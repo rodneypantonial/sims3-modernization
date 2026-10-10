@@ -1,0 +1,47 @@
+# Local-only repo: keep EA game files and large outputs out of git.
+
+# Game binaries and copied EA files (never commit these)
+*.exe
+*.exe.orig
+*.dll
+*.asi
+*.package
+*.dbc
+*.dbp
+*.world
+*.sims3pack
+game-copy/
+bin-copy/
+
+# Ghidra / REA projects and analysis databases
+*.gpr
+*.rep/
+ghidra/
+*.idb
+*.i64
+rea-out/
+
+# Profiling and debugger output
+*.dmp
+*.etl
+*.trace
+x32dbg/db/
+captures/
+
+# Build output
+build/
+out/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+
+# Editors and OS
+.idea/
+.vs/
+*.user
+Thumbs.db
+desktop.ini
