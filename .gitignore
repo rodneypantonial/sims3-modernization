@@ -16,7 +16,7 @@ bin-copy/
 # Ghidra / REA projects and analysis databases
 *.gpr
 *.rep/
-ghidra/
+/ghidra/
 *.idb
 *.i64
 rea-out/
