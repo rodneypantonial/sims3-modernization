@@ -6,6 +6,7 @@
 //   node tools/setup/install-fixes.ts install   [same options]
 //   node tools/setup/install-fixes.ts uninstall [--only id,id]
 //   node tools/setup/install-fixes.ts status
+//   node tools/setup/install-fixes.ts install --only cache-budget --cache-budget-mb 50   (offload phase 0)
 //
 // Manual downloads (NRaas, ModTheSims, Nexus need a browser): put the files in --downloads
 // (default ~/Downloads/ts3-fixes); `plan` lists which ones are missing and where to get them.
@@ -37,6 +38,7 @@ const TAR = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\W
 const { positionals, values } = parseArgs({ allowPositionals: true, options: {
   set: { type: 'string', default: 'default' }, only: { type: 'string' }, skip: { type: 'string' },
   downloads: { type: 'string', default: join(homedir(), 'Downloads', 'ts3-fixes') },
+  'cache-budget-mb': { type: 'string' }, // value for the cache-budget fix (offload phase 0: 200, 50, 0)
 } });
 const cmd = positionals[0] ?? 'plan';
 const fixes: Fix[] = JSON.parse(readFileSync(join(import.meta.dirname, 'fixes.json'), 'utf8'));
@@ -201,6 +203,30 @@ function generated(f: Fix, rec: Installed): boolean {
       execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'nointro.ts')], { stdio: 'ignore' });
       const p = join(USER, 'Mods', 'Packages', 'ts3-nointro.package');
       place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3-nointro.package'), p));
+      return true;
+    }
+    case 'cache-budget': {
+      // Default.ini [Resources] CacheBudget (bytes) = the generic ResourceCache budget (docs/08 §2.5);
+      // re-installing with another --cache-budget-mb keeps the first backup, so uninstall restores EA's value
+      const p = join(BIN, 'Default.ini');
+      const mb = Number(values['cache-budget-mb'] ?? c.mb);
+      if (!Number.isInteger(mb) || mb < 0 || mb > 476) throw new Error('cache-budget: --cache-budget-mb must be 0..476 (engine debug var max 500,000,000 B)');
+      const re = /^(CacheBudget\s*=\s*)\d+/m;
+      const text = readFileSync(p, 'latin1');
+      if (!re.test(text)) throw new Error('cache-budget: CacheBudget line not found in Default.ini');
+      place(f, rec, p, () => writeFileSync(p, text.replace(re, `$1${mb * 1024 * 1024}`), 'latin1'));
+      return true;
+    }
+    case 'user-cc': {
+      // Rodney's CC from the backup, relative paths kept (they fit Resource.cfg's folder depth); exclusions in fixes.json
+      const files = (c.include as string[]).flatMap(inc => readdirSync(join(c.source, inc), { recursive: true }).map(String)
+        .filter(n => n.toLowerCase().endsWith('.package')).map(n => `${inc}/${n.replace(/\\/g, '/')}`))
+        .filter(rel => !(c.exclude as string[]).some(x => rel.startsWith(x)));
+      for (const rel of files) {
+        const dest = join(USER, 'Mods', rel);
+        place(f, rec, dest, () => copyFileSync(join(c.source, rel), dest));
+      }
+      console.log(`  user-cc: ${files.length} packages`);
       return true;
     }
     case 'cache-clear':

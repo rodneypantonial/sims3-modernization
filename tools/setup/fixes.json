@@ -1461,5 +1461,64 @@
     "requires": [],
     "default": false,
     "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "cache-budget",
+    "name": "Default.ini [Resources] CacheBudget (offload phase 0)",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "install": {
+      "target": "bin",
+      "files": [
+        "Default.ini"
+      ]
+    },
+    "config": {
+      "mb": 200
+    },
+    "notes": "Experiment, not a fix. Sets the generic ResourceCache budget (docs/08 §2.5; EA default 209,715,200 B = 200 MB). Value from --cache-budget-mb (0..476), else config.mb. Phase 0 runs 200, 50 and 0; what 0 does (no caching of unreferenced resources, or unbounded) is [to measure]: watch /rescache. Re-installing with another value keeps the first backup; uninstall restores EA's file."
+  },
+  {
+    "id": "user-cc",
+    "name": "Rodney's custom content (from the 2026-10-11 backup)",
+    "author": "various (see the package names)",
+    "category": "content",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods"
+    },
+    "config": {
+      "source": "D:/Sims3-backup/2026-10-11/Documents-The Sims 3/Mods",
+      "include": [
+        "Packages/ModTheSims",
+        "Packages/Performance Fixes",
+        "Overrides/Body Shop",
+        "Overrides/Game Mods"
+      ],
+      "exclude": [
+        "Packages/ModTheSims/Game Mods/Script & Core Mods - Pure Scripting Mods",
+        "Packages/ModTheSims/ld_SmoothPatch"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "resource-cfg"
+    ],
+    "default": false,
+    "notes": "For offload phase 0 (docs/08 §7): CC content only, copied with its relative paths. Excluded: the three \"Sims 3 Store Updates\" repacks and \"Store Fixes\" (Packages/Sims 3 Store, third-party repack, docs/07 §2.6), the old script and core mods in Packages/ and Overrides/ root and the Pure Scripting Mods folder (superseded by or clashing with the fixes layer: ErrorTrap, Overwatch, simler90 UPDATE197, ld_RandomSimFixes, ld_SmoothPatch), and the old Resource.cfg. Uninstall removes exactly the copied files."
   }
 ]
