@@ -105,7 +105,7 @@ function peImage(body: Buffer): Buffer | null {
 }
 
 // Module name from .NET metadata (Module table row 0), e.g. "UI.dll".
-function moduleName(img: Buffer): string | null {
+export function moduleName(img: Buffer): string | null {
   const pe = img.readUInt32LE(0x3c);
   const nSec = img.readUInt16LE(pe + 6), optSize = img.readUInt16LE(pe + 20), opt = pe + 24;
   const secs = opt + optSize;
