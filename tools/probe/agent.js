@@ -67,22 +67,30 @@ function mailboxValid(p) {
   }
 }
 
+let lastScan = { at: 0, ms: 0, ranges: 0, bytes: 0 };
 function findMailbox() {
   if (mailbox && mailboxValid(mailbox)) return mailbox;
   mailbox = null;
+  if (Date.now() - lastScan.at < 5000) return null; // a full scan costs seconds; never queue them up
+  const t0 = Date.now();
+  lastScan = { at: t0, ms: 0, ranges: 0, bytes: 0 };
   const pattern = Array.from(MBX_MAGIC).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
   for (const r of Process.enumerateRanges('rw-')) {
     if (r.size < MBX.capacity) continue; // the buffer is one 1 MB array
+    lastScan.ranges++; lastScan.bytes += r.size;
     for (const m of Memory.scanSync(r.base, r.size, pattern)) {
-      if (mailboxValid(m.address)) { mailbox = m.address; return mailbox; }
+      if (mailboxValid(m.address)) { mailbox = m.address; lastScan.ms = Date.now() - t0; return mailbox; }
     }
   }
+  lastScan.ms = Date.now() - t0;
   return null;
 }
 
-function mailboxCall(cmd, args, timeoutMs) {
+// Non-blocking: post a request, then the host polls mailboxReply (a blocking wait here would stall every other RPC).
+function mailboxSend(cmd, args) {
   const p = findMailbox();
   if (!p) throw new Error('ts3agent mailbox not found: is build/ts3agent.package installed and the game past startup?');
+  if (p.add(MBX.offReqSeq).readU32() !== p.add(MBX.offRespSeq).readU32()) throw new Error('previous request still pending');
   const req = Object.assign({ id: ++mailboxId, cmd }, args ? { args } : {});
   const text = JSON.stringify(req);
   const byteLen = unescape(encodeURIComponent(text)).length; // UTF-8 length
@@ -91,24 +99,29 @@ function mailboxCall(cmd, args, timeoutMs) {
   p.add(MBX.offReqLen).writeU32(byteLen);
   const seq = (p.add(MBX.offReqSeq).readU32() + 1) >>> 0;
   p.add(MBX.offReqSeq).writeU32(seq); // publish last; the game answers on its next tick
-  const deadline = Date.now() + (timeoutMs || 30000);
-  while (p.add(MBX.offRespSeq).readU32() !== seq) {
-    if (Date.now() > deadline) throw new Error(`no reply to '${cmd}' within ${timeoutMs || 30000} ms (game paused, loading or blocked?)`);
-    Thread.sleep(0.005);
-  }
+  return seq;
+}
+
+function mailboxReply(seq) {
+  const p = findMailbox();
+  if (!p || p.add(MBX.offRespSeq).readU32() !== seq) return null;
   const len = p.add(MBX.offRespLen).readU32();
   return JSON.parse(p.add(MBX.header + MBX.reqCap).readUtf8String(len));
 }
 
 rpc.exports = {
-  agentCall(cmd, args, timeoutMs) {
-    return mailboxCall(cmd, args, timeoutMs);
+  agentSend(cmd, args) {
+    return mailboxSend(cmd, args);
+  },
+
+  agentReply(seq) {
+    return mailboxReply(seq);
   },
 
   agentStatus() {
     const p = findMailbox();
     return p ? { address: p.toString(), heartbeat: p.add(MBX.offHeartbeat).readU32(), worldLoaded: p.add(MBX.offState).readU32() === 1 }
-             : { address: null };
+             : { address: null, lastScan };
   },
 
   status() {

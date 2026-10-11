@@ -13,6 +13,7 @@ namespace Ts3Agent
             RegisterSims();
             RegisterControl();
             RegisterBuild();
+            RegisterHarness();
         }
 
         static object Ping(Args a)

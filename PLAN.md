@@ -13,10 +13,15 @@ Output: `docs/02-baseline-install-guide.md`.
 
 ## 2b. Test harness: next (decided 2026-10-11)
 Manual test runs are slow and noisy, so we automate them before measuring. Prior art and design: `docs/06-test-harness-prior-art.md`.
-- [ ] Runner (`tools/harness/run.ts`): prepares a copy of the user folder, launches `TS3W.exe -worldFile:"<save>.sims3"` with a timeout, records PresentMon, collects results.
-- [ ] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
+- [~] Runner (`tools/harness/run.ts`; launch, load and aging work via `tools/probe/ts3probe.py serve --launch` and `tools/harness/age-save.ts`): prepares a copy of the user folder, launches `TS3W.exe -worldFile:"<save>.sims3"` with a timeout, records PresentMon, collects results.
+- [x] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
 - [ ] Native probe ASI (the Frida profiler made permanent) and later a named-pipe bridge.
 - [ ] Scenario files: create and age the test saves automatically, then run tests A to E unattended.
+
+## 2c. All-known-fixes installer: next after the vanilla baseline (decided 2026-10-11)
+One tool applies every established community fix, so we only hunt problems that remain with all of them installed. Catalog: `docs/07-known-fixes-catalog.md`, manifest `tools/setup/fixes.json`.
+- [ ] Installer `tools/setup/install-fixes.ts`: downloads from official sources (manual step for login-only sites), verifies SHA-256, backs up, installs, can uninstall. Never bundles other authors' files.
+- [ ] Measure the "all known fixes" layer with the harness; this becomes the baseline our own fixes must beat.
 
 ## 3. Reverse engineer TS3W.exe and the Mono layer: in progress (first pass done)
 Focus decided 2026-10-11: in-game stutter (stuck sims, threading, bad world pathing); load times are fine. Findings and ranked big wins: `docs/04-re-findings.md`, script side: `docs/04a-script-layer-stutter.md`.

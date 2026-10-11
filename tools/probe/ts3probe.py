@@ -7,6 +7,7 @@ the Node binding is a native npm module. Standard library otherwise.
   python tools/probe/ts3probe.py get status|threads|memory|modules|events|scripterrors
   python tools/probe/ts3probe.py get "read?addr=0xd81840&len=32"
   python tools/probe/ts3probe.py get "agent?cmd=ping"        (in-game ts3agent mod, see mods/ts3agent)
+  python tools/probe/ts3probe.py get detach                  (always stop the server this way, not by killing it)
 
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
@@ -69,6 +70,7 @@ class Probe:
         self.out.mkdir(parents=True, exist_ok=True)
         self.events_file = open(self.out / 'events.jsonl', 'a', encoding='utf-8')
         self.lock = threading.Lock()
+        self.agent_lock = threading.Lock()
         self.script_errors = []
         self.alive = True
 
@@ -164,11 +166,23 @@ class Probe:
                 if 'stack' in e:
                     e['stack'] = self.symbols.stack(e['stack'])
             return evs
+        if path == 'detach':  # stop probing without killing the host mid-call (that can take the game down)
+            self.alive = False
+            threading.Thread(target=self.session.detach, daemon=True).start()
+            return {'detaching': True}
         if path == 'agentstatus':
             return rpc.agent_status()
         if path == 'agent':  # in-game ts3agent command, e.g. agent?cmd=list_sims&args={"household":"active"}
             args = json.loads(q['args']) if 'args' in q else None
-            return rpc.agent_call(q['cmd'], args, int(q.get('timeout', 30000)))
+            with self.agent_lock:  # one request in the mailbox at a time
+                seq = rpc.agent_send(q['cmd'], args)
+                deadline = time.time() + int(q.get('timeout', 30000)) / 1000
+                while time.time() < deadline:
+                    reply = rpc.agent_reply(seq)
+                    if reply is not None:
+                        return reply
+                    time.sleep(0.02)
+            return {'ok': False, 'error': f"no reply to '{q['cmd']}' (game paused, loading or blocked?)", 'seq': seq}
         if path == 'scripterrors':
             with self.lock:
                 return self.script_errors[int(q.get('since', 0)):]
