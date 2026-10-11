@@ -24,7 +24,11 @@ See `01-existing-fixes-comparison.md` for why each fix is here.
 
 Use the **same save, the same lot and the same speed** every time:
 
-- **Save:** your normal heaviest save with all expansions. If you'd rather keep it untouched, use a copy.
+- **Save:** a vanilla test save, aged so the stutter has time to build up (decided 2026-10-11; the real save "Rodney and Rose" needs mods and CC, so it is used again from layer 5 onwards):
+  1. With no mods, start a new game in **Sunset Valley** with a household of 2. Story progression stays on, at default settings.
+  2. Play at speed 3 for about **2 sim weeks**. Sending the household to work and school is fine. Save the game as `Baseline-SV`.
+  3. Copy `Saves\Baseline-SV.sims3` (it's a folder) to `D:\Sims3-backup\test-saves\`. **Before every test, copy it back**, so every layer starts from exactly the same state.
+  4. Optional: for stuck-sim and routing tests, make a second aged save in **Bridgeport** (Late Night), which the community reports as laggy because of elevators and routing, and treat it the same way.
 - **Test A, load time:** time it from clicking Play in the launcher to being in Live mode with control of your household, using a stopwatch.
 - **Test B, idle FPS:** in Live mode at your household lot, set speed 3, keep the camera still for 60 seconds and note the average FPS.
 - **Test C, travel and streaming:** pan the camera across town to the busiest community lot and back. Note any hitches.
