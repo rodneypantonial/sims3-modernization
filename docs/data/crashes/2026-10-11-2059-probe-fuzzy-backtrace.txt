@@ -1,0 +1,297 @@
+[Build info]
+Application: Sims3
+BuildTime:   2014-01-21-1120
+BuildUser:   slcbuilder
+BuildHost:   SLC1-BUILD110
+BuildConfig: Release
+BuldVersion: 0.0.0.32
+Commandline: C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin\TS3W.exe
+
+
+[System info]
+Computer name: <pc>
+Computer DNS name: <pc>
+User name: <user>
+EA_PLATFORM: Windows on X86
+OS name: Windows Vista
+OS version number: 6.2.9200
+OS service pack: 
+Debugger present: no
+CPU count: 16
+Processor type: x86
+Processor level: 6
+Processor revision: 36097
+Memory load: 69%
+Total physical memory: 32494 Mb
+Available physical memory: 9770 Mb
+Total page file memory: 61166 Mb
+Available page file memory: 20926 Mb
+Total virtual memory: 4095 Mb
+Free virtual memory: 1930 Mb
+
+[Application info]
+Language: C++
+Compiler: Microsoft Visual C++ compiler, version 1400
+App path: C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin\TS3W.exe
+App version: 0.0.0.32
+
+[Exception info]
+date: 2026-10-11
+time: 20.59.00
+type: ACCESS_VIOLATION reading address 0x45c20000
+address: 0x58bdc016 "C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll":0x0001:0x00c4b016
+
+[Call stack]
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58bdc016
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x580e8442
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58bd19dd
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58bd19b5
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x5803131c
+
+C:\WINDOWS\SYSTEM32\ntdll.dll
+0x777450b7
+
+C:\WINDOWS\System32\KERNEL32.DLL
+0x76755d49
+
+C:\WINDOWS\SYSTEM32\ntdll.dll
+0x7775c75b
+
+C:\WINDOWS\SYSTEM32\ntdll.dll
+0x7775c6e1
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x581858dc
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58194a1a
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x5819480e
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58186d34
+
+C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll
+0x58186dcf
+
+
+[Stack data]
+040becd0 | 0c c0 bd 58 00 00 00 00 00 00 00 00<b0>f7 82 03 | ...X............ |
+040bece0 | 00 a1 15 0f d4 ed 0b 04 28 f0 0b 04 b0 f7 82 03 | ........(....... |
+040becf0 | 00 00 00 00 20 d9 07 02 00 00 c2 45 00 00 00 00 | .... ......E.... |
+040bed00 | 00 10 00 00 e0 ff 24 04 fa ff ff ff 00 00 00 00 | ......$......... |
+040bed10 | 06 00 00 00 e0 ff 24 04 00 00 fc 03 00 00 00 00 | ......$......... |
+040bed20 | 00 00 10 00 00 a1 15 0f 42 84 0e 58 c0 ff 24 04 | ........B..X..$. |
+040bed30 | cc f7 82 03 40 ed 0b 04 dd 19 bd 58 b0 f7 82 03 | ....@......X.... |
+040bed40 | 01 00 00 00 84 ed 0b 04 10 00 00 00 00 a1 15 0f | ................ |
+040bed50 | 38 f9 15 0f 10 00 7b 03 24 fc 82 03 b5 19 bd 58 | 8.....{.$......X |
+040bed60 | b0 f7 82 03 e0 35 29 04 84 ed 0b 04 10 00 00 00 | .....5)......... |
+040bed70 | 1c 13 03 58 b0 f7 82 03 e0 35 29 04 84 ed 0b 04 | ...X.....5)..... |
+040bed80 | 10 fa 82 03 68 00 00 00 b7 50 74 77 49 5d 75 76 | ....h....PtwI]uv |
+040bed90 | 5b c7 75 77 e1 c6 75 77 10 00 7b 03 50 55 0d 02 | [.uw..uw..{.PU.. |
+040beda0 | 00 00 08 00 58 b2 e9 0e 00 00 08 00 e0 ee 0b 04 | ....X........... |
+040bedb0 | dc 58 18 58 10 00 7b 03 50 55 0d 02 00 00 08 00 | .X.X..{.PU...... |
+040bedc0 | 01 00 00 00 c8 ed 0b 04 e0 35 29 04 00 00 00 00 | .........5)..... |
+040bedd0 | 02 00 00 00 34 ee 0b 04 a1 0d 03 58 10 00 7b 03 | ....4......X..{. |
+040bede0 | d0 d4 25 04 00 00 08 00 10 ee 0b 04 10 fa 82 03 | ..%............. |
+040bedf0 | 10 ee 0b 04 10 00 7b 03 03 00 00 00 28 f0 0b 04 | ......{.....(... |
+040bee00 | 10 fa 82 03 10 00 7b 03 10 00 7b 03 03 00 00 00 | ......{...{..... |
+040bee10 | 10 00 7b 03 03 00 00 00 28 f0 0b 04 10 fa 82 03 | ..{.....(....... |
+040bee20 | 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 | ................ |
+040bee30 | 00 00 00 00 9c ee 0b 04 02 e0 19 58 10 00 7b 03 | ...........X..{. |
+040bee40 | d0 d4 25 04 00 00 08 00 03 00 00 00 28 f0 0b 04 | ..%.........(... |
+040bee50 | 98 fc 24 04 00 9e 82 03 00 00 08 00 4c f0 0b 04 | ..$.........L... |
+040bee60 | 26 00 00 00 98 fc 24 04 00 00 08 00 28 f0 0b 04 | &.....$.....(... |
+040bee70 | 09 00 00 00 09 00 00 00 e8 b9 e9 0e 5a 3b 1a 58 | ............Z;.X |
+040bee80 | 03 00 00 00 00 00 00 00 09 00 00 00 00 9e 82 03 | ................ |
+040bee90 | 05 ef 0b 04 10 00 7b 03 00 00 00 00 c0 ef 0b 04 | ......{......... |
+040beea0 | 51 1a 18 58 00 00 00 00 98 fc 24 04 00 00 08 00 | Q..X......$..... |
+040beeb0 | d0 d4 25 04 00 00 08 00 03 00 00 00 69 0d 03 58 | ..%.........i..X |
+040beec0 | 00 00 00 00 40 f0 0b 04 10 00 7b 03 08 00 d8 01 | ....@.....{..... |
+040beed0 | 54 00 00 00 23 60 00 58 54 00 00 00 18 30 1a 58 | T...#`.XT....0.X |
+
+[Instruction data]
+58bdbf96 => DasmX86Dll.dll not found. 
+
+[Registers]
+eip: 58bdc016
+eax: 00000001
+ebx: 00000004
+ecx: 00000000
+edx: 47faf000
+esi: 45c20000
+edi: 0382f7b0
+ebp: 45c21db8
+efl: 00010202
+esp: 040becdc
+
+[Modules]
+base 0x00400000 size 0x00e5a000 entry 0x00f7f371 "TS3W.exe"                                       "C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin\TS3W.exe"
+base 0x776f0000 size 0x001bf000 entry 0x00000000 "ntdll.dll"                                      "C:\WINDOWS\SYSTEM32\ntdll.dll"
+base 0x76740000 size 0x000f0000 entry 0x76755970 "KERNEL32.DLL"                                   "C:\WINDOWS\System32\KERNEL32.DLL"
+base 0x75ae0000 size 0x002d9000 entry 0x75c3b680 "KERNELBASE.dll"                                 "C:\WINDOWS\System32\KERNELBASE.dll"
+base 0x65f50000 size 0x000af000 entry 0x65f8cd40 "apphelp.dll"                                    "C:\WINDOWS\SYSTEM32\apphelp.dll"
+base 0x762d0000 size 0x001ed000 entry 0x76301310 "USER32.dll"                                     "C:\WINDOWS\System32\USER32.dll"
+base 0x768d0000 size 0x0001c000 entry 0x00000000 "win32u.dll"                                     "C:\WINDOWS\System32\win32u.dll"
+base 0x751a0000 size 0x00022000 entry 0x751a43b0 "GDI32.dll"                                      "C:\WINDOWS\System32\GDI32.dll"
+base 0x77070000 size 0x000ea000 entry 0x770b6d20 "gdi32full.dll"                                  "C:\WINDOWS\System32\gdi32full.dll"
+base 0x751d0000 size 0x00085000 entry 0x751e8f80 "msvcp_win.dll"                                  "C:\WINDOWS\System32\msvcp_win.dll"
+base 0x59140000 size 0x00780000 entry 0x591411f0 "d3d9.dll"                                       "C:\Program Files (x86)\Steam\steamapps\common\The Sims 3\Game\Bin\d3d9.dll"
+base 0x77470000 size 0x00110000 entry 0x774cfb40 "ucrtbase.dll"                                   "C:\WINDOWS\System32\ucrtbase.dll"
+base 0x76ba0000 size 0x00085000 entry 0x76bb3d00 "ADVAPI32.dll"                                   "C:\WINDOWS\System32\ADVAPI32.dll"
+base 0x6bd50000 size 0x000ec000 entry 0x6bd641d0 "DDRAW.dll"                                      "C:\WINDOWS\SYSTEM32\DDRAW.dll"
+base 0x76ec0000 size 0x000c7000 entry 0x76ef5d80 "msvcrt.dll"                                     "C:\WINDOWS\System32\msvcrt.dll"
+base 0x75280000 size 0x0066a000 entry 0x75401890 "SHELL32.dll"                                    "C:\WINDOWS\System32\SHELL32.dll"
+base 0x6fc50000 size 0x00026000 entry 0x6fc5aee0 "iphlpapi.dll"                                   "C:\WINDOWS\SYSTEM32\iphlpapi.dll"
+base 0x75dd0000 size 0x00085000 entry 0x75debaa0 "sechost.dll"                                    "C:\WINDOWS\System32\sechost.dll"
+base 0x76c30000 size 0x00157000 entry 0x76c5f240 "ole32.dll"                                      "C:\WINDOWS\System32\ole32.dll"
+base 0x758f0000 size 0x000bc000 entry 0x759320e0 "RPCRT4.dll"                                     "C:\WINDOWS\System32\RPCRT4.dll"
+base 0x76900000 size 0x00297000 entry 0x76a39e20 "combase.dll"                                    "C:\WINDOWS\System32\combase.dll"
+base 0x74f70000 size 0x00223000 entry 0x75081150 "WININET.dll"                                    "C:\WINDOWS\SYSTEM32\WININET.dll"
+base 0x75e70000 size 0x00451000 entry 0x75ea2190 "SETUPAPI.dll"                                   "C:\WINDOWS\System32\SETUPAPI.dll"
+base 0x759c0000 size 0x0009f000 entry 0x759fcb80 "OLEAUT32.dll"                                   "C:\WINDOWS\System32\OLEAUT32.dll"
+base 0x77590000 size 0x00025000 entry 0x77593a70 "IMM32.dll"                                      "C:\WINDOWS\System32\IMM32.dll"
+base 0x71000000 size 0x00007000 entry 0x71002130 "DCIMAN32.dll"                                   "C:\WINDOWS\SYSTEM32\DCIMAN32.dll"
+base 0x77460000 size 0x00006000 entry 0x77461590 "PSAPI.DLL"                                      "C:\WINDOWS\System32\PSAPI.DLL"
+base 0x72e10000 size 0x00108000 entry 0x72e62d90 "dxgi.dll"                                       "C:\WINDOWS\SYSTEM32\dxgi.dll"
+base 0x77280000 size 0x0006a000 entry 0x7729cab0 "WS2_32.dll"                                     "C:\WINDOWS\System32\WS2_32.dll"
+base 0x71300000 size 0x0009b000 entry 0x7130232b "MSVCR80.dll"                                    "C:\WINDOWS\WinSxS\x86_microsoft.vc80.crt_1fc8b3b9a1e18e3b_8.0.50727.9680_none_d090cb7c44278b28\MSVCR80.dll"
+base 0x711f0000 size 0x00087000 entry 0x71220dce "MSVCP80.dll"                                    "C:\WINDOWS\WinSxS\x86_microsoft.vc80.crt_1fc8b3b9a1e18e3b_8.0.50727.9680_none_d090cb7c44278b28\MSVCP80.dll"
+base 0x74cc0000 size 0x001e8000 entry 0x74d05470 "dbghelp.dll"                                    "C:\WINDOWS\SYSTEM32\dbghelp.dll"
+base 0x72070000 size 0x00017000 entry 0x00000000 "USP10.dll"                                      "C:\WINDOWS\SYSTEM32\USP10.dll"
+base 0x74f30000 size 0x00008000 entry 0x74f318e0 "VERSION.dll"                                    "C:\WINDOWS\SYSTEM32\VERSION.dll"
+base 0x6eaf0000 size 0x00015000 entry 0x6eaf1ef0 "NETAPI32.dll"                                   "C:\WINDOWS\SYSTEM32\NETAPI32.dll"
+base 0x72920000 size 0x00055000 entry 0x72927d10 "powrprof.dll"                                   "C:\WINDOWS\SYSTEM32\powrprof.dll"
+base 0x70f60000 size 0x00076000 entry 0x70f777f0 "DSOUND.dll"                                     "C:\WINDOWS\SYSTEM32\DSOUND.dll"
+base 0x73fe0000 size 0x00034000 entry 0x73feabb0 "WINMM.dll"                                      "C:\WINDOWS\SYSTEM32\WINMM.dll"
+base 0x6d9f0000 size 0x00036000 entry 0x6da13890 "dxcore.dll"                                     "C:\WINDOWS\SYSTEM32\dxcore.dll"
+base 0x70820000 size 0x0009f000 entry 0x7084e8c0 "ResampleDmo.DLL"                                "C:\WINDOWS\SYSTEM32\ResampleDmo.DLL"
+base 0x71940000 size 0x00025000 entry 0x71959790 "winmmbase.dll"                                  "C:\WINDOWS\SYSTEM32\winmmbase.dll"
+base 0x764d0000 size 0x000d5000 entry 0x76523b70 "shcore.dll"                                     "C:\WINDOWS\System32\shcore.dll"
+base 0x72020000 size 0x00009000 entry 0x72023000 "msdmo.dll"                                      "C:\WINDOWS\SYSTEM32\msdmo.dll"
+base 0x739b0000 size 0x00040000 entry 0x739bc760 "cfgmgr32.dll"                                   "C:\WINDOWS\SYSTEM32\cfgmgr32.dll"
+base 0x01a80000 size 0x00267000 entry 0x01c9af6c "d3dx9_31.dll"                                   "C:\WINDOWS\SYSTEM32\d3dx9_31.dll"
+base 0x71ff0000 size 0x0000f000 entry 0x71ff85a0 "UMPDC.dll"                                      "C:\WINDOWS\SYSTEM32\UMPDC.dll"
+base 0x57f90000 size 0x011a1000 entry 0x58b911a0 "frida-agent.dll"                                "C:\Users\<user>\AppData\Local\Temp\frida-ad228120dcf44494d1f049e2211c30df\x86\frida-agent.dll"
+base 0x76f90000 size 0x00052000 entry 0x76faa480 "SHLWAPI.dll"                                    "C:\WINDOWS\System32\SHLWAPI.dll"
+base 0x77160000 size 0x0010f000 entry 0x771b5fe0 "CRYPT32.dll"                                    "C:\WINDOWS\System32\CRYPT32.dll"
+base 0x6fc80000 size 0x0010d000 entry 0x6fcd0bd0 "DNSAPI.dll"                                     "C:\WINDOWS\SYSTEM32\DNSAPI.dll"
+base 0x72f20000 size 0x0001c000 entry 0x72f2b1d0 "bcrypt.dll"                                     "C:\WINDOWS\SYSTEM32\bcrypt.dll"
+base 0x705e0000 size 0x0000a000 entry 0x705e1a40 "DSPARSE.dll"                                    "C:\WINDOWS\SYSTEM32\DSPARSE.dll"
+base 0x75dc0000 size 0x00007000 entry 0x75dc2040 "NSI.dll"                                        "C:\WINDOWS\System32\NSI.dll"
+base 0x73a00000 size 0x00015000 entry 0x73a04a10 "kernel.appcore.dll"                             "C:\WINDOWS\SYSTEM32\kernel.appcore.dll"
+base 0x71910000 size 0x00026000 entry 0x71915180 "xinput1_3.dll"                                  "C:\WINDOWS\SYSTEM32\xinput1_3.dll"
+base 0x70ee0000 size 0x00076000 entry 0x70f467a0 "glu32.dll"                                      "C:\WINDOWS\SYSTEM32\glu32.dll"
+base 0x70730000 size 0x000e3000 entry 0x707e6480 "OPENGL32.dll"                                   "C:\WINDOWS\SYSTEM32\OPENGL32.dll"
+base 0x74590000 size 0x0071e000 entry 0x74792db0 "windows.storage.dll"                            "C:\WINDOWS\SYSTEM32\windows.storage.dll"
+base 0x6b1e0000 size 0x0017b000 entry 0x6b1ef750 "vulkan-1.dll"                                   "C:\WINDOWS\SYSTEM32\vulkan-1.dll"
+base 0x6da30000 size 0x00017000 entry 0x6da3eb80 "windows.staterepositorycore.dll"                "C:\WINDOWS\SYSTEM32\windows.staterepositorycore.dll"
+base 0x669f0000 size 0x0004d000 entry 0x66a2ef10 "directxdatabasehelper.dll"                      "C:\WINDOWS\SYSTEM32\directxdatabasehelper.dll"
+base 0x76ff0000 size 0x0007a000 entry 0x7702f570 "bcryptPrimitives.dll"                           "C:\WINDOWS\System32\bcryptPrimitives.dll"
+base 0x566b0000 size 0x018dc000 entry 0x5741f670 "igvk32.dll"                                     "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igvk32.dll"
+base 0x649a0000 size 0x0041a000 entry 0x64d0b450 "igdgmm32.dll"                                   "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igdgmm32.dll"
+base 0x5ffd0000 size 0x049cb000 entry 0x617ad510 "igc32.dll"                                      "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igc32.dll"
+base 0x54cd0000 size 0x019d7000 entry 0x55a00e8f "nvoglv32.dll"                                   "C:\WINDOWS\System32\DriverStore\FileRepository\nvdmi.inf_amd64_ba022bd5a96e7bcb\nvoglv32.dll"
+base 0x74f00000 size 0x00021000 entry 0x74f05ff0 "WTSAPI32.dll"                                   "C:\WINDOWS\SYSTEM32\WTSAPI32.dll"
+base 0x74ed0000 size 0x0002b000 entry 0x74ee6000 "SspiCli.dll"                                    "C:\WINDOWS\SYSTEM32\SspiCli.dll"
+base 0x74eb0000 size 0x0000e000 entry 0x74eb6520 "msasn1.dll"                                     "C:\WINDOWS\SYSTEM32\msasn1.dll"
+base 0x6d990000 size 0x0002b000 entry 0x6d99f700 "cryptnet.dll"                                   "C:\WINDOWS\SYSTEM32\cryptnet.dll"
+base 0x73300000 size 0x0000a000 entry 0x733028e0 "cryptbase.dll"                                  "C:\WINDOWS\SYSTEM32\cryptbase.dll"
+base 0x6a9f0000 size 0x00064000 entry 0x6aa053a0 "wldp.dll"                                       "C:\WINDOWS\SYSTEM32\wldp.dll"
+base 0x6b3d0000 size 0x0012b000 entry 0x6b40e020 "drvstore.dll"                                   "C:\WINDOWS\SYSTEM32\drvstore.dll"
+base 0x732d0000 size 0x00025000 entry 0x732da4d0 "devobj.dll"                                     "C:\WINDOWS\SYSTEM32\devobj.dll"
+base 0x73150000 size 0x00029000 entry 0x73159b80 "ntmarta.dll"                                    "C:\WINDOWS\SYSTEM32\ntmarta.dll"
+base 0x75a70000 size 0x00068000 entry 0x75a8e040 "WINTRUST.dll"                                   "C:\WINDOWS\System32\WINTRUST.dll"
+base 0x75260000 size 0x0001b000 entry 0x75266d40 "imagehlp.dll"                                   "C:\WINDOWS\System32\imagehlp.dll"
+base 0x73350000 size 0x00014000 entry 0x733569a0 "CRYPTSP.dll"                                    "C:\WINDOWS\SYSTEM32\CRYPTSP.dll"
+base 0x73310000 size 0x00032000 entry 0x733218f0 "rsaenh.dll"                                     "C:\WINDOWS\system32\rsaenh.dll"
+base 0x0fcf0000 size 0x05544000 entry 0x0ff347c0 "nvgpucomp32.dll"                                "C:\WINDOWS\System32\DriverStore\FileRepository\nvdmi.inf_amd64_ba022bd5a96e7bcb\nvgpucomp32.dll"
+base 0x76840000 size 0x00086000 entry 0x768b3010 "clbcatq.dll"                                    "C:\WINDOWS\System32\clbcatq.dll"
+base 0x71520000 size 0x000f9000 entry 0x7158f620 "WinTypes.dll"                                   "C:\Windows\System32\WinTypes.dll"
+base 0x6e770000 size 0x0002d000 entry 0x6e78ee70 "rometadata.dll"                                 "C:\WINDOWS\SYSTEM32\rometadata.dll"
+base 0x6e730000 size 0x0003e000 entry 0x6e740f4b "graphics-hook32.dll"                            "C:\ProgramData\obs-studio-hook\graphics-hook32.dll"
+base 0x73fb0000 size 0x0001e000 entry 0x73fbb160 "profapi.dll"                                    "C:\WINDOWS\SYSTEM32\profapi.dll"
+base 0x6b0c0000 size 0x00119000 entry 0x6b12aac0 "igvkMedia32.dll"                                "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igvkMedia32.dll"
+base 0x6be50000 size 0x0147a000 entry 0x6c6874c0 "igddxvacommon32.dll"                            "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igddxvacommon32.dll"
+base 0x5c530000 size 0x01bb1000 entry 0x5c53cac0 "media_bin_32.dll"                               "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\media_bin_32.dll"
+base 0x6a7b0000 size 0x00139000 entry 0x6a7c0240 "nvspcap.dll"                                    "C:\WINDOWS\system32\nvspcap.dll"
+base 0x6e630000 size 0x00025000 entry 0x6e6351a0 "dwmapi.dll"                                     "C:\WINDOWS\SYSTEM32\dwmapi.dll"
+base 0x73ca0000 size 0x0007e000 entry 0x73cd22c0 "uxtheme.dll"                                    "C:\WINDOWS\system32\uxtheme.dll"
+base 0x775c0000 size 0x00117000 entry 0x7761b220 "MSCTF.dll"                                      "C:\WINDOWS\System32\MSCTF.dll"
+base 0x685a0000 size 0x001b2000 entry 0x685f9150 "MFPlat.DLL"                                     "C:\Windows\System32\MFPlat.DLL"
+base 0x6e470000 size 0x0002f000 entry 0x6e47e760 "RTWorkQ.DLL"                                    "C:\Windows\System32\RTWorkQ.DLL"
+base 0x71e30000 size 0x0000d000 entry 0x71e34a80 "wbemprox.dll"                                   "C:\WINDOWS\system32\wbem\wbemprox.dll"
+base 0x71dc0000 size 0x00069000 entry 0x71ddad50 "wbemcomn.dll"                                   "C:\WINDOWS\SYSTEM32\wbemcomn.dll"
+base 0x712a0000 size 0x00011000 entry 0x712a9250 "wbemsvc.dll"                                    "C:\WINDOWS\system32\wbem\wbemsvc.dll"
+base 0x71010000 size 0x000d0000 entry 0x71045c50 "fastprox.dll"                                   "C:\WINDOWS\system32\wbem\fastprox.dll"
+base 0x70fe0000 size 0x00015000 entry 0x70febea0 "amsi.dll"                                       "C:\WINDOWS\SYSTEM32\amsi.dll"
+base 0x74f40000 size 0x00029000 entry 0x74f47d80 "USERENV.dll"                                    "C:\WINDOWS\SYSTEM32\USERENV.dll"
+base 0x70d20000 size 0x001a8000 entry 0x70e0a320 "com_antivirus.dll"                              "C:\Program Files (x86)\Kaspersky Lab\Kaspersky 21.26\com_antivirus.dll"
+base 0x71170000 size 0x0000a000 entry 0x711718b0 "Secur32.dll"                                    "C:\WINDOWS\SYSTEM32\Secur32.dll"
+base 0x710f0000 size 0x00009000 entry 0x710f1ed0 "DPAPI.DLL"                                      "C:\WINDOWS\SYSTEM32\DPAPI.DLL"
+base 0x730c0000 size 0x00040000 entry 0x730d5dd0 "product_info.dll"                               "C:\Program Files (x86)\Kaspersky Lab\Kaspersky 21.26\product_info.dll"
+base 0x6db40000 size 0x00012000 entry 0x6db45d30 "DEVRTL.dll"                                     "C:\WINDOWS\SYSTEM32\DEVRTL.dll"
+base 0x6e710000 size 0x00017000 entry 0x6e718e50 "SPINF.dll"                                      "C:\WINDOWS\SYSTEM32\SPINF.dll"
+base 0x6d9c0000 size 0x0001f000 entry 0x6d9c9710 "gpapi.dll"                                      "C:\WINDOWS\SYSTEM32\gpapi.dll"
+base 0x6e690000 size 0x0001a000 entry 0x6e696b30 "SPFILEQ.dll"                                    "C:\WINDOWS\SYSTEM32\SPFILEQ.dll"
+base 0x51120000 size 0x00141000 entry 0x51170337 "nvppe.dll"                                      "C:\WINDOWS\System32\DriverStore\FileRepository\nvdmi.inf_amd64_ba022bd5a96e7bcb\nvppe.dll"
+base 0x64dc0000 size 0x00047000 entry 0x64dd1f70 "igdgmm2_32.dll"                                 "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igdgmm2_32.dll"
+base 0x64f10000 size 0x01034000 entry 0x655c9450 "igd10um32xe.DLL"                                "C:\WINDOWS\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_cbfaa9cd064ee779\igd10um32xe.DLL"
+base 0x6e610000 size 0x00015000 entry 0x6e61da10 "xinput1_4.dll"                                  "C:\WINDOWS\SYSTEM32\xinput1_4.dll"
+base 0x68420000 size 0x00172000 entry 0x68559eb0 "inputhost.dll"                                  "C:\WINDOWS\SYSTEM32\inputhost.dll"
+base 0x66b30000 size 0x000e0000 entry 0x66bd64c0 "CoreMessaging.dll"                              "C:\WINDOWS\SYSTEM32\CoreMessaging.dll"
+base 0x66c20000 size 0x00111000 entry 0x66c80750 "Windows.UI.dll"                                 "C:\Windows\System32\Windows.UI.dll"
+base 0x6af90000 size 0x00102000 entry 0x6afd9c00 "textinputframework.dll"                         "C:\WINDOWS\SYSTEM32\textinputframework.dll"
+base 0x6ba10000 size 0x00295000 entry 0x6ba7a710 "CoreUIComponents.dll"                           "C:\WINDOWS\SYSTEM32\CoreUIComponents.dll"
+base 0x73f50000 size 0x00054000 entry 0x73f5df70 "mswsock.dll"                                    "C:\WINDOWS\system32\mswsock.dll"
+base 0x726d0000 size 0x0023d000 entry 0x7289ee70 "iertutil.dll"                                   "C:\WINDOWS\SYSTEM32\iertutil.dll"
+base 0x72690000 size 0x0000b000 entry 0x726931e0 "netutils.dll"                                   "C:\WINDOWS\SYSTEM32\netutils.dll"
+base 0x726a0000 size 0x0001e000 entry 0x726a52b0 "srvcli.dll"                                     "C:\WINDOWS\SYSTEM32\srvcli.dll"
+base 0x73180000 size 0x00018000 entry 0x731848c0 "ondemandconnroutehelper.dll"                    "C:\WINDOWS\SYSTEM32\ondemandconnroutehelper.dll"
+base 0x72b30000 size 0x000e6000 entry 0x72b88260 "WINHTTP.dll"                                    "C:\WINDOWS\SYSTEM32\WINHTTP.dll"
+base 0x731a0000 size 0x0000a000 entry 0x731a23b0 "WINNSI.DLL"                                     "C:\WINDOWS\SYSTEM32\WINNSI.DLL"
+base 0x6abf0000 size 0x000ff000 entry 0x6ac01a70 "rasapi32.dll"                                   "C:\WINDOWS\SYSTEM32\rasapi32.dll"
+base 0x6de10000 size 0x000a2000 entry 0x6de27760 "mscms.dll"                                      "C:\WINDOWS\SYSTEM32\mscms.dll"
+base 0x6e5c0000 size 0x0003e000 entry 0x6e5f7850 "icm32.dll"                                      "C:\WINDOWS\SYSTEM32\icm32.dll"
+base 0x70630000 size 0x0001c000 entry 0x70635430 "dhcpcsvc.DLL"                                   "C:\WINDOWS\SYSTEM32\dhcpcsvc.DLL"
+base 0x72980000 size 0x00197000 entry 0x72a03e30 "urlmon.dll"                                     "C:\WINDOWS\SYSTEM32\urlmon.dll"
+base 0x6d2d0000 size 0x00008000 entry 0x6d2d1a40 "rasadhlp.dll"                                   "C:\Windows\System32\rasadhlp.dll"
+base 0x6b360000 size 0x00062000 entry 0x6b37cc40 "fwpuclnt.dll"                                   "C:\WINDOWS\System32\fwpuclnt.dll"
+base 0x6db80000 size 0x00087000 entry 0x6dbac4a0 "MMDevApi.dll"                                   "C:\WINDOWS\System32\MMDevApi.dll"
+base 0x6daf0000 size 0x00040000 entry 0x6daffb70 "wdmaud.drv"                                     "C:\WINDOWS\SYSTEM32\wdmaud.drv"
+base 0x6e590000 size 0x0001e000 entry 0x6e5a46c0 "wdmaud2.drv"                                    "C:\WINDOWS\SYSTEM32\wdmaud2.drv"
+base 0x70ed0000 size 0x00009000 entry 0x70ed1d00 "AVRT.dll"                                       "C:\WINDOWS\SYSTEM32\AVRT.dll"
+base 0x6eef0000 size 0x00173000 entry 0x6ef4c830 "AUDIOSES.DLL"                                   "C:\WINDOWS\SYSTEM32\AUDIOSES.DLL"
+base 0x702c0000 size 0x0000b000 entry 0x702c4750 "msacm32.drv"                                    "C:\WINDOWS\SYSTEM32\msacm32.drv"
+base 0x6e450000 size 0x0001a000 entry 0x6e455020 "MSACM32.dll"                                    "C:\WINDOWS\SYSTEM32\MSACM32.dll"
+base 0x6eee0000 size 0x00008000 entry 0x6eee1d80 "midimap.dll"                                    "C:\WINDOWS\SYSTEM32\midimap.dll"
+base 0x6ddf0000 size 0x00010000 entry 0x6ddf5550 "resourcepolicyclient.dll"                       "C:\WINDOWS\SYSTEM32\resourcepolicyclient.dll"
+base 0x6d310000 size 0x00068000 entry 0x6d32a646 "nvapi.dll"                                      "C:\WINDOWS\SYSTEM32\nvapi.dll"
+base 0x547c0000 size 0x00510000 entry 0x54b82420 "nvapi_impl.dll"                                 "C:\WINDOWS\system32\DriverStore\FileRepository\nvdmi.inf_amd64_ba022bd5a96e7bcb\nvapi_impl.dll"
+base 0x6bcd0000 size 0x00072000 entry 0x6bd24710 "DispBroker.dll"                                 "C:\Windows\System32\DispBroker.dll"
+base 0x70560000 size 0x00050000 entry 0x70585d90 "WINSTA.dll"                                     "C:\WINDOWS\SYSTEM32\WINSTA.dll"
+base 0x6eb30000 size 0x0000a000 entry 0x6eb333f0 "netbios.dll"                                    "C:\WINDOWS\SYSTEM32\netbios.dll"
+
+[Register memory]
+edx 47faf000 |<??>?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? | ???????????????? |
+    47faf010 | ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? | ???????????????? |
+esi 45c20000 |<??>?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? | ???????????????? |
+    45c20010 | ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? | ???????????????? |
+edi 0382f7b0 |<00>a1 15 0f 01 00 00 00 00 00 00 00 20 c7 dc 0d | ............ ... |
+    0382f7c0 | a0 3a 07 02 60 92 ff 57 10 00 00 00 00 00 00 00 | .:..`..W........ |
+ebp 45c21db0 |                        <??>?? ?? ?? ?? ?? ?? ?? |         ???????? |
+    45c21dc0 | ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? | ???????????????? |
+    45c21dd0 | ?? ?? ?? ?? ?? ?? ?? ??                         | ????????         |
+
+[Extra]
+ScriptHeap: 98.66MB/119.96MB (18); 16.26MB

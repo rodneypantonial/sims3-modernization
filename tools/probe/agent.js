@@ -19,12 +19,82 @@ function pushEvent(e) {
   send({ type: 'event', event: e }); // host appends it to events.jsonl at once, so a crash still leaves a record
 }
 
+// Stack walking in JS only: every read goes through Frida's guarded memory API, which throws instead of crashing.
+// (Frida's native Backtracer.FUZZY read unmapped stack memory and crashed the game on 2026-10-11.)
+let codeMap = new ModuleMap();
+function isCode(p) {
+  if (codeMap.has(p)) return true;
+  codeMap.update(); // a DLL may have loaded since
+  return codeMap.has(p);
+}
+function safeRead(p) {
+  try { return p.readPointer(); } catch (e) { return null; }
+}
+function walk(pc, sp, fp, max) {
+  const out = [pc.toString()];
+  // 1. frame-pointer chain (exact where the code keeps EBP frames)
+  let frame = fp;
+  for (let i = 0; i < max && !frame.isNull(); i++) {
+    const ret = safeRead(frame.add(4)), next = safeRead(frame);
+    if (ret === null || next === null || !isCode(ret)) break;
+    out.push(ret.toString());
+    if (next.compare(frame) <= 0) break; // the chain must go up the stack
+    frame = next;
+  }
+  if (out.length >= 4) return out.slice(0, max);
+  // 2. fallback: values on the top of the stack that point into loaded code (may include stale ones)
+  for (let off = 0; off < 2048 && out.length < max; off += 4) {
+    const v = safeRead(sp.add(off));
+    if (v === null) break;
+    if (isCode(v)) out.push(v.toString() + '?');
+  }
+  return out;
+}
 function frames(context, max) {
   try {
-    return Thread.backtrace(context, Backtracer.FUZZY).slice(0, max).map(p => p.toString());
+    return walk(context.pc, context.sp, context.ebp, max);
   } catch (e) {
-    return [`backtrace failed: ${e.message}`];
+    return [`stack walk failed: ${e.message}`];
   }
+}
+
+// One thread's registers without enumerating (and suspending) every thread in the game.
+const k32t = Process.getModuleByName('kernel32.dll');
+const OpenThread = new NativeFunction(k32t.getExportByName('OpenThread'), 'pointer', ['uint', 'int', 'uint']);
+const SuspendThread = new NativeFunction(k32t.getExportByName('SuspendThread'), 'uint', ['pointer']);
+const ResumeThread = new NativeFunction(k32t.getExportByName('ResumeThread'), 'uint', ['pointer']);
+const GetThreadContext = new NativeFunction(k32t.getExportByName('GetThreadContext'), 'int', ['pointer', 'pointer']);
+const CloseHandle = new NativeFunction(k32t.getExportByName('CloseHandle'), 'int', ['pointer']);
+const CTX = Memory.alloc(1024); // x86 CONTEXT is 716 bytes
+function threadStack(tid, max) {
+  if (tid === Process.getCurrentThreadId()) throw new Error('cannot sample the probe thread itself');
+  const h = OpenThread(0x0002 | 0x0008 | 0x0040, 0, tid); // SUSPEND_RESUME | GET_CONTEXT | QUERY_INFORMATION
+  if (h.isNull()) throw new Error(`OpenThread ${tid} failed`);
+  let pc, sp, fp;
+  try {
+    if (SuspendThread(h) === 0xffffffff) throw new Error('SuspendThread failed');
+    try {
+      CTX.writeU32(0x10003); // CONTEXT_CONTROL | CONTEXT_INTEGER
+      if (!GetThreadContext(h, CTX)) throw new Error('GetThreadContext failed');
+      fp = CTX.add(0xb4).readPointer(); pc = CTX.add(0xb8).readPointer(); sp = CTX.add(0xc4).readPointer();
+    } finally {
+      ResumeThread(h); // resume before walking: the walk only reads memory
+    }
+  } finally {
+    CloseHandle(h);
+  }
+  return walk(pc, sp, fp, max);
+}
+
+const SIMULATE = [ptr(0xd81840), ptr(0xd82100)]; // MonoScriptHost::Simulate (tools/ghidra/anchors.csv)
+let simTid = null;
+function findSimThread() {
+  if (simTid !== null) return simTid;
+  for (const t of Process.enumerateThreads()) {
+    const st = frames(t.context, 24);
+    if (st.some(a => { const p = ptr(a.replace('?', '')); return p.compare(SIMULATE[0]) >= 0 && p.compare(SIMULATE[1]) < 0; })) { simTid = t.id; break; }
+  }
+  return simTid;
 }
 
 function regs(c) {
@@ -183,6 +253,13 @@ rpc.exports = {
       imageMB: mb(byType.image), mappedMB: mb(byType.mapped), privateMB: mb(byType.private),
       biggestReservedOnly: reservedBlocks.slice(0, 15).map(b => ({ base: b.base, MB: mb(b.size), owner: b.owner })),
     };
+  },
+
+  // The sim thread only: cheap enough for a watchdog (suspends one thread for a few microseconds).
+  simStack(maxFrames) {
+    const tid = findSimThread();
+    if (tid === null) return { thread: null, stack: [] };
+    return { thread: tid, stack: threadStack(tid, maxFrames || 24) };
   },
 
   modules() {

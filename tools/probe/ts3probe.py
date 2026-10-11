@@ -134,10 +134,14 @@ class Probe:
         cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads']
         with open(self.out / 'memory.csv', 'a', encoding='utf-8') as f:
             f.write(','.join(cols) + '\n')
+            n, threads = 0, 0
             while self.alive:
                 try:
                     m = self.script.exports_sync.address_space()
-                    m['threads'] = self.script.exports_sync.status()['threads']
+                    if n % 6 == 0:  # counting threads enumerates (suspends) them all; once a minute is enough
+                        threads = self.script.exports_sync.status()['threads']
+                    n += 1
+                    m['threads'] = threads
                     m['time'] = time.strftime('%H:%M:%S')
                     f.write(','.join(str(m[c]) for c in cols) + '\n')
                     f.flush()
@@ -171,6 +175,10 @@ class Probe:
             for t in ts:
                 t['stack'] = self.symbols.stack(t['stack'])
             return ts
+        if path == 'simstack':  # sim thread only; safe for frequent use (the all-thread /threads is not)
+            r = rpc.sim_stack(int(q.get('frames', 24)))
+            r['stack'] = self.symbols.stack([f.rstrip('?') for f in r['stack']])
+            return r
         if path == 'memory':
             return rpc.address_space()
         if path == 'modules':

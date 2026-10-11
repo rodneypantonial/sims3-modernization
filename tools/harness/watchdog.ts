@@ -71,9 +71,8 @@ const gameRunning = () => execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq 
 
 async function simStack(): Promise<string> {
   try {
-    const threads = await get('threads?frames=12', 60000);
-    const sim = threads.find((t: any) => t.stack.some((f: string) => f.includes('MonoScriptHost_Simulate')));
-    return sim ? sim.stack.map((f: string) => f.split(' ').slice(1).join(' ')).slice(0, 8).join(' < ') : 'sim thread not found';
+    const r = await get('simstack?frames=12', 30000); // sim thread only; never all threads (that once crashed the game)
+    return r.stack?.length ? r.stack.map((f: string) => f.split(' ').slice(1).join(' ')).slice(0, 8).join(' < ') : 'sim thread not found';
   } catch (e) { return `stack unavailable: ${(e as Error).message}`; }
 }
 
