@@ -2,17 +2,23 @@
 // game process, probe, world/live mode, sim clock progress, dialogs, address space, sim-thread stack.
 // Tries to recover by itself (clear dialogs, leave Edit Town); exits non-zero with a diagnosis when the run
 // is stuck or the game is gone, so whoever started it in the background gets notified.
-// Usage: node tools/harness/watchdog.ts [--every 5] [--port 47891] [--min-free-mb 300]
+// Only in a loaded world does a frozen clock count; the main menu and loading screens are skipped.
+// Usage: node tools/harness/watchdog.ts [--every 1] [--port 47891] [--min-free-mb 300]
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({ options: {
-  every: { type: 'string', default: '5' }, port: { type: 'string', default: '47891' }, 'min-free-mb': { type: 'string', default: '300' },
+  every: { type: 'string', default: '1' }, port: { type: 'string', default: '47891' }, 'min-free-mb': { type: 'string', default: '300' },
 } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const LOG = join(ROOT, 'probe-out', 'watchdog.log');
+const SAVING = join(ROOT, 'probe-out', 'saving'); // written by age-save.ts while a save runs
+const SAVE_GRACE_MS = 3 * 60000;
+function savingFor(): number | null {
+  try { return existsSync(SAVING) ? Date.now() - JSON.parse(readFileSync(SAVING, 'utf8')).started : null; } catch { return null; }
+}
 mkdirSync(join(ROOT, 'probe-out'), { recursive: true });
 const base = `http://127.0.0.1:${values.port}`;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -64,6 +70,19 @@ for (;;) {
     `dialog: ${dialog?.ok ? (dialog.result.open ? JSON.stringify(dialog.result.dialog.text?.[0] ?? '').slice(0, 80) : 'none') : 'unavailable'}`,
   ];
 
+  if (!(state.ok && state.result.in_world)) { // menu or loading: nothing to judge yet
+    log(`not in a world yet (main menu or loading) | ${summary.join(' | ')}`);
+    lastMinutes = null;
+    stalledChecks = 0;
+    continue;
+  }
+  const saveAge = savingFor();
+  if ((saveAge !== null && saveAge < SAVE_GRACE_MS) || state.result.save_in_progress) { // a save pauses the clock
+    log(`saving (${saveAge !== null ? Math.round(saveAge / 1000) + ' s' : 'in progress'}); stall rule paused for up to 3 min | ${summary.join(' | ')}`);
+    lastMinutes = null;
+    stalledChecks = 0;
+    continue;
+  }
   const minutes = time.ok ? time.result.minutes_total : null;
   const moved = minutes !== null && lastMinutes !== null && minutes > lastMinutes;
   if (minutes !== null && lastMinutes !== null && !moved) stalledChecks++; else stalledChecks = 0;
@@ -80,6 +99,14 @@ for (;;) {
       log(`recovery: in ${state.result.sub_state}, entering live mode`);
       await agent('enter_live_mode').catch(() => null);
     }
-    if (stalledChecks >= 2) fail('sim clock has not moved for two checks', [...summary, `sim thread: ${await simStack()}`]);
+    await sleep(20000); // give the recovery a moment, then judge
+    const again = await agent('time').catch(() => null);
+    if (again?.ok && again.result.minutes_total > (minutes ?? 0)) {
+      log(`recovered: clock at day ${again.result.day_number} ${again.result.clock}`);
+      lastMinutes = again.result.minutes_total;
+      stalledChecks = 0;
+    } else {
+      fail(`sim clock has not moved for ${values.every} min in a loaded world`, [...summary, `sim thread: ${await simStack()}`]);
+    }
   }
 }

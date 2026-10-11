@@ -2,7 +2,12 @@
 // Needs the probe server (tools/probe/ts3probe.py serve) attached and the ts3agent mod in the game.
 // Saves a checkpoint (<save>-dayN) every --checkpoint sim days, so a crash can be reproduced from the last one.
 // Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--checkpoint 2] [--port 47891]
+import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+
+// Marker the watchdog reads: a save pauses the clock, which must not count as a stall.
+const SAVING = join(resolve(import.meta.dirname, '..', '..'), 'probe-out', 'saving');
 
 const { values } = parseArgs({ options: {
   days: { type: 'string', default: '14' }, save: { type: 'string' }, port: { type: 'string', default: '47891' },
@@ -48,6 +53,12 @@ if (state.result.sub_state !== 'LiveModeState') {
   await dismissDialogs();
 }
 async function saveAs(name: string): Promise<void> {
+  mkdirSync(join(SAVING, '..'), { recursive: true });
+  writeFileSync(SAVING, JSON.stringify({ name, started: Date.now() }));
+  try { await saveAsInner(name); } finally { rmSync(SAVING, { force: true }); }
+}
+
+async function saveAsInner(name: string): Promise<void> {
   await agent('set_speed', { speed: 'pause' });
   await dismissDialogs();
   const r = await agent('save_game', { name });

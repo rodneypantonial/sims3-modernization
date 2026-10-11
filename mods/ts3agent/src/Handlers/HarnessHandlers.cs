@@ -155,6 +155,7 @@ namespace Ts3Agent
             r["active_household"] = active != null ? active.Name : null;
             r["households"] = Household.sHouseholdList != null ? Household.sHouseholdList.Count : 0;
             r["save_name"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveName;
+            r["save_in_progress"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveGameInProgress;
             return r;
         }
 

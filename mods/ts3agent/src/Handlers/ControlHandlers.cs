@@ -624,7 +624,9 @@ namespace Ts3Agent
             if (a.Has("name")) om.SaveName = a.Str("name");
             if (string.IsNullOrEmpty(om.SaveName))
                 throw new McpException("this game has no save name yet; pass name=\"...\"");
-            RunAsync("save " + om.SaveName, delegate { om.SaveGame(); });
+            // forceUseSaveName: without it the game ignores SaveName and overwrites the currently loaded file.
+            bool asNew = a.Has("name");
+            RunAsync("save " + om.SaveName, delegate { om.SaveGame(false, asNew, false); });
             Dictionary<string, object> r = Util.Obj();
             r["saving"] = om.SaveName;
             return r;
