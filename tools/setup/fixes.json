@@ -349,7 +349,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "NRaas_ErrorTrap_P167_V100_Steam.zip",
       "page": "https://www.nraas.net/community/ErrorTrap"
     },
     "sha256": null,
@@ -373,7 +373,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "NRaas_Overwatch_V123.zip",
       "page": "https://www.nraas.net/community/Overwatch"
     },
     "sha256": null,
@@ -569,19 +569,18 @@
     "name": "Catalogue Lag and Memory Leak Fix",
     "author": "Sonja92yu",
     "category": "script",
-    "version": null,
+    "version": "1 (2026-08-15)",
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "Nexus-242-Catalogue-Lag-And-Memory-Leak-Fix-v1.7z",
       "page": "https://www.nexusmods.com/thesims3/mods/242"
     },
     "sha256": null,
     "install": {
       "target": "mods",
       "files": [
-        "S3DBG_CatalogueLagMemoryLeakFix_min.package",
-        "S3DBG_RestoreEPBadges.package"
+        "S3DBG_CatalogueLagMemoryLeakFix_min.package"
       ]
     },
     "conflictsWith": [],
@@ -589,7 +588,7 @@
       "monopatcher"
     ],
     "default": true,
-    "notes": "Nexus account, manual download. The Steam guide links mods/247 but search shows 242: confirm. The badge-restore file needs MonoPatcher; the main file is LAYO-only. Version unknown."
+    "notes": "Nexus account, manual download. The Steam guide links mods/247 but search shows 242: confirm. The badge-restore file needs MonoPatcher; the main file is LAYO-only. Version unknown. Nexus file names carry a random suffix; save it as Nexus-242-Catalogue-Lag-And-Memory-Leak-Fix-v1.7z in the downloads folder."
   },
   {
     "id": "houseboat-fix",
@@ -627,7 +626,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "Nikel23-Interactonslopedterrain.rar",
       "page": "https://modthesims.info/d/529671/interaction-on-sloped-terrain-enabler.html"
     },
     "sha256": null,
@@ -649,7 +648,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "OhRudi__Routing_Fix__Sims_need_less_Space.zip.zip",
       "page": "https://modthesims.info/d/683612/fix-sims-need-less-space.html"
     },
     "sha256": null,
@@ -671,7 +670,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "TSS_ToddlerRoutingFix.rar",
       "page": "https://modthesims.info/d/685924/toddler-routing-fix.html"
     },
     "sha256": null,
@@ -693,7 +692,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "OhRudi__RoutingFix__Pets_need_less_space.zip",
       "page": "https://modthesims.info/d/683307/fix-pets-need-less-space.html"
     },
     "sha256": null,
@@ -715,7 +714,7 @@
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "GoAndPlayInOceanFix.zip",
       "page": "https://modthesims.info/d/686121/autonomous-play-in-the-ocean-fix.html"
     },
     "sha256": null,

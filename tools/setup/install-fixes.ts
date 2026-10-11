@@ -70,7 +70,8 @@ function findManual(f: Fix): string | null {
   if (!existsSync(values.downloads!)) return null;
   const want = (f.source.asset ?? '').toLowerCase();
   const names = readdirSync(values.downloads!);
-  const hit = want ? names.find(n => n.toLowerCase() === want) : null;
+  // ModTheSims prefixes downloads ("MTS_<author>_<id>_<name>"), so match on the end of the name
+  const hit = want ? names.find(n => n.toLowerCase().endsWith(want)) : null;
   // shortcut: without an asset name, match on the fix id's words; good enough for a hand-filled folder
   const loose = hit ?? names.find(n => f.id.split('-').every(w => n.toLowerCase().includes(w)));
   return loose ? join(values.downloads!, loose) : null;
