@@ -43,6 +43,7 @@ for (const p of pkgs) {
   for (const e of entries) {
     const key = `${e.type.toString(16).padStart(8, '0')}:${e.group.toString(16).padStart(8, '0')}:${e.inst.toString(16).padStart(16, '0')}`;
     if (seen.has(key)) continue; // a duplicate inside one package is that package's own business
+    if (e.type === 0x0166038c) continue; // name map: nearly every package has one at instance 0, and they merge
     seen.add(key);
     owners.set(key, [...(owners.get(key) ?? []), relative(dir, p)]);
     if (e.type === S3SA) {
