@@ -36,7 +36,11 @@ async function dismissDialogs(): Promise<void> {
 
 await dismissDialogs();
 const state = await agent('game_state');
-if (state.ok && state.result.sub_state !== 'LiveModeState') {
+if (!state.ok || !state.result.in_world) {
+  console.error(`${stamp()} not in a world (${state.error ?? 'main menu or loading'}); load a save first (cycle.ts --save)`);
+  process.exit(1);
+}
+if (state.result.sub_state !== 'LiveModeState') {
   // Edit Town and other modes pause the clock; aging only works in live mode.
   console.log(`${stamp()} in ${state.result.sub_state}; switching to live mode`);
   await agent('enter_live_mode');

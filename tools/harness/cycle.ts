@@ -54,14 +54,20 @@ if (values.restart) {
 // load a save, ending in live mode (a save can come back in Edit Town, which pauses the clock)
 if (values.save) {
   await until('agent answering', 300, async () => (await agent('ping')).ok === true);
-  // "Mod Scripts Found" opens at the menu after a script-cache rebuild; a load requested under it is lost.
-  await sleep(5000);
-  for (let i = 0; i < 5; i++) {
+  // "Mod Scripts Found" (native, script mods present) opens at the menu up to ~90 s after the agent answers.
+  // Accepting it during a load leaves the game stuck on the loading screen, so clear it first and wait for quiet.
+  let quietSince = Date.now(), sawWarning = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 150000 && (!sawWarning ? Date.now() - t0 < 120000 : Date.now() - quietSince < 5000)) {
     const d = await agent('auto_dialog');
-    if (!d.ok || !d.result.open) break;
-    log(`menu dialog "${d.result.title}" -> ${d.result.clicked}`);
+    if (d.ok && d.result.open) {
+      log(`menu dialog "${d.result.title}" -> ${d.result.clicked}`);
+      if (/mod scripts/i.test(d.result.title ?? '')) sawWarning = true;
+      quietSince = Date.now();
+    }
     await sleep(2000);
   }
+  if (!sawWarning) log('no "Mod Scripts Found" warning within 120 s; loading anyway');
   const r = await agent('load_save', { file: values.save });
   if (!r.ok) throw new Error(`load_save: ${r.error}`);
   // Loading can stop on a modal (e.g. "Mod Scripts Found"), so clear dialogs while waiting.
