@@ -1,7 +1,7 @@
 // Ages the loaded game: runs at speed 3 for N sim days (dismissing dialogs), then saves under a new name.
 // Needs the probe server (tools/probe/ts3probe.py serve) attached and the ts3agent mod in the game.
 // Saves a checkpoint (<save>-dayN) every --checkpoint sim days, so a crash can be reproduced from the last one.
-// Keeps the active household alive (keep_alive tops up motives below --keep-alive, default -50).
+// Keeps the active household alive (keep_alive tops up motives below --keep-alive, default -50, and repairs broken home objects).
 // Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--until-day 15] [--checkpoint 2] [--keep-alive -50|off]
 import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -96,6 +96,7 @@ for (;;) {
   if (values['keep-alive'] !== 'off') {
     const k = await agent('keep_alive', { threshold: Number(values['keep-alive']) });
     if (k.ok && k.result.topped_up.length) console.log(`${stamp()} keep_alive: ${k.result.topped_up.join(', ')}`);
+    if (k.ok && k.result.repaired?.length) console.log(`${stamp()} repaired: ${k.result.repaired.join(', ')}`);
   }
   const s = await agent('set_speed', { speed: 'ultra' });
   const t = s.ok ? s.result : (await agent('time')).result;

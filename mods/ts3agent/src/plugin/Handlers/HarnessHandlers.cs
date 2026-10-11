@@ -7,6 +7,7 @@ using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Autonomy;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
+using Sims3.Gameplay.Interfaces;
 using Sims3.SimIFace;
 using Sims3.UI;
 using Sims3.UI.GameEntry;
@@ -136,8 +137,21 @@ namespace Ts3Agent
                     topped.Add(s.FirstName + " " + k + " " + Math.Round(v));
                 }
             }
+            // Test-only upkeep: broken home objects (sink, bathtub, toilet...) mean puddles, bad moods and repair
+            // interactions that skew the measurement, so fix them silently (same as the game's DEBUG Force Repaired).
+            List<object> repaired = new List<object>();
+            if (hh.LotHome != null)
+            {
+                foreach (IGameObject o in hh.LotHome.GetObjects<IGameObject>())
+                {
+                    if (o == null || o.Repairable == null || !o.Repairable.Broken) continue;
+                    o.Repairable.ForceRepaired(null);
+                    repaired.Add(o.GetType().Name);
+                }
+            }
             Dictionary<string, object> r = Util.Obj();
             r["topped_up"] = topped;
+            r["repaired"] = repaired;
             return r;
         }
 
