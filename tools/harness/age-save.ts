@@ -1,10 +1,12 @@
 // Ages the loaded game: runs at speed 3 for N sim days (dismissing dialogs), then saves under a new name.
 // Needs the probe server (tools/probe/ts3probe.py serve) attached and the ts3agent mod in the game.
-// Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--port 47891]
+// Saves a checkpoint (<save>-dayN) every --checkpoint sim days, so a crash can be reproduced from the last one.
+// Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--checkpoint 2] [--port 47891]
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({ options: {
   days: { type: 'string', default: '14' }, save: { type: 'string' }, port: { type: 'string', default: '47891' },
+  checkpoint: { type: 'string', default: '2' },
 } });
 if (!values.save) { console.error('usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV'); process.exit(2); }
 const base = `http://127.0.0.1:${values.port}`;
@@ -41,6 +43,19 @@ if (state.ok && state.result.sub_state !== 'LiveModeState') {
   await sleep(15000);
   await dismissDialogs();
 }
+async function saveAs(name: string): Promise<void> {
+  await agent('set_speed', { speed: 'pause' });
+  await dismissDialogs();
+  const r = await agent('save_game', { name });
+  if (!r.ok) { console.log(`${stamp()} save ${name} not started: ${r.error}`); return; }
+  for (let i = 0; i < 120; i++) { // the save itself runs as a game task
+    const log = await agent('async_log');
+    if (log.ok && log.result.some((l: string) => l.includes(`save ${name} -> `))) break;
+    await sleep(2000);
+  }
+  console.log(`${stamp()} saved ${name}`);
+}
+
 const start = await agent('time');
 if (!start.ok) throw new Error(`agent not answering: ${start.error}`);
 const targetDay = start.result.day_number + Number(values.days);
@@ -48,6 +63,7 @@ console.log(`${stamp()} start day ${start.result.day_number} ${start.result.cloc
 const t0 = Date.now();
 let last = start.result;
 let stalls = 0;
+let lastCheckpoint = -1;
 for (;;) {
   await dismissDialogs();
   const s = await agent('set_speed', { speed: 'ultra' });
@@ -57,12 +73,15 @@ for (;;) {
   if (stalls === 6) console.log(`${stamp()} sim clock has not moved for a minute (speed ${t.speed}, locked ${t.speed_locked})`);
   last = t;
   if (t.day_number >= targetDay) break;
+  const every = Number(values.checkpoint);
+  if (every > 0 && t.day_number > start.result.day_number && (t.day_number - start.result.day_number) % every === 0 && t.day_number !== lastCheckpoint) {
+    lastCheckpoint = t.day_number;
+    await saveAs(`${values.save}-day${t.day_number}`);
+  }
   const simDays = (t.minutes_total - start.result.minutes_total) / 1440;
   const realMin = (Date.now() - t0) / 60000;
   console.log(`${stamp()} day ${t.day_number} ${t.clock} ${t.speed}; ${simDays.toFixed(2)} sim days in ${realMin.toFixed(1)} min`);
   await sleep(30000);
 }
-await agent('set_speed', { speed: 'pause' });
-await dismissDialogs();
-const saved = await agent('save_game', { name: values.save });
-console.log(`${stamp()} reached day ${last.day_number}; save: ${saved.ok ? 'started' : saved.error}`);
+console.log(`${stamp()} reached day ${last.day_number}`);
+await saveAs(values.save);
