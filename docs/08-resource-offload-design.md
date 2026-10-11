@@ -298,6 +298,39 @@ Run with `tools/probe` when the game is free, on the vanilla user folder and the
 
 Effort: 1 to 2 days once the game is free. Exit criterion: we know how many MB of address space the ResourceCache, transient buffers, CAS data, string tables and catalog take with and without CC.
 
+#### Phase 0 tooling (ready 2026-10-11, not run yet)
+
+Run it after the baselines, with nothing else driving the game (it closes and relaunches the game per variant):
+
+```
+node tools/harness/offload-phase0.ts --dry-run                      # print the steps
+node tools/harness/offload-phase0.ts --save Baseline-SV.sims3 --minutes 15
+node tools/harness/offload-phase0.ts --only nocc-200,cc-200         # a subset
+```
+
+Variants: `nocc-200`, `nocc-50`, `nocc-0`, `cc-200`, `cc-50`, `cc-0` (CC off/on × `CacheBudget` in MB). Per variant: `cycle.ts --restart`, installer switches (`user-cc`, `cache-budget --cache-budget-mb N`, `cache-clear`), probe launch, `cycle.ts --save`, a crash-ledger snapshot noted `offload phase0 <variant>`, then N minutes at speed 3 with the in-game autopilot (holds speed, clears popups), keep_alive and declines. At the end the CC and the budget change are uninstalled (EA's `Default.ini` restored) and the game is closed. Output: `probe-out/phase0/<stamp>/<variant>.csv` (every 10 s) plus `<variant>-probe.log`.
+
+Pieces, usable on their own:
+
+- `node tools/setup/install-fixes.ts install --only user-cc` copies Rodney's CC from `D:\Sims3-backup\2026-10-11` (143 packages, ~27 MB): `Packages/ModTheSims`, `Packages/Performance Fixes`, `Overrides/Body Shop`, `Overrides/Game Mods`, relative paths kept. Excluded: the three "Store Updates" repacks and "Store Fixes" (`Packages/Sims 3 Store`), old script and core mods (root `Packages/`, `Overrides/` root, the Pure Scripting Mods folder, `ld_SmoothPatch*`), the old `Resource.cfg`. `uninstall --only user-cc` removes exactly those files. `check-conflicts.ts` on fixes layer + CC (isolated copy): 167 packages, **0 CLASH, 0 WARN**, 309 INFO overrides. Note: without the Store repacks the CC is small, so `cc-*` measures the ~27 MB content set, not the 5 GB one [measured sizes].
+- `node tools/setup/install-fixes.ts install --only cache-budget --cache-budget-mb 50` sets `Default.ini [Resources] CacheBudget` (bytes = MB × 1,048,576; 0..476). Switching values keeps the first backup; `uninstall --only cache-budget` restores EA's 209,715,200.
+- `python tools/probe/ts3probe.py get rescache` (read-only) lists the manager's caches.
+
+What the CSV columns mean:
+
+| Column | Source | Meaning | Confidence |
+|---|---|---|---|
+| `commitMB`, `largestFreeMB`, `privateMB` | `/memory` (VirtualQuery walk) | committed address space, largest free block (the Error 12 margin), private (heap) bytes | [verified, as in docs/05] |
+| `cacheBudgetMB` | ResourceCache `+0x8c` | budget in effect (should equal the variant's value) | [verified, ctor `0x732910` reads `CacheBudget` into `[0x23]`] |
+| `cacheBytesMB` | `+0x94` | bytes the cache counts as held | [verified field; `0x732a00`/`0x732b60` add and subtract resource sizes here] |
+| `cacheFlushMB` | `+0x98` | bytes on the flush list (unreferenced, evictable); moved back to `+0x94` on a hit | [inferred from `0x732b60`] |
+| `cacheEntries` | `+0x28` | entries in the key map (EASTL `hash_map` element count after buckets `+0x20`, bucket count `+0x24`) | [inferred from the ctor's EASTL-shaped init] |
+| `animBytesMB` | AnimationCache (priority 1000) `+0x94` | the fixed 15 MB animation cache's fill | [verified field, same class] |
+
+How `/rescache` finds them: manager singleton `[0x11c78d8]` (getter `0x4afd20`), checked against vtable `0xfb2da0`; cache array `+0xa0`/`+0xa4` of 8-byte `{cache*, priority}` entries (`FindCache` `0x4b0070`) [verified]; only objects with the ResourceCache vtable `0xffdd94` are read. That the array holds the ResourceCache and AnimationCache with priorities 0 and 1000 follows from `0x738670` registering them through the manager's vtable slot `+0x54` [inferred: the registering object is assumed to be the manager]. **To verify with the game:** `get rescache` returns two known caches, the generic one's budget is 209,715,200, bytes grow after loading a lot. If the manager check fails, decompile `0x738670`'s caller and the slot-`+0x54` target to confirm which object owns the array.
+
+What to read from it: `cacheBytesMB` at 200 MB vs at 50/0 is the address space the helper could move out (compare `commitMB` between variants too); more `cacheFlushMB` churn and lower sim pace at small budgets mean re-reads cost time. What budget 0 means (cache nothing unreferenced, or unbounded) is [to measure]: `cacheBytesMB` answers it.
+
 ### Phase 1: helper with byte serving (H0, H1)
 
 Helper process, IPC, package registration, merged index (parallel parse of all read-only packages), overlapped reads, RefPack pool, decompressed LRU cache, validation mode, fallback. No change to the engine's cache budget yet.
