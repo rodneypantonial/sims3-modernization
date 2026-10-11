@@ -46,6 +46,8 @@ if (values.restart) {
   // scriptCache holds compiled mods, so a stale one would run the old agent
   const pkgs = join(USER_DIR, 'Mods', 'Packages');
   mkdirSync(pkgs, { recursive: true });
+  // rebuild first: a plugin change that was only hot-reloaded would otherwise be lost on relaunch
+  execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'build-agent.ts')], { stdio: 'ignore' });
   for (const p of ['ts3agent.package', 'ts3-nointro.package']) copyFileSync(join(ROOT, 'build', p), join(pkgs, p));
   rmSync(join(USER_DIR, 'scriptCache.package'), { force: true });
   log('game closed, packages installed, script cache cleared; now start: python tools/probe/ts3probe.py serve --launch');
