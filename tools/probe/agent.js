@@ -277,6 +277,35 @@ rpc.exports = {
     return kind === 'utf16' ? p.readUtf16String() : p.readCString();
   },
 
+  // Resource caches (docs/08 §2.5), read-only. Manager singleton [0x11c78d8] (getter 0x4afd20), vtable 0xfb2da0;
+  // its cache array +0xa0/+0xa4 holds 8-byte {cache*, priority} entries (FindCache 0x4b0070) [verified].
+  // Per cache (ctor 0x732910, vtable 0xffdd94): +0x8c CacheBudget, +0x90 overflow budget, +0x94 bytes [verified];
+  // +0x98 bytes on the flush list (moved to +0x94 on a hit, 0x732b60) and +0x28 entry count (EASTL hash_map
+  // after buckets +0x20 / bucket count +0x24) [inferred]. Every pointer is checked before it is followed.
+  resCache() {
+    const u32 = p => { try { return p.readU32(); } catch (e) { return null; } };
+    const mgr = safeRead(ptr('0x11c78d8'));
+    if (!mgr || mgr.isNull()) return { ok: false, error: 'manager not created yet' };
+    if (u32(mgr) !== 0xfb2da0) return { ok: false, error: 'manager vtable mismatch', manager: mgr.toString() };
+    const begin = safeRead(mgr.add(0xa0)), end = safeRead(mgr.add(0xa4));
+    if (!begin || !end) return { ok: false, error: 'cache array unreadable' };
+    const n = end.sub(begin).toInt32() / 8;
+    if (n < 0 || n > 16 || n !== Math.floor(n)) return { ok: false, error: `odd cache array size ${n}` };
+    const caches = [];
+    for (let i = 0; i < n; i++) {
+      const c = safeRead(begin.add(i * 8));
+      if (!c || c.isNull()) continue;
+      const vt = u32(c), known = vt === 0xffdd94;
+      caches.push({
+        address: c.toString(), priority: u32(begin.add(i * 8 + 4)), vtable: vt === null ? null : '0x' + vt.toString(16), known,
+        // other cache classes have another layout: only read the ResourceCache fields from ResourceCache objects
+        ...(known ? { budget: u32(c.add(0x8c)), overflowBudget: u32(c.add(0x90)), bytes: u32(c.add(0x94)),
+          flushBytes: u32(c.add(0x98)), entries: u32(c.add(0x28)) } : {}),
+      });
+    }
+    return { ok: true, manager: mgr.toString(), caches };
+  },
+
   // Opt-in from the host: every native exception (thousands per second at times) enters this script.
   enableExceptions() {
     installExceptionHandler();

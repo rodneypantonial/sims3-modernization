@@ -4,7 +4,7 @@ Python, not TypeScript, because Frida's Python bindings are already installed (p
 the Node binding is a native npm module. Standard library otherwise.
 
   python tools/probe/ts3probe.py serve [--launch] [--world X.sims3] [--profile] [--port 47891]
-  python tools/probe/ts3probe.py get status|threads|memory|modules|events|scripterrors
+  python tools/probe/ts3probe.py get status|threads|memory|rescache|modules|events|scripterrors
   python tools/probe/ts3probe.py get "read?addr=0xd81840&len=32"
   python tools/probe/ts3probe.py get "agent?cmd=ping"        (in-game ts3agent mod, see mods/ts3agent)
   python tools/probe/ts3probe.py get detach                  (always stop the server this way, not by killing it)
@@ -181,6 +181,8 @@ class Probe:
             return r
         if path == 'memory':
             return rpc.address_space()
+        if path == 'rescache':  # resource cache budget and fill (docs/08 phase 0), read-only
+            return rpc.res_cache()
         if path == 'modules':
             self.symbols.refresh_modules()
             return rpc.modules()
