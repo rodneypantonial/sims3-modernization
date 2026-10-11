@@ -45,3 +45,6 @@ Release/
 *.user
 Thumbs.db
 desktop.ini
+
+# Live probe output (events, profiles)
+probe-out/

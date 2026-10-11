@@ -1,5 +1,6 @@
 // Names TS3W.exe functions after the Mono internal calls bound to them.
 // Input: CSV "name,address" from tools/internal-calls-map.ts ({fn*, name*} table), path passed as script arg.
+// Optional 2nd arg "anchors": names from tools/ghidra/anchors.csv are applied as-is (no IC_ prefix, no clearing).
 // Headless: analyzeHeadless <proj> TS3 -process TS3W.exe -noanalysis -scriptPath tools/ghidra
 //           -postScript ApplyInternalCallNames.java game-copy/analysis/internal-calls-map.csv
 // @category Sims3
@@ -15,8 +16,9 @@ public class ApplyInternalCallNames extends GhidraScript {
     protected void run() throws Exception {
         List<String> lines = Files.readAllLines(Path.of(getScriptArgs()[0]));
         int named = 0, created = 0, cleared = 0;
+        boolean anchors = getScriptArgs().length > 1 && getScriptArgs()[1].equals("anchors");
         // re-runs must not leave stale names behind (an earlier map was shifted by one entry)
-        for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
+        if (!anchors) for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
             if (f.getName().startsWith("IC_")) { f.setName(null, SourceType.DEFAULT); f.setComment(null); cleared++; }
         }
         println("cleared " + cleared + " old IC_ names");
@@ -24,7 +26,7 @@ public class ApplyInternalCallNames extends GhidraScript {
             String[] p = line.split(",");
             Address a = toAddr(Long.decode(p[1]));
             // "ScriptCore.Route::Route_Plan" -> "IC_Route_Plan"; keeps names unique and greppable
-            String name = "IC_" + p[0].substring(p[0].indexOf("::") + 2);
+            String name = anchors ? p[0] : "IC_" + p[0].substring(p[0].indexOf("::") + 2);
             Function f = getFunctionAt(a);
             if (f == null) {
                 disassemble(a);
