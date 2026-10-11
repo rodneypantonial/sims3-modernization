@@ -38,7 +38,6 @@ Timeline: `docs/data/2026-10-11-vanilla-load-memory.csv` (one sample every 10 s;
 
 - Done: aged saves `Baseline-SV` and `Baseline-BP` (14 sim days each under DXVK); the "all known fixes" layer installed and validated on Bridgeport (below).
 - Tests B to E from `02-baseline-install-guide.md` (idle FPS, travel hitches, memory after 30 minutes, save time), automated with the harness, on both aged saves, DXVK-only vs all fixes.
-- The all-fixes validation on `Baseline-SV`.
 
 ## Layer: all known fixes (22 default fixes, installed 2026-10-11 by `tools/setup/install-fixes.ts`)
 
@@ -55,3 +54,11 @@ Validation run on `Baseline-BP` (Bridgeport, aged 14 sim days), 2 sim days at sp
 S3SS patches confirmed installed in `S3SS_LOG.txt`: CreateFileRandomAccess, ExpandedCrashLogs, GCFinalizeThrottle, OversizedThreadStackFix, RefPackDecompressor, SmoothPatchPrecise, StartupWarningDialogFix, LotStreamingOptimizations, StoreFeaturedItemsDisable. Listed but without an install line: CPUOptimization, Mimalloc, TimerOptimization, AdaptiveWait (open). `DeviceConfig.log` still shows `Texture memory: 32MB <<OVERRIDE>>` (open).
 
 Caveat: the DXVK-only pace comes from the aging run (with checkpoints), not from an identical 2-day window; the like-for-like comparison is part of tests B–E.
+
+### Sunset Valley validation (all fixes, low presets)
+
+`Baseline-SV` (Keatons, aged 14 days), same procedure: 2 sim days in 5.5 min (~0.36 sim days per minute), no crash, watchdog clean, memory 1.76–1.94 GB committed with 1.72–2.0 GB largest free. Load 82 s after the "Mod Scripts Found" dialog. The new keep_alive upkeep found 4 broken plumbing objects in the Keaton house (bathtub, toilet, 2 sinks) and repaired them.
+
+### Graphics presets were low under DXVK [verified 2026-10-11]
+
+Under DXVK the engine reads texture memory as 0, `GraphicsRules.sgr` falls back to 32 MB (`Texture memory: 32MB <<OVERRIDE>>`), GPU memory level 1, and first-run detection wrote texture, sim and lighting quality 1 (vanilla D3D9 picked 3–4). So the DXVK-only and all-fixes numbers above ran on low presets, and vanilla on high ones. `textureMemory` only selects the preset tier (thresholds 112/240/368 MB; it is not a VRAM budget). Fix `graphicsrules-vram` sets the fallback to 1024 MB; after re-detection (Options.ini regenerated) the game picks texture/sim/lighting quality 3, GPU memory level 4, `maxactivelots` 2. Every later run uses these presets; the low-preset runs stay as a separate row.

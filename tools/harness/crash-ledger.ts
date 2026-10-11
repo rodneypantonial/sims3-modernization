@@ -25,7 +25,8 @@ function current(note?: string): Entry {
   let git = 'unknown';
   try {
     git = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim();
-    if (execFileSync('git', ['-C', ROOT, 'status', '--porcelain']).toString().trim()) git += '+dirty';
+    // docs/ (incl. this ledger) changes do not alter what runs
+    if (execFileSync('git', ['-C', ROOT, 'status', '--porcelain', '--', '.', ':!docs']).toString().trim()) git += '+dirty';
   } catch { /* not a repo */ }
   const state: Record<string, { version: string | null; files: { path: string }[] }> = existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : {};
   const files: Record<string, string> = { 'TS3W.exe': fileHash(join(BIN, 'TS3W.exe')), 'GraphicsRules.sgr': fileHash(join(BIN, 'GraphicsRules.sgr')) };
