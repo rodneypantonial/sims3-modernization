@@ -3,12 +3,13 @@
 Approved 2026-10-10.
 
 ## 1. Compare existing fixes: done
+Prior-art RE research (S3SS signatures, Mono/Boehm, routing, NRaas, world fixes): `docs/03-prior-art-re.md`.
 Output: `docs/01-existing-fixes-comparison.md`. Core picks: DXVK x32 (spoofs a GTX 580 for TS3W, keeps texture memory out of the 32-bit address space) and Sims 3 Settings Setter. Sims 3 Performance Patch is optional and overlaps S3SS's stack fix.
 
 ## 2. Baseline setup and measurements: guide done, results pending
 Output: `docs/02-baseline-install-guide.md`.
 - [ ] Rodney runs layers 1 to 6 and fills in the results table (load time, idle FPS, streaming hitches, commit size after 30 min, save time, crashes).
-- [ ] Record the results in `docs/03-baseline-results.md`. These are the numbers steps 3 and 4 have to beat.
+- [ ] Record the results in `docs/05-baseline-results.md`. These are the numbers steps 3 and 4 have to beat.
 
 ## 3. Reverse engineer TS3W.exe and the Mono layer: next
 - [ ] Copy TS3W.exe and the script DLLs (Game\Bin, Mono assemblies) into `game-copy/` (git-ignored); never analyse the live install.
