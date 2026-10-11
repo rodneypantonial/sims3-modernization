@@ -36,9 +36,9 @@ Timeline: `docs/data/2026-10-11-vanilla-load-memory.csv` (one sample every 10 s;
 
 ## Still to measure
 
-- Aged save `Baseline-SV` (14 sim days, created under DXVK; the save data does not depend on the renderer).
-- Tests B to E from `02-baseline-install-guide.md` (idle FPS, travel hitches, memory after 30 minutes, save time), automated with the harness.
-- The full "all known fixes" layer (`tools/setup/install-fixes.ts install`), once the manual downloads are in place.
+- Done: aged saves `Baseline-SV` and `Baseline-BP` (14 sim days each under DXVK); the "all known fixes" layer installed and validated on Bridgeport (below).
+- Tests B to E from `02-baseline-install-guide.md` (idle FPS, travel hitches, memory after 30 minutes, save time), automated with the harness, on both aged saves, DXVK-only vs all fixes.
+- The all-fixes validation on `Baseline-SV`.
 
 ## Layer: all known fixes (22 default fixes, installed 2026-10-11 by `tools/setup/install-fixes.ts`)
 
