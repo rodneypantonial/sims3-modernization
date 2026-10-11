@@ -356,7 +356,7 @@
     "install": {
       "target": "mods",
       "files": [
-        "NRaasErrorTrap*.package"
+        "NRaas_ErrorTrap.package"
       ]
     },
     "conflictsWith": [],
@@ -380,7 +380,7 @@
     "install": {
       "target": "mods",
       "files": [
-        "NRaasOverwatch*.package"
+        "NRaas_Overwatch.package"
       ]
     },
     "config": {

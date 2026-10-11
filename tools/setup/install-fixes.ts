@@ -115,6 +115,7 @@ function pick(tree: string, pattern: string): string[] {
 
 // ---------- targets
 function targetPath(f: Fix, rel: string): string {
+  if (rel.startsWith('%BIN%')) return join(BIN, rel.slice('%BIN%'.length).replace(/^[\\/]/, ''));
   if (rel.includes('%DOCUMENTS%')) return rel.replace('%DOCUMENTS%/Electronic Arts/The Sims 3', USER).replace(/\//g, '\\');
   switch (f.install.target) {
     case 'bin': return join(BIN, rel);
@@ -133,7 +134,7 @@ function place(f: Fix, rec: Installed, dest: string, write: () => void) {
   }
   mkdirSync(dirname(dest), { recursive: true });
   write();
-  rec.files.push({ path: dest, backup });
+  if (!rec.files.some(x => x.path === dest)) rec.files.push({ path: dest, backup }); // re-installs must not record a file twice
   console.log(`  ${f.id}: ${dest}`);
 }
 
@@ -221,7 +222,8 @@ async function install(order: Fix[]) {
         const src = await fetchSource(f);
         if (!src) { missing.push(f); continue; }
         const tree = unpack(f, src);
-        for (const spec of f.install.files ?? []) {
+        // no file list: every .package in the download (single-package mods, per-expansion sets)
+        for (const spec of f.install.files ?? ['*.package']) {
           const from = typeof spec === 'string' ? spec : spec.from;
           const hits = /\.(zip|7z|tar\.gz|tgz|rar)$/i.test(src) ? pick(tree, from) : [src];
           if (!hits.length) throw new Error(`${f.id}: '${from}' not found in ${basename(src)}`);
