@@ -394,3 +394,14 @@ These are ideas for after Phases 0 to 2 succeed. None of them is part of the cor
 - Sims3MonoModder source: `src/core/resource_system.h/.cpp`, `src/core/addresses.cpp` (sims3fiend).
 - Sims 3 Performance Patch features as quoted in https://simscommunity.info/2026/07/16/sims-3-performance-patch-mod-review/ ; mod page https://www.nexusmods.com/thesims3/mods/235 (HTTP 403 to our fetch).
 - Earlier project docs: `03-prior-art-re.md` (S3SS anchors, lot streaming), `05-baseline-results.md` (DXVK measurement), `07-known-fixes-catalog.md`.
+
+### Phase 0 results, first run (2026-10-11, Bridgeport, all fixes, no CC, 10 min each at x3)
+
+| Variant | Cache start / avg / peak / end | Entries (end) | Commit avg / peak | Min largest free | Sim days |
+|---|---|---|---|---|---|
+| nocc-200 | 341 / 415 / 460 / 405 MB | 117,712 | 1.99 / 2.11 GB | 1.58 GB | 3.28 |
+| nocc-50 (see below) | 341 / 408 / 450 / 428 MB | 121,370 | 2.00 / 2.08 GB | 1.56 GB | 3.74 |
+
+- **The budget switch did not take effect:** with `Default.ini` `CacheBudget` set to 50 MB, `/rescache` still read a budget of 200 MB (209,715,200) in the game. So nocc-50 is a repeat of nocc-200 and shows the measurement repeats within ~2% (avg 415 vs 408 MB). Next: find where the game really reads the budget (another ini or section, the user folder, or a hard-coded default; xrefs of the "CacheBudget" string and `ResourceCache_ctor 0x732910` callers), fix `cache-budget`, check the budget column before trusting a variant (offload-phase0 should abort when it does not match).
+- The main cache holds ~400–460 MB, twice its budget, and grows with play (341 MB right after load). Whether that is in-use data (cannot move) or evictable data is still open: it needs a working budget 0 run.
+- Stopped after two variants (end of session); nocc-0 and the CC variants were not run. Restored afterwards: `Default.ini` back to 200 MB, CC never installed.
