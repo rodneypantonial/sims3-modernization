@@ -39,3 +39,19 @@ Timeline: `docs/data/2026-10-11-vanilla-load-memory.csv` (one sample every 10 s;
 - Aged save `Baseline-SV` (14 sim days, created under DXVK; the save data does not depend on the renderer).
 - Tests B to E from `02-baseline-install-guide.md` (idle FPS, travel hitches, memory after 30 minutes, save time), automated with the harness.
 - The full "all known fixes" layer (`tools/setup/install-fixes.ts install`), once the manual downloads are in place.
+
+## Layer: all known fixes (22 default fixes, installed 2026-10-11 by `tools/setup/install-fixes.ts`)
+
+Validation run on `Baseline-BP` (Bridgeport, aged 14 sim days), 2 sim days at speed 3 with keep_alive, declines and the 1-minute watchdog.
+
+| Measurement | DXVK only (Baseline-BP aging) | All fixes |
+|---|---|---|
+| Crashes | 1 (our probe, fixed) | none |
+| Sim pace | ~0.21 sim days per real minute | ~0.28 (2 sim days in 7.1 min; 0.35 in the first minute) |
+| Memory in live mode | ~2.0 GB committed, ~1.58 GB largest free | 1.94–2.07 GB committed, 1.56–1.82 GB largest free |
+| Launch to agent ready | 25–48 s | 105 s (S3SS, MonoPatcher, script cache rebuild; to investigate) |
+| Script errors | none | 1 ErrorTrap correction log on load (references to destroyed objects repaired) |
+
+S3SS patches confirmed installed in `S3SS_LOG.txt`: CreateFileRandomAccess, ExpandedCrashLogs, GCFinalizeThrottle, OversizedThreadStackFix, RefPackDecompressor, SmoothPatchPrecise, StartupWarningDialogFix, LotStreamingOptimizations, StoreFeaturedItemsDisable. Listed but without an install line: CPUOptimization, Mimalloc, TimerOptimization, AdaptiveWait (open). `DeviceConfig.log` still shows `Texture memory: 32MB <<OVERRIDE>>` (open).
+
+Caveat: the DXVK-only pace comes from the aging run (with checkpoints), not from an identical 2-day window; the like-for-like comparison is part of tests B–E.

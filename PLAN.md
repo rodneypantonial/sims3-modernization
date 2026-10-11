@@ -1,59 +1,76 @@
 # Plan
 
-Approved 2026-10-10.
+Approved 2026-10-10. Rewritten 2026-10-11 with everything found so far (read this first after a context reset).
 
-## 1. Compare existing fixes: done
-Prior-art RE research (S3SS signatures, Mono/Boehm, routing, NRaas, world fixes): `docs/03-prior-art-re.md`.
-Output: `docs/01-existing-fixes-comparison.md`. Core picks: DXVK x32 (spoofs a GTX 580 for TS3W, keeps texture memory out of the 32-bit address space) and Sims 3 Settings Setter. Sims 3 Performance Patch is optional and overlaps S3SS's stack fix.
+Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (stuck Sims, routing, sim-thread work; load times are fine), then fewer crashes (Error 12 / out of address space) and room for heavy CC. Rodney wants every avenue tried. Workflow: online prior art → reverse engineering → rank big wins → build, one change at a time, measured with the harness.
 
-## 2. Baseline setup and measurements: guide done, results pending
-Output: `docs/02-baseline-install-guide.md`.
-- [ ] Rodney runs layers 1 to 6 and fills in the results table (load time, idle FPS, streaming hitches, commit size after 30 min, save time, crashes).
-- [ ] Record the results in `docs/05-baseline-results.md`. These are the numbers steps 3 and 4 have to beat.
+## Where things stand (2026-10-11)
 
-## 2b. Test harness: next (decided 2026-10-11)
-Manual test runs are slow and noisy, so we automate them before measuring. Prior art and design: `docs/06-test-harness-prior-art.md`.
-- [~] Runner (`tools/harness/run.ts`; launch, load and aging work via `tools/probe/ts3probe.py serve --launch` and `tools/harness/age-save.ts`): prepares a copy of the user folder, launches `TS3W.exe -worldFile:"<save>.sims3"` with a timeout, records PresentMon, collects results.
-- [x] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
-- [~] Live probe (`tools/probe`, Frida): stacks, address-space timeline, crash/script-error capture, agent bridge, hot reload of probe and agent plugin. A permanent ASI comes later.
-- [x] Watchdog (`tools/harness/watchdog.ts`): 1-minute stuck detection, hangs, blocked ticks, sim lag, stuck Sims.
-- [~] Scenario files: create and age the test saves automatically, then run tests A to E unattended. Done: `Baseline-SV` (Sunset Valley, Keatons) and `Baseline-BP` (Bridgeport, Angelistas), each aged 14 sim days under DXVK with keep_alive, in `D:\Sims3-backup\test-saves` (checkpoints in `checkpoints\`). Next: tests A to E.
+**Install:** fresh Steam reinstall at `C:\Program Files (x86)\Steam\steamapps\common\The Sims 3` (`TS3W.exe` SHA-256 `10b2423e…0609`, LAA set). All 22 default community fixes installed by `tools/setup/install-fixes.ts` (DXVK 3.1.1, Ultimate ASI Loader as `wininet.dll`, S3SS 1.6.3 + `S3SS.toml`, MonoPatcher 0.3.0, NRaas ErrorTrap V100 1.67-Steam, Overwatch V123, simler90 core UPDATE242 Steam, Catalogue Lag Fix (Nexus 242), House Boat Fix, Smooth Patch `.package`, 5 routing fixes incl. 11 per-EP "Sims need less space", Resource.cfg, no-intro, Options.ini tweaks). `check-conflicts.ts`: 0 clash, 0 warn. Our own `ts3agent.package` + `ts3-nointro.package` in `Mods\Packages`.
 
-## 2c. All-known-fixes installer: next after the vanilla baseline (decided 2026-10-11)
-One tool applies every established community fix, so we only hunt problems that remain with all of them installed. Catalog: `docs/07-known-fixes-catalog.md`, manifest `tools/setup/fixes.json`.
-- [ ] Installer `tools/setup/install-fixes.ts`: downloads from official sources (manual step for login-only sites), verifies SHA-256, backs up, installs, can uninstall. Never bundles other authors' files.
-- [ ] Measure the "all known fixes" layer with the harness; this becomes the baseline our own fixes must beat.
+**Backups (D:\Sims3-backup):** `2026-10-11\` = Rodney's original user folder incl. CC (535 files) and old Bin mods; `pre-fixes-2026-10-11\` = pristine `Game\Bin` + user folder right before the fixes (restore = copy back); `test-saves\` = `Baseline-SV(-fresh)`, `Baseline-BP(-fresh)`, `checkpoints\`. Installer undo: `node tools/setup/install-fixes.ts uninstall [--only id]` (state + per-file backups in `%LOCALAPPDATA%\ts3-fixes`). Manual downloads kept in `~\Downloads\ts3-fixes`.
 
-## 3. Reverse engineer TS3W.exe and the Mono layer: in progress (first pass done)
-Focus decided 2026-10-11: in-game stutter (stuck sims, threading, bad world pathing); load times are fine. Findings and ranked big wins: `docs/04-re-findings.md`, script side: `docs/04a-script-layer-stutter.md`.
-- [x] Copy TS3W.exe and the script DLLs (Game\Bin, Mono assemblies) into `game-copy/` (git-ignored); never analyse the live install.
-- [ ] Run REA with Ghidra: map the main sim loop, Mono GC calls, allocator use, thread creation, resource streaming and RefPack decompression.
-- [x] Line up what S3SS already patches with those functions, so we only target what is left (`docs/03-prior-art-re.md`, anchors table).
-- [ ] Profile live with x32dbg or Frida during tests B to D to find where the main thread spends time and where address space goes.
-- [x] Write findings to `docs/04-re-findings.md`, ranked by expected gain (first pass; re-rank after the measurements listed there).
+**Measured (docs/05):** vanilla D3D9 runs out of address space loading a fresh save (3.49 GB committed, 176 MB largest free; crash at 60 MB free in SimService). DXVK: 1.74 GB committed, 1.85 GB largest free, 52 s load. All fixes on Bridgeport: no crash, sim pace ~0.28 sim-days/min vs ~0.21 with DXVK only (first minute 0.35), memory ~1.95–2.07 GB committed / 1.56–1.82 GB largest free (similar to DXVK only), agent ready 105 s after launch (was 25–48 s), ErrorTrap repaired destroyed-object references on load.
 
-## 4. Build and test our own fixes
-- [ ] Build an ASI/DLL hook (S3SS as the reference) for the top findings from step 3.
-- [ ] Candidates, to be confirmed by step 3: offloading work from the main thread, trimming address-space waste further, cheaper GC behaviour, faster streaming.
-- [ ] Measure each patch against the baseline table, one change at a time, and keep the ones that win.
+**Crashes seen:** 17:54 vanilla OOM (SimService); 19:14 wild pointer at `0xeeacf3` (DXVK, aging day 12, after accepting an age-up dialog; did not recur); 20:59 our own probe (Frida FUZZY backtracer) — fixed. Reports in `docs/data/crashes/`.
 
-## 5. 64-bit resource offload helper: design started 2026-10-11 (in parallel with the baselines)
-Heavy custom content (`Mods\Packages` via `Resource.cfg`, `.sims3pack` in `DCCache`) fills the 32-bit address space: package indexes, decompressed resources and CAS caches live inside TS3W.exe. A 64-bit helper process holds them instead, and the game maps in only what it needs. Routing data and WorldCache are out of scope (static).
-- [ ] Map the resource system and estimate what grows with CC: `docs/08-resource-offload-design.md`.
-- [ ] Phase 0: measure address space by category with and without the user's CC set (probe, when the game is free).
-- [ ] Phase 1: package index offload. Phase 2: decompressed-resource cache. Phase 3: CAS caches.
+## Tools (all in the repo, Windows)
 
-Ideas, only if the offload helper works (not scheduled yet):
-- Use all cores in the helper: parallel index parsing, a RefPack decompression pool, prefetch of lot objects and CAS parts.
-- Preload the whole world's resources (offscreen lots included) into the helper's RAM, so the game's streaming hits a warm cache.
-- Raise the game's own resource cache (`Sims3.ini` `[ResourceSystem] MemoryUsageLimit = 20000000`, ~20 MB) and extend `[Preloader]`, once their meaning is verified.
-- Warm the Windows file cache before launch (`tools/harness/warm-cache.ts`, written but not used yet).
-- NVIDIA/GPU: textures already sit in VRAM through DXVK; DirectStorage only as an optional fast reader in the helper; RefPack decompression stays on CPU cores; GPUDirect Storage is not available on GeForce/Windows.
+| Tool | What |
+|---|---|
+| `tools/probe/ts3probe.py serve [--launch]` | Frida probe on 127.0.0.1:47891: `status`, `memory` (4 GB map), `simstack` (sim thread only, safe), `threads` (all, avoid while running), `modules`, `read`, `events`, `scripterrors`, `agent?cmd=…`, `agentstatus`, `reload` (probe JS in place), `detach` (always stop this way). Logs `probe-out/<ts>/events.jsonl` + `memory.csv` (10 s). Safety rules: memory `probe-safety`. |
+| `mods/ts3agent` | In-game C# agent (fork of Sims3-MCP, MIT): loader (`src/loader`, mailbox, needs restart) + hot-reloadable plugin (`src/plugin`). Commands incl. game_state, load_world, load_save, world_households, play_household, save_game (real save-as), auto_dialog (rules for known dialogs), keep_alive, decline_requests, quiet_ui, sims_activity, queues, enter_live_mode, reflect_*, plugin_*. Build `tools/harness/build-agent.ts`, hot reload `tools/harness/reload-agent.ts` (~300 ms). |
+| `tools/harness/cycle.ts --restart` / `--save X.sims3` | Restart cleanly (installs our packages, clears scriptCache); load a save, clear "Mod Scripts Found", settle dialogs, end in live mode. Start the probe server as its own background task in between. |
+| `tools/harness/new-save.ts`, `age-save.ts`, `watchdog.ts` | Create a test save from the menu; age N sim days (keep_alive, declines every 10 s, checkpoints, `--until-day`); watchdog every 1 min (frozen clock in a world, 3 min save grace, hangs, frozen heartbeat, SLOW SIM with sim stack, low memory, stuck Sims → `probe-out/stuck-sims.jsonl`). |
+| `tools/setup/install-fixes.ts`, `check-conflicts.ts`, `fixes.json` | Known-fixes installer (plan/install/uninstall/status) and static Mods conflict check. |
+| `tools/ghidra/*`, `tools/internal-calls-map.ts`, `tools/extract-assemblies.ts`, `tools/dbpf.ts` | Ghidra headless scripts, the `{fn,name}` script-binding map (1,757), S3SA extract/decrypt, DBPF writer. Anchors: `tools/ghidra/anchors.csv`. |
 
-## 6. Single patch host: one tool instead of clashing mods (added 2026-10-11)
-Core mods clash because each replaces a whole EA assembly, so only one wins. Instead, our agent gets a runtime method-patch host (the MonoPatcher approach, on top of the hot-reloadable plugin): each fix is a small, independent, switchable patch, tested alone with the harness.
-- [ ] Pre-flight: `tools/setup/check-conflicts.ts` runs before every install. Drop duplicates found in the old Mods folder (second ErrorTrap copy, one of the two ld_RandomSimFixes variants); flag the overlapping Store Updates/Fixes packages.
-- [ ] Keep original mods wherever the checker shows no clash (e.g. ErrorTrap on ScriptCore and simler90 on the gameplay assemblies coexist).
-- [ ] Study how MonoPatcher patches methods under Mono 1.2 (signatures, trampolines); build our patch host in the agent.
-- [ ] Reimplement fixes as our own patches only where mods truly fight, or where we need the behaviour in our tool anyway (stuck Sims, routing, save cleanup).
-- Licensing: NRaas, simler90, MonoPatcher and S3SS have no license file (all rights reserved). Read their decompiled code to understand the behaviour, write a behaviour spec in our own words (`docs/specs/<fix>.md`: the EA bug, what the fix changes, when), implement from the spec, credit the author in the spec. Never paste or port their code line by line, in any language (a translation is still a derivative work). Where possible, ask the authors for permission instead.
+## Next tasks, in order
+
+1. **Record and finish the fixes layer (step 2c).** Run the same validation on `Baseline-SV`; run tests B–E (frame times via the once-per-frame function `0xEC9F00`, which contains S3SS's post-present limiter `0xEC9FBA`; travel hitches; memory after 30 min; save time) on both aged saves, DXVK-only vs all fixes.
+2. **Open questions on the installed fixes:** S3SS lists CPUOptimization, Mimalloc, TimerOptimization, AdaptiveWait as enabled but logs no install line (check S3SS_LOG after a second launch; Mimalloc needs a restart); `Texture memory: 32MB <<OVERRIDE>>` still in `DeviceConfig.log` under DXVK (find the GraphicsRules rule; test whether the game uses it as a texture budget); startup to agent got slower (105 s).
+3. **Stutter fix #1: route-failure cache (step 4).** Stuck/unroutable Sims today: EA's 3 AM `RunStuckCheck` (only Sims that never moved), Overwatch (resets after >10 failed plans in 30 sim-min), our watchdog (detects only). All act after the cost: every failed `Route.Plan` runs A* synchronously on the sim thread under a global lock (docs/04 F1). Build a native negative cache + per-Sim backoff on `Route_PlanLocked 0x82c6e0` / `IC_Route_Plan 0x765160`, invalidated on build/buy, portal and footprint changes; plus the NPC "go home" immediate-retry loop (`Sim.CanRunAutonomyImmediately`, docs/04a). Measure with SLOW SIM / stuck-sims data on Bridgeport.
+4. **Other stutter candidates (docs/04):** GC pause shape (`GC_PRINT_STATS=1` → gc.log; budget window 500–1500), finalizer drain-all and 10-step catch-up spikes in `MonoScriptHost_Simulate 0xD81840`, per-search time budget.
+5. **Single patch host (step 6)** and save cleanup research (memories, NPC inventories, photos, dead Sims; verify against NRaas source). The background research agent for this was blocked by permissions; ask Rodney before re-launching.
+6. **Offload (step 5): measure first.** docs/08: indexes are tiny (~17.6 B/resource, CC ≈ 3.5 MB); nothing is memory-mapped; the real budget is `[Resources] CacheBudget` (200 MB + 10 MB) in `Default.ini`, a global lock is held through read+decompress, CC grows CAS data / catalog objects / string tables (~90 MB est.). Phase 0: measure cache fill with and without Rodney's CC; try CacheBudget 200 → 50 → 0. Build the helper (~60–100 h, est. 150–250 MB) only if the cache is a large share.
+
+## Steps (history and status)
+
+### 1. Compare existing fixes: done
+`docs/01-existing-fixes-comparison.md`, prior-art RE `docs/03-prior-art-re.md`.
+
+### 2. Baselines
+- [x] Fresh reinstall; vanilla and DXVK layers measured (docs/05). Vanilla cannot reliably load a save (address space).
+- [x] Aged test saves: `Baseline-SV` (Sunset Valley, Keatons), `Baseline-BP` (Bridgeport, Angelistas), 14 sim days each under DXVK with keep_alive.
+- [ ] Tests B–E on both saves (see next tasks).
+
+### 2b. Test harness: working
+Probe, agent (hot reload), cycle, new-save, age-save, watchdog, dialog rules, keep_alive, declines, quiet UI. Prior art: `docs/06-test-harness-prior-art.md`.
+- [ ] Frame-time capture (hook `0xEC9F00`; test on a dummy first per probe-safety).
+- [ ] A permanent probe ASI later (Frida stays for exploration).
+
+### 2c. All-known-fixes layer: installed, first validation passed
+Catalog `docs/07-known-fixes-catalog.md`, manifest `tools/setup/fixes.json`, installer and conflict checker.
+- [x] Install with backups; conflict check clean; Bridgeport 2-day run without crash.
+- [ ] Sunset Valley run, tests B–E, the open questions in next-task 2.
+
+### 3. Reverse engineering: first pass done
+`docs/04-re-findings.md` (route planning synchronous under a global lock; GC every frame with adaptive ~1 ms budget; finalizer drain; catch-up steps; Boehm env vars), `docs/04a-script-layer-stutter.md` (NPC retry loops, weak route-fail blocking, unyielding local autonomy, weak EA stuck check). REA (MCP) is registered locally; restart the session to use its tools.
+- [ ] Re-run Ghidra analysis with more heap (two analyzers hit OutOfMemory at 16 GB; some functions missing, e.g. `0xD81840` had to be created by hand).
+
+### 4. Our own fixes
+Route-failure cache first (next-task 3), then the other docs/04 candidates. One change at a time, measured.
+
+### 5. 64-bit resource offload helper: measure first
+`docs/08-resource-offload-design.md`. Ideas only if it works: multi-core prefetch, whole-world preload into the helper, raising the game's cache, `tools/harness/warm-cache.ts` (written, unused), GPU options (textures already in VRAM via DXVK; DirectStorage at most a helper reader; no CUDA RefPack; no GPUDirect on GeForce). Note: `Sims3.ini [ResourceSystem] MemoryUsageLimit` is the async loader's limit, not the cache; `HoldOntoResource` is misspelled there (ignored).
+
+### 6. Single patch host: one tool instead of clashing mods
+Core mods clash because each replaces a whole EA assembly. Our agent gets a runtime method-patch host (MonoPatcher approach on the hot-reloadable plugin); each fix is a small switchable patch.
+- [x] Pre-flight conflict checker. Old Mods folder had: ErrorTrap twice (sync copy), two ld_RandomSimFixes variants, overlapping Store Updates/Fixes packages (third-party repack, excluded), outdated simler90 UPDATE197.
+- [ ] Study MonoPatcher's method patching under Mono 1.2; build our patch host.
+- [ ] Reimplement only where mods truly fight or where our tool needs the behaviour (stuck Sims, routing, save cleanup).
+- Licensing: NRaas, simler90, MonoPatcher and S3SS have no license file (all rights reserved). Read their decompiled code to understand the behaviour, write a behaviour spec in our own words (`docs/specs/<fix>.md`), implement from the spec, credit the author. Never paste or port their code line by line, in any language. Ask authors for permission where possible. simler90 publishes its source on its MTS page (check its terms).
+
+### 7. Later
+- 64-bit: not realistic as a rewrite (40,263 functions + Mono 1.2); grows only from per-function rewrites verified live with the probe.
+- Rodney's CC (backup): 172 packages, 209,735 resources, 5.18 GB (15.4 GB decompressed), 98% in three "Store Updates" repack packages; textures 86% (handled by DXVK).
