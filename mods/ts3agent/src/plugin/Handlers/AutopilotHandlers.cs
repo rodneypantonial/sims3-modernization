@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Sims3.Gameplay;
 using Sims3.SimIFace;
 using GF = Sims3.Gameplay.Gameflow;
 using GameSpeed = Sims3.SimIFace.Gameflow.GameSpeed;
@@ -9,7 +10,9 @@ namespace Ts3Agent
     // Test-harness autopilot, in-game so it reacts within a frame instead of the harness's 30 s loop:
     // holds the game at the target speed (the game drops to normal on events) and clears popups as they open.
     // Popups pause or lock the speed, so GameSpeedChanged triggers an immediate dialog check; a 250 ms poll
-    // catches the rest. Live mode only; the harness turns it off around saves (a save pauses on purpose).
+    // catches the rest. Dialogs in any in-world state (loading, Edit Town, live; never the main menu, where
+    // accepting "Mod Scripts Found" during a load hangs it); speed in live mode only, and not at all with
+    // speed "none". The harness turns it off around saves (a save pauses on purpose).
     public static partial class Handlers
     {
         // Settings and generation live in AppDomain data so they survive a hot reload; an old plugin's task
@@ -45,7 +48,7 @@ namespace Ts3Agent
             return c;
         }
 
-        // autopilot {enabled?, speed?: normal|fast|ultra, dialogs?}: updates settings, returns them plus what it
+        // autopilot {enabled?, speed?: normal|fast|ultra|none, dialogs?}: updates settings, returns them plus what it
         // did since the last call (speed corrections and cleared dialogs).
         static object Autopilot(Args a)
         {
@@ -70,7 +73,7 @@ namespace Ts3Agent
         static void AutopilotStep(ref int lastDialog, ref int lastSpeed)
         {
             Dictionary<string, object> c = ApCfg();
-            if (!(bool)c["enabled"] || SubState() != "LiveModeState") return;
+            if (!(bool)c["enabled"] || !GameStates.IsInWorld()) return;
             int now = System.Environment.TickCount;
             if ((bool)c["dialogs"] && (sApPoke || now - lastDialog >= 250))
             {
@@ -83,7 +86,7 @@ namespace Ts3Agent
                     return; // let the dialog close before touching the speed
                 }
             }
-            if (now - lastSpeed < 1000) return;
+            if (now - lastSpeed < 1000 || (string)c["speed"] == "none" || SubState() != "LiveModeState") return;
             lastSpeed = now;
             GameSpeed target = ApTarget((string)c["speed"]);
             if (!GF.GameSpeedLocked && GF.CurrentGameSpeed != target)

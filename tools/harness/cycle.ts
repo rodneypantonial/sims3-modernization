@@ -70,6 +70,8 @@ if (values.save) {
     await sleep(2000);
   }
   if (!sawWarning) log('no "Mod Scripts Found" warning within 120 s; loading anyway');
+  // in-game autopilot clears popups within a frame once in a world (load, Edit Town, live); speed left alone
+  await agent('autopilot', { enabled: true, speed: 'none', dialogs: true });
   const r = await agent('load_save', { file: values.save });
   if (!r.ok) throw new Error(`load_save: ${r.error}`);
   // Loading can stop on a modal (e.g. "Mod Scripts Found"), so clear dialogs while waiting.
@@ -84,8 +86,8 @@ if (values.save) {
     const t0 = Date.now();
     let quietSince = Date.now();
     while (Date.now() - quietSince < 5000 && Date.now() - t0 < 30000) {
-      const d = await agent('auto_dialog');
-      if (d.ok && d.result.open) { log(`dialog "${String(d.result.title).slice(0, 70)}" -> ${d.result.clicked}${d.result.rule ? ' (rule)' : ''}`); quietSince = Date.now(); }
+      const ap = await agent('autopilot');
+      for (const c of ap.ok ? ap.result.cleared : []) { log(`dialog ${String(c).slice(0, 80)}`); quietSince = Date.now(); }
       await sleep(1000);
     }
     await agent('quiet_ui', { memories_off: true });
