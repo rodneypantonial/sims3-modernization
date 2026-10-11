@@ -16,10 +16,12 @@ Confidence tags: **[verified]** means read in the decompiled code or the bytes. 
 | Extract script DLLs from `.package` files (DBPF, RefPack, S3SA decryption) | `node tools/extract-assemblies.ts` | `assemblies/` (10 DLLs) |
 | Decompile C# | `ilspycmd -p` | `decompiled/` (11,071 files) |
 | Ghidra import + analysis (16 GB heap; X86Analyzer and StackVariableAnalyzer still hit `OutOfMemoryError`, so some functions are missing) | `analyzeHeadless` | `ghidra/TS3.gpr` |
-| Name the 1,716 native functions bound to script `DllImport`s | `tools/ghidra/ApplyInternalCallNames.java` with `analysis/internal-calls-map.csv` | functions named `IC_<Class>_<Method>` |
+| Name the 1,757 native functions bound to script `DllImport`s | `node tools/internal-calls-map.ts` → `analysis/internal-calls-map.csv`, then `tools/ghidra/ApplyInternalCallNames.java` | functions named `IC_<Class>_<Method>` |
 | Decompile, string xrefs, call paths | `tools/ghidra/run-headless.sh DecompileTo.java / StringXrefs.java / CallPaths.java …` | `analysis/decomp/*.c`, `analysis/*.txt` |
 
-**How script calls reach the engine.** Script methods are `[DllImport("Sims3Common.dll")]` stubs; no such DLL ships. TS3W.exe resolves them by name through a `.data` table of `{char* name, void* fn}` pairs (for example `"ScriptCore.Route::Route_Plan"` → `0x765240`). Proof: `GameUtils_IsSingleThreadedMode` maps to `0x620d60`, which is `xor al,al; ret`. [verified]
+**How script calls reach the engine.** Script methods are `[DllImport("Sims3Common.dll")]` stubs; no such DLL ships. TS3W.exe resolves them by name through `.data` tables of `{void* fn, char* name}` pairs, with each run ended by a null pair (for example `"ScriptCore.Route::Route_Plan"` → `0x765160`). Proof: in 41 of 42 runs a code pointer sits before the first name, and no run has one after its last name. [verified]
+
+> **Correction (2026-10-11):** the first version of this document read the pairs as `{name, fn}`, which gave every name the *next* entry's function (spotted by the harness research in `06`). The names and addresses below are corrected, and F1's conclusion was re-checked under the correct names: it still holds.
 
 ---
 
@@ -28,8 +30,8 @@ Confidence tags: **[verified]** means read in the decompiled code or the bytes. 
 Call chain from script to the A* search, read in Ghidra:
 
 ```
-IC_Route_Plan 0x765240 / IC_Route_Replan 0x765550 / IC_Route_ReplanFromPosition / IC_Route_IsPointRoutable
-  -> 0x7642c0 (builds start points, "Routing/RoutingHost/startPoints")
+IC_Route_Plan 0x765160 / IC_Route_Replan 0x765490            -> 0x7641d0
+IC_Route_PlanFromPoint 0x765240 / IC_Route_ReplanFromPosition 0x765550 -> 0x7642c0 ("Routing/RoutingHost/startPoints")
   -> 0x7606e0
   -> 0x82c6e0: lock(0x1021cf0) ; setup 0x819d50 ; SEARCH 0x81b2a0 ; 0x819ae0 ; read result ; unlock
                 (lock = 0x4e16f0: EnterCriticalSection / WaitForSingleObject wrapper; unlock = 0x4e17b0)
@@ -38,7 +40,7 @@ IC_Route_Plan 0x765240 / IC_Route_Replan 0x765550 / IC_Route_ReplanFromPosition 
 
 - No `JobManager` / `JobThread%i` call appears in this chain. The planner runs to completion inside the script call and returns the result. [verified]
 - Scripts are single-threaded cooperative tasks (see 04a), so every `Route.Plan` stalls **all** script simulation until the search ends. [inferred]
-- `IC_World_FindPlacesOnRoad` reaches the same search. [verified]
+- `IC_World_FindPlaceOnRoadOffScreen` reaches the same search. `Route_IsPointRoutable` (`0x7538c0`) does not. [verified]
 - Open question: which other threads take lock `0x1021cf0` (contention)? To check with `StringXrefs`/xrefs on the lock.
 
 **Why this is the stuck-sim stutter.** Several script paths retry routing without real backoff (04a): NPCs that fail autonomy re-queue immediately (`Sim.CanRunAutonomyImmediately` returns `!IsSelectable` after a failure, `Sim.cs:56248`) [verified]. `GoHome` makes up to 3 world-scale plans per attempt. A failed route target is blocked for only one sim minute. Waiting sims replan every 2–3 cycles for up to 50 sim minutes. On a world with bad routing data, failed searches are also the most expensive ones, because A* explores the whole reachable area before giving up. [inferred]
@@ -63,7 +65,7 @@ The exe contains `GC_PRINT_STATS`, `gc.log`, `GC_INITIAL_HEAP_SIZE`, `GC_MAXIMUM
 
 - `Sims3.ini` `[Timeslices]`: `SimService`, `JobManager`, `ResourceSystem` and `TextureCompositor` all = `10,10,25,50`. The `JobManager` and `SimService` code references these names (`0x5992d0`, `0x5ebc50`).
 - Script-visible profiler hooks exist: `ProfilerUtils_BeginEvent/EndEvent/Marker/Counter`, `Simulator_EnableYieldAnalysis`, and `StopWatch_*`. Whether release builds strip these is still to check. If they are live, they are free instrumentation points.
-- `GameUtils_IsSingleThreadedMode` is hard-wired to `false`, and `Sims3.ini` has `[Script] Multithreaded=1`. The sim already runs on its own thread, separate from rendering.
+- `GameUtils_IsSingleThreadedMode` (`0xEC1500`) compares two thread-related values; its meaning is not decoded yet. `Sims3.ini` has `[Script] Multithreaded=1`, which suggests the sim already runs on its own thread, separate from rendering. [inferred]
 
 ---
 

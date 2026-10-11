@@ -21,11 +21,12 @@ const HOOKS = {
   gcInvokeFinalizers: [0xe697f0, 'e8 eb 1b fe ff 85 c0 74'],
   routeOuter: [0x82c6e0, '81 ec d8 00 00 00 53 56'], // lock + setup + search + unlock, returns success in AL
   routeSearch: [0x81b2a0, '55 8b ec 83 e4 f0 81 ec'], // the A* search itself
-  Route_Plan: [0x765240, '55 8b ec 83 e4 f0 0f 57'],
-  Route_Replan: [0x765550, '55 8b ec 83 e4 f0 8b 0d'],
-  Route_PlanFromPoint: [0x74c820, '55 8b ec 83 e4 f0 8b 0d'],
-  Route_ReplanFromPosition: [0x765160, '0f 57 c0 8b 0d c4 40 1d'],
-  Route_IsPointRoutable: [0x765490, '8b 0d c4 40 1d 01 83 ec'],
+  // script entry points, from tools/internal-calls-map.ts (the table is {fn, name})
+  Route_Plan: [0x765160, '0f 57 c0 8b 0d c4 40 1d'],
+  Route_Replan: [0x765490, '8b 0d c4 40 1d 01 83 ec'],
+  Route_PlanFromPoint: [0x765240, '55 8b ec 83 e4 f0 0f 57'],
+  Route_ReplanFromPosition: [0x765550, '55 8b ec 83 e4 f0 8b 0d'],
+  Route_IsPointRoutable: [0x7538c0, '55 8b ec 83 e4 f0 8b 0d'],
 };
 const ROUTE_ENTRIES = ['Route_Plan', 'Route_Replan', 'Route_PlanFromPoint', 'Route_ReplanFromPosition', 'Route_IsPointRoutable'];
 

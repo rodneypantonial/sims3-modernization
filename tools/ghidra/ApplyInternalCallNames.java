@@ -1,5 +1,5 @@
 // Names TS3W.exe functions after the Mono internal calls bound to them.
-// Input: CSV "name,address" (from the .data {name*, fn*} table), path passed as script arg.
+// Input: CSV "name,address" from tools/internal-calls-map.ts ({fn*, name*} table), path passed as script arg.
 // Headless: analyzeHeadless <proj> TS3 -process TS3W.exe -noanalysis -scriptPath tools/ghidra
 //           -postScript ApplyInternalCallNames.java game-copy/analysis/internal-calls-map.csv
 // @category Sims3
@@ -14,7 +14,12 @@ public class ApplyInternalCallNames extends GhidraScript {
     @Override
     protected void run() throws Exception {
         List<String> lines = Files.readAllLines(Path.of(getScriptArgs()[0]));
-        int named = 0, created = 0;
+        int named = 0, created = 0, cleared = 0;
+        // re-runs must not leave stale names behind (an earlier map was shifted by one entry)
+        for (Function f : currentProgram.getFunctionManager().getFunctions(true)) {
+            if (f.getName().startsWith("IC_")) { f.setName(null, SourceType.DEFAULT); f.setComment(null); cleared++; }
+        }
+        println("cleared " + cleared + " old IC_ names");
         for (String line : lines.subList(1, lines.size())) {
             String[] p = line.split(",");
             Address a = toAddr(Long.decode(p[1]));
