@@ -30,6 +30,88 @@ namespace Ts3Agent
             Dispatcher.Register("reflect_call_async", ReflectCallAsync);
             Dispatcher.Register("sims_activity", SimsActivity);
             Dispatcher.Register("keep_alive", KeepAlive);
+            Dispatcher.Register("decline_requests", DeclineRequests);
+            Dispatcher.Register("queues", Queues);
+            Dispatcher.Register("quiet_ui", QuietUi);
+        }
+
+        // Less on screen during unattended runs: turn the memory system off (no memory popups, photos or
+        // bookkeeping; the game checks the option each time) and clear the notifications in the top-right corner.
+        static object QuietUi(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Bool("memories_off", true))
+            {
+                // EnableMemories stores MemoriesMode + 1: Enabled 1, NotificationsDisabled 2, Disabled 3
+                Sims3.Gameplay.UI.OptionsModel.SetOptionSetting("EnableMemories", 3u);
+                r["memories"] = Sims3.Gameplay.UI.OptionsModel.GetMemoryMode().ToString();
+            }
+            NotificationManager nm = NotificationManager.Instance;
+            if (nm != null) { nm.ClearAll(); r["notifications"] = "cleared"; }
+            return r;
+        }
+
+        // Diagnostic: every queued interaction of the active household, with its runtime type and target.
+        static object Queues(Args a)
+        {
+            Household hh = Household.ActiveHousehold;
+            if (hh == null) throw new McpException("no active household");
+            List<object> list = new List<object>();
+            foreach (Sim s in hh.AllActors)
+            {
+                if (s.InteractionQueue == null) continue;
+                foreach (InteractionInstance i in s.InteractionQueue.InteractionList)
+                {
+                    Dictionary<string, object> o = Util.Obj();
+                    o["sim"] = s.FirstName;
+                    string name;
+                    try { name = i.GetInteractionName(); } catch (Exception) { name = null; }
+                    o["name"] = name;
+                    o["type"] = i.GetType().FullName;
+                    Sim t = i.Target as Sim;
+                    o["target"] = t != null ? t.FullName : (i.Target != null ? i.Target.GetType().Name : null);
+                    o["target_in_household"] = t != null && t.Household == hh;
+                    o["autonomous"] = i.Autonomous;
+                    list.Add(o);
+                }
+            }
+            return list;
+        }
+
+        // Socials that other Sims start with our household (chat, ask to dance...): our side runs as a
+        // SocialInteractionB, while socials our Sims start themselves run as SocialInteractionA. Cancelling the
+        // B side is what clicking it away in the queue does. Optionally ignores requests from household members.
+        static object DeclineRequests(Args a)
+        {
+            Household hh = Household.ActiveHousehold;
+            if (hh == null) throw new McpException("no active household");
+            bool fromHousehold = a.Bool("include_household", false);
+            List<object> declined = new List<object>();
+            foreach (Sim s in hh.AllActors)
+            {
+                if (s.InteractionQueue == null) continue;
+                List<InteractionInstance> incoming = new List<InteractionInstance>();
+                foreach (InteractionInstance i in s.InteractionQueue.InteractionList)
+                {
+                    // answering an incoming call ("Chat with X" on the phone) is the other common kind of request
+                    if (i.GetType().FullName.EndsWith("Phone+Answer")) { incoming.Add(i); continue; }
+                    if (!(i is Sims3.Gameplay.Socializing.SocialInteractionB)) continue;
+                    Sim other = i.Target as Sim;
+                    if (!fromHousehold && other != null && other.Household == hh) continue;
+                    incoming.Add(i);
+                }
+                foreach (InteractionInstance i in incoming)
+                {
+                    Sim other = i.Target as Sim;
+                    string what;
+                    try { what = i.GetInteractionName(); } catch (Exception) { what = i.GetType().Name; }
+                    s.InteractionQueue.CancelInteraction(i, false);
+                    declined.Add(s.FirstName + ": '" + what + "'" + (other != null ? " from " + other.FullName : ""));
+                }
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["declined"] = declined;
+            return r;
         }
 
         // Safety net for unattended runs (like NRaas MasterController's max motives, but only in the danger zone):

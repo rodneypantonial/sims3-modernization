@@ -73,6 +73,16 @@ async function saveAsInner(name: string): Promise<void> {
   console.log(`${stamp()} saved ${name}`);
 }
 
+// Every 10 s: decline Sims who approach or call the household, and clear the notification corner.
+let quietTick = 0;
+const quiet = setInterval(async () => {
+  try {
+    const d = await agent('decline_requests');
+    if (d.ok && d.result.declined.length) console.log(`${stamp()} declined: ${d.result.declined.join('; ')}`);
+    await agent('quiet_ui', { memories_off: quietTick++ % 30 === 0 }); // re-assert the option every ~5 min
+  } catch { /* game busy; next tick */ }
+}, 10000);
+
 const start = await agent('time');
 if (!start.ok) throw new Error(`agent not answering: ${start.error}`);
 const targetDay = values['until-day'] ? Number(values['until-day']) : start.result.day_number + Number(values.days);
@@ -104,5 +114,6 @@ for (;;) {
   console.log(`${stamp()} day ${t.day_number} ${t.clock} ${t.speed}; ${simDays.toFixed(2)} sim days in ${realMin.toFixed(1)} min`);
   await sleep(30000);
 }
+clearInterval(quiet);
 console.log(`${stamp()} reached day ${last.day_number}`);
 await saveAs(values.save);
