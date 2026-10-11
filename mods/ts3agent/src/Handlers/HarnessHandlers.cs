@@ -23,6 +23,91 @@ namespace Ts3Agent
             Dispatcher.Register("world_households", WorldHouseholds);
             Dispatcher.Register("play_household", PlayHousehold);
             Dispatcher.Register("quit_game", QuitGame);
+            Dispatcher.Register("auto_dialog", AutoDialog);
+        }
+
+        // ------------------------------------------------------------ blocking dialogs
+
+        static readonly string[] kAcceptWords = { "ok", "accept", "yes", "continue", "done", "confirm", "close", "got it" };
+        static readonly string[] kRejectWords = { "cancel", "no", "back", "quit", "exit", "decline", "never" };
+        static readonly string[] kNames = { "Alex", "Sam", "Jamie", "Robin", "Casey", "Morgan", "Riley", "Quinn", "Avery", "Reese" };
+        static int sNameIndex;
+
+        static void FindTextEdits(WindowBase w, List<TextEdit> found, int depth)
+        {
+            if (w == null || depth > 12) return;
+            TextEdit te = w as TextEdit;
+            if (te != null && te.Visible) found.Add(te);
+            for (uint i = 0; i < 200; i++)
+            {
+                WindowBase child;
+                try { child = w.GetChildByIndex(i); } catch (Exception) { break; }
+                if (child == null) break;
+                FindTextEdits(child, found, depth + 1);
+            }
+        }
+
+        static string Words(WindowBase b)
+        {
+            string tip = null;
+            Button button = b as Button;
+            if (button != null) { try { tip = button.TooltipText; } catch (Exception) { } }
+            return ((b.Caption ?? "") + " " + (tip ?? "")).Trim().ToLowerInvariant();
+        }
+
+        static int Score(string words)
+        {
+            foreach (string w in kRejectWords) if (words == w || words.StartsWith(w + " ")) return -1;
+            foreach (string w in kAcceptWords) if (words == w || words.StartsWith(w + " ") || words.IndexOf(w) >= 0) return 2;
+            return words.Length == 0 ? 0 : 1;
+        }
+
+        // Clears whatever modal dialog blocks the game: fills empty text fields (e.g. naming a newborn),
+        // then clicks the most "accepting" enabled button. Prefers tooltips because EA icon buttons have no caption.
+        static object AutoDialog(Args a)
+        {
+            WindowBase modal = UIManager.GetModalWindow();
+            Dictionary<string, object> r = Util.Obj();
+            if (modal == null) { r["open"] = false; return r; }
+            r["open"] = true;
+            List<string> texts = new List<string>();
+            CollectTexts(modal, texts, 0);
+            r["title"] = texts.Count > 0 ? texts[0] : null;
+
+            List<TextEdit> edits = new List<TextEdit>();
+            FindTextEdits(modal, edits, 0);
+            List<object> filled = new List<object>();
+            foreach (TextEdit te in edits)
+            {
+                if (!string.IsNullOrEmpty(te.Caption)) continue;
+                string name = kNames[sNameIndex++ % kNames.Length];
+                te.Caption = name;
+                filled.Add(name);
+            }
+            r["filled"] = filled;
+
+            KeyValuePair<WindowBase, object>? best = null;
+            int bestScore = int.MinValue;
+            List<object> seen = new List<object>();
+            foreach (KeyValuePair<WindowBase, object> kv in DialogButtons(modal))
+            {
+                string words = Words(kv.Key);
+                bool enabled = true;
+                try { enabled = kv.Key.Enabled; } catch (Exception) { }
+                int s = enabled ? Score(words) : -2;
+                seen.Add("#" + kv.Key.ID + " '" + words + "'" + (enabled ? "" : " (disabled)") + " score " + s);
+                if (s > bestScore) { bestScore = s; best = kv; }
+            }
+            r["buttons"] = seen;
+            if (best == null || bestScore < 0) throw new McpException("no acceptable button: " + string.Join(", ", seen.ConvertAll(o => (string)o).ToArray()));
+            WindowBase btn = best.Value.Key;
+            object glue = best.Value.Value;
+            MethodInfo invoke = glue.GetType().GetMethod("Invoke", new Type[] { typeof(WindowBase), typeof(UIEventArgs) });
+            UIButtonClickEventArgs args = new UIButtonClickEventArgs();
+            args.Init(kButtonClick, btn, btn, (int)btn.ID, 0, 0, 0f, 0f, 0f, 0f, false, null);
+            RunAsync("auto_dialog #" + btn.ID, delegate { invoke.Invoke(glue, new object[] { btn, args }); });
+            r["clicked"] = "#" + btn.ID + " " + Words(btn);
+            return r;
         }
 
         static object GameState(Args a)

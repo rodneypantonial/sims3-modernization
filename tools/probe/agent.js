@@ -34,7 +34,16 @@ function regs(c) {
 }
 
 // Native exceptions (access violations etc.). The game handles some itself, so we only record and pass them on.
+// The game can raise thousands of handled exceptions (e.g. while rebuilding scriptCache), and a stack walk per
+// exception starves every other probe call: full detail only for the first hits per site and per second.
+const exceptionCounts = {};
+let exceptionWindow = { second: 0, n: 0 };
 Process.setExceptionHandler(d => {
+  const site = `${d.type}@${d.address}`;
+  const seen = exceptionCounts[site] = (exceptionCounts[site] || 0) + 1;
+  const second = Math.floor(Date.now() / 1000);
+  if (exceptionWindow.second !== second) exceptionWindow = { second, n: 0 };
+  if (seen > 3 || ++exceptionWindow.n > 10) return false;
   pushEvent({
     kind: 'exception', type: d.type, address: d.address.toString(),
     memory: d.memory ? { operation: d.memory.operation, address: d.memory.address.toString() } : null,
@@ -188,6 +197,10 @@ rpc.exports = {
   readString(address, kind) {
     const p = ptr(address);
     return kind === 'utf16' ? p.readUtf16String() : p.readCString();
+  },
+
+  exceptionCounts() {
+    return Object.entries(exceptionCounts).sort((a, b) => b[1] - a[1]).slice(0, 50).map(([site, n]) => ({ site, n }));
   },
 
   events(sinceSeq) {

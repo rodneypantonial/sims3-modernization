@@ -170,6 +170,8 @@ class Probe:
             self.alive = False
             threading.Thread(target=self.session.detach, daemon=True).start()
             return {'detaching': True}
+        if path == 'exceptions':  # counts per site, including the ones not logged in detail
+            return rpc.exception_counts()
         if path == 'agentstatus':
             return rpc.agent_status()
         if path == 'agent':  # in-game ts3agent command, e.g. agent?cmd=list_sims&args={"household":"active"}

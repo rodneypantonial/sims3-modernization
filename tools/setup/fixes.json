@@ -1,0 +1,1438 @@
+[
+  {
+    "id": "laa-check",
+    "name": "Large Address Aware check (no patch)",
+    "author": "n/a",
+    "category": "engine",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "TS3W.exe"
+      ]
+    },
+    "config": {
+      "action": "verify",
+      "expectFlag": "IMAGE_FILE_LARGE_ADDRESS_AWARE"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Verify only. Steam 1.67 TS3W.exe already has LAA (Characteristics 0x123) [verified]. Warn if a Steam verify ever clears it; never patch by default."
+  },
+  {
+    "id": "asi-loader",
+    "name": "Ultimate ASI Loader (Win32)",
+    "author": "ThirteenAG",
+    "category": "engine",
+    "version": "v9.7.4",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip",
+      "repo": "ThirteenAG/Ultimate-ASI-Loader",
+      "asset": "Ultimate-ASI-Loader.zip",
+      "page": "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/tag/v9.7.4"
+    },
+    "sha256": "952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f",
+    "install": {
+      "target": "bin",
+      "files": [
+        {
+          "from": "dinput8.dll",
+          "to": "wininet.dll"
+        }
+      ]
+    },
+    "config": {
+      "removeLegacy": [
+        "ddraw.dll (only if its version resource says Ultimate ASI Loader)",
+        "any wininet.dll bundled with MonoPatcher or Smooth Patch"
+      ]
+    },
+    "conflictsWith": [
+      "smoothpatch-asi"
+    ],
+    "requires": [],
+    "default": true,
+    "notes": "MIT. Published 2026-08-16. Exactly one loader. The DLL name inside the Win32 zip (dinput8.dll) is [community]; confirm on first unpack. Never name it d3d9.dll (DXVK uses that)."
+  },
+  {
+    "id": "dxvk",
+    "name": "DXVK (x32 d3d9.dll)",
+    "author": "doitsujin",
+    "category": "engine",
+    "version": "v3.1.1",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz",
+      "repo": "doitsujin/dxvk",
+      "asset": "dxvk-3.1.1.tar.gz",
+      "page": "https://github.com/doitsujin/dxvk/releases/tag/v3.1.1"
+    },
+    "sha256": "40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608",
+    "install": {
+      "target": "bin",
+      "files": [
+        {
+          "from": "dxvk-3.1.1/x32/d3d9.dll",
+          "to": "d3d9.dll"
+        }
+      ]
+    },
+    "conflictsWith": [
+      "d3d9-wrappers-other"
+    ],
+    "requires": [
+      "dxvk-conf"
+    ],
+    "default": true,
+    "notes": "Zlib. Published 2026-09-15. Built-in TS3W.exe profile spoofs GeForce GTX 580 (10de:1080) [verified config.cpp], so no GraphicsRules edits. Leave d3d9.textureMemory at default."
+  },
+  {
+    "id": "dxvk-conf",
+    "name": "dxvk.conf for The Sims 3",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "dxvk.conf"
+      ]
+    },
+    "config": {
+      "lines": [
+        "d3d9.samplerAnisotropy = 16"
+      ],
+      "optionalLines": {
+        "measurement": "dxvk.hud = fps,memory",
+        "ifIntelPicked": "dxvk.hideIntegratedGraphics = True",
+        "ifS3ssLimiterOff": "d3d9.maxFrameRate = 60"
+      }
+    },
+    "conflictsWith": [],
+    "requires": [
+      "dxvk"
+    ],
+    "default": true,
+    "notes": "Generated, not downloaded. One frame cap only: the S3SS Precise limiter by default."
+  },
+  {
+    "id": "s3ss",
+    "name": "Sims 3 Settings Setter",
+    "author": "sims3fiend",
+    "category": "engine",
+    "version": "1.6.3",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/sims3fiend/Sims3SettingsSetter/releases/download/1.6.3/Sims3SettingsSetter.asi",
+      "repo": "sims3fiend/Sims3SettingsSetter",
+      "asset": "Sims3SettingsSetter.asi",
+      "page": "https://github.com/sims3fiend/Sims3SettingsSetter/releases/tag/1.6.3"
+    },
+    "sha256": "69ce87ee84528748ee1f19c1f7cb2183e8e8cb7f7cae57cdb64098a7ebcdc13a",
+    "install": {
+      "target": "bin",
+      "files": [
+        "Sims3SettingsSetter.asi"
+      ]
+    },
+    "conflictsWith": [
+      "smoothpatch-asi"
+    ],
+    "requires": [
+      "asi-loader",
+      "s3ss-config"
+    ],
+    "default": true,
+    "notes": "No license file: download from GitHub, never re-host. Published 2026-07-20. Patterns match Steam 1.67 [verified]. Includes the Alder Lake fix (CPU Thread Optimization)."
+  },
+  {
+    "id": "s3ss-config",
+    "name": "S3SS patch selection (S3SS.toml)",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "config",
+      "files": [
+        "%DOCUMENTS%/Electronic Arts/The Sims 3/S3SS/S3SS.toml"
+      ]
+    },
+    "config": {
+      "patches": {
+        "CPUOptimization": {
+          "enabled": true
+        },
+        "StartupWarningDialogFix": {
+          "enabled": true
+        },
+        "ExpandedCrashLogs": {
+          "enabled": true
+        },
+        "Mimalloc": {
+          "enabled": true
+        },
+        "OversizedThreadStackFix": {
+          "enabled": true
+        },
+        "RefPackDecompressor": {
+          "enabled": true
+        },
+        "SmoothPatchPrecise": {
+          "enabled": true,
+          "tickRateLimit": 480,
+          "frameRateLimit": 60
+        },
+        "SmoothPatchClassic": {
+          "enabled": false
+        },
+        "TimerOptimization": {
+          "enabled": true
+        },
+        "CreateFileRandomAccess": {
+          "enabled": true
+        },
+        "GCTryToCollect": {
+          "enabled": false
+        },
+        "WorldCacheSizePatch": {
+          "enabled": false
+        }
+      },
+      "optionalPatches": {
+        "GCFinalizeThrottle": {
+          "enabled": true
+        },
+        "LotStreamingOptimizations": {
+          "enabled": true
+        },
+        "AdaptiveWait": {
+          "enabled": true
+        },
+        "StoreFeaturedItemsDisablePatch": {
+          "enabled": true
+        }
+      },
+      "qol": {
+        "memory_monitor": {
+          "enabled": true,
+          "warning_threshold": 3.5,
+          "warning_style": "overlay"
+        },
+        "ui": {
+          "disable_overlay": false
+        }
+      }
+    },
+    "conflictsWith": [],
+    "requires": [
+      "s3ss"
+    ],
+    "default": true,
+    "notes": "Schema: [patches.<InternalName>] enabled + settings by name, [qol.*] [verified from S3SS source]. Merge into an existing file; keep other keys. Set OversizedThreadStackFix=false on the first S3PP run. Never AdaptiveWait together with S3PP ShortWaitSpin. Set qol.ui.disable_overlay=true if the overlay crashes with DXVK."
+  },
+  {
+    "id": "smoothpatch-package",
+    "name": "Smooth Patch tuning package (ld_SmoothPatch.package)",
+    "author": "LazyDuchess",
+    "category": "script",
+    "version": "2.1",
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": "ld_TS3Patch.zip",
+      "page": "https://modthesims.info/d/658759/smooth-patch-2-1.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        {
+          "from": "Packages/ld_SmoothPatch.package",
+          "to": "Packages/ld_SmoothPatch.package"
+        }
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "s3ss"
+    ],
+    "default": true,
+    "notes": "Package only (46,524 bytes; CAS load, CAS audio and Create-a-Style fixes). Do NOT install TS3Patch.asi, TS3Patch.txt or wininet.dll from the zip. Unsupported since 2026-01-26; the S3SS README says to keep this package [verified]. MTS getfile link changes with each update; read it from the page."
+  },
+  {
+    "id": "smoothpatch-asi",
+    "name": "Smooth Patch ASI (TS3Patch.asi), legacy: remove",
+    "author": "LazyDuchess",
+    "category": "engine",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": "ld_TS3Patch.zip",
+      "page": "https://modthesims.info/d/658759/smooth-patch-2-1.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "TS3Patch.asi",
+        "TS3Patch.txt"
+      ]
+    },
+    "config": {
+      "action": "remove-if-present"
+    },
+    "conflictsWith": [
+      "s3ss"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Excluded. Patches the same SleepEx wrapper (0x004E1320) as the S3SS Smooth Patch [verified]. The installer moves it to the backup folder if found."
+  },
+  {
+    "id": "monopatcher",
+    "name": "MonoPatcher",
+    "author": "LazyDuchess",
+    "category": "script",
+    "version": "0.3.0",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/LazyDuchess/MonoPatcher/releases/download/0.3.0/MonoPatcher.zip",
+      "repo": "LazyDuchess/MonoPatcher",
+      "asset": "MonoPatcher.zip",
+      "page": "https://github.com/LazyDuchess/MonoPatcher/releases/tag/0.3.0"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        {
+          "from": "ld_MonoPatcher.package",
+          "to": "Packages/MonoPatcher/ld_MonoPatcher.package"
+        },
+        {
+          "from": "MonoPatcher.asi",
+          "to": "%BIN%/MonoPatcher.asi"
+        }
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "asi-loader"
+    ],
+    "default": true,
+    "notes": "No license file. The API exposes no digest; zip is 811,083 bytes; record our own hash on first download. Skip the bundled wininet.dll. Needs the VC++ x86 redistributable. Signatures match Steam 1.67 [verified]. If it crashes, remove MonoPatcher.asi; the listed fixes only need the package [community]."
+  },
+  {
+    "id": "nraas-errortrap",
+    "name": "NRaas ErrorTrap (Steam 1.67 build)",
+    "author": "NRaas (Twallan, Chain-Reaction)",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/ErrorTrap"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasErrorTrap*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "The only NRaas mod with per-version builds: take the 1.67 one, not 1.69 [community]. nraas.net blocks scripted fetches (403), so this is a manual download. Version unknown."
+  },
+  {
+    "id": "nraas-overwatch",
+    "name": "NRaas Overwatch",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/Overwatch"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasOverwatch*.package"
+      ]
+    },
+    "config": {
+      "inGameReminder": "With simler90-core: City Hall > NRaas > Overwatch > Settings > Set Alarm Hour = 5 (default 3), once per new save"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Resets stuck Sims; cleans up cars, elevators and stereos. Manual download, version unknown."
+  },
+  {
+    "id": "nraas-mastercontroller",
+    "name": "NRaas MasterController",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/MasterController"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasMasterController*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Sim, lot and town management and manual resets. Optional. Manual download; keep all NRaas files from the same period."
+  },
+  {
+    "id": "nraas-register",
+    "name": "NRaas Register",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/Register"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasRegister*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Turns off NPC classes (wild horses lag Isla Paradiso). Optional. Manual download; keep all NRaas files from the same period."
+  },
+  {
+    "id": "nraas-saver",
+    "name": "NRaas Saver",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/Saver"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasSaver*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Timed autosave, pause on load. Optional. Manual download; keep all NRaas files from the same period."
+  },
+  {
+    "id": "nraas-traveler",
+    "name": "NRaas Traveler",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/Traveler"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasTraveler*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Recommended for travel packs (WA, UL, ITF). Optional. Manual download; keep all NRaas files from the same period."
+  },
+  {
+    "id": "nraas-storyprogression",
+    "name": "NRaas StoryProgression",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/StoryProgression"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasStoryProgression*.package"
+      ]
+    },
+    "conflictsWith": [
+      "simler90-core"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Replaces EA story progression; redundant with simler90, which fixes EA's version [community]. Use only one story-progression system."
+  },
+  {
+    "id": "simler90-core",
+    "name": "simler90's Gameplay Core Mod (Steam)",
+    "author": "simler90",
+    "category": "script",
+    "version": "UPDATE242",
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": "simler90GameplayCoreMod-UPDATE242-Steam.7z",
+      "page": "https://modthesims.info/d/659969/simler90-s-gameplay-systems-core-mod.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "simler90GameplayCoreMod-UPDATE242-Steam.package"
+      ]
+    },
+    "conflictsWith": [
+      "nraas-storyprogression",
+      "core-mods-other"
+    ],
+    "requires": [],
+    "default": true,
+    "notes": "Updated 2026-09-20; package is 12,807,314 bytes [verified page]. Steam build only. Not compatible with any other mod that modifies Sims3GameplaySystems.dll or Sims3GameplayObjects.dll [verified]. There is no NRaas-specific variant. NRaas won't support saves that use it. The policy allows modified re-releases on free sites, not re-hosting the original. Best on a new save."
+  },
+  {
+    "id": "core-mods-other",
+    "name": "Other core mods (replace Sims3GameplaySystems/Objects.dll)",
+    "author": "various",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods"
+    },
+    "config": {
+      "action": "flag-if-present"
+    },
+    "conflictsWith": [
+      "simler90-core"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Placeholder so the installer can flag other core mods in Mods (S3SA resources that replace EA assemblies)."
+  },
+  {
+    "id": "catalogue-lag-fix",
+    "name": "Catalogue Lag and Memory Leak Fix",
+    "author": "Sonja92yu",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nexusmods.com/thesims3/mods/242"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "S3DBG_CatalogueLagMemoryLeakFix_min.package",
+        "S3DBG_RestoreEPBadges.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "monopatcher"
+    ],
+    "default": true,
+    "notes": "Nexus account, manual download. The Steam guide links mods/247 but search shows 242: confirm. The badge-restore file needs MonoPatcher; the main file is LAYO-only. Version unknown."
+  },
+  {
+    "id": "houseboat-fix",
+    "name": "House Boat Fix",
+    "author": "FoulPlay",
+    "category": "routing",
+    "version": "v1.0.0.1a-testing",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/FoulPlay/houseboatfix/releases/download/v1.0.0.1a-testing/fp.houseboatfix-1.0.0.1a.package",
+      "repo": "FoulPlay/houseboatfix",
+      "asset": "fp.houseboatfix-1.0.0.1a.package",
+      "page": "https://github.com/FoulPlay/houseboatfix/releases/tag/v1.0.0.1a-testing"
+    },
+    "sha256": "c530f2f09526f1342c83b87993a502dce82fa80df8c447e908ffff943541bf66",
+    "install": {
+      "target": "mods",
+      "files": [
+        "fp.houseboatfix-1.0.0.1a.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "monopatcher"
+    ],
+    "default": true,
+    "notes": "Island Paradise. Fixes houseboat routing that freezes the sim every few seconds. Published 2026-09-02; the tag says testing. No license file."
+  },
+  {
+    "id": "routing-sloped-terrain",
+    "name": "Interaction on sloped terrain enabler",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/529671/interaction-on-sloped-terrain-enabler.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Base. Sims no longer get stuck interacting on slight slopes. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-sims-less-space",
+    "name": "Fix: Sims need less Space",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/683612/fix-sims-need-less-space.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Base. Smaller interaction footprints, fewer route failures. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-toddler",
+    "name": "Toddler Routing Fix",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/685924/toddler-routing-fix.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Base. The toddler fall animation no longer cancels the queue. Author TheSweetSimmer. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-pets-less-space",
+    "name": "Fix: Pets need less Space",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/683307/fix-pets-need-less-space.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Pets. Smaller pet interaction area. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-ocean-play",
+    "name": "Autonomous Play In The Ocean Fix",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/686121/autonomous-play-in-the-ocean-fix.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Island Paradise. No autonomous ocean play outside beach and resort lots. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-guitar-less-space",
+    "name": "Fix: Guitar needs less Space for playing",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/671269/fix-guitar-needs-less-space-for-playing.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Base. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "routing-bass-less-space",
+    "name": "Fix: Bass needs less Space for playing",
+    "author": null,
+    "category": "routing",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/671217/fix-bass-needs-less-space-for-playing.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Late Night. From the Steam 2026 guide's essential routing list [community]. File name and version not recorded; read them from the page. Check for tuning overlap with simler90 (S3PE key diff)."
+  },
+  {
+    "id": "fewer-memories",
+    "name": "No (or fewer) automatic memories",
+    "author": null,
+    "category": "script",
+    "version": "2014-01-16",
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/446281"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Alternative to enablememories=0: keeps only important memories, less bloat and lag."
+  },
+  {
+    "id": "resource-cfg",
+    "name": "Mods\\Resource.cfg (Packages + Overrides)",
+    "author": "community",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "Resource.cfg"
+      ]
+    },
+    "config": {
+      "content": [
+        "Priority 500",
+        "PackedFile Packages/*.package",
+        "PackedFile Packages/*/*.package",
+        "PackedFile Packages/*/*/*.package",
+        "PackedFile Packages/*/*/*/*.package",
+        "PackedFile Packages/*/*/*/*/*.package",
+        "Priority 1000",
+        "PackedFile Overrides/*.package",
+        "PackedFile Overrides/*/*.package",
+        "PackedFile Overrides/*/*/*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Generated. The local file has no Overrides entries [verified]. Priority values are convention; Overrides must outrank Packages. Create Mods\\Overrides."
+  },
+  {
+    "id": "nointro",
+    "name": "No Intro (all intro videos incl. Maxis logo)",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "Packages/ts3-nointro.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/harness/nointro.ts"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Built by our own script (empty VP6 stubs for 14 videos). Community alternative: https://modthesims.info/d/497903 (nointromaxis.zip). Use only one."
+  },
+  {
+    "id": "options-ini",
+    "name": "Options.ini performance settings",
+    "author": "community",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "config",
+      "files": [
+        "%DOCUMENTS%/Electronic Arts/The Sims 3/Options.ini"
+      ]
+    },
+    "config": {
+      "section": "options",
+      "set": {
+        "enableinteractiveloading": 0,
+        "enableingamestore": 0,
+        "enabletelemetry": 0,
+        "receiveconnecttns": 0
+      },
+      "optional": {
+        "enablememories": 0
+      }
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Keys verified in the local file; the benefits are [community] (Steam guide Bonus Step). Edit in place and keep other keys. Re-apply on each run: the game resets options after GPU driver updates."
+  },
+  {
+    "id": "cache-clear",
+    "name": "Clear game caches after mod changes",
+    "author": "community",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "config",
+      "files": [
+        "CASPartCache.package",
+        "compositorCache.package",
+        "scriptCache.package",
+        "simCompositorCache.package",
+        "socialCache.package",
+        "WorldCaches/*",
+        "Thumbnails/*",
+        "DCCache/dcc.ent",
+        "DCCache/missingdeps.idx",
+        "FeaturedItems/*"
+      ]
+    },
+    "config": {
+      "action": "delete",
+      "when": "after install or uninstall only"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Paths are relative to Documents\\Electronic Arts\\The Sims 3. Don't clear on every launch."
+  },
+  {
+    "id": "s3pp",
+    "name": "Sims 3 Performance Patch (beta)",
+    "author": "Sonja92yu",
+    "category": "engine",
+    "version": "1.1 beta",
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nexusmods.com/thesims3/mods/235"
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "Sims3Performance.asi",
+        "Sims3Performance.ini"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [
+      "asi-loader"
+    ],
+    "default": false,
+    "notes": "Nexus account, manual download (403 to scripts; version from docs/01, not re-checked). Overlaps S3SS: ThreadStackDiet vs OversizedThreadStackFix (first run with the S3SS one off); ShortWaitSpin vs AdaptiveWait (never both). Watch for blank or wrong UI text (LocalizedStringCache)."
+  },
+  {
+    "id": "tiny-ui-fix",
+    "name": "Tiny UI Fix",
+    "author": "just-harry",
+    "category": "config",
+    "version": "v1.5.3",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/just-harry/tiny-ui-fix-for-ts3/releases/download/v1.5.3/tiny-ui-fix-for-ts3.zip",
+      "repo": "just-harry/tiny-ui-fix-for-ts3",
+      "asset": "tiny-ui-fix-for-ts3.zip",
+      "page": "https://github.com/just-harry/tiny-ui-fix-for-ts3/releases/tag/v1.5.3"
+    },
+    "sha256": "438bcf1a09690ade78aed407a28355785d4e422ebf31df3ff9b04009360529f9",
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "config": {
+      "run": "Use-TinyUIFixForTS3.ps1 (PowerShell 5.1+ or 7)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Boost Software License 1.0 (per MTS page). A script that generates a UI-scaling package from the game's own assemblies. Only useful above 1080p or with the S3SS Resolution Spoofer. Published 2026-03-14. A .bat variant also exists (sha256 63cbc0f8351e1b89ee59197575cb467daf5df6b67081d223ee66ff4acd1d6406)."
+  },
+  {
+    "id": "less-banding",
+    "name": "TS3 Banding Fix (ld_LessBanding)",
+    "author": "LazyDuchess",
+    "category": "engine",
+    "version": "1.0",
+    "source": {
+      "kind": "github-release",
+      "url": "https://github.com/LazyDuchess/TS3-Banding-Fix/releases/download/1.0/ld_LessBanding.zip",
+      "repo": "LazyDuchess/TS3-Banding-Fix",
+      "asset": "ld_LessBanding.zip",
+      "page": "https://github.com/LazyDuchess/TS3-Banding-Fix/releases/tag/1.0"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Visual only. Published 2024-12-18; no digest exposed; contents not inspected, so confirm the target folder on unpack. No license file."
+  },
+  {
+    "id": "regul-save-cleaner",
+    "name": "Regul Save Cleaner (external tool)",
+    "author": "Regul",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://modthesims.info/d/652440/regul-save-cleaner.html"
+    },
+    "sha256": null,
+    "install": {
+      "target": "config",
+      "files": null
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "A standalone tool that shrinks bloated saves; run it by hand, with backups. Not installed into the game."
+  },
+  {
+    "id": "d3d9-wrappers-other",
+    "name": "Other d3d9 wrappers (ReShade as d3d9.dll, dgVoodoo2)",
+    "author": "various",
+    "category": "engine",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "d3d9.dll"
+      ]
+    },
+    "config": {
+      "action": "flag-if-present"
+    },
+    "conflictsWith": [
+      "dxvk"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Placeholder for conflict detection. Only one d3d9.dll."
+  },
+  {
+    "id": "store-fixes-g4tw",
+    "name": "\"Sims 3 Store Fixes\" / \"Store Updates 001-051\" (Games4theworld repacks)",
+    "author": "kissing_toast, notouching (G4TW)",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "overrides"
+    },
+    "config": {
+      "action": "flag-if-present"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Excluded. They fix unofficially obtained store content, are not for bought content, and must not be redistributed. The installer should flag them if found in Mods. For bought content the fix is to restore EA's ContentPatch folder from a backup."
+  },
+  {
+    "id": "world-fix-sunset-valley",
+    "name": "Sunset Valley .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/451817",
+      "resources": "https://modthesims.info/d/450599"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-wa-worlds",
+    "name": "Champs les Sims, Shang Simla, Al Simhara .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/450569",
+      "resources": "https://modthesims.info/d/448919"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-twinbrook",
+    "name": "Twinbrook .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/456220",
+      "resources": "https://modthesims.info/d/454885"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-bridgeport",
+    "name": "Bridgeport .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/452601",
+      "resources": "https://modthesims.info/d/451614"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-appaloosa-plains",
+    "name": "Appaloosa Plains .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/461424",
+      "resources": "https://modthesims.info/d/460168"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-starlight-shores",
+    "name": "Starlight Shores .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/482952",
+      "resources": "https://modthesims.info/d/481992"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-moonlight-falls",
+    "name": "Moonlight Falls .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/488897",
+      "resources": "https://modthesims.info/d/486830"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-sims-university",
+    "name": "Sims University .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://ellacharmed.wordpress.com/2013/12/30/sims-uni/",
+      "resources": "https://modthesims.info/d/517885"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-isla-paradiso",
+    "name": "Isla Paradiso .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/514909",
+      "resources": "https://modthesims.info/d/513265"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-riverview",
+    "name": "Riverview .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/514904",
+      "resources": "https://modthesims.info/d/495650"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-hidden-springs",
+    "name": "Hidden Springs .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "http://ellacharmed.wordpress.com/2013/12/21/hidden-springs/",
+      "resources": "https://modthesims.info/d/517205"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-lunar-lakes",
+    "name": "Lunar Lakes .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/516858",
+      "resources": "https://modthesims.info/d/516857"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-sunlit-tides",
+    "name": "Sunlit Tides .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/516760",
+      "resources": "https://modthesims.info/d/516342"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  },
+  {
+    "id": "world-fix-monte-vista",
+    "name": "Monte Vista .world with routing fixes",
+    "author": "ellacharmed",
+    "category": "world",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "page": "https://modthesims.info/d/516849",
+      "resources": "https://modthesims.info/d/516808"
+    },
+    "sha256": null,
+    "install": {
+      "target": "world",
+      "files": null
+    },
+    "config": {
+      "backupOriginalAs": ".orig",
+      "locate": "find the EA .world by name under the Steam install (GameData/Shared/NonPackaged/Worlds)"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "2011-2014; may predate later EA world updates. Since patch 1.42 the fix only applies to a NEW game [verified wiki]. The Steam guide leaves world fixes out: CAW saves can corrupt ghost, mummy and SimBot data [community]."
+  }
+]

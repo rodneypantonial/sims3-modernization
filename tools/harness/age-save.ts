@@ -19,15 +19,17 @@ async function agent(cmd: string, args?: object, timeoutMs = 10000): Promise<Rep
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
 
+// auto_dialog fills name fields (e.g. a newborn) and clicks the accepting button; see HarnessHandlers.AutoDialog.
 async function dismissDialogs(): Promise<void> {
-  for (let i = 0; i < 5; i++) {
-    const d = await agent('pending_dialogs');
-    if (!d.ok || !d.result?.open) return;
-    const button = d.result.dialog?.buttons?.[0];
-    console.log(`${stamp()} dialog "${d.result.dialog?.text?.[0]?.slice(0, 60)}" -> ${button}`);
-    await agent('respond_dialog', { button });
-    await sleep(1000);
+  for (let i = 0; i < 8; i++) {
+    const d = await agent('auto_dialog');
+    if (!d.ok) { console.log(`${stamp()} dialog not cleared: ${d.error}`); return; }
+    if (!d.result.open) return;
+    const filled = d.result.filled?.length ? ` (named ${d.result.filled.join(', ')})` : '';
+    console.log(`${stamp()} dialog "${(d.result.title ?? '').slice(0, 60)}" -> ${d.result.clicked}${filled}`);
+    await sleep(1500);
   }
+  console.log(`${stamp()} dialogs keep coming back: ${JSON.stringify((await agent('pending_dialogs')).result)}`);
 }
 
 const start = await agent('time');
