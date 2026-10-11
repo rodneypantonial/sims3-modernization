@@ -234,6 +234,25 @@ namespace Ts3Agent
             return ((b.Caption ?? "") + " " + (tip ?? "")).Trim().ToLowerInvariant();
         }
 
+        // Known dialogs where "accept" is the wrong answer for an unattended test run: the first rule whose text
+        // fragment appears in the dialog picks the first button containing one of its preferred words.
+        // Anything else falls back to Score(). Text matching is plain substrings (lowercase).
+        static readonly string[][][] kDialogRules = {
+            new[] { new[] { "placing the following lots", "new lots available" }, new[] { "don't place", "dont place", "no" } },
+            new[] { new[] { "save your town before continuing" }, new[] { "just continue", "continue" } },
+            new[] { new[] { "name your saved game" }, new[] { "cancel" } },
+            new[] { new[] { "come over", "invite", "would like to visit", "wants to visit", "join them" }, new[] { "decline", "not now", "no", "cancel" } },
+            new[] { new[] { "mod scripts found" }, new[] { "accept", "ok", "continue" } },
+        };
+
+        static string[] RuleFor(string text)
+        {
+            foreach (string[][] rule in kDialogRules)
+                foreach (string frag in rule[0])
+                    if (text.IndexOf(frag) >= 0) return rule[1];
+            return null;
+        }
+
         static int Score(string words)
         {
             foreach (string w in kRejectWords) if (words == w || words.StartsWith(w + " ")) return -1;
@@ -252,23 +271,45 @@ namespace Ts3Agent
             List<string> texts = new List<string>();
             CollectTexts(modal, texts, 0);
             r["title"] = texts.Count > 0 ? texts[0] : null;
-
-            List<TextEdit> edits = new List<TextEdit>();
-            FindTextEdits(modal, edits, 0);
-            List<object> filled = new List<object>();
-            foreach (TextEdit te in edits)
-            {
-                if (!string.IsNullOrEmpty(te.Caption)) continue;
-                string name = kNames[sNameIndex++ % kNames.Length];
-                te.Caption = name;
-                filled.Add(name);
-            }
-            r["filled"] = filled;
+            string allText = string.Join(" ", texts.ToArray()).ToLowerInvariant();
+            string[] preferred = RuleFor(allText);
+            r["rule"] = preferred != null ? preferred[0] : null;
 
             KeyValuePair<WindowBase, object>? best = null;
             int bestScore = int.MinValue;
             List<object> seen = new List<object>();
-            foreach (KeyValuePair<WindowBase, object> kv in DialogButtons(modal))
+            List<KeyValuePair<WindowBase, object>> buttons = DialogButtons(modal);
+            if (preferred != null)
+            {
+                foreach (string want in preferred)
+                {
+                    foreach (KeyValuePair<WindowBase, object> kv in buttons)
+                    {
+                        bool en = true;
+                        try { en = kv.Key.Enabled; } catch (Exception) { }
+                        if (en && Words(kv.Key).IndexOf(want) >= 0) { best = kv; bestScore = 100; break; }
+                    }
+                    if (best != null) break;
+                }
+            }
+
+            // Only fill name fields when we are about to accept (a newborn); never for a dialog we cancel.
+            List<object> filled = new List<object>();
+            if (preferred == null)
+            {
+                List<TextEdit> edits = new List<TextEdit>();
+                FindTextEdits(modal, edits, 0);
+                foreach (TextEdit te in edits)
+                {
+                    if (!string.IsNullOrEmpty(te.Caption)) continue;
+                    string name = kNames[sNameIndex++ % kNames.Length];
+                    te.Caption = name;
+                    filled.Add(name);
+                }
+            }
+            r["filled"] = filled;
+
+            foreach (KeyValuePair<WindowBase, object> kv in buttons)
             {
                 string words = Words(kv.Key);
                 bool enabled = true;

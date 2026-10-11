@@ -76,11 +76,18 @@ if (values.save) {
     if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
     return (await agent('game_state')).result?.in_world === true;
   });
-  for (let i = 0; i < 5; i++) {
-    const d = await agent('auto_dialog');
-    if (!d.ok || !d.result.open) break;
-    log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
-    await sleep(1500);
+  // Settle: dialogs and notifications keep appearing for a few seconds after a load (new lots, lots in the
+  // world, tutorials). Poll every second until 5 s pass without one (at most 30 s), then clear the corner.
+  {
+    const t0 = Date.now();
+    let quietSince = Date.now();
+    while (Date.now() - quietSince < 5000 && Date.now() - t0 < 30000) {
+      const d = await agent('auto_dialog');
+      if (d.ok && d.result.open) { log(`dialog "${String(d.result.title).slice(0, 70)}" -> ${d.result.clicked}${d.result.rule ? ' (rule)' : ''}`); quietSince = Date.now(); }
+      await sleep(1000);
+    }
+    await agent('quiet_ui', { memories_off: true });
+    await agent('decline_requests');
   }
   const s = await agent('game_state');
   if (s.result?.sub_state !== 'LiveModeState') {
