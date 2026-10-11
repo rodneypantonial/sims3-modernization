@@ -42,3 +42,10 @@ Heavy custom content (`Mods\Packages` via `Resource.cfg`, `.sims3pack` in `DCCac
 - [ ] Map the resource system and estimate what grows with CC: `docs/08-resource-offload-design.md`.
 - [ ] Phase 0: measure address space by category with and without the user's CC set (probe, when the game is free).
 - [ ] Phase 1: package index offload. Phase 2: decompressed-resource cache. Phase 3: CAS caches.
+
+Ideas, only if the offload helper works (not scheduled yet):
+- Use all cores in the helper: parallel index parsing, a RefPack decompression pool, prefetch of lot objects and CAS parts.
+- Preload the whole world's resources (offscreen lots included) into the helper's RAM, so the game's streaming hits a warm cache.
+- Raise the game's own resource cache (`Sims3.ini` `[ResourceSystem] MemoryUsageLimit = 20000000`, ~20 MB) and extend `[Preloader]`, once their meaning is verified.
+- Warm the Windows file cache before launch (`tools/harness/warm-cache.ts`, written but not used yet).
+- NVIDIA/GPU: textures already sit in VRAM through DXVK; DirectStorage only as an optional fast reader in the helper; RefPack decompression stays on CPU cores; GPUDirect Storage is not available on GeForce/Windows.
