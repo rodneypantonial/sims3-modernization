@@ -49,3 +49,11 @@ Ideas, only if the offload helper works (not scheduled yet):
 - Raise the game's own resource cache (`Sims3.ini` `[ResourceSystem] MemoryUsageLimit = 20000000`, ~20 MB) and extend `[Preloader]`, once their meaning is verified.
 - Warm the Windows file cache before launch (`tools/harness/warm-cache.ts`, written but not used yet).
 - NVIDIA/GPU: textures already sit in VRAM through DXVK; DirectStorage only as an optional fast reader in the helper; RefPack decompression stays on CPU cores; GPUDirect Storage is not available on GeForce/Windows.
+
+## 6. Single patch host: one tool instead of clashing mods (added 2026-10-11)
+Core mods clash because each replaces a whole EA assembly, so only one wins. Instead, our agent gets a runtime method-patch host (the MonoPatcher approach, on top of the hot-reloadable plugin): each fix is a small, independent, switchable patch, tested alone with the harness.
+- [ ] Pre-flight: `tools/setup/check-conflicts.ts` runs before every install. Drop duplicates found in the old Mods folder (second ErrorTrap copy, one of the two ld_RandomSimFixes variants); flag the overlapping Store Updates/Fixes packages.
+- [ ] Keep original mods wherever the checker shows no clash (e.g. ErrorTrap on ScriptCore and simler90 on the gameplay assemblies coexist).
+- [ ] Study how MonoPatcher patches methods under Mono 1.2 (signatures, trampolines); build our patch host in the agent.
+- [ ] Reimplement fixes as our own patches only where mods truly fight, or where we need the behaviour in our tool anyway (stuck Sims, routing, save cleanup).
+- Licensing: NRaas, simler90, MonoPatcher and S3SS have no license file (all rights reserved). Read their decompiled code to understand the behaviour, write our own implementation, credit them in docs; never copy their code.
