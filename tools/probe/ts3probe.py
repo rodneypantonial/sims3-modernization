@@ -6,6 +6,7 @@ the Node binding is a native npm module. Standard library otherwise.
   python tools/probe/ts3probe.py serve [--launch] [--world X.sims3] [--profile] [--port 47891]
   python tools/probe/ts3probe.py get status|threads|memory|modules|events|scripterrors
   python tools/probe/ts3probe.py get "read?addr=0xd81840&len=32"
+  python tools/probe/ts3probe.py get "agent?cmd=ping"        (in-game ts3agent mod, see mods/ts3agent)
 
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
@@ -46,6 +47,9 @@ class Symbols:
         except (TypeError, ValueError):
             return addr_text
         mod = next((m for m in self.modules if m[0] <= a < m[1]), None)
+        if mod is None:  # a DLL loaded after attach: refresh once
+            self.refresh_modules()
+            mod = next((m for m in self.modules if m[0] <= a < m[1]), None)
         if mod and mod[2].lower() == 'ts3w.exe' and self.starts:
             i = bisect.bisect_right(self.starts, a) - 1
             if i >= 0 and a <= self.ends[i]:
@@ -160,6 +164,11 @@ class Probe:
                 if 'stack' in e:
                     e['stack'] = self.symbols.stack(e['stack'])
             return evs
+        if path == 'agentstatus':
+            return rpc.agent_status()
+        if path == 'agent':  # in-game ts3agent command, e.g. agent?cmd=list_sims&args={"household":"active"}
+            args = json.loads(q['args']) if 'args' in q else None
+            return rpc.agent_call(q['cmd'], args, int(q.get('timeout', 30000)))
         if path == 'scripterrors':
             with self.lock:
                 return self.script_errors[int(q.get('since', 0)):]

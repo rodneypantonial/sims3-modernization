@@ -48,7 +48,69 @@ function owner(base) {
   return m ? m.name : null;
 }
 
+// --- ts3agent mailbox (mods/ts3agent/src/Mailbox.cs): a byte[] in the game, serviced once per sim tick ---
+const MBX = { header: 64, reqCap: 64 * 1024, capacity: 1024 * 1024, version: 1, salt: 0x53334d43,
+              offNonce: 20, offReqSeq: 24, offRespSeq: 28, offReqLen: 32, offRespLen: 36, offCapacity: 40,
+              offCheck: 44, offHeartbeat: 48, offState: 56 };
+const MBX_MAGIC = 'TS3AGENT-MBOX-01';
+let mailbox = null;
+let mailboxId = 0;
+
+function mailboxValid(p) {
+  try {
+    if (p.readUtf8String(16) !== MBX_MAGIC) return false;
+    const nonce = p.add(MBX.offNonce).readU32(), cap = p.add(MBX.offCapacity).readU32();
+    return p.add(16).readU32() === MBX.version && cap === MBX.capacity &&
+           ((MBX.version ^ nonce ^ cap ^ MBX.salt) >>> 0) === p.add(MBX.offCheck).readU32();
+  } catch (e) {
+    return false;
+  }
+}
+
+function findMailbox() {
+  if (mailbox && mailboxValid(mailbox)) return mailbox;
+  mailbox = null;
+  const pattern = Array.from(MBX_MAGIC).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+  for (const r of Process.enumerateRanges('rw-')) {
+    if (r.size < MBX.capacity) continue; // the buffer is one 1 MB array
+    for (const m of Memory.scanSync(r.base, r.size, pattern)) {
+      if (mailboxValid(m.address)) { mailbox = m.address; return mailbox; }
+    }
+  }
+  return null;
+}
+
+function mailboxCall(cmd, args, timeoutMs) {
+  const p = findMailbox();
+  if (!p) throw new Error('ts3agent mailbox not found: is build/ts3agent.package installed and the game past startup?');
+  const req = Object.assign({ id: ++mailboxId, cmd }, args ? { args } : {});
+  const text = JSON.stringify(req);
+  const byteLen = unescape(encodeURIComponent(text)).length; // UTF-8 length
+  if (byteLen > MBX.reqCap) throw new Error('request too large');
+  p.add(MBX.header).writeUtf8String(text);
+  p.add(MBX.offReqLen).writeU32(byteLen);
+  const seq = (p.add(MBX.offReqSeq).readU32() + 1) >>> 0;
+  p.add(MBX.offReqSeq).writeU32(seq); // publish last; the game answers on its next tick
+  const deadline = Date.now() + (timeoutMs || 30000);
+  while (p.add(MBX.offRespSeq).readU32() !== seq) {
+    if (Date.now() > deadline) throw new Error(`no reply to '${cmd}' within ${timeoutMs || 30000} ms (game paused, loading or blocked?)`);
+    Thread.sleep(0.005);
+  }
+  const len = p.add(MBX.offRespLen).readU32();
+  return JSON.parse(p.add(MBX.header + MBX.reqCap).readUtf8String(len));
+}
+
 rpc.exports = {
+  agentCall(cmd, args, timeoutMs) {
+    return mailboxCall(cmd, args, timeoutMs);
+  },
+
+  agentStatus() {
+    const p = findMailbox();
+    return p ? { address: p.toString(), heartbeat: p.add(MBX.offHeartbeat).readU32(), worldLoaded: p.add(MBX.offState).readU32() === 1 }
+             : { address: null };
+  },
+
   status() {
     const m = Process.getModuleByName('TS3W.exe');
     return { pid: Process.id, arch: Process.arch, exeBase: m.base.toString(), threads: Process.enumerateThreads().length,
