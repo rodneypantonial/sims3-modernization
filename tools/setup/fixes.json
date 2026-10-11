@@ -128,6 +128,33 @@
     "notes": "Generated, not downloaded. One frame cap only: the S3SS Precise limiter by default."
   },
   {
+    "id": "graphicsrules-vram",
+    "name": "GraphicsRules.sgr: real VRAM fallback under DXVK",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "GraphicsRules.sgr"
+      ]
+    },
+    "config": {
+      "textureMemoryMB": 1024
+    },
+    "conflictsWith": [],
+    "requires": [
+      "dxvk"
+    ],
+    "default": true,
+    "notes": "[verified 2026-10-11] Under DXVK the engine reads texture memory as 0, so GraphicsRules.sgr falls back to 32 MB (DeviceConfig.log: \"Texture memory: 32MB <<OVERRIDE>>\"), GPU memory level Low, and the first-run detection writes low presets (texture/sim/lighting/terrain quality 1; vanilla D3D9 picked 3-4). textureMemory only feeds those presets (no runtime budget in the rules), so the game must redo detection: delete Options.ini, start the game once, then re-run options-ini. Steam \"verify files\" reverts the patch."
+  },
+  {
     "id": "s3ss",
     "name": "Sims 3 Settings Setter",
     "author": "sims3fiend",
@@ -877,7 +904,8 @@
         "enableinteractiveloading": 0,
         "enableingamestore": 0,
         "enabletelemetry": 0,
-        "receiveconnecttns": 0
+        "receiveconnecttns": 0,
+        "fullscreen": 0
       },
       "optional": {
         "enablememories": 0
@@ -886,7 +914,7 @@
     "conflictsWith": [],
     "requires": [],
     "default": true,
-    "notes": "Keys verified in the local file; the benefits are [community] (Steam guide Bonus Step). Edit in place and keep other keys. Re-apply on each run: the game resets options after GPU driver updates."
+    "notes": "Keys verified in the local file; the benefits are [community] (Steam guide Bonus Step). Edit in place and keep other keys. Re-apply on each run: the game resets options after GPU driver updates. fullscreen = 0 keeps the game windowed so the harness and Claude can run next to it (a fresh Options.ini defaults to fullscreen)."
   },
   {
     "id": "cache-clear",

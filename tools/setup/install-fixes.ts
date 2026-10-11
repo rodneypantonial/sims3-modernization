@@ -171,6 +171,15 @@ function generated(f: Fix, rec: Installed): boolean {
     case 'dxvk-conf':
       place(f, rec, join(BIN, 'dxvk.conf'), () => writeFileSync(join(BIN, 'dxvk.conf'), c.lines.join('\r\n') + '\r\n'));
       return true;
+    case 'graphicsrules-vram': {
+      // only the "textureMemory == 0" fallback; detected values are left alone
+      const p = join(BIN, 'GraphicsRules.sgr');
+      const re = /(if \(\$textureMemory == 0\)\s*seti textureMemory\s+)\d+/;
+      const text = readFileSync(p, 'latin1');
+      if (!re.test(text)) throw new Error('graphicsrules-vram: fallback line not found in GraphicsRules.sgr');
+      place(f, rec, p, () => writeFileSync(p, text.replace(re, `$1${c.textureMemoryMB}`), 'latin1'));
+      return true;
+    }
     case 's3ss-config': {
       const p = targetPath(f, f.install.files![0] as string);
       place(f, rec, p, () => writeFileSync(p, toml(c)));
