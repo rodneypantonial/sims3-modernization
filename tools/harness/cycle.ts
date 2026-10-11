@@ -86,7 +86,12 @@ if (values.save) {
   if (s.result?.sub_state !== 'LiveModeState') {
     log(`in ${s.result?.sub_state}; entering live mode`);
     await agent('enter_live_mode');
-    await until('live mode', 120, async () => (await agent('game_state')).result?.sub_state === 'LiveModeState');
+    // leaving Edit Town asks "save your town before continuing?"; clear it or the switch never happens
+    await until('live mode', 120, async () => {
+      const d = await agent('auto_dialog');
+      if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
+      return (await agent('game_state')).result?.sub_state === 'LiveModeState';
+    });
   }
   log(`ready: ${JSON.stringify((await agent('game_state')).result)}`);
 }
