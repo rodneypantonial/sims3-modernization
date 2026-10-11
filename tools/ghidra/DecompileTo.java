@@ -40,7 +40,14 @@ public class DecompileTo extends GhidraScript {
     }
 
     private Function resolve(String s) {
-        if (s.startsWith("0x")) return getFunctionContaining(toAddr(Long.decode(s)));
+        if (s.startsWith("0x")) {
+            var a = toAddr(Long.decode(s));
+            Function f = getFunctionContaining(a);
+            if (f != null) return f;
+            // analysis missed it: treat the address as a function entry (not saved with -readOnly)
+            disassemble(a);
+            return createFunction(a, null);
+        }
         for (Symbol sym : currentProgram.getSymbolTable().getSymbols(s)) {
             Function f = getFunctionAt(sym.getAddress());
             if (f != null) return f;

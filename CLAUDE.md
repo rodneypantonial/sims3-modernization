@@ -20,7 +20,7 @@ Make The Sims 3 run well on modern hardware: fewer crashes (Error 12, crash on s
 - Baseline stack: DXVK x32 `d3d9.dll` (has a built-in TS3W profile) + S3SS, optionally the Sims 3 Performance Patch (Nexus mod 235).
 
 ## Status
-See `PLAN.md`. Steps 1 and 2 are done; waiting on Rodney's baseline measurements before steps 3 and 4.
+See `PLAN.md`. Step 1 done; step 2 waits on Rodney's baseline measurements; step 3 first pass done (`docs/04-re-findings.md`). Priority: in-game stutter.
 
 ## Repository
 - This is a **local-only git repo**. Do not add a GitHub remote or push: game binaries, Ghidra projects and captures make it too big, and EA's files must not be published.
@@ -30,6 +30,10 @@ See `PLAN.md`. Steps 1 and 2 are done; waiting on Rodney's baseline measurements
 ## Docs
 - `docs/01-existing-fixes-comparison.md`: every known fix compared, with what each actually changes
 - `docs/02-baseline-install-guide.md`: layer-by-layer install and the measurement table (tests A to E)
+- `docs/03-prior-art-re.md`: prior reverse-engineering work, S3SS anchors on the Steam exe, routing and GC background
+- `docs/04-re-findings.md`: our verified findings (routing, sim loop, GC) and the ranked big wins
+- `docs/04a-script-layer-stutter.md`: script (C#) side of stutter: scheduler, autonomy and routing retry loops
+- `tools/`: `extract-assemblies.ts` (script DLLs out of .package files) and Ghidra headless scripts (`tools/ghidra/run-headless.sh`)
 
 ## Working style
 - Rodney wants every avenue tried, including binary patches and DLL hooks.
