@@ -62,3 +62,13 @@ Caveat: the DXVK-only pace comes from the aging run (with checkpoints), not from
 ### Graphics presets were low under DXVK [verified 2026-10-11]
 
 Under DXVK the engine reads texture memory as 0, `GraphicsRules.sgr` falls back to 32 MB (`Texture memory: 32MB <<OVERRIDE>>`), GPU memory level 1, and first-run detection wrote texture, sim and lighting quality 1 (vanilla D3D9 picked 3–4). So the DXVK-only and all-fixes numbers above ran on low presets, and vanilla on high ones. `textureMemory` only selects the preset tier (thresholds 112/240/368 MB; it is not a VRAM budget). Fix `graphicsrules-vram` sets the fallback to 1024 MB; after re-detection (Options.ini regenerated) the game picks texture/sim/lighting quality 3, GPU memory level 4, `maxactivelots` 2. Every later run uses these presets; the low-preset runs stay as a separate row.
+
+## Reference runs: all fixes, detected presets (quality 3), in-game autopilot [measured 2026-10-11]
+
+From here on every run uses the in-game autopilot (holds speed 3, clears popups within a frame; `AutopilotHandlers.cs`), keep_alive with home-object repair, and the redetected presets. Earlier pace numbers are not comparable: the harness only re-forced speed 3 every 30 s, so the game ran at normal speed in between (the same SV run went from ~0.30 to ~0.40 sim days per minute with the autopilot).
+
+| Save | Pace (2 sim days) | Memory committed | Largest free (min) | Crashes | Notes |
+|---|---|---|---|---|---|
+| `Baseline-SV` (Ref-SV-fixes) | 5.0 min, ~0.40 sim days/min | avg 1.88 GB, max 2.02 GB | 1.65 GB | none | 3 speed restores, 1 popup, 5 repairs, 0 stuck Sims |
+
+For reference, without the autopilot: SV low presets 5.5 min; SV quality 3 6.6 min.

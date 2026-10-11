@@ -286,7 +286,8 @@ rpc.exports = {
     const u32 = p => { try { return p.readU32(); } catch (e) { return null; } };
     const mgr = safeRead(ptr('0x11c78d8'));
     if (!mgr || mgr.isNull()) return { ok: false, error: 'manager not created yet' };
-    if (u32(mgr) !== 0xfb2da0) return { ok: false, error: 'manager vtable mismatch', manager: mgr.toString() };
+    // live object is a subclass: vtable 0xffe250 on Steam 1.67 [verified 2026-10-11]; 0xfb2da0 is the base ctor's
+    if (u32(mgr) !== 0xffe250 && u32(mgr) !== 0xfb2da0) return { ok: false, error: 'manager vtable mismatch', manager: mgr.toString() };
     const begin = safeRead(mgr.add(0xa0)), end = safeRead(mgr.add(0xa4));
     if (!begin || !end) return { ok: false, error: 'cache array unreadable' };
     const n = end.sub(begin).toInt32() / 8;
