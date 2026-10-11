@@ -32,6 +32,15 @@ async function dismissDialogs(): Promise<void> {
   console.log(`${stamp()} dialogs keep coming back: ${JSON.stringify((await agent('pending_dialogs')).result)}`);
 }
 
+await dismissDialogs();
+const state = await agent('game_state');
+if (state.ok && state.result.sub_state !== 'LiveModeState') {
+  // Edit Town and other modes pause the clock; aging only works in live mode.
+  console.log(`${stamp()} in ${state.result.sub_state}; switching to live mode`);
+  await agent('enter_live_mode');
+  await sleep(15000);
+  await dismissDialogs();
+}
 const start = await agent('time');
 if (!start.ok) throw new Error(`agent not answering: ${start.error}`);
 const targetDay = start.result.day_number + Number(values.days);

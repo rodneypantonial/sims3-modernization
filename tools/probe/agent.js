@@ -38,7 +38,7 @@ function regs(c) {
 // exception starves every other probe call: full detail only for the first hits per site and per second.
 const exceptionCounts = {};
 let exceptionWindow = { second: 0, n: 0 };
-Process.setExceptionHandler(d => {
+function installExceptionHandler() { Process.setExceptionHandler(d => {
   const site = `${d.type}@${d.address}`;
   const seen = exceptionCounts[site] = (exceptionCounts[site] || 0) + 1;
   const second = Math.floor(Date.now() / 1000);
@@ -50,7 +50,7 @@ Process.setExceptionHandler(d => {
     registers: regs(d.context), stack: frames(d.context, 48), thread: Process.getCurrentThreadId(),
   });
   return false;
-});
+}); }
 
 function owner(base) {
   const m = Process.findModuleByAddress(base);
@@ -119,6 +119,7 @@ function mailboxReply(seq) {
 }
 
 rpc.exports = {
+
   agentSend(cmd, args) {
     return mailboxSend(cmd, args);
   },
@@ -197,6 +198,12 @@ rpc.exports = {
   readString(address, kind) {
     const p = ptr(address);
     return kind === 'utf16' ? p.readUtf16String() : p.readCString();
+  },
+
+  // Opt-in from the host: every native exception (thousands per second at times) enters this script.
+  enableExceptions() {
+    installExceptionHandler();
+    return true;
   },
 
   exceptionCounts() {

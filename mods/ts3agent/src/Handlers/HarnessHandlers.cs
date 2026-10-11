@@ -24,6 +24,41 @@ namespace Ts3Agent
             Dispatcher.Register("play_household", PlayHousehold);
             Dispatcher.Register("quit_game", QuitGame);
             Dispatcher.Register("auto_dialog", AutoDialog);
+            Dispatcher.Register("enter_live_mode", EnterLiveMode);
+            Dispatcher.Register("reflect_call_async", ReflectCallAsync);
+        }
+
+        // Current in-world sub state (LiveMode, EditTown, BuildMode, CAS...), read from GameStates' private state machines.
+        static string SubState()
+        {
+            try
+            {
+                object gs = typeof(GameStates).GetField("sSingleton", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                object inWorld = typeof(GameStates).GetField("mInWorldState", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(gs);
+                if (inWorld == null) return null;
+                object sm = inWorld.GetType().GetField("mStateMachine", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(inWorld);
+                object cur = sm.GetType().GetProperty("CurState").GetValue(sm, null);
+                return cur == null ? null : cur.GetType().Name;
+            }
+            catch (Exception e) { return "unknown: " + e.Message; }
+        }
+
+        // Edit Town pauses the clock; this is what the Edit Town "Play" button ends in.
+        static object EnterLiveMode(Args a)
+        {
+            RunAsync("enter_live_mode", delegate { GameStates.TransitionToLiveMode(); });
+            Dictionary<string, object> r = Util.Obj();
+            r["from"] = SubState();
+            return r;
+        }
+
+        // reflect_call for methods that yield (state transitions, waits): runs as a game task, result lands in async_log.
+        static object ReflectCallAsync(Args a)
+        {
+            RunAsync("reflect_call " + a.Str("path"), delegate { ReflectCall(a); });
+            Dictionary<string, object> r = Util.Obj();
+            r["queued"] = a.Str("path");
+            return r;
         }
 
         // ------------------------------------------------------------ blocking dialogs
@@ -114,6 +149,7 @@ namespace Ts3Agent
         {
             Dictionary<string, object> r = Util.Obj();
             r["in_world"] = GameStates.IsInWorld();
+            r["sub_state"] = SubState();
             r["shutting_down"] = GameStates.IsGameShuttingDown;
             Household active = Household.ActiveHousehold;
             r["active_household"] = active != null ? active.Name : null;

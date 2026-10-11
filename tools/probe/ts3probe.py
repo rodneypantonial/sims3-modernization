@@ -13,7 +13,7 @@ serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/p
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
 every event (native exceptions, script errors, detach/crash) to probe-out/<timestamp>/events.jsonl.
 """
-import argparse, bisect, csv, glob, json, os, subprocess, sys, threading, time, urllib.request
+import argparse, bisect, csv, glob, json, os, subprocess, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -104,12 +104,15 @@ class Probe:
         self.script.on('message', self.on_message)
         self.script.load()
         self.symbols = Symbols(self.script)
+        if self.args.exception_stacks:
+            self.script.exports_sync.enable_exceptions()
         if self.args.profile:
             prof = self.session.create_script((ROOT / 'tools' / 'frida' / 'stutter-profile.js').read_text(encoding='utf-8'))
             prof.on('message', lambda m, d: print('[profile]', m.get('payload', m), flush=True))
             prof.load()
             prof.exports_sync.init('late', {'out': str(self.out / 'profile').replace('\\', '/')})
         threading.Thread(target=self.watch_script_errors, daemon=True).start()
+        threading.Thread(target=self.sample_memory, daemon=True).start()
         print(f'[ts3probe] attached; serving http://127.0.0.1:{self.args.port}; events in {self.out}', flush=True)
 
     def on_message(self, message, data):
@@ -124,6 +127,24 @@ class Probe:
             info['crash'] = {'summary': crash.summary, 'report': crash.report}
         self.log(info)
         self.alive = False
+
+    def sample_memory(self):
+        """Address-space timeline (memory.csv): shows what fills the 4 GB before an out-of-memory crash."""
+        cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads']
+        with open(self.out / 'memory.csv', 'a', encoding='utf-8') as f:
+            f.write(','.join(cols) + '\n')
+            while self.alive:
+                try:
+                    m = self.script.exports_sync.address_space()
+                    m['threads'] = self.script.exports_sync.status()['threads']
+                    m['time'] = time.strftime('%H:%M:%S')
+                    f.write(','.join(str(m[c]) for c in cols) + '\n')
+                    f.flush()
+                    if m['largestFreeMB'] < 200:
+                        self.log({'kind': 'low-address-space', 'largestFreeMB': m['largestFreeMB'], 'freeMB': m['freeMB']})
+                except Exception:
+                    pass  # game busy or gone; the detach handler reports that
+                time.sleep(self.args.memory_interval)
 
     def watch_script_errors(self):
         """The game writes one ScriptError_*.xml per script exception, with the managed stack trace inside."""
@@ -170,7 +191,7 @@ class Probe:
             self.alive = False
             threading.Thread(target=self.session.detach, daemon=True).start()
             return {'detaching': True}
-        if path == 'exceptions':  # counts per site, including the ones not logged in detail
+        if path == 'exceptions':  # per-site counts (only with --exception-stacks)
             return rpc.exception_counts()
         if path == 'agentstatus':
             return rpc.agent_status()
@@ -227,8 +248,12 @@ def serve(args):
 
 
 def get(args):
-    with urllib.request.urlopen(f'http://127.0.0.1:{args.port}/{args.path}', timeout=60) as r:
-        print(r.read().decode())
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{args.port}/{args.path}', timeout=60) as r:
+            print(r.read().decode())
+    except urllib.error.HTTPError as e:  # the server puts the reason in the body
+        print(e.read().decode())
+        sys.exit(1)
 
 
 def main():
@@ -238,7 +263,10 @@ def main():
     s.add_argument('--launch', action='store_true', help='start TS3W.exe first')
     s.add_argument('--world', help='save to auto-load, e.g. Baseline-SV.sims3 (passed as -worldFile)')
     s.add_argument('--profile', action='store_true', help='also load the stutter profiler')
+    s.add_argument('--exception-stacks', action='store_true',
+                   help='also log stacks for native exceptions (JS handler; the game raises thousands per second, which can starve the probe)')
     s.add_argument('--port', type=int, default=47891)
+    s.add_argument('--memory-interval', type=float, default=10, help='seconds between address-space samples')
     s.add_argument('extra', nargs='*', help='extra TS3W.exe arguments after --')
     g = sub.add_parser('get')
     g.add_argument('path')
