@@ -61,6 +61,7 @@ async function saveAs(name: string): Promise<void> {
 }
 
 async function saveAsInner(name: string): Promise<void> {
+  await agent('autopilot', { enabled: false }); // it would unpause the save
   await agent('set_speed', { speed: 'pause' });
   await dismissDialogs();
   const r = await agent('save_game', { name });
@@ -87,6 +88,8 @@ const start = await agent('time');
 if (!start.ok) throw new Error(`agent not answering: ${start.error}`);
 const targetDay = values['until-day'] ? Number(values['until-day']) : start.result.day_number + Number(values.days);
 console.log(`${stamp()} start day ${start.result.day_number} ${start.result.clock}, target day ${targetDay}`);
+// in-game autopilot: holds speed 3 and clears popups within a frame (the loop below only samples every 30 s)
+await agent('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 const t0 = Date.now();
 let last = start.result;
 let stalls = 0;
@@ -98,6 +101,9 @@ for (;;) {
     if (k.ok && k.result.topped_up.length) console.log(`${stamp()} keep_alive: ${k.result.topped_up.join(', ')}`);
     if (k.ok && k.result.repaired?.length) console.log(`${stamp()} repaired: ${k.result.repaired.join(', ')}`);
   }
+  const ap = await agent('autopilot');
+  if (ap.ok && ap.result.speed_fixes) console.log(`${stamp()} autopilot: speed restored ${ap.result.speed_fixes}x`);
+  if (ap.ok) for (const c of ap.result.cleared) console.log(`${stamp()} autopilot dialog: ${String(c).slice(0, 80)}`);
   const s = await agent('set_speed', { speed: 'ultra' });
   const t = s.ok ? s.result : (await agent('time')).result;
   if (!t) { console.log(`${stamp()} no reply (${s.error}); retrying`); await sleep(5000); continue; }
@@ -109,6 +115,7 @@ for (;;) {
   if (every > 0 && t.day_number > start.result.day_number && (t.day_number - start.result.day_number) % every === 0 && t.day_number !== lastCheckpoint) {
     lastCheckpoint = t.day_number;
     await saveAs(`${values.save}-day${t.day_number}`);
+    await agent('autopilot', { enabled: true });
   }
   const simDays = (t.minutes_total - start.result.minutes_total) / 1440;
   const realMin = (Date.now() - t0) / 60000;

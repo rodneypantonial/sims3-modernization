@@ -34,6 +34,8 @@ namespace Ts3Agent
             Dispatcher.Register("decline_requests", DeclineRequests);
             Dispatcher.Register("queues", Queues);
             Dispatcher.Register("quiet_ui", QuietUi);
+            Dispatcher.Register("autopilot", Autopilot);
+            StartAutopilot();
         }
 
         // Less on screen during unattended runs: turn the memory system off (no memory popups, photos or
