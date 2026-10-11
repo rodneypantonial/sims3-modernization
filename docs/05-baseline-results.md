@@ -70,5 +70,8 @@ From here on every run uses the in-game autopilot (holds speed 3, clears popups 
 | Save | Pace (2 sim days) | Memory committed | Largest free (min) | Crashes | Notes |
 |---|---|---|---|---|---|
 | `Baseline-SV` (Ref-SV-fixes) | 5.0 min, ~0.40 sim days/min | avg 1.88 GB, max 2.02 GB | 1.65 GB | none | 3 speed restores, 1 popup, 5 repairs, 0 stuck Sims |
+| `Baseline-BP` (Ref-BP-fixes) | 6.0 min, ~0.33 sim days/min | avg 1.97 GB, max 2.12 GB | 1.52 GB | none | 5 speed restores, 1 popup; 28 stuck-Sim flags, 14 of them "Go Home" (the NPC retry loop, docs/04a) |
+
+Resource cache on Bridgeport after the run (`/rescache`): main cache budget 200 MB, +0x94 = 405 MB, 113k entries; animation cache 5.6 of 15 MB.
 
 For reference, without the autopilot: SV low presets 5.5 min; SV quality 3 6.6 min.
