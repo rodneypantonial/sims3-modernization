@@ -36,3 +36,9 @@ Focus decided 2026-10-11: in-game stutter (stuck sims, threading, bad world path
 - [ ] Build an ASI/DLL hook (S3SS as the reference) for the top findings from step 3.
 - [ ] Candidates, to be confirmed by step 3: offloading work from the main thread, trimming address-space waste further, cheaper GC behaviour, faster streaming.
 - [ ] Measure each patch against the baseline table, one change at a time, and keep the ones that win.
+
+## 5. 64-bit resource offload helper: design started 2026-10-11 (in parallel with the baselines)
+Heavy custom content (`Mods\Packages` via `Resource.cfg`, `.sims3pack` in `DCCache`) fills the 32-bit address space: package indexes, decompressed resources and CAS caches live inside TS3W.exe. A 64-bit helper process holds them instead, and the game maps in only what it needs. Routing data and WorldCache are out of scope (static).
+- [ ] Map the resource system and estimate what grows with CC: `docs/08-resource-offload-design.md`.
+- [ ] Phase 0: measure address space by category with and without the user's CC set (probe, when the game is free).
+- [ ] Phase 1: package index offload. Phase 2: decompressed-resource cache. Phase 3: CAS caches.
