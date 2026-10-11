@@ -11,6 +11,13 @@ Output: `docs/02-baseline-install-guide.md`.
 - [ ] Rodney runs layers 1 to 6 and fills in the results table (load time, idle FPS, streaming hitches, commit size after 30 min, save time, crashes).
 - [ ] Record the results in `docs/05-baseline-results.md`. These are the numbers steps 3 and 4 have to beat.
 
+## 2b. Test harness: next (decided 2026-10-11)
+Manual test runs are slow and noisy, so we automate them before measuring. Prior art and design: `docs/06-test-harness-prior-art.md`.
+- [ ] Runner (`tools/harness/run.ts`): prepares a copy of the user folder, launches `TS3W.exe -worldFile:"<save>.sims3"` with a timeout, records PresentMon, collects results.
+- [ ] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
+- [ ] Native probe ASI (the Frida profiler made permanent) and later a named-pipe bridge.
+- [ ] Scenario files: create and age the test saves automatically, then run tests A to E unattended.
+
 ## 3. Reverse engineer TS3W.exe and the Mono layer: in progress (first pass done)
 Focus decided 2026-10-11: in-game stutter (stuck sims, threading, bad world pathing); load times are fine. Findings and ranked big wins: `docs/04-re-findings.md`, script side: `docs/04a-script-layer-stutter.md`.
 - [x] Copy TS3W.exe and the script DLLs (Game\Bin, Mono assemblies) into `game-copy/` (git-ignored); never analyse the live install.
