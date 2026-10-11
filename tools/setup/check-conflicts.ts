@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import { readIndex, refpack, decryptS3SA, moduleName } from '../extract-assemblies.ts';
 
-const dir = process.argv[2] ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3', 'Mods');
+const dir = process.argv.slice(2).find(a => !a.startsWith('--')) ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3', 'Mods');
 const S3SA = 0x073faa07, XML = 0x0333406c;
 const EA_ASSEMBLIES = ['Sims3GameplaySystems', 'Sims3GameplayObjects', 'Sims3StoreObjects', 'ScriptCore', 'SimIFace', 'UI', 'Sims3Metadata', 'mscorlib', 'System', 'System.Xml'];
 const severityOf = (type: number) => (type === S3SA ? 'CLASH' : type === XML ? 'WARN' : 'INFO');
