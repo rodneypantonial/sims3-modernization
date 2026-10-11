@@ -17,7 +17,7 @@ Manual test runs are slow and noisy, so we automate them before measuring. Prior
 - [x] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
 - [~] Live probe (`tools/probe`, Frida): stacks, address-space timeline, crash/script-error capture, agent bridge, hot reload of probe and agent plugin. A permanent ASI comes later.
 - [x] Watchdog (`tools/harness/watchdog.ts`): 1-minute stuck detection, hangs, blocked ticks, sim lag, stuck Sims.
-- [~] Scenario files: create and age the test saves automatically, then run tests A to E unattended. Done: `Baseline-SV` (Sunset Valley, Keatons, aged 14 sim days under DXVK, in `D:\Sims3-backup\test-saves`). Next: Bridgeport, then tests A to E.
+- [~] Scenario files: create and age the test saves automatically, then run tests A to E unattended. Done: `Baseline-SV` (Sunset Valley, Keatons) and `Baseline-BP` (Bridgeport, Angelistas), each aged 14 sim days under DXVK with keep_alive, in `D:\Sims3-backup\test-saves` (checkpoints in `checkpoints\`). Next: tests A to E.
 
 ## 2c. All-known-fixes installer: next after the vanilla baseline (decided 2026-10-11)
 One tool applies every established community fix, so we only hunt problems that remain with all of them installed. Catalog: `docs/07-known-fixes-catalog.md`, manifest `tools/setup/fixes.json`.
