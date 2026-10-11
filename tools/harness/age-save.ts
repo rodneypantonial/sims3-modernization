@@ -1,7 +1,8 @@
 // Ages the loaded game: runs at speed 3 for N sim days (dismissing dialogs), then saves under a new name.
 // Needs the probe server (tools/probe/ts3probe.py serve) attached and the ts3agent mod in the game.
 // Saves a checkpoint (<save>-dayN) every --checkpoint sim days, so a crash can be reproduced from the last one.
-// Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--checkpoint 2] [--port 47891]
+// Keeps the active household alive (keep_alive tops up motives below --keep-alive, default -50).
+// Usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV [--until-day 15] [--checkpoint 2] [--keep-alive -50|off]
 import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -11,7 +12,8 @@ const SAVING = join(resolve(import.meta.dirname, '..', '..'), 'probe-out', 'savi
 
 const { values } = parseArgs({ options: {
   days: { type: 'string', default: '14' }, save: { type: 'string' }, port: { type: 'string', default: '47891' },
-  checkpoint: { type: 'string', default: '2' },
+  checkpoint: { type: 'string', default: '2' }, 'until-day': { type: 'string' },
+  'keep-alive': { type: 'string', default: '-50' }, // top up active-household motives below this; 'off' to disable
 } });
 if (!values.save) { console.error('usage: node tools/harness/age-save.ts --days 14 --save Baseline-SV'); process.exit(2); }
 const base = `http://127.0.0.1:${values.port}`;
@@ -73,7 +75,7 @@ async function saveAsInner(name: string): Promise<void> {
 
 const start = await agent('time');
 if (!start.ok) throw new Error(`agent not answering: ${start.error}`);
-const targetDay = start.result.day_number + Number(values.days);
+const targetDay = values['until-day'] ? Number(values['until-day']) : start.result.day_number + Number(values.days);
 console.log(`${stamp()} start day ${start.result.day_number} ${start.result.clock}, target day ${targetDay}`);
 const t0 = Date.now();
 let last = start.result;
@@ -81,6 +83,10 @@ let stalls = 0;
 let lastCheckpoint = -1;
 for (;;) {
   await dismissDialogs();
+  if (values['keep-alive'] !== 'off') {
+    const k = await agent('keep_alive', { threshold: Number(values['keep-alive']) });
+    if (k.ok && k.result.topped_up.length) console.log(`${stamp()} keep_alive: ${k.result.topped_up.join(', ')}`);
+  }
   const s = await agent('set_speed', { speed: 'ultra' });
   const t = s.ok ? s.result : (await agent('time')).result;
   if (!t) { console.log(`${stamp()} no reply (${s.error}); retrying`); await sleep(5000); continue; }

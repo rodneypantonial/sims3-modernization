@@ -4,6 +4,7 @@ using System.Reflection;
 using Sims3.Gameplay;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
+using Sims3.Gameplay.Autonomy;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
 using Sims3.SimIFace;
@@ -28,6 +29,34 @@ namespace Ts3Agent
             Dispatcher.Register("enter_live_mode", EnterLiveMode);
             Dispatcher.Register("reflect_call_async", ReflectCallAsync);
             Dispatcher.Register("sims_activity", SimsActivity);
+            Dispatcher.Register("keep_alive", KeepAlive);
+        }
+
+        // Safety net for unattended runs (like NRaas MasterController's max motives, but only in the danger zone):
+        // any active-household motive below the threshold goes to full. Above it the Sims still eat, sleep and use
+        // the toilet themselves, so autonomy and routing load stay realistic.
+        static object KeepAlive(Args a)
+        {
+            Household hh = Household.ActiveHousehold;
+            if (hh == null) throw new McpException("no active household");
+            float threshold = (float)a.Double("threshold", -50);
+            List<object> topped = new List<object>();
+            foreach (Sim s in hh.AllActors)
+            {
+                Motives m = s.Motives;
+                if (m == null) continue;
+                foreach (CommodityKind k in kShownMotives)
+                {
+                    if (k == CommodityKind.Temperature || !m.HasMotive(k)) continue;
+                    float v = m.GetValue(k);
+                    if (v >= threshold) continue;
+                    m.SetMax(k);
+                    topped.Add(s.FirstName + " " + k + " " + Math.Round(v));
+                }
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["topped_up"] = topped;
+            return r;
         }
 
         // Every instantiated Sim with where it is and what it is doing; the watchdog diffs this over time to spot
