@@ -5,6 +5,7 @@ using Sims3.Gameplay;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
+using Sims3.Gameplay.Interactions;
 using Sims3.SimIFace;
 using Sims3.UI;
 using Sims3.UI.GameEntry;
@@ -26,6 +27,38 @@ namespace Ts3Agent
             Dispatcher.Register("auto_dialog", AutoDialog);
             Dispatcher.Register("enter_live_mode", EnterLiveMode);
             Dispatcher.Register("reflect_call_async", ReflectCallAsync);
+            Dispatcher.Register("sims_activity", SimsActivity);
+        }
+
+        // Every instantiated Sim with where it is and what it is doing; the watchdog diffs this over time to spot
+        // Sims that stay on the same interaction at the same spot (stuck) or keep routing without arriving.
+        static object SimsActivity(Args a)
+        {
+            List<object> list = new List<object>();
+            foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+            {
+                if (s == null || s.SimDescription == null) continue;
+                Dictionary<string, object> o = Util.Obj();
+                o["id"] = Util.Id(s.ObjectId);
+                o["name"] = s.FullName;
+                Vector3 p = s.Position;
+                o["x"] = Math.Round(p.x, 1);
+                o["z"] = Math.Round(p.z, 1);
+                o["lot"] = s.LotCurrent != null ? s.LotCurrent.Name : null;
+                InteractionInstance cur = null;
+                try { cur = s.CurrentInteraction; } catch (Exception) { }
+                string curName = null;
+                if (cur != null) { try { curName = cur.GetInteractionName(); } catch (Exception) { curName = cur.GetType().Name; } }
+                o["interaction"] = curName;
+                o["queue"] = s.InteractionQueue != null ? s.InteractionQueue.Count : 0;
+                bool routing = false;
+                try { routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting; } catch (Exception) { }
+                o["routing"] = routing;
+                o["active_household"] = s.Household != null && s.Household == Household.ActiveHousehold;
+                list.Add(o);
+                if (list.Count >= 400) break;
+            }
+            return list;
         }
 
         // Current in-world sub state (LiveMode, EditTown, BuildMode, CAS...), read from GameStates' private state machines.

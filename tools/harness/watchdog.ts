@@ -34,6 +34,39 @@ async function agent(cmd: string, args?: object): Promise<any> {
   if (args) q.set('args', JSON.stringify(args));
   return get(`agent?${q}`);
 }
+// Windows marks a window "Not Responding" when its UI thread stops pumping messages for ~5 s.
+function windowStatus(): string {
+  const csv = execFileSync('tasklist', ['/V', '/FO', 'CSV', '/NH', '/FI', 'IMAGENAME eq TS3W.exe']).toString().trim();
+  const cols = csv.split('","');
+  return cols.length > 6 ? cols[5] : 'unknown';
+}
+const STUCK_FILE = join(ROOT, 'probe-out', 'stuck-sims.jsonl');
+const EXPECTED_SIM_MIN_PER_MIN: Record<string, number> = { Triple: 460, Double: 150, Normal: 25 }; // measured at speed 3: ~0.32 sim days per real minute
+const simSeen = new Map<string, { key: string; checks: number; reported: boolean }>();
+let lastHeartbeat: number | null = null;
+let lastCheckAt = Date.now();
+
+// Gameplay-level stuck Sims: same spot and same interaction (or routing without moving) across several checks.
+async function checkSims(): Promise<void> {
+  const r = await agent('sims_activity').catch(() => null);
+  if (!r?.ok) return; // older agent without the command
+  const now = new Set<string>();
+  for (const s of r.result) {
+    now.add(s.id);
+    const key = `${s.x},${s.z},${s.interaction},${s.routing}`;
+    const prev = simSeen.get(s.id);
+    const entry = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
+    simSeen.set(s.id, entry);
+    const limit = s.routing ? 3 : 6; // routing without moving for ~1 sim day, or one activity for ~2 sim days
+    if (!entry.reported && s.interaction && entry.checks >= limit) {
+      entry.reported = true;
+      log(`STUCK SIM? ${s.name} on "${s.interaction}" at (${s.x}, ${s.z}) ${s.lot ?? ''}${s.routing ? ' while routing' : ''} for ${entry.checks} checks (queue ${s.queue})`);
+      appendFileSync(STUCK_FILE, JSON.stringify({ time: stamp(), checks: entry.checks, ...s }) + '\n');
+    }
+  }
+  for (const id of [...simSeen.keys()]) if (!now.has(id)) simSeen.delete(id);
+}
+
 const gameRunning = () => execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq TS3W.exe']).toString().includes('TS3W.exe');
 
 async function simStack(): Promise<string> {
@@ -55,6 +88,8 @@ let stalledChecks = 0;
 log(`watchdog started, checking every ${values.every} min`);
 for (;;) {
   await sleep(Number(values.every) * 60000);
+  const realMin = (Date.now() - lastCheckAt) / 60000;
+  lastCheckAt = Date.now();
   if (!gameRunning()) fail('game process is gone', ['look for an xcpt *.txt crash report in Documents\\Electronic Arts\\The Sims 3']);
   const status = await get('status', 30000).catch(e => ({ error: (e as Error).message }));
   if ((status as any).error) fail('probe not answering', [(status as any).error]);
@@ -84,12 +119,33 @@ for (;;) {
     continue;
   }
   const minutes = time.ok ? time.result.minutes_total : null;
+  const prevMinutes = lastMinutes;
   const moved = minutes !== null && lastMinutes !== null && minutes > lastMinutes;
   if (minutes !== null && lastMinutes !== null && !moved) stalledChecks++; else stalledChecks = 0;
   lastMinutes = minutes ?? lastMinutes;
   log(`ok? ${stalledChecks === 0 ? 'yes' : `clock stalled (${stalledChecks})`} | ${summary.join(' | ')}`);
 
   if (mem && mem.largestFreeMB < Number(values['min-free-mb'])) log(`WARNING: largest free block ${mem.largestFreeMB} MB; out-of-address-space crash risk`);
+
+  const win = windowStatus();
+  if (/not responding/i.test(win)) log(`WARNING: game window is "Not Responding" (UI thread hung); sim thread: ${await simStack()}`);
+
+  // The agent's mailbox heartbeat goes up once per script tick; frozen while unpaused = script/sim thread blocked.
+  const hb = await get('agentstatus', 30000).catch(() => null);
+  const paused = time.ok && /pause/i.test(time.result.speed);
+  if (hb?.heartbeat !== undefined) {
+    if (lastHeartbeat !== null && hb.heartbeat === lastHeartbeat && !paused)
+      fail('script ticks stopped (agent heartbeat frozen) while the game is not paused', [...summary, `window: ${win}`, `sim thread: ${await simStack()}`]);
+    lastHeartbeat = hb.heartbeat;
+  }
+
+  // Sim pace: a moving but crawling clock is sim lag, the stutter we are hunting; log it, don't fail.
+  if (moved && time.ok && EXPECTED_SIM_MIN_PER_MIN[time.result.speed]) {
+    const pace = (minutes! - (prevMinutes ?? minutes!)) / Math.max(realMin, 0.01);
+    const pct = Math.round(100 * pace / EXPECTED_SIM_MIN_PER_MIN[time.result.speed]);
+    if (pct < 40) log(`SLOW SIM: ${Math.round(pace)} sim-min per real minute at ${time.result.speed} (${pct}% of normal); sim thread: ${await simStack()}`);
+  }
+  await checkSims();
 
   if (stalledChecks > 0) {
     // recover: blocking dialog, Edit Town or another non-live mode, paused speed
