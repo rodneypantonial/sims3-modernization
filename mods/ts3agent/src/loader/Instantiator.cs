@@ -19,7 +19,7 @@ namespace Ts3Agent
             World.OnStartupAppEventHandler += OnStartupApp;
             World.OnWorldLoadFinishedEventHandler += OnWorldLoadFinished;
             World.OnWorldQuitEventHandler += OnWorldQuit;
-            Handlers.RegisterAll();
+            PluginHost.Init(); // registers the commands from the plugin assembly (hot-reloadable)
             // Open right away so the server can see the mod is loaded even
             // before a world is (state stays 0 until a world finishes loading).
             Mailbox.Open();

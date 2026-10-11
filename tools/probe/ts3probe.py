@@ -8,6 +8,7 @@ the Node binding is a native npm module. Standard library otherwise.
   python tools/probe/ts3probe.py get "read?addr=0xd81840&len=32"
   python tools/probe/ts3probe.py get "agent?cmd=ping"        (in-game ts3agent mod, see mods/ts3agent)
   python tools/probe/ts3probe.py get detach                  (always stop the server this way, not by killing it)
+  python tools/probe/ts3probe.py get reload                  (reload tools/probe/agent.js in place)
 
 serve attaches to a running TS3W.exe (or starts it with --launch), loads tools/probe/agent.js
 (and tools/frida/stutter-profile.js with --profile), serves JSON on 127.0.0.1 only, and appends
@@ -187,6 +188,16 @@ class Probe:
                 if 'stack' in e:
                     e['stack'] = self.symbols.stack(e['stack'])
             return evs
+        if path == 'reload':  # swap tools/probe/agent.js in place after editing it, without detaching from the game
+            old = self.script
+            self.script = self.session.create_script((ROOT / 'tools' / 'probe' / 'agent.js').read_text(encoding='utf-8'))
+            self.script.on('message', self.on_message)
+            self.script.load()
+            old.unload()
+            self.symbols.script = self.script
+            if self.args.exception_stacks:
+                self.script.exports_sync.enable_exceptions()
+            return {'reloaded': 'tools/probe/agent.js'}
         if path == 'detach':  # stop probing without killing the host mid-call (that can take the game down)
             self.alive = False
             threading.Thread(target=self.session.detach, daemon=True).start()

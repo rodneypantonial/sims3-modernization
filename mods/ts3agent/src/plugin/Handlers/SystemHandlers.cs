@@ -21,6 +21,7 @@ namespace Ts3Agent
             Dictionary<string, object> r = new Dictionary<string, object>();
             r["pong"] = true;
             r["mod_version"] = Instantiator.ModVersion;
+            r["plugin"] = typeof(PluginEntry).Assembly.GetName().Name; // changes with every hot reload
             r["echo"] = a.Raw("echo");
             return r;
         }

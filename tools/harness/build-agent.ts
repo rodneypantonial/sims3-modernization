@@ -1,6 +1,8 @@
-// Compiles mods/ts3agent against the game's own DLLs and packs build/ts3agent.package.
+// Compiles mods/ts3agent against the game's own DLLs: the loader (src/loader, stable) and the plugin
+// (src/plugin, all commands, hot-reloadable), and packs both into build/ts3agent.package.
+//   node tools/harness/build-agent.ts          full package (needs a game restart to take effect)
+//   node tools/harness/build-agent.ts --hot    plugin only, uniquely named, for tools/harness/reload-agent.ts
 // Windows-only by nature: it needs the .NET Framework C# compiler that ships with Windows (csc.exe, C# 5).
-// Usage: node tools/harness/build-agent.ts
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -35,15 +37,29 @@ if (missing.length) {
 }
 const outDir = join(ROOT, 'build');
 mkdirSync(outDir, { recursive: true });
-const dll = join(outDir, `${ASSEMBLY}.dll`);
-execFileSync(CSC, ['/nologo', '/nostdlib+', '/noconfig', '/target:library', '/optimize+', '/langversion:5', '/warn:4',
-  '/nowarn:414,169,649', `/out:${dll}`, ...REFS.map(r => `/reference:${join(REF_DIR, `${r}.dll`)}`),
-  ...sources(join(ROOT, 'mods', 'ts3agent', 'src'))], { stdio: 'inherit' });
-
-const pkg = writePackage([
-  { type: TYPE_S3SA, group: 0, instance: fnv64(ASSEMBLY), data: s3saEncode(readFileSync(dll)) },
-  { type: TYPE_XML, group: 0, instance: fnv64(INSTANTIATOR), data: Buffer.from(TUNING_XML, 'utf8') },
-]);
-const out = join(outDir, 'ts3agent.package');
-writeFileSync(out, pkg);
-console.log(`built ${out} (${pkg.length} bytes)`);
+const src = join(ROOT, 'mods', 'ts3agent', 'src');
+const refs = REFS.map(r => `/reference:${join(REF_DIR, `${r}.dll`)}`);
+function csc(out: string, files: string[], extra: string[] = []) {
+  execFileSync(CSC, ['/nologo', '/nostdlib+', '/noconfig', '/target:library', '/optimize+', '/langversion:5', '/warn:4',
+    '/nowarn:414,169,649', `/out:${out}`, ...refs, ...extra, ...files], { stdio: 'inherit' });
+}
+const loaderDll = join(outDir, `${ASSEMBLY}.dll`);
+const hot = process.argv.includes('--hot');
+if (!hot) csc(loaderDll, sources(join(src, 'loader')));
+// A hot plugin needs a new assembly name each time, or the runtime may hand back the copy it already loaded.
+const pluginName = hot ? `${ASSEMBLY}Plugin_${Date.now().toString(36)}` : `${ASSEMBLY}Plugin`;
+const pluginDll = join(outDir, `${pluginName}.dll`);
+csc(pluginDll, sources(join(src, 'plugin')), [`/reference:${loaderDll}`]);
+if (hot) {
+  writeFileSync(join(outDir, 'hot-plugin.txt'), pluginDll);
+  console.log(`built hot plugin ${pluginDll}`);
+} else {
+  const pkg = writePackage([
+    { type: TYPE_S3SA, group: 0, instance: fnv64(ASSEMBLY), data: s3saEncode(readFileSync(loaderDll)) },
+    { type: TYPE_S3SA, group: 0, instance: fnv64(`${ASSEMBLY}Plugin`), data: s3saEncode(readFileSync(pluginDll)) },
+    { type: TYPE_XML, group: 0, instance: fnv64(INSTANTIATOR), data: Buffer.from(TUNING_XML, 'utf8') },
+  ]);
+  const out = join(outDir, 'ts3agent.package');
+  writeFileSync(out, pkg);
+  console.log(`built ${out} (${pkg.length} bytes)`);
+}
