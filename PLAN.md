@@ -15,8 +15,9 @@ Output: `docs/02-baseline-install-guide.md`.
 Manual test runs are slow and noisy, so we automate them before measuring. Prior art and design: `docs/06-test-harness-prior-art.md`.
 - [~] Runner (`tools/harness/run.ts`; launch, load and aging work via `tools/probe/ts3probe.py serve --launch` and `tools/harness/age-save.ts`): prepares a copy of the user folder, launches `TS3W.exe -worldFile:"<save>.sims3"` with a timeout, records PresentMon, collects results.
 - [x] In-game agent mod, forked from Sims3-MCP (MIT): speed, camera, select, push interactions, spawn, wait for sim time, save/quit, snapshots (sims, queues, route failures, heap).
-- [ ] Native probe ASI (the Frida profiler made permanent) and later a named-pipe bridge.
-- [ ] Scenario files: create and age the test saves automatically, then run tests A to E unattended.
+- [~] Live probe (`tools/probe`, Frida): stacks, address-space timeline, crash/script-error capture, agent bridge, hot reload of probe and agent plugin. A permanent ASI comes later.
+- [x] Watchdog (`tools/harness/watchdog.ts`): 1-minute stuck detection, hangs, blocked ticks, sim lag, stuck Sims.
+- [~] Scenario files: create and age the test saves automatically, then run tests A to E unattended. Done: `Baseline-SV` (Sunset Valley, Keatons, aged 14 sim days under DXVK, in `D:\Sims3-backup	est-saves`). Next: Bridgeport, then tests A to E.
 
 ## 2c. All-known-fixes installer: next after the vanilla baseline (decided 2026-10-11)
 One tool applies every established community fix, so we only hunt problems that remain with all of them installed. Catalog: `docs/07-known-fixes-catalog.md`, manifest `tools/setup/fixes.json`.
