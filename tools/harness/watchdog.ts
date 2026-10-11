@@ -79,6 +79,8 @@ async function simStack(): Promise<string> {
 function fail(reason: string, details: string[]): never {
   log(`STUCK: ${reason}`);
   for (const d of details) log(`  ${d}`);
+  // a crash leaves an xcpt report: show which change set it ran under
+  if (!gameRunning()) log(execFileSync(process.execPath, [join(import.meta.dirname, 'crash-ledger.ts'), 'triage']).toString().trim());
   process.exit(1);
 }
 

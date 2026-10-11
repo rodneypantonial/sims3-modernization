@@ -101,4 +101,6 @@ if (values.save) {
     });
   }
   log(`ready: ${JSON.stringify((await agent('game_state')).result)}`);
+  // record the change set this run uses, so a later crash can be tied to it (crash-ledger.ts triage)
+  log(execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'crash-ledger.ts'), 'snapshot']).toString().trim());
 }
