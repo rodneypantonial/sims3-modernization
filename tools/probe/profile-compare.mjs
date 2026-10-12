@@ -20,7 +20,9 @@ const runs = tags.map(tag => {
   const csv = lines(find(`${tag}-600-seconds.csv`)), head = csv.shift()?.split(',') ?? [];
   const rows = csv.map(l => Object.fromEntries(l.split(',').map((v, i) => [head[i], Number(v)])));
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0), n = rows.length || 1;
-  const managed = lines(find(`${tag}-managed.jsonl`, `managed-${tag}.jsonl`)).map(l => JSON.parse(l));
+  // patched methods sample under the hook's name (docs/04 F8); count them as the method they replace
+  const alias = n => n === 'GoHomeHook.Run' ? 'Sims3.Gameplay.Core.GoHome.Run' : n;
+  const managed = lines(find(`${tag}-managed.jsonl`, `managed-${tag}.jsonl`)).map(l => JSON.parse(l).map(alias));
   const busy = managed.filter(m => m.length);
   const incl = new Map(), self = new Map();
   for (const m of busy) {

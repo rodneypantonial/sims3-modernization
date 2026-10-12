@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Sims3.Gameplay;
+using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
+using Sims3.SimIFace;
 
 namespace Ts3Agent
 {
@@ -129,7 +132,7 @@ namespace Ts3Agent
         // its own class that received the original's header; nothing else may call that stub.
         const string kPatchState = "ts3agent.patch.state";
 
-        // [0] GoHome.Run calls; shared across hot reloads through AppDomain data
+        // GoHome counters (see GoHomeHook); shared across hot reloads through AppDomain data
         static int[] PatchCounters()
         {
             int[] c = AppDomain.CurrentDomain.GetData(kPatchState) as int[];
@@ -164,6 +167,10 @@ namespace Ts3Agent
             catch (Exception e) { sPatchLog.Add(target.Name + "." + method + ": " + e.Message); }
         }
 
+        // Off-screen go-home (PLAN fix b): a townie whose trip home nobody can see skips the walk/drive and appears on its
+        // home lot. Only the route is replaced: the game's own lead-in (carpool wait, leaving the visit and group) runs, and
+        // the success bookkeeping matches a real arrival, so whatever the Sim does next is unchanged. Anything not clearly
+        // safe runs the original. Counters: [0] runs, [1] shortcuts, [2] no spot found on the lot, [3] loop guard.
         public class GoHomeHook : GoHome
         {
             static int[] sCounters;
@@ -171,9 +178,88 @@ namespace Ts3Agent
             {
                 if (sCounters == null) sCounters = PatchCounters();
                 sCounters[0]++;
-                return RunOrig();
+                if (!ShortcutOn("gohome") || !Unseen(Actor, Target)) return RunOrig();
+                // a Sim shortcut twice within 10 sim-minutes is in some loop the game drives: let it walk
+                ulong id = Actor.SimDescription.SimDescriptionId;
+                long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+                long last;
+                if (sLastShortcut.TryGetValue(id, out last) && now - last < kLoopTicks)
+                {
+                    sCounters[3]++;
+                    return RunOrig();
+                }
+                Sims3.SimIFace.Vector3 pos = Sims3.SimIFace.Vector3.Invalid, fwd = Sims3.SimIFace.Vector3.Invalid;
+                bool found = false;
+                for (int i = 0; i < 3 && !found; i++) // the spot must be on the home lot, or the game still sees the Sim away
+                    found = GlobalFunctions.FindGoodLocation(Actor, new World.FindGoodLocationParams(Target.GetRandomPosition(false, true)), out pos, out fwd)
+                        && LotManager.GetLotAtPoint(pos) == Target;
+                if (!found)
+                {
+                    sCounters[2]++;
+                    return RunOrig();
+                }
+                sLastShortcut[id] = now;
+                if (sLog.Count >= 40) sLog.RemoveAt(0);
+                sLog.Add(Actor.FullName + " -> " + Target.Name + " from " + (Actor.LotCurrent != null ? Actor.LotCurrent.Name : "street"));
+                // same lead-in as GoHome.Run
+                if (!Sims3.Gameplay.Objects.Vehicles.CarpoolManager.WaitForCarpool(Actor)) return false;
+                Sims3.Gameplay.Situations.VisitSituation.OnSimLeavingLot(Actor);
+                Sims3.Gameplay.Situations.GroupingSituation.RemoveSimFromGroupSituation(Actor);
+                Actor.SimRoutingComponent.DisableDynamicFootprint();
+                Actor.SetPosition(pos);
+                Actor.SetForward(fwd);
+                sCounters[1]++;
+                NumSuccess++;
+                BeginCommodityUpdates();
+                EndCommodityUpdates(true);
+                return true;
             }
             public bool RunOrig() { return false; } // receives GoHome.Run's original header
+            static readonly Dictionary<ulong, long> sLastShortcut = new Dictionary<ulong, long>();
+            public static readonly List<object> sLog = GoHomeLog();
+            static readonly long kLoopTicks = Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(10f, Sims3.Gameplay.Utilities.TimeUnit.Minutes);
+
+            // Townie, alone, standing, going to its own ordinary lot, and neither it nor that lot near the camera or the
+            // active household. Houseboats and apartment shells keep their own arrival code.
+            bool Unseen(Sims3.Gameplay.Actors.Sim sim, Lot home)
+            {
+                if (sim == null || home == null || sim.IsSelectable || sim.Household == Household.ActiveHousehold) return false;
+                if (sim.LotHome != home || sim.LotCurrent == home || home == Household.ActiveHouseholdLot) return false;
+                if (SimFollowers != null && SimFollowers.Count > 0) return false;
+                if (sim.Posture != sim.Standing || sim.IsInRidingPosture || sim.IsInBeingRiddenPosture) return false;
+                if (home.IsHouseboatLot() || home.BuildableShells.Length > 0) return false;
+                if (Sims3.Gameplay.Controllers.TombRoomManager.IsObjectInATombRoom(sim)) return false;
+                if (World.IsObjectOnScreen(sim)) return false;
+                return FarFromViewers(sim.Position) && FarFromViewers(home.Position);
+            }
+        }
+
+        // Outside the camera's reach (a radius that grows as the camera zooms out) and not near any active-household Sim.
+        static bool FarFromViewers(Sims3.SimIFace.Vector3 p)
+        {
+            Sims3.SimIFace.Vector3 target = CameraController.GetTarget(), cam = CameraController.GetPosition();
+            float reach = Math.Max(kShortcutMinDistance, 2f * Math.Abs(cam.y - target.y));
+            if ((p - target).Length() < reach || (p - cam).Length() < reach) return false;
+            if (Household.ActiveHousehold != null)
+                foreach (Sims3.Gameplay.Actors.Sim s in Household.ActiveHousehold.AllActors)
+                    if (s != null && (p - s.Position).Length() < kShortcutMinDistance) return false;
+            return true;
+        }
+
+        const float kShortcutMinDistance = 80f;
+
+        static List<object> GoHomeLog()
+        {
+            List<object> l = AppDomain.CurrentDomain.GetData("ts3agent.shortcut.gohome.log") as List<object>;
+            if (l == null) { l = new List<object>(); AppDomain.CurrentDomain.SetData("ts3agent.shortcut.gohome.log", l); }
+            return l;
+        }
+
+        // shortcuts {name: bool}: runtime switches (all on by default), shared across hot reloads
+        static bool ShortcutOn(string name)
+        {
+            object v = AppDomain.CurrentDomain.GetData("ts3agent.shortcut." + name);
+            return v == null || (bool)v;
         }
 
         // patches: what was applied at startup and the hook counters
@@ -181,7 +267,14 @@ namespace Ts3Agent
         {
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = AppDomain.CurrentDomain.GetData(kPatchState + ".log");
-            r["gohome_runs"] = PatchCounters()[0];
+            if (a.Has("gohome")) AppDomain.CurrentDomain.SetData("ts3agent.shortcut.gohome", a.Bool("gohome", true));
+            int[] c = PatchCounters();
+            r["gohome"] = ShortcutOn("gohome");
+            r["gohome_runs"] = c[0];
+            r["gohome_shortcuts"] = c[1];
+            r["gohome_no_spot"] = c[2];
+            r["gohome_loop_guard"] = c[3];
+            r["gohome_recent"] = GoHomeLog();
             return r;
         }
     }
