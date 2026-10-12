@@ -27,7 +27,7 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 
 **Open now:**
 1. Full mod is slower than build 62c39f6 in Bridgeport (40 vs 50 iterations/s; forced GC 13.9 vs 3.6 ms/s). Our hook code is only 0.3% of samples, so likely extra allocation by the new route fixes or the watchdog. Next: in-load A/B toggling the new route fixes; watchdog needs a runtime switch and a cheaper check.
-2. GC heap A/B in Bridgeport (default vs `GC_INITIAL_HEAP_SIZE` 352 MB) finishing; if it helps, test `ts3native.asi`.
+2. GC heap: **352 MB start = forced GCs 128 -> 1 and hitches -14%** (docs/04 F15); now testing `ts3native.asi` (InitialHeapMB=352, installer entry `native-patches`, off by default until verified). The slowdown in open 1 is not GC: iterations stayed ~39 with the big heap.
 3. The bp-mod run's 14 stuck Sims did not recur (25-min scan and a fresh 6-min run: 0); keep watching.
 
 **Next, in order:**

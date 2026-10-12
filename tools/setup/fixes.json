@@ -882,6 +882,32 @@
     "notes": "Built by our own script (empty VP6 stubs for 14 videos). Community alternative: https://modthesims.info/d/497903 (nointromaxis.zip). Use only one."
   },
   {
+    "id": "native-patches",
+    "name": "TS3 native patches (our ASI plugin, native/ts3native)",
+    "author": "sims-3-modernization",
+    "category": "binary",
+    "version": "0.1.0",
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "bin",
+      "files": [
+        "ts3native.asi",
+        "ts3native.ini"
+      ]
+    },
+    "config": {
+      "build": "native/ts3native/build.cmd"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Built from source with MSVC. GC initial heap 40 -> 352 MB and growth step 8 -> 32 MB (docs/13, docs/15); each patch checks the original bytes first and logs to ts3native.log. Loaded by the ASI loader (wininet.dll). Off by default until verified in game."
+  },
+  {
     "id": "stutter-fixes",
     "name": "TS3 stutter fixes (our player mod, mods/ts3fixes)",
     "author": "sims-3-modernization",

@@ -205,6 +205,14 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3-nointro.package'), p));
       return true;
     }
+    case 'native-patches': {
+      execFileSync('cmd', ['/c', join(ROOT, 'native', 'ts3native', 'build.cmd')], { stdio: 'ignore' });
+      for (const name of ['ts3native.asi', 'ts3native.ini']) {
+        const p = join(BIN, name);
+        place(f, rec, p, () => copyFileSync(join(ROOT, 'native', 'ts3native', 'out', name), p));
+      }
+      return true;
+    }
     case 'stutter-fixes': {
       execFileSync(process.execPath, [join(ROOT, 'tools', 'setup', 'build-fixes.ts')], { stdio: 'ignore' });
       const p = join(USER, 'Mods', 'Packages', 'ts3fixes.package');
