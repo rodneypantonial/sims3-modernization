@@ -507,7 +507,8 @@ rpc.exports = {
   // ts3native.asi counters (docs/15): route cache and route worker, null when the plugin is not loaded.
   // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
   // routeBudget 0|1 likewise sets the route search budget's switch (ts3native >= 0.4.0, [RouteBudget] Enabled=1).
-  nativeCounters(routeWorker, routeBudget) {
+  // routeAsync 0|1 likewise sets the async route plan's switch (ts3native >= 0.5.0, [RouteAsync] Enabled=1).
+  nativeCounters(routeWorker, routeBudget, routeAsync) {
     const m = Process.findModuleByName('ts3native.asi'); // Frida 17 has no static Module.findExportByName
     const c = m === null ? null : m.findExportByName('ts3native_counters');
     if (c === null) return null;
@@ -515,6 +516,8 @@ rpc.exports = {
     if (c.readS32() >= 2) f.push('workerMode', 'workerReady', 'workerCalls', 'workerUs', 'workerMaxUs', 'waitUs', 'fallbacks', 'watchdogs');
     if (c.readS32() >= 3) f.push('budgetMode', 'budgetReady', 'budgetCalls', 'budgetCapped', 'budgetCapNodes', 'budgetCapUs', 'budgetMaxNodes', 'budgetMaxNodesOk', 'budgetMaxUsOk');
     if (c.readS32() >= 4) f.push('invokeHook', 'invokes'); // 0.4.1: worker's managed calls proxied to the sim thread (+0x64, +0x68)
+    if (c.readS32() >= 5) f.push('asyncMode', 'asyncReady', 'asyncStarted', 'asyncRefused', 'asyncCollected', 'asyncDropped',
+      'asyncUs', 'asyncMaxUs', 'asyncPumpUs', 'asyncPumpWaits'); // 0.5.0: async route plan (+0x6C..)
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (routeWorker === 0 || routeWorker === 1) {
       if (r.workerReady !== 1) return Object.assign(r, { error: 'route worker not running ([RouteWorker] Enabled=0 or ts3native < 0.3.0)' });
@@ -525,6 +528,11 @@ rpc.exports = {
       if (r.budgetReady !== 1) return Object.assign(r, { error: 'route budget not active ([RouteBudget] Enabled=0 or ts3native < 0.4.0)' });
       c.add(16 * 4).writeS32(routeBudget);
       r.budgetMode = c.add(16 * 4).readS32();
+    }
+    if (routeAsync === 0 || routeAsync === 1) {
+      if (r.asyncReady !== 1) return Object.assign(r, { error: 'async route plan not active ([RouteAsync] Enabled=0 or ts3native < 0.5.0)' });
+      c.add(27 * 4).writeS32(routeAsync);
+      r.asyncMode = c.add(27 * 4).readS32();
     }
     return r;
   },

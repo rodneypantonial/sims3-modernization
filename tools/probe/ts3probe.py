@@ -225,9 +225,9 @@ class Probe:
             return ts
         if path == 'net':  # network calls per API and target (start=1 hooks them once); does the game go online while playing?
             return rpc.net(q.get('start') == '1')
-        if path == 'native':  # ts3native.asi counters (route cache, worker, budget), null when the plugin is not loaded; routeworker=0|1 / routebudget=0|1 flip them at runtime
-            rw, rb = q.get('routeworker'), q.get('routebudget')
-            return rpc.native_counters(int(rw) if rw in ('0', '1') else None, int(rb) if rb in ('0', '1') else None)
+        if path == 'native':  # ts3native.asi counters (route cache, worker, budget), null when the plugin is not loaded; routeworker=0|1 / routebudget=0|1 / routeasync=0|1 flip them at runtime
+            sw = [q.get(k) for k in ('routeworker', 'routebudget', 'routeasync')]
+            return rpc.native_counters(*[int(v) if v in ('0', '1') else None for v in sw])
         if path == 'routelock':  # routing-lock hold/wait and plan overlap (docs/18 step 1a); start=1 hooks once, stop=1 unhooks
             return rpc.route_lock(q.get('start') == '1', q.get('stop') == '1')
         if path == 'taskstall':  # scheduler-stage stalls >= ms with task + managed stack samples (docs/04 F17); start=1 hooks, stop=1 unhooks.

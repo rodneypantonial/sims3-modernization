@@ -5,7 +5,7 @@
 // Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). For the whole run:
 // autopilot at x3 with popups cleared, keep_alive + decline_requests every 30 s, and the native stutter profiler
 // (separate Frida session). Samplers in turn: managed C# stack (minutes 1-4), native sim-thread stack (5-8).
-// --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` = ts3native [RouteWorker] / [RouteBudget] via /native) alternate on/off every --slice minutes, starting on;
+// --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) alternate on/off every --slice minutes, starting on;
 // slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
 // Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,stuck.json,houseboats.json}.
@@ -52,7 +52,7 @@ const toggler = (async () => {
   if (!abNames.length) return;
   for (let i = 0, on = true; i * Number(values.slice) * 60 < secs; i++, on = !on) {
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
-    const nativeNames = ['routeworker', 'routebudget']; // ts3native's runtime switches, not C# patches
+    const nativeNames = ['routeworker', 'routebudget', 'routeasync']; // ts3native's runtime switches, not C# patches
     const patchNames = abNames.filter(n => !nativeNames.includes(n));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);

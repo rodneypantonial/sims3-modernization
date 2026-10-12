@@ -218,6 +218,57 @@ Ghidra headless on `game-copy/bin/TS3W.exe` (scripts kept in the session scratch
 
 **Cost with the route worker (offload-sync)**: every such call is a thread round trip (worker -> caller -> worker: 2 event signals and 2 wakes, likely 10-50 us each on Windows) on top of the call itself. For 2-30 calls per plan that is up to ~1.5 ms per plan, while the sim thread waits anyway. Measure with the `invokes` counter against `workerCalls` (0.4.1+). For the async design (step 2) the answer must come from the sim thread: either precompute the lock state of every portal on the lots in the plan before handing off (needs the portal list per lot), or run the lot search on the sim thread and offload only the world A\* `0x676260`, which has no managed calls by this analysis [inferred].
 
+## Async plan (step 2, ts3native 0.5.0 + ts3fixes, built 2026-10-13, not run in game)
+
+Opt-in: `[RouteAsync] Enabled=0` by default; runtime switch `asyncMode` (`/native?routeasync=0|1`, `profile-world.ts --ab routeasync`). The C# side is always present and asks native; with ts3native absent or off it costs one `GetOption` call per eligible plan.
+
+### Can the callers take a deferred result natively? No: async lives at the script level [verified]
+
+- `ScriptCore.Route.Plan`/`PlanFromPoint`/`Replan`/`ReplanFromPoint` store the internal call's result and return it at once (Route.cs:900-1000). 137 game source files call `.Plan()`/`.Replan()` 278 times and read `PlanResult` right after. No caller has a "plan in progress" or retry-later branch; `FailedBecausePlannerAborted` (the only abort result) is set only by `IsDestObjectInvalid` and every caller treats it as a failure (route-fail behaviour, replans, interaction exit).
+- So returning "pending" from native to unchanged callers would turn every pending plan into a route failure. The wait has to happen inside `Route.Plan` itself, on the Sim's own task: the ts3fixes hook (already on `ScriptCore.Route.Plan` for the backoff) sleeps the task with `Simulator.Sleep(0)` until native has the result. **Chosen: script-level yield + native worker** (design B+C above), smallest version: only `Route.Plan` (the funnel of every `PlanTo*` helper); `PlanFromPoint`, `Replan`, `ReplanFromPoint` stay synchronous.
+
+### How it works
+
+| Step | C# (`RouteBackoffHook.PlanAsync`, mods/ts3fixes/src/RouteBackoff.cs) | Native (ts3native.cpp) |
+|---|---|---|
+| Eligible? | follower is a Sim, `Simulator.CurrentTask == sim.ObjectId`, `CheckYieldingContext(false)`, switch `asyncroute` (default on) | |
+| START | `GetOption(bit 58)` | `Route_GetOption 0x74D040` detour: bit 58 (`0x0400000000000000`, no enum name, never set by the game) = START. Mode 1, slot free: store handle + FPU state, signal the worker, answer true. Slot busy with another route: false (counter `asyncRefused`), C# plans synchronously |
+| Wait | `GetOption2(bit 58)` = READY; false: `Simulator.Sleep(0)` and ask again (cap 1000 polls) | worker runs the **whole original `IC_Route_Plan 0x765160`** (start points, `Route_PlanCommon`, `Route_PlanLocked` under `world+0x918`, result mapping) into the slot. READY answers true when done and arms "collect" for this handle; while running it also runs a pending managed call (below) |
+| Result | original `Route.Plan` once: `IsDestObjectInvalid`, `AboutToPlanCallback`, internal call, start points, `PostPlanCallback`, as without us | `IC_Route_Plan` detour: armed for this handle: copy the stored 0x48-byte RoutePlanResult (`asyncCollected`). Not armed (poll cap, a plain plan of the same route): wait for the job, drop it, plan synchronously (`asyncDropped`) |
+| Always | `finally`: `GetOption2(bit 58 \| bit 62)` = CANCEL (disarm) | an uncollected result (Sim reset while sleeping, destination gone) is dropped by the next START |
+
+The route's native data is held by the worker for the job: route vtable `+0x10`/`+0x14` around every route internal call are AddRef/Release (`0x8ABE50`: `lock xadd [ecx+0xC], 1`; `0x8ABE60`: release) [verified], so a `DestroyRoute` during the job cannot free the route under the worker; the last Release may then run on the worker.
+
+### Managed calls and the routing lock (why it cannot deadlock on the known paths)
+
+The planner's one managed call (portal-lock query, World event 59) must run on the Mono sim thread, which is no longer waiting. Two places run it there:
+
+1. **Lock_Acquire 0x4E16F0 detour** (prologue `53 55 56 8B F1 80 7E 24 00`). The routing world lock `world+0x918` is a game `Lock` (CRITICAL_SECTION or mutex, flag `+0x24`, recursion `+0x20`; `[deadline]` = absolute GetTickCount or `0xFFFFFFFF`; `-2` = timed out) [verified, disassembly]. While a job runs, a blocking acquire on the job's owner thread becomes a try-lock loop (deadline 0 = one TryEnter / 0 ms wait inside the original) that runs the worker's managed call in between (1 ms waits). This covers the per-iteration locomotion obstacle check, footprint updates and the route handle table lock `0x1004124`. Counters `asyncPumpWaits`, `asyncPumpUs`; a 2 s watchdog logs and keeps waiting.
+2. **READY poll**: runs a pending managed call without waiting, so a job progresses at least once per tick even when the sim thread never touches a busy lock.
+
+Other plans on the sim thread while a job runs (another Sim's synchronous plan, Overwatch, our SafeSpot check) reach `Route_PlanLocked` -> `RunPlan`, which first waits for the job (running its managed calls) and then plans as usual; a plan made **inside** the job's managed call goes to the worker, nested in the job's search exactly as it is nested without us (`g_inInvoke`).
+
+### Risks
+
+- **Routing lock `world+0x918` (the gain limit):** the worker holds it for the whole search; the sim thread's next locomotion check waits for it (pumped). Gain = sim-thread work done before the next lock use (O in Q3); long searches still stall the next iteration. Measure `asyncPumpUs` against `asyncUs`: if pump time is close to job time, async saves little and the try-lock obstacle check (rank 5) or the budget (rank 2) must come first.
+- **World mutation during the search:** every routing-world writer found takes `world+0x918`, so it waits for the job; the search sees one consistent world. Not guarded: object/Sim positions read outside the lock and the route object itself (another script calling `SetOption`/`GetPath` on this route while its owner sleeps would race the worker; only the owner's task uses its route in the cases seen) [inferred].
+- **Stale results:** the result reflects the world when the job started (portal answers up to one tick later), applied 1+ ticks later. The Sim does not move meanwhile (its task is in our loop); other Sims and doors may have, which route following already handles by replanning, as for any path that ages while walking [inferred].
+- **Managed call needing a lock the worker holds:** if the portal callback (run on the sim thread for the worker) itself took `world+0x918`, the worker would wait for the callback and the callback for the lock: deadlock (logged by the watchdog, not recovered). The same risk exists in offload-sync 0.4.1; its first in-game run tells.
+- **Unknown bit 58:** nothing names it in `RouteOption`, and START/READY/CANCEL never reach the game's `GetOption` (we answer them); only a native reader of a *set* bit 58 would matter, and we never set it [verified that the C# enum skips it; native readers not scanned].
+- **Save, travel, world unload during a job:** not handled specially; a writer of the routing world waits for the job (the sim thread pumps). Untested.
+- **Dead time:** each async plan costs the Sim at least one tick (20-60 ms real time at speed 1) before it walks; callers that plan many candidates in a row (`PlanToUnusedPart`, `Lot.PlanRouteIntoLot`) wait one tick per plan.
+
+### Verified vs inferred
+
+- Verified: callers need a synchronous result (C#); IC_Route_Plan, Route_GetOption, Lock_Acquire prologues and calling conventions (dumpbin); route `+0x10/+0x14` = AddRef/Release; no lock in the event-fire path `0x78F2B0`; the protocol, lock pump, collect/drop/refuse and the queueing behind a job in the selftest (`TestRouteAsync`, fakes for the three game functions; 20/20 runs).
+- Inferred, to be measured: that the sim thread does useful work while the worker searches (O), that the portal callback takes no routing lock, that Sleep(0) yields exactly one tick in this context, and the real gain.
+
+### How to test in game (serial, saves backed up)
+
+1. Install: close the game, `node tools/setup/install-fixes.ts install --only native-patches` (ts3native 0.5.0), rebuild/install ts3fixes as usual, set `[RouteAsync] Enabled=1` in `Game\Bin\ts3native.ini` (Mode 1), leave `[RouteWorker]`/`[RouteBudget]`/`[RouteCache]` at 0. Check `ts3native.log` for `OK detour Lock_Acquire`, `IC_Route_Plan`, `Route_GetOption` and `route async settings: Mode=1`.
+2. Only after the offload-sync check (PLAN "Next" 1) is clean: `repro.ts run bp-route-async`; then `/native` and ts3fixes counters [52-54].
+3. Soak: `profile-world.ts --ab routeasync` on Baseline-BP and Baseline-IP (10 min, 2-3 min slices). Pass: 0 extra stuck Sims, no hang, watchdogs 0, hitches and iterations/s not worse; read `asyncUs` vs `asyncPumpUs`.
+
 ## Open questions
 
 - How often does the sim thread take the routing lock per iteration, and does any other thread hold it for long? (step 1a)

@@ -36,13 +36,13 @@ namespace Ts3Fixes
             {
                 int[] c = PatchCounters();
                 c[24]++;
-                if (!ShortcutOn("backoff")) return PlanOrig();
                 IScriptProxy proxy = Follower;
                 Sims3.Gameplay.Actors.Sim sim = proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null;
+                if (!ShortcutOn("backoff")) return PlanAsync(sim);
                 Vector3 dest = GetApproximateOriginalDestination();
                 // non-Sim routers, no destination yet, or a short hop (turn in place, fail-path near the Sim): untouched
                 if (sim == null || dest == Vector3.Origin || dest == Vector3.Invalid || (sim.Position - dest).Length() < kBackoffMinDistance)
-                    return PlanOrig();
+                    return PlanAsync(sim);
                 BackoffKey key = new BackoffKey(proxy.ObjectId.Value, dest);
                 long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
                 BackoffEntry e;
@@ -52,7 +52,7 @@ namespace Ts3Fixes
                     c[26]++;
                     return FailFast(e.Type);
                 }
-                RoutePlanResult r = PlanOrig();
+                RoutePlanResult r = PlanAsync(sim);
                 if ((r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination) // not plain Failed: ts3native's route cache returns that on a hit (docs/15)
                     && r.mBlockerType != RouteBlockerType.Sim && r.mBlockerType != RouteBlockerType.Vehicle && BackoffEligible(sim))
                 {
@@ -66,6 +66,41 @@ namespace Ts3Fixes
                 return r;
             }
             public RoutePlanResult PlanOrig() { return default(RoutePlanResult); } // receives ScriptCore.Route.Plan's original header
+
+            // Async route plan (docs/18 "Async plan", ts3native [RouteAsync]): when the plan comes from the Sim's own task and
+            // that task may yield, ts3native searches on its worker thread while this task sleeps one tick at a time; the sim
+            // thread keeps running everything else. Handshake through GetOption on RouteOption bit 58, which has no name and
+            // is never set by the game: without ts3native (or with it off) START answers false and this is one extra call.
+            // The original Plan then runs once, as without us, and its internal call hands over the worker's result.
+            // Switch "asyncroute" (default on; ts3native decides). Counters: [56] started, [57] yields, [58] poll cap.
+            RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
+            {
+                if (sim == null || !ShortcutOn("asyncroute") || Simulator.CurrentTask != sim.ObjectId
+                    || !Simulator.CheckYieldingContext(false) || !GetOption(kAsyncStart))
+                    return PlanOrig();
+                int[] c = PatchCounters();
+                c[56]++;
+                try
+                {
+                    for (int i = 0; !GetOption2(kAsyncReady); i++)
+                    {
+                        // shortcut: a fixed cap (~10-20 s real time); past it the plan waits natively and is then made
+                        // again synchronously. Upgrade to a time-based cap if long searches ever reach it.
+                        if (i >= kAsyncMaxPolls) { c[58]++; break; }
+                        c[57]++;
+                        Simulator.Sleep(0);
+                    }
+                    return PlanOrig();
+                }
+                finally
+                {
+                    GetOption2(kAsyncCancel); // disarm, also when the Sim is reset while sleeping
+                }
+            }
+            const Sims3.SimIFace.Route.RouteOption kAsyncStart = (Sims3.SimIFace.Route.RouteOption)0x0400000000000000L;
+            const Sims3.SimIFace.Route.RouteOption2 kAsyncReady = (Sims3.SimIFace.Route.RouteOption2)0x0400000000000000L;
+            const Sims3.SimIFace.Route.RouteOption2 kAsyncCancel = (Sims3.SimIFace.Route.RouteOption2)0x4400000000000000L;
+            const int kAsyncMaxPolls = 1000;
 
             // What Plan leaves after a real failure, minus the blocker (so no fail-path plans): empty paths, invalid start points.
             RoutePlanResult FailFast(RoutePlanResultType type)

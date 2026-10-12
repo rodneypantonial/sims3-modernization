@@ -291,6 +291,117 @@ static void TestRouteBudget() {
     ts3native_counters.budgetReady = 0;
 }
 
+// --- async route plan: START/READY/CANCEL handshake, collect, drop, refuse, lock pump, plans queued behind a job ---
+static CRITICAL_SECTION g_fakeLock;  // stands in for the routing lock world+0x918
+static volatile LONG g_icHoldLock, g_icLockTaken, g_icInvoke, g_icSleepMs;
+static LONG __fastcall FakeLockAcquire(void* lock, void*, const DWORD* deadline) {
+    if (*deadline == 0xFFFFFFFF) { EnterCriticalSection((CRITICAL_SECTION*)lock); return 1; }
+    return TryEnterCriticalSection((CRITICAL_SECTION*)lock) ? 1 : -2;
+}
+static u8 __cdecl FakeGetOption(DWORD, DWORD, DWORD, DWORD) { return 0; }  // the game: bit 58 is never set
+static u8* __cdecl FakeIc(u8* out, DWORD handle) {
+    memset(out, 0, 0x48);
+    *(DWORD*)out = 1;  // Succeeded
+    *(DWORD*)(out + 4) = handle;
+    *(DWORD*)(out + 0x40) = GetCurrentThreadId();
+    if (g_icHoldLock) { EnterCriticalSection(&g_fakeLock); g_icLockTaken = 1; }
+    if (g_icInvoke) {  // the portal-lock query: runs on the owner even though it is not waiting for us
+        g_icInvoke = 0;
+        void* r = ((InvokeFn)(uintptr_t)g_fakeSlot)((void*)1, (void*)0x100, NULL, NULL);
+        assert(r == (void*)0x101 && g_invokeTid != GetCurrentThreadId());
+    }
+    if (g_icSleepMs) Sleep(g_icSleepMs);
+    if (g_icHoldLock) { g_icHoldLock = g_icLockTaken = 0; LeaveCriticalSection(&g_fakeLock); }
+    return out;
+}
+static const DWORD kH1 = 0x25000001, kH2 = 0x25000002;
+static u8 Start(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi, 0); }
+static u8 Ready(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi, 1); }
+static void Cancel(DWORD h) { assert(GetOptionHook(h, 0, kAsyncOptHi | kAsyncCancelHi, 1) == 1); }
+static void WaitReady(DWORD h) { while (!Ready(h)) Sleep(1); }
+
+static void TestRouteAsync() {
+    const DWORD me = GetCurrentThreadId();
+    const Ts3nCounters& c = ts3native_counters;
+    free(g_tab);
+    g_tab = NULL;  // no route cache: the fake plans below have no real points
+    InitializeCriticalSection(&g_fakeLock);
+    g_icPlanOrig = FakeIc;
+    g_getOptOrig = FakeGetOption;
+    g_lockOrig = FakeLockAcquire;
+    u8 out[0x48];
+    const DWORD inf = 0xFFFFFFFF;
+
+    ts3native_counters.asyncMode = 0;  // switch off: START says no, the C# hook plans synchronously
+    assert(!Start(kH1) && c.asyncStarted == 0);
+    assert(GetOptionHook(kH1, 1, 0, 0) == 0);  // other options pass through
+    ts3native_counters.asyncMode = 1;
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);  // no job: plain call
+
+    // started -> not ready while running -> ready -> the next Route.Plan takes the worker's result
+    g_icSleepMs = 30;
+    assert(Start(kH1) && c.asyncStarted == 1);
+    assert(!Ready(kH1));
+    assert(Ready(kH2));  // no job for that route: "ready", nothing armed
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid && *(DWORD*)(out + 4) == kH1);
+    assert(c.asyncCollected == 1 && g_async.state == A_IDLE);
+    Cancel(kH1);
+
+    // CANCEL after READY (destination went invalid, Plan returned before the internal call): the result is not handed to a later plan
+    assert(Start(kH1));
+    WaitReady(kH1);
+    Cancel(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 1 && c.asyncCollected == 1);
+
+    // another route's START while a job runs is refused; a plain plan of the running route waits for it, then plans itself
+    g_icSleepMs = 50;
+    assert(Start(kH1));
+    assert(!Start(kH2) && c.asyncRefused == 1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 2 && g_async.state == A_IDLE);
+
+    // a result nobody collected (the Sim was reset while sleeping) is dropped by the next START
+    g_icSleepMs = 0;
+    assert(Start(kH1));
+    while (g_async.state == A_RUNNING) Sleep(1);
+    assert(Start(kH2) && c.asyncDropped == 3);
+    WaitReady(kH2);
+    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == g_workerTid && c.asyncCollected == 2);
+
+    // lock pump: the job holds the routing lock and makes a managed call; the owner, blocked on that lock, runs it meanwhile
+    g_icHoldLock = g_icInvoke = 1;
+    g_icSleepMs = 20;
+    const LONG inv0 = c.invokes;
+    assert(Start(kH1));
+    while (!g_icLockTaken) Sleep(1);
+    g_invokeTid = 0;
+    assert(LockAcquireHook(&g_fakeLock, NULL, &inf) == 1 && g_invokeTid == me && c.invokes == inv0 + 1 && c.asyncPumpWaits == 1);
+    LeaveCriticalSection(&g_fakeLock);
+    assert(LockAcquireHook(&g_fakeLock, NULL, &inf) == 1);  // no job, or not contended: straight through
+    LeaveCriticalSection(&g_fakeLock);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && c.asyncCollected == 3);
+
+    // a plan of another route (Route_PlanLocked) while a job runs: waits for the job, running its managed call, then runs here
+    ts3native_counters.workerReady = 1;
+    ts3native_counters.workerMode = 0;
+    g_planOrig = WorkerPlan;
+    g_icInvoke = 1;
+    g_icSleepMs = 30;
+    u8 opts[0x38] = {0};
+    int s[2] = {1, 2}, g[2] = {3, 4}, list[2];
+    assert(Start(kH1));
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
+    assert(g_async.state == A_DONE && g_invokeTid == me && c.invokes == inv0 + 2);
+    Cancel(kH1);
+    assert(Start(kH2) && c.asyncDropped == 4);  // the done kH1 result was never collected
+    WaitReady(kH2);
+    assert(IcPlanHook(out, kH2) == out);
+    assert(c.watchdogs == 0 && c.asyncUs >= 30000 && c.asyncMaxUs >= 30000);
+    ts3native_counters.workerReady = 0;
+    g_icSleepMs = 0;
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -314,6 +425,7 @@ int main() {
     TestRouteCache();
     TestRouteWorker();
     TestRouteBudget();
+    TestRouteAsync();
     puts("selftest ok");
     return 0;
 }

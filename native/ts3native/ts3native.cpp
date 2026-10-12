@@ -10,7 +10,7 @@
 #include <math.h>
 #include <xmmintrin.h>
 
-#define TS3NATIVE_VERSION "0.4.2"
+#define TS3NATIVE_VERSION "0.5.0"
 
 typedef unsigned char u8;
 
@@ -152,7 +152,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 27 int32 (v4).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 37 int32 (v5).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -184,9 +184,21 @@ struct Ts3nCounters {
     // v4: managed calls the planner makes on the worker, run on the waiting caller thread instead (docs/18 crash 2026-10-13)
     LONG invokeHook;   // 1 = mono_runtime_invoke slot hooked, -1 = slot not as expected (worker mode refused), 0 = not yet
     LONG invokes;      // managed invokes from the worker that ran on the caller thread
+    // v5: async route plan (docs/18 "Async plan"): the sim thread does not wait, the Sim's own task sleeps until the result is ready
+    volatile LONG asyncMode;  // runtime switch, writable by test tools: 0 = every START answered "no" (plans stay synchronous), 1 = on
+    LONG asyncReady;     // 1 when the three async detours (IC_Route_Plan, Route_GetOption, Lock_Acquire) are installed
+    LONG asyncStarted;   // jobs started (C# START answered yes)
+    LONG asyncRefused;   // START answered no because another route's job still ran
+    LONG asyncCollected; // results handed to the C# caller that started them
+    LONG asyncDropped;   // results thrown away (caller gave up: reset, destination gone, poll cap; or a plain plan of that route)
+    LONG asyncUs;        // total job time on the worker, microseconds
+    LONG asyncMaxUs;     // longest job, microseconds
+    LONG asyncPumpUs;    // owner-thread time in contended Lock_Acquire waits while a job ran (managed calls served meanwhile), microseconds
+    LONG asyncPumpWaits; // such waits
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 typedef unsigned __int64 u64;
 struct CacheEntry { u64 key; ULONGLONG until; };
@@ -277,6 +289,9 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.budgetReady)
         Log("route budget: mode %ld calls %ld capped %ld capNodes %ld capMs %ld maxNodes %ld maxNodesOk %ld maxUsOk %ld", c.budgetMode,
             c.budgetCalls, c.budgetCapped, c.budgetCapNodes, c.budgetCapUs / 1000, c.budgetMaxNodes, c.budgetMaxNodesOk, c.budgetMaxUsOk);
+    if (c.asyncReady)
+        Log("route async: mode %ld started %ld refused %ld collected %ld dropped %ld job %ld ms max %ld us pump %ld ms (%ld waits)", c.asyncMode,
+            c.asyncStarted, c.asyncRefused, c.asyncCollected, c.asyncDropped, c.asyncUs / 1000, c.asyncMaxUs, c.asyncPumpUs / 1000, c.asyncPumpWaits);
 }
 
 static LARGE_INTEGER g_qpf;
@@ -411,6 +426,25 @@ static DWORD g_workerTid;
 static volatile DWORD g_callerTid;  // the thread waiting for the worker's current plan, 0 when idle
 static CRITICAL_SECTION g_workerCs;  // one caller at a time; another calling thread waits here (recursive for nesting)
 
+// Async route plan (docs/18 "Async plan"): one job slot. The owner (sim) thread writes it while idle or done, the worker
+// while running; `state` is the hand-off.
+enum { A_IDLE, A_RUNNING, A_DONE };
+struct AsyncSlot {
+    volatile LONG state;
+    DWORD handle;  // script route handle (0x25xxxxxx)
+    DWORD owner;   // thread that started the job (the Mono sim thread); only it can run the job's managed calls
+    unsigned short x87;
+    unsigned int mxcsr;
+    u8 result[0x48];  // RoutePlanResult as IC_Route_Plan writes it
+};
+static AsyncSlot g_async;
+static HANDLE g_asyncReady, g_asyncDone;
+// IC_Route_Plan 0x765160: cdecl, [esp+4] = hidden RoutePlanResult* (also returned in eax), [esp+8] = route handle.
+typedef u8*(__cdecl* IcPlanFn)(u8* out, DWORD handle);
+static IcPlanFn g_icPlanOrig;
+static void WaitAsyncDone();
+static int g_inInvoke;  // > 0 while the caller/owner thread runs a managed call for the worker (ServeInvoke)
+
 // Managed calls (docs/18 "Crash 2026-10-13"): the planner can call script code through mono_runtime_invoke, and the worker
 // is no Mono thread (no domain in TLS 0x11959DC, not in Boehm's thread table, which only holds the GC_init thread).
 // Each such call goes back to the waiting caller thread and runs there, as it would have without the worker. Only one
@@ -466,14 +500,16 @@ static void ServeInvoke() {
         seen[nSeen++] = v.method;
         Log("route worker: planner made a managed call, MonoMethod %p obj %p exc %p", v.method, v.obj, v.exc);
     }
+    g_inInvoke++;
     v.result = g_invokeOrig(v.method, v.obj, v.params, v.exc);
+    g_inInvoke--;
     InterlockedIncrement(&ts3native_counters.invokes);
     SetEvent(g_invDone);
 }
 
 // In the runtime_invoke slot: every thread but the worker goes straight to the original.
 static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** exc) {
-    if (GetCurrentThreadId() != g_workerTid || !g_callerTid) return g_invokeOrig(method, obj, params, exc);
+    if (GetCurrentThreadId() != g_workerTid || (!g_callerTid && g_async.state != A_RUNNING)) return g_invokeOrig(method, obj, params, exc);
     InvokeJob v = {method, obj, params, exc, NULL};
     InvokeJob* prev = g_invJob;
     g_invJob = &v;
@@ -508,10 +544,31 @@ static bool EnsureInvokeHook() {
     return true;
 }
 
+// Worker side of an async job: the whole original IC_Route_Plan (start points, Route_PlanCommon, Route_PlanLocked under
+// the routing lock, result mapping) with the starter's FPU state. Its managed calls go to the owner thread (InvokeHook).
+static void ServeAsync() {
+    AsyncSlot& a = g_async;
+    const unsigned short cw = GetX87();
+    const unsigned int csr = _mm_getcsr();
+    SetX87(a.x87);
+    _mm_setcsr(a.mxcsr);
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    g_icPlanOrig(a.result, a.handle);
+    LONG us = UsSince(t0);
+    InterlockedExchangeAdd(&ts3native_counters.asyncUs, us);
+    Max(&ts3native_counters.asyncMaxUs, us);
+    SetX87(cw);
+    _mm_setcsr(csr);
+    InterlockedExchange(&a.state, A_DONE);
+    SetEvent(g_asyncDone);
+}
+
 static DWORD WINAPI WorkerMain(LPVOID) {
     for (;;) {
-        WaitForSingleObject(g_jobReady, INFINITE);
-        ServePlan();
+        HANDLE h[2] = {g_jobReady, g_asyncReady};
+        if (WaitForMultipleObjects(2, h, FALSE, INFINITE) == WAIT_OBJECT_0) ServePlan();
+        else ServeAsync();
     }
 }
 
@@ -522,8 +579,10 @@ static bool StartWorker() {
     g_jobDone = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_invDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_asyncReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
     // 1 MB reserve like a default thread; it starts running only after DllMain returns (loader lock) and then just waits
-    HANDLE t = g_jobReady && g_jobDone && g_invReady && g_invDone
+    HANDLE t = g_jobReady && g_jobDone && g_invReady && g_invDone && g_asyncReady && g_asyncDone
                    ? CreateThread(NULL, 1 << 20, WorkerMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, &g_workerTid)
                    : NULL;
     if (!t) return false;
@@ -533,9 +592,17 @@ static bool StartWorker() {
 
 static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
                   int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
-    if (ts3native_counters.workerMode != 1 || !ts3native_counters.workerReady)
-        return CallPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     const DWORD me = GetCurrentThreadId();
+    bool viaWorker = ts3native_counters.workerMode == 1;
+    // An async job of this thread still runs (it holds the routing lock and may wait for a managed call only this thread can
+    // run). A plan made inside such a managed call is nested in the job's search, as it would be without us: it goes to the
+    // worker, which waits in InvokeHook. Any other plan waits here for the job, running its managed calls, then goes on.
+    if (g_async.state == A_RUNNING && me == g_async.owner) {
+        if (g_inInvoke) viaWorker = true;
+        else WaitAsyncDone();
+    }
+    if (!viaWorker || !ts3native_counters.workerReady)
+        return CallPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     if (me == g_workerTid) {  // waiting for ourselves would deadlock
         InterlockedIncrement(&ts3native_counters.fallbacks);
         return CallPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
@@ -605,6 +672,135 @@ static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* s
 
 static const DWORD ROUTE_PLAN_LOCKED = 0x0082C6E0;
 static const u8 kPlanLockedPrologue[] = {0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00};  // sub esp,0xD8
+
+// --- Async route plan (docs/18 "Async plan"): the C# hook on ScriptCore.Route.Plan (mods/ts3fixes RouteBackoff.cs) asks
+// through Route.GetOption with RouteOption bit 58 (0x0400000000000000: no enum name, never set by the game, so the
+// unpatched game answers false and the C# side plans synchronously):
+//   GetOption(bit 58)            START:  start this route's plan on the worker, true = started (the Sim's task then sleeps)
+//   GetOption2(bit 58)           READY:  true = the job is done (or there is none); arms the next IC_Route_Plan to take it
+//   GetOption2(bit 58 | bit 62)  CANCEL: disarm (the C# finally, also on a Sim reset)
+// The C# side then calls the original Route.Plan once; IC_Route_Plan hands over the stored result, so the script's own
+// tail (start points, PostPlanCallback) runs once, as without us. While a job runs the sim thread keeps simulating; every
+// Lock_Acquire on it that would block runs the job's managed calls (portal-lock query) while waiting, so it cannot
+// deadlock against the worker holding the routing lock world+0x918.
+static const DWORD kAsyncOptHi = 0x04000000, kAsyncCancelHi = 0x40000000;
+typedef u8(__cdecl* GetOptionFn)(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2);  // 0x74D040, bool in AL
+typedef LONG(__fastcall* LockAcquireFn)(void* lock, void* edx, const DWORD* deadline);       // 0x4E16F0 thiscall, ret 4
+static GetOptionFn g_getOptOrig;
+static LockAcquireFn g_lockOrig;
+static DWORD g_collect;  // handle whose READY said "done": the owner's next IC_Route_Plan for it takes the stored result
+
+// Owner side: runs the job's managed calls until it is done (2 s watchdog: log and keep waiting, as RunPlan does).
+static void WaitAsyncDone() {
+    for (DWORD s = 0; g_async.state == A_RUNNING;) {
+        HANDLE h[2] = {g_asyncDone, g_invReady};
+        const DWORD w = WaitForMultipleObjects(2, h, FALSE, 2000);
+        if (w == WAIT_OBJECT_0 + 1) ServeInvoke();
+        else if (w == WAIT_TIMEOUT) {
+            s += 2;
+            InterlockedIncrement(&ts3native_counters.watchdogs);
+            Log("route async: thread %lu waited %lu s for the job of route %08lX, still waiting", GetCurrentThreadId(), s, g_async.handle);
+        }
+    }
+}
+
+static u8* __cdecl IcPlanHook(u8* out, DWORD handle) {
+    // only the Mono sim thread calls internal calls (the worker calls g_icPlanOrig directly), so g_collect needs no lock
+    const bool collect = g_collect == handle;
+    g_collect = 0;
+    if (g_async.state == A_IDLE || GetCurrentThreadId() != g_async.owner) return g_icPlanOrig(out, handle);
+    // another route: its Route_PlanLocked waits for the job first (RunPlan)
+    if (g_async.handle != handle) return g_icPlanOrig(out, handle);
+    WaitAsyncDone();  // normally already done (READY said so)
+    if (collect) {
+        memcpy(out, g_async.result, sizeof(g_async.result));
+        InterlockedIncrement(&ts3native_counters.asyncCollected);
+    } else {
+        InterlockedIncrement(&ts3native_counters.asyncDropped);  // a plan the C# hook did not arm: plan it now, as asked
+    }
+    InterlockedExchange(&g_async.state, A_IDLE);
+    return collect ? out : g_icPlanOrig(out, handle);
+}
+
+static u8 AsyncStart(DWORD handle) {
+    g_collect = 0;
+    if (ts3native_counters.asyncMode != 1) return 0;
+    if (g_async.state == A_RUNNING) { InterlockedIncrement(&ts3native_counters.asyncRefused); return 0; }
+    if (g_async.state == A_DONE) InterlockedIncrement(&ts3native_counters.asyncDropped);  // its caller gave up
+    EnterCriticalSection(&g_workerCs);
+    const bool invokeOk = EnsureInvokeHook();  // the job's managed calls must come back to this thread
+    LeaveCriticalSection(&g_workerCs);
+    if (!invokeOk) return 0;
+    g_async.handle = handle;
+    g_async.owner = GetCurrentThreadId();
+    g_async.x87 = GetX87();
+    g_async.mxcsr = _mm_getcsr();
+    ResetEvent(g_asyncDone);
+    InterlockedExchange(&g_async.state, A_RUNNING);
+    InterlockedIncrement(&ts3native_counters.asyncStarted);
+    SetEvent(g_asyncReady);
+    return 1;
+}
+
+static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
+    if (optLo != 0 || (optHi & ~kAsyncCancelHi) != kAsyncOptHi) return g_getOptOrig(handle, optLo, optHi, options2);
+    if (!(u8)options2) return AsyncStart(handle);
+    const bool mine = g_async.state != A_IDLE && g_async.handle == handle && GetCurrentThreadId() == g_async.owner;
+    if (optHi & kAsyncCancelHi) { g_collect = 0; return 1; }
+    if (mine && g_async.state == A_RUNNING && WaitForSingleObject(g_invReady, 0) == WAIT_OBJECT_0) ServeInvoke();  // keep it moving
+    if (mine && g_async.state == A_RUNNING) return 0;
+    g_collect = mine ? handle : 0;
+    return 1;
+}
+
+// Every Lock_Acquire in the game passes through here; only the job owner's blocking waits during a job are changed:
+// try-lock (deadline 0 = one TryEnter/0 ms wait in the original) in a loop, running the job's managed calls in between.
+static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline) {
+    if (g_async.state != A_RUNNING || *deadline != 0xFFFFFFFF || GetCurrentThreadId() != g_async.owner) return g_lockOrig(lock, edx, deadline);
+    static const DWORD kTry = 0;
+    LONG r = g_lockOrig(lock, edx, &kTry);
+    if (r != -2) return r;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    InterlockedIncrement(&ts3native_counters.asyncPumpWaits);
+    for (DWORD start = GetTickCount(), next = 2000;;) {
+        if (g_async.state != A_RUNNING) { r = g_lockOrig(lock, edx, deadline); break; }  // job over: wait as the game would
+        HANDLE h[2] = {g_invReady, g_asyncDone};
+        if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) ServeInvoke();
+        if ((r = g_lockOrig(lock, edx, &kTry)) != -2) break;
+        if (GetTickCount() - start >= next) {
+            next += 2000;
+            InterlockedIncrement(&ts3native_counters.watchdogs);
+            Log("route async: lock %p busy for %lu s during the job of route %08lX, still waiting", lock, next / 1000 - 2, g_async.handle);
+        }
+    }
+    InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, UsSince(t0));
+    return r;
+}
+
+static const DWORD IC_ROUTE_PLAN = 0x00765160, ROUTE_GET_OPTION = 0x0074D040, LOCK_ACQUIRE = 0x004E16F0;
+static const u8 kIcPlanPrologue[] = {0x0F, 0x57, 0xC0, 0x8B, 0x0D, 0xC4, 0x40, 0x1D, 0x01};     // xorps xmm0,xmm0; mov ecx,[0x11D40C4]
+static const u8 kGetOptionPrologue[] = {0x8B, 0x0D, 0xC4, 0x40, 0x1D, 0x01};                     // mov ecx,[0x11D40C4]
+static const u8 kLockAcquirePrologue[] = {0x53, 0x55, 0x56, 0x8B, 0xF1, 0x80, 0x7E, 0x24, 0x00};  // push ebx/ebp/esi; mov esi,ecx; cmp byte [esi+24h],0
+
+// [RouteAsync]: returns the start value of the switch, or -1 when off.
+static int ReadRouteAsync(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"RouteAsync", L"Enabled", 0, ini)) { Log("route async disabled (Enabled=0)"); return -1; }
+    return Clamp(GetPrivateProfileIntW(L"RouteAsync", L"Mode", 1, ini), 0, 1);
+}
+
+// Needs the worker thread and the Route_PlanLocked detour (RunPlan) already in place. All three detours or none in use:
+// a missing one leaves asyncReady 0, and START is then never answered yes.
+static bool InstallAsync(int mode) {
+    g_lockOrig = (LockAcquireFn)InstallDetour("Lock_Acquire", LOCK_ACQUIRE, kLockAcquirePrologue, sizeof(kLockAcquirePrologue), (void*)LockAcquireHook);
+    g_icPlanOrig = g_lockOrig ? (IcPlanFn)InstallDetour("IC_Route_Plan", IC_ROUTE_PLAN, kIcPlanPrologue, sizeof(kIcPlanPrologue), (void*)IcPlanHook) : NULL;
+    g_getOptOrig = g_icPlanOrig ? (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook) : NULL;
+    if (!g_getOptOrig) { Log("FAIL route async: detours incomplete, async plans stay off"); return false; }
+    ts3native_counters.asyncMode = mode;
+    ts3native_counters.asyncReady = 1;
+    Log("route async settings: Mode=%d", mode);
+    return true;
+}
 
 // Returns true when the cache table is ready; InstallPlanDetour installs the detour.
 static bool ApplyRouteCache(const wchar_t* ini) {
@@ -680,7 +876,10 @@ static void Run(HMODULE self) {
         ApplyGc(ini);
         bool cache = ApplyRouteCache(ini);
         bool worker = ApplyRouteWorker(ini);
+        const int asyncMode = ReadRouteAsync(ini);
+        if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
         keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini));
+        if (asyncMode >= 0 && worker && keepLog) InstallAsync(asyncMode);
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

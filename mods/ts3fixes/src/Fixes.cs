@@ -60,13 +60,14 @@ namespace Ts3Fixes
         // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs), [44-45] Overwatch stuck-check
         // plans/yields (OverwatchStuck.cs), [46-51] watchdog idle cases (RouteFixes.cs: idle on an unroutable spot, hidden
         // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked), [52] empty life-event lists trimmed, [53] memory snapshots capped (SaveCleanup.cs), [54-55] route
-        // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs).
+        // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs), [56-58] async
+        // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[56]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[59]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 

@@ -221,6 +221,10 @@ Self-test (`TestRouteBudget`): one changed site → nothing written; switch off 
 
 **Risks** [inferred]: a reachable destination that needs more than the cap now fails, and RouteBackoff then blocks that unseen townie from it for 30 sim-minutes (a long trip for a played Sim fails instead of being slow). A time cap depends on load: a slow machine or a descheduled thread fails more routes. The capped search still pops every queued node, which is cheap but not free. Lot searches stay unbounded.
 
+## Phase 5: async route plan (v0.5.0, `[RouteAsync] Enabled=0` by default)
+
+Built and self-tested 2026-10-13, not run in game. The sim thread no longer waits: a plan from a Sim's own yielding task runs on the worker while the task sleeps (ts3fixes `PlanAsync`). Three more detours (`Lock_Acquire 0x4E16F0`, `IC_Route_Plan 0x765160`, `Route_GetOption 0x74D040`), counters v5 (`asyncMode` writable at +0x6C ... `asyncPumpWaits`). Design, protocol, risks and test plan: docs/18 "Async plan".
+
 ## Proposed install entry for tools/setup/fixes.json (not applied)
 
 ```json

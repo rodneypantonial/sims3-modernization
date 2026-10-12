@@ -1062,5 +1062,49 @@
       "minutes": 5
     },
     "expect": "fix on: portaladaptor_unsubscribes >= 1 and the second RouteAdaptorCounts shows stale no higher than the first (adaptors differ only by live routes); with --set portaladaptorleak=false: counter flat (FAIL), stale grows by >= 1 per portal trip, and RunRouteAdaptorCleanupOnce removes them (savecleanup_route_callbacks rises, stale back to ~0); no route errors or stuck Sims either way"
+  },
+  {
+    "id": "bp-route-async",
+    "bug": "Every route search blocks the sim thread (docs/18): long plans are hitches",
+    "fix": "ts3native 0.5.0 [RouteAsync] Enabled=1 + ts3fixes PlanAsync: plans from the Sim's own task run on the worker while the task sleeps (docs/18 \"Async plan\")",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "gohome": false,
+          "virtualhome": false,
+          "backoff": false
+        },
+        "note": "shortcuts off so Go Home really routes; /native must show asyncReady 1, asyncMode 1"
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 312.4,
+          "z": 1496.7
+        }
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "waitS": 2
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock"
+      ],
+      "minutes": 5
+    },
+    "expect": "Wogan leaves the diner and gets home as with routeasync=0; /native asyncStarted and asyncCollected rise (collected ~= started), watchdogs 0, no route async lines in ts3native.log other than the 60 s counters; ts3fixes counters [52] > 0, [54] = 0; no hang (the probe and agent keep answering)",
+    "area": [
+      312.4,
+      1497.0
+    ]
   }
 ]
