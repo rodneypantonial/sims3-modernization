@@ -419,6 +419,35 @@
     "notes": "Resets stuck Sims; cleans up cars, elevators and stereos. Manual download, version unknown."
   },
   {
+    "id": "overwatch-no-stuckcheck",
+    "name": "NRaas Overwatch: Stuck Check off for new saves (tuning override)",
+    "author": "sims-3-modernization",
+    "category": "config",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "Packages/ts3-overwatch-nostuckcheck.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/setup/build-overwatch-tuning.ts",
+      "inGameReminder": "Existing saves: City Hall > NRaas > Overwatch > Settings > Stuck Check = off (the tuning only seeds new saves)"
+    },
+    "conflictsWith": [],
+    "requires": [
+      "nraas-overwatch",
+      "stutter-fixes"
+    ],
+    "default": false,
+    "notes": "Generated. Tuning XML for NRaas.OverwatchSpace.PersistedSettings (instance 0x85842A96AEC69641) with kStuckCheck = False: turns off both Overwatch stuck checks (nightly Stationary/Unroutable scan, docs/04 F18, and the route-failure reset hook). Off by default until a taskstall A/B shows the nightly stall shrinks; our watchdog does not cover every case Overwatch's check does (docs/07 §2.2)."
+  },
+  {
     "id": "nraas-mastercontroller",
     "name": "NRaas MasterController",
     "author": "NRaas",
