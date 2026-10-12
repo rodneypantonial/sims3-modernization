@@ -882,6 +882,31 @@
     "notes": "Built by our own script (empty VP6 stubs for 14 videos). Community alternative: https://modthesims.info/d/497903 (nointromaxis.zip). Use only one."
   },
   {
+    "id": "stutter-fixes",
+    "name": "TS3 stutter fixes (our player mod, mods/ts3fixes)",
+    "author": "sims-3-modernization",
+    "category": "script",
+    "version": "0.1.0",
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "Packages/ts3fixes.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/setup/build-fixes.ts"
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": true,
+    "notes": "Built from source. Off-screen trip shortcuts, walk-style comparer, broadcaster throttle, route-failure fixes, stuck-Sim watchdog (docs/04 F8-F13). Replaces game methods at startup; a mod that replaces the same methods (GoHome.Run, VisitCommunityLot.Run, RabbitHole.RouteNearEntranceAndEnterRabbitHole, SimRoutingComponent route options, ScriptCore.Route.Plan, ReactionBroadcaster.PulseSims) would conflict. Settings: tuning values in the package (mods/ts3fixes/README.md)."
+  },
+  {
     "id": "options-ini",
     "name": "Options.ini performance settings",
     "author": "community",

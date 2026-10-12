@@ -205,6 +205,12 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3-nointro.package'), p));
       return true;
     }
+    case 'stutter-fixes': {
+      execFileSync(process.execPath, [join(ROOT, 'tools', 'setup', 'build-fixes.ts')], { stdio: 'ignore' });
+      const p = join(USER, 'Mods', 'Packages', 'ts3fixes.package');
+      place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3fixes.package'), p));
+      return true;
+    }
     case 'cache-budget': {
       // the generic ResourceCache budget (bytes) comes from GraphicsRules.sgr `setProp $ResourceGroup CacheBudget`
       // (the ctor 0x732910 reads the wide "CacheBudget" property); Default.ini's CacheBudget is ignored [verified 2026-10-12].
