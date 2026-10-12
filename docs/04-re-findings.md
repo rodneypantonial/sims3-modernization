@@ -97,3 +97,14 @@ Rank = expected stutter gain × confidence ÷ effort. "Not done by" lists S3SS, 
 - Is `GC_ENABLE_INCREMENTAL` usable with this Mono 1.2.3.1 build on Windows (write-watch dirty bits), or does it crash?
 - What is the units/timer mode of `FUN_004f30e0(2)` (µs vs ticks)? This sets the real GC budget.
 - Do the remaining Ghidra `OutOfMemoryError`s hide important functions? Rerun with `GHIDRA_HEADLESS_MAXMEM=24G`, or analyse in the GUI.
+
+## F5. Measured: where sim-loop time goes on Bridgeport [measured 2026-10-12]
+
+`tools/frida/stutter-profile.js`, 10 min on `Baseline-BP` with all fixes, speed 3, autopilot on (raw data `probe-out/profile/bp-600-*`, not committed):
+
+- 31 loop iterations/s; **4.0 hitches/s** (iterations of 50 ms or more), 2,354 in total, worst 1,014 ms.
+- **Route search: 95 ms per second** (26.5 plans/s, 15,456 plans, single searches up to 188 ms). Only **1.6% fail**, but failures cluster (47–58 per minute in minutes 1, 4 and 7, which also had the highest route time).
+- GC: mark 16.8 ms/s plus forced collections 15.9 ms/s (176 forced, up to 149 ms); finalizers 1.8 ms/s.
+- Dominant cost per hitch: route 270, GC 89, **unaccounted 1,995**. The profiler's script hook (`0xD80BC0`) sees only 12 ms/s, less than the route time that runs inside scripts, so it does not cover most script execution; the unaccounted part is script and native work inside the iteration that no hook times.
+
+Consequences: (1) a route-*failure* cache alone targets ~2% of plans; the cost is mostly successful searches, so the routing fix should move searches off the sim thread or make fewer of them; (2) the largest bucket is still unidentified: next, sample the sim thread's stack (`/simstack`) during hitches to rank the unaccounted time.
