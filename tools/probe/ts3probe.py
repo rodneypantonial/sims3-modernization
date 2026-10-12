@@ -220,6 +220,8 @@ class Probe:
             for t in ts:
                 t['stack'] = self.symbols.stack(t['stack'])
             return ts
+        if path == 'native':  # ts3native.asi counters (route cache), null when the plugin is not loaded
+            return rpc.native_counters()
         if path == 'managedstack':  # C# call stack of the sim thread, innermost first (interpreter frames)
             return rpc.interp_stack(int(q.get('frames', 64)))
         if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)

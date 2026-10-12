@@ -316,5 +316,79 @@
       "minutes": 5
     },
     "expect": "first run: pairs and mini drop (save cleanup: -N pairs, -M minis, N > 0), households and sims unchanged; second run removes ~0 (idempotent); save succeeds; no stuck Sims and no new ErrorTrap/script errors in 5 min; reload Cleanup-Test-BP-after loads clean and SaveCleanupCounts matches the 'after' values (watch covers all Sims: Bridgeport has a few vanilla stuck Sims, compare the count with a run without the cleanup)"
+  },
+  {
+    "id": "bp-route-cache",
+    "bug": "Repeated route plans to an unreachable spot each run a full failed search (docs/11: no search budget)",
+    "fix": "ts3native route negative cache ([RouteCache] Enabled=1) + C# backoff",
+    "save": "Baseline-BP",
+    "area": [
+      5.0,
+      5.0
+    ],
+    "steps": [
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 5.0,
+          "z": 5.0
+        },
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock"
+      ],
+      "minutes": 3
+    },
+    "expect": "probe /native: hits >= 4 of the 6 plans (first stores, repeats hit within the 2 s window); Wogan not stuck afterwards. Needs ts3native 0.2.0 installed with Enabled=1 for the test."
   }
 ]

@@ -263,6 +263,13 @@ function mailboxReply(seq) {
 }
 
 rpc.exports = {
+  // ts3native.asi counters (docs/15): route cache calls/hits/misses/stored, null when the plugin is not loaded
+  nativeCounters() {
+    const c = Module.findExportByName('ts3native.asi', 'ts3native_counters');
+    if (c === null) return null;
+    const f = ['version', 'enabled', 'calls', 'hits', 'misses', 'stored', 'otherFails', 'windowMs'];
+    return Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
+  },
 
   agentSend(cmd, args) {
     return mailboxSend(cmd, args);
