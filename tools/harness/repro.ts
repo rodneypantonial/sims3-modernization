@@ -1,6 +1,8 @@
 // Repro library runner: reproduce a bug on demand from a saved situation, then check whether a fix handles it.
 //   node tools/harness/repro.ts list
-//   node tools/harness/repro.ts run <id> [--no-load]     (needs the probe server; loads the entry's save unless --no-load)
+//   node tools/harness/repro.ts run <id> [--no-load] [--set a=true,b=false]   (needs the probe server; loads the entry's save unless --no-load)
+//   node tools/harness/repro.ts run-many <id,id,...> [--no-load] [--set ...]  several repros in one load: same save, areas at
+//     least 150 m apart and no shared Sims, else the conflicting ones are left for another batch; all watched together
 // Entries live in tools/harness/repros.json: { id, bug, fix, save, steps: [{cmd, args, waitS?}], watch, expect }.
 //   watch.kind "stuck":  watch these Sims (or all, if "sims" is empty) for watch.minutes; PASS when none is stuck
 //                        (same spot and interaction for 6 checks of 30 s, or routing without moving for 3).
@@ -25,13 +27,40 @@ if (cmd === 'list' || !cmd) {
   for (const r of LIB) console.log(`${r.id.padEnd(28)} ${r.save.padEnd(26)} ${r.bug}`);
   process.exit(0);
 }
-const r = LIB.find(x => x.id === id);
-if (cmd !== 'run' || !r) { console.error('usage: repro.ts list | run <id> [--no-load]'); process.exit(2); }
+// run-many: merge compatible entries into one virtual entry (one save, areas apart, no shared Sims)
+let r: any;
+if (cmd === 'run-many') {
+  const want = (id ?? '').split(',').map(x => LIB.find(e => e.id === x)).filter(Boolean);
+  const batch: any[] = [], later: string[] = [];
+  const simsOf = (e: any) => new Set([...(e.watch?.sims ?? []), ...(e.steps ?? []).map((s: any) => s.args?.sim).filter(Boolean)]);
+  for (const e of want) {
+    const clash = batch.find(b => b.save !== e.save
+      || (b.area && e.area && Math.hypot(b.area[0] - e.area[0], b.area[1] - e.area[1]) < 150)
+      || [...simsOf(e)].some(n => simsOf(b).has(n)));
+    if (clash) later.push(e.id); else batch.push(e);
+  }
+  if (!batch.length) { console.error('no matching entries'); process.exit(2); }
+  if (later.length) console.log(`not in this batch (same place, Sim or another save): ${later.join(', ')}`);
+  const counters = batch.filter(e => e.watch.kind === 'counter');
+  if (counters.length) console.log(`counter watches run separately: ${counters.map(e => e.id).join(', ')}`);
+  const stuckOnes = batch.filter(e => e.watch.kind !== 'counter');
+  r = { id: stuckOnes.map(e => e.id).join('+'), bug: `${stuckOnes.length} repros together`, fix: '-', save: batch[0].save,
+    steps: stuckOnes.flatMap(e => e.steps ?? []),
+    watch: { kind: 'stuck', sims: stuckOnes.flatMap(e => e.watch.sims ?? []), minutes: Math.max(...stuckOnes.map(e => e.watch.minutes)) },
+    expect: 'every repro passes' };
+} else r = LIB.find(x => x.id === id);
+if ((cmd !== 'run' && cmd !== 'run-many') || !r) { console.error('usage: repro.ts list | run <id> | run-many <id,id,...> [--no-load] [--set ...]'); process.exit(2); }
 
 console.log(`${stamp()} ${r.id}: ${r.bug}\n  fix under test: ${r.fix}`);
 if (!process.argv.includes('--no-load'))
   execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'cycle.ts'), '--save', `${r.save}.sims3`], { stdio: 'inherit' });
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+// --set a=true,b=false: switch fixes for this run (patches command), e.g. to bisect which one causes a bug
+const set = process.argv.indexOf('--set');
+if (set > 0) {
+  const sw = Object.fromEntries(process.argv[set + 1].split(',').map(kv => { const [k, v] = kv.split('='); return [k, v !== 'false']; }));
+  console.log(`${stamp()} switches ${JSON.stringify(sw)}: ${(await ag('patches', sw)).ok ? 'ok' : 'failed'}`);
+}
 for (const s of r.steps ?? []) {
   const res = await ag(s.cmd, s.args);
   console.log(`${stamp()} step ${s.cmd} ${JSON.stringify(s.args ?? {})}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`);

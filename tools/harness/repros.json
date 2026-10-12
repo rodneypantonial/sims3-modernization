@@ -5,13 +5,51 @@
     "fix": "ts3fixes trip shortcuts + route-fail fixes; bisect in progress (docs/04 F10, PLAN item 1)",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "place_sim", "args": { "sim": "Wogan Hemlock", "x": 312.4, "z": 1496.7 } },
-      { "cmd": "place_sim", "args": { "sim": "Johnny Jones", "x": 312.4, "z": 1497.7 }, "optional": true },
-      { "cmd": "sim_go_home", "args": { "sim": "Wogan Hemlock" }, "waitS": 2 },
-      { "cmd": "sim_go_home", "args": { "sim": "Johnny Jones" }, "optional": true }
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 312.4,
+          "z": 1496.7
+        }
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Johnny Jones",
+          "x": 312.4,
+          "z": 1497.7
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Johnny Jones"
+        },
+        "optional": true
+      }
     ],
-    "watch": { "kind": "stuck", "sims": ["Wogan Hemlock", "Johnny Jones"], "minutes": 5 },
-    "expect": "both leave the diner and get home (no Sim stuck)"
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock",
+        "Johnny Jones"
+      ],
+      "minutes": 5
+    },
+    "expect": "both leave the diner and get home (no Sim stuck)",
+    "area": [
+      312.4,
+      1497.0
+    ]
   },
   {
     "id": "bp-waylons-gohome",
@@ -19,11 +57,33 @@
     "fix": "same as bp-hogans-gohome",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "place_sim", "args": { "sim": "Paul Hogue", "x": 411.9, "z": 1344.0 } },
-      { "cmd": "sim_go_home", "args": { "sim": "Paul Hogue" } }
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Paul Hogue",
+          "x": 411.9,
+          "z": 1344.0
+        }
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Paul Hogue"
+        }
+      }
     ],
-    "watch": { "kind": "stuck", "sims": ["Paul Hogue"], "minutes": 5 },
-    "expect": "the Sim walks home or is shortcut home (not stuck)"
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Paul Hogue"
+      ],
+      "minutes": 5
+    },
+    "expect": "the Sim walks home or is shortcut home (not stuck)",
+    "area": [
+      411.9,
+      1344.0
+    ]
   },
   {
     "id": "ip-houseboat-gohome",
@@ -31,10 +91,31 @@
     "fix": "ts3fixes docked-houseboat shortcut (b2)",
     "save": "Baseline-IP",
     "steps": [
-      { "cmd": "sim_go_home", "args": { "sim": "Linda Scott" }, "optional": true },
-      { "cmd": "sim_go_home", "args": { "sim": "Mylee Arias" }, "optional": true }
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Linda Scott"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Mylee Arias"
+        },
+        "optional": true
+      }
     ],
-    "watch": { "kind": "stuck", "sims": ["Linda Scott", "Mylee Arias", "Tariq Scott", "Ruben Arias"], "minutes": 5 },
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Linda Scott",
+        "Mylee Arias",
+        "Tariq Scott",
+        "Ruben Arias"
+      ],
+      "minutes": 5
+    },
     "expect": "no houseboat resident stuck"
   },
   {
@@ -43,7 +124,12 @@
     "fix": "ts3fixes VirtualHomeHook",
     "save": "Baseline-BP",
     "steps": [],
-    "watch": { "kind": "counter", "counter": "virtualhome_shortcuts", "min": 3, "minutes": 3 },
+    "watch": {
+      "kind": "counter",
+      "counter": "virtualhome_shortcuts",
+      "min": 3,
+      "minutes": 3
+    },
     "expect": "unseen homeless townies fade out at once"
   }
 ]
