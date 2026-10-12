@@ -5,7 +5,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const DIR = join(resolve(import.meta.dirname, '..', '..'), 'probe-out', 'profile');
-const tags = process.argv.slice(2);
+// A tag profiled with profile-world.ts --ab also yields <tag>:on and <tag>:off (rows split by slice; the first 15 s
+// after each switch are dropped while the sim settles).
+const tags = process.argv.slice(2).flatMap(t => existsSync(join(DIR, `${t}-ab.json`)) ? [`${t}:on`, `${t}:off`] : [t]);
 const find = (...names) => names.map(n => join(DIR, n)).find(existsSync);
 const lines = f => f ? readFileSync(f, 'utf8').split('\n').filter(Boolean) : [];
 const pct = (n, d) => d ? (100 * n / d).toFixed(1) : '-';
@@ -16,9 +18,15 @@ const KEY = ['Sims3.Gameplay.Actors.Sim.Simulate', 'Sims3.Gameplay.ObjectCompone
   'Sims3.Gameplay.Autonomy.ReactionBroadcaster.PulseSims', 'Sims3.Gameplay.Actors.SimUpdate.Simulate', 'Sims3.Gameplay.Autonomy.Autonomy.Update',
   'Sims3.Gameplay.Core.GoHome.Run', 'GoToVirtualHomeInternal.Run', 'Sims3.Gameplay.Queries.GetObjects',
   'Sims3.Gameplay.EventSystem.EventTracker.SendEvent', 'Sims3.Gameplay.Core.Lot.Simulate'];
-const runs = tags.map(tag => {
+const runs = tags.map(full => {
+  const [tag, side] = full.split(':');
   const csv = lines(find(`${tag}-600-seconds.csv`)), head = csv.shift()?.split(',') ?? [];
-  const rows = csv.map(l => Object.fromEntries(l.split(',').map((v, i) => [head[i], Number(v)])));
+  let rows = csv.map(l => Object.fromEntries(l.split(',').map((v, i) => [head[i], Number(v)])));
+  if (side) {
+    const { slices } = JSON.parse(readFileSync(join(DIR, `${tag}-ab.json`), 'utf8'));
+    const sideOf = sec => { let cur = null; for (const sl of slices) if (sec >= sl.from) cur = sl; return cur && sec - cur.from >= 15 ? (cur.on ? 'on' : 'off') : null; };
+    rows = rows.filter((r, i) => sideOf(i) === side); // row i is roughly second i of the run
+  }
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0), n = rows.length || 1;
   // patched methods sample under the hook's name (docs/04 F8); count them as the method they replace
   const alias = n => n === 'GoHomeHook.Run' ? 'Sims3.Gameplay.Core.GoHome.Run' : n;
@@ -32,7 +40,7 @@ const runs = tags.map(tag => {
   const stacks = lines(find(`${tag}-simstack.jsonl`, `simstack-${tag}.jsonl`)).map(l => JSON.parse(l).stack ?? []);
   const interp = stacks.filter(s => s.some(f => /FUN_00e53eb0/.test(f))).length, interpTop = stacks.filter(s => /FUN_00e53eb0/.test(s[0] ?? '')).length;
   const gcTop = stacks.filter(s => /FUN_00e4c3e0/.test(s[0] ?? '')).length;
-  return { tag, sum, n, rows, managed, busy, incl, self, stacks, interp, interpTop, gcTop };
+  return { tag: full, sum, n, rows, managed, busy, incl, self, stacks, interp, interpTop, gcTop };
 });
 
 row('', tags);
