@@ -31,6 +31,7 @@ captures/
 # Build output
 build/
 out/
+native/ts3native/out/
 Debug/
 Release/
 *.obj
