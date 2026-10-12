@@ -21,7 +21,8 @@ namespace Ts3Fixes
     //       removed with MiniSimDescription.RemoveMSD (unlinks the other sides' mini relationships).
     //   (c) Empty life-event lists (docs/14 7a): LifeEventManager keys whose List is empty; the game recreates one on demand.
     // Counters: [40] relationship pairs removed, [41] MiniSims removed, [42] cleanup runs, [43] runs skipped or failed,
-    // [52] empty life-event lists removed.
+    // [52] empty life-event lists removed, [53] memory pictures removed by (d).
+    //   (d) Memory snapshot cap (docs/14 7b): its own tunable Instantiator.kSnapshotCap (0 = off), same 2:00 alarm and skips.
     public static partial class Fixes
     {
         const float kCleanupHour = 2f;
@@ -47,6 +48,7 @@ namespace Ts3Fixes
 
         static void DailySaveCleanup()
         {
+            if (Instantiator.kSnapshotCap > 0) { try { RunSnapshotCapOnce(Instantiator.kSnapshotCap); } catch (Exception) { PatchCounters()[43]++; } }
             if (!SaveCleanupOn()) return;
             try { RunSaveCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; }
             try { RunLifeEventTrimOnce(); } catch (Exception) { PatchCounters()[43]++; }
@@ -73,10 +75,79 @@ namespace Ts3Fixes
             return line;
         }
 
+        // (d) On demand for the test agent too (reflect_call with args [cap]). Per active-household Sim, keeps the newest
+        // `cap` memory pictures and clears older ones the way LifeEvent.Forget does (DeleteTravelDBResource), but keeps the
+        // memory itself: with no snapshot LifeEvent.Snapshot falls back to the event type's stock image. Custom memories
+        // (id 0, taken by the player) are never counted or touched; a picture any other LifeEvent still holds is skipped.
+        public static string RunSnapshotCapOnce(int cap)
+        {
+            int[] c = PatchCounters();
+            if (cap <= 0) return "off: cap " + cap;
+            string unsafeWhy = CleanupUnsafe();
+            if (unsafeWhy != null) { c[43]++; return "skipped: " + unsafeWhy; }
+            string before = LifeEventCounts();
+            Dictionary<ResourceKey, bool> shared = SnapshotHolders();
+            int removed = 0, kept = 0;
+            foreach (SimDescription d in Household.ActiveHousehold.AllSimDescriptions)
+            {
+                if (d == null || d.LifeEventManager == null) continue;
+                List<Sims3.UI.Hud.ILifeEvent> snaps = new List<Sims3.UI.Hud.ILifeEvent>();
+                foreach (Sims3.UI.Hud.ILifeEvent e in d.LifeEventManager.GetVisibleLifeEvents())
+                    if (e.HasSnapshot && e.Id != 0) snaps.Add(e);
+                snaps.Sort(); // LifeEvent.CompareTo orders by mTimestamp, oldest first
+                for (int i = 0; i < snaps.Count - cap; i++)
+                {
+                    Sims3.UI.Hud.ILifeEvent e = snaps[i];
+                    ResourceKey key = e.Snapshot;
+                    bool isShared;
+                    if (shared.TryGetValue(key, out isShared) && isShared) { kept++; continue; }
+                    MethodInfo update = e.GetType().GetMethod("UpdateSnapshot"); // LifeEvent is a private nested class
+                    if (update == null) return "failed: no LifeEvent.UpdateSnapshot";
+                    update.Invoke(e, new object[] { ResourceKey.kInvalidResourceKey });
+                    World.DeleteTravelDBResource(key);
+                    removed++;
+                }
+            }
+            c[53] += removed;
+            string line = "snapshot cap " + cap + ": -" + removed + " pictures, " + kept + " shared kept | before " + before + " | after " + LifeEventCounts();
+            ShortcutLog(line);
+            AppDomain.CurrentDomain.SetData("ts3fixes.snapshotcap", line);
+            return line;
+        }
+
+        // Every snapshot key held by a LifeEvent (visible or not) of any Sim in any household or urnstone: true when more
+        // than one LifeEvent holds it (EventWithScreenshot can hand one picture to several Sims; no script code builds one).
+        static Dictionary<ResourceKey, bool> SnapshotHolders()
+        {
+            List<SimDescription> all = new List<SimDescription>();
+            foreach (Household h in Household.sHouseholdList) all.AddRange(h.AllSimDescriptions); // incl. previous travellers
+            all.AddRange(SimDescription.GetHomelessSimDescriptionsFromUrnstones());
+            Dictionary<ResourceKey, object> owner = new Dictionary<ResourceKey, object>();
+            Dictionary<ResourceKey, bool> shared = new Dictionary<ResourceKey, bool>();
+            foreach (SimDescription d in all)
+            {
+                if (d == null || d.LifeEventManager == null) continue;
+                System.Collections.IDictionary dict = LifeEventDict(d.LifeEventManager, "mLifeEvents");
+                if (dict == null) continue;
+                foreach (System.Collections.IEnumerable list in dict.Values)
+                {
+                    if (list == null) continue;
+                    foreach (Sims3.UI.Hud.ILifeEvent e in list)
+                    {
+                        if (e == null || !e.HasSnapshot) continue;
+                        object first;
+                        if (!owner.TryGetValue(e.Snapshot, out first)) { owner[e.Snapshot] = e; shared[e.Snapshot] = false; }
+                        else if (!ReferenceEquals(first, e)) shared[e.Snapshot] = true; // the same Sim listed twice is not sharing
+                    }
+                }
+            }
+            return shared;
+        }
+
         // lists/empty over both dictionaries of every Sim; events = LifeEvent objects; visible/snaps for the active household.
         public static string LifeEventCounts()
         {
-            int lists = 0, empty = 0, events = 0, visible = 0, snaps = 0;
+            int lists = 0, empty = 0, events = 0, visible = 0, snaps = 0, snapmax = 0;
             foreach (SimDescription d in Household.EverySimDescription())
             {
                 if (d == null || d.LifeEventManager == null) continue;
@@ -97,13 +168,16 @@ namespace Ts3Fixes
                 foreach (SimDescription d in Household.ActiveHousehold.AllSimDescriptions)
                 {
                     if (d.LifeEventManager == null) continue;
+                    int own = 0;
                     foreach (Sims3.UI.Hud.ILifeEvent e in d.LifeEventManager.GetVisibleLifeEvents())
                     {
                         visible++;
                         if (e.HasSnapshot) snaps++;
+                        if (e.HasSnapshot && e.Id != 0) own++; // what the snapshot cap counts
                     }
+                    snapmax = Math.Max(snapmax, own);
                 }
-            return "lists=" + lists + " empty=" + empty + " events=" + events + " visible=" + visible + " snaps=" + snaps
+            return "lists=" + lists + " empty=" + empty + " events=" + events + " visible=" + visible + " snaps=" + snaps + " snapmax=" + snapmax
                 + " hh=" + Household.sHouseholdList.Count + " sims=" + Household.EverySimDescription().Count;
         }
 

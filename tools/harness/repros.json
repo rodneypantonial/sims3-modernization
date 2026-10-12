@@ -384,6 +384,61 @@
     "expect": "run 1: life-event trim -N lists with N > 20,000, events, visible, snaps, hh and sims unchanged; run 2 removes < 100; after set_skill visible grows by 1 and the memory shows in the scrapbook; save succeeds; no stuck Sims and no new ErrorTrap/script errors in 5 min. Offline: FILTER=LifeEvent node tools/harness/save-sources.ts Cleanup-Test-BP Cleanup-Test-BP-le shows List<LifeEvent> + List<LifeEventActiveNode> down ~26,000 and OBJS ~0.75 MB smaller"
   },
   {
+    "id": "bp-snapshot-cap",
+    "bug": "Every memory of a selectable Sim stores a ~130 KB picture in TravelDB.package (dds g269d005); the game only caps visible memories at 400 per Sim, so pictures grow without bound (SV: 29 pictures, 3.82 MB in 14 sim days; docs/09 6, docs/14 7b)",
+    "fix": "ts3fixes SaveCleanup snapshot cap (opt-in kSnapshotCap, 0 = off; docs/14 7b)",
+    "save": "Cleanup-Test-BP",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.LifeEventCounts"
+        },
+        "waitS": 90,
+        "note": "wait for the post-load settling, as in bp-save-cleanup; note visible, snaps and snapmax (BP has 4 pictures in TravelDB.package)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunSnapshotCapOnce",
+          "args": [
+            1
+          ]
+        },
+        "waitS": 5,
+        "note": "cap 1 per Sim so BP's few pictures are capped; use 10 on a Baseline-SV copy (29 pictures)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunSnapshotCapOnce",
+          "args": [
+            1
+          ]
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "savecleanup_snapshots = pictures removed in run 1"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Cleanup-Test-BP-snap"
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 5
+    },
+    "expect": "run 1: snapshot cap 1: -N pictures (N = snaps minus one per Sim with pictures), 0 shared kept; visible, events, hh and sims unchanged; snapmax <= 1 after; run 2 removes 0; savecleanup_snapshots = N; save succeeds; the scrapbook opens and capped memories show the stock image; no new ErrorTrap/script errors in 5 min; reload Cleanup-Test-BP-snap loads clean. Offline: node tools/harness/save-sources.ts Cleanup-Test-BP Cleanup-Test-BP-snap shows dds g269d005 in TravelDB.package down by N"
+  },
+  {
     "id": "bp-route-cache",
     "bug": "Repeated route plans to an unreachable spot each run a full failed search (docs/11: no search budget)",
     "fix": "ts3native route negative cache ([RouteCache] Enabled=1) + C# backoff",

@@ -130,7 +130,7 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[53];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[54];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
             string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck" };
@@ -163,6 +163,7 @@ namespace Ts3Agent
             if (c.Length > 45) { r["overwatch_checks"] = c[44]; r["overwatch_yields"] = c[45]; } // NRaas Stuck Check plans seen / spread to their own tick
             if (c.Length > 51) { r["watchdog_idle_unroutable"] = c[46]; r["watchdog_idle_hidden_room"] = c[47]; r["watchdog_idle_stationary"] = c[48]; r["watchdog_route_fails"] = c[49]; r["watchdog_idle_verdicts"] = c[50]; r["watchdog_route_fail_sims"] = c[51]; } // watchdog idle cases (switch watchdogidle): resets per case, routability verdicts asked, Sims with failing plans tracked
             if (c.Length > 52) r["savecleanup_lifeevent_lists"] = c[52]; // empty life-event lists trimmed (docs/14 7a)
+            if (c.Length > 53) r["savecleanup_snapshots"] = c[53]; // old memory pictures removed by the snapshot cap (docs/14 7b)
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;
