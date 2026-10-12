@@ -44,7 +44,7 @@ const stuck: any[] = [];
 async function checkStuck() {
   const r = await ag('sims_activity');
   if (!r.ok) return;
-  const recent: string[] = (await ag('patches')).result?.recent ?? [];
+  const moved: Record<string, string> = (await ag('patches')).result?.moved ?? {}; // every Sim a shortcut moved
   for (const sim of r.result) {
     const key = `${sim.x},${sim.z},${sim.interaction},${sim.routing}`;
     const prev = simSeen.get(sim.id);
@@ -52,7 +52,7 @@ async function checkStuck() {
     simSeen.set(sim.id, e);
     if (!e.reported && sim.interaction && e.checks >= (sim.routing ? 3 : 6)) {
       e.reported = true;
-      stuck.push({ ...sim, checks: e.checks, shortcut: recent.some(l => l.startsWith(sim.name + ' -> ') || l.startsWith(sim.name + ' => ')) });
+      stuck.push({ ...sim, checks: e.checks, shortcut: moved[sim.name] ?? false });
     }
   }
 }
@@ -85,7 +85,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
 }
 await Promise.all([upkeep, profDone]);
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
-console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ' [teleported]' : ''} on ${x.interaction}`).join('; ')})` : ''}`);
+console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ` [teleported: ${x.shortcut}]` : ''} on ${x.interaction}`).join('; ')})` : ''}`);
 if (boats0.length) {
   const boats1 = (await ag('houseboats')).result ?? [];
   const moved = boats1.filter((b: any) => { const o = boats0.find((x: any) => x.lot === b.lot); return !o || Math.hypot(o.x - b.x, o.z - b.z) > 1; });

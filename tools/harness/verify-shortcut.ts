@@ -30,7 +30,7 @@ let verdict = 'FAIL: no checks ran';
 while (Date.now() - t0 < limit) {
   await sleep(30000);
   const p = (await ag('patches')).result ?? {};
-  const recent: string[] = p.recent ?? [];
+  const moved: Record<string, string> = p.moved ?? {}; // every Sim a shortcut moved
   const sims = (await ag('sims_activity')).result ?? [];
   for (const s of sims) {
     const key = `${s.x},${s.z},${s.interaction},${s.routing}`;
@@ -39,7 +39,7 @@ while (Date.now() - t0 < limit) {
     seen.set(s.id, e);
     if (!e.reported && s.interaction && e.checks >= (s.routing ? 3 : 6)) {
       e.reported = true;
-      const teleported = recent.some(l => l.startsWith(s.name + ' -> ') || l.startsWith(s.name + ' => '));
+      const teleported = s.name in moved;
       stuck.push(`${s.name}${teleported ? ' [teleported]' : ''} on ${s.interaction}`);
     }
   }

@@ -218,3 +218,19 @@ Bridgeport baseline (all shortcuts but traffic): the same townies (Ti Bellino, W
 ## F12. Reaction broadcaster throttle [measured 2026-10-12]
 
 `ReactionBroadcaster.PulseSims` hook (`BroadcasterPulseHook`): a broadcaster far from the camera and the active household pulses one call in four (staggered by a shared counter); near the player nothing changes. `Baseline-BP`, 3 min managed samples, against the walk-style build: `PulseSims` 7.1% -> 4.3%, `GetInRadiusSims` 3.4% -> 1.5%, `Lot.UpdateReactions` 8.6% -> 5.5%; 99,148 of 161,636 pulses skipped. The first build saved under 1%: the hook itself (~860 calls/s) read AppDomain data and rebuilt the household Sim list per call. Counters and camera/household positions are now cached (positions once per sim tick, `RefreshViewers`), which also cheapens every shortcut; all hooks together are 0.9% of script time.
+
+## F13. All fixes together, three worlds [measured 2026-10-12]
+
+Build 62c39f6 (patch host with go-home, building trips, lot visits, docked houseboats, walk-style comparer, broadcaster throttle), `profile-world.ts`, 10 min x3 each, against the morning baselines (no patches):
+
+| | BP base | BP all | SV base | SV all | IP base | IP all |
+|---|---|---|---|---|---|---|
+| sim iterations/s | 31.2 | **50.1** (+61%) | 63.3 | **116.8** (+85%) | 31.7 | **73.8** (+133%) |
+| hitches/s (>=50 ms) | 4.03 | **2.46** (-39%) | 1.90 | **1.00** (-47%) | 3.49 | **1.70** (-51%) |
+| worst iteration | 1,014 ms | 468 ms | 2,210 ms | 2,885 ms | 1,170 ms | 676 ms |
+| route ms/s | 94.9 | 107.8 | 82.2 | 77.3 | 246.4 | 183.5 |
+| route plans/s | 26.5 | 42.9 | 10.1 | 12.8 | 9.7 | 14.0 |
+| GC mark / forced ms/s | 16.8 / 15.9 | 7.0 / 3.6 | 11.2 / 6.6 | 14.3 / 2.8 | 14.1 / 13.2 | 10.2 / 3.6 |
+| stuck Sims (3 min rule) | - | 0 | - | 6 | - | 5 |
+
+Plans per real second rise because the sim runs faster (plans per iteration unchanged: BP 0.85 -> 0.86); cost per plan fell (BP 3.6 -> 2.5 ms). Open: the stuck Sims in SV (Meet Up / Visit at homes, routing without moving) and IP (houseboat households Arias and Scott going out) were not attributable with the 40-line shortcut log; rerun with the full moved-Sim record and a shortcuts-off baseline (in progress).

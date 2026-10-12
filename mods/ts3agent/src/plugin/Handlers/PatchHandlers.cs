@@ -212,7 +212,7 @@ namespace Ts3Agent
                 if (!Sims3.Gameplay.Objects.Vehicles.CarpoolManager.WaitForCarpool(Actor)) return false;
                 Sims3.Gameplay.Situations.VisitSituation.OnSimLeavingLot(Actor);
                 Sims3.Gameplay.Situations.GroupingSituation.RemoveSimFromGroupSituation(Actor);
-                PlaceSim(Actor, pos, fwd);
+                PlaceSim(Actor, pos, fwd, "home " + Target.Name);
                 sCounters[1]++;
                 NumSuccess++;
                 BeginCommodityUpdates();
@@ -335,6 +335,21 @@ namespace Ts3Agent
             log.Add(line);
         }
 
+        // Every Sim a shortcut moved this session (name -> last move and where it was placed), so a stuck Sim found
+        // later can be matched for certain; the 40-line log above only covers the last few seconds.
+        static Dictionary<string, object> MovedSims()
+        {
+            Dictionary<string, object> d = AppDomain.CurrentDomain.GetData("ts3agent.shortcut.moved") as Dictionary<string, object>;
+            if (d == null) { d = new Dictionary<string, object>(); AppDomain.CurrentDomain.SetData("ts3agent.shortcut.moved", d); }
+            return d;
+        }
+
+        static void PlaceSim(Sims3.Gameplay.Actors.Sim sim, Sims3.SimIFace.Vector3 pos, Sims3.SimIFace.Vector3 fwd, string what)
+        {
+            PlaceSim(sim, pos, fwd);
+            MovedSims()[sim.FullName] = what + " @" + Math.Round(pos.x, 1) + "," + Math.Round(pos.z, 1) + " " + Sims3.Gameplay.Utilities.SimClock.CurrentTime().ToString();
+        }
+
         // Trips into buildings (PLAN fix b3): work, school, shops, restaurants. An unseen townie heading to an unseen rabbit
         // hole far away is placed at a safe spot by the entrance, then the game's own method runs: it plans only the last
         // few metres and does everything after the walk unchanged (entering animation, success count, followers).
@@ -359,7 +374,7 @@ namespace Ts3Agent
                         if (SafeSpot(a, lot, door, out pos, out fwd))
                         {
                             string from = a.LotCurrent != null ? a.LotCurrent.Name : "street";
-                            PlaceSim(a, pos, fwd);
+                            PlaceSim(a, pos, fwd, "building " + proxy.CatalogName);
                             sCounters[5]++;
                             ShortcutLog(a.FullName + " => " + proxy.CatalogName + " from " + from);
                         }
@@ -389,7 +404,7 @@ namespace Ts3Agent
             Sims3.SimIFace.Vector3 pos, fwd;
             if (!SafeSpot(sim, lot, lot.EntryPoint(), out pos, out fwd)) { c[idx + 2]++; return false; }
             string from = sim.LotCurrent != null ? sim.LotCurrent.Name : "street";
-            PlaceSim(sim, pos, fwd);
+            PlaceSim(sim, pos, fwd, name + " " + lot.Name);
             c[idx + 1]++;
             ShortcutLog(sim.FullName + " => " + lot.Name + " (" + name + " from " + from + ")");
             return true;
@@ -575,6 +590,7 @@ namespace Ts3Agent
             r["broadcast_skipped"] = c[23];
             r["houseboat_shortcuts"] = c[21]; // shortcuts that placed a Sim on a docked houseboat
             r["recent"] = GoHomeLog();
+            r["moved"] = MovedSims();
             return r;
         }
     }
