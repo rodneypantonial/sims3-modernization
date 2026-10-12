@@ -80,20 +80,21 @@ The table is a fixed open-addressed array: `MaxEntries` rounded up to a power of
 
 ### Settings and counters
 
-`ts3native.ini` `[RouteCache]`: `Enabled=0` (no detour at all when 0), `WindowMs=2000` (100–60000), `MaxEntries=4096` (256–65536). When the cache is on, `ts3native.log` stays open and gets `route cache: calls N hits N misses N stored N otherFails N` about every 60 s, written by whichever game thread calls the planner first after the minute is up.
+`ts3native.ini` `[RouteCache]`: `Enabled=0` (no detour when 0, unless `[RouteWorker] Enabled=1`), `WindowMs=2000` (100–60000), `MaxEntries=4096` (256–65536). When the cache is on, `ts3native.log` stays open and gets `route cache: calls N hits N misses N stored N otherFails N` about every 60 s, written by whichever game thread calls the planner first after the minute is up.
 
-Export for test tools: `ts3native_counters`, a data export of 8 int32:
+Export for test tools: `ts3native_counters`, a data export of 16 int32 (8 in layout version 1, ts3native 0.2.0):
 
 | Offset | Field |
 |---|---|
-| +0x00 | version (1) |
+| +0x00 | version (2 since 0.3.0) |
 | +0x04 | enabled (1 when the detour is installed) |
 | +0x08 | calls |
 | +0x0C | hits |
 | +0x10 | misses (keyed calls that ran the original) |
 | +0x14 | stored |
 | +0x18 | otherFails |
-| +0x1C | windowMs |
+| +0x1C | windowMs (0 when the cache is off) |
+| +0x20..+0x3C | route worker, see Phase 3 |
 
 Frida: `const c = Module.findExportByName('ts3native.asi', 'ts3native_counters'); c.add(0xC).readS32()`.
 
@@ -127,6 +128,34 @@ One interaction: a native hit reaches the C# hook as `Failed` with no blocker, w
    - `stuck` Sims: any Sim standing still with an interaction queued for more than 1 sim-hour.
    Also log any Sim that keeps re-queuing the same failed interaction. A plain failure that loops would show here.
 5. If stuck Sims or loops show up, try `WindowMs=500` before turning the cache off.
+
+## Phase 3: route worker, offload-sync (v0.3.0, `[RouteWorker] Enabled=0` by default)
+
+docs/18 first step: prove the route search runs safely on another thread, with no gameplay change. Built and self-tested 2026-10-13; not run in game yet.
+
+- **Hook**: the same `Route_PlanLocked 0x82C6E0` detour as the cache (`PlanLockedHook`). One detour serves both; it is installed when either `[RouteCache] Enabled=1` or `[RouteWorker] Enabled=1`. Order per call: the original's early-outs run on the caller; a cache hit returns on the caller; everything else (cache miss, or cache off) goes to `RunPlan`.
+- **Threading**: one persistent worker thread (`CreateThread`, 1 MB stack reserve), started in `DllMain` (it runs once the loader lock is released). With `workerMode = 1`, `RunPlan` copies the 10 arguments, `ecx` and the caller's x87 control word and MXCSR into one job slot, signals the worker and blocks on an event. The worker sets the same FPU state, calls the original through the trampoline and signals back. One job at a time (a critical section); a call made on the worker itself runs there directly (`fallbacks`). Same arguments, same result, only the thread changes.
+- **Watchdog**: every 2 s of waiting logs `route worker: thread N waited S s for worker thread W ...` and counts `watchdogs`; the caller keeps waiting (no unsafe recovery). Any watchdog line is deadlock evidence (docs/18 hazard 2).
+- **Settings**: `Enabled` (start the worker, install the detour), `Mode` (start value of the runtime switch, 0 = plan on the calling thread, 1 = on the worker). With `Enabled=1, Mode=0` the detour only passes through until the switch is flipped.
+- **Runtime switch**: `workerMode` at `ts3native_counters+0x20` is writable. Probe: `GET /native?routeworker=1` (or `0`); `profile-world.ts --ab routeworker` alternates it per slice.
+- **Log**: about every 60 s, `route worker: mode M calls N worker N ms max N us wait N ms fallbacks N watchdogs N`.
+
+| Offset | Field |
+|---|---|
+| +0x20 | workerMode (writable runtime switch) |
+| +0x24 | workerReady (1 when the worker runs and the detour is installed) |
+| +0x28 | workerCalls |
+| +0x2C | workerUs (total time in the original on the worker) |
+| +0x30 | workerMaxUs |
+| +0x34 | waitUs (total caller wait; `waitUs - workerUs` = handoff overhead) |
+| +0x38 | fallbacks |
+| +0x3C | watchdogs |
+
+Self-test (`selftest.cpp`, `TestRouteWorker`): mode 0 runs on the caller; mode 1 runs on the worker thread with the caller's x87 control word (24-bit precision set on purpose) and returns each call's own result; a plan started on the worker falls back to a direct call; `doPlan = 0` stays on the caller; with the cache on, a no-path failure found on the worker is stored and the repeat is a hit that never reaches the worker.
+
+Probe for the same step: `GET /routelock?start=1` (opt-in, `stop=1` unhooks) hooks `Route_PlanLocked`, `Lock_Acquire 0x4E16F0` / `Lock_Release 0x4E17B0` filtered on `world+0x918`, and `0x83CED0` (iteration count). It reports acquisitions, wait and hold per thread, plan length percentiles, and the overlap **O**: for each plan, `min(plan length, gap until the sim thread next acquires the routing lock)`. `Lock_Acquire` is engine-wide, so every acquire enters the Frida script; `acquireHooksPerSec` shows that cost. Measure O with `workerMode = 0`.
+
+Unverified: the planner has no thread affinity (TLS, profiler scopes, asserts); the calling thread never already holds `world+0x918` when it calls `Route_PlanLocked` (if it did, the worker would deadlock on the lock, and the watchdog would show it); an access violation inside the search on the worker is not caught by any handler the sim thread may have.
 
 ## Proposed install entry for tools/setup/fixes.json (not applied)
 

@@ -307,6 +307,104 @@ function netStart() {
   }
 }
 
+// Routing-lock watch (opt-in, /routelock?start=1, stop=1 detaches; docs/18 step 1a): who holds RoutingWorld+0x918,
+// how long, and how much of each plan a worker could overlap with sim-thread work. Read-only hooks; the lock is learned
+// from the first Route_PlanLocked (ecx = RoutingWorld). Lock_Acquire is the engine-wide lock (resource lock too), so
+// every acquire enters this script: `acquireHooksPerSec` shows the cost; stop it when done.
+const ROUTE_PLAN_LOCKED = ptr(0x82c6e0), LOCK_ACQUIRE = ptr(0x4e16f0), LOCK_RELEASE = ptr(0x4e17b0), LOCOMOTION_UPDATE = ptr(0x83ced0);
+const qpcBuf = Memory.alloc(8);
+const qpcFn = new NativeFunction(k32.getExportByName('QueryPerformanceCounter'), 'int', ['pointer']);
+const qpfBuf = Memory.alloc(8);
+new NativeFunction(k32.getExportByName('QueryPerformanceFrequency'), 'int', ['pointer'])(qpfBuf);
+const qpfPerMs = qpfBuf.readU64().toNumber() / 1000;
+function nowMs() { qpcFn(qpcBuf); return qpcBuf.readU64().toNumber() / qpfPerMs; }
+const rl = { started: null, listeners: [], lock: null, simTid: null, iterations: 0, acquireHooks: 0, threads: {},
+             plans: [], plansByThread: {}, planMs: 0, overlapMs: 0, gaps: [], pending: null, depth: {} };
+const OVERLAP_BUCKETS = [0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, Infinity];
+function rlThread(tid) {
+  return rl.threads[tid] ??= { acquires: 0, waitMs: 0, maxWaitMs: 0, holdMs: 0, maxHoldMs: 0, held: 0 };
+}
+function routeLockStart() {
+  if (rl.started) return;
+  rl.started = nowMs();
+  rl.simTid = findInterpThread();
+  rl.listeners.push(Interceptor.attach(ROUTE_PLAN_LOCKED, {
+    onEnter() {
+      if (rl.lock === null) rl.lock = this.context.ecx.add(0x918);
+      this.t = nowMs();
+    },
+    onLeave() {
+      const tid = Process.getCurrentThreadId(), end = nowMs(), len = end - this.t;
+      rl.planMs += len;
+      rl.plansByThread[tid] = (rl.plansByThread[tid] || 0) + 1;
+      if (rl.plans.length < 20000) rl.plans.push(len);
+      rl.pending = { end, len }; // closed by the sim thread's next acquire of the routing lock
+    },
+  }));
+  rl.listeners.push(Interceptor.attach(LOCK_ACQUIRE, {
+    onEnter() {
+      rl.acquireHooks++;
+      this.match = rl.lock !== null && this.context.ecx.equals(rl.lock);
+      if (!this.match) return;
+      this.t = nowMs();
+      const tid = Process.getCurrentThreadId();
+      if (tid === rl.simTid && rl.pending && !(rl.depth[tid] > 0)) {
+        const gap = this.t - rl.pending.end, ov = Math.min(rl.pending.len, gap);
+        rl.overlapMs += ov;
+        if (rl.gaps.length < 20000) rl.gaps.push(ov);
+        rl.pending = null;
+      }
+    },
+    onLeave() {
+      if (!this.match) return;
+      const tid = Process.getCurrentThreadId(), now = nowMs(), w = now - this.t, th = rlThread(tid);
+      th.acquires++; th.waitMs += w; th.maxWaitMs = Math.max(th.maxWaitMs, w);
+      if (!(rl.depth[tid] > 0)) th.held = now;
+      rl.depth[tid] = (rl.depth[tid] || 0) + 1;
+    },
+  }));
+  rl.listeners.push(Interceptor.attach(LOCK_RELEASE, {
+    onEnter() {
+      if (rl.lock === null || !this.context.ecx.equals(rl.lock)) return;
+      const tid = Process.getCurrentThreadId();
+      if (!(rl.depth[tid] > 0)) return; // acquired before the watch started
+      if (--rl.depth[tid] === 0) {
+        const th = rlThread(tid), h = nowMs() - th.held;
+        th.holdMs += h; th.maxHoldMs = Math.max(th.maxHoldMs, h);
+      }
+    },
+  }));
+  rl.listeners.push(Interceptor.attach(LOCOMOTION_UPDATE, { onEnter() { rl.iterations++; } }));
+}
+function routeLockStop() {
+  for (const l of rl.listeners) l.detach();
+  rl.listeners = [];
+}
+function pct(a, q) {
+  if (!a.length) return null;
+  const s = a.slice().sort((x, y) => x - y);
+  return Math.round(s[Math.min(s.length - 1, Math.floor(q * s.length))] * 1000) / 1000;
+}
+function routeLockReport() {
+  if (rl.started && rl.simTid === null) rl.simTid = findInterpThread();
+  const secs = rl.started ? (nowMs() - rl.started) / 1000 : 0, r3 = x => Math.round(x * 1000) / 1000;
+  const hist = {};
+  for (const b of OVERLAP_BUCKETS) hist[b === Infinity ? '>100' : '<=' + b] = 0;
+  for (const g of rl.gaps) { const b = OVERLAP_BUCKETS.find(x => g <= x); hist[b === Infinity ? '>100' : '<=' + b]++; }
+  const threads = Object.fromEntries(Object.entries(rl.threads).map(([tid, t]) => [tid, {
+    sim: Number(tid) === rl.simTid, acquires: t.acquires, perIteration: rl.iterations ? r3(t.acquires / rl.iterations) : null,
+    waitMs: r3(t.waitMs), maxWaitMs: r3(t.maxWaitMs), holdMs: r3(t.holdMs), maxHoldMs: r3(t.maxHoldMs) }]));
+  return {
+    since: rl.started && Math.round(secs), hooked: rl.listeners.length > 0, lock: rl.lock && rl.lock.toString(), simThread: rl.simTid,
+    iterations: rl.iterations, acquireHooksPerSec: secs ? Math.round(rl.acquireHooks / secs) : 0, threads,
+    plans: { n: rl.plans.length, byThread: rl.plansByThread, totalMs: r3(rl.planMs), p50: pct(rl.plans, 0.5), p90: pct(rl.plans, 0.9),
+             p99: pct(rl.plans, 0.99), max: pct(rl.plans, 1) },
+    // O = share of plan time a worker could run before the sim thread next needs the routing lock
+    overlap: { n: rl.gaps.length, totalMs: r3(rl.overlapMs), O: rl.planMs ? r3(rl.overlapMs / rl.planMs) : null,
+               routeMsPerSec: secs ? r3(rl.planMs / secs) : null, overlapMsPerSec: secs ? r3(rl.overlapMs / secs) : null, histogramMs: hist },
+  };
+}
+
 rpc.exports = {
   net(start) {
     if (start) netStart();
@@ -314,12 +412,26 @@ rpc.exports = {
              loaded: Object.keys(NET_APIS).filter(d => Process.findModuleByName(d) !== null) };
   },
 
-  // ts3native.asi counters (docs/15): route cache calls/hits/misses/stored, null when the plugin is not loaded
-  nativeCounters() {
+  routeLock(start, stop) {
+    if (start) routeLockStart();
+    if (stop) routeLockStop();
+    return routeLockReport();
+  },
+
+  // ts3native.asi counters (docs/15): route cache and route worker, null when the plugin is not loaded.
+  // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
+  nativeCounters(routeWorker) {
     const c = Module.findExportByName('ts3native.asi', 'ts3native_counters');
     if (c === null) return null;
     const f = ['version', 'enabled', 'calls', 'hits', 'misses', 'stored', 'otherFails', 'windowMs'];
-    return Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
+    if (c.readS32() >= 2) f.push('workerMode', 'workerReady', 'workerCalls', 'workerUs', 'workerMaxUs', 'waitUs', 'fallbacks', 'watchdogs');
+    const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
+    if (routeWorker === 0 || routeWorker === 1) {
+      if (r.workerReady !== 1) return Object.assign(r, { error: 'route worker not running ([RouteWorker] Enabled=0 or ts3native < 0.3.0)' });
+      c.add(8 * 4).writeS32(routeWorker);
+      r.workerMode = c.add(8 * 4).readS32();
+    }
+    return r;
   },
 
   agentSend(cmd, args) {

@@ -78,6 +78,64 @@ static void TestRouteCache() {
     assert(ts3native_counters.otherFails == 2 && ts3native_counters.hits == 1 && ts3native_counters.calls == 7);
 }
 
+// --- route worker: the original runs on the worker with the caller's FPU control word, composed with the cache ---
+static DWORD g_planTid;
+static unsigned short g_planCw;
+static int g_reenter;
+static u8 __fastcall WorkerPlan(void*, void*, int* outList, int* starts, int* goals, DWORD agent, DWORD, u8* opts, int*, int*,
+                                DWORD guidLo, DWORD) {
+    g_planTid = GetCurrentThreadId();
+    g_planCw = GetX87();
+    if (g_reenter) {  // a plan started on the worker runs there directly instead of waiting for itself
+        g_reenter = 0;
+        assert(PlanLockedHook(NULL, NULL, outList, starts, goals, agent, 1, opts, NULL, NULL, 1, 0) == 1);
+        assert(g_planTid == GetCurrentThreadId());
+    }
+    return (u8)guidLo;  // echo, so each call's own result comes back
+}
+
+static void TestRouteWorker() {
+    free(g_tab);
+    g_tab = NULL;  // worker only
+    assert(StartWorker());
+    ts3native_counters.workerReady = 1;
+    g_planOrig = WorkerPlan;
+    u8 opts[0x38] = {0};
+    int s[2] = {(int)(uintptr_t)g_pts[0], (int)(uintptr_t)g_pts[1]};
+    int g[2] = {(int)(uintptr_t)g_pts[1], (int)(uintptr_t)g_pts[2]};
+    int list[2];
+    const DWORD me = GetCurrentThreadId();
+    const Ts3nCounters c0 = ts3native_counters;
+
+    ts3native_counters.workerMode = 0;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
+    ts3native_counters.workerMode = 1;
+    const unsigned short cw = GetX87();
+    SetX87((unsigned short)(cw & ~0x300));  // 24-bit precision, as D3D9 can leave the game thread
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 0, 0) == 0);
+    assert(g_planTid == g_workerTid && g_planTid != me && g_planCw == GetX87());
+    SetX87(cw);
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planCw == cw);
+    g_reenter = 1;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1);
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 0, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);  // doPlan=0 stays
+    const Ts3nCounters& c = ts3native_counters;
+    assert(c.workerCalls - c0.workerCalls == 3 && c.fallbacks - c0.fallbacks == 1 && c.watchdogs == 0);
+    assert(c.waitUs >= c.workerUs);
+
+    // with the cache: a 7/8 failure found on the worker is stored, the repeat is a hit that never reaches the worker
+    assert(CacheInit(4096, 2000));
+    g_planOrig = FakePlan;
+    g_status = 8;
+    const LONG calls0 = c.workerCalls, hits0 = c.hits;
+    list[0] = list[1] = (int)(uintptr_t)list;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 9, 0) == 0);
+    list[0] = list[1] = (int)(uintptr_t)list;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 9, 0) == 0);
+    assert(c.workerCalls - calls0 == 1 && c.hits - hits0 == 1);
+    ts3native_counters.workerMode = 0;
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -99,6 +157,7 @@ int main() {
     assert(((int(__cdecl*)())fn)() == 7);
     assert(((int(__cdecl*)())tramp)() == 42);
     TestRouteCache();
+    TestRouteWorker();
     puts("selftest ok");
     return 0;
 }

@@ -151,6 +151,8 @@ Two unknowns set the gain of any off-thread design:
 
 ## Q4. First step (one day): lock/overlap probe + offload-sync mode
 
+**Built 2026-10-13 (not run in game yet):** 1a as `GET /routelock?start=1` in `tools/probe` (agent.js `routeLock`); 1b as ts3native 0.3.0 `[RouteWorker] Enabled/Mode` (docs/15 phase 3), runtime switch `GET /native?routeworker=0|1`, `profile-world.ts --ab routeworker`. Differences from the plan below: an `Enabled` key starts the worker and installs the detour (`Mode` is only the start value of the switch, so `Enabled=1, Mode=0` allows the in-load A/B); counters are in microseconds (`workerUs`, `workerMaxUs`, `waitUs`; handoff overhead = `waitUs - workerUs`); the job also carries the caller's x87 control word and MXCSR. The E counters in the C# `RouteBackoffHook` are not built yet.
+
 Goal: measure **O** and **E**, and prove the planner runs correctly on another thread, **with no change to what the game does**.
 
 ### 1a. Frida probe `routelock` (tools/probe, measurement only)

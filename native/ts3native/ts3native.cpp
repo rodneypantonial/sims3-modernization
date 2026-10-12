@@ -8,8 +8,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <xmmintrin.h>
 
-#define TS3NATIVE_VERSION "0.2.0"
+#define TS3NATIVE_VERSION "0.3.0"
 
 typedef unsigned char u8;
 
@@ -151,18 +152,27 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 8 int32.
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 16 int32.
 struct Ts3nCounters {
-    LONG version;      // layout version, 1
+    LONG version;      // layout version, 2
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
     LONG calls;        // every Route_PlanLocked call
     LONG hits;         // answered from the cache: plain failure, no lock, no search
     LONG misses;       // keyed calls that ran the original
     LONG stored;       // no-path failures (status 7/8) recorded
     LONG otherFails;   // original returned 0 without a 7/8 path (not cached)
-    LONG windowMs;     // active WindowMs
+    LONG windowMs;     // active WindowMs, 0 when the cache is off
+    // v2: route worker (docs/18 first step)
+    volatile LONG workerMode;  // runtime switch, writable by test tools: 0 = plan on the calling thread, 1 = on the worker
+    LONG workerReady;  // 1 when the worker thread runs and the detour is installed
+    LONG workerCalls;  // plans run on the worker
+    LONG workerUs;     // total time in the original on the worker, microseconds
+    LONG workerMaxUs;  // longest single plan on the worker, microseconds
+    LONG waitUs;       // total time callers waited for the worker (search + handoff), microseconds
+    LONG fallbacks;    // mode 1 but run on the calling thread (a plan started from the worker itself)
+    LONG watchdogs;    // waits that passed 2 s (logged; the caller keeps waiting)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {1, 0, 0, 0, 0, 0, 0, 0};
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 typedef unsigned __int64 u64;
 struct CacheEntry { u64 key; ULONGLONG until; };
@@ -246,7 +256,96 @@ static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
     if ((LONG64)now < next || InterlockedCompareExchange64(&g_nextLog, (LONG64)now + 60000, next) != next) return;
     const Ts3nCounters& c = ts3native_counters;
-    Log("route cache: calls %ld hits %ld misses %ld stored %ld otherFails %ld", c.calls, c.hits, c.misses, c.stored, c.otherFails);
+    if (c.windowMs) Log("route cache: calls %ld hits %ld misses %ld stored %ld otherFails %ld", c.calls, c.hits, c.misses, c.stored, c.otherFails);
+    if (c.workerReady)
+        Log("route worker: mode %ld calls %ld worker %ld ms max %ld us wait %ld ms fallbacks %ld watchdogs %ld", c.workerMode,
+            c.workerCalls, c.workerUs / 1000, c.workerMaxUs, c.waitUs / 1000, c.fallbacks, c.watchdogs);
+}
+
+// --- Route worker (docs/18 first step, offload-sync): the original runs on our thread while the caller waits ---
+// Same arguments, same result; only the thread changes. Proves the search is safe off the sim thread.
+struct PlanJob {
+    void* world; int* outList; int* starts; int* goals; DWORD agent; DWORD doPlan; u8* opts; int* out1; int* out2;
+    DWORD guidLo, guidHi;
+    unsigned short x87;
+    unsigned int mxcsr;
+    u8 result;
+};
+static PlanJob g_job;
+static HANDLE g_jobReady, g_jobDone;
+static DWORD g_workerTid;
+static CRITICAL_SECTION g_workerCs;  // one job at a time; another calling thread waits here
+static LARGE_INTEGER g_qpf;
+
+static LONG UsSince(LARGE_INTEGER t0) {
+    LARGE_INTEGER t1;
+    QueryPerformanceCounter(&t1);
+    return (LONG)((t1.QuadPart - t0.QuadPart) * 1000000 / g_qpf.QuadPart);
+}
+
+// The caller's FPU state goes with the job: D3D9 can leave the game thread's x87 at single precision, and the
+// search must round the same way to find the same path.
+static unsigned short GetX87() {
+    unsigned short cw;
+    __asm { fnstcw cw }
+    return cw;
+}
+static void SetX87(unsigned short cw) {
+    __asm { fldcw cw }
+}
+
+static DWORD WINAPI WorkerMain(LPVOID) {
+    for (;;) {
+        WaitForSingleObject(g_jobReady, INFINITE);
+        PlanJob& j = g_job;
+        SetX87(j.x87);
+        _mm_setcsr(j.mxcsr);
+        LARGE_INTEGER t0;
+        QueryPerformanceCounter(&t0);
+        j.result = g_planOrig(j.world, NULL, j.outList, j.starts, j.goals, j.agent, j.doPlan, j.opts, j.out1, j.out2, j.guidLo, j.guidHi);
+        LONG us = UsSince(t0), m;
+        InterlockedIncrement(&ts3native_counters.workerCalls);
+        InterlockedExchangeAdd(&ts3native_counters.workerUs, us);
+        while (us > (m = ts3native_counters.workerMaxUs) && InterlockedCompareExchange(&ts3native_counters.workerMaxUs, us, m) != m) {}
+        SetEvent(g_jobDone);
+    }
+}
+
+static bool StartWorker() {
+    QueryPerformanceFrequency(&g_qpf);
+    InitializeCriticalSection(&g_workerCs);
+    g_jobReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_jobDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    // 1 MB reserve like a default thread; it starts running only after DllMain returns (loader lock) and then just waits
+    HANDLE t = g_jobReady && g_jobDone ? CreateThread(NULL, 1 << 20, WorkerMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, &g_workerTid) : NULL;
+    if (!t) return false;
+    CloseHandle(t);
+    return true;
+}
+
+static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
+                  int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+    if (ts3native_counters.workerMode != 1 || !ts3native_counters.workerReady)
+        return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    if (GetCurrentThreadId() == g_workerTid) {  // waiting for ourselves would deadlock
+        InterlockedIncrement(&ts3native_counters.fallbacks);
+        return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    }
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    EnterCriticalSection(&g_workerCs);
+    PlanJob j = {world, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi, GetX87(), _mm_getcsr(), 0};
+    g_job = j;
+    SetEvent(g_jobReady);
+    // Watchdog: log deadlock evidence and keep waiting; there is no safe way to take the search back.
+    for (DWORD s = 2; WaitForSingleObject(g_jobDone, 2000) == WAIT_TIMEOUT; s += 2) {
+        InterlockedIncrement(&ts3native_counters.watchdogs);
+        Log("route worker: thread %lu waited %lu s for worker thread %lu (world %p), still waiting", GetCurrentThreadId(), s, g_workerTid, world);
+    }
+    u8 r = g_job.result;
+    LeaveCriticalSection(&g_workerCs);
+    InterlockedExchangeAdd(&ts3native_counters.waitUs, UsSince(t0));
+    return r;
 }
 
 static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
@@ -257,13 +356,14 @@ static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* s
     // the original's own early-outs (no plan requested, no start, no goal) stay with the original
     if ((u8)doPlan == 0 || starts[0] == starts[1] || goals[0] == goals[1])
         return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    if (!g_tab) return RunPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);  // worker only
     u64 key = RouteKey(starts, goals, agent, opts, guidLo, guidHi);
     if (CacheHit(key, now)) {
         InterlockedIncrement(&ts3native_counters.hits);
         return 0;  // same as the original's pre-lock early-outs: out list untouched, Failed with no blocker
     }
     InterlockedIncrement(&ts3native_counters.misses);
-    u8 r = g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    u8 r = RunPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     if (r) return r;
     int* node = (int*)(uintptr_t)outList[0];
     void* path = node != outList ? (void*)(uintptr_t)node[2] : NULL;
@@ -280,16 +380,34 @@ static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* s
 static const DWORD ROUTE_PLAN_LOCKED = 0x0082C6E0;
 static const u8 kPlanLockedPrologue[] = {0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00};  // sub esp,0xD8
 
-// Returns true when the detour is installed (the log must then stay open for the periodic counters).
+// Returns true when the cache table is ready; InstallPlanDetour installs the detour.
 static bool ApplyRouteCache(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"RouteCache", L"Enabled", 0, ini)) { Log("route cache disabled (Enabled=0)"); return false; }
     int windowMs = Clamp(GetPrivateProfileIntW(L"RouteCache", L"WindowMs", 2000, ini), 100, 60000);
     int maxEntries = Clamp(GetPrivateProfileIntW(L"RouteCache", L"MaxEntries", 4096, ini), 256, 65536);
     if (!CacheInit((DWORD)maxEntries, (DWORD)windowMs)) { Log("FAIL route cache: table allocation"); return false; }
     Log("route cache settings: WindowMs=%d MaxEntries=%d (table %lu)", windowMs, maxEntries, g_mask + 1);
-    g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
-    if (!g_planOrig) return false;
     ts3native_counters.windowMs = windowMs;
+    return true;
+}
+
+// Starts the worker thread; Mode is the start value of the runtime switch `workerMode`.
+static bool ApplyRouteWorker(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"RouteWorker", L"Enabled", 0, ini)) { Log("route worker disabled (Enabled=0)"); return false; }
+    int mode = Clamp(GetPrivateProfileIntW(L"RouteWorker", L"Mode", 0, ini), 0, 1);
+    if (!StartWorker()) { Log("FAIL route worker: thread start (err %lu)", GetLastError()); return false; }
+    ts3native_counters.workerMode = mode;
+    Log("route worker settings: Mode=%d (worker thread %lu)", mode, g_workerTid);
+    return true;
+}
+
+// One detour serves both: cache lookup on the calling thread, then the original there or on the worker.
+// Returns true when installed (the log must then stay open for the periodic counters and the watchdog).
+static bool InstallPlanDetour(bool cache, bool worker) {
+    if (!cache && !worker) return false;
+    g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
+    if (!g_planOrig) { ts3native_counters.windowMs = 0; return false; }
+    ts3native_counters.workerReady = worker;
     ts3native_counters.enabled = 1;
     g_nextLog = (LONG64)GetTickCount64() + 60000;
     return true;
@@ -317,7 +435,8 @@ static void Run(HMODULE self) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
         ApplyGc(ini);
-        keepLog = ApplyRouteCache(ini);
+        bool cache = ApplyRouteCache(ini);
+        keepLog = InstallPlanDetour(cache, ApplyRouteWorker(ini));
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

@@ -222,8 +222,11 @@ class Probe:
             return ts
         if path == 'net':  # network calls per API and target (start=1 hooks them once); does the game go online while playing?
             return rpc.net(q.get('start') == '1')
-        if path == 'native':  # ts3native.asi counters (route cache), null when the plugin is not loaded
-            return rpc.native_counters()
+        if path == 'native':  # ts3native.asi counters (route cache, route worker), null when the plugin is not loaded; routeworker=0|1 flips the worker at runtime
+            rw = q.get('routeworker')
+            return rpc.native_counters(int(rw) if rw in ('0', '1') else None)
+        if path == 'routelock':  # routing-lock hold/wait and plan overlap (docs/18 step 1a); start=1 hooks once, stop=1 unhooks
+            return rpc.route_lock(q.get('start') == '1', q.get('stop') == '1')
         if path == 'managedstack':  # C# call stack of the sim thread, innermost first (interpreter frames)
             return rpc.interp_stack(int(q.get('frames', 64)))
         if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)
