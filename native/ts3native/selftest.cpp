@@ -82,6 +82,21 @@ static void TestRouteCache() {
 static DWORD g_planTid;
 static unsigned short g_planCw;
 static int g_reenter;
+static int g_callInvoke;      // WorkerPlan makes a managed call through the runtime_invoke slot
+static DWORD g_fakeSlot;      // stands in for 0x1195B60
+static DWORD g_invokeTid;
+static int g_invokeNested;    // the managed call starts a plan of its own
+static void* __cdecl FakeInvoke(void* method, void* obj, void**, void** exc) {
+    g_invokeTid = GetCurrentThreadId();
+    if (exc) *exc = NULL;
+    if (g_invokeNested) {  // like script code planning a route from inside the callback: back to the worker
+        g_invokeNested = 0;
+        u8 opts[0x38] = {0};
+        int s[2] = {1, 2}, g[2] = {3, 4}, list[2];
+        assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == g_workerTid);
+    }
+    return (char*)obj + (uintptr_t)method;
+}
 static u8 __fastcall WorkerPlan(void*, void*, int* outList, int* starts, int* goals, DWORD agent, DWORD, u8* opts, int*, int*,
                                 DWORD guidLo, DWORD) {
     g_planTid = GetCurrentThreadId();
@@ -90,6 +105,13 @@ static u8 __fastcall WorkerPlan(void*, void*, int* outList, int* starts, int* go
         g_reenter = 0;
         assert(PlanLockedHook(NULL, NULL, outList, starts, goals, agent, 1, opts, NULL, NULL, 1, 0) == 1);
         assert(g_planTid == GetCurrentThreadId());
+    }
+    if (g_callInvoke) {  // the managed call runs on the waiting caller, the plan continues here with its result
+        g_callInvoke = 0;
+        void* r = ((InvokeFn)(uintptr_t)g_fakeSlot)((void*)1, (void*)0x100, NULL, NULL);
+        assert(r == (void*)0x101 && g_invokeTid != GetCurrentThreadId());
+        g_planTid = GetCurrentThreadId();
+        g_planCw = GetX87();
     }
     return (u8)guidLo;  // echo, so each call's own result comes back
 }
@@ -110,17 +132,32 @@ static void TestRouteWorker() {
     ts3native_counters.workerMode = 0;
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
     ts3native_counters.workerMode = 1;
+    // runtime_invoke slot not as expected (Mono not up, or another build): refused, plans stay on the caller
+    g_invokeSlot = &g_fakeSlot;
+    g_invokeCheckBytes = false;
+    g_invokeExpect = (DWORD)(uintptr_t)FakeInvoke;
+    g_fakeSlot = 0xEA1080;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
+    assert(ts3native_counters.invokeHook == -1 && g_fakeSlot == 0xEA1080);
+    ts3native_counters.invokeHook = 0;
+    g_fakeSlot = (DWORD)(uintptr_t)FakeInvoke;
     const unsigned short cw = GetX87();
     SetX87((unsigned short)(cw & ~0x300));  // 24-bit precision, as D3D9 can leave the game thread
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 0, 0) == 0);
     assert(g_planTid == g_workerTid && g_planTid != me && g_planCw == GetX87());
     SetX87(cw);
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planCw == cw);
+    assert(ts3native_counters.invokeHook == 1 && g_fakeSlot == (DWORD)(uintptr_t)InvokeHook);
+    assert(((InvokeFn)(uintptr_t)g_fakeSlot)((void*)2, (void*)0x100, NULL, NULL) == (void*)0x102 && g_invokeTid == me);  // other threads: pass-through
+    g_callInvoke = 1;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_invokeTid == me && g_planTid == g_workerTid);
+    g_callInvoke = g_invokeNested = 1;  // worker plan -> managed call on the caller -> nested plan on the worker
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_invokeTid == me && !g_invokeNested);
     g_reenter = 1;
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1);
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 0, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);  // doPlan=0 stays
     const Ts3nCounters& c = ts3native_counters;
-    assert(c.workerCalls - c0.workerCalls == 3 && c.fallbacks - c0.fallbacks == 1 && c.watchdogs == 0);
+    assert(c.workerCalls - c0.workerCalls == 6 && c.fallbacks - c0.fallbacks == 1 && c.watchdogs == 0 && c.invokes == 2);
     assert(c.waitUs >= c.workerUs);
 
     // with the cache: a 7/8 failure found on the worker is stored, the repeat is a hit that never reaches the worker

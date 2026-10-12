@@ -9,7 +9,7 @@ Scratch outputs (session scratchpad, not committed): `roots.txt` (who reaches th
 ## Short answer
 
 - Planning is fully synchronous, and the engine has **no async mode to switch on**. RoutingJob looks like an engine Job (same vtable shape as the JobManager jobs), but it is only ever built on the stack and run inline [verified].
-- The planner runs native code only: no direct call path from the plan entry points into the Mono interpreter [verified for direct calls]. A worker thread therefore needs **no Mono thread attach** and is not touched by the GC [inferred].
+- ~~The planner runs native code only~~ **Wrong (crash 2026-10-13):** the planner calls script code through `mono_runtime_invoke` during a plan, via a virtual call (no direct path exists) [verified crash stack]. A worker must hand those calls back to a Mono thread; see "Crash 2026-10-13" below.
 - The routing world is guarded by one recursive lock, `RoutingWorld+0x918`. The sim thread takes it every iteration for each walking Sim's obstacle check (locomotion update inside `MonoScriptHost::Simulate`) [verified path]. A search running on a worker under that lock therefore overlaps only with the sim-thread work done **before the next lock use**. Long searches would still stall the next iteration.
 - **Recommended design: async plan for the Sim's own task (B+C below).** A C# hook on `Route.Plan`/`PlanFromPoint`/`Replan`/`ReplanFromPoint` asks native for a background plan, then the Sim yields with `Simulator.Sleep(0)` until the result is ready. A ts3native worker runs the original internal call under the game's own lock. Expected gain: about 15-70 ms/s of sim-thread time in Bridgeport and 35-125 ms/s in Isla Paradiso, depending on how often the lock is free (to be measured first). It does not remove the long-search hitches by itself.
 - **First step (one day):** a lock and overlap probe (Frida) plus an "offload-sync" mode in ts3native that runs each plan on a worker while the sim thread waits. This proves the planner runs safely on another thread and measures the overlap we could gain, without changing game behaviour.
@@ -141,7 +141,7 @@ Two unknowns set the gain of any off-thread design:
 
 **Native side:** one worker thread (own `CreateThread`, 1 MB stack, normal priority), one job at a time (the planner is single-search anyway), a table `route pointer -> {state, result[0x48], key}`. The worker calls the original internal call through the trampoline. `IC_Route_DestroyRoute 0x750400` hook: wait for that route's job first. Counters added to `ts3native_counters`: jobs, pending polls, wait-in-destroy, sync fallbacks, worker busy ms.
 
-**Mono and GC:** the worker never touches managed memory, so no `mono_thread_attach`, and Boehm's stop-the-world does not need to stop it [inferred]. The waiting C# frame keeps the `Route` wrapper alive, so no finalizer runs while pending, except on a Sim reset (covered by the destroy hook).
+**Mono and GC:** ~~the worker never touches managed memory~~ the planner makes managed calls (crash 2026-10-13). In offload-sync the waiting sim thread runs them (ts3native 0.4.1). In this async design the sim thread is not waiting, so each managed call would have to wait for the Sim's next yield, or the callback must be identified and its answer computed before the plan starts. Decide after the 0.4.1 log names the callbacks. The waiting C# frame keeps the `Route` wrapper alive, so no finalizer runs while pending, except on a Sim reset (covered by the destroy hook).
 
 **What callers see:** a 1-3 tick delay (20-60 ms real time at speed 1) before a Sim starts walking. Vanilla Sims already pause while route following yields. Callers that try several destinations in a row (`PlanToUnusedPart`, `Lot.PlanRouteIntoLot`) pay one tick per try [inferred].
 
@@ -188,6 +188,16 @@ For **E**, add counters to the existing C# `RouteBackoffHook.PlanHook`: plans wi
 
 Async protocol as above: native job table and `IC_Route_*Plan*` hooks (`0x765160`, `0x765240`, `0x765490`, `0x765550`), `IC_Route_DestroyRoute 0x750400` wait, C# hooks on the four plan methods with the yield loop, a runtime switch `async` for in-load A/B, and a repro per caller type (walk, go home, visit lot, replan during following via a blocked doorway). Before building, scan the native readers of the RouteOption hi word to confirm that `DebugPathPlan` is unused.
 
+## Crash 2026-10-13 (step 1b, first in-game use) and fix
+
+Bridgeport, `workerMode` 1, first `sim_route_to` plans: ACCESS_VIOLATION reading 0x58 at 0x00EA2B03 within about 1 s (`xcpt <pc> 26-10-13 01.11.31.txt`). Details and addresses in docs/15 Phase 3 "Crash 2026-10-13 and fix".
+
+- Chain [verified, disassembly + return addresses in the stack data]: planner -> (virtual call) -> `mono_runtime_invoke` -> `[0x1195B60]` = interpreter runtime_invoke 0xE5A600 -> `ves_exec_method` 0xE59FD0 (domain from `mono_domain_get()` = TLS 0x11959DC, NULL on the worker) -> box return value 0xE52C70 -> `mono_object_new` 0xEA36F0 -> `mono_class_vtable` 0xEA2AD0 reads `domain->domain_id` (+0x58) -> fault.
+- The managed callee returns a non-void, non-reference type (bool, int, float or struct) [verified from the boxing switch]. Which method is still unknown: no direct-call path from `Route_PlanLocked` (1344 functions within 30 levels) reaches any runtime_invoke user, so the bridge is a virtual call [verified]. 0.4.1 logs the MonoMethod pointers. Candidates [inferred]: portal or door permission checks and object cost callbacks during the lot-portal step (0x63E340).
+- Boehm here registers one thread only (`GC_new_thread` 0xE51070 has a single caller, `GC_thr_init`) [verified]. No game thread wrapper registers threads, so "create the worker like the game's threads" does not exist, and attaching the worker to Mono would run script code on a second OS thread for the first time.
+- Fix options ranked by safety: (1) **chosen**: managed calls from the worker run on the waiting caller thread (hook the runtime_invoke slot, a data pointer; no code patch); same thread and order as without the worker. (2) Move only the A* inner loop to the worker: needs the callback site first, and the A* may itself be where the callback is. (3) `GC_new_thread` + domain TLS on the worker: Boehm-safe, but thread-static and `MonoThread` state stay missing [inferred risky].
+- Consequence for step 2 (async B+C): see the note under "Mono and GC" above.
+
 ## Open questions
 
 - How often does the sim thread take the routing lock per iteration, and does any other thread hold it for long? (step 1a)
@@ -195,4 +205,4 @@ Async protocol as above: native job table and `IC_Route_*Plan*` hooks (`0x765160
 - Do the lock users outside `0x829370-0x834860` (object system, lots, world) run on the main thread? A thread id in step 1a answers this.
 - Is the route vtable `+0x10/+0x14` pair a lock or a reference hold? If it is a lock, the worker holds it for the whole plan and any script read of that route waits; harmless while the Sim waits.
 
-Not checked: virtual-call paths from the planner (direct calls only), the JobManager submit function (our own thread is simpler, so it is not needed), and whether the planner uses thread-local storage (step 1b tests it in practice).
+Not checked: which virtual call from the planner reaches managed code (the crash proves one exists), the JobManager submit function (our own thread is simpler, so it is not needed), and whether the planner uses thread-local storage (step 1b tests it in practice).
