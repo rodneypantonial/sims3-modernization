@@ -29,7 +29,6 @@ namespace Ts3Agent
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);
             Dispatcher.Register("patches", Patches);
-            ApplyStartupPatches();
             Dispatcher.Register("play_household", PlayHousehold);
             Dispatcher.Register("quit_game", QuitGame);
             Dispatcher.Register("auto_dialog", AutoDialog);

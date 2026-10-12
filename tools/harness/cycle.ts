@@ -49,16 +49,19 @@ if (values.restart) {
   mkdirSync(pkgs, { recursive: true });
   // rebuild first: a plugin change that was only hot-reloaded would otherwise be lost on relaunch
   execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'build-agent.ts')], { stdio: 'ignore' });
+  // the player mod with the fixes (mods/ts3fixes); the agent only reads and switches it
+  execFileSync(process.execPath, [join(ROOT, 'tools', 'setup', 'build-fixes.ts')], { stdio: 'ignore' });
   // the game does not notice changed script mods, but rebuilding the cache costs startup time: clear it only when the
   // agent source or the Mods folder changed (the old csc builds differ byte-wise every time, so hash the inputs)
   const stampFile = join(ROOT, 'probe-out', 'scriptcache.stamp');
   const listing = (dir: string): string[] => readdirSync(dir, { recursive: true }).map(String).sort()
     .map(n => { const st = statSync(join(dir, n)); return st.isFile() ? `${n}:${st.size}:${st.mtimeMs}` : ''; });
   const stamp = createHash('sha256').update(listing(join(ROOT, 'mods', 'ts3agent', 'src')).join('|'))
-    .update(listing(join(USER_DIR, 'Mods')).filter(n => !/^Packages[\\/](ts3agent|ts3-nointro)\.package/.test(n)).join('|')).digest('hex');
+    .update(listing(join(ROOT, 'mods', 'ts3fixes', 'src')).join('|'))
+    .update(listing(join(USER_DIR, 'Mods')).filter(n => !/^Packages[\\/](ts3agent|ts3-nointro|ts3fixes)\.package/.test(n)).join('|')).digest('hex');
   const unchanged = existsSync(stampFile) && readFileSync(stampFile, 'utf8') === stamp && existsSync(join(pkgs, 'ts3agent.package'));
   if (!unchanged) {
-    for (const p of ['ts3agent.package', 'ts3-nointro.package']) copyFileSync(join(ROOT, 'build', p), join(pkgs, p));
+    for (const p of ['ts3agent.package', 'ts3-nointro.package', 'ts3fixes.package']) copyFileSync(join(ROOT, 'build', p), join(pkgs, p));
     rmSync(join(USER_DIR, 'scriptCache.package'), { force: true });
     mkdirSync(dirname(stampFile), { recursive: true });
     writeFileSync(stampFile, stamp);
