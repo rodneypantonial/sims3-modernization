@@ -155,6 +155,7 @@ namespace Ts3Agent
             Patch(typeof(VisitLot), "Run", typeof(VisitLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToLot), "Run", typeof(GoToLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToCommunityLot), "Run", typeof(GoToCommunityLotHook), "RunHook", "RunOrig");
+            Patch(typeof(Sims3.Gameplay.Actors.SimRoutingComponent).GetNestedType("WalkStyleComparer", BindingFlags.NonPublic), "Compare", typeof(WalkStyleCompareHook), "CompareHook", null);
             // not applied: in Bridgeport the traffic shortcut left ~3x as many Sims stuck (eating out, meet-ups, visits)
             // as the same run without it, for ~1% of script time. Kept for reference, docs/04 F10.
             // Patch(typeof(Route), "PlanToPoint", typeof(RoutePlanToPointHook), "PlanToPointHook", "PlanToPointOrig");
@@ -165,10 +166,10 @@ namespace Ts3Agent
             const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
             try
             {
-                MethodInfo t = target.GetMethod(method, all), r = hook.GetMethod(replacement, all), s = hook.GetMethod(stub, all);
+                MethodInfo t = target.GetMethod(method, all), r = hook.GetMethod(replacement, all);
                 if (Marshal.ReadInt32(new IntPtr(t.MethodHandle.Value.ToInt32() + 0x14)) != 0)
                     throw new InvalidOperationException("already compiled");
-                SwapMethod(s, t);
+                if (stub != null) SwapMethod(hook.GetMethod(stub, all), t);
                 SwapMethod(t, r);
                 sPatchLog.Add(target.Name + "." + method + ": ok");
             }
@@ -402,6 +403,34 @@ namespace Ts3Agent
                 return PlanToPointOrig(dest);
             }
             public RoutePlanResult PlanToPointOrig(Sims3.SimIFace.Vector3 dest) { return default(RoutePlanResult); } // receives Route.PlanToPoint's original header
+        }
+
+        // Walk-style comparer (PLAN fix a): SimRoutingComponent's private WalkStyleComparer.Compare looks both walk styles up
+        // in a Dictionary<WalkStyle, int>, and with the default enum comparer each lookup boxes and calls Enum.Equals and
+        // GetHashCode: 5% of script time as Enum.Equals alone in Bridgeport (docs/04 F7). The enum is sequential from 0, so
+        // an array indexed by value gives the same priorities; a style missing from the table still throws, as before.
+        public class WalkStyleCompareHook
+        {
+            static int[] sPrio;
+            public int CompareHook(Sims3.Gameplay.Actors.Sim.WalkStyle x, Sims3.Gameplay.Actors.Sim.WalkStyle y)
+            {
+                if (sPrio == null) sPrio = WalkStylePriorities();
+                int px = (int)x < sPrio.Length ? sPrio[(int)x] : -1, py = (int)y < sPrio.Length ? sPrio[(int)y] : -1;
+                if (px < 0 || py < 0) throw new KeyNotFoundException();
+                return py - px;
+            }
+
+            static int[] WalkStylePriorities()
+            {
+                Sims3.Gameplay.Actors.Sim.WalkStyle[] order = (Sims3.Gameplay.Actors.Sim.WalkStyle[])typeof(Sims3.Gameplay.Actors.SimRoutingComponent)
+                    .GetField("kWalkStylePriorities", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+                int max = 0;
+                foreach (Sims3.Gameplay.Actors.Sim.WalkStyle w in order) max = Math.Max(max, (int)w);
+                int[] p = new int[max + 1];
+                for (int i = 0; i < p.Length; i++) p[i] = -1;
+                for (int i = 0; i < order.Length; i++) p[(int)order[i]] = i; // later duplicates win, as the dictionary's indexer
+                return p;
+            }
         }
 
         // Home visits (VisitLot) and plain lot trips (GoToLot, GoToCommunityLot): same as community visits, the game's

@@ -210,3 +210,7 @@ Mechanism (the idea MonoPatcher's `ReplaceMethod` uses, reimplemented in `mods/t
 Houseboats (F7 data): boat moves cost 0.2–0.3%; boarding and leaving through gangways costs 5–8% (`SimRoutingComponent.CheckAndUpdateForHouseboats`, House Boat Fix's `EnterHouseboatThroughGangway`). So fix b2 lets go-home and lot shortcuts target houseboat lots while the boat is docked (`Houseboat.IsDocked`). Verified on `Baseline-IP`: 12 Sims placed on docked houseboats (Fantasea, Aquaholic, ...) in 2 min, 0 stuck.
 
 Bridgeport baseline (all shortcuts but traffic): the same townies (Ti Bellino, Wogan Hemlock, Mars Champion, Regina Choi, ...) sit stuck in Go Home on community lots, routing, in every run of `Baseline-BP`: a pre-existing problem of that save, not caused by the shortcuts (to investigate separately).
+
+## F11. Walk-style comparer fix [measured 2026-10-12]
+
+`SimRoutingComponent.WalkStyleComparer.Compare` (private) replaced by `WalkStyleCompareHook.CompareHook`: an array indexed by the `Sim.WalkStyle` value (sequential from 0) instead of two `Dictionary<WalkStyle, int>` lookups that box the enum and call `Enum.Equals`/`GetHashCode` in the interpreter. Same priorities, same exception for a style not in the table. `Baseline-BP`, 3 min managed samples at x3 (885 before, 887 after): `GetAdjustedWalkStyleForRoute` 6.0% -> 1.7%, `WalkStyleComparer.Compare` 4.7% -> 0.1%, `SortedList.Find` 4.9% -> 0.2%, `System.Enum.Equals` self 5.1% -> 1.0%. First full replacement (no stub) and first hook on a private nested class (found by reflection).
