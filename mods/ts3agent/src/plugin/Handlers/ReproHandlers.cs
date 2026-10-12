@@ -15,6 +15,7 @@ namespace Ts3Agent
         {
             Dispatcher.Register("place_sim", PlaceSim);
             Dispatcher.Register("sim_go_home", SimGoHome);
+            Dispatcher.Register("sim_strand", SimStrand);
             Dispatcher.Register("sim_visit_lot", SimVisitLot);
             Dispatcher.Register("sim_route_to", SimRouteTo);
         }
@@ -33,6 +34,33 @@ namespace Ts3Agent
             r["sim"] = s.FullName;
             r["lot"] = s.LotCurrent != null ? s.LotCurrent.Name : null;
             return r;
+        }
+
+        // sim_strand {sim, lot?, tries?}: stand the Sim on a spot of `lot` (default: the lot it is on) that fails the game's
+        // Sim.IsPointInLotSafelyRoutable (an enclosed room, a fenced corner, a pool tile), the case NRaas Overwatch and the
+        // ts3fixes watchdog reset as "unroutable". Samples up to `tries` (default 40) random lot positions, one route plan
+        // each, in this one call (a test hitch is fine). Error if every sample is routable.
+        static object SimStrand(Args a)
+        {
+            Sim s = Util.FindSim(a, "sim");
+            Lot lot = a.Has("lot") ? FindLotByName(a.Str("lot")) : s.LotCurrent;
+            if (lot == null || lot.IsWorldLot) throw new McpException("needs a non-world lot (pass lot)");
+            int tries = a.Has("tries") ? (int)a.Double("tries") : 40;
+            for (int i = 0; i < tries; i++)
+            {
+                Vector3 p = lot.GetRandomPosition(true, true, TerrainType.LotTerrain | TerrainType.LotFloor | TerrainType.LotPool);
+                if (p == Vector3.Invalid || s.IsPointInLotSafelyRoutable(lot, p)) continue;
+                s.InteractionQueue.CancelAllInteractions();
+                s.SetPosition(p);
+                Dictionary<string, object> r = Util.Obj();
+                r["sim"] = s.FullName;
+                r["lot"] = lot.Name;
+                r["x"] = Math.Round(p.x, 2); r["y"] = Math.Round(p.y, 2); r["z"] = Math.Round(p.z, 2);
+                r["terrain"] = World.GetTerrainType(p).ToString();
+                r["samples"] = i + 1;
+                return r;
+            }
+            throw new McpException("no unroutable spot in " + tries + " samples on " + lot.Name + " (try another lot or more tries)");
         }
 
         // sim_go_home {sim}: the game's own Sim.MakeSimGoHome (GoHome, or the virtual-home trip for homeless townies)

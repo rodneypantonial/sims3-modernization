@@ -57,13 +57,14 @@ namespace Ts3Fixes
         // trips (visit, visitlot, gotolot, gotocommunity: runs/shortcuts/no spot each), [21] houseboat placements,
         // [22-23] broadcaster pulses/skipped, [24-26] route backoff, [27-36] route fixes (RouteFixes.cs), [37-39] SafeSpot
         // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs), [44-45] Overwatch stuck-check
-        // plans/yields (OverwatchStuck.cs).
+        // plans/yields (OverwatchStuck.cs), [46-51] watchdog idle cases (RouteFixes.cs: idle on an unroutable spot, hidden
+        // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[48]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[52]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -87,6 +88,7 @@ namespace Ts3Fixes
                 case "virtualhome": return Instantiator.kVirtualHomeShortcut;
                 case "failreplan": return Instantiator.kNoRouteFailWalkOffscreen;
                 case "watchdog": return Instantiator.kStuckWatchdog;
+                case "watchdogidle": return Instantiator.kStuckWatchdogIdle;
                 case "backoff": return Instantiator.kRouteFailureBackoff;
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
                 case "spotspread": return true;
@@ -205,12 +207,13 @@ namespace Ts3Fixes
         // A spot for a shortcut Sim on `lot` near `near`: on the lot (else the game still sees the Sim away) and passing the
         // game's Sim.IsPointInLotSafelyRoutable (a plan from the spot to the lot's corners and edge midpoints), so the Sim can
         // walk on from there instead of standing stuck. That check is a full route plan (362 ms once in Bridgeport, docs/04
-        // F18), so its verdict is cached per 0.5 m cell (SpotSafe). Spots next to the lot's verified ones are tried first,
+        // F18), so its verdict is cached per 0.5 m cell and route profile (SpotVerdict). Spots next to the lot's verified ones are tried first,
         // rotating through them so arrivals spread out; then fresh spots from `near` (the entrance), whose cells may cost a
         // full check within the per-tick budget. No verified spot = false, and the caller runs the game's own trip.
         static bool SafeSpot(Sims3.Gameplay.Actors.Sim sim, Lot lot, Sims3.SimIFace.Vector3 near, out Sims3.SimIFace.Vector3 pos, out Sims3.SimIFace.Vector3 fwd)
         {
             SpotVerdicts v = Verdicts(lot);
+            RouteProfile prof = ProfileOf(sim);
             // "spotspread" off = the earlier build: always start from the lot's last verified spot (A/B for the Bridgeport slowdown)
             bool spread = ShortcutOn("spotspread");
             for (int i = 0; i < 2 + 3; i++)
@@ -219,7 +222,7 @@ namespace Ts3Fixes
                 if (!fresh && v.Good.Count == 0) continue;
                 Sims3.SimIFace.Vector3 start = fresh ? near : v.Good[spread ? v.Next++ % v.Good.Count : v.Good.Count - 1];
                 if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd)) continue;
-                if (LotManager.GetLotAtPoint(pos) != lot || !SpotSafe(sim, lot, v, pos, fresh)) continue;
+                if (LotManager.GetLotAtPoint(pos) != lot || SpotVerdict(sim, lot, v, prof, pos, fresh, false, true) != true) continue;
                 if (lot.IsHouseboatLot()) PatchCounters()[21]++;
                 return true;
             }
@@ -227,14 +230,20 @@ namespace Ts3Fixes
             return false;
         }
 
-        // SafeSpot's verdicts for one lot. The check plans as an adult whatever the Sim (only water planning follows
-        // IsHuman), so a verdict holds for any Sim of that kind. Kept for one sim-day, and dropped when the lot's household
-        // changes (a move-in or move-out refurnishes it) or the clock went back (another save or world was loaded).
+        // Verdicts of the game's Sim.IsPointInLotSafelyRoutable for one lot (SafeSpot and the stuck watchdog). The check
+        // plans with CreateRouteAsAdult(): the Sim's own species/gender flags with the age forced to adult, plus every option
+        // SetRouteOptions sets from the Sim (real age, posture, ghost buff, mermaid, lifeguard, UFO, frozen ponds, pet,
+        // horse, special-service pass-through, or none at all under an IHasCustomRouteOptions interaction), then water
+        // planning = IsHuman; no valid-room limit (the adult flags skip it). So a verdict is keyed by the cell plus that
+        // exact route profile (RouteProfile, read back from a route built the same way), never by IsHuman alone. Kept for
+        // one sim-day, and dropped when the lot's household changes (a move-in or move-out refurnishes it), the lot moved
+        // (a houseboat at another dock) or the clock went back (another save or world was loaded).
         class SpotVerdicts
         {
             public long Created;
             public ulong Household;
-            public readonly Dictionary<long, bool> Cells = new Dictionary<long, bool>();
+            public Sims3.SimIFace.Vector3 LotPos;
+            public readonly Dictionary<VerdictKey, bool> Cells = new Dictionary<VerdictKey, bool>(new VerdictKeyComparer());
             public readonly List<Sims3.SimIFace.Vector3> Good = new List<Sims3.SimIFace.Vector3>();
             public int Next;
         }
@@ -249,35 +258,76 @@ namespace Ts3Fixes
             long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
             ulong hh = lot.Household != null ? lot.Household.HouseholdId : 0;
             SpotVerdicts v;
-            if (!sSpotVerdicts.TryGetValue(lot.LotId, out v) || now < v.Created || now - v.Created > kVerdictTicks || v.Household != hh)
+            if (!sSpotVerdicts.TryGetValue(lot.LotId, out v) || now < v.Created || now - v.Created > kVerdictTicks || v.Household != hh
+                || (lot.Position - v.LotPos).Length() > 0.5f)
             {
                 v = new SpotVerdicts();
                 v.Created = now;
                 v.Household = hh;
+                v.LotPos = lot.Position;
                 sSpotVerdicts[lot.LotId] = v;
             }
             return v;
         }
 
+        // What the game's check feeds the planner for this Sim right now: the route's age/gender/species flags and every
+        // RouteOption/RouteOption2 bit, read back from a route built exactly as IsPointInLotSafelyRoutable builds it. Not
+        // cacheable (Ok = false) for a Sim with a parent (a boat route gets the boat as follower and ignore-object, which
+        // the option bits do not show; vehicles, beds).
+        struct RouteProfile { public bool Ok; public uint Flags; public long Opts, Opts2; }
+        static Route.RouteOption[] sRouteOpts;
+        static Route.RouteOption2[] sRouteOpts2;
+        static RouteProfile ProfileOf(Sims3.Gameplay.Actors.Sim sim)
+        {
+            RouteProfile p = new RouteProfile();
+            if (sim == null || sim.Parent != null || sim.SimRoutingComponent == null || sim.SimDescription == null) return p;
+            if (sRouteOpts == null)
+            {
+                sRouteOpts = (Route.RouteOption[])Enum.GetValues(typeof(Route.RouteOption));
+                sRouteOpts2 = (Route.RouteOption2[])Enum.GetValues(typeof(Route.RouteOption2));
+            }
+            Route r = sim.SimRoutingComponent.CreateRouteAsAdult();
+            r.SetOption(Route.RouteOption.EnableWaterPlanning, sim.IsHuman); // as the game's check does next
+            foreach (Route.RouteOption o in sRouteOpts) if (o != Route.RouteOption.None && r.GetOption(o)) p.Opts |= (long)o;
+            foreach (Route.RouteOption2 o in sRouteOpts2) if (o != Route.RouteOption2.None && r.GetOption2(o)) p.Opts2 |= (long)o;
+            p.Flags = (sim.SimDescription.SimFlags & 0xFFFFFF80u) | 0x20u; // CreateRouteAsAdult's flags
+            p.Ok = true;
+            return p;
+        }
+
         // Cells are 0.5 m and floor-aligned, so a cell never straddles a wall or fence on a tile edge; y in 1 m steps keeps
-        // floors apart. A cell without a verdict gets the full check only when `mayCheck` and this sim tick's budget allow;
-        // otherwise the spot counts as unsafe. Counters: [37] cache hits, [38] misses, [39] full checks run.
-        static bool SpotSafe(Sims3.Gameplay.Actors.Sim sim, Lot lot, SpotVerdicts v, Sims3.SimIFace.Vector3 pos, bool mayCheck)
+        // floors apart.
+        struct VerdictKey { public long Cell, Opts, Opts2; public uint Flags; }
+        class VerdictKeyComparer : IEqualityComparer<VerdictKey> // explicit: the default one boxes structs in this Mono
+        {
+            public bool Equals(VerdictKey a, VerdictKey b) { return a.Cell == b.Cell && a.Opts == b.Opts && a.Opts2 == b.Opts2 && a.Flags == b.Flags; }
+            public int GetHashCode(VerdictKey k) { return k.Cell.GetHashCode() ^ (k.Opts.GetHashCode() * 31) ^ (k.Opts2.GetHashCode() * 17) ^ (int)k.Flags; }
+        }
+
+        // The verdict for `pos`: cached when the profile is cacheable, else a full check when `mayCheck` and this sim tick's
+        // budget (shared by SafeSpot and the watchdog) allow; null = no verdict now (SafeSpot treats it as unsafe, the
+        // watchdog retries next tick). `recheckBad`: a cached "not routable" is re-checked (the watchdog acts on it; a stale
+        // bad verdict must not reset a Sim). `addGood`: remember the spot for SafeSpot's spreading.
+        // Counters: [37] cache hits, [38] misses, [39] full checks run.
+        static bool? SpotVerdict(Sims3.Gameplay.Actors.Sim sim, Lot lot, SpotVerdicts v, RouteProfile p, Sims3.SimIFace.Vector3 pos, bool mayCheck, bool recheckBad, bool addGood)
         {
             int[] c = PatchCounters();
-            long key = ((long)((int)Math.Floor(pos.x * 2f) & 0xFFFFF) << 40) | ((long)((int)Math.Floor(pos.z * 2f) & 0xFFFFF) << 20)
-                | ((long)((int)Math.Floor(pos.y) & 0x7FFFF) << 1) | (sim.IsHuman ? 1L : 0L);
+            VerdictKey key = new VerdictKey();
+            key.Cell = ((long)((int)Math.Floor(pos.x * 2f) & 0xFFFFF) << 40) | ((long)((int)Math.Floor(pos.z * 2f) & 0xFFFFF) << 20)
+                | (long)(uint)((int)Math.Floor(pos.y) & 0xFFFFF);
+            key.Opts = p.Opts; key.Opts2 = p.Opts2; key.Flags = p.Flags;
             bool ok;
-            if (v.Cells.TryGetValue(key, out ok)) { c[37]++; return ok; }
+            if (p.Ok && v.Cells.TryGetValue(key, out ok) && (ok || !recheckBad)) { c[37]++; return ok; }
             c[38]++;
             long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
             if (now != sSpotCheckTick) { sSpotCheckTick = now; sSpotChecks = 0; }
-            if (!mayCheck || sSpotChecks >= kMaxSpotChecksPerTick) return false;
+            if (!mayCheck || sSpotChecks >= kMaxSpotChecksPerTick) return null;
             sSpotChecks++;
             c[39]++;
-            ok = sim.IsPointInLotSafelyRoutable(lot, pos);
-            v.Cells[key] = ok;
-            if (ok && v.Good.Count < kMaxGoodSpots) v.Good.Add(pos);
+            sInOwnCheck = true;
+            try { ok = sim.IsPointInLotSafelyRoutable(lot, pos); } finally { sInOwnCheck = false; }
+            if (p.Ok) v.Cells[key] = ok;
+            if (ok && addGood && p.Ok && v.Good.Count < kMaxGoodSpots) v.Good.Add(pos);
             return ok;
         }
 

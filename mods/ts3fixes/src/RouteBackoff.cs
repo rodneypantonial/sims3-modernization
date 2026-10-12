@@ -27,6 +27,13 @@ namespace Ts3Fixes
         {
             public RoutePlanResult PlanHook()
             {
+                RoutePlanResult r = PlanBackoff();
+                NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded); // the stuck watchdog's route-fail count (RouteFixes.cs)
+                return r;
+            }
+
+            RoutePlanResult PlanBackoff()
+            {
                 int[] c = PatchCounters();
                 c[24]++;
                 if (!ShortcutOn("backoff")) return PlanOrig();

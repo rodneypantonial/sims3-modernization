@@ -13,7 +13,8 @@ namespace Ts3Fixes
     // Routing fixes from docs/10, 11 and 12. Counters: [27] virtual-home runs, [28] virtual-home fades, [29] obstacle
     // replans switched off, [30] route-fail walks skipped, [31] stuck Sims reset or faded by the watchdog, [32] station
     // detours skipped. Watchdog home kinds: [33] none or virtual (faded), [34] shell apartment, [35] house; [36] second
-    // resets in one sim-day.
+    // resets in one sim-day. Watchdog idle cases (switch watchdogidle): [46] unroutable spot, [47] hidden room, [48] stationary,
+    // [49] route plans failing, [50] routability verdicts asked, [51] route-fail Sims tracked.
     public static partial class Fixes
     {
         static void ApplyRouteFixes()
@@ -110,6 +111,34 @@ namespace Ts3Fixes
         // more than 10 m from the first spot, so a Sim stuck again on the way home is not reset in a loop. Checks every
         // 10 sim-minutes while a world is loaded.
         const float kStuckGoHomeMinutes = 60f, kStuckRoutingMinutes = 120f, kWatchMinutes = 10f, kSecondResetMeters = 10f;
+        static readonly long kDayTicks = SimClock.ConvertToTicks(1f, TimeUnit.Days);
+
+        // Route plans that failed per Sim (object id) while it stayed within 1 m: the watchdog's "route plans failing" case
+        // (Overwatch's Route.PostPlanCallback part). Fed by RouteBackoffHook.PlanHook for every plan; our own routability
+        // checks (SpotVerdict, the Overwatch hook) are not counted. A successful plan clears the Sim's count.
+        struct RouteFails { public Vector3 Pos; public long First; public int Count; }
+        static readonly Dictionary<ulong, RouteFails> sRouteFails = new Dictionary<ulong, RouteFails>();
+        static bool sInOwnCheck;
+
+        static void NotePlanResult(IScriptProxy follower, bool ok)
+        {
+            if (follower == null || sInOwnCheck) return;
+            if (ok) { if (sRouteFails.Count > 0) sRouteFails.Remove(follower.ObjectId.Value); return; }
+            if (!ShortcutOn("watchdog") || !ShortcutOn("watchdogidle")) return;
+            Sim sim = follower.Target as Sim;
+            if (sim == null) return;
+            ulong id = follower.ObjectId.Value;
+            long now = SimClock.CurrentTicks;
+            RouteFails f;
+            if (!sRouteFails.TryGetValue(id, out f) || (sim.Position - f.Pos).Length() > 1f || f.First > now)
+            {
+                if (sRouteFails.Count >= 1024) sRouteFails.Clear(); // bounded; a stuck Sim is counted again from its next failures
+                f = new RouteFails { Pos = sim.Position, First = now };
+                PatchCounters()[51]++;
+            }
+            f.Count++;
+            sRouteFails[id] = f;
+        }
 
         public static void StartWatchdog()
         {
@@ -129,13 +158,138 @@ namespace Ts3Fixes
                 while (true)
                 {
                     try { if (ShortcutOn("watchdog")) Check(); } catch (Exception) { mSeen.Clear(); }
+                    try { if (ShortcutOn("watchdog") && ShortcutOn("watchdogidle")) CheckIdle(); } catch (Exception) { mStill.Clear(); }
                     Simulator.Sleep(wait);
                 }
             }
 
+            // Once per Sim per sim-day, plus one more that day only if it is stuck again more than 10 m from the first spot
+            // (shared by every watchdog case, so no Sim is reset in a loop).
+            bool ResetAllowed(Sim s, long now, out bool second)
+            {
+                Reset last;
+                bool today = mLastReset.TryGetValue(s.SimDescription.SimDescriptionId, out last) && now - last.At < kDayTicks && last.At <= now;
+                second = today && last.Count == 1 && (s.Position - last.Pos).Length() > kSecondResetMeters;
+                return !today || second;
+            }
+
+            void NoteReset(Sim s, long now, bool second)
+            {
+                Reset last;
+                mLastReset.TryGetValue(s.SimDescription.SimDescriptionId, out last);
+                mLastReset[s.SimDescription.SimDescriptionId] = new Reset { At = second ? last.At : now, Pos = s.Position, Count = second ? 2 : 1 };
+                if (second) PatchCounters()[36]++;
+            }
+
+            // ---- Idle cases (switch "watchdogidle"): what NRaas Overwatch's nightly Stuck Check and its route-fail
+            // callback catch (docs/07 §2.2), checked every 10 sim-minutes instead of once a night, and spread over ticks.
+            //  [46] Unroutable: a non-selectable Sim standing still in the same (or no) interaction on a non-world lot whose
+            //       spot fails the game's Sim.IsPointInLotSafelyRoutable (Overwatch's "Unroutable"). An unseen standing
+            //       townie qualifies after 60 sim-minutes; any other non-selectable Sim (on screen, not standing) after one
+            //       sim-day in the same spot, as Overwatch's nightly "same spot as last night" (and only standing Sims get
+            //       the route check: a seated Sim's spot is inside its chair). Verdicts come from the shared, profile-keyed
+            //       cache (Fixes.SpotVerdict); a cached "not routable" is re-checked before acting. At most one full check
+            //       per sim tick (budget shared with SafeSpot), a yield after each, at most kIdleChecksPerPass per pass.
+            //  [47] Hidden room: same stillness rule, in a room the lot marks hidden (Lot.IsRoomHidden): no route check.
+            //  [48] Stationary: any non-selectable Sim in the same spot and interaction for a whole sim-day (Overwatch's
+            //       "Stationary"; Sims in a rabbit hole, in a bed, vehicle or other parent are skipped).
+            //  [49] Route plans failing: any Sim, the active household included (as Overwatch's callback), whose route plans
+            //       failed at least 10 times over more than 30 sim-minutes while it stayed within 1 m (RouteBackoff's plan
+            //       hook counts them via NotePlanResult; a successful plan clears the count; our own routability checks do
+            //       not count). [51] Sims tracked this way.
+            // [50] counts routability verdicts asked by this pass. Actions are the game's own: an idle Sim with nothing
+            // queued is moved by Sim.AttemptToPutInSafeLocation(false) (the reset's own placement: its spot if safe, else a
+            // routable spot nearby on its lot, else the lot's front door, else home), so nothing it was doing is cut;
+            // otherwise the game's reset (SetObjectToReset, which runs the same placement). A hidden-room Sim with a home
+            // gets SetToResetAndSendHome (its own spot may count as safe inside the hidden room). Shared daily reset limit.
+            const float kIdleMinutes = 60f, kRouteFailMinutes = 30f;
+            const int kRouteFailPlans = 10, kIdleChecksPerPass = 16;
+            struct Still { public Vector3 Pos; public InteractionInstance Cur; public long Since, OkAt; }
+            readonly Dictionary<ulong, Still> mStill = new Dictionary<ulong, Still>();
+
+            void CheckIdle()
+            {
+                long now = SimClock.CurrentTicks;
+                long idle = SimClock.ConvertToTicks(kIdleMinutes, TimeUnit.Minutes), failSpan = SimClock.ConvertToTicks(kRouteFailMinutes, TimeUnit.Minutes);
+                int[] c = PatchCounters();
+                List<Sim> queue = new List<Sim>();
+                Dictionary<ulong, Still> keep = new Dictionary<ulong, Still>();
+                foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+                {
+                    if (s == null || s.SimDescription == null || !s.InWorld) continue;
+                    ulong id = s.ObjectId.Value;
+                    RouteFails f;
+                    if (sRouteFails.TryGetValue(id, out f) && f.Count >= kRouteFailPlans && now - f.First > failSpan && f.First <= now
+                        && (s.Position - f.Pos).Length() <= 1f)
+                    {
+                        sRouteFails.Remove(id);
+                        if (Act(s, now, 49, "reset (route plans failing)")) continue;
+                    }
+                    if (s.IsSelectable || s.Household == Household.ActiveHousehold || s.Parent != null || s.SimInRabbitHolePosture) continue;
+                    InteractionInstance cur = s.CurrentInteraction;
+                    Still st;
+                    if (!mStill.TryGetValue(id, out st) || (s.Position - st.Pos).Length() > 1f || st.Cur != cur || st.Since > now)
+                        st = new Still { Pos = s.Position, Cur = cur, Since = now };
+                    keep[id] = st;
+                    long still = now - st.Since;
+                    if (still >= kDayTicks) { if (Act(s, now, 48, "reset (stationary a sim-day)")) keep.Remove(id); continue; }
+                    bool unseen = TownieUnseen(s, null);
+                    Lot lot = s.LotCurrent;
+                    if (still < (unseen ? idle : kDayTicks) || s.IsRouting || lot == null || lot.IsWorldLot) continue;
+                    if (lot.IsRoomHidden(s.RoomId)) { if (Act(s, now, 47, "reset (hidden room)")) keep.Remove(id); continue; }
+                    if (s.Posture == s.Standing && (st.OkAt == 0 || now - st.OkAt > kDayTicks)) queue.Add(s);
+                }
+                mStill.Clear();
+                foreach (KeyValuePair<ulong, Still> kv in keep) mStill[kv.Key] = kv.Value;
+                if (mLastReset.Count > 1024) mLastReset.Clear();
+
+                // the route checks: one full plan per tick at most, re-validated after every yield
+                int asked = 0;
+                foreach (Sim s in queue)
+                {
+                    if (asked >= kIdleChecksPerPass) break;
+                    for (int tries = 0; tries < 4; tries++)
+                    {
+                        Still st;
+                        if (s.HasBeenDestroyed || !s.InWorld || !mStill.TryGetValue(s.ObjectId.Value, out st) || (s.Position - st.Pos).Length() > 1f
+                            || st.Cur != s.CurrentInteraction || s.IsRouting || s.Posture != s.Standing || s.LotCurrent == null || s.LotCurrent.IsWorldLot) break;
+                        Lot lot = s.LotCurrent;
+                        int before = c[39];
+                        bool? ok = SpotVerdict(s, lot, Verdicts(lot), ProfileOf(s), s.Position, true, true, false);
+                        if (ok.HasValue)
+                        {
+                            asked++;
+                            c[50]++;
+                            if (ok.Value) { st.OkAt = now; mStill[s.ObjectId.Value] = st; }
+                            else if (Act(s, now, 46, "reset (idle on unroutable spot)")) mStill.Remove(s.ObjectId.Value);
+                        }
+                        if (c[39] != before || !ok.HasValue) Simulator.Sleep(0); // a full plan ran (or the tick's budget was used): next one in a later tick
+                        if (ok.HasValue) break;
+                    }
+                }
+            }
+
+            // The game's own end state for a stuck idle Sim, within the shared daily limit. True = acted.
+            bool Act(Sim s, long now, int counter, string why)
+            {
+                bool second;
+                if (!ResetAllowed(s, now, out second)) return false;
+                NoteReset(s, now, second);
+                PatchCounters()[counter]++;
+                string what = "watchdog " + why + (second ? " (2nd)" : "") + " in " + (s.CurrentInteraction != null ? s.CurrentInteraction.GetType().Name : "nothing")
+                    + (s.LotCurrent != null ? " on " + s.LotCurrent.Name : "");
+                ShortcutLog(s.FullName + " -> " + what);
+                MovedSims()[s.FullName] = what + " @" + Math.Round(s.Position.x, 1) + "," + Math.Round(s.Position.z, 1) + " " + SimClock.CurrentTime().ToString();
+                Lot home = s.LotHome ?? s.SimDescription.VirtualLotHome;
+                if (counter == 47 && home != null) s.SetToResetAndSendHome();
+                else if (counter == 46 && s.InteractionQueue != null && s.InteractionQueue.Count == 0) s.AttemptToPutInSafeLocation(false);
+                else s.SetObjectToReset();
+                return true;
+            }
+
             void Check()
             {
-                long now = SimClock.CurrentTicks, day = SimClock.ConvertToTicks(1f, TimeUnit.Days);
+                long now = SimClock.CurrentTicks;
                 long goHome = SimClock.ConvertToTicks(kStuckGoHomeMinutes, TimeUnit.Minutes), routing = SimClock.ConvertToTicks(kStuckRoutingMinutes, TimeUnit.Minutes);
                 Dictionary<ulong, Seen> keep = new Dictionary<ulong, Seen>();
                 foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
@@ -150,15 +304,12 @@ namespace Ts3Fixes
                     Seen seen;
                     if (!mSeen.TryGetValue(id, out seen) || (s.Position - seen.Pos).Length() > 1f)
                         seen = new Seen { Pos = s.Position, Since = now };
-                    Reset last;
-                    bool today = mLastReset.TryGetValue(s.SimDescription.SimDescriptionId, out last) && now - last.At < day && last.At <= now;
-                    bool second = today && last.Count == 1 && (s.Position - last.Pos).Length() > kSecondResetMeters;
-                    if ((!today || second) && now - seen.Since >= (home ? goHome : routing))
+                    bool second;
+                    if (ResetAllowed(s, now, out second) && now - seen.Since >= (home ? goHome : routing))
                     {
                         int[] c = PatchCounters();
                         c[31]++;
-                        if (second) c[36]++;
-                        mLastReset[s.SimDescription.SimDescriptionId] = new Reset { At = second ? last.At : now, Pos = s.Position, Count = second ? 2 : 1 };
+                        NoteReset(s, now, second);
                         Lot lot = s.LotHome;
                         string kind = lot == null ? "none/virtual" : lot.BuildableShells.Length > 0 ? "shell apartment" : "house";
                         c[lot == null ? 33 : lot.BuildableShells.Length > 0 ? 34 : 35]++;

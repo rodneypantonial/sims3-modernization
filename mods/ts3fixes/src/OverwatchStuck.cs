@@ -42,7 +42,9 @@ namespace Ts3Fixes
         {
             public static bool RoutableHook(Sim ths, Lot lot, Vector3 pos)
             {
-                bool ok = RoutableOrig(ths, lot, pos);
+                bool ok;
+                sInOwnCheck = true; // not counted as the Sim's own route failures (watchdog route-fail case)
+                try { ok = RoutableOrig(ths, lot, pos); } finally { sInOwnCheck = false; }
                 int[] c = PatchCounters();
                 c[44]++;
                 if (ShortcutOn("overwatchstuck") && Simulator.CheckYieldingContext(false))

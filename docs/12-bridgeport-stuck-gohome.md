@@ -97,7 +97,7 @@ The agent can't find the interaction class from the name alone. The cheapest imp
 
 Order: confirm first (section 3). If most stuck Sims run `GoToVirtualHome*`, fix 1 alone should clear them. Otherwise use fix 2, then fix 3. A/B each one with `profile-world --ab` on `Baseline-BP` and count stuck Sims.
 
-Status 2026-10-13: fixes 1 (`VirtualHomeHook`) and 2 (`StuckWatchdog`, 60 sim-min going home / 120 routing, once per Sim per sim-day) are built (`mods/ts3fixes/src/RouteFixes.cs`); fix 3 is not.
+Status 2026-10-13: fixes 1 (`VirtualHomeHook`) and 2 (`StuckWatchdog`, 60 sim-min going home / 120 routing, once per Sim per sim-day) are built (`mods/ts3fixes/src/RouteFixes.cs`); fix 3 is not. The watchdog was extended the same day (switch `watchdogidle`, docs/04 F18 "Our own stuck check") to cover NRaas Overwatch's Stuck Check cases: idle Sims on unroutable spots or in hidden rooms, a sim-day in one spot, and Sims (active household included) whose route plans keep failing. Its route checks are spread over ticks (at most one plan per tick) and reuse SafeSpot's verdict cache, now keyed by the Sim's exact route profile.
 
 ## 5. Apartments, penthouses and elevators (code review 2026-10-13)
 

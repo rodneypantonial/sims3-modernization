@@ -670,5 +670,169 @@
       "minutes": 1
     },
     "expect": "overwatch_checks > 0 and overwatch_yields == overwatch_checks (the agent task can yield); /taskstall: no StuckCheck stall over 100 ms with overwatchstuck on, the ~300 ms one with it off; the same reset notices either way"
+  },
+  {
+    "id": "bp-idle-unroutable",
+    "bug": "An idle townie standing on an unroutable spot (enclosed room, fenced corner, pool tile) stays there for good; only NRaas Overwatch's nightly Stuck Check resets it (docs/07 §2.2)",
+    "fix": "ts3fixes StuckWatchdog idle cases (switch watchdogidle): unseen standing townie still 60 sim-minutes in one (or no) interaction on a spot failing Sim.IsPointInLotSafelyRoutable -> game's AttemptToPutInSafeLocation(false) (empty queue) or reset (docs/04 F18, docs/12 §5)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "sim_strand",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "Hogan"
+        },
+        "note": "samples the lot for a spot failing the game's routability check and stands him there; keep the camera away (unseen townie = 60 sim-minute rule, else one sim-day)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "watchdog_idle_unroutable",
+      "min": 1,
+      "minutes": 6
+    },
+    "expect": "within ~70 sim-minutes recent/moved show 'Wogan Hemlock -> watchdog reset (idle on unroutable spot)' and he stands on a routable spot of the lot (or at its front door); watchdog_idle_verdicts >= 1, safespot_checks rises by at most one per pass for him; with --set watchdogidle=false he stays put (counter flat)",
+    "area": [
+      312.4,
+      1497.0
+    ]
+  },
+  {
+    "id": "bp-route-fail-active",
+    "bug": "An active-household Sim stuck on an unroutable spot keeps failing every route; Overwatch's route-fail callback resets it (>10 failed plans over >30 sim-minutes without moving), our watchdog did not cover the active household",
+    "fix": "ts3fixes StuckWatchdog route-fail case (switch watchdogidle): RouteBackoffHook.PlanHook counts failed plans per Sim while it stays within 1 m; >= 10 over > 30 sim-minutes -> the game's reset (SetObjectToReset)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "sim_strand",
+        "args": {},
+        "note": "the active Sim, on the lot it stands on"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        }
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true,
+        "note": "11 plans off the stranded spot (each fails); its own autonomy adds more; spaced so > 30 sim-minutes pass"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "x": 312.4,
+          "z": 1497.0
+        },
+        "waitS": 4,
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "watchdog_route_fails",
+      "min": 1,
+      "minutes": 6
+    },
+    "expect": "watchdog_route_fail_sims >= 1, then watchdog_route_fails +1 once 30 sim-minutes have passed since the first failure: recent shows '<active Sim> -> watchdog reset (route plans failing)' and the Sim stands on a routable spot; with --set watchdogidle=false it stays stranded",
+    "area": [
+      312.4,
+      1497.0
+    ]
   }
 ]
