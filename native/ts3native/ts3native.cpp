@@ -10,7 +10,7 @@
 #include <math.h>
 #include <xmmintrin.h>
 
-#define TS3NATIVE_VERSION "0.4.1"
+#define TS3NATIVE_VERSION "0.4.2"
 
 typedef unsigned char u8;
 
@@ -298,17 +298,20 @@ static void Max(LONG* m, LONG v) {
 // once per generated node right before it is allocated and pushed. Over budget, every edge cost returns the wall:
 // nothing new is pushed, the open list drains (goal check on pop still runs), and the search leaves through its own
 // "open list empty" exit 0x676BF7 (returns 0, no leak), i.e. an ordinary no-path failure.
-struct Budget { DWORD tid; LONG nodes; LARGE_INTEGER t0; LONG capped; };
-static Budget g_budget;  // one search at a time: the planner holds the routing lock world+0x918; tid filters other threads
+struct Budget { LONG on; LONG nodes; LARGE_INTEGER t0; LONG capped; };
+// Per thread: a plan on another thread (another world's lock, or the route worker) never sees or overwrites this one.
+// Implicit TLS in a LoadLibrary'd DLL (the ASI loader) works on Vista+, existing threads included.
+static __declspec(thread) Budget t_budget;
 static LONG g_maxNodes, g_maxUs, g_onlyFlagged;
 static const float kWall = 1e9f;  // >= the planner's 1e8 blocked-edge constant at 0x00FEF678
 
 static int __cdecl BudgetStep(DWORD costArg5) {
-    Budget& b = g_budget;
-    if (!b.tid || b.tid != GetCurrentThreadId()) return 0;
+    Budget& b = t_budget;
+    if (!b.on) return 0;
     if (b.capped) return costArg5 == 1;
     if (costArg5 != 0) return 0;
-    ++b.nodes;
+    // clock starts at the first node, after Route_PlanLocked took the routing lock: lock wait is not search time
+    if (b.nodes++ == 0) QueryPerformanceCounter(&b.t0);
     if ((g_maxNodes && b.nodes > g_maxNodes) || (g_maxUs && (b.nodes & 15) == 0 && UsSince(b.t0) > g_maxUs)) {
         b.capped = 1;
         InterlockedIncrement(&ts3native_counters.budgetCapped);
@@ -373,18 +376,20 @@ static bool PatchCostSites(const DWORD* sites, const DWORD* fns) {
 // Runs the original Route_PlanLocked under a budget on this thread (the caller's or the worker's).
 static u8 CallPlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
                    int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
-    const DWORD me = GetCurrentThreadId();
     // DebugPathPlan (RouteOption hi word bit 0x1) as the "budget this route" flag for a future C# caller (docs/11 Q3)
-    if (ts3native_counters.budgetMode != 1 || !ts3native_counters.budgetReady || g_budget.tid == me ||
+    if (ts3native_counters.budgetMode != 1 || !ts3native_counters.budgetReady ||
         (g_onlyFlagged && !(((const DWORD*)(opts + 0x2C))[0] & 1)))
         return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
-    Budget b = {me, 0, {}, 0};
-    QueryPerformanceCounter(&b.t0);
-    g_budget = b;
+    // A plan nested on this thread (from a managed call inside the search) gets its own budget; the outer one resumes after.
+    const Budget outer = t_budget;
+    const Budget fresh = {1, 0, {}, 0};
+    t_budget = fresh;
+    LARGE_INTEGER t0;  // whole request, lock wait included: for the counters only
+    QueryPerformanceCounter(&t0);
     u8 r = g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
-    LONG us = UsSince(g_budget.t0), nodes = g_budget.nodes;
-    if (g_budget.capped) InterlockedExchangeAdd(&ts3native_counters.budgetCapUs, us);
-    g_budget.tid = 0;
+    LONG us = UsSince(t0), nodes = t_budget.nodes;
+    if (t_budget.capped) InterlockedExchangeAdd(&ts3native_counters.budgetCapUs, us);
+    t_budget = outer;
     InterlockedIncrement(&ts3native_counters.budgetCalls);
     Max(&ts3native_counters.budgetMaxNodes, nodes);
     if (r) { Max(&ts3native_counters.budgetMaxNodesOk, nodes); Max(&ts3native_counters.budgetMaxUsOk, us); }

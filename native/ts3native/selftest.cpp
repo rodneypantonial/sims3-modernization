@@ -226,7 +226,7 @@ static void TestRouteBudget() {
     g_maxNodes = 300;  // capped: the next edge is a wall, the search fails through its own exit
     assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0);
     assert(g_searchNodes == 300 && c.budgetCapped == 1 && c.budgetCapNodes == 301 && c.budgetMaxNodesOk == 1001);
-    assert(g_budget.tid == 0);
+    assert(!t_budget.on);
     g_costCalls = 0;  // no budget outside a request: a search not started by Route_PlanLocked is untouched
     assert(FakeSearch(NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, 0, 0) == 1 && g_costCalls == 2001);
     g_onlyFlagged = 1;  // only routes with DebugPathPlan (hi word bit 0x1)
@@ -245,7 +245,48 @@ static void TestRouteBudget() {
         }
     };
     assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped == 3 && c.budgetCapUs >= 5000);
+    // clock starts at the first node: 30 ms waiting for the routing lock, then a quick search, is not capped,
+    // but the request time in the counters still includes the wait
+    g_planOrig = [](void* w, void* e, int* l, int* s, int* g, DWORD a, DWORD d, u8* o, int* o1, int* o2, DWORD gl, DWORD gh) -> u8 {
+        Sleep(30);
+        return FakeSearch(w, e, l, s, g, a, d, o, o1, o2, gl, gh);
+    };
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1 && c.budgetCapped == 3 && c.budgetMaxUsOk >= 30000);
     g_maxUs = 0;
+
+    // per-thread state: a capped plan on another thread in the middle of ours neither ends nor feeds our budget
+    g_maxNodes = 300;
+    g_planOrig = [](void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) -> u8 {
+        g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+        for (int i = 0; i < 1000; i++) {
+            if (g_cost(0, 0, 0, 0, 1, 0, 0, 0) >= 1e8f) return 0;
+            g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+            if (i == 200) {
+                HANDLE t = CreateThread(NULL, 0, [](LPVOID) -> DWORD {
+                    u8 o[0x38] = {0};
+                    int l[2];
+                    g_planOrig = FakeSearch;  // the other thread's own capped search
+                    return CallPlan(NULL, NULL, l, NULL, NULL, 0, 1, o, NULL, NULL, 0, 0);
+                }, NULL, 0, NULL);
+                DWORD rc = 1;
+                WaitForSingleObject(t, INFINITE);
+                GetExitCodeThread(t, &rc);
+                CloseHandle(t);
+                assert(rc == 0 && t_budget.on && t_budget.nodes == 202 && !t_budget.capped);
+            }
+        }
+        return 1;
+    };
+    const LONG capped0 = c.budgetCapped;
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped - capped0 == 2);
+
+    // on the route worker: the worker's own budget caps the plan, the caller's stays off
+    ts3native_counters.workerReady = ts3native_counters.workerMode = 1;
+    g_planOrig = FakeSearch;
+    assert(RunPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped - capped0 == 3);
+    assert(g_searchNodes == 300 && !t_budget.on);
+    ts3native_counters.workerReady = ts3native_counters.workerMode = 0;
+    g_maxNodes = 0;
     ts3native_counters.budgetMode = 0;
     ts3native_counters.budgetReady = 0;
 }
