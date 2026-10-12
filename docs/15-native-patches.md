@@ -230,3 +230,11 @@ The `local-build` source kind does not exist in the installer yet; it needs a sm
 - **32 MB growth steps** add up to 24 MB extra peak per expansion. **[inferred]**
 - **Other plugins** patching the same bytes: whichever runs second sees different bytes and skips (ours logs it). S3SS 1.6.3 does not patch these sites as far as docs/03 §3 lists. **[inferred]**
 - The budget unit is probably microseconds (docs/13 Q3). Raising the ceiling costs sim-loop time each frame. **[inferred]**
+
+### Phase 4 in game (2026-10-13): route budget stubs strand Sims - keep OFF
+
+- Functional check: 50 plans through the budget, game stable, unreachable plans fail fast (218 nodes, 2.5 ms) [verified].
+- 10-min Bridgeport profile with `[RouteBudget] Enabled=1` (stubs + detour installed; budgetMode alternated 1/0 every 2 min): **41 stuck Sims** on all trip kinds (visits, work, school, Go Home), although only 1 search was capped (`capNodes 16`, `capUs 989189`) [verified, `probe-out/repro/Repro-bp-budget-1724.json`].
+- Control, same save and mods, `Enabled=0` (no stubs, no detour), 5 min: **0 stuck** [verified, `probe-out/bp-nobudget.log`].
+- So the stubs themselves break routing even with the switch off (suspects: cost/FPU state, stale per-request timer for A* calls outside Route_PlanLocked); code review in progress. `[RouteBudget] Enabled=0` stays the default.
+- Phase 3 (route worker) crashed the game on first use: ACCESS_VIOLATION reading 0x58 at 0x00EA2B03 (Mono) from 0x00E5A668 (Boehm GC) on the worker thread, i.e. the planner reaches GC/Mono code (xcpt 26-10-13 01.11.31); `Enabled=0` stays the default; fix being analysed.
