@@ -27,7 +27,7 @@ namespace Ts3Fixes
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } };
         }
     }
 }

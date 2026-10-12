@@ -48,6 +48,7 @@ namespace Ts3Fixes
             Patch(typeof(Sims3.Gameplay.Autonomy.ReactionBroadcaster), "PulseSims", typeof(BroadcasterPulseHook), "PulseHook", "PulseOrig");
             ApplyRouteFixes();
             ApplyRouteBackoff();
+            ApplyOverwatchStuck(false);
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -55,7 +56,8 @@ namespace Ts3Fixes
         // Counters, read by test tools: [0-3] go-home runs/shortcuts/no spot/loop guard, [4-6] buildings, [7-18] lot
         // trips (visit, visitlot, gotolot, gotocommunity: runs/shortcuts/no spot each), [21] houseboat placements,
         // [22-23] broadcaster pulses/skipped, [24-26] route backoff, [27-36] route fixes (RouteFixes.cs), [37-39] SafeSpot
-        // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs).
+        // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs), [44-45] Overwatch stuck-check
+        // plans/yields (OverwatchStuck.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {

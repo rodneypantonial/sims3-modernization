@@ -133,7 +133,7 @@ namespace Ts3Agent
             int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[48];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "backoff", "stations", "spotspread", "savecleanup" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
@@ -160,6 +160,7 @@ namespace Ts3Agent
             if (c.Length > 36) { r["watchdog_home_none"] = c[33]; r["watchdog_home_shell"] = c[34]; r["watchdog_home_house"] = c[35]; r["watchdog_second"] = c[36]; } // watchdog home kinds (none = faded), second resets in a day
             if (c.Length > 39) { r["safespot_hits"] = c[37]; r["safespot_misses"] = c[38]; r["safespot_checks"] = c[39]; } // SafeSpot verdict cache; checks = full route plans run
             if (c.Length > 43) { r["savecleanup_pairs"] = c[40]; r["savecleanup_minisims"] = c[41]; r["savecleanup_runs"] = c[42]; r["savecleanup_skipped"] = c[43]; }
+            if (c.Length > 45) { r["overwatch_checks"] = c[44]; r["overwatch_yields"] = c[45]; } // NRaas Stuck Check plans seen / spread to their own tick
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;

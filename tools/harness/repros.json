@@ -634,5 +634,41 @@
       "minutes": 1
     },
     "expect": "commitMB delta per placed object and per worn part; objects removed and outfits restored; no script errors"
+  },
+  {
+    "id": "bp-overwatch-stuckcheck",
+    "bug": "NRaas Overwatch nightly Stuck Check plans a route per standing-still Sim (SimEx.IsPointInLotSafelyRoutable) all in one FunctionTask tick: ~300 ms hitch per sim night (docs/04 F18)",
+    "fix": "ts3fixes OverwatchStuckHook: NRaas check unchanged, then a one-tick yield after each plan (switch overwatchstuck)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "applied log must list SimEx.IsPointInLotSafelyRoutable: ok (else Overwatch not installed or its signature differs)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "NRaas.Overwatch.OnTimer"
+        },
+        "waitS": 2,
+        "note": "the nightly alarm body (runs all Overwatch nightly cleanups); the first run records each Sim position"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "NRaas.Overwatch.OnTimer"
+        },
+        "waitS": 5,
+        "note": "Sims still at the same spot and in the same interaction now get the route check; A/B with --ab overwatchstuck under profile-world --taskstall 250"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "overwatch_yields",
+      "min": 1,
+      "minutes": 1
+    },
+    "expect": "overwatch_checks > 0 and overwatch_yields == overwatch_checks (the agent task can yield); /taskstall: no StuckCheck stall over 100 ms with overwatchstuck on, the ~300 ms one with it off; the same reset notices either way"
   }
 ]

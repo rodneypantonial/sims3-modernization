@@ -25,6 +25,7 @@ Measured with all fixes on, 10 minutes at speed 3 against the same saves without
 | `kSaveCleanup` | **off** | Once a sim day, remove weak relationships between townies (strangers/acquaintances, never family, romance, coworkers or recent contacts) and other-world Sims with no links to this world, using the game's own removal functions (docs/14). Opt-in. |
 | `kBroadcasterThrottle` | on | Reaction broadcasters (music, fires, smells, ...) far from the camera check for nearby Sims less often. |
 | `kWalkStyleComparer` | on | A faster lookup of walk styles with the same result. |
+| (none; only with NRaas Overwatch) | on | Overwatch's nightly Stuck Check runs one route check per sim tick instead of all in one (a ~300 ms hitch per sim night). Same checks, same order, same resets; later Sims and Overwatch's other nightly cleanups finish a few ticks later. Nothing happens without Overwatch. Test switch `overwatchstuck`; counters `overwatch_checks`, `overwatch_yields`. |
 
 Never affected: your household, any Sim near the camera or near your Sims, Sims travelling with others, and lots with their own arrival rules (apartments, resorts, diving lots, moving houseboats). After a shortcut the game's own code runs the last few metres and the arrival, so what the Sim does next is unchanged; spots are checked with the game's own "can walk off this spot" test so nobody is left stuck.
 
@@ -36,7 +37,7 @@ To change a setting, edit the tuning resource `Ts3Fixes.Instantiator` in the pac
 
 ## Compatibility
 
-Conflicts with any mod that replaces the same methods: `GoHome.Run`, `VisitCommunityLot.Run`, `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run`, `RabbitHole.RouteNearEntranceAndEnterRabbitHole`, `Sim.GoToVirtualHome.GoToVirtualHomeInternal.Run`, `SimRoutingComponent.SetRouteOptions` / `GetRouteFailPath`, `SimRoutingComponent.CheckAndUpdateRouteForStations`, `ScriptCore.Route.Plan`, `ReactionBroadcaster.PulseSims`, `SimRoutingComponent.WalkStyleComparer.Compare`. Tested with NRaas ErrorTrap and Overwatch, MonoPatcher, simler90 core and the community routing fixes listed in docs/01.
+Conflicts with any mod that replaces the same methods: `GoHome.Run`, `VisitCommunityLot.Run`, `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run`, `RabbitHole.RouteNearEntranceAndEnterRabbitHole`, `Sim.GoToVirtualHome.GoToVirtualHomeInternal.Run`, `SimRoutingComponent.SetRouteOptions` / `GetRouteFailPath`, `SimRoutingComponent.CheckAndUpdateRouteForStations`, `ScriptCore.Route.Plan`, `ReactionBroadcaster.PulseSims`, `SimRoutingComponent.WalkStyleComparer.Compare`, and NRaas Overwatch's `NRaas.CommonSpace.Helpers.SimEx.IsPointInLotSafelyRoutable` (Overwatch's own copy only). Tested with NRaas ErrorTrap and Overwatch, MonoPatcher, simler90 core and the community routing fixes listed in docs/01.
 
 ## Build from source
 
