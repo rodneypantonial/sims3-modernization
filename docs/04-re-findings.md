@@ -282,3 +282,17 @@ Built (2026-10-13, not yet run in game):
 **4. Likely culprits [inferred, to confirm with the measurement above].**
 - 0.3-2.4 s in play: Task-type work that does not yield. Candidates: mod `OneShotFunctionTask`s doing whole-world scans (ErrorTrap/Overwatch cleanups), `ImmediateInteractionTask`s (autonomy immediate actions and any route plan they make), bursts of `StoryProgressionTask`/`AgingQueue`/`ReferenceWatchdog`, and `FinalizerTask` draining script finalizers. A forced (non-abortable) GC triggered by an allocation inside a task also counts toward the stage (up to 149 ms in F5; near 0 with ts3native's heap patch, F16). Interaction routing, autonomy scoring and broadcasters run in Sim/Lot/AutonomyManager (Threaded), and ThreadedObjects stalled only once (294 ms), so they are not the main suspects for these TaskObjects stalls.
 - 5-7 s: world load and the first ticks (`Gameflow`, `LoadSaveManagerTask`, the `OnWorldLoadFinished` handlers of the game and mods). A save (`AutoSave`/`LoadSaveManagerTask`; `0xD7FE80` references `ScriptCore.LoadSaveManager`) or travel would land in the same stage, but neither happened in this run.
+
+## F18. First /taskstall run names the long stages (2026-10-13, Bridgeport, 10 min, `profile-world --tag bp-budget --taskstall 250`)
+
+Data: `probe-out/20261013-011301-taskstall.jsonl` [verified]. Five stalls over 250 ms in 10 minutes (S3PP off):
+
+| ms | stage | task and managed stack (innermost first) |
+|---|---|---|
+| 287, 311, 326 | TaskObjects | `FunctionTask` -> **NRaas Overwatch `Alarms.StuckCheck.PrivatePerformAction`** -> `SimEx.IsPointInLotSafelyRoutable` -> `Route.PlanFromPoint` (a route plan per Sim, all in one task tick) |
+| 362 | Threaded | `ScriptProxy` -> `GoHomeHook.Run` -> **our `Ts3Fixes.Fixes.SafeSpot`** -> `Sim.IsPointInLotSafelyRoutable` -> `Route.PlanFromPoint` |
+| 1,069 | Threaded | `ScriptProxy` -> `Lot.PlanToPointRadialRange` -> `RouteBackoffHook.Plan` -> `Route.Plan` (an ordinary lot route) |
+
+- Overwatch's stuck check duplicates our watchdog and costs ~300 ms each time it runs: candidate fix = turn off Overwatch's "Stuck Check" in our installed Overwatch settings (keep its other cleanups), our watchdog covers stuck Sims.
+- Our own `SafeSpot` safety check is a full route plan (~360 ms here): cache the result per lot/spot (spots are reused by spot spreading) or test fewer candidate spots per call.
+- The 1 s plan is the long-search case docs/18 targets (route budget / off-thread).
