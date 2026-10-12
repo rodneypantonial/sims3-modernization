@@ -414,42 +414,53 @@
         "args": {
           "category": "hair"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "cas_category",
         "args": {
           "category": "makeup"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "cas_category",
         "args": {
           "category": "everyday"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "cas_category",
         "args": {
           "category": "formal"
         },
-        "waitS": 5
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "tops"
+        },
+        "waitS": 10
       },
       {
         "cmd": "cas_category",
         "args": {
           "category": "accessories"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "cas_category",
         "args": {
           "category": "basics"
         },
-        "waitS": 5
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_state",
+        "waitS": 2
       },
       {
         "cmd": "cas_close",
@@ -464,42 +475,42 @@
         "args": {
           "category": "Comfort"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_category",
         "args": {
           "category": "Surfaces"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_category",
         "args": {
           "category": "Decor"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_category",
         "args": {
           "category": "Plumbing"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_category",
         "args": {
           "category": "Electronics"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_category",
         "args": {
           "category": "Lighting"
         },
-        "waitS": 5
+        "waitS": 10
       },
       {
         "cmd": "buy_close",

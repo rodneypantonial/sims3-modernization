@@ -40,8 +40,9 @@ namespace Ts3Agent
         static readonly List<Dictionary<string, object>> sUiTimings = new List<Dictionary<string, object>>();
         static volatile bool sUiMeasuring;
 
-        // Runs start() in a game task, then polls every 100 ms until ready() holds and count() has not changed for 1.5 s
-        // (or timeout). ms = time of the last change seen, i.e. when the panel finished filling.
+        // Runs start() in a game task, then polls every 100 ms until ready() holds and count() (when given) is readable
+        // (>= 0) and has not changed for 1.5 s, or timeout. ms = time of the last change seen, i.e. when the panel finished
+        // filling; ms/items stay null when ready() never held or the count was never readable (never a made-up 0).
         static object Measure(string label, Work start, Ready ready, Counter count, int timeoutMs)
         {
             if (sUiMeasuring) throw new McpException("previous CAS/Buy action is still being timed; wait and retry");
@@ -57,7 +58,7 @@ namespace Ts3Agent
                 {
                     start();
                     r["sync_ms"] = System.Environment.TickCount - t0;
-                    int last = -1, lastChange = 0, lastPoll = -1000;
+                    int last = int.MinValue, lastChange = -1, lastPoll = -1000;
                     bool settled = false;
                     while (System.Environment.TickCount - t0 < timeoutMs)
                     {
@@ -67,11 +68,12 @@ namespace Ts3Agent
                         lastPoll = now;
                         if (!ready()) continue;
                         int n = count != null ? count() : 0;
+                        if (n < 0) continue; // count not readable (panel/grid not there): not settled
                         if (n != last) { last = n; lastChange = now; continue; }
                         if (now - lastChange >= 1500) { settled = true; break; }
                     }
-                    r["ms"] = lastChange;
-                    r["items"] = last;
+                    r["ms"] = lastChange < 0 ? null : (object)lastChange;
+                    r["items"] = count == null || last < 0 ? null : (object)last;
                     r["settled"] = settled;
                 }
                 catch (Exception e)
@@ -96,25 +98,55 @@ namespace Ts3Agent
             return q;
         }
 
-        // Sum of all visible item grids under the main UI window (catalog/part lists), with depth and width caps.
-        static int VisibleGridItems(WindowBase w, int depth)
+        // ------------------------------------------------------------ CAS panels
+        // Each CAS panel is its own layout with an internal static gSingleton (null until loaded, unloaded after its
+        // fade-out). Items are read from the panel's own grid: CASHair.mHairTypesGrid (hair parts), CASMakeup.mGridMakeupParts
+        // (makeup parts of the chosen type, filled synchronously in Init), CASClothingCategory.mClothingTypesGrid (one
+        // CASClothingRow per CAS part, filled a few per tick by ItemGrid.BeginPopulating; done = OnClothingGridFinishedPopulating).
+
+        static object Panel(Type t) { return t.GetField("gSingleton", kPriv).GetValue(null); }
+
+        static bool Shown(Type t) { WindowBase w = Panel(t) as WindowBase; return w != null && w.Visible; }
+
+        static ItemGrid PanelGrid(Type t, string field)
         {
-            if (w == null || depth > 24 || !w.Visible) return 0;
-            ItemGrid g = w as ItemGrid;
-            int n = g != null ? g.Count : 0;
-            for (uint i = 0; i < 500; i++)
-            {
-                WindowBase child;
-                try { child = w.GetChildByIndex(i); } catch (Exception) { break; }
-                if (child == null) break;
-                n += VisibleGridItems(child, depth + 1);
-            }
-            return n;
+            object p = Panel(t);
+            return p == null ? null : t.GetField(field, kPriv).GetValue(p) as ItemGrid;
         }
 
-        static int UiItems() { return VisibleGridItems(UIManager.GetMainWindow(), 0); }
+        // ItemGrid.BeginPopulating keeps its callback until the last item is added
+        static bool Filling(ItemGrid g) { return typeof(ItemGrid).GetField("mPopulateCallback", kPriv).GetValue(g) != null; }
 
-        // ------------------------------------------------------------ CAS
+        static volatile bool sClothingFilled;
+        static void OnClothingFilled() { sClothingFilled = true; }
+
+        static void SetCasState(CASState s) { typeof(CASController).GetMethod("SetCurrentState", kPriv).Invoke(CASController.Singleton, new object[] { s }); } // internal
+
+        static readonly Type[] kCasPanels = { typeof(CASBasics), typeof(CASPhysical), typeof(CASHair), typeof(CASFacialDetails),
+            typeof(CASMakeup), typeof(CASCharacter), typeof(CASClothing), typeof(CASClothingCategory) };
+
+        // CAS state, loaded panels (hidden = loaded but not visible / fading out) and puck busy, for error messages
+        static string CasDiag()
+        {
+            CASState st = CASController.Singleton.CurrentState;
+            string s = "cas " + st.mTopState + "/" + st.mMidState + "/" + st.mPhysicalState + "/" + st.mClothingState + "; panels:";
+            foreach (Type t in kCasPanels)
+            {
+                WindowBase w = Panel(t) as WindowBase;
+                if (w != null) s += " " + t.Name + (w.Visible ? "" : "(hidden)");
+            }
+            return s + (CASPuck.Instance != null && CASPuck.Instance.UiBusy ? "; puck busy" : "");
+        }
+
+        static void WaitFor(Ready cond, int ms, string what)
+        {
+            int t0 = System.Environment.TickCount;
+            while (!cond())
+            {
+                if (System.Environment.TickCount - t0 > ms) throw new McpException(what + " not ready after " + ms / 1000 + " s (" + CasDiag() + ")");
+                Simulator.Sleep(0);
+            }
+        }
 
         static bool CasUp()
         {
@@ -163,56 +195,90 @@ namespace Ts3Agent
         static readonly string[] kCasCategories = { "basics", "body", "hair", "face", "makeup", "personality", "everyday", "formal",
             "sleepwear", "swimwear", "athletic", "outerwear", "tops", "bottoms", "shoes", "outfits", "accessories" };
 
-        // cas_category {category}: the tab the CAS buttons switch to (CASCharacterSheet/CASFacialDetails/CASClothing call
-        // CASController.SetCurrentState + Activate; the clothing tabs also set CASModel.OutfitCategory; the clothing type
-        // row is CASClothingCategory.SetTypeCategory).
+        // cas_category {category}: presses what a player presses. A different tab goes through the character sheet's own tab
+        // click (CASCharacterSheet.SetButtonsAndState -> CASSheetWindow.OnNavigationButtonClick: SetCurrentState, and
+        // Activate only when no tab was open; the old panel fades out and its fade-finished handler loads and activates the
+        // new one). The old code also called Activate(true) on every switch, which re-showed the fading-out panel, so the
+        // chain never reached the new one: makeup/everyday/formal read 0 items and accessories found no clothing panel.
+        // Inside a tab: hair/face/makeup = CASPhysical's and CASFacialDetails' own buttons (SetCurrentState + Activate(true),
+        // safe there because the sub-panel is not fading), outfit = CASClothing.OnClothingCategoryButtonClick, clothing type =
+        // CASClothingCategory.SetTypeCategory (the type row). tops/bottoms/shoes/outfits/accessories keep the current outfit.
         static object CasCategory(Args a)
         {
             if (!CasUp()) throw new McpException("CAS is not open (state " + SubState() + ")");
             string c = a.Str("category").Trim().ToLowerInvariant();
             CASMidState mid = CASMidState.Clothing;
             CASPhysicalState phys = CASPhysicalState.None;
-            CASClothingState cloth = CASClothingState.Everyday;
-            OutfitCategories outfit = OutfitCategories.Everyday;
-            string type = null;
+            OutfitCategories outfit = OutfitCategories.None;
+            string outfitButton = null, type = null, gridField = "mClothingTypesGrid";
+            Type tabPanel = typeof(CASClothingCategory), panel = typeof(CASClothingCategory);
             switch (c)
             {
-                case "basics": case "body": mid = CASMidState.Basics; break;
-                case "hair": mid = CASMidState.Physical; phys = CASPhysicalState.Hair; break;
-                case "face": mid = CASMidState.FacialDetails; phys = CASPhysicalState.FacialDetailsSummary; break;
-                case "makeup": mid = CASMidState.FacialDetails; phys = CASPhysicalState.Makeup; break;
-                case "personality": mid = CASMidState.Character; break;
-                case "clothing": case "everyday": break;
-                case "formal": cloth = CASClothingState.Formal; outfit = OutfitCategories.Formalwear; break;
-                case "sleepwear": cloth = CASClothingState.Sleepwear; outfit = OutfitCategories.Sleepwear; break;
-                case "swimwear": cloth = CASClothingState.Swimwear; outfit = OutfitCategories.Swimwear; break;
-                case "athletic": cloth = CASClothingState.Exercise; outfit = OutfitCategories.Athletic; break;
-                case "outerwear": cloth = CASClothingState.Outerwear; outfit = OutfitCategories.Outerwear; break;
+                case "basics": case "body": mid = CASMidState.Basics; tabPanel = panel = typeof(CASBasics); gridField = null; break;
+                case "hair": mid = CASMidState.Physical; phys = CASPhysicalState.Hair; tabPanel = typeof(CASPhysical); panel = typeof(CASHair); gridField = "mHairTypesGrid"; break;
+                case "face": mid = CASMidState.FacialDetails; phys = CASPhysicalState.FacialDetailsSummary; tabPanel = panel = typeof(CASFacialDetails); gridField = null; break;
+                case "makeup": mid = CASMidState.FacialDetails; phys = CASPhysicalState.Makeup; tabPanel = typeof(CASFacialDetails); panel = typeof(CASMakeup); gridField = "mGridMakeupParts"; break;
+                case "personality": mid = CASMidState.Character; tabPanel = panel = typeof(CASCharacter); gridField = null; break;
+                case "clothing": case "everyday": outfit = OutfitCategories.Everyday; outfitButton = "mEverydayButton"; break;
+                case "formal": outfit = OutfitCategories.Formalwear; outfitButton = "mFormalButton"; break;
+                case "sleepwear": outfit = OutfitCategories.Sleepwear; outfitButton = "mSleepwearButton"; break;
+                case "swimwear": outfit = OutfitCategories.Swimwear; outfitButton = "mSwimwearButton"; break;
+                case "athletic": outfit = OutfitCategories.Athletic; outfitButton = "mExerciseButton"; break;
+                case "outerwear": outfit = OutfitCategories.Outerwear; outfitButton = "mOuterwearButton"; break;
                 case "tops": case "bottoms": case "shoes": case "outfits": case "accessories": type = c; break;
                 default: throw new McpException("unknown CAS category '" + c + "'; one of: " + string.Join(", ", kCasCategories));
             }
-            if (mid != CASMidState.Clothing) { cloth = CASClothingState.None; outfit = OutfitCategories.None; }
-            CASState target = new CASState(CASTopState.CreateASim, mid, phys, cloth);
+            bool clothing = mid == CASMidState.Clothing;
+            Counter count = null;
+            if (gridField != null) count = delegate { ItemGrid g = PanelGrid(panel, gridField); return g == null ? -1 : g.Count; };
+            Ready ready = delegate
+            {
+                if (!CasReady() || !Shown(panel)) return false;
+                if (clothing && !sClothingFilled) return false;
+                ItemGrid g = gridField == null ? null : PanelGrid(panel, gridField);
+                return g == null || !Filling(g);
+            };
             return Measure("cas_category " + c, delegate
             {
                 ICASModel m = Responder.Instance.CASModel;
-                if (outfit != OutfitCategories.None && m.OutfitCategory != outfit) m.OutfitCategory = outfit;
                 CASController ctl = CASController.Singleton;
-                CASState cur = ctl.CurrentState;
-                if (cur.mTopState != target.mTopState || cur.mMidState != target.mMidState || cur.mPhysicalState != target.mPhysicalState || cur.mClothingState != target.mClothingState)
+                CASClothingCategory.OnClothingGridFinishedPopulating -= OnClothingFilled;
+                CASClothingCategory.OnClothingGridFinishedPopulating += OnClothingFilled;
+                sClothingFilled = false;
+                bool fills = false; // something below makes the clothing grid refill
+                WaitFor(delegate { return !CASPuck.Instance.UiBusy && !m.IsProcessing(); }, 20000, "CAS input");
+                if (ctl.CurrentState.mMidState != mid)
                 {
-                    typeof(CASController).GetMethod("SetCurrentState", kPriv).Invoke(ctl, new object[] { target }); // internal
+                    CASCharacterSheet sheet = Panel(typeof(CASCharacterSheet)) as CASCharacterSheet;
+                    if (sheet == null) throw new McpException("no CAS character sheet (" + CasDiag() + ")");
+                    sheet.SetButtonsAndState(new CASState(CASTopState.CreateASim, mid, CASPhysicalState.None, CASClothingState.None));
+                    fills = clothing;
+                }
+                WaitFor(delegate { return Shown(tabPanel) && (!fills || sClothingFilled); }, 20000, tabPanel.Name);
+                if (phys != CASPhysicalState.None && ctl.CurrentState.mPhysicalState != phys)
+                {
+                    SetCasState(new CASState(CASTopState.CreateASim, mid, phys, CASClothingState.None));
                     ctl.Activate(true);
                 }
-                if (type == null) return;
-                // the clothing panel loads behind a fade; its type row exists once it is up
-                FieldInfo f = typeof(CASClothingCategory).GetField("gSingleton", kPriv);
-                int t0 = System.Environment.TickCount;
-                CASClothingCategory cc = null;
-                while ((cc = f.GetValue(null) as CASClothingCategory) == null && System.Environment.TickCount - t0 < 15000) Simulator.Sleep(0);
-                if (cc == null) throw new McpException("clothing panel did not load");
-                cc.SetTypeCategory((CASClothingCategory.Category)Enum.Parse(typeof(CASClothingCategory.Category), type, true));
-            }, CasReady, UiItems, 60000);
+                if (outfit != OutfitCategories.None && m.OutfitCategory != outfit)
+                {
+                    object cl = Panel(typeof(CASClothing));
+                    if (cl == null) throw new McpException("no CASClothing panel (" + CasDiag() + ")");
+                    sClothingFilled = false;
+                    typeof(CASClothing).GetMethod("OnClothingCategoryButtonClick", kPriv).Invoke(cl,
+                        new object[] { typeof(CASClothing).GetField(outfitButton, kPriv).GetValue(cl), new UIButtonClickEventArgs() });
+                    fills = true; // refills via CASModel.OnSimOutfitCategoryChanged -> Activate -> SetTypeCategory
+                }
+                if (clothing && (type != null || !fills))
+                {
+                    // a type change, or a repeat of the current outfit: refill the grid ourselves so there is a fill to time
+                    WaitFor(delegate { return !fills || sClothingFilled; }, 20000, "clothing grid");
+                    CASClothingCategory cc = (CASClothingCategory)Panel(typeof(CASClothingCategory));
+                    sClothingFilled = false;
+                    cc.SetTypeCategory(type == null ? CASClothingCategory.CurrentTypeCategory
+                        : (CASClothingCategory.Category)Enum.Parse(typeof(CASClothingCategory.Category), type, true));
+                }
+            }, ready, count, 60000);
         }
 
         // cas_close: the close button's "exit without saving" path, minus its Yes/No dialog; back to live mode.
@@ -242,6 +308,8 @@ namespace Ts3Agent
                 r["cas"] = st.mTopState + "/" + st.mMidState + "/" + st.mPhysicalState + "/" + st.mClothingState;
                 r["cas_ready"] = CasReady();
                 r["outfit"] = Responder.Instance.CASModel.OutfitCategory.ToString();
+                r["clothing_type"] = CASClothingCategory.CurrentTypeCategory.ToString(); // accessories falls back to tops when none fit
+                r["panels"] = CasDiag();
             }
             if (BuyController.Active)
             {
