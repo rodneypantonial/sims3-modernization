@@ -28,6 +28,7 @@ const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 
 const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
   '-P', JSON.stringify({ out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50 }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -63,4 +64,10 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 await Promise.all([upkeep, profDone]);
+if (boats0.length) {
+  const boats1 = (await ag('houseboats')).result ?? [];
+  const moved = boats1.filter((b: any) => { const o = boats0.find((x: any) => x.lot === b.lot); return !o || Math.hypot(o.x - b.x, o.z - b.z) > 1; });
+  writeFileSync(`${pre}-houseboats.json`, JSON.stringify({ start: boats0, end: boats1 }, null, 1));
+  console.log(`${stamp()} houseboats: ${boats1.length}, moved: ${moved.map((b: any) => `${b.lot} (${b.household ?? 'empty'})`).join(', ') || 'none'}`);
+}
 console.log(`${stamp()} done; game ${(await ag('game_state')).ok ? 'alive' : 'NOT answering'}`);

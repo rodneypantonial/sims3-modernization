@@ -24,6 +24,7 @@ namespace Ts3Agent
             Dispatcher.Register("load_world", LoadWorld);
             Dispatcher.Register("load_save", LoadSave);
             Dispatcher.Register("world_households", WorldHouseholds);
+            Dispatcher.Register("houseboats", Houseboats);
             Dispatcher.Register("play_household", PlayHousehold);
             Dispatcher.Register("quit_game", QuitGame);
             Dispatcher.Register("auto_dialog", AutoDialog);
@@ -409,6 +410,24 @@ namespace Ts3Agent
                 o["id"] = Util.Id(h.HouseholdId);
                 o["members"] = h.NumMembers;
                 o["lot"] = h.LotHome.Name;
+                list.Add(o);
+            }
+            return list;
+        }
+
+        // Every houseboat with its position and household, so a profile run can count which ones moved.
+        static object Houseboats(Args a)
+        {
+            List<object> list = new List<object>();
+            foreach (Sims3.Gameplay.Objects.Island.Houseboat b in Sims3.Gameplay.Queries.GetObjects<Sims3.Gameplay.Objects.Island.Houseboat>())
+            {
+                Dictionary<string, object> o = Util.Obj();
+                Lot lot = b.GetHouseboatLot();
+                o["lot"] = lot != null ? lot.Name : null;
+                o["port"] = b.LotCurrent != null ? b.LotCurrent.Name : null;
+                o["household"] = lot != null && lot.Household != null ? lot.Household.Name : null;
+                o["x"] = Math.Round(b.Position.x, 1);
+                o["z"] = Math.Round(b.Position.z, 1);
                 list.Add(o);
             }
             return list;

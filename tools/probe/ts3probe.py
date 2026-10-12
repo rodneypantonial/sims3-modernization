@@ -182,12 +182,15 @@ class Probe:
                 _, h, x, y = w
                 if first is None:
                     first, t0 = (x, y), time.time()
+                    print(f'[ts3probe] game window at {first}; saved place {saved}', flush=True)
                 if saved and (x, y) == first and (x, y) != (saved['x'], saved['y']) and time.time() - t0 < 120:
                     u.SetWindowPos(h, 0, saved['x'], saved['y'], 0, 0, 0x1 | 0x4 | 0x10)  # NOSIZE | NOZORDER | NOACTIVATE
+                    print(f'[ts3probe] moved game window to {saved}', flush=True)
                 elif (x, y) != first and (not saved or (x, y) != (saved['x'], saved['y'])):
                     saved = {'x': x, 'y': y}  # moved by Rodney (or by us, then equal to saved): remember it
                     place.parent.mkdir(exist_ok=True)
                     place.write_text(json.dumps(saved))
+                    print(f'[ts3probe] remembered game window place {saved}', flush=True)
             time.sleep(2)
 
     def watch_script_errors(self):
