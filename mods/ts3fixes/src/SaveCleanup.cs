@@ -19,7 +19,9 @@ namespace Ts3Fixes
     //       drop if NPC decay were not 0.001x, removed with Relationship.RemoveRelationship (both directions).
     //   (b) MiniSimDescriptions of Sims from other worlds with no family links and no tie to the active household,
     //       removed with MiniSimDescription.RemoveMSD (unlinks the other sides' mini relationships).
-    // Counters: [40] relationship pairs removed, [41] MiniSims removed, [42] cleanup runs, [43] runs skipped or failed.
+    //   (c) Empty life-event lists (docs/14 7a): LifeEventManager keys whose List is empty; the game recreates one on demand.
+    // Counters: [40] relationship pairs removed, [41] MiniSims removed, [42] cleanup runs, [43] runs skipped or failed,
+    // [52] empty life-event lists removed.
     public static partial class Fixes
     {
         const float kCleanupHour = 2f;
@@ -47,6 +49,82 @@ namespace Ts3Fixes
         {
             if (!SaveCleanupOn()) return;
             try { RunSaveCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; }
+            try { RunLifeEventTrimOnce(); } catch (Exception) { PatchCounters()[43]++; }
+        }
+
+        // (c) On demand for the test agent too. Only empty lists go: every reader uses TryGetValue and creates a missing
+        // list again (LifeEventManager.ProcessLifeEvent, GetActiveNode), and export/import just walk the dictionaries.
+        public static string RunLifeEventTrimOnce()
+        {
+            int[] c = PatchCounters();
+            string unsafeWhy = CleanupUnsafe();
+            if (unsafeWhy != null) { c[43]++; return "skipped: " + unsafeWhy; }
+            string before = LifeEventCounts();
+            int lists = 0;
+            foreach (SimDescription d in Household.EverySimDescription())
+            {
+                if (d == null || d.LifeEventManager == null) continue;
+                lists += RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mLifeEvents")) + RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mActiveNodes"));
+            }
+            c[52] += lists;
+            string line = "life-event trim: -" + lists + " lists | before " + before + " | after " + LifeEventCounts();
+            ShortcutLog(line);
+            AppDomain.CurrentDomain.SetData("ts3fixes.lifeeventtrim", line);
+            return line;
+        }
+
+        // lists/empty over both dictionaries of every Sim; events = LifeEvent objects; visible/snaps for the active household.
+        public static string LifeEventCounts()
+        {
+            int lists = 0, empty = 0, events = 0, visible = 0, snaps = 0;
+            foreach (SimDescription d in Household.EverySimDescription())
+            {
+                if (d == null || d.LifeEventManager == null) continue;
+                foreach (string field in new string[] { "mLifeEvents", "mActiveNodes" })
+                {
+                    System.Collections.IDictionary dict = LifeEventDict(d.LifeEventManager, field);
+                    if (dict == null) continue;
+                    foreach (System.Collections.ICollection list in dict.Values)
+                    {
+                        lists++;
+                        if (list == null) continue;
+                        if (list.Count == 0) empty++;
+                        else if (field == "mLifeEvents") events += list.Count;
+                    }
+                }
+            }
+            if (Household.ActiveHousehold != null)
+                foreach (SimDescription d in Household.ActiveHousehold.AllSimDescriptions)
+                {
+                    if (d.LifeEventManager == null) continue;
+                    foreach (Sims3.UI.Hud.ILifeEvent e in d.LifeEventManager.GetVisibleLifeEvents())
+                    {
+                        visible++;
+                        if (e.HasSnapshot) snaps++;
+                    }
+                }
+            return "lists=" + lists + " empty=" + empty + " events=" + events + " visible=" + visible + " snaps=" + snaps
+                + " hh=" + Household.sHouseholdList.Count + " sims=" + Household.EverySimDescription().Count;
+        }
+
+        // Private Dictionary<uint, List<T>>; T (LifeEventActiveNode) is a private type, so use the non-generic view.
+        static System.Collections.IDictionary LifeEventDict(LifeEventManager m, string field)
+        {
+            FieldInfo f = typeof(LifeEventManager).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic);
+            return f != null ? f.GetValue(m) as System.Collections.IDictionary : null;
+        }
+
+        static int RemoveEmptyLists(System.Collections.IDictionary dict)
+        {
+            if (dict == null) return 0;
+            List<object> drop = new List<object>();
+            foreach (System.Collections.DictionaryEntry kv in dict)
+            {
+                System.Collections.ICollection list = kv.Value as System.Collections.ICollection;
+                if (list != null && list.Count == 0) drop.Add(kv.Key); // null values are left alone: not ours to judge
+            }
+            foreach (object key in drop) dict.Remove(key);
+            return drop.Count;
         }
 
         // On demand for the test agent (reflect_call); ignores the tunable but keeps every safety check.

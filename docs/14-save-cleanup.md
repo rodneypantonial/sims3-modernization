@@ -102,7 +102,9 @@ Measured ranking: `docs/09` §6. The two candidates below come next after relati
 
 What the existing mods do here [verified, NRaas `master`]: Overwatch has no life-event or memory cleanup. ErrorTrap's `DerefLifeEventManager` only handles references to disposed objects (`mActiveNodes`, `mOwnerDescription`). MasterController's Remove Memories (not installed) is manual and deletes whole memories. Nothing trims empty lists or caps snapshots, so we would not duplicate anything.
 
-### 7a. Empty life-event lists (recommended next; counter [46])
+### 7a. Empty life-event lists (built 2026-10-13, untested; counter [52])
+
+**Built**: `Fixes.RunLifeEventTrimOnce()` and `Fixes.LifeEventCounts()` in `mods/ts3fixes/src/SaveCleanup.cs`, called from the 2:00 alarm after `RunSaveCleanupOnce` when `kSaveCleanup` / switch `savecleanup` is on; same skip rules (counter [43]). Counter [52] (agent `savecleanup_lifeevent_lists`; the array grew to 53 because [46] went to the watchdog idle cases); last line in AppDomain data `ts3fixes.lifeeventtrim`. Repro `bp-lifeevent-trim` in `tools/harness/repros.json` (step 3 uses `set_skill` Logic 10 on the active Sim). Re-checked in the decompiled code: no `Simulator.Sleep` in `ProcessLifeEvent` (line 1640), `CreateSubject` (1254), `GetActiveNode` (1861), `ShouldAddLifeEvent` (1967) or `LifeEventActiveNode.Create` (648); the method's only yields are at 409, 755, 960 (other tasks) and 1230 (`AddLifeEvent`, after the list is used) [verified]. `AddCustomLifeEvent` (1195) and `RemoveActiveNode` (1911) also use `TryGetValue`; `ClearInvalidActiveNodes` (2255) already removes keys the same way.
 
 Why: `LifeEventManager.ProcessLifeEvent` (`Sims3.Gameplay.ActorSystems/LifeEventManager.cs` line 1640) does `mLifeEvents[data.Id] = new List<LifeEvent>()` the first time a life-event id is checked for a Sim, **before** the probability and dedup checks decide whether to add anything. `GetActiveNode` (line 1861) does the same for `mActiveNodes`, but only adds the node when `Actor.IsSelectable` (line 1883), so for NPCs the list always stays empty [verified]. The only cleanup is `Purge()` (line 2276), and it runs only for Sims dead 10+ days (`PurgeIfNecessary`, line 2235) [verified]. Measured in BP after 14 days: 27,904 such lists, 26,364 of them empty. With their backing arrays and dictionary entries they take 0.87 MB of the 2.9 MB script-state growth, and they are about 18% of all persisted objects (`docs/09` §6) [verified].
 
@@ -122,7 +124,7 @@ Repro (`tools/harness/repros.json`), id `bp-lifeevent-trim`, save `Cleanup-Test-
 
 Pass: run 1 removes N > 20,000 lists; `events`, `visible`, `snaps`, `hh` and `sims` are unchanged; run 2 removes under 100; the new memory appears in the scrapbook; no ErrorTrap or script errors; the save works. Offline: `node tools/harness/save-sources.ts Cleanup-Test-BP Cleanup-Test-BP-le` (with `FILTER=LifeEvent`) shows `List<LifeEvent>` and `List<LifeEventActiveNode>` down by about 26,000, and OBJS script state about 0.75 MB smaller.
 
-### 7b. Memory snapshot cap (opt-in, default off; counter [47])
+### 7b. Memory snapshot cap (opt-in, default off; counter [53], not built)
 
 Why: the largest disk grower. In SV, one 2-Sim active household made 29 snapshots (3.82 MB, about 130 KB each) in 14 sim days, in `TravelDB.package` (type `0x00B2D882`, group `0x0269D005`) [verified]. Only selectable Sims get snapshots (`AddLifeEvent`, line 1221) [verified]. The game's only cap is `kMaximumNumberOfMemories = 400` visible memories per Sim (line 1017). That is up to about 50 MB per Sim, and the game only warns at the limit [verified].
 
@@ -132,4 +134,4 @@ Risk: it removes player content (old memory pictures), so it is opt-in and shoul
 
 Repro, id `sv-snapshot-cap`, save a copy of `Baseline-SV` (29 snapshots). Set the cap to 10 through the agent switch, run the cap once, then run it again (about 0 the second time), and `save_game` to `Cap-Test-SV-after`. Pass: `snaps` <= 10 per Sim, `visible` unchanged; the scrapbook opens and shows stock images for the capped memories; no errors. Offline: `save-sources.ts` shows `dds g269d005` in `TravelDB.package` dropping from 29 to about 20 (2 Sims x 10) and the file shrinking by about 1 MB.
 
-Wiring for both (main session): the same pattern as §4. Add `RunLifeEventTrimOnce`, `LifeEventCounts` and `RunSnapshotCapOnce` to `SaveCleanup.cs`. Call the trim from the existing 2:00 alarm when `kSaveCleanup` is on. Add a separate tunable `kSnapshotCap` (default 0). Counters `c[46]` (lists removed) and `c[47]` (snapshots dropped) are free (the counter array has 52 slots; 40-45 and 50 are in use).
+Wiring for both (main session): the same pattern as §4. Add `RunLifeEventTrimOnce`, `LifeEventCounts` and `RunSnapshotCapOnce` to `SaveCleanup.cs`. Call the trim from the existing 2:00 alarm when `kSaveCleanup` is on. Add a separate tunable `kSnapshotCap` (default 0). Counters: `c[52]` (lists removed, built); the snapshot cap needs a new slot `c[53]` (46-51 went to the watchdog idle cases).

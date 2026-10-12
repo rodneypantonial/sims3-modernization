@@ -326,6 +326,64 @@
     "expect": "first run: pairs and mini drop (save cleanup: -N pairs, -M minis, N > 0), households and sims unchanged; second run removes ~0 (idempotent); save succeeds; no stuck Sims and no new ErrorTrap/script errors in 5 min; reload Cleanup-Test-BP-after loads clean and SaveCleanupCounts matches the 'after' values (watch covers all Sims: Bridgeport has a few vanilla stuck Sims, compare the count with a run without the cleanup)"
   },
   {
+    "id": "bp-lifeevent-trim",
+    "bug": "Every Sim keeps one List per life-event id ever checked (LifeEventManager.ProcessLifeEvent / GetActiveNode create it before deciding to add anything); in BP 26,364 of 27,904 lists are empty, 0.87 MB of script state (docs/09 4a, docs/14 7a)",
+    "fix": "ts3fixes SaveCleanup life-event trim (opt-in kSaveCleanup; docs/14 7a)",
+    "save": "Cleanup-Test-BP",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.LifeEventCounts"
+        },
+        "waitS": 90,
+        "note": "wait for the post-load settling, as in bp-save-cleanup"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunLifeEventTrimOnce"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunLifeEventTrimOnce"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "set_skill",
+        "args": {
+          "skill": "Logic",
+          "level": 10
+        },
+        "waitS": 60,
+        "note": "active Sim; kSkillLevelUp should add a memory (mastered skill) through a list the trim removed; pick another skill if the Sim already has Logic 10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.LifeEventCounts"
+        }
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Cleanup-Test-BP-le"
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 5
+    },
+    "expect": "run 1: life-event trim -N lists with N > 20,000, events, visible, snaps, hh and sims unchanged; run 2 removes < 100; after set_skill visible grows by 1 and the memory shows in the scrapbook; save succeeds; no stuck Sims and no new ErrorTrap/script errors in 5 min. Offline: FILTER=LifeEvent node tools/harness/save-sources.ts Cleanup-Test-BP Cleanup-Test-BP-le shows List<LifeEvent> + List<LifeEventActiveNode> down ~26,000 and OBJS ~0.75 MB smaller"
+  },
+  {
     "id": "bp-route-cache",
     "bug": "Repeated route plans to an unreachable spot each run a full failed search (docs/11: no search budget)",
     "fix": "ts3native route negative cache ([RouteCache] Enabled=1) + C# backoff",

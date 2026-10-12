@@ -62,7 +62,7 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 1. Item 1 above (split the detour from the taskstall sampler), then native routing step by step: detour alone 10-min stuck check -> `routeworker=1` single same-lot `sim_route_to` -> cross-lot, unreachable -> `--ab routeworker`; budget 0.4.2 only after the detour is cleared.
 2. Bundle restart with the built mod fixes (item 4): repros `bp-idle-unroutable`, `bp-route-fail-active`, `bp-overwatch-stuckcheck`, `bp-hogans-pileup` (`--set watchdogidle=false` / `overwatchstuck=false` for off), then a 10-min BP profile (with `--taskstall` once item 1 clears it): 0 stuck, no SafeSpot or StuckCheck stalls.
 3. Retire Overwatch's StuckCheck once our check covers its cases (`overwatch-no-stuckcheck` for new saves; in-game toggle for existing ones).
-4. Next save cleanup: empty life-event list trim (docs/14 §7a, repro `bp-lifeevent-trim`); snapshot cap opt-in (§7b) later.
+4. Save cleanup: empty life-event list trim **built, untested** (docs/14 §7a; `RunLifeEventTrimOnce` / `LifeEventCounts` in `SaveCleanup.cs`, runs in the 2:00 cleanup under `kSaveCleanup`, counter [52]); run repro `bp-lifeevent-trim` on `Cleanup-Test-BP`. Snapshot cap opt-in (§7b) later.
 5. Create-a-Sim and Buy: `store-cas-browse` (store + S3PP; label check), then without store; `store-items-memory`. Then decide `s3pp` default on (~70 MB address space).
 6. Native route cache test (`bp-route-cache`, `[RouteCache] Enabled=1`), after the detour is cleared.
 7. Milestone: full per-world profiles with everything on (`run-check.mjs`, per-stage buckets, `--taskstall`) plus `tests-be.ts`; updated results table; then `native-patches` (and `s3pp`) default on.
