@@ -1,7 +1,7 @@
 // Compares profile-world.ts runs side by side: node tools/probe/profile-compare.mjs bp sv ip
 // Reads probe-out/profile/<tag>-600-seconds.csv, <tag>-managed.jsonl (or managed-<tag>.jsonl) and <tag>-simstack.jsonl
 // (or simstack-<tag>.jsonl). Prints native per-second rates, then key C# methods (inclusive %) and the top self methods.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const DIR = join(resolve(import.meta.dirname, '..', '..'), 'probe-out', 'profile');
@@ -20,7 +20,8 @@ const KEY = ['Sims3.Gameplay.Actors.Sim.Simulate', 'Sims3.Gameplay.ObjectCompone
   'Sims3.Gameplay.EventSystem.EventTracker.SendEvent', 'Sims3.Gameplay.Core.Lot.Simulate'];
 const runs = tags.map(full => {
   const [tag, side] = full.split(':');
-  const csv = lines(find(`${tag}-600-seconds.csv`)), head = csv.shift()?.split(',') ?? [];
+  // <tag>-<run seconds>-seconds.csv (600 for the default 10 min run)
+  const csv = lines(find(...readdirSync(DIR).filter(f => f.startsWith(`${tag}-`) && /^\d+-seconds\.csv$/.test(f.slice(tag.length + 1))))), head = csv.shift()?.split(',') ?? [];
   let rows = csv.map(l => Object.fromEntries(l.split(',').map((v, i) => [head[i], Number(v)])));
   if (side) {
     const { slices } = JSON.parse(readFileSync(join(DIR, `${tag}-ab.json`), 'utf8'));
