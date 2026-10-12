@@ -84,6 +84,15 @@ namespace Ts3Agent
                 finally
                 {
                     r["state"] = SubState();
+                    try
+                    {
+                        if (CasUp())
+                        {
+                            r["outfit"] = Responder.Instance.CASModel.OutfitCategory.ToString();
+                            r["clothing_type"] = CASClothingCategory.CurrentTypeCategory.ToString();
+                        }
+                    }
+                    catch (Exception) { } // diagnostics only; never lose the timing
                     lock (sUiTimings)
                     {
                         sUiTimings.Add(r);
@@ -116,9 +125,6 @@ namespace Ts3Agent
 
         // ItemGrid.BeginPopulating keeps its callback until the last item is added
         static bool Filling(ItemGrid g) { return typeof(ItemGrid).GetField("mPopulateCallback", kPriv).GetValue(g) != null; }
-
-        static volatile bool sClothingFilled;
-        static void OnClothingFilled() { sClothingFilled = true; }
 
         static void SetCasState(CASState s) { typeof(CASController).GetMethod("SetCurrentState", kPriv).Invoke(CASController.Singleton, new object[] { s }); } // internal
 
@@ -156,33 +162,52 @@ namespace Ts3Agent
 
         static bool CasReady() { return CasUp() && CASPuck.Instance.Visible && !Responder.Instance.CASModel.IsProcessing(); }
 
-        // the same refusals as Sim.EditSimInCAS (not in the active household, babies, pregnancy, odd outfits); null = can edit
-        static string CasRefusal(Sim s)
+        static readonly string[] kOutfitNames = { "everyday", "formal", "sleepwear", "swimwear", "athletic", "outerwear" };
+        static readonly OutfitCategories[] kOutfits = { OutfitCategories.Everyday, OutfitCategories.Formalwear, OutfitCategories.Sleepwear,
+            OutfitCategories.Swimwear, OutfitCategories.Athletic, OutfitCategories.Outerwear };
+
+        static OutfitCategories OutfitByName(string name)
+        {
+            int i = Array.IndexOf(kOutfitNames, name.Trim().ToLowerInvariant());
+            if (i < 0) throw new McpException("unknown outfit '" + name + "'; one of: " + string.Join(", ", kOutfitNames));
+            return kOutfits[i];
+        }
+
+        // the same refusals as Sim.EditSimInCAS (not in the active household, babies, pregnancy, odd outfits); null = can edit.
+        // oc = the outfit CAS will open in (the Sim's current one unless cas_open was given one she has).
+        static string CasRefusal(Sim s, OutfitCategories oc)
         {
             SimDescription sd = s.SimDescription;
             if (sd.Household == null || sd.Household != Household.ActiveHousehold) return sd.FullName + " is not in the active household";
             if (!s.IsHuman || sd.Baby || sd.IsPregnant || sd.IsVisuallyPregnant) return sd.FullName + " cannot be edited in CAS (not human, baby or pregnant)";
-            OutfitCategories oc = s.CurrentOutfitCategory;
             if (oc != OutfitCategories.Everyday && oc != OutfitCategories.Formalwear && oc != OutfitCategories.Sleepwear
                 && oc != OutfitCategories.Swimwear && oc != OutfitCategories.Athletic && oc != OutfitCategories.Outerwear)
                 return sd.FullName + " is wearing " + oc + "; CAS needs an everyday/formal/sleep/swim/athletic/outerwear outfit";
             return null;
         }
 
-        // cas_open {sim?}: Edit-in-CAS for the named Sim, else the active Sim, else the first household member CAS accepts
-        // (the active one may be in a towel or a career outfit); CAS works on a copy.
+        // The outfit CAS opens in: the requested one when the Sim has it (outfit index 0), else what she wears now.
+        static OutfitCategories CasOutfit(Sim s, OutfitCategories want)
+        {
+            return want != OutfitCategories.None && s.SimDescription.GetOutfitCount(want) > 0 ? want : s.CurrentOutfitCategory;
+        }
+
+        // cas_open {sim?, outfit?}: Edit-in-CAS for the named Sim, else the active Sim, else the first household member CAS
+        // accepts (the active one may be in a towel or a career outfit); CAS works on a copy. outfit (everyday, formal, ...)
+        // opens CAS in that outfit when the Sim has one, instead of the one she is wearing.
         static object CasOpen(Args a)
         {
             if (SubState() != "LiveModeState") throw new McpException("not in live mode (state " + SubState() + ")");
+            OutfitCategories want = a.Has("outfit") ? OutfitByName(a.Str("outfit")) : OutfitCategories.None;
             Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();
-            string why = CasRefusal(s);
+            string why = CasRefusal(s, CasOutfit(s, want));
             if (why != null && !a.Has("sim"))
                 foreach (Sim m in Household.ActiveHousehold.Sims)
-                    if (CasRefusal(m) == null) { s = m; why = null; break; }
+                    if (CasRefusal(m, CasOutfit(m, want)) == null) { s = m; why = null; break; }
             if (why != null) throw new McpException(why);
             SimDescription sd = s.SimDescription;
-            OutfitCategories oc = s.CurrentOutfitCategory;
-            object r = Measure("cas_open " + sd.FullName, delegate
+            OutfitCategories oc = CasOutfit(s, want);
+            object r = Measure("cas_open " + sd.FullName + " (" + oc + ")", delegate
             {
                 CASLogic cas = CASLogic.GetSingleton();
                 cas.LoadSim(sd, oc, 0);
@@ -229,12 +254,24 @@ namespace Ts3Agent
                 default: throw new McpException("unknown CAS category '" + c + "'; one of: " + string.Join(", ", kCasCategories));
             }
             bool clothing = mid == CASMidState.Clothing;
+            CASClothingCategory.Category typeCat = type == null ? CASClothingCategory.Category.Tops
+                : (CASClothingCategory.Category)Enum.Parse(typeof(CASClothingCategory.Category), type, true);
             Counter count = null;
             if (gridField != null) count = delegate { ItemGrid g = PanelGrid(panel, gridField); return g == null ? -1 : g.Count; };
+            // Polled state, no one-shot event: the old code waited 20 s inside the action for
+            // OnClothingGridFinishedPopulating and threw before the outfit button was ever pressed (so the Sim stayed in
+            // Exercise). Ready = CAS idle, panel shown and done fading in (its fade-finished handler starts the first fill),
+            // the requested outfit/type in place, the grid not filling; Measure then waits for a stable Count.
             Ready ready = delegate
             {
-                if (!CasReady() || !Shown(panel)) return false;
-                if (clothing && !sClothingFilled) return false;
+                if (!CasReady() || !Shown(panel) || CASPuck.Instance.UiBusy) return false;
+                if (clothing)
+                {
+                    CASClothingCategory cc = Panel(typeof(CASClothingCategory)) as CASClothingCategory;
+                    if (cc == null || cc.IsFading) return false;
+                    if (outfit != OutfitCategories.None && (Responder.Instance.CASModel.OutfitCategory != outfit
+                        || CASController.Singleton.CurrentState.mClothingState != CASClothing.CASClothingStateFromOutfitCategory(outfit))) return false;
+                }
                 ItemGrid g = gridField == null ? null : PanelGrid(panel, gridField);
                 return g == null || !Filling(g);
             };
@@ -242,43 +279,40 @@ namespace Ts3Agent
             {
                 ICASModel m = Responder.Instance.CASModel;
                 CASController ctl = CASController.Singleton;
-                CASClothingCategory.OnClothingGridFinishedPopulating -= OnClothingFilled;
-                CASClothingCategory.OnClothingGridFinishedPopulating += OnClothingFilled;
-                sClothingFilled = false;
-                bool fills = false; // something below makes the clothing grid refill
-                WaitFor(delegate { return !CASPuck.Instance.UiBusy && !m.IsProcessing(); }, 20000, "CAS input");
-                if (ctl.CurrentState.mMidState != mid)
+                Ready idle = delegate { return !CASPuck.Instance.UiBusy && !m.IsProcessing(); };
+                WaitFor(idle, 20000, "CAS input");
+                bool switched = ctl.CurrentState.mMidState != mid;
+                if (switched)
                 {
                     CASCharacterSheet sheet = Panel(typeof(CASCharacterSheet)) as CASCharacterSheet;
                     if (sheet == null) throw new McpException("no CAS character sheet (" + CasDiag() + ")");
                     sheet.SetButtonsAndState(new CASState(CASTopState.CreateASim, mid, CASPhysicalState.None, CASClothingState.None));
-                    fills = clothing;
                 }
-                WaitFor(delegate { return Shown(tabPanel) && (!fills || sClothingFilled); }, 20000, tabPanel.Name);
+                // only the tab panel being there and the UI idle; its grid fill is timed by ready()/count, not here
+                WaitFor(delegate { return Shown(tabPanel) && idle(); }, 30000, tabPanel.Name);
                 if (phys != CASPhysicalState.None && ctl.CurrentState.mPhysicalState != phys)
                 {
                     SetCasState(new CASState(CASTopState.CreateASim, mid, phys, CASClothingState.None));
                     ctl.Activate(true);
                 }
+                if (!clothing) return;
+                CASClothingCategory cc = Panel(typeof(CASClothingCategory)) as CASClothingCategory;
+                if (cc == null) throw new McpException("no CASClothingCategory panel (" + CasDiag() + ")");
+                WaitFor(delegate { return !cc.IsFading; }, 30000, "CASClothingCategory fade-in");
                 if (outfit != OutfitCategories.None && m.OutfitCategory != outfit)
                 {
+                    // what the outfit button does: CASModel.OutfitCategory = outfit, type Tops, state; the model then raises
+                    // OnSimOutfitCategoryChanged -> SetCurrentState + Activate -> SetTypeCategory (refill)
                     object cl = Panel(typeof(CASClothing));
                     if (cl == null) throw new McpException("no CASClothing panel (" + CasDiag() + ")");
-                    sClothingFilled = false;
                     typeof(CASClothing).GetMethod("OnClothingCategoryButtonClick", kPriv).Invoke(cl,
                         new object[] { typeof(CASClothing).GetField(outfitButton, kPriv).GetValue(cl), new UIButtonClickEventArgs() });
-                    fills = true; // refills via CASModel.OnSimOutfitCategoryChanged -> Activate -> SetTypeCategory
                 }
-                if (clothing && (type != null || !fills))
-                {
-                    // a type change, or a repeat of the current outfit: refill the grid ourselves so there is a fill to time
-                    WaitFor(delegate { return !fills || sClothingFilled; }, 20000, "clothing grid");
-                    CASClothingCategory cc = (CASClothingCategory)Panel(typeof(CASClothingCategory));
-                    sClothingFilled = false;
-                    cc.SetTypeCategory(type == null ? CASClothingCategory.CurrentTypeCategory
-                        : (CASClothingCategory.Category)Enum.Parse(typeof(CASClothingCategory.Category), type, true));
-                }
-            }, ready, count, 60000);
+                else if (type != null || !switched)
+                    // a type change, or a repeat of the current outfit in an open tab: refill so there is a fill to time
+                    // (a fresh tab already filled in its fade-in handler)
+                    cc.SetTypeCategory(type == null ? CASClothingCategory.CurrentTypeCategory : typeCat);
+            }, ready, count, 90000);
         }
 
         // cas_close: the close button's "exit without saving" path, minus its Yes/No dialog; back to live mode.

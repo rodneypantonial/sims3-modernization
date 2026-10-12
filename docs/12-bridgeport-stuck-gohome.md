@@ -167,3 +167,9 @@ Entry, using the stuck Waylon's Haunt spot that `bp-waylons-gohome` already uses
 - Run it once with `patches {gohome:false, watchdog:false}` to see the vanilla behaviour, then with both on.
 - Read `ShortcutLog` and `ts3fixes.moved` for where the Sim ended up.
 - `sim_go_home` calls `Sim.MakeSimGoHome`, so a real resident gets `GoHome` (the hook path) and a virtual resident gets `GoToVirtualHome`.
+
+### 5.5 Discovery result (2026-10-13, Baseline-BP, read-only `reflect_get` over `Household.sHouseholdList`)
+
+Of 55 households, 30 have a home lot; **22 of those homes are shell apartments or penthouses** (`BuildableShells.Length` 1, `HasVirtualResidentialSlots` true), e.g. Clavier (Bridgeport Arms), Hemlock (The Tidewater), Bumble (The Simerset), Jones (One Leo Center), Talon and Striker (Hieroglyph Condos), Rake (Bachelor Tower), Maloney (Maloney Tower), King (Glenview Manor) [verified].
+
+Matched against the Sims in our stuck repros (bp-hogans-gohome, bp-hogans-pileup, the bp-mod run): **Wogan Hemlock, Wayne Bumble and Johnny Jones live in shell apartments**, the homes `GoHomeHook` skips, so they still walk home through the building; **Suzy Strummer, Lilly-Bo Chique, Marie Desmarais and Paul Hogue have no household home lot** (homeless or virtual residents, the `VirtualHomeHook` and watchdog path) [verified]. So both causes in §5.1-5.3 are real: shell-apartment residents (fix 2: unseen -> game's own safe spot inside the home) and homeless/virtual townies (fix 1: watchdog uses the game's fade-out). The repro `bp-apartment-gohome` can use Wogan Hemlock (The Tidewater) and Wayne Bumble (The Simerset).
