@@ -576,5 +576,63 @@
       411.9,
       1344.0
     ]
+  },
+  {
+    "id": "store-items-memory",
+    "bug": "Memory per store item in use (docs/17 §4 M9): placed objects and worn CAS parts",
+    "fix": "measurement only; read commitMB from the probe /memory before and after each step",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "catalog_objects",
+        "args": {
+          "filter": "store",
+          "max": 20
+        },
+        "note": "if empty, the repacks report as ea: pick keys by the raw category/source/pack fields"
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "store",
+          "count": 20
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_parts",
+        "args": {
+          "filter": "store",
+          "max": 5
+        }
+      },
+      {
+        "cmd": "wear_parts",
+        "args": {
+          "keys": []
+        },
+        "note": "fill with 5 keys from cas_parts (one per body type)",
+        "optional": true,
+        "waitS": 60
+      },
+      {
+        "cmd": "restore_outfit",
+        "args": {
+          "sim": "all"
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "commitMB delta per placed object and per worn part; objects removed and outfits restored; no script errors"
   }
 ]
