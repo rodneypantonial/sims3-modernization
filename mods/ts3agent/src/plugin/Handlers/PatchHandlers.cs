@@ -155,6 +155,9 @@ namespace Ts3Agent
             Patch(typeof(VisitLot), "Run", typeof(VisitLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToLot), "Run", typeof(GoToLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToCommunityLot), "Run", typeof(GoToCommunityLotHook), "RunHook", "RunOrig");
+            // not applied: in Bridgeport the traffic shortcut left ~3x as many Sims stuck (eating out, meet-ups, visits)
+            // as the same run without it, for ~1% of script time. Kept for reference, docs/04 F10.
+            // Patch(typeof(Route), "PlanToPoint", typeof(RoutePlanToPointHook), "PlanToPointHook", "PlanToPointOrig");
         }
 
         static void Patch(Type target, string method, Type hook, string replacement, string stub)
@@ -222,7 +225,7 @@ namespace Ts3Agent
             {
                 if (home == null || !TownieUnseen(sim, SimFollowers)) return false;
                 if (sim.LotHome != home || sim.LotCurrent == home || home == Household.ActiveHouseholdLot) return false;
-                if (home.IsHouseboatLot() || home.BuildableShells.Length > 0) return false;
+                if (!HouseboatOk(home) || home.BuildableShells.Length > 0) return false;
                 return FarFromViewers(home.Position);
             }
         }
@@ -260,11 +263,26 @@ namespace Ts3Agent
                 bool fromKnown = cached && i == 0;
                 if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(fromKnown ? known : near), out pos, out fwd)) continue;
                 if (LotManager.GetLotAtPoint(pos) != lot) continue;
-                if (fromKnown && uses % 8 != 0) return true;
-                if (sim.IsPointInLotSafelyRoutable(lot, pos)) { sSafeSpot[lot.LotId] = pos; return true; }
+                if (fromKnown && uses % 8 != 0) { if (lot.IsHouseboatLot()) PatchCounters()[21]++; return true; }
+                if (sim.IsPointInLotSafelyRoutable(lot, pos))
+                {
+                    sSafeSpot[lot.LotId] = pos;
+                    if (lot.IsHouseboatLot()) PatchCounters()[21]++;
+                    return true;
+                }
                 if (fromKnown) sSafeSpot.Remove(lot.LotId);
             }
             return false;
+        }
+
+        // Houseboat lots (PLAN fix b2): most of their cost is Sims boarding and leaving through gangways
+        // (SimRoutingComponent.CheckAndUpdateForHouseboats, 5-8% in Isla Paradiso), not the boats moving, so trips to a
+        // houseboat may be shortcut too, but only while it is docked and not moving.
+        static bool HouseboatOk(Lot lot)
+        {
+            if (!lot.IsHouseboatLot()) return true;
+            Sims3.Gameplay.Objects.Island.Houseboat b = lot.GetHouseboat();
+            return b != null && b.IsDocked;
         }
 
         static void PlaceSim(Sims3.Gameplay.Actors.Sim sim, Sims3.SimIFace.Vector3 pos, Sims3.SimIFace.Vector3 fwd)
@@ -330,7 +348,7 @@ namespace Ts3Agent
 
         // Shared by the lot-trip shortcuts: counts a call in [idx], and if the townie and the lot are both unseen and far
         // apart, places the townie on a safe spot on the lot ([idx+1]) or gives up ([idx+2], no safe spot). Lots with their
-        // own arrival code (houseboats, apartment shells, resorts, diving lots, the active household's lot) are left alone,
+        // own arrival code (moving houseboats, apartment shells, resorts, diving lots, the active household's lot) are left alone,
         // and so are townies whose household has pets (the game may add a pet or horse as a follower after the move, which
         // would then start far away).
         static bool ShortcutToLot(Sims3.Gameplay.Actors.Sim sim, Lot lot, string name, int idx)
@@ -338,7 +356,7 @@ namespace Ts3Agent
             int[] c = PatchCounters();
             c[idx]++;
             if (!ShortcutOn(name) || sim == null || lot == null || lot.IsWorldLot || sim.LotCurrent == lot) return false;
-            if (lot.IsHouseboatLot() || lot.BuildableShells.Length > 0 || lot == Household.ActiveHouseholdLot) return false;
+            if (!HouseboatOk(lot) || lot.BuildableShells.Length > 0 || lot == Household.ActiveHouseholdLot) return false;
             if (lot.CommercialLotSubType == CommercialLotSubType.kEP10_Resort || lot.CommercialLotSubType == CommercialLotSubType.kEP10_Diving) return false;
             if (sim.Household != null && sim.Household.Pets.Count > 0) return false;
             if (!TownieUnseen(sim, null) || (sim.Position - lot.Position).Length() <= kShortcutMinDistance || !FarFromViewers(lot.Position)) return false;
@@ -349,6 +367,41 @@ namespace Ts3Agent
             c[idx + 1]++;
             ShortcutLog(sim.FullName + " => " + lot.Name + " (" + name + " from " + from + ")");
             return true;
+        }
+
+        // Ambient traffic (PLAN fix b3, cars): driverless traffic cars and light taxis (CarNpcWithNoDriver's LiteDriver task)
+        // drive between random shop parking spots until a cleanup alarm sends them away. Their route plans go through
+        // Route.PlanToPoint; when the car and its parking spot are both unseen and far apart, the car is put at the spot and
+        // the plan reports "not planned", so the task skips the drive and goes on as usual (frees the spot, waits, picks the
+        // next lot). Route is abstract with many members, so this hook is a plain class that casts `this` back to Route.
+        // Counters: [19] car plans seen, [20] shortcuts.
+        public class RoutePlanToPointHook
+        {
+            public RoutePlanResult PlanToPointHook(Sims3.SimIFace.Vector3 dest)
+            {
+                Route r = (Route)(object)this;
+                if (ShortcutOn("traffic"))
+                {
+                    IScriptProxy f = r.Follower;
+                    Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver car = f != null ? f.Target as Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver : null;
+                    if (car != null)
+                    {
+                        int[] c = PatchCounters();
+                        c[19]++;
+                        if ((car.Position - dest).Length() > kShortcutMinDistance && !World.IsObjectOnScreen(car) && FarFromViewers(car.Position) && FarFromViewers(dest))
+                        {
+                            car.SetPosition(dest);
+                            c[20]++;
+                            RoutePlanResult res = r.PlanResult;
+                            res.mType = RoutePlanResultType.Failed;
+                            r.PlanResult = res;
+                            return res;
+                        }
+                    }
+                }
+                return PlanToPointOrig(dest);
+            }
+            public RoutePlanResult PlanToPointOrig(Sims3.SimIFace.Vector3 dest) { return default(RoutePlanResult); } // receives Route.PlanToPoint's original header
         }
 
         // Home visits (VisitLot) and plain lot trips (GoToLot, GoToCommunityLot): same as community visits, the game's
@@ -433,6 +486,11 @@ namespace Ts3Agent
                 r[n + "_shortcuts"] = c[8 + 3 * i];
                 r[n + "_no_spot"] = c[9 + 3 * i];
             }
+            if (a.Has("traffic")) AppDomain.CurrentDomain.SetData("ts3agent.shortcut.traffic", a.Bool("traffic", true));
+            r["traffic"] = ShortcutOn("traffic");
+            r["traffic_runs"] = c[19];
+            r["traffic_shortcuts"] = c[20];
+            r["houseboat_shortcuts"] = c[21]; // shortcuts that placed a Sim on a docked houseboat
             r["recent"] = GoHomeLog();
             return r;
         }

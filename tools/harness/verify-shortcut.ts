@@ -3,11 +3,12 @@
 // Runs at x3 with popups cleared and checks every 30 s: shortcut counters (patches command: <name>_shortcuts,
 // <name>_no_spot) and stuck Sims as watchdog.ts judges them, marking Sims a shortcut recently placed. Passes once each
 // named shortcut has fired --tries times with no stuck teleported Sim and at least 2 min elapsed; fails on a stuck teleported
-// Sim or when --minutes run out. Exit code 0 = pass. Needs the probe server and a world in live mode.
+// Sim, more than --max-stuck stuck Sims of any kind, or when --minutes run out. Exit code 0 = pass. Needs the probe server and a world in live mode.
 import { parseArgs } from 'node:util';
 
-const { values } = parseArgs({ options: { name: { type: 'string' }, tries: { type: 'string', default: '20' }, minutes: { type: 'string', default: '5' } } });
+const { values } = parseArgs({ options: { name: { type: 'string' }, tries: { type: 'string', default: '20' }, minutes: { type: 'string', default: '5' }, 'max-stuck': { type: 'string', default: '5' }, off: { type: 'string' } } });
 if (!values.name) throw new Error('--name required (gohome, rabbithole, ...)');
+const maxStuck = Number(values['max-stuck']);
 const names = values.name.split(','), tries = Number(values.tries), limit = Number(values.minutes) * 60000;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
@@ -18,6 +19,8 @@ const ag = async (cmd: string, args?: object): Promise<any> => {
 };
 
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+// --off a,b: switch those shortcuts off for this run (a baseline for the stuck count)
+if (values.off) await ag('patches', Object.fromEntries(values.off.split(',').map(n => [n, false])));
 const start = (await ag('patches')).result ?? {};
 const base = Object.fromEntries(names.map(n => [n, { shortcuts: start[`${n}_shortcuts`] ?? 0, noSpot: start[`${n}_no_spot`] ?? 0 }]));
 const seen = new Map<string, { key: string; checks: number; reported: boolean }>();
@@ -43,6 +46,8 @@ while (Date.now() - t0 < limit) {
   const got = names.map(n => ({ n, shortcuts: (p[`${n}_shortcuts`] ?? 0) - base[n].shortcuts, noSpot: (p[`${n}_no_spot`] ?? 0) - base[n].noSpot }));
   console.log(`${stamp()} ${got.map(g => `${g.n}: ${g.shortcuts} shortcuts, ${g.noSpot} without a safe spot`).join('; ')}; stuck: ${stuck.length ? stuck.join('; ') : 'none'}`);
   if (stuck.some(s => s.includes('[teleported]'))) { verdict = 'FAIL: a teleported Sim is stuck'; break; }
+  // any Sims stuck count too: a shortcut can strand Sims it never moved (e.g. ones waiting on a car it moved)
+  if (stuck.length > maxStuck) { verdict = `FAIL: ${stuck.length} stuck Sims (more than --max-stuck ${maxStuck}); compare with the shortcut off`; break; }
   if (got.every(g => g.shortcuts >= tries) && Date.now() - t0 >= 120000) { verdict = 'PASS'; break; }
   verdict = `FAIL: too few tries for ${got.filter(g => g.shortcuts < tries).map(g => g.n).join(', ')} within the time limit (try another world or save)`;
 }

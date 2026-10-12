@@ -194,3 +194,19 @@ Mechanism (the idea MonoPatcher's `ReplaceMethod` uses, reimplemented in `mods/t
 | stuck Sims | – | **0** |
 
 329 of 404 go-home runs were shortcut. Route time per second did not fall: townies home sooner head out sooner, and outbound trips still route (fix b3). The first build placed Sims on the sidewalk (`Service.GetPositionInRandomLot` returns a footpath point near the lot), so the game kept sending them home: 5× the go-home rate until the spot had to be on the lot. Shortcut townies were seen continuing normally (work shifts, meet-ups, visits, eating out).
+
+## F10. Trip shortcuts verified per type [2026-10-12]
+
+`tools/harness/verify-shortcut.ts` (x3, up to 5 min, stuck-Sim check; Rodney's rule: each type must be seen working, no A/B). Shared rules: the Sim and its destination are unseen (off screen, beyond max(80 m, 2× camera height) from the camera and 80 m from the active household), the Sim is a townie on its own and standing; the spot is on the destination lot and passes `Sim.IsPointInLotSafelyRoutable`, cached per lot (re-verified every 8th use); the game's own method then runs the last metres and the arrival.
+
+| Shortcut | Hook | Result |
+|---|---|---|
+| go-home | `GoHome.Run` | F9: 329/404 in 10 min, 0 stuck |
+| trips into buildings | `RabbitHole.RouteNearEntranceAndEnterRabbitHole` | Isla Paradiso: 25+ in 2 min, 0 stuck |
+| community lot visits | `VisitCommunityLot.Run` (follower list preset empty) | IP: 70 in 5 min |
+| home visits / go to lot / go to community lot | `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run` | IP: 10 / 6 / 9 in 5 min, 0 stuck |
+| ambient traffic cars | `Route.PlanToPoint` for `CarNpcWithNoDriver` (LiteDriver) | **dropped**: Bridgeport, ~24 stuck Sims in 2.5 min vs 7 with it off (eating out, meet-ups, shows, visits); gain ~1% |
+
+Houseboats (F7 data): boat moves cost 0.2–0.3%; boarding and leaving through gangways costs 5–8% (`SimRoutingComponent.CheckAndUpdateForHouseboats`, House Boat Fix's `EnterHouseboatThroughGangway`). So fix b2 lets go-home and lot shortcuts target houseboat lots while the boat is docked (`Houseboat.IsDocked`).
+
+Bridgeport baseline (all shortcuts but traffic): the same townies (Ti Bellino, Wogan Hemlock, Mars Champion, Regina Choi, ...) sit stuck in Go Home on community lots, routing, in every run of `Baseline-BP`: a pre-existing problem of that save, not caused by the shortcuts (to investigate separately).
