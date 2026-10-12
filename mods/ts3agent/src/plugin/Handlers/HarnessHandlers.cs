@@ -25,6 +25,7 @@ namespace Ts3Agent
             Dispatcher.Register("load_save", LoadSave);
             Dispatcher.Register("world_households", WorldHouseholds);
             Dispatcher.Register("houseboats", Houseboats);
+            RegisterRepro();
             Dispatcher.Register("patch_test", PatchTest);
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);

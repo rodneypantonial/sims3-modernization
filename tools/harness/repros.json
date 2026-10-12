@@ -1,0 +1,49 @@
+[
+  {
+    "id": "bp-hogans-gohome",
+    "bug": "Townies placed by the building shortcut at Hogan's Deep-Fried Diner later stand stuck in Go Home (bp-mod run, 2026-10-12)",
+    "fix": "ts3fixes trip shortcuts + route-fail fixes; bisect in progress (docs/04 F10, PLAN item 1)",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "place_sim", "args": { "sim": "Wogan Hemlock", "x": 312.4, "z": 1496.7 } },
+      { "cmd": "place_sim", "args": { "sim": "Johnny Jones", "x": 312.4, "z": 1497.7 }, "optional": true },
+      { "cmd": "sim_go_home", "args": { "sim": "Wogan Hemlock" }, "waitS": 2 },
+      { "cmd": "sim_go_home", "args": { "sim": "Johnny Jones" }, "optional": true }
+    ],
+    "watch": { "kind": "stuck", "sims": ["Wogan Hemlock", "Johnny Jones"], "minutes": 5 },
+    "expect": "both leave the diner and get home (no Sim stuck)"
+  },
+  {
+    "id": "bp-waylons-gohome",
+    "bug": "Townies placed by the lot-visit shortcut at Waylon's Haunt later stand stuck in Go Home (bp-mod run)",
+    "fix": "same as bp-hogans-gohome",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "place_sim", "args": { "sim": "Paul Hogue", "x": 411.9, "z": 1344.0 } },
+      { "cmd": "sim_go_home", "args": { "sim": "Paul Hogue" } }
+    ],
+    "watch": { "kind": "stuck", "sims": ["Paul Hogue"], "minutes": 5 },
+    "expect": "the Sim walks home or is shortcut home (not stuck)"
+  },
+  {
+    "id": "ip-houseboat-gohome",
+    "bug": "Houseboat households (Arias, Scott) stuck going out/home in Isla Paradiso (ip-all run)",
+    "fix": "ts3fixes docked-houseboat shortcut (b2)",
+    "save": "Baseline-IP",
+    "steps": [
+      { "cmd": "sim_go_home", "args": { "sim": "Linda Scott" }, "optional": true },
+      { "cmd": "sim_go_home", "args": { "sim": "Mylee Arias" }, "optional": true }
+    ],
+    "watch": { "kind": "stuck", "sims": ["Linda Scott", "Mylee Arias", "Tariq Scott", "Ruben Arias"], "minutes": 5 },
+    "expect": "no houseboat resident stuck"
+  },
+  {
+    "id": "bp-virtualhome-fade",
+    "bug": "Homeless townies walk across Bridgeport to a random lot before leaving the world (4.4% of script time)",
+    "fix": "ts3fixes VirtualHomeHook",
+    "save": "Baseline-BP",
+    "steps": [],
+    "watch": { "kind": "counter", "counter": "virtualhome_shortcuts", "min": 3, "minutes": 3 },
+    "expect": "unseen homeless townies fade out at once"
+  }
+]
