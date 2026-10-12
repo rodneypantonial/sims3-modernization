@@ -26,8 +26,8 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 **Native patch host `native/ts3native`** (docs/15, `build.cmd`, MSVC 2022): `ts3native.asi` + `.ini`; GC initial heap 40 -> 256 MB and growth step 8 -> 32 MB, original bytes checked first. Built, not yet loaded in the game.
 
 **Open now:**
-1. Full mod is slower than build 62c39f6 in Bridgeport (40 vs 50 iterations/s; forced GC 13.9 vs 3.6 ms/s). Our hook code is only 0.3% of samples, so likely extra allocation by the new route fixes or the watchdog. Next: in-load A/B toggling the new route fixes; watchdog needs a runtime switch and a cheaper check.
-2. GC heap: **352 MB start = forced GCs 128 -> 1 and hitches -14%** (docs/04 F15); now testing `ts3native.asi` (InitialHeapMB=352, installer entry `native-patches`, off by default until verified). The slowdown in open 1 is not GC: iterations stayed ~39 with the big heap.
+1. Full mod runs at 38-41 iterations/s in Bridgeport vs 50 in the single run of build 62c39f6. Not GC (big heap: same iterations) and not the four new route fixes (in-load A/B: on 40.8 vs off 34.9 iterations/s, hitches 2.57 vs 3.36, route 97 vs 127 ms/s; they help). Testing the last two differences, watchdog and spot spreading, with runtime switches (`bp-wab`); if neither, the 50 was an outlier.
+2. GC heap: **352 MB start = forced GCs 128 -> 1 and hitches -14%** (docs/04 F15). `ts3native.asi` **verified in game**: all GC patches applied (log), heap 356-360 MB, forced GC 0.0 ms/s, 0 stuck. Phase 2 native route cache built (0.2.0, off by default, `[RouteCache]`), not yet run in game. The slowdown in open 1 is not GC: iterations stayed ~39 with the big heap.
 3. The bp-mod run's 14 stuck Sims did not recur (25-min scan and a fresh 6-min run: 0); keep watching.
 
 **Next, in order:**
