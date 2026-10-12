@@ -31,6 +31,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSaveCleanup value="False" />
     <kSnapshotCap value="0" />
     <kNoStationDetourOffscreen value="True" />
+    <kPortalAdaptorLeak value="True" />
   </Current_Tuning>
 </base>
 `;

@@ -999,5 +999,68 @@
       "minutes": 1
     },
     "expect": "Within one load: both label_check results have the same hash and counts. Across loads (same save, content and language): s3pp on and s3pp off give the same hash, empty, placeholder, mismatch and hash_empty. Different -> run label_check {dump:true} in both and diff values by key; hash_empty or mismatch only with s3pp on = stale cache, set LocalizedStringCache=0"
+  },
+  {
+    "id": "ip-portal-leak",
+    "bug": "Isla Paradiso saves leak routing objects (ScriptCore.Route, PortalAnimateThroughAction, Sim script/steering/path adaptors; ~23 per sim day, 0 -> 326 by day 14): PortalAnimateThroughAction.DoPortal creates the route adaptors (ScriptAdaptor.Init subscribes Sim.OnExitReasonsAdded) but skips PerformRoute for Ocean / Houseboat portals, so the only unsubscribe (FollowRouteAction.Kill) never runs (docs/09 section 5)",
+    "fix": "ts3fixes PortalAdaptorHook (switch portaladaptorleak, tuning kPortalAdaptorLeak): unsubscribe the adaptor DoPortal created once it returns; existing saves: opt-in SaveCleanup (d) RunRouteAdaptorCleanupOnce",
+    "save": "Baseline-IP",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RouteAdaptorCounts"
+        },
+        "waitS": 60,
+        "note": "before: adaptors/stale over all Sims (stale = callback whose route action is in no route action list); waits for post-load settling"
+      },
+      {
+        "cmd": "sim_portal_trip",
+        "args": {
+          "via": "ocean"
+        },
+        "waitS": 60,
+        "note": "active Sim swims out (Ocean portal, route skipped)"
+      },
+      {
+        "cmd": "sim_portal_trip",
+        "args": {
+          "via": "houseboat"
+        },
+        "waitS": 90,
+        "optional": true,
+        "note": "active Sim boards the nearest houseboat (Houseboat portal, route skipped)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 120,
+        "note": "townie ocean/houseboat traffic adds more"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RouteAdaptorCounts"
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunRouteAdaptorCleanupOnce"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "existing-save cleanup (d) on demand; matters in the --set portaladaptorleak=false run"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "portaladaptor_unsubscribes",
+      "min": 1,
+      "minutes": 5
+    },
+    "expect": "fix on: portaladaptor_unsubscribes >= 1 and the second RouteAdaptorCounts shows stale no higher than the first (adaptors differ only by live routes); with --set portaladaptorleak=false: counter flat (FAIL), stale grows by >= 1 per portal trip, and RunRouteAdaptorCleanupOnce removes them (savecleanup_route_callbacks rises, stale back to ~0); no route errors or stuck Sims either way"
   }
 ]

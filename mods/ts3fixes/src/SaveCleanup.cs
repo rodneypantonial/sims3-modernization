@@ -20,6 +20,8 @@ namespace Ts3Fixes
     //   (b) MiniSimDescriptions of Sims from other worlds with no family links and no tie to the active household,
     //       removed with MiniSimDescription.RemoveMSD (unlinks the other sides' mini relationships).
     //   (c) Empty life-event lists (docs/14 7a): LifeEventManager keys whose List is empty; the game recreates one on demand.
+    //   (d) Stale route callbacks (Sim.OnExitReasonsAdded -> ScriptAdaptor of a finished route action) left by the portal
+    //       adaptor leak in existing saves; in PortalAdaptorLeak.cs, counter [55].
     // Counters: [40] relationship pairs removed, [41] MiniSims removed, [42] cleanup runs, [43] runs skipped or failed,
     // [52] empty life-event lists removed, [53] memory pictures removed by (d).
     //   (d) Memory snapshot cap (docs/14 7b): its own tunable Instantiator.kSnapshotCap (0 = off), same 2:00 alarm and skips.
@@ -52,6 +54,7 @@ namespace Ts3Fixes
             if (!SaveCleanupOn()) return;
             try { RunSaveCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; }
             try { RunLifeEventTrimOnce(); } catch (Exception) { PatchCounters()[43]++; }
+            try { RunRouteAdaptorCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; } // (d), PortalAdaptorLeak.cs
         }
 
         // (c) On demand for the test agent too. Only empty lists go: every reader uses TryGetValue and creates a missing

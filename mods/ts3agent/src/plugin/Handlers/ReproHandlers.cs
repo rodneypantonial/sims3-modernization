@@ -18,6 +18,7 @@ namespace Ts3Agent
             Dispatcher.Register("sim_strand", SimStrand);
             Dispatcher.Register("sim_visit_lot", SimVisitLot);
             Dispatcher.Register("sim_route_to", SimRouteTo);
+            Dispatcher.Register("sim_portal_trip", SimPortalTrip);
         }
 
         // place_sim {sim, x, z, y?}: stand the Sim at a world position (resets what it was doing, like the game's teleport)
@@ -114,6 +115,53 @@ namespace Ts3Agent
             route.PlanToPoint(p);
             Dictionary<string, object> r = Util.Obj();
             r["plan"] = route.PlanResult.mType.ToString();
+            return r;
+        }
+
+        // sim_portal_trip {sim?, via?}: Go Here (user-directed, default the active Sim) into the sea (via "ocean", default:
+        // 10 m past the first sea point found on rings of 10..400 m round the Sim) or onto the nearest houseboat (via
+        // "houseboat"). Both routes cross a portal whose PortalAnimateThroughAction.DoPortal skips the route: the trigger
+        // for the route adaptor leak (repro ip-portal-leak, docs/09 section 5). Needs a world with sea / houseboats (IP).
+        static object SimPortalTrip(Args a)
+        {
+            Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();
+            string via = a.Has("via") ? a.Str("via").Trim().ToLowerInvariant() : "ocean";
+            Vector3 pos = Vector3.Invalid;
+            string what = null;
+            if (via == "houseboat")
+            {
+                float best = float.MaxValue;
+                foreach (Lot l in LotManager.AllLots)
+                {
+                    if (l == null || !l.IsHouseboatLot()) continue;
+                    Sims3.Gameplay.Objects.Island.Houseboat hb = l.GetHouseboat();
+                    if (hb == null) continue;
+                    float d = (hb.Position - s.Position).LengthSqr();
+                    if (d < best) { best = d; pos = hb.Position; what = l.Name; }
+                }
+            }
+            else
+            {
+                for (float rad = 10f; rad <= 400f && what == null; rad += 10f)
+                    for (int i = 0; i < 24 && what == null; i++)
+                    {
+                        double ang = i * Math.PI / 12;
+                        Vector3 dir = new Vector3((float)Math.Cos(ang), 0f, (float)Math.Sin(ang));
+                        Vector3 p = s.Position + dir * rad, far = s.Position + dir * (rad + 10f);
+                        if ((TerrainType)World.GetTerrainType(p.x, p.z, 0) == TerrainType.WorldSea
+                            && (TerrainType)World.GetTerrainType(far.x, far.z, 0) == TerrainType.WorldSea) { pos = far; what = "sea"; }
+                    }
+            }
+            if (what == null) throw new McpException(via == "houseboat" ? "no houseboat in this world" : "no sea within 400 m of " + s.FullName);
+            InteractionInstance ii = Terrain.GoHere.GetSingleton(s, pos).CreateInstance(Terrain.Singleton, s,
+                new InteractionPriority(InteractionPriorityLevel.UserDirected), false, true);
+            Terrain.GoHere gh = ii as Terrain.GoHere;
+            if (gh != null) gh.SetDestination(pos, false);
+            Dictionary<string, object> r = Util.Obj();
+            r["sim"] = s.FullName;
+            r["to"] = what;
+            r["x"] = Math.Round(pos.x, 1); r["z"] = Math.Round(pos.z, 1);
+            r["queued"] = s.InteractionQueue.Add(ii);
             return r;
         }
     }

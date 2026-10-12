@@ -49,6 +49,7 @@ namespace Ts3Fixes
             ApplyRouteFixes();
             ApplyRouteBackoff();
             ApplyOverwatchStuck(false);
+            ApplyPortalAdaptorLeak();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -58,13 +59,14 @@ namespace Ts3Fixes
         // [22-23] broadcaster pulses/skipped, [24-26] route backoff, [27-36] route fixes (RouteFixes.cs), [37-39] SafeSpot
         // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs), [44-45] Overwatch stuck-check
         // plans/yields (OverwatchStuck.cs), [46-51] watchdog idle cases (RouteFixes.cs: idle on an unroutable spot, hidden
-        // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked), [52] empty life-event lists trimmed, [53] memory snapshots capped (SaveCleanup.cs).
+        // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked), [52] empty life-event lists trimmed, [53] memory snapshots capped (SaveCleanup.cs), [54-55] route
+        // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[54]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[56]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -91,6 +93,7 @@ namespace Ts3Fixes
                 case "watchdogidle": return Instantiator.kStuckWatchdogIdle;
                 case "backoff": return Instantiator.kRouteFailureBackoff;
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
+                case "portaladaptorleak": return Instantiator.kPortalAdaptorLeak;
                 case "spotspread": return true;
                 default: return true;
             }
