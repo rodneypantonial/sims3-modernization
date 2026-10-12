@@ -144,23 +144,29 @@ Fix candidates, by expected gain per effort [inferred, to verify one at a time]:
 
 `tools/harness/profile-world.ts --tag <world>` runs the same 10 min for every world (x3 with autopilot, keep_alive and declines every 30 s, the native stutter profiler throughout, the managed sampler in minutes 1–4, the native sampler in minutes 5–8); `tools/probe/profile-compare.mjs bp sv …` prints the table. Sampling does not inflate hitches: on Sunset Valley the rate was 1.5/s before sampling, 1.7/s and 2.0/s during the two samplers, 1.8/s after.
 
-| | Bridgeport (`Baseline-BP`) | Sunset Valley (`Baseline-SV`) |
-|---|---|---|
-| iterations/s | 31.2 | 63.3 |
-| hitches/s (≥50 ms) / worst | 4.0 / 1,014 ms | 1.9 / 2,210 ms |
-| route ms/s, plans/s, fail % | 94.9, 26.5, 1.6% | 82.2, 10.1, **7.0%** |
-| ms per plan | 3.6 | **8.1** |
-| GC mark / forced ms/s, forced max | 16.8 / 15.9, 149 ms | 11.2 / 6.6, 72 ms |
-| interpreter top frame (native samples) | 29.7% | 28.5% |
-| no script running (managed samples) | 18.5% | 31.6% |
-| `Sim.Simulate` (incl.) | 34.8% | 26.2% |
-| `RoutingComponent.DoRoute` / native `Route_Plan` self | 16.5% / 9.9% | 7.3% / **11.5%** |
-| walk-style rules / `Enum.Equals` self | 6.0% / 5.1% | 2.4% / 2.5% |
-| `Lot.UpdateReactions` / `PulseSims` | 8.9% / 7.1% | 1.9% / 1.4% |
-| `GoHome.Run` / `GoToVirtualHomeInternal` | 7.2% / 4.4% | 5.2% / 1.2% |
-| `Queries.GetObjects` / `EventTracker.SendEvent` | 6.0% / 4.6% | 1.1% / 0.8% |
+| | Bridgeport (`Baseline-BP`) | Sunset Valley (`Baseline-SV`) | Isla Paradiso (`Baseline-IP`) |
+|---|---|---|---|
+| iterations/s | 31.2 | 63.3 | 31.7 |
+| hitches/s (≥50 ms) / worst | 4.0 / 1,014 ms | 1.9 / 2,210 ms | 3.5 / 1,170 ms |
+| route ms/s, plans/s, fail % | 94.9, 26.5, 1.6% | 82.2, 10.1, **7.0%** | **246.4**, 9.7, **12.0%** |
+| ms per plan | 3.6 | **8.1** | **25.4** |
+| GC mark / forced ms/s, forced max | 16.8 / 15.9, 149 ms | 11.2 / 6.6, 72 ms | 14.1 / 13.2, 162 ms |
+| interpreter top frame (native samples) | 29.7% | 28.5% | 23.0% |
+| no script running (managed samples) | 18.5% | 31.6% | 18.2% |
+| `Sim.Simulate` (incl.) | 34.8% | 26.2% | 43.5% |
+| `RoutingComponent.DoRoute` / native `Route_Plan` self | 16.5% / 9.9% | 7.3% / **11.5%** | 21.4% / **13.3%** (+ `Route_ReplanFromPosition` **10.9%**, `Route_PlanFromPoint` 2.8%) |
+| walk-style rules / `Enum.Equals` self | 6.0% / 5.1% | 2.4% / 2.5% | 2.7% / 2.3% |
+| `Lot.UpdateReactions` / `PulseSims` | 8.9% / 7.1% | 1.9% / 1.4% | 6.6% / 5.7% |
+| `GoHome.Run` / `GoToVirtualHomeInternal` | 7.2% / 4.4% | 5.2% / 1.2% | **11.1%** / 1.1% |
+| `Queries.GetObjects` / `EventTracker.SendEvent` | 6.0% / 4.6% | 1.1% / 0.8% | 3.1% / 0.6% |
 
 Reading [measured, interpretation inferred]:
 - Sunset Valley is lighter overall (twice the iterations, half the hitches) but its route searches are slower and fail more: fewer plans, each 2.2× longer, 7% failing. Failed searches are the expensive ones: one iteration with 4 failed `Route_Plan` calls took 1,010 ms. On this world a **route-failure cache or per-Sim backoff** pays more than on Bridgeport.
 - Bridgeport's extra cost is population-driven script work (reaction broadcasters, object queries, events, walk-style rules), consistent with a dense downtown.
 - Common to both: native `Route_Plan` is the largest single self cost (10–12%); NPC go-home is 6–12%; the largest hitches (0.5–2.2 s) carry little route or GC time, so they are interpreted script work no hook times (F5).
+
+Isla Paradiso (`Baseline-IP`: new save from `IslaParadiso.world`, Dregg household on the "Atlantis" houseboat, aged 14 sim days at x3 in 36 min, no crash) [measured 2026-10-12]:
+- **Routing dominates: 246 ms of route search per second (2.6× Bridgeport), 25 ms per plan, 12% failing.** Native route calls are ~29% of all script samples (`Route_Plan` 13.3%, `Route_ReplanFromPosition` 10.9%, `Route_PlanFromPoint` 2.8%, `Route_Replan` 1.7%). In hitches alone: 1,555 `Route_Plan` (21% failed, 57 s), 613 `ReplanFromPosition` (50 s), 273 `PlanFromPoint` (22 s) over 570 s.
+- Who routes (task frame above the route call, % of samples): `GoHome.Run` 8.0%, rabbit-hole trips 6.4%, `VisitCommunityLot`/`VisitLot`/`GoToCommunityLot`/`GoToLot` 7.2%, `StandAndWaitController` 1.5% (blocked Sims waiting and replanning), group walks 2.4%. `GoHome.Run` inclusive is 11.1%, the highest of the three worlds.
+- **NPC houseboats move on their own:** 3 of the 6 occupied houseboats (The Romantic, The Angler, Scott) changed position in 10 min (`houseboats` agent command, start/end snapshot). Scott is the household players name as the worst lot.
+- Reading [inferred]: cross-water trips make every plan long and failure-prone, and Isla Paradiso sends more Sims on them (go-home, lot visits). The off-screen go-home (PLAN fix b) and a route-failure backoff should pay most here; houseboat placement off-screen (fix b2) is now worth building, after measuring how much of the replan time is boat-related.
