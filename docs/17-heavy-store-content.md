@@ -188,3 +188,21 @@ Not candidates: disabling packs (against the target), pre-installed store repack
 - CC Magic: https://modthesims.info/d/461888 ; https://steamcommunity.com/app/47890/discussions/0/1457328927848038488
 - Build/Buy Search: https://simscommunity.info/2023/05/18/sims-3-build-search-mod-lazyduchess/ ; recategorization: https://www.nexusmods.com/thesims3/mods/128
 - Pack selection: https://steamcommunity.com/app/47890/discussions/0/1473095965298580683 ; pre-installed store packs: https://www.tumblr.com/nausallien ; Recompressorizer and kt store fixes: https://steamcommunity.com/app/47890/discussions/0/3377008022021249317
+
+## 6. Phase 0 result: store content vs none (2026-10-12)
+
+`offload-phase0.ts --only nocc-200,store-200 --minutes 5 --save Baseline-BP.sims3`; both variants start right after `cache-clear` (cold caches), 5 min at speed 3 with autopilot, 30 samples each, no probe errors. `store-200` = Rodney's CC plus the Store Updates repacks (test-only, `store-repacks-test`). Raw data: `probe-out/phase0/2026-10-12T16-14-02/` [verified].
+
+| | no CC, no store | CC + store repacks | change |
+|---|---|---|---|
+| launch to live mode | 80 s | 125 s | **+45 s (+56%)** |
+| committed address space (median / max) | 2,281 / 2,339 MB | 2,377 / 2,452 MB | +96 / +113 MB |
+| largest free block (median / min) | 1,469 / 1,293 MB | 1,421 / 1,347 MB | -48 MB median |
+| ResourceCache bytes (median / peak) | 388 / 421 MB | 482 / 513 MB | +94 MB |
+| sim minutes advanced in 5 min | 3,208 | 2,926 | -9% |
+
+Reading:
+- **Load time is the big cost** of a heavy store set (+56%); address space grows by only ~100 MB and 1.3 GB stays free, so Error 12 is not close in a 5-minute session [verified for this run]. Longer sessions and saves still need the M-items of §4.
+- **The ResourceCache passes its 200 MB budget** in both runs (421 and 513 MB); the budget is not what limits it, as Phase 0 found before [verified].
+- The sim ran ~9% slower with the store set; one run each, so treat as a hint, not a result [inferred].
+- Next: split load time (launch -> menu vs menu -> live, M1) and warm vs cold caches (M2) to find where the 45 s go; the Performance Patch run (M8) needs its manual Nexus download (mods/235, not in `~/Downloads/ts3-fixes`).
