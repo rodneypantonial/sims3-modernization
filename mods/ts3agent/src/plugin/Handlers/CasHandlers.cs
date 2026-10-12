@@ -124,19 +124,32 @@ namespace Ts3Agent
 
         static bool CasReady() { return CasUp() && CASPuck.Instance.Visible && !Responder.Instance.CASModel.IsProcessing(); }
 
-        // cas_open {sim?}: Edit-in-CAS for the active Sim (or a named Sim of the active household); CAS works on a copy.
+        // the same refusals as Sim.EditSimInCAS (not in the active household, babies, pregnancy, odd outfits); null = can edit
+        static string CasRefusal(Sim s)
+        {
+            SimDescription sd = s.SimDescription;
+            if (sd.Household == null || sd.Household != Household.ActiveHousehold) return sd.FullName + " is not in the active household";
+            if (!s.IsHuman || sd.Baby || sd.IsPregnant || sd.IsVisuallyPregnant) return sd.FullName + " cannot be edited in CAS (not human, baby or pregnant)";
+            OutfitCategories oc = s.CurrentOutfitCategory;
+            if (oc != OutfitCategories.Everyday && oc != OutfitCategories.Formalwear && oc != OutfitCategories.Sleepwear
+                && oc != OutfitCategories.Swimwear && oc != OutfitCategories.Athletic && oc != OutfitCategories.Outerwear)
+                return sd.FullName + " is wearing " + oc + "; CAS needs an everyday/formal/sleep/swim/athletic/outerwear outfit";
+            return null;
+        }
+
+        // cas_open {sim?}: Edit-in-CAS for the named Sim, else the active Sim, else the first household member CAS accepts
+        // (the active one may be in a towel or a career outfit); CAS works on a copy.
         static object CasOpen(Args a)
         {
             if (SubState() != "LiveModeState") throw new McpException("not in live mode (state " + SubState() + ")");
             Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();
+            string why = CasRefusal(s);
+            if (why != null && !a.Has("sim"))
+                foreach (Sim m in Household.ActiveHousehold.Sims)
+                    if (CasRefusal(m) == null) { s = m; why = null; break; }
+            if (why != null) throw new McpException(why);
             SimDescription sd = s.SimDescription;
-            if (sd.Household == null || sd.Household != Household.ActiveHousehold) throw new McpException(sd.FullName + " is not in the active household");
-            // the same refusals as Sim.EditSimInCAS (babies, pregnancy, odd outfits)
-            if (!s.IsHuman || sd.Baby || sd.IsPregnant || sd.IsVisuallyPregnant) throw new McpException(sd.FullName + " cannot be edited in CAS (not human, baby or pregnant)");
             OutfitCategories oc = s.CurrentOutfitCategory;
-            if (oc != OutfitCategories.Everyday && oc != OutfitCategories.Formalwear && oc != OutfitCategories.Sleepwear
-                && oc != OutfitCategories.Swimwear && oc != OutfitCategories.Athletic && oc != OutfitCategories.Outerwear)
-                throw new McpException(sd.FullName + " is wearing " + oc + "; CAS needs an everyday/formal/sleep/swim/athletic/outerwear outfit");
             object r = Measure("cas_open " + sd.FullName, delegate
             {
                 CASLogic cas = CASLogic.GetSingleton();

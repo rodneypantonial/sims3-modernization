@@ -845,6 +845,7 @@
         "PackedFile Packages/*/*/*.package",
         "PackedFile Packages/*/*/*/*.package",
         "PackedFile Packages/*/*/*/*/*.package",
+        "PackedFile Packages/*/*/*/*/*/*.package",
         "Priority 1000",
         "PackedFile Overrides/*.package",
         "PackedFile Overrides/*/*.package",
@@ -854,7 +855,7 @@
     "conflictsWith": [],
     "requires": [],
     "default": true,
-    "notes": "Generated. The local file has no Overrides entries [verified]. Priority values are convention; Overrides must outrank Packages. Create Mods\\Overrides."
+    "notes": "Generated. The local file has no Overrides entries [verified]. Priority values are convention; Overrides must outrank Packages. Create Mods\\Overrides. One more Packages level (6) since 2026-10-13: CC sorted into deep folders was silently never loaded (content-health.ts found one)."
   },
   {
     "id": "nointro",
@@ -1570,7 +1571,8 @@
       ],
       "exclude": [
         "Packages/ModTheSims/Game Mods/Script & Core Mods - Pure Scripting Mods",
-        "Packages/ModTheSims/ld_SmoothPatch"
+        "Packages/ModTheSims/ld_SmoothPatch",
+        "Packages/ModTheSims/Game Mods/Overrides - Recategorisers and Hiders/Nikel23 - Interact on sloped terrain.package"
       ]
     },
     "conflictsWith": [],
@@ -1578,7 +1580,7 @@
       "resource-cfg"
     ],
     "default": false,
-    "notes": "For offload phase 0 (docs/08 §7): CC content only, copied with its relative paths. Excluded: the three \"Sims 3 Store Updates\" repacks and \"Store Fixes\" (Packages/Sims 3 Store, third-party repack, docs/07 §2.6), the old script and core mods in Packages/ and Overrides/ root and the Pure Scripting Mods folder (superseded by or clashing with the fixes layer: ErrorTrap, Overwatch, simler90 UPDATE197, ld_RandomSimFixes, ld_SmoothPatch), and the old Resource.cfg. Uninstall removes exactly the copied files."
+    "notes": "For offload phase 0 (docs/08 §7): CC content only, copied with its relative paths. Excluded: the three \"Sims 3 Store Updates\" repacks and \"Store Fixes\" (Packages/Sims 3 Store, third-party repack, docs/07 §2.6), the old script and core mods in Packages/ and Overrides/ root and the Pure Scripting Mods folder (superseded by or clashing with the fixes layer: ErrorTrap, Overwatch, simler90 UPDATE197, ld_RandomSimFixes, ld_SmoothPatch), and the old Resource.cfg. Uninstall removes exactly the copied files. Also excluded: the CC copy of Nikel23 - Interact on sloped terrain (the fixes layer installs it as routing-sloped-terrain; two copies)."
   },
   {
     "id": "store-repacks-test",
