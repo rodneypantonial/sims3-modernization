@@ -96,3 +96,74 @@ The agent can't find the interaction class from the name alone. The cheapest imp
 4. Do not lengthen or shorten `kDefaultStandAndWaitDuration` or the elevator timeouts. They are shared by every route; a targeted watchdog is safer.
 
 Order: confirm first (section 3). If most stuck Sims run `GoToVirtualHome*`, fix 1 alone should clear them. Otherwise use fix 2, then fix 3. A/B each one with `profile-world --ab` on `Baseline-BP` and count stuck Sims.
+
+Status 2026-10-13: fixes 1 (`VirtualHomeHook`) and 2 (`StuckWatchdog`, 60 sim-min going home / 120 routing, once per Sim per sim-day) are built (`mods/ts3fixes/src/RouteFixes.cs`); fix 3 is not.
+
+## 5. Apartments, penthouses and elevators (code review 2026-10-13)
+
+Question: do Bridgeport townies who live in apartments or penthouses stand stuck in "Go Home" because they cannot route into their building? Tags: [verified] = read in the decompiled source, [community] = with link, [measured] = from repo logs, [inferred] = not confirmed.
+
+### 5.1 How each kind of resident goes home
+
+| Resident | Interaction | Route target | Elevator involved |
+|---|---|---|---|
+| Real household, home lot is an apartment building with NPC units (`LotHome.HasVirtualResidentialSlots`: residential lot with a `PublicRoomMarker`, `Lot.cs` ~5303) | `GoHome` | `Lot.PlanRouteIntoLot` (`Lot.cs` ~9006): the first time per lot it picks a portal (door, not elevator) between a public and a private room on the **lowest** non-negative level (`IsBetterLocation`), caches it in `mBestRouteIntoLotLocation` (until `BestRouteIntoLotLocationValidated` is cleared, ~8733), and plans to within 1-3 m of it | Only if no such door exists: then the best `ElevatorDoors` whose slot is in a private room off the lobby level (`PrivateBetterElevatorDoorTestCheck`), so the route rides the elevator [verified] |
+| Real household in a penthouse or shell building (`LotHome.BuildableShells.Length > 0`, no virtual slots) | `GoHome` | `PlanRouteIntoLot` falls through to `FindFrontDoor()`, the routing slot of the front door that is not outdoors; if that door is on an upper floor the route goes through the shell's `MainEntranceDoor` and an elevator. Falls back to the mailbox, then `PlanToLotEx` [verified] | If the front door is upstairs [inferred per lot] |
+| NPC virtual resident (`VirtualLotHome`, `LotHome == null`) | `GoToVirtualHome(Internal)` | `BuildableShells[0].RouteInsideShell` (`MainEntranceDoor.RouteThroughDoor`) or `RouteToLot`; failure = fade out. On arrival one autonomous action on the home lot, then the NPC unit door (`GetAssociatedNPCDoor`) or a plan to every `ElevatorDoors` slot, then fade out [verified] | Only walks *to* the elevator slot, never rides. A non-service NPC may use an elevator only through doors in a public room (`ElevatorDoors.CanTravelInElevator` returns `IsInPublicResidentialRoom`); a real resident always may (`IsOnHomeLot`) [verified] |
+
+Bounds on the elevator part (section 1): lane wait in `PortalComponent` up to `ElevatorInterior.ElevatorGiveUpTime`, at most 12 Sims in `ElevatorDoors.Line`, a 30-minute failsafe reset. A failed route ends `GoHome.Run` with `NumFail++`. Nothing in the apartment path waits without a limit [verified].
+
+Our hooks on these paths [verified in `mods/ts3fixes/src`]:
+- `GoHomeHook.Unseen` returns false when `home.BuildableShells.Length > 0`, so **shell apartments and penthouses are the only unseen townie homes that still get the full walk** (and every elevator ride on the way).
+- `VirtualHomeHook` fades every unseen non-tourist, non-alien virtual resident whose home is unseen, so the `GoToVirtualHome*` path should no longer stall unseen Sims.
+- `StuckWatchdog` calls `SetToResetAndSendHome()`. With the send-home flag, reset runs `AttemptToFindSafeLocation(forceHome: true)`, which calls `FindPositionNearFrontDoor(LotHome ?? VirtualLotHome)`: a safely routable point inside the home, near `FindFrontDoor()`, so a penthouse resident lands inside the penthouse. If that fails, `AttemptToPutInSafeLocation` puts the Sim at `lot.Position` of `LotHome ?? VirtualLotHome ?? LotCurrent`, which is the lot's corner (`Sim.cs` ~54465-54480). For a homeless townie that is the **corner of the lot it is stuck on**, which can itself be unroutable [verified; consequence inferred].
+
+### 5.2 Does the apartment theory fit the data? Mostly not
+
+- Every recorded stuck "Go Home" Sim stands on the lot it is leaving, not on its home lot [measured: `probe-out/stuck-sims.jsonl`, `probe-out/profile/bp-mod-stuck.json`]. An elevator or entry stall at an apartment would show the Sim on the apartment lot (the elevator lane, lobby or shell door). The only residential-lot entries are Jason Westfall on "Rhapsody in Blue - 1br, 1ba" and Mars Champion on "Bachelor Tower" (not going home). [inferred]
+- They do not move for many sim-hours [measured: `probe-out/watchdog.log`]. On 2026-10-11 the watchdog started at 15:19 (day 15 12:31), and 13 Sims were flagged on the third check at 15:22 (day 16 05:19). So they were stuck from the first minute after load, about 17 sim-hours.
+  - That is longer than any bounded wait in section 1.
+  - It points to a saved state that never recovers: a Sim in an unroutable spot, a native follower that is never woken, or a retry loop that starts again at the same spot. It is not a 20-minute elevator wait. [inferred]
+- They line up along streets [measured]: x≈298 (The Grind z 1252-1262, Hogan's Deep-Fried Diner lot z 1489-1502), x≈629-632 (Eugi's, The Brightmore, Bridgeport Acres, the art gallery) and z≈1592-1595 (The Brightmore). That looks like sidewalk or lot-edge geometry on those streets (a lot entry point, or a sidewalk segment cut off from the network), not anything inside a building. [inferred]
+- Bridgeport elevators are a known stuck source for unseen Sims, and NPC-only units on the ground floor trap residents coming out of hibernation: NRaas staff on Steam, https://steamcommunity.com/app/47890/discussions/0/3133918821790545121 [community]. In code, the ground-floor case matches `PlanRouteIntoLot` preferring the lowest-level door: if that door belongs to an NPC-only unit, every resident plans to it [inferred].
+- Which stuck Sims live in apartments is not known: no repo capture holds household -> home lot with shell or virtual-slot flags. Section 5.4 reads it live.
+
+Conclusion:
+- Apartments and penthouses are a plausible minor source: shell homes still get the full walk plus elevator rides, and there is the NRaas ground-floor case. Confidence that they are the main cause: low.
+- The recorded stuck Sims are stuck at their **origin**, along two streets, from load onward. Confidence that the main cause is on the origin side (where they stand, a saved stuck state, possibly the route-into-lot entry point): medium.
+- Confirm with section 3 plus 5.4.
+
+### 5.3 Fix design, safest first
+
+1. **Watchdog tweaks** (no new teleport kinds; uses the game's own reset):
+   - (a) Allow a second reset per Sim per sim-day when the Sim is stuck again at a different spot. Today it is once per day, and Wogan Hemlock was stuck on both days of the bp-mod run.
+   - (b) Homeless townies (`LotHome == null && VirtualLotHome == null`) and virtual residents: instead of `SetToResetAndSendHome`, which can drop a homeless Sim on the corner of the current lot, end the trip the game's own way. Either `FadeOut(true, true)` from the Sim's own interaction, or reset it and let `VirtualHomeHook` fade it on the next trip. Off-screen only.
+   - (c) Log the home kind on each reset (`BuildableShells.Length`, `HasVirtualResidentialSlots`, `ElevatorDoors` count, front-door level) to `ShortcutLog`, so one run answers 5.2.
+   - Risk: low. These are end states the game already uses.
+2. **Shell-apartment arrival in `GoHomeHook`** (only if 5.4 shows shell or penthouse residents among the stuck):
+   - Lift the `BuildableShells` guard only when `Actor.AttemptToFindSafeLocation(true, out pos, out fwd)` succeeds. That is the game's own `FindRoutablePointInsideNearFrontDoor`: inside the home, near the front door, checked with `IsPointSafelyRoutable`. On a penthouse level it lands inside the penthouse.
+   - Also require that the point is on `LotHome` and that the Sim and the home are unseen. Keep the existing pet, follower, active-lot and loop guards.
+   - Then run the same lead-in and success bookkeeping as today.
+   - Skip homes that also have virtual residential slots (NPC units sharing the lobby), so we never pick a spot in an NPC unit.
+   - Risk: low-medium. Placement inside a home is what the game's reset already does.
+3. **Arrival through the building's entrance or elevator**: do not build. Our own `RouteInsideShell` or elevator code would need elevator line and portal bookkeeping, which strands Sims when it is skipped (docs/10 rule, same as traffic cars).
+4. **Origin-side fix** (if section 3 shows the Sims are frozen in place from load): a one-time pass right after the world loads.
+   - For each unseen townie whose position fails `IsInSafeLocation()` or `IsPointInLotSafelyRoutable`, call `AttemptToPutInSafeLocation(false)`, the game's own placement on the current lot.
+   - Risk: low. This is the right fix if the save holds Sims in unroutable spots.
+
+### 5.4 Repro design (for `repros.json` once the Sim is named)
+
+Find an affected resident first (agent, read-only, one-off):
+1. `list_households`: read `home_lot` per household.
+2. For each home lot, go through a member Sim with `reflect_get`: `@obj:<sim id>.LotHome.BuildableShells.Length` and `.HasVirtualResidentialSlots`. Use `reflect_call` `GetObjects` to count `ElevatorDoors`.
+3. Pick one adult townie from a shell or penthouse home, and one from a virtual-slot building with elevators.
+
+Entry, using the stuck Waylon's Haunt spot that `bp-waylons-gohome` already uses:
+
+```json
+{"id":"bp-apartment-gohome","bug":"Townies living in Bridgeport shell apartments or penthouses stand stuck in Go Home (GoHomeHook skips BuildableShells homes; elevator rides at the home)","fix":"docs/12 §5.3 fix 1 (watchdog home-kind logging and second reset), then fix 2 if confirmed","save":"Baseline-BP","steps":[{"cmd":"place_sim","args":{"sim":"<shell/penthouse resident>","x":411.9,"z":1344}},{"cmd":"sim_go_home","args":{"sim":"<shell/penthouse resident>"},"waitS":2},{"cmd":"place_sim","args":{"sim":"<virtual-slot building resident>","x":412.9,"z":1345},"optional":true},{"cmd":"sim_go_home","args":{"sim":"<virtual-slot building resident>"},"optional":true}],"watch":{"kind":"stuck","sims":["<shell/penthouse resident>","<virtual-slot building resident>"],"minutes":5},"expect":"both reach their home lot (inside the building) or are reset onto it; none stuck on Waylon's Haunt or in an elevator line","area":[411.9,1344]}
+```
+
+- Run it once with `patches {gohome:false, watchdog:false}` to see the vanilla behaviour, then with both on.
+- Read `ShortcutLog` and `ts3fixes.moved` for where the Sim ended up.
+- `sim_go_home` calls `Sim.MakeSimGoHome`, so a real resident gets `GoHome` (the hook path) and a virtual resident gets `GoToVirtualHome`.
