@@ -4,7 +4,7 @@ Approved 2026-10-10. Rewritten 2026-10-12 with everything found so far (read thi
 
 Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (stuck Sims, routing, sim-thread work; load times are fine), then fewer crashes (Error 12 / out of address space) and room for heavy CC. Rodney wants every avenue tried. Workflow: online prior art → reverse engineering → rank big wins → build, one change at a time, measured with the harness.
 
-## Resume here (updated 2026-10-13, night)
+## Resume here (updated 2026-10-13, late night)
 
 **State:** install = 22 community fixes + `graphicsrules-vram` + Options.ini (quality 3, windowed) + our player mod `ts3fixes`. Saves: `Baseline-SV`, `Baseline-BP`, `Baseline-IP` (14 sim days; IP checkpoints day 3-13), `Cleanup-Test-BP(-after)`. The game window reopens where Rodney put it. Focus (Rodney 2026-10-12): general problems most players hit (stutter, heavy store content, Create-a-Sim) before niche ones.
 
@@ -29,13 +29,17 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 - Native plugin `native/ts3native` (docs/15, installer entry `native-patches`, default off until the milestone): GC initial heap 40 -> 352 MB, growth 8 -> 32 MB, verified (forced GC 13.9 -> 0.0 ms/s, hitches -14%, F15). Route negative cache built (0.2.0), not yet tested.
 - Online access (docs/16, probe `/net`): our switches already stop store, telemetry, Connect TNS and login; in a launch + load + 5 min play watch the game made one 1 ms `connect` at launch and **no network calls while playing**, none on the sim thread. Not a stutter source.
 - Heavy store content, first numbers (docs/17 §6; Bridgeport, cold caches, CC + Store Updates repacks as a test-only load via `store-repacks-test`): load +29 s (84 -> 113 s: menu +4 s, menu content scan +12 s, world load +10 s), address space +~100 MB with 1.3 GB still free, ResourceCache 389 -> 501 MB (it ignores its 200 MB budget). Load time is the main cost.
-- Research docs: 16 online features, 17 heavy store content + Create-a-Sim (§5) with ranked candidates, 18 route search off the sim thread (design and first step).
-- Tools: repro library (`repro.ts`, `repros.json`, trigger actions), `stuck-scan.ts`, repro saves, `run-check.mjs` gate, in-load A/B (`profile-world.ts --ab`), `save-stats.ts`; `offload-phase0.ts` variants nocc/cc/store (x CacheBudget), `-s3pp`, warm runs (a variant repeated right after itself) and the load split; probe `/net`; agent actions `cas_open/cas_category/cas_close/buy_open/buy_category/buy_close/cas_state` (built, not yet run in game; repro `store-cas-browse`).
+- Store load split (docs/17 §6b): no CC 84 s; CC + store cold 113 s (menu +4 s, menu content scan +12 s, world load +10 s); warm 104 s. Warm caches save ~9 s, so clearing caches every launch is not worth it. A repeat cold store run gave 110 s.
+- Rodney's CC fixed (found by the new read-only `tools/setup/content-health.ts`, docs/17 §7): `Resource.cfg` reads one more Packages level (6; one CC package was never loaded), and the CC copy of `Nikel23 - Interact on sloped terrain` is excluded (the fixes layer installs it). Applied to the live folder.
+- Research docs: 16 online features, 17 heavy store content + Create-a-Sim (§5) + health check (§7) + S3PP compatibility (§8: no overlap with ts3native, ts3fixes, S3SS or the probe; `LocalizedStringCache` needs a label test), 18 route search off the sim thread.
+- ts3native 0.3.0 built and self-tested, not yet run in game (docs/15 Phase 3): `[RouteWorker] Enabled/Mode` runs each route search on a worker thread while the sim thread waits; runtime switch `/native?routeworker=0|1`, `profile-world --ab routeworker`; opt-in `/routelock` probe (lock wait/hold, plan overlap). Risk: deadlock if the sim thread already holds the routing lock when planning (logged by a 2 s watchdog, not recovered).
+- Tools: repro library (`repro.ts`, `repros.json`, trigger actions), `stuck-scan.ts`, repro saves, `run-check.mjs` gate, in-load A/B (`profile-world.ts --ab`), `save-stats.ts`; `offload-phase0.ts` variants nocc/cc/store (x CacheBudget), `-s3pp`, warm runs (a variant repeated right after itself) and the load split; probe `/net`; agent actions `cas_open/cas_category/cas_close/buy_open/buy_category/buy_close/cas_state` (first in-game run: CAS open 2.6 s, hair 2.9 s / 389 items with the store set; makeup/clothing/accessories counts and the accessories panel need a fix (agent working); `cas_open` now falls back to an eligible household Sim; repro `store-cas-browse`; agent plugin hot-reloads with `build-agent.ts --hot` + `reload-agent.ts`).
 - Sims 3 Performance Patch 2.1 (Rodney's download, source 1.1 in `game-copy/s3pp`): installer entry `s3pp` (sha256 checked) with `ThreadStackDiet` and `ShortWaitSpin` off because S3SS does both; not yet measured.
 
 **Open now:**
 1. The bp-mod run's 14 stuck Sims did not recur (25-min scan, fresh runs: 0); keep watching.
-2. Running: `offload-phase0.ts --only nocc-200,store-200,store-200 --minutes 2` (third = warm caches) -> fill docs/17 §6.
+2. Running: `offload-phase0.ts --only store-200,store-200-s3pp --minutes 3` (Performance Patch off vs on, cold); store-200 done (110 s to live).
+3. Agent fixing CAS item counting and the accessories panel in `CasHandlers.cs` (build only).
 
 **Working notes for the next context:**
 - Restart + quick check: `bash tools/harness/restart-verify.sh <names> <save.sims3> [tries] ["--off a,b --max-stuck N --minutes M"]`; restart + in-load A/B: edit and run `tools/harness/restart-ab.sh`. One agent command: `node tools/harness/ag.mjs <cmd> '<json>'`. GC counters: `node tools/probe/gc-read.mjs`. Native counters: probe `/native` (needs a probe restart, agent.js gained `nativeCounters`).
@@ -44,11 +48,11 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 - Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
 
 **Next, in order:**
-1. Performance Patch: `offload-phase0.ts --only store-200,store-200-s3pp --minutes 3 --save Baseline-BP.sims3`; check `Game\Bin\Sims3Performance.log` (which patches armed on Steam), load split, address space, blank UI text. If it helps without problems: make `s3pp` default on for heavy content, then a bundle stutter check (it touches Mono type lookups next to our patch host).
-2. Create-a-Sim and Buy with the store set: `repro.ts run store-cas-browse` (first in-game run of the new actions; check grid counts, Buy category names, waits), then `cas_state` for all timings, store vs no store. Only if CAS is slow: A/B NRaas MasterController compact view, `CASRenderTargetSize` 2048 -> 1024 (docs/17 §5).
-3. Route search off the sim thread, first step (docs/18): Frida probe of the routing lock (RoutingWorld+0x918) and plan overlap; ts3native 0.3.0 `[RouteWorker] Mode=1` (search on a worker, sim thread waits) with `sim_route_to` repros and `--ab` in IP and BP; build the async design only if IP gains >= ~30 ms/s. Pair with a search budget for unseen townies.
+1. Performance Patch result (running): compare load split, address space and largest free block; read `Game\Bin\Sims3Performance.log` (which patches armed on Steam; `[STBL509] active`, not `refusing late install`); check UI labels for blanks (`LocalizedStringCache`). If it helps without problems: `s3pp` default on, then a bundle stutter check.
+2. Create-a-Sim and Buy: rerun `store-cas-browse` with the fixed counters (store set), then the same without store content; only if CAS is slow: A/B MasterController compact view, `CASRenderTargetSize` 2048 -> 1024 (docs/17 §5). Doubles as the label check for step 1.
+3. Route worker in game (docs/15 Phase 3, docs/18): install ts3native 0.3.0 with `[RouteWorker] Enabled=1, Mode=0`, check `/native` workerReady 1; `sim_route_to` repros (short, cross-lot, unreachable, cross-water in IP) with `routeworker=1` (same outcomes, watchdogs 0); `/routelock` in mode 0 to measure overlap; `profile-world --ab routeworker` on IP and BP. Build the async design only if IP gains >= ~30 ms/s; pair with a search budget for unseen townies.
 4. Native route cache test (repro `bp-route-cache`, see working notes).
-5. Store follow-ups (docs/17): content health check in the installer (DCCache, leftover .sims3pack, OneDrive conflict copies), `SigsCache`/`DCBackup` in `cache-clear`, Store items in use (MB per placed/worn item).
+5. Store follow-ups (docs/17): wire `content-health.ts` into `install-fixes.ts check`, `SigsCache`/`DCBackup` in `cache-clear`, Store items in use (MB per placed/worn item).
 6. Milestone: full per-world profiles with everything on (`run-check.mjs` gate), updated results table; then `native-patches` (and `s3pp` if step 1 passes) default on.
 7. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, 14), tests B-E, time `InternetGetConnectedState` on the system wininet.dll (docs/16), underwater lag in Isla Paradiso (low priority).
 
