@@ -29,10 +29,10 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 - Research docs 09-15 (save bloat, expansion travel, route planner, Bridgeport Go Home, save cleanup, GC, native patches).
 
 **Open now:**
-1. Full mod at 38-41 iterations/s in Bridgeport vs 50 in one run of build 62c39f6: not GC, not the route fixes. A/B of the last two suspects (watchdog, spot spreading; `bp-wab`) running; if neither, the 50 was an outlier.
+1. ~~Full mod at 38-41 vs 50 iterations/s~~ closed: not GC, route fixes, watchdog or spot spreading (all in-load A/Bs); the 50 was a single outlier run.
 2. The bp-mod run's 14 stuck Sims did not recur (25-min scan, fresh runs: 0); keep watching.
 
-**In flight at the compact (2026-10-12 ~15:40 UTC):** in-load A/B `bp-wab` in Bridgeport (watchdog + spotspread switched every 3 min, 12 min; log `probe-out/wab.log`; read with `node tools/probe/profile-compare.mjs bp-wab bp-nab bp-all`). If the "off" slices reach ~50 iterations/s, split the two switches; if not, call build 62c39f6's 50 an outlier and move on. The game may still be running with the probe server attached; `cycle.ts --restart` closes both cleanly.
+**Last run before the compact (done):** in-load A/B `bp-wab` (watchdog + spot spreading): on 37.8 vs off 37.8 iterations/s, hitches 2.81 vs 3.26, 0 stuck. Neither causes the 38-41 vs 50 gap; with the route fixes and GC also ruled out, build 62c39f6's single 50 is treated as an outlier. Open 1 is closed; continue with Next 2 (save cleanup repro). The game may still be running with the probe attached; `cycle.ts --restart` closes both.
 
 **Working notes for the next context:**
 - Restart + quick check: `bash tools/harness/restart-verify.sh <names> <save.sims3> [tries] ["--off a,b --max-stuck N --minutes M"]`; restart + in-load A/B: edit and run `tools/harness/restart-ab.sh`. One agent command: `node tools/harness/ag.mjs <cmd> '<json>'`. GC counters: `node tools/probe/gc-read.mjs`. Native counters: probe `/native` (needs a probe restart, agent.js gained `nativeCounters`).
@@ -41,7 +41,6 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 - Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
 
 **Next, in order:**
-1. Finish open 1 (fix or call the 50 an outlier).
 2. Save cleanup: run repro `bp-save-cleanup` on the copy `Cleanup-Test-BP` (counts drop, second run ~0, no new stuck Sims, reload clean).
 3. Native route cache: enable on a test run, repro with `sim_route_to` to an unreachable point (hits counted, no stuck Sims), then compare route ms/s.
 4. Underwater lag in Isla Paradiso: fill `ip-underwater-lag` (dive-lot point from `list_lots`), profile diving vs land.
