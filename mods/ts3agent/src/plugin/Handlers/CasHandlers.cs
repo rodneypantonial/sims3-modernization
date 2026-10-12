@@ -111,7 +111,7 @@ namespace Ts3Agent
         // Each CAS panel is its own layout with an internal static gSingleton (null until loaded, unloaded after its
         // fade-out). Items are read from the panel's own grid: CASHair.mHairTypesGrid (hair parts), CASMakeup.mGridMakeupParts
         // (makeup parts of the chosen type, filled synchronously in Init), CASClothingCategory.mClothingTypesGrid (one
-        // CASClothingRow per CAS part, filled a few per tick by ItemGrid.BeginPopulating; done = OnClothingGridFinishedPopulating).
+        // CASClothingRow per CAS part, filled a few per tick by ItemGrid.BeginPopulating; done = its mPopulateCallback cleared, polled).
 
         static object Panel(Type t) { return t.GetField("gSingleton", kPriv).GetValue(null); }
 
