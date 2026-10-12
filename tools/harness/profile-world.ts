@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { appendFileSync, createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { reproSave } from './repro-save.ts';
 
 const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' } } });
 if (!values.tag) throw new Error('--tag required');
@@ -100,6 +101,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
 await Promise.all([upkeep, profDone, toggler]);
 if (abNames.length) { writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
+if (stuck.length) await reproSave(ag, values.tag!, stuck);
 console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ` [teleported: ${x.shortcut}]` : ''} on ${x.interaction}`).join('; ')})` : ''}`);
 if (boats0.length) {
   const boats1 = (await ag('houseboats')).result ?? [];

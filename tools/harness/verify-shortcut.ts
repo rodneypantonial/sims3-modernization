@@ -5,6 +5,7 @@
 // named shortcut has fired --tries times with no stuck teleported Sim and at least 2 min elapsed; fails on a stuck teleported
 // Sim, more than --max-stuck stuck Sims of any kind, or when --minutes run out. Exit code 0 = pass. Needs the probe server and a world in live mode.
 import { parseArgs } from 'node:util';
+import { reproSave } from './repro-save.ts';
 
 const { values } = parseArgs({ options: { name: { type: 'string' }, tries: { type: 'string', default: '20' }, minutes: { type: 'string', default: '5' }, 'max-stuck': { type: 'string', default: '5' }, off: { type: 'string' } } });
 if (!values.name) throw new Error('--name required (gohome, rabbithole, ...)');
@@ -51,5 +52,7 @@ while (Date.now() - t0 < limit) {
   if (got.every(g => g.shortcuts >= tries) && Date.now() - t0 >= 120000) { verdict = 'PASS'; break; }
   verdict = `FAIL: too few tries for ${got.filter(g => g.shortcuts < tries).map(g => g.n).join(', ')} within the time limit (try another world or save)`;
 }
+// keep the situation for a direct retest of the fix (load the repro save instead of waiting for it to recur)
+if (stuck.length) await reproSave(ag, `verify-${names[0]}`, stuck.map(x => ({ sim: x })));
 console.log(`${stamp()} ${verdict}; recent: ${((await ag('patches')).result?.recent ?? []).slice(-6).join(' | ')}`);
 process.exit(verdict === 'PASS' ? 0 : 1);
