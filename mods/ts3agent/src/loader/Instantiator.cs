@@ -36,7 +36,7 @@ namespace Ts3Agent
 
         static void OnWorldLoadFinished(object sender, EventArgs e)
         {
-            Mailbox.Close();
+            // keep the same buffer: a new one makes the probe rescan all memory (~18 s per pass) right after a load
             Mailbox.Open();
             Mailbox.SetWorldLoaded(true);
             PollTask.Start(true);

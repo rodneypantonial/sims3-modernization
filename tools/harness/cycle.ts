@@ -26,11 +26,11 @@ async function agent(cmd: string, args?: object): Promise<any> {
   if (args) q.set('args', JSON.stringify(args));
   return get(`agent?${q}`);
 }
-async function until(what: string, limitS: number, check: () => Promise<boolean>): Promise<void> {
+async function until(what: string, limitS: number, check: () => Promise<boolean>, everyMs = 1000): Promise<void> {
   const t0 = Date.now();
   while (!(await check().catch(() => false))) {
     if (Date.now() - t0 > limitS * 1000) throw new Error(`${what}: not reached within ${limitS} s`);
-    await sleep(3000);
+    await sleep(everyMs);
   }
   log(`${what} after ${Math.round((Date.now() - t0) / 1000)} s`);
 }
@@ -74,18 +74,20 @@ if (values.save) {
   await agent('autopilot', { enabled: true, speed: 'none', dialogs: true });
   const r = await agent('load_save', { file: values.save });
   if (!r.ok) throw new Error(`load_save: ${r.error}`);
-  // Loading can stop on a modal (e.g. "Mod Scripts Found"), so clear dialogs while waiting.
+  // The agent sets the mailbox's world-loaded flag in OnWorldLoadFinished; /agentstatus reads it without a round trip.
+  // Dialogs once in the world are the autopilot's job; every 10 s also try a modal that blocks the load itself.
+  let waits = 0;
   await until('world loaded', 600, async () => {
-    const d = await agent('auto_dialog');
-    if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
-    return (await agent('game_state')).result?.in_world === true;
-  });
+    if ((await get('agentstatus', 5000)).worldLoaded === true) return true;
+    if (++waits % 20 === 0) { const d = await agent('auto_dialog'); if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`); }
+    return false;
+  }, 500);
   // Settle: dialogs and notifications keep appearing for a few seconds after a load (new lots, lots in the
-  // world, tutorials). Poll every second until 5 s pass without one (at most 30 s), then clear the corner.
+  // world, tutorials). Poll every second until 2 s pass without one (at most 30 s), then clear the corner.
   {
     const t0 = Date.now();
     let quietSince = Date.now();
-    while (Date.now() - quietSince < 5000 && Date.now() - t0 < 30000) {
+    while (Date.now() - quietSince < 2000 && Date.now() - t0 < 30000) { // the autopilot clears dialogs within a frame
       const ap = await agent('autopilot');
       for (const c of ap.ok ? ap.result.cleared : []) { log(`dialog ${String(c).slice(0, 80)}`); quietSince = Date.now(); }
       await sleep(1000);
@@ -93,7 +95,9 @@ if (values.save) {
     await agent('quiet_ui', { memories_off: true });
     await agent('decline_requests');
   }
-  const s = await agent('game_state');
+  // right after OnWorldLoadFinished game_state can still throw (world objects not set up); wait for a real answer
+  let s: any;
+  await until('world state', 60, async () => (s = await agent('game_state')).ok && /State$/.test(s.result?.sub_state ?? ''));
   if (s.result?.sub_state !== 'LiveModeState') {
     log(`in ${s.result?.sub_state}; entering live mode`);
     await agent('enter_live_mode');
