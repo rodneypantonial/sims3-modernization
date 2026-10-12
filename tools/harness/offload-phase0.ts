@@ -83,6 +83,8 @@ for (const v of variants) {
         Object.assign(row, { cacheBudgetMB: MB(gen?.budget), cacheBytesMB: MB(gen?.bytes), cacheFlushMB: MB(gen?.flushBytes),
           cacheEntries: gen?.entries ?? '', animBytesMB: MB(anim?.bytes) });
         peak = Math.max(peak, gen?.bytes ?? 0);
+        // a variant whose budget the game did not pick up measures nothing new (2026-10-11: Default.ini edit ignored)
+        if (i === 0 && gen && gen.budget !== mb * 1048576) { log(`${v}: game reports budget ${MB(gen.budget)} MB, not ${mb}; skipping variant`); break; }
       } else row.error = rc.error;
       failures = 0;
     } catch (e) {

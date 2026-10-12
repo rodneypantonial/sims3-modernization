@@ -1464,7 +1464,7 @@
   },
   {
     "id": "cache-budget",
-    "name": "Default.ini [Resources] CacheBudget (offload phase 0)",
+    "name": "GraphicsRules.sgr ResourceCache CacheBudget (offload phase 0)",
     "author": "sims-3-modernization",
     "category": "config",
     "version": null,
@@ -1479,13 +1479,13 @@
     "install": {
       "target": "bin",
       "files": [
-        "Default.ini"
+        "GraphicsRules.sgr"
       ]
     },
     "config": {
       "mb": 200
     },
-    "notes": "Experiment, not a fix. Sets the generic ResourceCache budget (docs/08 §2.5; EA default 209,715,200 B = 200 MB). Value from --cache-budget-mb (0..476), else config.mb. Phase 0 runs 200, 50 and 0; what 0 does (no caching of unreferenced resources, or unbounded) is [to measure]: watch /rescache. Re-installing with another value keeps the first backup; uninstall restores EA's file."
+    "notes": "Experiment, not a fix. Patches GraphicsRules.sgr `setProp $ResourceGroup CacheBudget` (Default.ini [Resources] CacheBudget is ignored by the game [verified 2026-10-12: all 20 copies at 50 MB, /rescache still 200]). Sets the generic ResourceCache budget (docs/08 §2.5; EA default 209,715,200 B = 200 MB). Value from --cache-budget-mb (0..476), else config.mb. Phase 0 runs 200, 50 and 0; what 0 does (no caching of unreferenced resources, or unbounded) is [to measure]: watch /rescache. Re-installing with another value keeps the first backup; uninstall restores EA's file."
   },
   {
     "id": "user-cc",

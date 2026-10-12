@@ -206,14 +206,15 @@ function generated(f: Fix, rec: Installed): boolean {
       return true;
     }
     case 'cache-budget': {
-      // Default.ini [Resources] CacheBudget (bytes) = the generic ResourceCache budget (docs/08 §2.5);
-      // re-installing with another --cache-budget-mb keeps the first backup, so uninstall restores EA's value
-      const p = join(BIN, 'Default.ini');
+      // the generic ResourceCache budget (bytes) comes from GraphicsRules.sgr `setProp $ResourceGroup CacheBudget`
+      // (the ctor 0x732910 reads the wide "CacheBudget" property); Default.ini's CacheBudget is ignored [verified 2026-10-12].
+      // Re-installing with another --cache-budget-mb keeps the first backup, so uninstall restores the previous file.
+      const p = join(BIN, 'GraphicsRules.sgr');
       const mb = Number(values['cache-budget-mb'] ?? c.mb);
       if (!Number.isInteger(mb) || mb < 0 || mb > 476) throw new Error('cache-budget: --cache-budget-mb must be 0..476 (engine debug var max 500,000,000 B)');
-      const re = /^(CacheBudget\s*=\s*)\d+/m;
+      const re = /^(setProp \$ResourceGroup CacheBudget )\S+/m;
       const text = readFileSync(p, 'latin1');
-      if (!re.test(text)) throw new Error('cache-budget: CacheBudget line not found in Default.ini');
+      if (!re.test(text)) throw new Error('cache-budget: CacheBudget setProp not found in GraphicsRules.sgr');
       place(f, rec, p, () => writeFileSync(p, text.replace(re, `$1${mb * 1024 * 1024}`), 'latin1'));
       return true;
     }
