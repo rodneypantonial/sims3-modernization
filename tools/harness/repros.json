@@ -275,5 +275,46 @@
       "minutes": 5
     },
     "expect": "measure hitches/iterations while diving (profile-world --minutes 5) and compare with land; then fix if sim-side"
+  },
+  {
+    "id": "bp-save-cleanup",
+    "bug": "Long-running saves keep every weak NPC-NPC relationship (NPC decay 0.001x) and every other-world MiniSim forever (docs/09 4b ranks 1-2)",
+    "fix": "ts3fixes SaveCleanup (opt-in kSaveCleanup; docs/14)",
+    "save": "Cleanup-Test-BP",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SaveCleanupCounts"
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunSaveCleanupOnce"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.RunSaveCleanupOnce"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Cleanup-Test-BP-after"
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 5
+    },
+    "expect": "first run: pairs and mini drop (save cleanup: -N pairs, -M minis, N > 0), households and sims unchanged; second run removes ~0 (idempotent); save succeeds; no stuck Sims and no new ErrorTrap/script errors in 5 min; reload Cleanup-Test-BP-after loads clean and SaveCleanupCounts matches the 'after' values (watch covers all Sims: Bridgeport has a few vanilla stuck Sims, compare the count with a run without the cleanup)"
   }
 ]
