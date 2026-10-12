@@ -32,6 +32,15 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 1. Full mod at 38-41 iterations/s in Bridgeport vs 50 in one run of build 62c39f6: not GC, not the route fixes. A/B of the last two suspects (watchdog, spot spreading; `bp-wab`) running; if neither, the 50 was an outlier.
 2. The bp-mod run's 14 stuck Sims did not recur (25-min scan, fresh runs: 0); keep watching.
 
+**In flight at the compact (2026-10-12 ~15:40 UTC):** in-load A/B `bp-wab` in Bridgeport (watchdog + spotspread switched every 3 min, 12 min; log `probe-out/wab.log`; read with `node tools/probe/profile-compare.mjs bp-wab bp-nab bp-all`). If the "off" slices reach ~50 iterations/s, split the two switches; if not, call build 62c39f6's 50 an outlier and move on. The game may still be running with the probe server attached; `cycle.ts --restart` closes both cleanly.
+
+**Working notes for the next context:**
+- Restart + quick check: `bash tools/harness/restart-verify.sh <names> <save.sims3> [tries] ["--off a,b --max-stuck N --minutes M"]`; restart + in-load A/B: edit and run `tools/harness/restart-ab.sh`. One agent command: `node tools/harness/ag.mjs <cmd> '<json>'`. GC counters: `node tools/probe/gc-read.mjs`. Native counters: probe `/native` (needs a probe restart, agent.js gained `nativeCounters`).
+- Route cache test (Next 3): close the game (the installed .asi is locked while it runs), `node tools/setup/install-fixes.ts install --only native-patches` (installs 0.2.0), set `[RouteCache] Enabled=1` in `Game/Bin/ts3native.ini` for the test only, restart, load Baseline-BP, `node tools/harness/repro.ts run bp-route-cache --no-load`, read `/native`.
+- Editing PLAN.md with Python: read with `open(p, encoding='utf-8')` and write with `newline='
+'`; earlier scripts doubled the CR (CR CR LF).
+- Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
+
 **Next, in order:**
 1. Finish open 1 (fix or call the 50 an outlier).
 2. Save cleanup: run repro `bp-save-cleanup` on the copy `Cleanup-Test-BP` (counts drop, second run ~0, no new stuck Sims, reload clean).
