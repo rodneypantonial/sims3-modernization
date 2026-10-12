@@ -177,3 +177,20 @@ Mechanism (the idea MonoPatcher's `ReplaceMethod` uses, reimplemented in `mods/t
 - A swap reaches only callers the interpreter compiles **after** it (and reflection). Callers already compiled, direct or virtual, keep the old code: EA's interpreter (custom, not stock mint; `FUN_00e53eb0`) binds call targets when it compiles a caller. So patches are applied **once at startup** (tuning time, from the plugin's first load, before any world), never on a hot reload; each patch checks that the target's interpreter info (`MonoMethod+0x14`) is still 0.
 - Calling the original: an instance stub on the hook class receives the original's header first (`SwapMethod(stub, target)`), then the target receives the replacement's; the replacement calls the stub. Verified with a virtual method (41 → 141). A **static** stub breaks (callers compiled before the swap pass arguments in the wrong layout: null `this`), and only the replacement may call the stub.
 - Live test: `GoHome.Run` wrapped by `GoHomeHook.RunHook` (counts, then calls the original). In `Baseline-IP` at x3: 42 runs in ~2.5 min, no script errors; sampled stacks show `GoHomeHook.Run` → `GoHome.RunOrig` → `Lot.PlanRouteIntoLot`/`DoRouteWithFollowers` → `Route_Plan`, so the original body and routing run unchanged. Note: patched methods appear in samples under the swapped names (`GoHomeHook.Run`, `<Target>.RunOrig`).
+
+## F9. Off-screen go-home shortcut, measured [2026-10-12]
+
+`GoHomeHook` (docs/04 F8 patch host; PLAN fix b): unseen townies are placed outdoors on their home lot on a spot that passes `Sim.IsPointInLotSafelyRoutable`, then `GoHome.Run`'s own lead-in and success bookkeeping run. `Baseline-IP`, 10 min x3, `profile-world.ts` (`ip` = no patch, `ip-on` = shortcut on):
+
+| | ip | ip-on |
+|---|---|---|
+| iterations/s | 31.7 | **38.1** (+20%) |
+| hitches/s (≥50 ms) | 3.49 | **2.63** (−25%) |
+| route ms/s | 246 | 254 |
+| `GoHome.Run` (incl.) | 11.1% | **5.6%** |
+| `Route_Plan` self | 13.3% | **8.9%** |
+| `Route_PlanFromPoint` self | 2.8% | 6.4% (the safe-spot check) |
+| GC mark / forced ms/s | 14.1 / 13.2 | 9.8 / 8.1 |
+| stuck Sims | – | **0** |
+
+329 of 404 go-home runs were shortcut. Route time per second did not fall: townies home sooner head out sooner, and outbound trips still route (fix b3). The first build placed Sims on the sidewalk (`Service.GetPositionInRandomLot` returns a footpath point near the lot), so the game kept sending them home: 5× the go-home rate until the spot had to be on the lot. Shortcut townies were seen continuing normally (work shifts, meet-ups, visits, eating out).
