@@ -2,7 +2,7 @@
 // Downloads only from the official sources (never re-hosts), verifies SHA-256 when the manifest has one,
 // backs up every file it overwrites and records what it did, so `uninstall` restores the exact previous state.
 //
-//   node tools/setup/install-fixes.ts plan      [--set default|all] [--only id,id] [--skip id,id]
+//   node tools/setup/install-fixes.ts plan      [--set default|all] [--only id,id] [--skip id,id]   (also prints content-health warnings)
 //   node tools/setup/install-fixes.ts install   [same options]
 //   node tools/setup/install-fixes.ts uninstall [--only id,id]
 //   node tools/setup/install-fixes.ts status
@@ -253,10 +253,13 @@ function generated(f: Fix, rec: Installed): boolean {
 }
 
 function clearCaches(f: Fix) {
+  const keep = new Set<string>((f.config?.keep ?? []).map((k: string) => k.toLowerCase()));
   for (const spec of f.install.files as string[]) {
     const p = join(USER, spec.replace(/\/\*$/, ''));
     if (!existsSync(p)) continue;
-    if (spec.endsWith('/*')) for (const e of readdirSync(p)) rmSync(join(p, e), { recursive: true, force: true });
+    if (spec.endsWith('/*')) for (const e of readdirSync(p)) {
+      if (!keep.has(`${spec.slice(0, -1)}${e}`.toLowerCase())) rmSync(join(p, e), { recursive: true, force: true });
+    }
     else rmSync(p, { force: true });
   }
   console.log('  cache-clear: game caches deleted (the game rebuilds them)');
@@ -319,12 +322,26 @@ function uninstall(ids: string[]) {
   }
 }
 
+// Read-only content-health report (docs/17 §7). Findings only warn; they never block an install.
+function contentHealth() {
+  try {
+    const out = execFileSync(process.execPath, [join(import.meta.dirname, 'content-health.ts'), '--json', '--user', USER],
+      { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+    const { warnings } = JSON.parse(out) as { warnings: string[] };
+    console.log(warnings.length ? `\ncontent health: ${warnings.length} warning(s) (details: node tools/setup/content-health.ts)` : '\ncontent health: OK');
+    for (const w of warnings) console.log(`  warn: ${w}`);
+  } catch (e: any) {
+    console.log(`\ncontent health: not run (${String(e.stderr || e.message).trim().split('\n')[0]})`);
+  }
+}
+
 if (cmd === 'plan') {
   for (const f of select()) {
     const src = f.source.kind === 'manual' ? (findManual(f) ? 'manual: found' : `manual: MISSING (${f.source.page})`)
       : f.source.url ? `${f.source.kind}${f.sha256 ? ' + sha256' : ' (no hash)'}` : 'generated';
     console.log(`${state[f.id] ? 'installed' : 'pending  '}  ${f.id.padEnd(26)} ${String(f.version ?? '').padEnd(14)} ${src}`);
   }
+  contentHealth();
 } else if (cmd === 'install') {
   await install(select());
 } else if (cmd === 'uninstall') {

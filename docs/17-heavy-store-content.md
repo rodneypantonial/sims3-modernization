@@ -47,7 +47,7 @@ Tags: **[verified]** we saw it in our docs, binaries, files or code. **[communit
 
 ### Cache files to delete (after content changes only)
 
-`cache-clear` already deletes `CASPartCache`, `compositorCache`, `scriptCache`, `simCompositorCache`, `socialCache`, `WorldCaches\*`, `Thumbnails\*` (`CASThumbnails`, `ObjectThumbnails`, `DownloadsThumbnails`), `DCCache\dcc.ent`, `missingdeps.idx` and `FeaturedItems\*` [verified, `fixes.json`]. The community also lists `SigsCache\` (launcher issues) and the `DCBackup\` contents except `ccmerged.package` [community, EA forums]. Not in our list yet; low value, low risk.
+`cache-clear` already deletes `CASPartCache`, `compositorCache`, `scriptCache`, `simCompositorCache`, `socialCache`, `WorldCaches\*`, `Thumbnails\*` (`CASThumbnails`, `ObjectThumbnails`, `DownloadsThumbnails`), `DCCache\dcc.ent`, `missingdeps.idx` and `FeaturedItems\*` [verified, `fixes.json`]. The community also lists `SigsCache\` (launcher issues) and the `DCBackup\` contents except `ccmerged.package` [community, EA forums]. Added 2026-10-13 (candidate 6): `SigsCache/*` and `DCBackup/*`, with `config.keep` sparing `DCBackup/ccmerged.package` (the exe names it [verified strings]); that the launcher recreates the rest is [community].
 
 **Side finding:** the 2026-10-11 backup holds `compositorCache-<pc>.package` (99 MB), `simCompositorCache-<pc>.package` (251 MB), and `CASThumbnails-` / `ObjectThumbnails-<pc>.package`. The exe only names the unsuffixed files [verified strings]. The `-<PC name>` suffix is OneDrive's conflict-copy pattern [inferred], so these files are dead weight on disk and **not** the game's live caches. docs/08 §1 treats them as live caches and should be read with that in mind.
 
@@ -223,7 +223,7 @@ Reading:
 
 ## 7. Health check results (2026-10-13)
 
-Candidate 2 now exists as a separate read-only script, `node tools/setup/content-health.ts [--user <path>] [--json] [--self-test]` (not yet wired into `install-fixes.ts check`). It never deletes or moves files. Both runs below are [verified, script output]; the live caches were empty because a `cache-clear` ran just before.
+Candidate 2 now exists as a separate read-only script, `node tools/setup/content-health.ts [--user <path>] [--json] [--self-test]` (since 2026-10-13 also run by `install-fixes.ts plan`, which prints its warnings and never blocks an install). It never deletes or moves files. Both runs below are [verified, script output]; the live caches were empty because a `cache-clear` ran just before.
 
 | Check | Live user folder | Backup `D:\Sims3-backup\2026-10-11\Documents-The Sims 3` |
 |---|---|---|

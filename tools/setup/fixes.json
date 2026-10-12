@@ -991,17 +991,20 @@
         "Thumbnails/*",
         "DCCache/dcc.ent",
         "DCCache/missingdeps.idx",
-        "FeaturedItems/*"
+        "FeaturedItems/*",
+        "SigsCache/*",
+        "DCBackup/*"
       ]
     },
     "config": {
       "action": "delete",
-      "when": "after install or uninstall only"
+      "when": "after install or uninstall only",
+      "keep": ["DCBackup/ccmerged.package"]
     },
     "conflictsWith": [],
     "requires": [],
     "default": true,
-    "notes": "Paths are relative to Documents\\Electronic Arts\\The Sims 3. Don't clear on every launch."
+    "notes": "Paths are relative to Documents\\Electronic Arts\\The Sims 3. Don't clear on every launch. SigsCache/* and DCBackup/* (except ccmerged.package, listed in config.keep) added per docs/17 §1 'Cache files to delete' / candidate 6: the community after-mod-change list includes them for launcher issues and the game/launcher recreates them [community, EA forums]; ccmerged.package is named by the exe (DCBackup\\ccmerged.package) [verified exe strings] so it is kept. Both were ~0 MB on the live and backup folders (docs/17 §7)."
   },
   {
     "id": "s3pp",

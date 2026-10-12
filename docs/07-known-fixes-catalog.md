@@ -251,7 +251,7 @@ Use our own `tools/harness/nointro.ts` (overrides all 14 intro videos including 
 Optional, because they change gameplay: `enablememories = 0` (or the `fewer-memories` mod), lower `maxactivelots`. The game may rewrite `Options.ini` after a driver update, so the installer should re-apply on each run [community].
 
 ### 4.4 Cache clearing — `cache-clear` [community]
-After any mod change delete `CASPartCache.package`, `compositorCache.package`, `scriptCache.package`, `simCompositorCache.package`, `socialCache.package`, `WorldCaches\*`, `Thumbnails\*`, `DCCache\dcc.ent`, `DCCache\missingdeps.idx`, `FeaturedItems\*` (list from 01 §H). The guide warns not to clear on every launch: a warm cache performs better.
+After any mod change delete `CASPartCache.package`, `compositorCache.package`, `scriptCache.package`, `simCompositorCache.package`, `socialCache.package`, `WorldCaches\*`, `Thumbnails\*`, `DCCache\dcc.ent`, `DCCache\missingdeps.idx`, `FeaturedItems\*` (list from 01 §H), plus `SigsCache\*` and `DCBackup\*` except `ccmerged.package` (docs/17 candidate 6). The guide warns not to clear on every launch: a warm cache performs better.
 
 ### 4.5 Windows-side items (print as reminders, not automated)
 High-performance GPU for TS3W.exe (laptop iGPU), Steam overlay off, OneDrive not syncing Documents (save failures), no emoji/special characters in the Windows user name (Mods folder won't load) [community]. Launcher bypass: Steam launch option `"Game\Bin\TS3W" -%command%` (can empty the Edit Town library) [community].
