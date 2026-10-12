@@ -1,0 +1,222 @@
+// Baseline tests B-E (docs/02 section 1) on a loaded world, measured instead of by stopwatch:
+//   node tools/harness/tests-be.ts --tag sv-dxvk [--only B,C,D,E] [--minutes 30] [--lot "Name"] [--dry-run]
+//   node tools/harness/tests-be.ts --self-check            (parsing and statistics only; no game)
+// Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). Runs at speed 3 with autopilot.
+//   B  frame times: 60 s at speed 3, camera untouched. Hooks the per-frame function 0xEC9F00 (tools/harness/frame-times.js,
+//      own Frida session); median, p95, p99, max frame and frames > 50 ms per second.
+//   C  travel hitch: the active Sim visits a community lot (--lot, default the one with most Sims on it) and goes home,
+//      frames recorded throughout; per leg the trip time, frame stats and the worst frames around the arrival.
+//   D  memory: /memory (commit, private, largest free block) plus the process's private bytes (Task Manager "Commit size")
+//      at 0, 1/3, 2/3 and all of --minutes at speed 3, with keep_alive / decline_requests every 30 s.
+//   E  save time: save_game as TestE-<tag> (never overwrites the loaded save) until save_in_progress is false; save size.
+// Output: probe-out/tests/<tag>-<B|C|D|E>.json (+ <tag>-<B|C>-frames.csv) and one summary line per test.
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
+import assert from 'node:assert/strict';
+
+const ROOT = resolve(import.meta.dirname, '..', '..');
+const OUT = join(ROOT, 'probe-out', 'tests');
+const SAVES = join(process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3'), 'Saves');
+const SLOW_MS = 50, B_SECONDS = 60, TRIP_TIMEOUT_S = 300, SAVE_TIMEOUT_S = 600;
+
+// ---- parsing and statistics (covered by --self-check) ----
+type Frame = { t: number; ms: number; work: number; fg: number };
+export function parseFrames(csv: string): Frame[] {
+  return csv.split('\n').slice(1).filter(l => l.trim()).map(l => {
+    const [t, ms, work, fg] = l.split(',').map(Number);
+    return { t, ms, work, fg };
+  }).filter(f => Number.isFinite(f.t) && Number.isFinite(f.ms));
+}
+export function frameStats(frames: Frame[]) {
+  if (!frames.length) return null;
+  const ms = frames.map(f => f.ms).sort((a, b) => a - b);
+  const pct = (p: number) => ms[Math.max(0, Math.ceil(p * ms.length) - 1)]; // nearest rank
+  const secs = ms.reduce((a, b) => a + b, 0) / 1000;
+  const slow = ms.filter(x => x > SLOW_MS).length;
+  const r = (x: number) => Math.round(x * 100) / 100;
+  return { frames: ms.length, seconds: r(secs), fps: r(ms.length / secs), medianMs: pct(0.5), p95Ms: pct(0.95), p99Ms: pct(0.99),
+    maxMs: ms.at(-1)!, slowFrames: slow, slowPerSec: r(slow / secs), focusedShare: r(frames.filter(f => f.fg).length / frames.length) };
+}
+// Busiest community lot by Sims on it, not the lot the active Sim stands on.
+export function pickLot(lots: { name: string; type: string }[], sims: { lot: string | null }[], exclude: string | null) {
+  const count = (n: string) => sims.filter(s => s.lot === n).length;
+  return lots.filter(l => l.type.startsWith('community') && l.name !== exclude)
+    .reduce<{ name: string; type: string } | null>((best, l) => !best || count(l.name) > count(best.name) ? l : best, null)?.name ?? null;
+}
+
+if (process.argv.includes('--self-check')) {
+  const f = parseFrames('epochMs,frameMs,workMs,fg\n1000,16.5,2,1\n1016,60,3,1\n\n1076,16.7,2,0\nbad,line\n');
+  assert.equal(f.length, 3);
+  assert.deepEqual(f[1], { t: 1016, ms: 60, work: 3, fg: 1 });
+  const s = frameStats([10, 20, 30, 40, 100].map((ms, i) => ({ t: i, ms, work: 0, fg: i % 2 })))!;
+  assert.equal(s.medianMs, 30); assert.equal(s.p95Ms, 100); assert.equal(s.maxMs, 100);
+  assert.equal(s.slowFrames, 1); assert.equal(s.seconds, 0.2); assert.equal(s.slowPerSec, 5); assert.equal(s.focusedShare, 0.4);
+  assert.equal(frameStats([]), null);
+  assert.equal(pickLot([{ name: 'Park', type: 'community:Park' }, { name: 'Gym', type: 'community:Gym' }, { name: 'Home', type: 'residential' }],
+    [{ lot: 'Gym' }, { lot: 'Gym' }, { lot: 'Park' }, { lot: 'Home' }, { lot: 'Home' }, { lot: 'Home' }], null), 'Gym');
+  assert.equal(pickLot([{ name: 'Gym', type: 'community:Gym' }], [], 'Gym'), null);
+  console.log('self-check ok');
+  process.exit(0);
+}
+
+const { values } = parseArgs({ options: { tag: { type: 'string' }, only: { type: 'string', default: 'B,C,D,E' },
+  minutes: { type: 'string', default: '30' }, lot: { type: 'string' }, 'dry-run': { type: 'boolean' }, 'self-check': { type: 'boolean' } } });
+if (!values.tag) throw new Error('--tag required');
+const tag = values.tag, only = values.only!.toUpperCase().split(',').map(s => s.trim());
+if (only.some(t => !'BCDE'.includes(t) || t.length !== 1)) throw new Error(`--only takes B,C,D,E, got ${values.only}`);
+const minutes = Number(values.minutes);
+if (!(minutes > 0)) throw new Error('--minutes must be > 0');
+mkdirSync(OUT, { recursive: true });
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const stamp = () => new Date().toISOString().slice(11, 19);
+const get = async (p: string, to = 20000) => (await fetch(`http://127.0.0.1:47891/${p}`, { signal: AbortSignal.timeout(to) })).json();
+const ag = async (cmd: string, args?: object, to = 20000): Promise<any> => {
+  const q = new URLSearchParams({ cmd, timeout: String(Math.min(8000, to)) });
+  if (args) q.set('args', JSON.stringify(args));
+  try { return await get(`agent?${q}`, to); } catch (e) { return { ok: false, error: String(e) }; }
+};
+const write = (test: string, data: object, summary: string) => {
+  writeFileSync(join(OUT, `${tag}-${test}.json`), JSON.stringify({ tag, test, at: new Date().toISOString(), summary, ...data }, null, 1));
+  console.log(`${stamp()} ${tag} ${test}: ${summary}`);
+};
+
+// Frame capture in its own Frida session, stopped by a line on stdin (EOF too, so a dying harness still unhooks cleanly).
+const PY = `import frida, json, sys
+s = frida.attach('TS3W.exe')
+sc = s.create_script(open(sys.argv[1], encoding='utf-8').read())
+sc.on('message', lambda m, d: print(m.get('payload', m), flush=True))
+sc.load()
+sc.exports_sync.init('late', json.loads(sys.argv[2]))
+print('ready', flush=True)
+sys.stdin.readline()
+sc.unload()
+s.detach()`;
+async function capture(test: string) {
+  const out = join(OUT, `${tag}-${test}-frames.csv`);
+  const p = spawn('python', ['-c', PY, join(import.meta.dirname, 'frame-times.js'), JSON.stringify({ out: out.replace(/\\/g, '/') })],
+    { stdio: ['pipe', 'pipe', 'pipe'] });
+  let log = '';
+  const done = new Promise(r => p.on('exit', r));
+  await new Promise<void>((ok, fail) => {
+    const to = setTimeout(() => fail(new Error(`frame hook not ready in 30 s: ${log}`)), 30000);
+    const on = (d: Buffer) => { log += d; if (log.includes('ready')) { clearTimeout(to); ok(); } };
+    p.stdout.on('data', on); p.stderr.on('data', on);
+    p.on('exit', c => { clearTimeout(to); if (!log.includes('ready')) fail(new Error(`frame hook failed (exit ${c}): ${log.trim()}`)); });
+  });
+  return { stop: async () => { p.stdin.end('\n'); await done; return { frames: parseFrames(readFileSync(out, 'utf8')), log: log.trim() }; } };
+}
+const fmt = (s: ReturnType<typeof frameStats>) => s ? `${s.fps} FPS, median ${s.medianMs} / p95 ${s.p95Ms} / p99 ${s.p99Ms} / max ${s.maxMs} ms, ` +
+  `${s.slowPerSec}/s > ${SLOW_MS} ms, focused ${Math.round(s.focusedShare * 100)}%` : 'no frames';
+
+if (values['dry-run']) {
+  console.log(`dry run, tag ${tag}, tests ${only.join(',')}; nothing is sent to the game. Would:`);
+  console.log(`  check game_state is LiveModeState; autopilot {enabled, speed ultra, dialogs}`);
+  if (only.includes('B')) console.log(`  B: hook 0xEC9F00 via tools/harness/frame-times.js for ${B_SECONDS} s -> ${tag}-B.json, ${tag}-B-frames.csv`);
+  if (only.includes('C')) console.log(`  C: sim_visit_lot active Sim -> ${values.lot ?? 'busiest community lot'}, then sim_go_home (each <= ${TRIP_TIMEOUT_S} s), frames throughout -> ${tag}-C.json`);
+  if (only.includes('D')) console.log(`  D: /memory + private bytes at ${[0, 1, 2, 3].map(i => Math.round(minutes * i / 3 * 10) / 10).join('/')} min, upkeep every 30 s -> ${tag}-D.json`);
+  if (only.includes('E')) console.log(`  E: save_game {name: "TestE-${tag}"}, wait for save_in_progress false (<= ${SAVE_TIMEOUT_S} s), size of ${join(SAVES, `TestE-${tag}.sims3`)} -> ${tag}-E.json`);
+  process.exit(0);
+}
+
+const st = await ag('game_state');
+if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
+console.log(`${stamp()} ${tag}: ${JSON.stringify(st.result)}`);
+await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+
+if (only.includes('B')) {
+  const cap = await capture('B');
+  await sleep(B_SECONDS * 1000);
+  const { frames, log } = await cap.stop();
+  const s = frameStats(frames);
+  write('B', { stats: s, captureLog: log }, fmt(s));
+}
+
+if (only.includes('C')) {
+  const sim = (await ag('tick_status')).result?.sim;
+  const sims = (await ag('sims_activity')).result ?? [];
+  const startLot = sims.find((x: any) => x.name === sim)?.lot ?? null;
+  const target = values.lot ?? pickLot((await ag('list_lots')).result ?? [], sims, startLot);
+  if (!sim || !target) write('C', { sim, target }, `skipped: ${!sim ? 'no active Sim' : 'no community lot'}`);
+  else {
+    const legs: any[] = [];
+    const cap = await capture('C');
+    for (const [leg, cmd] of [['out', 'sim_visit_lot'], ['home', 'sim_go_home']] as const) {
+      const t0 = Date.now();
+      const q = await ag(cmd, cmd === 'sim_visit_lot' ? { sim, lot: target } : { sim });
+      const dest = cmd === 'sim_visit_lot' ? q.result?.lot : q.result?.home;
+      if (!q.ok || !dest || q.result?.queued === false) { legs.push({ leg, error: q.error ?? `not queued: ${JSON.stringify(q.result)}` }); break; }
+      let arrived = 0;
+      while (!arrived && Date.now() - t0 < TRIP_TIMEOUT_S * 1000) {
+        await sleep(2000); // shortcut: arrival known to ~2 s; the arrival window below is wider than that
+        const me = ((await ag('sims_activity')).result ?? []).find((x: any) => x.name === sim);
+        if (me?.lot === dest) arrived = Date.now();
+      }
+      legs.push({ leg, cmd, dest, t0, arrived: arrived || null, tripS: arrived ? (arrived - t0) / 1000 : null });
+      if (!arrived) break;
+      await sleep(10000); // the lot settles: streaming hitches often land just after arrival
+    }
+    const { frames, log } = await cap.stop();
+    for (const l of legs.filter(l => l.t0)) {
+      const end = l.arrived ? l.arrived + 10000 : l.t0 + TRIP_TIMEOUT_S * 1000;
+      l.stats = frameStats(frames.filter(f => f.t >= l.t0 && f.t <= end));
+      if (l.arrived) {
+        const near = frames.filter(f => Math.abs(f.t - l.arrived) <= 5000);
+        l.arrivalSlowFrames = near.filter(f => f.ms > SLOW_MS).length;
+        l.arrivalWorst = near.sort((a, b) => b.ms - a.ms).slice(0, 5).map(f => ({ ms: f.ms, sFromArrival: (f.t - l.arrived) / 1000 }));
+      }
+    }
+    write('C', { sim, from: startLot, target, legs, captureLog: log }, legs.map(l => l.error ? `${l.leg}: ${l.error}` : !l.arrived
+      ? `${l.leg} to ${l.dest}: not arrived in ${TRIP_TIMEOUT_S} s` : `${l.leg} to ${l.dest} ${l.tripS} s, worst at arrival ${l.arrivalWorst[0]?.ms ?? '-'} ms, ` +
+      `${l.arrivalSlowFrames} frames > ${SLOW_MS} ms within 5 s, trip ${fmt(l.stats)}`).join(' | '));
+  }
+}
+
+if (only.includes('D')) {
+  // Task Manager's "Commit size" is the process's private bytes; /memory's commitMB also counts images and mapped files.
+  const privateBytes = () => { try {
+    return Math.round(Number(execFileSync('powershell', ['-NoProfile', '-Command', '(Get-Process TS3W).PrivateMemorySize64'], { timeout: 15000 }).toString().trim()) / 1048576);
+  } catch { return null; } };
+  const samples: any[] = [];
+  const t0 = Date.now();
+  for (let i = 0; i <= 3; i++) {
+    const due = t0 + minutes * 60000 * i / 3;
+    while (Date.now() < due - 1000) { // upkeep as in profile-world.ts, so the run keeps going at speed 3
+      await ag('keep_alive', { threshold: -50 }); await ag('decline_requests'); await ag('autopilot');
+      await sleep(Math.min(30000, Math.max(0, due - Date.now())));
+    }
+    let m: any = null;
+    try { m = await get('memory', 60000); } catch (e) { m = { error: String(e) }; }
+    const time = (await ag('time')).result;
+    samples.push({ min: Math.round((Date.now() - t0) / 6000) / 10, commitMB: m.commitMB, privateMB: m.privateMB, largestFreeMB: m.largestFreeMB,
+      freeMB: m.freeMB, reserveOnlyMB: m.reserveOnlyMB, privateBytesMB: privateBytes(), game: time ? `day ${time.day_number} ${time.clock} ${time.speed}` : null, error: m.error });
+    console.log(`${stamp()} D ${JSON.stringify(samples.at(-1))}`);
+  }
+  write('D', { minutes, samples }, samples.map(s => `${s.min} min: commit ${s.commitMB} / private ${s.privateMB} / priv bytes ${s.privateBytesMB} / largest free ${s.largestFreeMB} MB`).join(' | '));
+}
+
+if (only.includes('E')) {
+  const name = `TestE-${tag}`, dir = join(SAVES, `${name}.sims3`);
+  const t0 = Date.now();
+  const q = await ag('save_game', { name });
+  let sawSaving = false, done = 0, unanswered = 0;
+  while (q.ok && !done && Date.now() - t0 < SAVE_TIMEOUT_S * 1000) {
+    await sleep(250);
+    const s = await ag('game_state', undefined, 5000);
+    if (!s.ok) { unanswered++; continue; } // the sim thread is busy saving
+    if (s.result.save_in_progress) sawSaving = true;
+    // shortcut: a save quicker than one poll is caught by the file being written after t0
+    else if (sawSaving || (existsSync(dir) && statSync(dir).mtimeMs > t0)) done = Date.now();
+  }
+  const files = existsSync(dir) ? readdirSync(dir).map(f => statSync(join(dir, f))) : [];
+  const bytes = files.reduce((a, f) => a + f.size, 0);
+  const lastWriteS = files.length ? (Math.max(...files.map(f => f.mtimeMs)) - t0) / 1000 : null;
+  const ok = q.ok && !!done && files.length > 0;
+  write('E', { name, dir, ok, error: q.error, saveS: done ? (done - t0) / 1000 : null, lastWriteS, sizeMB: Math.round(bytes / 1048576 * 100) / 100,
+    unansweredPolls: unanswered }, ok ? `saved in ${(done - t0) / 1000} s (last file write ${lastWriteS} s), ${Math.round(bytes / 1048576 * 100) / 100} MB, ${unanswered} polls unanswered`
+    : `FAILED: ${q.error ?? (done ? 'no save files' : `still saving after ${SAVE_TIMEOUT_S} s`)}`);
+}
+console.log(`${stamp()} done; game ${(await ag('game_state')).ok ? 'alive' : 'NOT answering'}`);

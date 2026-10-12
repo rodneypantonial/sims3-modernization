@@ -35,6 +35,19 @@ Use the **same save, the same lot and the same speed** every time:
 - **Test D, memory:** after 30 minutes of play, note TS3W.exe's **Commit size** in Task Manager (Details tab → right-click the column header → Select columns → **Commit size**). Process Explorer's **Virtual Size** column is better if you have it. Anything near 3.5–4 GB is the danger zone for Error 12.
 - **Test E, saving:** time a save and note whether it succeeds.
 
+**Measured instead of by hand (tests B to E):** with the probe server running and the save in Live mode (`cycle.ts --save X`):
+
+```
+node tools/harness/tests-be.ts --tag sv-dxvk [--only B,C,D,E] [--minutes 30] [--lot "Lot name"] [--dry-run]
+node tools/harness/tests-be.ts --self-check     # parsing and statistics only, no game
+```
+
+It runs at speed 3 with autopilot and writes `probe-out/tests/<tag>-<B|C|D|E>.json` plus one summary line per test.
+- **B:** hooks the per-frame function `0xEC9F00` (`tools/harness/frame-times.js`, its own Frida session) for 60 s with the camera untouched: FPS, median, p95, p99 and max frame time, frames over 50 ms per second. Keep the game window focused: unfocused, the game caps itself at about 30 FPS (`focused` in the summary shows the share).
+- **C:** the active Sim visits a community lot (`--lot`, default the one with the most Sims on it) and goes home, with frames recorded all the way. Per leg: trip time, frame stats, and the worst frames within 5 s of arrival. The agent cannot move the camera, so this measures the trip and arrival, not a camera pan.
+- **D:** at 0, 10, 20 and 30 minutes (thirds of `--minutes`): `/memory` commit, private and largest free block, plus the process's private bytes (Task Manager's Commit size).
+- **E:** saves as `TestE-<tag>` (a new save, so the baseline save is never overwritten; the game then treats `TestE-<tag>` as the loaded save) and times it until `save_in_progress` is false; save folder size.
+
 Copy this table into a note and fill one row per layer:
 
 | Layer | Load (s) | Idle FPS | Hitches (C) | Memory @30 min | Save OK / time | Crashes / notes |
