@@ -133,12 +133,12 @@ namespace Ts3Agent
             int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[48];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "backoff", "stations" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "backoff", "stations", "spotspread", "savecleanup" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = !sw.TryGetValue(n, out on) || on; // unset = the mod's tuning (on by default)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup"; // unset = the mod's tuning (all on by default except savecleanup)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -157,6 +157,7 @@ namespace Ts3Agent
             r["failreplan_off"] = c[29]; r["failreplan_shortcuts"] = c[30]; // route-fail walks skipped
             r["watchdog_shortcuts"] = c[31]; // stuck Sims reset
             if (c.Length > 32) r["stations_shortcuts"] = c[32]; // station detours skipped
+            if (c.Length > 43) { r["savecleanup_pairs"] = c[40]; r["savecleanup_minisims"] = c[41]; r["savecleanup_runs"] = c[42]; r["savecleanup_skipped"] = c[43]; }
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;

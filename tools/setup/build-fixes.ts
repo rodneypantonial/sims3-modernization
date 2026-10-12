@@ -27,6 +27,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kNoRouteFailWalkOffscreen value="True" />
     <kStuckWatchdog value="True" />
     <kRouteFailureBackoff value="True" />
+    <kSaveCleanup value="False" />
     <kNoStationDetourOffscreen value="True" />
   </Current_Tuning>
 </base>

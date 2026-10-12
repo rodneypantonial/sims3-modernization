@@ -86,6 +86,7 @@ namespace Ts3Fixes
                 case "watchdog": return Instantiator.kStuckWatchdog;
                 case "backoff": return Instantiator.kRouteFailureBackoff;
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
+                case "spotspread": return true;
                 default: return true;
             }
         }
@@ -215,7 +216,9 @@ namespace Ts3Fixes
             sSafeUses[lot.LotId] = uses + 1;
             for (int i = 0; i < 3; i++)
             {
-                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(near), out pos, out fwd)) continue;
+                // "spotspread" off = the earlier build: first try from the lot's cached spot (A/B for the Bridgeport slowdown)
+                bool fromKnown = cached && i == 0 && !ShortcutOn("spotspread");
+                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(fromKnown ? known : near), out pos, out fwd)) continue;
                 if (LotManager.GetLotAtPoint(pos) != lot) continue;
                 bool trusted = cached && uses % 8 != 0 && (pos - known).Length() < 3f;
                 if (trusted || sim.IsPointInLotSafelyRoutable(lot, pos))

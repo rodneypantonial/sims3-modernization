@@ -46,7 +46,7 @@ namespace Ts3Fixes
                     return FailFast(e.Type);
                 }
                 RoutePlanResult r = PlanOrig();
-                if ((r.mType == RoutePlanResultType.Failed || r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination)
+                if ((r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination) // not plain Failed: ts3native's route cache returns that on a hit (docs/15)
                     && r.mBlockerType != RouteBlockerType.Sim && r.mBlockerType != RouteBlockerType.Vehicle && BackoffEligible(sim))
                 {
                     if (sBackoff.Count >= kMaxBackoffEntries) PruneBackoff(now);

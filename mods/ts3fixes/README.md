@@ -22,6 +22,7 @@ Measured with all fixes on, 10 minutes at speed 3 against the same saves without
 | `kRouteFailureBackoff` | on | An unseen townie does not re-plan a route to the same place for 30 sim-minutes after it failed. |
 | `kNoStationDetourOffscreen` | on | An unseen townie keeps the route it planned instead of rolling for a subway or hover train detour (extra searches nobody would see). |
 | `kStuckWatchdog` | on | An unseen townie that has not moved for 60 sim-minutes on its way home, or 120 sim-minutes while walking anywhere (e.g. two Sims blocking each other in a doorway), gets the game's own reset-and-send-home; at most once per Sim per sim-day. |
+| `kSaveCleanup` | **off** | Once a sim day, remove weak relationships between townies (strangers/acquaintances, never family, romance, coworkers or recent contacts) and other-world Sims with no links to this world, using the game's own removal functions (docs/14). Opt-in. |
 | `kBroadcasterThrottle` | on | Reaction broadcasters (music, fires, smells, ...) far from the camera check for nearby Sims less often. |
 | `kWalkStyleComparer` | on | A faster lookup of walk styles with the same result. |
 

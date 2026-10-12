@@ -108,7 +108,6 @@ namespace Ts3Fixes
 
         public static void StartWatchdog()
         {
-            if (!ShortcutOn("watchdog")) return;
             Simulator.AddObject(new StuckWatchdog());
         }
 
@@ -123,7 +122,7 @@ namespace Ts3Fixes
                 uint wait = (uint)SimClock.ConvertToTicks(kWatchMinutes, TimeUnit.Minutes);
                 while (true)
                 {
-                    try { Check(); } catch (Exception) { mSeen.Clear(); }
+                    try { if (ShortcutOn("watchdog")) Check(); } catch (Exception) { mSeen.Clear(); }
                     Simulator.Sleep(wait);
                 }
             }
