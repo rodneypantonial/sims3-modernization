@@ -136,6 +136,83 @@ static void TestRouteWorker() {
     ts3native_counters.workerMode = 0;
 }
 
+// --- route budget: stubs in place of the A*'s cost-function pointers, against a fake A* ---
+static int g_costCalls;
+static float __cdecl FakeCost(DWORD, DWORD, DWORD, DWORD, DWORD isEdge, DWORD, DWORD, DWORD) { g_costCalls++; return isEdge ? 1.0f : 2.0f; }
+typedef float(__cdecl* CostFn)(DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD);
+static CostFn g_cost;  // what the A* would load from [esp+0x60]
+static int g_searchNodes;
+
+// Like 0x676260: initial heuristic, then per expansion one edge cost; an edge below the wall generates a node (heuristic).
+// Succeeds after 1000 nodes; once every edge is a wall the open list empties and it fails.
+static u8 __fastcall FakeSearch(void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) {
+    g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+    for (g_searchNodes = 0; g_searchNodes < 1000; g_searchNodes++) {
+        if (g_cost(0, 0, 0, 0, 1, 0, 0, 0) >= 1e8f) return 0;
+        assert(g_cost(0, 0, 0, 0, 0, 0, 0, 0) == 2.0f);
+    }
+    return 1;
+}
+
+static void TestRouteBudget() {
+    u8 code[5][8];
+    DWORD sites[5], fns[5];
+    for (int i = 0; i < 5; i++) {
+        fns[i] = (DWORD)(uintptr_t)FakeCost;
+        sites[i] = (DWORD)(uintptr_t)code[i];
+        const u8 mov[4] = {0xC7, 0x44, 0x24, 0x60};
+        memcpy(code[i], mov, 4);
+        memcpy(code[i] + 4, &fns[i], 4);
+    }
+    code[3][7] ^= 1;
+    assert(!PatchCostSites(sites, fns) && *(DWORD*)(code[0] + 4) == fns[0]);  // one differs: nothing written
+    code[3][7] ^= 1;
+    assert(PatchCostSites(sites, fns));
+    g_cost = *(CostFn*)(code[2] + 4);
+    assert((DWORD)(uintptr_t)g_cost != fns[2]);
+
+    QueryPerformanceFrequency(&g_qpf);
+    ts3native_counters.workerReady = 0;
+    ts3native_counters.budgetReady = 1;
+    g_planOrig = FakeSearch;
+    u8 opts[0x38] = {0};
+    int list[2];
+    const Ts3nCounters& c = ts3native_counters;
+
+    ts3native_counters.budgetMode = 0;  // switch off: stubs pass through
+    g_costCalls = 0;
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1 && g_costCalls == 2001 && c.budgetCalls == 0);
+    ts3native_counters.budgetMode = 1;
+    g_maxNodes = 100000;  // above the search: same result, counted
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1);
+    assert(c.budgetCalls == 1 && c.budgetCapped == 0 && c.budgetMaxNodesOk == 1001 && c.budgetMaxNodes == 1001);
+    g_maxNodes = 300;  // capped: the next edge is a wall, the search fails through its own exit
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0);
+    assert(g_searchNodes == 300 && c.budgetCapped == 1 && c.budgetCapNodes == 301 && c.budgetMaxNodesOk == 1001);
+    assert(g_budget.tid == 0);
+    g_costCalls = 0;  // no budget outside a request: a search not started by Route_PlanLocked is untouched
+    assert(FakeSearch(NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, NULL, NULL, 0, 0) == 1 && g_costCalls == 2001);
+    g_onlyFlagged = 1;  // only routes with DebugPathPlan (hi word bit 0x1)
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1 && c.budgetCalls == 2);
+    opts[0x2C] = 1;
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped == 2);
+    g_onlyFlagged = 0;
+    g_maxNodes = 0;
+    g_maxUs = 5000;  // time cap: checked every 16 nodes
+    g_planOrig = [](void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) -> u8 {
+        g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+        for (;;) {
+            if (g_cost(0, 0, 0, 0, 1, 0, 0, 0) >= 1e8f) return 0;
+            g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+            Sleep(1);
+        }
+    };
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped == 3 && c.budgetCapUs >= 5000);
+    g_maxUs = 0;
+    ts3native_counters.budgetMode = 0;
+    ts3native_counters.budgetReady = 0;
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -158,6 +235,7 @@ int main() {
     assert(((int(__cdecl*)())tramp)() == 42);
     TestRouteCache();
     TestRouteWorker();
+    TestRouteBudget();
     puts("selftest ok");
     return 0;
 }

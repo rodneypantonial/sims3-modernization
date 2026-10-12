@@ -157,6 +157,54 @@ Probe for the same step: `GET /routelock?start=1` (opt-in, `stop=1` unhooks) hoo
 
 Unverified: the planner has no thread affinity (TLS, profiler scopes, asserts); the calling thread never already holds `world+0x918` when it calls `Route_PlanLocked` (if it did, the worker would deadlock on the lock, and the watchdog would show it); an access violation inside the search on the worker is not caught by any handler the sim thread may have.
 
+## Phase 4: route search budget (v0.4.0, `[RouteBudget] Enabled=0` by default)
+
+docs/11 Q3 / docs/18 rank 2: one route request can no longer search without limit. Built and self-tested 2026-10-13; not run in game yet.
+
+**Hook** [verified in `astar-676260.asm` and the bytes of `game-copy/bin/TS3W.exe`]: the world A\* `0x676260` loads its cost function into `[esp+0x60]` with one of five `mov dword [esp+0x60], imm32` (`C7 44 24 60 imm32`) at `0x676340/4A/54/5E/68` (travel modes 1-4 → `0x674E40`, `0x673850`, `0x674250`, `0x675800`; default `0x6734E0`). It calls it as cdecl with 8 args, float in ST0. Arg 5 is 1 for an edge cost, which the caller compares against the 1e8 wall (`0x00FEF678`) at `0x676683`, `0x6768A6` and `0x676B24`; it is 0 for the heuristic, which runs once per generated node right before the node is allocated and pushed (plus once per search for the start). The patch swaps the five immediates for stubs (`push orig; jmp CostGate`). This needs no code cave at the back-edge and no open-list drain (the docs/11 Q3 plan).
+
+**How the cap ends a search**:
+- The budget is armed per `Route_PlanLocked` request (`CallPlan`, on the thread that runs the original: the caller's or the worker's). It counts heuristic calls (= nodes generated) across every A\* run in the request, its retries included.
+- Over `MaxNodes`, or over `MaxUs` (checked every 16 nodes), every further edge cost returns 1e9. Nothing new is pushed, the queued nodes are popped (the goal check on pop still runs) and the loop leaves through its own "open list empty" exit `0x676BF7` (frees the heap, returns 0). That is the same exit as any failed search, so nodes go back to the pool as usual.
+- Retries in the same request (`0x661B50` per-goal-lot plans, `0x81C67A` obstacle replan) find the budget spent and fail after one pop each.
+- The result is the game's ordinary no-path failure (status 7/8 → `FailedBecauseNoPathToDestination` with the best node found as the blocker hint) [inferred from docs/11 Q1: not traced which code the planner returns for a world-leg failure]. No new result code.
+- Not capped: the lot/portal A\* `0x63E340` and in-room `0x632E40` (other code), and the C# fail-path plans (`DoRouteFailureBehavior`, 2-4 more requests), each of which is a new request with its own budget.
+
+**Script reaction** [verified in code]: a no-path failure takes each caller's normal failure branch. For unseen townies on foot, ts3fixes `RouteBackoff` then fast-fails the same Sim and destination for 30 sim-minutes (it records only `FailedBecauseNoPathToDestination`, and not when the blocker is a Sim or vehicle). The native route cache stores the capped failure for `WindowMs`.
+
+**"Unseen townies only" cannot be decided natively.** The request has the agent class, follower ObjectGuid and options, but not selectable/on-screen/household state. `OnlyFlagged=1` caps only routes with RouteOption `DebugPathPlan` (hi word bit `0x1`, opts+0x2C), for a later C# caller (RouteBackoff) that sets the bit for unseen townies. Nothing sets it yet, so the default is to cap **all** searches with a generous cap.
+
+**Settings**: `Enabled`, `Mode` (start value of the switch; 1 = cap), `MaxNodes` (0 = off; no calibrated default), `MaxUs` (default 100000), `OnlyFlagged` (0).
+- **Default cap, 100 ms per request** (derived, not measured): 4× the Isla Paradiso mean plan (25.4 ms, F7b) and 28× Bridgeport's (3.6 ms). Bridgeport's longest single search was 188 ms, and failed requests cost up to ~250 ms each (4 failed plans in one 1,010 ms iteration). So the cap cuts the failure tail but leaves almost every successful plan alone.
+- A node cap is better (deterministic, the same on the worker and under load), but no nodes-per-ms figure exists. Run once with the time cap and `budgetMode = 0`, read `budgetMaxNodesOk`, then set `MaxNodes` above it.
+
+**Runtime switch and counters** (layout v3; `GET /native?routebudget=0|1`; `profile-world.ts --ab routebudget`):
+
+| Offset | Field |
+|---|---|
+| +0x40 | budgetMode (writable switch) |
+| +0x44 | budgetReady (stubs patched and detour installed) |
+| +0x48 | budgetCalls (requests run under a budget) |
+| +0x4C | budgetCapped |
+| +0x50 | budgetCapNodes (sum of nodes when the cap tripped) |
+| +0x54 | budgetCapUs (sum of capped request time: search, drain and retries) |
+| +0x58 | budgetMaxNodes (any request) |
+| +0x5C | budgetMaxNodesOk (largest request that found a path) |
+| +0x60 | budgetMaxUsOk (longest request that found a path) |
+
+The log line every 60 s is `route budget: mode … calls … capped … capNodes … capMs … maxNodes … maxNodesOk … maxUsOk …`. `budgetCalls` and the maxima count only requests run with the switch on, so calibrate with the switch on and a high `MaxUs` (for example 2000000), not with mode 0.
+
+**Fail safe**: all five sites are verified before any write (a mismatch logs `SKIP route budget` and nothing is patched). With no budget armed on the current thread, a stub passes straight through to the original (one call and a thread-id check per cost call). A search not started from `Route_PlanLocked` is never capped.
+
+Self-test (`TestRouteBudget`): one changed site → nothing written; switch off → passes through; cap above the search → same result and counters; cap of 300 → the next edge is a wall and the fake A\* fails through its own exit with 300 expansions; a search outside a request is untouched; `OnlyFlagged`; time cap.
+
+**Test plan** (serial, saves backed up):
+1. `Enabled=1, Mode=1, MaxUs=2000000`. Check `OK route budget` in the log and `budgetReady = 1` in `/native`. Play 10 min on `Baseline-IP`, then read `budgetMaxNodesOk` / `budgetMaxUsOk` (calibration) and confirm `budgetCapped = 0`.
+2. Repro `sim_route_to` to an unreachable point (closed room or roof) with `MaxNodes` set below the measured failure size: `budgetCapped` +1, the Sim fails as before (one route-fail reaction) and stays controllable; a reachable walk right after succeeds. Then a long legitimate trip (IP cross-water, `bp-route-cache` repro) with the default cap: it must still succeed (`budgetCapped` unchanged).
+3. `profile-world.ts --ab routebudget` on `Baseline-IP` and `Baseline-BP`: route ms/s, hitches ≥ 50 ms, fail % and stuck Sims, on vs off.
+
+**Risks** [inferred]: a reachable destination that needs more than the cap now fails, and RouteBackoff then blocks that unseen townie from it for 30 sim-minutes (a long trip for a played Sim fails instead of being slow). A time cap depends on load: a slow machine or a descheduled thread fails more routes. The capped search still pops every queued node, which is cheap but not free. Lot searches stay unbounded.
+
 ## Proposed install entry for tools/setup/fixes.json (not applied)
 
 ```json

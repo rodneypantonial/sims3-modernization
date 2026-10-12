@@ -420,16 +420,23 @@ rpc.exports = {
 
   // ts3native.asi counters (docs/15): route cache and route worker, null when the plugin is not loaded.
   // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
-  nativeCounters(routeWorker) {
+  // routeBudget 0|1 likewise sets the route search budget's switch (ts3native >= 0.4.0, [RouteBudget] Enabled=1).
+  nativeCounters(routeWorker, routeBudget) {
     const c = Module.findExportByName('ts3native.asi', 'ts3native_counters');
     if (c === null) return null;
     const f = ['version', 'enabled', 'calls', 'hits', 'misses', 'stored', 'otherFails', 'windowMs'];
     if (c.readS32() >= 2) f.push('workerMode', 'workerReady', 'workerCalls', 'workerUs', 'workerMaxUs', 'waitUs', 'fallbacks', 'watchdogs');
+    if (c.readS32() >= 3) f.push('budgetMode', 'budgetReady', 'budgetCalls', 'budgetCapped', 'budgetCapNodes', 'budgetCapUs', 'budgetMaxNodes', 'budgetMaxNodesOk', 'budgetMaxUsOk');
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (routeWorker === 0 || routeWorker === 1) {
       if (r.workerReady !== 1) return Object.assign(r, { error: 'route worker not running ([RouteWorker] Enabled=0 or ts3native < 0.3.0)' });
       c.add(8 * 4).writeS32(routeWorker);
       r.workerMode = c.add(8 * 4).readS32();
+    }
+    if (routeBudget === 0 || routeBudget === 1) {
+      if (r.budgetReady !== 1) return Object.assign(r, { error: 'route budget not active ([RouteBudget] Enabled=0 or ts3native < 0.4.0)' });
+      c.add(16 * 4).writeS32(routeBudget);
+      r.budgetMode = c.add(16 * 4).readS32();
     }
     return r;
   },
