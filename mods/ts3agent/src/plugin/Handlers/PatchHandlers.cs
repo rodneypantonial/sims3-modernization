@@ -170,7 +170,7 @@ namespace Ts3Agent
         // Off-screen go-home (PLAN fix b): a townie whose trip home nobody can see skips the walk/drive and appears on its
         // home lot. Only the route is replaced: the game's own lead-in (carpool wait, leaving the visit and group) runs, and
         // the success bookkeeping matches a real arrival, so whatever the Sim does next is unchanged. Anything not clearly
-        // safe runs the original. Counters: [0] runs, [1] shortcuts, [2] no spot found on the lot, [3] loop guard.
+        // safe runs the original. Counters: [0] runs, [1] shortcuts, [2] no safe spot on the lot, [3] loop guard.
         public class GoHomeHook : GoHome
         {
             static int[] sCounters;
@@ -190,9 +190,11 @@ namespace Ts3Agent
                 }
                 Sims3.SimIFace.Vector3 pos = Sims3.SimIFace.Vector3.Invalid, fwd = Sims3.SimIFace.Vector3.Invalid;
                 bool found = false;
-                for (int i = 0; i < 3 && !found; i++) // the spot must be on the home lot, or the game still sees the Sim away
+                // the spot must be on the home lot (or the game still sees the Sim away) and connected to the lot's edges, so
+                // the Sim can walk on from there later instead of standing stuck (the game's own check, a short plan in the lot)
+                for (int i = 0; i < 3 && !found; i++)
                     found = GlobalFunctions.FindGoodLocation(Actor, new World.FindGoodLocationParams(Target.GetRandomPosition(false, true)), out pos, out fwd)
-                        && LotManager.GetLotAtPoint(pos) == Target;
+                        && LotManager.GetLotAtPoint(pos) == Target && Actor.IsPointInLotSafelyRoutable(Target, pos);
                 if (!found)
                 {
                     sCounters[2]++;

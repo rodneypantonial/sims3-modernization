@@ -3,7 +3,7 @@
 // Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). For the whole run:
 // autopilot at x3 with popups cleared, keep_alive + decline_requests every 30 s, and the native stutter profiler
 // (separate Frida session). Samplers in turn: managed C# stack (minutes 1-4), native sim-thread stack (5-8).
-// Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl}.
+// Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,stuck.json,houseboats.json}.
 import { spawn } from 'node:child_process';
 import { appendFileSync, createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -37,11 +37,31 @@ prof.stdout.pipe(plog); prof.stderr.pipe(plog);
 const profDone = new Promise(r => prof.on('exit', r));
 
 const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
+// Stuck Sims, as watchdog.ts judges them: same spot and interaction for 6 checks (3 min), or routing without moving for 3.
+// Flagged Sims recently teleported by a shortcut are marked, so every shortcut gets checked for leaving Sims stuck.
+const simSeen = new Map<string, { key: string; checks: number; reported: boolean }>();
+const stuck: any[] = [];
+async function checkStuck() {
+  const r = await ag('sims_activity');
+  if (!r.ok) return;
+  const recent: string[] = (await ag('patches')).result?.gohome_recent ?? [];
+  for (const sim of r.result) {
+    const key = `${sim.x},${sim.z},${sim.interaction},${sim.routing}`;
+    const prev = simSeen.get(sim.id);
+    const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
+    simSeen.set(sim.id, e);
+    if (!e.reported && sim.interaction && e.checks >= (sim.routing ? 3 : 6)) {
+      e.reported = true;
+      stuck.push({ ...sim, checks: e.checks, shortcut: recent.some(l => l.startsWith(sim.name + ' -> ')) });
+    }
+  }
+}
 writeFileSync(`${pre}-upkeep.log`, '');
 const upkeep = (async () => {
   while (Date.now() - t0 < secs * 1000) {
     const k = await ag('keep_alive', { threshold: -50 }); await ag('decline_requests');
     const ap = await ag('autopilot');
+    await checkStuck();
     appendFileSync(`${pre}-upkeep.log`, `${stamp()} ${k.ok ? `topped ${k.result.topped_up.length} repaired ${k.result.repaired?.length ?? 0}` : k.error} ${ap.ok ? `speedfix ${ap.result.speed_fixes} dialogs ${ap.result.cleared.length}` : ''}\n`);
     await sleep(30000);
   }
@@ -64,6 +84,8 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 await Promise.all([upkeep, profDone]);
+writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
+console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ' [teleported]' : ''} on ${x.interaction}`).join('; ')})` : ''}`);
 if (boats0.length) {
   const boats1 = (await ag('houseboats')).result ?? [];
   const moved = boats1.filter((b: any) => { const o = boats0.find((x: any) => x.lot === b.lot); return !o || Math.hypot(o.x - b.x, o.z - b.z) > 1; });
