@@ -1,0 +1,188 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using Sims3.Gameplay.Core;
+
+namespace Ts3Agent
+{
+    // Patch host experiment: replace a C# method at runtime by copying the replacement's MonoMethod header over the
+    // original's (the idea MonoPatcher's ReplaceMethod uses: 40 bytes, keeping the name pointer at +0x18; +0x14 is the
+    // interpreter info this build caches per method). patch_test checks which call paths see a swap made mid-game.
+    public static partial class Handlers
+    {
+        const int kMethodHeader = 40, kNameOffset = 0x18;
+
+        static byte[] SwapMethod(MethodBase original, MethodBase replacement)
+        {
+            IntPtr o = original.MethodHandle.Value, r = replacement.MethodHandle.Value;
+            byte[] saved = new byte[kMethodHeader], repl = new byte[kMethodHeader];
+            Marshal.Copy(o, saved, 0, kMethodHeader);
+            Marshal.Copy(r, repl, 0, kMethodHeader);
+            Marshal.Copy(repl, 0, o, kNameOffset);
+            Marshal.Copy(repl, kNameOffset + 4, new IntPtr(o.ToInt32() + kNameOffset + 4), kMethodHeader - kNameOffset - 4);
+            return saved;
+        }
+
+        static void RestoreMethod(MethodBase original, byte[] saved)
+        {
+            Marshal.Copy(saved, 0, original.MethodHandle.Value, kMethodHeader);
+        }
+
+        public class PtVirt
+        {
+            public virtual int F() { return 1; }
+            public int G() { return 2; }
+        }
+
+        static int PtA() { return 1; }
+        static int PtB() { return 2; }
+        static int PtCallWarm() { return PtA(); }
+        static int PtCallCold() { return PtA(); }
+        static int PtVirtCall(PtVirt v) { return v.F(); }
+
+        // method_handle {type (or "self"), method, warm?}: MonoMethod pointer and the interpreter info at +0x14 (0 until first run), for the probe's read
+        static object MethodHandle(Args a)
+        {
+            const BindingFlags all = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            string tn = a.Str("type");
+            Type t = tn == "self" ? typeof(Handlers) : null; // this plugin's own test methods
+            if (t == null) foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type x = asm.GetType(tn, false);
+                if (x != null) t = x; // last match: a hot-reloaded plugin loads after its predecessors
+            }
+            if (t == null) throw new McpException("no type " + tn);
+            MethodInfo m = t.GetMethod(a.Str("method"), all);
+            if (m == null) throw new McpException("no method " + a.Str("method"));
+            if (a.Bool("warm", false)) { PtCallWarm(); PtB(); PtVirtCall(new PtVirt()); new PtVirt().G(); }
+            IntPtr h = m.MethodHandle.Value;
+            Dictionary<string, object> r = Util.Obj();
+            r["method"] = "0x" + h.ToInt32().ToString("x");
+            r["info"] = "0x" + Marshal.ReadInt32(new IntPtr(h.ToInt32() + 0x14)).ToString("x");
+            return r;
+        }
+
+        // Cold variants: never run before patch_test_cold swaps them, as game methods are at startup.
+        public class PcBase
+        {
+            public int Field = 40;
+            public virtual int Run() { return Field + 1; }
+            public int Orig() { return -1; } // stub: receives the original's header, so the replacement can call it
+        }
+        public class PcFix : PcBase
+        {
+            public int Run2() { return Orig() + 100; } // replacement: wraps the original
+        }
+        static int PcCallDirect(PcBase b) { return b.Run(); }
+
+        static object PatchTestCold(Args a)
+        {
+            const BindingFlags all = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            MethodInfo run = typeof(PcBase).GetMethod("Run", all), orig = typeof(PcBase).GetMethod("Orig", all);
+            MethodInfo fix = typeof(PcFix).GetMethod("Run2", all);
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Bool("swap", true))
+            {
+                SwapMethod(orig, run); // stub now runs the original body
+                SwapMethod(run, fix);  // Run now runs the replacement
+            }
+            PcBase b = new PcBase();
+            r["virtual_call"] = PcCallDirect(b);     // expect 141 (original 41 + 100)
+            r["stub_call"] = b.Orig();               // expect 41
+            r["derived_call"] = PcCallDirect(new PcFix());
+            return r;
+        }
+
+        static object PatchTest(Args a)
+        {
+            const BindingFlags all = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type h = typeof(Handlers);
+            Dictionary<string, object> r = Util.Obj();
+            PtVirt v = new PtVirt();
+            // compile the warm callers before the swap; the cold one only after
+            r["before_warm"] = PtCallWarm();
+            r["before_virt"] = PtVirtCall(v);
+            MethodInfo a1 = h.GetMethod("PtA", all), b1 = h.GetMethod("PtB", all);
+            MethodInfo f = typeof(PtVirt).GetMethod("F", all), g = typeof(PtVirt).GetMethod("G", all);
+            byte[] sa = SwapMethod(a1, b1), sf = SwapMethod(f, g);
+            try
+            {
+                r["after_warm"] = PtCallWarm();
+                r["after_cold"] = PtCallCold();
+                r["after_virt"] = PtVirtCall(v);
+                r["after_reflect"] = a1.Invoke(null, null);
+            }
+            finally
+            {
+                RestoreMethod(a1, sa);
+                RestoreMethod(f, sf);
+            }
+            r["restored_warm"] = PtCallWarm();
+            r["restored_virt"] = PtVirtCall(v);
+            return r;
+        }
+
+        // ---- Startup patch table. Swaps only work for methods the interpreter has not compiled yet (patch_test), so
+        // they are applied once per game session, from the first plugin load (tuning time, before any world), never on
+        // a hot reload. Rule from patch_test_cold: a replacement calls the original only through an instance stub on
+        // its own class that received the original's header; nothing else may call that stub.
+        const string kPatchState = "ts3agent.patch.state";
+
+        // [0] GoHome.Run calls; shared across hot reloads through AppDomain data
+        static int[] PatchCounters()
+        {
+            int[] c = AppDomain.CurrentDomain.GetData(kPatchState) as int[];
+            if (c == null) { c = new int[8]; AppDomain.CurrentDomain.SetData(kPatchState, c); }
+            return c;
+        }
+
+        static List<object> sPatchLog;
+
+        static void ApplyStartupPatches()
+        {
+            if (AppDomain.CurrentDomain.GetData(kPatchState + ".applied") != null) return;
+            AppDomain.CurrentDomain.SetData(kPatchState + ".applied", true);
+            sPatchLog = new List<object>();
+            AppDomain.CurrentDomain.SetData(kPatchState + ".log", sPatchLog);
+            PatchCounters();
+            Patch(typeof(GoHome), "Run", typeof(GoHomeHook), "RunHook", "RunOrig");
+        }
+
+        static void Patch(Type target, string method, Type hook, string replacement, string stub)
+        {
+            const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            try
+            {
+                MethodInfo t = target.GetMethod(method, all), r = hook.GetMethod(replacement, all), s = hook.GetMethod(stub, all);
+                if (Marshal.ReadInt32(new IntPtr(t.MethodHandle.Value.ToInt32() + 0x14)) != 0)
+                    throw new InvalidOperationException("already compiled");
+                SwapMethod(s, t);
+                SwapMethod(t, r);
+                sPatchLog.Add(target.Name + "." + method + ": ok");
+            }
+            catch (Exception e) { sPatchLog.Add(target.Name + "." + method + ": " + e.Message); }
+        }
+
+        public class GoHomeHook : GoHome
+        {
+            static int[] sCounters;
+            public bool RunHook()
+            {
+                if (sCounters == null) sCounters = PatchCounters();
+                sCounters[0]++;
+                return RunOrig();
+            }
+            public bool RunOrig() { return false; } // receives GoHome.Run's original header
+        }
+
+        // patches: what was applied at startup and the hook counters
+        static object Patches(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            r["applied"] = AppDomain.CurrentDomain.GetData(kPatchState + ".log");
+            r["gohome_runs"] = PatchCounters()[0];
+            return r;
+        }
+    }
+}
