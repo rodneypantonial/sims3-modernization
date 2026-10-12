@@ -323,5 +323,5 @@ Per the bundle rule, the first run is `store-200` vs `store-200-s3pp` (PLAN step
 
 - Log: Steam 1.67 detected, 7 of 9 installed, `[STBL509] active` (savedPerTable 29,640 bytes), isinst cache, string cache, type index all armed; no errors.
 - Gain is address space (~70 MB headroom against Error 12), not load time on this save and content; the author's load-time win (18 -> 4 min) is for very large saves where the type lookups dominate [community].
-- Its `[SIMSTALL]` log shows TaskObjects stages of 0.3-0.5 s and two over 5 s (being analysed, docs/04).
+- Its `[SIMSTALL]` log shows 15 TaskObjects stalls of 0.27-6.9 s (median 624 ms, three over 5 s, likely world load; at least one in play), see docs/04 F17.
 - Open: UI label check (`LocalizedStringCache`) via `store-cas-browse` with S3PP on.
