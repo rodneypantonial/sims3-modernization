@@ -407,3 +407,15 @@ These are ideas for after Phases 0 to 2 succeed. None of them is part of the cor
 - Stopped after two variants (end of session); nocc-0 and the CC variants were not run. Restored afterwards: `Default.ini` back to 200 MB, CC never installed.
 
 **Correction (2026-10-12) [verified]:** the game takes the ResourceCache budget from `GraphicsRules.sgr` (`seti MemCacheBudgetValue 209715200`, 160 MB when RAM level is low; `setProp $ResourceGroup CacheBudget $MemCacheBudgetValue`, line 656), read by the ctor `0x732910` through the wide property name "CacheBudget" (pushed at `0x7329a0`). `Default.ini [Resources] CacheBudget` is ignored: with all 20 pack copies set to 50 MB, `/rescache` still showed 200 MB; with the `GraphicsRules.sgr` line set to 50 MB it showed 50 MB. The `cache-budget` installer entry now patches that line, and offload-phase0 skips a variant whose budget the game did not pick up. Earlier mentions of `Default.ini` as the source in this document are wrong.
+
+### Phase 0 results, complete (2026-10-12, Bridgeport, all fixes, 10 min per variant at x3) [measured]
+
+| Variant | Budget (game) | Cache avg / peak | Evictable (flush list) avg | Entries (end) | Commit avg | Min largest free | Sim days |
+|---|---|---|---|---|---|---|---|
+| nocc-200 (2026-10-11) | 200 MB | 415 / 460 MB | ~10 MB | 117,712 | 1.99 GB | 1.58 GB | 3.28 |
+| nocc-50 | 50 MB | 410 / 455 MB | 9.9 MB | 119,665 | 2.02 GB | 1.57 GB | 3.96 |
+| nocc-0 | 0 | 394 / 430 MB | 10.0 MB | 116,960 | 1.99 GB | 1.55 GB | 3.61 |
+| cc-200 (143 CC packages) | 200 MB | 404 / 451 MB | 10.4 MB | 122,012 | 2.02 GB | 1.55 GB | 4.03 |
+| cc-0 | 0 | 407 / 442 MB | 9.9 MB | 121,740 | 2.01 GB | 1.56 GB | 4.24 |
+
+**Conclusion:** the budget barely matters. About 390–410 MB of the main cache is resources in use by the loaded world (not evictable); only ~10–20 MB is cold, even at budget 0. Rodney's 143 CC packages add nothing measurable at load (+~4k entries). A 64-bit helper that takes over the cold part of this cache would win ~20 MB at best: **not worth building for this cache** (the 60–100 h estimate stands). Lowering the budget is no cheap win either (no address space freed, no measurable pace change). Still open: the Store repacks (`cc-full`) and the "used in the world" test (store items placed and worn), which grow the in-use part; if that grows a lot, offloading would have to target in-use data, which needs a different design (not a cache).
