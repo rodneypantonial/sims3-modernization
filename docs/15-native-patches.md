@@ -31,11 +31,102 @@ Only the trailing opcode bytes (`76 2C`, `77 05`, `50`) are in the comparison, n
 - Ultimate ASI Loader, as `wininet.dll`, loads plugins during process start-up, before the exe's entry point (`0xF7F371`) runs. **[community: UAL design; S3SS relies on the same timing]**
 - Runtime proof per launch: the plugin reads `0x11F30D0` before patching. If it is already 1, the initial-heap patch is skipped and the log says "plugin loaded too late". The growth-step and ceiling patches still apply, as both are read on every use.
 
-## Phase 2 (not implemented): route negative cache
+## Phase 2: route negative cache (v0.2.0, `[RouteCache] Enabled=0` by default)
 
-`InstallDetour(name, target, prologue, len, hook)` in `ts3native.cpp` writes a 5-byte `jmp` plus NOP padding and returns a trampoline (copied prologue + `jmp` back). It is covered by the self-test, but nothing uses it yet. The prologue must end on an instruction boundary and contain no relative operands.
+Built and self-tested; **not yet run in the game**. Recommendation 1 of docs/11: a repeat of a request that just failed with "no path" returns a plain failure at once, before the RoutingWorld lock, so none of the native retries, the obstacle replan, or the C# fail-path plans run.
 
-For `Route_PlanLocked` `0x82C6E0` (docs/11): original bytes `81 EC D8 00 00 00 | 53 | 56 | 8B F1 | ...` = `sub esp,0xD8 ; push ebx ; push esi ; mov esi,ecx`. Use `len = 6` (`sub esp,0xD8` alone; no relative operands). `ecx` = this (thiscall), so the hook must be `__fastcall`-style or naked asm that keeps `ecx`. **[code]**
+### Patch site and calling convention [code: dumpbin disassembly of `0x82C6E0`–`0x82C7FB`, call sites `0x760DE1`, `0xC7C6E3`, `0xC7C9D5`]
+
+`InstallDetour` writes `jmp hook` over the 6 bytes `81 EC D8 00 00 00` (`sub esp,0xD8`; checked first, skipped and logged if different). The trampoline is that instruction plus `jmp 0x82C6E6`.
+
+`Route_PlanLocked` is `__thiscall`: `ecx` = RoutingWorld (`0x8292D0()` at the PlanCommon call site). It takes 10 stack dwords and ends with `ret 28h`. The result is a bool in `AL`. The hook is `__fastcall` with a dummy `edx`, which gives the same stack layout and cleanup.
+
+| Stack arg | Value at the `0x760DE1` call (Route_PlanCommon, `esi` = native route) | Meaning |
+|---|---|---|
+| 1 | `esi+0xE0` | out path list (EASTL list head). PlanCommon empties it before the call (`0x7606E0` prologue) |
+| 2 | PlanCommon arg 2 | start points vector `{begin,end}`, 64-byte records |
+| 3 | local vector (accepted points) | goal points vector, 64-byte records, x,y,z floats at +0 (x/z bounds-checked in PlanCommon) |
+| 4 | `[esi+0x3C]` | agent class: 0x800 flier, 0x900 walking dog, 0xA00 little dog, 0xB00 leading horse, 0x4400 shark (set in PlanCommon from the options) |
+| 5 | `1` | do-plan flag (byte); 0 = take the lock, run `0x82C420`, return 0 |
+| 6 | `esi+0x158` | RoutingOptions; RouteOption lo/hi at +0x28/+0x2C, RouteOption2 lo/hi at +0x30/+0x34 (`0x81C880` is called with `ecx = esi+0x158` at `0x7608AD`) |
+| 7, 8 | `&local`, `&local` | out dwords, zeroed by the caller |
+| 9, 10 | `[esi+0x40]`, `[esi+0x44]` | **follower ObjectGuid** (64-bit). docs/11 called these "lot id": `0x752620` compares each blocker id with route+0x40/+0x44 to skip the follower itself, so they are the follower's id [code for the comparison, meaning inferred] |
+
+`0xC7BF70` (off-screen road placement) calls it directly with agent class 0, follower 0 and a local list.
+
+Correction to docs/11 Q4: the lock is the object at `world+0x918` (`ecx` for `Lock_Acquire 0x4E16F0`). `0x1021CF0` is a constant pushed as its argument.
+
+### How a failure is returned and recorded [code]
+
+- After `RoutingJob` Execute, the function reads the first path in the out list, calls its vtable `+0x20` (status), and returns `status < 3`.
+- PlanCommon then calls `0x752620` if the list is non-empty. That maps status 7/8 to `FailedBecauseNoPathToDestination` (16) plus the blocker id, type and location (vtable `+0x160/+0x164`).
+- If the function returns 0 with the list still empty, PlanCommon jumps to `0x76156D` and returns its default result: `mType = 2` (**Failed**), all other fields 0, so **no blocker**. The original's own early-outs (no start, no goal, world flags `+0x97E`/`+0x976`) take this path.
+- C# side (SimRoutingComponent.cs:1265–1300): with blocker id 0 and location zero, `GetRouteFailPath` returns null, so `DoRouteFailureBehavior` runs no fail-path plans. It still plays the route-fail reaction when `DoRouteFail` and the frequency check allow it, with no target object. The interaction's normal failure branch runs, the same as after the C# `RouteBackoff` fast fail.
+
+### Hook logic (`PlanLockedHook` in `ts3native.cpp`)
+
+1. Count the call. If do-plan is 0, or starts or goals are empty, call the original unchanged.
+2. Build the key, a 64-bit FNV-1a hash of:
+   - the agent class;
+   - all four option words;
+   - the follower ObjectGuid;
+   - the start count and each start point's x,y,z, floored to **0.5 m** cells, in order;
+   - the same for the goals.
+   The key is strict on purpose: a miss costs one normal plan, while a false hit returns a wrong failure. No option bits are masked out.
+3. If the key failed less than `WindowMs` ago (real time, `GetTickCount64`): **return 0** without the lock, the original, or touching the out list. Callers see a plain Failed with no blocker.
+4. Otherwise call the original through the trampoline. If it returned 0 and the first path's status is 7 or 8, store the key with `until = now + WindowMs`. Successes are never stored, and neither are other failures (status 3–6, empty list).
+
+The table is a fixed open-addressed array: `MaxEntries` rounded up to a power of two, 256–65536 slots, allocated once. A key probes 8 slots. A store takes the matching slot, else the first free or expired slot, else evicts the oldest of the 8, so the table never grows. Lookups hold an SRW lock shared and stores hold it exclusive, only around the table, never around the original call. The counters use `Interlocked*`.
+
+### Settings and counters
+
+`ts3native.ini` `[RouteCache]`: `Enabled=0` (no detour at all when 0), `WindowMs=2000` (100–60000), `MaxEntries=4096` (256–65536). When the cache is on, `ts3native.log` stays open and gets `route cache: calls N hits N misses N stored N otherFails N` about every 60 s, written by whichever game thread calls the planner first after the minute is up.
+
+Export for test tools: `ts3native_counters`, a data export of 8 int32:
+
+| Offset | Field |
+|---|---|
+| +0x00 | version (1) |
+| +0x04 | enabled (1 when the detour is installed) |
+| +0x08 | calls |
+| +0x0C | hits |
+| +0x10 | misses (keyed calls that ran the original) |
+| +0x14 | stored |
+| +0x18 | otherFails |
+| +0x1C | windowMs |
+
+Frida: `const c = Module.findExportByName('ts3native.asi', 'ts3native_counters'); c.add(0xC).readS32()`.
+
+### Relation to the C# RouteBackoff (`mods/ts3fixes/src/RouteBackoff.cs`)
+
+The C# hook on `ScriptCore.Route.Plan` fast-fails unseen townies on foot for 30 sim-minutes, per Sim and destination 1 m cell. Those requests never reach native code, so they are not counted twice. The native cache covers what the C# hook leaves alone: selectable and on-screen Sims, pets, horses, non-Sim routers, short hops, native callers (`0xC7BF70`), and repeats within 2 s whose C# key differs.
+
+One interaction: a native hit reaches the C# hook as `Failed` with no blocker, which the C# hook also records (it accepts `Failed` and `FailedBecauseNoPathToDestination`). That only happens when a real no-path failure of the same request occurred less than 2 s earlier. If strict separation is wanted, the C# hook can record only `FailedBecauseNoPathToDestination`, since a real no-path failure always comes back as 16 from `0x752620`.
+
+### Risks
+
+- **Stale failures** [inferred]: a door unlocked, an object moved or sold, a wall removed, or a Sim that was blocking walks away. A request that would now succeed still fails for up to `WindowMs`. Mitigations:
+  - The window is short (2 s real time).
+  - The key includes the exact start cell, so a Sim that has moved is a new request.
+  - There is no routing-world epoch yet. The pending-update flag `[world+0x95C]+0x10E` from docs/11 is unverified, so it is not used.
+- **Transient Sim blockers** are cached too. The native hook does not decode the blocker type, because the `+0x164` argument layout is not verified. Sims that re-plan within 2 s after being blocked by another Sim get a plain failure instead of waiting their turn. Watch for this in the test.
+- **0.5 m cells**: two starts in the same cell on opposite sides of a thin wall share a key, for 2 s.
+- **Hash collision**: 64-bit keys, at most 65536 live entries; negligible.
+- Another plugin that hooks `0x82C6E0` first changes the prologue. Ours then skips, logs `SKIP detour Route_PlanLocked`, and leaves `enabled = 0`.
+
+### Test plan
+
+1. Set `Enabled=1`, start the game, and check `ts3native.log` for `OK detour Route_PlanLocked at 0x0082C6E0`. Check the Frida export: `enabled = 1`, `windowMs = 2000`.
+2. **Repro**: on a quiet lot, use the agent action `sim_route_to` to an unreachable point, e.g. inside a closed room with no door, or on a roof. Repeat 10 times in quick succession.
+   - Expect `stored` +1 on the first try, then `hits` rising for repeats within 2 s.
+   - The Sim plays its route-fail reaction at most once, then stands idle and stays controllable. Queue a reachable walk right after: it must succeed at once (different key).
+3. **Stale-failure check**: make a point unreachable (lock a door for that Sim) and fail a route to it. Unlock the door, wait more than 2 s, and route again: it must succeed. Within 2 s, a plain failure is expected.
+4. **Soak**: 30 min in the stutter save (Isla Paradiso or Sunset Valley) with `Enabled=0`, then the same with `Enabled=1`. Compare against the baseline table:
+   - frame-time spikes and route time per `Route.Plan` from the probe;
+   - the hit ratio from the counters;
+   - `stuck` Sims: any Sim standing still with an interaction queued for more than 1 sim-hour.
+   Also log any Sim that keeps re-queuing the same failed interaction. A plain failure that loops would show here.
+5. If stuck Sims or loops show up, try `WindowMs=500` before turning the cache off.
 
 ## Proposed install entry for tools/setup/fixes.json (not applied)
 

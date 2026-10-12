@@ -191,3 +191,19 @@ C# is the right place for **policy** (per-Sim backoff length, the unseen-townie 
 5. **Off-thread planning**: not now (Q4).
 
 **Next measurement** before building: count native searches per C# `Route.Plan` on failures. A Frida counter on `0x676260`, `0x63e340` and `0x661b50` per `0x82c6e0` call, on Isla Paradiso, will show how much of the failure cost is retries rather than the first search.
+
+---
+
+## Addendum 2026-10-12: Route_PlanLocked ABI, checked for the native cache
+
+The native cache is built (docs/15, phase 2, off by default). Corrections and confirmations, checked with dumpbin disassembly of `0x82C6E0` and the three call sites `0x760DE1`, `0xC7C6E3` and `0xC7C9D5` **[verified]**:
+
+- **Calling convention:** `__thiscall` with `ecx` = RoutingWorld (`0x8292D0()`), 10 stack dwords, `ret 28h`, result in `AL`.
+- **Q5 argument list, corrected:**
+  - arg4 `[route+0x3C]` is the **agent class** (0x800/0x900/0xA00/0xB00/0x4400, set by PlanCommon from the options), not a follower object.
+  - arg5 is the do-plan byte (1).
+  - arg6 is RoutingOptions `route+0x158`. The option words at +0x28..+0x34 are verified for this block too: `0x81C880` is called with `ecx = route+0x158`.
+  - arg7/arg8 are zeroed out-dwords.
+  - arg9/arg10 `[route+0x40]/[route+0x44]` are the **follower ObjectGuid**: `0x752620` skips a blocker whose id equals them.
+- **Lock:** the lock object is `world+0x918`; `0x1021CF0` is a constant pushed as `Lock_Acquire`'s argument (Q4 named it as the lock).
+- **Plain failure:** PlanCommon empties the out list before the call. If the call returns 0 with the list still empty, PlanCommon returns its default result (`mType = 2` Failed, no blocker) at `0x76156D`.

@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 
-#define TS3NATIVE_VERSION "0.1.0"
+#define TS3NATIVE_VERSION "0.2.0"
 
 typedef unsigned char u8;
 
@@ -148,8 +150,154 @@ static void ApplyGc(const wchar_t* ini) {
     else PatchImm32("GC budget ceiling", kBudgetCeiling, 1, (DWORD)Clamp(ceiling, 500, 20000));
 }
 
+// --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 8 int32.
+struct Ts3nCounters {
+    LONG version;      // layout version, 1
+    LONG enabled;      // 1 when the Route_PlanLocked detour is installed
+    LONG calls;        // every Route_PlanLocked call
+    LONG hits;         // answered from the cache: plain failure, no lock, no search
+    LONG misses;       // keyed calls that ran the original
+    LONG stored;       // no-path failures (status 7/8) recorded
+    LONG otherFails;   // original returned 0 without a 7/8 path (not cached)
+    LONG windowMs;     // active WindowMs
+};
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {1, 0, 0, 0, 0, 0, 0, 0};
+
+typedef unsigned __int64 u64;
+struct CacheEntry { u64 key; ULONGLONG until; };
+static CacheEntry* g_tab;
+static DWORD g_mask;  // table size - 1 (power of two)
+static ULONGLONG g_windowMs = 2000;
+static SRWLOCK g_tabLock = SRWLOCK_INIT;
+static const DWORD kProbe = 8;  // slots looked at per key; the oldest of them is evicted when all are live
+
+static u64 Fnv(u64 h, DWORD v) {
+    for (int i = 0; i < 4; i++) { h ^= (v >> (i * 8)) & 0xFF; h *= 0x100000001B3ull; }
+    return h;
+}
+
+// Route points are 64-byte records, position x,y,z floats at +0 (x/z bounds-checked in Route_PlanCommon 0x7606E0).
+static const size_t kPointSize = 64;
+static u64 HashPoints(u64 h, const int* vec) {
+    const u8* b = (const u8*)(uintptr_t)vec[0];
+    const u8* e = (const u8*)(uintptr_t)vec[1];
+    h = Fnv(h, (DWORD)((e - b) / kPointSize));
+    for (const u8* p = b; p + kPointSize <= e; p += kPointSize)
+        for (int i = 0; i < 3; i++) h = Fnv(h, (DWORD)(int)floorf(((const float*)p)[i] * 2.0f));  // 0.5 m cells
+    return h;
+}
+
+// Request identity: agent class (route+0x3C), all four RoutingOptions words (options+0x28..+0x34), follower
+// ObjectGuid (route+0x40/+0x44), start and goal points in 0.5 m cells, in order. Strict on purpose: a miss costs
+// one normal plan, a false hit costs a wrong failure.
+static u64 RouteKey(const int* starts, const int* goals, DWORD agent, const u8* opts, DWORD guidLo, DWORD guidHi) {
+    u64 h = 0xCBF29CE484222325ull;
+    h = Fnv(h, agent);
+    for (int i = 0; i < 4; i++) h = Fnv(h, ((const DWORD*)(opts + 0x28))[i]);
+    h = Fnv(Fnv(h, guidLo), guidHi);
+    h = HashPoints(HashPoints(h, starts), goals);
+    return h ? h : 1;  // 0 marks an empty slot
+}
+
+static bool CacheInit(DWORD maxEntries, DWORD windowMs) {
+    DWORD n = 256;
+    while (n < maxEntries && n < 65536) n <<= 1;
+    g_tab = (CacheEntry*)calloc(n, sizeof(CacheEntry));
+    if (!g_tab) return false;
+    g_mask = n - 1;
+    g_windowMs = windowMs;
+    return true;
+}
+
+static bool CacheHit(u64 key, ULONGLONG now) {
+    bool hit = false;
+    AcquireSRWLockShared(&g_tabLock);
+    for (DWORD i = 0; i < kProbe; i++) {
+        const CacheEntry& e = g_tab[(key + i) & g_mask];
+        if (e.key == key) { hit = now < e.until; break; }
+    }
+    ReleaseSRWLockShared(&g_tabLock);
+    return hit;
+}
+
+static void CacheStore(u64 key, ULONGLONG now) {
+    AcquireSRWLockExclusive(&g_tabLock);
+    CacheEntry* pick = NULL;
+    for (DWORD i = 0; i < kProbe; i++) {
+        CacheEntry* e = &g_tab[(key + i) & g_mask];
+        if (e->key == key) { pick = e; break; }
+        if (!pick || (pick->until > now && e->until < pick->until)) pick = e;  // first free/expired, else the oldest
+    }
+    pick->key = key;
+    pick->until = now + g_windowMs;
+    ReleaseSRWLockExclusive(&g_tabLock);
+}
+
+// Route_PlanLocked 0x82C6E0 is __thiscall (ecx = route world), 10 stack args, `ret 28h`, result in AL.
+// __fastcall with a dummy edx has the same stack layout and cleanup.
+typedef u8(__fastcall* PlanLockedFn)(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
+                                     DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi);
+static PlanLockedFn g_planOrig;
+typedef int(__fastcall* PathStatusFn)(void* path, void* edx);  // path vtable +0x20, thiscall, no args
+static volatile LONG64 g_nextLog;
+
+static void MaybeLogCounters(ULONGLONG now) {
+    LONG64 next = g_nextLog;
+    if ((LONG64)now < next || InterlockedCompareExchange64(&g_nextLog, (LONG64)now + 60000, next) != next) return;
+    const Ts3nCounters& c = ts3native_counters;
+    Log("route cache: calls %ld hits %ld misses %ld stored %ld otherFails %ld", c.calls, c.hits, c.misses, c.stored, c.otherFails);
+}
+
+static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
+                                    DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+    InterlockedIncrement(&ts3native_counters.calls);
+    ULONGLONG now = GetTickCount64();
+    MaybeLogCounters(now);
+    // the original's own early-outs (no plan requested, no start, no goal) stay with the original
+    if ((u8)doPlan == 0 || starts[0] == starts[1] || goals[0] == goals[1])
+        return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    u64 key = RouteKey(starts, goals, agent, opts, guidLo, guidHi);
+    if (CacheHit(key, now)) {
+        InterlockedIncrement(&ts3native_counters.hits);
+        return 0;  // same as the original's pre-lock early-outs: out list untouched, Failed with no blocker
+    }
+    InterlockedIncrement(&ts3native_counters.misses);
+    u8 r = g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    if (r) return r;
+    int* node = (int*)(uintptr_t)outList[0];
+    void* path = node != outList ? (void*)(uintptr_t)node[2] : NULL;
+    int status = path ? ((PathStatusFn)(*(void***)path)[0x20 / 4])(path, NULL) : 0;
+    if (status == 7 || status == 8) {  // no path to destination (0x752620 -> FailedBecauseNoPathToDestination)
+        CacheStore(key, GetTickCount64());
+        InterlockedIncrement(&ts3native_counters.stored);
+    } else {
+        InterlockedIncrement(&ts3native_counters.otherFails);
+    }
+    return r;
+}
+
+static const DWORD ROUTE_PLAN_LOCKED = 0x0082C6E0;
+static const u8 kPlanLockedPrologue[] = {0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00};  // sub esp,0xD8
+
+// Returns true when the detour is installed (the log must then stay open for the periodic counters).
+static bool ApplyRouteCache(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"RouteCache", L"Enabled", 0, ini)) { Log("route cache disabled (Enabled=0)"); return false; }
+    int windowMs = Clamp(GetPrivateProfileIntW(L"RouteCache", L"WindowMs", 2000, ini), 100, 60000);
+    int maxEntries = Clamp(GetPrivateProfileIntW(L"RouteCache", L"MaxEntries", 4096, ini), 256, 65536);
+    if (!CacheInit((DWORD)maxEntries, (DWORD)windowMs)) { Log("FAIL route cache: table allocation"); return false; }
+    Log("route cache settings: WindowMs=%d MaxEntries=%d (table %lu)", windowMs, maxEntries, g_mask + 1);
+    g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
+    if (!g_planOrig) return false;
+    ts3native_counters.windowMs = windowMs;
+    ts3native_counters.enabled = 1;
+    g_nextLog = (LONG64)GetTickCount64() + 60000;
+    return true;
+}
+
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
+    bool keepLog = false;
     DWORD n = GetModuleFileNameW(self, path, MAX_PATH);
     if (!n || n >= MAX_PATH) return;
     wchar_t* dot = wcsrchr(path, L'.');
@@ -169,9 +317,10 @@ static void Run(HMODULE self) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
         ApplyGc(ini);
+        keepLog = ApplyRouteCache(ini);
     }
     Log("done");
-    if (g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }
+    if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }
 }
 
 #ifndef TS3NATIVE_NO_DLLMAIN
