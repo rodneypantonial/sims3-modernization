@@ -92,7 +92,8 @@ const run = (args: string[], file: string) => new Promise(r => {
   const p = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
-const window = abNames.length ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+// none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
+const window = abNames.length || values.taskstall ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
 await sleep(Math.max(0, at(60) - Date.now()));
 console.log(`${stamp()} managed sampler ${window} s`);
 if (window) await run([join(ROOT, 'tools', 'probe', 'managed-sample.mjs'), String(window), '5', `${pre}-managed.jsonl`], `${pre}-managed.txt`);
@@ -105,7 +106,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 await Promise.all([upkeep, profDone, toggler]);
-if (values.taskstall) { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); }
+if (values.taskstall) { try { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); } catch (e) { console.log(`${stamp()} taskstall stop failed: ${e.message}`); } }
 if (abNames.length) { writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
 if (stuck.length) await reproSave(ag, values.tag!, stuck);

@@ -49,3 +49,4 @@ desktop.ini
 
 # Live probe output (events, profiles)
 probe-out/
+.claude/worktrees/
