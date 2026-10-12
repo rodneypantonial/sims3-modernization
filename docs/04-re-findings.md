@@ -117,3 +117,10 @@ Consequences: (1) a route-*failure* cache alone targets ~2% of plans; the cost i
 - This explains F5's "unaccounted" hitch time: it is mostly interpreted script work that the profiler's hooks do not time.
 
 Consequences: the biggest stutter lever is script execution cost. Options, roughly by effort: (1) find the hot C# methods (managed sampler: read the interpreter's `ThreadContext.current_frame` chain on the sim thread and name each frame's method) and slim those down through the patch host or move them to native internal calls; (2) cut how often the hot paths run (autonomy, routing callbacks); (3) speed up the interpreter itself (dispatch, hot opcode paths) or compile hot methods natively, a large project. A full JIT swap (newer Mono) is not realistic for a 32-bit exe with EA's embedding.
+
+### F6a. Toward a managed sampler (partial, 2026-10-12)
+
+- Verified: the interpreter's ThreadContext is in the sim thread's TLS slot whose index is at `[0x11f4160]` (96 on this run); `ThreadContext[2]` is the current call frame and `frame[0]` its parent (decompile of `0xe53eb0`, where `param_2[2] = frame` and `frame[0] = previous`). Probe endpoint `/interp` reads the chain with the thread suspended.
+- Verified: `[0x11f4170]` holds the current script *task* (saved and restored around each interpreter run); its `+0` is the task's base `MonoMethod` (e.g. `Sims3.Gameplay.ActorSystems.SimBuilderTask.Simulate`, `ScriptCore.ScriptProxy.Simulate`), `+0x140` its call depth.
+- MonoMethod layout here: klass `+8`, name `+0x18`; MonoClass name/namespace `+0x34`/`+0x38` [verified live]. The interpreter fetches a callee's runtime info from `MonoMethod+0x10` (decompile line ~228) [inferred].
+- Not yet working: mapping a frame's `frame[1]` to its MonoMethod (`/rmname` scans memory for `MonoMethod+0x10 == frame[1]` and found none, ~35 s per scan). Either `frame[1]` is not that pointer or the layout differs. Next: decompile the call opcode path (where `frame[1]` is assigned from the callee) or hook the method-entry point to count entries per MonoMethod.

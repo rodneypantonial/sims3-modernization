@@ -30,6 +30,47 @@ function isCode(p) {
 function safeRead(p) {
   try { return p.readPointer(); } catch (e) { return null; }
 }
+// Mono interpreter frames of a thread (docs/04 F6), read-only. ThreadContext lives in the thread's TLS slot whose
+// index is at [0x11f4160] (TlsGetValue in 0xe59fd0); ThreadContext +8 = current_frame, frame +0 = parent [verified].
+const ntQueryThread = new NativeFunction(Process.getModuleByName('ntdll.dll').getExportByName('NtQueryInformationThread'), 'int', ['pointer', 'int', 'pointer', 'uint', 'pointer']);
+const tebCache = new Map();
+function tebOf(tid, h) {
+  if (tebCache.has(tid)) return tebCache.get(tid);
+  const tbi = Memory.alloc(28); // THREAD_BASIC_INFORMATION: ExitStatus, TebBaseAddress, ...
+  const teb = ntQueryThread(h, 0, tbi, 28, NULL) === 0 ? tbi.add(4).readPointer() : null;
+  if (teb) tebCache.set(tid, teb);
+  return teb;
+}
+// Copies the chain (first 0x30 bytes of each frame) while the thread is suspended: the frames live on its stack.
+function interpFrames(tid, max) {
+  if (tid === Process.getCurrentThreadId()) throw new Error('cannot sample the probe thread itself');
+  const h = OpenThread(0x0002 | 0x0040, 0, tid); // SUSPEND_RESUME | QUERY_INFORMATION
+  if (h.isNull()) throw new Error(`OpenThread ${tid} failed`);
+  const frames = [];
+  let idx = null, ctx = null;
+  try {
+    const teb = tebOf(tid, h);
+    if (!teb) return { error: 'no TEB' };
+    idx = ptr('0x11f4160').readU32();
+    if (SuspendThread(h) === 0xffffffff) throw new Error('SuspendThread failed');
+    try {
+      const slot = idx < 64 ? teb.add(0xe10 + idx * 4) : safeRead(teb.add(0xf94))?.add((idx - 64) * 4);
+      ctx = slot ? safeRead(slot) : null;
+      let f = ctx && !ctx.isNull() ? safeRead(ctx.add(8)) : null;
+      for (let i = 0; i < (max || 32) && f && !f.isNull(); i++) {
+        let words; try { words = Array.from(new Uint32Array(f.readByteArray(0x30))); } catch (e) { break; }
+        frames.push({ at: f.toString(), words });
+        f = ptr(words[0]);
+      }
+    } finally {
+      ResumeThread(h);
+    }
+  } finally {
+    CloseHandle(h);
+  }
+  return { tlsIndex: idx, context: ctx ? ctx.toString() : null, frames };
+}
+
 function walk(pc, sp, fp, max) {
   const out = [pc.toString()];
   // 1. frame-pointer chain (exact where the code keeps EBP frames)
@@ -256,6 +297,33 @@ rpc.exports = {
   },
 
   // The sim thread only: cheap enough for a watchdog (suspends one thread for a few microseconds).
+  // Name of the method behind an interpreter RuntimeMethod: the interpreter reads it from MonoMethod+0x10
+  // (decompile of 0xe53eb0), with klass at +8 and name at +0x18, class name/namespace at +0x34/+0x38 [verified].
+  // There is no back pointer, so scan rw memory for MonoMethod+0x10 == rm (slow; resolve only the top entries).
+  resolveRuntimeMethod(rmStr) {
+    const rm = ptr(rmStr);
+    const pat = Array.from(new Uint8Array(new Uint32Array([rm.toUInt32()]).buffer)).map(b => ('0' + b.toString(16)).slice(-2)).join(' ');
+    const cstr = p => { try { const t = p.readCString(80); return /^[\w.<>`$|]+$/.test(t) ? t : null; } catch (e) { return null; } };
+    for (const r of Process.enumerateRanges('rw-')) {
+      if (r.size > 0x10000000) continue;
+      let hits; try { hits = Memory.scanSync(r.base, r.size, pat); } catch (e) { continue; }
+      for (const h of hits) {
+        const m = h.address.sub(0x10);
+        const klass = safeRead(m.add(8)), name = safeRead(m.add(0x18));
+        if (!klass || !name) continue;
+        const cn = safeRead(klass.add(0x34)), ns = safeRead(klass.add(0x38));
+        const c = cn ? cstr(cn) : null, n = cstr(name);
+        if (c && n) { const nsS = ns && !ns.isNull() ? cstr(ns) : ''; return { method: m.toString(), name: `${nsS ? nsS + '.' : ''}${c}.${n}` }; }
+      }
+    }
+    return { method: null, name: null };
+  },
+
+  interpFrames(maxFrames) {
+    const tid = findSimThread();
+    return tid === null ? { error: 'sim thread not found' } : interpFrames(tid, maxFrames);
+  },
+
   simStack(maxFrames) {
     const tid = findSimThread();
     if (tid === null) return { thread: null, stack: [] };

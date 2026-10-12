@@ -175,6 +175,10 @@ class Probe:
             for t in ts:
                 t['stack'] = self.symbols.stack(t['stack'])
             return ts
+        if path == 'rmname':  # resolve an interpreter RuntimeMethod pointer to its C# method name (memory scan, slow)
+            return rpc.resolve_runtime_method(q['rm'])
+        if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)
+            return rpc.interp_frames(int(q.get('frames', 32)))
         if path == 'simstack':  # sim thread only; safe for frequent use (the all-thread /threads is not)
             r = rpc.sim_stack(int(q.get('frames', 24)))
             r['stack'] = self.symbols.stack([f.rstrip('?') for f in r['stack']])
