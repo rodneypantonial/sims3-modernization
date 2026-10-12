@@ -220,3 +220,23 @@ Reading:
 - Store content costs ~+12 s in the menu scan and +6 to +10 s in the world load; launch to menu barely moves (+4 s).
 - Warm caches save ~9 s, mostly in the world load; clearing caches every launch is not worth it (confirms docs/17 M2).
 - The earlier 80 vs 125 s (§6) included different dialog timing; these split numbers are the reference.
+
+## 7. Health check results (2026-10-13)
+
+Candidate 2 now exists as a separate read-only script, `node tools/setup/content-health.ts [--user <path>] [--json] [--self-test]` (not yet wired into `install-fixes.ts check`). It never deletes or moves files. Both runs below are [verified, script output]; the live caches were empty because a `cache-clear` ran just before.
+
+| Check | Live user folder | Backup `D:\Sims3-backup\2026-10-11\Documents-The Sims 3` |
+|---|---|---|
+| DCCache | 1 `.ebc` file, ~0 MB, no `dcc.ent` | 1 `.dbc` (11 KB), no `dcc.ent`; far under `DBCacheMaxSizeMB` 200 |
+| `.sims3pack` in Downloads | none | 6 `dynamicchallenge_*.Sims3Pack` files (0.3 MB) |
+| Sync conflict copies | none | 18 (`*-<pc>`, `*-LAPTOP-G3`), 415 MB, mostly `simCompositorCache-` (251 MB) and `compositorCache-<pc>` (99 MB) |
+| `DCCache` line in `Mods/Resource.cfg` | no | **yes** (`PackedFile DCCache/*.dbc`) |
+| Caches at their cap | none | none (the live names are tiny; the big files are the conflict copies) |
+| Mods | 172 packages, 5.2 GB; 5.1 GB of that is the 4 store repacks | same set |
+| Never loaded (deeper than Resource.cfg) | 1: `Packages/ModTheSims/Body Shop/Clothing/Female/Mixed Sets - Young Adult/BraBikiniNude_breastfix.package` (6 levels, the cfg mounts 5) | same file |
+| Duplicate file names | 1: `Nikel23 - Interact on sloped terrain.package` in `Packages/` and in `Packages/ModTheSims/.../Recategorisers and Hiders/` | none |
+| Packages > 2 GB | none (largest repack 1.98 GB) | none |
+| Excluded store repacks (docs/07 §2.6) | 4 flagged (test-only `store-repacks-test`, expected) | 4 flagged |
+| SigsCache / DCBackup | both present, ~0 MB | both present, ~0 MB |
+
+Reading: on this install only the duplicate Nikel23 package and the one too-deep package matter in game; the backup's 415 MB of conflict copies and its DCCache line are what a player restoring that folder would carry over.
