@@ -9,7 +9,7 @@
 //   watch.kind "counter": PASS when patches.<watch.counter> rose by at least watch.min within watch.minutes.
 // Steps are agent commands (place_sim, sim_go_home, do_interaction, patches {name:false}, ...), run in order.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -61,6 +61,10 @@ if (set > 0) {
   const sw = Object.fromEntries(process.argv[set + 1].split(',').map(kv => { const [k, v] = kv.split('='); return [k, v !== 'false']; }));
   console.log(`${stamp()} switches ${JSON.stringify(sw)}: ${(await ag('patches', sw)).ok ? 'ok' : 'failed'}`);
 }
+// tell stuck-scan.ts which Sims this repro uses, so it does not report them as new cases
+const ACTIVE = join(ROOT, 'probe-out', 'repro-active.json');
+writeFileSync(ACTIVE, JSON.stringify({ id: r.id, sims: [...new Set([...(r.watch?.sims ?? []), ...(r.steps ?? []).map((x: any) => x.args?.sim).filter(Boolean)])] }));
+process.on('exit', () => rmSync(ACTIVE, { force: true }));
 for (const s of r.steps ?? []) {
   const res = await ag(s.cmd, s.args);
   console.log(`${stamp()} step ${s.cmd} ${JSON.stringify(s.args ?? {})}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`);
