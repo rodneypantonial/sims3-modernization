@@ -131,5 +131,126 @@
       "minutes": 3
     },
     "expect": "unseen homeless townies fade out at once"
+  },
+  {
+    "id": "bp-hogans-pileup",
+    "bug": "Many townies placed on one spot by Hogan's Deep-Fried Diner (bp-mod: 6 of 14 stuck Sims were placed there), then all go home",
+    "fix": "ts3fixes shortcut spot spreading + route-fail fixes (bisect)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 312.4,
+          "z": 1495.7
+        },
+        "optional": true
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Johnny Jones",
+          "x": 312.4,
+          "z": 1496.2
+        },
+        "optional": true
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Lilly-Bo Chique",
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "optional": true
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Marie Desmarais",
+          "x": 312.4,
+          "z": 1497.2
+        },
+        "optional": true
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Suzy Strummer",
+          "x": 312.4,
+          "z": 1497.7
+        },
+        "optional": true
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wayne Bumble",
+          "x": 312.4,
+          "z": 1498.2
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Johnny Jones"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Lilly-Bo Chique"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Marie Desmarais"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Suzy Strummer"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wayne Bumble"
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock",
+        "Johnny Jones",
+        "Lilly-Bo Chique",
+        "Marie Desmarais",
+        "Suzy Strummer",
+        "Wayne Bumble"
+      ],
+      "minutes": 5
+    },
+    "expect": "all six leave (no Sim stuck)",
+    "area": [
+      312.4,
+      1497.0
+    ]
   }
 ]
