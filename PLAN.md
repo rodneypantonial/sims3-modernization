@@ -38,7 +38,8 @@ Route plans per real second rise only because the sim runs faster (same plans pe
    4. Two-level planning for long trips: precomputed lot-to-lot graph plus a short local search; only after 2 and 3, touches native data.
    - Not doing: our own replacement of the native planner (the routing world, i.e. footprints, slots, portals, water, cars, ladders, gangways, elevators, lives in native data; months of work and a high risk of stuck Sims), or a learned/AI route model (paths must be exactly valid; a model cannot guarantee that and would cost more than A* in this 32-bit game). Simple prediction ("this route failed recently") is the failure cache in 2.
    Also: GC tuning (forced collections); underwater lag check in Isla Paradiso (Rodney's report: CPU vs GPU with the stutter profiler while diving).
-6. Later: tests B-E, long-running saves (task 8), store-content test (task 6).
+6. **Long-running saves (task 8)**: research done (`docs/09-save-bloat-research.md`, agent, 2026-10-12): keep Overwatch's default cleanups and turn on Cleanse The Dead for multi-generation saves; memories off or cleared; Regul Save Cleaner on a backup; Save As with rotating names. Own cleanup gaps, ranked: weak NPC-NPC relationships (`Relationship.sAllRelationships`, NPC decay at 0.001x), MiniSims from other worlds with no family links (`MiniSimDescription.sMiniSims`), memory snapshots per NPC, histories of dead/non-resident Sims. First measure bloat per checkpoint (save bytes per resource type, counts via `reflect_get`).
+7. Later: tests B-E, store-content test (task 6).
 
 **How to test (tools):** `cycle.ts --restart` then `ts3probe.py serve --launch` then `cycle.ts --save X`; `profile-world.ts --tag t` (10 min profile incl. stuck Sims) and `profile-compare.mjs a b`; `verify-shortcut.ts --name a,b [--tries N] [--off x,y] [--max-stuck N]` (quick check, max ~5 min).
 
