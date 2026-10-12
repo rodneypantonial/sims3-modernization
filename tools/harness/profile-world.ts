@@ -44,7 +44,7 @@ const stuck: any[] = [];
 async function checkStuck() {
   const r = await ag('sims_activity');
   if (!r.ok) return;
-  const recent: string[] = (await ag('patches')).result?.gohome_recent ?? [];
+  const recent: string[] = (await ag('patches')).result?.recent ?? [];
   for (const sim of r.result) {
     const key = `${sim.x},${sim.z},${sim.interaction},${sim.routing}`;
     const prev = simSeen.get(sim.id);
@@ -52,7 +52,7 @@ async function checkStuck() {
     simSeen.set(sim.id, e);
     if (!e.reported && sim.interaction && e.checks >= (sim.routing ? 3 : 6)) {
       e.reported = true;
-      stuck.push({ ...sim, checks: e.checks, shortcut: recent.some(l => l.startsWith(sim.name + ' -> ')) });
+      stuck.push({ ...sim, checks: e.checks, shortcut: recent.some(l => l.startsWith(sim.name + ' -> ') || l.startsWith(sim.name + ' => ')) });
     }
   }
 }
