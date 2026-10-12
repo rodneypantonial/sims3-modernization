@@ -286,6 +286,14 @@
         "cmd": "reflect_call",
         "args": {
           "path": "Ts3Fixes.Fixes.SaveCleanupCounts"
+        },
+        "waitS": 90,
+        "note": "the game itself still adds relationships and prunes MiniSims for ~1 min after load (2026-10-12: rel 189 -> 264, mini 289 -> 129 within 5 s); count only after it settles"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.SaveCleanupCounts"
         }
       },
       {

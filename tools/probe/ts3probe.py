@@ -220,6 +220,8 @@ class Probe:
             for t in ts:
                 t['stack'] = self.symbols.stack(t['stack'])
             return ts
+        if path == 'net':  # network calls per API and target (start=1 hooks them once); does the game go online while playing?
+            return rpc.net(q.get('start') == '1')
         if path == 'native':  # ts3native.asi counters (route cache), null when the plugin is not loaded
             return rpc.native_counters()
         if path == 'managedstack':  # C# call stack of the sim thread, innermost first (interpreter frames)

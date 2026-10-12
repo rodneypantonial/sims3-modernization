@@ -1,5 +1,5 @@
-// Offload phase 0 (docs/08 §7): how much address space the engine's ResourceCache takes, with and without CC,
-// at CacheBudget 200, 50 and 0 MB. Per variant: close the game, switch CC and the budget with the installer,
+// Offload phase 0 (docs/08 §7): how much address space the engine's ResourceCache takes, with and without CC
+// (store-*: CC plus the Store Updates repacks, a heavy store-content load, test-only), at CacheBudget 200, 50 and 0 MB. Per variant: close the game, switch CC and the budget with the installer,
 // clear caches, launch under the probe, load the save, run N minutes at speed 3 (in-game autopilot holds the speed
 // and clears popups), and sample /rescache + /memory every 10 s into probe-out/phase0/<stamp>/<variant>.csv.
 // Each variant is recorded in the crash ledger. At the end CC and the budget are uninstalled and the game closed.
@@ -21,12 +21,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`${stamp()} ${m}`);
 
-const ALL = ['nocc-200', 'nocc-50', 'nocc-0', 'cc-200', 'cc-50', 'cc-0'];
+const ALL = ['nocc-200', 'nocc-50', 'nocc-0', 'cc-200', 'cc-50', 'cc-0', 'store-200', 'store-50', 'store-0'];
 const variants = values.only ? values.only.split(',').map(s => s.trim()) : ALL;
 for (const v of variants) assert(ALL.includes(v), `unknown variant '${v}' (one of ${ALL.join(', ')})`);
-const parse = (v: string) => ({ cc: v.startsWith('cc-'), mb: Number(v.split('-')[1]) });
-assert.deepEqual(parse('cc-50'), { cc: true, mb: 50 });
-assert.deepEqual(parse('nocc-0'), { cc: false, mb: 0 });
+const parse = (v: string) => ({ cc: !v.startsWith('nocc-'), store: v.startsWith('store-'), mb: Number(v.split('-')[1]) });
+assert.deepEqual(parse('cc-50'), { cc: true, store: false, mb: 50 });
+assert.deepEqual(parse('nocc-0'), { cc: false, store: false, mb: 0 });
+assert.deepEqual(parse('store-200'), { cc: true, store: true, mb: 200 });
 
 const node = (script: string, ...args: string[]) => {
   const cmd = [join(ROOT, script), ...args];
@@ -50,10 +51,11 @@ const cols = ['time', 'elapsedS', 'simMinutes', 'speed', 'commitMB', 'largestFre
   'cacheBudgetMB', 'cacheBytesMB', 'cacheFlushMB', 'cacheEntries', 'animBytesMB', 'error'];
 
 for (const v of variants) {
-  const { cc, mb } = parse(v);
-  log(`=== ${v}: CC ${cc ? 'on' : 'off'}, CacheBudget ${mb} MB`);
+  const { cc, store, mb } = parse(v);
+  log(`=== ${v}: CC ${cc ? 'on' : 'off'}, store repacks ${store ? 'on' : 'off'}, CacheBudget ${mb} MB`);
   node('tools/harness/cycle.ts', '--restart');
   node('tools/setup/install-fixes.ts', cc ? 'install' : 'uninstall', '--only', 'user-cc');
+  node('tools/setup/install-fixes.ts', store ? 'install' : 'uninstall', '--only', 'store-repacks-test');
   node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-budget', '--cache-budget-mb', String(mb));
   node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-clear'); // CAS/compositor caches must match the CC set
   if (values['dry-run']) { log(`would launch the probe, load ${values.save}, sample ${values.minutes} min`); continue; }
@@ -62,7 +64,11 @@ for (const v of variants) {
   const probeLog = openSync(join(out, `${v}-probe.log`), 'a');
   spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port],
     { detached: true, stdio: ['ignore', probeLog, probeLog], cwd: ROOT }).unref();
-  try { log(node('tools/harness/cycle.ts', '--save', values.save).split('\n').at(-1)!); }
+  const tLoad = Date.now();
+  try {
+    log(node('tools/harness/cycle.ts', '--save', values.save).split('\n').at(-1)!);
+    log(`${v}: launch to live mode ${Math.round((Date.now() - tLoad) / 1000)} s`);
+  }
   catch (e) { log(`load failed, next variant: ${(e as Error).message.split('\n')[0]}`); continue; }
   node('tools/harness/crash-ledger.ts', 'snapshot', '--note', `offload phase0 ${v}`);
 
@@ -102,6 +108,6 @@ for (const v of variants) {
 
 log('restoring: closing the game, removing CC and the budget change');
 node('tools/harness/cycle.ts', '--restart');
-node('tools/setup/install-fixes.ts', 'uninstall', '--only', 'user-cc,cache-budget');
+node('tools/setup/install-fixes.ts', 'uninstall', '--only', 'user-cc,store-repacks-test,cache-budget');
 node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-clear');
 log(`done${values['dry-run'] ? ' (dry run)' : `; results in ${out}`}`);

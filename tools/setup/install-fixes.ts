@@ -232,7 +232,8 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => writeFileSync(p, text.replace(re, `$1${mb * 1024 * 1024}`), 'latin1'));
       return true;
     }
-    case 'user-cc': {
+    case 'user-cc':
+    case 'store-repacks-test': {
       // Rodney's CC from the backup, relative paths kept (they fit Resource.cfg's folder depth); exclusions in fixes.json
       const files = (c.include as string[]).flatMap(inc => readdirSync(join(c.source, inc), { recursive: true }).map(String)
         .filter(n => n.toLowerCase().endsWith('.package')).map(n => `${inc}/${n.replace(/\\/g, '/')}`))

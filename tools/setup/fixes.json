@@ -1571,5 +1571,33 @@
     ],
     "default": false,
     "notes": "For offload phase 0 (docs/08 §7): CC content only, copied with its relative paths. Excluded: the three \"Sims 3 Store Updates\" repacks and \"Store Fixes\" (Packages/Sims 3 Store, third-party repack, docs/07 §2.6), the old script and core mods in Packages/ and Overrides/ root and the Pure Scripting Mods folder (superseded by or clashing with the fixes layer: ErrorTrap, Overwatch, simler90 UPDATE197, ld_RandomSimFixes, ld_SmoothPatch), and the old Resource.cfg. Uninstall removes exactly the copied files."
+  },
+  {
+    "id": "store-repacks-test",
+    "name": "Store Updates repacks from the 2026-10-11 backup (heavy store-content test load only)",
+    "author": "third party (see docs/07 §2.6)",
+    "category": "content",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods"
+    },
+    "config": {
+      "source": "D:/Sims3-backup/2026-10-11/Documents-The Sims 3/Mods",
+      "include": [
+        "Packages/Sims 3 Store"
+      ],
+      "exclude": []
+    },
+    "conflictsWith": [],
+    "requires": [
+      "resource-cfg"
+    ],
+    "default": false,
+    "notes": "Test-only, local measurement of a heavy store-content load (Rodney's choice, 2026-10-12): ~5.1 GB, 203,382 resources in three packages plus Store Fixes. Never a fix, never shipped or recommended; store-fixes-g4tw stays excluded. Uninstall removes exactly the copied files."
   }
 ]

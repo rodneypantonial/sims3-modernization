@@ -41,11 +41,12 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 - Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
 
 **Next, in order:**
-2. Save cleanup: run repro `bp-save-cleanup` on the copy `Cleanup-Test-BP` (counts drop, second run ~0, no new stuck Sims, reload clean).
+2. Save cleanup: repro `bp-save-cleanup` **PASS** 2026-10-12 (-266 weak NPC pairs, -9 other-world minis, households and Sims unchanged, second run -0 pairs, save OK, 0 stuck in 5 min; ErrorTrap logged only a vanilla ReadBook carry error and its save-time destroyed-object list). Counts right after load drift (the game itself prunes ~1 min), so the repro now waits 90 s. Open: reload `Cleanup-Test-BP-after` clean (running).
+2b. Online calls (Rodney 2026-10-12): probe `/net` (start=1) hooks ws2_32/wininet/winhttp and counts calls, ms and sim-thread calls per target; first watch from launch through 5 min of play running. Store, telemetry, Connect TNS and featured-items download are already off (Options.ini, S3SS).
 3. Native route cache: enable on a test run, repro with `sim_route_to` to an unreachable point (hits counted, no stuck Sims), then compare route ms/s.
-4. Underwater lag in Isla Paradiso: fill `ip-underwater-lag` (dive-lot point from `list_lots`), profile diving vs land.
+4. Heavy store content (Rodney 2026-10-12: general issues like too many store packs come before niche ones): run offload Phase 0 (`tools/harness/offload-phase0.ts`, docs/08 §7) with a large store set vs none: load time, address space, hitches, catalog/CAS lag, `CacheBudget` 200/50/0; then fixes where it hurts (Performance Patch `StblBucketLayoutTuning`/`PackageIndexWarmup`, cache budget, package merging). Needs a large store-content set to test with (open question to Rodney).
 5. Milestone: full per-world profiles with everything on (`run-check.mjs` gate) and the updated results table; then mark `native-patches` default on.
-6. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, 14), route search off the sim thread (docs/11), tests B-E, store-content test.
+6. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, 14), route search off the sim thread (docs/11), tests B-E; underwater lag in Isla Paradiso (`ip-underwater-lag`, low priority per Rodney).
 
 **How we test:**
 - Each fix gets a repro: a trigger action in the agent (`place_sim`, `sim_go_home`, `sim_visit_lot`, `sim_route_to`) plus an entry in `tools/harness/repros.json`; run with `repro.ts run <id>`, several at once with `run-many` (areas 150 m apart, no shared Sims).

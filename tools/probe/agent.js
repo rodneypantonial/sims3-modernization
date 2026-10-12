@@ -262,7 +262,58 @@ function mailboxReply(seq) {
   return JSON.parse(p.add(MBX.header + MBX.reqCap).readUtf8String(len));
 }
 
+// Network watch (opt-in, /net?start=1): does the game still go online during play, and does it block? Counts calls,
+// total and worst ms per API and target, and how many ran on the sim thread. Only the system DLLs are hooked (the
+// ASI loader's wininet.dll proxy forwards to them).
+const NET_APIS = {
+  'ws2_32.dll': ['connect', 'getaddrinfo', 'gethostbyname', 'GetAddrInfoW'],
+  'wininet.dll': ['InternetOpenA', 'InternetOpenW', 'InternetConnectA', 'InternetConnectW', 'InternetOpenUrlA', 'InternetOpenUrlW',
+    'HttpSendRequestA', 'HttpSendRequestW', 'InternetReadFile', 'InternetGetConnectedState'],
+  'winhttp.dll': ['WinHttpConnect', 'WinHttpSendRequest', 'WinHttpReceiveResponse', 'WinHttpGetIEProxyConfigForCurrentUser'],
+};
+const net = { started: null, hooked: [], calls: {} };
+function netTarget(api, args) {
+  try {
+    if (api === 'connect') {
+      const sa = args[1];
+      if (sa.readU16() !== 2) return 'af ' + sa.readU16(); // AF_INET only
+      return [0, 1, 2, 3].map(i => sa.add(4 + i).readU8()).join('.') + ':' + ((sa.add(2).readU8() << 8) | sa.add(3).readU8());
+    }
+    if (api === 'getaddrinfo' || api === 'gethostbyname') return args[0].readCString();
+    if (api === 'GetAddrInfoW' || api === 'InternetOpenUrlW' || api === 'InternetConnectW') return args[api === 'GetAddrInfoW' ? 0 : 1].readUtf16String();
+    if (api === 'InternetOpenUrlA' || api === 'InternetConnectA') return args[1].readCString();
+    if (api === 'WinHttpConnect') return args[1].readUtf16String();
+  } catch (e) { return '?'; }
+  return '';
+}
+function netStart() {
+  if (net.started) return;
+  net.started = Date.now();
+  for (const [dll, apis] of Object.entries(NET_APIS)) {
+    const m = Process.findModuleByName(dll); // system DLLs only; a module not loaded yet is simply not watched
+    if (m === null || !/\\(system32|syswow64)\\/i.test(m.path)) continue;
+    for (const api of apis) {
+      const f = m.findExportByName(api);
+      if (f === null) continue;
+      Interceptor.attach(f, {
+        onEnter(args) { this.t = Date.now(); this.key = api + ' ' + netTarget(api, args); this.sim = Process.getCurrentThreadId() === simTid; }, // set once /simstack found it
+        onLeave() {
+          const ms = Date.now() - this.t, c = net.calls[this.key] ??= { n: 0, ms: 0, maxMs: 0, onSimThread: 0 };
+          c.n++; c.ms += ms; c.maxMs = Math.max(c.maxMs, ms); if (this.sim) c.onSimThread++;
+        },
+      });
+      net.hooked.push(dll + '!' + api);
+    }
+  }
+}
+
 rpc.exports = {
+  net(start) {
+    if (start) netStart();
+    return { since: net.started && Math.round((Date.now() - net.started) / 1000), hooked: net.hooked.length, calls: net.calls,
+             loaded: Object.keys(NET_APIS).filter(d => Process.findModuleByName(d) !== null) };
+  },
+
   // ts3native.asi counters (docs/15): route cache calls/hits/misses/stored, null when the plugin is not loaded
   nativeCounters() {
     const c = Module.findExportByName('ts3native.asi', 'ts3native_counters');
