@@ -206,3 +206,17 @@ Reading:
 - **The ResourceCache passes its 200 MB budget** in both runs (421 and 513 MB); the budget is not what limits it, as Phase 0 found before [verified].
 - The sim ran ~9% slower with the store set; one run each, so treat as a hint, not a result [inferred].
 - Next: split load time (launch -> menu vs menu -> live, M1) and warm vs cold caches (M2) to find where the 45 s go; the Performance Patch run (M8) needs its manual Nexus download (mods/235, not in `~/Downloads/ts3-fixes`).
+
+### 6b. Load split, cold vs warm (2026-10-12, `--only nocc-200,store-200,store-200 --minutes 2`)
+
+`cycle.ts` timings per stage; "menu scan" = from the agent answering until the "Mod Scripts Found" dialog appears and the menu is quiet (the game is still scanning content) [verified]. Data: `probe-out/phase0/2026-10-12T16-30-07/`.
+
+| | launch -> menu | menu scan | world load | to live | total | ResourceCache peak |
+|---|---|---|---|---|---|---|
+| no CC, cold | 46 s | 11 s | 22 s | 5 s | **84 s** | 389 MB |
+| CC + store, cold | 50 s | 23 s | 32 s | 8 s | **113 s** (+29 s) | 501 MB |
+| CC + store, warm | 51 s | 25 s | 28 s | 0 s | **104 s** (+20 s) | 518 MB |
+
+- Store content costs ~+12 s in the menu scan and +6 to +10 s in the world load; launch to menu barely moves (+4 s).
+- Warm caches save ~9 s, mostly in the world load; clearing caches every launch is not worth it (confirms docs/17 M2).
+- The earlier 80 vs 125 s (§6) included different dialog timing; these split numbers are the reference.
