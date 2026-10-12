@@ -41,7 +41,8 @@ const runs = tags.map(full => {
   const stacks = lines(find(`${tag}-simstack.jsonl`, `simstack-${tag}.jsonl`)).map(l => JSON.parse(l).stack ?? []);
   const interp = stacks.filter(s => s.some(f => /FUN_00e53eb0/.test(f))).length, interpTop = stacks.filter(s => /FUN_00e53eb0/.test(s[0] ?? '')).length;
   const gcTop = stacks.filter(s => /FUN_00e4c3e0/.test(s[0] ?? '')).length;
-  return { tag: full, sum, n, rows, managed, busy, incl, self, stacks, interp, interpTop, gcTop };
+  const has = k => head.includes(k); // runs before the stage buckets (docs/04 F17) lack those columns
+  return { tag: full, sum, n, has, rows, managed, busy, incl, self, stacks, interp, interpTop, gcTop };
 });
 
 row('', tags);
@@ -54,7 +55,12 @@ row('routes/s', runs.map(r => (r.sum('routes') / r.n).toFixed(1)));
 row('route fail %', runs.map(r => pct(r.sum('routeFails'), r.sum('routes'))));
 row('gc mark / forced ms/s', runs.map(r => `${(r.sum('gcMark') / r.n).toFixed(1)}/${(r.sum('gcForcedMs') / r.n).toFixed(1)}`));
 row('forced gcs / max forced ms', runs.map(r => `${r.sum('gcForced')}/${Math.max(0, ...r.rows.map(x => x.maxGcMarkMs)).toFixed(0)}`));
-row('script ms/s (outside hooks)', runs.map(r => (r.sum('script') / r.n).toFixed(1)));
+const stage = k => runs.map(r => r.has(k) ? (r.sum(k) / r.n).toFixed(1) : '-');
+row('stage ms/s: ScriptTick (0xD80BC0)', stage('script'));
+row('stage ms/s: TaskObjects', stage('taskObjects'));
+row('stage ms/s: OneShotObjects', stage('oneShot'));
+row('stage ms/s: ThreadedObjects', stage('threaded'));
+row('worst TaskObjects call ms', runs.map(r => r.has('maxTaskObjectsMs') ? Math.max(0, ...r.rows.map(x => x.maxTaskObjectsMs)).toFixed(0) : '-'));
 row('native samples with interpreter on stack %', runs.map(r => pct(r.interp, r.stacks.length)));
 row('native top frame interpreter / GC area %', runs.map(r => `${pct(r.interpTop, r.stacks.length)}/${pct(r.gcTop, r.stacks.length)}`));
 row('managed samples / idle %', runs.map(r => `${r.managed.length}/${pct(r.managed.length - r.busy.length, r.managed.length)}`));

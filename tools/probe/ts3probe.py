@@ -124,6 +124,9 @@ class Probe:
     def on_message(self, message, data):
         if message['type'] == 'send' and message['payload'].get('type') == 'event':
             self.log(message['payload']['event'])
+        elif message['type'] == 'send' and message['payload'].get('type') == 'taskstall':  # one line per stage stall (docs/04 F17)
+            with self.lock, open(self.out.parent / f'{self.out.name}-taskstall.jsonl', 'a', encoding='utf-8') as f:
+                f.write(json.dumps(message['payload']['stall']) + '\n')
         elif message['type'] == 'error':
             self.log({'kind': 'agent-error', 'description': message.get('description'), 'stack': []})
 
@@ -227,6 +230,9 @@ class Probe:
             return rpc.native_counters(int(rw) if rw in ('0', '1') else None, int(rb) if rb in ('0', '1') else None)
         if path == 'routelock':  # routing-lock hold/wait and plan overlap (docs/18 step 1a); start=1 hooks once, stop=1 unhooks
             return rpc.route_lock(q.get('start') == '1', q.get('stop') == '1')
+        if path == 'taskstall':  # scheduler-stage stalls >= ms with task + managed stack samples (docs/04 F17); start=1 hooks, stop=1 unhooks.
+            # S3PP's SimulatorStageProfiler detours the same functions: turn it off first. Records go to probe-out/<session>-taskstall.jsonl.
+            return rpc.task_stall(q.get('start') == '1', q.get('stop') == '1', int(q.get('ms', 0)), int(q.get('sample', 0)), int(q.get('n', 10)))
         if path == 'managedstack':  # C# call stack of the sim thread, innermost first (interpreter frames)
             return rpc.interp_stack(int(q.get('frames', 64)))
         if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)

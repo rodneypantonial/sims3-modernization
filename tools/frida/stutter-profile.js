@@ -1,6 +1,9 @@
 // Sim-thread stutter profiler for TS3W.exe (Steam build, SHA-256 10b2423e...0609).
 // Times what the simulation loop (MonoScriptHost::Simulate, 0xD81840) spends per iteration:
-// script tick, route searches, GC stop-the-world marking, finalizers, catch-up steps.
+// script tick, route searches, GC stop-the-world marking, finalizers, catch-up steps, and the four scheduler seams
+// (ScriptTick 0xD80BC0, TaskObjects 0xD7FC60, OneShotObjects 0xD74800, ThreadedObjects 0xD7F8B0; docs/04 F17) as
+// separate buckets, so each hitch is split by stage. S3PP's SimulatorStageProfiler detours the same prologues: turn it
+// off in Sims3Performance.ini while profiling (the byte check refuses to hook a detoured prologue).
 // Addresses and reasons: docs/04-re-findings.md.
 //
 // Run (game already in Live mode):
@@ -15,6 +18,10 @@ const HOOKS = {
   // name: [address, expected first bytes]
   simulate: [0xd81840, '81 ec 88 00 00 00 53 55'],
   scriptTick: [0xd80bc0, '55 8b ec 83 e4 f8 81 ec'],
+  // the other scheduler seams, siblings of scriptTick inside Simulate (docs/04 F17); each runs at most once per iteration
+  taskObjects: [0xd7fc60, '55 8b ec 83 e4 f8 83 ec'],
+  oneShot: [0xd74800, '83 ec 10 53 55 56 57 8b'],
+  threaded: [0xd7f8b0, '55 8b ec 83 e4 f8 81 ec'],
   catchUpSteps: [0xd70730, '83 ec 1c 53 55 56 57 89'],
   gcTryToCollect: [0xe4a050, '83 3d 94 30 1f 01 00 74'],
   gcStoppedMark: [0xe49980, '51 e8 1a 78 00 00 a1 60'],
@@ -44,12 +51,14 @@ function now() { qpc(qbuf); return Number(qbuf.readS64()) / ticksPerMs; }
 // --- per-iteration and per-second accumulators (sim thread only, except routeOtherThreads) ---
 function blankIter() {
   return { script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0, gcForcedMs: 0, fin: 0, finRun: 0,
-           steps: 0, route: 0, routeSearch: 0, routes: 0, routeFails: 0, byEntry: {} };
+           steps: 0, route: 0, routeSearch: 0, routes: 0, routeFails: 0, byEntry: {},
+           taskObjects: 0, oneShot: 0, threaded: 0 };
 }
 function blankSecond() {
   return { iters: 0, maxIterMs: 0, hitches: 0, script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0,
            gcForcedMs: 0, maxGcMarkMs: 0, fin: 0, finRun: 0, maxSteps: 0, route: 0, routeSearch: 0, routes: 0,
-           routeFails: 0, maxRouteMs: 0, routeOtherThreads: 0 };
+           routeFails: 0, maxRouteMs: 0, routeOtherThreads: 0,
+           taskObjects: 0, oneShot: 0, threaded: 0, maxTaskObjectsMs: 0 }; // new columns go last: readers use the header
 }
 let simThread = null;
 let iter = blankIter();
@@ -78,7 +87,7 @@ function endIteration(t) {
   sec.iters++;
   sec.maxIterMs = Math.max(sec.maxIterMs, wall);
   for (const k of ['script', 'gcMark', 'gcMarks', 'gcAborted', 'gcForced', 'gcForcedMs', 'fin', 'finRun',
-                   'route', 'routeSearch', 'routes', 'routeFails']) sec[k] += iter[k];
+                   'route', 'routeSearch', 'routes', 'routeFails', 'taskObjects', 'oneShot', 'threaded']) sec[k] += iter[k];
   sec.maxSteps = Math.max(sec.maxSteps, iter.steps);
   if (wall >= cfg.hitchMs) {
     sec.hitches++;
@@ -99,7 +108,9 @@ function flushSecond(t) {
   if (sec.hitches > 0 || sec.maxIterMs > cfg.hitchMs)
     console.log(`[ts3prof] ${sec.iters} it/s, max ${round(sec.maxIterMs)} ms, hitches ${sec.hitches}, ` +
       `routes ${sec.routes} (${sec.routeFails} failed, ${round(sec.route)} ms), gc ${round(sec.gcMark)} ms ` +
-      `(${sec.gcAborted} aborted, ${sec.gcForced} forced ${round(sec.gcForcedMs)} ms), fin ${round(sec.fin)} ms`);
+      `(${sec.gcAborted} aborted, ${sec.gcForced} forced ${round(sec.gcForcedMs)} ms), fin ${round(sec.fin)} ms, ` +
+      `stages tick ${round(sec.script)} task ${round(sec.taskObjects)} (max ${round(sec.maxTaskObjectsMs)}) ` +
+      `oneShot ${round(sec.oneShot)} threaded ${round(sec.threaded)} ms`);
   sec = blankSecond();
   secStart = t;
 }
@@ -109,7 +120,8 @@ function addr(name) {
   const [a, expect] = HOOKS[name];
   const p = ptr(a);
   const got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
-  if (got !== expect) throw new Error(`${name} @ ${p}: bytes ${got}, expected ${expect}. Different TS3W.exe build?`);
+  if (got !== expect) throw new Error(`${name} @ ${p}: bytes ${got}, expected ${expect}. ` +
+    (got.startsWith('e9') ? 'Detoured by another plugin (S3PP SimulatorStageProfiler? turn it off).' : 'Different TS3W.exe build?'));
   return p;
 }
 
@@ -123,7 +135,8 @@ function timed(name, onDone, onEnterExtra) {
 function install() {
   const mod = Process.getModuleByName('TS3W.exe');
   if (!mod.base.equals(ptr(0x400000))) throw new Error(`TS3W.exe loaded at ${mod.base}, expected 0x400000`);
-  addr('simulate'); // only verified, never hooked: it loops forever
+  for (const name of Object.keys(HOOKS)) addr(name); // check every prologue before the first attach: all or nothing
+  // simulate is only verified, never hooked: it loops forever
 
   // One GC_try_to_collect call per Simulate iteration: use its entry as the iteration boundary.
   Interceptor.attach(addr('gcTryToCollect'), {
@@ -152,6 +165,13 @@ function install() {
   timed('scriptTick', function (ms) {
     if (Process.getCurrentThreadId() === simThread) iter.script += ms;
   });
+  for (const stage of ['taskObjects', 'oneShot', 'threaded']) {
+    timed(stage, function (ms) {
+      if (Process.getCurrentThreadId() !== simThread) return;
+      iter[stage] += ms;
+      if (stage === 'taskObjects') sec.maxTaskObjectsMs = Math.max(sec.maxTaskObjectsMs, ms);
+    });
+  }
 
   Interceptor.attach(addr('catchUpSteps'), {
     onEnter(args) { if (Process.getCurrentThreadId() === simThread) iter.steps += args[0].toInt32(); },

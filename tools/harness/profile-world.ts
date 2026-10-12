@@ -1,5 +1,7 @@
 // One profiling run on a loaded world, the same for every world so results compare:
-//   node tools/harness/profile-world.ts --tag sv [--minutes 10] [--ab gohome,visit,... --slice 2]
+//   node tools/harness/profile-world.ts --tag sv [--minutes 10] [--ab gohome,visit,... --slice 2] [--taskstall 250]
+// --taskstall MS: also run the probe's /taskstall watch (docs/04 F17; S3PP SimulatorStageProfiler must be off); stalls go to
+// probe-out/<probe session>-taskstall.jsonl.
 // Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). For the whole run:
 // autopilot at x3 with popups cleared, keep_alive + decline_requests every 30 s, and the native stutter profiler
 // (separate Frida session). Samplers in turn: managed C# stack (minutes 1-4), native sim-thread stack (5-8).
@@ -13,7 +15,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'profile');
@@ -33,6 +35,7 @@ if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode:
 console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
+if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
 const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
   '-P', JSON.stringify({ out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50 }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -102,6 +105,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 await Promise.all([upkeep, profDone, toggler]);
+if (values.taskstall) { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); }
 if (abNames.length) { writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
 if (stuck.length) await reproSave(ag, values.tag!, stuck);
