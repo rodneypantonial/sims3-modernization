@@ -3,7 +3,7 @@
 Python, not TypeScript, because Frida's Python bindings are already installed (pip frida-tools);
 the Node binding is a native npm module. Standard library otherwise.
 
-  python tools/probe/ts3probe.py serve [--launch] [--world X.sims3] [--profile] [--port 47891]
+  python tools/probe/ts3probe.py serve [--launch [--env NAME=VALUE ...]] [--world X.sims3] [--profile] [--port 47891]
   python tools/probe/ts3probe.py get status|threads|memory|rescache|modules|events|scripterrors
   python tools/probe/ts3probe.py get "read?addr=0xd81840&len=32"
   python tools/probe/ts3probe.py get "agent?cmd=ping"        (in-game ts3agent mod, see mods/ts3agent)
@@ -90,7 +90,10 @@ class Probe:
             cmd.append(f'-worldFile:{self.args.world}')
         cmd += self.args.extra or []
         print(f'[ts3probe] launching {cmd}', flush=True)
-        subprocess.Popen(cmd, cwd=GAME_BIN)
+        env = dict(os.environ, **dict(e.split('=', 1) for e in self.args.env))
+        if self.args.env:
+            print(f'[ts3probe] game environment: {self.args.env}', flush=True)
+        subprocess.Popen(cmd, cwd=GAME_BIN, env=env)
         for _ in range(120):  # the exe may hand over to another instance; wait for the process by name
             try:
                 return frida.attach('TS3W.exe')
@@ -328,6 +331,7 @@ def main():
     sub = ap.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('serve')
     s.add_argument('--launch', action='store_true', help='start TS3W.exe first')
+    s.add_argument('--env', action='append', default=[], metavar='NAME=VALUE', help='environment for the launched game, e.g. GC_INITIAL_HEAP_SIZE=536870912 (docs/13)')
     s.add_argument('--world', help='save to auto-load, e.g. Baseline-SV.sims3 (passed as -worldFile)')
     s.add_argument('--profile', action='store_true', help='also load the stutter profiler')
     s.add_argument('--exception-stacks', action='store_true',
