@@ -252,5 +252,28 @@
       312.4,
       1497.0
     ]
+  },
+  {
+    "id": "ip-underwater-lag",
+    "bug": "Rodney's report: lag while scuba diving in Isla Paradiso; CPU (sim thread) or GPU?",
+    "fix": "to measure first: stutter profiler while diving vs on land",
+    "save": "Baseline-IP",
+    "area": null,
+    "steps": [
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 0,
+          "z": 0
+        },
+        "note": "TODO: a point in the water area of a dive lot (CommercialLotSubType kEP10_Diving; find with list_lots in Isla Paradiso); the Sim enters the scuba posture on its own when its route reaches the dive area"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 5
+    },
+    "expect": "measure hitches/iterations while diving (profile-world --minutes 5) and compare with land; then fix if sim-side"
   }
 ]

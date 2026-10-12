@@ -35,7 +35,7 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 2. GC: adopt the heap change if the A/B shows fewer hitches with enough free address space (docs/13).
 3. Route failures, native part: negative cache at `Route_PlanLocked` 0x82C6E0 in `ts3native` (docs/11).
 4. Expansion travel: virtual-home trips done; station detours done; apartments covered; elevators and boats not hooked (docs/10).
-5. Underwater lag check in Isla Paradiso (repro: active Sim scuba at a dive spot).
+5. Underwater lag check in Isla Paradiso: repro `ip-underwater-lag` drafted (diving starts when the active Sim's route enters a dive lot's water, so the trigger is `go_here` to a point there; fill the point from `list_lots` at the next Isla Paradiso load, then profile diving vs land). Native route cache (phase 2 of `ts3native`) being written by an agent, off by default.
 6. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, docs/14), tests B-E, store-content test.
 
 **How we test:**
