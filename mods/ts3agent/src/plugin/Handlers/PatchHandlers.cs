@@ -155,8 +155,9 @@ namespace Ts3Agent
             r["backoff_plans"] = c[24]; r["backoff_failures"] = c[25]; r["backoff_shortcuts"] = c[26]; // skipped plans
             r["virtualhome_runs"] = c[27]; r["virtualhome_shortcuts"] = c[28];
             r["failreplan_off"] = c[29]; r["failreplan_shortcuts"] = c[30]; // route-fail walks skipped
-            r["watchdog_shortcuts"] = c[31]; // stuck Sims reset
+            r["watchdog_shortcuts"] = c[31]; // stuck Sims reset or faded
             if (c.Length > 32) r["stations_shortcuts"] = c[32]; // station detours skipped
+            if (c.Length > 36) { r["watchdog_home_none"] = c[33]; r["watchdog_home_shell"] = c[34]; r["watchdog_home_house"] = c[35]; r["watchdog_second"] = c[36]; } // watchdog home kinds (none = faded), second resets in a day
             if (c.Length > 43) { r["savecleanup_pairs"] = c[40]; r["savecleanup_minisims"] = c[41]; r["savecleanup_runs"] = c[42]; r["savecleanup_skipped"] = c[43]; }
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");

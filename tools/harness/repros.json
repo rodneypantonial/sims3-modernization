@@ -526,5 +526,55 @@
       "minutes": 1
     },
     "expect": "cas_state timings: one entry per open/category/close with sync_ms, ms (until the list stops changing), items and settled=true; state back to LiveModeState; no script errors. A step that answers 'still being timed' means its waitS was too short."
+  },
+  {
+    "id": "bp-apartment-gohome",
+    "bug": "Townies living in Bridgeport shell apartments stand stuck in Go Home (GoHomeHook skips BuildableShells homes; elevator rides at the home)",
+    "fix": "docs/12 §5.3 fix 1 (watchdog: home-kind logging, second reset at a new spot, fade for homeless/virtual townies), then fix 2 if confirmed",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 411.9,
+          "z": 1344.0
+        }
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wayne Bumble",
+          "x": 412.9,
+          "z": 1345.0
+        }
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wayne Bumble"
+        }
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock",
+        "Wayne Bumble"
+      ],
+      "minutes": 5
+    },
+    "expect": "both reach their home lot (The Tidewater, The Simerset) or are reset onto it by the watchdog (recent/moved show 'watchdog reset [shell apartment ...]', watchdog_home_shell > 0); none stuck on Waylon's Haunt or in an elevator line. Run with --set watchdog=false for the vanilla baseline.",
+    "area": [
+      411.9,
+      1344.0
+    ]
   }
 ]

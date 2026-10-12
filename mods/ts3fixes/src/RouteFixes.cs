@@ -11,7 +11,9 @@ using Sims3.SimIFace;
 namespace Ts3Fixes
 {
     // Routing fixes from docs/10, 11 and 12. Counters: [27] virtual-home runs, [28] virtual-home fades, [29] obstacle
-    // replans switched off, [30] route-fail walks skipped, [31] stuck Sims reset by the watchdog, [32] station detours skipped.
+    // replans switched off, [30] route-fail walks skipped, [31] stuck Sims reset or faded by the watchdog, [32] station
+    // detours skipped. Watchdog home kinds: [33] none or virtual (faded), [34] shell apartment, [35] house; [36] second
+    // resets in one sim-day.
     public static partial class Fixes
     {
         static void ApplyRouteFixes()
@@ -101,10 +103,13 @@ namespace Ts3Fixes
 
         // Watchdog for stuck townies (docs/12): an unseen townie that has not moved for 60 sim-minutes while going home
         // (GoHome, GoToVirtualHome or its internal step), or for 120 sim-minutes while routing anywhere (two Sims blocking
-        // each other in a doorway wait it out forever otherwise), gets the game's own Sim.SetToResetAndSendHome(). At most
-        // once per Sim per sim-day, so a Sim that gets stuck again on the way home is not reset in a loop. Checks every
+        // each other in a doorway wait it out forever otherwise), gets the game's own Sim.SetToResetAndSendHome(). A townie
+        // without a household home lot (homeless or virtual resident; not tourists or aliens) is faded out and removed
+        // instead, the end state of the game's own GoToVirtualHome, since a send-home reset can drop it on the corner of the
+        // lot it is stuck on (docs/12 §5.1). Once per Sim per sim-day, plus one more that day only if it is stuck again
+        // more than 10 m from the first spot, so a Sim stuck again on the way home is not reset in a loop. Checks every
         // 10 sim-minutes while a world is loaded.
-        const float kStuckGoHomeMinutes = 60f, kStuckRoutingMinutes = 120f, kWatchMinutes = 10f;
+        const float kStuckGoHomeMinutes = 60f, kStuckRoutingMinutes = 120f, kWatchMinutes = 10f, kSecondResetMeters = 10f;
 
         public static void StartWatchdog()
         {
@@ -115,7 +120,8 @@ namespace Ts3Fixes
         {
             struct Seen { public Vector3 Pos; public long Since; }
             readonly Dictionary<ulong, Seen> mSeen = new Dictionary<ulong, Seen>();
-            readonly Dictionary<ulong, long> mLastReset = new Dictionary<ulong, long>();
+            struct Reset { public long At; public Vector3 Pos; public int Count; }
+            readonly Dictionary<ulong, Reset> mLastReset = new Dictionary<ulong, Reset>();
 
             public override void Simulate()
             {
@@ -144,14 +150,25 @@ namespace Ts3Fixes
                     Seen seen;
                     if (!mSeen.TryGetValue(id, out seen) || (s.Position - seen.Pos).Length() > 1f)
                         seen = new Seen { Pos = s.Position, Since = now };
-                    long last;
-                    bool resetToday = mLastReset.TryGetValue(s.SimDescription.SimDescriptionId, out last) && now - last < day && last <= now;
-                    if (!resetToday && now - seen.Since >= (home ? goHome : routing))
+                    Reset last;
+                    bool today = mLastReset.TryGetValue(s.SimDescription.SimDescriptionId, out last) && now - last.At < day && last.At <= now;
+                    bool second = today && last.Count == 1 && (s.Position - last.Pos).Length() > kSecondResetMeters;
+                    if ((!today || second) && now - seen.Since >= (home ? goHome : routing))
                     {
-                        PatchCounters()[31]++;
-                        mLastReset[s.SimDescription.SimDescriptionId] = now;
-                        ShortcutLog(s.FullName + " -> reset and sent home (stuck on " + cur.GetType().Name + ")");
-                        s.SetToResetAndSendHome();
+                        int[] c = PatchCounters();
+                        c[31]++;
+                        if (second) c[36]++;
+                        mLastReset[s.SimDescription.SimDescriptionId] = new Reset { At = second ? last.At : now, Pos = s.Position, Count = second ? 2 : 1 };
+                        Lot lot = s.LotHome;
+                        string kind = lot == null ? "none/virtual" : lot.BuildableShells.Length > 0 ? "shell apartment" : "house";
+                        c[lot == null ? 33 : lot.BuildableShells.Length > 0 ? 34 : 35]++;
+                        Household hh = s.Household;
+                        bool fade = lot == null && hh != null && !hh.IsTouristHousehold && !hh.IsAlienHousehold;
+                        string what = "watchdog " + (fade ? "faded" : "reset") + (second ? " (2nd)" : "") + " [" + kind + (lot != null ? " " + lot.Name : "") + "] stuck on " + cur.GetType().Name;
+                        ShortcutLog(s.FullName + " -> " + what);
+                        MovedSims()[s.FullName] = what + " @" + Math.Round(s.Position.x, 1) + "," + Math.Round(s.Position.z, 1) + " " + SimClock.CurrentTime().ToString();
+                        if (fade) s.FadeOut(false, true); // fade, then the alarm destroys the Sim, as GoToVirtualHome ends unseen trips
+                        else s.SetToResetAndSendHome();
                         continue;
                     }
                     keep[id] = seen;
