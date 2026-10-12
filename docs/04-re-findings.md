@@ -108,3 +108,12 @@ Rank = expected stutter gain × confidence ÷ effort. "Not done by" lists S3SS, 
 - Dominant cost per hitch: route 270, GC 89, **unaccounted 1,995**. The profiler's script hook (`0xD80BC0`) sees only 12 ms/s, less than the route time that runs inside scripts, so it does not cover most script execution; the unaccounted part is script and native work inside the iteration that no hook times.
 
 Consequences: (1) a route-*failure* cache alone targets ~2% of plans; the cost is mostly successful searches, so the routing fix should move searches off the sim thread or make fewer of them; (2) the largest bucket is still unidentified: next, sample the sim thread's stack (`/simstack`) during hitches to rank the unaccounted time.
+
+## F6. Scripts run in the Mono *interpreter*; it is the largest sim-thread cost [verified 2026-10-12]
+
+- TS3W.exe embeds only Mono's interpreter ("mint"): strings `..\..\mono\mono\interpreter\interp.c`, `mintops.c`, `transform.c` ("transform.c: Unimplemented opcode ..."), `MINT_JMP ...`; no `mini`/JIT strings at all. All C# game and mod code is interpreted.
+- `FUN_00e53eb0` (4,400 lines decompiled, `game-copy/analysis/decomp/gc-hot.c`, references `interp.c`) is the interpreter's main loop (`ves_exec_method_with_context`). Called via `0xe59fd0` and `0xd7f000`.
+- Sampling the sim thread's top frame through `/simstack` (676 samples over 3 min, Bridgeport, x3; `probe-out/profile/simstack-bp.jsonl`): **29.7% in `FUN_00e53eb0`**, 6.1% in `FUN_00e4c3e0` (GC area, called from the per-frame GC path `0xe4d270`/`0xe4d460`), 5.0% in `FUN_004e5e40`, 7.5% in ntdll (waits/locks), the rest spread thin. The interpreter's callees (internal calls, allocation) come on top of the 29.7%.
+- This explains F5's "unaccounted" hitch time: it is mostly interpreted script work that the profiler's hooks do not time.
+
+Consequences: the biggest stutter lever is script execution cost. Options, roughly by effort: (1) find the hot C# methods (managed sampler: read the interpreter's `ThreadContext.current_frame` chain on the sim thread and name each frame's method) and slim those down through the patch host or move them to native internal calls; (2) cut how often the hot paths run (autonomy, routing callbacks); (3) speed up the interpreter itself (dispatch, hot opcode paths) or compile hot methods natively, a large project. A full JIT swap (newer Mono) is not realistic for a 32-bit exe with EA's embedding.
