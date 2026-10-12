@@ -114,6 +114,8 @@ class Probe:
             prof.exports_sync.init('late', {'out': str(self.out / 'profile').replace('\\', '/')})
         threading.Thread(target=self.watch_script_errors, daemon=True).start()
         threading.Thread(target=self.sample_memory, daemon=True).start()
+        if sys.platform == 'win32':
+            threading.Thread(target=self.keep_window_place, daemon=True).start()
         print(f'[ts3probe] attached; serving http://127.0.0.1:{self.args.port}; events in {self.out}', flush=True)
 
     def on_message(self, message, data):
@@ -150,6 +152,43 @@ class Probe:
                 except Exception:
                     pass  # game busy or gone; the detach handler reports that
                 time.sleep(self.args.memory_interval)
+
+    def keep_window_place(self):
+        """Puts the game window where it was last time (the game centers it on start), so tests can run beside other work.
+        The position is saved whenever it changes; on start the window is moved back while it still sits where the game put it."""
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        place = ROOT / 'probe-out' / 'window.json'
+        saved = json.loads(place.read_text()) if place.exists() else None
+        pid = frida.get_local_device().get_process('TS3W.exe').pid
+
+        def game_window():
+            found = []
+            def cb(h, _):
+                p = wintypes.DWORD()
+                u.GetWindowThreadProcessId(h, ctypes.byref(p))
+                r = wintypes.RECT()
+                if p.value == pid and u.IsWindowVisible(h) and not u.IsIconic(h) and u.GetWindowRect(h, ctypes.byref(r)):
+                    found.append(((r.right - r.left) * (r.bottom - r.top), h, r.left, r.top))
+                return True
+            u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(cb), 0)
+            return max(found, default=None)
+
+        first, t0 = None, None
+        while self.alive:
+            w = game_window()
+            if w and w[0] > 200 * 200:
+                _, h, x, y = w
+                if first is None:
+                    first, t0 = (x, y), time.time()
+                if saved and (x, y) == first and (x, y) != (saved['x'], saved['y']) and time.time() - t0 < 120:
+                    u.SetWindowPos(h, 0, saved['x'], saved['y'], 0, 0, 0x1 | 0x4 | 0x10)  # NOSIZE | NOZORDER | NOACTIVATE
+                elif (x, y) != first and (not saved or (x, y) != (saved['x'], saved['y'])):
+                    saved = {'x': x, 'y': y}  # moved by Rodney (or by us, then equal to saved): remember it
+                    place.parent.mkdir(exist_ok=True)
+                    place.write_text(json.dumps(saved))
+            time.sleep(2)
 
     def watch_script_errors(self):
         """The game writes one ScriptError_*.xml per script exception, with the managed stack trace inside."""
