@@ -4,9 +4,10 @@
 //   node tools/harness/cycle.ts --save X.sims3   wait for the agent, load the save, end in live mode
 // Windows-only by nature (TS3W.exe, taskkill).
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
@@ -48,9 +49,21 @@ if (values.restart) {
   mkdirSync(pkgs, { recursive: true });
   // rebuild first: a plugin change that was only hot-reloaded would otherwise be lost on relaunch
   execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'build-agent.ts')], { stdio: 'ignore' });
-  for (const p of ['ts3agent.package', 'ts3-nointro.package']) copyFileSync(join(ROOT, 'build', p), join(pkgs, p));
-  rmSync(join(USER_DIR, 'scriptCache.package'), { force: true });
-  log('game closed, packages installed, script cache cleared; now start: python tools/probe/ts3probe.py serve --launch');
+  // the game does not notice changed script mods, but rebuilding the cache costs startup time: clear it only when the
+  // agent source or the Mods folder changed (the old csc builds differ byte-wise every time, so hash the inputs)
+  const stampFile = join(ROOT, 'probe-out', 'scriptcache.stamp');
+  const listing = (dir: string): string[] => readdirSync(dir, { recursive: true }).map(String).sort()
+    .map(n => { const st = statSync(join(dir, n)); return st.isFile() ? `${n}:${st.size}:${st.mtimeMs}` : ''; });
+  const stamp = createHash('sha256').update(listing(join(ROOT, 'mods', 'ts3agent', 'src')).join('|'))
+    .update(listing(join(USER_DIR, 'Mods')).filter(n => !/^Packages[\\/](ts3agent|ts3-nointro)\.package/.test(n)).join('|')).digest('hex');
+  const unchanged = existsSync(stampFile) && readFileSync(stampFile, 'utf8') === stamp && existsSync(join(pkgs, 'ts3agent.package'));
+  if (!unchanged) {
+    for (const p of ['ts3agent.package', 'ts3-nointro.package']) copyFileSync(join(ROOT, 'build', p), join(pkgs, p));
+    rmSync(join(USER_DIR, 'scriptCache.package'), { force: true });
+    mkdirSync(dirname(stampFile), { recursive: true });
+    writeFileSync(stampFile, stamp);
+  }
+  log(`game closed, ${unchanged ? 'agent and mods unchanged, script cache kept' : 'packages installed, script cache cleared'}; now start: python tools/probe/ts3probe.py serve --launch`);
 }
 
 // load a save, ending in live mode (a save can come back in Edit Town, which pauses the clock)
