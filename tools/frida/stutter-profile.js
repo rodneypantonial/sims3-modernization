@@ -120,6 +120,10 @@ function addr(name) {
   const [a, expect] = HOOKS[name];
   const p = ptr(a);
   const got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+  if (got.startsWith('e9')) { // ts3native's own detour (same arguments and result): time the replacement instead
+    const target = p.add(5).add(p.add(1).readS32());
+    if (Process.findModuleByAddress(target)?.name === 'ts3native.asi') return target;
+  }
   if (got !== expect) throw new Error(`${name} @ ${p}: bytes ${got}, expected ${expect}. ` +
     (got.startsWith('e9') ? 'Detoured by another plugin (S3PP SimulatorStageProfiler? turn it off).' : 'Different TS3W.exe build?'));
   return p;

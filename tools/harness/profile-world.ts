@@ -14,6 +14,7 @@ import { appendFileSync, createWriteStream, mkdirSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
+import { focusGame } from './focus-game.ts';
 
 const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
@@ -33,6 +34,7 @@ const ag = async (cmd: string, args?: object): Promise<any> => {
 const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
+console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fps capped, numbers not comparable)'}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);

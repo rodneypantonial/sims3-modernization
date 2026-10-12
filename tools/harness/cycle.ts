@@ -9,6 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { focusGame } from './focus-game.ts';
 
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -124,7 +125,7 @@ if (values.save) {
       return (await agent('game_state')).result?.sub_state === 'LiveModeState';
     });
   }
-  log(`ready: ${JSON.stringify((await agent('game_state')).result)}`);
+  log(`ready: ${JSON.stringify((await agent('game_state')).result)}; window ${focusGame() ? 'focused' : 'NOT focused'}`);
   // record the change set this run uses, so a later crash can be tied to it (crash-ledger.ts triage)
   log(execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'crash-ledger.ts'), 'snapshot']).toString().trim());
 }
