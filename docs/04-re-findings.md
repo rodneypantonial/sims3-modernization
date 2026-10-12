@@ -125,3 +125,17 @@ Consequences: the biggest stutter lever is script execution cost. Options, rough
 - MonoMethod layout here: klass `+8`, name `+0x18`; MonoClass name/namespace `+0x34`/`+0x38` [verified live]. The interpreter fetches a callee's runtime info from `MonoMethod+0x10` (decompile line ~228) [inferred].
 - Not yet working: mapping a frame's `frame[1]` to its MonoMethod (`/rmname` scans memory for `MonoMethod+0x10 == frame[1]` and found none, ~35 s per scan). Either `frame[1]` is not that pointer or the layout differs. Next: decompile the call opcode path (where `frame[1]` is assigned from the callee) or hook the method-entry point to count entries per MonoMethod.
 - Task-level sample (885 samples, 3 min, Bridgeport x3; reads of `[0x11f4170]` while the thread runs, so roughly 5% unresolved): **67% `ScriptCore.ScriptProxy.Simulate`** (the wrapper that runs every game object's and Sim's script task), 2.1% `SimBuilderTask`, 1.0% `StoryProgressionTask`, 0.9% `ScriptProxy.CreateLogic`, ~20% no script task running. Splitting the 67% by `ScriptProxy.mTarget` failed with unsuspended reads (the proxy pointer races); it needs the reads done inside the suspended window.
+
+## F7. Managed (C#) profile of the sim thread [measured 2026-10-12]
+
+Tool: probe `/managedstack` (interpreter frame chain read with the thread suspended: `frame[1]` = interpreter info, `info+8` = MonoMethod, back pointer at `MonoMethod+0x14`; script thread = the one whose TLS slot `[0x11f4160]` is set) and `tools/probe/managed-sample.mjs` (5 Hz). 885 samples over 3 min, `Baseline-BP`, all fixes, x3; 18.5% of samples had no script running. Raw: `probe-out/profile/managed-bp.*`.
+
+Inclusive (anywhere on the C# stack): `ScriptProxy.Simulate` 66.8%; `Sim.Simulate`/`Sim.DoInteraction` 34.8% (`InteractionQueue.ProcessOneInteraction` 33.2%); **routing `SimRoutingComponent.DoRoute` 16.6%** (`Route.Plan` 11.5%, native `Route_Plan` 9.9% self); `Lot.Simulate` 12.9% → `Lot.UpdateReactions` 8.9% → **`ReactionBroadcaster.PulseSims` 7.1%, `GetInRadiusSims` 4.2%**; `SimUpdate.Simulate` 10.2%; **`GoHome.Run` 7.2%** and `GoToVirtualHomeInternal.Run` 4.4%; **walk-style rules** `SimWalkStyleRules.GetAdjustedWalkStyleForRoute` 6.0%, `PostProcessWalkStyle` 5.4%, `WalkStyleComparer.Compare` 4.7%, `SortedList`2.Find` 4.9%; `Queries.GetObjects` 6.0%; `EventTracker.SendEvent` 4.6%; `Autonomy.Update` 5.4%.
+
+Self (innermost): native `Route_Plan` 9.9%, **`System.Enum.Equals` 5.1%** (boxed enum compare through `DefaultComparer`, very slow interpreted), `Query_GetObjectsInRange` 2.6%, `Route_ReplanFromPosition` 2.0%, `Object.GetType` 1.9%, `Query_GetObjectsOnLot` 1.8%.
+
+Fix candidates, by expected gain per effort [inferred, to verify one at a time]:
+1. Walk-style rules: a `SortedList<WalkStyle,…>`/`WalkStyleComparer` lookup per route that ends in `Enum.Equals` via the default comparer. An int-based comparer or a cached result per Sim and route type could remove most of ~6%.
+2. NPC go-home loops (7–11%): per-Sim backoff after failures, or send NPCs home off-screen without world-scale planning (docs/04a).
+3. Reaction broadcasters (7%): `PulseSims`/`GetInRadiusSims` scan Sims around each broadcaster on every lot update; throttle the pulse rate or cache the Sim list per lot per tick.
+4. Route search itself (~10% self): fewer plans (1, 2) first, then searches off the sim thread.

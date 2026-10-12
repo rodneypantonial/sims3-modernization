@@ -41,6 +41,39 @@ function tebOf(tid, h) {
   if (teb) tebCache.set(tid, teb);
   return teb;
 }
+// The script (sim) thread is the one whose interpreter TLS slot is set; steadier than catching Simulate on its stack.
+let interpTid = null;
+function findInterpThread() {
+  if (interpTid !== null) return interpTid;
+  const idx = ptr('0x11f4160').readU32();
+  for (const t of Process.enumerateThreads()) {
+    const h = OpenThread(0x0040, 0, t.id);
+    if (h.isNull()) continue;
+    try {
+      const teb = tebOf(t.id, h);
+      const slot = teb ? (idx < 64 ? teb.add(0xe10 + idx * 4) : safeRead(teb.add(0xf94))?.add((idx - 64) * 4)) : null;
+      const v = slot ? safeRead(slot) : null;
+      if (v && !v.isNull()) { interpTid = t.id; break; }
+    } finally { CloseHandle(h); }
+  }
+  return interpTid;
+}
+const methodNames = new Map();
+function methodNameOfInfo(info) {
+  const key = info.toString();
+  if (methodNames.has(key)) return methodNames.get(key);
+  // metadata names end at the first non-printable byte (readCString runs past them here)
+  const cstr = p => { if (!p || p.isNull()) return ''; try { const b = new Uint8Array(p.readByteArray(120)); let e = 0; while (e < b.length && b[e] >= 0x20 && b[e] < 0x7f) e++; return String.fromCharCode(...b.subarray(0, e)); } catch (e) { return null; } };
+  let name = null;
+  const m = safeRead(info.add(8));
+  if (m) {
+    const klass = safeRead(m.add(8)), n = cstr(safeRead(m.add(0x18)));
+    const cn = klass ? cstr(safeRead(klass.add(0x34))) : null, ns = klass ? cstr(safeRead(klass.add(0x38))) : null;
+    if (cn && n) name = `${ns ? ns + '.' : ''}${cn}.${n}`;
+  }
+  if (name) methodNames.set(key, name); // heap metadata is stable; failures are retried next time
+  return name ?? '?';
+}
 // Copies the chain (first 0x30 bytes of each frame) while the thread is suspended: the frames live on its stack.
 function interpFrames(tid, max) {
   if (tid === Process.getCurrentThreadId()) throw new Error('cannot sample the probe thread itself');
@@ -297,26 +330,14 @@ rpc.exports = {
   },
 
   // The sim thread only: cheap enough for a watchdog (suspends one thread for a few microseconds).
-  // Name of the method behind an interpreter RuntimeMethod: the interpreter reads it from MonoMethod+0x10
-  // (decompile of 0xe53eb0), with klass at +8 and name at +0x18, class name/namespace at +0x34/+0x38 [verified].
-  // There is no back pointer, so scan rw memory for MonoMethod+0x10 == rm (slow; resolve only the top entries).
-  resolveRuntimeMethod(rmStr) {
-    const rm = ptr(rmStr);
-    const pat = Array.from(new Uint8Array(new Uint32Array([rm.toUInt32()]).buffer)).map(b => ('0' + b.toString(16)).slice(-2)).join(' ');
-    const cstr = p => { try { const t = p.readCString(80); return /^[\w.<>`$|]+$/.test(t) ? t : null; } catch (e) { return null; } };
-    for (const r of Process.enumerateRanges('rw-')) {
-      if (r.size > 0x10000000) continue;
-      let hits; try { hits = Memory.scanSync(r.base, r.size, pat); } catch (e) { continue; }
-      for (const h of hits) {
-        const m = h.address.sub(0x10);
-        const klass = safeRead(m.add(8)), name = safeRead(m.add(0x18));
-        if (!klass || !name) continue;
-        const cn = safeRead(klass.add(0x34)), ns = safeRead(klass.add(0x38));
-        const c = cn ? cstr(cn) : null, n = cstr(name);
-        if (c && n) { const nsS = ns && !ns.isNull() ? cstr(ns) : ''; return { method: m.toString(), name: `${nsS ? nsS + '.' : ''}${c}.${n}` }; }
-      }
-    }
-    return { method: null, name: null };
+  // Managed call stack of the sim thread, innermost first: frame[1] is the method's interpreter info, info+8 its
+  // MonoMethod (klass +8, name +0x18; class name/namespace +0x34/+0x38) [verified 2026-10-12, docs/04 F6a].
+  interpStack(maxFrames) {
+    const tid = findInterpThread();
+    if (tid === null) return { error: 'sim thread not found' };
+    const r = interpFrames(tid, maxFrames);
+    if (r.error) return r;
+    return { methods: r.frames.map(f => methodNameOfInfo(ptr(f.words[1]))) };
   },
 
   interpFrames(maxFrames) {
