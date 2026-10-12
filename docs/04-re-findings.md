@@ -207,6 +207,6 @@ Mechanism (the idea MonoPatcher's `ReplaceMethod` uses, reimplemented in `mods/t
 | home visits / go to lot / go to community lot | `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run` | IP: 10 / 6 / 9 in 5 min, 0 stuck |
 | ambient traffic cars | `Route.PlanToPoint` for `CarNpcWithNoDriver` (LiteDriver) | **dropped**: Bridgeport, ~24 stuck Sims in 2.5 min vs 7 with it off (eating out, meet-ups, shows, visits); gain ~1% |
 
-Houseboats (F7 data): boat moves cost 0.2–0.3%; boarding and leaving through gangways costs 5–8% (`SimRoutingComponent.CheckAndUpdateForHouseboats`, House Boat Fix's `EnterHouseboatThroughGangway`). So fix b2 lets go-home and lot shortcuts target houseboat lots while the boat is docked (`Houseboat.IsDocked`).
+Houseboats (F7 data): boat moves cost 0.2–0.3%; boarding and leaving through gangways costs 5–8% (`SimRoutingComponent.CheckAndUpdateForHouseboats`, House Boat Fix's `EnterHouseboatThroughGangway`). So fix b2 lets go-home and lot shortcuts target houseboat lots while the boat is docked (`Houseboat.IsDocked`). Verified on `Baseline-IP`: 12 Sims placed on docked houseboats (Fantasea, Aquaholic, ...) in 2 min, 0 stuck.
 
 Bridgeport baseline (all shortcuts but traffic): the same townies (Ti Bellino, Wogan Hemlock, Mars Champion, Regina Choi, ...) sit stuck in Go Home on community lots, routing, in every run of `Baseline-BP`: a pre-existing problem of that save, not caused by the shortcuts (to investigate separately).
