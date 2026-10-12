@@ -59,18 +59,21 @@ function findInterpThread() {
   return interpTid;
 }
 const methodNames = new Map();
+// metadata names end at the first non-printable byte (readCString runs past them here)
+const cstr = p => { if (!p || p.isNull()) return ''; try { const b = new Uint8Array(p.readByteArray(120)); let e = 0; while (e < b.length && b[e] >= 0x20 && b[e] < 0x7f) e++; return String.fromCharCode(...b.subarray(0, e)); } catch (e) { return null; } };
+function className(klass) { // MonoClass name/namespace +0x34/+0x38
+  const cn = cstr(safeRead(klass.add(0x34))), ns = cstr(safeRead(klass.add(0x38)));
+  return cn ? `${ns ? ns + '.' : ''}${cn}` : null;
+}
+function monoMethodName(m) { // MonoMethod klass +8, name +0x18
+  const klass = safeRead(m.add(8)), n = cstr(safeRead(m.add(0x18))), c = klass && !klass.isNull() ? className(klass) : null;
+  return c && n ? `${c}.${n}` : null;
+}
 function methodNameOfInfo(info) {
   const key = info.toString();
   if (methodNames.has(key)) return methodNames.get(key);
-  // metadata names end at the first non-printable byte (readCString runs past them here)
-  const cstr = p => { if (!p || p.isNull()) return ''; try { const b = new Uint8Array(p.readByteArray(120)); let e = 0; while (e < b.length && b[e] >= 0x20 && b[e] < 0x7f) e++; return String.fromCharCode(...b.subarray(0, e)); } catch (e) { return null; } };
-  let name = null;
   const m = safeRead(info.add(8));
-  if (m) {
-    const klass = safeRead(m.add(8)), n = cstr(safeRead(m.add(0x18)));
-    const cn = klass ? cstr(safeRead(klass.add(0x34))) : null, ns = klass ? cstr(safeRead(klass.add(0x38))) : null;
-    if (cn && n) name = `${ns ? ns + '.' : ''}${cn}.${n}`;
-  }
+  const name = m && !m.isNull() ? monoMethodName(m) : null;
   if (name) methodNames.set(key, name); // heap metadata is stable; failures are retried next time
   return name ?? '?';
 }
@@ -380,6 +383,79 @@ function routeLockStop() {
   for (const l of rl.listeners) l.detach();
   rl.listeners = [];
 }
+// Scheduler-stage stall watch (opt-in, /taskstall?start=1&ms=250, stop=1 unhooks; docs/04 F17). Interceptor.attach on
+// the seams MonoScriptHost::Simulate calls each iteration; per call only one QPC read on enter and one on leave. A 50 ms
+// timer on the probe thread looks at the open stage; once it has run `ms`, it reads the current task every `sample` ms
+// (cap 40): ObjectGuid host+0xBD0/+0xBD4, context *(host+0xBC8) ([0] MonoMethod, [1] task object; set by 0xD7F000)
+// and the sim thread's managed stack (interpFrames, suspends it for microseconds). One record per stall goes to the host
+// (probe-out/<session>-taskstall.jsonl) and to a ring of the last 50.
+// S3PP's SimulatorStageProfiler detours the same prologues: set it off in Sims3Performance.ini first (the byte check
+// below refuses a detoured prologue rather than hooking S3PP's jump).
+const STAGES = { taskObjects: [0xd7fc60, '55 8b ec 83 e4 f8 83 ec'], oneShot: [0xd74800, '83 ec 10 53 55 56 57 8b'],
+                 threaded: [0xd7f8b0, '55 8b ec 83 e4 f8 81 ec'] };
+const ts = { started: null, listeners: [], timer: null, ms: 250, sampleMs: 250, open: null, stalls: [], counts: {} };
+function taskNow(host) {
+  let guid = null;
+  try { guid = '0x' + host.add(0xbd0).readU64().toString(16); } catch (e) { /* host gone */ }
+  const slot = safeRead(host.add(0xbc8)), ctx = slot && !slot.isNull() ? safeRead(slot) : null;
+  const m = ctx && !ctx.isNull() ? safeRead(ctx) : null, obj = ctx && !ctx.isNull() ? safeRead(ctx.add(4)) : null;
+  const vt = obj && !obj.isNull() ? safeRead(obj) : null, klass = vt && !vt.isNull() ? safeRead(vt) : null; // MonoVTable +0 = klass
+  return { guid: guid === '0x0' ? null : guid, class: klass && !klass.isNull() ? className(klass) : null,
+           method: m && !m.isNull() ? monoMethodName(m) : null };
+}
+function taskStallTick() {
+  const o = ts.open;
+  if (!o) return;
+  const at = nowMs() - o.t0;
+  if (at < ts.ms || at < o.nextAt || o.samples.length >= 40) return;
+  o.nextAt = at + ts.sampleMs;
+  let methods;
+  try {
+    const r = interpFrames(o.tid, 64);
+    methods = r.error ? [r.error] : r.frames.map(f => methodNameOfInfo(ptr(f.words[1])));
+  } catch (e) { methods = [`sample failed: ${e.message}`]; }
+  o.samples.push({ atMs: Math.round(at), task: taskNow(o.host), methods });
+}
+function taskStallStart() {
+  if (ts.started) return;
+  for (const [name, [a, expect]] of Object.entries(STAGES)) { // all or nothing, before the first attach
+    const got = Array.from(new Uint8Array(ptr(a).readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    if (got !== expect) throw new Error(`${name} @ 0x${a.toString(16)}: bytes ${got}, expected ${expect}` +
+      (got.startsWith('e9') ? ' (detoured: turn off S3PP SimulatorStageProfiler)' : ' (different TS3W.exe build?)'));
+  }
+  ts.started = Date.now();
+  for (const [stage, [a]] of Object.entries(STAGES)) {
+    ts.listeners.push(Interceptor.attach(ptr(a), {
+      onEnter() {
+        this.o = { stage, t0: nowMs(), host: this.context.ecx, tid: Process.getCurrentThreadId(), wall: Date.now(), nextAt: 0, samples: [] };
+        ts.open = this.o;
+      },
+      onLeave() {
+        const o = this.o, ms = nowMs() - o.t0;
+        if (ts.open === o) ts.open = null;
+        if (ms < ts.ms) return;
+        const c = ts.counts[stage] ??= { n: 0, totalMs: 0, maxMs: 0 };
+        c.n++; c.totalMs = Math.round(c.totalMs + ms); c.maxMs = Math.max(c.maxMs, Math.round(ms));
+        const by = {}; // the task seen in most samples; samples keep their own (a stage can run many slow tasks)
+        for (const s of o.samples) { const k = JSON.stringify(s.task); by[k] = (by[k] || 0) + 1; }
+        const top = Object.entries(by).sort((x, y) => y[1] - x[1])[0];
+        const rec = { time: new Date(o.wall).toISOString(), end: new Date().toISOString(), stage, ms: Math.round(ms),
+                      task: top ? JSON.parse(top[0]) : null, samples: o.samples };
+        ts.stalls.push(rec);
+        if (ts.stalls.length > 50) ts.stalls.shift();
+        send({ type: 'taskstall', stall: rec }); // the host appends it to probe-out/<session>-taskstall.jsonl
+      },
+    }));
+  }
+  ts.timer = setInterval(taskStallTick, 50);
+}
+function taskStallStop() {
+  for (const l of ts.listeners) l.detach();
+  ts.listeners = [];
+  if (ts.timer !== null) clearInterval(ts.timer);
+  ts.timer = null; ts.open = null; ts.started = null;
+}
+
 function pct(a, q) {
   if (!a.length) return null;
   const s = a.slice().sort((x, y) => x - y);
@@ -418,11 +494,22 @@ rpc.exports = {
     return routeLockReport();
   },
 
+  taskStall(start, stop, ms, sampleMs, n) {
+    if (ms > 0) ts.ms = ms;
+    if (sampleMs > 0) ts.sampleMs = sampleMs;
+    if (start) taskStallStart();
+    if (stop) taskStallStop();
+    const o = ts.open;
+    return { since: ts.started && new Date(ts.started).toISOString(), hooked: ts.listeners.length > 0, ms: ts.ms, sampleMs: ts.sampleMs,
+             open: o ? { stage: o.stage, forMs: Math.round(nowMs() - o.t0) } : null, counts: ts.counts, stalls: ts.stalls.slice(-(n || 10)) };
+  },
+
   // ts3native.asi counters (docs/15): route cache and route worker, null when the plugin is not loaded.
   // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
   // routeBudget 0|1 likewise sets the route search budget's switch (ts3native >= 0.4.0, [RouteBudget] Enabled=1).
   nativeCounters(routeWorker, routeBudget) {
-    const c = Module.findExportByName('ts3native.asi', 'ts3native_counters');
+    const m = Process.findModuleByName('ts3native.asi'); // Frida 17 has no static Module.findExportByName
+    const c = m === null ? null : m.findExportByName('ts3native_counters');
     if (c === null) return null;
     const f = ['version', 'enabled', 'calls', 'hits', 'misses', 'stored', 'otherFails', 'windowMs'];
     if (c.readS32() >= 2) f.push('workerMode', 'workerReady', 'workerCalls', 'workerUs', 'workerMaxUs', 'waitUs', 'fallbacks', 'watchdogs');
