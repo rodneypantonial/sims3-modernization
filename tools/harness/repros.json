@@ -947,5 +947,57 @@
       312.4,
       1497.0
     ]
+  },
+  {
+    "id": "s3pp-label-check",
+    "bug": "S3PP LocalizedStringCache can serve blank or wrong labels (a key cached before its STBL loaded; no invalidation when tables are added) (docs/17 §8.3, §9)",
+    "fix": "measurement only: label_check resolves a fixed sample (UI, interaction, store script, trait and skill keys; buy objects and CAS parts per origin) before and after a CAS + Buy browse; compare across one load with installer entry s3pp on and one with it off",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "label_check",
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 15
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Decor"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "label_check",
+        "waitS": 5
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "Within one load: both label_check results have the same hash and counts. Across loads (same save, content and language): s3pp on and s3pp off give the same hash, empty, placeholder, mismatch and hash_empty. Different -> run label_check {dump:true} in both and diff values by key; hash_empty or mismatch only with s3pp on = stale cache, set LocalizedStringCache=0"
   }
 ]
