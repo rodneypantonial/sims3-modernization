@@ -133,11 +133,13 @@ namespace Ts3Agent
         const string kPatchState = "ts3agent.patch.state";
 
         // GoHome counters (see GoHomeHook); shared across hot reloads through AppDomain data
+        static int[] sCountersCache;
         static int[] PatchCounters()
         {
+            if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData(kPatchState) as int[];
             if (c == null) { c = new int[32]; AppDomain.CurrentDomain.SetData(kPatchState, c); }
-            return c;
+            return sCountersCache = c;
         }
 
         static List<object> sPatchLog;
@@ -156,6 +158,7 @@ namespace Ts3Agent
             Patch(typeof(GoToLot), "Run", typeof(GoToLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToCommunityLot), "Run", typeof(GoToCommunityLotHook), "RunHook", "RunOrig");
             Patch(typeof(Sims3.Gameplay.Actors.SimRoutingComponent).GetNestedType("WalkStyleComparer", BindingFlags.NonPublic), "Compare", typeof(WalkStyleCompareHook), "CompareHook", null);
+            Patch(typeof(Sims3.Gameplay.Autonomy.ReactionBroadcaster), "PulseSims", typeof(BroadcasterPulseHook), "PulseHook", "PulseOrig");
             // not applied: in Bridgeport the traffic shortcut left ~3x as many Sims stuck (eating out, meet-ups, visits)
             // as the same run without it, for ~1% of script time. Kept for reference, docs/04 F10.
             // Patch(typeof(Route), "PlanToPoint", typeof(RoutePlanToPointHook), "PlanToPointHook", "PlanToPointOrig");
@@ -234,13 +237,35 @@ namespace Ts3Agent
         // Outside the camera's reach (a radius that grows as the camera zooms out) and not near any active-household Sim.
         static bool FarFromViewers(Sims3.SimIFace.Vector3 p)
         {
-            Sims3.SimIFace.Vector3 target = CameraController.GetTarget(), cam = CameraController.GetPosition();
-            float reach = Math.Max(kShortcutMinDistance, 2f * Math.Abs(cam.y - target.y));
-            if ((p - target).Length() < reach || (p - cam).Length() < reach) return false;
-            if (Household.ActiveHousehold != null)
-                foreach (Sims3.Gameplay.Actors.Sim s in Household.ActiveHousehold.AllActors)
-                    if (s != null && (p - s.Position).Length() < kShortcutMinDistance) return false;
+            RefreshViewers();
+            if ((p - sCamTarget).Length() < sReach || (p - sCamPos).Length() < sReach) return false;
+            for (int i = 0; i < sViewerCount; i++)
+                if ((p - sViewers[i]).Length() < kShortcutMinDistance) return false;
             return true;
+        }
+
+        // Camera and active-household positions, read once per sim tick (the broadcaster hook alone asks ~800 times/s).
+        static long sViewTick = -1;
+        static Sims3.SimIFace.Vector3 sCamTarget, sCamPos;
+        static float sReach;
+        static Sims3.SimIFace.Vector3[] sViewers = new Sims3.SimIFace.Vector3[16];
+        static int sViewerCount;
+        static void RefreshViewers()
+        {
+            long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+            if (now == sViewTick) return;
+            sViewTick = now;
+            sCamTarget = CameraController.GetTarget();
+            sCamPos = CameraController.GetPosition();
+            sReach = Math.Max(kShortcutMinDistance, 2f * Math.Abs(sCamPos.y - sCamTarget.y));
+            sViewerCount = 0;
+            if (Household.ActiveHousehold == null) return;
+            foreach (Sims3.Gameplay.Actors.Sim s in Household.ActiveHousehold.AllActors)
+            {
+                if (s == null) continue;
+                if (sViewerCount == sViewers.Length) Array.Resize(ref sViewers, sViewers.Length * 2);
+                sViewers[sViewerCount++] = s.Position;
+            }
         }
 
         const float kShortcutMinDistance = 80f;
@@ -433,6 +458,31 @@ namespace Ts3Agent
             }
         }
 
+        // Reaction broadcasters (PLAN fix c): every broadcaster (music, fires, smells, ...) pulses about once per second:
+        // a spatial query for Sims in its radius plus line-of-sight checks per Sim (ReactionBroadcaster.PulseSims, 7% of
+        // script time in Bridgeport). One far from the camera and the active household now pulses about one call in four
+        // (staggered by a shared call counter), so an unseen Sim starts or stops reacting a few sim-seconds later; near the
+        // player nothing changes. ReactionBroadcaster has no parameterless constructor, so the hook is a plain class.
+        // Counters: [22] pulses, [23] skipped.
+        public class BroadcasterPulseHook
+        {
+            static int sCalls;
+            public void PulseHook(float pulseRadius, bool fullSimulation)
+            {
+                Sims3.Gameplay.Autonomy.ReactionBroadcaster b = (Sims3.Gameplay.Autonomy.ReactionBroadcaster)(object)this;
+                int[] c = PatchCounters();
+                c[22]++;
+                Sims3.Gameplay.Interfaces.IGameObject o = b.BroadcastingObject;
+                if (ShortcutOn("broadcast") && o != null && (++sCalls & 3) != 0 && FarFromViewers(o.Position))
+                {
+                    c[23]++;
+                    return;
+                }
+                PulseOrig(pulseRadius, fullSimulation);
+            }
+            public void PulseOrig(float pulseRadius, bool fullSimulation) { } // receives ReactionBroadcaster.PulseSims' original header
+        }
+
         // Home visits (VisitLot) and plain lot trips (GoToLot, GoToCommunityLot): same as community visits, the game's
         // Run follows with a short route to the door and its own arrival. Counters: visitlot [10-12], gotolot [13-15],
         // gotocommunity [16-18].
@@ -519,6 +569,10 @@ namespace Ts3Agent
             r["traffic"] = ShortcutOn("traffic");
             r["traffic_runs"] = c[19];
             r["traffic_shortcuts"] = c[20];
+            if (a.Has("broadcast")) AppDomain.CurrentDomain.SetData("ts3agent.shortcut.broadcast", a.Bool("broadcast", true));
+            r["broadcast"] = ShortcutOn("broadcast");
+            r["broadcast_pulses"] = c[22];
+            r["broadcast_skipped"] = c[23];
             r["houseboat_shortcuts"] = c[21]; // shortcuts that placed a Sim on a docked houseboat
             r["recent"] = GoHomeLog();
             return r;
