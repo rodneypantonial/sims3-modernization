@@ -308,3 +308,20 @@ ts3native's optional `Route_PlanLocked` detour (`0x82C6E0`) and budget ceiling (
 | `ThreadStackDiet`, `ShortWaitSpin` | Keep **off** | Log must not show `[TSD] ... armed` or `[ShortWaitSpin] spinning` |
 
 Per the bundle rule, the first run is `store-200` vs `store-200-s3pp` (PLAN step 1), not one run per patch. Only if something fails, turn S3PP patches off one at a time in the order its README gives.
+
+## 9. Performance Patch 2.1 result (2026-10-12, Bridgeport, CC + store, cold, 3 min each)
+
+`offload-phase0.ts --only store-200,store-200-s3pp --minutes 3`; ThreadStackDiet and ShortWaitSpin off (S3SS does both). Data: `probe-out/phase0/2026-10-12T16-47-57/` [verified].
+
+| | S3PP off | S3PP on | change |
+|---|---|---|---|
+| launch -> menu / world load / to live | 46 / 29 / 110 s | 53 / 30 / 112 s | none |
+| committed address space (median) | 2,272 MB | 2,201 MB | **-71 MB** |
+| largest free block (median) | 1,430 MB | 1,494 MB | **+64 MB** |
+| private bytes (median) | 1,996 MB | 1,914 MB | -82 MB |
+| sim minutes in 3 min | 1,932 | 1,958 | +1% (noise) |
+
+- Log: Steam 1.67 detected, 7 of 9 installed, `[STBL509] active` (savedPerTable 29,640 bytes), isinst cache, string cache, type index all armed; no errors.
+- Gain is address space (~70 MB headroom against Error 12), not load time on this save and content; the author's load-time win (18 -> 4 min) is for very large saves where the type lookups dominate [community].
+- Its `[SIMSTALL]` log shows TaskObjects stages of 0.3-0.5 s and two over 5 s (being analysed, docs/04).
+- Open: UI label check (`LocalizedStringCache`) via `store-cas-browse` with S3PP on.
