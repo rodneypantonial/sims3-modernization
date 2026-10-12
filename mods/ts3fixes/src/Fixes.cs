@@ -54,7 +54,8 @@ namespace Ts3Fixes
 
         // Counters, read by test tools: [0-3] go-home runs/shortcuts/no spot/loop guard, [4-6] buildings, [7-18] lot
         // trips (visit, visitlot, gotolot, gotocommunity: runs/shortcuts/no spot each), [21] houseboat placements,
-        // [22-23] broadcaster pulses/skipped, [24-26] route backoff, [27-31] route fixes (RouteFixes.cs).
+        // [22-23] broadcaster pulses/skipped, [24-26] route backoff, [27-36] route fixes (RouteFixes.cs), [37-39] SafeSpot
+        // verdict cache hits/misses/full checks, [40-43] save cleanup (SaveCleanup.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
@@ -200,35 +201,82 @@ namespace Ts3Fixes
         const float kShortcutMinDistance = 80f;
 
         // A spot for a shortcut Sim on `lot` near `near`: on the lot (else the game still sees the Sim away) and passing the
-        // game's Sim.IsPointInLotSafelyRoutable (a short plan from the spot to the lot's edges), so the Sim can walk on from
-        // there instead of standing stuck. The search always starts from `near` (the entrance), so arrivals spread out
-        // instead of piling onto one point; that check is itself a route plan, so a spot within 3 m of the lot's last
-        // verified spot skips it, except every 8th time.
-        static readonly Dictionary<ulong, Sims3.SimIFace.Vector3> sSafeSpot = new Dictionary<ulong, Sims3.SimIFace.Vector3>();
-        static readonly Dictionary<ulong, int> sSafeUses = new Dictionary<ulong, int>();
+        // game's Sim.IsPointInLotSafelyRoutable (a plan from the spot to the lot's corners and edge midpoints), so the Sim can
+        // walk on from there instead of standing stuck. That check is a full route plan (362 ms once in Bridgeport, docs/04
+        // F18), so its verdict is cached per 0.5 m cell (SpotSafe). Spots next to the lot's verified ones are tried first,
+        // rotating through them so arrivals spread out; then fresh spots from `near` (the entrance), whose cells may cost a
+        // full check within the per-tick budget. No verified spot = false, and the caller runs the game's own trip.
         static bool SafeSpot(Sims3.Gameplay.Actors.Sim sim, Lot lot, Sims3.SimIFace.Vector3 near, out Sims3.SimIFace.Vector3 pos, out Sims3.SimIFace.Vector3 fwd)
         {
-            pos = fwd = Sims3.SimIFace.Vector3.Invalid;
-            Sims3.SimIFace.Vector3 known;
-            bool cached = sSafeSpot.TryGetValue(lot.LotId, out known);
-            int uses;
-            sSafeUses.TryGetValue(lot.LotId, out uses);
-            sSafeUses[lot.LotId] = uses + 1;
-            for (int i = 0; i < 3; i++)
+            SpotVerdicts v = Verdicts(lot);
+            // "spotspread" off = the earlier build: always start from the lot's last verified spot (A/B for the Bridgeport slowdown)
+            bool spread = ShortcutOn("spotspread");
+            for (int i = 0; i < 2 + 3; i++)
             {
-                // "spotspread" off = the earlier build: first try from the lot's cached spot (A/B for the Bridgeport slowdown)
-                bool fromKnown = cached && i == 0 && !ShortcutOn("spotspread");
-                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(fromKnown ? known : near), out pos, out fwd)) continue;
-                if (LotManager.GetLotAtPoint(pos) != lot) continue;
-                bool trusted = cached && uses % 8 != 0 && (pos - known).Length() < 3f;
-                if (trusted || sim.IsPointInLotSafelyRoutable(lot, pos))
-                {
-                    if (!trusted) sSafeSpot[lot.LotId] = pos;
-                    if (lot.IsHouseboatLot()) PatchCounters()[21]++;
-                    return true;
-                }
+                bool fresh = i >= 2;
+                if (!fresh && v.Good.Count == 0) continue;
+                Sims3.SimIFace.Vector3 start = fresh ? near : v.Good[spread ? v.Next++ % v.Good.Count : v.Good.Count - 1];
+                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd)) continue;
+                if (LotManager.GetLotAtPoint(pos) != lot || !SpotSafe(sim, lot, v, pos, fresh)) continue;
+                if (lot.IsHouseboatLot()) PatchCounters()[21]++;
+                return true;
             }
+            pos = fwd = Sims3.SimIFace.Vector3.Invalid;
             return false;
+        }
+
+        // SafeSpot's verdicts for one lot. The check plans as an adult whatever the Sim (only water planning follows
+        // IsHuman), so a verdict holds for any Sim of that kind. Kept for one sim-day, and dropped when the lot's household
+        // changes (a move-in or move-out refurnishes it) or the clock went back (another save or world was loaded).
+        class SpotVerdicts
+        {
+            public long Created;
+            public ulong Household;
+            public readonly Dictionary<long, bool> Cells = new Dictionary<long, bool>();
+            public readonly List<Sims3.SimIFace.Vector3> Good = new List<Sims3.SimIFace.Vector3>();
+            public int Next;
+        }
+        static readonly Dictionary<ulong, SpotVerdicts> sSpotVerdicts = new Dictionary<ulong, SpotVerdicts>();
+        static readonly long kVerdictTicks = Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(1f, Sims3.Gameplay.Utilities.TimeUnit.Days);
+        const int kMaxGoodSpots = 8, kMaxSpotChecksPerTick = 1;
+        static long sSpotCheckTick = -1;
+        static int sSpotChecks;
+
+        static SpotVerdicts Verdicts(Lot lot)
+        {
+            long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+            ulong hh = lot.Household != null ? lot.Household.HouseholdId : 0;
+            SpotVerdicts v;
+            if (!sSpotVerdicts.TryGetValue(lot.LotId, out v) || now < v.Created || now - v.Created > kVerdictTicks || v.Household != hh)
+            {
+                v = new SpotVerdicts();
+                v.Created = now;
+                v.Household = hh;
+                sSpotVerdicts[lot.LotId] = v;
+            }
+            return v;
+        }
+
+        // Cells are 0.5 m and floor-aligned, so a cell never straddles a wall or fence on a tile edge; y in 1 m steps keeps
+        // floors apart. A cell without a verdict gets the full check only when `mayCheck` and this sim tick's budget allow;
+        // otherwise the spot counts as unsafe. Counters: [37] cache hits, [38] misses, [39] full checks run.
+        static bool SpotSafe(Sims3.Gameplay.Actors.Sim sim, Lot lot, SpotVerdicts v, Sims3.SimIFace.Vector3 pos, bool mayCheck)
+        {
+            int[] c = PatchCounters();
+            long key = ((long)((int)Math.Floor(pos.x * 2f) & 0xFFFFF) << 40) | ((long)((int)Math.Floor(pos.z * 2f) & 0xFFFFF) << 20)
+                | ((long)((int)Math.Floor(pos.y) & 0x7FFFF) << 1) | (sim.IsHuman ? 1L : 0L);
+            bool ok;
+            if (v.Cells.TryGetValue(key, out ok)) { c[37]++; return ok; }
+            c[38]++;
+            long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+            if (now != sSpotCheckTick) { sSpotCheckTick = now; sSpotChecks = 0; }
+            if (!mayCheck || sSpotChecks >= kMaxSpotChecksPerTick) return false;
+            sSpotChecks++;
+            c[39]++;
+            ok = sim.IsPointInLotSafelyRoutable(lot, pos);
+            v.Cells[key] = ok;
+            if (ok && v.Good.Count < kMaxGoodSpots) v.Good.Add(pos);
+            return ok;
         }
 
         // Houseboat lots (PLAN fix b2): most of their cost is Sims boarding and leaving through gangways
