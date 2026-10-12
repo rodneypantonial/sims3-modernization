@@ -37,7 +37,7 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 **Working notes for the next context:**
 - Restart + quick check: `bash tools/harness/restart-verify.sh <names> <save.sims3> [tries] ["--off a,b --max-stuck N --minutes M"]`; restart + in-load A/B: edit and run `tools/harness/restart-ab.sh`. One agent command: `node tools/harness/ag.mjs <cmd> '<json>'`. GC counters: `node tools/probe/gc-read.mjs`. Native counters: probe `/native` (needs a probe restart, agent.js gained `nativeCounters`).
 - Route cache test (Next 3): close the game (the installed .asi is locked while it runs), `node tools/setup/install-fixes.ts install --only native-patches` (installs 0.2.0), set `[RouteCache] Enabled=1` in `Game/Bin/ts3native.ini` for the test only, restart, load Baseline-BP, `node tools/harness/repro.ts run bp-route-cache --no-load`, read `/native`.
-- Editing PLAN.md with Python: read with `open(p, encoding='utf-8')` and write with `newline='
+- Editing PLAN.md with Python: read with `open(p, encoding='utf-8')` and write with `newline='
 '`; earlier scripts doubled the CR (CR CR LF).
 - Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
 
