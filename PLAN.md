@@ -16,27 +16,29 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 | hitches/s (>=50 ms) | 4.0 -> **2.5** (-39%) | 1.9 -> **1.0** (-47%) | 3.5 -> **1.7** (-51%) |
 | worst iteration | 1,014 -> 468 ms | 2,210 -> 2,885 ms | 1,170 -> 676 ms |
 
-**Player mod `mods/ts3fixes`** (`tools/setup/build-fixes.ts`, installer entry `stutter-fixes`, README in the folder; one `[Tunable]` per fix; the test agent only reads and switches it with `patches {name:false}`):
-- Patch host (F8): game methods replaced at startup by copying a hook's `MonoMethod` header; mid-game swaps miss compiled callers.
-- Trip shortcuts (F9, F10): unseen townies start at a safe spot at the destination (go home, buildings, lot and home visits, go-to-lot, docked houseboats); the game's own code does the last metres. Traffic-car shortcut dropped (stranded Sims).
-- Walk-style comparer (F11), broadcaster throttle (F12).
-- Route fixes for unseen townies: homeless "go home" fades out at once, no route-fail re-search or walk, no station detour, per-Sim route-failure backoff; stuck watchdog (reset after 60 sim-min going home or 120 routing, once per Sim per day).
-- Built, not yet in the mod: save cleanup (docs/14, off by default; code in scratch `savecleanup/`).
-
-**Native patch host `native/ts3native`** (docs/15, `build.cmd`, MSVC 2022): `ts3native.asi` + `.ini`; GC initial heap 40 -> 256 MB and growth step 8 -> 32 MB, original bytes checked first. Built, not yet loaded in the game.
+**Done (verified in game unless noted):**
+- Player mod `mods/ts3fixes` (`tools/setup/build-fixes.ts`, installer entry `stutter-fixes`, README; one `[Tunable]` per fix; the test agent reads and switches it with `patches {name:false}`):
+  - Patch host (docs/04 F8): game methods replaced at startup.
+  - Trip shortcuts (F9, F10): go home, buildings, lot and home visits, go-to-lot, docked houseboats. Traffic cars dropped.
+  - Walk-style comparer (F11), broadcaster throttle (F12).
+  - Route fixes for unseen townies: homeless "go home" fade, no route-fail re-search/walk, no station detour, per-Sim backoff (records only no-path failures). In-load A/B: on 40.8 vs off 34.9 iterations/s, hitches 2.57 vs 3.36.
+  - Stuck watchdog (60 sim-min going home / 120 routing, once per Sim per day; runtime switch).
+  - Save cleanup wired in, **off by default** (docs/14), not yet run in game.
+- Native plugin `native/ts3native` (docs/15, `build.cmd`, installer entry `native-patches`): GC initial heap 40 -> 352 MB and growth 8 -> 32 MB, verified in game (forced GC 13.9 -> 0.0 ms/s, hitches -14%, docs/04 F15). Phase 2 route negative cache built (0.2.0, `[RouteCache] Enabled=0`), not yet run in game.
+- Tools: repro library (`repro.ts`, `repros.json`, trigger actions), `stuck-scan.ts`, repro saves, `run-check.mjs` gate, in-load A/B (`profile-world.ts --ab`), `save-stats.ts`.
+- Research docs 09-15 (save bloat, expansion travel, route planner, Bridgeport Go Home, save cleanup, GC, native patches).
 
 **Open now:**
-1. Full mod runs at 38-41 iterations/s in Bridgeport vs 50 in the single run of build 62c39f6. Not GC (big heap: same iterations) and not the four new route fixes (in-load A/B: on 40.8 vs off 34.9 iterations/s, hitches 2.57 vs 3.36, route 97 vs 127 ms/s; they help). Testing the last two differences, watchdog and spot spreading, with runtime switches (`bp-wab`); if neither, the 50 was an outlier.
-2. GC heap: **352 MB start = forced GCs 128 -> 1 and hitches -14%** (docs/04 F15). `ts3native.asi` **verified in game**: all GC patches applied (log), heap 356-360 MB, forced GC 0.0 ms/s, 0 stuck. Phase 2 native route cache built (0.2.0, off by default, `[RouteCache]`), not yet run in game. The slowdown in open 1 is not GC: iterations stayed ~39 with the big heap.
-3. The bp-mod run's 14 stuck Sims did not recur (25-min scan and a fresh 6-min run: 0); keep watching.
+1. Full mod at 38-41 iterations/s in Bridgeport vs 50 in one run of build 62c39f6: not GC, not the route fixes. A/B of the last two suspects (watchdog, spot spreading; `bp-wab`) running; if neither, the 50 was an outlier.
+2. The bp-mod run's 14 stuck Sims did not recur (25-min scan, fresh runs: 0); keep watching.
 
 **Next, in order:**
-1. Fix the slowdown (open 1), then wire in the save cleanup and test it on a save copy (`bp-save-cleanup` repro).
-2. GC: adopt the heap change if the A/B shows fewer hitches with enough free address space (docs/13).
-3. Route failures, native part: negative cache at `Route_PlanLocked` 0x82C6E0 in `ts3native` (docs/11).
-4. Expansion travel: virtual-home trips done; station detours done; apartments covered; elevators and boats not hooked (docs/10).
-5. Underwater lag check in Isla Paradiso: repro `ip-underwater-lag` drafted (diving starts when the active Sim's route enters a dive lot's water, so the trigger is `go_here` to a point there; fill the point from `list_lots` at the next Isla Paradiso load, then profile diving vs land). Native route cache (phase 2 of `ts3native`) being written by an agent, off by default.
-6. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, docs/14), tests B-E, store-content test.
+1. Finish open 1 (fix or call the 50 an outlier).
+2. Save cleanup: run repro `bp-save-cleanup` on the copy `Cleanup-Test-BP` (counts drop, second run ~0, no new stuck Sims, reload clean).
+3. Native route cache: enable on a test run, repro with `sim_route_to` to an unreachable point (hits counted, no stuck Sims), then compare route ms/s.
+4. Underwater lag in Isla Paradiso: fill `ip-underwater-lag` (dive-lot point from `list_lots`), profile diving vs land.
+5. Milestone: full per-world profiles with everything on (`run-check.mjs` gate) and the updated results table; then mark `native-patches` default on.
+6. Later: Bridgeport's vanilla stuck Go Home townies (docs/12), save bloat follow-up (docs/09, 14), route search off the sim thread (docs/11), tests B-E, store-content test.
 
 **How we test:**
 - Each fix gets a repro: a trigger action in the agent (`place_sim`, `sim_go_home`, `sim_visit_lot`, `sim_route_to`) plus an entry in `tools/harness/repros.json`; run with `repro.ts run <id>`, several at once with `run-many` (areas 150 m apart, no shared Sims).
