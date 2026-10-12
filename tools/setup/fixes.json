@@ -1007,14 +1007,14 @@
     "name": "Sims 3 Performance Patch (beta)",
     "author": "Sonja92yu",
     "category": "engine",
-    "version": "1.1 beta",
+    "version": "2.1 beta",
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "Sims3PerformanceBooster-beta2.1.7z",
       "page": "https://www.nexusmods.com/thesims3/mods/235"
     },
-    "sha256": null,
+    "sha256": "a33e95a6bdd1d4dc3baac92495931bf6a9f42fce12247dc1499ad1949cb23cb0",
     "install": {
       "target": "bin",
       "files": [
@@ -1027,7 +1027,15 @@
       "asi-loader"
     ],
     "default": false,
-    "notes": "Nexus account, manual download (403 to scripts; version from docs/01, not re-checked). Overlaps S3SS: ThreadStackDiet vs OversizedThreadStackFix (first run with the S3SS one off); ShortWaitSpin vs AdaptiveWait (never both). Watch for blank or wrong UI text (LocalizedStringCache)."
+    "notes": "Nexus account, manual download (Rodney, 2026-10-12: 'Sims3PerformanceBooster Beta2.1' renamed to the asset name; source 1.1 in game-copy/s3pp). Steam 1.67 by signature scan with byte checks, self-test and rollback; writes Sims3Performance.log next to TS3W.exe. Two patches off because S3SS already does them: ThreadStackDiet (S3SS OversizedThreadStackFix) and ShortWaitSpin (never with S3SS AdaptiveWait). Kept: MonoTypeEHashProbe + SimulatorStageProfiler (load time), PackageIndexWarmup, StblBucketLayoutTuning (~290 MB on big saves), AllocatorArenaTuning, LocalizedStringCache (watch for blank/wrong UI text), MonoIsinstCache.",
+    "config": {
+      "ini": {
+        "Sims3Performance.ini": {
+          "ThreadStackDiet": 0,
+          "ShortWaitSpin": 0
+        }
+      }
+    }
   },
   {
     "id": "tiny-ui-fix",

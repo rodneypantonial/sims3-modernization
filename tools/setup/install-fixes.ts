@@ -154,7 +154,7 @@ function toml(c: any): string {
 function setIni(text: string, set: Record<string, any>): string {
   const lines = text.split(/\r?\n/);
   for (const [k, v] of Object.entries(set)) {
-    const i = lines.findIndex(l => l.trim().toLowerCase().startsWith(k.toLowerCase() + ' ='));
+    const i = lines.findIndex(l => l.trim().toLowerCase().replace(/\s*=.*/, '') === k.toLowerCase() && l.includes('='));
     if (i >= 0) lines[i] = `${k} = ${v}`; else lines.push(`${k} = ${v}`);
   }
   return lines.join('\r\n');
@@ -282,6 +282,11 @@ async function install(order: Fix[]) {
             const dest = targetPath(f, typeof spec === 'string' ? basename(h) : spec.to);
             place(f, rec, dest, () => copyFileSync(h, dest));
           }
+        }
+        // key overrides in a shipped Bin ini (e.g. s3pp patches that S3SS already does); the copy above is the backup point
+        for (const [file, set] of Object.entries<Record<string, any>>(f.config?.ini ?? {})) {
+          const p = join(BIN, file);
+          writeFileSync(p, setIni(readFileSync(p, 'utf8'), set));
         }
       }
       rec.at = new Date().toISOString();

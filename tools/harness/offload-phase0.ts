@@ -21,13 +21,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`${stamp()} ${m}`);
 
-const ALL = ['nocc-200', 'nocc-50', 'nocc-0', 'cc-200', 'cc-50', 'cc-0', 'store-200', 'store-50', 'store-0'];
+const ALL = ['nocc-200', 'nocc-50', 'nocc-0', 'cc-200', 'cc-50', 'cc-0', 'store-200', 'store-50', 'store-0', 'nocc-200-s3pp', 'store-200-s3pp'];
 const variants = values.only ? values.only.split(',').map(s => s.trim()) : ALL;
 for (const v of variants) assert(ALL.includes(v), `unknown variant '${v}' (one of ${ALL.join(', ')})`);
-const parse = (v: string) => ({ cc: !v.startsWith('nocc-'), store: v.startsWith('store-'), mb: Number(v.split('-')[1]) });
-assert.deepEqual(parse('cc-50'), { cc: true, store: false, mb: 50 });
-assert.deepEqual(parse('nocc-0'), { cc: false, store: false, mb: 0 });
-assert.deepEqual(parse('store-200'), { cc: true, store: true, mb: 200 });
+const parse = (v: string) => ({ cc: !v.startsWith('nocc-'), store: v.startsWith('store-'), s3pp: v.endsWith('-s3pp'), mb: Number(v.split('-')[1]) });
+assert.deepEqual(parse('cc-50'), { cc: true, store: false, s3pp: false, mb: 50 });
+assert.deepEqual(parse('nocc-0'), { cc: false, store: false, s3pp: false, mb: 0 });
+assert.deepEqual(parse('store-200-s3pp'), { cc: true, store: true, s3pp: true, mb: 200 });
 
 const node = (script: string, ...args: string[]) => {
   const cmd = [join(ROOT, script), ...args];
@@ -50,14 +50,21 @@ const MB = (b: number | null | undefined) => (b == null ? '' : (b / 1048576).toF
 const cols = ['time', 'elapsedS', 'simMinutes', 'speed', 'commitMB', 'largestFreeMB', 'privateMB',
   'cacheBudgetMB', 'cacheBytesMB', 'cacheFlushMB', 'cacheEntries', 'animBytesMB', 'error'];
 
-for (const v of variants) {
-  const { cc, store, mb } = parse(v);
-  log(`=== ${v}: CC ${cc ? 'on' : 'off'}, store repacks ${store ? 'on' : 'off'}, CacheBudget ${mb} MB`);
+let prev = '';
+for (const variant of variants) {
+  const { cc, store, s3pp, mb } = parse(variant);
+  // CAS/compositor caches must match the content set; a variant repeated right after itself keeps them (a warm run)
+  const warm = prev === variant;
+  prev = variant;
+  const v = warm ? `${variant}-warm` : variant; // label for logs and files
+  log(`=== ${v}: CC ${cc ? 'on' : 'off'}, store repacks ${store ? 'on' : 'off'}, Performance Patch ${s3pp ? 'on' : 'off'}, CacheBudget ${mb} MB`);
   node('tools/harness/cycle.ts', '--restart');
   node('tools/setup/install-fixes.ts', cc ? 'install' : 'uninstall', '--only', 'user-cc');
   node('tools/setup/install-fixes.ts', store ? 'install' : 'uninstall', '--only', 'store-repacks-test');
+  node('tools/setup/install-fixes.ts', s3pp ? 'install' : 'uninstall', '--only', 's3pp');
   node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-budget', '--cache-budget-mb', String(mb));
-  node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-clear'); // CAS/compositor caches must match the CC set
+  if (!warm) node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-clear');
+  log(`${v}: ${warm ? 'warm (caches kept)' : 'cold (caches cleared)'}`);
   if (values['dry-run']) { log(`would launch the probe, load ${values.save}, sample ${values.minutes} min`); continue; }
 
   // the probe server must outlive this step, as with cycle.ts: its own detached process
@@ -66,7 +73,8 @@ for (const v of variants) {
     { detached: true, stdio: ['ignore', probeLog, probeLog], cwd: ROOT }).unref();
   const tLoad = Date.now();
   try {
-    log(node('tools/harness/cycle.ts', '--save', values.save).split('\n').at(-1)!);
+    // cycle.ts's own timing lines split the load: launch -> agent answering (menu), Mod Scripts dialog wait, menu -> world loaded
+    for (const l of node('tools/harness/cycle.ts', '--save', values.save).split('\n')) if (/ after \d+ s|dialog|ready:/.test(l)) log(`${v}: ${l.slice(9)}`);
     log(`${v}: launch to live mode ${Math.round((Date.now() - tLoad) / 1000)} s`);
   }
   catch (e) { log(`load failed, next variant: ${(e as Error).message.split('\n')[0]}`); continue; }
@@ -108,6 +116,6 @@ for (const v of variants) {
 
 log('restoring: closing the game, removing CC and the budget change');
 node('tools/harness/cycle.ts', '--restart');
-node('tools/setup/install-fixes.ts', 'uninstall', '--only', 'user-cc,store-repacks-test,cache-budget');
+node('tools/setup/install-fixes.ts', 'uninstall', '--only', 'user-cc,store-repacks-test,s3pp,cache-budget');
 node('tools/setup/install-fixes.ts', 'install', '--only', 'cache-clear');
 log(`done${values['dry-run'] ? ' (dry run)' : `; results in ${out}`}`);

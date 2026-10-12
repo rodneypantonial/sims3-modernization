@@ -398,5 +398,122 @@
       "minutes": 3
     },
     "expect": "probe /native: hits >= 4 of the 6 plans (first stores, repeats hit within the 2 s window); Wogan not stuck afterwards. Needs ts3native 0.2.0 installed with Enabled=1 for the test."
+  },
+  {
+    "id": "store-cas-browse",
+    "bug": "CAS and the Buy catalog lag with lots of store content installed (docs/17 §4 M6, §5)",
+    "fix": "measurement only: times CAS and Buy catalog categories with the store content installed",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "makeup"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "everyday"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "formal"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "accessories"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "basics"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 15
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Comfort"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Surfaces"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Decor"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Plumbing"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Electronics"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Lighting"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_state"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "cas_state timings: one entry per open/category/close with sync_ms, ms (until the list stops changing), items and settled=true; state back to LiveModeState; no script errors. A step that answers 'still being timed' means its waitS was too short."
   }
 ]
