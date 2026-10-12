@@ -240,3 +240,71 @@ Candidate 2 now exists as a separate read-only script, `node tools/setup/content
 | SigsCache / DCBackup | both present, ~0 MB | both present, ~0 MB |
 
 Reading: on this install only the duplicate Nikel23 package and the one too-deep package matter in game; the backup's 415 MB of conflict copies and its DCCache line are what a player restoring that folder would carry over.
+
+## 8. S3PP 2.1 compatibility with our stack (source review, 2026-10-13)
+
+Read-only review of the Sims 3 Performance Patch before its first run next to our patches. Source is 1.1 (`game-copy/s3pp/src-1.1/Sims3PerfBeta Source/`); the binary is 2.1 (`game-copy/s3pp/bin-2.1/Sims3PerformanceBooster_beta2.1/`). Our side: ts3fixes patch host (docs/04 F8), ts3native (docs/15), S3SS 1.6.3 as in `tools/setup/fixes.json` `s3ss-config` (Mimalloc, OversizedThreadStackFix, AdaptiveWait, GCFinalizeThrottle, LotStreaming, RefPack, CreateFileRandomAccess, SmoothPatchPrecise, CPU/Timer on), MonoPatcher 0.3.0, ts3agent and the Frida probe.
+
+### 8.1 Version gap: 1.1 source vs 2.1 binary
+
+- The 2.1 `.asi` calls itself `1.0.0-beta2` and has the same nine patch classes. All 68 byte signatures in the 1.1 source appear unchanged in the 2.1 binary, and the 2.1 `.ini` is byte-identical to the 1.1 one [verified: string scan of the `.asi`, `diff` of the ini].
+- Log strings that are new in 2.1 (not in the 1.1 source): an EA App dry-run path for `StblBucketLayoutTuning`; `[ShortWaitSpin] another module already owns a wait import; skipping` (so it backs off when S3SS AdaptiveWait has hooked the wait imports); a `rooted=` counter in the `[LSC]` report [verified strings]. Other code changes in 2.1 cannot be ruled out from strings alone [inferred: small].
+- How it installs: `DllMain` starts a worker thread, and that thread applies the patches in priority order (Arena 1, STBL 2, Warmup 40, ISC 90, Profiler 90, LSC 91, MTEH 92) while the game keeps starting [verified `dllmain.cpp`, `optimization.cpp`]. ts3native and S3SS patch inside their own `DllMain`. None of the sites below are shared, so the order does not matter [verified, table 8.2].
+- S3PP links its CRT statically (`/MT`, `RuntimeLibrary=MultiThreaded`), so its own caches and index vectors do not go through MSVCR80 and S3SS's mimalloc never sees them [verified vcxproj].
+
+### 8.2 What each patch touches on Steam 1.67
+
+Steam addresses come from running the 1.1 signatures over `game-copy/bin/TS3W.exe` (our Steam 1.67 copy). Every pattern had exactly one match [verified, scratch scan script]. The retail addresses in the source do not apply to Steam.
+
+| S3PP patch | Kind | Steam sites (1.1 signatures) | Ours / S3SS / probe nearby | Overlap |
+|---|---|---|---|---|
+| `SimulatorStageProfiler` | Detours on 4 scheduler functions (timing only) | TaskObjects `0xD7FC60`, OneShot `0xD74800`, ThreadedObjects `0xD7F8B0`, ProcessTaskState `0xD80BC0` | Probe treats `0xD81840`–`0xD82100` as `MonoScriptHost::Simulate`. S3SS GC sites `0xD819AA`/`0xD81A1D`/`0xD81A37` and the Precise call `0xD81FDE` are all inside Simulate | None: different functions [verified] |
+| `MonoTypeEHashProbe` | Detours on Mono `g_hash` lookup/insert/remove/destroy; reads `mono_metadata_type_equal` as a table tag only | lookup `0xEBBDE0`, remove `0xEBBF00`, destroy `0xEBBFE0`, insert `0xEBC060`; type_equal `0xEA8720` | Probe reads the interpreter TLS slot `[0x11F4160]` (getter `0xE59FD0`) | None [verified] |
+| `MonoIsinstCache` | Detour on `mono_object_isinst` | `0xEA3820` | none | None [verified] |
+| `LocalizedStringCache` | Detour on `LocStrSvc_GetString_A`; calls `GC_add_roots` | GetStringA `0x59C5B0`; GC_add_roots `0xE4D9F0` | ts3native GC sites `0xE4E168` (GC_init) and `0xE4A1D8`/`0xE4A1FF`/`0xE4A206` (GC_collect_or_expand) | None: GC_add_roots is only called, not patched [verified] |
+| `StblBucketLayoutTuning` | ~50 immediate rewrites in the STBL hash table code, with self-test and rollback | Find `0x59AF50`, Clear `0x59F6C0`, FindOrInsert `0x59F750`, and the sites in between (`0x59Axxx`–`0x5A0xxx`) | none in that range | None [verified] |
+| `AllocatorArenaTuning` | 4 data immediates (16/4 MB to 4/1 MB) | `0x4E49E5`, `0x4E4A1C`, `0x4E5BDA`, `0x4E5BE4` (operands at +6) | S3SS Smooth wrapper `0x4E1320`, RefPack `0x4EB3B0`; ts3native none | None: different functions [verified] |
+| `PackageIndexWarmup` | Background thread reads Mods `.package` index blocks (`FILE_SHARE_READ\|WRITE\|DELETE`, random access) | no game code | none | None [verified] |
+| `ThreadStackDiet`, `ShortWaitSpin` | off in our install (`fixes.json` `s3pp.config`) | — | S3SS OversizedThreadStackFix / AdaptiveWait cover them | Would conflict; kept off [verified config] |
+
+ts3native's optional `Route_PlanLocked` detour (`0x82C6E0`) and budget ceiling (`0x1192324`) are nowhere near any S3PP site [verified].
+
+### 8.3 Per-patch interactions
+
+**`MonoTypeEHashProbe` + `SimulatorStageProfiler`**
+- The hook only acts on `g_hash` tables whose equality function is `mono_metadata_type_equal` (`table[1]`). In Mono that is the domain's `MonoType -> System.Type` table [inferred from Mono 1.2 layout]. It only acts while the calling thread is inside a tracked stage (ProcessTaskState, and TaskObjects/ThreadedObjects as set in the ini). Every other lookup goes straight to the original [verified].
+- Staleness: the pointer index is per thread (`thread_local`) and is used only when the table's mutation generation (bumped by the hooked insert/remove/destroy), bucket array, bucket count **and** entry count all match the snapshot. Otherwise it falls back to the real lookup and rebuilds later [verified `EnsurePointerIndex`]. Our patch host's `typeof`/`GetMethod` calls in the static constructor insert into that table through the hooked insert, so no stale entry can survive. A wrong hit is only possible if an unhooked path replaced a value in place without changing the count [inferred: no such caller known].
+- Header swaps: F8 copies 40-byte `MonoMethod` headers and never touches `MonoType`, `MonoClass` or the type table, so the index has nothing to go stale on [verified `Fixes.cs` `SwapMethod`]. The `+0x14 == 0` precondition is untouched: S3PP never runs or transforms a script method [verified: no hooks in the interpreter or JIT].
+- Probe: the stage detours add S3PP frames (`Sims3Performance.asi`) between Simulate and the stage functions on the sim thread. `findInterpThread` uses the TLS slot and is unaffected. `findSimThread`/native samples see one or two extra frames, and samples inside S3PP hooks show up as non-TS3W addresses [inferred].
+- Bonus: `[SIMSTALL] stage=... duration=...` lines (threshold `SimulatorSlowStageMs=250`) give free per-stage stall timing to compare with our stutter traces and the route work in docs/18 [verified log format].
+
+**`MonoIsinstCache`**
+- The cache key is (`obj->vtable->klass`, target `MonoClass*`) and the value is a bool; there is no invalidation [verified]. Our header swaps change method bodies, not class hierarchies or vtables, so cached answers stay right. That includes the hook classes' `(T)(object)this` casts: the object's real class is the game class, and the answer is the same every time [verified swap code; cast path inferred].
+- The only theoretical wrong answer is a class whose isinst result depends on the instance (remoting proxies). TS3 scripts do not use remoting [inferred].
+
+**`LocalizedStringCache`**
+- No overlap with our code. Cached strings stay alive through `GC_add_roots` on a 64 KB array (16,384 slots). That is a negligible extra root range on top of ts3native's 256 MB initial heap, and it does not interact with the heap or growth patches [verified sites; cost inferred].
+- Staleness risk, independent of our patches: the cache is keyed only on the 64-bit string key and invalidates only when the service pointer or `*(service+0x48)` changes. If `+0x48` is the head (sentinel) of an STL-style map, it does not change when string tables are added. A lookup made before a table loads (store repack, travel world, newly loaded expansion STBL) could then serve the old "missing" answer until the cache fills to 75% and clears [inferred; S3PP's own README warns about blank or wrong labels]. It returns the same `MonoString` instance to every caller; harmless unless a script edits strings in place (ours do not) [verified for ts3fixes/ts3agent: no unsafe string writes].
+
+**`StblBucketLayoutTuning`**
+- No shared sites. It refuses to install if the localized-string service already exists, which matters because it installs from a thread: check the log for `[STBL509] active` and not `refusing late install` [verified strings]. It changes STBL memory layout, so any STBL bytes-by-tag numbers (§4 M5) must be taken in the same configuration they are compared against [inferred].
+
+**`AllocatorArenaTuning`**
+- The patched arena code (functions `0x4E48F0` and `0x4E5AA0`, Steam) calls `VirtualAlloc`/`VirtualFree` directly and imports nothing from MSVCR80 [verified: import calls in `0x4E4800`–`0x4E63E6`]. So it is separate from S3SS's mimalloc (MSVCR80 `malloc`/`free`) and from the Boehm heap that ts3native resizes [verified]. Smaller arenas mean more of them; the effect on the largest free block is unmeasured [inferred].
+
+**`PackageIndexWarmup`**
+- It never touches game memory. It does pre-warm the OS file cache while the menu is up, so it confounds the cold vs warm load split in §6b: in an A/B, both arms must be warm (or both cold with warm-up off) [inferred].
+
+### 8.4 Verdict and checks for the first run
+
+| Patch | Verdict | Check |
+|---|---|---|
+| `MonoTypeEHashProbe` + `SimulatorStageProfiler` | **Safe as-is** | `Sims3Performance.log`: `[MTEH] ... armed`, `four scheduler seams armed` with the Steam addresses above. ts3fixes' applied list (`ts3fixes.applied`) shows every patch. Probe `/simstack` still finds the sim thread. Bundle stutter run with `bp-route-cache` |
+| `MonoIsinstCache` | **Safe as-is** | `[ISC] ... served=` rising; no `InvalidCastException` in script error logs during the bundle run |
+| `LocalizedStringCache` | **Needs a test** (the most likely to misbehave) | `store-cas-browse` (CAS/Buy labels of store items) and one travel or world switch; look for blank or wrong labels and `[LSC] clears=`. If anything is off: `LocalizedStringCache=0` only |
+| `StblBucketLayoutTuning` | **Safe as-is** | Log shows `[STBL509] active` (not `refusing late install` or `self-test FAILED`); M3 address space |
+| `AllocatorArenaTuning` | **Safe as-is** | Log `changed TS3 arenas from 16/4 MB to 4/1 MB`; M3 largest free block at the save vs `store-200` |
+| `PackageIndexWarmup` | **Safe as-is** | `[PackageIndexWarmup] files=... validIndexes=...`; compare only warm vs warm load splits |
+| `ThreadStackDiet`, `ShortWaitSpin` | Keep **off** | Log must not show `[TSD] ... armed` or `[ShortWaitSpin] spinning` |
+
+Per the bundle rule, the first run is `store-200` vs `store-200-s3pp` (PLAN step 1), not one run per patch. Only if something fails, turn S3PP patches off one at a time in the order its README gives.
