@@ -60,7 +60,7 @@ namespace Ts3Fixes
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[32]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[48]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -85,6 +85,7 @@ namespace Ts3Fixes
                 case "failreplan": return Instantiator.kNoRouteFailWalkOffscreen;
                 case "watchdog": return Instantiator.kStuckWatchdog;
                 case "backoff": return Instantiator.kRouteFailureBackoff;
+                case "stations": return Instantiator.kNoStationDetourOffscreen;
                 default: return true;
             }
         }
@@ -199,8 +200,9 @@ namespace Ts3Fixes
 
         // A spot for a shortcut Sim on `lot` near `near`: on the lot (else the game still sees the Sim away) and passing the
         // game's Sim.IsPointInLotSafelyRoutable (a short plan from the spot to the lot's edges), so the Sim can walk on from
-        // there instead of standing stuck. That check is itself a route plan, so each lot keeps its last verified spot:
-        // reuses start next to it and re-verify every 8th time.
+        // there instead of standing stuck. The search always starts from `near` (the entrance), so arrivals spread out
+        // instead of piling onto one point; that check is itself a route plan, so a spot within 3 m of the lot's last
+        // verified spot skips it, except every 8th time.
         static readonly Dictionary<ulong, Sims3.SimIFace.Vector3> sSafeSpot = new Dictionary<ulong, Sims3.SimIFace.Vector3>();
         static readonly Dictionary<ulong, int> sSafeUses = new Dictionary<ulong, int>();
         static bool SafeSpot(Sims3.Gameplay.Actors.Sim sim, Lot lot, Sims3.SimIFace.Vector3 near, out Sims3.SimIFace.Vector3 pos, out Sims3.SimIFace.Vector3 fwd)
@@ -213,17 +215,15 @@ namespace Ts3Fixes
             sSafeUses[lot.LotId] = uses + 1;
             for (int i = 0; i < 3; i++)
             {
-                bool fromKnown = cached && i == 0;
-                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(fromKnown ? known : near), out pos, out fwd)) continue;
+                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(near), out pos, out fwd)) continue;
                 if (LotManager.GetLotAtPoint(pos) != lot) continue;
-                if (fromKnown && uses % 8 != 0) { if (lot.IsHouseboatLot()) PatchCounters()[21]++; return true; }
-                if (sim.IsPointInLotSafelyRoutable(lot, pos))
+                bool trusted = cached && uses % 8 != 0 && (pos - known).Length() < 3f;
+                if (trusted || sim.IsPointInLotSafelyRoutable(lot, pos))
                 {
-                    sSafeSpot[lot.LotId] = pos;
+                    if (!trusted) sSafeSpot[lot.LotId] = pos;
                     if (lot.IsHouseboatLot()) PatchCounters()[21]++;
                     return true;
                 }
-                if (fromKnown) sSafeSpot.Remove(lot.LotId);
             }
             return false;
         }

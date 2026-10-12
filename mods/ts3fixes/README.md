@@ -20,7 +20,8 @@ Measured with all fixes on, 10 minutes at speed 3 against the same saves without
 | `kVirtualHomeShortcut` | on | Homeless townies leaving the world fade out at once when unseen (the game would first walk them to a random lot). |
 | `kNoRouteFailWalkOffscreen` | on | An unseen townie whose route fails skips the extra searches and the walk to the obstacle that only feed the route-fail animation. |
 | `kRouteFailureBackoff` | on | An unseen townie does not re-plan a route to the same place for 30 sim-minutes after it failed. |
-| `kStuckWatchdog` | on | An unseen townie stuck on its way home for 60 sim-minutes gets the game's own reset-and-send-home. |
+| `kNoStationDetourOffscreen` | on | An unseen townie keeps the route it planned instead of rolling for a subway or hover train detour (extra searches nobody would see). |
+| `kStuckWatchdog` | on | An unseen townie that has not moved for 60 sim-minutes on its way home, or 120 sim-minutes while walking anywhere (e.g. two Sims blocking each other in a doorway), gets the game's own reset-and-send-home; at most once per Sim per sim-day. |
 | `kBroadcasterThrottle` | on | Reaction broadcasters (music, fires, smells, ...) far from the camera check for nearby Sims less often. |
 | `kWalkStyleComparer` | on | A faster lookup of walk styles with the same result. |
 
@@ -34,7 +35,7 @@ To change a setting, edit the tuning resource `Ts3Fixes.Instantiator` in the pac
 
 ## Compatibility
 
-Conflicts with any mod that replaces the same methods: `GoHome.Run`, `VisitCommunityLot.Run`, `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run`, `RabbitHole.RouteNearEntranceAndEnterRabbitHole`, `Sim.GoToVirtualHome.GoToVirtualHomeInternal.Run`, `SimRoutingComponent.SetRouteOptions` / `GetRouteFailPath`, `ScriptCore.Route.Plan`, `ReactionBroadcaster.PulseSims`, `SimRoutingComponent.WalkStyleComparer.Compare`. Tested with NRaas ErrorTrap and Overwatch, MonoPatcher, simler90 core and the community routing fixes listed in docs/01.
+Conflicts with any mod that replaces the same methods: `GoHome.Run`, `VisitCommunityLot.Run`, `VisitLot.Run`, `GoToLot.Run`, `GoToCommunityLot.Run`, `RabbitHole.RouteNearEntranceAndEnterRabbitHole`, `Sim.GoToVirtualHome.GoToVirtualHomeInternal.Run`, `SimRoutingComponent.SetRouteOptions` / `GetRouteFailPath`, `SimRoutingComponent.CheckAndUpdateRouteForStations`, `ScriptCore.Route.Plan`, `ReactionBroadcaster.PulseSims`, `SimRoutingComponent.WalkStyleComparer.Compare`. Tested with NRaas ErrorTrap and Overwatch, MonoPatcher, simler90 core and the community routing fixes listed in docs/01.
 
 ## Build from source
 
