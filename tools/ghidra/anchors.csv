@@ -16,8 +16,8 @@ Route_StartPointsFromPosition,0x7641d0
 Route_StartPointsBuild,0x7642c0
 Route_PlanCommon,0x7606e0
 Route_PlanLocked,0x82c6e0
-Route_SearchAStar,0x81b2a0
-RoutingJob_Init,0x661b50
+RoutingJob_Execute,0x81b2a0
+PathPlan_WithRetries,0x661b50
 JobManager_JobThread,0x599cf0
 ResourceMan_GetManager,0x4afd20
 ResourceMan_Manager_ctor,0x4b33b0
