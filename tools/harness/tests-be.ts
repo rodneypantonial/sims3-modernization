@@ -154,17 +154,25 @@ console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fp
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 
 if (only.includes('B')) {
+  // Frame hook first, profiler second, and the profiler (stops itself after -t) must detach first: each python host
+  // injects its own frida-agent, and when the first-loaded agent unloads before a later one, the later one's unload
+  // kills the process (crashed the game at the end of B twice; dummy 32-bit process, two no-op scripts: FIFO detach
+  // crashes every time, LIFO never, 2026-10-13).
+  const cap = await capture('B');
   // sim-thread hitches on the same QPC clock, as profile-world.ts runs it; its own session, stops itself after -t
   const simOut = join(OUT, `${tag}-B-sim`);
   const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
     '-P', JSON.stringify({ out: simOut.replace(/\\/g, '/'), hitchMs: SLOW_MS }), '-q', '-t', String(B_SECONDS + 5)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let profLog = '';
   prof.stdout.on('data', d => profLog += d); prof.stderr.on('data', d => profLog += d);
-  const profDone = new Promise(r => prof.on('exit', r));
-  const cap = await capture('B');
+  let profExited = false;
+  const profDone = new Promise(r => prof.on('exit', () => { profExited = true; r(null); }));
+  for (const due = Date.now() + 30000; !profLog.includes('hooks installed') && !profExited && Date.now() < due;) await sleep(250);
+  const t0 = Date.now(); // B window starts once the profiler is hooked: its attach hitches stay out of the stats
   await sleep(B_SECONDS * 1000);
-  const { frames, log } = await cap.stop();
   await profDone;
+  const cap0 = await cap.stop();
+  const frames = cap0.frames.filter(f => f.t >= t0 && f.t <= t0 + B_SECONDS * 1000), log = cap0.log;
   const s = frameStats(frames);
   const simOk = profLog.includes('hooks installed') && !profLog.includes('NOT PROFILING') && existsSync(`${simOut}-hitches.jsonl`);
   const hitches = simOk ? readFileSync(`${simOut}-hitches.jsonl`, 'utf8').split('\n').filter(l => l.trim()).map(l => JSON.parse(l)) : null;

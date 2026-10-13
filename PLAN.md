@@ -134,7 +134,7 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 
 ### 2b. Test harness: working
 Probe, agent (hot reload), cycle, new-save, age-save, watchdog, dialog rules, keep_alive, declines, quiet UI. Prior art: `docs/06-test-harness-prior-art.md`.
-- [ ] Frame-time capture: hook `0xEC9F00` verified (docs/04 F19, CModule, present=1 only, dummy-tested); first in-game run `node tools/harness/tests-be.ts --tag sv-<layer> --only B`.
+- [ ] Frame-time capture: hook `0xEC9F00` verified (docs/04 F19, CModule, present=1 only, dummy-tested; the end-of-B game crash was two frida-agents unloading in load order, fixed by detaching the profiler first); first in-game run `node tools/harness/tests-be.ts --tag sv-<layer> --only B`.
 - [ ] A permanent probe ASI later (Frida stays for exploration).
 
 ### 2c. All-known-fixes layer: installed, first validation passed

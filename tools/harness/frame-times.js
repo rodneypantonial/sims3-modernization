@@ -110,7 +110,9 @@ rpc.exports = {
     clearInterval(timer);
     listener.detach();
     Interceptor.flush();
-    Thread.sleep(0.5); // the render thread may still be inside the CModule hook; unloading it now crashed the game (bp-cur, 2026-10-13)
+    // Cheap guard: the render thread may still be inside the CModule hook. The end-of-B crashes (bp-cur, 2026-10-13) were
+    // not this: they were two frida-agents unloading in load order (FIFO); tests-be.ts now detaches the profiler first.
+    Thread.sleep(0.5);
     drain();
     file.close();
     console.log(`[frames] ${frames} frames on thread ${ST(1)}, ${ST(3)} render calls without present, ` +
