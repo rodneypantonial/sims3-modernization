@@ -11,7 +11,7 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
-#define TS3NATIVE_VERSION "0.8.0"
+#define TS3NATIVE_VERSION "0.9.0"
 
 typedef unsigned char u8;
 
@@ -153,7 +153,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 76 int32 (v9).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 83 int32 (v10).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -239,8 +239,16 @@ struct Ts3nCounters {
     LONG allocDropped;         // chunks forgotten because their heap shut down
     LONG allocShutdowns;       // EA heap shutdowns seen
     LONG allocOomRetries;      // Malloc that returned NULL, flushed this thread's chunks of that heap and retried
+    // v10: water-grid jump-point search as one inlined loop (docs/15 phase 9, waterjps.cpp)
+    LONG waterJpsReady;           // 1 when the call at 0x6207FB is retargeted
+    volatile LONG waterJpsMode;   // runtime switch, writable by test tools: 0 = the game's jump 0x61FE10, 1 = WaterJump
+    volatile LONG waterJpsVerify; // 1 = mode 1 also runs the game's jump and compares (its result is used on a mismatch)
+    LONG waterJpsCallsK;          // jumps run by WaterJump, units of 1024
+    LONG waterJpsCellsK;          // cells they stepped over, units of 1024
+    LONG waterJpsMismatches;      // verify: WaterJump and the game's jump differed
+    LONG waterJpsFallbacks;       // mode 1 calls passed to the game's jump (dir > 7, oversized grid)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {9,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -983,6 +991,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
 #include "savewrite.cpp"
 #include "decompress.cpp"
 #include "alloc.cpp"
+#include "waterjps.cpp"
 
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
@@ -1018,6 +1027,7 @@ static void Run(HMODULE self) {
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
         keepLog = ApplyDecompress(ini) || keepLog;
         keepLog = ApplyAlloc(ini) || keepLog;
+        keepLog = ApplyWaterJps(ini) || keepLog;
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

@@ -882,6 +882,39 @@ static void TestAlloc() {
            (t2.QuadPart - t1.QuadPart) * 1e9 / fq.QuadPart / N);
 }
 
+// --- water jps (phase 9): hand-checked jumps on tiny grids; waterjps-test.exe compares against the game's code ---
+static DWORD __cdecl FakeJump(const u8* const*, const u8* const*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, void*) { return 1234; }
+
+static void TestWaterJps() {
+    Ts3nCounters& k = ts3native_counters;
+    static u8 g1[9], g2[9];
+    const u8* p1 = g1;
+    const u8* p2 = g2;
+    k.waterJpsMode = 1;
+    auto J = [&](DWORD w, DWORD h, DWORD goal, DWORD cell, DWORD dir, DWORD flag) { return WaterJumpHook(&p1, &p2, w, h, goal, cell, dir, flag, NULL); };
+    memset(g1, 1, 9);
+    assert(J(6, 1, 0xFFFFFFFF, 0, 2, 0) == 0xFFFFFFFF);  // open row east: no jump point before the edge
+    assert(J(6, 1, 4, 0, 2, 0) == 4);                    // the goal
+    g2[3] = 1;
+    assert(J(6, 1, 0xFFFFFFFF, 0, 2, 0) == 2);  // next to a cost-layer cell
+    g2[3] = 0;
+    g1[0] = 0;
+    assert(J(3, 1, 0xFFFFFFFF, 0, 2, 1) == 1);  // start on land: one step out
+    g1[0] = 1;
+    assert(J(3, 1, 0xFFFFFFFF, 0, 2, 1) == 0xFFFFFFFF);
+    // 3x3 sea, diagonal from (0,0): the east scan off (1,1) wraps past the row end (the game's index step) to (0,2), (1,2),
+    // (2,2), so it finds either goal and (1,1) is the jump point
+    assert(J(3, 3, 7, 0, 3, 0) == 4 && J(3, 3, 8, 0, 3, 0) == 4);
+    assert(J(3, 3, 0xFFFFFFFF, 0, 3, 0) == 0xFFFFFFFF);
+    // mode 0 and the odd cases go to the game's jump
+    g_wjOrig = FakeJump;
+    assert(J(3, 3, 7, 0, 0xFF, 0) == 1234 && k.waterJpsFallbacks == 1);
+    k.waterJpsMode = 0;
+    assert(J(3, 3, 7, 0, 3, 0) == 1234 && k.waterJpsFallbacks == 1);
+    g_wjOrig = (WjJumpFn)(uintptr_t)WJ_JUMP;
+    k.waterJpsFallbacks = 0;
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -909,6 +942,7 @@ int main() {
     TestSaveWrite();
     TestDecompress();
     TestAlloc();
+    TestWaterJps();
     puts("selftest ok");
     return 0;
 }

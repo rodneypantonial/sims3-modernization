@@ -81,7 +81,7 @@ Smaller items, none above 0.5% each: `0xAB7ED0`/`0xA8DF80` (lot tile and room lo
 | Rank | Candidate | Expected gain (sim-thread ms/s) | Effort | Status |
 |---|---|---|---|---|
 | 1 | Route search async, including the water JPS (docs/18 B+C) | Table share ~110 BP / 96 SV / 201 IP. Realistic after the lock overlap: 15-70 BP, 35-125 IP (docs/18, E×O). The water JPS moves with it | M-L | Worker mode 1 works in game; async mode being built |
-| 1b | Water JPS made cheaper in place (iterative jump or JPS+) | IP only: up to ~40-60 of the ~78; also shortens long IP searches that async cannot hide | M | New, pure function, low risk |
+| 1b | Water JPS made cheaper in place (iterative jump or JPS+) | IP only: up to ~40-60 of the ~78; also shortens long IP searches that async cannot hide | M | Built (ts3native 0.9.0, `[WaterJps]`, docs/15 Phase 9): the jump as one inlined loop, identical to the game's code on 43.9M offline jumps, 3.9x faster; ~50 ms/s expected in IP [inferred]. No cache/JPS+: results depend on goal and start, grids have no known invalidation point |
 | 2 | Animation update as a parallel-for over actors | ~20-28 of ~33 (8 cores, if safe) | L | New; first decompile `0x940430`'s callees for script or event calls |
 | 3 | Read-only query caches (raycast height, quadtree, `GetObjectsOnLot`) | ~15-30 of ~43 | S-M each (C# for #8 and #9, native for #7) | #9 built (ts3fixes `kSpatialCache`, opt-in, not run in game; §4a). #7 and #8 not started |
 | n/a | Allocator: thread-local cache or mimalloc behind the arena (not an offload) | ~30-80 of 50-160 | M | Built (ts3native 0.8.0, `[Alloc]`, docs/15 Phase 8): per-thread cache in front of the locked entry points, not run in game. S3PP `AllocatorArenaTuning` patches other sites (compatible) |

@@ -458,3 +458,53 @@ Hit rate decides it and is unknown: game code tends to free and reallocate the s
 - Thread-exit flush takes the heap lock inside the FLS callback (as the CRT does); a deadlock needs a lock holder that waits on that thread's exit.
 - More than 4 heaps on one thread: the 5th is not cached (`allocPassedK`). Only `0x4E69D0`, `0x4E6A20` and `0x4E5920` are covered; code that calls `0x4E5E40`/`0x4E51B0` directly (debug layer, realloc internals) is unaffected and stays correct because cached chunks look allocated.
 - S3PP `AllocatorArenaTuning` patches immediates in `0x4E48F0`/`0x4E5AA0` (core sizes), not these entries: compatible [verified sites]. Another mod detouring these entry points makes ours `SKIP` all four.
+
+## Phase 9: faster water-grid jump-point search (v0.9.0, `[WaterJps] Enabled=0` by default)
+
+Built and tested offline against the game's own code 2026-10-13, not run in game. Item 1b of docs/20: the water JPS `0x620560`/`0x61FE10` is 7.8% of Isla Paradiso sim-thread samples (0% in BP/SV). Source `native/ts3native/waterjps.cpp` (included by `ts3native.cpp`), offline test `waterjps-test.cpp`.
+
+### What the code does [verified: decompile + disassembly]
+
+- Caller chain: `0x65E0D0` -> `0x671930` ("PathPlan/path", "Routing/waterPath") -> `0x620560(g1, g2, w, h, costScale, &start, &goal, &outPath, cb)`. `g1` and `g2` are EASTL `vector<u8>` grids picked from the routing world (`+0x7B0 + 16*i` by boat/swim type, `+0x7C0 + 16*j`), `w`/`h` at world `+0x7A0`/`+0x7A4`. `g1 != 0` = water the route may use; `g2 != 0` = a cost layer: such cells are always jump points, and an edge touching one costs `costScale` (`DAT_00FBB870` = 40.0) per cell instead of `DAT_0107A538` = 1.0.
+- `0x620560` is a plain JPS A*: a binary-heap open list ("PathPlan/tOpenListContainer", EASTL push/pop heap `0x61F830`/`0x6EB480`), a hash map cell -> {g, parent} ("PathPlan/extraData"), a `w*h` byte closed set allocated and zeroed per call ("PathPlan/closed"), octile heuristic `0x620120`, Euclidean/Manhattan edge cost `0x61FFA0`. For each popped node it computes the parent direction (`0x61F7E0`), the natural plus forced neighbours (`0x61FA10`), and calls the jump `0x61FE10` once per direction.
+- The jump `0x61FE10` (cdecl, 9 args, plain `ret`): step one cell (`0x61F750`, index arithmetic: `cell - w`, `+1`, `+w`, ... so a step east off the last column lands on column 0 of the next row), `n / w` and `n % w` (two `div`s), bounds check, then `n == goal`, forced test `0x61FA10`, `g2[n]` (`0x61F9E0`); a diagonal step first runs both straight jumps (recursive calls), and then **recurses for the next cell**. So one stack frame per cell scanned. A flag argument (start cell not water) makes it return the first step without scanning.
+- The forced-neighbour test `0x61FA10` first calls the route callback's vtable slot 1 (`0x66DC50`: is the cell within 3 cells of the start or the goal, Chebyshev), then up to four `0x61F890` (neighbour coordinate, a switch) + `0x61F9A0` (open = `g1 && !g2`, coordinate bounds check, no row wrap) pairs and three `g2` neighbour reads.
+
+### Why it is slow [measured: IP samples]
+
+Of the 367 Isla Paradiso sim-thread samples with the JPS on the stack, the leaf is the jump `0x61FE10` 105, `0x61F9A0` 86, `0x61FA10` 85, `0x61F890` 34, `0x61F9E0` 11, `0x61F750` 8, callback `0x66DCxx` 7: **~92% is the per-cell chain** (about ten calls, two divisions and an indirect call per cell). Open list, hash map and closed-set allocation are a few samples. Not a missing pruning or a repeated grid scan: the algorithm is ordinary JPS; the per-cell constant is the cost.
+
+### What we built
+
+`WaterJump`: the same jump as one loop, every helper inlined, no division per cell (x, y tracked next to the index, with the same row wrap), interior cells tested with plain index offsets and no bounds checks, the game's callback `0x66DC50` inlined (any other callback is still called once per forced test through its vtable). Straight scans are a loop; a diagonal step runs the two straight scans and continues; the stack use is fixed. Results are identical by construction and by test, including the row-wrap quirk.
+
+Hook: only the search's own call at `0x6207FB` (`E8` to `0x61FE10`) is retargeted to `WaterJumpHook`; the game's function is untouched and stays the mode-0 path. Install checks the call bytes and an FNV-1a of `0x61F750..0x61FF93` (every function the jump runs, `0x5A2C1E2B`) and of `0x66DC50` (`0x585FD97D`); a mismatch skips the patch (or, for the callback only, calls it through the vtable). Passed to the game's jump: mode 0, `dir` byte > 7, `w < 2` (a diagonal step is +0 there and the game recurses until the stack overflows), `w * (h + 2) >= 2^31`, `cell >= w*h`.
+
+Not done: a result cache or JPS+ jump tables. A jump depends on the goal and on the callback's start/goal boxes, so (cell, dir) results do not carry over between searches, and precomputed jump distances per grid would need an invalidation point for `+0x7B0`/`+0x7C0` (houseboats, terrain edits) that we have not found [inferred].
+
+Settings `[WaterJps]`: `Enabled=0`, `Mode=1` (runtime switch `ts3native_counters.waterJpsMode`, +0x134), `Verify=0` (+0x138: mode 1 also runs the game's jump, counts and logs mismatches, uses the game's result). Counters v10 at +0x130: `waterJpsReady`, `waterJpsMode`, `waterJpsVerify`, `waterJpsCallsK`, `waterJpsCellsK`, `waterJpsMismatches`, `waterJpsFallbacks`; `agent.js` reads them for `version >= 10`.
+
+### Offline results (2026-10-13, i7-11800H, 32-bit /O2 build) [measured]
+
+`out\waterjps-test.exe ["<path>\TS3W.exe"] [grids]` copies `0x61F000..0x621000` and `0x66D000..0x66E000` from the exe (read-only) to the same addresses in the test process (the code only calls itself; its switch tables are in those pages) and runs the game's jump and `WaterJump` on the same inputs: random grids 2..161 x 1..160 with islands, open sea, sparse and patchy `g2`, every start cell (a sample on big grids) x 8 directions x flag 0/1 with junk in the flag's upper bytes, random or no goal, and three callbacks (none, the game's `0x66DC50`, another one through the vtable whose calls are counted). **1000 grids: 43.9M jumps, identical results and identical callback call counts.** Timing on a 512 x 512 sea with 300 islands and 0.1% `g2`, 400k jumps from random water cells (138 cells per jump on average), best of 3: **game 2.21 s, WaterJump 0.56 s, 3.9x**.
+
+Found on the way: on a grid 1 cell wide the game's jump recurses forever (stack overflow), and on large open grids its recursion depth is the number of cells scanned (a row-wrapping scan can go `w*h` deep); the test runs on a 256 MB stack for that reason. Whether the game's water grids are ever wide open to the border is not known [inferred].
+
+`selftest.exe` adds hand-checked jumps on tiny grids (goal, cost-layer neighbour, flag, the row-wrap case) and the mode-0/fallback wiring.
+
+### Expected gain in game [inferred]
+
+~92% of the JPS time is the per-cell chain and it runs 3.9x faster offline, so the JPS share drops by about 0.92 x (1 - 1/3.9) = 68%: in Isla Paradiso about **5 points of the 7.8%, ~50 ms per second of sim-thread time** (40-55 ms/s if the real grids behave differently from the synthetic one). Long boat/swim searches get shorter in the same proportion, which also helps the async route plan later (a shorter job). BP and SV have no water JPS samples: no change there.
+
+### How to test in game
+
+1. Build, `install --only native-patches`, `[WaterJps] Enabled=1 Verify=1`. Log must show `OK   water jps: call 0x006207FB -> WaterJumpHook, mode 1 verify 1, callback 0x0066DC50 inlined`.
+2. Isla Paradiso bundle run with boats and swimming in it (route repro actions for a boat trip and a swim): `waterJpsCallsK` grows, `waterJpsMismatches 0`, `waterJpsFallbacks 0`, no `MISMATCH` lines.
+3. Then `Verify=0` and an A/B in one load: flip `waterJpsMode` (+0x134) 0/1 with `/simstack` on and compare the `0x61FE10`/`0x61FA10`/`0x61F9A0` family share (docs/20 method).
+4. Stop on any crash in `ts3native.asi` or in `0x620560`; triage against the change ledger.
+
+### Risks
+
+- A wrong jump point would change boat/swim routes (not memory safety: the loop only reads the two grids inside `w*h` and the callback's 16 bytes). Mitigated by the identical-result test on the game's own code and by `Verify=1` for the first runs.
+- Another mod patching the jump's code or the call at `0x6207FB` makes ours `SKIP`.
+- The counters use two interlocked adds per jump (~10-20 ns against ~1.4 us per jump).
