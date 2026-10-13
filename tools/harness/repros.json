@@ -791,10 +791,19 @@
     "save": "Baseline-BP",
     "steps": [
       {
-        "cmd": "sim_strand",
+        "cmd": "place_sim",
         "args": {
           "sim": "Wogan Hemlock",
-          "lot": "Hogan"
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 2,
+        "note": "puts him on Hogan's diner lot: in-game lot names do not match 'Hogan'"
+      },
+      {
+        "cmd": "sim_strand",
+        "args": {
+          "sim": "Wogan Hemlock"
         },
         "note": "samples the lot for a spot failing the game's routability check and stands him there; keep the camera away (unseen townie = 60 sim-minute rule, else one sim-day)"
       },
