@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { endlessJob } from './stuck-rule.ts';
 
 const { values } = parseArgs({ options: { minutes: { type: 'string', default: '30' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -48,7 +49,7 @@ while (Date.now() - t0 < Number(values.minutes) * 60000) {
     const p = seen.get(s.id);
     const e = p && p.key === key ? { key, checks: p.checks + 1, reported: p.reported } : { key, checks: 1, reported: false };
     seen.set(s.id, e);
-    if (e.reported || !s.interaction || e.checks < (s.routing ? 3 : 6)) continue;
+    if (e.reported || !s.interaction || endlessJob(s.interaction) || e.checks < (s.routing ? 3 : 6)) continue;
     e.reported = true;
     console.log(`${stamp()} NEW STUCK ${s.name} on "${s.interaction}" at ${s.lot ?? 'street'} (${s.x}, ${s.z})${s.routing ? ' routing' : ''}${moved[s.name] ? ` [moved: ${moved[s.name]}]` : ''}`);
     const list = existsSync(CANDIDATES) ? JSON.parse(readFileSync(CANDIDATES, 'utf8')) : [];

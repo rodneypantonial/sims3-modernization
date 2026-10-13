@@ -10,7 +10,8 @@
 // Steps are agent commands (place_sim, sim_go_home, do_interaction, patches {name:false}, ...), run in order.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { endlessJob } from './stuck-rule.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const LIB = JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[];
@@ -94,7 +95,7 @@ if (w.kind === 'counter') {
       const p = seen.get(s.id);
       const e = p && p.key === key ? { key, checks: p.checks + 1 } : { key, checks: 1 };
       seen.set(s.id, e);
-      if (s.interaction && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
+      if (s.interaction && !endlessJob(s.interaction) && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
     }
     console.log(`${stamp()} stuck: ${stuck.size ? [...stuck].join('; ') : 'none'}`);
   }

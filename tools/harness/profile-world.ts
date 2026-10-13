@@ -14,7 +14,8 @@ import { appendFileSync, createWriteStream, mkdirSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
-import { focusGame } from './focus-game.ts';
+import { focusGame } from './focus-game.ts';
+import { endlessJob } from './stuck-rule.ts';
 
 const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
@@ -73,7 +74,7 @@ async function checkStuck() {
     const prev = simSeen.get(sim.id);
     const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     simSeen.set(sim.id, e);
-    if (!e.reported && sim.interaction && e.checks >= (sim.routing ? 3 : 6)) {
+    if (!e.reported && sim.interaction && !endlessJob(sim.interaction) && e.checks >= (sim.routing ? 3 : 6)) {
       e.reported = true;
       stuck.push({ ...sim, checks: e.checks, shortcut: moved[sim.name] ?? false });
     }

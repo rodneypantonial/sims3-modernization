@@ -7,7 +7,8 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
+import { parseArgs } from 'node:util';
+import { endlessJob } from './stuck-rule.ts';
 
 const { values } = parseArgs({ options: {
   every: { type: 'string', default: '1' }, port: { type: 'string', default: '47891' }, 'min-free-mb': { type: 'string', default: '300' },
@@ -58,7 +59,7 @@ async function checkSims(): Promise<void> {
     const entry = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     simSeen.set(s.id, entry);
     const limit = s.routing ? 3 : 6; // routing without moving for ~1 sim day, or one activity for ~2 sim days
-    if (!entry.reported && s.interaction && entry.checks >= limit) {
+    if (!entry.reported && s.interaction && !endlessJob(s.interaction) && entry.checks >= limit) {
       entry.reported = true;
       log(`STUCK SIM? ${s.name} on "${s.interaction}" at (${s.x}, ${s.z}) ${s.lot ?? ''}${s.routing ? ' while routing' : ''} for ${entry.checks} checks (queue ${s.queue})`);
       appendFileSync(STUCK_FILE, JSON.stringify({ time: stamp(), checks: entry.checks, ...s }) + '\n');
