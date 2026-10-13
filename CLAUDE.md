@@ -23,8 +23,7 @@ Make The Sims 3 run well on modern hardware: fewer crashes (Error 12, crash on s
 See `PLAN.md` ("Where things stand" and "Next tasks"): it is the source of truth after a context reset. Priority: in-game stutter.
 
 ## Repository
-- This is a **local-only git repo**. Do not add a GitHub remote or push: game binaries, Ghidra projects and captures make it too big, and EA's files must not be published.
-- First CLI step if it isn't a repo yet: `git init`, then `git add -A` and `git commit -m "Project setup: plan, notes and docs"`.
+- **Published on GitHub** for contributors (`README.md`, `AGENTS.md` for agent rules, branch and PR conventions). Never commit EA game files, decompiled code, saves, dumps or captures, and no personal paths, machine names or emails.
 - `.gitignore` keeps EA game files (exe, dll, package), Ghidra/REA projects, dumps, traces and build output out of git. Keep game copies for analysis in `game-copy/`, which is ignored. Commit notes, findings, scripts and our own patch source only.
 
 ## Docs

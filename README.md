@@ -1,0 +1,150 @@
+# Sims 3 modernization
+
+Make The Sims 3 run well on modern PCs: less in-game stutter, fewer Error 12 (out of address space) crashes, and room for heavy store content and custom content (CC). First we collect and measure what the community fixes already do, then we reverse engineer the game and build our own fixes where those fall short: a C# script mod, a native ASI plugin, and the test tools to prove each change.
+
+Target: The Sims 3 Steam edition, patch 1.67, all expansion and stuff packs, Windows 10/11.
+
+**Status:** research project, early. Results are measured on one laptop (i7-11800H, 32 GB, RTX 3070 Laptop GPU). They are not yet confirmed on other machines; that is one of the things contributors can help with.
+
+`PLAN.md` is the source of truth for what is done, what is open and what comes next.
+
+## Results so far
+
+Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play at speed 3, on aged 14-day test saves. **Baseline** = the community fixes layer (DXVK, S3SS, NRaas, Smooth Patch, routing fixes, ...; see `tools/setup/fixes.json`) without our mods. The unmodified game cannot reliably load a save on this machine at all: it runs out of address space while loading (docs/05).
+
+**Our C# mod `ts3fixes`, all fixes on, 3 runs per world (2026-10-12, build 62c39f6, docs/04 F13):**
+
+| | Bridgeport | Sunset Valley | Isla Paradiso |
+|---|---|---|---|
+| sim iterations/s | 31.2 -> **50.1** (+61%) | 63.3 -> **116.8** (+85%) | 31.7 -> **73.8** (+133%) |
+| hitches/s (sim iterations >= 50 ms) | 4.03 -> **2.46** (-39%) | 1.90 -> **1.00** (-47%) | 3.49 -> **1.70** (-51%) |
+| worst iteration | 1,014 -> 468 ms | 2,210 -> 2,885 ms | 1,170 -> 676 ms |
+| route search ms/s | 94.9 -> 107.8 | 82.2 -> 77.3 | 246.4 -> 183.5 |
+
+Repeat Bridgeport runs on later builds land at 37.8-41 iterations/s (+25-30%) and 2.6-2.8 hitches/s (-30%); the single 50.1 run is treated as an outlier (docs/04 F16). Best Bridgeport so far: 38.8 it/s, 2.68 hitches/s (2026-10-13). Sunset Valley and Isla Paradiso have not been re-measured since F13; a milestone run is planned.
+
+**Single fixes and experiments (Bridgeport, in-load A/B: the fix switches on and off every 2 minutes in one 10-minute load):**
+
+| Change | Result | Date / source |
+|---|---|---|
+| Route fixes for unseen townies (ts3fixes) | 40.8 vs 34.9 it/s, hitches 2.57 vs 3.36/s, worst iteration 402 vs 857 ms | 2026-10-12, docs/04 F16 |
+| Bigger GC heap 40 -> 352 MB (ts3native `[GC]`) | forced collections 128 -> 1 in 6 min, forced GC 13.9 -> 0.1 ms/s, hitches -14% | 2026-10-12, docs/04 F15 (3 x 6 min, not in-load) |
+| Allocator cache (ts3native `[Alloc]`, experimental) | 30.7 vs 25.7 it/s (**+19%**), hitches 4.39 vs 6.12/s (-28%); one 2 s stall in the on slices, to repeat | 2026-10-13, PLAN.md |
+| Lot object query cache (ts3fixes `kSpatialCache`) | 34.8 vs 33.0 it/s (+5%), hitches -7% | 2026-10-13, PLAN.md |
+| Fewer route plans (`kRoutableCache` + `kStuckCheckBusy`) | no measurable change (38.8 vs 38.2 it/s) | 2026-10-13, PLAN.md |
+
+**Other results:**
+
+- **Address space (Error 12):** DXVK alone frees about 1.75 GB on a fresh save (vanilla: 176 MB largest free block after load and an out-of-memory crash; DXVK: 1,853 MB) [measured, docs/05]. The Sims 3 Performance Patch (S3PP 2.1) frees another ~70 MB with heavy store content (committed -71 MB, largest free block +64 MB); its string cache broke no labels in our check [measured, docs/17 §8-9].
+- **Frame rate (test B, Bridgeport, current build, 2 runs, 2026-10-13):** 56.6 / 59.0 FPS, p99 frame 39.2 / 33.1 ms, p99.9 98.4 / 42.1 ms; 21 of 23 long frames overlapped a sim-thread hitch. No baseline FPS yet.
+- **Stuck Sims:** treated as solved (2026-10-13): many 10-minute runs with 0 real stuck Sims. New cases are only logged (`docs/data/stuck-log.md`).
+- **Save cleanup (opt-in):** on a Bridgeport test save, -266 weak townie relationships and -9 stray other-world Sims, households and Sims unchanged, a second run removes nothing, the save reloads clean (docs/14).
+- **Heavy store content:** CC + store repacks add ~29 s to a cold load and ~100 MB address space; load time is the main cost, not stutter (docs/17 §6).
+- **Online features:** with our settings the game makes no network calls while playing (docs/16).
+
+All numbers come from one machine and one set of saves. Treat percentages as "this is what we saw", not as a promise.
+
+## What is in the repo
+
+| Layer | Path | What it is |
+|---|---|---|
+| Community fixes installer | `tools/setup/install-fixes.ts`, `fixes.json` | Installs the known community fixes from their official sources (never re-hosted), checks SHA-256, backs up every file it replaces, `uninstall` restores. Also `check-conflicts.ts` (clashing mods) and `content-health.ts` (read-only CC check). |
+| `ts3fixes` player mod | `mods/ts3fixes` | C# script mod (one `.package`). Replaces a few game methods at startup: off-screen trip shortcuts, route fixes, stuck watchdog, broadcaster throttle, optional save cleanup and caches. One tuning switch per fix. See `mods/ts3fixes/README.md`. |
+| `ts3native` ASI plugin | `native/ts3native` | 32-bit native plugin loaded by Ultimate ASI Loader. GC heap patches, plus opt-in experiments (route cache, route worker, allocator cache, faster decompression, save write, water route search). Every patch checks the original bytes first and skips itself on a different exe. Settings in `ts3native.ini`. |
+| `ts3agent` test agent | `mods/ts3agent` | In-game script mod that lets our tools read and drive the game (load saves, place Sims, trigger routes, switch fixes, count things). Test-only, never for players. Forked from Sims3-MCP (MIT). |
+| Probe and harness | `tools/probe`, `tools/frida`, `tools/harness` | Frida-based probe server (memory, stacks, native counters), stutter profiler, frame-time hook, repro library, profiling and A/B runs, crash and change ledgers. |
+| Research | `docs/01`-`docs/22` | Community fixes compared, reverse-engineering findings (native and C#), designs, measurements. Raw data in `docs/data`. |
+
+## Status of each fix
+
+| Fix | Where | Status |
+|---|---|---|
+| Community fixes layer (DXVK, S3SS, NRaas ErrorTrap/Overwatch, Smooth Patch, MonoPatcher, routing fixes, ...) | installer, default set | **on by default**, measured |
+| Sims 3 Performance Patch 2.1 (S3PP) | installer `s3pp` | **on by default** (manual download), label check passed |
+| Trip shortcuts, route fixes for unseen townies, stuck watchdog, broadcaster throttle, walk-style comparer, portal adaptor leak | `ts3fixes` | **on by default** (`stutter-fixes`) |
+| Save cleanup (`kSaveCleanup`) | `ts3fixes` | **opt-in**, verified on one save |
+| Lot object query cache (`kSpatialCache`) | `ts3fixes` | **opt-in**, +5% in one A/B |
+| `kRoutableCache`, `kStuckCheckBusy` | `ts3fixes` | **opt-in**, no measurable gain |
+| Create-a-Sim hair/makeup grid (`kCasGrid`) | `ts3fixes` | **experimental**, not yet validated in game |
+| GC heap and growth step (`[GC]`) | `ts3native` | **opt-in** (installer `native-patches` is off by default until the milestone run); on inside the plugin |
+| Allocator cache (`[Alloc]`) | `ts3native` | **experimental**, +19% in one A/B, repeat pending |
+| Route worker, synchronous (`[RouteWorker]`) | `ts3native` | **experimental**: stable in game, no speed gain on its own |
+| Async route plan (`[RouteAsync]`) | `ts3native` + `ts3fixes` | **paused**: the routing code shares per-lot state outside its lock; see [docs/18](docs/18-route-search-off-thread.md) |
+| Route search budget (`[RouteBudget]`) | `ts3native` | **paused**: stranded Sims (41 stuck vs 0) |
+| Route negative cache, save write, faster RefPack decoder, water route search | `ts3native` | **experimental**: built and tested offline, not yet run in game |
+
+## Quick start: players
+
+The safe set today is the community fixes layer plus `ts3fixes`. Everything else is for testers.
+
+1. **Back up first:** copy `<Documents>\Electronic Arts\The Sims 3\` (saves, Mods, settings) somewhere safe. Keep a copy of `TS3W.exe` as `TS3W.exe.orig` if you ever patch the exe yourself (our tools never do).
+2. Install Node.js 22.18 or newer, then clone this repo.
+3. See what will be installed and which files you must download by hand (NRaas, ModTheSims and Nexus need a browser):
+
+   ```
+   node tools/setup/install-fixes.ts plan
+   ```
+
+   Put the manual downloads in `%USERPROFILE%\Downloads\ts3-fixes` (or pass `--downloads <dir>`). If the game is not in the default Steam folder, set `TS3_BIN=<SteamLibrary>\steamapps\common\The Sims 3\Game\Bin`.
+4. Install the default set and check it:
+
+   ```
+   node tools/setup/install-fixes.ts install
+   node tools/setup/install-fixes.ts status
+   node tools/setup/check-conflicts.ts
+   ```
+
+   `stutter-fixes` (our `ts3fixes`) is part of the default set; building it needs the game's script DLLs, see [docs/BUILD.md](docs/BUILD.md).
+5. To undo: `node tools/setup/install-fixes.ts uninstall` (or `--only <id>`). Backups live in `%LOCALAPPDATA%\ts3-fixes`.
+
+Opt-in entries (`native-patches`, `overwatch-no-stuckcheck`, world fixes, ...) are listed by `plan --set all`; install one with `install --only <id>`.
+
+## Quick start: contributors
+
+- [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md): hardware, software, AI model.
+- [docs/BUILD.md](docs/BUILD.md): build the mods and the native plugin, installer usage, `ts3native.ini` switches.
+- [docs/TESTING.md](docs/TESTING.md): how we measure, repro library, A/B runs, crash triage, how to report results.
+- [AGENTS.md](AGENTS.md): rules for AI coding agents (and a good summary for humans).
+- `PLAN.md`: current state, open items and the next tasks in order. Pick from there or from the GitHub issues.
+
+## Project rules
+
+- **No EA files in git.** No game binaries, packages, extracted or decompiled EA code, saves, dumps or captures. Each contributor works on their own copy of the game. `.gitignore` covers the usual paths; `game-copy/` is for local analysis only.
+- **Measure everything.** A fix counts when the harness shows it against the baseline, with build hash and settings. One change at a time; compare in one load with runtime switches where possible.
+- **Verified vs inferred.** Every claim in the docs is marked `[verified]` (disassembly, decompiled code or measurement), `[community]` (reported by others) or `[inferred]`. Inferred claims are confirmed before code relies on them.
+- **No harm to saves.** Fixes use the game's own functions and end states. Anything that changes save data is opt-in.
+- **Respect other authors.** Community mods without a license are studied for behaviour only and never copied or ported; we write our own implementation from a written spec and credit the author.
+
+## License
+
+Code: MIT (`LICENSE`). Documentation (`docs/`, `*.md`): CC BY 4.0 (`LICENSE-docs`). `mods/ts3agent` keeps its upstream MIT notice (`mods/ts3agent/LICENSE`). Third-party fixes installed by the installer keep their own licenses and are downloaded from their authors' pages, never redistributed here.
+
+## Notice
+
+The Sims and The Sims 3 are trademarks of Electronic Arts Inc. This project is not affiliated with, endorsed by or sponsored by Electronic Arts or Maxis. It contains no EA code or assets; you need your own legal copy of the game. Use at your own risk and keep backups of your saves.
+
+## Credits
+
+This work stands on community projects. Thank you to their authors.
+
+| Project | Author | Used for |
+|---|---|---|
+| [Sims 3 Settings Setter (S3SS)](https://github.com/sims3fiend/Sims3SettingsSetter) | sims3fiend | Engine patches; reference for our native hooks |
+| [NRaas mods](https://www.nraas.net/) (ErrorTrap, Overwatch, ...) | Twallan, Chain-Reaction and the NRaas team | Error repair, nightly cleanups, stuck check |
+| [Smooth Patch](https://modthesims.info/d/658759/smooth-patch-2-1.html), [MonoPatcher](https://github.com/LazyDuchess/MonoPatcher), [Banding Fix](https://github.com/LazyDuchess/TS3-Banding-Fix) | LazyDuchess | Frame pacing, the method-patching approach our patch host follows |
+| [Sims 3 Performance Patch (S3PP)](https://www.nexusmods.com/thesims3/mods/235), [Catalogue Lag Fix](https://www.nexusmods.com/thesims3/mods/242) | Sonja92yu | Address space, load and catalogue fixes |
+| [simler90's Gameplay Core Mod](https://modthesims.info/d/659969/simler90-s-gameplay-systems-core-mod.html) | simler90 | Gameplay bug fixes |
+| [House Boat Fix](https://github.com/FoulPlay/houseboatfix) | FoulPlay | Houseboat fixes |
+| Routing fixes on ModTheSims: [sloped terrain](https://modthesims.info/d/529671/interaction-on-sloped-terrain-enabler.html), [Sims need less space](https://modthesims.info/d/683612/fix-sims-need-less-space.html), [toddler routing](https://modthesims.info/d/685924/toddler-routing-fix.html), [pets need less space](https://modthesims.info/d/683307/fix-pets-need-less-space.html), [ocean play](https://modthesims.info/d/686121/autonomous-play-in-the-ocean-fix.html) | their authors | Routing fixes in the default set |
+| World routing fixes | ellacharmed | Optional `.world` fixes (links in `fixes.json`) |
+| [DXVK](https://github.com/doitsujin/dxvk) | doitsujin and contributors | D3D9 on Vulkan: the biggest address-space win |
+| [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) | ThirteenAG | Loads S3SS and `ts3native` |
+| [Tiny UI Fix](https://github.com/just-harry/tiny-ui-fix-for-ts3) | just-harry | Optional UI scaling |
+| [Regul Save Cleaner](https://modthesims.info/d/652440/regul-save-cleaner.html) | Regul | Recommended save cleanup tool |
+| [Sims3-MCP](https://github.com/Critical-Reynolds/Sims3-MCP) | Critical-Reynolds | Base of our test agent `ts3agent` |
+| [Frida](https://frida.re/) | Ole André Vadla Ravnås and contributors | Live probe and profilers |
+| [Ghidra](https://github.com/NationalSecurityAgency/ghidra) | NSA and contributors | Static analysis of TS3W.exe |
+| [REA (Reverse Engineer Anything)](https://github.com/morluto/rea) | morluto | MCP server over Ghidra and .NET analysis |
+| [ILSpy](https://github.com/icsharpcode/ILSpy) (`ilspycmd`) | ICSharpCode | Reading the game's C# scripts locally |
+
+Full list with versions and notes: `tools/setup/fixes.json` and `docs/07-known-fixes-catalog.md`.

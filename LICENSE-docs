@@ -1,0 +1,23 @@
+Documentation license
+
+Copyright (c) 2026 Rodney Pantonial and contributors
+
+The documentation in this repository (README.md, PLAN.md, AGENTS.md, CLAUDE.md,
+everything under docs/, and other Markdown files) is licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0).
+
+You may share and adapt it for any purpose, including commercially, as long as
+you give appropriate credit, link to the license, and indicate if changes were
+made.
+
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+Summary: https://creativecommons.org/licenses/by/4.0/
+
+Source code (scripts, C#, C++, JavaScript, Java and Python files) is licensed
+under the MIT License in LICENSE. mods/ts3agent keeps its upstream MIT notice
+in mods/ts3agent/LICENSE.
+
+The Sims and The Sims 3 are trademarks of Electronic Arts Inc. This project is
+not affiliated with or endorsed by Electronic Arts. Addresses, names and
+behaviour of the game described in the documentation are our own analysis;
+no EA code or assets are included.
