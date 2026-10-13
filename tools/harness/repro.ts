@@ -10,8 +10,9 @@
 // Steps are agent commands (place_sim, sim_go_home, do_interaction, patches {name:false}, ...), run in order.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { endlessJob } from './stuck-rule.ts';
+import { watchGame } from './game-alive.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const LIB = JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[];
@@ -55,6 +56,7 @@ if ((cmd !== 'run' && cmd !== 'run-many') || !r) { console.error('usage: repro.t
 console.log(`${stamp()} ${r.id}: ${r.bug}\n  fix under test: ${r.fix}`);
 if (!process.argv.includes('--no-load'))
   execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'cycle.ts'), '--save', `${r.save}.sims3`], { stdio: 'inherit' });
+const alive = watchGame(); // FAIL as soon as the game dies, never a PASS on a dead game
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 // --set a=true,b=false: switch fixes for this run (patches command), e.g. to bisect which one causes a bug
 const set = process.argv.indexOf('--set');
@@ -89,7 +91,9 @@ if (w.kind === 'counter') {
   const stuck = new Set<string>();
   while (Date.now() - t0 < w.minutes * 60000) {
     await sleep(30000);
-    for (const s of (await ag('sims_activity')).result ?? []) {
+    const act = await ag('sims_activity');
+    if (!act.ok) { console.log(`${stamp()} stuck: ? (no answer: ${act.error})`); continue; } // a failed call is not "no stuck Sims"
+    for (const s of act.result) {
       if (w.sims?.length && !w.sims.includes(s.name)) continue;
       const key = `${s.x},${s.z},${s.interaction},${s.routing}`;
       const p = seen.get(s.id);
@@ -101,5 +105,6 @@ if (w.kind === 'counter') {
   }
   verdict = stuck.size ? `FAIL: ${stuck.size} stuck` : 'PASS';
 }
+await alive.check();
 console.log(`${stamp()} ${r.id}: ${verdict} (expected: ${r.expect})`);
 process.exit(verdict === 'PASS' ? 0 : 1);

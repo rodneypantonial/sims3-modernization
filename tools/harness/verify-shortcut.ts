@@ -5,8 +5,9 @@
 // named shortcut has fired --tries times with no stuck teleported Sim and at least 2 min elapsed; fails on a stuck teleported
 // Sim, more than --max-stuck stuck Sims of any kind, or when --minutes run out. Exit code 0 = pass. Needs the probe server and a world in live mode.
 import { parseArgs } from 'node:util';
-import { reproSave } from './repro-save.ts';
+import { reproSave } from './repro-save.ts';
 import { endlessJob } from './stuck-rule.ts';
+import { watchGame } from './game-alive.ts';
 
 const { values } = parseArgs({ options: { name: { type: 'string' }, tries: { type: 'string', default: '20' }, minutes: { type: 'string', default: '5' }, 'max-stuck': { type: 'string', default: '5' }, off: { type: 'string' } } });
 if (!values.name) throw new Error('--name required (gohome, rabbithole, ...)');
@@ -20,6 +21,7 @@ const ag = async (cmd: string, args?: object): Promise<any> => {
   try { return await (await fetch(`http://127.0.0.1:47891/agent?${q}`, { signal: AbortSignal.timeout(20000) })).json(); } catch (e) { return { ok: false, error: String(e) }; }
 };
 
+const alive = watchGame();
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 // --off a,b: switch those shortcuts off for this run (a baseline for the stuck count)
 if (values.off) await ag('patches', Object.fromEntries(values.off.split(',').map(n => [n, false])));
@@ -31,9 +33,11 @@ const t0 = Date.now();
 let verdict = 'FAIL: no checks ran';
 while (Date.now() - t0 < limit) {
   await sleep(30000);
-  const p = (await ag('patches')).result ?? {};
+  const pr = await ag('patches'), act = await ag('sims_activity');
+  if (!pr.ok || !act.ok) { console.log(`${stamp()} no answer: ${pr.error ?? act.error}`); continue; } // not "no stuck Sims"
+  const p = pr.result ?? {};
   const moved: Record<string, string> = p.moved ?? {}; // every Sim a shortcut moved
-  const sims = (await ag('sims_activity')).result ?? [];
+  const sims = act.result ?? [];
   for (const s of sims) {
     const key = `${s.x},${s.z},${s.interaction},${s.routing}`;
     const prev = seen.get(s.id);
@@ -55,5 +59,6 @@ while (Date.now() - t0 < limit) {
 }
 // keep the situation for a direct retest of the fix (load the repro save instead of waiting for it to recur)
 if (stuck.length) await reproSave(ag, `verify-${names[0]}`, stuck.map(x => ({ sim: x })));
+await alive.check();
 console.log(`${stamp()} ${verdict}; recent: ${((await ag('patches')).result?.recent ?? []).slice(-6).join(' | ')}`);
 process.exit(verdict === 'PASS' ? 0 : 1);

@@ -20,6 +20,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import assert from 'node:assert/strict';
 import { focusGame } from './focus-game.ts';
+import { watchGame } from './game-alive.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'tests');
@@ -150,6 +151,7 @@ if (values['dry-run']) {
 const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${tag}: ${JSON.stringify(st.result)}`);
+const alive = watchGame();
 console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fps capped, B/C not comparable)'}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 
@@ -266,4 +268,5 @@ if (only.includes('E')) {
     unansweredPolls: unanswered }, ok ? `saved in ${(done - t0) / 1000} s (last file write ${lastWriteS} s), ${Math.round(bytes / 1048576 * 100) / 100} MB, ${unanswered} polls unanswered`
     : `FAILED: ${q.error ?? (done ? 'no save files' : `still saving after ${SAVE_TIMEOUT_S} s`)}`);
 }
+await alive.check();
 console.log(`${stamp()} done; game ${(await ag('game_state')).ok ? 'alive' : 'NOT answering'}`);

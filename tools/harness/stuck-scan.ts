@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { endlessJob } from './stuck-rule.ts';
+import { watchGame } from './game-alive.ts';
 
 const { values } = parseArgs({ options: { minutes: { type: 'string', default: '30' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -36,6 +37,7 @@ const seen = new Map<string, { key: string; checks: number; reported: boolean }>
 const t0 = Date.now();
 let world = '';
 console.log(`${stamp()} stuck-scan started`);
+watchGame();
 while (Date.now() - t0 < Number(values.minutes) * 60000) {
   await sleep(30000);
   const active = new Set<string>(existsSync(ACTIVE) ? JSON.parse(readFileSync(ACTIVE, 'utf8')).sims ?? [] : []);
