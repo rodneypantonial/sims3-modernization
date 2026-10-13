@@ -43,7 +43,13 @@ node tools/harness/tests-be.ts --self-check     # parsing and statistics only, n
 ```
 
 It runs at speed 3 with autopilot and writes `probe-out/tests/<tag>-<B|C|D|E>.json` plus one summary line per test.
-- **B:** hooks the per-frame function `0xEC9F00` (`tools/harness/frame-times.js`, its own Frida session) for 60 s with the camera untouched: FPS, median, p95, p99 and max frame time, frames over 50 ms per second. Keep the game window focused: unfocused, the game caps itself at about 30 FPS (`focused` in the summary shows the share).
+- **B:** exact command, after `python tools/probe/ts3probe.py serve` (without `--profile`) and `node tools/harness/cycle.ts --save Baseline-SV` have the world in Live mode, S3PP `SimulatorStageProfiler` off:
+
+  ```
+  node tools/harness/tests-be.ts --tag sv-<layer> --only B
+  ```
+
+  It focuses the game window, hooks the per-frame function `0xEC9F00` (`tools/harness/frame-times.js`, its own Frida session; verified in docs/04 F19: main thread, once per presented frame) and runs the sim-thread stutter profiler alongside for 60 s with the camera untouched. Summary: frames, average FPS, frame time p50 / p95 / p99 / p99.9 / max, frames over 33 / 50 / 100 ms per minute, and how many frames over 50 ms overlap a sim-thread hitch. Files: `<tag>-B.json`, `<tag>-B-frames.csv` (per frame), `<tag>-B-sim-hitches.jsonl`. Unfocused, the game caps itself at about 30 FPS (`focused` in the summary shows the share). The hook suspends no thread and takes no JS lock on the render thread, so the probe's samplers can run at the same time. First run: a short dummy check per probe-safety (`--only B` on a throwaway save, compare the FPS with DXVK's HUD).
 - **C:** the active Sim visits a community lot (`--lot`, default the one with the most Sims on it) and goes home, with frames recorded all the way. Per leg: trip time, frame stats, and the worst frames within 5 s of arrival. The agent cannot move the camera, so this measures the trip and arrival, not a camera pan.
 - **D:** at 0, 10, 20 and 30 minutes (thirds of `--minutes`): `/memory` commit, private and largest free block, plus the process's private bytes (Task Manager's Commit size).
 - **E:** saves as `TestE-<tag>` (a new save, so the baseline save is never overwritten; the game then treats `TestE-<tag>` as the loaded save) and times it until `save_in_progress` is false; save folder size.

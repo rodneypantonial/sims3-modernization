@@ -1,23 +1,32 @@
 // Frame-time recorder for TS3W.exe (Steam build, SHA-256 10b2423e...0609), loaded by tools/harness/tests-be.ts (tests B, C).
-// Hooks FUN_00ec9f00 (0xEC9F00-0xEC9FDE in game-copy/analysis/functions.csv): the per-frame function that ends with the
-// post-present "inactive window ~30 FPS" limiter at 0xEC9FBA (S3SS Smooth Patch anchor, docs/03). S3SS patches bytes
-// inside the function, not its prologue, so the prologue check below still holds with S3SS installed.
-// [inferred] it runs once per rendered frame on the render thread; check the first run against DXVK's FPS HUD.
-// Output <out>: CSV `epochMs,frameMs,workMs,fg` per frame. frameMs = time since the previous call started (the frame
-// time), workMs = time inside this call, fg = 1 when the game window had focus in that second (an unfocused game is
-// capped at ~30 FPS by the limiter above, so B numbers only count with fg = 1).
+// Hooks FUN_00ec9f00(bool present) (0xEC9F00-0xEC9FDE, __thiscall, RET 4), verified in Ghidra 2026-10-13 (docs/04 F19):
+//   - BeginScene (0x611620, device vtable +0xA4), scene render, StreamHost flush, then with present != 0 EndScene + Present
+//     (0x611760 -> 0x611680, vtable +0xA8 / +0x44), then the inactive-window ~30 FPS sleep at 0xEC9FBA (S3SS Smooth Patch
+//     anchor: S3SS jumps out there and back; the prologue stays intact). No tail calls, no other exits.
+//   - Callers: the main loop FUN_00eca960 (entry -> __tmainCRTStartup -> 0xECBE30 -> 0xECBD00 -> 0xECA960, so the main/render
+//     thread, not the sim thread) calls it with present = 1 once per loop iteration at 0xECAAFC; the window-message path
+//     0xECA2A0 also with 1; the callback 0xECA030 (run by 0x9DE140 earlier in the same iteration) with present = 0, which
+//     renders without presenting. Only present = 1 calls are frames; present = 0 calls are counted, not recorded.
+// The hook is a CModule: the main thread never takes Frida's JS lock, so the probe's samplers (which suspend the sim thread,
+// possibly while it holds that lock in stutter-profile.js) cannot stall a frame or deadlock with it. No thread is suspended.
+// Output <out>: CSV `epochMs,qpcMs,frameMs,workMs,fg` per presented frame. qpcMs = QueryPerformanceCounter in ms at the call
+// (the clock stutter-profile.js stamps sim hitches with), frameMs = time since the previous frame started, workMs = time
+// inside the call (render + Present, incl. DXVK's frame cap and S3SS's limiter), fg = 1 when the game window had focus
+// (unfocused, the game caps itself at ~30 FPS, so B numbers only count with fg = 1).
 'use strict';
 
-const FRAME = [0xec9f00, '83 ec 20 56 e8 b7 43 74'];
+const FRAME = [0xec9f00, '83 ec 20 56 e8 b7 43 74']; // sub esp,20h; push esi; call 0x60E2C0 (graphics device)
+const N = 8192; // ring slots: ~2 min at 60 FPS, drained every 250 ms
 
 const k32 = Process.getModuleByName('kernel32.dll');
-const qpc = new NativeFunction(k32.getExportByName('QueryPerformanceCounter'), 'int', ['pointer']);
+const QPC = k32.getExportByName('QueryPerformanceCounter');
+const qpc = new NativeFunction(QPC, 'int', ['pointer']);
 const qpf = new NativeFunction(k32.getExportByName('QueryPerformanceFrequency'), 'int', ['pointer']);
 const qbuf = Memory.alloc(8);
 qpf(qbuf);
 const ticksPerMs = Number(qbuf.readS64()) / 1000;
-function now() { qpc(qbuf); return Number(qbuf.readS64()) / ticksPerMs; }
-const epoch0 = Date.now(), q0 = now();
+const nowMs = () => { qpc(qbuf); return Number(qbuf.readS64()) / ticksPerMs; };
+const epoch0 = Date.now(), q0 = nowMs();
 
 const u32 = Process.getModuleByName('user32.dll');
 const getFg = new NativeFunction(u32.getExportByName('GetForegroundWindow'), 'pointer', []);
@@ -25,45 +34,85 @@ const getPid = new NativeFunction(u32.getExportByName('GetWindowThreadProcessId'
 const pidBuf = Memory.alloc(4);
 function foreground() { const h = getFg(); if (h.isNull()) return 0; getPid(h, pidBuf); return pidBuf.readU32() === Process.id ? 1 : 0; }
 
-let file = null, buf = [], frames = 0, otherThread = 0, tid = null, last = 0, lastFlush = 0, fg = 1, listener = null;
+const C = `
+#include <gum/guminterceptor.h>
+#define N ${N}
+typedef struct { gint64 start, end; } Rec;
+typedef struct { gint64 start; } State;
+extern int __attribute__((stdcall)) QueryPerformanceCounter (gint64 * t);
+/* in JS-allocated memory: CModule's own data is not writable on Windows (dummy run, 2026-10-13) */
+extern volatile guint32 st[4]; /* head, main_tid, other_thread, no_present */
+extern Rec recs[N];
+#define head st[0]
+#define main_tid st[1]
+#define other_thread st[2]
+#define no_present st[3]
+
+void onEnter (GumInvocationContext * ic) {
+  State * s = GUM_IC_GET_INVOCATION_DATA (ic, State);
+  guint32 tid = gum_invocation_context_get_thread_id (ic);
+  s->start = 0;
+  if (main_tid == 0) main_tid = tid;
+  if (tid != main_tid) { other_thread++; return; }
+  if (gum_invocation_context_get_nth_argument (ic, 0) == NULL) { no_present++; return; }
+  QueryPerformanceCounter (&s->start);
+}
+
+void onLeave (GumInvocationContext * ic) {
+  State * s = GUM_IC_GET_INVOCATION_DATA (ic, State);
+  gint64 end;
+  if (s->start == 0) return;
+  QueryPerformanceCounter (&end);
+  recs[head % N].start = s->start;
+  recs[head % N].end = end;
+  head++; /* x86 keeps store order: the record is written before head moves */
+}
+`;
+
+const mem = Memory.alloc(16 + N * 16); // st[4] + recs[N], zeroed
+const ST = i => mem.add(4 * i).readU32(), recs = mem.add(16);
+let cm = null, file = null, listener = null, timer = null, read = 0, frames = 0, lost = 0, last = 0, fg = 1, lastFg = 0;
 const r2 = x => Math.round(x * 100) / 100;
 
-function flush() { if (file && buf.length) { file.write(buf.join('')); file.flush(); buf = []; } }
+function drain() {
+  const head = ST(0);
+  if (head - read > N) { lost += head - read - N; read = head - N; last = 0; } // overwritten: restart the frame chain
+  const out = [];
+  for (; read !== head; read++) {
+    const rec = recs.add((read % N) * 16);
+    const t = Number(rec.readS64()) / ticksPerMs, end = Number(rec.add(8).readS64()) / ticksPerMs;
+    if (last) { out.push(`${Math.round(epoch0 + t - q0)},${r2(t)},${r2(t - last)},${r2(end - t)},${fg}\n`); frames++; }
+    last = t;
+  }
+  if (out.length) { file.write(out.join('')); file.flush(); }
+  const n = nowMs();
+  if (n - lastFg >= 1000) { fg = foreground(); lastFg = n; }
+}
 
 function install(out) {
   if (!Process.getModuleByName('TS3W.exe').base.equals(ptr(0x400000))) throw new Error('TS3W.exe not at 0x400000');
   const p = ptr(FRAME[0]);
   const got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
-  if (got !== FRAME[1]) throw new Error(`frame fn @ ${p}: bytes ${got}, expected ${FRAME[1]} (detoured or different build)`);
+  if (got !== FRAME[1]) throw new Error(`frame fn @ ${p}: bytes ${got}, expected ${FRAME[1]} (hooked by another session, detoured, or a different build)`);
+  cm = new CModule(C, { QueryPerformanceCounter: QPC, st: mem, recs });
   file = new File(out, 'w');
-  file.write('epochMs,frameMs,workMs,fg\n');
-  listener = Interceptor.attach(p, {
-    onEnter() {
-      const id = Process.getCurrentThreadId();
-      if (tid === null) tid = id;
-      if (id !== tid) { otherThread++; return; }
-      this.t = now();
-    },
-    onLeave() {
-      if (this.t === undefined) return;
-      const t = this.t, end = now();
-      if (last) {
-        buf.push(`${Math.round(epoch0 + t - q0)},${r2(t - last)},${r2(end - t)},${fg}\n`);
-        frames++;
-      }
-      last = t;
-      if (end - lastFlush >= 1000) { fg = foreground(); flush(); lastFlush = end; }
-    },
-  });
-  console.log(`[frames] hooked ${p} -> ${out}`);
+  file.write('epochMs,qpcMs,frameMs,workMs,fg\n');
+  fg = foreground();
+  listener = Interceptor.attach(p, cm);
+  timer = setInterval(drain, 250);
+  console.log(`[frames] hooked ${p} (CModule) -> ${out}; window ${fg ? 'focused' : 'NOT focused'}`);
 }
 
 rpc.exports = {
   init(stage, parameters) { install(parameters.out); }, // throws on a prologue mismatch: nothing gets hooked
   dispose() {
-    if (listener) listener.detach();
-    flush();
-    if (file) file.close();
-    console.log(`[frames] ${frames} frames on thread ${tid}, ${otherThread} calls from other threads`);
+    if (!listener) return;
+    clearInterval(timer);
+    listener.detach();
+    Interceptor.flush();
+    drain();
+    file.close();
+    console.log(`[frames] ${frames} frames on thread ${ST(1)}, ${ST(3)} render calls without present, ` +
+      `${ST(2)} calls from other threads, ${lost} lost`);
   },
 };

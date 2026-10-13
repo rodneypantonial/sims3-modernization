@@ -3,7 +3,10 @@
 //   node tools/harness/tests-be.ts --self-check            (parsing and statistics only; no game)
 // Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). Runs at speed 3 with autopilot.
 //   B  frame times: 60 s at speed 3, camera untouched. Hooks the per-frame function 0xEC9F00 (tools/harness/frame-times.js,
-//      own Frida session); median, p95, p99, max frame and frames > 50 ms per second.
+//      own Frida session, CModule hook: no JS lock on the render thread, no thread suspended) and runs the sim-thread stutter
+//      profiler (tools/frida/stutter-profile.js) alongside: FPS, frame time p50/p95/p99/p99.9/max, frames > 33/50/100 ms per
+//      minute, and which long frames overlap a sim-thread hitch (same QPC clock). Without the profiler (S3PP
+//      SimulatorStageProfiler on, or the probe started with --profile) B still reports frames, hitches null.
 //   C  travel hitch: the active Sim visits a community lot (--lot, default the one with most Sims on it) and goes home,
 //      frames recorded throughout; per leg the trip time, frame stats and the worst frames around the arrival.
 //   D  memory: /memory (commit, private, largest free block) plus the process's private bytes (Task Manager "Commit size")
@@ -16,18 +19,22 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import assert from 'node:assert/strict';
+import { focusGame } from './focus-game.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'tests');
 const SAVES = join(process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3'), 'Saves');
-const SLOW_MS = 50, B_SECONDS = 60, TRIP_TIMEOUT_S = 300, SAVE_TIMEOUT_S = 600;
+const SLOW_MS = 50, LONG_MS = [33, 50, 100], B_SECONDS = 60, TRIP_TIMEOUT_S = 300, SAVE_TIMEOUT_S = 600;
 
 // ---- parsing and statistics (covered by --self-check) ----
-type Frame = { t: number; ms: number; work: number; fg: number };
+// t = epoch ms, q = QPC ms at the frame's start (frame-times.js); the frame spans [q - ms, q].
+type Frame = { t: number; q: number; ms: number; work: number; fg: number };
 export function parseFrames(csv: string): Frame[] {
-  return csv.split('\n').slice(1).filter(l => l.trim()).map(l => {
-    const [t, ms, work, fg] = l.split(',').map(Number);
-    return { t, ms, work, fg };
+  const [head, ...rows] = csv.split('\n');
+  const col = Object.fromEntries(head.trim().split(',').map((h, i) => [h, i]));
+  return rows.filter(l => l.trim()).map(l => {
+    const v = l.split(',').map(Number);
+    return { t: v[col.epochMs], q: v[col.qpcMs], ms: v[col.frameMs], work: v[col.workMs], fg: v[col.fg] };
   }).filter(f => Number.isFinite(f.t) && Number.isFinite(f.ms));
 }
 export function frameStats(frames: Frame[]) {
@@ -38,7 +45,20 @@ export function frameStats(frames: Frame[]) {
   const slow = ms.filter(x => x > SLOW_MS).length;
   const r = (x: number) => Math.round(x * 100) / 100;
   return { frames: ms.length, seconds: r(secs), fps: r(ms.length / secs), medianMs: pct(0.5), p95Ms: pct(0.95), p99Ms: pct(0.99),
-    maxMs: ms.at(-1)!, slowFrames: slow, slowPerSec: r(slow / secs), focusedShare: r(frames.filter(f => f.fg).length / frames.length) };
+    p999Ms: pct(0.999), maxMs: ms.at(-1)!, slowFrames: slow, slowPerSec: r(slow / secs),
+    longPerMin: Object.fromEntries(LONG_MS.map(l => [`over${l}`, r(ms.filter(x => x > l).length / secs * 60)])),
+    focusedShare: r(frames.filter(f => f.fg).length / frames.length) };
+}
+// Long frames (> SLOW_MS) against sim-thread hitches from stutter-profile.js (t = QPC ms at the iteration's end, wallMs).
+// A frame and a hitch correlate when their intervals overlap.
+export function correlate(frames: Frame[], hitches: { t: number; wallMs: number }[]) {
+  const long = frames.filter(f => f.ms > SLOW_MS && Number.isFinite(f.q));
+  const hit = (f: Frame, h: { t: number; wallMs: number }) => h.t - h.wallMs < f.q && h.t > f.q - f.ms;
+  const both = long.filter(f => hitches.some(h => hit(f, h)));
+  return { longFrames: long.length, withSimHitch: both.length, simHitches: hitches.length,
+    simHitchesWithLongFrame: hitches.filter(h => long.some(f => hit(f, h))).length,
+    worst: long.sort((a, b) => b.ms - a.ms).slice(0, 10).map(f => ({ ms: f.ms, at: new Date(f.t).toISOString().slice(11, 23),
+      simHitchMs: hitches.filter(h => hit(f, h)).map(h => h.wallMs) })) };
 }
 // Busiest community lot by Sims on it, not the lot the active Sim stands on.
 export function pickLot(lots: { name: string; type: string }[], sims: { lot: string | null }[], exclude: string | null) {
@@ -48,12 +68,17 @@ export function pickLot(lots: { name: string; type: string }[], sims: { lot: str
 }
 
 if (process.argv.includes('--self-check')) {
-  const f = parseFrames('epochMs,frameMs,workMs,fg\n1000,16.5,2,1\n1016,60,3,1\n\n1076,16.7,2,0\nbad,line\n');
+  const f = parseFrames('epochMs,qpcMs,frameMs,workMs,fg\n1000,500,16.5,2,1\n1016,560,60,3,1\n\n1076,576.7,16.7,2,0\nbad,line\n');
   assert.equal(f.length, 3);
-  assert.deepEqual(f[1], { t: 1016, ms: 60, work: 3, fg: 1 });
-  const s = frameStats([10, 20, 30, 40, 100].map((ms, i) => ({ t: i, ms, work: 0, fg: i % 2 })))!;
-  assert.equal(s.medianMs, 30); assert.equal(s.p95Ms, 100); assert.equal(s.maxMs, 100);
+  assert.deepEqual(f[1], { t: 1016, q: 560, ms: 60, work: 3, fg: 1 });
+  const s = frameStats([10, 20, 30, 40, 100].map((ms, i) => ({ t: i, q: i, ms, work: 0, fg: i % 2 })))!;
+  assert.equal(s.medianMs, 30); assert.equal(s.p95Ms, 100); assert.equal(s.p999Ms, 100); assert.equal(s.maxMs, 100);
   assert.equal(s.slowFrames, 1); assert.equal(s.seconds, 0.2); assert.equal(s.slowPerSec, 5); assert.equal(s.focusedShare, 0.4);
+  assert.deepEqual(s.longPerMin, { over33: 600, over50: 300, over100: 0 });
+  // frame [500, 560] overlaps the hitch [540, 600]; the hitch [100, 180] overlaps no long frame
+  const c = correlate(f, [{ t: 600, wallMs: 60 }, { t: 180, wallMs: 80 }]);
+  assert.equal(c.longFrames, 1); assert.equal(c.withSimHitch, 1); assert.equal(c.simHitches, 2); assert.equal(c.simHitchesWithLongFrame, 1);
+  assert.deepEqual(c.worst[0].simHitchMs, [60]);
   assert.equal(frameStats([]), null);
   assert.equal(pickLot([{ name: 'Park', type: 'community:Park' }, { name: 'Gym', type: 'community:Gym' }, { name: 'Home', type: 'residential' }],
     [{ lot: 'Gym' }, { lot: 'Gym' }, { lot: 'Park' }, { lot: 'Home' }, { lot: 'Home' }, { lot: 'Home' }], null), 'Gym');
@@ -109,13 +134,13 @@ async function capture(test: string) {
   });
   return { stop: async () => { p.stdin.end('\n'); await done; return { frames: parseFrames(readFileSync(out, 'utf8')), log: log.trim() }; } };
 }
-const fmt = (s: ReturnType<typeof frameStats>) => s ? `${s.fps} FPS, median ${s.medianMs} / p95 ${s.p95Ms} / p99 ${s.p99Ms} / max ${s.maxMs} ms, ` +
-  `${s.slowPerSec}/s > ${SLOW_MS} ms, focused ${Math.round(s.focusedShare * 100)}%` : 'no frames';
+const fmt = (s: ReturnType<typeof frameStats>) => s ? `${s.fps} FPS, p50 ${s.medianMs} / p95 ${s.p95Ms} / p99 ${s.p99Ms} / p99.9 ${s.p999Ms} / max ${s.maxMs} ms, ` +
+  `per min ${LONG_MS.map(l => `>${l} ms ${s.longPerMin[`over${l}`]}`).join(' ')}, focused ${Math.round(s.focusedShare * 100)}%` : 'no frames';
 
 if (values['dry-run']) {
   console.log(`dry run, tag ${tag}, tests ${only.join(',')}; nothing is sent to the game. Would:`);
   console.log(`  check game_state is LiveModeState; autopilot {enabled, speed ultra, dialogs}`);
-  if (only.includes('B')) console.log(`  B: hook 0xEC9F00 via tools/harness/frame-times.js for ${B_SECONDS} s -> ${tag}-B.json, ${tag}-B-frames.csv`);
+  if (only.includes('B')) console.log(`  B: hook 0xEC9F00 via tools/harness/frame-times.js + stutter-profile.js for ${B_SECONDS} s -> ${tag}-B.json, ${tag}-B-frames.csv, ${tag}-B-sim-hitches.jsonl`);
   if (only.includes('C')) console.log(`  C: sim_visit_lot active Sim -> ${values.lot ?? 'busiest community lot'}, then sim_go_home (each <= ${TRIP_TIMEOUT_S} s), frames throughout -> ${tag}-C.json`);
   if (only.includes('D')) console.log(`  D: /memory + private bytes at ${[0, 1, 2, 3].map(i => Math.round(minutes * i / 3 * 10) / 10).join('/')} min, upkeep every 30 s -> ${tag}-D.json`);
   if (only.includes('E')) console.log(`  E: save_game {name: "TestE-${tag}"}, wait for save_in_progress false (<= ${SAVE_TIMEOUT_S} s), size of ${join(SAVES, `TestE-${tag}.sims3`)} -> ${tag}-E.json`);
@@ -125,14 +150,28 @@ if (values['dry-run']) {
 const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${tag}: ${JSON.stringify(st.result)}`);
+console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fps capped, B/C not comparable)'}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 
 if (only.includes('B')) {
+  // sim-thread hitches on the same QPC clock, as profile-world.ts runs it; its own session, stops itself after -t
+  const simOut = join(OUT, `${tag}-B-sim`);
+  const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
+    '-P', JSON.stringify({ out: simOut.replace(/\\/g, '/'), hitchMs: SLOW_MS }), '-q', '-t', String(B_SECONDS + 5)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let profLog = '';
+  prof.stdout.on('data', d => profLog += d); prof.stderr.on('data', d => profLog += d);
+  const profDone = new Promise(r => prof.on('exit', r));
   const cap = await capture('B');
   await sleep(B_SECONDS * 1000);
   const { frames, log } = await cap.stop();
+  await profDone;
   const s = frameStats(frames);
-  write('B', { stats: s, captureLog: log }, fmt(s));
+  const simOk = profLog.includes('hooks installed') && !profLog.includes('NOT PROFILING') && existsSync(`${simOut}-hitches.jsonl`);
+  const hitches = simOk ? readFileSync(`${simOut}-hitches.jsonl`, 'utf8').split('\n').filter(l => l.trim()).map(l => JSON.parse(l)) : null;
+  const corr = hitches ? correlate(frames, hitches) : null;
+  write('B', { stats: s, correlation: corr, captureLog: log, simProfilerLog: profLog.trim().slice(-2000) }, fmt(s) + (corr
+    ? `; long frames ${corr.longFrames}, ${corr.withSimHitch} overlap a sim hitch (${corr.simHitchesWithLongFrame} of ${corr.simHitches} sim hitches show as a long frame)`
+    : '; sim hitches not recorded (stutter profiler did not start, see simProfilerLog)'));
 }
 
 if (only.includes('C')) {
