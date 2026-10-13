@@ -1,4 +1,4 @@
-# Local-only repo: keep EA game files and large outputs out of git.
+# Published on GitHub: keep EA game files, decompiled code, saves and large outputs out of git.
 
 # Game binaries and copied EA files (never commit these)
 *.exe
@@ -55,3 +55,7 @@ desktop.ini
 # Live probe output (events, profiles)
 probe-out/
 .claude/worktrees/
+
+# Python bytecode
+__pycache__/
+*.pyc

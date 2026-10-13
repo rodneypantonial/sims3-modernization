@@ -1,7 +1,10 @@
 @echo off
 rem Builds out\ts3native.asi (32-bit DLL, static CRT) and runs the helper self-check.
 setlocal
-call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars32.bat" >nul || exit /b 1
+rem any Visual Studio 2019+ edition with the C++ x86/x64 tools (vswhere ships with the VS installer)
+for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+if not defined VSDIR (echo Visual Studio with the C++ tools not found & exit /b 1)
+call "%VSDIR%\VC\Auxiliary\Build\vcvars32.bat" >nul || exit /b 1
 cd /d "%~dp0"
 if not exist out mkdir out
 cl /nologo /LD /O2 /MT /W4 /WX /Foout\ /Feout\ts3native.asi ts3native.cpp /link /DLL kernel32.lib || exit /b 1

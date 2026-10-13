@@ -1,7 +1,7 @@
 #!/bin/bash
 # Restart on the current build, load Baseline-BP, print ts3native.log, GC counters, then an in-load A/B profile.
 # Edit the --tag/--ab line for the switches under test (last used: watchdog,spotspread as bp-wab).
-cd /c/Users/<user>/IdeaProjects/sims-3-modernization
+cd "$(dirname "$0")/../.."
 BIN="/c/Program Files (x86)/Steam/steamapps/common/The Sims 3/Game/Bin"
 timeout 180 node tools/harness/cycle.ts --restart | tail -1
 python tools/probe/ts3probe.py serve --launch > probe-out/serve-native.log 2>&1 &
