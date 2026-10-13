@@ -232,7 +232,7 @@ Opt-in: `[RouteAsync] Enabled=0` by default; runtime switch `asyncMode` (`/nativ
 | Step | C# (`RouteBackoffHook.PlanAsync`, mods/ts3fixes/src/RouteBackoff.cs) | Native (ts3native.cpp) |
 |---|---|---|
 | Eligible? | follower is a Sim, `Simulator.CurrentTask == sim.ObjectId`, `CheckYieldingContext(false)`, switch `asyncroute` (default on) | |
-| START | `GetOption(bit 58)` | `Route_GetOption 0x74D040` detour: bit 58 (`0x0400000000000000`, no enum name, never set by the game) = START. Mode 1, slot free: store handle + FPU state, signal the worker, answer true. Slot busy with another route: false (counter `asyncRefused`), C# plans synchronously |
+| START | `GetOption(bit 58)` | `Route_GetOption 0x74D040` detour: bit 58 (`0x0400000000000000`, no enum name, never set by the game) = START. Mode 1, slot free, caller may yield (`CanYield`, see "Crash: yield in a nested call"): store handle + FPU state, signal the worker, answer true. Slot busy with another route, or the caller may not yield: false (counter `asyncRefused`), C# plans synchronously |
 | Wait | `GetOption2(bit 58)` = READY; false: `Simulator.Sleep(0)` and ask again (cap 1000 polls) | worker runs the **whole original `IC_Route_Plan 0x765160`** (start points, `Route_PlanCommon`, `Route_PlanLocked` under `world+0x918`, result mapping) into the slot. READY answers true when done and arms "collect" for this handle; while running it also runs a pending managed call (below) |
 | Result | original `Route.Plan` once: `IsDestObjectInvalid`, `AboutToPlanCallback`, internal call, start points, `PostPlanCallback`, as without us | `IC_Route_Plan` detour: armed for this handle: copy the stored 0x48-byte RoutePlanResult (`asyncCollected`). Not armed (poll cap, a plain plan of the same route): wait for the job, drop it, plan synchronously (`asyncDropped`) |
 | Always | `finally`: `GetOption2(bit 58 \| bit 62)` = CANCEL (disarm) | an uncollected result (Sim reset while sleeping, destination gone) is dropped by the next START |
@@ -263,9 +263,35 @@ Other plans on the sim thread while a job runs (another Sim's synchronous plan, 
 - Verified: callers need a synchronous result (C#); IC_Route_Plan, Route_GetOption, Lock_Acquire prologues and calling conventions (dumpbin); route `+0x10/+0x14` = AddRef/Release; no lock in the event-fire path `0x78F2B0`; the protocol, lock pump, collect/drop/refuse and the queueing behind a job in the selftest (`TestRouteAsync`, fakes for the three game functions; 20/20 runs).
 - Inferred, to be measured: that the sim thread does useful work while the worker searches (O), that the portal callback takes no routing lock, that Sleep(0) yields exactly one tick in this context, and the real gain.
 
+### Crash: yield in a nested call (2026-10-13, 0.5.0) and fix (0.5.1)
+
+First in-game use of `[RouteAsync]`: the game aborted with `` * Assertion at ..\..\mono\mono\interpreter\interp.c:3595, condition `pState->yieldReturn' not met `` (the yield opcode's check at `0xE59763`/`0xE5976D` pushes `0x108E704` "pState->yieldReturn"; the game's SIGABRT handler hits `int3` at `0x58D9B0`) [verified crash]. `PlanAsync` called `Simulator.Sleep(0)` while `Route.Plan` ran inside a native->managed call made during the Sim's task. `CheckYieldingContext(false)` only tests `YieldingDisabled` and a current task, so it passed.
+
+How EA's yield works [verified, disassembly]:
+
+| Piece | Address | What it does |
+|---|---|---|
+| Interpreter state ("pState", 0x150 bytes) | `0xE52D70` allocates one per task; `runtime_invoke 0xE5A600` builds a fresh one on its stack; `0xD8A8E0` (another native->managed entry, called from the script-host glue around `0xD9B130`) does too | `+0x148` free on exit, `+0x149` **yieldReturn**, `+0x14A` fresh, `+0x14B` stack-allocated, `+0x140` resume point (-1 = not resuming) |
+| Current state | `ves_exec 0xE53EB0` saves `[0x11F4170]`, stores its pState there, restores it on return (`0xE597BA`, `0xE5986C`) | the innermost running interpreter state |
+| Task runner | `0xD7F000` (TaskObjects), `this` = MonoScriptHost `[0x11EE514]` (ctor `0xD7E010`) | per task: `host+0xBC8` = pointer to the task's pState slot, `host+0xBD0/+0xBD4` = task ObjectGuid; then `0xE59FD0(pState)` (which clears `yieldReturn` on a resume) |
+| Mark yield | `0xD70F60` (host sub-object at `host+8`, vtable slot `0x108B7AC`) | if slot and task id are set: `yieldReturn(*slot) = 1` via `0xE52B50`. Only the task's **root** state is marked |
+| Yield opcode | `0xE59751` | calls the host sleep (`0xD70820` -> host vtable `+0x20`), then asserts `yieldReturn` on the **current** state |
+| After the run | `0xD7F000` reads `yieldReturn` (`0xE52B40`) of the root state: set = task sleeps, else it ended |
+
+So a yield is legal only when the current state is the task's root state: `[0x11F4170] == *[host+0xBC8]` with a task id in `host+0xBD0`. Any native->managed call during the task (runtime_invoke from a native callback, `0xD8A8E0`) runs on its own state, whose `yieldReturn` nothing sets: the assertion. Managed code cannot see this (no script API reports the nesting), so the test is native.
+
+Fix (ts3native 0.5.1, ts3fixes):
+
+- `CanYield()` in ts3native: exactly the rule above (host, slot, task id, current == root). `AsyncStart` refuses START when it is false (counter `asyncRefused`), so `PlanAsync` plans synchronously there.
+- New query `GetOption2(bit 58 | bit 61)` = NOYIELD (`0x2400000000000000`, no enum name): true = a yield here would abort. ts3fixes `MayYield()` = `CheckYieldingContext(false)` and not NOYIELD, asked on a handle-0 `ScriptCore.Route` (the game's `Route_GetOption` answers false for handle 0: `0x74B2C0` rejects handles without the `0x25` tag). Without ts3native (or an older one) it answers false, so the old rule applies. The `Route_GetOption` detour is now installed whenever ts3native runs on TS3W.exe, also with `[RouteAsync]` off, so the guard works there; START additionally needs `asyncReady` (all three async detours), since `asyncMode` can be switched on at runtime.
+- `MayYield()` guards the other two yield sites from our hooks: the Overwatch stuck-check hook (`OverwatchStuck.cs`, docs/04 F18) and the stuck watchdog's idle-spot plans (`RouteFixes.cs`, our own task, so it should always say yes). Where it says no they run without yielding, as before the fix existed.
+- Not taken: counting nested `runtime_invoke`s in `InvokeHook`. A managed exception thrown through runtime_invoke without an `exc` out parameter leaves by `longjmp` (`0xE59FD0`), skipping the decrement, and `0xD8A8E0` does not pass through the slot; the state comparison has neither gap.
+
+Tests: selftest `TestRouteAsync` (fake host, slot and current state: root state may yield and START works; nested state, no task id, no current state, no host: NOYIELD true and START refused with `asyncRefused`; other option bits pass through). In game (not run yet): the `bp-route-async` repro and the Overwatch repro `bp-overwatch-stuckcheck` with ts3native 0.5.1; pass = no assertion, `asyncRefused` above 0 only where plans came from nested calls.
+
 ### How to test in game (serial, saves backed up)
 
-1. Install: close the game, `node tools/setup/install-fixes.ts install --only native-patches` (ts3native 0.5.0), rebuild/install ts3fixes as usual, set `[RouteAsync] Enabled=1` in `Game\Bin\ts3native.ini` (Mode 1), leave `[RouteWorker]`/`[RouteBudget]`/`[RouteCache]` at 0. Check `ts3native.log` for `OK detour Lock_Acquire`, `IC_Route_Plan`, `Route_GetOption` and `route async settings: Mode=1`.
+1. Install: close the game, `node tools/setup/install-fixes.ts install --only native-patches` (ts3native 0.5.1), rebuild/install ts3fixes as usual, set `[RouteAsync] Enabled=1` in `Game\Bin\ts3native.ini` (Mode 1), leave `[RouteWorker]`/`[RouteBudget]`/`[RouteCache]` at 0. Check `ts3native.log` for `OK detour Lock_Acquire`, `IC_Route_Plan`, `Route_GetOption` and `route async settings: Mode=1`.
 2. Only after the offload-sync check (PLAN "Next" 1) is clean: `repro.ts run bp-route-async`; then `/native` and ts3fixes counters [52-54].
 3. Soak: `profile-world.ts --ab routeasync` on Baseline-BP and Baseline-IP (10 min, 2-3 min slices). Pass: 0 extra stuck Sims, no hang, watchdogs 0, hitches and iterations/s not worse; read `asyncUs` vs `asyncPumpUs`.
 

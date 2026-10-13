@@ -47,7 +47,7 @@ namespace Ts3Fixes
                 try { ok = RoutableOrig(ths, lot, pos); } finally { sInOwnCheck = false; }
                 int[] c = PatchCounters();
                 c[44]++;
-                if (ShortcutOn("overwatchstuck") && Simulator.CheckYieldingContext(false))
+                if (ShortcutOn("overwatchstuck") && MayYield()) // not inside a native->managed call (RouteBackoff.cs MayYield)
                 {
                     c[45]++;
                     Simulator.Sleep(0);

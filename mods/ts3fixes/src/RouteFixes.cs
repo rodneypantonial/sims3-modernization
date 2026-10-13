@@ -263,7 +263,7 @@ namespace Ts3Fixes
                             if (ok.Value) { st.OkAt = now; mStill[s.ObjectId.Value] = st; }
                             else if (Act(s, now, 46, "reset (idle on unroutable spot)")) mStill.Remove(s.ObjectId.Value);
                         }
-                        if (c[39] != before || !ok.HasValue) Simulator.Sleep(0); // a full plan ran (or the tick's budget was used): next one in a later tick
+                        if ((c[39] != before || !ok.HasValue) && MayYield()) Simulator.Sleep(0); // a full plan ran (or the tick's budget was used): next one in a later tick
                         if (ok.HasValue) break;
                     }
                 }

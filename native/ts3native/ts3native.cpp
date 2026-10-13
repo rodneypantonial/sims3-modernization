@@ -10,7 +10,7 @@
 #include <math.h>
 #include <xmmintrin.h>
 
-#define TS3NATIVE_VERSION "0.6.0"
+#define TS3NATIVE_VERSION "0.6.1"
 
 typedef unsigned char u8;
 
@@ -188,7 +188,7 @@ struct Ts3nCounters {
     volatile LONG asyncMode;  // runtime switch, writable by test tools: 0 = every START answered "no" (plans stay synchronous), 1 = on
     LONG asyncReady;     // 1 when the three async detours (IC_Route_Plan, Route_GetOption, Lock_Acquire) are installed
     LONG asyncStarted;   // jobs started (C# START answered yes)
-    LONG asyncRefused;   // START answered no because another route's job still ran
+    LONG asyncRefused;   // START answered no: another route's job still ran, or the caller may not yield (nested call)
     LONG asyncCollected; // results handed to the C# caller that started them
     LONG asyncDropped;   // results thrown away (caller gave up: reset, destination gone, poll cap; or a plain plan of that route)
     LONG asyncUs;        // total job time on the worker, microseconds
@@ -691,11 +691,27 @@ static const u8 kPlanLockedPrologue[] = {0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00};  /
 //   GetOption(bit 58)            START:  start this route's plan on the worker, true = started (the Sim's task then sleeps)
 //   GetOption2(bit 58)           READY:  true = the job is done (or there is none); arms the next IC_Route_Plan to take it
 //   GetOption2(bit 58 | bit 62)  CANCEL: disarm (the C# finally, also on a Sim reset)
+//   GetOption2(bit 58 | bit 61)  NOYIELD: true = a yield here would hit the interp.c:3595 assertion (any route handle, also 0)
 // The C# side then calls the original Route.Plan once; IC_Route_Plan hands over the stored result, so the script's own
 // tail (start points, PostPlanCallback) runs once, as without us. While a job runs the sim thread keeps simulating; every
 // Lock_Acquire on it that would block runs the job's managed calls (portal-lock query) while waiting, so it cannot
 // deadlock against the worker holding the routing lock world+0x918.
-static const DWORD kAsyncOptHi = 0x04000000, kAsyncCancelHi = 0x40000000;
+static const DWORD kAsyncOptHi = 0x04000000, kAsyncCancelHi = 0x40000000, kNoYieldHi = 0x20000000;
+
+// Can the running script code yield (docs/18 "Crash: yield in a nested call")? EA's yield opcode (0xE59751) calls the
+// host's sleep, which sets yieldReturn (+0x149) only on the running task's root interpreter state (host+0xBC8 -> slot ->
+// state, 0xD70F60), then asserts yieldReturn on the *current* state (0xE59763). The current state is the innermost
+// ves_exec's (0xE53EB0 keeps it in 0x11F4170); a native->managed call (runtime_invoke 0xE5A600, or 0xD8A8E0) runs on a
+// fresh one. So a yield is only safe when the current state is the task's root state.
+static DWORD* g_hostPtr = (DWORD*)(uintptr_t)0x011EE514;    // MonoScriptHost (ctor 0xD7E010)
+static DWORD* g_curState = (DWORD*)(uintptr_t)0x011F4170;   // current interpreter state
+static bool CanYield() {
+    const u8* host = (const u8*)(uintptr_t)*g_hostPtr;
+    if (!host) return false;
+    const DWORD* slot = *(const DWORD* const*)(host + 0xBC8);  // set with the task id (+0xBD0) for each task it runs (0xD7F000)
+    const DWORD* id = (const DWORD*)(host + 0xBD0);
+    return slot && (id[0] | id[1]) && *g_curState && *g_curState == *slot;
+}
 typedef u8(__cdecl* GetOptionFn)(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2);  // 0x74D040, bool in AL
 typedef LONG(__fastcall* LockAcquireFn)(void* lock, void* edx, const DWORD* deadline);       // 0x4E16F0 thiscall, ret 4
 static GetOptionFn g_getOptOrig;
@@ -736,8 +752,9 @@ static u8* __cdecl IcPlanHook(u8* out, DWORD handle) {
 
 static u8 AsyncStart(DWORD handle) {
     g_collect = 0;
-    if (ts3native_counters.asyncMode != 1) return 0;
-    if (g_async.state == A_RUNNING) { InterlockedIncrement(&ts3native_counters.asyncRefused); return 0; }
+    if (ts3native_counters.asyncMode != 1 || !ts3native_counters.asyncReady) return 0;  // asyncMode is writable at runtime
+    // another job runs, or the caller could not sleep (nested native->managed call: its yield would abort the game)
+    if (g_async.state == A_RUNNING || !CanYield()) { InterlockedIncrement(&ts3native_counters.asyncRefused); return 0; }
     if (g_async.state == A_DONE) InterlockedIncrement(&ts3native_counters.asyncDropped);  // its caller gave up
     EnterCriticalSection(&g_workerCs);
     const bool invokeOk = EnsureInvokeHook();  // the job's managed calls must come back to this thread
@@ -755,7 +772,8 @@ static u8 AsyncStart(DWORD handle) {
 }
 
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
-    if (optLo != 0 || (optHi & ~kAsyncCancelHi) != kAsyncOptHi) return g_getOptOrig(handle, optLo, optHi, options2);
+    if (optLo != 0 || (optHi & ~(kAsyncCancelHi | kNoYieldHi)) != kAsyncOptHi) return g_getOptOrig(handle, optLo, optHi, options2);
+    if (optHi & kNoYieldHi) return !CanYield();
     if (!(u8)options2) return AsyncStart(handle);
     const bool mine = g_async.state != A_IDLE && g_async.handle == handle && GetCurrentThreadId() == g_async.owner;
     if (optHi & kAsyncCancelHi) { g_collect = 0; return 1; }
@@ -895,6 +913,9 @@ static void Run(HMODULE self) {
         keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini));
         if (asyncMode >= 0 && worker && keepLog) InstallAsync(asyncMode);
         keepLog = ApplySaveWrite(ini) || keepLog;
+        // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
+        if (!g_getOptOrig)
+            g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

@@ -72,6 +72,8 @@ namespace Ts3Fixes
             // thread keeps running everything else. Handshake through GetOption on RouteOption bit 58, which has no name and
             // is never set by the game: without ts3native (or with it off) START answers false and this is one extra call.
             // The original Plan then runs once, as without us, and its internal call hands over the worker's result.
+            // CheckYieldingContext is not enough: when this plan runs inside a native->managed call during the task, a
+            // yield aborts the game (interp.c:3595 `pState->yieldReturn'), so ts3native refuses START there (MayYield).
             // Switch "asyncroute" (default on; ts3native decides). Counters: [56] started, [57] yields, [58] poll cap.
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
@@ -121,6 +123,18 @@ namespace Ts3Fixes
             }
             static FieldInfo[] sStartFields;
         }
+
+        // Whether a Simulator.Sleep here is safe. CheckYieldingContext only tests for a current task; EA's yield also needs
+        // the running code to be the task's own top-level interpreter state, not a native->managed call made during the
+        // task, or the game aborts on "interp.c:3595 `pState->yieldReturn' not met" (docs/18 "Crash: yield in a nested
+        // call"). ts3native answers that through GetOption2 bit 58|61 (true = may not yield) on any Route, here one with
+        // handle 0. Without ts3native the game answers false (handle 0 has no route), so the old rule applies.
+        static bool MayYield()
+        {
+            return Simulator.CheckYieldingContext(false) && !sYieldProbe.GetOption2(kNoYield);
+        }
+        static readonly ScriptCore.Route sYieldProbe = new ScriptCore.Route();
+        const Sims3.SimIFace.Route.RouteOption2 kNoYield = (Sims3.SimIFace.Route.RouteOption2)0x2400000000000000L;
 
         // Unseen townie on foot, not a pet or horse (their routes carry their own follower/owner logic).
         static bool BackoffEligible(Sims3.Gameplay.Actors.Sim sim)

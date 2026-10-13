@@ -319,6 +319,19 @@ static u8 Start(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi, 0); }
 static u8 Ready(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi, 1); }
 static void Cancel(DWORD h) { assert(GetOptionHook(h, 0, kAsyncOptHi | kAsyncCancelHi, 1) == 1); }
 static void WaitReady(DWORD h) { while (!Ready(h)) Sleep(1); }
+static u8 NoYield(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi | kNoYieldHi, 1); }
+
+// MonoScriptHost stand-in: +0xBC8 -> slot -> the task's root interpreter state, +0xBD0 task id; g_fakeCur = current state
+static u8 g_fakeHost[0xC00];
+static DWORD g_fakeHostPtr, g_fakeCur, g_fakeRootSlot;
+static const DWORD kRoot = 0x1000, kNested = 0x2000;
+static void FakeTask(DWORD cur, DWORD id) {
+    g_fakeHostPtr = (DWORD)(uintptr_t)g_fakeHost;
+    g_fakeRootSlot = kRoot;
+    *(DWORD**)(g_fakeHost + 0xBC8) = &g_fakeRootSlot;
+    *(DWORD*)(g_fakeHost + 0xBD0) = id;
+    g_fakeCur = cur;
+}
 
 static void TestRouteAsync() {
     const DWORD me = GetCurrentThreadId();
@@ -331,11 +344,16 @@ static void TestRouteAsync() {
     g_lockOrig = FakeLockAcquire;
     u8 out[0x48];
     const DWORD inf = 0xFFFFFFFF;
+    g_hostPtr = &g_fakeHostPtr;
+    g_curState = &g_fakeCur;
+    FakeTask(kRoot, 7);  // the Sim's own task at its top level: may yield
 
     ts3native_counters.asyncMode = 0;  // switch off: START says no, the C# hook plans synchronously
     assert(!Start(kH1) && c.asyncStarted == 0);
     assert(GetOptionHook(kH1, 1, 0, 0) == 0);  // other options pass through
     ts3native_counters.asyncMode = 1;
+    assert(!Start(kH1) && c.asyncStarted == 0);  // detours not all in place (only Route_GetOption, for NOYIELD): START says no
+    ts3native_counters.asyncReady = 1;
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);  // no job: plain call
 
     // started -> not ready while running -> ready -> the next Route.Plan takes the worker's result
@@ -400,6 +418,20 @@ static void TestRouteAsync() {
     assert(c.watchdogs == 0 && c.asyncUs >= 30000 && c.asyncMaxUs >= 30000);
     ts3native_counters.workerReady = 0;
     g_icSleepMs = 0;
+
+    // yield guard (interp.c:3595): only the task's root interpreter state may yield
+    assert(NoYield(0) == 0 && NoYield(kH1) == 0);
+    FakeTask(kNested, 7);  // inside a native->managed call during the task
+    const LONG refused = c.asyncRefused, started = c.asyncStarted;
+    assert(NoYield(0) == 1 && !Start(kH1) && c.asyncRefused == refused + 1 && c.asyncStarted == started && g_async.state == A_IDLE);
+    FakeTask(kRoot, 0);  // no task running (stale slot)
+    assert(NoYield(0) == 1 && !Start(kH1));
+    FakeTask(0, 7);
+    assert(NoYield(0) == 1);
+    g_fakeHostPtr = 0;  // host not created yet
+    assert(NoYield(0) == 1);
+    FakeTask(kRoot, 7);
+    assert(GetOptionHook(kH1, 0, kNoYieldHi, 1) == 0 && GetOptionHook(kH1, 1, kAsyncOptHi | kNoYieldHi, 1) == 0);  // not ours: passes through
 }
 
 // --- save write: the backup job against a fake native save on real temp folders ---
