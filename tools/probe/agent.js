@@ -542,6 +542,11 @@ rpc.exports = {
       c.add(27 * 4).writeS32(routeAsync);
       r.asyncMode = c.add(27 * 4).readS32();
     }
+    if (alloc === 0 || alloc === 1) { // fields are consecutive int32s, so the name's index is its offset / 4
+      if (r.allocReady !== 1) return Object.assign(r, { error: 'alloc cache not active ([Alloc] Enabled=0 or ts3native < 0.8.0)' });
+      c.add(f.indexOf('allocMode') * 4).writeS32(alloc);
+      r.allocMode = c.add(f.indexOf('allocMode') * 4).readS32();
+    }
     return r;
   },
 

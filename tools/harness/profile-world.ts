@@ -53,7 +53,7 @@ const toggler = (async () => {
   if (!abNames.length) return;
   for (let i = 0, on = true; i * Number(values.slice) * 60 < secs; i++, on = !on) {
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
-    const nativeNames = ['routeworker', 'routebudget', 'routeasync']; // ts3native's runtime switches, not C# patches
+    const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc']; // ts3native's runtime switches, not C# patches
     const patchNames = abNames.filter(n => !nativeNames.includes(n));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
