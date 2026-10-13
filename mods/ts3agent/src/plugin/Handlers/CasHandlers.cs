@@ -302,6 +302,7 @@ namespace Ts3Agent
                     SetCasState(new CASState(CASTopState.CreateASim, mid, phys, CASClothingState.None));
                     ctl.Activate(true);
                 }
+                if (phys == CASPhysicalState.Hair) ShowHairNotHats(idle);
                 if (!clothing) return;
                 CASClothingCategory cc = Panel(typeof(CASClothingCategory)) as CASClothingCategory;
                 if (cc == null) throw new McpException("no CASClothingCategory panel (" + CasDiag() + ")");
@@ -320,6 +321,29 @@ namespace Ts3Agent
                     // (a fresh tab already filled in its fade-in handler)
                     cc.SetTypeCategory(type == null ? CASClothingCategory.CurrentTypeCategory : typeCat);
             }, ready, count, 90000);
+        }
+
+        // A Sim whose worn hair part is a hat gets the hair panel on Hats (CASHair.Init and SetState: PartIsHat(worn) ->
+        // SetHairTypeCategory(Hat)), so "hair" timed the hats grid (fill_path "hats"). Press the Hair button as a player
+        // would (OnHairButtonClick + the two buttons' Selected); the hats fill before it stays in sync_ms.
+        static void ShowHairNotHats(Ready idle)
+        {
+            List<CASPart> worn = Responder.Instance.CASModel.GetWornParts(BodyTypes.Hair);
+            if (worn.Count == 0 || !CASHair.PartIsHat(worn[0])) return;
+            FieldInfo type = typeof(CASHair).GetField("mHairType", kPriv);
+            const uint kHairButton = 98285829u, kHatsButton = 98285830u;
+            // set up (on Hats), or already pressed to Hair by an earlier "hair" in the same panel
+            WaitFor(delegate
+            {
+                CASHair p = Panel(typeof(CASHair)) as CASHair;
+                return p != null && p.Visible && idle() && ((CASHair.HairType)type.GetValue(p) == CASHair.HairType.Hat
+                    || ((Button)p.GetChildByID(kHairButton, true)).Selected);
+            }, 30000, "CASHair hair type");
+            CASHair h = (CASHair)Panel(typeof(CASHair));
+            if ((CASHair.HairType)type.GetValue(h) != CASHair.HairType.Hat) return;
+            ((Button)h.GetChildByID(kHatsButton, true)).Selected = false;
+            ((Button)h.GetChildByID(kHairButton, true)).Selected = true;
+            h.SetHairTypeCategory(CASHair.HairType.Hair);
         }
 
         // cas_close: the close button's "exit without saving" path, minus its Yes/No dialog; back to live mode.
