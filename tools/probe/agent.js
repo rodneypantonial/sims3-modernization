@@ -234,7 +234,9 @@ function findMailbox() {
   for (const r of Process.enumerateRanges('rw-')) {
     if (r.size < MBX.capacity) continue; // the buffer is one 1 MB array
     lastScan.ranges++; lastScan.bytes += r.size;
-    for (const m of Memory.scanSync(r.base, r.size, pattern)) {
+    let hits = [];
+    try { hits = Memory.scanSync(r.base, r.size, pattern); } catch { continue; } // range freed or reprotected while scanning
+    for (const m of hits) {
       if (mailboxValid(m.address)) { mailbox = m.address; lastScan.ms = Date.now() - t0; return mailbox; }
     }
   }
