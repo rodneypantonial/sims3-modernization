@@ -508,7 +508,7 @@ rpc.exports = {
   // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
   // routeBudget 0|1 likewise sets the route search budget's switch (ts3native >= 0.4.0, [RouteBudget] Enabled=1).
   // routeAsync 0|1 likewise sets the async route plan's switch (ts3native >= 0.5.0, [RouteAsync] Enabled=1).
-  nativeCounters(routeWorker, routeBudget, routeAsync) {
+  nativeCounters(routeWorker, routeBudget, routeAsync, alloc) {
     const m = Process.findModuleByName('ts3native.asi'); // Frida 17 has no static Module.findExportByName
     const c = m === null ? null : m.findExportByName('ts3native_counters');
     if (c === null) return null;
