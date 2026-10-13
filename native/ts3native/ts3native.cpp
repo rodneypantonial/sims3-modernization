@@ -11,7 +11,7 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
-#define TS3NATIVE_VERSION "0.7.1"
+#define TS3NATIVE_VERSION "0.8.0"
 
 typedef unsigned char u8;
 
@@ -153,7 +153,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 65 int32 (v8).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 76 int32 (v9).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -227,8 +227,20 @@ struct Ts3nCounters {
     LONG planOffFails;   // ... of those, returned 0 (cache hits included)
     LONG planOnCalls;    // requests with worker or async mode on (also plain plans made while async is on)
     LONG planOnFails;
+    // v9: per-thread cache in front of EA's general allocator (docs/15 phase 8, alloc.cpp); counts in units of 1024
+    LONG allocReady;           // 1 when the Malloc/Memalign/Free/Shutdown detours (0x4E69D0, 0x4E6A20, 0x4E5920, 0x4E5CB0) are installed
+    volatile LONG allocMode;   // runtime switch, writable by test tools: 0 = every call goes to the game, 1 = cache
+    LONG allocHitsK;           // Malloc answered from the cache (no lock, no 0x4E5E40)
+    LONG allocMissesK;         // cacheable Malloc that went to the heap
+    LONG allocCachedK;         // Free kept in the cache
+    LONG allocPassedK;         // cacheable Free passed to the heap (bin or thread full, 5th heap)
+    LONG allocThreads;         // threads holding a ThreadKB quota
+    LONG allocFlushed;         // chunks given back to their heap (thread exit, out of memory, after another heap's shutdown)
+    LONG allocDropped;         // chunks forgotten because their heap shut down
+    LONG allocShutdowns;       // EA heap shutdowns seen
+    LONG allocOomRetries;      // Malloc that returned NULL, flushed this thread's chunks of that heap and retried
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {8,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {9,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -970,6 +982,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
 
 #include "savewrite.cpp"
 #include "decompress.cpp"
+#include "alloc.cpp"
 
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
@@ -1004,6 +1017,7 @@ static void Run(HMODULE self) {
         if (!g_getOptOrig)
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
         keepLog = ApplyDecompress(ini) || keepLog;
+        keepLog = ApplyAlloc(ini) || keepLog;
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

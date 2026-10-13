@@ -84,7 +84,7 @@ Smaller items, none above 0.5% each: `0xAB7ED0`/`0xA8DF80` (lot tile and room lo
 | 1b | Water JPS made cheaper in place (iterative jump or JPS+) | IP only: up to ~40-60 of the ~78; also shortens long IP searches that async cannot hide | M | New, pure function, low risk |
 | 2 | Animation update as a parallel-for over actors | ~20-28 of ~33 (8 cores, if safe) | L | New; first decompile `0x940430`'s callees for script or event calls |
 | 3 | Read-only query caches (raycast height, quadtree, `GetObjectsOnLot`) | ~15-30 of ~43 | S-M each (C# for #8 and #9, native for #7) | New |
-| n/a | Allocator: thread-local cache or mimalloc behind the arena (not an offload) | ~30-80 of 50-160 | M | New. Biggest native item not yet addressed. First check what `bp-worker1` changed (contention) and S3PP `AllocatorArenaTuning` |
+| n/a | Allocator: thread-local cache or mimalloc behind the arena (not an offload) | ~30-80 of 50-160 | M | Built (ts3native 0.8.0, `[Alloc]`, docs/15 Phase 8): per-thread cache in front of the locked entry points, not run in game. S3PP `AllocatorArenaTuning` patches other sites (compatible) |
 
 Not offloadable, and handled elsewhere: interpreter (28.5%), Mono runtime (14.8%), GC (9.9%; docs/13, ts3native heap).
 

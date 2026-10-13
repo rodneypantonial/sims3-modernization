@@ -742,6 +742,146 @@ static void TestDecompress() {
     ts3native_counters.decompressVerify = 0;
 }
 
+// --- EA allocator cache (phase 8): a fake heap that lays chunks out like the game's (16-byte header, in-use bit in the next chunk) ---
+static __declspec(align(16)) u8 g_fakeArena[1 << 18];
+static DWORD g_fakeTop = 0x10;
+static int g_fakeMallocs, g_fakeFrees, g_fakeOom;
+static void* __fastcall FakeEaMalloc(void*, void*, DWORD n, DWORD) {
+    g_fakeMallocs++;
+    if (g_fakeOom) { g_fakeOom--; return NULL; }
+    const DWORD sz = n >= 0x1000 ? 0x1000 : AcChunk(n);
+    if (g_fakeTop + sz + 0x20 > sizeof(g_fakeArena)) g_fakeTop = 0x10;
+    u8* c = g_fakeArena + g_fakeTop;
+    g_fakeTop += sz;
+    *(DWORD*)(c + 4) = sz | 1;
+    *(DWORD*)(c + sz + 4) = 1;  // next chunk: previous (this one) in use
+    return c + 0x10;
+}
+static int g_fakeAligns;
+static void* __fastcall FakeEaMemalign(void* h, void* e, DWORD n, DWORD, DWORD, DWORD f) { g_fakeAligns++; return FakeEaMalloc(h, e, n, f); }
+static void __fastcall FakeEaFree(void*, void*, void*) { g_fakeFrees++; }
+static DWORD __fastcall FakeEaShutdown(void*, void*) { return 1; }
+static CRITICAL_SECTION g_fakeCs;
+static void* __fastcall LockedFakeMalloc(void* h, void* e, DWORD n, DWORD f) { EnterCriticalSection(&g_fakeCs); void* r = FakeEaMalloc(h, e, n, f); LeaveCriticalSection(&g_fakeCs); return r; }
+static void __fastcall LockedFakeFree(void* h, void* e, void* p) { EnterCriticalSection(&g_fakeCs); FakeEaFree(h, e, p); LeaveCriticalSection(&g_fakeCs); }
+static void* const kHeapA = (void*)0x1000;
+static void* const kHeapB = (void*)0x2000;
+static DWORD WINAPI AcFreeThree(void*) {
+    void* p[3];
+    for (int i = 0; i < 3; i++) p[i] = EaMallocHook(kHeapA, NULL, 100, 0);
+    for (int i = 0; i < 3; i++) EaFreeHook(kHeapA, NULL, p[i]);
+    return 0;
+}
+
+static void TestAlloc() {
+    Ts3nCounters& c = ts3native_counters;
+    g_eaMallocOrig = FakeEaMalloc;
+    g_eaMemalignOrig = FakeEaMemalign;
+    g_eaFreeOrig = FakeEaFree;
+    g_eaShutdownOrig = FakeEaShutdown;
+    assert(AcInit(16, 1, 4));
+    c.allocMode = 1;
+    assert(AcChunk(0) == 16 && AcChunk(4) == 16 && AcChunk(5) == 32 && AcChunk(40) == 64 && AcChunk(36) == 48 && AcChunk(1000) == 1024);
+
+    // free then malloc of the same chunk size: same pointer, no heap call; header and user bytes untouched
+    void* p = EaMallocHook(kHeapA, NULL, 40, 0);
+    assert(g_fakeMallocs == 1 && ((uintptr_t)p & 15) == 0);
+    memset(p, 0xAB, 40);
+    const DWORD hdr = ((DWORD*)p)[-3];
+    EaFreeHook(kHeapA, NULL, p);
+    assert(g_fakeFrees == 0 && ((u8*)p)[0] == 0xAB && ((u8*)p)[39] == 0xAB && ((DWORD*)p)[-3] == hdr);
+    assert(EaMallocHook(kHeapA, NULL, 36, 0) != p && g_fakeMallocs == 2);  // 48-byte chunk: another bin
+    assert(EaMallocHook(kHeapB, NULL, 40, 0) != p && g_fakeMallocs == 3);  // other heap
+    assert(EaMallocHook(kHeapA, NULL, 37, 8) != p && g_fakeMallocs == 4);  // flag 8: direct VirtualAlloc path
+    assert(EaMallocHook(kHeapA, NULL, 37, 0) == p && g_fakeMallocs == 4);  // 37 -> 64 too
+
+    // memalign: only align <= 16 with offset 0 (0x4E63F0's plain 0x4E5E40 path) may come from the cache
+    EaFreeHook(kHeapA, NULL, p);
+    assert(EaMemalignHook(kHeapA, NULL, 40, 32, 0, 0) != p && g_fakeAligns == 1);
+    assert(EaMemalignHook(kHeapA, NULL, 40, 4, 16, 0) != p && g_fakeAligns == 2);  // ZoneObject: align 4, offset 16
+    assert(EaMemalignHook(kHeapA, NULL, 40, 16, 0, 0) == p && g_fakeAligns == 2);
+
+    // not cached: direct-mapped, fastbin-tagged, too big, NULL, next chunk says free
+    u8* q = (u8*)EaMallocHook(kHeapA, NULL, 100, 0);
+    const DWORD qh = ((DWORD*)q)[-3];
+    ((DWORD*)q)[-3] = qh | 2;          EaFreeHook(kHeapA, NULL, q); assert(g_fakeFrees == 1);
+    ((DWORD*)q)[-3] = qh | 0x80000004; EaFreeHook(kHeapA, NULL, q); assert(g_fakeFrees == 2);
+    ((DWORD*)q)[-3] = qh;
+    DWORD* next = (DWORD*)(q - 0x10 + (qh & ~15u) + 4);
+    *next &= ~1u;                      EaFreeHook(kHeapA, NULL, q); assert(g_fakeFrees == 3);
+    *next |= 1;
+    EaFreeHook(kHeapA, NULL, EaMallocHook(kHeapA, NULL, 1013, 0)); assert(g_fakeFrees == 4);  // 1040-byte chunk
+    EaFreeHook(kHeapA, NULL, NULL);    assert(g_fakeFrees == 5);
+
+    // per-bin cap 4, then the 16 KB thread cap
+    void* v[24];
+    for (int i = 0; i < 5; i++) v[i] = EaMallocHook(kHeapA, NULL, 200, 0);
+    for (int i = 0; i < 5; i++) EaFreeHook(kHeapA, NULL, v[i]);
+    assert(g_fakeFrees == 6);
+    AcThread* t = (AcThread*)FlsGetValue(g_acFls);
+    assert(t && t->bytes == 4 * 224);
+    for (int i = 0; i < 24; i++) v[i] = EaMallocHook(kHeapA, NULL, 1000 - 16 * (i % 6), 0);
+    for (int i = 0; i < 24; i++) EaFreeHook(kHeapA, NULL, v[i]);
+    assert(t->bytes <= 16 * 1024 && g_fakeFrees > 6);
+
+    // mode 0: straight through
+    c.allocMode = 0;
+    int m = g_fakeMallocs, f = g_fakeFrees;
+    void* z = EaMallocHook(kHeapA, NULL, 200, 0);
+    EaFreeHook(kHeapA, NULL, z);
+    assert(g_fakeMallocs == m + 1 && g_fakeFrees == f + 1);
+    c.allocMode = 1;
+
+    // heap A shuts down: its chunks are forgotten (not freed), heap B's go back to B
+    void* b1 = EaMallocHook(kHeapB, NULL, 60, 0);
+    EaFreeHook(kHeapB, NULL, b1);
+    f = g_fakeFrees;
+    const LONG dropped = c.allocDropped, flushed = c.allocFlushed;
+    EaShutdownHook(kHeapA, NULL);
+    assert(g_fakeFrees == f + 1 && c.allocFlushed == flushed + 1 && c.allocDropped > dropped && t->bytes == 0 && c.allocShutdowns == 1);
+
+    // out of memory: this thread's chunks of the heap go back, then one retry
+    b1 = EaMallocHook(kHeapB, NULL, 60, 0);
+    EaFreeHook(kHeapB, NULL, b1);
+    f = g_fakeFrees;
+    m = g_fakeMallocs;
+    g_fakeOom = 1;
+    assert(EaMallocHook(kHeapB, NULL, 500, 0) != NULL);
+    assert(g_fakeMallocs == m + 2 && g_fakeFrees == f + 1 && c.allocOomRetries == 1);
+
+    // thread exit returns its chunks and its quota
+    f = g_fakeFrees;
+    const LONG threads = g_acThreads;
+    HANDLE th = CreateThread(NULL, 0, AcFreeThree, NULL, 0, NULL);
+    WaitForSingleObject(th, INFINITE);
+    CloseHandle(th);
+    assert(g_fakeFrees == f + 3 && g_acThreads == threads);
+
+    // quota: 1 MB / 16 KB = 64 threads; the 65th runs uncached
+    g_acThreadsMax = g_acThreads;
+    f = g_fakeFrees;
+    th = CreateThread(NULL, 0, AcFreeThree, NULL, 0, NULL);
+    WaitForSingleObject(th, INFINITE);
+    CloseHandle(th);
+    assert(g_fakeFrees == f + 3 && g_acThreads == threads);
+    g_acThreadsMax = 64;
+
+    // benchmark: one free + malloc pair through the cache vs the fake heap behind a CRITICAL_SECTION (uncontended)
+    InitializeCriticalSectionAndSpinCount(&g_fakeCs, 10);
+    LARGE_INTEGER t0, t1, t2, fq;
+    QueryPerformanceFrequency(&fq);
+    const int N = 2000000;
+    void* r = EaMallocHook(kHeapB, NULL, 100, 0);
+    QueryPerformanceCounter(&t0);
+    for (int i = 0; i < N; i++) { EaFreeHook(kHeapB, NULL, r); r = EaMallocHook(kHeapB, NULL, 100, 0); }
+    QueryPerformanceCounter(&t1);
+    g_fakeTop = 0x10;
+    for (int i = 0; i < N; i++) { LockedFakeFree(kHeapB, NULL, r); r = LockedFakeMalloc(kHeapB, NULL, 100, 0); if (g_fakeTop > 0x30000) g_fakeTop = 0x10; }
+    QueryPerformanceCounter(&t2);
+    printf("alloc cache: %.1f ns per free+malloc hit, %.1f ns for lock + bump allocator\n", (t1.QuadPart - t0.QuadPart) * 1e9 / fq.QuadPart / N,
+           (t2.QuadPart - t1.QuadPart) * 1e9 / fq.QuadPart / N);
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -768,6 +908,7 @@ int main() {
     TestRouteAsync();
     TestSaveWrite();
     TestDecompress();
+    TestAlloc();
     puts("selftest ok");
     return 0;
 }

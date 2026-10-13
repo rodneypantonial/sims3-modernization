@@ -524,6 +524,8 @@ rpc.exports = {
       'decompressMismatches', 'decompressMaxUs', 'decompressInMB', 'decompressOutMB', 'decompressMs', 'decompressMainCalls',
       'decompressMainMs'); // 0.7.0: [Decompress] faster RefPack decoder (docs/15 phase 6, +0xC0..)
     if (c.readS32() >= 8) f.push('hostCalls', 'planOffCalls', 'planOffFails', 'planOnCalls', 'planOnFails'); // 0.7.1 (+0xF0..): docs/18
+    if (c.readS32() >= 9) f.push('allocReady', 'allocMode', 'allocHitsK', 'allocMissesK', 'allocCachedK', 'allocPassedK',
+      'allocThreads', 'allocFlushed', 'allocDropped', 'allocShutdowns', 'allocOomRetries'); // 0.8.0: [Alloc] EA allocator cache (docs/15 phase 8, +0x104..)
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (routeWorker === 0 || routeWorker === 1) {
       if (r.workerReady !== 1) return Object.assign(r, { error: 'route worker not running ([RouteWorker] Enabled=0 or ts3native < 0.3.0)' });
