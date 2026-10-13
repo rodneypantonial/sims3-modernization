@@ -1,0 +1,18 @@
+[
+  { "name": "area:routing", "color": "1d76db", "description": "Route planning, stuck Sims, trip shortcuts, replans" },
+  { "name": "area:memory", "color": "5319e7", "description": "Address space (Error 12), allocators, caches, GC heap" },
+  { "name": "area:cas", "color": "d876e3", "description": "Create-a-Sim and Buy catalog" },
+  { "name": "area:save", "color": "c2e0c6", "description": "Save size, save time, save cleanup, long-running saves" },
+  { "name": "area:travel", "color": "0e8a16", "description": "Vacation, University, future and store-world travel" },
+  { "name": "area:native", "color": "b60205", "description": "ts3native.asi and other native (C++) patches of TS3W.exe" },
+  { "name": "area:mod", "color": "fbca04", "description": "ts3fixes player mod (C# script patches)" },
+  { "name": "area:harness", "color": "006b75", "description": "Probe, agent, profile/repro/test tools, CI" },
+  { "name": "area:docs", "color": "0075ca", "description": "Documentation and research write-ups" },
+  { "name": "type:test-needed", "color": "f9d0c4", "description": "Built; needs an in-game run, measurement or A/B" },
+  { "name": "type:research", "color": "bfd4f2", "description": "Investigate and write up before building anything" },
+  { "name": "type:fix", "color": "d93f0b", "description": "Build or change a fix" },
+  { "name": "type:infra", "color": "ededed", "description": "Contributor infrastructure: setup, CI, test farm, dashboards" },
+  { "name": "good-first-issue", "color": "7057ff", "description": "Small, well-scoped; good for a new contributor" },
+  { "name": "needs-game", "color": "e99695", "description": "Needs The Sims 3 (Steam 1.67, all packs) installed to work on" },
+  { "name": "paused", "color": "cccccc", "description": "Deliberately on hold; read the status section before starting" }
+]

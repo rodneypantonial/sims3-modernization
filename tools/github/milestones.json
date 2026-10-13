@@ -1,0 +1,10 @@
+[
+  { "title": "M0 Contributor setup", "order": 0, "description": "Everything a new contributor needs before game work: reproducible test saves, portable paths, CI, test farm and a results dashboard." },
+  { "title": "M1 Validate built fixes", "order": 1, "description": "Fixes that are built but not (fully) run in game: run their repros and in-load A/Bs, then decide each default." },
+  { "title": "M2 Milestone measurement + defaults", "order": 2, "description": "Frame-time and B-E tests, full per-world milestone profiles with the current bundle, then turn on the defaults the numbers support." },
+  { "title": "M3 Stutter: routing", "order": 3, "description": "Make route searches cheaper and fewer: route budget, replans, houseboat gangways, stand-and-wait, Overwatch StuckCheck." },
+  { "title": "M4 Create-a-Sim & content", "order": 4, "description": "Create-a-Sim and Buy speed, store content and heavy CC load times." },
+  { "title": "M5 Travel worlds", "order": 5, "description": "Cost of travel itself and the worst destinations: Champs Les Sims round trips, Sims University, Al Simhara, Oasis Landing." },
+  { "title": "M6 Long-running saves", "order": 6, "description": "Save growth, save time and cleanups for saves played for weeks." },
+  { "title": "M7 Research backlog", "order": 7, "description": "Research and paused work: async routing, animation, online checks, address space, RE tooling." }
+]
