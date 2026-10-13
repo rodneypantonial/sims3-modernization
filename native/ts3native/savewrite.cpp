@@ -1,0 +1,324 @@
+// Phase 7: save timing and the save backup copy off the sim thread (docs/15 phase 7). Included by ts3native.cpp.
+//
+// Native save = FUN_00AB1030 (thiscall, 3 args), called from IC_LoadSaveManager_SaveGame_Impl at 0x742A95. In order:
+//   0xAB10F6 FUN_00AAE950  fill the save info (paths; info+0x430 = "<Saves>\<name>.sims3\<world>.nhd")
+//   0xAB12AF FUN_00AAC110  write the game into the working copy package (CurrentGame.sims3), Mono callbacks: sim thread only
+//   0xAB134E FUN_00AB0F80  if <world>.nhd exists: back up the old save, i.e. delete <name>.sims3.backup, copy
+//                          <name>.sims3 -> <name>.sims3.backup with CopyFileW, FlushFileBuffers every file
+//   0xAB1363 FUN_00AB0E80  delete <name>.sims3, copy CurrentGame.sims3 -> <name>.sims3, flush every file
+//   0xAB1410 FUN_00AAF5F0  write 1a5tf1l3.dat, flush the save folder again
+// The backup step reads only the old save, which nothing writes during the save, so with Mode=1 a worker copies it to a
+// temp folder while the sim thread writes the package; at 0xAB134E the sim thread waits for it and renames the temp copy
+// to <name>.sims3.backup. The old save must be unchanged (names, sizes, write times) from the job start to that point
+// and the copy must match it, else the temp copy is dropped and the game's own backup runs. Nothing is reported earlier
+// than before: the game still copies and flushes the new save itself before it returns.
+#include <wctype.h>
+
+static const DWORD SAVE_GAME_SITE = 0x00742A95, SAVE_GAME = 0x00AB1030;
+static const DWORD SAVE_INFO_SITE = 0x00AB10F6, SAVE_INFO = 0x00AAE950;
+static const DWORD SAVE_WRITE_SITE = 0x00AB12AF, SAVE_WRITE = 0x00AAC110;
+static const DWORD SAVE_BACKUP_SITE = 0x00AB134E, SAVE_BACKUP = 0x00AB0F80;
+static const DWORD SAVE_COPY_SITE = 0x00AB1363, SAVE_COPY = 0x00AB0E80;
+static const DWORD SAVE_FINAL_SITE = 0x00AB1410, SAVE_FINAL = 0x00AAF5F0;
+static const size_t kInfoNhdPath = 0x430;  // inline wchar_t[520] path buffer in the save info
+
+// thiscall as __fastcall with a dummy edx: same stack layout and callee cleanup. DWORD returns keep eax whole.
+typedef DWORD(__fastcall* SaveGameFn)(void* lsm, void* edx, void* info, int travelSave, int traveling);  // ret 0Ch
+typedef DWORD(__fastcall* SaveInfoFn)(void* lsm, void* edx, u8* info, int keepId, int travelSave);      // ret 0Ch
+typedef DWORD(__fastcall* SaveWriteFn)(void* lsm, void* edx, void* pkg, int flag);                     // ret 8
+typedef DWORD(__fastcall* SaveBackupFn)(void* lsm, void* edx, const wchar_t* name);                    // ret 4
+typedef DWORD(__fastcall* SaveCopyFn)(void* lsm, void* edx, const wchar_t* name, int dir);             // ret 8
+typedef DWORD(__fastcall* SaveFinalFn)(void* info, void* edx);                                         // ret
+static SaveGameFn g_saveGameOrig = (SaveGameFn)(uintptr_t)SAVE_GAME;
+static SaveInfoFn g_saveInfoOrig = (SaveInfoFn)(uintptr_t)SAVE_INFO;
+static SaveWriteFn g_saveWriteOrig = (SaveWriteFn)(uintptr_t)SAVE_WRITE;
+static SaveBackupFn g_saveBackupOrig = (SaveBackupFn)(uintptr_t)SAVE_BACKUP;
+static SaveCopyFn g_saveCopyOrig = (SaveCopyFn)(uintptr_t)SAVE_COPY;
+static SaveFinalFn g_saveFinalOrig = (SaveFinalFn)(uintptr_t)SAVE_FINAL;
+
+// --- folder helpers (plain Win32, no game code: they run on the worker) ---
+static bool Join(wchar_t* out, const wchar_t* dir, const wchar_t* name) {
+    return swprintf_s(out, MAX_PATH, L"%s\\%s", dir, name) > 0;
+}
+static bool IsDots(const wchar_t* n) { return !wcscmp(n, L".") || !wcscmp(n, L".."); }
+
+static bool RemoveTree(const wchar_t* dir) {
+    wchar_t pat[MAX_PATH], p[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    if (!Join(pat, dir, L"*")) return false;
+    HANDLE h = FindFirstFileW(pat, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (IsDots(fd.cFileName) || !Join(p, dir, fd.cFileName)) continue;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) RemoveTree(p);
+            else { SetFileAttributesW(p, FILE_ATTRIBUTE_NORMAL); DeleteFileW(p); }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    RemoveDirectoryW(dir);
+    return GetFileAttributesW(dir) == INVALID_FILE_ATTRIBUTES;
+}
+
+// Names (relative), sizes and write times of every file and folder under dir, in one hash. False if unreadable.
+static bool TreeHash(const wchar_t* dir, u64* h, u64* bytes) {
+    wchar_t pat[MAX_PATH], p[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    if (!Join(pat, dir, L"*")) return false;
+    HANDLE f = FindFirstFileW(pat, &fd);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    bool ok = true;
+    do {
+        if (IsDots(fd.cFileName)) continue;
+        for (const wchar_t* c = fd.cFileName; *c; c++) *h = Fnv(*h, towlower(*c));
+        const bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        *h = Fnv(*h, isDir ? 0xD1D1D1D1u : 0xF1F1F1F1u);
+        if (isDir) ok = Join(p, dir, fd.cFileName) && TreeHash(p, h, bytes) && ok;
+        else {
+            *h = Fnv(Fnv(Fnv(Fnv(*h, fd.nFileSizeLow), fd.nFileSizeHigh), fd.ftLastWriteTime.dwLowDateTime), fd.ftLastWriteTime.dwHighDateTime);
+            *bytes += ((u64)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        }
+    } while (FindNextFileW(f, &fd));
+    FindClose(f);
+    return ok;
+}
+
+static bool FlushPath(const wchar_t* path) {  // as the game's FUN_00AAF4B0 does it per file
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    const bool ok = FlushFileBuffers(h) != 0;
+    CloseHandle(h);
+    return ok;
+}
+
+// CopyFileW keeps the write time, so a good copy hashes like its source.
+static bool CopyTree(const wchar_t* src, const wchar_t* dst) {
+    wchar_t pat[MAX_PATH], s[MAX_PATH], d[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    if (!CreateDirectoryW(dst, NULL) || !Join(pat, src, L"*")) return false;
+    HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    bool ok = true;
+    do {
+        if (IsDots(fd.cFileName)) continue;
+        if (!Join(s, src, fd.cFileName) || !Join(d, dst, fd.cFileName)) { ok = false; break; }
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ok = CopyTree(s, d);
+        else ok = CopyFileW(s, d, TRUE) && FlushPath(d);
+    } while (ok && FindNextFileW(h, &fd));
+    FindClose(h);
+    return ok;
+}
+
+// --- the backup job ---
+struct SaveJob {
+    wchar_t src[MAX_PATH], bak[MAX_PATH], tmp[MAX_PATH];
+    u64 hash, bytes;     // the old save at job start
+    HANDLE thread;
+    volatile LONG ok;    // worker result: 1 = tmp is a flushed copy of src and src did not change meanwhile
+    LONG us;
+};
+static SaveJob g_sj;
+static bool g_sjActive;  // only the saving thread touches it (the save is synchronous)
+struct SaveTimes { LARGE_INTEGER t0; LONG infoEnd, write, backup, copy, final, wait; int job; };  // job: 0 none, 1 promoted, -1 fallback
+static SaveTimes g_st;
+
+static bool TreeHashOf(const wchar_t* dir, u64* h, u64* bytes) {
+    *h = 0xCBF29CE484222325ull;
+    *bytes = 0;
+    return TreeHash(dir, h, bytes);
+}
+
+static DWORD WINAPI SaveJobMain(LPVOID) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    u64 h1, b1, h2, b2;
+    bool ok = (GetFileAttributesW(g_sj.tmp) == INVALID_FILE_ATTRIBUTES || RemoveTree(g_sj.tmp)) && CopyTree(g_sj.src, g_sj.tmp) &&
+              TreeHashOf(g_sj.src, &h1, &b1) && h1 == g_sj.hash && b1 == g_sj.bytes &&
+              TreeHashOf(g_sj.tmp, &h2, &b2) && h2 == g_sj.hash && b2 == g_sj.bytes;
+    g_sj.us = UsSince(t0);
+    InterlockedExchange(&g_sj.ok, ok ? 1 : 0);
+    return 0;
+}
+
+static bool EndsWithI(const wchar_t* s, const wchar_t* tail) {
+    const size_t n = wcslen(s), m = wcslen(tail);
+    return n >= m && !_wcsicmp(s + n - m, tail);
+}
+
+static void CutLast(wchar_t* path) {  // "a\b\c" -> "a\b"
+    wchar_t* sl = wcsrchr(path, L'\\');
+    if (sl) *sl = 0; else *path = 0;
+}
+
+// Paths from the save info; false (no job) unless they look exactly as expected.
+static bool SaveJobPaths(const u8* info) {
+    const wchar_t* nhd = (const wchar_t*)(info + kInfoNhdPath);
+    if (!Readable(nhd, 520 * sizeof(wchar_t))) return false;
+    const size_t n = wcsnlen(nhd, 520);
+    if (n == 0 || n >= MAX_PATH || !EndsWithI(nhd, L".nhd")) return false;
+    DWORD a = GetFileAttributesW(nhd);
+    if (a == INVALID_FILE_ATTRIBUTES || (a & FILE_ATTRIBUTE_DIRECTORY)) return false;  // no old save: the game skips the backup too
+    wcscpy_s(g_sj.src, nhd);
+    CutLast(g_sj.src);  // <Saves>\<name>.sims3
+    wchar_t user[MAX_PATH];
+    wcscpy_s(user, g_sj.src);
+    CutLast(user);  // <Saves>
+    if (!EndsWithI(g_sj.src, L".sims3") || !EndsWithI(user, L"\\Saves")) return false;
+    CutLast(user);  // the TS3 user folder: same volume as Saves (rename works), not listed as a save
+    return swprintf_s(g_sj.bak, L"%s.backup", g_sj.src) > 0 && Join(g_sj.tmp, user, L"ts3native-backup.tmp");
+}
+
+static void SaveJobDiscard() {  // wait for the worker and drop its copy
+    if (!g_sjActive) return;
+    WaitForSingleObject(g_sj.thread, INFINITE);
+    CloseHandle(g_sj.thread);
+    g_sjActive = false;
+    RemoveTree(g_sj.tmp);
+}
+
+static void SaveJobStart(const u8* info) {
+    SaveJobDiscard();
+    if (!SaveJobPaths(info) || !TreeHashOf(g_sj.src, &g_sj.hash, &g_sj.bytes)) return;
+    g_sj.ok = 0;
+    g_sj.thread = CreateThread(NULL, 256 * 1024, SaveJobMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+    if (!g_sj.thread) return;
+    g_sjActive = true;
+    InterlockedIncrement(&ts3native_counters.saveJobs);
+}
+
+// The game's backup step, done with the worker's copy. False = nothing promoted; the caller runs the game's own step.
+static bool SaveJobPromote(const wchar_t* name) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    WaitForSingleObject(g_sj.thread, INFINITE);
+    g_st.wait = UsSince(t0);
+    CloseHandle(g_sj.thread);
+    g_sjActive = false;
+    // The game's step works on <Saves>\<name> (+ ".sims3"); ours must be the same folder.
+    const wchar_t* last = wcsrchr(g_sj.src, L'\\');
+    wchar_t want[MAX_PATH];
+    bool same = last && name && Readable(name, MAX_PATH * sizeof(wchar_t)) && wcsnlen(name, MAX_PATH) < MAX_PATH - 8 &&
+                (!_wcsicmp(last + 1, name) || (swprintf_s(want, L"%s.sims3", name) > 0 && !_wcsicmp(last + 1, want)));
+    u64 h, b;
+    if (!g_sj.ok || !same || !TreeHashOf(g_sj.src, &h, &b) || h != g_sj.hash || b != g_sj.bytes) {
+        Log("save backup: worker copy not used (ok %ld, same folder %d), game copies", g_sj.ok, same);
+        RemoveTree(g_sj.tmp);
+        return false;
+    }
+    // As FUN_00AAFC50: a file in the way is deleted; a folder is removed with up to 10 tries 500 ms apart.
+    DWORD a = GetFileAttributesW(g_sj.bak);
+    if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) DeleteFileW(g_sj.bak);
+    for (int i = 0; i < 10 && GetFileAttributesW(g_sj.bak) != INVALID_FILE_ATTRIBUTES; i++)
+        if (!RemoveTree(g_sj.bak) && i < 9) Sleep(500);
+    if (GetFileAttributesW(g_sj.bak) != INVALID_FILE_ATTRIBUTES || !MoveFileExW(g_sj.tmp, g_sj.bak, MOVEFILE_WRITE_THROUGH)) {
+        Log("save backup: rename to %ls failed (err %lu), game copies", g_sj.bak, GetLastError());
+        RemoveTree(g_sj.tmp);
+        return false;
+    }
+    return true;
+}
+
+// --- call-site hooks (sim thread) ---
+static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSave, int traveling) {
+    memset(&g_st, 0, sizeof(g_st));
+    QueryPerformanceCounter(&g_st.t0);
+    const DWORD r = g_saveGameOrig(lsm, NULL, info, travelSave, traveling);
+    SaveJobDiscard();  // a save that never reached the backup step (error, travel) leaves no copy behind
+    const LONG total = UsSince(g_st.t0);
+    ts3native_counters.saveLastUs = total;
+    ts3native_counters.saveLastWriteUs = g_st.write;
+    ts3native_counters.saveLastBackupUs = g_st.backup;
+    ts3native_counters.saveLastCopyUs = g_st.copy;
+    ts3native_counters.saveLastFinalUs = g_st.final;
+    InterlockedIncrement(&ts3native_counters.saveCount);
+    Log("save: result %lu travel %d/%d total %ld ms: info %ld, write %ld, backup %ld (%s, worker %ld, wait %ld), copy %ld, final %ld ms",
+        r, travelSave, traveling, total / 1000, g_st.infoEnd / 1000, g_st.write / 1000, g_st.backup / 1000,
+        g_st.job > 0 ? "worker copy" : g_st.job < 0 ? "fallback" : "game", g_st.job ? g_sj.us / 1000 : 0, g_st.wait / 1000,
+        g_st.copy / 1000, g_st.final / 1000);
+    return r;
+}
+
+static DWORD __fastcall SaveInfoHook(void* lsm, void*, u8* info, int keepId, int travelSave) {
+    const DWORD r = g_saveInfoOrig(lsm, NULL, info, keepId, travelSave);
+    g_st.infoEnd = UsSince(g_st.t0);
+    if (r == 0 && !(travelSave & 0xFF) && ts3native_counters.saveMode == 1) SaveJobStart(info);
+    return r;
+}
+
+static DWORD __fastcall SaveWriteHook(void* lsm, void*, void* pkg, int flag) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    const DWORD r = g_saveWriteOrig(lsm, NULL, pkg, flag);
+    g_st.write = UsSince(t0);
+    return r;
+}
+
+static DWORD __fastcall SaveBackupHook(void* lsm, void*, const wchar_t* name) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    DWORD r;
+    const bool hadJob = g_sjActive;
+    if (hadJob && SaveJobPromote(name)) {
+        r = 1;  // what the game's step returns when its copy worked
+        g_st.job = 1;
+        InterlockedIncrement(&ts3native_counters.savePromoted);
+    } else {
+        if (hadJob) { g_st.job = -1; InterlockedIncrement(&ts3native_counters.saveFallbacks); }
+        r = g_saveBackupOrig(lsm, NULL, name);
+    }
+    g_st.backup = UsSince(t0);
+    return r;
+}
+
+static DWORD __fastcall SaveCopyHook(void* lsm, void*, const wchar_t* name, int dir) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    const DWORD r = g_saveCopyOrig(lsm, NULL, name, dir);
+    g_st.copy = UsSince(t0);
+    return r;
+}
+
+static DWORD __fastcall SaveFinalHook(void* info, void*) {
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    const DWORD r = g_saveFinalOrig(info, NULL);
+    g_st.final = UsSince(t0);
+    return r;
+}
+
+// Rewrites `call rel32` sites: every site must be an E8 to its expected target, else nothing is written.
+struct CallSite { DWORD site, target; void* hook; };
+static bool PatchCalls(const char* name, const CallSite* s, int count) {
+    for (int i = 0; i < count; i++) {
+        const u8* p = (const u8*)(uintptr_t)s[i].site;
+        if (!Readable(p, 5) || p[0] != 0xE8 || (DWORD)(s[i].site + 5 + *(const LONG*)(p + 1)) != s[i].target) {
+            Log("SKIP %s: call at 0x%08X is not a call to 0x%08X, nothing written", name, s[i].site, s[i].target);
+            return false;
+        }
+    }
+    for (int i = 0; i < count; i++) {
+        const LONG rel = (LONG)((uintptr_t)s[i].hook - (s[i].site + 5));
+        if (!Write((u8*)(uintptr_t)s[i].site + 1, &rel, 4)) {
+            Log("FAIL %s: VirtualProtect at 0x%08X (err %lu)", name, s[i].site, GetLastError());
+            return false;  // shortcut: earlier sites stay hooked; each hook only times and calls its original
+        }
+    }
+    Log("OK   %s: %d call sites", name, count);
+    return true;
+}
+
+static const CallSite kSaveSites[] = {
+    {SAVE_GAME_SITE, SAVE_GAME, (void*)SaveGameHook},       {SAVE_INFO_SITE, SAVE_INFO, (void*)SaveInfoHook},
+    {SAVE_WRITE_SITE, SAVE_WRITE, (void*)SaveWriteHook},    {SAVE_BACKUP_SITE, SAVE_BACKUP, (void*)SaveBackupHook},
+    {SAVE_COPY_SITE, SAVE_COPY, (void*)SaveCopyHook},       {SAVE_FINAL_SITE, SAVE_FINAL, (void*)SaveFinalHook}};
+
+// [SaveWrite] Enabled=1 times every save phase (log line per save + counters); Mode is the start value of the runtime
+// switch saveMode (1 = backup copy on the worker). Returns true when hooked (the log stays open for the save lines).
+static bool ApplySaveWrite(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"SaveWrite", L"Enabled", 0, ini)) { Log("save write disabled (Enabled=0)"); return false; }
+    QueryPerformanceFrequency(&g_qpf);
+    ts3native_counters.saveMode = Clamp(GetPrivateProfileIntW(L"SaveWrite", L"Mode", 1, ini), 0, 1);
+    if (!PatchCalls("save write", kSaveSites, sizeof(kSaveSites) / sizeof(kSaveSites[0]))) return false;
+    ts3native_counters.saveReady = 1;
+    Log("save write settings: Mode=%ld", ts3native_counters.saveMode);
+    return true;
+}

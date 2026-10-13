@@ -10,7 +10,7 @@
 #include <math.h>
 #include <xmmintrin.h>
 
-#define TS3NATIVE_VERSION "0.5.0"
+#define TS3NATIVE_VERSION "0.6.0"
 
 typedef unsigned char u8;
 
@@ -152,7 +152,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 37 int32 (v5).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 48 int32 (v6).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -195,8 +195,20 @@ struct Ts3nCounters {
     LONG asyncMaxUs;     // longest job, microseconds
     LONG asyncPumpUs;    // owner-thread time in contended Lock_Acquire waits while a job ran (managed calls served meanwhile), microseconds
     LONG asyncPumpWaits; // such waits
+    // v6: save timing and the backup copy on a worker (docs/15 phase 7, savewrite.cpp)
+    LONG saveReady;      // 1 when the six save call sites are hooked
+    volatile LONG saveMode;  // runtime switch, writable by test tools: 0 = time only (game backs up), 1 = backup copy on the worker
+    LONG saveJobs;       // worker backup copies started
+    LONG savePromoted;   // worker copies used as the backup (the game's copy skipped)
+    LONG saveFallbacks;  // worker copies dropped (failed, old save changed, rename failed); the game's own backup ran
+    LONG saveCount;      // saves timed
+    LONG saveLastUs;     // last save: whole native save (IC SaveGame -> FUN_00AB1030), microseconds
+    LONG saveLastWriteUs;   // last save: package write incl. script serialization (FUN_00AAC110)
+    LONG saveLastBackupUs;  // last save: sim-thread time in the backup step (game copy, or wait + rename)
+    LONG saveLastCopyUs;    // last save: working copy -> save folder copy + flush (FUN_00AB0E80)
+    LONG saveLastFinalUs;   // last save: 1a5tf1l3.dat + folder flush (FUN_00AAF5F0)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -852,6 +864,8 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
     return true;
 }
 
+#include "savewrite.cpp"
+
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
     bool keepLog = false;
@@ -880,6 +894,7 @@ static void Run(HMODULE self) {
         if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
         keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini));
         if (asyncMode >= 0 && worker && keepLog) InstallAsync(asyncMode);
+        keepLog = ApplySaveWrite(ini) || keepLog;
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

@@ -402,6 +402,136 @@ static void TestRouteAsync() {
     g_icSleepMs = 0;
 }
 
+// --- save write: the backup job against a fake native save on real temp folders ---
+static wchar_t g_sv[MAX_PATH];         // <tmp>\User
+static const wchar_t* g_svName;        // name the fake game passes to the backup step
+static bool g_svTouch, g_svReachBackup;
+static int g_svOrigBackups;
+static DWORD __fastcall FakeInfo(void*, void*, u8*, int, int) { return 0; }
+static DWORD __fastcall FakeWrite(void*, void*, void*, int) {
+    Sleep(30);
+    if (g_svTouch) {  // the old save changes while the worker copies it
+        wchar_t p[MAX_PATH];
+        swprintf_s(p, L"%s\\Saves\\Foo.sims3\\Meta.data", g_sv);
+        HANDLE h = CreateFileW(p, FILE_APPEND_DATA, 0, NULL, OPEN_EXISTING, 0, NULL);
+        DWORD n;
+        WriteFile(h, "x", 1, &n, NULL);
+        CloseHandle(h);
+    }
+    return 0;
+}
+static DWORD __fastcall FakeBackup(void*, void*, const wchar_t*) { g_svOrigBackups++; return 1; }
+static DWORD __fastcall FakeCopy(void*, void*, const wchar_t*, int) { return 1; }
+static DWORD __fastcall FakeFinal(void*, void*) { return 1; }
+static DWORD __fastcall FakeGame(void*, void*, void* info, int travel, int) {  // FUN_00AB1030's order of steps
+    if (SaveInfoHook(NULL, NULL, (u8*)info, 0, travel)) return 2;
+    SaveWriteHook(NULL, NULL, NULL, 1);
+    if (!travel && g_svReachBackup && SaveBackupHook(NULL, NULL, g_svName)) SaveCopyHook(NULL, NULL, g_svName, 0);
+    SaveFinalHook(info, NULL);
+    return 0;
+}
+
+static void SvFile(const wchar_t* rel, const char* text) {
+    wchar_t p[MAX_PATH];
+    swprintf_s(p, L"%s\\%s", g_sv, rel);
+    HANDLE h = CreateFileW(p, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    assert(h != INVALID_HANDLE_VALUE);
+    DWORD n;
+    WriteFile(h, text, (DWORD)strlen(text), &n, NULL);
+    CloseHandle(h);
+}
+static bool SvExists(const wchar_t* rel) {
+    wchar_t p[MAX_PATH];
+    swprintf_s(p, L"%s\\%s", g_sv, rel);
+    return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES;
+}
+static u64 SvHash(const wchar_t* rel) {
+    wchar_t p[MAX_PATH];
+    swprintf_s(p, L"%s\\%s", g_sv, rel);
+    u64 h, b;
+    assert(TreeHashOf(p, &h, &b));
+    return h;
+}
+static void SvReset() {  // old save with a world package, metadata and a sub folder; an older backup with other files
+    RemoveTree(g_sv);
+    wchar_t p[MAX_PATH];
+    CreateDirectoryW(g_sv, NULL);
+    const wchar_t* dirs[] = {L"Saves", L"Saves\\Foo.sims3", L"Saves\\Foo.sims3\\Sub", L"Saves\\Foo.sims3.backup"};
+    for (const wchar_t* d : dirs) { swprintf_s(p, L"%s\\%s", g_sv, d); assert(CreateDirectoryW(p, NULL)); }
+    SvFile(L"Saves\\Foo.sims3\\World_0x1.nhd", "world package bytes");
+    SvFile(L"Saves\\Foo.sims3\\Meta.data", "meta");
+    SvFile(L"Saves\\Foo.sims3\\Sub\\x.package", "sub");
+    SvFile(L"Saves\\Foo.sims3.backup\\Old.nhd", "older save");
+}
+
+static void TestSaveWrite() {
+    // PatchCalls: a site that is not a call to the expected target -> nothing written; a matching one -> rel32 rewritten.
+    u8* code = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    const DWORD site = (DWORD)(uintptr_t)code, target = site + 0x20;
+    code[0] = 0xE8;
+    *(LONG*)(code + 1) = 0x20 - 5;
+    CallSite wrong[] = {{site, target + 1, (void*)Hook}}, right[] = {{site, target, (void*)Hook}};
+    assert(!PatchCalls("wrong", wrong, 1) && *(LONG*)(code + 1) == 0x20 - 5);
+    assert(PatchCalls("right", right, 1) && site + 5 + *(LONG*)(code + 1) == (DWORD)(uintptr_t)Hook);
+
+    g_saveGameOrig = FakeGame; g_saveInfoOrig = FakeInfo; g_saveWriteOrig = FakeWrite;
+    g_saveBackupOrig = FakeBackup; g_saveCopyOrig = FakeCopy; g_saveFinalOrig = FakeFinal;
+    QueryPerformanceFrequency(&g_qpf);
+    wchar_t tmp[MAX_PATH];
+    GetTempPathW(MAX_PATH, tmp);
+    swprintf_s(g_sv, L"%sts3n-selftest-%lu", tmp, GetCurrentProcessId());
+    static u8 info[0x1000];
+    swprintf_s((wchar_t*)(info + kInfoNhdPath), 520, L"%s\\Saves\\Foo.sims3\\World_0x1.nhd", g_sv);
+    Ts3nCounters& c = ts3native_counters;
+
+    // 1. mode 1: the worker copy becomes the backup, the game's backup copy is skipped, no temp copy left.
+    SvReset();
+    const u64 old = SvHash(L"Saves\\Foo.sims3");
+    c.saveMode = 1; g_svName = L"Foo"; g_svTouch = false; g_svReachBackup = true; g_svOrigBackups = 0;
+    assert(SaveGameHook(NULL, NULL, info, 0, 0) == 0);
+    assert(g_svOrigBackups == 0 && c.saveJobs == 1 && c.savePromoted == 1 && c.saveFallbacks == 0 && c.saveCount == 1);
+    assert(SvHash(L"Saves\\Foo.sims3.backup") == old && !SvExists(L"Saves\\Foo.sims3.backup\\Old.nhd"));
+    assert(!SvExists(L"ts3native-backup.tmp") && c.saveLastWriteUs >= 20000);
+
+    // 2. the name with ".sims3" is the same folder.
+    SvReset(); g_svName = L"Foo.sims3";
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(g_svOrigBackups == 0 && c.savePromoted == 2);
+
+    // 3. old save changed during the write -> copy dropped, the game backs up.
+    SvReset(); g_svName = L"Foo"; g_svTouch = true;
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(g_svOrigBackups == 1 && c.saveFallbacks == 1 && c.savePromoted == 2);
+    assert(SvExists(L"Saves\\Foo.sims3.backup\\Old.nhd") && !SvExists(L"ts3native-backup.tmp"));  // ours never touched it
+    g_svTouch = false;
+
+    // 4. another folder name at the backup step -> fallback.
+    SvReset(); g_svName = L"Bar";
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(g_svOrigBackups == 2 && c.saveFallbacks == 2 && SvExists(L"Saves\\Foo.sims3.backup\\Old.nhd"));
+
+    // 5. save fails before the backup step: the job is waited for and its copy removed; backup untouched.
+    SvReset(); g_svName = L"Foo"; g_svReachBackup = false;
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(c.saveJobs == 5 && !SvExists(L"ts3native-backup.tmp") && SvExists(L"Saves\\Foo.sims3.backup\\Old.nhd"));
+    g_svReachBackup = true;
+
+    // 6. travel save, mode 0 and a new save (no world package yet) start no job.
+    SvReset();
+    SaveGameHook(NULL, NULL, info, 1, 1);
+    c.saveMode = 0;
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(c.saveJobs == 5 && g_svOrigBackups == 3);
+    c.saveMode = 1;
+    SvReset();
+    wchar_t p[MAX_PATH];
+    swprintf_s(p, L"%s\\Saves\\Foo.sims3\\World_0x1.nhd", g_sv);
+    DeleteFileW(p);
+    SaveGameHook(NULL, NULL, info, 0, 0);
+    assert(c.saveJobs == 5 && g_svOrigBackups == 4 && c.saveCount == 8);
+    assert(RemoveTree(g_sv));
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -426,6 +556,7 @@ int main() {
     TestRouteWorker();
     TestRouteBudget();
     TestRouteAsync();
+    TestSaveWrite();
     puts("selftest ok");
     return 0;
 }

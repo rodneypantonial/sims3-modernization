@@ -225,6 +225,73 @@ Self-test (`TestRouteBudget`): one changed site → nothing written; switch off 
 
 Built and self-tested 2026-10-13, not run in game. The sim thread no longer waits: a plan from a Sim's own yielding task runs on the worker while the task sleeps (ts3fixes `PlanAsync`). Three more detours (`Lock_Acquire 0x4E16F0`, `IC_Route_Plan 0x765160`, `Route_GetOption 0x74D040`), counters v5 (`asyncMode` writable at +0x6C ... `asyncPumpWaits`). Design, protocol, risks and test plan: docs/18 "Async plan".
 
+## Phase 7: save (v0.6.0, `[SaveWrite] Enabled=0` by default)
+
+Offload candidate #2. Built and self-tested 2026-10-13, not run in game. Code: `native/ts3native/savewrite.cpp`. Static analysis: Ghidra decompile of the functions below plus `dumpbin` of `FUN_00AB1030` (0xAB1030-0xAB14AB) and `IC_LoadSaveManager_SaveGame_Impl` (0x742A50).
+
+### Where a save goes (sim thread, start to end)
+
+| # | Step | Code | Kind | Off the sim thread? |
+|---|---|---|---|---|
+| 1 | Pause, `ProgressDialog`, `ThumbnailHelper.UpdateDirtyLotThumbnails`, lot + household thumbnails | C# `OptionsModel.SaveGame` | rendering, live state | no |
+| 2 | `LoadSaveManager.SaveGame` -> `LoadSaveManager_SaveGame_Impl` 0x742A50 -> `FUN_00AB1030` (thiscall, 3 args) | native | synchronous; C# waits for the error code | - |
+| 3 | Save info and paths (`FUN_00AAE950` x2): working copy `<TS3 user folder>\CurrentGame.sims3`, target `Saves\<name>.sims3`; info+0x430 = `Saves\<name>.sims3\<world>.nhd` | 0xAB10DB, 0xAB10F6 | paths | - |
+| 4 | Old single-file save renamed `.legacy` (`FUN_00AACE80`) | 0xAB112D | rare | - |
+| 5 | Open the working-copy DBPF (`World/LoadSaveManager/DBPF`, vtable 0xFB2600, open = +0x18) and write the game into it: `FUN_00AAC110` writes the "S3" header, the save listeners (+0xC), the world (`FUN_00C6D460`: lots, objects, script state via the `ScriptCore.LoadSaveManager` callbacks `SaveObjectGroup` / `SaveObject` / `EndSaveObjects` into a native stream = OBJS), the routing world save (`FUN_00834FC0` under the routing lock), then post-save listeners (+0x14) | 0xAB12AF | **live game state + Mono** | **no** |
+| 6 | Package commit and close: vtable +0x1C = `FUN_004A8500(1)` writes pending resources (`FUN_004A7910`, vtable +0x3C per record) and the index; +0x08 closes | 0xAB12C1, 0xAB12FD | DBPF write; compression per resource [inferred, compressor not located] | not without rebuilding the DBPF writer |
+| 7 | Travel save: stop here (`cmp [esp+315Ch],0; jne`) | 0xAB1319 | - | - |
+| 8 | If `<world>.nhd` exists in the target: **backup** `FUN_00AB0F80` -> `FUN_00AAFC50(Saves\<name>.sims3, Saves\<name>.sims3.backup)`: delete the old backup (up to 10 tries, `Sleep(500)` between), recursive `CopyFileW` of the old save (`FUN_004DD030`), `FlushFileBuffers` on every copied file (`FUN_00AAF4B0`) | 0xAB134E | **pure file I/O on the old save**, which nothing writes during a save | **yes (built)** |
+| 9 | **Copy the new save**: `FUN_00AB0E80(name, 0)` -> `FUN_00AAFC50(CurrentGame.sims3, Saves\<name>.sims3)`: delete the old save folder (same retry loop), copy the working copy file by file, flush every file | 0xAB1363 | file I/O, needs step 6 done | only with the sim thread waiting (no gain) |
+| 10 | Failure path: working copy to `<name>.sims3.bad`, `.legacy` restore | 0xAB1375-0xAB13FF | error handling | - |
+| 11 | Write `1a5tf1l3.dat` in the save folder and flush every file in it again (`FUN_00AAF5F0`) | 0xAB1410 | file I/O | no gain |
+| 12 | C#: `UIManager.SetSaveGameMetadata`, `DynamicChallengeManager.Save`, close the dialog, restore speed | C# | - | - |
+
+[verified code] for the order, the calls and the copy/flush/retry behavior; [inferred] for the CurrentGame.sims3 location (same base as `Saves`, from the same `vtable+0x24` user-folder call; the folder is gone after the game exits) and for where resource compression happens.
+
+Size of what is copied: `Baseline-BP` is 33.3 MB (31.9 MB `.nhd`, 0.5 MB ExportDB, 0.9 MB TravelDB; docs/09 §6). So every ordinary save copies about **33 MB twice** (old save to `.backup`, working copy to the save) and flushes about 66 MB, plus a second flush pass in step 11.
+
+**No save-time numbers exist yet** (test E has never been run). The new hooks measure it: one log line per save with total, package write (step 5, includes the script serialization), backup, copy and final flush.
+
+### What is offloaded (Mode=1)
+
+Step 8 copies the **old** save, so it does not depend on the package write. At step 3 (after `FUN_00AAE950` returns, non-travel, `<world>.nhd` exists) a worker thread copies `Saves\<name>.sims3` to `<TS3 user folder>\ts3native-backup.tmp` (plain Win32: `CopyFileW` per file, `FlushFileBuffers` per file, like the game), while the sim thread runs step 5. At step 8 the sim thread waits for the worker (expected to be done by then), deletes the old `.backup` exactly as the game does (file: `DeleteFileW`; folder: up to 10 tries 500 ms apart) and renames the temp copy to `<name>.sims3.backup` (`MoveFileExW`, `MOVEFILE_WRITE_THROUGH`). The game's copy is skipped and the hook returns 1, which is what the game's step returns after a good copy.
+
+Data safety:
+- Nothing is reported earlier than before. Steps 9 and 11 (the new save, its flush) still run on the sim thread before the C# call returns; only the backup of the old save changes thread, and it is complete and flushed before the rename that makes it the backup.
+- The temp copy is used only if (a) every copy and flush succeeded, (b) the old save's file names, sizes and write times hash the same at job start, after the copy and again at step 8, (c) the copy hashes the same as the source (`CopyFileW` keeps write times), (d) the backup step's name is the same folder (`<name>` or `<name>.sims3`). Any miss: the temp copy is deleted and the game's own `FUN_00AB0F80` runs, so the outcome is the game's.
+- The old `.backup` is deleted only after (a)-(d) passed. A failed rename after that leaves no backup for a moment and then the game's own copy makes it, which is the game's own order (it also deletes before copying).
+- A save that never reaches step 8 (write error, travel, cancelled) waits for the worker at the end of `FUN_00AB1030` and deletes the temp copy, so the old `.backup` is untouched, as in the game.
+- Paths come from the save info only when they look exactly right (info+0x430 readable, under 260 chars, ends in `.nhd`, the file exists, parent ends in `.sims3`, grandparent in `\Saves`); else no job.
+- The temp folder sits next to `Saves` (same volume, so the rename is a metadata change) and outside it, so the game never lists it as a save.
+
+Hook sites (`call rel32` rewritten; every site must be an `E8` to the expected function or nothing is written): 0x742A95 (`FUN_00AB1030`, total), 0xAB10F6 (`FUN_00AAE950`, job start), 0xAB12AF (`FUN_00AAC110`, write time), 0xAB134E (`FUN_00AB0F80`, backup), 0xAB1363 (`FUN_00AB0E80`, copy time), 0xAB1410 (`FUN_00AAF5F0`, final time). Calling conventions checked in the disassembly (`ret 0Ch`, `ret 0Ch`, `ret 8`, `ret 4`, `ret 8`, `ret`).
+
+Settings: `[SaveWrite] Enabled=0` (1 = hooks + timing), `Mode=1` (start value of the runtime switch; 0 = time only, the game backs up). Counters v6 at the end of `ts3native_counters`: `saveReady`, `saveMode` (writable), `saveJobs`, `savePromoted`, `saveFallbacks`, `saveCount`, `saveLastUs`, `saveLastWriteUs`, `saveLastBackupUs`, `saveLastCopyUs`, `saveLastFinalUs`.
+
+Self-test (`TestSaveWrite`, real temp folders): call-site patch refuses a wrong target; worker copy promoted (backup = old save, older backup gone, no temp left, game's backup not called); `<name>.sims3` name accepted; old save changed during the write -> fallback, older backup kept until the game's step; wrong folder name -> fallback; save that stops before the backup -> temp removed, backup untouched; travel save, `Mode=0` and a new save start no job.
+
+### Expected gain [inferred]
+
+The whole backup step leaves the sim thread when the package write takes longer than the copy, which it should (it serializes every script object; docs/09: 188k-303k OBJS records). Copying and flushing 33 MB on this laptop's NVMe should be about 0.1-0.5 s, more with Defender scanning the new `.nhd` or on an HDD. The delete of the old backup (and its retry loop, up to 5 s when a file in it is locked) still runs on the sim thread at step 8, as in the game. The new save's own copy (step 9) and the double flush stay. The numbers decide whether this is worth keeping: compare `backup` between Mode 0 and 1.
+
+### Not offloaded, and why
+
+- Step 5 (package write incl. script state): walks live Mono objects and game state; must stay on the sim thread.
+- Step 6 (resource compression and index): runs inside the DBPF writer interleaved with its file offsets; offloading needs a new writer. Next: locate the compressor (vtable +0x3C path) and time it with the step-5 number before deciding.
+- Step 9 (copy the new save): needs the finished package and must be complete and flushed before success is reported; on a worker the sim thread would only wait.
+- Step 11: small.
+
+Next best options (not built): (1) make step 8 a rename of the old save instead of a copy (`<name>.sims3` -> `<name>.sims3.backup`; step 9 then finds no folder to delete). Same crash windows as the game (the game also deletes the save folder before copying the new one), no 33 MB copy at all, no worker. (2) Skip the second flush pass in step 11 for files step 9 just flushed. Both change the game's file operations, so they wait for the step timings.
+
+### In-game test plan
+
+Back up `Documents\Electronic Arts\The Sims 3\Saves` first (whole folder). Then, serially:
+1. `[SaveWrite] Enabled=1, Mode=0`. Load `Baseline-BP`, `tests-be.ts` test E (save as `TestE-<tag>`): check `OK   save write: 6 call sites` and one `save:` line in `ts3native.log`; record total, write, backup, copy, final. Save the same save again once (now a backup exists): the backup number is the cost being moved.
+2. `Mode=1` (ini or the runtime switch), same steps: `savePromoted` +1 per save, `saveFallbacks` 0, `backup` near 0 when `worker` < `write`; `TestE-<tag>.sims3.backup` exists and `save-stats.ts` on it gives the same counts as on the previous save; no `ts3native-backup.tmp` left in the TS3 user folder.
+3. Reload the saved game: loads, household and Sims as before; `save-stats.ts` counts on the save identical to a Mode 0 save of the same state.
+4. Load the `.backup` folder as a save (copy it to a new `.sims3` name): it loads.
+5. Repeat 1-2 on `Baseline-IP` and `Baseline-SV`; autosave and Save-and-Quit once each in Mode 1.
+
 ## Proposed install entry for tools/setup/fixes.json (not applied)
 
 ```json
