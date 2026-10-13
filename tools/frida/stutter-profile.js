@@ -120,9 +120,11 @@ function addr(name) {
   const [a, expect] = HOOKS[name];
   const p = ptr(a);
   const got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
-  if (got.startsWith('e9')) { // ts3native's own detour (same arguments and result): time the replacement instead
+  if (got.startsWith('e9')) { // detoured by a known plugin: time its wrapper instead
     const target = p.add(5).add(p.add(1).readS32());
-    if (Process.findModuleByAddress(target)?.name === 'ts3native.asi') return target;
+    // ts3native's route detour, or S3PP's SimulatorStageProfiler (needed by its MonoTypeEHashProbe, so it stays on): both wrap
+    // the original with the same arguments and result, so timing the wrapper times the stage
+    if (['ts3native.asi', 'Sims3Performance.asi'].includes(Process.findModuleByAddress(target)?.name)) return target;
   }
   if (got !== expect) throw new Error(`${name} @ ${p}: bytes ${got}, expected ${expect}. ` +
     (got.startsWith('e9') ? 'Detoured by another plugin (S3PP SimulatorStageProfiler? turn it off).' : 'Different TS3W.exe build?'));

@@ -418,14 +418,18 @@ function taskStallTick() {
 }
 function taskStallStart() {
   if (ts.started) return;
+  const at = {}; // stage -> address to hook: the prologue, or S3PP's wrapper when its SimulatorStageProfiler detoured it
   for (const [name, [a, expect]] of Object.entries(STAGES)) { // all or nothing, before the first attach
-    const got = Array.from(new Uint8Array(ptr(a).readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const p = ptr(a), got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const target = got.startsWith('e9') ? p.add(5).add(p.add(1).readS32()) : null;
+    if (target && Process.findModuleByAddress(target)?.name === 'Sims3Performance.asi') { at[name] = target; continue; } // same args (thiscall)
     if (got !== expect) throw new Error(`${name} @ 0x${a.toString(16)}: bytes ${got}, expected ${expect}` +
-      (got.startsWith('e9') ? ' (detoured: turn off S3PP SimulatorStageProfiler)' : ' (different TS3W.exe build?)'));
+      (got.startsWith('e9') ? ' (detoured by an unknown plugin)' : ' (different TS3W.exe build?)'));
+    at[name] = p;
   }
   ts.started = Date.now();
-  for (const [stage, [a]] of Object.entries(STAGES)) {
-    ts.listeners.push(Interceptor.attach(ptr(a), {
+  for (const stage of Object.keys(STAGES)) {
+    ts.listeners.push(Interceptor.attach(at[stage], {
       onEnter() {
         this.o = { stage, t0: nowMs(), host: this.context.ecx, tid: Process.getCurrentThreadId(), wall: Date.now(), nextAt: 0, samples: [] };
         ts.open = this.o;
