@@ -33,6 +33,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kNoStationDetourOffscreen value="True" />
     <kPortalAdaptorLeak value="True" />
     <kCasGrid value="False" />
+    <kSpatialCache value="False" />
   </Current_Tuning>
 </base>
 `;

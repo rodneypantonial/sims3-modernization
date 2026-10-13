@@ -83,10 +83,32 @@ Smaller items, none above 0.5% each: `0xAB7ED0`/`0xA8DF80` (lot tile and room lo
 | 1 | Route search async, including the water JPS (docs/18 B+C) | Table share ~110 BP / 96 SV / 201 IP. Realistic after the lock overlap: 15-70 BP, 35-125 IP (docs/18, E×O). The water JPS moves with it | M-L | Worker mode 1 works in game; async mode being built |
 | 1b | Water JPS made cheaper in place (iterative jump or JPS+) | IP only: up to ~40-60 of the ~78; also shortens long IP searches that async cannot hide | M | New, pure function, low risk |
 | 2 | Animation update as a parallel-for over actors | ~20-28 of ~33 (8 cores, if safe) | L | New; first decompile `0x940430`'s callees for script or event calls |
-| 3 | Read-only query caches (raycast height, quadtree, `GetObjectsOnLot`) | ~15-30 of ~43 | S-M each (C# for #8 and #9, native for #7) | New |
+| 3 | Read-only query caches (raycast height, quadtree, `GetObjectsOnLot`) | ~15-30 of ~43 | S-M each (C# for #8 and #9, native for #7) | #9 built (ts3fixes `kSpatialCache`, opt-in, not run in game; §4a). #7 and #8 not started |
 | n/a | Allocator: thread-local cache or mimalloc behind the arena (not an offload) | ~30-80 of 50-160 | M | Built (ts3native 0.8.0, `[Alloc]`, docs/15 Phase 8): per-thread cache in front of the locked entry points, not run in game. S3PP `AllocatorArenaTuning` patches other sites (compatible) |
 
 Not offloadable, and handled elsewhere: interpreter (28.5%), Mono runtime (14.8%), GC (9.9%; docs/13, ts3native heap).
+
+## 4a. Candidate 3 in C#: the lot object query cache
+
+**Callers** [measured, all 20 `*-managed.jsonl` files pooled, 11,175 busy samples; first frame above the query wrappers]:
+
+| Internal call (samples) | Top callers with the same inputs again and again |
+|---|---|
+| `Query_GetObjectsOnLot` (201) | `TombRoomManager.AddForbiddenPortalsToRouteForLot` 45 (doors and stairs of the lot, on every route plan through `AboutToPlanRouteCallback`), `Autonomy.ScoreInteractionsForLocalAutonomy` 21 (`lot.GetObjects<Sim>()` once per commodity kind of one autonomy pass), `Sim.GetMostExpensiveUsableParkedVehicle` 29 (parking spaces, bike racks, broom stands of the lot), `LightGameObject.AutoLightsOn/Off` 21, `Lot.FindCallbox` 11, `WallMountedSpeaker.SpeakerBoostForStereo` 6 |
+| `Query_GetObjectsInRange` (141) | `ReactionBroadcaster.GetInRadiusSims` 137: a different center per broadcaster, so a cache keyed by exact inputs would not hit. The broadcaster throttle (F12) already covers it |
+| `Query_CountObjectsOnLot` (58) | interaction `Definition.Test` 18, `UnchartedIslandMarker.IsUnchartedIsland` 9, `IsNeighborOfPlayerWhoIsLastOneAtHome` 14 |
+| `Query_GetGlobalObjects` (61) | `GameObject.Dispose` -> `WorldLot.GetObjects` 33 (must stay exact while objects are destroyed) |
+| `World_GetTerrainHeightImpl` | 2 samples: the height raycast (#7) is reached from native route planning, not from C#, so a C# cache cannot reach it |
+
+**Built:** `mods/ts3fixes/src/SpatialCache.cs`. It replaces `Sims3.SimIFace.Queries.GetObjects(Type, ulong lotId)`, which every `Lot.GetObjects<T>()` and `Queries.GetObjects<T>(lot)` ends in (the generic wrappers cannot be patched by our header swap). It keeps one result per (type, lot) for the current `Simulator.TicksElapsed()` tick and returns a copy of the array on a hit (callers may edit theirs).
+- Invalidation: a new sim tick or more than 100 ms of wall time clears everything (covers modes where ticks stop); nothing is cached while the game is paused (buy and build edits); `Simulator.DestroyObject` is also replaced and clears the cache, so a hit never returns a destroyed object. If either patch fails (`already compiled` in `ts3fixes.applied`), the cache stays off.
+- Known limit: an object created on the lot, or moved onto or off it, earlier in the same tick is seen from the next tick on [inferred harmless: the game's own autonomy already works on cached values per pass]. That is why the fix is opt-in.
+- Not cached: counts (`CountObjects`), room queries, range queries, global queries.
+- Expected gain [inferred, unmeasured]: at most the 1.8% of managed samples under `Query_GetObjectsOnLot`; the hit rate decides how much.
+
+**Switch and counters:** tuning `kSpatialCache` (default `False`), runtime switch `spatialcache` (agent `patches`), counters `spatialcache_hits` [62], `spatialcache_misses` [63] (native lot walks), `spatialcache_clears` [64].
+
+**A/B (not run yet):** `node tools/harness/profile-world.ts --tag bp-spatial --ab spatialcache`, then `node tools/probe/profile-compare.mjs bp-spatial` (compare `ScriptCore.Queries.Query_GetObjectsOnLot` and iterations/s between `:on` and `:off`). First check `ts3fixes.applied` shows `Queries.GetObjects: ok` and `Simulator.DestroyObject: ok`, and that `spatialcache_hits` grows. Keep it off by default unless the A/B shows a gain and no new script errors.
 
 ## 5. Create-a-Sim and Buy: no profile yet
 

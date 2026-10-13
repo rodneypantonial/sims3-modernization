@@ -51,6 +51,7 @@ namespace Ts3Fixes
             ApplyOverwatchStuck(false);
             ApplyPortalAdaptorLeak();
             ApplyCasGrid();
+            ApplySpatialCache();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -63,13 +64,14 @@ namespace Ts3Fixes
         // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked), [52] empty life-event lists trimmed, [53] memory snapshots capped (SaveCleanup.cs), [54-55] route
         // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs), [56-58] async
         // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]), [59-61] CAS incremental
-        // fills started / hair preset cache hits / preset lookups run (CasGrid.cs).
+        // fills started / hair preset cache hits / preset lookups run (CasGrid.cs), [62-64] lot object query cache hits /
+        // misses / clears on object destroy (SpatialCache.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[62]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[65]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -98,6 +100,7 @@ namespace Ts3Fixes
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
                 case "portaladaptorleak": return Instantiator.kPortalAdaptorLeak;
                 case "casgrid": case "casmemo": return Instantiator.kCasGrid;
+                case "spatialcache": return Instantiator.kSpatialCache;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -105,17 +108,24 @@ namespace Ts3Fixes
 
         static void Patch(Type target, string method, Type hook, string replacement, string stub)
         {
+            Patch(target, method, null, hook, replacement, stub);
+        }
+
+        // args picks one overload of target.method (null when the name is unique). True when the patch went in.
+        static bool Patch(Type target, string method, Type[] args, Type hook, string replacement, string stub)
+        {
             const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
             try
             {
-                MethodInfo t = target.GetMethod(method, all), r = hook.GetMethod(replacement, all);
+                MethodInfo t = args == null ? target.GetMethod(method, all) : target.GetMethod(method, all, null, args, null), r = hook.GetMethod(replacement, all);
                 if (Marshal.ReadInt32(new IntPtr(t.MethodHandle.Value.ToInt32() + 0x14)) != 0)
                     throw new InvalidOperationException("already compiled");
                 if (stub != null) SwapMethod(hook.GetMethod(stub, all), t);
                 SwapMethod(t, r);
                 AppliedLog().Add(target.Name + "." + method + ": ok");
+                return true;
             }
-            catch (Exception e) { AppliedLog().Add(target.Name + "." + method + ": " + e.Message); }
+            catch (Exception e) { AppliedLog().Add(target.Name + "." + method + ": " + e.Message); return false; }
         }
 
         // Off-screen go-home (PLAN fix b): a townie whose trip home nobody can see skips the walk/drive and appears on its
