@@ -130,15 +130,15 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[59];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[62];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup"; // unset = the mod's tuning (all on by default except savecleanup)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo"; // unset = the mod's tuning (all on by default except savecleanup and the CAS grid)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -166,6 +166,7 @@ namespace Ts3Agent
             if (c.Length > 53) r["savecleanup_snapshots"] = c[53]; // old memory pictures removed by the snapshot cap (docs/14 7b)
             if (c.Length > 55) { r["portaladaptor_unsubscribes"] = c[54]; r["savecleanup_route_callbacks"] = c[55]; } // route adaptor leak on ocean/houseboat portals (docs/09 section 5)
             if (c.Length > 58) { r["asyncroute_started"] = c[56]; r["asyncroute_yields"] = c[57]; r["asyncroute_pollcap"] = c[58]; } // async route plans (docs/18, ts3native [RouteAsync])
+            if (c.Length > 61) { r["casgrid_fills"] = c[59]; r["casmemo_hits"] = c[60]; r["casmemo_lookups"] = c[61]; } // CAS hair/makeup incremental fills, hair preset cache (docs/21)
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;

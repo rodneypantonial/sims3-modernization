@@ -28,6 +28,7 @@ namespace Ts3Agent
             Dispatcher.Register("cas_category", CasCategory);
             Dispatcher.Register("cas_close", CasClose);
             Dispatcher.Register("cas_state", CasState);
+            Dispatcher.Register("cas_bench", CasBench);
             Dispatcher.Register("buy_open", BuyOpen);
             Dispatcher.Register("buy_category", BuyCategory);
             Dispatcher.Register("buy_close", BuyClose);
@@ -75,6 +76,7 @@ namespace Ts3Agent
                     r["ms"] = lastChange < 0 ? null : (object)lastChange;
                     r["items"] = count == null || last < 0 ? null : (object)last;
                     r["settled"] = settled;
+                    if (label.StartsWith("cas_category")) AddFillTimes(r, t0);
                 }
                 catch (Exception e)
                 {
@@ -353,6 +355,115 @@ namespace Ts3Agent
             }
             r["measuring"] = sUiMeasuring;
             lock (sUiTimings) r["timings"] = new List<Dictionary<string, object>>(sUiTimings);
+            return r;
+        }
+
+        // fill_* of a cas_category result, from the timing ts3fixes' CAS grid hook records (CasGrid.cs, with casgrid on or
+        // off) for the last hair/makeup fill that started during this action: fill_start_ms = press to fill start (tab
+        // switch), fill_first_ms = press to the first tiles shown, fill_ms = fill start to the last tile (null when aborted
+        // or still running). Absent without ts3fixes or when no hair/makeup fill ran.
+        static void AddFillTimes(Dictionary<string, object> r, int t0)
+        {
+            int[] f = AppDomain.CurrentDomain.GetData("ts3fixes.casfill") as int[];
+            if (f == null || f.Length < 5 || f[0] - t0 < 0) return;
+            r["fill_start_ms"] = f[0] - t0;
+            r["fill_first_ms"] = f[1] < 0 ? null : (object)(f[1] - t0);
+            r["fill_ms"] = f[2] < 0 ? null : (object)(f[2] - f[0]);
+            r["fill_incremental"] = f[4] == 1;
+        }
+
+        // cas_bench: times, over every hair part the CAS Sim can wear, each per-tile call CASHair.PopulateTypesGrid makes
+        // (docs/21 section 4), each call type in its own loop, twice (cold, then warm). Needs CAS open; runs as a game
+        // task, result in cas_state timings (action cas_bench). ms per call type in total and per part; design_preset
+        // runs after an untimed SetCASPart of the same part (it reads the current part); load_xml counts its fallbacks.
+        // Leaves ObjectDesigner on the last part, as a grid fill does; layouts are destroyed after each pass.
+        static object CasBench(Args a)
+        {
+            if (!CasUp()) throw new McpException("CAS is not open (state " + SubState() + ")");
+            if (sUiMeasuring) throw new McpException("previous CAS/Buy action is still being timed; wait and retry");
+            sUiMeasuring = true;
+            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+            {
+                Dictionary<string, object> r = Util.Obj();
+                r["action"] = "cas_bench";
+                try
+                {
+                    System.Collections.ArrayList parts = Responder.Instance.CASModel.GetVisibleCASParts(BodyTypes.Hair);
+                    r["parts"] = parts.Count;
+                    r["cold"] = BenchPass(parts);
+                    r["warm"] = BenchPass(parts);
+                }
+                catch (Exception e) { r["error"] = e.GetType().Name + ": " + e.Message; }
+                finally
+                {
+                    lock (sUiTimings) { sUiTimings.Add(r); if (sUiTimings.Count > 60) sUiTimings.RemoveAt(0); }
+                    sUiMeasuring = false;
+                }
+            }));
+            Dictionary<string, object> q = Util.Obj();
+            q["queued"] = "cas_bench";
+            return q;
+        }
+
+        delegate void PartCall(CASPart p);
+
+        static Dictionary<string, object> BenchPass(System.Collections.ArrayList parts)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            StopWatch sw = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+            int fallbacks = 0;
+            float xmlUs = 0;
+            ResourceKey layoutKey = ResourceKey.CreateUILayoutKey("GenericCasItem", 0u);
+            List<Layout> layouts = new List<Layout>();
+            PartCall[] calls = {
+                delegate(CASPart p) { CASUtils.PartDataNumPresets(p.Key); },
+                delegate(CASPart p) { UIUtils.GetCustomContentType(p.Key); },
+                delegate(CASPart p) { ObjectDesigner.SetCASPart(p.Key); },
+                null, // design_preset, below
+                delegate(CASPart p) { Layout l = UIManager.LoadLayout(layoutKey); l.GetWindowByExportID(1); layouts.Add(l); },
+                delegate(CASPart p) { UIManager.GetCASThumbnailImage(new ThumbnailKey(p.Key, -1, (uint)p.BodyType, (uint)p.AgeGenderSpecies, ThumbnailSize.Large)); },
+            };
+            string[] names = { "num_presets", "content_type", "set_part", "design_preset", "layout", "thumbnail" };
+            try
+            {
+                for (int i = 0; i < calls.Length; i++)
+                {
+                    float us = 0;
+                    foreach (CASPart p in parts)
+                    {
+                        if (calls[i] == null)
+                        {
+                            ObjectDesigner.SetCASPart(p.Key);
+                            sw.Restart();
+                            string xml = ObjectDesigner.GetDesignPreset(ObjectDesigner.GetDesignPresetIndexFromId(ObjectDesigner.DefaultPresetId));
+                            sw.Stop();
+                            us += sw.GetElapsedTimeFloat();
+                            if (string.IsNullOrEmpty(xml))
+                            {
+                                fallbacks++;
+                                sw.Restart();
+                                Simulator.LoadXMLString(new ResourceKey(p.Key.InstanceId, 53690476u, p.Key.GroupId));
+                                sw.Stop();
+                                xmlUs += sw.GetElapsedTimeFloat();
+                            }
+                            continue;
+                        }
+                        sw.Restart();
+                        calls[i](p);
+                        sw.Stop();
+                        us += sw.GetElapsedTimeFloat();
+                    }
+                    r[names[i] + "_ms"] = Math.Round(us / 1000.0, 1);
+                    r[names[i] + "_us_per_part"] = parts.Count == 0 ? 0 : Math.Round(us / parts.Count, 0);
+                }
+                r["load_xml_ms"] = Math.Round(xmlUs / 1000.0, 1);
+                r["load_xml_fallbacks"] = fallbacks;
+            }
+            finally
+            {
+                foreach (Layout l in layouts) { try { l.Shutdown(); l.Dispose(); } catch (Exception) { } }
+                sw.Dispose();
+            }
             return r;
         }
 

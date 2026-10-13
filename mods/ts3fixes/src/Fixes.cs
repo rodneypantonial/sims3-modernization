@@ -50,6 +50,7 @@ namespace Ts3Fixes
             ApplyRouteBackoff();
             ApplyOverwatchStuck(false);
             ApplyPortalAdaptorLeak();
+            ApplyCasGrid();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -61,13 +62,14 @@ namespace Ts3Fixes
         // plans/yields (OverwatchStuck.cs), [46-51] watchdog idle cases (RouteFixes.cs: idle on an unroutable spot, hidden
         // room, stationary a sim-day, route plans failing, routability checks asked, route-fail Sims tracked), [52] empty life-event lists trimmed, [53] memory snapshots capped (SaveCleanup.cs), [54-55] route
         // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs), [56-58] async
-        // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]).
+        // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]), [59-61] CAS incremental
+        // fills started / hair preset cache hits / preset lookups run (CasGrid.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[59]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[62]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -95,6 +97,7 @@ namespace Ts3Fixes
                 case "backoff": return Instantiator.kRouteFailureBackoff;
                 case "stations": return Instantiator.kNoStationDetourOffscreen;
                 case "portaladaptorleak": return Instantiator.kPortalAdaptorLeak;
+                case "casgrid": case "casmemo": return Instantiator.kCasGrid;
                 case "spotspread": return true;
                 default: return true;
             }

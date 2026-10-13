@@ -641,6 +641,30 @@
     "expect": "cas_state timings: one entry per open/category/close with sync_ms, ms (until the list stops changing), items and settled=true; state back to LiveModeState; no script errors. A step that answers 'still being timed' means its waitS was too short."
   },
   {
+    "id": "cas-grid",
+    "bug": "Opening CAS hair freezes the sim thread ~2.2 s while all 261 tiles are built in one call (docs/21)",
+    "fix": "ts3fixes CasGrid.cs (switches casgrid, casmemo; tuning kCasGrid, default off): hair and makeup grids filled 3+1 tiles per UI tick with ItemGrid.BeginPopulating, hair preset data cached per CAS session. Run twice: --set casgrid=true,casmemo=true and --set casgrid=false,casmemo=false",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "cas_open", "waitS": 30 },
+      { "cmd": "cas_category", "args": { "category": "hair" }, "waitS": 15 },
+      { "cmd": "cas_bench", "waitS": 30 },
+      { "cmd": "cas_category", "args": { "category": "makeup" }, "waitS": 10 },
+      { "cmd": "cas_category", "args": { "category": "hair" }, "waitS": 15 },
+      { "cmd": "cas_category", "args": { "category": "makeup" }, "waitS": 10 },
+      { "cmd": "cas_state", "waitS": 2 },
+      { "cmd": "patches", "waitS": 1 },
+      { "cmd": "cas_close", "waitS": 20 },
+      { "cmd": "cas_state" }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "cas_state timings: cas_category hair/makeup with fill_start_ms, fill_first_ms, fill_ms, fill_incremental (true only with casgrid on) and the same items count in both runs; casgrid on: fill_first_ms well under the off run's (first tiles after the tab switch, not after the whole list), fill_ms about the same or a little longer; second hair visit with casmemo on: casmemo_hits > 0 and fill_ms lower than the first. cas_bench: cold/warm ms per call type (num_presets, content_type, set_part, design_preset, layout, thumbnail) over all hair parts. Check by eye in the on run: the worn hair is highlighted, no blank tiles, switching hair -> hats -> hair mid-fill shows the right list. No script errors."
+  },
+  {
     "id": "bp-apartment-gohome",
     "bug": "Townies living in Bridgeport shell apartments stand stuck in Go Home (GoHomeHook skips BuildableShells homes; elevator rides at the home)",
     "fix": "docs/12 §5.3 fix 1 (watchdog: home-kind logging, second reset at a new spot, fade for homeless/virtual townies), then fix 2 if confirmed",
