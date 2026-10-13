@@ -1101,7 +1101,7 @@
       ],
       "minutes": 5
     },
-    "expect": "Wogan leaves the diner and gets home as with routeasync=0; /native asyncStarted and asyncCollected rise (collected ~= started), watchdogs 0, no route async lines in ts3native.log other than the 60 s counters; ts3fixes counters [52] > 0, [54] = 0; no hang (the probe and agent keep answering)",
+    "expect": "Wogan leaves the diner and gets home as with routeasync=0; /native asyncStarted and asyncCollected rise (collected ~= started), watchdogs 0, no route async lines in ts3native.log other than the 60 s counters; ts3fixes counters [56] > 0, [58] = 0 (agent asyncroute_started, asyncroute_pollcap); no hang (the probe and agent keep answering)",
     "area": [
       312.4,
       1497.0
