@@ -83,6 +83,7 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 **Rules from Rodney:**
 - Repro-driven fixes; full runs only at milestones; bundle fixes per world; compare in one load with switches.
 - Success = stuck Sims no worse than vanilla and at most one caused by a shortcut per 10-min run; don't chase every vanilla stuck Sim.
+- Stuck Sims are solved (2026-10-13, many runs with 0 real stuck Sims): log possible cases in `docs/data/stuck-log.md` (how they occurred), no research or fixes unless one repeats often or a fix of ours caused it. Focus: stutter, FPS, performance.
 - Stop a run on an obvious error or outdated code and fix first; watch every long run; update this plan with each fix.
 - Teleports must not break what the Sim does next or strand it; each shortcut type must be seen working once.
 - Parallel sub-agents for code and research; game tests stay serial; test-only helpers stay in the agent.
