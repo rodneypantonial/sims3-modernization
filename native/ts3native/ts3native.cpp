@@ -9,8 +9,9 @@
 #include <stdlib.h>
 #include <math.h>
 #include <xmmintrin.h>
+#include <emmintrin.h>
 
-#define TS3NATIVE_VERSION "0.6.1"
+#define TS3NATIVE_VERSION "0.7.0"
 
 typedef unsigned char u8;
 
@@ -152,7 +153,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 48 int32 (v6).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 60 int32 (v7).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -207,8 +208,21 @@ struct Ts3nCounters {
     LONG saveLastBackupUs;  // last save: sim-thread time in the backup step (game copy, or wait + rename)
     LONG saveLastCopyUs;    // last save: working copy -> save folder copy + flush (FUN_00AB0E80)
     LONG saveLastFinalUs;   // last save: 1a5tf1l3.dat + folder flush (FUN_00AAF5F0)
+    // v7: faster RefPack decoder (docs/15 phase 6, decompress.cpp); 64-bit sums and per-thread detail stay in g_dstat (log)
+    LONG decompressReady;   // 1 when the call at 0x4EC065 is retargeted
+    volatile LONG decompressMode;    // runtime switch, writable by test tools: 0 = the code at 0x4EB3B0 (S3SS or game), 1 = RefpackFast
+    volatile LONG decompressVerify;  // 1 = mode 1 also runs 0x4EB3B0 into a scratch buffer and compares (slow; first in-game runs)
+    LONG decompressCalls;      // decodes
+    LONG decompressFails;      // decodes that returned 0
+    LONG decompressMismatches; // verify: result or bytes differed (the 0x4EB3B0 output is used then)
+    LONG decompressMaxUs;      // longest single decode, microseconds
+    LONG decompressInMB;       // compressed MB in
+    LONG decompressOutMB;      // decompressed MB out
+    LONG decompressMs;         // time inside the decoder (excludes verify), milliseconds
+    LONG decompressMainCalls;  // decodes on the thread that loaded us (the main thread)
+    LONG decompressMainMs;     // their time, milliseconds
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {7,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -883,6 +897,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
 }
 
 #include "savewrite.cpp"
+#include "decompress.cpp"
 
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
@@ -916,6 +931,7 @@ static void Run(HMODULE self) {
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
         if (!g_getOptOrig)
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
+        keepLog = ApplyDecompress(ini) || keepLog;
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

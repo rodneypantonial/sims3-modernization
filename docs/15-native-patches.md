@@ -225,6 +225,77 @@ Self-test (`TestRouteBudget`): one changed site → nothing written; switch off 
 
 Built and self-tested 2026-10-13, not run in game. The sim thread no longer waits: a plan from a Sim's own yielding task runs on the worker while the task sleeps (ts3fixes `PlanAsync`). Three more detours (`Lock_Acquire 0x4E16F0`, `IC_Route_Plan 0x765160`, `Route_GetOption 0x74D040`), counters v5 (`asyncMode` writable at +0x6C ... `asyncPumpWaits`). Design, protocol, risks and test plan: docs/18 "Async plan".
 
+## Phase 6: faster resource decompression (v0.7.0, `[Decompress] Enabled=0` by default)
+
+Built and self-tested 2026-10-13, not run in game. Offload candidate #1 from docs/08: resource decompression. Source `native/ts3native/decompress.cpp` (included by `ts3native.cpp`), offline test `decompress-test.cpp`.
+
+### Where decompression happens
+
+| What | Address | Evidence |
+|---|---|---|
+| RefPack codec object (vtable `0xFB9018`: dtor, compress `0x4EC200`, decompress `0x4EC010`, header check `0x4EC080`, name "Refpack") | `0xFB9018` | vtable dump + decompile [code] |
+| Decompress slot: checks the `0x10FB` signature and header size <= buffer, then calls the core | `0x4EC010` (`__thiscall`, `ret 14h`; only reference is the vtable) | decompile + bytes [code] |
+| Decode core: cdecl `(dst, dstCap, src, srcLen)`, byte-by-byte copies, bounds-checked, returns the header size after the stop code or 0 | `0x4EB3B0`-`0x4EB74C` | decompile [code] |
+| The only call to the core | `0x4EC065` `E8 46 F3 FF FF`, then `add esp,10h` | byte scan of the whole exe for `E8`/`E9` rel32 and absolute refs [code] |
+| Users of the codec: PackedFile `0x4A7360`/`0x4A7030` (`ResourceLoad/PackedFile/CompressionRefpack`), MemoryDB `0x72B0A0`, PackedStream `0x72C980`, `0x72AFB0` | | string xrefs + decompile [code] |
+| zlib 1.1.3 inflate (`0x4331F0`, "incorrect header check") with callers `0x435384`, `0x43D816`, `0x43DD0F` next to libpng-style errors ("Extra compressed data", "Decompression error") | `0x431A80`-`0x43DDA1` | strings + call scan [code]; PNG use [inferred] |
+
+- **Packages use RefPack only.** All 267 installed `.package` files: 602,169 RefPack resources (11.0 GB compressed, 33.4 GB decompressed), 314,217 uncompressed, **no zlib (`0x5A42`)** [code, index survey]. Half the RefPack bytes are resources of 0.5-2 MB (textures, meshes); the largest is 5.5 MB.
+- zlib has no script-reachable caller within 10 calls (`CallPaths` from all 1,716 `IC_*`) and appears in at most a few sim-thread samples per run. Not a target.
+- **Which thread:** whichever thread asks for the resource; the decoder has no thread of its own and runs synchronously inside the caller (docs/08: under the global resource lock `0xFB2CD0`). In the 15 native sim-thread profiles in `probe-out/profile/*-simstack.jsonl` (5 Hz, 10-min runs in all three worlds, 9,890 samples), the decoder (return address `0x4EC06A`, with S3SS's code on top) is on the stack in **24 samples = 0.24%** of sim-thread time in live mode (0-4 per run) [code, measured]. Those stacks run through CAS outfit building (`IC_CASUtils_SetOutfitInGameObjectDelayed`) and the TaskObjects stage `0xD7FC60`, so the sim thread does decode synchronously, but rarely. World load, CAS and Buy were not sampled; the counters below measure them.
+- **S3SS already replaces the core.** `RefPackDecompressor` (on in our install, docs/05) writes a `jmp` at `0x4EB3B0` to an SSE2/AVX2 version (source `patches/refpack_decompressor_patch.cpp`, read 2026-10-13 at commit 5eb2c65). It copies 16/32 bytes only for literal runs and matches with offset >= 16; short literals (1-3 bytes) and matches with offset < 16 stay byte loops.
+- **No splitting.** One RefPack stream is strictly sequential (each match copies earlier output). Parallel work is only possible across resources (docs/08 helper pool). The largest resource decodes in about 2-4 ms, so no single decompression is a hitch on its own [inferred from the offline MB/s].
+
+### What we built
+
+- `RefpackRef`: exact C port of `0x4EB3B0` (same checks in the same order). Reference for the tests.
+- `RefpackFast`: same result and the same failure cases, but "wild" copies away from the buffer ends (LZ4 style): 4 bytes for every 1-3 byte literal, 16-byte blocks for literal runs and matches with offset >= 16, 8-byte blocks for offset 8-15, `memset` for offset 1, byte loop for offset 2-7. The overrun stays inside `[dst, dst + min(cap, header size))` and inside the source, and the next command overwrites it. Near the ends it copies exactly. SSE2 only (every CPU that runs Windows 11).
+- Hook: the rel32 of the call at `0x4EC065` points to `RefpackHook` (5 bytes verified first, else `SKIP` in the log). We never touch `0x4EB3B0`, so S3SS's `jmp` there stays and is what mode 0 runs; the two patches do not overlap, and the load order of the two ASIs does not matter.
+- Runtime switch `ts3native_counters.decompressMode` (counters v7, appended after the v6 save fields: `decompressReady, decompressMode, decompressVerify, decompressCalls, decompressFails, decompressMismatches, decompressMaxUs, decompressInMB, decompressOutMB, decompressMs, decompressMainCalls, decompressMainMs`; `decompressMode` at +0xC4, `decompressVerify` at +0xC8). 64-bit byte/time sums and the per-thread split (first 8 threads) stay internal and go to `ts3native.log`. Mode 0 = the code at `0x4EB3B0` (S3SS or the game), 1 = `RefpackFast`. `decompressVerify=1` also decodes with `0x4EB3B0` into a scratch buffer, compares, counts mismatches and keeps that result (slow, first runs only).
+- Log every 60 s (`ts3native.log`): `decompress: mode .. calls .. fails .. in .. MB out .. MB time .. ms max .. us`, then one line per thread (first 8 threads that decode; `(main)` = the thread that loaded the ASI). The probe's sim thread id tells which line is the sim thread.
+
+Settings (`ts3native.ini`):
+
+```ini
+[Decompress]
+Enabled=0   ; 1 = retarget the call at 0x4EC065
+Mode=1      ; start value of the runtime switch
+Verify=0    ; 1 = compare every decode with 0x4EB3B0 (slow)
+```
+
+### Offline results (2026-10-13, i7-11800H, 32-bit /O2 build) [measured]
+
+`out\decompress-test.exe ["<game dir>"] [MB]` reads a byte-proportional sample of every installed package (read-only), decodes each resource with `RefpackRef` and `RefpackFast`, asserts the same result, the same bytes and 64 untouched guard bytes past the buffer, then times three passes each (best of 3). A third decoder can be compiled in with `/DEXTRA_DECODER` (we used an extract of S3SS's AVX2 path; it is not in the repo).
+
+| 321,378 resources, 502 MB compressed, 3,707 MB out | all sizes | resources < 16 KB (629 MB out) |
+|---|---|---|
+| Game decoder (C port of `0x4EB3B0`, modern compiler) | 1,277 MB/s | 796 MB/s |
+| S3SS `RefPackDecompressor` (AVX2) | 1,502 MB/s | 793 MB/s |
+| **`RefpackFast`** | **2,766 MB/s (2.2x game, 1.8x S3SS)** | **1,318 MB/s (1.7x)** |
+
+Identity: 0 mismatches over 321,378 resources; none ends short of its header size; the game's decoder rejects none. A first run sampled per package (98,159 resources, 840 MB out) gave 1.78x vs the port and 1.75x vs S3SS. The selftest adds 3,000 random valid streams with every command type (incl. overlapping matches and the 0-3 byte stop tail) plus 12,000 corrupted ones (flipped bytes, cut input, smaller and larger buffers): same result as `RefpackRef`, same bytes wherever the game's decoder writes, nothing past the buffer. The game's own machine code was also copied out of the exe for a direct benchmark, but it crashed outside the game (not chased), so the "game" row is our C port; the real 2009-compiler code is likely slower, not faster [inferred].
+
+### Expected gain in game [inferred]
+
+- **Live mode:** decoding is 0.24% of sim-thread time; 1.8x faster saves about 0.1% of sim time. Not a stutter fix on its own.
+- **Loads, CAS, Buy:** decoded bytes per world load are not measured yet; the ResourceCache holds 389-501 MB after a load (docs/17 §6), so assume 0.5-1.5 GB decoded. At S3SS's 1.5 GB/s that is 0.35-1.1 s of an 84-113 s load; `RefpackFast` saves 0.15-0.5 s (under 1%), on whatever thread loads. Shorter decodes also shorten holds of the global resource lock.
+- So this is a small, safe win, and the counters give the first real numbers (bytes and ms per thread during load, CAS and Buy). If they show more than a few seconds of decoding per load, the next step is the docs/08 helper pool (decode across resources on other cores), not a faster single decoder.
+
+### How to test in game
+
+1. Build, then `install --only native-patches`; in `Game\Bin\ts3native.ini` set `[Decompress] Enabled=1`, `Mode=1`, `Verify=1` for the first run. Check the log for `OK   decompress: call 0x004EC065 -> RefpackHook`.
+2. Load `Baseline-BP`, play 2 min, open CAS and Buy (`store-cas-browse`). Expect `mismatches 0`, `fails` the same as with mode 0. Then `Verify=0`.
+3. Load split: `node tools/harness/offload-phase0.ts --only store-200` once with `Mode=0` and once with `Mode=1` (same cache state: warm both or cold both), compare menu/world load seconds and the `decompress:` log lines (MB and ms per thread; which thread is `(main)` and which is the sim thread from probe `/simstack`).
+4. CAS/Buy: repro `store-cas-browse` with mode 0 and 1 (the switch can be flipped in one load through the export, offset +8).
+5. Stop on any `MISMATCH` line or a crash in `ts3native.asi`; triage against the change ledger.
+
+### Risks
+
+- A bug in the wild-copy bounds would corrupt or overrun resource buffers. Mitigations: all bounds checks of the original kept, overrun limited to `min(cap, header size)`, selftest fuzzing with guard bytes, 3.7 GB real-data identity check, `Verify=1` for the first in-game runs.
+- If a stream ever ends short of its header size (none in the shipped packages; possible in broken CC), the bytes between the real end and the header size may hold scratch instead of untouched heap garbage. The game reads that buffer as the resource either way.
+- Another plugin that rewrites the call at `0x4EC065` (none known; S3MM maps `0x4EC010` but a detour at its entry still reaches our call) would make ours `SKIP`.
+- The per-call `QueryPerformanceCounter` pair and interlocked counters cost roughly 50 ns per decode (about 1% of a 4 KB decode).
+
 ## Phase 7: save (v0.6.0, `[SaveWrite] Enabled=0` by default)
 
 Offload candidate #2. Built and self-tested 2026-10-13, not run in game. Code: `native/ts3native/savewrite.cpp`. Static analysis: Ghidra decompile of the functions below plus `dumpbin` of `FUN_00AB1030` (0xAB1030-0xAB14AB) and `IC_LoadSaveManager_SaveGame_Impl` (0x742A50).

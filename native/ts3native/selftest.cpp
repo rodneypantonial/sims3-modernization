@@ -564,6 +564,115 @@ static void TestSaveWrite() {
     assert(RemoveTree(g_sv));
 }
 
+// --- decompress (phase 6): random valid RefPack streams with every command type, then corrupted ones ---
+static DWORD g_rnd = 12345;
+static DWORD Rnd(DWORD n) { g_rnd = g_rnd * 1103515245 + 12345; return (g_rnd >> 8) % n; }
+
+// Writes a stream that decodes to `size` bytes (also written to `plain`); returns the stream length.
+static DWORD GenRefpack(u8* out, u8* plain, DWORD size) {
+    u8* o = out;
+    *o++ = 0x10; *o++ = 0xFB;
+    *o++ = (u8)(size >> 16); *o++ = (u8)(size >> 8); *o++ = (u8)size;
+    DWORD done = 0;
+    const DWORD alpha = 2 + Rnd(200);  // small alphabets give long matches
+    for (;;) {
+        const DWORD left = size - done;
+        if (left < 4 && Rnd(2)) {  // stop code with the 0-3 tail bytes
+            *o++ = (u8)(0xFC | left);
+            for (DWORD i = 0; i < left; i++) *o++ = plain[done++] = (u8)Rnd(alpha);
+            return (DWORD)(o - out);
+        }
+        const DWORD lit = Rnd(4) < left ? Rnd(4) : 0, kind = Rnd(4);
+        const DWORD avail = done + lit;  // history the match may reach back into
+        DWORD n = 0, off = 0, maxN = 0, maxOff = 0;
+        if (kind == 0) { maxN = 10; maxOff = 1024; n = 3 + Rnd(8); }
+        if (kind == 1) { maxN = 67; maxOff = 16384; n = 4 + Rnd(64); }
+        if (kind == 2) { maxN = 1028; maxOff = 131072; n = 5 + Rnd(Rnd(2) ? 1024 : 40); }
+        if (maxN && avail && n <= maxN && lit + n <= left) {
+            off = 1 + Rnd(avail < maxOff ? avail : maxOff);
+            if (Rnd(3) == 0) off = 1 + Rnd(avail < 20 ? avail : 20);  // overlapping copies
+            const DWORD o1 = off - 1;
+            if (kind == 0) { *o++ = (u8)(((o1 >> 3) & 0x60) | ((n - 3) << 2) | lit); *o++ = (u8)o1; }
+            if (kind == 1) { *o++ = (u8)(0x80 | (n - 4)); *o++ = (u8)((lit << 6) | (o1 >> 8)); *o++ = (u8)o1; }
+            if (kind == 2) { *o++ = (u8)(0xC0 | (((o1 >> 16) & 1) << 4) | (((n - 5) >> 8) << 2) | lit); *o++ = (u8)(o1 >> 8); *o++ = (u8)o1; *o++ = (u8)(n - 5); }
+            for (DWORD i = 0; i < lit; i++) *o++ = plain[done++] = (u8)Rnd(alpha);
+            for (DWORD i = 0; i < n; i++, done++) plain[done] = plain[done - off];
+        } else if (left >= 4) {
+            DWORD k = 1 + Rnd(28);
+            if (k * 4 > left) k = left / 4;
+            *o++ = (u8)(0xE0 | (k - 1));
+            for (DWORD i = 0; i < k * 4; i++) *o++ = plain[done++] = (u8)Rnd(alpha);
+        }
+    }
+}
+
+static int __cdecl FakeCore(u8*, DWORD, const u8*, DWORD) { return -2; }
+
+static void TestDecompress() {
+    const DWORD kMax = 300000, kGuard = 64;
+    u8* plain = (u8*)malloc(kMax);
+    u8* stream = (u8*)malloc(kMax * 2 + 64);
+    u8* a = (u8*)malloc(kMax + kGuard);
+    u8* b = (u8*)malloc(kMax + kGuard);
+    u8* c = (u8*)malloc(kMax + kGuard);
+    for (int iter = 0; iter < 3000; iter++) {
+        const DWORD size = iter < 50 ? (DWORD)iter : (Rnd(4) ? Rnd(5000) : Rnd(kMax));
+        DWORD len = GenRefpack(stream, plain, size);
+        memset(a, 0xAA, kMax + kGuard);
+        memset(b, 0xAA, kMax + kGuard);
+        assert(RefpackRef(a, size, stream, len) == (int)size && memcmp(a, plain, size) == 0);
+        assert(RefpackFast(b, size, stream, len) == (int)size && memcmp(b, plain, size) == 0);
+        assert(b[size] == 0xAA);
+        // Corrupt: flip bytes, cut the stream, shrink or grow the cap. Same result; same bytes on success; nothing past cap.
+        for (int k = 0; k < 4; k++) {
+            DWORD clen = len;
+            const DWORD flips = Rnd(4);
+            for (DWORD f = 0; f < flips && len > 2; f++) stream[2 + Rnd(len - 2)] ^= (u8)(1 + Rnd(255));
+            if (Rnd(3) == 0) clen = Rnd(len + 1);
+            DWORD cap = Rnd(3) == 0 ? Rnd(size + 1) : Rnd(2) ? size : (size + Rnd(64) < kMax ? size + Rnd(64) : size);
+            memset(a, 0xAA, kMax + kGuard);
+            memset(b, 0xAA, kMax + kGuard);
+            memset(c, 0x55, kMax + kGuard);
+            const int ra = RefpackRef(a, cap, stream, clen), rb = RefpackFast(b, cap, stream, clen);
+            assert(ra == rb && RefpackRef(c, cap, stream, clen) == ra);
+            // Every byte the game's decoder wrote (same in a and c despite different fills) is the same in b. Bytes it
+            // left alone may hold scratch from a wild copy, only when the stream ends short of its header size.
+            if (ra > 0)
+                for (DWORD i = 0; i < cap; i++) assert(a[i] != c[i] || b[i] == a[i]);
+            for (DWORD g = cap; g < cap + kGuard; g++) assert(b[g] == 0xAA);
+            len = GenRefpack(stream, plain, size);  // a fresh valid stream for the next round
+        }
+    }
+    free(plain); free(stream); free(a); free(b); free(c);
+
+    // The hook site: `call core` rel32 is retargeted only when the 5 bytes match.
+    u8* site = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    const DWORD at = (DWORD)(uintptr_t)site, core = (DWORD)(uintptr_t)FakeCore;
+    site[0] = 0xE8;
+    *(LONG*)(site + 1) = (LONG)(core - (at + 5));
+    assert(!PatchRefpackCall(at, core + 1, (void*)RefpackHook));
+    assert(*(LONG*)(site + 1) == (LONG)(core - (at + 5)));
+    assert(PatchRefpackCall(at, core, (void*)RefpackHook));
+    assert(at + 5 + *(LONG*)(site + 1) == (DWORD)(uintptr_t)RefpackHook);
+    // Hook: mode 0 runs the original, mode 1 the fast decoder, verify keeps the original's result on a mismatch.
+    g_refpackOrig = FakeCore;
+    QueryPerformanceFrequency(&g_dqpf);
+    g_dstat.mainTid = (LONG)GetCurrentThreadId();
+    u8 src[] = {0x10, 0xFB, 0x00, 0x00, 0x04, 0xFC | 0, 0};
+    u8 hello[] = {0x10, 0xFB, 0x00, 0x00, 0x04, 0xE0, 'a', 'b', 'c', 'd', 0xFC};
+    u8 out[8];
+    ts3native_counters.decompressMode = 0;
+    assert(RefpackHook(out, 4, src, 6) == -2);
+    ts3native_counters.decompressMode = 1;
+    assert(RefpackHook(out, 4, hello, sizeof(hello)) == 4 && memcmp(out, "abcd", 4) == 0);
+    ts3native_counters.decompressVerify = 1;
+    assert(RefpackHook(out, 4, hello, sizeof(hello)) == -2 && ts3native_counters.decompressMismatches == 1);
+    g_refpackOrig = RefpackRef;
+    assert(RefpackHook(out, 4, hello, sizeof(hello)) == 4 && ts3native_counters.decompressMismatches == 1);
+    assert(ts3native_counters.decompressCalls == 4 && ts3native_counters.decompressMainCalls == 4 && g_dstat.tid[0] == (LONG)GetCurrentThreadId());
+    ts3native_counters.decompressVerify = 0;
+}
+
 int main() {
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
@@ -589,6 +698,7 @@ int main() {
     TestRouteBudget();
     TestRouteAsync();
     TestSaveWrite();
+    TestDecompress();
     puts("selftest ok");
     return 0;
 }
