@@ -1059,7 +1059,7 @@
     "requires": [
       "asi-loader"
     ],
-    "default": false,
+    "default": true,
     "notes": "Nexus account, manual download (Rodney, 2026-10-12: 'Sims3PerformanceBooster Beta2.1' renamed to the asset name; source 1.1 in game-copy/s3pp). Steam 1.67 by signature scan with byte checks, self-test and rollback; writes Sims3Performance.log next to TS3W.exe. Two patches off because S3SS already does them: ThreadStackDiet (S3SS OversizedThreadStackFix) and ShortWaitSpin (never with S3SS AdaptiveWait). Kept: MonoTypeEHashProbe + SimulatorStageProfiler (load time), PackageIndexWarmup, StblBucketLayoutTuning (~290 MB on big saves), AllocatorArenaTuning, LocalizedStringCache (watch for blank/wrong UI text), MonoIsinstCache.",
     "config": {
       "ini": {
