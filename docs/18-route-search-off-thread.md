@@ -324,3 +324,59 @@ Tests: selftest (11/11 runs): a host call from a worker plan runs on the caller 
 - Is the route vtable `+0x10/+0x14` pair a lock or a reference hold? If it is a lock, the worker holds it for the whole plan and any script read of that route waits; harmless while the Sim waits.
 
 Not checked: the JobManager submit function (our own thread is simpler, so it is not needed), and whether the planner uses thread-local storage (step 1b tests it in practice).
+
+## Async plan: thread-private scratch (option B) (2026-10-13, static analysis)
+
+Question: after crash 3 (goal step outside `world+0x918`, free in `0x61C020`), can the worker get thread-private search objects so it never shares mutable routing scratch with the sim thread? Sources: Ghidra headless decompile/disassembly of `0x62EAB0`, `0x75C2D0`, `0x63F490`, `0x63D2F0`, `0x63D7B0`, `0x63CB90`, `0x6339F0`, `0x6320D0`, `0x664B10`, `0x6645D0`, `0x61BF60`, `0x61E320`, `0x61E360`, `0x61E030`, `0x61E8A0`, `0x61C020`, `0x62E420`, `0x829D50`, `0x82B810`, plus xrefs.
+
+**Verdict: dead end as designed.** The "per-lot search object" is not scratch. It is a shared lot graph cache that is built lazily on first use. The A* scratch is one object for the whole game, and it stores each search's state inside nodes that point to shared lot cells. Those cells have non-atomic refcounts, and the search uses a global generation counter. A private A* object alone fixes only the `0x61C020` clear race. The worker would still need `world+0x918` around the goal step, and once it holds that lock, private scratch gains nothing. The smaller fix is a lock: every entry into the lot planner, on the sim thread and on the worker, takes `world+0x918` (the "routing gate" in PLAN). That leaves overlap only with sim work that does no routing.
+
+### (1) What 0x62EAB0 returns, and the real scratch
+
+| Object | What it is | Tag |
+|---|---|---|
+| **P**, lot path planner | One per routing world: `0x829BC0` returns `[world+0x95C]` if `world+0x974` is set. `0x75C2D0` gets it as `0x829BC0(0x8292D0())`. `this` of `0x63F490`, `0x63D7B0`, `0x63D2F0`, `0x6339F0`, `0x6320D0` | verified (`0x8292D0` = routing world getter is inferred) |
+| `0x62EAB0` | **Find-or-insert** in a hash table at `P+0x48` (buckets `P+0x4C`, bucket count `P+0x50`, entry count `+0xC`), keyed by the 8-byte lot key. On a miss it builds a default lot entry on the stack (`0x62AA60`), inserts a copy (`0x62E680` -> `0x62E5F0`, may rehash via `0x625940`) and frees the temporary (`0x62B930`). Returns `entry+0x10`. It is not a search object, and on a miss it **writes the shared table** | verified |
+| Lot graph (`entry+0x10`, about 0x180 bytes, ctor `0x62AA60`) | Allocator tags "Routing/PathPlanner/mPortalList", "mPortalsToAdd/Remove", "mQuadTrees", "LotConnectivity", "LotEdgeWaypointIndices", "LotEdgeFlags". `+0x8C` = lot built flag (set by `0x63CB90`), `+0x90/+0x94` = vector of 0x44-byte room records (`+0` built flag, `+0x24` portal index list, `+0x34` connectivity lists), `+0x74` = vector of per-level cell graphs L, `+0x16C` (word) = outside room index | verified for the fields used |
+| **Q**, `cAStarSearch` | The **only** instance in the game: allocated with size `0x9C90` and constructed by `0x61BF60` (its only caller is `0x62E860`, the P init, called from `0x829900`, `0x82A810`, `0x834FC0`). Stored at `P+0xBC`, intrusive refcount at `Q+4`. Vtable `0xFEA5C0`, dtor `0x61E420`, deleting dtor `0x61EB20`. `Q+0x14` path list ("Routing/AStarSearch/mpPath"), `Q+0x18` bucketed open list ("Routing/OpenList"), `Q+0x24` iteration count (cap 64000 or 0x40002), `Q+0x28..+0x9C84` node hash table (10007 buckets) with end sentinel `+0x9C84`, count `+0x9C88` | verified |
+| Nodes | Created on demand by `0x6320D0` -> `0x664B10` -> `0x6645D0` (find in the 10007-bucket table, else `0x61C2C0` creates and inserts). `0x664B10` takes the table from `[L+0x28]` of the cell graph, not from `P+0xBC`. Because `0x61BF60` has one caller, `[L+0x28]` is Q itself | table call verified; `[L+0x28] == Q` inferred (one ctor, same layout) |
+| A* state | **Stored inside the nodes** (`0x61E030`): `+0x30` low word = search generation stamp, bits 20-21 = open/closed state, bit 22 = pinned position; `+0x1C` parent (refcounted via `0x61BB40`), `+0x20` g, `+0x24` f, `+0x28/+0x2C` entry point. A stamp mismatch resets the node through vtable `+0x3C` | verified |
+| Generation stamp | Global word **`0x11580C4`**: incremented once per search in `0x61E360` (A* init), read in `0x61E030` and `0x61C9B0` | verified (3 xrefs) |
+| Refcounts | Nodes: int `+0x28` (dtor through the vtable at `+0x24`); graph and cell objects: word `+4`. All plain `add`/`sub`, many inlined (for example `0x6339F0`, `0x664B10`, `0x61B030`, `0x61B1E0`, `0x61C020`) | verified |
+| Q users | About 20 `mov reg,[P+0xBC]` sites in `0x625000-0x63FFFF` (`0x625x` 2, `0x627x` 3, `0x62Ax` 2, `0x62D/E/F` 3, `0x632x` 1, `0x633x` 4, `0x63Dx` 4, `0x63Fx` 1), plus `[L+0x28]` in `0x664B10`. Resets (`0x61E320`) from `0x63D2F0`, `0x63D7B0`, `0x62E420`, `0x635B70`, `0x625400` and `0x625420` (the last two called from `0x65E0D0`) | count verified by a pattern scan; the role of each site not checked |
+
+Can the worker get its own Q? Mechanically yes: allocate `0x9C90` bytes with the EA allocator `0x4E3F90` and call `0x61BF60`; release through the `Q+4` refcount / `0x61EB20`. But a detour on `0x62EAB0` cannot redirect it, because that function returns the shared lot graph, not Q. Redirecting needs a patch at each of the ~20 `[P+0xBC]` loads and at `0x664B10` (`[L+0x28]`), each replaced by "worker ? private Q : original", plus a per-Q stamp instead of `0x11580C4` (3 sites). Cloning the lot graph per thread is not realistic: it is built lazily from world and lot data and rebuilt by world updates (see below).
+
+What stays shared even with a private Q:
+
+- **Lot cells and portals** that private nodes point to: the word refcounts at `+4` and the int refcounts at `+0x28` are changed without atomics from both threads. That is the bug class of crash 3: a lost update, then a premature free or a leak. Making them atomic means patching every inlined increment and decrement in the planner: dozens of sites, not counted.
+- **Generation stamp** `0x11580C4`: without the per-Q patch, a search on one thread bumps the stamp and the other thread's nodes reset mid-search. The result is lost g costs and parents, so a wrong path or a search that runs to the 64000 cap; the memory is private, so no corruption [inferred effect].
+
+### (2) Shared writes a plan makes beyond scratch
+
+| Write | Where | Lock today | Tag |
+|---|---|---|---|
+| Lot table insert on miss (plus rehash) | `0x62EAB0` -> `0x62E680` -> `0x625940`, `P+0x48` | none in the goal step; callers under `PlanLocked` hold `world+0x918` | verified |
+| Lazy lot build: rooms, portals, `entry+0x8C` built, `P+0x10E` dirty flag | `0x63CB90` (via `0x636330`, `0x635920`, `0x63CAF0`), first use of a lot | none in the goal step | verified |
+| Lazy room connectivity: room record `+0` built, `+0x24/+0x34` lists; runs a room-to-room A* (`0x6339F0` -> `0x61E8A0` on Q) and resets Q | `0x63D2F0`, first use of each room | none in the goal step (`0x63F490` from `0x75C2D0`). Also reached from `IC_World_GetConnectedRoomsImpl 0x7929F0` -> `0x63DCB0`, and from `0x63F450`, `0x63D880`, `0x63DF60`, `0x640E00` (called from `0x65E0D0`, `0xC75920`) | paths verified |
+| Q node table create and clear | `0x6645D0`/`0x61C2C0` (create), `0x61C020` (clear via `0x61E320`, `0x61E420`) | none | verified |
+| Generation stamp | `0x61E360` | none | verified |
+| Lot rebuild (all rooms, resets Q twice) | `0x82B810` -> `0x63D7B0`, from `0x82C820` (pending updates under `PlanLocked`), `0x63C690`, `0x657390`, `0xC6BCC0` (world manager) | the `PlanLocked` path holds `world+0x918`; the other callers not checked | partly verified |
+| Lot removal (flushes lot streams, resets Q) | `0x829D50` (takes `world+0x918`) -> `0x62E420`, from `0xAB1EB0` | `world+0x918` | verified |
+| Room graph refresh | `0x63D860` from `0x835110`, `0x835240`, `0xACE4A0` | not checked | xrefs verified |
+
+EA has no lock of its own around P, Q or the lot graph. The only lock in this code is `world+0x918`, taken by the world-side entry points (`PlanLocked`, `0x829D50`) but not by the goal step or the script queries above. All of these are lazy caches: written on first use, then mostly read. Most plans therefore write nothing besides Q and the stamp. The rare writes (first plan into a lot or room, the first plan after a rebuild) are exactly the ones that corrupt memory when two threads hit them at once.
+
+### (3) Invalidation
+
+Lot graphs have no version counter. Invalidation means clearing the built flags (`entry+0x8C`, room record `+0`) and freeing and rebuilding the data in place (`0x63D7B0`, `0x63CB90`), plus Q resets (`0x61E320`) that drop every node. The only counter is the per-search stamp, which marks node state, not graph validity. So a private Q holding references to cells would see those cells freed under it by a rebuild on the sim thread, unless the worker holds `world+0x918` for the whole goal step and every sim-thread caller that rebuilds holds it too. Private copies cannot stay valid on their own.
+
+### Effort and risks of option B
+
+- Code: allocate and free a private Q per worker; patch ~21 load sites (`[P+0xBC]` and `[L+0x28]`) and 3 stamp sites; take `world+0x918` around the goal step on the worker; add the same lock to every unlocked sim-thread entry into P (`0x75C2D0`/`0x63F490`, `0x7929F0`, `0x63F6E0`, `0x633FA0`, `0x634500`, `0x635080`, `0x655EE0`, `0x65E0D0`, `0xC75920`, `0x835110`, `0x835240`, `0xACE4A0`); and make the refcounts on shared cells atomic (unbounded). Roughly 30+ patch sites before the refcount work.
+- Remaining risks: refcount races on shared cells; the lock state of the rebuild callers not checked (`0x657390`, `0xC6BCC0`, the `0x63D860` callers); the world A* `0x676260` and the water JPS `0x620560`/`0x61FE10` keep their own state (not reviewed here); the role of each `[P+0xBC]` load not verified.
+- Once the goal step must run under `world+0x918` anyway, a private Q adds nothing: the lock alone already serializes Q.
+
+### Recommendation
+
+Drop option B. If async plans are revived, use the gate instead: the worker takes `world+0x918` for the whole job (start points, goal step, `PlanLocked`), and the unlocked sim-thread entries into P listed above take it too. The lock is recursive, so nesting under `PlanLocked` is safe, and the existing `LockAcquireHook` pump serves the worker's managed calls while the sim thread waits. That is about 10 small detours and no change to EA data structures. The gain is then limited to sim-thread work that touches no routing lock, as PLAN already says; measure `asyncPumpUs` against `asyncUs` before investing more. The PLAN direction (cheaper searches: water JPS precompute, route budget, fewer replans) remains the better bet.
