@@ -113,7 +113,7 @@ D = in the default set, O = optional, X = excluded (not needed or not allowed). 
 
 ### 1.4 Smooth Patch package — `smoothpatch-package` [verified page]
 - **Fixes:** the script side of Smooth Patch 2.x: faster CAS clothing loads, CAS audio fixes, smoother Create-a-Style drag and drop. S3SS's README says to keep using it next to S3SS's tick limiter [verified].
-- **Source:** https://modthesims.info/d/658759/smooth-patch-2-1.html, file `ld_TS3Patch.zip` (uploaded 2024-11-05); page marked **Unsupported as of 2026-01-26**, pointing users to S3SS [verified]. Take only `Packages\ld_SmoothPatch.package` (46,524 bytes, XML tuning) → `Mods\Packages`. Do **not** install `TS3Patch.asi`, `TS3Patch.txt` or the bundled `wininet.dll`; the Steam guide dropped the whole mod on 2026-01-01 [verified]. Keeping the package is S3SS's advice, not the guide's; low risk [inferred].
+- **Source:** https://modthesims.info/d/658759/smooth-patch-2-1.html, file `ld_TS3Patch.zip` (uploaded 2024-11-05); page marked **Unsupported as of 2026-01-26**, pointing users to S3SS [verified]. Take only `Packages\ld_SmoothPatch.package` (46,524 bytes; tuning XML plus the script assembly `LazyDuchess.SmoothPatch.dll`, docs/21 §6) → `Mods\Packages`. Do **not** install `TS3Patch.asi`, `TS3Patch.txt` or the bundled `wininet.dll`; the Steam guide dropped the whole mod on 2026-01-01 [verified]. Keeping the package is S3SS's advice, not the guide's; low risk [inferred].
 - **License:** MTS default (no re-hosting).
 
 ### 1.5 MonoPatcher — `monopatcher` [verified release]
