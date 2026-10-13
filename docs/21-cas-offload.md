@@ -105,3 +105,29 @@ All [inferred]. A native offload could at best shave the resource-lookup share a
 **Agent:** `cas_bench` (CAS open; game task, result in `cas_state` timings): over every hair part, cold then warm, total and per-part time of `num_presets`, `content_type`, `set_part`, `design_preset` (after an untimed `SetCASPart`), `layout` (`LoadLayout(GenericCasItem)`, destroyed after the pass), `thumbnail`, plus `load_xml` fallbacks; times from `StopWatch` microseconds (unit of `GetElapsedTimeFloat` inferred). `cas_category` results add `fill_start_ms` (press to fill start = tab switch), `fill_first_ms` (press to first tiles), `fill_ms` (fill start to last tile) and `fill_incremental`, from `ts3fixes.casfill`, recorded with the switch on or off. `patches` reports `casgrid`, `casmemo`, `casgrid_fills`, `casmemo_hits`, `casmemo_lookups`.
 
 **Test:** `node tools/harness/repro.ts run cas-grid --set casgrid=true,casmemo=true`, then the same with `=false,casmemo=false` (cas_open, hair, cas_bench, makeup, hair again, makeup, state). Pass: `fill_first_ms` well under the off run's, `fill_ms` not much worse, the second hair visit faster with `casmemo_hits > 0`, the same item counts, worn hair highlighted, no blank tiles.
+
+### 6.1 First in-game run (2026-10-13, base install, `probe-out/cas-label-1.out`)
+
+| | casgrid on | casgrid off |
+|---|---|---|
+| `cas_open` picked | Lala Angelista (Athletic) | Lala Angelista (Everyday) |
+| hair: items / `sync_ms` / `fill_incremental` | 207 / 1640 / **false** | 352 / 2390 / false |
+| makeup: items / `sync_ms` / `fill_incremental` | 17 / 703 / true | 17 / 718 / false |
+| `cas_bench` warm, µs per part: layout / num_presets / content_type / thumbnail | 1633 / 51 / 44 / 4 | 2394 / 45 / 50 / 4 |
+
+[measured] Findings:
+
+- **Not a valid A/B.** `cas_open {}` took the Sim's current outfit, Athletic in one run and Everyday in the other, so the hair lists differ (207 vs 352 parts). No conclusion on the fill from these numbers.
+- **Hair never took the incremental path** (`fill_incremental` false with the switch on). The hook bailed out to the original whenever the featured store list had a hair (non-hat) item. The base install has no store content, but `StoreUI.GetCASFeaturedStoreItems` lists the store's **featured catalog** (items for sale, the `FeaturedItems` cache the thumbnail manager also reads, §1.2), so that bail-out fired in the case it was meant to skip [inferred: the log is cut before the counters; the new `fill_path`/`fill_featured` fields confirm it next run]. Its other bail-out (hats) cannot apply to the hair category.
+- **`LoadLayout(GenericCasItem)` is ~97% of the per-tile cost** (1.6-2.4 ms of ~1.7-2.5 ms); the resource lookups the memo skips are ~0.1 ms per part. So `casmemo` can only save a few percent; a faster fill needs fewer or cheaper layouts. A fixed 4 tiles per tick is 7-10 ms of sim thread per UI tick.
+- **Makeup `sync_ms` ~700 ms is the tab switch** (physical -> facial details fade out/in), not the fill: 17 tiles x ~2 ms ≈ 35 ms. The incremental fill cannot shrink it, on or off.
+- `s3pp-label-check` (after `label_check`): `cas_open {}` failed with "Tiara Angelista is wearing SkinnyDippingTowel; CAS needs an everyday/formal/sleep/swim/athletic/outerwear outfit": every household member was refused for the outfit, so the household fallback found nobody.
+
+### 6.2 Changes after the first run (built 2026-10-13, not run in game)
+
+- **Hair always incremental** (switch on, hair type Hair): the original `PopulateTypesGrid` runs first with `mPartsList` swapped for an empty list, so it clears the grid, adds the featured store tiles with their buy buttons and tooltips, sets the filter tags and clears `mUndoOnDelete` exactly as before; then the parts are filled incrementally after them (the original's order). No reimplementation of the store tiles.
+- **Time-budgeted batches:** at most **8 ms of tile work per UI tick** (`kCasTickBudgetUs`, stride cap 32). `ItemGrid.BeginPopulating` only counts callbacks, so the part list is wrapped (`BudgetedParts`): the grid calls `MoveNext` stride + 1 times per tick when every callback returns true (the tile callbacks now always do), so every 33rd call starts a tick, restarts a `StopWatch` (µs; `TickCount` fallback) and, once 8 ms are spent, the rest of the tick gets a no-work marker. A second `GetEnumerator` (`ItemGrid.SelectByComparableTag` during a fill) gets the plain list [verified in `ItemGrid`]. The synchronous part of `cas_category hair` is now the tab switch + featured tiles + one 8 ms batch [inferred; to measure].
+- **Why a fill took a path:** `ts3fixes.casfill` gains [5] path and [6] featured tiles; `cas_category` reports `fill_path` (`incremental`, `switch_off`, `hats`, `costume_makeup`) and `fill_featured`.
+- **Repro `cas-grid` pins the Sim and outfit:** `cas_open {sim: "Lala Angelista", outfit: "everyday"}`.
+- **`cas_open` fallback in every refusal path:** a Sim in an outfit CAS does not take (towel, career) now opens in Everyday instead of being refused, and a named Sim that is refused (other household, baby, pregnant) also falls back to the first eligible household member; the result then carries `fallback_from` with the refusal, and the action label names the Sim and outfit used.
+- **Not done, next if layouts stay the cost:** layout pooling (reuse `GenericCasItem` windows across fills, §2 "Later"). It is the only lever on total fill time; the budget only moves the work off the tab switch.

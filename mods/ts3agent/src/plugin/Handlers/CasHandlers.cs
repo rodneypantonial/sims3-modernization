@@ -188,22 +188,26 @@ namespace Ts3Agent
             return null;
         }
 
-        // The outfit CAS opens in: the requested one when the Sim has it (outfit index 0), else what she wears now.
+        // The outfit CAS opens in: the requested one when the Sim has it (outfit index 0), else what she wears now, else
+        // (towel, career, costume...) Everyday: the agent picks the outfit, so a Sim in an odd outfit is no reason to refuse.
         static OutfitCategories CasOutfit(Sim s, OutfitCategories want)
         {
-            return want != OutfitCategories.None && s.SimDescription.GetOutfitCount(want) > 0 ? want : s.CurrentOutfitCategory;
+            if (want != OutfitCategories.None && s.SimDescription.GetOutfitCount(want) > 0) return want;
+            OutfitCategories cur = s.CurrentOutfitCategory;
+            return Array.IndexOf(kOutfits, cur) >= 0 ? cur : OutfitCategories.Everyday;
         }
 
         // cas_open {sim?, outfit?}: Edit-in-CAS for the named Sim, else the active Sim, else the first household member CAS
-        // accepts (the active one may be in a towel or a career outfit); CAS works on a copy. outfit (everyday, formal, ...)
-        // opens CAS in that outfit when the Sim has one, instead of the one she is wearing.
+        // accepts, also when a named Sim is refused (the action label names the Sim and outfit used); CAS works on a copy.
+        // outfit (everyday, formal, ...) opens CAS in that outfit when the Sim has one, instead of the one she is wearing;
+        // a Sim in a towel or career outfit opens in Everyday (CasOutfit).
         static object CasOpen(Args a)
         {
             if (SubState() != "LiveModeState") throw new McpException("not in live mode (state " + SubState() + ")");
             OutfitCategories want = a.Has("outfit") ? OutfitByName(a.Str("outfit")) : OutfitCategories.None;
             Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();
-            string why = CasRefusal(s, CasOutfit(s, want));
-            if (why != null && !a.Has("sim"))
+            string why = CasRefusal(s, CasOutfit(s, want)), refused = why;
+            if (why != null && Household.ActiveHousehold != null)
                 foreach (Sim m in Household.ActiveHousehold.Sims)
                     if (CasRefusal(m, CasOutfit(m, want)) == null) { s = m; why = null; break; }
             if (why != null) throw new McpException(why);
@@ -216,6 +220,7 @@ namespace Ts3Agent
                 cas.UseTempSimDesc = true;
                 GameStates.TransitionToCASMode();
             }, CasReady, null, 180000);
+            if (refused != null) ((Dictionary<string, object>)r)["fallback_from"] = refused;
             return r;
         }
 
@@ -370,7 +375,13 @@ namespace Ts3Agent
             r["fill_first_ms"] = f[1] < 0 ? null : (object)(f[1] - t0);
             r["fill_ms"] = f[2] < 0 ? null : (object)(f[2] - f[0]);
             r["fill_incremental"] = f[4] == 1;
+            if (f.Length < 7) return; // older ts3fixes
+            r["fill_path"] = f[5] >= 0 && f[5] < kFillPaths.Length ? kFillPaths[f[5]] : f[5].ToString();
+            r["fill_featured"] = f[6] < 0 ? null : (object)f[6];
         }
+
+        // ts3fixes CasGrid kPath*: why a fill took the original path (fill_featured = store tiles the original added first)
+        static readonly string[] kFillPaths = { "incremental", "switch_off", "hats", "costume_makeup" };
 
         // cas_bench: times, over every hair part the CAS Sim can wear, each per-tile call CASHair.PopulateTypesGrid makes
         // (docs/21 section 4), each call type in its own loop, twice (cold, then warm). Needs CAS open; runs as a game
