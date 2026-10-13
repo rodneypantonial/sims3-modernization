@@ -74,6 +74,32 @@ All paths are under `game-copy/decompiled/Sims3GameplaySystems/`.
 - `travel_state` → `GameStates.IsTravelling`, `DestinationTravelWorld`, `CurrentDayOfTrip`, `TripLength`, MiniSim count, `.nhd` list. The harness waits on it the way `cycle.ts` waits for live mode.
 - `auto_dialog` and `respond_dialog` already exist for the travel confirmations.
 
+### Built (2026-10-13): agent travel actions and `travel-trip.ts`
+
+Agent commands in `mods/ts3agent/src/plugin/Handlers/TravelHandlers.cs`. They compile against the game DLLs; **none has run in game yet** [inferred until a run]. Each one returns at once, and the world switch runs as game tasks.
+
+| Command | What it calls [verified in decompiled code] |
+|---|---|
+| `travel_vacation {world: france\|china\|egypt, days?: 2, sims?: [names], cost?: 0}` | Queues `TravelUtil.SitInCarToTriggerTravel` on the lead Sim (the active Sim when it travels), the same interaction `TriggerTravelToVacationWorld` queues after the trip planner. The target is the world lot, so `Run` skips the walk to the farthest lot and goes straight to `FinalBoardingCall` → `GameStates.TravelToVacationWorld`. It skips the planner's visa and duration limits and the ITF "travel with" warning. Sims that fail the game's private `CheckForReasonsToFailTravel` are left behind and listed under `skipped`, because one failing traveller makes `FinalBoardingCall` cancel the whole trip. |
+| `travel_university {days?}` | The phone's path: `AcademicCareer.EnrollInAcademicCareer` opens the enrolment dialog (answer it with `auto_dialog`/`respond_dialog`; whether accepting the defaults enrols anyone is unknown), then `TravelUtil.TriggerTravelToUniversityWorld` (moving van, walk to the farthest lot). `days` overrides the van's `TravelDuration`. It runs as a game task; the result goes to `async_log`. |
+| `travel_future` | The time portal's private `TimePortal.Travel` interaction for the active Sim alone (confirm dialog, then `TravelToFuture` → `TravelToVacationWorld(FutureWorld)`). The reply shows `portal_active`, `portal_broken` and `traveler_summoned`; the interaction's own test needs all three to be fine. |
+| `travel_home` | Everyone returns early, per world type: `TriggerTravelToHomeWorld(sim, everyone: true)` on vacation, `TriggerTravelHomeFromUniversity(all, [])` at University, the portal `Travel` interaction in the future. |
+| `travel_state` | `world`, `world_type`, `world_file`, `away`, `in_travel` (`GameStates.IsTravelling`), `destination`, `on_vacation`, `trip_length`, `day_of_trip`, `days_left`, `minisims` (count of `MiniSimDescription.sMiniSims`), `sims_in_world`, `household`, `household_members`, `household_in_world`, `travelers`. |
+
+The mailbox survives the switch [verified in code, not yet observed during travel]. Its buffer is a static of the loader assembly, and `Mailbox.Open()` keeps an existing buffer, so the probe's cached address stays valid. Only the world flag drops between `OnWorldQuit` and `OnWorldLoadFinished`. That `OnWorldQuit` fires during a travel switch, and that the agent's poll and autopilot tasks restart in the new world as they do after a normal load, is inferred; `travel-trip.ts` also accepts `in_travel` or a changed `world` as "left".
+
+**How to run** (a home world in live mode via `cycle.ts --save Baseline-BP` first):
+
+```
+node tools/harness/travel-trip.ts --to france --days 2 --hours 6 --trips 3 --save-stats BP-trip
+```
+
+For each leg it logs the boarding time (command until the old world unloads), the load time (until the new world is in live mode), `/memory` (committed MB, largest free block) and `travel_state` before and after, one JSON line per leg in `probe-out/travel/<to>-<time>.jsonl`. At the destination it runs `--hours` sim hours on autopilot at speed 3. `--save-stats P` saves `P-trip0` before the first trip and `P-tripN` after each return (new files; the loaded save is left alone), then runs `save-stats.ts` over them. `--to university|future` use the other commands. The repro format (`repros.json`: steps, then a stuck or counter watch in one world) cannot express a world switch, so `bp-trip-france` is this command, not a repro entry:
+
+```
+node tools/harness/cycle.ts --save Baseline-BP && node tools/harness/travel-trip.ts --to france --trips 1
+```
+
 **Repros to add** (`tools/harness/repros.json`): `travel-roundtrip-wa` (timings, save-stats, MiniSim delta), `travel-3x-session` (crash or address space), `uni-union-doors` (stuck count at the Student Union), `uni-return-van` (the van leaves on schedule), `egypt-tomb-route` (one Sim through an opened tomb path).
 
 ## Sources

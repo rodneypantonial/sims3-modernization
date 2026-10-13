@@ -29,6 +29,7 @@ namespace Ts3Agent
             RegisterCas();
             RegisterContent();
             RegisterLabels();
+            RegisterTravel();
             Dispatcher.Register("patch_test", PatchTest);
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);
