@@ -1,0 +1,40 @@
+name: Research question
+description: Something to find out in the binary, the scripts or by measurement before anyone builds a fix.
+title: "[research] "
+labels: [research]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: One question that a doc section can answer. Link the PLAN.md item or doc it comes from.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: Which symptom (stutter, Error 12, load time, crash) it could help, and how much, if known.
+    validations:
+      required: true
+  - type: textarea
+    id: known
+    attributes:
+      label: What is known already
+      description: Links to docs/NN sections, addresses, community sources. Mark claims [verified], [community] or [inferred].
+  - type: textarea
+    id: approach
+    attributes:
+      label: Approach
+      description: Ghidra/REA static analysis, probe measurement, script reading, prior-art search. Which tools and saves.
+  - type: input
+    id: doc
+    attributes:
+      label: Output doc
+      description: The doc to append to, or the new docs/NN-topic.md number you claim.
+      placeholder: docs/24-texture-streaming.md
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The answer that closes this issue (for example "a ranked list of call sites with sample shares").

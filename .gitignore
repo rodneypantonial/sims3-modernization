@@ -13,6 +13,11 @@
 game-copy/
 bin-copy/
 
+# Saves (EA content and personal data)
+*.sims3/
+*.sims3.backup
+*.nhd
+
 # Ghidra / REA projects and analysis databases
 *.gpr
 *.rep/

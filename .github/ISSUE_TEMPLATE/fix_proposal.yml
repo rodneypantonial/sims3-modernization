@@ -1,0 +1,60 @@
+name: Fix proposal
+description: A change to ts3fixes, ts3native, the installer or the harness, backed by research.
+title: "[fix] "
+labels: [fix-proposal]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and evidence
+      description: The measured cost (profile tag, sample share, ms/s) or bug, with links to docs and results.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      options:
+        - ts3fixes (C# player mod)
+        - ts3native (native ASI)
+        - installer / fixes.json
+        - harness / probe / agent
+        - docs only
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Design
+      description: Patch sites (addresses or methods), what changes, thread safety, what happens when the expected bytes or methods are not found.
+    validations:
+      required: true
+  - type: textarea
+    id: switch
+    attributes:
+      label: Switch, counters and registry
+      description: ini key or [Tunable] (default off), runtime switch for in-load A/B, counter slots or ts3native counters version reserved in docs/registry.md.
+      placeholder: "[Foo] Enabled=0, /native?foo=0|1, counters v11 (+0x14C..)"
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: Test plan
+      description: Offline self-test, repro id, in-load A/B command (profile-world.ts --ab ...), worlds and saves, what counts as success.
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risks
+      description: Crashes, save corruption, stuck Sims, overlap with S3SS, S3PP, NRaas or other installed fixes.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked docs/01 and docs/07 that no installed community fix already does this.
+          required: true
+        - label: The design uses no copied EA, NRaas, S3SS or other third-party code.
+          required: true

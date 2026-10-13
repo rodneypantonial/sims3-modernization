@@ -34,6 +34,7 @@ See `PLAN.md` ("Where things stand" and "Next tasks"): it is the source of truth
 - `docs/04-re-findings.md`: our verified findings (routing, sim loop, GC) and the ranked big wins
 - `docs/04a-script-layer-stutter.md`: script (C#) side of stutter: scheduler, autonomy and routing retry loops
 - `docs/05-baseline-results.md` (measurements), `docs/06` (harness prior art), `docs/07` (known fixes), `docs/08-resource-offload-design.md` (offload design)
+- `CONTRIBUTING.md` (workflow, PR evidence, parallel agents), `docs/registry.md` (ts3fixes counter slots and ts3native counter versions: reserve before adding), `docs/23-ideas-and-roadmap.md` (ideas beyond PLAN.md)
 - `tools/`: `extract-assemblies.ts` (script DLLs out of .package files) and Ghidra headless scripts (`tools/ghidra/run-headless.sh`)
 
 ## Working style

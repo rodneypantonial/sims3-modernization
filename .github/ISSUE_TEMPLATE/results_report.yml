@@ -1,0 +1,73 @@
+name: Results report
+description: Submit measurements (A/B, milestone, crash-free hours) from your machine.
+title: "[results] "
+labels: [results]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer a PR that adds docs/data/results/<YYYY-MM-DD>-<gh-user>-<topic>.md (format in CONTRIBUTING.md). Use this form if you cannot open a PR; a maintainer copies it into that file.
+  - type: input
+    id: topic
+    attributes:
+      label: What was measured
+      placeholder: alloc cache in-load A/B, Bridgeport
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU, RAM, GPU + VRAM + driver, storage, Windows build, power mode.
+      placeholder: i7-11800H, 32 GB, RTX 3070 Laptop 8 GB (560.xx), NVMe, Windows 11 24H2, AC + high performance
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      placeholder: Steam 1.67, all EPs/SPs, TS3W.exe SHA-256 prefix, LAA on
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      placeholder: f29f95a, ts3native 0.9.0, ts3fixes defaults + spatialcache
+    validations:
+      required: true
+  - type: textarea
+    id: ini
+    attributes:
+      label: Install and ts3native.ini
+      description: install-fixes.ts set and the non-default ts3native.ini keys.
+      render: ini
+  - type: input
+    id: save
+    attributes:
+      label: Save
+      placeholder: Baseline-BP (community recipe), Bridgeport
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Commands
+      render: shell
+      placeholder: node tools/harness/profile-world.ts --tag bp-alloc --ab alloc --slice 2 --minutes 10
+    validations:
+      required: true
+  - type: textarea
+    id: table
+    attributes:
+      label: Results table
+      description: sim iterations/s, hitches/s (>= 50 ms), worst iteration, stuck Sims; off vs on (or before vs after).
+    validations:
+      required: true
+  - type: textarea
+    id: crashes
+    attributes:
+      label: Crashes
+      description: None, or the crash-ledger triage line and xcpt summary.
+    validations:
+      required: true

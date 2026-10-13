@@ -1,0 +1,88 @@
+name: Bug report (crash, stutter, stuck Sims)
+description: The game crashed, stuttered, hung or broke with this project's fixes installed.
+title: "[bug] "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Do not attach saves, dumps, game files or decompiled code. Remove user names, machine names and emails from paths and logs.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Crash to desktop
+        - Error 12 / out of memory
+        - Hang or freeze
+        - Stutter or hitches
+        - Stuck Sims
+        - Script error (ErrorTrap)
+        - Save failed or corrupted
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: World, save (community recipe or how you made it), what you did, how long until it happened. A repro id from tools/harness/repros.json if one fits.
+      placeholder: |
+        1. Load Baseline-BP (community recipe)
+        2. Speed 3, autopilot
+        3. After ~6 min the game closes
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build hash
+      description: git short hash the game ran (git rev-parse --short HEAD, plus +dirty if changed) and the ts3native version from ts3native.log.
+      placeholder: f29f95a, ts3native 0.9.0
+    validations:
+      required: true
+  - type: textarea
+    id: ini
+    attributes:
+      label: ts3native.ini
+      description: Non-default keys of Game\Bin\ts3native.ini, or "not installed".
+      render: ini
+  - type: textarea
+    id: install
+    attributes:
+      label: Install and switches
+      description: install-fixes.ts set (default/all, --only/--skip), other mods or CC, ts3fixes switches you changed.
+  - type: textarea
+    id: xcpt
+    attributes:
+      label: Crash summary (xcpt / crash ledger)
+      description: For crashes, the exception code, address and module from the xcpt*.txt report, and the line from `node tools/harness/crash-ledger.ts triage`. Summary only, no full dump.
+      render: text
+  - type: textarea
+    id: scripterror
+    attributes:
+      label: ScriptError summary (NRaas ErrorTrap)
+      description: Exception type, message and the top stack frames from ScriptError_*.xml, if any.
+      render: text
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      placeholder: i7-11800H, 32 GB, RTX 3070 Laptop 8 GB, NVMe, Windows 11 24H2
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I tried once with the suspected change switched off (runtime switch or Enabled=0), or I say above why not.
+        - label: The text above contains no personal paths, names or emails.
+          required: true
