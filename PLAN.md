@@ -61,6 +61,8 @@ Full mod today (bp-wab, 2026-10-12): Bridgeport 37.8-41 iterations/s (+25-30% vs
 - Editing PLAN.md with Python: read with open(p, encoding='utf-8') and write with the newline argument set to CRLF (backslash-r backslash-n); earlier scripts doubled the CR (CR CR LF), which editors show as blank lines.
 - Every change to `mods/ts3fixes/src` reaches the next `cycle.ts --restart` build; keep it unchanged while a measurement that compares builds runs.
 
+- **S3PP label check PASS (2026-10-13):** `label_check` hash `48d44eb48676dba5`, 14 empty UI captions, 0 mismatches, 0 placeholders with `s3pp` off AND on (Baseline-BP): S3PP's LocalizedStringCache breaks no labels; `s3pp` can go default on (~70 MB address space). First FPS (test B, BP, current build): 56.6 / 59.0 FPS, p99 39.2 / 33.1 ms, p99.9 98.4 / 42.1 ms; 21 of 23 long frames overlapped a sim hitch in run 1. frame-times.js crashes the game at unload (fix in progress).
+
 **Next, in order:**
 1. Item 1 above (split the detour from the taskstall sampler), then native routing step by step: detour alone 10-min stuck check -> `routeworker=1` single same-lot `sim_route_to` -> cross-lot, unreachable -> `--ab routeworker`; budget 0.4.2 only after the detour is cleared. Then async (0.5.0): `[RouteAsync] Enabled=1`, `bp-route-async`, `--ab routeasync` (docs/18 "How to test in game").
 2. Bundle restart with the built mod fixes (item 4): repros `bp-idle-unroutable`, `bp-route-fail-active`, `bp-overwatch-stuckcheck`, `bp-hogans-pileup` (`--set watchdogidle=false` / `overwatchstuck=false` for off), then a 10-min BP profile (with `--taskstall` once item 1 clears it): 0 stuck, no SafeSpot or StuckCheck stalls.
