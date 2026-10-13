@@ -11,7 +11,7 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
-#define TS3NATIVE_VERSION "0.7.0"
+#define TS3NATIVE_VERSION "0.7.1"
 
 typedef unsigned char u8;
 
@@ -153,7 +153,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 60 int32 (v7).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 65 int32 (v8).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -221,8 +221,14 @@ struct Ts3nCounters {
     LONG decompressMs;         // time inside the decoder (excludes verify), milliseconds
     LONG decompressMainCalls;  // decodes on the thread that loaded us (the main thread)
     LONG decompressMainMs;     // their time, milliseconds
+    // v8 (0.7.1): host delegate calls proxied whole; route plans and failures per mode, for A/Bs
+    LONG hostCalls;      // host delegate calls 0xD75FA0 from the worker that ran on the caller/owner thread
+    LONG planOffCalls;   // Route_PlanLocked requests (past the original's early-outs) with worker and async mode off
+    LONG planOffFails;   // ... of those, returned 0 (cache hits included)
+    LONG planOnCalls;    // requests with worker or async mode on (also plain plans made while async is on)
+    LONG planOnFails;
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {7,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {8,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -318,6 +324,8 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.asyncReady)
         Log("route async: mode %ld started %ld refused %ld collected %ld dropped %ld job %ld ms max %ld us pump %ld ms (%ld waits)", c.asyncMode,
             c.asyncStarted, c.asyncRefused, c.asyncCollected, c.asyncDropped, c.asyncUs / 1000, c.asyncMaxUs, c.asyncPumpUs / 1000, c.asyncPumpWaits);
+    if (c.workerReady || c.asyncReady)
+        Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
 }
 
 static LARGE_INTEGER g_qpf;
@@ -481,9 +489,21 @@ static DWORD g_invokeExpect = 0x00E5A600;  // the interpreter's runtime_invoke, 
 static bool g_invokeCheckBytes = true;     // selftest turns it off (its fake invoke has another prologue)
 static const u8 kInvokePrologue[] = {0x81, 0xEC, 0x50, 0x01, 0x00, 0x00, 0x68, 0x50, 0x01, 0x00, 0x00};  // sub esp,150h; push 150h
 static InvokeFn g_invokeOrig;
-struct InvokeJob { void* method; void* obj; void** params; void** exc; void* result; };
+// self NULL: runtime_invoke(a[0..3] = method, obj, params, exc); else host delegate call 0xD75FA0(self; a[0..3] = out, args 2-4)
+struct InvokeJob { void* a[4]; void* self; void* result; };
 static InvokeJob* volatile g_invJob;
 static HANDLE g_invReady, g_invDone;
+
+// Host delegate call (docs/18 "Crash: async route assert"): MonoScriptHost vtable slot 0x108B7C4 -> 0xD75FA0, thiscall, hidden
+// out pointer + 3 args, ret 10h, returns out. It boxes the callback arguments (mono_value_box), clears the running task's
+// id host+0xBD0/+0xBD4 (`this` is host+8: [ebx+0BC8h]) around its mono_runtime_invoke (0xD76200), restores it (0xD7621F). Run on the worker, the
+// boxing happens on a thread the GC does not scan and the clear hits the task the sim thread runs meanwhile (no yield mark
+// from 0xD70F60 -> interp.c:3595 assert). So the whole call goes to the caller/owner thread, as it runs without the worker.
+typedef void*(__fastcall* HostCallFn)(void* self, void* edx, void* out, void* a2, void* a3, void* a4);
+static HostCallFn g_hostCallOrig;
+static const DWORD HOST_CALL = 0x00D75FA0;
+static const u8 kHostCallPrologue[] = {0x55, 0x8D, 0x6C, 0x24, 0x98, 0x81, 0xEC, 0x84, 0x00, 0x00, 0x00};  // push ebp; lea ebp,[esp-68h]; sub esp,84h
+static DWORD* g_hostPtr = (DWORD*)(uintptr_t)0x011EE514;    // MonoScriptHost (ctor 0xD7E010)
 
 // The caller's FPU state goes with the job: D3D9 can leave the game thread's x87 at single precision, and the
 // search must round the same way to find the same path.
@@ -521,22 +541,30 @@ static void ServeInvoke() {
     static void* seen[8];  // first distinct MonoMethod pointers, logged once each, to name the callbacks later
     static int nSeen;
     int i = 0;
-    while (i < nSeen && seen[i] != v.method) i++;
-    if (i == nSeen && nSeen < 8) {
-        seen[nSeen++] = v.method;
-        Log("route worker: planner made a managed call, MonoMethod %p obj %p exc %p", v.method, v.obj, v.exc);
+    while (!v.self && i < nSeen && seen[i] != v.a[0]) i++;
+    if (!v.self && i == nSeen && nSeen < 8) {
+        seen[nSeen++] = v.a[0];
+        Log("route worker: planner made a managed call, MonoMethod %p obj %p exc %p", v.a[0], v.a[1], v.a[3]);
     }
+    // EA's guard of 0xD75FA0, on the thread that runs the script: a nested managed call runs without the task's id pair
+    // (no yield mark), the running task gets it back after
+    DWORD* id = *g_hostPtr ? (DWORD*)(uintptr_t)(*g_hostPtr + 0xBD0) : NULL;
+    const DWORD id0 = id ? id[0] : 0, id1 = id ? id[1] : 0;
+    if (id) id[0] = id[1] = 0;
     g_inInvoke++;
-    v.result = g_invokeOrig(v.method, v.obj, v.params, v.exc);
+    v.result = v.self ? g_hostCallOrig(v.self, NULL, v.a[0], v.a[1], v.a[2], v.a[3])
+                      : g_invokeOrig(v.a[0], v.a[1], (void**)v.a[2], (void**)v.a[3]);
     g_inInvoke--;
-    InterlockedIncrement(&ts3native_counters.invokes);
+    if (id) { id[0] = id0; id[1] = id1; }
+    InterlockedIncrement(v.self ? &ts3native_counters.hostCalls : &ts3native_counters.invokes);
     SetEvent(g_invDone);
 }
 
-// In the runtime_invoke slot: every thread but the worker goes straight to the original.
-static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** exc) {
-    if (GetCurrentThreadId() != g_workerTid || (!g_callerTid && g_async.state != A_RUNNING)) return g_invokeOrig(method, obj, params, exc);
-    InvokeJob v = {method, obj, params, exc, NULL};
+// A managed call on the worker for a waiting caller (sync plan) or for the job's owner (async plan)?
+static bool ForCaller() { return GetCurrentThreadId() == g_workerTid && (g_callerTid || g_async.state == A_RUNNING); }
+
+// Worker side: hands the call to the caller/owner thread and runs nested plans it sends back meanwhile.
+static void* Proxy(InvokeJob& v) {
     InvokeJob* prev = g_invJob;
     g_invJob = &v;
     SetEvent(g_invReady);
@@ -544,6 +572,20 @@ static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** e
     while (WaitForMultipleObjects(2, h, FALSE, INFINITE) == WAIT_OBJECT_0 + 1) ServePlan();  // a plan from inside the call
     g_invJob = prev;
     return v.result;
+}
+
+// In the runtime_invoke slot: every thread but the worker goes straight to the original.
+static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** exc) {
+    if (!ForCaller()) return g_invokeOrig(method, obj, params, exc);
+    InvokeJob v = {{method, obj, params, exc}, NULL, NULL};
+    return Proxy(v);
+}
+
+// Detour of 0xD75FA0: the same for the whole host delegate call (boxing and EA's task-id guard included).
+static void* __fastcall HostCallHook(void* self, void* edx, void* out, void* a2, void* a3, void* a4) {
+    if (!ForCaller()) return g_hostCallOrig(self, edx, out, a2, a3, a4);
+    InvokeJob v = {{out, a2, a3, a4}, self, NULL};
+    return Proxy(v);
 }
 
 // Hooks the slot once, from the first worker plan (it comes from script, so Mono is up). false: plans stay inline.
@@ -667,14 +709,8 @@ static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals,
     return j.result;
 }
 
-static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
-                                    DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
-    InterlockedIncrement(&ts3native_counters.calls);
-    ULONGLONG now = GetTickCount64();
-    MaybeLogCounters(now);
-    // the original's own early-outs (no plan requested, no start, no goal) stay with the original
-    if ((u8)doPlan == 0 || starts[0] == starts[1] || goals[0] == goals[1])
-        return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+static u8 PlanCached(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
+                     DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi, ULONGLONG now) {
     if (!g_tab) return RunPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);  // worker only
     u64 key = RouteKey(starts, goals, agent, opts, guidLo, guidHi);
     if (CacheHit(key, now)) {
@@ -693,6 +729,22 @@ static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* s
     } else {
         InterlockedIncrement(&ts3native_counters.otherFails);
     }
+    return r;
+}
+
+static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
+                                    DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+    InterlockedIncrement(&ts3native_counters.calls);
+    ULONGLONG now = GetTickCount64();
+    MaybeLogCounters(now);
+    // the original's own early-outs (no plan requested, no start, no goal) stay with the original
+    if ((u8)doPlan == 0 || starts[0] == starts[1] || goals[0] == goals[1])
+        return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
+    const Ts3nCounters& c = ts3native_counters;
+    const bool on = (c.workerMode == 1 && c.workerReady) || (c.asyncMode == 1 && c.asyncReady);
+    InterlockedIncrement(on ? &ts3native_counters.planOnCalls : &ts3native_counters.planOffCalls);
+    const u8 r = PlanCached(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi, now);
+    if (!r) InterlockedIncrement(on ? &ts3native_counters.planOnFails : &ts3native_counters.planOffFails);
     return r;
 }
 
@@ -717,7 +769,6 @@ static const DWORD kAsyncOptHi = 0x04000000, kAsyncCancelHi = 0x40000000, kNoYie
 // state, 0xD70F60), then asserts yieldReturn on the *current* state (0xE59763). The current state is the innermost
 // ves_exec's (0xE53EB0 keeps it in 0x11F4170); a native->managed call (runtime_invoke 0xE5A600, or 0xD8A8E0) runs on a
 // fresh one. So a yield is only safe when the current state is the task's root state.
-static DWORD* g_hostPtr = (DWORD*)(uintptr_t)0x011EE514;    // MonoScriptHost (ctor 0xD7E010)
 static DWORD* g_curState = (DWORD*)(uintptr_t)0x011F4170;   // current interpreter state
 static bool CanYield() {
     const u8* host = (const u8*)(uintptr_t)*g_hostPtr;
@@ -746,7 +797,16 @@ static void WaitAsyncDone() {
     }
 }
 
+// Owner side: waits for its job (running the job's managed calls) and throws the result away. No-op on other threads.
+static void DropOwnJob() {
+    if (g_async.state == A_IDLE || GetCurrentThreadId() != g_async.owner) return;
+    WaitAsyncDone();
+    InterlockedIncrement(&ts3native_counters.asyncDropped);
+    InterlockedExchange(&g_async.state, A_IDLE);
+}
+
 static u8* __cdecl IcPlanHook(u8* out, DWORD handle) {
+    if (ts3native_counters.asyncMode != 1) DropOwnJob();  // switched off mid-job: no job left without a collector
     // only the Mono sim thread calls internal calls (the worker calls g_icPlanOrig directly), so g_collect needs no lock
     const bool collect = g_collect == handle;
     g_collect = 0;
@@ -788,19 +848,26 @@ static u8 AsyncStart(DWORD handle) {
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
     if (optLo != 0 || (optHi & ~(kAsyncCancelHi | kNoYieldHi)) != kAsyncOptHi) return g_getOptOrig(handle, optLo, optHi, options2);
     if (optHi & kNoYieldHi) return !CanYield();
+    if (ts3native_counters.asyncMode != 1) DropOwnJob();  // switched off mid-job: READY then says "done", Route.Plan plans inline
     if (!(u8)options2) return AsyncStart(handle);
     const bool mine = g_async.state != A_IDLE && g_async.handle == handle && GetCurrentThreadId() == g_async.owner;
-    if (optHi & kAsyncCancelHi) { g_collect = 0; return 1; }
+    if (optHi & kAsyncCancelHi) {  // the caller gives up (finally, Sim reset): its job must not outlive it
+        g_collect = 0;
+        if (mine) DropOwnJob();
+        return 1;
+    }
     if (mine && g_async.state == A_RUNNING && WaitForSingleObject(g_invReady, 0) == WAIT_OBJECT_0) ServeInvoke();  // keep it moving
     if (mine && g_async.state == A_RUNNING) return 0;
     g_collect = mine ? handle : 0;
     return 1;
 }
 
-// Every Lock_Acquire in the game passes through here; only the job owner's blocking waits during a job are changed:
-// try-lock (deadline 0 = one TryEnter/0 ms wait in the original) in a loop, running the job's managed calls in between.
+// Every Lock_Acquire in the game passes through here; only the job owner's waits during a job are changed (INFINITE and
+// finite deadlines, an absolute GetTickCount): try-lock (deadline 0 = one TryEnter/0 ms wait in the original) in a loop,
+// running the job's managed calls in between. A finite deadline that passes ends with one original call with it (one
+// last try; the original's own result, -2 = timed out).
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline) {
-    if (g_async.state != A_RUNNING || *deadline != 0xFFFFFFFF || GetCurrentThreadId() != g_async.owner) return g_lockOrig(lock, edx, deadline);
+    if (g_async.state != A_RUNNING || *deadline == 0 || GetCurrentThreadId() != g_async.owner) return g_lockOrig(lock, edx, deadline);
     static const DWORD kTry = 0;
     LONG r = g_lockOrig(lock, edx, &kTry);
     if (r != -2) return r;
@@ -812,6 +879,7 @@ static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadl
         HANDLE h[2] = {g_invReady, g_asyncDone};
         if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) ServeInvoke();
         if ((r = g_lockOrig(lock, edx, &kTry)) != -2) break;
+        if (*deadline != 0xFFFFFFFF && (LONG)(GetTickCount() - *deadline) >= 0) { r = g_lockOrig(lock, edx, deadline); break; }
         if (GetTickCount() - start >= next) {
             next += 2000;
             InterlockedIncrement(&ts3native_counters.watchdogs);
@@ -836,6 +904,7 @@ static int ReadRouteAsync(const wchar_t* ini) {
 // Needs the worker thread and the Route_PlanLocked detour (RunPlan) already in place. All three detours or none in use:
 // a missing one leaves asyncReady 0, and START is then never answered yes.
 static bool InstallAsync(int mode) {
+    if (!g_hostCallOrig) { Log("FAIL route async: host call detour missing, async plans stay off"); return false; }
     g_lockOrig = (LockAcquireFn)InstallDetour("Lock_Acquire", LOCK_ACQUIRE, kLockAcquirePrologue, sizeof(kLockAcquirePrologue), (void*)LockAcquireHook);
     g_icPlanOrig = g_lockOrig ? (IcPlanFn)InstallDetour("IC_Route_Plan", IC_ROUTE_PLAN, kIcPlanPrologue, sizeof(kIcPlanPrologue), (void*)IcPlanHook) : NULL;
     g_getOptOrig = g_icPlanOrig ? (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook) : NULL;
@@ -890,7 +959,10 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
     g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
     if (!g_planOrig) { ts3native_counters.windowMs = 0; return false; }
     ts3native_counters.budgetReady = budget && PatchCostSites(kCostSites, kCostFns);
-    ts3native_counters.workerReady = worker;
+    // the worker's host delegate calls must run on the caller/owner thread; without that detour the worker stays unused
+    if (worker) g_hostCallOrig = (HostCallFn)InstallDetour("host call", HOST_CALL, kHostCallPrologue, sizeof(kHostCallPrologue), (void*)HostCallHook);
+    if (worker && !g_hostCallOrig) Log("FAIL route worker: host call detour missing, plans stay on the calling thread");
+    ts3native_counters.workerReady = worker && g_hostCallOrig;
     ts3native_counters.enabled = 1;
     g_nextLog = (LONG64)GetTickCount64() + 60000;
     return true;

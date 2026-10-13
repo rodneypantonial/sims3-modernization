@@ -79,6 +79,27 @@ static void TestRouteCache() {
 }
 
 // --- route worker: the original runs on the worker with the caller's FPU control word, composed with the cache ---
+// MonoScriptHost stand-in: +0xBC8 -> slot -> the task's root interpreter state, +0xBD0 task id; g_fakeCur = current state
+static u8 g_fakeHost[0xC00];
+static DWORD g_fakeHostPtr, g_fakeCur, g_fakeRootSlot;
+static const DWORD kRoot = 0x1000, kNested = 0x2000;
+static void FakeTask(DWORD cur, DWORD id) {
+    g_fakeHostPtr = (DWORD)(uintptr_t)g_fakeHost;
+    g_fakeRootSlot = kRoot;
+    *(DWORD**)(g_fakeHost + 0xBC8) = &g_fakeRootSlot;
+    *(DWORD*)(g_fakeHost + 0xBD0) = id;
+    g_fakeCur = cur;
+}
+
+// Host delegate call 0xD75FA0 stand-in: records its thread and that the task id pair was cleared around it
+static DWORD g_hostTid, g_hostIdSeen;
+static void* __fastcall FakeHostCall(void* self, void*, void* out, void* a2, void* a3, void* a4) {
+    g_hostTid = GetCurrentThreadId();
+    g_hostIdSeen = *(DWORD*)(g_fakeHost + 0xBD0) | *(DWORD*)(g_fakeHost + 0xBD4);
+    *(DWORD*)out = (DWORD)(uintptr_t)self + (DWORD)(uintptr_t)a2 + (DWORD)(uintptr_t)a3 + (DWORD)(uintptr_t)a4;
+    return out;
+}
+static int g_callHost;  // WorkerPlan makes a host delegate call (through the vtable in the game)
 static DWORD g_planTid;
 static unsigned short g_planCw;
 static int g_reenter;
@@ -113,6 +134,12 @@ static u8 __fastcall WorkerPlan(void*, void*, int* outList, int* starts, int* go
         g_planTid = GetCurrentThreadId();
         g_planCw = GetX87();
     }
+    if (g_callHost) {  // the whole host call runs on the waiting caller, with the task id pair cleared there, then restored
+        g_callHost = 0;
+        DWORD out = 0;
+        assert(HostCallHook((void*)0x10, NULL, &out, (void*)1, (void*)2, (void*)3) == &out && out == 0x16);
+        assert(g_hostTid != GetCurrentThreadId() && g_hostIdSeen == 0);
+    }
     return (u8)guidLo;  // echo, so each call's own result comes back
 }
 
@@ -128,9 +155,14 @@ static void TestRouteWorker() {
     int list[2];
     const DWORD me = GetCurrentThreadId();
     const Ts3nCounters c0 = ts3native_counters;
+    g_hostPtr = &g_fakeHostPtr;
+    FakeTask(kRoot, 7);
+    g_hostCallOrig = FakeHostCall;
 
     ts3native_counters.workerMode = 0;
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 0, 0) == 0);
+    assert(ts3native_counters.planOffCalls - c0.planOffCalls == 2 && ts3native_counters.planOffFails - c0.planOffFails == 1);
     ts3native_counters.workerMode = 1;
     // runtime_invoke slot not as expected (Mono not up, or another build): refused, plans stay on the caller
     g_invokeSlot = &g_fakeSlot;
@@ -155,9 +187,16 @@ static void TestRouteWorker() {
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_invokeTid == me && !g_invokeNested);
     g_reenter = 1;
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1);
+    // host delegate call on the worker: runs on the caller; the caller's task id pair is back afterwards
+    g_callHost = 1;
+    assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_hostTid == me && !g_callHost);
+    assert(*(DWORD**)(g_fakeHost + 0xBC8) == &g_fakeRootSlot && *(DWORD*)(g_fakeHost + 0xBD0) == 7 && ts3native_counters.hostCalls == 1);
+    DWORD hostOut = 0;  // other threads: pass-through
+    assert(HostCallHook((void*)0x10, NULL, &hostOut, NULL, NULL, NULL) == &hostOut && hostOut == 0x10 && g_hostTid == me);
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 0, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);  // doPlan=0 stays
     const Ts3nCounters& c = ts3native_counters;
-    assert(c.workerCalls - c0.workerCalls == 6 && c.fallbacks - c0.fallbacks == 1 && c.watchdogs == 0 && c.invokes == 2);
+    assert(c.workerCalls - c0.workerCalls == 7 && c.fallbacks - c0.fallbacks == 1 && c.watchdogs == 0 && c.invokes == 2);
+    assert(c.planOnCalls - c0.planOnCalls == 9 && c.planOnFails - c0.planOnFails == 1);  // nested plans count too
     assert(c.waitUs >= c.workerUs);
 
     // with the cache: a 7/8 failure found on the worker is stored, the repeat is a hit that never reaches the worker
@@ -321,18 +360,6 @@ static void Cancel(DWORD h) { assert(GetOptionHook(h, 0, kAsyncOptHi | kAsyncCan
 static void WaitReady(DWORD h) { while (!Ready(h)) Sleep(1); }
 static u8 NoYield(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi | kNoYieldHi, 1); }
 
-// MonoScriptHost stand-in: +0xBC8 -> slot -> the task's root interpreter state, +0xBD0 task id; g_fakeCur = current state
-static u8 g_fakeHost[0xC00];
-static DWORD g_fakeHostPtr, g_fakeCur, g_fakeRootSlot;
-static const DWORD kRoot = 0x1000, kNested = 0x2000;
-static void FakeTask(DWORD cur, DWORD id) {
-    g_fakeHostPtr = (DWORD)(uintptr_t)g_fakeHost;
-    g_fakeRootSlot = kRoot;
-    *(DWORD**)(g_fakeHost + 0xBC8) = &g_fakeRootSlot;
-    *(DWORD*)(g_fakeHost + 0xBD0) = id;
-    g_fakeCur = cur;
-}
-
 static void TestRouteAsync() {
     const DWORD me = GetCurrentThreadId();
     const Ts3nCounters& c = ts3native_counters;
@@ -411,12 +438,54 @@ static void TestRouteAsync() {
     assert(Start(kH1));
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
     assert(g_async.state == A_DONE && g_invokeTid == me && c.invokes == inv0 + 2);
-    Cancel(kH1);
-    assert(Start(kH2) && c.asyncDropped == 4);  // the done kH1 result was never collected
+    Cancel(kH1);  // drops the done kH1 result nobody collected
+    assert(c.asyncDropped == 4 && g_async.state == A_IDLE);
+    assert(Start(kH2) && c.asyncDropped == 4);
     WaitReady(kH2);
     assert(IcPlanHook(out, kH2) == out);
     assert(c.watchdogs == 0 && c.asyncUs >= 30000 && c.asyncMaxUs >= 30000);
     ts3native_counters.workerReady = 0;
+
+    // CANCEL while the job runs (Sim reset): waits for it, drops it; no orphan job, the next START is not refused
+    g_icSleepMs = 40;
+    assert(Start(kH1));
+    Cancel(kH2);  // another route's CANCEL leaves it alone
+    assert(g_async.state == A_RUNNING);
+    Cancel(kH1);
+    assert(g_async.state == A_IDLE && c.asyncDropped == 5);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 5);
+
+    // mode switched off mid-job: the owner's next entry (READY here) drains and drops it, Route.Plan then plans inline
+    assert(Start(kH1));
+    ts3native_counters.asyncMode = 0;
+    assert(Ready(kH1) && g_async.state == A_IDLE && c.asyncDropped == 6);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    ts3native_counters.asyncMode = 1;
+    assert(Start(kH1));
+    ts3native_counters.asyncMode = 0;  // ... or the internal call itself
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && g_async.state == A_IDLE && c.asyncDropped == 7);
+    ts3native_counters.asyncMode = 1;
+
+    // lock pump on a finite deadline: managed call served, lock taken; a deadline that passes ends with the original's -2
+    g_icHoldLock = g_icInvoke = 1;
+    g_icSleepMs = 20;
+    const LONG inv1 = c.invokes, waits1 = c.asyncPumpWaits;
+    assert(Start(kH1));
+    while (!g_icLockTaken) Sleep(1);
+    g_invokeTid = 0;
+    const DWORD later = GetTickCount() + 5000;
+    assert(LockAcquireHook(&g_fakeLock, NULL, &later) == 1 && g_invokeTid == me && c.invokes == inv1 + 1 && c.asyncPumpWaits == waits1 + 1);
+    LeaveCriticalSection(&g_fakeLock);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out);
+    g_icHoldLock = 1;
+    g_icSleepMs = 300;
+    assert(Start(kH1));
+    while (!g_icLockTaken) Sleep(1);
+    const DWORD soon = GetTickCount() + 30, t0 = GetTickCount();
+    assert(LockAcquireHook(&g_fakeLock, NULL, &soon) == -2 && GetTickCount() - t0 < 250 && g_async.state == A_RUNNING);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out);
     g_icSleepMs = 0;
 
     // yield guard (interp.c:3595): only the task's root interpreter state may yield

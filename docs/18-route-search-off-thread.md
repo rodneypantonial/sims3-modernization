@@ -289,6 +289,27 @@ Fix (ts3native 0.5.1, ts3fixes):
 
 Tests: selftest `TestRouteAsync` (fake host, slot and current state: root state may yield and START works; nested state, no task id, no current state, no host: NOYIELD true and START refused with `asyncRefused`; other option bits pass through). In game (not run yet): the `bp-route-async` repro and the Overwatch repro `bp-overwatch-stuckcheck` with ts3native 0.5.1; pass = no assertion, `asyncRefused` above 0 only where plans came from nested calls.
 
+### Crash: async route assert, hang, orphan job (2026-10-13, 0.7.0) and fix (0.7.1)
+
+Symptoms with `[RouteAsync]` on: the interp.c:3595 `pState->yieldReturn` assertion again (from a Sim's own top-level task, so `CanYield()` was not the gap), a hang, and a job left running after its Sim was reset.
+
+Cause [verified, disassembly]:
+
+- The planner calls script through the **host delegate call `0xD75FA0`** (MonoScriptHost vtable slot `0x108B7C4`, same vtable as the yield mark `0xD70F60`, so `this` = host+8; thiscall, hidden out pointer + 3 args, `ret 10h`; no direct callers). Around its `mono_runtime_invoke` (`call 0xEA1400` at `0xD7620C`) it saves the running task's id `[ebx+0xBC8]/[ebx+0xBCC]` = **host+0xBD0/+0xBD4**, zeroes it (`0xD76200`: `89 BB C8 0B 00 00 89 BB CC 0B 00 00`, edi = 0) and restores it (`0xD7621F`: `89 B3 C8 0B 00 00 89 8B CC 0B 00 00`, followed by a `je` on the flags of `cmp eax,edi`).
+- Up to 0.7.0 only the runtime_invoke slot was proxied, so `0xD75FA0` itself ran **on the worker**. In async mode the sim thread runs script meanwhile, and the worker zeroed that task's id under it. `0xD70F60` marks a yield only when `[this+0xBC0]` (slot, host+0xBC8) and `[this+0xBC8]|[this+0xBCC]` (task id) are set, so the task's yield got no mark and asserted. The same call also boxed the callback arguments (`mono_value_box`) on the worker, a thread Boehm does not scan [inferred risk: a GC between boxing and the call could hand the callback garbage; a 0 return clears lot flag +0x8F at `0x64F2C0`].
+- Hang: `ts3native.asi+0x24CB` = `InvokeHook`'s `WaitForMultipleObjects` on the worker inside `0xD75FA0`, waiting for the sim thread to serve the invoke; `LockAcquireHook` pumped only `INFINITE` waits, so a finite-deadline `Lock_Acquire` on the sim thread did not serve it.
+- Orphan job: START fired (the C# switch defaults on, a plan right after load), the caller vanished (Sim reset); CANCEL only cleared `g_collect`, so the job kept running with nobody to collect it.
+
+Fix (ts3native 0.7.1, counters v8):
+
+1. **`0xD75FA0` detour** (prologue `55 8D 6C 24 98 81 EC 84 00 00 00`, checked before patching): on the worker, while a sync caller waits or an async job runs, the whole host delegate call (boxing, EA's task-id guard, the invoke) goes to the caller/owner thread, where it runs without the worker (counter `hostCalls`). Chosen over call thunks at `0xD76200`/`0xD7621F` that skip the clear/restore on the worker: one checked detour on the existing proxy plumbing instead of two patched sites and naked thunks (the restore site must also keep the flags for its `je`), and it moves the boxing off the worker too. Without this detour `workerReady` stays 0 and async stays off.
+2. `ServeInvoke` (caller/owner side of every proxied call) saves host+0xBD0/+0xBD4, zeroes it, runs the call, restores it: EA's guard on the thread that runs the script (also for runtime_invoke calls that do not come through `0xD75FA0`).
+3. CANCEL of the caller's own job waits for it (serving its managed calls) and drops it (`asyncDropped`, state idle). With `asyncMode` switched to 0 mid-job, the owner's next GetOption (START/READY/CANCEL) or `IC_Route_Plan` drains and drops it; READY then says done and `Route.Plan` plans inline.
+4. `LockAcquireHook` pumps every non-zero deadline on the owner during a job. A finite deadline (absolute GetTickCount) that passes ends with one original call with that deadline, so the game gets the original's own result (`-2` = timed out).
+5. Counters `planOffCalls/planOffFails/planOnCalls/planOnFails`: Route_PlanLocked requests and failures with worker/async mode off vs on (on = `workerMode` or `asyncMode` 1 and ready), for A/Bs.
+
+Tests: selftest (11/11 runs): a host call from a worker plan runs on the caller with the task id cleared there and restored after, other threads pass through; per-mode plan/fail counts; CANCEL of a running job drops it (another route's CANCEL does not); mode flip drained by READY and by `IC_Route_Plan`; the lock pump on a finite deadline serves the managed call and takes the lock, and a passed deadline returns `-2` while the job still holds the lock. In game: not run yet.
+
 ### How to test in game (serial, saves backed up)
 
 1. Install: close the game, `node tools/setup/install-fixes.ts install --only native-patches` (ts3native 0.5.1), rebuild/install ts3fixes as usual, set `[RouteAsync] Enabled=1` in `Game\Bin\ts3native.ini` (Mode 1), leave `[RouteWorker]`/`[RouteBudget]`/`[RouteCache]` at 0. Check `ts3native.log` for `OK detour Lock_Acquire`, `IC_Route_Plan`, `Route_GetOption` and `route async settings: Mode=1`.
