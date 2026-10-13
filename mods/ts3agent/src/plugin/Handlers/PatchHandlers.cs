@@ -130,15 +130,15 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[65];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[68];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -168,6 +168,7 @@ namespace Ts3Agent
             if (c.Length > 58) { r["asyncroute_started"] = c[56]; r["asyncroute_yields"] = c[57]; r["asyncroute_pollcap"] = c[58]; } // async route plans (docs/18, ts3native [RouteAsync])
             if (c.Length > 61) { r["casgrid_fills"] = c[59]; r["casmemo_hits"] = c[60]; r["casmemo_lookups"] = c[61]; } // CAS hair/makeup incremental fills, hair preset cache (docs/21)
             if (c.Length > 64) { r["spatialcache_hits"] = c[62]; r["spatialcache_misses"] = c[63]; r["spatialcache_clears"] = c[64]; } // lot object query cache: hits, native lot walks, clears on object destroy (docs/20)
+            if (c.Length > 67) { r["routablecache_hits"] = c[65]; r["routablecache_plans"] = c[66]; r["stuckcheck_busy_skipped"] = c[67]; } // fewer route plans (FewerPlans.cs, docs/04a section 7)
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;

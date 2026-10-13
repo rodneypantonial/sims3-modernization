@@ -212,6 +212,32 @@ Explicit `GC.Collect()` calls exist only in rare paths: `DynamicChallengeManager
 
 ---
 
+## 8. Who plans the routes (measured 2026-10-13)
+
+Data: all 20 managed-stack profiles in `probe-out/profile/*-managed.jsonl` (BP, IP, SV; 15,417 samples at a fixed rate, so samples ~ sim-thread time) and the three `/taskstall` runs of 2026-10-13. A sample counts as a plan when its innermost frame is `Route_Plan`, `Route_PlanFromPoint`, `Route_Replan` or `Route_ReplanFromPosition`: 2,343 samples, **15.2% of sim-thread script time**. Caller = first frame outside `ScriptCore.Route`, `Sims3.SimIFace.Route` and our pass-through hooks [measured]. To re-run: per jsonl line (one stack, innermost first) keep the lines whose first frame is one of those four, drop the route/hook frames, count the first remaining frame.
+
+| # | Caller (first gameplay frame) | Samples | Share of plan time | Kind | Status |
+|---|---|---|---|---|---|
+| 1 | `RoutingComponent.DoRoute` (replans while following: `ReplanFromPoint` after obstacles, path pops) | 368 | 16% | needed; partly redundant (101 of these re-enter the houseboat callback below and re-plan the gangway leg) | replans for unseen townies: docs/18 D4, not built |
+| 2 | Houseboat gangway post-plan callback: `SimRoutingComponent.CheckAndUpdateForHouseboats` -> House Boat Fix `EnterHouseboatThroughGangway` (218) / game `ExitHouseboatThroughGangway` (81) | 299 | 13% (IP only: ~6% of all IP script time) | redundant: every plan or replan to/from a houseboat lot is thrown away and redone as start->gangway plus gangway->goal (3 searches per route) | third-party code (FoulPlay House Boat Fix replaces Enter); not touched. Candidate: skip the re-plan on `Replan`/`ReplanFromPoint` when the route already carries the gangway sub-path |
+| 3 | `Lot.PlanToLotEx` (lot visits: VisitCommunityLot, VisitLot, GoToVirtualHome) | 261 | 11% | needed (seen Sims) | unseen townies already shortcut (`visit*`, `gotolot`, `virtualhome`) |
+| 4 | `Lot.PlanRouteIntoLot` (GoHome) | 191 | 8% | needed (seen Sims) | unseen townies already shortcut (`gohome`); 1,069 ms stall in one plan |
+| 5 | `LotManager.RunStuckCheckHelper.RunStuckCheck` (3 AM check, up to 10 plans per Sim that did not move) | 110 | 5% (night only) | avoidable: at 3-4 AM nearly every unmoved Sim is asleep in bed | **built: `stuckcheckbusy`** (below); 645 ms stall in one check |
+| 6 | `Lot.RouteToDoor` / `RouteToFrontDoorOrMailbox` (arrival at a lot) | 110 | 5% | needed | none |
+| 7 | `RabbitHole.RouteOutside` / `RouteNearEntranceAndEnterRabbitHole` | 149 | 6% | needed (seen) | unseen already shortcut (`rabbithole`) |
+| 8 | `Sim.IsPointInLotSafelyRoutable` (game: `AttemptToFindSafeLocation`, `IsInSafeLocation`, `FindRoutablePointInsideNearFrontDoor`, NRaas `Instantiation`; ours: SafeSpot, watchdog) | 99 (~59 game, 40 ours) | 4% | cacheable: same spot, same profile, same answer | **built: `routablecache`** (below); 345 and 456 ms stalls |
+| 9 | Stand-and-wait replans (`ObstacleEncountered…` / `DestinationObstructed…StandAndWaitCycleHandler`, `PerformAction`) | 84 | 4% | redundant (a replan every 2-3 cycles for up to 50 sim-min, section 3) | tuning candidate (`kAvoidanceReplanCheckFrequencyMin/Max`), not built |
+| 10 | `LiteDriver.Simulate` (NPC cars) / `CarNpcManager.DriveAwayInNpcCar` | 107 | 5% | needed | none |
+
+Autonomy scoring does **not** plan routes in these profiles (no scoring frame such as `Autonomy.RunAutonomy` / `Score*` / `GetDistance` under any plan sample; the 9 plan samples under `Sims3.Gameplay.Autonomy.*` are running interactions such as `GoToGarden.Run`): scoring uses straight-line distance; the cost is in running the chosen interaction [measured]. NRaas Overwatch's `SimEx.IsPointInLotSafelyRoutable` shows only in `/taskstall` (287-368 ms, nightly; spread by `overwatchstuck`).
+
+**Built (ts3fixes `FewerPlans.cs`, both default off, not measured in game):**
+- `routablecache` (tuning `kRoutableCache`): hooks `Sim.IsPointInLotSafelyRoutable` and answers from the SafeSpot verdict cache (0.5 m cell + exact route profile, one sim-day per lot, dropped on a household change or lot move). Every caller shares verdicts, so a reset/send-home's `FindRoutablePointInsideNearFrontDoor` (a plan per candidate tile) mostly hits. Counters `routablecache_hits` [65], `routablecache_plans` [66]. Expected: up to ~0.4% of script time and most of the 345-456 ms reset stalls once the cache is warm; risk: a stale "routable" for up to a sim-day after a wall goes up on that cell (the same trade SafeSpot already makes).
+- `stuckcheckbusy` (tuning `kStuckCheckBusy`): hooks `RunStuckCheckHelper.RunStuckCheck`; a Sim held by an object (parent set, not standing, not a vehicle) ends the check as after a successful plan. Counter `stuckcheck_busy_skipped` [67]. Expected: most of the 0.7% night-time cost and the 645 ms stall; a Sim frozen in a bed or chair is still caught by `watchdogidle` (a sim-day in one spot) and Overwatch.
+- A/B in one load: `node tools/harness/profile-world.ts --tag bp-fewer --ab routablecache,stuckcheckbusy` (the stuck check only fires once per sim night, so also compare `/patches` counters and the night-time `/taskstall` stalls with `--taskstall 250`).
+
+---
+
 ## Top stutter suspects (ranked)
 
 | # | Suspect | Mechanism | Evidence path | Fix idea | Fix type | Est. impact |

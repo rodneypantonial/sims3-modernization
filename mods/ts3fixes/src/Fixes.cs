@@ -52,6 +52,7 @@ namespace Ts3Fixes
             ApplyPortalAdaptorLeak();
             ApplyCasGrid();
             ApplySpatialCache();
+            ApplyFewerPlans();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -65,13 +66,14 @@ namespace Ts3Fixes
         // adaptor callbacks unsubscribed after DoPortal / stale ones removed by the save cleanup (PortalAdaptorLeak.cs), [56-58] async
         // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]), [59-61] CAS incremental
         // fills started / hair preset cache hits / preset lookups run (CasGrid.cs), [62-64] lot object query cache hits /
-        // misses / clears on object destroy (SpatialCache.cs).
+        // misses / clears on object destroy (SpatialCache.cs), [65-67] routability cache hits / plans
+        // recorded, stuck checks skipped for busy Sims (FewerPlans.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[65]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[68]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -101,6 +103,8 @@ namespace Ts3Fixes
                 case "portaladaptorleak": return Instantiator.kPortalAdaptorLeak;
                 case "casgrid": case "casmemo": return Instantiator.kCasGrid;
                 case "spatialcache": return Instantiator.kSpatialCache;
+                case "routablecache": return Instantiator.kRoutableCache;
+                case "stuckcheckbusy": return Instantiator.kStuckCheckBusy;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -326,13 +330,19 @@ namespace Ts3Fixes
         // watchdog retries next tick). `recheckBad`: a cached "not routable" is re-checked (the watchdog acts on it; a stale
         // bad verdict must not reset a Sim). `addGood`: remember the spot for SafeSpot's spreading.
         // Counters: [37] cache hits, [38] misses, [39] full checks run.
-        static bool? SpotVerdict(Sims3.Gameplay.Actors.Sim sim, Lot lot, SpotVerdicts v, RouteProfile p, Sims3.SimIFace.Vector3 pos, bool mayCheck, bool recheckBad, bool addGood)
+        static VerdictKey KeyOf(RouteProfile p, Sims3.SimIFace.Vector3 pos)
         {
-            int[] c = PatchCounters();
             VerdictKey key = new VerdictKey();
             key.Cell = ((long)((int)Math.Floor(pos.x * 2f) & 0xFFFFF) << 40) | ((long)((int)Math.Floor(pos.z * 2f) & 0xFFFFF) << 20)
                 | (long)(uint)((int)Math.Floor(pos.y) & 0xFFFFF);
             key.Opts = p.Opts; key.Opts2 = p.Opts2; key.Flags = p.Flags;
+            return key;
+        }
+
+        static bool? SpotVerdict(Sims3.Gameplay.Actors.Sim sim, Lot lot, SpotVerdicts v, RouteProfile p, Sims3.SimIFace.Vector3 pos, bool mayCheck, bool recheckBad, bool addGood)
+        {
+            int[] c = PatchCounters();
+            VerdictKey key = KeyOf(p, pos);
             bool ok;
             if (p.Ok && v.Cells.TryGetValue(key, out ok) && (ok || !recheckBad)) { c[37]++; return ok; }
             c[38]++;

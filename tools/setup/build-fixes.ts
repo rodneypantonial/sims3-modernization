@@ -34,6 +34,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kPortalAdaptorLeak value="True" />
     <kCasGrid value="False" />
     <kSpatialCache value="False" />
+    <kRoutableCache value="False" />
+    <kStuckCheckBusy value="False" />
   </Current_Tuning>
 </base>
 `;
