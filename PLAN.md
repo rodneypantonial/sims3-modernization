@@ -6,7 +6,31 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 
 **Long-term goal: offload the sim thread (Rodney, 2026-10-14).** Move everything that can safely leave the game's single busy core (the sim thread) to other cores, so longer saves, more objects and more Sims scale instead of hitting that one core's limit. This needs a major architecture redesign and is a multi-step, long-term track (roadmap: docs/23 #17). Acceptance rule for offload changes: a change that moves measurable work off the sim thread is accepted even with no speed gain today, or a loss of up to ~2% in sim iterations/s, as long as it is stable (no crashes, no new stuck Sims, same results). Measure it as sim-thread ms/s moved off (route ms/s, stage ms/s), not only iterations/s. Losses over ~2% need a plan to win them back.
 
-## Resume here (updated 2026-10-13, end of session)
+## Resume here (updated 2026-10-14)
+
+**Releases:** v0.1.0 (ts3fixes + ts3native [GC], [WaterJps]) and v0.1.1 (+ [Decompress], [SaveWrite]) on GitHub; `.github/workflows/build.yml` drafts a release per tag and refuses ini sections outside the stable list; `CHANGELOG.md` holds the player notes.
+
+**Test round 2026-10-14 (BP/IP, CC + store installed; PHT 11:00-12:50):**
+
+| Feature | Result | Verdict |
+|---|---|---|
+| [Decompress] | Verify=1 load: 33,121 calls, 0 mismatches; ~144k calls over 4 sessions, 0 fails | PASS, on in v0.1.1 |
+| [SaveWrite] | 2 saves: backup by worker 63 ms, same size, save reloads from menu | PASS, on in v0.1.1 |
+| kCasGrid | `cas-grid` same outfit: hair first tile 4.1 s on vs 4.8 s off (incremental path taken, 129 items) | FAIL: the freeze is before the fill |
+| overwatchstuck (v0.1.0) | 108 checks, 27 yields; repro FAIL is a repro bug (baseline read after the steps) | PASS |
+| watchdogidle unroutable case | `bp-idle-unroutable` (lot fixed): sim_strand put Wogan on an apartment lot, case did not fire; other idle cases acted | UNCONFIRMED |
+| [Alloc] | A/B 32.5 vs 29.7 it/s, hitches -10%, worst 844 vs 506 ms, route fail 1.4 vs 1.0% (same pattern as 10-13); --taskstall: stall rate equal | UNCONFIRMED; crash suspect (below) |
+| kSpatialCache | 25.7 vs 27.4 it/s, hitches 5.55 vs 4.75 | FAIL (10-13: +5%) |
+| kRoutableCache + kStuckCheckBusy | 38.0 vs 44.3 it/s, 28 hits, 0 busy skipped | FAIL |
+| life-event trim (kSaveCleanup) | -26,161 empty lists, rest unchanged, second run -0, save OK; memory-add check not exercised (Sim already Logic 10) | PASS (stays opt-in) |
+| portaladaptorleak (v0.1.0) | on: 78 unsubscribes, stale 199 -> 30, cleanup -30; off: stale 16 -> 26, counter flat | PASS |
+| [RouteCache] | 12 hits in 6,681 plans (0.2%) | FAIL: no gain |
+
+**Crash 2026-10-14 11:58 PHT** (`xcpt ... 11.58.36`): ACCESS_VIOLATION writing to code page 0x00694690 from anonymous code 0x080469db (called from FUN_0091a440 <- FUN_00930380), 11 s into a profile run right after a `--taskstall` run, with [Alloc] on. Did not recur in 4 later sessions with [Alloc] off and no `--taskstall`. Suspects: [Alloc] heap corruption, or Frida hooks (taskstall unhook + profiler attach). Next: a long [Alloc] run without `--taskstall`.
+
+**Harness gotchas found:** `--taskstall` makes the stutter profiler refuse to run (0xD7FC60 already detoured: no it/s numbers); `cycle.ts --save` cannot load from inside a world (restart first); `bp-overwatch-stuckcheck` reads its counter baseline after the steps.
+
+## Resume here (2026-10-13, end of session)
 
 **Hand-off 2026-10-13 ~10:45 PHT (usage limit):** repo prepared for GitHub (README, BUILD/TESTING/REQUIREMENTS, CONTRIBUTING, AGENTS.md, licenses MIT + CC BY 4.0, .github templates, docs/registry.md counter slots, docs/23 ideas, docs/24 community RE projects (Apex Radiance: same Steam 1.67 build, read before building allocator/resource fixes), tools/github issues/labels/milestones + create-issues.ts, docs/re knowledge base if merged). Publishing = private repo rodneypantonial/sims3-modernization from a scrubbed clone (filter-branch tree-filter: `<user>` -> `<user>`, `<pc>` -> `<pc>`; verified 0 hits); this local repo keeps the unscrubbed history. Today's in-game results: water JPS (0.9.0) Verify on IP: 5.4M calls, 630M cells, 0 mismatches, 0 fallbacks; alloc cache BP +19% it/s, -28% hitches (repeat with --taskstall); spatialcache +5%; routablecache/stuckcheckbusy neutral (no 3 AM in window); S3PP label check PASS -> s3pp default on; FPS test B works (57-59 FPS BP, p99 33-39 ms). Async routing paused (docs/18, docs/re dead ends). Installed state: ts3native 0.9.0 with GC + [Alloc] + [WaterJps] on (test only; repo ini keeps them off), s3pp installed.
 

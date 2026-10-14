@@ -29,9 +29,9 @@ Repeat Bridgeport runs on later builds land at 37.8-41 iterations/s (+25-30%) an
 |---|---|---|
 | Route fixes for unseen townies (ts3fixes) | 40.8 vs 34.9 it/s, hitches 2.57 vs 3.36/s, worst iteration 402 vs 857 ms | 2026-10-12, docs/04 F16 |
 | Bigger GC heap 40 -> 352 MB (ts3native `[GC]`) | forced collections 128 -> 1 in 6 min, forced GC 13.9 -> 0.1 ms/s, hitches -14% | 2026-10-12, docs/04 F15 (3 x 6 min, not in-load) |
-| Allocator cache (ts3native `[Alloc]`, experimental) | 30.7 vs 25.7 it/s (**+19%**), hitches 4.39 vs 6.12/s (-28%); one 2 s stall in the on slices, to repeat | 2026-10-13, PLAN.md |
-| Lot object query cache (ts3fixes `kSpatialCache`) | 34.8 vs 33.0 it/s (+5%), hitches -7% | 2026-10-13, PLAN.md |
-| Fewer route plans (`kRoutableCache` + `kStuckCheckBusy`) | no measurable change (38.8 vs 38.2 it/s) | 2026-10-13, PLAN.md |
+| Allocator cache (ts3native `[Alloc]`, experimental) | 30.7 vs 25.7 it/s (**+19%**), hitches -28%; repeat 32.5 vs 29.7 (+9%), hitches -10%, but worst iteration and route fails higher in both; one unexplained crash in a session with it on | 2026-10-13/14, PLAN.md |
+| Lot object query cache (ts3fixes `kSpatialCache`) | 34.8 vs 33.0 it/s (+5%), hitches -7%; repeat 25.7 vs 27.4 (-6%), hitches +17% | 2026-10-13/14, PLAN.md |
+| Fewer route plans (`kRoutableCache` + `kStuckCheckBusy`) | no measurable change (38.8 vs 38.2 it/s); repeat 38.0 vs 44.3 (-14%), 0 busy Sims skipped | 2026-10-13/14, PLAN.md |
 
 **Other results:**
 
@@ -67,17 +67,19 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Community fixes layer (DXVK, S3SS, NRaas ErrorTrap/Overwatch, Smooth Patch, MonoPatcher, routing fixes, ...) | installer, default set | **on by default**, measured |
 | Sims 3 Performance Patch 2.1 (S3PP) | installer `s3pp` | **on by default** (manual download), label check passed |
 | Trip shortcuts, route fixes for unseen townies, stuck watchdog, broadcaster throttle, walk-style comparer, portal adaptor leak | `ts3fixes` | **on by default** (`stutter-fixes`) |
-| Save cleanup (`kSaveCleanup`) | `ts3fixes` | **opt-in**, verified on one save |
-| Lot object query cache (`kSpatialCache`) | `ts3fixes` | **opt-in**, +5% in one A/B |
+| Save cleanup (`kSaveCleanup`) | `ts3fixes` | **opt-in**, verified on one save each (relationships and other-world Sims; empty life-event lists: -26,161, save OK) |
+| Lot object query cache (`kSpatialCache`) | `ts3fixes` | **opt-in**, +5% then -6% in two A/Bs: no gain |
 | `kRoutableCache`, `kStuckCheckBusy` | `ts3fixes` | **opt-in**, no measurable gain |
-| Create-a-Sim hair/makeup grid (`kCasGrid`) | `ts3fixes` | **experimental**, not yet validated in game |
+| Create-a-Sim hair/makeup grid (`kCasGrid`) | `ts3fixes` | **experimental**, failed in game 2026-10-14: hair still freezes 4.1 s (4.8 s off) before the first tile |
 | GC heap and growth step (`[GC]`) | `ts3native` | **on by default** (stable build, release v0.1.0), measured: forced GCs 128 -> 1 in 6 min in Bridgeport |
 | Water route search (`[WaterJps]`) | `ts3native` | **on by default** (stable build, release v0.1.0), verified in game: 5.4M searches compared with the game's own code in Isla Paradiso, 0 mismatches |
-| Allocator cache (`[Alloc]`) | `ts3native` | **experimental**, +19% in one A/B, repeat pending |
+| Allocator cache (`[Alloc]`) | `ts3native` | **experimental**: +19% and +9% in two A/Bs, but worse worst-case iterations and route fails; crash suspect, needs a long stability run |
 | Route worker, synchronous (`[RouteWorker]`) | `ts3native` | **experimental**: stable in game, no speed gain on its own |
 | Async route plan (`[RouteAsync]`) | `ts3native` + `ts3fixes` | **paused**: the routing code shares per-lot state outside its lock; see [docs/18](docs/18-route-search-off-thread.md) |
 | Route search budget (`[RouteBudget]`) | `ts3native` | **paused**: stranded Sims (41 stuck vs 0) |
-| Route negative cache, save write, faster RefPack decoder | `ts3native` | **experimental**: built and tested offline, not yet run in game |
+| Faster RefPack decoder (`[Decompress]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: 0 mismatches over a full load, ~144k decodes in 4 sessions |
+| Save write (`[SaveWrite]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: old-save backup copied by a worker thread, saves reload |
+| Route negative cache (`[RouteCache]`) | `ts3native` | **off**: tested in game 2026-10-14, 0.2% hits, no gain |
 
 ## Quick start: players
 
