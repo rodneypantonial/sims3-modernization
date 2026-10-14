@@ -33,14 +33,14 @@ Measured over 10 minutes at speed 3 on the same saves, with and without `ts3fixe
 - **No more leftovers from swimming and houseboats.** A Sim swimming out to sea or boarding a houseboat no longer leaves dead route data behind, which piled up in Isla Paradiso saves.
 - **Cheaper background work.** Music, fires and smells far from the camera check for nearby Sims less often, and walk styles are looked up faster.
 
-Opt-in (off by default, still being tested): daily save cleanup of weak townie relationships, faster Create-a-Sim hair and makeup lists, and three small caches. See `mods/ts3fixes/README.md`.
+This release contains only these stable fixes. Features still in testing stay switched off.
 
 ### Fixes in `ts3native` (on by default)
 
 - **Fewer memory clean-up pauses.** The game's script memory starts bigger and grows in larger steps, so it pauses to clean up far less often (128 forced clean-ups down to 1 in 6 minutes in Bridgeport).
-- **Faster boat and swimming routes.** Route searches over water run about 4x faster with exactly the same results (checked against the game's own code on 43.9 million steps).
+- **Faster boat and swimming routes.** Route searches over water use a faster version of the game's own search: about 4x faster in an offline test, with exactly the same results (5.4 million in-game searches in Isla Paradiso compared with the game's own code: 0 differences).
 
-Everything else in `ts3native.ini` is off until it is verified in game.
+Only these two are switched on in the shipped `ts3native.ini`; everything else in it stays off until it is verified in game.
 
 ### Where these fixes come from
 

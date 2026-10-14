@@ -50,7 +50,7 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 |---|---|---|
 | Community fixes installer | `tools/setup/install-fixes.ts`, `fixes.json` | Installs the known community fixes from their official sources (never re-hosted), checks SHA-256, backs up every file it replaces, `uninstall` restores. Also `check-conflicts.ts` (clashing mods) and `content-health.ts` (read-only CC check). |
 | `ts3fixes` player mod | `mods/ts3fixes` | C# script mod (one `.package`). Replaces a few game methods at startup: off-screen trip shortcuts, route fixes, stuck watchdog, broadcaster throttle, optional save cleanup and caches. One tuning switch per fix. See `mods/ts3fixes/README.md`. |
-| `ts3native` ASI plugin | `native/ts3native` | 32-bit native plugin loaded by Ultimate ASI Loader. GC heap patches, plus opt-in experiments (route cache, route worker, allocator cache, faster decompression, save write, water route search). Every patch checks the original bytes first and skips itself on a different exe. Settings in `ts3native.ini`. |
+| `ts3native` ASI plugin | `native/ts3native` | 32-bit native plugin loaded by Ultimate ASI Loader. GC heap patches and faster water route search, plus opt-in experiments (route cache, route worker, allocator cache, faster decompression, save write). Every patch checks the original bytes first and skips itself on a different exe. Settings in `ts3native.ini`. |
 | `ts3agent` test agent | `mods/ts3agent` | In-game script mod that lets our tools read and drive the game (load saves, place Sims, trigger routes, switch fixes, count things). Test-only, never for players. Forked from Sims3-MCP (MIT). |
 | Probe and harness | `tools/probe`, `tools/frida`, `tools/harness` | Frida-based probe server (memory, stacks, native counters), stutter profiler, frame-time hook, repro library, profiling and A/B runs, crash and change ledgers. |
 | Research | `docs/01`-`docs/22` | Community fixes compared, reverse-engineering findings (native and C#), designs, measurements. Raw data in `docs/data`. |
@@ -71,12 +71,13 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Lot object query cache (`kSpatialCache`) | `ts3fixes` | **opt-in**, +5% in one A/B |
 | `kRoutableCache`, `kStuckCheckBusy` | `ts3fixes` | **opt-in**, no measurable gain |
 | Create-a-Sim hair/makeup grid (`kCasGrid`) | `ts3fixes` | **experimental**, not yet validated in game |
-| GC heap and growth step (`[GC]`) | `ts3native` | **opt-in** (installer `native-patches` is off by default until the milestone run); on inside the plugin |
+| GC heap and growth step (`[GC]`) | `ts3native` | **on by default** (stable build, release v0.1.0), measured: forced GCs 128 -> 1 in 6 min in Bridgeport |
+| Water route search (`[WaterJps]`) | `ts3native` | **on by default** (stable build, release v0.1.0), verified in game: 5.4M searches compared with the game's own code in Isla Paradiso, 0 mismatches |
 | Allocator cache (`[Alloc]`) | `ts3native` | **experimental**, +19% in one A/B, repeat pending |
 | Route worker, synchronous (`[RouteWorker]`) | `ts3native` | **experimental**: stable in game, no speed gain on its own |
 | Async route plan (`[RouteAsync]`) | `ts3native` + `ts3fixes` | **paused**: the routing code shares per-lot state outside its lock; see [docs/18](docs/18-route-search-off-thread.md) |
 | Route search budget (`[RouteBudget]`) | `ts3native` | **paused**: stranded Sims (41 stuck vs 0) |
-| Route negative cache, save write, faster RefPack decoder, water route search | `ts3native` | **experimental**: built and tested offline, not yet run in game |
+| Route negative cache, save write, faster RefPack decoder | `ts3native` | **experimental**: built and tested offline, not yet run in game |
 
 ## Quick start: players
 
