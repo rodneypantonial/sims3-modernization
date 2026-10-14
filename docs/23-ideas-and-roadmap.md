@@ -24,6 +24,7 @@ Claims here are `[inferred]` unless marked otherwise; most are proposals.
 | 14 | Animation LOD | medium | medium | medium | research |
 | 15 | Mono interpreter speedups | high | high | high | research |
 | 16 | 64-bit research notes | low (clarity) | low | low | research |
+| 17 | Sim-thread offload architecture (long-term goal) | high | high | high | research |
 
 Suggested order: 1, 2, 10, 9 first (they make every later contribution cheaper and comparable), then 7, 4, 3, 6, then the research bets as contributors with RE experience join.
 
@@ -126,3 +127,11 @@ Results from different machines only compare when everyone measures the same sav
 
 - Why it is not realistic: a 32-bit exe with ~40k functions, embedded Mono 1.2 (32-bit, interpreter), 32-bit pointer assumptions in data files and saves, third-party 32-bit plugins (S3SS, DXVK x32, ASI loader). What it would take: per-function rewrites verified live, or an out-of-process 64-bit helper (docs/08 tried a resource cache helper and dropped it). Write it down once so the question stops costing time.
 - Issue: `[research] 64-bit: why not, and what would be needed (notes only)`.
+
+### 17. Sim-thread offload architecture (long-term goal)
+
+- Goal (Rodney, 2026-10-14): move everything that can safely leave the sim thread to other cores, so the game scales with longer saves, more objects and more Sims instead of hitting one core's limit. Value high, effort high, risk high. Needs a redesign of how work reaches the sim thread, built step by step.
+- Acceptance rule: an offload step is accepted with no speed gain today, or up to ~2% fewer sim iterations/s, if it is stable (no crashes, no new stuck Sims, same results) and moves measurable work off the sim thread (route ms/s, stage ms/s, sampler share). Over ~2% needs a plan to win it back. See `PLAN.md` (Goal).
+- Known candidates and blockers: route search on a worker (`[RouteWorker]` works, synchronous today; async blocked by unlocked per-lot routing state, docs/18), save write and backup copy (`[SaveWrite]`), resource decoding (`[Decompress]`), CAS tile building (docs/21: mostly UI layout, which must stay on its thread), GC marking, autonomy scoring and story progression (Mono, research).
+- First step: a map of sim-thread work by owner (native vs Mono, per stage) from the existing profiles, ranked by what could run elsewhere and what shared state blocks it.
+- Issue: `[research] Sim-thread offload architecture: map, blockers, step plan`.

@@ -10,7 +10,7 @@ Make The Sims 3 run well on modern hardware: fewer crashes (Error 12, crash on s
 
 ## Hard constraints
 - **TS3W.exe is 32-bit.** With Large Address Aware it gets 4 GB of address space at most, no matter how much RAM is installed. We cannot raise that without a 64-bit rebuild; we can only waste less of it (smaller stacks, leaner caches and allocators, textures moved out of process via DXVK). Extra RAM still helps through the Windows file cache.
-- The simulation (Mono script VM, interaction scheduler, pathfinding) is mostly single-threaded. Gains come from making the main thread cheaper per tick and moving side work to other cores, not from parallelizing the sim outright.
+- The simulation (Mono script VM, interaction scheduler, pathfinding) is mostly single-threaded. Gains come from making the main thread cheaper per tick and moving side work to other cores, not from parallelizing the sim outright. Long-term goal: move all work that can safely leave the sim thread to other cores; offload changes are accepted with no gain or up to ~2% loss if stable (PLAN.md Goal, docs/23 #17).
 - Always keep `TS3W.exe.orig` and back up `Documents\Electronic Arts\The Sims 3\` before testing a patch.
 
 ## Tooling decisions
