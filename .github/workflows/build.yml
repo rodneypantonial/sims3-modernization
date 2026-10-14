@@ -1,0 +1,67 @@
+# Builds ts3native and runs the checks that need no game files. A tag v* also drafts a GitHub release
+# with ts3native and the matching CHANGELOG.md section. ts3fixes.package is not built here: it compiles
+# against EA's assemblies, which must never be in the repo or in CI, so the maintainer attaches it to the draft.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ts3native and run selftest.exe
+        shell: cmd
+        run: native\ts3native\build.cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ts3native
+          path: |
+            native/ts3native/out/ts3native.asi
+            native/ts3native/out/ts3native.ini
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - name: Syntax check every script (TypeScript via type stripping)
+        run: git ls-files '*.ts' '*.js' '*.mjs' | xargs -n1 node --check
+      - name: Self-checks
+        run: |
+          node tools/harness/tests-be.ts --self-check
+          node tools/harness/milestone.ts --self-check
+          node tools/setup/content-health.ts --self-test
+          node tools/github/create-issues.ts --dry-run > /dev/null
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [native, node]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ts3native
+          path: ts3native
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # release notes = the CHANGELOG.md section headed "## <tag>"
+          awk -v tag="$TAG" '$1=="##" {on = ($2==tag)} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section '## $TAG'"; exit 1; }
+          (cd ts3native && zip -q "../ts3native-$TAG.zip" ts3native.asi ts3native.ini)
+          gh release create "$TAG" "ts3native-$TAG.zip" --draft --title "$TAG" --notes-file notes.md
