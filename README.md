@@ -55,6 +55,11 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Probe and harness | `tools/probe`, `tools/frida`, `tools/harness` | Frida-based probe server (memory, stacks, native counters), stutter profiler, frame-time hook, repro library, profiling and A/B runs, crash and change ledgers. |
 | Research | `docs/01`-`docs/22` | Community fixes compared, reverse-engineering findings (native and C#), designs, measurements. Raw data in `docs/data`. |
 
+### What we ship vs what is only for setup
+
+- **We ship only our own fixes:** `ts3fixes.package` and `ts3native`, as GitHub releases with player notes in [CHANGELOG.md](CHANGELOG.md).
+- **Community fixes are not part of the product.** The installer (`tools/setup/install-fixes.ts`) sets them up only so that developers and testers get the same game setup we measure against, with one command and as little manual work as possible. They are downloaded from their authors' own pages, never re-hosted or copied into this repo, and stay their authors' work (credits below).
+
 ## Status of each fix
 
 | Fix | Where | Status |
@@ -75,7 +80,7 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 
 ## Quick start: players
 
-The safe set today is the community fixes layer plus `ts3fixes`. Everything else is for testers.
+Just want our fixes? Download them from the [releases](https://github.com/rodneypantonial/sims3-modernization/releases) page. The steps below set up the full test install (community fixes layer plus `ts3fixes`), the one contributors use. Everything else is for testers.
 
 1. **Back up first:** copy `<Documents>\Electronic Arts\The Sims 3\` (saves, Mods, settings) somewhere safe. Keep a copy of `TS3W.exe` as `TS3W.exe.orig` if you ever patch the exe yourself (our tools never do).
 2. Install Node.js 22.18 or newer, then clone this repo.
