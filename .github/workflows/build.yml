@@ -63,5 +63,8 @@ jobs:
           # release notes = the CHANGELOG.md section headed "## <tag>"
           awk -v tag="$TAG" '$1=="##" {on = ($2==tag)} on' CHANGELOG.md > notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section '## $TAG'"; exit 1; }
+          # releases ship only the stable patches: any other enabled ini section fails the release
+          extra=$(awk -F= '{sub(/\r$/, "")} /^\[/ {s=$0} $1=="Enabled" && $2+0 && s!="[GC]" && s!="[WaterJps]" {print s}' ts3native/ts3native.ini)
+          test -z "$extra" || { echo "Not stable, must be Enabled=0 in ts3native.ini: $extra"; exit 1; }
           (cd ts3native && zip -q "../ts3native-$TAG.zip" ts3native.asi ts3native.ini)
           gh release create "$TAG" "ts3native-$TAG.zip" --draft --title "$TAG" --notes-file notes.md

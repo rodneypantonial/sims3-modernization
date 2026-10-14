@@ -935,7 +935,7 @@
     "conflictsWith": [],
     "requires": [],
     "default": true,
-    "notes": "Built from source with MSVC. GC initial heap 40 -> 352 MB and growth step 8 -> 32 MB (docs/13, docs/15); each patch checks the original bytes first and logs to ts3native.log. Loaded by the ASI loader (wininet.dll). Off by default until verified in game."
+    "notes": "Built from source with MSVC. GC initial heap 40 -> 352 MB and growth step 8 -> 32 MB (docs/13, docs/15); each patch checks the original bytes first and logs to ts3native.log. Loaded by the ASI loader (wininet.dll). The repo ts3native.ini enables only the stable patches ([GC], [WaterJps]); the rest stay off until verified in game."
   },
   {
     "id": "stutter-fixes",
