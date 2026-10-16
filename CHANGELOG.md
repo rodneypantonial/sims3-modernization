@@ -2,6 +2,19 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.1.3 (2026-10-16)
+
+Hotfix: the v0.1.2 speed-ups were shipped switched off.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` (replace the v0.1.2 file). **Please update if you installed v0.1.2.**
+- `ts3native-v0.1.3.zip`: same as v0.1.2 (no changes); keep your v0.1.2 files or replace them.
+
+### Fixed
+
+- **Faster saving and the lighter Sim panel are now really on.** In v0.1.2 the package's settings file still listed these four fixes as off, and the game uses that file over the built-in defaults, so the v0.1.2 package ran with them off. v0.1.3 ships the settings file with `kFastRefTable`, `kMotiveBarImageCache`, `kBuffGridInPlace` and `kSimNameCache` on. Nothing else changed; the tests listed under v0.1.2 apply.
+
 ## v0.1.2 (2026-10-16)
 
 Faster saves and a lighter Sim panel.
