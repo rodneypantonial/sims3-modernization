@@ -36,11 +36,11 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSpatialCache value="False" />
     <kRoutableCache value="False" />
     <kStuckCheckBusy value="False" />
-    <kFastRefTable value="False" />
+    <kFastRefTable value="True" />
     <kCachedReflection value="False" />
-    <kMotiveBarImageCache value="False" />
-    <kBuffGridInPlace value="False" />
-    <kSimNameCache value="False" />
+    <kMotiveBarImageCache value="True" />
+    <kBuffGridInPlace value="True" />
+    <kSimNameCache value="True" />
   </Current_Tuning>
 </base>
 `;
