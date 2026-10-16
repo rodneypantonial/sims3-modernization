@@ -188,6 +188,7 @@ The well-known "No Intro" mod is a plain resource override: it replaces every `_
 
 ### 5.2 Skeleton (pure script mod)
 
+<!-- docs-code: ok -->
 ```csharp
 using System;
 using Sims3.SimIFace;
@@ -279,7 +280,7 @@ Use the MonoPatcher plugin interface (or our own ASI calling `mono_add_internal_
 
 - `RandomUtil` (`Sims3.Gameplay.Core`) draws from `Sims3.SimIFace.RandomGen.NextDouble()`, which caches an `IRandom` from `AppDomain.GetData("RandomGen")` in the static `gRandomGen`. The default implementation is `ScriptCore.Random` → native `Random_NextDoubleImpl` (`0x74A780`), which calls a native RNG object (app vtable `+0x17C`, then `+0x28`).
 - **Seed control from script:** set `RandomGen.gRandomGen` (private static) to our own seeded `IRandom` by reflection, or replace `AppDomain` data before first use [inferred, simple to test]. Natively: hook `0x74A780` or find the RNG object's seeding.
-- But at least 59 call sites use `new System.Random()`, seeded from `Environment.TickCount` (`mscorlib/System/Random.cs`), and native systems (animation, routing jitter, threads) add timing noise. **Bit-exact replay is not realistic.** The harness should fix what it can (seeded `RandomGen`, fixed save, fixed settings, no story progression, fixed camera) and treat results statistically (N runs, median and spread).
+- But 35 call sites use unseeded `new System.Random()` (21 can run in sim play, all one-off events; full list and the native seed `[Config] SimulatorRandomSeed` in docs/27), seeded from `Environment.TickCount` (`mscorlib/System/Random.cs`), and native systems (animation, routing jitter, threads) add timing noise. **Bit-exact replay is not realistic.** The harness should fix what it can (seeded `RandomGen`, fixed save, fixed settings, no story progression, fixed camera) and treat results statistically (N runs, median and spread).
 
 ### 8.2 Speed and unattended running [verified unless marked]
 
@@ -344,7 +345,7 @@ I found no Sims 3 benchmark save or automated FPS test. Community practice is ma
 2. What exactly does `NoInactiveIdle` do, and is it a command-line switch or an ini key? Does the game throttle or pause when unfocused?
 3. Does `suspendrendering` keep the simulation running at full speed, and can it be turned back on?
 4. Is TS3's Mono really interpreter-only (S3MM naming), and what does that mean for per-call costs in our profiles?
-5. Does replacing `RandomGen.gRandomGen` with a seeded `IRandom` take effect for all `RandomUtil` users, and how much run-to-run variance remains after seeding?
+5. Does replacing `RandomGen.gRandomGen` with a seeded `IRandom` take effect for all `RandomUtil` users, and how much run-to-run variance remains after seeding? Priority parallel lane since 2026-10-15, steps in PLAN.md "Resume here".
 6. What protocol does EA's dormant automation listener (`Automation_EnableNetworkListening` / `GetNextScript`) speak, and on which port? Is `Automation/AutomationData.package` present in the Steam install?
 7. Does `GameUtils.CreateCSVFile(path)` read arbitrary files from disk? If so, it is a file-based command channel that needs no native code.
 8. How far can `GameUtils.SetGameTimeScale` go before the 10-step catch-up cap makes sim time non-linear, with and without S3SS's tick limiter changes?

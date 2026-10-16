@@ -8,15 +8,12 @@ import { join } from 'node:path';
 import { readIndex, refpack } from '../extract-assemblies.ts';
 
 const SAVES = join(process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3'), 'Saves');
-const names = process.argv.slice(2).map(n => n.endsWith('.sims3') ? n : `${n}.sims3`);
-if (!names.length) { console.error('usage: node tools/harness/save-stats.ts <save> [<later save> ...]'); process.exit(2); }
-
-type Stat = { count: number; bytes: number; label: string };
+export type Stat = { count: number; bytes: number; label: string };
 const label = (b: Buffer): string => b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) ? 'png'
   : b[0] === 0xff && b[1] === 0xd8 ? 'jpeg' : b.toString('latin1', 0, 4) === 'DDS ' ? 'dds' : '';
 
-const saves = names.map(name => {
-  const dir = join(SAVES, name);
+// total bytes of a save folder and bytes/count per resource type of its .nhd/.package files (queue.ts age runs use it too)
+export function saveStats(dir: string): { total: number; stats: Map<string, Stat> } {
   const stats = new Map<string, Stat>();
   let total = 0;
   for (const f of readdirSync(dir)) {
@@ -39,8 +36,13 @@ const saves = names.map(name => {
       stats.set(key, s);
     }
   }
-  return { name, total, stats };
-});
+  return { total, stats };
+}
+
+if (import.meta.main ?? process.argv[1]?.endsWith('save-stats.ts')) {
+const names = process.argv.slice(2).map(n => n.endsWith('.sims3') ? n : `${n}.sims3`);
+if (!names.length) { console.error('usage: node tools/harness/save-stats.ts <save> [<later save> ...]'); process.exit(2); }
+const saves = names.map(name => ({ name, ...saveStats(join(SAVES, name)) }));
 
 const mb = (n: number) => (n / 1048576).toFixed(2);
 const types = [...new Set(saves.flatMap(s => [...s.stats.keys()]))]
@@ -52,4 +54,5 @@ for (const t of types.slice(0, 25)) {
   const first = cols[0]?.bytes ?? 0, last = cols.at(-1)?.bytes ?? 0;
   const kind = cols.find(c => c?.label)?.label ?? '';
   console.log(t.padEnd(12) + kind.padEnd(6) + cols.map(c => (c ? `${mb(c.bytes)} MB/${c.count}` : '-').padStart(22)).join('') + `   ${last - first >= 0 ? '+' : ''}${mb(last - first)} MB`);
+}
 }

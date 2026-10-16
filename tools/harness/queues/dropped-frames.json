@@ -1,0 +1,10 @@
+[
+  { "id": "bp-dropped-frames", "note": "docs/72 §5 (draft, not run yet): frames published vs consumed without the main-thread sampler and with only [Verify] Costs, BP. Rodney focuses the game window first. Pass if published per consume < 1.28 (verify 2026-10-16), vfCostECAA65Calls 0, consume calls == vfCostECAA65Loops",
+    "asi": "game-copy/ts3native.asi.verify", "save": "Baseline-BP", "minCounters": 22,
+    "ini": { "Verify.Enabled": 1, "Verify.Threads": 0, "Verify.Races": 0, "Verify.Costs": 1, "Verify.Memory": 0, "Verify.ThreadedObjects": 0 },
+    "run": { "profile": { "minutes": 8 } }, "timeoutMin": 20 },
+  { "id": "ip-dropped-frames", "note": "docs/72 §5: the same in IP (verify 2026-10-16 ratio 1.64)",
+    "asi": "game-copy/ts3native.asi.verify", "save": "Baseline-IP", "minCounters": 22,
+    "ini": { "Verify.Enabled": 1, "Verify.Threads": 0, "Verify.Races": 0, "Verify.Costs": 1, "Verify.Memory": 0, "Verify.ThreadedObjects": 0 },
+    "run": { "profile": { "minutes": 8 } }, "timeoutMin": 20 }
+]

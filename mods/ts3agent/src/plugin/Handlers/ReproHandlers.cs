@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Sims3.Gameplay.Actors;
+using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
 using Sims3.SimIFace;
@@ -19,6 +20,139 @@ namespace Ts3Agent
             Dispatcher.Register("sim_visit_lot", SimVisitLot);
             Dispatcher.Register("sim_route_to", SimRouteTo);
             Dispatcher.Register("sim_portal_trip", SimPortalTrip);
+            Dispatcher.Register("thumbnails", Thumbnails);
+            Dispatcher.Register("outfit_change", OutfitChange);
+        }
+
+        // thumbnails {lots?, household?, maxS?, status?}: the ThumbnailManager ICs that create D3D textures from the calling
+        // thread (docs/43 §4, docs/51): lot thumbnails for the active home lot and the next lived-in lots (lots, default 3), the
+        // active household's thumbnail (household, default true), then UpdateDirtyLotThumbnails. Follow with save_game for the
+        // save path. The ICs run in a game task, one per tick, and no new one starts after maxS (default 15) seconds: the reply
+        // is the plan at once, so a slow or stuck IC no longer holds the mailbox (it did in both verify runs, 2026-10-15).
+        // status:true returns the last run's partial result (done, timed_out, finished, ms).
+        static Dictionary<string, object> sThumbs;
+        static volatile bool sThumbsBusy;
+
+        static object Thumbnails(Args a)
+        {
+            if (a.Bool("status", false))
+            {
+                Dictionary<string, object> s = Util.Obj();
+                lock (sThumbsLock) if (sThumbs != null) foreach (KeyValuePair<string, object> kv in sThumbs) s[kv.Key] = kv.Value;
+                s["busy"] = sThumbsBusy;
+                return s;
+            }
+            RequireLive();
+            if (sThumbsBusy) throw new McpException("previous thumbnails run still going; thumbnails {status:true} shows it");
+            int max = a.Has("lots") ? (int)a.Double("lots") : 3;
+            int limitMs = (int)(a.Double("maxS", 15) * 1000);
+            List<Lot> lots = new List<Lot>();
+            Household h = Household.ActiveHousehold;
+            if (h != null && h.LotHome != null) lots.Add(h.LotHome);
+            foreach (Lot l in LotManager.AllLots)
+            {
+                if (lots.Count >= max) break;
+                if (l != null && !l.IsWorldLot && l.Household != null && !lots.Contains(l)) lots.Add(l);
+            }
+            List<object> planned = new List<object>();
+            foreach (Lot l in lots) planned.Add(l.Name);
+            bool hh = h != null && a.Bool("household", true);
+            ulong hhId = hh ? h.HouseholdId : 0;
+            List<object> done = new List<object>();
+            Dictionary<string, object> st = Util.Obj();
+            st["lots"] = done;
+            st["household"] = false;
+            st["dirty_update"] = false;
+            st["timed_out"] = false;
+            st["finished"] = false;
+            lock (sThumbsLock) sThumbs = st;
+            sThumbsBusy = true;
+            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+            {
+                int t0 = System.Environment.TickCount;
+                try
+                {
+                    // one IC per tick; Over() stops before the next one once the time limit is gone
+                    foreach (Lot l in lots)
+                    {
+                        if (Over(st, t0, limitMs)) break;
+                        ThumbnailManager.GenerateLotThumbnails(l.LotId, l.LotId, ThumbnailSizeMask.All);
+                        lock (sThumbsLock) done.Add(l.Name);
+                        Simulator.Sleep(0);
+                    }
+                    if (hh && !Over(st, t0, limitMs))
+                    {
+                        ThumbnailManager.GenerateHouseholdThumbnail(hhId, hhId, ThumbnailSizeMask.All);
+                        lock (sThumbsLock) st["household"] = true;
+                        Simulator.Sleep(0);
+                    }
+                    if (!Over(st, t0, limitMs))
+                    {
+                        ThumbnailManager.UpdateDirtyLotThumbnails();
+                        lock (sThumbsLock) st["dirty_update"] = true;
+                    }
+                }
+                catch (Exception e) { lock (sThumbsLock) st["error"] = e.GetType().Name + ": " + e.Message; }
+                finally
+                {
+                    lock (sThumbsLock) { st["ms"] = System.Environment.TickCount - t0; st["finished"] = true; }
+                    sThumbsBusy = false;
+                }
+            }));
+            Dictionary<string, object> r = Util.Obj();
+            r["queued"] = true;
+            r["lots"] = planned;
+            r["household"] = hh;
+            r["maxS"] = limitMs / 1000.0;
+            return r;
+        }
+
+        static readonly object sThumbsLock = new object();
+
+        static bool Over(Dictionary<string, object> st, int t0, int limitMs)
+        {
+            if (System.Environment.TickCount - t0 < limitMs) return false;
+            lock (sThumbsLock) st["timed_out"] = true;
+            return true;
+        }
+
+        // outfit_change {count?, category?}: several Sims change outfit at once (outfit builds through the SimService, docs/42,
+        // docs/51): up to count (default 6) humans, child or older, active household first, switch to category (default
+        // athletic; everyday to change back) without the spin.
+        static object OutfitChange(Args a)
+        {
+            RequireLive();
+            int max = a.Has("count") ? (int)a.Double("count") : 6;
+            string name = a.Str("category", "athletic").ToLowerInvariant();
+            Sims3.SimIFace.CAS.OutfitCategories cat;
+            switch (name)
+            {
+                case "everyday": cat = Sims3.SimIFace.CAS.OutfitCategories.Everyday; break;
+                case "formal": cat = Sims3.SimIFace.CAS.OutfitCategories.Formalwear; break;
+                case "sleepwear": cat = Sims3.SimIFace.CAS.OutfitCategories.Sleepwear; break;
+                case "swimwear": cat = Sims3.SimIFace.CAS.OutfitCategories.Swimwear; break;
+                case "athletic": cat = Sims3.SimIFace.CAS.OutfitCategories.Athletic; break;
+                default: throw new McpException("category: everyday, formal, sleepwear, swimwear or athletic");
+            }
+            List<Sim> sims = new List<Sim>();
+            Household h = Household.ActiveHousehold;
+            if (h != null) foreach (Sim s in h.Sims) if (sims.Count < max) sims.Add(s);
+            foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+                if (sims.Count < max && !sims.Contains(s)) sims.Add(s);
+            List<object> changed = new List<object>(), skipped = new List<object>();
+            foreach (Sim s in sims)
+            {
+                SimDescription sd = s == null ? null : s.SimDescription;
+                if (sd == null) continue;
+                if (!sd.IsHuman || !sd.ChildOrAbove || sd.IsSupernaturalForm) { skipped.Add(sd.FullName + ": not a human child or older in normal form"); continue; }
+                s.SwitchToOutfitWithoutSpin(Sim.ClothesChangeReason.Force, cat);
+                changed.Add(sd.FullName + " (" + s.CurrentOutfitCategory + ")");
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["category"] = cat.ToString();
+            r["changed"] = changed;
+            r["skipped"] = skipped;
+            return r;
         }
 
         // place_sim {sim, x, z, y?}: stand the Sim at a world position (resets what it was doing, like the game's teleport)

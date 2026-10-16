@@ -7,8 +7,13 @@ using Sims3.Gameplay.Academics;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
+using Sims3.Gameplay.EventSystem;
 using Sims3.Gameplay.Interactions;
+using Sims3.Gameplay.Moving;
 using Sims3.Gameplay.Objects.Miscellaneous;
+using Sims3.Gameplay.TimeTravel;
+using Sims3.Gameplay.Tutorial;
+using Sims3.Gameplay.UI;
 using Sims3.Gameplay.Visa;
 using Sims3.SimIFace;
 
@@ -24,6 +29,7 @@ namespace Ts3Agent
             Dispatcher.Register("travel_vacation", TravelVacation);
             Dispatcher.Register("travel_university", TravelUniversity);
             Dispatcher.Register("travel_future", TravelFuture);
+            Dispatcher.Register("portal_prepare", PortalPrepare);
             Dispatcher.Register("travel_home", TravelHome);
             Dispatcher.Register("travel_state", TravelState);
         }
@@ -120,10 +126,146 @@ namespace Ts3Agent
             return r;
         }
 
-        // travel_university {days?}: the phone's "Enroll for University" path: AcademicCareer.EnrollInAcademicCareer (opens the
-        // enrolment dialog: answer it with auto_dialog / respond_dialog), then TravelUtil.TriggerTravelToUniversityWorld (moving
-        // van). days overrides the van's trip length (default: the chosen term length x 7). Runs as a game task (modal dialog).
+        static AcademicDegreeNames DegreeArg(string name)
+        {
+            string n = name.Replace("_", "").Replace(" ", "");
+            foreach (AcademicDegreeNames d in Enum.GetValues(typeof(AcademicDegreeNames)))
+                if (d > AcademicDegreeNames.Undefined && d < AcademicDegreeNames.MaxDegreeNames && string.Equals(d.ToString(), n, StringComparison.OrdinalIgnoreCase))
+                    return d;
+            throw new McpException("degree must be business, technology, science, fine_arts, communications or phys_ed");
+        }
+
+        // EnrollmentDialog.UpdateFunds for one Sim: what the term costs minus scholarship / grant (negative = money back).
+        static int TuitionFor(SimDescription sd, AcademicDegreeNames degree, uint courseLoad, int terms)
+        {
+            AcademicDegreeManager dm = sd.CareerManager.DegreeManager;
+            float cost = AcademicDegreeManager.GetStaticElement(degree).CostPerCredit * courseLoad * terms;
+            FinancialAidtype aid = dm.GetFinacialAidType();
+            bool grant = dm.DoesQualifyForGrant(sd);
+            int aidAmount = 0;
+            if (aid == FinancialAidtype.HonorsScholarship) aidAmount = AcademicDegreeManager.HonorsScholarshipAmount() + (int)cost;
+            else if (aid == FinancialAidtype.FullScholarship || aid == FinancialAidtype.PartialScholarship)
+            {
+                aidAmount = (aid == FinancialAidtype.FullScholarship ? AcademicDegreeManager.FullScholarshipAmount() : AcademicDegreeManager.PartialScholarshipAmount()) * terms;
+                if (grant && AcademicDegreeManager.NeedBasedGrantAmount() > aidAmount) aidAmount = AcademicDegreeManager.NeedBasedGrantAmount();
+            }
+            else if (grant) aidAmount = AcademicDegreeManager.NeedBasedGrantAmount();
+            return (int)cost - aidAmount;
+        }
+
+        // travel_university {sims?, degree?, course_load? (1), terms? (1), days?, dialog?}: enrols without the enrolment dialog,
+        // the way its accept path does (AcademicCareer.EnrollInAcademicCareer after EnrollmentDialog.Show): per Sim
+        // DegreeManager.SetEnrollmentData + kEnrolledInUniversity event, GlobalTermLength, PlayerMadeTravelRequest, then
+        // TravelUtil.TriggerTravelToUniversityWorld (moving van) with the dialog's tuition. sims default: the active Sim alone
+        // (the dialog's preselection); degree default: each Sim's last studied degree, else Business. dialog: true = old path.
         static object TravelUniversity(Args a)
+        {
+            if (a.Bool("dialog", false)) return TravelUniversityDialog(a);
+            if (GameUtils.IsUniversityWorld()) throw new McpException("already at University; travel_home first");
+            CheckCanLeave();
+            if (!GameUtils.IsInstalled(ProductVersion.EP9)) throw new McpException("University Life is not installed");
+            if (TravelUtil.PlayerMadeTravelRequest) throw new McpException("another trip is already requested");
+            if (MovingSituation.MovingInProgress) throw new McpException("a household move is in progress");
+            if (IntroTutorial.IsRunning) throw new McpException("the intro tutorial is running");
+            Sim active = Util.ActiveSim();
+            Household hh = active.Household;
+            if (hh == null || hh != Household.ActiveHousehold || hh.LotHome == null)
+                throw new McpException("the active household must live on a home lot");
+            int terms = (int)a.Double("terms", 1);
+            if (terms < 1 || terms > 2) throw new McpException("terms must be 1 or 2 (the dialog's choices)");
+            int courseLoadArg = (int)a.Double("course_load", 1);
+            if (courseLoadArg < 1 || courseLoadArg > 4) throw new McpException("course_load must be 1 to 4");
+            uint courseLoad = (uint)courseLoadArg;
+            bool fixedDegree = a.Has("degree");
+            AcademicDegreeNames degreeArg = fixedDegree ? DegreeArg(a.Str("degree")) : AcademicDegreeNames.Undefined;
+            int days = a.Has("days") ? (int)a.Double("days") : 0;
+
+            List<Sim> wanted = new List<Sim>();
+            List<object> names = a.List("sims");
+            if (names == null) wanted.Add(active);
+            else foreach (object n in names)
+            {
+                Dictionary<string, object> d = Util.Obj();
+                d["sim"] = n;
+                Sim s = Util.FindSim(new Args(d), "sim");
+                if (!wanted.Contains(s)) wanted.Add(s);
+            }
+            List<SimDescription> students = new List<SimDescription>();
+            List<AcademicDegreeNames> degrees = new List<AcademicDegreeNames>();
+            List<object> plan = new List<object>();
+            int tuition = 0;
+            foreach (Sim s in wanted)
+            {
+                SimDescription sd = s.SimDescription;
+                if (s.Household != hh || Household.RoommateManager.IsNPCRoommate(sd)) throw new McpException(s.FullName + " is not in the active household");
+                if (!sd.YoungAdultOrAdult) throw new McpException(s.FullName + " must be a young adult or adult");
+                if (sd.CareerManager == null || sd.CareerManager.DegreeManager == null) throw new McpException(s.FullName + " has no degree manager");
+                GreyedOutTooltipCallback why = null;
+                if (!TravelUtil.CanSimTriggerTravelToUniversityWorld(s, ref why))
+                    throw new McpException(s.FullName + " cannot go to University now" + (why != null ? ": " + why() : ""));
+                AcademicDegreeNames degree = degreeArg;
+                if (!fixedDegree)
+                {
+                    degree = (AcademicDegreeNames)sd.LastStudiedDegree;
+                    if (degree <= AcademicDegreeNames.Undefined || degree >= AcademicDegreeNames.MaxDegreeNames) degree = AcademicDegreeNames.Business;
+                }
+                if (AcademicDegreeManager.GetStaticElement(degree) == null) throw new McpException("no degree data for " + degree);
+                if (sd.CareerManager.DegreeManager.HasCompletedDegree(degree)) throw new McpException(s.FullName + " already has the " + degree + " degree");
+                int cost = TuitionFor(sd, degree, courseLoad, terms);
+                tuition += cost;
+                students.Add(sd);
+                degrees.Add(degree);
+                plan.Add(s.FullName + ": " + degree + ", tuition " + cost);
+            }
+            if (hh.FamilyFunds < tuition) throw new McpException("household funds " + hh.FamilyFunds + " < tuition " + tuition);
+
+            // Same steps as the accept path, minus the modal dialogs (EnrollmentDialog, its AcceptCancelDialog, the SUAT note).
+            RunAsync("travel_university", delegate
+            {
+                TravelUtil.PlayerMadeTravelRequest = true;
+                bool queued = false;
+                try
+                {
+                    for (int i = 0; i < students.Count; i++)
+                    {
+                        students[i].CareerManager.DegreeManager.SetEnrollmentData(degrees[i], courseLoad);
+                        EventTracker.SendEvent(new AcademicEvent(EventTypeId.kEnrolledInUniversity, students[i].CreatedSim, degrees[i]));
+                    }
+                    AcademicCareer.GlobalTermLength = (AcademicCareer.TermLength)terms;
+                    TravelUtil.TriggerTravelToUniversityWorld(students, tuition);
+                    foreach (SimDescription sd in students)
+                    {
+                        if (sd.CreatedSim == null) continue;
+                        foreach (InteractionInstance i in sd.CreatedSim.InteractionQueue.InteractionList)
+                        {
+                            TravelUtil.SitInMovingVanToTriggerTravelToUniversity van = i as TravelUtil.SitInMovingVanToTriggerTravelToUniversity;
+                            if (van == null) continue;
+                            queued = true;
+                            if (days > 0) van.TravelDuration = days;
+                        }
+                    }
+                    if (!queued) throw new Exception("TriggerTravelToUniversityWorld queued no moving van");
+                }
+                finally
+                {
+                    // the van's Run/Cleanup clears it; without a van nothing would, and every later trip is greyed out
+                    if (!queued) TravelUtil.PlayerMadeTravelRequest = false;
+                }
+            });
+            Dictionary<string, object> r = Util.Obj();
+            r["enrolling"] = plan;
+            r["terms"] = terms;
+            r["course_load"] = courseLoadArg;
+            r["tuition"] = tuition;
+            r["days"] = days > 0 ? (object)days : terms * 7;
+            return r;
+        }
+
+        // travel_university {dialog: true, days?}: the phone's "Enroll for University" path: AcademicCareer.EnrollInAcademicCareer
+        // (opens the enrolment dialog: answer it with auto_dialog / respond_dialog), then TravelUtil.TriggerTravelToUniversityWorld
+        // (moving van). days overrides the van's trip length (default: the chosen term length x 7). Runs as a game task (modal
+        // dialog). Crashed once 6 s after the dialog (PLAN.md, 2026-10-15 15:38 PHT).
+        static object TravelUniversityDialog(Args a)
         {
             CheckCanLeave();
             Sim lead = Util.ActiveSim();
@@ -155,10 +297,75 @@ namespace Ts3Agent
             return r;
         }
 
+        // A placed portal (not one in an inventory), the active household's own first.
         static TimePortal FindTimePortal()
         {
-            foreach (TimePortal p in Sims3.Gameplay.Queries.GetObjects<TimePortal>()) return p;
-            throw new McpException("no time portal in this world");
+            if (!GameUtils.IsInstalled(ProductVersion.EP11)) throw new McpException("Into the Future is not installed");
+            TimePortal found = null;
+            Household hh = Household.ActiveHousehold;
+            foreach (TimePortal p in Sims3.Gameplay.Queries.GetObjects<TimePortal>())
+            {
+                if (!p.InWorld || p.InInventory) continue;
+                if (hh != null && hh.LotHome != null && p.LotCurrent == hh.LotHome) return p;
+                if (found == null) found = p;
+            }
+            if (found == null) throw new McpException("no time portal placed in this world (the Into the Future intro spawns one, or place it from an inventory)");
+            return found;
+        }
+
+        // The portal conditions TimePortal.Travel's Test checks (besides PlayerMadeTravelRequest and the Sim's own state).
+        static Dictionary<string, object> PortalReport(TimePortal p)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            FieldInfo st = typeof(TimePortal).GetField("mCurState", BindingFlags.NonPublic | BindingFlags.Instance);
+            r["state"] = st != null ? st.GetValue(p).ToString() : null;
+            r["portal_active"] = p.Active;
+            r["portal_broken"] = p.IsBroken;
+            r["traveler_summoned"] = p.HasTimeTravelerBeenSummoned();
+            CauseEffectService ce = CauseEffectService.GetInstance();
+            r["almanac"] = ce != null ? (object)ce.ShouldShowTimeAlmanacButton() : null;
+            r["in_use"] = p.InUse;
+            return r;
+        }
+
+        // portal_prepare (test saves): puts the placed time portal into the state TimePortal.Travel needs, using the end
+        // effects of the game's own chain (SummonTimeTraveler -> ActivateDeactivate -> TimeTravelerSituation -> GiveAlmanac)
+        // without the traveler's visit or the animations. Persists into the next save (sTimeTravelerHasBeenSummoned is a
+        // PersistableStatic, the almanac flag is CauseEffectService persistable data).
+        static object PortalPrepare(Args a)
+        {
+            if (GameStates.IsTravelling) throw new McpException("a world switch is already running");
+            TimePortal p = FindTimePortal();
+            if (p.InUse) throw new McpException("the time portal is in use; wait for that interaction to end");
+            CauseEffectService ce = CauseEffectService.GetInstance();
+            if (ce == null) throw new McpException("no CauseEffectService in this world (Into the Future not running)");
+            Dictionary<string, object> r = Util.Obj();
+            r["portal"] = p.ObjectId.ToString();
+            r["lot"] = p.LotCurrent != null ? p.LotCurrent.Name : null;
+            r["before"] = PortalReport(p);
+            List<object> did = new List<object>();
+            // repair: what SocialCallback.PushTimeTravelerRepair and HelpTimeTravelerOpportunityCommon's cleanup do
+            if (p.IsBroken) { p.IsBroken = false; did.Add("repaired"); }
+            // summon: TimeTravelerSituation.OnAppearComplete; ActivateDeactivate.Run links the portal for the opportunities
+            if (!p.HasTimeTravelerBeenSummoned()) { p.SetTimeTravelerSummoned(); did.Add("summoned"); }
+            if (CauseEffectService.OpportunityPortal == null) CauseEffectService.OpportunityPortal = p;
+            // almanac: GiveAlmanac.Cleanup (the traveler hands it over after the summon); Travel's Test needs the button
+            if (!ce.ShouldShowTimeAlmanacButton())
+            {
+                ce.EnableTimeAlmanacButton();
+                HudModel hud = Sims3.UI.Responder.Instance.HudModel as HudModel;
+                if (hud != null) hud.RequestUiTimeAlmanacUpdate();
+                did.Add("almanac");
+            }
+            // activate: ActivateDeactivate's anim event 101 -> private SwitchActiveState (Active, or Rainbow/Distopia by world state)
+            if (!p.Active)
+            {
+                typeof(TimePortal).GetMethod("SwitchActiveState", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(p, null);
+                did.Add("activated");
+            }
+            r["changed"] = did;
+            r["after"] = PortalReport(p);
+            return r;
         }
 
         // The portal's own "Travel" interaction (private TimePortal.Travel): confirm dialog (auto_dialog), walk in, then
@@ -173,22 +380,24 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             r["queued"] = s.InteractionQueue.Add(i);
             r["sim"] = s.FullName;
-            // the interaction's Test (not run here) also needs these; false means the game would grey it out
-            r["portal_active"] = portal.Active;
-            r["portal_broken"] = portal.IsBroken;
-            r["traveler_summoned"] = portal.HasTimeTravelerBeenSummoned();
+            // the interaction's Test (not run here) also needs these; portal_prepare sets them
+            foreach (KeyValuePair<string, object> kv in PortalReport(portal)) r[kv.Key] = kv.Value;
             return r;
         }
 
-        // travel_future: the active Sim alone through the time portal (TravelWith, the group version, is not wired).
+        // travel_future {prepare?}: the active Sim alone through the time portal (TravelWith, the group version, is not wired).
+        // prepare: true runs portal_prepare first (test saves without a summoned traveler or an active portal).
         static object TravelFuture(Args a)
         {
             CheckCanLeave();
+            object prepared = a.Bool("prepare", false) ? PortalPrepare(a) : null;
             Sim s = Util.ActiveSim();
             GreyedOutTooltipCallback why = null;
             if (!TravelUtil.CanSimTriggerTravelToFutureWorld(s, ref why))
                 throw new McpException(s.FullName + " cannot travel to the future now" + (why != null ? ": " + why() : ""));
-            return QueuePortalTravel(s);
+            Dictionary<string, object> r = (Dictionary<string, object>)QueuePortalTravel(s);
+            if (prepared != null) r["prepare"] = prepared;
+            return r;
         }
 
         // travel_home: everyone returns early, the way the game's own UI does it per world type.

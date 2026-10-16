@@ -1,0 +1,7 @@
+[
+  { "id": "bp-s3pp-cache-on", "note": "S3PP Mono caches on (installed default): stutter profile with simstack sampling, compare with -off", "asi": "tested",
+    "save": "Baseline-BP", "run": { "profile": { "minutes": 10 } }, "timeoutMin": 30 },
+  { "id": "bp-s3pp-cache-off", "note": "S3PP MonoTypeEHashProbe + MonoIsinstCache off: does mono_metadata_type_equal come back (docs/29 §5)?", "asi": "tested",
+    "s3ppIni": { "Patches.MonoTypeEHashProbe": 0, "Patches.MonoIsinstCache": 0 },
+    "save": "Baseline-BP", "run": { "profile": { "minutes": 10 } }, "timeoutMin": 30 }
+]

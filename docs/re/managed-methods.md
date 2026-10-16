@@ -166,6 +166,9 @@ Saves grow 0.44 MB (BP) and 0.55 MB (SV) per sim day; the biggest grower is memo
 | `LifeEvent.Forget` / `World.DeleteTravelDBResource` / `LifeEvent.Snapshot` | Memory pictures in `TravelDB.package`; without a picture the stock image is shown [verified] | `SaveCleanup.cs` snapshot cap (`kSnapshotCap`, 0 = off, counter 53) |
 | `SimDescription.PurgeDistantGenealogyRelations`, `Household.CleanupBadlySavedInventories`, `LotManager.CleanupObjectsNotOnLot`, `Autonomy.OnceADayCallback` | The game's own cleanups [verified, docs/09] | none (kept) |
 | `World.CapturePhoto` | Memory snapshot capture | none |
+| `ScriptCore.PersistWriter.AddObject` / `GetObjectIndex` / `End` | One writer for the whole world: every object gets the next global index on first visit (roots in lot order, then breadth-first over references inside `End`); class and resource-key tables are global too, so one new or removed object renumbers everything visited after it [verified, ../26-incremental-save.md] | none (docs/26: incremental save not feasible without stable numbering) |
+| `ScriptCore.LoadSaveManager.SaveObjectGroup` / `SaveObject` / `SaveObjectStack` | Native callbacks per lot group, per object and per saved task stack; each returns the global index the native lot record (`0x4D1A5589`) stores [verified] | none |
+| `ScriptCore.ScriptObjectGroup` (+ `ScriptObjectGroupFormatter`, `IPersistGroupAffinity`) | Per-lot script object set; written as one record in the global OBJS graph, not as its own resource. Group affinity only filters objects of groups not being saved (partial saves) [verified] | none |
 | `Sims3.Gameplay.Core.Lot` persisted `ScriptCore.Route` objects | IP saves keep 0 → 224 routes over 11 days, held by portal actions and adaptors [measured] | §8 |
 
 ## 8. Portals, route adaptors, houseboats

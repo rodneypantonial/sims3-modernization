@@ -321,6 +321,21 @@ Offload candidate #2. Built and self-tested 2026-10-13, not run in game. Code: `
 
 Size of what is copied: `Baseline-BP` is 33.3 MB (31.9 MB `.nhd`, 0.5 MB ExportDB, 0.9 MB TravelDB; docs/09 §6). So every ordinary save copies about **33 MB twice** (old save to `.backup`, working copy to the save) and flushes about 66 MB, plus a second flush pass in step 11.
 
+### Where the save time goes (measured 2026-10-14)
+
+Bridgeport, `Baseline-BP` (35 MB save), three saves of 11.1-13.2 s (`[SaveWrite] Mode=1`). Save 2: native sim-thread stacks (`/simstack?frames=64`, 323 samples; stack-scan unwinder, so only leaf frames and named markers count). Save 3: C# stacks (`/managedstack`, 3,261 samples, time-weighted). Shares are rough (one save each). Native shares were counted per sample, but `/simstack` returns a blocked thread every 2-7 ms and a running one only every ~35 ms, so waits are overweighted ~10x; docs/25 re-weights by time (per-lot `Lot_Save` ~3.6 s of the ~4.1 s native window, footprint save ~1.2 s).
+
+| Part | Time | Evidence |
+|---|---|---|
+| Script serialization (C#, `LoadSaveManager.SaveGame` -> persisted-object writer) | ~6.3 s (~48%) | [measured] C# sampler. Inside: `ScriptCore.ReferenceHashtable.TryGetValue/TryAdd` (object identity tracking) ~2.5 s, reflection (`Object.GetType`, `MonoType.GetFields`, `MonoField.GetValue`, `RuntimeTypeHandle`, `PersistedClass.InitFieldList`) ~1.3 s, `FastStreamWriter.Write` ~0.6 s, rest interpreter |
+| Native world write (start of the save, ~4 s) | ~4-4.5 s | [measured] leaf frames: `FUN_006663c0` (called through `FUN_0063c690`, which also calls the per-lot routing object `FUN_0062eab0`; byte-swapping stream writer `FUN_004ddcc0`) [inferred: lot/routing world data], EA allocator `FUN_004e5e40` |
+| Sim thread waiting on another thread | ~0.13-0.24 s (corrected; the count-based ~0.9 s overweighted waits ~10x, docs/25) | [measured] `FUN_004e2760` = `WaitForSingleObject` wait (S3SS hooks it), near `Lock_Release` / `FUN_004a94c0` / `FUN_004ece50` (package code) [verified: decompile of 0x4E2760; owner of the lock unknown] |
+| Resource compression | ~0.6 s | [verified] `FUN_004ec0a0` (RefPack header 0x10FB, window 0x1FFFF) -> core `FUN_004ebb90` |
+| Disk write, copy and flush (steps 6, 9, 11) | ~0.8 s | [measured] `FUN_00aaf4b0` flush, KERNELBASE at the end of the save; fast NVMe |
+
+**What follows:** the parts a worker could take without the script engine (compression, package write, copy and flush) are only about 1.5 s of ~12 s, and need our own DBPF writer: poor value. Half the save is C# serialization on the sim thread (Mono, cannot move, dead-ends #17). Better levers: fewer persisted objects (save cleanup; the life-event trim removes ~18% of script objects in BP), a cheaper `ReferenceHashtable` (identity lookups ~2.5 s per save) and cached reflection, then the native world write (~4 s, owner functions to be named) and the footprint save scan (docs/25: ~1.2 s, quadratic). Measured 2026-10-14: trimming 26,161 empty life-event lists cut BP saves from 12.0 s to 10.7-11.6 s (two saves each, noisy).
+
+
 **No save-time numbers exist yet** (test E has never been run). The new hooks measure it: one log line per save with total, package write (step 5, includes the script serialization), backup, copy and final flush.
 
 ### What is offloaded (Mode=1)
@@ -348,9 +363,9 @@ The whole backup step leaves the sim thread when the package write takes longer 
 ### Not offloaded, and why
 
 - Step 5 (package write incl. script state): walks live Mono objects and game state; must stay on the sim thread.
-- Step 6 (resource compression and index): runs inside the DBPF writer interleaved with its file offsets; offloading needs a new writer. Next: locate the compressor (vtable +0x3C path) and time it with the step-5 number before deciding.
-- Step 9 (copy the new save): needs the finished package and must be complete and flushed before success is reported; on a worker the sim thread would only wait.
-- Step 11: small.
+- Step 6 (resource compression and index): runs inside the DBPF writer interleaved with its file offsets; offloading needs a new writer. Update: the compression alone can run ahead on workers without a new writer, see Phase 10 `[SaveCompress]`.
+- Step 9 (copy the new save): needs the finished package and must be complete and flushed before success is reported; on a worker the sim thread would only wait. Update: the copy stays, its flush moves to a worker after the save (Phase 10 `[SaveFlush]`, with the failure cases).
+- Step 11: small. Its flush pass moves with step 9's (Phase 10).
 
 Next best options (not built): (1) make step 8 a rename of the old save instead of a copy (`<name>.sims3` -> `<name>.sims3.backup`; step 9 then finds no folder to delete). Same crash windows as the game (the game also deletes the save folder before copying the new one), no 33 MB copy at all, no worker. (2) Skip the second flush pass in step 11 for files step 9 just flushed. Both change the game's file operations, so they wait for the step timings.
 
@@ -508,3 +523,269 @@ Found on the way: on a grid 1 cell wide the game's jump recurses forever (stack 
 - A wrong jump point would change boat/swim routes (not memory safety: the loop only reads the two grids inside `w*h` and the callback's 16 bytes). Mitigated by the identical-result test on the game's own code and by `Verify=1` for the first runs.
 - Another mod patching the jump's code or the call at `0x6207FB` makes ours `SKIP`.
 - The counters use two interlocked adds per jump (~10-20 ns against ~1.4 us per jump).
+
+## Phase 10: save compression and save flushes off the sim thread (v0.10.0, `[SaveCompress]` and `[SaveFlush]` `Enabled=0` by default)
+
+Built and tested offline 2026-10-14, not run in game. Targets two parts of "Where the save time goes" (Phase 7): resource compression (~0.6 s) and the disk flushes (part of the ~0.8 s disk time). Sources `native/ts3native/savecompress.cpp` (compression) and `savewrite.cpp` (flushes); offline test `savecompress-test.cpp`, shared test fake `savecompress-fake.h`.
+
+### How the commit compresses [verified: decompile + disassembly]
+
+| What | Address | Evidence |
+|---|---|---|
+| Package commit `FUN_004A8500(this, 1)` (vtable `0xFB2600` +0x1C = `0x4A8D20`, which calls it) calls the record loop | call at `0x4A850F` `E8 FC F3 FF FF` -> `0x4A7910` (`__fastcall`, ecx = package, returns al) | disassembly |
+| Record loop `FUN_004A7910`: while the pending count `+0x2FC` is not 0, `vt+0x3C(*(leftmost+0x20))`; leftmost = `+0x2F0` | `0x4A7910` | disassembly |
+| Pending map: EASTL rbtree, anchor `+0x2EC` (right, left = leftmost, parent = root), count `+0x2FC`; node `+0` right, `+4` left, `+8` parent, `+0x10` key, `+0x20` record; increment `FUN_004E0B20` | | decompile |
+| `vt+0x3C` = `FUN_004A8E00`: takes `Lock_Acquire(pkg+0x270)`, finds the node, record class `+8 == 0x12E4A892` -> `FUN_004A8910`, then erases the node | `0x4A8E00` | decompile + disassembly |
+| `FUN_004A8910` (per record): if `+0x20` (compression) != 0 and the size is `0x32..0xF42400`: stream `record+0x28` (`vt+0x1C` size, `vt+0x28` seek(0,0), `vt+0x30` read(buf, size)) into a `RecordData` buffer from the package allocator `+0x10`, then `FUN_004A82C0` -> `FUN_004A7030` | `0x4A89AE`-`0x4A8A55` | disassembly |
+| `FUN_004A7030`: builds a RefPack codec (`0x4EBFD0`: vtable `0xFB9018`, allocator at +4), asks the bound `slot1(src, len, 0, 0, 1)` = `len*1.25+32`, allocates it ("PackedRecord"), compresses with `slot1(src, len, dst, bound, flags)`; flags: `+0x20 == 1` -> `0x10001` (1 on the codec-plugin path), `== 3` -> 2, else 2 (len <= 250,000) or 1. With codec plugins (`+0x390`) it first runs a size-only pass `slot1(src, len, 0, 0, 2)` | `0x4A70A8`-`0x4A727C` | disassembly |
+| Codec slot 1 `0x4EC200` (thiscall, `ret 14h`): mode = flags bit 1 ? 1 : bit 16 ? 2 : 0; dst 0 with bit 0 -> the bound; else `0x4EC0A0(dst, cap, src, len, *(codec+4), mode)` | `0x4EC200`; vtable slot `0xFB901C` holds `0x4EC200` | disassembly + exe bytes |
+| Compressor `0x4EC0A0` (cdecl): header `0x10FB` (`0x90FB` for len >= 16 MB), mode bit 0 clear -> `|0x4000` and window `0x3FFF`, else window `0x1FFFF`; scratch: hash `0x40000` bytes (len > 16 KB) and chain `window*4+4` from the allocator passed in (`vt+8`, freed with `vt+0xC`), a 1 KB `_alloca` table for len <= 16 KB; cores `0x4EBB90` (> 16 KB) and `0x4EB750`; `dst` 0 = count only; `cap` is never checked | `0x4EC0A0`-`0x4EC1F2` | disassembly |
+| No global data in `0x4EB340`-`0x4EC282` (outside the decoder): only memcpy/memset through the MSVCR80 imports and the alloca probe | | disassembly scan |
+
+So the compressor is re-entrant when it gets its own allocator: it reads only its arguments and writes only `dst` and its scratch.
+
+The save package uses `+0x20 == 1`: of the 3,348 compressed records in `Baseline-BP`, the game's own code reproduces all 3,348 stored byte streams exactly (3,256 with mode 2 = `0x50FB`, 75 with mode 1 = `0x10FB`, 17 where mode 0 gives the same bytes); 4,402 of 4,402 in `Baseline-IP`, 3,496 of 3,496 in `Baseline-SV` [verified offline]. The 75 `0x10FB` records (type `0x01661233`) do not fit the flags rule above for this package; they may come from another writer [inferred]. If the game compresses them in the save, they show up as misses.
+
+### What we built: `[SaveCompress]`
+
+- Hook 1: the call at `0x4A850F` (verified `E8` to `0x4A7910`) -> `ScCommitHook`. With `compressMode` 1, compression on (`+0x20 != 0`), the package writable (`+0x14` bit 1) and records pending, it starts a batch: under the package lock (`Lock_Acquire 0x4E16F0(pkg+0x270)`) it walks the pending map from the leftmost (the order the loop commits in); for each record of class `0x12E4A892` with 4 KB to 15.26 MB of data it does the seek(0,0) and read the game is about to do, into a private copy, and queues a job with the predicted mode. Then it calls the game's loop.
+- Workers (`Threads`, default 6, started at the first batch, 256 KB stacks) run the game's compressor `0x4EC0A0` on the copy into a private output buffer (`len*1.25+1056`), with an allocator object of our own (two cached `HeapAlloc` blocks per worker, made big enough before the call, since the game's code does not check its allocations). No game allocator, no game lock, no Mono.
+- Hook 2: vtable slot `0xFB901C` (verified to hold `0x4EC200`) -> `ScSlotHook`. Outside a batch, on another thread, for bound calls and for records under 4 KB it is the game's slot. In a batch it looks for a job with the same length, the same mode (from the call's flags) and the same bytes (`memcmp` of the whole input), waits for it (or runs it itself if no worker took it yet), and copies the output to `dst` if it fits `cap`; a size-only call gets the length and keeps the job for the real call. No job, a failed job, another mode or output > cap: the game's slot runs (a miss). So the bytes written are always the game's compressor's bytes.
+- Window: copies + outputs in flight are capped at `MaxMB` (32); each answered call frees its job and refills from the map (records already committed are skipped by count: the node `walked` places after the start's leftmost is `walked - committed` places after the current one). A record larger than the window still gets a job when nothing else is in flight.
+- One batch at a time; a commit inside a commit or on another thread runs plain. At the end of the commit, queued jobs are cancelled, running ones waited for, and all buffers freed.
+- Install checks: FNV-1a of the compressor code `0x4EB340-0x4EB3B0`, `0x4EB750-0x4EBFD0`, `0x4EC0A0-0x4EC282` = `0x86B12C94` (Steam 1.67; the decoder range that S3SS patches and phase 6's call site are left out), the call bytes at `0x4A850F`, the slot value. Any mismatch: `SKIP`, nothing written.
+
+Settings `[SaveCompress]`: `Enabled=0`, `Mode=1` (runtime switch `compressMode`, +0x150), `Verify=0` (+0x154: an answered call also runs the game's slot into `dst`, compares, counts `compressMismatches` and returns the game's result), `Threads=6` (1-8), `MaxMB=32` (4-256). Log per commit with jobs: `save compress: N records, J jobs (MB), hits, misses, run here, mismatches, commit ms, wait ms, peak MB`.
+
+### What we built: `[SaveFlush]`
+
+The step 9 copy (`FUN_00AAFC50`: delete the old save folder, `CopyFileW` the working copy, then `FUN_00AAF4B0` = `FlushFileBuffers` on every file) and step 11 (`1a5tf1l3.dat`, then the same flush over the save folder) stay on the sim thread; only the two flush calls move:
+- Call sites `0xAAFD8A` (in `FUN_00AAFC50`) and `0xAAF737` (in `FUN_00AAF5F0`), both `E8` to `0xAAF4B0` (cdecl, path) -> `SaveFlushHook`. While the `[SaveWrite]` hooks of step 9 (`0xAB1363`) and step 11 (`0xAB1410`) run on the saving thread and `flushMode` is 1, the hook records the path instead of flushing. The same function called anywhere else (the game's backup fallback, the load copy, the failure path) flushes as before.
+- After `FUN_00AB1030` returns, one worker replays the recorded calls in order (same files; opened `GENERIC_WRITE` with read/write/delete sharing). If the thread cannot start, the game's flushes run there, as before.
+- Waits: the next save (also autosave and the travel save, all through `SaveGameHook`) and the load copy (call `0xAB16ED`, `FUN_00AB0E80(name, 1)`, save -> working copy) wait for the worker first, so the game never deletes, renames or copies a save folder the worker still has open.
+
+Not moved: the copy itself. Its source is the working copy `CurrentGame.sims3`, which the game keeps using after the save; we have not found every writer of it, so a background copy could take bytes from after the save. The copy from the file cache is the cheap part; the flushes write the 33 MB to the disk [decided; the split is measured by the `copy`/`final` numbers below].
+
+Failure cases (the game's own order: step 8 flushes the `.backup`, step 9 deletes the old save and copies the new one):
+- Game crash or quit (`ExitProcess` ends the worker) after the save returned: no loss. Every byte was written into the OS file cache before the game reported success, and Windows writes it out on its own.
+- OS crash or power loss before the worker finished (well under a second to a few seconds after the save): files of the new save may be incomplete on disk, and `1a5tf1l3.dat` (written in step 11) may reach the disk before the `.nhd`. The `.backup` folder was flushed in step 8 and is intact. With the game's order the same event during the save itself loses the save folder too; the window is longer now.
+- A reader that opens a save file without write sharing (for example the load menu reading `Meta.data`) at the moment the worker flushes that file gets a sharing error. Before any load, the load copy waits for the worker.
+
+Settings `[SaveFlush]`: `Enabled=0` (needs `[SaveWrite] Enabled=1`, else `SKIP`), `Mode=1` (runtime switch `flushMode`, +0x180). The `save:` line ends with `flushes deferred N`; the worker logs `save flush: N calls, F files flushed on the worker, fails, ms`.
+
+Counters v11 (+0x14C): `compressReady, compressMode, compressVerify, compressBatches, compressJobs, compressHits, compressMisses, compressMismatches, compressInMB, compressWaitMs, compressLastMs, compressPeakMB, flushReady, flushMode, flushDeferred, flushJobs, flushWaits, flushWaitMs, flushLastMs, flushFails`; `agent.js nativeCounters` reads them for `version >= 11`.
+
+### Offline results (2026-10-14, i7-11800H, 32-bit /O2 build) [measured]
+
+`out\savecompress-test.exe "<path>\TS3W.exe" "<Saves>\<name>.sims3\<world>.nhd" [threads] [MaxMB] [+0x20]` copies the game's compressor (`0x4EB000-0x4ED000`) from the exe to its own address, points its three CRT calls at this process's CRT, decodes every record of the save, then checks:
+1. determinism: 507-653 records per save compressed with scratch tables full of junk and of zeros, plus the count-only pass: identical bytes and length;
+2. stored bytes: all compressed records of `Baseline-BP`, `-IP` and `-SV` reproduced exactly (above);
+3. pipeline: the whole package as one commit through a fake package with the game's layout (`savecompress-fake.h`), mode 0 (the game's slot, serial) vs mode 1: every record byte-identical, 0 misses.
+
+| Save | records | MB in | serial commit | 6 workers, MaxMB 32 | peak in flight |
+|---|---|---|---|---|---|
+| Baseline-BP | 3,511 | 139.2 | 1,086 ms | 328 ms (3.3x) | 38 MB |
+| Baseline-IP | 4,546 | 117.3 | 903 ms | 253 ms (3.6x) | 36 MB |
+| Baseline-SV | 3,598 | 109.5 | 893 ms | 274 ms (3.3x) | 37 MB |
+
+The serial number includes the test allocator filling scratch tables; the in-game compressor share is ~0.6 s (Phase 7 table). What stays on the committing thread in mode 1: reading the records (the game reads them again), the copy, the `memcmp` of each input and the output copy, about 0.1 s for 140 MB [inferred].
+
+`selftest.exe`: fake compressor and fake package: identical output with and without workers (240 records, 1 MB window, many refills), misses when the commit uses another mode than predicted, size-only call plus real call served by one job, verify counts mismatches and keeps the game's bytes, no batch without compression, the hook outside a batch is the game's slot; flushes recorded and replayed (6 files), no flush by the game during the save, the next save and the load copy wait, a gone folder counts a fail, mode 0 and "not ready" flush as before.
+
+### Expected gain [inferred]
+
+Compression ~0.6 s -> ~0.15-0.2 s on the sim thread (copy, compare, waits on the largest records; the 9 MB record alone takes ~40 ms on one worker). Flushes: the step 9 and step 11 flush passes leave the sim thread; their share of the ~0.8 s disk time is not measured yet (`copy` and `final` in the `save:` line, mode 0 vs 1). Together roughly 0.5-1 s of a ~12 s Bridgeport save.
+
+### How to test in game
+
+Back up `Documents\Electronic Arts\The Sims 3\Saves` first.
+1. Build, `install --only native-patches`; in `Game\Bin\ts3native.ini`: `[SaveWrite] Enabled=1`, `[SaveCompress] Enabled=1 Mode=1 Verify=1`, `[SaveFlush] Enabled=1 Mode=1`. Log: `OK   save compress: commit 0x004A850F, codec slot 0x00FB901C -> ScSlotHook, ...`, `OK   save flush: 3 call sites`, `save flush settings: Mode=1`.
+2. Load `Baseline-BP`, save as `TestSC-on`. Expect a `save compress:` line with `mismatches 0` and `hits` close to `jobs`, a `save:` line ending `flushes deferred 2`, and `save flush: 2 calls, ... 0 fails`; counters `compressMismatches 0`, `flushFails 0`.
+3. Proof of identical output: `Verify=1` with `mismatches 0` over whole saves (every answered record also compressed by the game and compared). Optional cross-check: pause, save as `TestSC-on`, set `compressMode` (+0x150) and `flushMode` (+0x180) to 0 through the probe, save as `TestSC-off` right after without unpausing, and compare the two `.nhd` files record by record (`save-stats.ts` counts equal; records with equal uncompressed bytes have equal compressed bytes).
+4. `Verify=0`, save again: compare `write` (the commit is inside it), `compressLastMs` and `compressWaitMs` between mode 0 and 1, and `copy` / `final` between `flushMode` 0 and 1.
+5. Reload `TestSC-on`: it loads, same household and Sims. Save twice in a row (the second may wait: `flushWaits`), and load another save right after saving (the load copy waits).
+6. Stop on any `MISMATCH` line, a crash in `ts3native.asi` or a save that does not load; triage against the change ledger.
+
+### Risks
+
+- A wrong answer from a job would write wrong bytes into the save. Mitigations: a job is used only for the same length, mode and full input bytes; the code is the game's own compressor (hash-checked); `Verify=1` for the first runs; the offline test reproduces every stored record of three saves.
+- The read-ahead calls the record stream's seek and read on the committing thread before the game does; the game seeks to 0 again before its own read [verified], so a memory stream gives the same bytes. A stream with side effects on read would break this [inferred: none seen; only class `0x12E4A892` records are read].
+- Address space at save time: up to `MaxMB` (more only while one record alone is over the window, up to 2.25x its size) plus ~0.8 MB scratch per worker; 38 MB peak offline with the defaults.
+- If the walk order were not the commit order, jobs would not be found: misses, the game compresses; slower, not wrong.
+- Flushes: see the failure cases above (OS crash or power loss window after the save; a sharing error for a reader during the flush of that file).
+- Another mod patching the compressor, the slot or the call sites makes ours `SKIP` (logged).
+
+### First in-game run (2026-10-14): no batch, and why [verified]
+
+- BP, two saves with `[SaveCompress] Enabled=1 Verify=1`: hooks installed, but `compressBatches 0`, no `save compress:` line. `[SaveFlush]` worked (2 flushes deferred per save, 6 files on the worker, 0 fails).
+- Cause: a save does not leave its records pending until the package commit. The record class (`0x12E4A892`, vtables near `0x4ADA10`) commits itself when the writer closes it: `0x4AD9F0` (close) and the destructors `0x4AE080`/`0x4AE3C0` call `package->vt+0x3C(record)` = `FUN_004A8E00` whenever `record+0x24` (open) is set, so each record is compressed and written on close, one at a time; the second DBPF vtable `0x1048DA0` (`FUN_00996630`) has the same commit and `+0x3C`. The commit hook at `0x4A850F` then finds few or no pending records. Exe scan: the codec (`0x4EBFD0`) is built for compression only in `FUN_004A7030`; the other users (`0x727950`, `0x72A150`, ...) decompress.
+- Consequence: there is no look-ahead at the commit. Compressing a record ahead of its close would need its bytes before the writer is done with it (reading the open stream moves its position) or deferring the record's commit to the package commit (different file layout, and a read-back of a deferred record would fail in `FUN_004A94C0`). Neither is done. `[SaveCompress]` stays off.
+- 0.10.1 adds counters v12 (`compressCommits`, `compressCommitPending`, `compressDirectCalls`, `compressDirectMs`, `compressDirectMB`) and one log line per save: `save compress: this save N codec compress calls outside a batch (MB in, ms), C commit calls (pending at the last: P)`. They give the real compression time per save and how many records are still pending at the commit before any further design.
+
+## `[Verify]`: runtime checks of the mapping-doc inferences (v0.10.8, counters v20 + v21 + v22, `Enabled=0` by default)
+
+Measurement only (`native/ts3native/verify.cpp`). The mapping waves (docs/34-48) left many claims marked [inferred]: which thread creates textures, whether two threads overlap on unlocked data, what a lookup costs. One probe build checks them all in game, so the fixes in PLAN.md "Next round" (items 1-28) start from numbers. 0.10.6 (27 probes, v20) ran once on 2026-10-15 (docs/data/results/2026-10-15-verify-findings.md). **0.10.7** (2026-10-15, selftest ok, **not run in game**) fixes four readouts of that run and adds 31 probes for the docs/51 rows that had no key; parked as `game-copy/ts3native.asi.verify` (SHA-256 starts `d4835064a8ec`), run 2026-10-16. **0.10.8** (2026-10-16, selftest ok, **not run in game**) adds 31 probes for the docs/52-62 ledger rows (docs/51 §3b, §6; counters v22) and puts the `0xD7F8B0` probe behind `ThreadedObjects` (default 0, docs/68 §4 #1); parked as `game-copy/ts3native.asi.verify` (SHA-256 starts `20af6f323fff`).
+
+### 0.10.7: readouts fixed after the first run [verified asm on the exe copy unless marked]
+
+| Readout (0.10.6) | What it read | Fix |
+|---|---|---|
+| `vfMemSpeedTreeBytes` -10,057 / -9,373 KB, flat from load to end | `[0x11D8628]` is SpeedTree's own net counter, but its adds and subtracts do not pair: one free path subtracts `0x13800` where the alloc adds `0x13810` (`0x7BE670` vs `0x7BDBA0`), array frees subtract a 4-byte header plus `count*0x54` (`0x7A3210`); 110 sites in 56 functions, no other total exists | dropped: `vfSpeedTreeKB` stays -1 (field kept for the layout); `verify-verdicts.ts` treats a negative memory value as no data. The SpeedTree heap size (I-34-6) needs an allocator-side count; open |
+| `vfMemResCacheBudgetBytes` 15.7 MB | the first ResourceCache-class instance in the manager's cache array is the **AnimationCache**: `ResourceSystem_Init` creates it first (`0x738E2E`, budget forced `0xF00000` at `0x738E97`, priority `0x3E8`), then the ResourceCache (`0x738EDA`, budget from the config through `0x733140`, priority 0) | budget, held bytes and flush bytes now come from the **priority-0** instance only (0.10.6 summed both caches' bytes); none: budget -1 |
+| UI lock `0xFBA5CC`: 0 calls | the probe was hooked (`vfReady` `0x17FFFFFF` = bits 0-26 and the readout bit 28; bit 27 is no probe). `0xFBA5CC` is **not the lock**: it is a static `-1` that the 10 UI call sites pass as `Lock_Acquire`'s timeout pointer `[esp+4]`; the lock itself is `ecx` (WindowManager `+0x38` in the draw `0x50B270`, `+0x678` in `PostMessage 0x50D660`). The filter compared `ecx` with `0xFBA5CC`, so it never matched. `0xFD9744` (JobManager, 23 sites) and `0xFE4DC4` (SimService request list, 3 sites) are the same kind of per-module timeout constant (docs/36, docs/42 call them locks) | `Lock_Acquire` calls are classified by the timeout pointer: `0xFBA5CC` keeps `vfUiLock`, `0xFD9744` and `0xFE4DC4` get thread slots 44/45 (role counts, wait us, max) |
+| `vfMemVramBytes` 0 | the offset is right: `0x591010` creates the DeviceConfig singleton `[0x11CDD10]`, `DeviceConfig_Init 0x5928F0` calls the hw-info init `0x613CB0` with `this+0x174`, which stores the DxDiag VRAM at hw info `+0xC4` (`0x613EAE`); the DxDiag path `0x612640` returns `(((MB + 4) << 20) & 0xFF800000) >> 20`, so 8,192 MB wraps to 0 | none: 0 means the game stored 0 (docs/40 §5) |
+| `vfCostECAA65Calls` 0 | `0xECAA65` is in the main loop `FUN_00ECA960` (loops back to `0xECA9B1` until the quit state), on the branch taken only when `ResourceSystem` vtable `+0x58` returned true (`0xECAA58 test bl`) | stub kept; new mid-function counter at `0xECA9ED` (`movss xmm0, [0x11CDD9C]`, 8 bytes, reached by both branches of the flag test every iteration) gives the loop count `vfCostECAA65Loops`. 0 gate hits from game start (load included) means the gate was never true in that run, so "loading" is not its meaning [inferred] |
+
+### How it works
+
+- One generic pass-through stub per probe (the routegate.cpp pattern): it saves all registers and flags, calls the counter code with the probe number and the caller's return slot, restores everything and jumps to the stolen prologue. No probe needs the function's signature or calling convention. Probes that time a call or count "threads inside" swap the return address for a leave thunk and keep the real one on a per-thread stack of 16 frames; a frame left without returning (exception unwind) is dropped at that thread's next entry. The counter code does integer work only, so a float return in ST0 (`0xC2A570`) passes through untouched.
+- The 10 FPS gate `0xECAA65` and the loop counter `0xECA9ED` are in the middle of the main loop `FUN_00ECA960` with ST0 live: their stubs have no call, save the flags and do one locked add.
+- Overlap groups (0.10.7, with `Races=1`): each timed probe can sit on side A or B of a group; an entry counts `vfOverlap[g]` when another thread is inside the other side (a probe on both sides counts two threads inside itself). Own nesting never counts; a dropped frame gives its sides back.
+- Every prologue was disassembled from the Steam 1.67 exe copy (capstone, 2026-10-15) [verified]: whole instructions, no relative operand, first SSE use in each function is a write (no SSE argument passing), and no branch in `.text` targets the overwritten bytes (byte scan; the 3 hits were inside other instructions).
+- At start each probe of an enabled group is checked against its bytes; a mismatch skips that probe only and logs `SKIP verify <name>: prologue at ... differs (found ...)`. Pairs are skipped together (shape swap + ray, key list + register, package probe + index find): one half alone gives numbers that mean nothing. `[Verify]` installs last, so a section that already hooked an address wins: `[HeightCache]` owns `0xC2A570`/`0xC2A840`, `[RouteAsync]`/`[RouteGate]` own `Lock_Acquire 0x4E16F0`.
+- Roles: main = `[0x11D8A88]`, sim = `[0x11D8A8C]`, other = neither, off-device = not the device owner `[[0x11CECC8]+0x10]` (the test `Device_IsOwnerThread 0x60E820` makes [verified asm]).
+- Event file `ts3native-verify.jsonl` (`Log=1`): `first` (first call of a thread probe per role, with tid and return address), `idOffSim` (each of the 8 recorded off-sim lookup callers), `swapInRay` / `registerInKeyList` / `overlap` (first 16 overlaps; `overlap` with the group number 0 Scene, 1 UI, 2 R1, 3 route ray), `mem` (readouts every 10 s with `Memory=1`).
+
+### Switches (`[Verify]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` | 0 | master switch |
+| `Mode` | 1 | start value of `vfMode` (+0x34C): 0 = every hook passes straight through, 1 = measure |
+| `Log` | 1 | write `ts3native-verify.jsonl` |
+| `Threads` | 0 | group 1 (12 probes, 0.10.7: + 30, 0.10.8: + 31) |
+| `ThreadedObjects` | 0 | 0.10.8: also hook `ScriptHost_ThreadedObjects 0xD7F8B0` (I-36-1). Keep 0 while S3PP is installed: S3PP's SimulatorStageProfiler expects that entry's bytes, so our `jmp` disarms all four of its seams and its type-lookup speed-up (MonoTypeEHashProbe) without an error (docs/68 §4 #1) |
+| `Races` | 0 | group 2 (4 probes + the id lookup; 0.10.7: the overlap groups of the thread probes) |
+| `Costs` | 0 | group 3 (10 probes + the id lookup chain walk, SimService readout; 0.10.7: + the loop counter); hooks every engine `Lock_Acquire` (classified by the timeout pointer, three classes), a small cost on every lock |
+| `Memory` | 0 | group 4, readouts only (no hooks), once per second |
+
+### Counters (v20, offsets from the `ts3native_counters` export; `/native` shows them by these names)
+
+`vfReady` (+0x348) bit i = probe i hooked (order below, 0-26), bit 28 = readout thread; `vfReady2` (+0x55C, v21) bit i = probe 27 + i. `vfMode` (+0x34C). `*MaxUs`/`*Max*` are maxima since the last reset; `*K` count in units of 1024. **Live window (0.10.7):** `/native?vfresetmax=1` zeroes every `vf*Max*` field after reading them; `queue.ts` sends it with the dump after the load for jobs with `Verify.Enabled` and marks the dump `maxReset: true`, and `verify-verdicts.ts` takes `after - before` for counts and `*Us` (modulo 2^32) and the `after` maxima, so the verdicts cover play only (the first run's dumps have no reset: their maxima include the load).
+
+`/native` keys follow `vf<Group><Target><Suffix>` (Target = address without `0x`): struct field -> key: `vfThread[i][0..5]` -> `vfThr<addr>Main|Sim|Other|OffDevice|Us|MaxUs`; `vfSwaps`/`vfSwapsInRay` -> `vfRaceC2A840Calls`/`Race`; `vfRayCallsK` -> `vfRaceC2A570KiloCalls`; `vfRayMaxInFlight` -> `vfRaceC2A570MaxInFlight`; `vfKeyLists`/`vfRegDbs`/`vfKeyListOverlaps` -> `vfRace4B1AE0Calls`/`vfRace4B2D00Calls`/`vfRace4B1AE0Overlap`; `vfIdLookupsK`/`vfIdOffSim`/`vfIdOffSimRet[i]` -> `vfRace939100KiloCalls`/`OffSimRace`/`Ret<i>`; `vfPkgCalls`/`Us`/`MaxUs` -> `vfCost4AFFC0Calls`/`Us`/`MaxUs`; `vfPkgWalked`/`vfPkgMaxWalked` -> `vfCost4AA1B0Calls`/`MaxPerCall`; `vfIdChain[6]`/`vfIdMaxChain`/`vfIdObjects` -> `vfCost939100Chain0|1|2to3|4to7|8to15|16up`/`MaxChain`/`Objects`; `vfW2lCallsK` -> `vfCostAB8540KiloCalls`; `vfFindLotCalls` -> `vfCostC60D30Calls`; `vfTreeRebuilds`/`vfTreeMaxPerFrame` -> `vfCost712480Calls`/`MaxPerFrame`; `vfFdbHold*` -> `vfCost693780Calls|Us|MaxUs`; `vfFdbWait*` -> `vfCostFdbWaitCalls|Us|MaxUs`; `vfUiLock[role]` -> `vfCostFBA5CC<Main|Sim|Other>Calls|Us|MaxUs`; `vfFpsGate` -> `vfCostECAA65Calls`; `vfSimSlice` -> `vfCostSimServiceSlice`; `vfSpeedTreeKB`/`vfVramMB`/`vfRcBytesKB`/`vfRcFlushKB`/`vfRcBudgetMB` -> `vfMemSpeedTreeBytes`/`vfMemVramBytes`/`vfMemResCacheBytes`/`vfMemResCacheFlushBytes`/`vfMemResCacheBudgetBytes` (agent.js scales KB/MB to bytes; -1 stays -1); `vfDeviceTid` -> `vfThrDeviceTid`; `vfReady`, `vfMode`, `vfUntracked`, `vfLogDropped` unchanged. v21: `vfThread2[s-12][0..5]` -> `vfThr<addr>Main|Sim|Other|OffDevice|Us|MaxUs` with the slot addresses below; `vfOverlap[0..3]` -> `vfRaceSceneOverlap`, `vfRace50AB70Overlap`, `vfRaceR1Overlap`, `vfRace686CC0Overlap`; `vfFdbPublishes` -> `vfCostFrameDbPublished` (agent.js adds `vfCostFrameDbConsumed` = `vfCost693780Calls`); `vfFpsLoops` -> `vfCostECAA65Loops`; `vfReady2` unchanged.
+
+**Threads** (`vfThread[12][6]` from +0x350, 24 bytes per probe: `main`, `sim`, `other`, `offDevice` calls, `us` total, `maxUs`):
+
+| # | Probe | Address | Offset | Inference it tests |
+|---|---|---|---|---|
+| 0 | `thumbTex` | `ThumbnailManager_CreateThumbnailTexture 0xD5D910` | +0x350 | docs/43: creates and fills a MANAGED texture on the sim thread with no owner check (crash-on-save lead): `sim`/`offDevice` > 0 confirms |
+| 1 | `texCreate` | `Texture_CreateD3D 0x619540` | +0x368 | docs/40 S1: the only CreateTexture site; is it ever off the device thread |
+| 2 | `texUpload` | `DDS_UploadLevels 0x60D290` | +0x380 | docs/40 S1: same for the per-mip lock and copy |
+| 3 | `renderReq` | `Renderer_RenderRequest 0x6F3DC0` | +0x398 | docs/46: reached from `IC_CASUtils_IsSceneLoadedImpl`; a sim call would wait for the frame jobs and draw |
+| 4 | `execJob` | `JobManager_ExecuteJob 0x599720` | +0x3B0 | docs/46 RJ1, docs/36: all jobs per thread (the overall count) |
+| 5-9 | `jobMainCull`, `jobShadowCull`, `jobReflCull`, `jobShadow2Cull`, `jobSortMain` | `0x6F1B00`, `0x6EBE30`, `0x6EA260`, `0x6EBF50`, `0x6F1D10` | +0x3C8, +0x3E0, +0x3F8, +0x410, +0x428 | docs/46 RJ2: does the sim pump ever steal a frame job, and its length (`sim`, `us`). The bodies are hooked directly instead of comparing `job+0x10` in `ExecuteJob`: same answer, no job layout needed |
+| 10 | `texDrain` | PendingTextures drain `0x50A860` | +0x440 | docs/47: main thread only |
+| 11 | `asyncComplete` | `AsyncLoader_Complete 0x7294F0` | +0x458 | docs/39 §1.4 step 5: "the thread that services the loader" [inferred] |
+
+**Races:**
+
+| # | Field (offset) | Probe | Inference it tests |
+|---|---|---|---|
+| 12, 13 | `vfSwaps` (+0x470), `vfSwapsInRay` (+0x474), `vfRayCallsK` (+0x478), `vfRayMaxInFlight` (+0x47C) | `WorldCellGrid_SetCellShapes 0xC2A840` counted; `WorldCellGrid_Raycast 0xC2A570` in-flight count | docs/38 C1: main frees `cell+0x38` while a sim ray reads it. `vfSwapsInRay` = swaps while another thread is inside a ray |
+| 14, 15 | `vfKeyLists` (+0x480), `vfRegDbs` (+0x484), `vfKeyListOverlaps` (+0x488) | `GetKeyList 0x4B1AE0`, `RegisterDatabase 0x4B2D00` in flight | docs/39 R2: a registration during an unlocked key walk |
+| 16 | `vfIdLookupsK` (+0x48C), `vfIdOffSim` (+0x490), `vfIdOffSimRet[8]` (+0x494) | `ObjectId_Lookup 0x939100` | docs/45 (and PLAN 24): off-sim readers of the unlocked id hash, with the first 8 distinct caller return addresses; counted once the sim thread id is known |
+
+**Costs:**
+
+| # | Field (offset) | Probe | Inference it tests |
+|---|---|---|---|
+| 17, 18 | `vfPkgCalls` (+0x4B4), `vfPkgUs`, `vfPkgMaxUs`, `vfPkgWalked` (+0x4C0), `vfPkgMaxWalked` | `GetPackageSource 0x4AFFC0` (outermost calls), package index searches `DBPF_IndexCompressed_Find 0x4AA1B0` inside it | docs/39 R1: ~6.7 ms/s in the linear probe; packages walked per miss |
+| 16 | `vfIdChain[6]` (+0x4C8: 0, 1, 2-3, 4-7, 8-15, 16+ nodes compared), `vfIdMaxChain` (+0x4E0), `vfIdObjects` (+0x4E4) | `0x939100` on the sim thread: walks the chain as the lookup does (`ecx` = buckets, `[esp+8]` = id, `id_lo % 0x409`, next `+0x10`, ids `+8/+0xC`; count at buckets `+0x1028` = service `+0x1038`) [verified asm] | docs/45 O1/O2: chain length in big worlds |
+| 19 | `vfW2lCallsK` (+0x4E8) | `Lot_WorldToLocal2D 0xAB8540` | docs/38 C2 |
+| 20 | `vfFindLotCalls` (+0x4EC) | `WorldManager_FindLotById 0xC60D30` | docs/38 C3 |
+| 21 | `vfTreeRebuilds` (+0x4F0), `vfTreeMaxPerFrame` (+0x4F4) | SpeedTree cluster rebuild `0x712480`, max between two FrameDb consumes | docs/48 S2. A frame tick at `Frame_RenderAndPresent 0xEC9F00` is not possible (relative call inside its first 5 bytes); the consume runs once per render frame |
+| 22 | `vfFdbHolds` (+0x4F8), `vfFdbHoldUs`, `vfFdbHoldMaxUs` | `FrameDb_ConsumeAndInterpolate 0x693780` on main | docs/41 S1: hold of the `+0x48` lock. The consume's whole time is an upper bound (the early outs before `TryEnterCriticalSection` are short) |
+| 23, 24 | `vfFdbWaits` (+0x504), `vfFdbWaitUs`, `vfFdbWaitMaxUs` | `SimRender_TripleBufferSync 0x593590`, `FrameDb_PublishFrame 0x593600` on the sim thread (both `EnterCriticalSection(+0x48)` first) | docs/41 S1: the sim waits for the consume (likely the 0.6% sim wait, docs/20) |
+| 25 | `vfUiLock[3][3]` (+0x510: per role main/sim/other `acquires`, `us`, `maxUs`); slots 44/45 (v21) | `Lock_Acquire 0x4E16F0` with timeout pointer `[esp+4]` `0xFBA5CC` (UI lock; 0.10.6 tested `ecx`, which never matched), `0xFD9744` (JobManager), `0xFE4DC4` (SimService request list) | docs/47 UI-L1: sim waits while main draws the 3D scene under the UI lock; docs/36 (I-36-10), docs/42 (I-42-3) |
+| 26 | `vfFpsGate` (+0x534) | `0xECAA65` (reached only while the ResourceSystem gate is set) | docs/41 P5: does the 10 FPS loading cap fire in live mode |
+| 57 | `vfFpsLoops` (+0x8A4, v21) | `0xECA9ED`, every main-loop iteration | the gate's denominator |
+| - | `vfSimSlice` (+0x538) | readout `[[0x11CE6A0]+0x139]` (-1 = no service) | docs/42 CAS2: is SimService time slicing on |
+
+**Memory** (readouts, no hooks): `vfSpeedTreeKB` (+0x53C, -1 since 0.10.7: `[0x11D8628]` is not a live-bytes total, see the table above), `vfVramMB` (+0x540, `[[0x11CDD10]+0x238]`: hw info at DeviceConfig `+0x174` (`DeviceConfig_Init` passes it to `0x613CB0` at `0x592A30`), VRAM at hw info `+0xC4` (`0x613EAE`); DeviceConfig singleton from the getter `0x58E3F0` [verified asm; the getter's object = DeviceConfig inferred from the shared `+0x2A8` Mac flag]; docs/37 C1, docs/40 §5: a wrapped value reads 0 or 2048), `vfRcBytesKB` (+0x544) and `vfRcFlushKB` (+0x548: `+0x94`/`+0x98` of the priority-0 ResourceCache since 0.10.7; 0.10.6 summed it with the AnimationCache), `vfRcBudgetMB` (+0x54C, its `+0x8C`), `vfDeviceTid` (+0x550). Also `vfUntracked` (+0x554, timed entries with 16 frames open) and `vfLogDropped` (+0x558).
+
+**v21 thread probes** (0.10.7; `vfThread2` from +0x560, 24 bytes per slot, slot s at +0x560 + (s - 12) * 24; probe i = 27..56 uses slot i - 15). Each prologue: whole instructions, no relative operand, the function's first SSE use writes its register, no branch into the patched bytes (byte scan of `.text`; one hit at `0x401BBC` is the `0x74` inside `mov esi, [esp+0x10]`) [verified, capstone on the exe copy]; all 58 table entries compared byte for byte with the exe copy. `[LotStream]` `SyncWait=1`/`ObjScene=1` own `0x7D98C0`/`0xABFAC0`: with those on, the Verify probe skips itself.
+
+| Slot | Probe | Address | docs/51 row | Group |
+|---|---|---|---|---|
+| 12 | `rayEntry` | physics ray entry `0x6583E0` | I-33-3 | |
+| 13 | `routeRay` | route worker ray `0x686CC0` | I-33-4 | overlap `686CC0` (self, both sides) |
+| 14 | `stCtor` | `SpeedTreeRenderer_ctor 0x7140D0` (CRT static init: may run before the hook) | I-34-2 | |
+| 15 | `stRender` | `SpeedTreeRenderer_RenderFrame 0x7135B0` | I-34-3 | |
+| 16 | `stWind` | SpeedTree wind `0x712F00` | I-34-7 | |
+| 17 | `audioCb` | sound-finished callback dispatch `0x863DC0` | I-35-5 | |
+| 18 | `threadedObjs` | `ScriptHost_ThreadedObjects 0xD7F8B0` (MaxUs vs the 5000 deadline) | I-36-1 | |
+| 19 | `loadLayout` | `LoadLayout` IC `0x782BC0` (window-IC marker: `GetMainWindow 0x779540` and the other small window ICs start with a relative call) | I-36-3, I-43-2 | overlap `50AB70` side B |
+| 20 | `rwfsWorker` | RW file system worker start `0x401BE0` (calls = threads started) | I-36-4 | |
+| 21 | `poolWorker` | thread pool `WorkerProc 0x4E1DF0` (calls = workers started) | I-36-6 | |
+| 22 | `devTexCreate` | device wrapper texture create `0x619770` | I-37-3 | |
+| 23 | `worldLoad` | front-end world load `0xC6D970` | I-38-2 | |
+| 24 | `lotGrid` | lazy lot grid rebuild `0xC688A0` | I-38-6 | |
+| 25 | `remoteSync` | synchronous remote call `0x7D98C0` (wait us) | I-38-7 | |
+| 26 | `texFactory` | texture factory `0x722E00` | I-40-1 | |
+| 27 | `buildModel` | `BuildModelMsg 0x5AD8F0` | I-42-1 | |
+| 28 | `buildStep` | `BuildStep 0x5E2050` | I-42-2 | |
+| 29 | `lotLighting` | `LotLightingManager 0xADD2C0` | I-44-1 | |
+| 30 | `ao` | precomputed AO `0x6883A0` | I-44-2 | |
+| 31 | `imposterStep` | `LotImposterJob_Step 0xADAE50` (a job step pointer, set at `0xADB062`) | I-44-3, I-44-4 | |
+| 32 | `idInsert` | object id hash insert `0x939170` | I-45-1 | |
+| 33 | `sceneMsg` | `SceneObjMgr_HandleMessage 0x703CB0` | I-46-1, I-48-3 | overlap `Scene` side A (side B: the cull job bodies, probes 5-8) |
+| 34 | `adoptVisuals` | `WindowManager_AdoptVisualsLocked 0x50B300` | I-47-2 | |
+| 35 | `uiInput` | `UIInput_ToWindowMessage 0x5989C0` | I-47-3 | |
+| 36 | `inputCall` | `0x598F90` (camera/input callers) | I-47-7 | |
+| 37 | `quadtree` | static quadtree build `0x6E4770` | I-48-1 | |
+| 38 | `lotScene` | `Lot_UpdateObjectSceneNode 0xABFAC0` | I-50-2 | |
+| 39 | `scriptMsg` | `ScriptMessageScope 0x7D2DB0` | I-50-3 | |
+| 40 | `wmDraw` | `WindowManager_Draw 0x50B270` | I-43-2, I-47-5 | overlap `50AB70` side A, `R1` side B |
+| 41 | `effectUpdate` | `UTFWinEffect_Update 0x5172E0` | I-47-5 | overlap `R1` side A |
+| 42 | (`shapeSwap`, probe 12) | `0xC2A840` thread roles | I-38-3 | |
+| 43 | (`treeRebuild`, probe 21) | `0x712480` thread roles | I-34-8 | |
+| 44 | (`lockAcquire`, probe 25) | `Lock_Acquire` with `0xFD9744` (JobManager): acquires by role, wait us | I-36-10 | |
+| 45 | (`lockAcquire`, probe 25) | `Lock_Acquire` with `0xFE4DC4` (SimService request list; posters `0x5EDA20` from `IC_CASUtils_SimOutfitFreeImpl`, swap `0x5F0DF0`/`0x5F0E50`) | I-42-3 | |
+
+Also v21: `vfOverlap[4]` (+0x890), `vfFdbPublishes` (+0x8A0: `0x593600` on the sim thread, I-41-4), `vfFpsLoops` (+0x8A4).
+
+**v22 probes** (0.10.8; `vfThread3` from +0x8AC, slot s at +0x8AC + (s - 46) * 24; `vfReady3` +0x8A8 bit i = probe 58 + i). Prologues read from the exe copy (capstone, 2026-10-16) [verified]: whole instructions, no relative operand, no direct branch into the copied bytes (byte scan of `.text`), the function's first SSE use is a write (`0xC6C290`, `0x49C5F0`, `0xD75FA0`) or none before the first `ret`; all 89 table entries compared byte for byte with the exe. None sits in a known signature window of S3SS or S3PP (docs/68 §6). `/native` keys: slot prefix + `Main|Sim|Other|OffDevice|Us|MaxUs` (count-only slots keep `Us`/`MaxUs` 0).
+
+| Slot | Probe | Address | Kind | docs/51 row | Key prefix |
+|---|---|---|---|---|---|
+| 46 | `monoLoaderLock` | `mono_loader_lock 0xE85020` (skipped under `[IcLockCheck]`) | thread, timed | I-58-1 | `vfMonoE85020` |
+| 47 | `monoVtable` | `mono_class_create_runtime_vtable 0xEA1E30` | thread | I-58-2 | `vfMonoEA1E30` |
+| 48 | `monoCctorSlow` | `0xEA3382` in `mono_runtime_class_init`: mid-function, after the fast exit `jne 0xEA36C7`; the logged caller is `[esp+0x1C]` | count | I-58-3 | `vfMonoEA3382` |
+| 49 | `monoThunk` | `tramp_create_thunk 0xE51400` | thread | I-58-4 | `vfMonoE51400` |
+| 50 | `monoGcHandle` | GC handle alloc `0xE78780` | thread | I-58-5 | `vfMonoE78780` |
+| 51 | `monoRtMethod` | `mono_interp_get_runtime_method 0xE53070` | thread | I-58-6 | `vfMonoE53070` |
+| 52-55 | `rtLotContains`, `rtExitBuildBuy`, `rtRebuildLot`, `rtDestroy` | `0x628A90`, `0x835240`, `0x835110`, `ObjectService_DestroyById 0x939420` (docs/60 §2 gate sites 13-15, destroy drain) | thread | I-60-1..I-60-5 | `vfRt628A90`, `vfRt835240`, `vfRt835110`, `vfRt939420` |
+| 56 | `rtShapeRelease` | `PhysShape_Release 0x682760`, counted only when the return address is `0xC2A896` (the terrain swap's release) | count | I-60-6, I-60-7 | `vfRt682760` |
+| 57 | `evPump` | `JobManager_RunJobs 0x59A430` (opens a pass per thread; skipped under `[LotStream]`) | thread, timed | I-61-2 | `vfEv59A430` |
+| 58, 59 | `evReady` + existing `execJob` | `ReadyJob 0x599FC0` inside a pass records the job (`[esp+4]`, newest 16 per thread); `ExecuteJob 0x599720` of a recorded job in the same outermost pass counts once | count | I-61-2 | `vfEvReadyInPump`, `vfEvPumpSamePass` |
+| 60-63 | existing `remoteSync` / `execJob` / `lotAddExec` | `RemoteCall_Dispatch 0x7D98C0`: inline when the caller is the target (selector byte `[esp+4]`: 1 = sim `[0x11D8A8C]`, 0 = main `[0x11D8A88]`, the test at `0x7D98E2`) and inline inside a lot add; a not-inline call with async byte `[esp+8]` = 0 opens a wait in which `ExecuteJob` and lot adds count | count | I-61-1, I-61-8, I-61-3, I-61-4 | `vfEvRcInline`, `vfEvRcInLotAdd`, `vfEvJobInSyncWait`, `vfEvLotAddInSyncWait` |
+| 64 | `evScriptDrain` | ScriptMessageServer service slot `+0x20` `0x76B1A0` | thread | I-61-9 | `vfEv76B1A0` |
+| 65, 66 | `lotAddExec` + the four managed entries | `RemoteMethodCall_Execute 0xABD3C0` with fn `[ecx+0x10] == 0xAC1130` (lot add; skipped under `[LotStream]`); `0xE59FD0`, `0xE5A600`, `0xD8A8E0`, `0xD75FA0` (skipped under `[RouteWorker]`) entered inside it | thread, timed / count | I-61-5..I-61-7 | `vfThrAC1130`, `vfEvLotAddManaged` |
+| 67 | `lotScore` | `WorldManager_ScoreAndStreamLots 0xC6C290` (skipped under `[LotStream]`) | thread | I-61-14, I-61-15 | `vfThrC6C290` |
+| 68-70 | `glyphAddPage`, `glyphPageTex`, `glyphClearPage` | `0x452D30`, `0x6916F0`, `0x452630` | thread | I-54-4..I-54-6, I-52-4 | `vfThr452D30`, `vfThr6916F0`, `vfThr452630` |
+| 71 | `stblRebuild` | `LocStrSvc_RebuildTableList 0x59BDE0` | thread | I-54-7 | `vfThr59BDE0` |
+| 72 | `padPoll` | `InputMan_PollPad 0x49C5F0` | thread | I-55-1, I-55-2 | `vfThr49C5F0` |
+| 73, 74 | `shaderVs`, `shaderPs` | `0x799780`, `0x799810`; creates before the first `0xC6D970` entry also count in `vfShaderStartup[2]` (+0xBE0) | thread | I-53-1..I-53-3 | `vfThr799780`, `vfThr799810`, `vfCost7997x0Startup` |
+| 75 | `loadPump` | `App_LoadPumpCallback 0xECA350` | thread | I-55-5 | `vfThrECA350` |
+| 76 | `cursorApply` | `CursorManager_Apply 0x505620`, self overlap group 4 -> `vfOverlapCur` (+0xBDC) | thread + overlap | I-55-4 | `vfThr505620`, `vfRace505620Overlap` |
+| 77, 78 | `arenaGrow`, `gcFree` | `0xD71900`, `GC_free 0xE4BEB0` | count | I-57-1, I-57-2 | `vfMonoD71900`, `vfMonoE4BEB0` |
+| 79 | the four managed entries | `0xE59FD0`, `0xE5A600`, `0xD8A8E0`, `0xD75FA0` (nested entries count again) | count | I-56-5 | `vfMonoInvoke` |
+
+Also v22: `vfMonoIcNestMax` (+0xBE8) and `vfMonoIcNestNeg` (+0xBEC, key `vfMonoIcNestNegCalls`): the 1 s poll (Costs or Memory) reads `[0x11F2D84]` (docs/56 I-56-1). Not hookable at the entry: `Job_Submit 0x59A350` (`je` in its first 4 bytes) and `RunJobsLocked 0x599E60` (`0x599ED8` jumps to `0x599E65`). Left out by the hook rule (docs/68): `0x59C5B0`, `0xE4D9F0`, `0xD81FC3`-`0xD81FE0`, `0xAC1130` (S3SS detours it), no new probe on `0xABFAC0`/`0x7D2DB0`.
+
+**Not built:** the texture share of the ResourceCache (docs/39/40): the cache keeps no per-type byte count, so there is no field to read; it would need a hook on `Texture_CacheSizeBytes 0x619DB0` or `ResourceCache_AdjustBytes 0x731F60`.
+
+### Selftest
+
+Every probe runs through its real stub, trampoline and leave thunk on a dummy function (nop prologue of the probe's length, `mov eax, id; ret 8`): mode 0 passes everything through and counts nothing; (0.10.7) every v21 thread probe in its slot, the four overlap groups both ways with own nesting excluded and a dropped frame giving its sides back, swap and tree thread roles, the lock classes by timeout pointer (an `ecx` equal to the old filter value is not counted), FrameDb publishes on sim only, the loop counter, the priority-0 cache pick; thread roles and off-device; timing; ray/swap and key-list/register overlaps across two threads (own nesting excluded); a dropped dead frame undoes its in-flight count; the 16-frame limit; the id chain histogram over a fake bucket array and the off-sim caller list; the package probe with nested calls; tree rebuilds per frame; FrameDb hold/wait by role; the UI lock filter; the gate stub; each stub's index and trampoline slot; readouts over fake objects and SEH on bad pointers; the event file; and install refusing every probe in a process without the game's bytes. `static_assert`s pin the v20 offsets and the v21 layout. 0.10.8: every v22 thread probe in its slot, the count-only kinds (no time, no frame), the shape release filter on `0xC2A896`, shader startup vs after the world load, pump same pass (once per job, forgotten by the next pass), inline remote calls by selector, a synchronous wait counting jobs and lot adds run inside it, the lot-add filter on fn `0xAC1130` with managed entries and inline re-posts inside it, a dropped lot-add frame giving its depth back, the cursor self overlap across two threads, the IC nesting readout; `static_assert`s pin the v22 layout (764 int32). The save-write test's info buffer moved to its own page (a static buffer ended at a section edge in this build, so `Readable()` over the 520-char path failed).
+
+### How to test in game
+
+One load per group first (`Threads=1`, then `Races=1`, then `Costs=1` with `Memory=1`), BP and SV, normal play plus a save and a CAS open; read `/native` and the jsonl. Overhead to watch: `Costs` hooks every `Lock_Acquire` and the hot lookups (`0x939100` with a chain walk, `0xAB8540`, `0xC2A570` in `Races`); compare the sim tick time with `Mode=0` in the same load before reading costs.
+
+### Risks
+
+- A mod that patches one of these prologues after we load would overwrite our jump (we only check at start).
+- The return-address swap is invisible to the game, but a stack walker (Frida, crash dumps) shows the leave thunk in place of the caller for an open timed call.
+- Counters written from several threads use interlocked adds; the id chain histogram is sim-thread only (plain adds).

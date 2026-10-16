@@ -1,0 +1,18 @@
+[
+  {
+    "id": "bp-ts3fixes-ui",
+    "note": "v0.1.2 candidates: ts3fixes UI caches #25 motivebar, #26 buffgrid, #30 namecache (docs/74); A/B in one load, 3-min slices, starts on",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": { "profile": { "minutes": 12, "ab": "motivebar,buffgrid,namecache", "slice": 3 } },
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ts3fixes-ui",
+    "note": "same on Isla Paradiso",
+    "asi": "tested",
+    "save": "Baseline-IP",
+    "run": { "profile": { "minutes": 12, "ab": "motivebar,buffgrid,namecache", "slice": 3 } },
+    "timeoutMin": 30
+  }
+]

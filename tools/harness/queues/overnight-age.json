@@ -1,0 +1,16 @@
+[
+  {
+    "id": "bp-age-14d",
+    "note": "PLAN lane G 10 (task 8): Baseline-BP loaded and saved as bp-age-14d-<date> (Baseline-BP only read), 14 sim days, checkpoint every 2; repo ini as is, kFastRefTable as installed",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": {
+      "age": {
+        "days": 14,
+        "checkpoint": 2,
+        "keepAlive": -50
+      }
+    },
+    "timeoutMin": 150
+  }
+]

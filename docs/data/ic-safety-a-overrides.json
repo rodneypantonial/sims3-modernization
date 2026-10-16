@@ -1,0 +1,23 @@
+{
+  "Route_Plan": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/18: plans under RoutingWorld+0x918 but reads unlocked per-lot planner state; the old route worker had to proxy every managed call"},
+  "Route_PlanFromPoint": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/18: same planner path as Route_Plan"},
+  "Route_Replan": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/18: same planner path as Route_Plan"},
+  "Route_ReplanFromPosition": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/18: same planner path as Route_Plan"},
+  "Query_GetObjectsInRange": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics range query, readers take no lock and no thread check; the tree is written on the sim thread"},
+  "Query_CountObjectsInRange": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics range query, no lock"},
+  "Query_GetSimsOverlappingFootprint": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics range query, no lock"},
+  "World_CanSeeObjectImpl": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33 and docs/48: physics ray plus Lot_UpdateObjectSceneNode, no lock"},
+  "World_CanSeePointImpl": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics ray, no lock"},
+  "World_CanSeeSkyFromPosImpl": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics ray, no lock"},
+  "World_FindPlaceOutsideLot": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/33: physics range query, no lock"},
+  "Query_GetObjectsOnLot": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/45: walks the lot object vector with no lock; returns a managed handle array (host +0xC0)"},
+  "Query_CountObjectsOnLot": {"verdict": "UNSAFE", "confidence": "verified", "note": "docs/45: walks the lot object vector with no lock"},
+  "Simulator_CreateObjectImpl": {"verdict": "PROXY", "confidence": "verified", "note": "docs/50: object insert, all inserts found run on the sim thread; host +0x17C then primary host +0x04"},
+  "Simulator_DestroyObjectImpl": {"verdict": "PROXY", "confidence": "verified", "note": "docs/45: object remove (DestroyById), sim thread only"},
+  "Objects_Clone": {"verdict": "PROXY", "confidence": "verified", "note": "docs/45 and docs/50: ObjectService_CloneObject insert, sim thread only"},
+  "World_ObjectDesigner_SetObjectImpl": {"verdict": "PROXY", "confidence": "verified", "note": "docs/45: ObjectService_CreateObject insert"},
+  "World_LotSetEntranceByTargetPointImpl": {"verdict": "PROXY", "confidence": "verified", "note": "docs/45: ObjectService_CreateObject insert"},
+  "World_ObjectDesigner_ShareDesignPresetImpl": {"confidence": "verified", "note": "creates a thumbnail texture on the calling thread (ThumbnailManager_CreateThumbnailTexture -> Texture_Create2D/FillLevels, same missing hand-off as docs/43)"},
+  "World_SetLightingValuesImpl": {"confidence": "verified", "note": "reaches Device_ApplyGammaRamp through 0x6C4770 with no owner-thread check in the direct-call path"},
+  "Simulator_DidSecuritySystemFailImpl": {"verdict": "SAFE", "confidence": "inferred", "note": "returns one flag"}
+}

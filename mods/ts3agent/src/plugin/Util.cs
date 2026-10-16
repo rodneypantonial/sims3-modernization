@@ -32,6 +32,7 @@ namespace Ts3Agent
         {
             if (!a.Has(key)) return ActiveSim().SimDescription;
             string q = a.Str(key).Trim();
+            if (q == "active") return ActiveSim().SimDescription;  // lets repro entries filter by the active Sim
             ulong id;
             if (ulong.TryParse(q, NumberStyles.Integer, CultureInfo.InvariantCulture, out id))
             {

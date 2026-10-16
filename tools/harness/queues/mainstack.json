@@ -1,0 +1,4 @@
+[
+  { "id": "bp-mainstack", "note": "M-TOOL / docs/20 §7: first main-thread stack sample (frame loop, D3D, UI, SpeedTree cost) beside the sim sampler, installed build",
+    "asi": "tested", "save": "Baseline-BP", "run": { "profile": { "minutes": 6, "mainstack": "main" } }, "timeoutMin": 20 }
+]

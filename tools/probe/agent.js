@@ -21,10 +21,14 @@ function pushEvent(e) {
 
 // Stack walking in JS only: every read goes through Frida's guarded memory API, which throws instead of crashing.
 // (Frida's native Backtracer.FUZZY read unmapped stack memory and crashed the game on 2026-10-11.)
-let codeMap = new ModuleMap();
+let codeMap = new ModuleMap(), codeMapAt = 0;
 function isCode(p) {
   if (codeMap.has(p)) return true;
-  codeMap.update(); // a DLL may have loaded since
+  // a DLL may have loaded since; at most one refresh per second: a stack scan misses on most words, and a refresh per miss
+  // made one /simstack call take seconds, which starved every other probe call (2026-10-16-sampler-hang.md)
+  if (Date.now() - codeMapAt < 1000) return false;
+  codeMapAt = Date.now();
+  codeMap.update();
   return codeMap.has(p);
 }
 function safeRead(p) {
@@ -164,15 +168,82 @@ function threadStack(tid, max) {
 }
 
 const SIMULATE = [ptr(0xd81840), ptr(0xd82100)]; // MonoScriptHost::Simulate (tools/ghidra/anchors.csv)
-let simTid = null;
+let simTid = null, simSearchAt = 0;
 function findSimThread() {
   if (simTid !== null) return simTid;
+  const stored = storedTid(SIM_TID_AT); // set at app init (docs/28 §5.2); no need to suspend every thread to find it
+  if (stored) return (simTid = stored);
+  // The search suspends every thread (Process.enumerateThreads) and walks each stack: once per 10 s at most while it fails.
+  if (Date.now() - simSearchAt < 10000) return null;
+  simSearchAt = Date.now();
   for (const t of Process.enumerateThreads()) {
     const st = frames(t.context, 24);
     if (st.some(a => { const p = ptr(a.replace('?', '')); return p.compare(SIMULATE[0]) >= 0 && p.compare(SIMULATE[1]) < 0; })) { simTid = t.id; break; }
   }
   return simTid;
 }
+
+// Thread ids the game stores at app init: [0x11D8A88] main (render, frame loop 0xEC9F00) and [0x11D8A8C] sim, compared by
+// 0x7D98C0 (docs/28 §5.2, docs/33 §8) [verified static]. Before init (or in a dummy) the owner of the visible game window stands in.
+const MAIN_TID_AT = ptr('0x11d8a88'), SIM_TID_AT = ptr('0x11d8a8c');
+const storedTid = p => { try { return p.readU32() || null; } catch (e) { return null; } };
+let winTid = null;
+function windowThread() {
+  if (winTid !== null) return winTid;
+  const u = Process.findModuleByName('user32.dll');
+  if (!u) return null;
+  const FindWindowExW = new NativeFunction(u.getExportByName('FindWindowExW'), 'pointer', ['pointer', 'pointer', 'pointer', 'pointer']);
+  const GetWindowThreadProcessId = new NativeFunction(u.getExportByName('GetWindowThreadProcessId'), 'uint', ['pointer', 'pointer']);
+  const IsWindowVisible = new NativeFunction(u.getExportByName('IsWindowVisible'), 'int', ['pointer']);
+  const pid = Memory.alloc(4);
+  for (let h = FindWindowExW(NULL, NULL, NULL, NULL), n = 0; !h.isNull() && n < 20000; h = FindWindowExW(NULL, h, NULL, NULL), n++) {
+    const tid = GetWindowThreadProcessId(h, pid);
+    if (pid.readU32() === Process.id && IsWindowVisible(h)) return (winTid = tid);
+  }
+  return null;
+}
+// Thread ids of this process without suspending anything (Process.enumerateThreads suspends every thread for its contexts).
+const CreateToolhelp32Snapshot = new NativeFunction(k32t.getExportByName('CreateToolhelp32Snapshot'), 'pointer', ['uint', 'uint']);
+const Thread32First = new NativeFunction(k32t.getExportByName('Thread32First'), 'int', ['pointer', 'pointer']);
+const Thread32Next = new NativeFunction(k32t.getExportByName('Thread32Next'), 'int', ['pointer', 'pointer']);
+function processThreads() {
+  const snap = CreateToolhelp32Snapshot(4, 0); // TH32CS_SNAPTHREAD: every thread of the system
+  if (snap.toInt32() === -1) throw new Error('CreateToolhelp32Snapshot failed');
+  const e = Memory.alloc(28); // THREADENTRY32: dwSize, cntUsage, th32ThreadID +8, th32OwnerProcessID +12, ...
+  e.writeU32(28);
+  const ids = [];
+  try {
+    for (let ok = Thread32First(snap, e); ok; ok = Thread32Next(snap, e)) if (e.add(12).readU32() === Process.id) ids.push(e.add(8).readU32());
+  } finally { CloseHandle(snap); }
+  return ids;
+}
+const getDescription = k32t.findExportByName('GetThreadDescription'); // Windows 10 1607+
+const GetThreadDescription = getDescription ? new NativeFunction(getDescription, 'int', ['pointer', 'pointer']) : null;
+const LocalFree = new NativeFunction(k32t.getExportByName('LocalFree'), 'pointer', ['pointer']);
+// shortcut: cached per thread id, so a reused id keeps the old name; clear the cache if long runs show odd names
+const threadInfo = new Map();
+function infoOf(tid) {
+  if (threadInfo.has(tid)) return threadInfo.get(tid);
+  let name = null, start = null;
+  const h = OpenThread(0x0040 | 0x0800, 0, tid); // QUERY_INFORMATION | QUERY_LIMITED_INFORMATION
+  if (!h.isNull()) {
+    try {
+      const p = Memory.alloc(Process.pointerSize);
+      if (ntQueryThread(h, 9, p, Process.pointerSize, NULL) === 0) start = p.readPointer(); // ThreadQuerySetWin32StartAddress
+      if (GetThreadDescription && GetThreadDescription(h, p) >= 0) {
+        const s = p.readPointer();
+        if (!s.isNull()) { name = s.readUtf16String() || null; LocalFree(s); }
+      }
+    } finally { CloseHandle(h); }
+  }
+  const mod = start ? Process.findModuleByAddress(start) : null;
+  const r = { name, start: start ? start.toString() : null, module: mod ? mod.name : null };
+  threadInfo.set(tid, r);
+  return r;
+}
+// Frida cloaks its own threads and agent memory (they never show in enumerateThreads/ModuleMap); Toolhelp still lists them.
+const isProbeThread = (tid, i) => Cloak.hasThread(tid) || (i.start !== null && Cloak.hasRangeContaining(ptr(i.start)))
+  || /frida/i.test(i.module || '') || /^(gum|gmain|gdbus|frida)/i.test(i.name || '');
 
 function regs(c) {
   const out = {};
@@ -316,6 +387,8 @@ function netStart() {
 // how long, and how much of each plan a worker could overlap with sim-thread work. Read-only hooks; the lock is learned
 // from the first Route_PlanLocked (ecx = RoutingWorld). Lock_Acquire is the engine-wide lock (resource lock too), so
 // every acquire enters this script: `acquireHooksPerSec` shows the cost; stop it when done.
+// Also G11 (docs/18 H6 plan): entries at the 12 S0 gate sites by threads not holding +0x918, and the lock-free window per
+// sim-thread IC_Route_Plan (report `g11`; `gateHooksPerSec` shows the cost of those hooks). Queue run kind: {routelock}.
 const ROUTE_PLAN_LOCKED = ptr(0x82c6e0), LOCK_ACQUIRE = ptr(0x4e16f0), LOCK_RELEASE = ptr(0x4e17b0), LOCOMOTION_UPDATE = ptr(0x83ced0);
 const qpcBuf = Memory.alloc(8);
 const qpcFn = new NativeFunction(k32.getExportByName('QueryPerformanceCounter'), 'int', ['pointer']);
@@ -323,16 +396,125 @@ const qpfBuf = Memory.alloc(8);
 new NativeFunction(k32.getExportByName('QueryPerformanceFrequency'), 'int', ['pointer'])(qpfBuf);
 const qpfPerMs = qpfBuf.readU64().toNumber() / 1000;
 function nowMs() { qpcFn(qpcBuf); return qpcBuf.readU64().toNumber() / qpfPerMs; }
-const rl = { started: null, listeners: [], lock: null, simTid: null, iterations: 0, acquireHooks: 0, threads: {},
-             plans: [], plansByThread: {}, planMs: 0, overlapMs: 0, gaps: [], pending: null, depth: {} };
+// G11 (docs/18 "(3) Gating measurement"): the 12 S0 gate sites (planner leaves + 2 coarse gates) and IC_Route_Plan, the
+// whole job an async plan would run. Prologue bytes verified on the Steam exe; checked before any attach, all or nothing.
+const RL_GATES = {
+  lotTableFind: [0x62eab0, '55 8b ec 83 e4 f0 81 ec'], goalLotPlanner: [0x63f490, '83 ec 54 8b 44 24 5c 85'],
+  roomConnectivity: [0x63d2f0, '55 8b ec 83 e4 f8 81 ec'], lazyLotBuild: [0x63cb90, '83 ec 5c 53 8b 5c 24 64'],
+  lotRebuild: [0x63d7b0, '8b 44 24 08 55 8b e9 8b'], roomGraphRefresh: [0x63d860, '8b 44 24 08 8b 54 24 04'],
+  qReset: [0x61e320, '53 8b 5c 24 08 56 8b f1'], qResetClear: [0x61e420, '53 56 8b f1 8b 46 18 83'],
+  searchStamp: [0x61e360, '66 83 05 c4 80 15 01 01'], qNodeClear: [0x61c020, 'b8 70 9c 00 00 e8 36 2e'],
+  goalStep: [0x75c2d0, '55 8b ec 83 e4 f0 81 ec'], connectedRooms: [0x7929f0, '83 ec 14 53 33 db 57 89'],
+};
+const RL_ROUTE_PLAN = [0x765160, '0f 57 c0 8b 0d c4 40 1d'];
+// prologue, or the wrapper of a known plugin's detour (ts3native's IC_Route_Plan detour when RouteAsync is on); else throw
+function rlHookAt(name, [a, expect]) {
+  const p = ptr(a), got = Array.from(new Uint8Array(p.readByteArray(8))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+  if (got === expect) return p;
+  const target = got.startsWith('e9') ? p.add(5).add(p.add(1).readS32()) : null;
+  if (target && ['ts3native.asi', 'Sims3Performance.asi'].includes(Process.findModuleByAddress(target)?.name)) return target;
+  throw new Error(`routelock: ${name} @ 0x${a.toString(16)}: bytes ${got}, expected ${expect} (different build or unknown detour; nothing hooked)`);
+}
+
+// --- g11 begin: pure accounting, no Frida API (tools/probe/g11-check.mjs runs this block in node)
+// Events come from the hooks with a ms clock t. "busy" = some thread holds +0x918 or a gate site is running.
+// The movable time of a sim-thread IC_Route_Plan is min(plan length, gap from its return to the sim thread's next
+// routing touch: an outermost +0x918 acquire or a gate-site entry, or the next plan's entry).
+function g11Tracker(t0) {
+  const g = { depth: {}, gate: {}, plan: 0, planT0: 0, pending: null, busy: 0, busySince: 0, busyMs: 0,
+              plans: 0, planMs: 0, movableMs: 0, moves: [], secs: {}, sites: {} };
+  const bucket = t => g.secs[Math.floor((t - t0) / 1000)] ??= { movableMs: 0, unlocked: 0, busyMs: 0 };
+  const inc = t => { if (g.busy++ === 0) g.busySince = t; };
+  // shortcut: a busy span is booked in the second it ends (spans are short next to 1 s); split at the boundary if that matters
+  const dec = t => { if (g.busy > 0 && --g.busy === 0) { g.busyMs += t - g.busySince; bucket(t).busyMs += t - g.busySince; } };
+  const close = t => {
+    if (!g.pending) return;
+    const m = Math.min(g.pending.len, t - g.pending.end);
+    g.movableMs += m; bucket(t).movableMs += m;
+    if (g.moves.length < 20000) g.moves.push(m);
+    g.pending = null;
+  };
+  const held = tid => g.depth[tid] > 0;
+  return {
+    g,
+    lockEnter(tid, sim, t) { if (sim && g.plan === 0 && !held(tid)) close(t); },
+    lockHeld(tid, t) { if (!held(tid)) inc(t); g.depth[tid] = (g.depth[tid] || 0) + 1; },
+    lockRelease(tid, t) { // true when the thread's outermost hold ended; false for a hold taken before the watch started
+      if (!held(tid)) return false;
+      if (--g.depth[tid] > 0) return false;
+      dec(t); return true;
+    },
+    gateEnter(tid, sim, site, t) {
+      const s = g.sites[site] ??= { entries: 0, unlocked: 0, unlockedSim: 0, unlockedOuter: 0 };
+      s.entries++;
+      if (!held(tid)) {
+        s.unlocked++; if (sim) s.unlockedSim++;
+        if (!(g.gate[tid] > 0)) { s.unlockedOuter++; bucket(t).unlocked++; } // the entries a [RouteGate] detour would lock
+      }
+      if (sim && g.plan === 0) close(t);
+      g.gate[tid] = (g.gate[tid] || 0) + 1; inc(t);
+    },
+    gateLeave(tid, t) { if (g.gate[tid] > 0) { g.gate[tid]--; dec(t); } },
+    planEnter(sim, t) { if (sim && g.plan++ === 0) { close(t); g.planT0 = t; } },
+    planLeave(sim, t) {
+      if (!sim || g.plan === 0 || --g.plan > 0) return;
+      const len = t - g.planT0;
+      g.plans++; g.planMs += len; g.pending = { end: t, len };
+    },
+    report(t) {
+      const r3 = x => Math.round(x * 1000) / 1000, secs = (t - t0) / 1000, full = Math.floor(secs);
+      const q = (a, f) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return r3(s[Math.min(s.length - 1, Math.floor(f * s.length))]); };
+      const series = k => Array.from({ length: full }, (_, i) => r3(g.secs[i]?.[k] ?? 0)); // completed seconds only
+      const mv = series('movableMs'), un = series('unlocked'), bz = series('busyMs');
+      const unlockedTotal = Object.values(g.sites).reduce((a, s) => a + s.unlockedOuter, 0);
+      return {
+        formula: 'movableMsPerSec = sum over sim-thread IC_Route_Plan calls of min(plan ms, gap ms to the next sim-thread +0x918 acquire or gate-site entry) / seconds',
+        seconds: r3(secs), plans: g.plans, planMsPerSec: secs ? r3(g.planMs / secs) : null,
+        movableMsPerSec: secs ? r3(g.movableMs / secs) : null, movableShare: g.planMs ? r3(g.movableMs / g.planMs) : null,
+        movablePerSecond: { p50: q(mv, 0.5), p90: q(mv, 0.9), max: q(mv, 1) }, movablePerPlan: { p50: q(g.moves, 0.5), p90: q(g.moves, 0.9), max: q(g.moves, 1) },
+        freeShare: secs ? r3(1 - g.busyMs / (secs * 1000)) : null, // share of wall time with +0x918 free and no gate site running
+        unlockedGatePerSec: secs ? r3(unlockedTotal / secs) : null,
+        sites: Object.fromEntries(Object.entries(g.sites).map(([k, s]) => [k, { ...s, unlockedPerSec: secs ? r3(s.unlockedOuter / secs) : null }])),
+        open: g.pending !== null, // a plan whose gap never closed is not counted
+        series: { movableMs: mv, unlockedGate: un, busyMs: bz },
+      };
+    },
+  };
+}
+// --- g11 end
+
+const rl = { started: null, stopped: null, listeners: [], lock: null, simTid: null, iterations: 0, acquireHooks: 0, gateHooks: 0, threads: {},
+             plans: [], plansByThread: {}, planMs: 0, overlapMs: 0, gaps: [], pending: null, g11: null };
 const OVERLAP_BUCKETS = [0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, Infinity];
 function rlThread(tid) {
   return rl.threads[tid] ??= { acquires: 0, waitMs: 0, maxWaitMs: 0, holdMs: 0, maxHoldMs: 0, held: 0 };
 }
 function routeLockStart() {
-  if (rl.started) return;
-  rl.started = nowMs();
+  if (rl.listeners.length) return;
+  const gateAt = Object.fromEntries(Object.entries(RL_GATES).map(([k, v]) => [k, rlHookAt(k, v)])); // throws before any attach
+  const planAt = rlHookAt('IC_Route_Plan', RL_ROUTE_PLAN);
+  // a new start after stop measures afresh
+  Object.assign(rl, { started: nowMs(), stopped: null, iterations: 0, acquireHooks: 0, gateHooks: 0, threads: {}, plans: [], plansByThread: {},
+                      planMs: 0, overlapMs: 0, gaps: [], pending: null });
+  rl.g11 = g11Tracker(rl.started);
   rl.simTid = findInterpThread();
+  const g = rl.g11;
+  rl.listeners.push(Interceptor.attach(planAt, {
+    onEnter() { this.sim = Process.getCurrentThreadId() === rl.simTid; if (rl.lock !== null) g.planEnter(this.sim, nowMs()); },
+    onLeave() { if (rl.lock !== null) g.planLeave(this.sim, nowMs()); },
+  }));
+  for (const [site, at] of Object.entries(gateAt)) {
+    rl.listeners.push(Interceptor.attach(at, {
+      onEnter() {
+        rl.gateHooks++;
+        this.on = rl.lock !== null; // before the lock is known, nobody's hold can be told apart
+        if (!this.on) return;
+        const tid = Process.getCurrentThreadId();
+        g.gateEnter(tid, tid === rl.simTid, site, nowMs());
+      },
+      onLeave() { if (this.on) g.gateLeave(Process.getCurrentThreadId(), nowMs()); },
+    }));
+  }
   rl.listeners.push(Interceptor.attach(ROUTE_PLAN_LOCKED, {
     onEnter() {
       if (rl.lock === null) rl.lock = this.context.ecx.add(0x918);
@@ -353,7 +535,8 @@ function routeLockStart() {
       if (!this.match) return;
       this.t = nowMs();
       const tid = Process.getCurrentThreadId();
-      if (tid === rl.simTid && rl.pending && !(rl.depth[tid] > 0)) {
+      g.lockEnter(tid, tid === rl.simTid, this.t);
+      if (tid === rl.simTid && rl.pending && !(g.g.depth[tid] > 0)) {
         const gap = this.t - rl.pending.end, ov = Math.min(rl.pending.len, gap);
         rl.overlapMs += ov;
         if (rl.gaps.length < 20000) rl.gaps.push(ov);
@@ -364,17 +547,16 @@ function routeLockStart() {
       if (!this.match) return;
       const tid = Process.getCurrentThreadId(), now = nowMs(), w = now - this.t, th = rlThread(tid);
       th.acquires++; th.waitMs += w; th.maxWaitMs = Math.max(th.maxWaitMs, w);
-      if (!(rl.depth[tid] > 0)) th.held = now;
-      rl.depth[tid] = (rl.depth[tid] || 0) + 1;
+      if (!(g.g.depth[tid] > 0)) th.held = now;
+      g.lockHeld(tid, now);
     },
   }));
   rl.listeners.push(Interceptor.attach(LOCK_RELEASE, {
     onEnter() {
       if (rl.lock === null || !this.context.ecx.equals(rl.lock)) return;
-      const tid = Process.getCurrentThreadId();
-      if (!(rl.depth[tid] > 0)) return; // acquired before the watch started
-      if (--rl.depth[tid] === 0) {
-        const th = rlThread(tid), h = nowMs() - th.held;
+      const tid = Process.getCurrentThreadId(), now = nowMs();
+      if (g.lockRelease(tid, now)) { // false: acquired before the watch started, or still nested
+        const th = rlThread(tid), h = now - th.held;
         th.holdMs += h; th.maxHoldMs = Math.max(th.maxHoldMs, h);
       }
     },
@@ -382,6 +564,7 @@ function routeLockStart() {
   rl.listeners.push(Interceptor.attach(LOCOMOTION_UPDATE, { onEnter() { rl.iterations++; } }));
 }
 function routeLockStop() {
+  if (rl.listeners.length) rl.stopped = nowMs();
   for (const l of rl.listeners) l.detach();
   rl.listeners = [];
 }
@@ -469,7 +652,7 @@ function pct(a, q) {
 }
 function routeLockReport() {
   if (rl.started && rl.simTid === null) rl.simTid = findInterpThread();
-  const secs = rl.started ? (nowMs() - rl.started) / 1000 : 0, r3 = x => Math.round(x * 1000) / 1000;
+  const end = rl.stopped ?? nowMs(), secs = rl.started ? (end - rl.started) / 1000 : 0, r3 = x => Math.round(x * 1000) / 1000;
   const hist = {};
   for (const b of OVERLAP_BUCKETS) hist[b === Infinity ? '>100' : '<=' + b] = 0;
   for (const g of rl.gaps) { const b = OVERLAP_BUCKETS.find(x => g <= x); hist[b === Infinity ? '>100' : '<=' + b]++; }
@@ -484,10 +667,22 @@ function routeLockReport() {
     // O = share of plan time a worker could run before the sim thread next needs the routing lock
     overlap: { n: rl.gaps.length, totalMs: r3(rl.overlapMs), O: rl.planMs ? r3(rl.overlapMs / rl.planMs) : null,
                routeMsPerSec: secs ? r3(rl.planMs / secs) : null, overlapMsPerSec: secs ? r3(rl.overlapMs / secs) : null, histogramMs: hist },
+    // G11 (docs/18): job = whole IC_Route_Plan, window also ended by unlocked gate-site entries; upper bound until S2's native counters
+    gateHooksPerSec: secs ? Math.round(rl.gateHooks / secs) : 0,
+    g11: rl.g11 && rl.g11.report(end),
   };
 }
 
 rpc.exports = {
+  // One exported ts3native DWORD by name (e.g. ts3native_footprintMode); value 0|1 writes it first. Null when missing.
+  nativeExport(name, value, offset) {
+    const m = Process.findModuleByName('ts3native.asi');
+    const e = m === null ? null : m.findExportByName(name);
+    if (e === null) return null;
+    const p = e.add(offset || 0); // offset: a field of ts3native_counters, e.g. compressMode +0x150
+    if (value !== null) p.writeU32(value);
+    return { name, value: p.readU32() };
+  },
   net(start) {
     if (start) netStart();
     return { since: net.started && Math.round((Date.now() - net.started) / 1000), hooked: net.hooked.length, calls: net.calls,
@@ -514,7 +709,9 @@ rpc.exports = {
   // routeWorker 0|1 sets the worker's runtime switch (our plugin's own data, not game memory); only when the worker runs.
   // routeBudget 0|1 likewise sets the route search budget's switch (ts3native >= 0.4.0, [RouteBudget] Enabled=1).
   // routeAsync 0|1 likewise sets the async route plan's switch (ts3native >= 0.5.0, [RouteAsync] Enabled=1).
-  nativeCounters(routeWorker, routeBudget, routeAsync, alloc, waterJps) {
+  // vfResetMax 1 zeroes every [Verify] maximum (vf*Max*) after reading them, so the next read holds maxima since this call
+  // (tools/harness/queue.ts sends it with the dump after the load: the live window, docs/51 §1).
+  nativeCounters(routeWorker, routeBudget, routeAsync, alloc, waterJps, vfResetMax) {
     const m = Process.findModuleByName('ts3native.asi'); // Frida 17 has no static Module.findExportByName
     const c = m === null ? null : m.findExportByName('ts3native_counters');
     if (c === null) return null;
@@ -534,7 +731,65 @@ rpc.exports = {
       'allocThreads', 'allocFlushed', 'allocDropped', 'allocShutdowns', 'allocOomRetries'); // 0.8.0: [Alloc] EA allocator cache (docs/15 phase 8, +0x104..)
     if (c.readS32() >= 10) f.push('waterJpsReady', 'waterJpsMode', 'waterJpsVerify', 'waterJpsCallsK', 'waterJpsCellsK', 'waterJpsMismatches',
       'waterJpsFallbacks'); // 0.9.0: [WaterJps] water-grid jump as one loop (docs/15 phase 9, +0x130..)
+    if (c.readS32() >= 11) f.push('compressReady', 'compressMode', 'compressVerify', 'compressBatches', 'compressJobs', 'compressHits',
+      'compressMisses', 'compressMismatches', 'compressInMB', 'compressWaitMs', 'compressLastMs', 'compressPeakMB', 'flushReady', 'flushMode',
+      'flushDeferred', 'flushJobs', 'flushWaits', 'flushWaitMs', 'flushLastMs', 'flushFails'); // 0.10.0: [SaveCompress] + [SaveFlush] (docs/15 phase 10, +0x14C..)
+    if (c.readS32() >= 12) f.push('compressCommits', 'compressCommitPending', 'compressDirectCalls', 'compressDirectMs',
+      'compressDirectMB'); // 0.10.1: where save compression runs (docs/15 phase 10, +0x19C..)
+    if (c.readS32() >= 13) f.push('heightReady', 'heightMode', 'heightCalls', 'heightHits', 'heightMisses', 'heightRebuilds',
+      'heightMismatches'); // 0.10.2: terrain height cache (docs/20 §4b, +0x1B0..)
+    if (c.readS32() >= 14) f.push('gcCheckReady', 'gcOwnerTid', 'gcForeignAllocs', 'gcForeignTid'); // 0.10.2: GC thread check (docs/29 §4.5, +0x1CC..)
+    if (c.readS32() >= 15) f.push('icLockReady', 'icLockEntersK', 'icLockContended', 'icLockWaitUs', 'icLockMaxWaitUs', 'icLockOwnerChanges',
+      'icLockPrevTid', 'icLockLastTid', 'icLockLeaveWaiters', 'icLockCallback'); // 0.10.2: Mono loader lock check (docs/29 §5, +0x1DC..)
+    if (c.readS32() >= 16) f.push('rgReady', 'rgLock', 'rgOwnerTid', 'rgAcquires', 'rgEntries', 'rgUntracked',
+      ...Object.keys(RL_GATES).map(k => 'rgUnlocked_' + k), ...Object.keys(RL_GATES).map(k => 'rgJob_' + k)); // 0.10.3: route gate measurement (docs/18 S2a, +0x204..)
+    if (c.readS32() >= 17) f.push('cacheReady', 'cacheMode', 'cacheHits', 'cacheMisses', 'cacheMismatches', 'cacheEvicted', 'cacheEntries',
+      'cacheKB', 'cacheHitMB', 'cacheHashMs'); // 0.10.3: [SaveCompress] CacheMB compressed-bytes cache (docs/26 §8, +0x27C..)
+    if (c.readS32() >= 18) f.push('mtReady', 'mtMode', 'mtSimTid', 'mtThreads', 'mtSimRegistered', 'mtPushCalls', 'mtStacksPushed',
+      'mtCtxFails'); // 0.10.4: [MonoThread] step 1, GC thread registration and multi-stack root scan (docs/30, +0x2A4..)
+    if (c.readS32() >= 19) f.push('lsReady', 'lsMode', 'lotAdds', 'lotAddUs', 'lotAddMaxUs', 'lotAddObjs', 'lotAddMaxObjs', 'lotRemoves',
+      'lotRemoveUs', 'lotRemoveMaxUs', 'pumpCalls', 'pumpUs', 'pumpMaxUs', 'pumpLotPasses', 'pumpMaxLots', 'lotScoreCalls', 'lotScoreUs',
+      'lotScoreMaxUs', 'lotScoreChanged', 'lotSetOn', 'lotSetOff', 'syncWaits', 'syncWaitUs', 'syncWaitMaxUs', 'objScenes', 'objSceneUs',
+      'objSceneMaxUs', 'objSceneHist_lt0_1ms', 'objSceneHist_lt1ms', 'objSceneHist_lt10ms', 'objSceneHist_ge10ms', 'lsOtherFns',
+      'lsLogDropped'); // 0.10.5: [LotStream] lot streaming measurement (docs/28 §5.5, +0x2C4..)
+    // v20 keys follow vf<Group><Target><Suffix> (docs/15 [Verify] has the struct field for each); vfMem*Bytes are scaled below
+    if (c.readS32() >= 20) f.push('vfReady', 'vfMode',
+      ...['D5D910', '619540', '60D290', '6F3DC0', '599720', '6F1B00', '6EBE30', '6EA260', '6EBF50', '6F1D10', '50A860', '7294F0']
+        .flatMap(a => ['Main', 'Sim', 'Other', 'OffDevice', 'Us', 'MaxUs'].map(s => `vfThr${a}${s}`)),
+      'vfRaceC2A840Calls', 'vfRaceC2A840Race', 'vfRaceC2A570KiloCalls', 'vfRaceC2A570MaxInFlight', 'vfRace4B1AE0Calls', 'vfRace4B2D00Calls',
+      'vfRace4B1AE0Overlap', 'vfRace939100KiloCalls', 'vfRace939100OffSimRace', ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => `vfRace939100Ret${i}`),
+      'vfCost4AFFC0Calls', 'vfCost4AFFC0Us', 'vfCost4AFFC0MaxUs', 'vfCost4AA1B0Calls', 'vfCost4AA1B0MaxPerCall',
+      'vfCost939100Chain0', 'vfCost939100Chain1', 'vfCost939100Chain2to3', 'vfCost939100Chain4to7', 'vfCost939100Chain8to15',
+      'vfCost939100Chain16up', 'vfCost939100MaxChain', 'vfCost939100Objects', 'vfCostAB8540KiloCalls', 'vfCostC60D30Calls',
+      'vfCost712480Calls', 'vfCost712480MaxPerFrame', 'vfCost693780Calls', 'vfCost693780Us', 'vfCost693780MaxUs',
+      'vfCostFdbWaitCalls', 'vfCostFdbWaitUs', 'vfCostFdbWaitMaxUs',
+      ...['Main', 'Sim', 'Other'].flatMap(r => [`vfCostFBA5CC${r}Calls`, `vfCostFBA5CC${r}Us`, `vfCostFBA5CC${r}MaxUs`]),
+      'vfCostECAA65Calls', 'vfCostSimServiceSlice', 'vfMemSpeedTreeBytes', 'vfMemVramBytes', 'vfMemResCacheBytes', 'vfMemResCacheFlushBytes',
+      'vfMemResCacheBudgetBytes', 'vfThrDeviceTid', 'vfUntracked', 'vfLogDropped'); // 0.10.6: [Verify] (docs/15 [Verify], +0x348..; vfRace939100Ret* are code addresses)
+    if (c.readS32() >= 21) f.push('vfReady2', // thread slots 12-45 in verify.cpp order (42-45: shape swap, tree rebuild, JobManager and SimService locks)
+      ...['6583E0', '686CC0', '7140D0', '7135B0', '712F00', '863DC0', 'D7F8B0', '782BC0', '401BE0', '4E1DF0', '619770', 'C6D970', 'C688A0',
+        '7D98C0', '722E00', '5AD8F0', '5E2050', 'ADD2C0', '6883A0', 'ADAE50', '939170', '703CB0', '50B300', '5989C0', '598F90', '6E4770',
+        'ABFAC0', '7D2DB0', '50B270', '5172E0', 'C2A840', '712480', 'FD9744', 'FE4DC4']
+        .flatMap(a => ['Main', 'Sim', 'Other', 'OffDevice', 'Us', 'MaxUs'].map(s => `vfThr${a}${s}`)),
+      'vfRaceSceneOverlap', 'vfRace50AB70Overlap', 'vfRaceR1Overlap', 'vfRace686CC0Overlap', 'vfCostFrameDbPublished',
+      'vfCostECAA65Loops'); // 0.10.7: [Verify] v21 (docs/15 [Verify], +0x55C..)
+    if (c.readS32() >= 22) f.push('vfReady3', // thread slots 46-79 in verify.cpp order, each with its group prefix (docs/15 [Verify] v22)
+      ...['vfMonoE85020', 'vfMonoEA1E30', 'vfMonoEA3382', 'vfMonoE51400', 'vfMonoE78780', 'vfMonoE53070', 'vfRt628A90', 'vfRt835240',
+        'vfRt835110', 'vfRt939420', 'vfRt682760', 'vfEv59A430', 'vfEvReadyInPump', 'vfEvPumpSamePass', 'vfEvRcInline', 'vfEvRcInLotAdd',
+        'vfEvJobInSyncWait', 'vfEvLotAddInSyncWait', 'vfEv76B1A0', 'vfThrAC1130', 'vfEvLotAddManaged', 'vfThrC6C290', 'vfThr452D30',
+        'vfThr6916F0', 'vfThr452630', 'vfThr59BDE0', 'vfThr49C5F0', 'vfThr799780', 'vfThr799810', 'vfThrECA350', 'vfThr505620',
+        'vfMonoD71900', 'vfMonoE4BEB0', 'vfMonoInvoke']
+        .flatMap(a => ['Main', 'Sim', 'Other', 'OffDevice', 'Us', 'MaxUs'].map(s => `${a}${s}`)),
+      'vfRace505620Overlap', 'vfCost799780Startup', 'vfCost799810Startup', 'vfMonoIcNestMax', 'vfMonoIcNestNegCalls'); // 0.10.8: [Verify] v22 (+0x8A8..)
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
+    if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
+    if (vfResetMax === 1 && r.version >= 20) {
+      let n = 0;
+      f.forEach((name, i) => { if (/^vf\w*Max/.test(name)) { c.add(i * 4).writeS32(0); n++; } });
+      r.vfMaxReset = n;
+    }
+    for (const [n, m] of [['vfMemSpeedTreeBytes', 1024], ['vfMemVramBytes', 1048576], ['vfMemResCacheBytes', 1024],
+      ['vfMemResCacheFlushBytes', 1024], ['vfMemResCacheBudgetBytes', 1048576]]) if (r[n] > 0) r[n] *= m; // counters hold KB / MB
     if (routeWorker === 0 || routeWorker === 1) {
       if (r.workerReady !== 1) return Object.assign(r, { error: 'route worker not running ([RouteWorker] Enabled=0 or ts3native < 0.3.0)' });
       c.add(8 * 4).writeS32(routeWorker);
@@ -628,6 +883,55 @@ rpc.exports = {
     };
   },
 
+  // Allocations >= minMB, regions grouped by AllocationBase (MBI +4), read-only (docs/08 M9: who owns the 128 MB block).
+  allocations(minMB) {
+    const mbi = Memory.alloc(MBI_SIZE);
+    const byBase = new Map();
+    let a = ptr(0x10000);
+    const end = ptr('0xffff0000');
+    while (a.compare(end) < 0) {
+      if (VirtualQuery(a, mbi, MBI_SIZE) === 0) break;
+      const base = mbi.readPointer();
+      const size = mbi.add(12).readU32();
+      const state = mbi.add(16).readU32();
+      if (state !== MEM_FREE) {
+        const key = mbi.add(4).readPointer().toString();
+        const e = byBase.get(key) || { base: key, reserved: 0, committed: 0, type: mbi.add(24).readU32() };
+        e.reserved += size;
+        if (state === MEM_COMMIT) e.committed += size;
+        byBase.set(key, e);
+      }
+      const next = base.add(size);
+      if (next.compare(a) <= 0) break;
+      a = next;
+    }
+    const mb = x => Math.round(x / 1048576 * 10) / 10;
+    const min = (minMB || 32) * 1048576;
+    const typeName = t => t === MEM_IMAGE ? 'MEM_IMAGE' : t === MEM_MAPPED ? 'MEM_MAPPED' : t === MEM_PRIVATE ? 'MEM_PRIVATE' : `0x${t.toString(16)}`;
+    const list = [...byBase.values()].filter(e => e.reserved >= min).sort((x, y) => y.reserved - x.reserved);
+    return { minMB: minMB || 32, count: list.length, allocations: list.map(e => ({ base: e.base, reservedMB: mb(e.reserved),
+      committedMB: mb(e.committed), type: typeName(e.type), owner: e.type === MEM_IMAGE ? owner(ptr(e.base)) : null })) };
+  },
+
+  // First 5 bytes of MSVCR80!malloc/free and where a jmp there leads (S3SS mimalloc patches them), read-only.
+  mallocHook() {
+    const crt = Process.enumerateModules().find(m => m.name.toLowerCase() === 'msvcr80.dll');
+    if (!crt) return { error: 'MSVCR80.dll not loaded' };
+    const one = name => {
+      const f = crt.findExportByName(name);
+      if (f === null) return { name, error: 'no export' };
+      const b = new Uint8Array(f.readByteArray(5));
+      const r = { name, address: f.toString(), bytes: Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(' '), jump: null, target: null };
+      try {
+        if (b[0] === 0xe9) { r.jump = 'E9 rel32'; r.target = f.add(5 + f.add(1).readS32()); }
+        else if (b[0] === 0xff && b[1] === 0x25) { r.jump = 'FF25 [abs32]'; r.target = f.add(2).readPointer().readPointer(); }
+      } catch (e) { r.error = `jump target unreadable: ${e.message}`; }
+      if (r.target !== null) { r.targetModule = owner(r.target); r.target = r.target.toString(); }
+      return r;
+    };
+    return { crt: crt.path, malloc: one('malloc'), free: one('free') };
+  },
+
   // The sim thread only: cheap enough for a watchdog (suspends one thread for a few microseconds).
   // Managed call stack of the sim thread, innermost first: frame[1] is the method's interpreter info, info+8 its
   // MonoMethod (klass +8, name +0x18; class name/namespace +0x34/+0x38) [verified 2026-10-12, docs/04 F6a].
@@ -648,6 +952,27 @@ rpc.exports = {
     const tid = findSimThread();
     if (tid === null) return { thread: null, stack: [] };
     return { thread: tid, stack: threadStack(tid, maxFrames || 24) };
+  },
+
+  // Native stacks of other threads, one SuspendThread each (a few microseconds), never all at once. which: 'main' (default),
+  // a thread id, or 'all' = every thread of the game except the sim thread, the probe's own threads and this one.
+  // Never the sim thread: /simstack owns it (two samplers on it deadlocked the probe, 2026-10-13).
+  threadStacks(which, maxFrames) {
+    const self = Process.getCurrentThreadId();
+    const sim = new Set([simTid, interpTid, storedTid(SIM_TID_AT)].filter(x => x));
+    const window = windowThread(), main = storedTid(MAIN_TID_AT) ?? window;
+    let tids;
+    if (which === 'all') tids = processThreads().filter(t => t !== self && !sim.has(t) && !isProbeThread(t, infoOf(t)));
+    else if (!which || which === 'main') tids = main ? [main] : [];
+    else if (/^\d+$/.test(String(which))) tids = [Number(which)];
+    else throw new Error(`which must be main, all or a thread id, not ${which}`);
+    const threads = tids.map(tid => {
+      const t = { thread: tid, role: tid === main ? 'main' : null, ...infoOf(tid), stack: null };
+      if (sim.has(tid)) t.error = 'sim thread: sampled by /simstack only';
+      else try { t.stack = threadStack(tid, maxFrames || 24); } catch (e) { t.error = e.message; }
+      return t;
+    });
+    return { main, window, sim: [...sim], threads };
   },
 
   modules() {

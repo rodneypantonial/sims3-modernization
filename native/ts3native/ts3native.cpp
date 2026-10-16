@@ -11,7 +11,7 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 
-#define TS3NATIVE_VERSION "0.9.0"
+#define TS3NATIVE_VERSION "0.10.8"
 
 typedef unsigned char u8;
 
@@ -109,6 +109,8 @@ void* InstallDetour(const char* name, DWORD target, const u8* prologue, size_t l
     return tramp;
 }
 
+static DWORD g_mainTid;  // thread that loaded us (Run)
+
 // --- Phase 1: Boehm GC (docs/13-gc-tuning.md) ---
 static const DWORD GC_IS_INITIALIZED = 0x011F30D0;  // set at the end of GC_init (0xE4E160)
 static const DWORD BLOCKS_PER_MB = 256;              // GC heap blocks are 4 KB
@@ -153,7 +155,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 83 int32 (v10).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 764 int32 (v22).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -247,8 +249,177 @@ struct Ts3nCounters {
     LONG waterJpsCellsK;          // cells they stepped over, units of 1024
     LONG waterJpsMismatches;      // verify: WaterJump and the game's jump differed
     LONG waterJpsFallbacks;       // mode 1 calls passed to the game's jump (dir > 7, oversized grid)
+    // v11: save package compression on workers and the save's flushes on a worker (docs/15 phase 10, savecompress.cpp, savewrite.cpp)
+    LONG compressReady;           // 1 when the commit call 0x4A850F and the codec slot 0xFB901C are hooked
+    volatile LONG compressMode;   // runtime switch, writable by test tools: 0 = the game compresses in the commit loop, 1 = workers ahead of it
+    volatile LONG compressVerify; // 1 = a served call also runs the game's compressor and uses its result (counts mismatches)
+    LONG compressBatches;         // commits run with mode 1
+    LONG compressJobs;            // records queued for the workers
+    LONG compressHits;            // codec calls answered from a finished job
+    LONG compressMisses;          // codec calls in a batch that ran the game's slot (no job, other mode, job failed)
+    LONG compressMismatches;      // verify: job output differed from the game's
+    LONG compressInMB;            // uncompressed MB compressed by jobs
+    LONG compressWaitMs;          // committing-thread time waiting for (or running) jobs, milliseconds
+    LONG compressLastMs;          // last batch: whole commit (FUN_004A7910), milliseconds
+    LONG compressPeakMB;          // most bytes in flight (copies + outputs), MB
+    LONG flushReady;              // 1 when the two flush calls and the load copy call are hooked
+    volatile LONG flushMode;      // runtime switch, writable by test tools: 0 = the game flushes during the save, 1 = a worker after it
+    LONG flushDeferred;           // flush calls recorded for the worker
+    LONG flushJobs;               // worker runs started
+    LONG flushWaits;              // times the sim thread had to wait for the worker (next save, travel, load)
+    LONG flushWaitMs;             // their total wait, milliseconds
+    LONG flushLastMs;             // last worker run, milliseconds
+    LONG flushFails;              // files the worker could not open or flush
+    // v12 (0.10.1): where save compression really runs (records are committed one by one when closed, docs/15 phase 10)
+    LONG compressCommits;         // calls of the commit hook 0x4A850F (any mode)
+    LONG compressCommitPending;   // pending records at the last of them
+    LONG compressDirectCalls;     // codec compress calls outside a batch (dst set), any thread
+    LONG compressDirectMs;        // their time in the game's compressor, milliseconds
+    LONG compressDirectMB;        // their input, MB
+    // v13: terrain height cache (docs/20 §4b, heightcache.cpp)
+    LONG heightReady;             // 1 when 0xC2A570 and 0xC2A840 are detoured
+    volatile LONG heightMode;     // runtime switch, writable by test tools: 0 = the game's raycast, 1 = cache (+0x1B4)
+    LONG heightCalls;             // calls in mode 1
+    LONG heightHits;              // answered from the table
+    LONG heightMisses;            // ran the raycast and stored the result
+    LONG heightRebuilds;          // cell rebuilds (each drops every entry)
+    LONG heightMismatches;        // Verify=1: hits whose cached height differed from the raycast
+    // v14: GC allocation thread check (docs/29 §4.5, gcthreads.cpp), measurement only
+    LONG gcCheckReady;            // bit 0: GC_allocobj detoured, bit 1: GC_alloc_large detoured
+    LONG gcOwnerTid;              // first thread that reached a GC slow path
+    LONG gcForeignAllocs;         // slow-path calls from any other thread (a latent heap race when > 0)
+    LONG gcForeignTid;            // last such thread
+    // v15: Mono loader lock 0x11F43A8 check (docs/29 §5, iclock.cpp), measurement only
+    LONG icLockReady;             // bit 0: mono_loader_lock 0xE85020 detoured, bit 1: mono_loader_unlock 0xE85030 detoured
+    LONG icLockEntersK;           // wrapper enters, units of 1024
+    LONG icLockContended;         // enters whose TryEnterCriticalSection failed (another thread held it)
+    LONG icLockWaitUs;            // their total wait, microseconds (QPC)
+    LONG icLockMaxWaitUs;         // longest single wait
+    LONG icLockOwnerChanges;      // enters by a thread other than the previous owner
+    LONG icLockPrevTid;           // owner before the last change
+    LONG icLockLastTid;           // last owner
+    LONG icLockLeaveWaiters;      // unlocks with at least one thread waiting (Leave has to wake it)
+    LONG icLockCallback;          // [0x11EE6CC] (0xDA5970's callback) at the first enter after it was set
+    // v16: routing gate measurement (docs/18 H6 step S2a, routegate.cpp), no behaviour change
+    LONG rgReady;                 // bit 0: Lock_Acquire hooked, bit 1: Lock_Release hooked, bit 2: all 12 gate sites hooked
+    LONG rgLock;                  // world+0x918, learned from Route_PlanLocked (0 until the first plan)
+    LONG rgOwnerTid;              // thread holding world+0x918 now, 0 = free
+    LONG rgAcquires;              // outermost acquires of world+0x918 (Lock_Acquire returned recursion count 1)
+    LONG rgEntries;               // gate-site entries seen once the lock is known (all threads, nested too): the hooks' cost
+    LONG rgUntracked;             // entries not tracked because the thread's 16-frame return stack was full
+    LONG rgUnlocked[12];          // per site (docs/18 S0 table order): outermost gate entries by a thread not holding +0x918
+    LONG rgJob[12];               // the same entries made while a route-worker or async job runs
+    // v17: compressed-bytes cache in the codec slot (docs/26 §8, savecompress.cpp)
+    LONG cacheReady;              // 1 when [SaveCompress] CacheMB > 0 and the slot hook is in
+    volatile LONG cacheMode;      // runtime switch, writable by test tools: 0 = no lookups or stores, 1 = cache (+0x280)
+    LONG cacheHits;               // compress calls answered from the cache
+    LONG cacheMisses;             // compress calls that ran the game's compressor (output stored)
+    LONG cacheMismatches;         // Verify=1: a hit whose stored bytes differed from the game's (the game's are used)
+    LONG cacheEvicted;            // entries dropped to stay under CacheMB (least recently used first)
+    LONG cacheEntries;            // entries held now
+    LONG cacheKB;                 // compressed bytes held now, KB
+    LONG cacheHitMB;              // uncompressed input of the hits, MB
+    LONG cacheHashMs;             // time hashing inputs, milliseconds
+    // v18: second managed thread step 1 (docs/30 P1/P2, monothread.cpp)
+    LONG mtReady;                 // bit 0: GC root hook [0x11949CC] replaced (P2), bit 1: Simulate slot hooked, bit 2: first tick ran (P1)
+    volatile LONG mtMode;         // runtime switch (+0x2A8); step 1 has only 0 = patches, no worker
+    LONG mtSimTid;                // sim thread id (first Simulate tick)
+    LONG mtThreads;               // GC thread table entries in use at the first tick (after registration)
+    LONG mtSimRegistered;         // 1 = P1 added the sim thread, -1 = GC_new_thread did not, 0 = it was already registered
+    LONG mtPushCalls;             // root hook calls with the world stopped
+    LONG mtStacksPushed;          // other threads' stacks pushed in those calls
+    LONG mtCtxFails;              // GetThreadContext failed (or ESP out of range): whole committed stack pushed instead
+    // v19: lot streaming measurement (docs/28 §5.5, lotstream.cpp), no behaviour change. *MaxUs / *MaxLots / *MaxObjs:
+    // highest since the last reset (stutter-profile.js zeroes them each second), all-time when nothing resets them
+    LONG lsReady;                 // bits: 1 add execute, 2 remove execute, 4 RunJobs, 8 lot scoring, 16 SetActive, 32 sync wait, 64 objScene
+    volatile LONG lsMode;         // runtime switch (+0x2C8): 0 = hooks pass through, 1 = measure
+    LONG lotAdds;                 // AddLotObjectsToScene remote calls run (0xABD3C0, fn 0xAC1130)
+    LONG lotAddUs;                // their total time, microseconds (QPC)
+    LONG lotAddMaxUs;             // longest one
+    LONG lotAddObjs;              // objects in the lots added
+    LONG lotAddMaxObjs;           // most objects in one added lot
+    LONG lotRemoves;              // remove remote calls run (0xABD3E0, fn 0xAB4C00)
+    LONG lotRemoveUs;
+    LONG lotRemoveMaxUs;
+    LONG pumpCalls;               // outermost RunJobs 0x59A430 passes on the sim thread
+    LONG pumpUs;
+    LONG pumpMaxUs;               // longest pass: the per-pass spike
+    LONG pumpLotPasses;           // passes that ran at least one lot add or remove
+    LONG pumpMaxLots;             // most lot adds + removes in one pass
+    LONG lotScoreCalls;           // lot scoring 0xC6C290 calls (main thread)
+    LONG lotScoreUs;
+    LONG lotScoreMaxUs;
+    LONG lotScoreChanged;         // scoring calls that switched at least one lot
+    LONG lotSetOn;                // Lot::SetActive calls that activate a lot (the game's own change test)
+    LONG lotSetOff;               // ... that deactivate one
+    LONG syncWaits;               // SyncWait=1: synchronous remote calls the sim thread posted to another thread
+    LONG syncWaitUs;
+    LONG syncWaitMaxUs;
+    LONG objScenes;               // ObjScene=1: UpdateObjectSceneNode 0xABFAC0 calls
+    LONG objSceneUs;
+    LONG objSceneMaxUs;
+    LONG objSceneHist[4];         // calls < 0.1 ms, < 1 ms, < 10 ms, >= 10 ms (+0x330)
+    LONG lsOtherFns;              // add/remove execute calls with another fn pointer (not counted; first 8 logged)
+    LONG lsLogDropped;            // events not written to the -lotstream.jsonl (buffer full or write failed)
+    // v20: [Verify] runtime checks of the mapping-doc inferences (verify.cpp, docs/15 [Verify]), no behaviour change.
+    // *MaxUs / *Max*: highest since the last reset (all-time when nothing resets them); *K: units of 1024 calls
+    LONG vfReady;                 // bit i: probe i of kVf hooked (verify.cpp order), bit 28: readout thread runs
+    volatile LONG vfMode;         // runtime switch (+0x34C): 0 = hooks pass through, 1 = measure
+    LONG vfThread[12][6];         // +0x350, per thread probe: calls on main, sim, other, off the device thread; us total, max us
+    LONG vfSwaps;                 // terrain cell shape swaps 0xC2A840 (docs/38 C1)
+    LONG vfSwapsInRay;            // ... while another thread is inside the ray cast 0xC2A570
+    LONG vfRayCallsK;             // ray casts 0xC2A570
+    LONG vfRayMaxInFlight;        // most threads inside 0xC2A570 at once
+    LONG vfKeyLists;              // GetKeyList 0x4B1AE0 calls (docs/39 R2)
+    LONG vfRegDbs;                // RegisterDatabase 0x4B2D00 calls
+    LONG vfKeyListOverlaps;       // a key list and a registration on two threads at once (counted by the later one)
+    LONG vfIdLookupsK;            // object id lookups 0x939100 (docs/45)
+    LONG vfIdOffSim;              // ... on a thread that is not the sim thread (once the sim thread id is known)
+    LONG vfIdOffSimRet[8];        // +0x494, first 8 distinct return addresses of those
+    LONG vfPkgCalls;              // GetPackageSource 0x4AFFC0, outermost calls (docs/39 R1)
+    LONG vfPkgUs;
+    LONG vfPkgMaxUs;
+    LONG vfPkgWalked;             // package index searches 0x4AA1B0 inside them
+    LONG vfPkgMaxWalked;          // most in one call
+    LONG vfIdChain[6];            // +0x4C8, sim-thread lookups by nodes compared: 0, 1, 2-3, 4-7, 8-15, 16+ (docs/45 O1/O2)
+    LONG vfIdMaxChain;
+    LONG vfIdObjects;             // object count [service+0x1038] at the last lookup
+    LONG vfW2lCallsK;             // Lot_WorldToLocal2D 0xAB8540 (docs/38 C2)
+    LONG vfFindLotCalls;          // WorldManager_FindLotById 0xC60D30 (docs/38 C3)
+    LONG vfTreeRebuilds;          // SpeedTree cluster rebuilds 0x712480 (docs/48 S2)
+    LONG vfTreeMaxPerFrame;       // most between two FrameDb consumes (one per render frame)
+    LONG vfFdbHolds;              // FrameDb_ConsumeAndInterpolate 0x693780 on main (docs/41 S1): its time bounds the +0x48 hold
+    LONG vfFdbHoldUs;
+    LONG vfFdbHoldMaxUs;
+    LONG vfFdbWaits;              // sim-thread 0x593590 + 0x593600 calls (EnterCriticalSection +0x48 inside)
+    LONG vfFdbWaitUs;
+    LONG vfFdbWaitMaxUs;
+    LONG vfUiLock[3][3];          // +0x510, Lock_Acquire with timeout pointer 0xFBA5CC (the UI lock's 10 sites) per role main/sim/other: acquires, wait us, max us (docs/47 UI-L1)
+    LONG vfFpsGate;               // 10 FPS cap gate reached at 0xECAA65 (docs/41 P5)
+    LONG vfSimSlice;              // readout: byte [SimService+0x139] (docs/42), -1 no service
+    LONG vfSpeedTreeKB;           // 0.10.7: always -1 ([0x11D8628] is not a live-bytes total, docs/15 [Verify])
+    LONG vfVramMB;                // readout: VRAM MB the game stored, [[0x11CDD10]+0x238] (docs/40 §5)
+    LONG vfRcBytesKB;             // readout: ResourceCache held bytes +0x94 (0.10.7: the priority-0 ResourceCache only, docs/39)
+    LONG vfRcFlushKB;             // readout: its +0x98
+    LONG vfRcBudgetMB;            // readout: its CacheBudget +0x8C (0.10.6 read the AnimationCache's 15 MB)
+    LONG vfDeviceTid;             // readout: device owner thread [[0x11CECC8]+0x10]
+    LONG vfUntracked;             // timed entries not tracked (16 frames open on that thread)
+    LONG vfLogDropped;            // lines not written to the -verify.jsonl
+    // v21: [Verify] probes for the docs/51 rows the first run had no key for, loop count of the 10 FPS gate
+    LONG vfReady2;                // +0x55C, bit i: probe 27 + i of kVf hooked
+    LONG vfThread2[34][6];        // +0x560, thread slots 12-45 (verify.cpp order; 42-45 = shape swap, tree rebuild, JobManager and SimService Lock_Acquire)
+    LONG vfOverlap[4];            // +0x890, two threads in an overlap group at once: scene writes vs cull jobs, UI draw vs layout IC, R1 effect update vs UI draw, route ray 0x686CC0 twice
+    LONG vfFdbPublishes;          // +0x8A0, FrameDb_PublishFrame 0x593600 on the sim thread (frames published, docs/41 §5)
+    LONG vfFpsLoops;              // +0x8A4, main-loop iterations at 0xECA9ED (the gate's denominator)
+    // v22: [Verify] probes for the docs/52-62 ledger rows (docs/51 I-52..I-62)
+    LONG vfReady3;                // +0x8A8, bit i: probe 58 + i of kVf hooked
+    LONG vfThread3[34][6];        // +0x8AC, thread slots 46-79 (verify.cpp order: Mono warm-up, routing sites, pump same pass, remote calls, lot add, UI/input/shader probes)
+    LONG vfOverlapCur;            // +0xBDC, two threads in CursorManager_Apply 0x505620 at once (docs/55 R-CUR)
+    LONG vfShaderStartup[2];      // +0xBE0, Shader_CreateVertexShader 0x799780 / CreatePixelShader 0x799810 calls before the first world load 0xC6D970
+    LONG vfMonoIcNestMax;         // +0xBE8, readout: largest [0x11F2D84] (EA IC nesting counter, docs/56) seen by the 1 s poll
+    LONG vfMonoIcNestNeg;         // +0xBEC, polls that read it below 0
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -752,8 +923,17 @@ static u8 PlanCached(void* world, void* edx, int* outList, int* starts, int* goa
     return r;
 }
 
+// [RouteGate] (routegate.cpp): the routing lock world+0x918, set from every plan while the gate measurement is on
+static void* volatile g_rgLock;
+
 static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
                                     DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+    if (ts3native_counters.rgReady == 7 && g_rgLock != (u8*)world + 0x918) {  // a new world (load, travel) has a new lock
+        g_rgLock = (u8*)world + 0x918;
+        ts3native_counters.rgLock = (LONG)(uintptr_t)g_rgLock;
+        ts3native_counters.rgOwnerTid = 0;  // holds of the old lock are over; the new one is tracked from its next acquire
+        Log("route gate: routing lock %p (thread %lu)", g_rgLock, GetCurrentThreadId());
+    }
     InterlockedIncrement(&ts3native_counters.calls);
     ULONGLONG now = GetTickCount64();
     MaybeLogCounters(now);
@@ -886,7 +1066,18 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
 // finite deadlines, an absolute GetTickCount): try-lock (deadline 0 = one TryEnter/0 ms wait in the original) in a loop,
 // running the job's managed calls in between. A finite deadline that passes ends with one original call with it (one
 // last try; the original's own result, -2 = timed out).
+static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline);
+// [RouteGate] (routegate.cpp) owner tracking for world+0x918: success returns the recursion count (> 0), -1/-2 = failed
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline) {
+    const LONG r = LockAcquireAsync(lock, edx, deadline);
+    if (lock == g_rgLock && r > 0) {
+        if (r == 1) InterlockedIncrement(&ts3native_counters.rgAcquires);
+        ts3native_counters.rgOwnerTid = (LONG)GetCurrentThreadId();
+    }
+    return r;
+}
+
+static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline) {
     if (g_async.state != A_RUNNING || *deadline == 0 || GetCurrentThreadId() != g_async.owner) return g_lockOrig(lock, edx, deadline);
     static const DWORD kTry = 0;
     LONG r = g_lockOrig(lock, edx, &kTry);
@@ -973,9 +1164,10 @@ static bool ApplyRouteBudget(const wchar_t* ini) {
 }
 
 // One detour serves all three: cache lookup on the calling thread, then the original there or on the worker, under a budget.
+// [RouteGate] needs it only to learn the routing lock (all three off: a plain pass-through).
 // Returns true when installed (the log must then stay open for the periodic counters and the watchdog).
-static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
-    if (!cache && !worker && !budget) return false;
+static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
+    if (!cache && !worker && !budget && !gate) return false;
     g_planOrig = (PlanLockedFn)InstallDetour("Route_PlanLocked", ROUTE_PLAN_LOCKED, kPlanLockedPrologue, sizeof(kPlanLockedPrologue), (void*)PlanLockedHook);
     if (!g_planOrig) { ts3native_counters.windowMs = 0; return false; }
     ts3native_counters.budgetReady = budget && PatchCostSites(kCostSites, kCostFns);
@@ -992,10 +1184,20 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget) {
 #include "decompress.cpp"
 #include "alloc.cpp"
 #include "waterjps.cpp"
+#include "savecompress.cpp"
+#include "footprint.cpp"
+#include "heightcache.cpp"
+#include "gcthreads.cpp"
+#include "iclock.cpp"
+#include "routegate.cpp"
+#include "monothread.cpp"
+#include "lotstream.cpp"
+#include "verify.cpp"
 
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
     bool keepLog = false;
+    g_mainTid = GetCurrentThreadId();  // DllMain of the ASI: the exe's main thread
     DWORD n = GetModuleFileNameW(self, path, MAX_PATH);
     if (!n || n >= MAX_PATH) return;
     wchar_t* dot = wcsrchr(path, L'.');
@@ -1019,15 +1221,26 @@ static void Run(HMODULE self) {
         bool worker = ApplyRouteWorker(ini);
         const int asyncMode = ReadRouteAsync(ini);
         if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
-        keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini));
+        const bool gate = ReadRouteGate(ini);  // checks every prologue first: nothing is hooked if one differs
+        keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini), gate);
         if (asyncMode >= 0 && worker && keepLog) InstallAsync(asyncMode);
+        if (gate) InstallRouteGate(g_planOrig != NULL);
         keepLog = ApplySaveWrite(ini) || keepLog;
+        ApplySaveFlush(ini);
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
         if (!g_getOptOrig)
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
         keepLog = ApplyDecompress(ini) || keepLog;
         keepLog = ApplyAlloc(ini) || keepLog;
         keepLog = ApplyWaterJps(ini) || keepLog;
+        keepLog = ApplySaveCompress(ini) || keepLog;
+        keepLog = ApplyFootprintIndex(ini) || keepLog;
+        keepLog = ApplyHeightCache(ini) || keepLog;
+        keepLog = ApplyGcThreadCheck(ini) || keepLog;
+        keepLog = ApplyIcLockCheck(ini) || keepLog;
+        keepLog = ApplyMonoThread(ini) || keepLog;
+        keepLog = ApplyLotStream(ini) || keepLog;
+        keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

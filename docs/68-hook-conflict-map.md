@@ -1,0 +1,229 @@
+# Hook conflict map: every patched TS3W.exe address
+
+Written 2026-10-16. Static only: no game run. Steam 1.67 `TS3W.exe` (SHA-256 prefix `10b2423e`), image base `0x400000`, `.text` `0x401000`-`0xF94FFF`.
+
+One table of every address in `TS3W.exe` that a native plugin in our install patches or detours, plus our planned sites, then the overlaps, install order, late patches and a rule for new hooks.
+
+Sources, and how sure each is:
+- **ts3native:** `native/ts3native/*.cpp` (read 2026-10-16). `node tools/hook-sites.ts` lists every code-range literal in those sources, and `--check` fails when one is missing from this doc [verified].
+- **S3SS 1.6.3:** docs/03 §1 (source read at `5eb2c65`, patterns re-run on Steam 1.67), the S3SS log of a 2026-10-16 start (`<Documents>\Electronic Arts\The Sims 3\S3SS\S3SS_LOG.txt`, lists every address it patched) and our `S3SS.toml` (`tools/setup/fixes.json` `s3ss-config`) [verified].
+- **S3PP (Sims 3 Performance Patch) 2.1:** docs/17 §8 (1.1 source signatures re-run on Steam) and the 1.1 source in `game-copy/s3pp` [verified].
+- **MonoPatcher 0.3.0:** docs/06 §0.2/§1 (8 signatures, each one hit on Steam) [verified]; a signature scan of the installed `.asi` against `TS3W.exe` hit `0xD7DB80` and `0xE5637D` again [verified].
+- **TS3Patch.asi (Smooth Patch) and D3DShaderReplacer.asi:** static import, string and byte scans of the copies in `game-copy/bin` [verified scans; meaning inferred where marked]. Neither is in the current `Game\Bin`. The installer removes TS3Patch (`smoothpatch-asi`, `remove-if-present`), and D3DShaderReplacer is only in the 2026-10-11 copy.
+- **Planned:** docs/60 §2.2 (H6 closures), PLAN.md "Next round: fixes from the mapping waves" (numbers `#n` below), docs/30 §3-§4 and PLAN.md "`[MonoThread]` step 2" (P3/P4).
+
+Kinds: **detour** = `jmp` written over a function entry (ts3native `InstallDetour`, MinHook or MS Detours); **mid** = `jmp` in the middle of a function; **call** = the rel32 of one `call` retargeted; **imm** = an immediate or opcode byte rewritten; **slot** = a data pointer swapped; **read** = only resolved, called or hashed, never written.
+
+---
+
+## 1. Installed third-party plugins
+
+Current `Game\Bin` ASIs, loaded by Ultimate ASI Loader as `wininet.dll`: `MonoPatcher.asi`, `Sims3Performance.asi` (S3PP), `Sims3SettingsSetter.asi` (S3SS), `ts3native.asi`. `d3d9.dll` is DXVK (no patches in `TS3W.exe`).
+
+### 1.1 S3SS 1.6.3 (our `S3SS.toml`)
+
+| Address | Kind | Patch (S3SS name) | On in our config | When | Source |
+|---|---|---|---|---|---|
+| `0xD81A1D` | imm | GCFinalizeThrottle: `cmp eax,0xC8` -> `0x7FFF` (in `MonoScriptHost::Simulate 0xD81840`) | yes | S3SS hook thread, at start | [verified log] |
+| `0xD81A37` | imm | GCFinalizeThrottle: `jnz` -> NOP | yes | same | [verified log] |
+| `0xD81FDE` | call | SmoothPatchPrecise: the call to `IdleSimulationCycle` -> its own limiter. **Pattern starts at `0xD81FC3`** (27 bytes, offset +27), covering the remote-call pump call `call [edx+0x24]` at `0xD81FDA` | yes | same | [verified: pattern from docs/03, bytes at `0xD81FC3` read from the exe] |
+| `0xEC9FBA` | mid | SmoothPatchPrecise: inactive-window limit in `Frame_RenderAndPresent 0xEC9F00` | yes | same | [verified docs/03, docs/41] |
+| `0xAC1130` | detour | LotStreamingOpt object throttle: `Lot::AddLotObjectsToScene` | yes | same | [verified log] |
+| `0xC6D570` | detour | LotStreamingOpt map-view blocker: `WorldManager::Update` | yes | same | [verified log] |
+| `0xC63015` | imm | LotStreamingOpt visibility override: `jz` -> `jmp` | yes | same | [verified log] |
+| `0xABFAC0`, `0x7D2DB0`, `0x7D2DF0`, `0xABE9C0`, `0xB088C0`, `0x73E060` | read | LotStreamingOpt resolves and calls these by pattern: `UpdateObjectSceneNode`, `ScriptMessageScope` ctor/dtor, `PostRemoteMethodCall`, `IsObjectLargeOrFlora`, `Camera_IsMapViewModeEnabled` | yes | same | [verified log; that a failed match stops the whole patch is inferred] |
+| `0x4EB3B0` | detour | RefPackDecompressor (AVX2) | yes | same | [verified log, docs/15] |
+| `0x4DB355` | call | OversizedThreadStackFix: `_beginthreadex` pointer at a call site | yes | same | [verified docs/03 pattern] |
+| `0x4DB56C` region (2 sites) | imm | CreateFileRandomAccess ("dual patch": adds `FILE_FLAG_RANDOM_ACCESS`) | yes | same | [verified log line; exact addresses inferred from docs/03] |
+| `0xECAC30` | detour | StartupWarningDialogFix: warning callback wrapper | yes | same | [verified log] |
+| `0x88E9B0` | detour or imm | StoreFeaturedItemsDisable: `DownloadStoreFeaturedItems` | yes | same | [verified log; kind inferred] |
+| VariableRegistry registration (vtable slot `+0x3C`) and config getter | detour | Settings hooks ("Variable settings" UI; sets `Throttle Lot LoD Transitions` etc. at run time) | yes | same; values written later from the UI | [verified docs/03 §1.4; Steam addresses not resolved here] |
+| IAT `WaitForSingleObject`, `WaitForSingleObjectEx` | slot (IAT) | AdaptiveWait | yes | same | [verified docs/03] |
+| `SetThreadIdealProcessor` | API hook | CPUOptimization | yes | same | [verified docs/03] |
+| `MSVCR80!malloc/free/realloc/_aligned_*` | detour (CRT, not exe) | Mimalloc | yes | DllMain | [verified docs/03] |
+| `IDirect3D9::CreateDevice`, device `EndScene`/`Reset`, game `WndProc` | vtable / subclass (d3d9, not exe) | overlay | yes | at device creation | [verified log] |
+| `0x4E1320` | imm | SmoothPatchClassic (`SleepEx` wrapper) | **no** | - | [verified docs/03] |
+| `0xD819AA` | imm | GCTryToCollect | **no** | - | [verified docs/03] |
+| `0xE511F5` | imm | GCStopWorld (registered, not in our toml, not installed per log) | **no** | - | [verified log] |
+| `0x7F9876`, `0x7F9897`, `0x7F98B3` | imm | AnimationBlendPatch | **no** | - | [verified docs/03] |
+| WorldCache JC (Steam address commented out in source) | imm | WorldCacheSizePatch | **no** | - | [verified docs/03] |
+
+### 1.2 S3PP 2.1 (`Sims3Performance.ini`)
+
+Applied from S3PP's own worker thread, in priority order, while the game keeps starting (docs/17 §8.1 [verified]). Every site is resolved by a unique pattern **at offset 0** plus an expected-bytes check, through MS Detours (`DetourAttach`) [verified 1.1 source `patch_utils.h`, `simulator_stage_profiler.cpp`, `localized_string_cache.cpp`].
+
+| Address | Kind | Patch | On | Source |
+|---|---|---|---|---|
+| `0xD7FC60` | detour | SimulatorStageProfiler: `TaskObjects` | yes | [verified docs/17] |
+| `0xD74800` | detour | SimulatorStageProfiler: `OneShotObjects` | yes | [verified docs/17] |
+| `0xD7F8B0` | detour | SimulatorStageProfiler: `ThreadedObjects` (expects `55 8B EC 83 E4 F8 81 EC 98`) | yes | [verified source + docs/17] |
+| `0xD80BC0` | detour | SimulatorStageProfiler: `ProcessTaskState` | yes | [verified docs/17] |
+| `0xEBBDE0`, `0xEBBF00`, `0xEBBFE0`, `0xEBC060` | detour | MonoTypeEHashProbe: `g_hash` lookup / remove / destroy / insert. Acts only inside a profiler stage, so it does nothing when the profiler is not armed | yes | [verified docs/17] |
+| `0xEA8720` | read | MonoTypeEHashProbe: `mono_metadata_type_equal` used as a table tag | yes | [verified docs/17] |
+| `0xEA3820` | detour | MonoIsinstCache: `mono_object_isinst` | yes | [verified docs/17] |
+| `0x59C5B0` | detour | LocalizedStringCache: `LocStrSvc_GetString_A` (pattern `83 EC 78 53 55 56 8B D9 57 89 5C 24`) | yes | [verified source + exe bytes] |
+| `0xE4D9F0` | read | LocalizedStringCache: calls `GC_add_roots`, found by pattern at offset 0 (`8B 44 24 08 8B 4C ...`); no match = the patch is not installed | yes | [verified source] |
+| `0x59AF50`-`0x5A0xxx` (~50 sites; Find `0x59AF50`, Clear `0x59F6C0`, FindOrInsert `0x59F750`) | imm | StblBucketLayoutTuning, with self-test and rollback | yes | [verified docs/17; individual sites not listed] |
+| `0x4E49E5`, `0x4E4A1C`, `0x4E5BDA`, `0x4E5BE4` | imm | AllocatorArenaTuning (operands at +6) in `0x4E48F0` and `0x4E5AA0` | yes | [verified docs/17] |
+| none | - | PackageIndexWarmup (file reads only) | yes | [verified docs/17] |
+| IAT waits / thread stack | slot | ShortWaitSpin, ThreadStackDiet | **no** (S3SS does both) | [verified ini] |
+
+### 1.3 MonoPatcher 0.3.0
+
+MinHook (imports `SuspendThread`, `Get/SetThreadContext`, Toolhelp thread walk) [verified imports].
+
+| Address | Kind | Patch | When | Source |
+|---|---|---|---|---|
+| `0xD7E560` | detour | `InitializeScriptHost`: loads plugins, runs the original, registers icalls | DllMain (fires once at script host init) | [verified docs/06] |
+| `0xE5CA90` | detour | Mono `GenerateCode`: swaps `header->ilBegin/codeSize` for patched methods | DllMain | [verified docs/06] |
+| `0xE59218` | imm | `"ret: more values on stack"` print -> `90 E9` | DllMain [inferred] | [verified docs/06] |
+| `0xE5637D` | imm | JIT cache check 1 -> `90 90` (ForceJIT) | **on demand** from C# (`MonoPatcherLib.Internal.Hooking::ForceJIT` icall) [inferred from the icall name] | [verified docs/06 + our scan] |
+| `0xE648DC` | imm | JIT cache check 2 -> `EB` (ForceJIT) | on demand [inferred] | [verified docs/06] |
+| `0xD7DB80`, `0xE82550`, `0x011EE514` | read | `CreateMonoClass`, `mono_add_internal_call`, ScriptHost singleton | - | [verified docs/06] |
+
+### 1.4 TS3Patch.asi and D3DShaderReplacer.asi (not installed now)
+
+| Plugin | `TS3W.exe` sites | Other hooks | Source |
+|---|---|---|---|
+| TS3Patch (Smooth Patch, LazyDuchess) | `0x4E1320` imm (`mov ecx,<ms>; nop` over the `SleepEx` wrapper, first match of `8B 44 24 04 8B 08 6A 01 51 FF`; the pattern bytes are in the `.asi` at file offset `0xA414`) | `IDirect3DDevice9::Present` (vtable index 17) through a dummy device (`Direct3DCreate9` string, `RegisterClassExA`/`CreateWindowExA`), MinHook-style thread freeze (`SuspendThread`, `Get/SetThreadContext`); `EnumWindows` + `CreateThread` suggest it hooks from a thread once the game window exists | [verified scan; timing inferred] |
+| D3DShaderReplacer (LazyDuchess) | **none found**: no code-range immediates that fit, no byte pattern that matches `TS3W.exe` or the system `d3d9.dll`; its two long `x` runs are a jump-index table, not masks | It **suspends threads and patches code**, but in `d3d9.dll`: dummy window + `Direct3DCreate9` to read the device vtable, then inline hooks with MinHook's freeze (`CreateToolhelp32Snapshot`, `SuspendThread`, `Get/SetThreadContext`, `FlushInstructionCache`). The hooked methods are most likely `CreateVertexShader`/`CreatePixelShader` (it loads replacement shaders with `D3DXAssembleShaderFromFileW`/`D3DCompile`) [inferred]. Under DXVK the patched code is DXVK's | [verified scan; method list inferred] |
+
+---
+
+## 2. Ours: ts3native (all modules) and ts3fixes
+
+Every ts3native patch is applied from `DllMain` on the main thread, before the exe entry point runs (docs/15), with the original bytes checked first; a mismatch logs `SKIP` and writes nothing (`InstallDetour`, `PatchImm32`, the call-site helpers) [verified]. The one late write is the route worker's `runtime_invoke` slot (atomic compare-exchange at the first worker plan). Runtime switches only change counters, never code.
+
+| Module (ini section) | Address | Kind | What |
+|---|---|---|---|
+| `[GC]` | `0xE4E168` | imm | `GC_init`: initial heap (`mov ebp,0x2800`) |
+| `[GC]` | `0xE4A1D8`, `0xE4A1FF`, `0xE4A206` | imm | `GC_collect_or_expand`: growth step `0x800` |
+| `[GC]` | `0x01192324` | imm (data) | per-frame GC budget ceiling (`.data`) |
+| `[RouteCache]`/`[RouteWorker]`/`[RouteBudget]` | `0x82C6E0` | detour | `Route_PlanLocked` |
+| `[RouteWorker]` | `0xD75FA0` | detour | host delegate call |
+| `[RouteWorker]` | `0x01195B60` | slot (late, CAS) | Mono `runtime_invoke` pointer (expects `0xE5A600`), set at the first worker plan |
+| `[RouteBudget]` | `0x676340`, `0x67634A`, `0x676354`, `0x67635E`, `0x676368` | imm | `mov [esp+0x60], fn`: cost functions `0x674E40`, `0x673850`, `0x674250`, `0x675800`, `0x6734E0` (read) replaced by stubs |
+| `[RouteAsync]` | `0x4E16F0` | detour | `Lock_Acquire` |
+| `[RouteAsync]` | `0x765160` | detour | `IC_Route_Plan` (docs/06: really `Route_Plan`) |
+| `[RouteAsync]` (also `[RouteCache]` alone) | `0x74D040` | detour | `Route_GetOption` |
+| `[RouteGate]` | `0x62EAB0`, `0x63F490`, `0x63D2F0`, `0x63CB90`, `0x63D7B0`, `0x63D860`, `0x61E320`, `0x61E420`, `0x61E360`, `0x61C020`, `0x75C2D0`, `0x7929F0` | detour | 12 gate sites (`kRgSites`) |
+| `[RouteGate]` | `0x4E17B0` | detour | `Lock_Release`; reuses the `[RouteAsync]` `Lock_Acquire` detour when present |
+| `[SaveWrite]` | `0x742A95`, `0xAB10F6`, `0xAB12AF`, `0xAB134E`, `0xAB1363`, `0xAB1410` | call | save pipeline calls to `0xAB1030`, `0xAAE950`, `0xAAC110`, `0xAB0F80`, `0xAB0E80`, `0xAAF5F0` (read) |
+| `[SaveFlush]` | `0xAAFD8A`, `0xAAF737`, `0xAB16ED` | call | calls to `SAVE_FLUSH 0xAAF4B0` and the load copy |
+| `[Decompress]` | `0x4EC065` | call | `call 0x4EB3B0` -> `RefpackHook`; never touches `0x4EB3B0` itself |
+| `[Alloc]` | `0x4E69D0`, `0x4E6A20`, `0x4E5920`, `0x4E5CB0` | detour | EA heap Malloc, Memalign, Free, Shutdown |
+| `[WaterJps]` | `0x6207FB` | call | call to the water jump `0x61FE10`; hashes `0x61F750`-`0x61FF93` and `0x66DC50` (read) |
+| `[SaveCompress]` | `0x4A850F` | call | package commit call to `0x4A7910` |
+| `[SaveCompress]` | `0x00FB901C` | slot | RefPack codec vtable slot 1 (expects `0x4EC200`); hashes `0x4EB340`-`0x4EB3B0`, `0x4EB750`-`0x4EBFD0`, `0x4EC0A0`-`0x4EC282` (read, `0x4EC0A0` also called); calls `0x4E16F0`/`0x4E17B0` |
+| `[FootprintIndex]` | `0x666488` | call (6 bytes, call + nop) | scan in `LotLevel_SaveFootprints` (`0x6663C0`-`0x666740` hashed) |
+| `[FootprintIndex]` | `0x82C940`, `0xAAC320` | call | to `0x63C690` and `World_Save 0xC6D460` (read) |
+| `[HeightCache]` | `0xC2A570`, `0xC2A840` | detour | terrain height, cell shape rebuild |
+| `[GcThreadCheck]` | `0xE4A2B0`, `0xE4BA90` | detour | `GC_allocobj`, `GC_alloc_large` |
+| `[IcLockCheck]` | `0xE85020`, `0xE85030` | detour (11 bytes each, end `0xE8502B` < `0xE85030`) | `mono_loader_lock`/`unlock` |
+| `[MonoThread]` | `0x011949CC` | slot | GC push hook (expects `0xE4EF90` -> `0xE51350` -> `0xD71820`, read; tail `0xE4D9DC` read) |
+| `[MonoThread]` | `0x0108B6B0` | slot | `MonoScriptHost_Simulate` vtable slot (expects `0xD81840`); calls `0xE51070`, `0xE4D520`, `0xE4CEE0` (read) |
+| `[LotStream]` | `0xABD3C0`, `0xABD3E0`, `0x59A430`, `0xC6C290`, `0xAC20E0` | detour | lot add/remove execute, `RunJobs`, lot scoring, `Lot::SetActive`; `0xAC1130`, `0xAB4C00` are named only (read) |
+| `[LotStream]` `SyncWait=1` | `0x7D98C0` | detour | synchronous remote call |
+| `[LotStream]` `ObjScene=1` | `0xABFAC0` | detour | `UpdateObjectSceneNode` |
+| `[Verify]` (installed last; skips any address another section owns) | 58 detours: `0x401BE0` rwfsWorker, `0x4AA1B0` indexFind, `0x4AFFC0` pkgSource, `0x4B1AE0` keyList, `0x4B2D00` registerDb, `0x4E16F0` lockAcquire, `0x4E1DF0` poolWorker, `0x50A860` texDrain, `0x50B270` wmDraw, `0x50B300` adoptVisuals, `0x5172E0` effectUpdate, `0x593590` fdbSync, `0x593600` fdbPublish, `0x5989C0` uiInput, `0x598F90` inputCall, `0x599720` execJob, `0x5AD8F0` buildModel, `0x5E2050` buildStep, `0x60D290` texUpload, `0x619540` texCreate, `0x619770` devTexCreate, `0x6583E0` rayEntry, `0x686CC0` routeRay, `0x6883A0` ao, `0x693780` fdbConsume, `0x6E4770` quadtree, `0x6EA260` jobReflCull, `0x6EBE30` jobShadowCull, `0x6EBF50` jobShadow2Cull, `0x6F1B00` jobMainCull, `0x6F1D10` jobSortMain, `0x6F3DC0` renderReq, `0x703CB0` sceneMsg, `0x712480` treeRebuild, `0x712F00` stWind, `0x7135B0` stRender, `0x7140D0` stCtor, `0x722E00` texFactory, `0x7294F0` asyncComplete, `0x782BC0` loadLayout, `0x7D2DB0` scriptMsg, `0x7D98C0` remoteSync, `0x863DC0` audioCb, `0x939100` idLookup, `0x939170` idInsert, `0xAB8540` worldToLocal, `0xABFAC0` lotScene, `0xADAE50` imposterStep, `0xADD2C0` lotLighting, `0xC2A570` ray, `0xC2A840` shapeSwap, `0xC60D30` findLot, `0xC688A0` lotGrid, `0xC6D970` worldLoad, `0xD5D910` thumbTex, `0xD7F8B0` threadedObjs (0.10.8: only with `[Verify] ThreadedObjects=1`, default 0, because of §4 #1), `0xECA9ED` fpsLoop (mid), `0xECAA65` fpsGate (mid). 0.10.8 adds 31 (v22, docs/51 I-52..I-62): `0x452630` glyphClearPage, `0x452D30` glyphAddPage, `0x49C5F0` padPoll, `0x505620` cursorApply, `0x599FC0` evReady, `0x59A430` evPump, `0x59BDE0` stblRebuild, `0x628A90` rtLotContains, `0x682760` rtShapeRelease (counts only calls returning to `0xC2A896`), `0x6916F0` glyphPageTex, `0x76B1A0` evScriptDrain, `0x799780` shaderVs, `0x799810` shaderPs, `0x835110` rtRebuildLot, `0x835240` rtExitBuildBuy, `0x939420` rtDestroy, `0xABD3C0` lotAddExec, `0xC6C290` lotScore, `0xD71900` arenaGrow, `0xD75FA0` invokeDelegate, `0xD8A8E0` nativeToManaged, `0xE4BEB0` gcFree, `0xE51400` monoThunk, `0xE53070` monoRtMethod, `0xE59FD0` invokeState, `0xE5A600` runtimeInvoke, `0xE78780` monoGcHandle, `0xE85020` monoLoaderLock, `0xEA1E30` monoVtable, `0xEA3382` monoCctorSlow (mid, after the fast exit's `jne`), `0xECA350` loadPump. None is in a known signature window (`0xD81FC3`-`0xD81FE0`, `0x59C5B0`, `0xE4D9F0`, the S3PP seams, the S3SS lot streaming helpers); `0x59A430`, `0xABD3C0`, `0xC6C290` skip themselves under `[LotStream]`, `0xE85020` under `[IcLockCheck]`, `0xD75FA0` under `[RouteWorker]` | detour | timing, thread and race probes (docs/15 `[Verify]`, docs/51) |
+
+Read-only literals in the same sources (no write): `0xF42400` is a size limit, not an address.
+
+**ts3fixes** (managed): no `TS3W.exe` code writes. Its patch host swaps 40-byte `MonoMethod` headers in the heap (docs/04 F8, docs/17 §8.3) and talks to ts3native through `Route_GetOption` (`0x74D040`, owned by ts3native) [verified `RouteBackoff.cs`, docs/17]. The only shared surface with another plugin is MonoPatcher's `GenerateCode` hook, which also changes what a method compiles to (§4 row 12).
+
+**Probe** (test harness only, Frida, attaches at run time): `--taskstall` detours `0xD7FC60` and refuses when S3PP's profiler already owns it (PLAN.md "Harness gotchas") [verified note].
+
+---
+
+## 3. Planned sites (not built)
+
+| Source | Address | Kind | Shares with |
+|---|---|---|---|
+| docs/60 #1 | readers `0x6583E0`, `0x83B3A0`; writers `0x6823E0`, `0x682080`, `0x6819B0`; count-only `0x681820`, `0x681E00` | detour | `0x6583E0`: Verify rayEntry |
+| docs/60 #2 | `0x682760` (`PhysShape_Release`; `PhysShape_AddRef 0x682750` is 16 bytes before and stays unhooked), plus code inside the `[HeightCache]` stubs `0xC2A570`/`0xC2A840` | detour | HeightCache, Verify ray/shapeSwap |
+| docs/60 #3 | `0x628A90` (gate site 13) | detour | - |
+| docs/60 #4 | `0x939420` (`ObjectService_DestroyById`) | detour | - |
+| docs/60 #5 | `0xC688A0`, `0x82C420`; count-only `0xC68680` | detour | `0xC688A0`: Verify lotGrid |
+| docs/60 #6 | `0xAAC110` (`Save_WritePackage` entry), `0x78AE40`, `0x8361B0` | detour | `0xAAC110`: target of `[SaveWrite]` call `0xAB12AF`; `[FootprintIndex]` call `0xAAC320` is inside it |
+| docs/60 #7 | `0x835240`, `0x835110` (gates 14, 15) | detour | - |
+| docs/60 #9 | `0x818EA0` | detour | - |
+| docs/60 #10 | `0x829410`, `0x82D140`, `0x8299E0` | detour | - |
+| PLAN #1 | see docs/60 #2 | | |
+| PLAN #2 | `0x4B1AE0` (`GetKeyList` lock) | detour | Verify keyList |
+| PLAN #4 | `0xD5D910` (thumbnail texture, defer to device thread); alt. `D3DCREATE_MULTITHREADED` at `0x6112A5`/`0x6112BA` | detour / imm | Verify thumbTex; S3SS `CreateDevice` hook sees the flags |
+| PLAN #6 | `0x6128C5` (VRAM 4 GB wrap clamp) | imm | - |
+| PLAN #9 | `0x4AFFC0`, `0x4AA1B0` (key-to-package map) | detour | Verify pkgSource/indexFind |
+| PLAN #10 | sim pump deadline at the `0xD81FC3` call sequence (`call [edx+0x24]` at `0xD81FDA`) | call/mid | **S3SS SmoothPatchPrecise pattern `0xD81FC3`-`0xD81FDD`** |
+| PLAN #11 | `0xAB8540`, `0xC60D30` | detour | Verify worldToLocal/findLot |
+| PLAN #12 | `0x686CC0` (replaced by docs/60 #1) | detour | Verify routeRay |
+| PLAN #13 | bit 31 at `0xD7E9E6`; counter at `0x599720` | imm / detour | Verify execJob |
+| PLAN #15 | `0x593590`, `0x593600`, `0x693780`, `0x712480`, `0x7006B0` | detour | Verify fdbSync/fdbPublish/fdbConsume/treeRebuild |
+| PLAN #16 | `0xECAA65` | mid | Verify fpsGate |
+| PLAN #21 | `0x599720`, `0x6F3DC0` | detour | Verify execJob/renderReq |
+| PLAN #22 | `0x939100`, `0x939170`, `0x938D00`, `0x939560` | detour | Verify idLookup/idInsert |
+| PLAN #24 | `0x64F2C0` (`Portal_LockState`; docs/60 says no hook needed) | probe | - |
+| PLAN #28 | `0x50B270` | detour | Verify wmDraw |
+| PLAN #29 | `0x59C5B0` (merged localized-string index) | detour | **S3PP LocalizedStringCache** |
+| PLAN #32 | `0x49C5F0` (XInput empty-port poll) | detour | - |
+| PLAN #17, #18, #19, #20, #14 | no address chosen yet | | add here when chosen |
+| MonoThread P3 (docs/30 §3) | `0xE4BE30`, `0xE4BCE0`, `0xE4A050`, `0xE4BDC0`, `0xE4BF90`, `0xE50DE0`, `0xE4A0B0`, `0xE4E450`, `0xE4AAC0`, `0xE4ABE0`, `0xE4AE30`, `0xE4A3F0`; `0xE4B3F0` replaced whole | detour | - |
+| MonoThread step 2 (PLAN) | `0xE4BEB0` (`GC_free`), `0xD71900`, `0xD71A20`, `0xD71B70`, `0xE4D9F0` (`GC_add_roots`) | detour | **`0xE4D9F0`: S3PP LocalizedStringCache resolves it by pattern** |
+| MonoThread P4 (docs/30 §4) | `0xE53EBD`, `0xE53EC2`, `0xE53ED7`, `0xE53EDD`, `0xE597BA`, `0xE597BF`, `0xE59866`, `0xE5986C` | mid | same function as MonoPatcher `0xE59218`, `0xE5637D` |
+
+---
+
+## 4. Overlaps
+
+"Same bytes" = the written ranges overlap or are within 16 bytes. "Signature window" = our write lands inside the bytes another plugin pattern-matches before it patches, so its patch fails to install even though it writes elsewhere. That case is the one that bites us, because S3SS and S3PP install **after** ts3native's DllMain (§5).
+
+| # | Address | Who | Type | Risk | Resolution |
+|---|---|---|---|---|---|
+| 1 | `0xD7F8B0` | `[Verify]` threadedObjs vs S3PP SimulatorStageProfiler | same entry; S3PP expects `55 8B EC 83 E4 F8 81 EC 98` and finds our `jmp` | **High** (when `[Verify]` is on): S3PP arms none of its four seams (all or nothing), and MonoTypeEHashProbe then does nothing because it acts only inside a stage. S3PP's main load-time win is lost silently [verified source logic] | **Done in 0.10.8:** the probe is behind `[Verify] ThreadedObjects` (default 0). Before: Verify should not take `0xD7F8B0` while S3PP is installed (read `Sims3Performance.ini` `SimulatorStageProfiler`), or use S3PP's own `[SIMSTALL]` timing. Check: `Sims3Performance.log` must say `four scheduler seams armed` in every verify run |
+| 2 | `0xD81FC3`-`0xD81FDD` | planned PLAN #10 (sim pump deadline) vs S3SS SmoothPatchPrecise | signature window: the pump call `call [edx+0x24]` at `0xD81FDA` is inside S3SS's 27-byte pattern for the `0xD81FDE` patch | **High**: any byte we change there stops S3SS installing its tick limiter (480 TPS / 60 FPS), with only a missing log line to show it [verified bytes] | Do not patch the call site. Put the deadline in the `RunJobs 0x59A430` entry detour that `[LotStream]` already owns (sim thread only, through a shared stub), or swap the JobManager vtable slot `+0x24` (data, outside the pattern) |
+| 3 | `0x59C5B0` | planned PLAN #29 vs S3PP LocalizedStringCache | same entry | **High**: whichever installs second fails; ours installs first, so S3PP's LSC would silently be off [verified pattern offset 0] | Pick one (PLAN already says so). If ours wins: the installer sets S3PP `LocalizedStringCache=0`, and ts3native refuses #29 when that line is 1 |
+| 4 | `0xE4D9F0` | planned MonoThread step 2 (`GC_add_roots` detour) vs S3PP LocalizedStringCache | signature window: S3PP finds `GC_add_roots` by a pattern at offset 0 | **Medium**: S3PP's LSC fails to install [verified source] | Lock `GC_add_roots` from its callers' side, or hook it with a byte-preserving method (patch its caller sites) so the entry bytes stay; or install it only with S3PP LSC off |
+| 5 | `0xABFAC0`, `0x7D2DB0` | `[LotStream] ObjScene` and `[Verify]` lotScene/scriptMsg vs S3SS LotStreamingOpt | signature window: S3SS resolves both functions by pattern and calls them | **Medium**: if S3SS's patterns cover the entry bytes, its whole lot streaming patch may not install [inferred: the log reports the match at the entry address; pattern offset not read] | Check once: a start with `ObjScene=1` and `[Verify] Enabled=1` must still show `Object throttle installed` in `S3SS_LOG.txt`. If not, skip these two probes when S3SS LotStreamingOptimizations is on |
+| 6 | `0xD7FC60` | probe `--taskstall` (Frida) vs S3PP profiler | same entry | Low (test only); the probe already refuses [verified PLAN note] | Keep refusing; take stage times from S3PP's log when it is on |
+| 7 | `0x4EB3B0` | S3SS RefPackDecompressor (entry detour) vs `[Decompress]` call `0x4EC065` and `[SaveCompress]` hash range ending at `0x4EB3B0` | adjacent, by design | Low: our call site and hash ranges leave `0x4EB3B0` alone; mode 0 runs S3SS's decoder [verified docs/15] | None needed |
+| 8 | `0xAC1130` / `0xABD3C0` | S3SS object throttle vs `[LotStream]` | caller and callee | Low: `[LotStream]` hooks the remote-call execute, not `0xAC1130`, so both compose [verified lotstream.cpp] | None needed |
+| 9 | `0xD81840` (`Simulate`) | `[MonoThread]` vtable slot `0x108B6B0`; S3SS `0xD81A1D`, `0xD81A37`, `0xD81FDE`; S3PP seams in callees | same function, different bytes | Low: the slot wraps the whole function, the inline patches stay inside [verified addresses] | None; future Simulate changes go through the slot stub, never inline (see #2) |
+| 10 | `0x4E16F0`, `0x4E17B0` | `[RouteAsync]`, `[RouteGate]`, `[Verify]` lockAcquire, `[SaveCompress]` (calls) | same entry, all ours | Low: RouteGate reuses the async detour; Verify skips owned addresses [verified] | Shared stub (done) |
+| 11 | ours vs ours (Verify vs modules and plans) | `0xC2A570`, `0xC2A840` (HeightCache, docs/60 #2), `0x7D98C0` (SyncWait), `0xABFAC0` (ObjScene), `0x6583E0`, `0xC688A0` (docs/60 #1, #5), `0x4B1AE0`, `0xD5D910`, `0x4AFFC0`, `0x4AA1B0`, `0xAB8540`, `0xC60D30`, `0x686CC0`, `0x599720`, `0x593590`, `0x593600`, `0x693780`, `0x712480`, `0xECAA65`, `0x6F3DC0`, `0x939100`, `0x939170`, `0x50B270` (PLAN fixes); 0.10.8 adds `0x628A90`, `0x835240`, `0x835110`, `0x939420`, `0x682760` (docs/60 #2-#4, #7), `0x49C5F0` (PLAN #32), `0xE4BEB0`, `0xD71900` (MonoThread step 2), `0x59A430`, `0xABD3C0`, `0xC6C290` (`[LotStream]`) | same entry | Low today (Verify installs last and skips); **each planned fix takes its address from Verify** | One stub per address: the fix owns it and counts the Verify slot from inside (docs/60 §2.2 rule) |
+| 12 | `0xE53EB0` body (`ves_exec_method_with_context`) | planned MonoThread P4 (`0xE53EBD`..`0xE5986C`) vs MonoPatcher `0xE59218` (load) and `0xE5637D` (ForceJIT, on demand); ts3fixes header swaps vs MonoPatcher `GenerateCode 0xE5CA90` | same function, more than 16 bytes apart / same method data | Low for bytes. MonoPatcher writes `0xE5637D` at run time, possibly while the sim thread runs that function [inferred] | P4 checks each site's bytes; triage any crash in `0xE56xxx` against the ForceJIT log first. Do not let ts3fixes and a MonoPatcher package patch the same method |
+| 13 | `0xAAC110` | planned docs/60 #6 entry detour vs `[SaveWrite]` call `0xAB12AF` (targets it) and `[FootprintIndex]` call `0xAAC320` (inside it) | caller / entry / inside | Low: chains compose (SaveWrite hook -> entry detour -> body with our call site) [inferred] | Keep the call-site rewrites; the entry detour must jump to the trampoline, not to `0xAAC110 + 5` by hand |
+| 14 | `0x682750` / `0x682760` | planned docs/60 #2 | 16 bytes apart | None: only `0x682760` is hooked (5 bytes) | - |
+| 15 | `0xD7E9E6` | planned PLAN #13 vs MonoPatcher `InitializeScriptHost 0xD7E560` | possibly the same function [inferred, 0x486 apart] | Low: MonoPatcher writes only the entry | Check the function bounds before building #13 |
+| 16 | `0x4E1320` | TS3Patch vs S3SS SmoothPatchClassic | same bytes | None today: TS3Patch is removed by the installer, Classic is off | Keep `smoothpatch-asi` excluded |
+| 17 | d3d9 device vtable | S3SS (`CreateDevice`, `EndScene`, `Reset`), TS3Patch (`Present`), D3DShaderReplacer (shader create, inferred) | different methods, all in `d3d9.dll` (DXVK) | Low; no `TS3W.exe` bytes involved | Only if D3DShaderReplacer comes back: check the S3SS overlay still draws |
+
+Not an overlap, for the crash triage of 2026-10-14 (PLAN.md crash hardening): no plugin in this table writes near `0x694690`; the anonymous writer `0x080469db` is not explained by any listed patch [verified against this table].
+
+---
+
+## 5. Install order and late patches
+
+| Plugin | Where it patches | When | Sees ours? |
+|---|---|---|---|
+| ts3native | `DllMain`, main thread | before the exe entry point (UAL loads plugins at start-up, docs/15) | - |
+| MonoPatcher | `DllMain` (MinHook) | start-up; ForceJIT bytes later, on demand [inferred] | its sites are not ours |
+| S3SS | its own "Hook thread" (log: `Hook thread started` precedes every patch line) | start-up, from a second thread; settings and D3D9 hooks later (device creation) | yes: it scans after or concurrently with our `DllMain` [verified log order; exact interleaving inferred] |
+| S3PP | its own worker thread, priority order | while the game keeps starting (docs/17 §8.1) | yes: after our `DllMain` |
+| TS3Patch, D3DShaderReplacer | own thread (`CreateThread` imported), MinHook freeze | after the game window or device exists [inferred] | n/a |
+| ts3native route worker | `runtime_invoke` slot `0x1195B60` | first worker plan (in game) | atomic compare-exchange |
+
+Consequences:
+- Our checked-bytes rule protects **us** (a foreign `jmp` makes ours `SKIP`), but because we install first, it is the third-party plugin that meets our `jmp` and fails. S3PP refuses cleanly (expected bytes); S3SS's behaviour on a failed helper pattern is not known [inferred]. So a new ts3native hook can switch off a community patch without any error in our log.
+- UAL loads ASIs in directory order (`MonoPatcher`, `Sims3Performance`, `Sims3SettingsSetter`, `ts3native`) [community: UAL design], but the S3SS and S3PP patch threads are not ordered against our `DllMain`. Never rely on order.
+- Late code writes made while other threads run: S3SS hook thread, S3PP worker, MonoPatcher ForceJIT, and (if reinstalled) the MinHook-based TS3Patch and D3DShaderReplacer. MinHook freezes threads and moves instruction pointers out of the patched bytes; MS Detours (S3PP) only does that for threads passed to `DetourUpdateThread`, and S3PP passes only its own [verified source for `localized_string_cache.cpp`]. A 5-byte write over code another thread is executing is a crash source to keep in mind during start-up crashes [inferred].
+
+---
+
+## 6. Rule for new hooks
+
+1. **Look it up first.** Before choosing a site, find it and its function in this table and run `node tools/hook-sites.ts --check`. The same commit that adds the hook adds its row here (`--check` fails otherwise).
+2. **Stay out of signature windows.** Do not write inside the bytes another plugin pattern-matches, not only the bytes it patches: S3SS and S3PP patterns (docs/03 §1, S3PP source), MonoPatcher signatures (docs/06). Hook the callee entry, a caller, or a data slot instead. Known windows: `0xD81FC3`-`0xD81FE0`, `0x59C5B0`+12, `0xE4D9F0`+34, the four S3PP seam entries, and the S3SS lot streaming helpers (§1.1).
+3. **One stub per address.** A second user of an address (a fix and a Verify probe) goes through the owner's stub and counts from inside it; never stack two of our detours.
+4. **Skip when a foreign jump is present.** `InstallDetour` already refuses changed bytes. A new hook logs what it found (`E9`/`EB`/`FF 25` = foreign hook, with the module that owns the target) and stays off; it never chains onto a foreign `jmp` by hand.
+5. **Install in `DllMain` only.** No code writes after start-up; a late change is an atomic swap of a data pointer, like the `runtime_invoke` slot.
+6. **Coordinate with the mod when we must share.** If our fix replaces a community patch (#3), the installer turns that patch off in its config and ts3native refuses to install while the mod's switch is on, so both can never be live.
+7. **Prove the community patches still install.** A run with the new switch on must show the S3SS lines (`Object throttle installed`, `SmoothPatchPrecise ... Successfully installed`) and the S3PP lines (`four scheduler seams armed`, `[STBL509] active`, `[MTEH] ... armed`) in their logs. A missing line is a failed run under the stop-on-error rule.
