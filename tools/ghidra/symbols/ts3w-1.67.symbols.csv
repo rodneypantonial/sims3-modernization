@@ -14,7 +14,7 @@ address,name,type,comment
 0x004AAF50,DBPF_IndexCompressed_ctor,function,[verified: function entry in our Ghidra database] <docs/08>
 0x004ABD70,DBPF_IndexMap_A,function,"[verified: function entry in our Ghidra database] Modifiable index, 0x24-byte nodes <docs/08>"
 0x004AC240,DBPF_IndexMap_B,function,[verified: function entry in our Ghidra database] <docs/08>
-0x004AC9C0,CASPartSearch_Leaf,function,[verified: function entry in our Ghidra database] Under CreatePartSearchImpl <docs/20>
+0x004AC9C0,CASPartSearch_Leaf,function,"[verified: function entry in our Ghidra database] Under CreatePartSearchImpl; really the DBPF index key enumeration (IndexCompressed/Matches, GetKeyList path) <docs/20, 39>"
 0x004AD020,DBPF_IndexCompressed_Load,function,[unverified: from our docs only] 16-byte entries <docs/08>
 0x004AFD20,ResourceMan_GetManager,function,[verified: function entry in our Ghidra database] Returns [0x11C78D8] <docs/08>
 0x004AFDA0,ResourceMan_FindDatabase,function,[unverified: from our docs only] slot 0x44 <docs/08>
@@ -82,12 +82,21 @@ address,name,type,comment
 0x005833C0,TrackManager_BlendTracks,function,[verified: function entry in our Ghidra database] Pose evaluation (the only parallel-safe slice) <docs/22>
 0x00583AB0,TrackManager_OnEventSwitch,function,"[verified: function entry in our Ghidra database] Parent/Unparent, Sound, Effect, Visibility <docs/22>"
 0x00583D00,TrackManager_Update,function,[verified: function entry in our Ghidra database] Advance all tracks <docs/22>
+0x00588B60,Canvas_InitDevice,function,"[verified: function entry in our Ghidra database] Services/Canvas vtable 0xFCBD84 slot +0x10; sets the device singleton, mode, FSAA, calls Device_Create <docs/37>"
+0x00588C90,Canvas_Shutdown,function,[verified: function entry in our Ghidra database] Services/Canvas slot +0x18; Device_Destroy <docs/37>
+0x00588E20,Canvas_ApplyPendingMode,function,[verified: function entry in our Ghidra database] Calls Device_ApplyModeAndReset when device +0x8E (mode change pending) is set <docs/37>
 0x0058D9B0,SigAbrtHandler_int3,label,[unverified: from our docs only] Game SIGABRT handler hits int3 here after an interpreter assert <docs/18>
+0x0058E330,DeviceConfig_SetSystemMemoryOverride,function,[verified: function entry in our Ghidra database] Stores the -systemmemory= command-line value (config +0x16C) <docs/40>
+0x0058E340,DeviceConfig_SetTextureMemoryOverride,function,[verified: function entry in our Ghidra database] Stores the -texturememory= command-line value (config +0x170); nonzero replaces the detected VRAM for GraphicsRules <docs/40>
+0x005902B0,DeviceConfig_RunGraphicsRules,function,[verified: function entry in our Ghidra database] Runs GraphicsRules.sgr; applies the memory overrides; exports cpuSpeed..textureMemory variables; reads back cardLevel/cpuLevel <docs/40>
+0x005928F0,DeviceConfig_Init,function,"[verified: function entry in our Ghidra database] DeviceConfig.log, Options.ini, hardware probe 0x613CB0, GraphicsRules <docs/40>"
+0x0058E110,DeviceConfig_DetectTransgaming,function,[verified: function entry in our Ghidra database] ntdll IsTransgaming/TGGetOS(MacOSX): sets the Mac flag that picks the DirectDraw VRAM path <docs/37>
+0x005928F0,DeviceConfig_Init,function,"[verified: function entry in our Ghidra database] Services/DeviceConfigManager: DeviceConfig.log, Options.ini, DeviceCaps_Probe, GraphicsRules.sgr <docs/37>"
 0x00593590,SimRender_TripleBufferSync,function,[verified: function entry in our Ghidra database] EnterCriticalSection wait; 0.6% <docs/20>
 0x00593E60,RenderMessageBuffer_Post,function,"[verified: function entry in our Ghidra database] <docs/21, 22>"
 0x00596450,ResourceConfig_LoadResourceCfg,function,[verified: function entry in our Ghidra database] Also 0x5961C0 <docs/08>
-0x005992D0,JobManager_ReadTimeslices,function,[verified: function entry in our Ghidra database] References the [Timeslices] names [inferred name] <docs/04>
-0x00599CF0,JobManager_JobThread,function,[verified: function entry in our Ghidra database] Engine worker pool thread; no routing jobs run here {thread proc} <docs/18>
+0x005992D0,JobManager_ReadTimeslices,function,"[verified: function entry in our Ghidra database] JobManagerService::Init (service vtable 0xFD9810 slot +0x10): JobManager_Init(1) = one generic worker, main job-thread record mask 0x80000001, sets [0x11CE2CC], registers Timeslicing/JobManager +0xCC; old name kept <docs/04, 36>"
+0x00599CF0,JobManager_JobThread,function,"[verified: function entry in our Ghidra database] = CreateJobThread (JobManager vtable +0x14): (mask, createOsThread, index) record; with an OS thread named JobThread%i, entry 0x599200; old name kept <docs/18, 36>"
 0x0059AF50,STBL_Find,function,[verified: function entry in our Ghidra database] S3PP StblBucketLayoutTuning range <docs/17 §8>
 0x0059C5B0,LocStrSvc_GetString_A,function,[verified: function entry in our Ghidra database] S3PP LocalizedStringCache detours it <docs/17 §8>
 0x0059F6C0,STBL_Clear,function,[verified: function entry in our Ghidra database] <docs/17 §8>
@@ -100,11 +109,98 @@ address,name,type,comment
 0x005E7480,CASThumbnail_BuildKey,function,[verified: function entry in our Ghidra database] <docs/21>
 0x005EB9C0,SimCompositorCache_Open,function,[verified: function entry in our Ghidra database] <docs/08>
 0x005EBC50,SimService_Process,function,"[verified: function entry in our Ghidra database] CAS SimService; vanilla OOM crash at 0x5EBE31 [name inferred] <docs/04, 05>"
+0x005F9A10,CAS_HSVToRGBOp_FillLUT,function,[verified: function entry in our Ghidra database] Only D3DXFillVolumeTexture caller (16x16x16 HSV-to-RGB lookup) <docs/37>
 0x00608510,TextureCompositorQueue,function,[verified: function entry in our Ghidra database] <docs/21>
+0x0060CEA0,Texture_CreateByShape,function,"[verified: function entry in our Ghidra database] Picks 2D, cube or volume create from faces/depth <docs/40>"
+0x0060CF40,DDS_DropTopMips,function,[verified: function entry in our Ghidra database] Skips the top N mips of a DDS stream when min(w h) >= threshold (DropTexMipsOnLoad/TextureSizeThreshold) <docs/40>
+0x0060D140,DDS_CheckLastMipZero,function,[verified: function entry in our Ghidra database] Sums the bytes of the smallest mip; used to decide a forced mip drop [inferred purpose] <docs/40>
+0x0060D290,DDS_UploadLevels,function,"[verified: function entry in our Ghidra database] Copies DDS mips into the texture: direct LockRect for MANAGED, else a SYSTEMMEM staging texture + UpdateTexture <docs/40>"
+0x0060D9B0,DDS_LoadTexture,function,"[verified: function entry in our Ghidra database] DDS header parse (DXT1-5, ARGB/XRGB/L8/A8...), mip drop, create (flags 2 = MANAGED unless arg4 == 1), upload <docs/40>"
 0x0060E2C0,GraphicsDevice_Get,function,[verified: function entry in our Ghidra database] <docs/04 F19>
 0x00611620,Device_BeginScene,function,[verified: function entry in our Ghidra database] device vtable +0xA4 <docs/04 F19>
 0x00611680,Device_Present,function,"[verified: function entry in our Ghidra database] EndScene +0xA8, Present +0x44 <docs/04 F19>"
 0x00611760,Device_EndSceneAndPresent,function,[verified: function entry in our Ghidra database] -> 0x611680 <docs/04 F19>
+0x00613B10,HwDetect_SystemInfo,function,"[verified: function entry in our Ghidra database] Computer name, CPU, WOW64, GlobalMemoryStatusEx MB <docs/40>"
+0x00616C40,IndexBuffer_CreateD3D,function,"[verified: function entry in our Ghidra database] CreateIndexBuffer: dynamic flag -> DYNAMIC|WRITEONLY DEFAULT, else MANAGED <docs/40>"
+0x00616DF0,IndexBuffer_Create,function,[verified: function entry in our Ghidra database] Index buffer setup then 0x616C40 (Graphics/IndexBuffer) <docs/40>
+0x00618D50,Texture_FlagsToUsagePool,function,"[verified: function entry in our Ghidra database] Engine texture flags to D3DUSAGE/D3DPOOL: 0x100 SYSTEMMEM, 0x2 MANAGED, else DEFAULT; 0x1 RT, 0x10 DS, 0x4 DYNAMIC, 0x200 AUTOGENMIPMAP <docs/40>"
+0x00619540,Texture_CreateD3D,function,"[verified: function entry in our Ghidra database] The only CreateTexture/CreateCubeTexture/CreateVolumeTexture call site <docs/40>"
+0x006196B0,Texture_ReleaseD3D,function,[verified: function entry in our Ghidra database] Unbinds and releases the D3D texture <docs/40>
+0x00619820,Texture_MipCount,function,[verified: function entry in our Ghidra database] Full chain when 0 levels requested <docs/40>
+0x00619910,Texture_CreateCube,function,[verified: function entry in our Ghidra database] <docs/40>
+0x00619AB0,Texture_EstimateBytes,function,[verified: function entry in our Ghidra database] Bytes for all mips and faces <docs/40>
+0x00619C80,Texture_Create2D,function,[verified: function entry in our Ghidra database] <docs/40>
+0x00619DB0,Texture_CacheSizeBytes,function,[verified: function entry in our Ghidra database] Size reported to the ResourceCache: 0x34 + pixels only for MANAGED or SYSTEMMEM textures <docs/40>
+0x0060E2D0,GraphicsDevice_Set,function,[verified: function entry in our Ghidra database] Swaps the device singleton [0x11CECC8] <docs/37>
+0x0060E2E0,Device_SaveTargets,function,"[verified: function entry in our Ghidra database] GetRenderTarget, GetDepthStencilSurface, GetViewport, GetScissorRect <docs/37>"
+0x0060E410,Device_RestoreTargets,function,[verified: function entry in our Ghidra database] SetRenderTarget + SetDepthStencilSurface from a saved set <docs/37>
+0x0060E590,Device_IsMultiSampleSupported,function,[verified: function entry in our Ghidra database] IDirect3D9 CheckDeviceMultiSampleType <docs/37>
+0x0060E5F0,Device_PickSupportedMultiSample,function,[verified: function entry in our Ghidra database] Steps the FSAA level down until supported <docs/37>
+0x0060E700,D3D9_CreateGlobal,function,"[verified: function entry in our Ghidra database] Direct3DCreate9(0x20) into [0x11CECD0], called from app init 0xECB000 <docs/37>"
+0x0060E720,D3D9_ReleaseGlobal,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060E740,Device_DetectAtiInstancing,function,"[verified: function entry in our Ghidra database] CheckDeviceFormat FOURCC INST, then SetRenderState(POINTSIZE, INST) (ATI instancing hack) <docs/37>"
+0x0060E7A0,Device_UnbindShadersAndStreams,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060E820,Device_IsOwnerThread,function,[verified: function entry in our Ghidra database] GetCurrentThreadId == device +0x10 (thread that created the device) <docs/37>
+0x0060E990,Device_SetRenderStateCached,function,[verified: function entry in our Ghidra database] SetRenderState through the state cache [inferred: cache compare] <docs/37>
+0x0060E9E0,Device_SetRenderStateCached_B,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EA50,Device_SetSamplerStateCached,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EAD0,Device_ApplySamplerAndRenderStates,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EC10,Device_UpdateTexture,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060ED60,Device_SetTexture_A,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EDA0,Device_SetTexture_B,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EDE0,Device_SetTexture_C,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EE50,Device_SetScissorRect,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EE90,Device_SetClipPlane,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EF20,Device_SetRenderTarget,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EF70,Device_SetDepthStencil,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060EFB0,Device_SetVertexDeclaration,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F020,Device_SetStreamSource,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F0F0,Device_SetIndices,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F150,Device_DrawPrimitive,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F180,Device_DrawIndexedPrimitive,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F1D0,Device_DrawIndexedInstanced,function,[verified: function entry in our Ghidra database] SetStreamSourceFreq + DrawIndexedPrimitive <docs/37>
+0x0060F270,Device_Clear,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F350,Device_CreateImmVB,function,"[verified: function entry in our Ghidra database] Services/Device/ImmVB, also CreateRenderTarget <docs/37>"
+0x0060F430,Device_WrapBackAndDepthBuffers,function,[verified: function entry in our Ghidra database] GetRenderTarget/GetDepthStencilSurface into the BackBuffer/DepthBuffer wrappers +0x90/+0x94 <docs/37>
+0x0060F4C0,Device_ReadBackStateCache,function,[verified: function entry in our Ghidra database] GetRenderState/GetSamplerState <docs/37>
+0x0060F5F0,Device_CheckTextureFormat,function,[verified: function entry in our Ghidra database] IDirect3D9 CheckDeviceFormat <docs/37>
+0x0060F630,Device_ApplyGammaRamp,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0060F730,D3D9_GetGlobal,function,[verified: function entry in our Ghidra database] Returns [0x11CECD0] <docs/37>
+0x0060F740,Device_GetD3DDevice,function,[verified: function entry in our Ghidra database] Returns [0x11CECCC] (raw IDirect3DDevice9) <docs/37>
+0x0060FF40,Device_ImmQuadFlush,function,[verified: function entry in our Ghidra database] Immediate-mode draw (quad IB or DrawPrimitive) <docs/37>
+0x0060FFE0,Device_SetViewport,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00610590,Device_NotifyLost,function,[verified: function entry in our Ghidra database] Calls slot 0 of every listener on list +0xE4 <docs/37>
+0x00610660,Device_CopyRenderTarget,function,[verified: function entry in our Ghidra database] GetRenderTarget + StretchRect or GetRenderTargetData (readback); sets lost on DEVICELOST <docs/37>
+0x00610850,Device_ReleaseDefaultPool,function,[verified: function entry in our Ghidra database] Releases the wrapper's own default-pool objects before Reset <docs/37>
+0x00610960,Device_Destroy,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00610AB0,Device_TryReset,function,"[verified: function entry in our Ghidra database] Foreground check, TestCooperativeLevel, listener OnLost (+0x14), Reset, state cache reset, listener OnReset (+0x10) <docs/37>"
+0x00611080,Device_Create,function,"[verified: function entry in our Ghidra database] Direct3DCreate9(0x20), GetDeviceCaps, CreateDevice(HAL, HW or SW vertex processing, no MULTITHREADED) <docs/37>"
+0x006115C0,Device_ApplyModeAndReset,function,[verified: function entry in our Ghidra database] Copies the wanted mode into the present parameters and calls Device_TryReset(1) <docs/37>
+0x00611D30,D3DFake_Get,function,[verified: function entry in our Ghidra database] Services/D3DFakeW32 (null IDirect3D9) <docs/37>
+0x00611DA0,D3DDeviceFake_Get,function,[verified: function entry in our Ghidra database] Services/D3DDeviceFakeW32 (null device) <docs/37>
+0x00611F40,FakeDevice_CreateVertexShader,function,[verified: function entry in our Ghidra database] D3DXGetShaderSize caller <docs/37>
+0x00611FA0,FakeDevice_CreatePixelShader,function,[verified: function entry in our Ghidra database] D3DXGetShaderSize caller <docs/37>
+0x00612050,NvCpl_Query,function,[verified: function entry in our Ghidra database] NVCPL.dll NvCplGetDataInt for NVIDIA vendor ids <docs/37>
+0x00612130,VRAM_DirectDraw,function,[verified: function entry in our Ghidra database] DirectDrawCreateEx + GetAvailableVidMem; only on Mac (Transgaming) <docs/37>
+0x00612640,VRAM_DxDiag,function,"[verified: function entry in our Ghidra database] IDxDiagProvider, matches szDeviceIdentifier with the adapter GUID, parses szDisplayMemoryEnglish; MB wraps at 4096 <docs/37>"
+0x006128C5,VRAM_DxDiag_round,label,"[verified: address and xrefs in our Ghidra database] ADD EBP,4; SHL EBP,0x14; AND EBP,0xFF800000: MB to bytes in 32 bits (wraps at 4 GB) <docs/37>"
+0x00612EB0,Adapter_EnumModes,function,[verified: function entry in our Ghidra database] GetAdapterModeCount/EnumAdapterModes into a sorted list (GraphicsSys/ModeSet) <docs/37>
+0x00613210,DeviceInfo_FormatDriver,function,[verified: function entry in our Ghidra database] Driver version and adapter GUID strings for DeviceConfig.log <docs/37>
+0x00613CB0,DeviceCaps_Probe,function,"[verified: function entry in our Ghidra database] Temporary IDirect3D9: adapter identifier, vendor checks, caps, modes, VRAM <docs/37>"
+0x00616BB0,IndexBuffer_Lock,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00616C10,IndexBuffer_Unlock,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00616C40,IndexBuffer_CreateD3D,function,[verified: function entry in our Ghidra database] Graphics/IndexBuffer <docs/37>
+0x00617C50,Surface_CreateRTorDS,function,[verified: function entry in our Ghidra database] CreateRenderTarget or CreateDepthStencilSurface <docs/37>
+0x00617DE0,Surface_StretchRect,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00618DF0,Texture_LockRect,function,[verified: function entry in our Ghidra database] IDirect3DTexture9 at wrapper +0x30 <docs/37>
+0x00619160,Texture_UnlockRect,function,[verified: function entry in our Ghidra database] <docs/37>
+0x006194B0,Texture_GetSurfaceLevel,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00619540,Texture_CreateD3D,function,"[verified: function entry in our Ghidra database] CreateTexture, CreateCubeTexture or CreateVolumeTexture by type +0x2C <docs/37>"
+0x00619980,Texture_Init,function,[verified: function entry in our Ghidra database] <docs/37>
+0x00619BC0,Texture_ctor,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0061A010,VertexDecl_Create,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0061A1C0,VertexBuffer_CreateD3D,function,[verified: function entry in our Ghidra database] <docs/37>
+0x0061A2A0,VertexBuffer_CreateD3D_B,function,[verified: function entry in our Ghidra database] <docs/37>
 0x0061BB40,AStarNode_AddRef,function,[verified: function entry in our Ghidra database] <docs/18>
 0x0061BF60,AStarSearch_ctor,function,"[verified: function entry in our Ghidra database] The only AStarSearch (Q), size 0x9C90; only caller 0x62E860 <docs/18>"
 0x0061C020,AStarNodeTable_Clear,function,[verified: function entry in our Ghidra database] Heap corruption seen here in async crash 3 <docs/18>
@@ -190,24 +286,86 @@ address,name,type,comment
 0x00676BE9,WorldAStar_loop_backedge,label,[unverified: from our docs only] 14 bytes to 0x676BF6; candidate budget patch site (not used) <docs/11>
 0x00676BF7,WorldAStar_open_empty_exit,label,"[unverified: from our docs only] Returns 0 (no path) <docs/11, 15 Phase 4>"
 0x00676C14,WorldAStar_goal_popped,label,[unverified: from our docs only] <docs/11>
-0x0067E2B0,RayTriangle_Int16,function,[verified: function entry in our Ghidra database] Floor/terrain height ray test; 1.9% of sim samples <docs/20>
+0x00676F70,Poly2D_ContainsPoint,function,[verified: function entry in our Ghidra database] Physics 2D polygon helper; point-in-polygon used by PolySet tests <docs/33>
+0x006772E0,PolySet_ContainsPoint,function,[verified: function entry in our Ghidra database] Any polygon of a set (16-byte vector entries) contains the point; IC_Query_GetSimsOverlappingFootprint and routing footprints <docs/33>
+0x006795D0,PhysShape_RayLocal,function,[unverified: role inferred from callers] 5 KB local-space ray test called by BoxShape and KDTreeShape vtable ray slots <docs/33>
+0x0067AE90,Poly2D_PointWithinRadius,function,[verified: function entry in our Ghidra database] Point inside polygon or within radius of an edge <docs/33>
+0x0067B130,PolySet_PointWithinRadius,function,[verified: function entry in our Ghidra database] Used with Physics/PolygonProcessor by routing (0x6583E0) and road clipping (0xB74A20) <docs/33>
+0x0067B190,PolySet_SegmentIntersects,function,[verified: function entry in our Ghidra database] Endpoint-in-polygon or edge crossing (0x7CDAA0); called by RouteCost_Dispatch 0x627780 <docs/33>
+0x0067B990,PolySet_ClosestPoint,function,[verified: function entry in our Ghidra database] Minimum distance over a polygon set <docs/33>
+0x0067CC90,ConvexHull2D,function,[unverified: role inferred from the allocator tag Physics/PhysicsCollisionHelpers/ptAngs] Angle-sorted hull (Graham scan style) <docs/33>
+0x0067D290,OrientedBoxCorners2D,function,[unverified: role inferred from the allocator tag Physics/PhysicsCollisionHelpers/corners2d] Shape footprint corners then hull; also deck placement 0xCAC110 <docs/33>
+0x0067E2B0,RayTriangle_Int16,function,"[verified: function entry in our Ghidra database] Physics KDTreeShape triangle ray test (terrain/floor height); 1.9% of sim samples <docs/20, docs/33>"
+0x0067E650,KDTree_AllocArrays,function,"[verified: function entry in our Ghidra database] Physics/KDTreeNodes, KDTreeVertices, KDTreeIndices; terrain builders <docs/33>"
 0x0067E740,TerrainRay_C,function,[verified: function entry in our Ghidra database] <docs/20>
 0x0067EA80,TerrainRay_B,function,[verified: function entry in our Ghidra database] <docs/20>
-0x0067EDE0,TerrainRay_A,function,[verified: function entry in our Ghidra database] <docs/20>
-0x006809F0,BBox_Test,function,[verified: function entry in our Ghidra database] <docs/20>
-0x006814B0,LineOfSight,function,[verified: function entry in our Ghidra database] 0.4% <docs/20>
-0x00681B40,FootprintQuadtree_Leaf,function,[verified: function entry in our Ghidra database] <docs/20>
-0x00681CF0,FootprintQuadtree_Recurse,function,[verified: function entry in our Ghidra database] <docs/20>
-0x00681E00,FootprintQuadtree_Query,function,[verified: function entry in our Ghidra database] 1.3% <docs/20>
+0x0067EDE0,TerrainRay_A,function,"[verified: function entry in our Ghidra database] KDTreeShape vtable ray slot (vtable 0xFEFA3C) <docs/20, docs/33>"
+0x0067EE90,KDTreeFactory_Create,function,[verified: function entry in our Ghidra database] Physics/KDTreeFactory; called from terrain data 0xC2CCD0 <docs/33>
+0x0067F4A0,KDTree_BuildRecurse,function,[verified: function entry in our Ghidra database] Recursive kd-tree build <docs/33>
+0x00680510,KDTreeShape_Build,function,[verified: function entry in our Ghidra database] Physics/KDTreeShape <docs/33>
+0x006809A0,KDTreeShape_Footprint2D,function,[unverified: role inferred] KDTreeShape vtable slot; corners via OrientedBoxCorners2D <docs/33>
+0x006809F0,BBox_Test,function,"[verified: function entry in our Ghidra database] Physics loose-quadtree node bounds test <docs/20, docs/33>"
+0x00680CE0,LooseQuadTree_RayVsNode,function,[unverified: role inferred from its place in the ray recursion] <docs/33>
+0x00680F80,LooseQuadTree_RayNodeShapes,function,[unverified: role inferred from its place in the ray recursion] Tests the shapes of one node against the ray <docs/33>
+0x006813F0,LooseQuadTree_Unlink,function,[verified: function entry in our Ghidra database] Unlinks a shape and frees empty nodes to the global free lists 0x11587F8 and 0x1158808 (no lock) <docs/33>
+0x006814B0,LineOfSight,function,"[verified: function entry in our Ghidra database] Physics loose-quadtree ray recursion (front-to-back children), not a separate line-of-sight routine; 0.4% <docs/20, docs/33>"
+0x00681770,LooseQuadTree_ctor,function,[verified: function entry in our Ghidra database] Physics/Realm/LooseQuadTree (0x60 bytes) <docs/33>
+0x00681820,LooseQuadTree_RayCast,function,[verified: function entry in our Ghidra database] Root of the physics ray cast; recursion 0x6814B0 <docs/33>
+0x006818F0,LooseQuadTree_Insert,function,[verified: function entry in our Ghidra database] <docs/33>
+0x006819B0,LooseQuadTree_Reinsert,function,[verified: function entry in our Ghidra database] Unlink then insert (shape moved) <docs/33>
+0x00681B40,FootprintQuadtree_Leaf,function,"[verified: function entry in our Ghidra database] Physics loose-quadtree node: tests shapes by collision mask and radius (not routing footprints) <docs/20, docs/33>"
+0x00681CF0,FootprintQuadtree_Recurse,function,"[verified: function entry in our Ghidra database] Physics loose-quadtree range recursion <docs/20, docs/33>"
+0x00681E00,FootprintQuadtree_Query,function,"[verified: function entry in our Ghidra database] Physics loose-quadtree range query (Physics/Realm/LooseQuadTree, not routing footprints); 1.3% <docs/20, docs/33>"
+0x00681E50,Physics_RayCastHit,function,[verified: function entry in our Ghidra database] Ray cast plus hit point and normal <docs/33>
+0x00682080,Realm_RemoveShape,function,[verified: function entry in our Ghidra database] Swap-remove from the global list and the group list; quadtree unlink <docs/33>
+0x00682120,Realm_CreateGroup,function,"[verified: function entry in our Ghidra database] Physics/Realm/Group, Physics/GroupShapes (0x40 bytes) <docs/33>"
+0x006821E0,Realm_DestroyGroup,function,[verified: function entry in our Ghidra database] Recursive <docs/33>
+0x006822B0,Realm_ctor,function,"[verified: function entry in our Ghidra database] Physics/ShapesGlobalList, root group, LooseQuadTree <docs/33>"
+0x006823E0,Realm_AddShape,function,[verified: function entry in our Ghidra database] Global list index +0x38, group index +0x3C, then LooseQuadTree_Insert <docs/33>
+0x00682520,RangeResult_CollectUserData,function,[verified: function entry in our Ghidra database] Copies shape user data (+0x40/+0x44) into Physics/RangeResult <docs/33>
+0x00682590,Realm_RangeQuery,function,[verified: function entry in our Ghidra database] Physics/RangeShapeResult; callers 0x83B3A0 (route goal/planner) and PhysicsWorld_RangeQuery <docs/18 and 33>
+0x00682610,Realm_RangeQueryFiltered,function,[verified: function entry in our Ghidra database] Physics/RangeShapeResult <docs/33>
+0x00682750,PhysShape_AddRef,function,[verified: function entry in our Ghidra database] Non-atomic increment of +0x4C <docs/33>
+0x00682760,PhysShape_Release,function,[verified: function entry in our Ghidra database] Non-atomic decrement of +0x4C; deletes at zero <docs/33>
+0x00682780,PhysShape_SetUserData,function,[verified: function entry in our Ghidra database] Stores owner (object id) at +0x40/+0x44; shared vtable slot <docs/33>
+0x006827E0,HeightFieldShape_SetGrid,function,[verified: function entry in our Ghidra database] Grid size at +0x80; terrain 0xC2A840, floors 0xA93B00, roofs 0xB98430 <docs/33>
+0x00682890,PhysShape_ctor,function,[verified: function entry in our Ghidra database] Base shape (vtable 0xFEFCB0); default mask 0x9FFFF <docs/33>
+0x00682C40,BoxShape_RayCast,function,[verified: function entry in our Ghidra database] Box vtable slot: ray to local space then PhysShape_RayLocal <docs/33>
+0x00683120,HeightFieldShape_ctor,function,[unverified: name from the HeightFieldShape tag in its terrain caller] vtable 0xFEFD10 <docs/33>
+0x00683270,ShearedBoxShape_Set,function,[verified: function entry in our Ghidra database] Walls/fences/stairs (Lot/ModularStairsGeometry/ShearedBoxShape) <docs/33>
+0x00683F80,HeightFieldShape_SetHeights,function,[unverified: role inferred] Called by terrain/floor/roof shape builders <docs/33>
+0x00685A00,BoxShape_CreateFromData,function,[verified: function entry in our Ghidra database] Physics/BoxShape; from PhysicsComponent <docs/33>
+0x006860A0,CapsuleShape_CreateFromData,function,[verified: function entry in our Ghidra database] Physics/CapsuleShape; from PhysicsComponent and SpeedTree <docs/33>
+0x00686A90,PhysicsWorld_Get,function,[verified: function entry in our Ghidra database] Returns [0x11CF490]; 76 callers <docs/33>
+0x00686AA0,PhysicsWorld_InitRealm,function,[verified: function entry in our Ghidra database] Creates Physics/Realm; +0xC = simulator message sink <docs/33>
+0x00686B40,Physics_MaskForType,function,[verified: function entry in our Ghidra database] Query type to collision mask <docs/33>
+0x00686C20,PhysicsWorld_RangeQuery,function,[verified: function entry in our Ghidra database] Sphere query; IC_Query_GetObjectsInRange and 7 more <docs/33>
+0x00686C70,PhysicsWorld_RangeQueryFiltered,function,[verified: function entry in our Ghidra database] IC_Query_GetSimsOverlappingFootprint and 9 more <docs/33>
+0x00686CC0,PhysicsWorld_RayCastVertical,function,[unverified: direction inferred from constants] Only caller routing 0x6583E0 <docs/33>
+0x00686DE0,PhysicsService_Register,function,[verified: function entry in our Ghidra database] Physics/Service id 0x175EC5F; vtable 0xFEFE0C <docs/33>
+0x00686E50,PhysicsSimMsg_ctor,function,[verified: function entry in our Ghidra database] Message to the sim thread (vtable 0xFEFE50) <docs/33>
+0x00686ED0,PhysicsWorld_AddShape,function,[verified: function entry in our Ghidra database] Off the sim thread ([0x11D8A8C]) posts message 0x5B57E39 <docs/33>
+0x00686F50,PhysicsWorld_RemoveShape,function,[verified: function entry in our Ghidra database] Off the sim thread posts message 0x5B57E61 <docs/33>
+0x00686FD0,PhysicsWorld_RayCastSegment,function,[verified: function entry in our Ghidra database] Picking, CanSeeSky/Object, camera, photo; 19 callers <docs/33>
+0x00687130,PhysicsWorld_UpdateShape,function,[verified: function entry in our Ghidra database] Off the sim thread posts message 0x5B575EF; else quadtree reinsert <docs/33>
+0x006871C0,PhysShape_SetTransform,function,[verified: function entry in our Ghidra database] Position/rotation with epsilon check; then PhysicsWorld_UpdateShape <docs/33>
+0x006880F0,AnimatedTexture_Load,function,[verified: function entry in our Ghidra database] Renderer/AnimatedTextureResource frames through DDS_LoadTexture (MANAGED) <docs/40>
 0x00692F70,PostRenderMessage,function,"[verified: function entry in our Ghidra database] <docs/21, 22>"
 0x006CBF90,CompositorCache_Open,function,[verified: function entry in our Ghidra database] <docs/08>
 0x006EB480,WaterJps_HeapPop,function,[verified: function entry in our Ghidra database] <docs/15 Phase 9>
+0x00722B50,TextureFactory_Ctor,function,[verified: function entry in our Ghidra database] Reads ForceHighLODObjects / DropTexMipsOnLoad / TextureSizeThreshold into the mip-drop configs <docs/40>
+0x00722C80,TextureFactory_OpenStream,function,[verified: function entry in our Ghidra database] Copies the resource into a Renderer/TextureFactory memory stream <docs/40>
+0x00722DA0,TextureFactory_ScaleDims,function,[verified: function entry in our Ghidra database] Applies the mip-drop shift to width/height (min 16) <docs/40>
+0x00722E00,TextureFactory_CreateResource,function,[verified: function entry in our Ghidra database] Factory vtable 0xFFCBE0 slot; picks the mip-drop config and loads with arg4 = 0 (MANAGED) <docs/40>
+0x00723270,TextureResource_Load,function,[verified: function entry in our Ghidra database] Renderer/TextureResource load; reports its size to the ResourceCache <docs/40>
 0x007274D0,AsyncLoader_Init,function,[verified: function entry in our Ghidra database] MemoryUsageLimit stored at +0x38 <docs/08>
 0x00728690,AsyncLoader_ctor,function,[verified: function entry in our Ghidra database] <docs/08>
 0x0072ACC0,KeyFilter_Parse,function,[unverified: from our docs only] <docs/08>
 0x0072B0A0,MemoryDB_Decompress,function,[verified: function entry in our Ghidra database] <docs/15 Phase 6>
 0x0072C980,PackedStream_Decompress,function,[verified: function entry in our Ghidra database] <docs/15 Phase 6>
 0x00731AE0,Preloader_Init,function,[verified: function entry in our Ghidra database] <docs/08>
+0x00731CC0,Resource_SetCacheSize,function,[verified: function entry in our Ghidra database] Sets a resource's byte size; updates the owning cache's totals <docs/40>
+0x00731F60,ResourceCache_AdjustBytes,function,"[verified: function entry in our Ghidra database] Under lock 0xFFDD34 adds the size delta to cache +0x94 (unreferenced) or +0x98 (in use) <docs/40>"
 0x007324E0,ResourceCache_Find,function,[unverified: from our docs only] <docs/08>
 0x00732910,ResourceCache_ctor,function,[verified: function entry in our Ghidra database] vtable 0xFFDD94; CacheBudget at +0x8C <docs/08>
 0x00732A00,ResourceCache_Add,function,[verified: function entry in our Ghidra database] [inferred name] <docs/08>
@@ -238,6 +396,12 @@ address,name,type,comment
 0x0076C8A0,Simulate_CanSeeSky_B,function,[verified: function entry in our Ghidra database] <docs/20>
 0x0078F2B0,World_FireEvent,function,"[verified: function entry in our Ghidra database] Delegate table 0x11D6A78 + N*0x24 -> script host -> runtime_invoke (LotManager.PortalLockedCallback, event 59) <docs/15 Phase 3, 18>"
 0x00791C00,World_FirePortalLockedQuery,function,"[verified: function entry in our Ghidra database] Marshals 6 args (lotId, routingObjectId, portalObjectId, rooms, initialLocked) <docs/18>"
+0x007E77E0,UITexture_Load,function,[verified: function entry in our Ghidra database] UI/Texture: DDS_LoadTexture (MANAGED) or a MANAGED 2D layout texture <docs/40>
+0x00799780,Shader_CreateVertexShader,function,[verified: function entry in our Ghidra database] Shader/VertexShader <docs/37>
+0x00799810,Shader_CreatePixelShader,function,[verified: function entry in our Ghidra database] Shader/PixelShader <docs/37>
+0x0079D2A0,Shader_SetBoolConstants,function,[verified: function entry in our Ghidra database] Set{Vertex;Pixel}ShaderConstantB <docs/37>
+0x0079DFE0,Shader_SetFloatConstants,function,[verified: function entry in our Ghidra database] Set{Vertex;Pixel}ShaderConstantF <docs/37>
+0x0079E400,Shader_Bind,function,[verified: function entry in our Ghidra database] SetVertexShader + SetPixelShader <docs/37>
 0x00805870,WalkerClipMonitor_OnEvent,function,[verified: function entry in our Ghidra database] vtable 0x1020348 +0x10 <docs/22>
 0x0080E060,Matrix_CopyVirtual,function,[verified: function entry in our Ghidra database] <docs/20>
 0x00819AE0,RoutingJob_dtor,function,[verified: function entry in our Ghidra database] {thiscall} <docs/11>
@@ -277,6 +441,12 @@ address,name,type,comment
 0x00942C00,Actor_TimeStep,function,[verified: function entry in our Ghidra database] <docs/22>
 0x00942C50,Actor_PoseSubSteps,function,[verified: function entry in our Ghidra database] Calls 0x940430 in fixed sub-steps <docs/22>
 0x00947590,Locomotion_Notify,function,[verified: function entry in our Ghidra database] Into the routing/locomotion library <docs/22>
+0x0094DAE0,PhysicsComponent_RemoveShapes,function,[unverified: role inferred from callees] <docs/33>
+0x0094DBA0,PhysicsComponent_SetTransform,function,[unverified: role inferred from callees] Calls PhysShape_SetTransform <docs/33>
+0x0094DEA0,PhysicsComponent_AddCapsule,function,[verified: function entry in our Ghidra database] Physics/CapsuleShape <docs/33>
+0x0094DF50,PhysicsComponent_AddBox,function,[verified: function entry in our Ghidra database] Physics/BoxShape <docs/33>
+0x0094E040,PhysicsComponent_BuildShapes,function,[unverified: role inferred from callees] <docs/33>
+0x0094E120,PhysicsComponent_Load,function,"[verified: function entry in our Ghidra database] Objects/Components/PhysicsComponent/TerrainNameString, Physics/ShapeDataVector" <docs/33>
 0x0094E9C0,SACS_DriverUpdate,function,[verified: function entry in our Ghidra database] Pushes Scripting/EventQueue events <docs/22>
 0x00957210,Locomotion_UpdateAgent,function,"[verified: function entry in our Ghidra database] <docs/18, 20>"
 0x00959670,Transform_Publish,function,[verified: function entry in our Ghidra database] -> 0x958430 -> 0x692F70 <docs/22>
@@ -306,10 +476,10 @@ address,name,type,comment
 0x00B396E0,ObjectDesigner_SetCASPart,function,[verified: function entry in our Ghidra database] Takes the global ObjectDesignerService lock <docs/21>
 0x00C2A570,WorldCellGrid_Raycast,function,[verified: function entry in our Ghidra database] <docs/20>
 0x00C5FA60,SceneNode_FindRecursive,function,[verified: function entry in our Ghidra database] <docs/20>
-0x00C622D0,World_LotStreaming,function,[verified: function entry in our Ghidra database] <docs/18>
+0x00C622D0,World_LotStreaming,function,[verified: function entry in our Ghidra database] Misnamed: world init on the main thread (weather; terrain; sea; sky; road network); no lot streaming <docs/18; docs/38>
 0x00C68990,World_LotLookup,function,"[verified: function entry in our Ghidra database] <docs/11, 18>"
 0x00C6A540,Terrain_GetHeight,function,"[verified: function entry in our Ghidra database] <docs/11, 18>"
-0x00C6BCC0,WorldManager_LotRebuildCaller,function,[verified: function entry in our Ghidra database] World manager caller of lot rebuild <docs/18>
+0x00C6BCC0,WorldManager_LotRebuildCaller,function,[verified: function entry in our Ghidra database] World manager caller of lot rebuild; really the terrain and routing part of World_Save (sync hops to main) <docs/18; docs/38>
 0x00C6D460,World_Save,function,"[verified: function entry in our Ghidra database] Lots, objects, script state (OBJS) <docs/15 Phase 7>"
 0x00C6D570,WorldManager_Update,function,"[verified: function entry in our Ghidra database] Lot streaming; +0x258 skip-streaming flag (S3SS) {thiscall} <docs/03 anchors, 18>"
 0x00C7BF70,World_FindPlaceOnRoadOffScreen_plan,function,[verified: function entry in our Ghidra database] Calls 0x82C6E0 directly <docs/11>
@@ -440,17 +610,22 @@ address,name,type,comment
 0x00ECA2A0,WndMsg_Render,function,"[verified: function entry in our Ghidra database] Window-message path (via 0xECA350), present = 1 <docs/04 F19>"
 0x00ECA960,MainLoop,function,[verified: function entry in our Ghidra database] Runs until state 0x28D869F <docs/04 F19>
 0x00ECAAFC,MainLoop_call_Frame,label,[unverified: from our docs only] present = 1 once per iteration <docs/04 F19>
+0x00ECB000,App_ParseGraphicsCmdLine,function,"[verified: function entry in our Ghidra database] ccinstall, shaders, emulategpu, resolution, systemmemory, texturememory, resetOptions; then DeviceConfig_Init <docs/40>"
 0x00ECB600,App_StartupFlags,function,[verified: function entry in our Ghidra database] Sets the RADSDK enable flag <docs/16>
 0x00ECBD00,App_RunLoop,function,[verified: function entry in our Ghidra database] <docs/04 F19>
 0x00ECBE30,App_Run,function,[verified: function entry in our Ghidra database] __tmainCRTStartup -> here -> 0xECBD00 <docs/04 F19>
 0x00F73760,UPnP_Discovery,function,[verified: function entry in our Ghidra database] Skipped with -noupnp <docs/16>
 0x00F7F371,entry,function,[verified: function entry in our Ghidra database] PE entry point <docs/15 Phase 1>
 0x00FB2600,vt_DatabasePackedFile,data,"[unverified: from our docs only] <docs/08, 15 Phase 7>"
-0x00FB2CD0,g_ResourceLock,data,[unverified: from our docs only] Global resource lock held across GetResource incl. the file read <docs/08>
+0x00FB2CD0,g_ResourceLock,data,"[verified: reference scan in our Ghidra database] Global resource lock held across GetResource incl. the file read; 23 refs, all in manager methods <docs/08, 39>"
 0x00FB8B38,vt_ICoreAllocator_default,data,"[unverified: from our docs only] slot +4 aligned Alloc 0x4E3E90, +8 Alloc 0x4E3E40, +0xC Free 0x4E3EF0 <docs/15 Phase 8>"
 0x00FB9018,vt_RefPackCodec,data,[unverified: from our docs only] <docs/15 Phase 6>
 0x00FC1B48,vt_ClipController,data,[unverified: from our docs only] <docs/22>
 0x00FCBA70,vt_TrackManager,data,[unverified: from our docs only] <docs/22>
+0x00FCBD84,vt_ServicesCanvas,data,"[verified: address and xrefs in our Ghidra database] Services/Canvas service vtable (name string just before it) <docs/37>"
+0x00FE7A60,tbl_MultiSampleTypes,data,[verified: address and xrefs in our Ghidra database] FSAA level to D3DMULTISAMPLE_TYPE <docs/37>
+0x00FE7BC8,vt_D3DFakeW32,data,[verified: address and xrefs in our Ghidra database] <docs/37>
+0x00FE7C10,vt_D3DDeviceFakeW32,data,[verified: address and xrefs in our Ghidra database] <docs/37>
 0x00FEA5C0,vt_AStarSearch,data,[unverified: from our docs only] <docs/18>
 0x00FEF678,k_RouteWallCost,data,"[unverified: from our docs only] Blocked-edge constant {float 1e8} <docs/11, 15 Phase 4>"
 0x00FFDD94,vt_ResourceCache,data,[unverified: from our docs only] <docs/08>
@@ -479,6 +654,12 @@ address,name,type,comment
 0x01195B7C,g_monoThreadTlsIndex,data,[unverified: from our docs only] MonoThread TLS {DWORD} <docs/15 Phase 3>
 0x011C78D8,g_ResourceManager,data,[unverified: from our docs only] Live vtable 0xFFE250 (subclass); base 0xFB2DA0 <docs/08>
 0x011CB864,g_MemoryManHeap,data,[unverified: from our docs only] Shared MemoryMan heap <docs/15 Phase 8>
+0x011CECC8,g_GraphicsDevice,data,[verified: decompiled references] Engine device wrapper singleton (GraphicsDevice_Get) <docs/40>
+0x011D2FB0,g_TexMipDropCfg,data,"[verified: decompiled references] {DropTexMipsOnLoad, TextureSizeThreshold} <docs/40>"
+0x011D2FBC,g_TexMipDropCfgAlt,data,"[verified: decompiled references] {DropTexMipsOnLoad + 1, 256} (0 and 2048 with ForceHighLODObjects) for the other resource kind <docs/40>"
+0x011CECC8,g_GraphicsDevice,data,[verified: address and xrefs in our Ghidra database] EA device wrapper singleton (Services/Canvas +0x10) <docs/37>
+0x011CECCC,g_D3DDevice9,data,[verified: address and xrefs in our Ghidra database] Raw IDirect3DDevice9 (also wrapper +0x0C) <docs/37>
+0x011CECD0,g_D3D9,data,[verified: address and xrefs in our Ghidra database] IDirect3D9 <docs/37>
 0x011D40C4,g_RouteHandleTable,data,[unverified: from our docs only] <docs/18>
 0x011D4BBC,g_ScriptHostForWorldEvents,data,"[unverified: from our docs only] Script host used by world event delegates (vtable +0x134 delegate, +0x138 method) <docs/18>"
 0x011D6A78,g_WorldEventDelegates,data,[unverified: from our docs only] Written by IC World_RegisterCallbackDelegateImpl 0x7861A0 {entries of 0x24} <docs/18>
@@ -2209,3 +2390,948 @@ address,name,type,comment
 0x00EC4C60,IC_GameUtils_WorldFileSearchFreeSearchImpl,icall,[verified: script binding table] ScriptCore.GameUtils::GameUtils_WorldFileSearchFreeSearchImpl
 0x00EC4CE0,IC_GameUtils_CreateCSVFileImpl,icall,[verified: script binding table] ScriptCore.GameUtils::GameUtils_CreateCSVFileImpl
 0x00EC4D50,IC_GameUtils_CreateCSVFile_ListImpl,icall,[verified: script binding table] ScriptCore.GameUtils::GameUtils_CreateCSVFile_ListImpl
+0x004AFDC0,ResourceMan_LockUnlock,function,[verified: decompile in our Ghidra database] Manager slot 0x50: take/release g_ResourceLock {(bool lock)} <docs/39>
+0x004B05F0,ResourceMan_GetResourceEx,function,[verified: decompile in our Ghidra database] Manager slot 0x0C: GetResource with caller-supplied database and factory; holds g_ResourceLock <docs/39>
+0x004B10E0,ResourceMan_FindFactory,function,"[verified: decompile in our Ghidra database] Manager slot 0x2C: type hash map (+0x7C) -> first factory whose slot 0x30 accepts (type, group) <docs/39>"
+0x004B1180,ResourceMan_GetFactoryList,function,[verified: decompile in our Ghidra database] Manager slot 0x30 <docs/39>
+0x004B17E0,ResourceMan_GetDatabaseList,function,[verified: decompile in our Ghidra database] Manager slot 0x48: probes every database for a key under g_ResourceLock <docs/39>
+0x004B0960,ResourceMan_NotifyDatabaseChanged,function,"[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x4C: change listeners, lock released around callbacks <docs/39>"
+0x004B2770,ResourceMan_RegisterFactorySet,function,"[verified: decompile in our Ghidra database] Manager slot 0x08, tag Manager/factorySet; caller 0x737170 <docs/39>"
+0x004B29D0,ResourceMan_RegisterFactory,function,"[verified: decompile in our Ghidra database] Manager slot 0x28, tags TypeIdArray, Mgr/FArray <docs/39>"
+0x004B2EC0,ResourceMan_SetDatabasePriority,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x3C: erase + sorted re-insert <docs/39>
+0x004AFF70,ResourceMan_IsDatabaseRegistered,function,[verified: decompile in our Ghidra database] Manager slot 0x38 <docs/39>
+0x004B18A0,ResourceMan_SetKeyName,function,"[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x84, key-name map +0x11C <docs/39>"
+0x004B2400,ResourceMan_GetKeyName,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x88 <docs/39>
+0x004B1CD0,ResourceMan_RemoveKeyName,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x8C <docs/39>
+0x004B0D10,ResourceMan_GetTypeIdByName,function,"[verified: decompile in our Ghidra database] Manager slot 0x90, case-insensitive name compare over +0xF4 <docs/39>"
+0x004B1380,ResourceMan_GetTypeName,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x94 <docs/39>
+0x004B24B0,ResourceMan_GetTypeNameString,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x98 <docs/39>
+0x004B1D50,ResourceMan_RemoveTypeName,function,[verified: function entry in our Ghidra database] [inferred name] Manager slot 0x9C <docs/39>
+0x00FB2DA0,vt_ResourceMan,data,[verified: decompile in our Ghidra database] Manager vtable (ctor 0x4B33B0) <docs/39>
+0x004AA1B0,DBPF_IndexCompressed_Find,function,"[verified: decompile in our Ghidra database] (type+group) bucket chain, then binary search on instance; 0.47% sim-thread self <docs/39>"
+0x004AEB90,ResourceKey_HashNameFNV64,function,[verified: decompile in our Ghidra database] FNV-1 64-bit over the lower-cased wide string <docs/39>
+0x004A7DE0,DBPF_PackedFile_ReadAt,function,[verified: function entry in our Ghidra database] [inferred name] Seek + read under g_PackedFileLock <docs/39>
+0x00FB24F8,g_PackedFileLock,data,[verified: decompile in our Ghidra database] One EA lock for all DatabasePackedFile objects (35 refs); held across read + RefPack decode in OpenRecord <docs/39>
+0x00FFDD34,g_ResourceCacheLock,data,[verified: decompile in our Ghidra database] Lock of both ResourceCache instances (Find/Add/Touch) <docs/39>
+0x00FFD2DC,g_AsyncLoaderLock,data,[verified: decompile in our Ghidra database] AsyncLoader lock (19 refs) <docs/39>
+0x00FFD388,vt_AsyncLoader,data,[verified: decompile in our Ghidra database] AsyncLoader vtable (ctor 0x728690) <docs/39>
+0x007297E0,AsyncLoader_CreateLoad,function,"[verified: decompile in our Ghidra database] LoadInfo (0x118, tag ResourceLoad/AsyncLoader/LoadInfo), in-flight counters +0x74/+0x78 <docs/39>"
+0x00729E10,AsyncLoader_RequestResource,function,"[verified: function entry in our Ghidra database] [inferred name] Cache check, else CreateLoad, under g_AsyncLoaderLock <docs/39>"
+0x00729CD0,AsyncLoader_RequestNoCallback,function,[verified: function entry in our Ghidra database] [inferred name] As RequestResource without a client callback <docs/39>
+0x0072A150,AsyncLoader_JobDecompress,function,"[verified: decompile in our Ghidra database] Job-thread stage: stream-mode open, MemoryStream, own RefPack codec <docs/39>"
+0x0072A020,AsyncLoader_QueueDependencies,function,[verified: decompile in our Ghidra database] Queues child keys as more loads <docs/39>
+0x007294F0,AsyncLoader_Complete,function,"[verified: function entry in our Ghidra database] [inferred name] Factory create, FindCache + CacheResource, client callbacks <docs/39>"
+0x00727C50,AsyncLoader_IssueRead,function,[verified: decompile in our Ghidra database] Bytes in flight +0x30 += size; read request to the RW file system (0x401400) <docs/39>
+0x00727D20,AsyncLoader_PumpIOQueue,function,[verified: decompile in our Ghidra database] Next read only while in-flight bytes +0x30 <= MemoryUsageLimit +0x38 (or <= +0x34) <docs/39>
+0x00401400,RWFS_ReadRequest_Init,function,[verified: decompile in our Ghidra database] Services/rw/core/filesystem read request <docs/39>
+0x00401D10,RWFS_QueueRequest,function,[verified: decompile in our Ghidra database] Queue under lock 0xF97F84 sorted by priority then file offset; signals the I/O thread <docs/39>
+0x00401CA0,RWFS_StartIOThread,function,[verified: decompile in our Ghidra database] Lazily creates the file-system I/O thread through 0x4E2F30 (thread proc 0x401BE0) <docs/39>
+0x00401BE0,RWFS_IOThreadProc,function,[verified: function entry in our Ghidra database] [inferred name] Thread proc passed by 0x401CA0 <docs/39>
+0x004E2F30,EAThread_Create,function,[verified: decompile in our Ghidra database] _beginthreadex wrapper <docs/39>
+0x005961C0,ResourceConfig_LoadOneCfg,function,"[verified: function entry in our Ghidra database] [inferred name] Called 3x by ResourceConfig_LoadResourceCfg (game data, Win32/Resource.cfg, Mods) <docs/39>"
+0x004EB2F0,RefPack_ReadSize,function,[verified: function entry in our Ghidra database] [inferred name] Decompressed size from the RefPack header <docs/39>
+0x004EBFD0,RefPackCodec_ctor,function,[verified: decompile in our Ghidra database] Sets codec vtable 0xFB9018 <docs/39>
+0x00AB1860,Lot_IsActive,function,[verified: function entry in our Ghidra database] Returns lot+0xC1 (streamed in) <docs/38>
+0x00AB1870,Lot_GetStreamPriority,function,[verified: function entry in our Ghidra database] Returns lot+0xC4 (scoring priority) <docs/38>
+0x00AB4A20,Lot_CreateRenderer,function,[verified: function entry in our Ghidra database] Lot/LotRenderer at lot+0x364; posted sync to the main thread <docs/38>
+0x00AB4C00,Lot_RemoveLotObjectsFromScene,function,[verified: function entry in our Ghidra database] Object event 0xC per object; sim thread (pump) <docs/38>
+0x00AB8540,Lot_WorldToLocal2D,function,"[verified: function entry in our Ghidra database] World (x,z) to lot space: origin +0x190/+0x198, angle +0x1A0, fsin+fcos per call <docs/38>"
+0x00ABE970,Lot_PostRemoteCallSync,function,[verified: function entry in our Ghidra database] Remote call to selector arg0 with async 0 (caller waits) <docs/38>
+0x00ABE9C0,Lot_PostRemoteCallAsync,function,"[verified: function entry in our Ghidra database] Services/RemoteMethodCall vtable 0x10650C4, async 1 <docs/38>"
+0x00ABFAC0,Lot_UpdateObjectSceneNode,function,[verified: function entry in our Ghidra database] Per-object scene add with LOD from the lot renderer <docs/38>
+0x00AC01E0,Lot_Unload,function,"[unverified: role inferred from its only use] Lot vtable 0x1065268 slot +0x14, called by WorldManager_DetachLot <docs/38>"
+0x00AC19F0,Lot_ctor,function,"[verified: function entry in our Ghidra database] World/Lot (0x4C0 bytes): vtables 0x1065268/0x106525C, critical sections +0xD0/+0xF0/+0x110 <docs/38>"
+0x00AC1EB0,Lot_dtor,function,[unverified: stores the lot vtables back; role inferred]  <docs/38>
+0x00AC20E0,Lot_SetActive,function,"[verified: function entry in our Ghidra database] Sets lot+0xC1, posts add (0xAC1130) or remove (0xAB4C00) to the sim thread async <docs/38>"
+0x00ACB8A0,Lot_Save,function,"[verified: function entry in our Ghidra database] Header, floor manager, imposter, data layers, objects; sim thread (save) <docs/38>"
+0x00ACBF50,Lot_Save_Slot,function,"[verified: function entry in our Ghidra database] Lot vtable slot +0x1C, calls Lot_Save <docs/38>"
+0x00ACE0D0,Lot_LoadObjectLayer,function,"[verified: function entry in our Ghidra database] Lot/ObjectLayer at +0x2D0, objects via vtable +0x24, then AddLotObjectsToScene inline <docs/38>"
+0x00ACF170,Lot_FinishLoad,function,"[verified: function entry in our Ghidra database] Once (+0xC0) under lot critical section +0xD0: object layer, managers, routing lot setup <docs/38>"
+0x00ACF520,Lot_Load,function,"[verified: function entry in our Ghidra database] Builds pending scene-node manager, floor manager; posts Lot_CreateRenderer sync to main <docs/38>"
+0x00ACF9D0,Lot_Load_Thunk,function,"[verified: function entry in our Ghidra database] Lot vtable 0x1065268 slot +0x18, jumps to Lot_Load <docs/38>"
+0x00C2A040,WorldCellGrid_CloneCellShape,function,[verified: function entry in our Ghidra database] Cell shape vtable +0x08 into a caller pointer <docs/38>
+0x00C2A290,TerrainData_LoadHeightMap,function,[verified: function entry in our Ghidra database] Terrain/TerrainData/HeightMap at +0x08 from resource 0x2AD195F2 <docs/38>
+0x00C2A4B0,WorldCellGrid_MarkCellDirty,function,[verified: function entry in our Ghidra database] cell+0x4C = 1 <docs/38>
+0x00C2A840,WorldCellGrid_SetCellShapes,function,[verified: function entry in our Ghidra database] Releases cell+0x38 and installs KDTreeShape or HeightFieldShape; no lock; main thread in live mode <docs/38>
+0x00C2CCD0,TerrainData_ctor,function,"[verified: function entry in our Ghidra database] Chunk grid, chunks, colour maps, terrain types <docs/38>"
+0x00C60CF0,WorldTerrain_OnLotChanged,function,[verified: function entry in our Ghidra database] Lot coverage update; posted to the main thread <docs/38>
+0x00C60D30,WorldManager_FindLotById,function,[verified: function entry in our Ghidra database] Linear recursive SceneNode_FindRecursive over WM+0x9C <docs/38>
+0x00C62D80,WorldManager_LotScore,function,[verified: function entry in our Ghidra database] Squared camera distance minus Active Lot Bias (WM+0xE0) for active lots <docs/38>
+0x00C64950,RemoteCall_PostSync,function,"[verified: function entry in our Ghidra database] Remote call to selector arg0, async 0 (waits) <docs/38>"
+0x00C649A0,RemoteCall_PostAsync,function,"[verified: function entry in our Ghidra database] Remote call to selector arg0, async 1 <docs/38>"
+0x00C64B90,RemoteCall_PostSyncRelease,function,"[verified: function entry in our Ghidra database] Remote call, async 0, then releases arg3 <docs/38>"
+0x00C65830,WorldManager_DetachLot,function,"[verified: function entry in our Ghidra database] Event 0xE, lot vtable +0x14, terrain update sync on the main thread <docs/38>"
+0x00C65A20,WorldManager_RemoveLot,function,"[verified: function entry in our Ghidra database] Removes the lot from WM+0x9C, optional detach <docs/38>"
+0x00C65E00,WorldManager_CreateLotsFromLayer,function,[verified: function entry in our Ghidra database] Allocates World/Lot objects and Lot/ObjMgr - Layer groups from the layer file <docs/38>
+0x00C671E0,WorldManager_Init,function,"[verified: function entry in our Ghidra database] Lot lists, partitions, houseboat lots, Streaming live settings <docs/38>"
+0x00C678D0,WorldManager_LoadLots,function,"[verified: function entry in our Ghidra database] Lot::Load per lot via vtable +0x18, stream adaptors <docs/38>"
+0x00C688A0,WorldManager_LotGridLookup,function,"[verified: function entry in our Ghidra database] Lot at (x,z) through a lazily rebuilt hash grid (WM+0x1CC dirty) <docs/38>"
+0x00C69FF0,WorldManager_AnyActiveLotPending,function,[unverified: meaning of the checks inferred] True when an active lot still waits on render resources <docs/38>
+0x00C6A080,WorldManager_ActivateAllLots,function,[unverified: trigger WM+0xD8 inferred] SetActive on every lot instead of scoring <docs/38>
+0x00C6A250,World_GetHeightAt,function,"[verified: function entry in our Ghidra database] Lot floor, foundation, water, then terrain WorldCellGrid_Raycast <docs/38>"
+0x00C6AEB0,World_PostLoadInit,function,"[verified: function entry in our Ghidra database] Forced terrain update, ponds, world render manager; posted sync to main by WorldManager_LoadWorld <docs/38>"
+0x00C6B780,WorldManager_Shutdown,function,"[verified: function entry in our Ghidra database] World unload: removes every lot, releases world DBs <docs/38>"
+0x00C6C290,WorldManager_ScoreAndStreamLots,function,"[verified: function entry in our Ghidra database] Main thread lot scoring, sort, Lot_SetActive; camera speed gate WM+0xEC <docs/38>"
+0x00C6CF80,WorldManager_LoadWorld,function,[verified: function entry in our Ghidra database] From IC_LoadSaveManager_LoadGame_Impl (sim); world init and post-init posted sync to main <docs/38>
+0x00C7E350,WorldService_Register,function,[verified: function entry in our Ghidra database] World/Service hash 0x9B8E862F vtable 0x107A358 <docs/38>
+0x00C7E3C0,WorldService_Update,function,"[verified: function entry in our Ghidra database] Service slot +0x1C on the main thread: WorldManager_Update, render manager, locomotion, wind <docs/38>"
+0x00C82330,WorldTerrain_ctor,function,[verified: function entry in our Ghidra database] Terrain/WorldTerrain (0x1B0 bytes) at WM+0x58 <docs/38>
+0x00C83200,TerrainChunk_BuildHeightFieldShape,function,[verified: function entry in our Ghidra database] Chunk mesh buffers; cell collision shape = height field <docs/38>
+0x00C84090,TerrainChunk_BuildKDTreeShape,function,[verified: function entry in our Ghidra database] Two Terrain/KDTree builds (0xC26810); cell collision shape = kd-tree <docs/38>
+0x00C845C0,WorldTerrain_Update,function,"[verified: function entry in our Ghidra database] Main thread per frame: chunk LOD by camera, chunk rebuilds, cell shape swaps <docs/38>"
+0x00C85250,WorldTerrain_ForceUpdate,function,[verified: function entry in our Ghidra database] WorldTerrain_Update with the forced flag at +0xF4 <docs/38>
+0x00C85270,WorldTerrain_RebuildAllChunks,function,[verified: function entry in our Ghidra database] Every chunk: kd-tree build or physics-world shape swap (world init) <docs/38>
+0x00599160,JobManager_Get,function,[verified: function entry in our Ghidra database] Returns the JobManager interface [0x11CE2CC] <docs/36>
+0x00599170,JobManager_Init,function,"[verified: function entry in our Ghidra database] Vtable +0x04: calling-thread record, then one OS JobThread%i per set bit of the mask argument <docs/36>"
+0x005991D0,JobManager_BindThread,function,[verified: function entry in our Ghidra database] Vtable +0x1C: sets a record's thread id to the caller <docs/36>
+0x00599200,JobThread_Proc,function,"[verified: function entry in our Ghidra database] JobThread%i entry: RunJobs(record, 0, 0), blocks for ever {thread proc} <docs/36>"
+0x00599220,Job_GetState,function,[verified: function entry in our Ghidra database] Job state (+0x24) under the JobManager lock <docs/36>
+0x005995D0,JobManager_Shutdown,function,[verified: function entry in our Ghidra database] Vtable +0x08: destroys job threads and drains the queues <docs/36>
+0x00599620,JobManager_CreateJob,function,"[verified: function entry in our Ghidra database] Vtable +0x10: Services/JobManager/Job, state 1, mask -1, returns job+8 <docs/28, 36>"
+0x00599720,JobManager_ExecuteJob,function,[verified: function entry in our Ghidra database] Runs job fn (+0x10) with the lock dropped; completion and dependents <docs/36>
+0x00599920,JobQueue_InsertByPriority,function,[verified: function entry in our Ghidra database] Sorted insert on job+0x48 <docs/36>
+0x00599970,JobManagerService_ctor,function,"[verified: function entry in our Ghidra database] Service id 0x2A8D18B, vtable 0xFD9810; +0xD0 single-threaded flag, +0xCC timeslice 5 <docs/36>"
+0x00599A10,JobManagerService_Update,function,"[verified: function entry in our Ghidra database] Main-thread service slot +0x1C: RunJobs(main record, timeslice deadline, nonblock) <docs/36>"
+0x00599E00,JobManager_FindThreadByMask,function,[verified: function entry in our Ghidra database] Vtable +0x20 <docs/36>
+0x00599E60,JobManager_RunJobsLocked,function,"[verified: function entry in our Ghidra database] Pump loop: own queue, shared queue JM+0x60 for bit-31 records, deadline (QPC at +0x18), nonblock, single {thiscall (rec, deadline, nonblock, single)} <docs/28, 36>"
+0x00599FC0,JobManager_ReadyJob,function,[verified: function entry in our Ghidra database] Routes a ready job: mask -1 to the shared queue; else first record with a matching mask <docs/36>
+0x0059A190,JobManager_Submit,function,[verified: function entry in our Ghidra database] Created job to ready or to the dependency wait list JM+0x58 <docs/36>
+0x0059A220,JobManager_WaitLocked,function,[verified: function entry in our Ghidra database] Waits for a job; job threads run their own queue meanwhile <docs/25, 36>
+0x0059A350,Job_Submit,function,[verified: function entry in our Ghidra database] Interface wrapper of 0x59A190 <docs/28, 36>
+0x0059A430,JobManager_RunJobs,function,"[verified: function entry in our Ghidra database] Vtable +0x24: lock + 0x599E60; sim pump call at 0xD81FC3 passes deadline 0 {thiscall, ret 0xC} <docs/28, 36>"
+0x0059A500,JobManager_Wait,function,[verified: function entry in our Ghidra database] Lock wrapper of 0x59A220 <docs/25, 36>
+0x0059A540,Job_Cancel,function,[verified: function entry in our Ghidra database] [inferred name] <docs/36>
+0x0059A8B0,JobManager_DestroyJobThread,function,[verified: function entry in our Ghidra database] Vtable +0x18 <docs/36>
+0x0059A990,Job_Release,function,[verified: function entry in our Ghidra database] Refcount drop; destroy on last <docs/36>
+0x0059A9F0,Job_CancelTree,function,[verified: function entry in our Ghidra database] JobManager/DepsToCancel [inferred name] <docs/36>
+0x00FD97A4,vt_JobManager,data,[verified: bytes match the Steam 1.67 exe] JobManager interface vtable (+0x10 CreateJob ... +0x24 RunJobs) <docs/36>
+0x00FD9810,vt_JobManagerService,data,[verified: bytes match the Steam 1.67 exe] Service vtable (+0x10 Init 0x5992D0 +0x1C Update 0x599A10) <docs/36>
+0x00FD9744,g_jobManagerLock,data,[verified: referenced in our Ghidra database] Static lock for every JobManager list <docs/36>
+0x011CE2CC,g_jobManager,data,[verified: referenced in our Ghidra database] JobManager interface pointer <docs/28, 36>
+0x011D8A8C,g_simThreadId,data,[verified: referenced in our Ghidra database] Sim thread id (set by 0x7D9A00) <docs/28, 33, 36>
+0x011D8A88,g_mainThreadId,data,[verified: referenced in our Ghidra database] Main thread id (set by 0x7D99E0) <docs/28, 36>
+0x011D6778,g_simThreadStarted,data,[verified: referenced in our Ghidra database] Set by the Simulator thread after script host start <docs/36>
+0x004E2E30,EAThread_Entry,function,[verified: function entry in our Ghidra database] Thread entry: names the thread (0x406D1388) and calls fn(arg) {thread proc} <docs/36>
+0x004E31A0,EAThread_BeginRunnable,function,[verified: function entry in our Ghidra database] Same for a runnable object (vtable +4 Run) <docs/36>
+0x004E30A0,EAThread_EntryRunnable,function,[verified: function entry in our Ghidra database] {thread proc} <docs/36>
+0x004E2C50,EAThread_SetIdealProcessor,function,[verified: function entry in our Ghidra database] SetThreadIdealProcessor modulo CPU count <docs/36>
+0x004E2AF0,EAThread_SetPriority,function,[verified: function entry in our Ghidra database] SetThreadPriority with fallback <docs/36>
+0x004E2760,EASemaphore_Wait,function,[verified: function entry in our Ghidra database] WaitForSingleObject with a GetTickCount deadline <docs/25, 36>
+0x004E2810,EASemaphore_Post,function,[verified: function entry in our Ghidra database] [inferred name] <docs/36>
+0x004E2210,EAThreadPool_Init,function,"[verified: function entry in our Ghidra database] Pool params (min, max <= 16, start, idle ms), starts threads <docs/36>"
+0x004E2080,EAThreadPool_SetThreadCount,function,[verified: function entry in our Ghidra database] Threads/ThreadPool/ThreadInfo <docs/36>
+0x004E1DF0,EAThreadPool_WorkerProc,function,[verified: function entry in our Ghidra database] Pool worker loop {thread proc} <docs/36>
+0x004E9100,CallbackProcessor_Add,function,[verified: function entry in our Ghidra database] Starts the CallbackProcessor thread on first use [inferred name] <docs/36>
+0x004F35B0,Stopwatch_Init,function,[verified: function entry in our Ghidra database] Stopwatch with unit mode (3 us / 4 ms inferred) <docs/36>
+0x004F34F0,Stopwatch_SetDeadline,function,[verified: function entry in our Ghidra database] Deadline = QPC + count / units-per-tick at +0x18 <docs/36>
+0x004DB220,FileWatcher_ThreadProc,function,[verified: function entry in our Ghidra database] Started by 0x4DB290 [inferred role] {thread proc} <docs/03, 36>
+0x00893660,SIGSThreadJobManager_CreatePool,function,"[verified: function entry in our Ghidra database] SIGS/ThreadJobManager/mpThreadPool: min 3, max 16, start 3, idle 500 <docs/36>"
+0x00893D90,SIGSThreadJobManager_ctor,function,[verified: function entry in our Ghidra database] SIGS/tThreadJobContainer <docs/36>
+0x00893EC0,SIGSThreadJobManager_PopJob,function,[verified: function entry in our Ghidra database] [inferred name] <docs/36>
+0x008942F0,SIGSThreadJobManager_RunLoop,function,[verified: function entry in our Ghidra database] Calls JobRunner_Loop [inferred name] <docs/36>
+0x007D98C0,RemoteCall_Dispatch,function,"[verified: function entry in our Ghidra database] (selector, async): inline on the target thread, else job mask 4 (sim) or 1 (main) {thiscall, ret 8} <docs/28, 36>"
+0x007D9840,RemoteCall_JobFn,function,[verified: function entry in our Ghidra database] Job body of a remote call <docs/36>
+0x007D99F0,GetSimThreadId,function,[verified: function entry in our Ghidra database] Returns [0x11D8A8C] <docs/33, 36>
+0x007D99D0,GetMainThreadId,function,[verified: function entry in our Ghidra database] Returns [0x11D8A88] <docs/36>
+0x007D9A00,SetSimThreadId,function,[verified: function entry in our Ghidra database] <docs/36>
+0x007D99E0,SetMainThreadId,function,[verified: function entry in our Ghidra database] <docs/36>
+0x007D9A10,IsSingleThreaded,function,[verified: function entry in our Ghidra database] main id == sim id <docs/36>
+0x00ABEA50,PostRemoteMethodCall_LotRemove,function,[verified: function entry in our Ghidra database] Async post of 0xAB4C00 to the sim thread <docs/28, 36>
+0x0082AA70,RunOnSimThreadSync,function,[verified: function entry in our Ghidra database] Job mask 4 + wait; caller 0x835110 <docs/36>
+0x0082ACF0,RunOnMainThreadSync,function,[verified: function entry in our Ghidra database] Job mask 1 + wait; caller 0x835110 <docs/36>
+0x0076B1B0,ScriptThreadService_ctor,function,[verified: function entry in our Ghidra database] Scripting/Service/Thread <docs/36>
+0x0076B610,ScriptThreadService_Init,function,"[verified: function entry in our Ghidra database] Starts the Simulator thread (512 KB, ideal CPU 1) or binds the sim id to the caller <docs/36>"
+0x0076B470,SimulatorThread_Proc,function,[verified: function entry in our Ghidra database] Simulator thread: sets sim id; host start; host run loop {thread proc} <docs/36>
+0x0059ECC0,Service_ctor,function,"[verified: function entry in our Ghidra database] Base engine service (id, x); vtable 0xFDDE44 <docs/33, 36>"
+0x0059ED20,ServiceList_Update,function,[verified: function entry in our Ghidra database] Main-thread service slot +0x1C <docs/28, 36>
+0x0059ED70,ServiceList_SimUpdate,function,[verified: function entry in our Ghidra database] Sim-thread service slot +0x20 (4 calls in Simulate) <docs/36>
+0x0059EFE0,ServiceList_Find,function,[verified: function entry in our Ghidra database] By id <docs/36>
+0x00EC9C20,App_ReadMultithreaded,function,"[verified: function entry in our Ghidra database] [Script] Multithreaded; MT/ST/SP switches [inferred] <docs/03, 36>"
+0x00EC6D90,App_ReadTimeslices,function,[verified: function entry in our Ghidra database] [Timeslices] four rows of four values <docs/04, 36>
+0x005887A0,App_IdleIfNotForeground,function,[verified: function entry in our Ghidra database] Sleep(10) unless the foreground window is ours <docs/41>
+0x00594230,GameClock_Advance,function,"[verified: function entry in our Ghidra database] game dt = real dt x scale, clamped, unless paused; lock 0xFD7C84 <docs/41>"
+0x00594300,GameClock_SetPauseFlags,function,[verified: function entry in our Ghidra database] clock +0x40 |= bits; MainLoop bit 4 when device +0x8D <docs/41>
+0x00594330,GameClock_ClearPauseFlags,function,[verified: function entry in our Ghidra database] clock +0x40 &= ~bits <docs/41>
+0x005943C0,GameClock_IsPaused,function,[unverified: from our docs only] lock 0xFD7C84 reader; callers IsPausedImpl <docs/41>
+0x005943F0,GameClock_FrameTick,function,"[verified: function entry in our Ghidra database] QPC real dt per main-loop iteration, then GameClock_Advance <docs/41>"
+0x00593440,FrameDb_GetReadPair,function,[verified: function entry in our Ghidra database] slots read and read+1 of the 3-slot frame ring <docs/41>
+0x005934C0,FrameDb_Get,function,[verified: function entry in our Ghidra database] Services/FrameDatabase singleton <docs/41>
+0x00593560,FrameDb_SetFixedStepFlag,function,[verified: function entry in our Ghidra database] +0xFC under lock +0x48 <docs/41>
+0x00593600,FrameDb_PublishFrame,function,"[verified: function entry in our Ghidra database] sim: write index +1 mod 3, count +1, drop oldest above cap 2 (3 fixed step) <docs/41>"
+0x005937B0,FrameDb_DrainEvents,function,[verified: function entry in our Ghidra database] main: swap message lists under +0xD0 and run each 0x50-byte message <docs/41>
+0x00593D60,FrameDb_ctor,function,[verified: function entry in our Ghidra database] Services/FrameDatabase/EventList <docs/41>
+0x00593EC0,FrameDbService_Create,function,[verified: function entry in our Ghidra database] Services/FrameDatabase/Service <docs/41>
+0x00693660,FrameDb_AdvanceRenderClock,function,"[verified: function entry in our Ghidra database] render time += dt clamped to [tA, tB], returns lerp factor <docs/41>"
+0x006933E0,FrameDb_SetFixedStep,function,[verified: function entry in our Ghidra database] fixed render step (capture) <docs/41>
+0x00693780,FrameDb_ConsumeAndInterpolate,function,"[verified: function entry in our Ghidra database] main: TryEnter +0x48, consume frames, drain messages, interpolate objects <docs/41>"
+0x006E2120,RenderingJobs_Advance,function,[unverified: from our docs only] RenderingJobs deque step under lock 0xFF7700 <docs/41>
+0x006E3250,RenderSystem_ctor,function,"[verified: function entry in our Ghidra database] Renderer/RenderSystem/RenderingJobs, CondemnedResources, GlobalShaderSettings <docs/41>"
+0x006E33F0,RenderingJobs_Pop,function,[unverified: from our docs only] RenderingJobs deque under lock 0xFF7700; Renderer_BeginFrame and RemoteCall_JobFn <docs/41>
+0x006E3620,RenderSystemService_Update,function,[verified: RenderSystem service vtable 0xFF7D84 slot +0x1C] calls FrameDb_ConsumeAndInterpolate at 0x6E3653 <docs/41>
+0x006E3C60,RenderSystemService_Create,function,[verified: function entry in our Ghidra database] Services/RenderSystem <docs/41>
+0x006E4130,Renderer_RunDeferredCallbacks,function,[unverified: from our docs only] drains a callback list in Renderer_BeginFrame <docs/41>
+0x006E8330,Renderer_Get,function,[verified: function entry in our Ghidra database] [0x11D1860] <docs/41>
+0x006E8810,Renderer_EndFrame,function,[verified: function entry in our Ghidra database] JobManager_Wait on the frame jobs after Present <docs/41>
+0x006E8920,Renderer_SetRenderTime,function,[verified: function entry in our Ghidra database] renderer +0x370 <docs/41>
+0x006EBA90,Renderer_ChooseFrameJobs,function,[verified: function entry in our Ghidra database] sets +0x28E/+0x28F/+0x29C job flags <docs/41>
+0x006EBB70,Renderer_BeginFrame,function,"[verified: function entry in our Ghidra database] RenderingJobs drain, pre-passes, submits up to 5 frame jobs <docs/41>"
+0x0072F1C0,ResourceSystem_Get,function,[verified: function entry in our Ghidra database] [0x11D3E28]; vtable +0x58 gates the 10 FPS loading cap <docs/41>
+0x009DE140,VideoCapture_RenderFrame,function,[unverified: from our docs only] renders through Frame_RenderCallback (present 0) <docs/41>
+0x009E0C70,VideoCapture_WriteAudio,function,[unverified: from our docs only] 0x2004-sample chunks; sets the fixed render step <docs/41>
+0x009E1B70,VideoCapture_Get,function,[unverified: from our docs only] [0x11E9AF0] <docs/41>
+0x00EC6A80,LoadState_CreateState,function,[verified: function entry in our Ghidra database] Misc/LoadState/* tags <docs/41>
+0x00EC6C30,LoadState_Update,function,[verified: function entry in our Ghidra database] state vtable +0xC once per main-loop iteration <docs/41>
+0x00ECAA65,MainLoop_loading_cap_100ms,label,[verified: bytes match the Steam 1.67 exe] FLD [0x10F5B10] = 100.0 ms stopwatch compare <docs/41>
+0x006E3653,RenderSystem_call_FrameDbConsume,label,[verified: bytes match the Steam 1.67 exe] CALL 0x693780 <docs/41>
+0x0058AAD0,Config_GetBool,function,"[verified: function entry in our Ghidra database] (group "Config", key, default); reads GraphicsRules/Options props <docs/44>"
+0x0058ABA0,Config_GetInt,function,"[verified: function entry in our Ghidra database] (group "Config", key, default) <docs/44>"
+0x006883A0,AOSolver_LoadIni,function,"[verified: function entry in our Ghidra database] AO.ini: BlurFilterSkip, BlurFilterWidthMeters, MaxGroundOcclusion, MaxRoofOcclusion <docs/44>"
+0x00689400,AOSolver_CreateMapTexture,function,"[verified: function entry in our Ghidra database] "AoSolver" texture 1024 x N, MANAGED (flags 2) <docs/44>"
+0x0068A7F0,AORoofSolver_CreateTexture,function,"[verified: function entry in our Ghidra database] "AoSolver" square texture, MANAGED (flags 2) <docs/44>"
+0x006AFDC0,LightingSystem_Init,function,"[verified: function entry in our Ghidra database] reads InteriorLightProbeCount (default 12) <docs/44>"
+0x006B0500,LightManager_FrameUpdate,function,"[verified: function entry; role inferred from callers/strings] main loop pre-render 0x6EBB70 and imposter pump <docs/44>"
+0x006E05A0,RenderSystem_ReadConfig,function,"[verified: function entry in our Ghidra database] RenderShadowsEnabled, HighRezTranslucency, WaterReflectionDetail, DisablePerPixelFog, DisallowL16RTT <docs/44>"
+0x006E2760,RenderSystem_CreateTargets,function,"[verified: function entry; role inferred from callers/strings] creates shadow map (0x70BEB0) and default textures <docs/44>"
+0x006E8330,Renderer_Get,function,"[verified: function entry; role inferred from callers/strings] renderer singleton getter, 241 callers <docs/44>"
+0x006E9270,Renderer_ReadQualityConfig,function,"[verified: function entry in our Ghidra database] RenderPostProcessEnabled, RenderReflectionsEnabled, ComplexPostProcessEnabled, WaterReflection*, CASLightMap* <docs/44>"
+0x006EB610,Renderer_InitScene,function,"[verified: function entry in our Ghidra database] Renderer/Scene, Renderer/SceneLODScheduler <docs/44>"
+0x006EF780,Renderer_RegisterDebugOptions,function,"[verified: function entry in our Ghidra database] "Scene Shadow", "Shadow Camera", "Multithreaded Cull" debug toggles <docs/44>"
+0x00706AA0,ScreenCapture_CreateTempTexture,function,"[verified: function entry in our Ghidra database] "ScreenCapture" render target (flags 1) <docs/44>"
+0x0070BD40,ShadowMap_ColorFormat,function,"[verified: function entry in our Ghidra database] ShadowColorFormatWorkaround <docs/44>"
+0x0070BEB0,ShadowMap_Create,function,"[verified: function entry in our Ghidra database] ShadowMapSize (default 2048) square depth texture + color target (1x1 when ShadowMapAllowNullColor) <docs/44>"
+0x0079B450,ShadowMode_ReadConfig,function,"[verified: function entry; role inferred from callers/strings] RenderShadowMode (1..4) and RenderShadowsEnabled -> size 0x400/0x200/0x100 <docs/44>"
+0x009164F0,Swarm_ApplyQuality,function,"[verified: function entry in our Ghidra database] SwarmQuality (default 3); re-applies to all effects on change <docs/44>"
+0x00AB2A90,Lot_RebuildWorldImposter,function,"[verified: function entry in our Ghidra database] when lot+0x364: Lot_BuildImposter into world package, clears lot+0xBA <docs/44>"
+0x00AC3680,Lot_MarkImposterDirty,function,"[verified: function entry in our Ghidra database] World_RegenImposter: sets lot+0xBA and rebuild flags <docs/44>"
+0x00AD97E0,LotImposter_WaitOrPump,function,"[verified: function entry in our Ghidra database] main thread: pumps frames until the job ends; else JobManager_Wait <docs/25> <docs/44>"
+0x00AD9DE0,LotLODCreator_ctor,function,"[verified: function entry in our Ghidra database] mObjectIDs, mModifiedObjectIDs <docs/44>"
+0x00ADA250,LotImposterJob_SubmitMainA,function,"[verified: function entry in our Ghidra database] child job with mask 1 (main thread) <docs/44>"
+0x00ADA400,LotImposterJob_SubmitMainB,function,"[verified: function entry in our Ghidra database] child job with mask 1 (main thread) <docs/44>"
+0x00ADA460,LotLODCreator_Render,function,"[verified: function entry in our Ghidra database] renders the lot LOD/imposter model and textures <docs/44>"
+0x00ADAE50,LotImposterJob_Step,function,"[verified: function entry in our Ghidra database] 8-state job callback (main-thread job) <docs/44>"
+0x00ADDEA0,LotLODCreator_CreateRTT,function,"[verified: function entry in our Ghidra database] LotLODCreator/RTT (DEFAULT RT) + Readback (SYSTEMMEM) <docs/44>"
+0x00ADE030,LotLODCreator_CreateLODTexture,function,"[verified: function entry in our Ghidra database] LotLODCreator/LODTexture (SYSTEMMEM), copy from RT <docs/44>"
+0x00ADE200,LotLODCreator_BuildModel,function,"[verified: function entry in our Ghidra database] imposterTexture, imposterTextureAOandSI, imposterTextureWater <docs/44>"
+0x00ADFB40,LotLODCreator_RenderPass,function,"[verified: function entry in our Ghidra database] creates RTT/LOD texture at size / downscale <docs/44>"
+0x00ADFE70,LotLODCreator_BuildImposterModel,function,"[verified: function entry in our Ghidra database] lotImposter, ImpostorWater, HolidayLights <docs/44>"
+0x00ADAF60,LotImposter_Build,function,"[verified: function entry in our Ghidra database] submits the main-thread imposter job, then waits or pumps <docs/25> <docs/44>"
+0x00AE0540,Lot_BuildImposter,function,"[verified: function entry in our Ghidra database] wrapper of LotImposter_Build; from Lot_Save and Lot_RebuildWorldImposter <docs/25> <docs/44>"
+0x00C5FB10,World_SetImposterModeFlag,function,"[verified: function entry in our Ghidra database] world+0xD8; from camera code and World_SetImposterMode <docs/44>"
+0x00C7D8F0,Debug_ForceImposterGeneration,function,"[verified: function entry in our Ghidra database] "Force Imposter Generation" toggle <docs/44>"
+0x00D62640,ThumbnailRenderer_Render,function,"[verified: function entry in our Ghidra database] thumbnail scene and shadow plane, render target <docs/44>"
+0x00D62950,ThumbnailRenderer_CreatePrelim,function,"[verified: function entry in our Ghidra database] ThumbnailRenderer/PrelimThumbsTex RT, TempRTT <docs/44>"
+0x00619770,Texture_ClampToCaps,function,"[verified: decompiled in our Ghidra database] Rounds w/h to a power of two when caps need it, clamps to caps max size; no device call <docs/43>"
+0x00618570,Texture_FillLevels,function,"[verified: decompiled in our Ghidra database] Per mip level: Texture_LockRect, fill (0x615B80), Texture_UnlockRect; no thread check <docs/43>"
+0x0050A6A0,UTFWin_PendingTexturesInit,function,"[verified: decompiled in our Ghidra database] Lazily creates the UI/UTFWin/PendingTextures list (0x11CD034) <docs/43>"
+0x0050A710,UTFWin_PendingTexturesPush,function,"[verified: decompiled in our Ghidra database] Appends (object | flag) under lock 0xFBA4D8 <docs/43>"
+0x0050A780,UTFWin_QueuePendingTexture,function,"[verified: decompiled in our Ghidra database] Hand-off of a UI texture create (1) or release (0) to the device owner thread [drain inferred] <docs/43>"
+0x0050AB70,UTFWin_GetWindowManager,function,[verified: decompiled in our Ghidra database] Returns [0x11CD080] <docs/43>
+0x00516AC0,UI_SampleClock,function,[verified: decompiled in our Ghidra database] QPC or rdtsc sample into the UI clock 0x11CD088 <docs/43>
+0x00723EE0,UTFWinService_Update,function,[verified: service vtable 0xFFCF8C slot +0x1C] Main-thread slot; sim slot is the stub <docs/43>
+0x00724310,UTFWinService_ctor,function,"[verified: decompiled in our Ghidra database] ""Services/UTFWin"", Service_ctor, vtable 0xFFCF8C <docs/43>"
+0x007DBBE0,UIResource_ReleaseD3D,function,"[verified: decompiled in our Ghidra database] Releases the D3D object only on the device owner thread, else UTFWin_QueuePendingTexture(obj,0) <docs/43>"
+0x007DECF0,CollectionsManager_ctor,function,"[verified: decompiled in our Ghidra database] UI/CollectionsManager service, both slots stub <docs/43>"
+0x007E4590,HeadlineManager_ctor,function,"[verified: decompiled in our Ghidra database] UI/HeadlineManager service, both slots stub <docs/43>"
+0x007E5110,IMEService_ctor,function,"[verified: decompiled in our Ghidra database] ""UI/IME/Service"", vtable 0x101C158 <docs/43>"
+0x007E6840,IMEService_Update,function,[verified: service vtable 0x101C158 slot +0x1C] Main-thread slot <docs/43>
+0x007E7610,UITextureResource_ReleaseD3D,function,"[verified: decompiled in our Ghidra database] Same owner-thread check as 0x7DBBE0 (vtable 0x101C7A8) <docs/43>"
+0x007E7F70,UITextureResource_ctor,function,[verified: decompiled in our Ghidra database] vtable 0x101C7AC <docs/43>
+0x007E8200,UITextureResource_FromImage,function,"[verified: decompiled in our Ghidra database] UI/UITextureResource + UI/UTFWin/Image; size via Texture_ClampToCaps; D3D create queued via UTFWin_QueuePendingTexture(res,1) <docs/43>"
+0x007E8390,UIImage_BuildTexture,function,[verified: decompiled in our Ghidra database] LoadUIImage helper: copy pixels (0x7D2CF0) then UITextureResource_FromImage <docs/43>
+0x007ECAA0,SerializationService_ctor,function,"[verified: decompiled in our Ghidra database] ""Services/Serialization"", both slots stub <docs/43>"
+0x007F1350,TriggerService_ctor,function,"[verified: decompiled in our Ghidra database] UI/TriggerService, both slots stub <docs/43>"
+0x007F14E0,UIService_ctor,function,"[verified: Service_ctor caller, vtable 0x101E758] UI service with a sim-thread slot; sub-vtable 0x101E748 holds CursorMgr 0x7F1EF0 [name inferred] <docs/36, 43>"
+0x007F1530,UIService_SimUpdate,function,"[verified: decompiled in our Ghidra database] Sim-thread slot +0x20: UI_SampleClock, then window manager [0x11CD080] vtable +0x24 and +0x28 <docs/43>"
+0x00D4D6D0,ThumbnailManager_SimUpdate,function,"[verified: service vtable 0x1088F2C slot +0x20] Lock 0x1088330 check, then SACS_DriverUpdate / Actor_TimeStep for thumbnail scene actors <docs/36, 43>"
+0x00D57D30,ThumbnailManager_ctor,function,"[verified: Service_ctor caller] UI/ThumbnailManager, vtable 0x1088F2C <docs/43>"
+0x00D5D910,ThumbnailManager_CreateThumbnailTexture,function,"[verified: decompiled in our Ghidra database] Texture_Create2D (MANAGED, ""Thumbnail"") + Texture_FillLevels on the caller thread, then queues under lock 0x1088330 <docs/43>"
+0x00D61670,ThumbnailManager_Update,function,"[verified: service vtable 0x1088F2C slot +0x1C] Main-thread slot: request queues, PostRenderMessage <docs/43>"
+0x011CD034,g_UTFWinPendingTextures,data,[verified: decompiled in our Ghidra database] UI/UTFWin/PendingTextures list pointer <docs/43>
+0x011CD080,g_UTFWinWindowManager,data,[verified: decompiled in our Ghidra database] Window manager object [name inferred] <docs/43>
+0x00FBA4D8,g_UTFWinPendingTexturesLock,data,[verified: decompiled in our Ghidra database] Lock taken by UTFWin_PendingTexturesPush <docs/43>
+0x01088330,g_ThumbnailManagerLock,data,[verified: decompiled in our Ghidra database] Taken by ThumbnailManager_SimUpdate and ThumbnailManager_CreateThumbnailTexture <docs/36, 43>
+0x005F0E50,SimService_Update,function,"[verified: function entry in our Ghidra database] SimService vtable +0x1C (main-thread service slot): swaps the request list under 0xFE4DC4, then a QPC-deadline state machine (no deadline unless [this+0x139] time slicing is on); state 0xB = SimService_Process <docs/42>"
+0x005EB7C0,SimService_Get,function,[verified: function entry in our Ghidra database] Returns the SimService singleton [0x11CE6A0] <docs/42>
+0x005E2050,SimBuilder_BuildStep,function,"[verified: function entry in our Ghidra database] One SimBuilder build step; 0 done, 1 progress, 2 needs the device; reached from the build/process messages and SimService_Update (skin build via 0x5DE400) <docs/42>"
+0x005DE400,SimBuilder_BuildSkinStep,function,[verified: function entry in our Ghidra database] Calls BuildSkinJob_RunJob inline <docs/42>
+0x005AD8F0,SimBuilder_BuildModelMsg,function,"[verified: function entry in our Ghidra database] Message callback of IC SimBuilderBuildModel: up to 100 build steps, re-posts itself (msg 0x30290F0) while the step needs the device, then posts completion to the script host <docs/42>"
+0x005ADA30,SimBuilder_ProcessModelMsg,function,[verified: function entry in our Ghidra database] Message callback of IC SimBuilderProcessModel (same shape as SimBuilder_BuildModelMsg) <docs/42>
+0x005ADD40,CAS_PostOutfitSwapMsg,function,"[verified: function entry in our Ghidra database] Posts the outfit-swap request of SetOutfitInGameObject(Delayed) as message 0x30290F0 to the message server [name inferred] <docs/42>"
+0x005E84D0,SimOutfit_LoadParts,function,"[verified: function entry in our Ghidra database] Per outfit part: async resource request (type 0x034C777B, callback 0xD4B150); blocking mode waits on the outfit job [+0xB8] and the part jobs <docs/42>"
+0x005AF0D0,CASPartData_WaitJob,function,[verified: function entry in our Ghidra database] Waits (JobManager_Wait) for the CAS part data job at [+0x1CC] if asked <docs/42>
+0x005E9AA0,SimOutfitResource_Parse,function,"[verified: function entry in our Ghidra database] Parses a SimOutfit resource (presets, key pools), creates its job at [+0xB8] and submits it (mask default) <docs/42>"
+0x005B2290,CASPartDataResource_Parse,function,"[verified: function entry in our Ghidra database] Parses CAS part data (key table, presets, sound materials), submits its job at [+0x1CC] <docs/42>"
+0x005AEF40,CASCache_FindPart,function,[verified: function entry in our Ghidra database] Wrapper over CASCache_GetCachedPart for IC GetCASPart and FindReplacementPartForCategory <docs/42>
+0x00608630,TextureCompositorQueue_Update,function,[verified: function entry in our Ghidra database] TextureCompositor service vtable +0x1C (main-thread slot) <docs/42>
+0x00B3A960,ObjectDesignerService_Update,function,"[verified: function entry in our Ghidra database] ObjectDesignerService vtable +0x1C (main-thread slot); takes the ObjectDesignerService lock 0x106B874 <docs/42>"
+0x00B3A340,ObjectDesignerService_Slot14,function,[verified: function entry in our Ghidra database] ObjectDesignerService vtable +0x14; takes the lock 0x106B874 [role unknown] <docs/42>
+0x00B3A1D0,ObjectDesignerService_Create,function,"[verified: function entry in our Ghidra database] Allocates Services/ObjectDesignerService (0x338 bytes), stores [0x11EBAE0], registers it <docs/42>"
+0x0044C470,MessageServer_Get,function,[verified: function entry in our Ghidra database] Returns [0x11B1378]; vtable +0x1C posts a message (id 0x30290F0 for CAS callbacks) [name inferred] <docs/42>
+0x007692B0,ScriptHost_GetWorld,function,[verified: function entry in our Ghidra database] Returns g_ScriptHostForWorldEvents; +0x118 current task id; +0x120 wait; +0xCC handle lookup [slot roles inferred] <docs/42>
+0x00D4E550,HashMap_Find_Generic,function,[verified: function entry in our Ghidra database] Folded generic hash lookup used by D3D buffers, resource type names and lot grid; not a ThumbnailManager function <docs/42>
+0x00FE4DC4,g_SimServiceRequestLock,data,[verified: Lock_Acquire argument in SimService_Update] SimService request list lock <docs/42>
+0x011CE6A0,g_SimService,data,[verified: read by SimService_Get] SimService singleton <docs/42>
+0x011EBAE0,g_ObjectDesignerService,data,[verified: written by ObjectDesignerService_Create] <docs/42>
+0x011CEB88,g_TextureCompositorQueue,data,[verified: written by TextureCompositorQueue] <docs/42>
+0x011CEB8C,g_MaterialTextureCompositor,data,[verified: written by TextureCompositorQueue] <docs/42>
+0x011B1378,g_MessageServer,data,[verified: read by MessageServer_Get] [name inferred] <docs/42>
+0x0106BE6C,vt_ObjectDesignerService,data,[verified: stored by the ObjectDesignerService constructor; +0x1C = 0xB3A960] <docs/42>
+0x00FE514C,vt_SimService,data,[verified: stored by the SimService constructors 0x5F0BA0/0x5F1450; +0x1C = 0x5F0E50] <docs/42>
+0x00FE6B08,vt_TextureCompositorQueue,data,[verified: +0x10 = TextureCompositorQueue init; +0x1C = 0x608630] <docs/42>
+0x006F40B0,Renderer_Init,function,"[verified: allocs Renderer/RenderPickManager, registers shader globals, creates the 6 frame jobs +0x30C-+0x320 with fn/arg and priority 10] <docs/46>"
+0x006E97F0,Renderer_Shutdown,function,[verified: Job_Release of the 6 frame jobs and frees renderer members] <docs/46>
+0x006EEB30,RenderJob_ShadowCullFn,function,[verified: job fn of Renderer+0x310; arg 4 = run -> Renderer_CullShadowView] <docs/46>
+0x006EBE30,Renderer_CullShadowView,function,"[verified: when +0x28E: fit shadow camera +0x2C (0x723BE0), cull into render set +0x14; clears +0x28E when empty] <docs/46>"
+0x006F3C30,RenderJob_MainCullFn,function,[verified: job fn of Renderer+0x318 -> Renderer_CullMainView] <docs/46>
+0x006F1B00,Renderer_CullMainView,function,"[verified: frustum of camera +0x24, scene cull into render set +0x10 (Renderer/SceneCullFilter/ObjectList), sort +0x110/+0x120, screen coverage] <docs/46>"
+0x006EDA60,RenderJob_ReflectionCullFn,function,[verified: job fn of Renderer+0x314 -> Renderer_CullReflectionView] <docs/46>
+0x006EA260,Renderer_CullReflectionView,function,"[verified code; reflection meaning inferred] when +0x294: camera +0x30, cull into render set +0x1C <docs/46>"
+0x006EEB50,RenderJob_Shadow2CullFn,function,[verified: job fn of Renderer+0x320 -> Renderer_CullShadow2View] <docs/46>
+0x006EBF50,Renderer_CullShadow2View,function,"[verified code; second shadow view inferred] when +0x29C: fit camera +0x34 (0x723BE0), cull into render set +0x20 <docs/46>"
+0x006F3C50,RenderJob_SortMainFn,function,[verified: job fn of Renderer+0x31C -> Renderer_SortMainRenderSets] <docs/46>
+0x006F1D10,Renderer_SortMainRenderSets,function,[verified: RenderSet_Sort on six sub-lists of render set +0x10] <docs/46>
+0x006F16B0,RenderSet_Sort,function,[verified: Renderer/SceneManager/RenderSetEntryBuffer; sorts entries by key] <docs/46>
+0x006E6530,Scene_CullIntoRenderSet,function,[inferred: called by every cull job with a frustum/filter and a render set] <docs/46>
+0x0068D9E0,CullFrustum_FromCamera,function,[inferred: builds planes from a camera; first call of every cull job] <docs/46>
+0x00723BE0,Shadow_FitLightCamera,function,[inferred: fits a light camera to the view camera; shadow cull jobs] <docs/46>
+0x0059E7C0,ScreenCoverageSet_Update,function,[verified: Renderer/ScreenCoverageSet; takes lock 0xFDDDDC; called from Renderer_CullMainView] <docs/46>
+0x0059A820,Job_SetPriority,function,"[verified: job+0x20 = arg under the JobManager lock, re-queues; priority meaning inferred] <docs/46>"
+0x0059A870,Job_AddDependency,function,[verified: this job waits for the argument job (0x59A6E0)] <docs/46>
+0x0059A6E0,JobManager_AddDependencyLocked,function,[verified: dependency node; cancels the dependent if the prerequisite was cancelled] <docs/46>
+0x006F3F90,Renderer_DrawScene,function,"[verified: from scene window 0x7EB6D0: waits frame jobs 310/314/320, or runs all 5 job bodies inline when +0x28F = 0] <docs/46>"
+0x006ED0A0,Renderer_DrawPassAfterMainCull,function,[verified: waits job +0x318 before drawing; pass role inferred] <docs/46>
+0x006F1390,Renderer_DrawReflectionPass,function,[verified: waits job +0x314 before drawing; reflection inferred] <docs/46>
+0x006F0DB0,Renderer_DrawMainRenderSets,function,[verified: waits job +0x31C (sorted render sets) before drawing] <docs/46>
+0x006F1D90,Renderer_DrawMainPass,function,[verified: from scene window 0x7EB6D0; waits job +0x318] <docs/46>
+0x006F3C90,Renderer_WaitFrameJobsAndDraw,function,[verified: waits all frame jobs then draws (0x6E7DB0)] <docs/46>
+0x006F3D30,Renderer_WaitFrameJobsAndDrawB,function,[verified: waits all frame jobs then draws (0x6E7620)] <docs/46>
+0x006F3DC0,Renderer_RenderRequest,function,[verified: Renderer_WaitFrameJobsAndDraw + Renderer/SceneManager pass for one queued request] <docs/46>
+0x006F3E90,Renderer_ProcessRenderRequests,function,[verified: from RenderSystemService_Update; list Renderer+0x4F8; submits each request's completion job] <docs/46>
+0x00703CB0,SceneObjMgr_HandleMessage,function,[verified: listener vtable 0xFFA1F4 slot 1] switch on ~40 MessageServer ids; main thread via render message drain <docs/48>
+0x00703510,SceneObjMgr_ctor,function,[verified: stores vtable 0xFFA1F4; Renderer/SceneNodeMap and mSpeedTreeClusters tags; registers ids with MessageServer +0x24] <docs/48>
+0x00702B40,SceneObjMgr_dtor,function,[verified: stores vtable 0xFFA1F4; unregisters ids] <docs/48>
+0x00703C90,SceneObjMgr_DeletingDtor,function,[verified: listener vtable 0xFFA1F4 slot 0] <docs/48>
+0x00FFA1F4,vt_SceneObjMgrListener,data,[verified: stored by 0x703510/0x702B40; +0 = 0x703C90; +4 = 0x703CB0] <docs/48>
+0x007006B0,SceneObjMgr_OnSpeedTreeClusterMsg,function,[verified: case 0x3359DC3C of 0x703CB0] type 0xC4E8FD0F; countdown +0x10C8 = 50; calls 0x712480 <docs/48>
+0x00712480,SpeedTreeClusterModel_Rebuild,function,[verified: only caller 0x7006B0] main thread <docs/34; docs/48>
+0x006FDFB0,SceneObjMgr_FindObject,function,[verified: decompile] hash map 0x409 buckets keyed by 64-bit id <docs/48>
+0x00693170,RenderMsg_Dispatch,function,[verified: bytes] id 0x489122F = callback in message; else MessageServer vtable +0x18 <docs/48>
+0x00693620,FrameDb_DrainEventsLocked,function,[verified: EnterCriticalSection +0x48 then FrameDb_DrainEvents to MessageServer] <docs/48>
+0x006E3A20,RenderSystemService_Slot14,function,[verified: service vtable 0xFF7D98 = 0xFF7D84+0x14] calls 0x693620 [name inferred] <docs/48>
+0x006E4530,Scene_ctor,function,[verified: Renderer/Scene/ObjectTable and ObjectsInFrustum tags] <docs/48>
+0x006E4770,Scene_BuildQuadtree,function,[verified: Renderer/Scene/SceneQuadtree 0xA0 bytes at scene +0x2C] <docs/48>
+0x006E4DE0,Scene_DestroyQuadtree,function,[verified: frees scene +0x2C quadtree] [name inferred] <docs/48>
+0x006E8360,Renderer_BuildSceneQuadtree,function,[verified: only caller LoadingScreen_Present_A] <docs/48>
+0x00705380,SceneQuadtree_ctor,function,[verified: called after the SceneQuadtree allocation] <docs/48>
+0x007057B0,SceneQuadtree_Build,function,[verified: called by 0x6E4770] [name inferred] <docs/48>
+0x00705400,SceneQuadtree_Clear,function,[verified: called before free in 0x6E4770/0x6E4DE0] [name inferred] <docs/48>
+0x00705CB0,SceneQuadtree_QueryFrustum,function,[verified: called by 0x6E4F90 with scene +0x30] [name inferred] <docs/48>
+0x006E6570,Scene_CullAndSort,function,[verified: cull then sorts 15 render bins] <docs/48>
+0x006E5880,Scene_CullLinear,function,[verified: walks scene +0x04..+0x08] <docs/48>
+0x006E4F90,Scene_CullQuadtree,function,[verified: calls 0x705CB0] <docs/48>
+0x006F1800,SceneManager_dtor,function,[verified: vtable 0xFF91B8; unregisters scene debug options] <docs/48>
+0x006DF8E0,SceneCullFilter_Render,function,[verified: SceneCullFilter/ObjectList; from 0x6DFEC0] <docs/48>
+0x006E7850,SceneLODScheduler_ctor,function,[verified: ObjectSizeCullFactor and RenderSimLODDistances config] <docs/48>
+0x00701270,SceneObjMgr_FrameUpdate,function,[verified: counts down +0x10C8] scene update from RenderSystemService_Update <docs/41; docs/48>
+0x0095EC10,TreeComponent_Create,function,[verified: Objects/Components/Tree tags; posts 0x3359DC3C] [name inferred] <docs/48>
+0x0095DC60,TreeComponent_PostClusterUpdate,function,[verified: PostRenderMessage of 0x3359DC3C] [name inferred] <docs/48>
+0x00935860,Object_Destruct,function,[verified: decompiled] Sims3::Objects::Object body dtor: calls each component's vtable +0x2C <docs/45>
+0x00935DF0,Object_DeletingDtor,function,[verified: decompiled] vt_Object slot 0; frees through the ObjectService allocator <docs/45>
+0x00935FA0,Object_DebugDump,function,"[verified: decompiled] Object.cpp DebugDump: id, component mask +0x2C, key +0x18, refs +0x04 <docs/45>"
+0x009361D0,Object_Allocate,function,"[verified: decompiled] One block: 0x38 + 4 per extra component, then each component (desc size/align), ctor desc+0xC; tag Objects/Object <docs/45>"
+0x009388D0,ObjectService_Init,function,[verified: decompiled] Service slot +0x10: sets g_ObjectService <docs/45>
+0x00938900,ObjectService_Release,function,[verified: decompiled] Service slot +0x18: frees event handlers and clears g_ObjectService <docs/45>
+0x00938A00,ObjectService_GetAllocator,function,[verified: decompiled] Returns +0x1040 <docs/45>
+0x00938A10,ObjectService_RegisterComponent,function,"[verified: decompiled] desc -> +0x1044[n], name hash -> +0x10C4[n], bit -> +0x1144[n]; bit = +0x11C4 (doubles), n = +0x11C8 <docs/45>"
+0x00938B50,ObjectService_Get,function,[verified: decompiled] Returns g_ObjectService <docs/45>
+0x00938BF0,ObjectService_GetComponentDesc,function,[verified: decompiled] Bit -> descriptor through ctz index into +0x1044 <docs/45>
+0x00938CA0,ObjectService_RemoveFromUpdateList,function,[verified: decompiled] Swap-remove from the ObjectsToUpdate vector +0x11D4; index in object +0x28 low 22 bits <docs/45>
+0x00938D00,ObjectIdHash_EraseNode,function,[verified: decompiled] Unlinks an object from its bucket chain (next at object +0x10); count -1 <docs/45>
+0x00938D70,ObjectService_ResolveComponentMask,function,[verified: decompiled] Adds components implied by others (desc+0x18 predicate) and by resource key types <docs/45>
+0x00938ED0,ObjectService_CreateFromResource,function,[verified: decompiled] ObjectResource -> mask -> Object_Allocate -> load components <docs/45>
+0x00939170,ObjectIdHash_Insert,function,"[verified: decompiled] key % 0x409, push front, count +1, no lock <docs/45>"
+0x009391E0,ObjectService_dtor,function,[verified: decompiled] <docs/45>
+0x00939420,ObjectService_DestroyById,function,"[verified: decompiled] Events 5/6 around unlink, flag 0x400000 at object +0x28, drops refs <docs/45>"
+0x00939510,ObjectService_DestroyAll,function,[verified: decompiled] Loops DestroyById while count +0x1038 != 0 <docs/45>
+0x00939560,ObjectService_FindById,function,"[verified: decompiled] 64-bit id -> Object* or 0, no AddRef, no lock (438 call sites) <docs/45>"
+0x009395A0,ObjectService_FindByIdAddRef,function,[verified: decompiled] As FindById plus atomic AddRef <docs/45>
+0x00939680,ObjectService_NewUniqueId,function,[verified: decompiled] Random 64-bit id (0x7CFC00) until no hit in the hash <docs/45>
+0x00939800,ObjectService_Shutdown,function,[verified: decompiled] Service slot +0x14: DestroyAll <docs/45>
+0x00939830,ObjectService_AddObject,function,[verified: decompiled] AddRef + ObjectIdHash_Insert + event 4 <docs/45>
+0x00939870,ObjectService_ExportObjects,function,[inferred: IO contexts per component then per id] Callers Lot save 0xABC880 and DownloadContent_StoreInventory <docs/45>
+0x009399F0,ObjectService_ReserveId,function,[verified: decompiled] 0 -> NewUniqueId; else returns the id only if unused <docs/45>
+0x00939B60,ObjectService_CreateFromStream,function,[inferred: large; called by Lot load objects 0xC70320] <docs/45>
+0x0093A1E0,ObjectService_CreateObject,function,"[verified: decompiled] ReserveId, ResolveComponentMask, Object_Allocate, init, AddObject <docs/45>"
+0x0093A2C0,ObjectService_CloneObject,function,[verified: decompiled] Object_Allocate + copy + event 3 + AddObject (IC_Objects_Clone) <docs/45>
+0x0093A510,ObjectService_ctor,function,"[verified: decompiled] Service 0x3DEFAE8, 0x11EC bytes: id hash +0x10 (0x409 buckets), count +0x1038, ObjectsToUpdate +0x11D4 <docs/45>"
+0x0093AA20,ObjectService_Install,function,[verified: decompiled] Objects/Service alloc + register <docs/45>
+0x00933FB0,ComponentsService_RegisterAll,function,[verified: decompiled] Registers the 15 component types in a fixed order and stores each bit in a global <docs/45>
+0x009341C0,ComponentsService_Install,function,[verified: decompiled] Service 0xB2D3889B <docs/45>
+0x00936C40,ObjectEventHandlers_FreeAll,function,[verified: decompiled] Frees the handler lists at 0x11DC2A8..0x11DC350 <docs/45>
+0x0076A4C0,ScriptHandles_FindTag,function,[verified: decompiled] Outer hash by handle tag byte; node 0x48: HandleInfoMap +0x04 and PointerToHandleMap +0x24 <docs/45>
+0x0076A520,ScriptHandles_HandleToPtr,function,"[verified: decompiled] Script host vtable +0xCC; uint handle -> pointer under g_ScriptHandleLock <docs/45>"
+0x0076A5B0,ScriptHandles_ReleaseHandle,function,[verified: decompiled] Host vtable +0xD0; clears the entry and releases the pointer ref <docs/45>
+0x0076A660,ScriptHandles_RemovePtr,function,[verified: decompiled] Host vtable +0xD4; removes pointer -> handle and handle entry <docs/45>
+0x0076A850,ScriptHandles_NewTagNode,function,[verified: decompiled] Allocates the 0x48-byte per-tag node <docs/45>
+0x0076AA60,ScriptHandles_GetOrCreate,function,"[verified: decompiled] Host vtable +0xC8; (ptr, tag) -> existing handle (refcount +1) or tag<<24 | random 24 bits <docs/45>"
+0x0076AC40,ScriptHostBase_ctor,function,[verified: decompiled] Base of MonoScriptHost; PtrHandles tables; Dump script handles command <docs/45>
+0x011DC350,g_ObjectService,data,[verified: written by ObjectService_Init/Release] <docs/45>
+0x010076DC,g_ScriptHandleLock,data,[verified: taken by every ScriptHandles_* function] <docs/45>
+0x01042CA8,vt_Object,data,[verified: stored by Object_Allocate; one slot (deleting dtor)] <docs/45>
+0x01042EBC,vt_ObjectService,data,[verified: stored by ObjectService_ctor; +0x1C/+0x20 are the stub 0x861C50] <docs/45>
+0x01042AF4,vt_ComponentsService,data,[verified: stored by ComponentsService_Install; +0x10 = RegisterAll] <docs/45>
+0x010078F0,vt_ScriptHostBase,data,[verified: stored by ScriptHostBase_ctor] <docs/45>
+0x011E9158,g_CompBit_Transform,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8FC4,g_CompBit_Model,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011DC484,g_CompBit_Animation,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E90F8,g_CompBit_Script,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8FC8,g_CompBit_Physics,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8E90,g_CompBit_Effect,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E9290,g_CompBit_Tree,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E90FC,g_CompBit_Sim,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E9138,g_CompBit_Steering,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E90F0,g_CompBit_Sacs,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E9114,g_CompBit_Slot,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8FC0,g_CompBit_Lighting,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E92A8,g_CompBit_VisualState,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8FA8,g_CompBit_Footprint,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x011E8E70,g_CompBit_Audio,data,[verified: ComponentsService_RegisterAll] <docs/45>
+0x0095A340,TransformComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0094AE30,ModelComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0093F900,AnimationComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0094F680,ScriptComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0094DD40,PhysicsComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00945370,EffectComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0095CF30,TreeComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x009511D0,SimComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00957470,SteeringComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0094EAA0,SacsComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00952F40,SlotComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00949670,LightingComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x0095FBF0,VisualStateComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00947690,FootprintComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x00943CE0,AudioComponent_ctor,function,[verified: descriptor +0x0C] <docs/45>
+0x007E86F0,UI_RegisterResourceFactories,function,"[verified: decompiled in our Ghidra database] Registers LayoutFactory, UITextureFactory, HitMaskFactory and (unless UINoAtlas) UITextureUVMap via manager slot 0x28; called from 0x7F1EF0 <docs/49>"
+0x007E85B0,LayoutFactory_ctor,function,"[verified: decompiled in our Ghidra database] Typed factory for .layo 0x025C95B6; vtable 0x101C990; binders TextureBinder + HitMaskBinder <docs/49>"
+0x007E8630,LayoutFactory_dtorBody,function,[verified: decompiled in our Ghidra database] <docs/49>
+0x007E9370,LayoutFactory_Init,function,"[verified: decompiled in our Ghidra database] LayoutFactory slot 0x10: sets g_LayoutFactory, adds 4 binders, registers change callback 0x7E7DE0 for type 0x025C95B6 <docs/49>"
+0x007E7ED0,LayoutFactory_Shutdown,function,[verified: decompiled in our Ghidra database] LayoutFactory slot 0x14: clears g_LayoutFactory <docs/49>
+0x0072F190,TypedFactory_ctor,function,"[verified: decompiled in our Ghidra database] Shared base of typed resource factories (+0x8 id, +0xC type) <docs/49>"
+0x0072F090,TypedFactory_CreateResource,function,"[verified: decompiled in our Ghidra database] Factory slot 0x1C: slot 0x38 new resource, slot 0x24 read <docs/49>"
+0x0072F070,TypedFactory_NewIfType,function,[verified: decompiled in our Ghidra database] Slot 0x38: type match then slot 0x34 <docs/49>
+0x0072F120,TypedFactory_ReadIfType,function,[verified: decompiled in our Ghidra database] Slot 0x24: copy key into resource then slot 0x3C <docs/49>
+0x0072F020,TypedFactory_Read2IfType,function,[verified: decompiled in our Ghidra database] Slot 0x28: type match then slot 0x40 <docs/49>
+0x0072F050,TypedFactory_GetType,function,[verified: decompiled in our Ghidra database] Slot 0x2C <docs/49>
+0x007E86A0,LayoutResource_New,function,"[verified: decompiled in our Ghidra database] LayoutFactory slot 0x34: 0x30 bytes UI/LayoutResource, vtable 0x101C77C <docs/49>"
+0x007E74B0,LayoutResource_Read,function,"[verified: decompiled in our Ghidra database] LayoutFactory slot 0x3C: whole record into UI/LayoutResourceData, wrapped in UI/LayoutResourceMemoryStream at +0x28 <docs/49>"
+0x007E7AF0,LayoutResource_dtor,function,[verified: decompiled in our Ghidra database] Releases the memory stream <docs/49>
+0x007E7B30,LayoutInstance_ctor,function,"[verified: decompiled in our Ghidra database] 0xC0 bytes UI/LayoutInstance, vtables 0x101C824/0x101C820 <docs/49>"
+0x007E7C30,LayoutInstance_Load,function,"[verified: decompiled in our Ghidra database] GetResourceEx(key), QI 0x025F4C07, rewind stream, UTFWin_XmlDeserialize; parses on every call <docs/49>"
+0x007E7B90,LayoutInstance_LoadIntoWindow,function,[verified: decompiled in our Ghidra database] Same as LayoutInstance_Load into an existing parent window; LoadLayoutAndAddToWindow(ByID) and reload callback <docs/49>
+0x007E7CF0,LayoutInstance_LinkLive,function,[verified: decompiled in our Ghidra database] Links instance into g_LayoutFactory+0x38 live list <docs/49>
+0x007E7DE0,LayoutFactory_OnLayoutChanged,function,[verified: decompiled in our Ghidra database] Resource-change callback: reload and re-apply to live instances with the same key <docs/49>
+0x0054BEA0,UTFWin_XmlDeserialize,function,"[verified: decompiled in our Ghidra database] Reader 0x54B7A0, parse 0x54BC50, free 0x54B720 <docs/49>"
+0x0054BC50,UTFWin_XmlParseGraph,function,[verified: decompiled in our Ghidra database] Root element graph or object; reference fix-up pass <docs/49>
+0x0054BB80,UTFWin_XmlParseObjects,function,[verified: decompiled in our Ghidra database] Loop over object child elements <docs/49>
+0x0054BA10,UTFWin_XmlCreateObject,function,"[verified: decompiled in our Ghidra database] Class id via wcstoul, create through class registry 0x4D8C80 slot 0x20, properties via 0x54B890 <docs/49>"
+0x0054B7A0,UTFWin_XmlReader_ctor,function,[verified: decompiled in our Ghidra database] Tag UI/UTFWin/XmlReaderState <docs/49>
+0x0054B720,UTFWin_XmlReader_dtor,function,[verified: decompiled in our Ghidra database] <docs/49>
+0x00471260,XmlReader_Next,function,[inferred: from use in UTFWin_XmlParseGraph] <docs/49>
+0x00471040,XmlReader_NodeType,function,[inferred: from use in UTFWin_XmlParseGraph] 1 = element start <docs/49>
+0x00471060,XmlReader_Name,function,[inferred: from use in UTFWin_XmlParseGraph] <docs/49>
+0x00471070,XmlReader_GetAttribute,function,[inferred: from use in UTFWin_XmlCreateObject] <docs/49>
+0x00548F10,HitMaskFactory_ctor,function,[verified: decompiled in our Ghidra database] vtable 0xFC0AA8 <docs/49>
+0x00731E50,ResourceCache_IsCacheableType,function,"[verified: decompiled in our Ghidra database] Rejects 8 types incl. 0x019AEF76 (hit mask); .layo 0x025C95B6 passes <docs/49>"
+0x011D8BF8,g_LayoutFactory,data,[verified: 6 refs; set by LayoutFactory_Init] <docs/49>
+0x009358E0,Object_InitComponents,function,[verified: decompiled] Each component vtable +0x04 then object event 0 (script create path) <docs/50>
+0x00936870,Object_LoadFromResource,function,[verified: decompiled] Component +0x04; property 0x42906A09 component list; component +0x10 per block; event 2 <docs/50>
+0x00935A70,Object_LoadComponentsFromStream,function,[verified: decompiled] Component vtable +0x08 per mask bit with the stream (lot load) <docs/50>
+0x00935E30,Object_FinishFromResource,function,[verified: decompiled] Component vtable +0x18 then event 7 (resource-backed stream objects) <docs/50>
+0x00935980,Object_CloneComponents,function,[verified: decompiled] Component vtable +0x00 copy; fails if mask not a subset of the source <docs/50>
+0x0093B9A0,ObjectResource_Load,function,[verified: decompiled] OBJK 0x2DC343F -> ResourceSystem vtable +0 fetch of 0x2DC3450; OBJD 0x319E4F1D redirect <docs/50>
+0x0093BD50,ObjectResource_ResolveSpec,function,[verified: decompiled] Per key type: resource fetch or catalog 0xC6E490; used for missing-content fallbacks <docs/50>
+0x00938B10,ObjectService_ComponentTypeToBit,function,[verified: decompiled] Linear scan of registered component type ids (service +0x10C4) -> bit (+0x1144) <docs/50>
+0x00936BC0,ObjectEvents_Register,function,"[verified: only writer of the 0x11DC2A8 handler table, 13 call sites] (event id, fn, 0) <docs/50>"
+0x00952EE0,SlotComponent_OnObjectEvent,function,[verified: registered for events 0/1/2/7 by the 0x953100 block] <docs/50>
+0x00950D70,SimComponent_OnObjectEvent,function,[verified: registered for events 0/1/2/7 by the 0x951130 block] <docs/50>
+0x007460F0,RefPtr_Release,function,[verified: decompiled] LOCK dec of +0x04; deleting dtor at 0 <docs/50>
+0x00B96150,RefPtr_Assign,function,[verified: decompiled] AddRef new / Release old <docs/50>
+0x00741D50,Object_GetScriptComponent,function,[verified: decompiled] Object_GetComponent(g_CompBit_Script) <docs/50>
+0x00749680,Object_GetFootprintComponent,function,[verified: decompiled] Object_GetComponent(g_CompBit_Footprint) <docs/50>
+0x00788ED0,Object_GetTreeComponent,function,[verified: decompiled] Object_GetComponent(g_CompBit_Tree) <docs/50>
+0x00C70320,LotObjects_LoadFromStream,function,"[verified: decompiled] Lot vtable +0x24: CreateFromStream per object, progress tick every 32, lot +0x30 add or placeholder destroy <docs/50>"
+0x00C5FB60,WorldLoad_ProgressTick,function,[verified: decompiled] Calls callback [0x11ECBC8] (loading progress) <docs/50>
+0x00AB1730,LotRenderer_PostObjectSceneEvent,function,[verified: decompiled] LOD handle 0xAE05D0/0xAE0600 then object event 0x14 (no native handlers) <docs/50>
+0x00ABEFE0,Lot_DeferSceneLod,function,[verified: decompiled] Stores (LOD; flag) in the deferred LOD map <docs/50>
+0x00ABE900,Lot_DeferredLodMap_GetOrInsert,function,[verified: decompiled] Id-keyed map lookup/insert for deferred scene LOD <docs/50>
+0x00A8F0A0,LotRenderer_ErasePending,function,[verified: decompiled] Erases an object id from an id-keyed hash; returns erased count <docs/50>
+0x007D2DB0,ScriptMessageScope_Begin,function,[verified: decompiled] Posts a script message through host vtable +0x18 (lot add ids 0x4C55E8C/0x4C55EFA) <docs/50>
+0x007D2DF0,ScriptMessageScope_End,function,[verified: decompiled] Posts the closing script message <docs/50>
+0x0094F940,ScriptComponent_Init,function,[verified: ScriptComponent vtable +0x04] Reads type name property 0xBE0E9060 <docs/50>
+0x00950280,ScriptComponent_LoadFromStream,function,[verified: ScriptComponent vtable +0x08] Queues script proxy create/load in the host <docs/50>
+0x0094FA30,ScriptComponent_LoadFromResource,function,[verified: ScriptComponent vtable +0x10] Type name from property 0xBE0E9060 <docs/50>
+0x0094F9B0,ScriptComponent_Finish,function,[verified: ScriptComponent vtable +0x18] Recreates the script object when the class name changed <docs/50>
+0x0094F360,ScriptComponent_Save,function,[unverified: ScriptComponent vtable +0x14; writes property 0xBE0E9060] <docs/50>
+0x0094F1C0,ScriptComponent_CreateScriptObject,function,[verified: decompiled] Host vtable +0xE0 (by class name) or +0xE4 <docs/50>
+0x0094EE30,ScriptComponent_ReleaseScriptObject,function,[verified: decompiled] Host vtable +0x10C with the script handle <docs/50>
+0x009501B0,ScriptComponent_QueuePendingCreate,function,[unverified: appends (object id; class name) to a host vector; consumer not traced] <docs/50>
+0x0094FCE0,ScriptComponent_QueuePendingLoad,function,[unverified: appends (object id; saved handle) to a host vector; consumer not traced] <docs/50>
+0x0094FD50,ScriptComponent_DebugText,function,"[verified: ScriptComponent vtable +0x24] Type name, script handle <docs/50>"
+0x00937F60,ObjectFactory_CreateFromKey,function,[unverified: builds mask from a key then ObjectService_CreateObject; caller in host 0xD7BADB] <docs/50>
+0x009376D0,ObjectFactory_CreateObject,function,[verified: decompiled] Forwards to ObjectService_CreateObject <docs/50>
+0x0093A610,ObjectService_CreateFromResourceList,function,[verified: decompiled] CreateFromResource per entry with fallback keys (inventory import; lot 0xAB5FC0) <docs/50>
+0x00D77920,ScriptHost_RegisterManagedObject,function,"[unverified: host vtable slot 0x108B82C; handle record, PostLoad (+0x1648) for ScriptProxy, two more managed calls] <docs/50>"
+0x0093A2A0,ObjectService_CloneObject_thunk,function,[verified: only caller of ObjectService_CloneObject] <docs/50>
+0x0050AB80,UTFWin_SetWindowManager,function,[verified: decompiled in our Ghidra database] Writes [0x11CD080] <docs/47>
+0x0050B6F0,WindowManager_ctor,function,[verified: decompiled in our Ghidra database] Stores vtable 0xFBA698; MessageQueue/ModalWindowQueue tags <docs/47>
+0x0050E3B0,WindowManager_Shutdown,function,[verified: vtable 0xFBA698 slot +0x00] Clears queues and display lists <docs/47>
+0x0050E450,WindowManager_dtor,function,[verified: decompiled in our Ghidra database] Restores vtable 0xFBA698 then Shutdown <docs/47>
+0x0050D660,WindowManager_PostMessage,function,[verified: vtable 0xFBA698 slot +0x18] Copies a message into the active queue under lock 0xFBA5CC <docs/47>
+0x0050A990,WindowManager_PostMessageNoTarget,function,[verified: vtable 0xFBA698 slot +0x38] PostMessage(0 0 msg) <docs/47>
+0x0050D700,WindowManager_ProcessMessages,function,[verified: vtable 0xFBA698 slot +0x24] Sim thread: queue swap under 0xFBA5CC then dispatch and per-tick message 0xC <docs/47>
+0x0050DE70,WindowManager_UpdateVisuals,function,[verified: vtable 0xFBA698 slot +0x28] Sim thread: layout/transform pass; repaint dirty windows into display lists; publish under 0xFBA5CC <docs/47>
+0x0050B270,WindowManager_Draw,function,[verified: vtable 0xFBA698 slot +0x30] Main thread from Frame_RenderAndPresent: PendingTextures drain + adopt + draw all under 0xFBA5CC <docs/47>
+0x0050B300,WindowManager_AdoptVisualsLocked,function,[verified: vtable 0xFBA698 slot +0x34] 0x50B1C0 under 0xFBA5CC <docs/47>
+0x0050B1C0,WindowManager_AdoptVisuals,function,[verified: decompiled in our Ghidra database] Moves published display lists (+0x6C) into the draw list (+0xB0) <docs/47>
+0x0050EB20,UTFWin_DrawDisplayLists,function,[verified: decompiled in our Ghidra database] Walks draw-list entries: effect slots +0x10/+0x14/+0x18 and renderable slot +0xC <docs/47>
+0x0050A860,UTFWin_PendingTexturesDrain,function,[verified: decompiled in our Ghidra database] Swaps the list under 0xFBA4D8; slot +0x10 create or +0x14 release; then Release <docs/47>
+0x0050A920,UTFWin_PendingTexturesDrainOnce,function,[verified: decompiled in our Ghidra database] Called by WindowManager_Draw (main thread) <docs/47>
+0x0050A970,UTFWin_PendingTexturesDrainAll,function,[verified: decompiled in our Ghidra database] Drains until empty; no direct callers <docs/47>
+0x0050DDF0,WindowManager_ClearMessageQueue,function,[verified: decompiled in our Ghidra database] From Shutdown <docs/47>
+0x0050B4C0,Window_SendMessage,function,[verified: decompiled in our Ghidra database] Synchronous: window procs (+0x218 list; mask filter) then the window's own handler <docs/47>
+0x0050BD30,WindowManager_DispatchMessage,function,[verified: decompiled in our Ghidra database] Observer +0xD8; target send or system handler <docs/47>
+0x0050BE70,WindowManager_HandleSystemMessage,function,[verified: decompiled in our Ghidra database] Resolution 0x4ECD5687; callback 0x74D2E9; mouse routing <docs/47>
+0x0050CB60,Window_UpdateTransforms,function,[verified: decompiled in our Ghidra database] Layout message 0x14 on layout dirty; world matrix from parent; recursive <docs/47>
+0x0050CF40,Window_PaintIntoRC,function,[verified: decompiled in our Ghidra database] Clip (style 0x400); paint message 0xD into the render context <docs/47>
+0x0050D2F0,Window_RebuildVisualsRecursive,function,[unverified: inferred from callees and recursion] Full display-list rebuild of a subtree <docs/47>
+0x0050AF60,Window_HitTest,function,[verified: decompiled in our Ghidra database] Recursive point test over children; style bits 1/0x10/0x400/0x1000 <docs/47>
+0x0050C7E0,WindowManager_DetachWindowRecursive,function,[verified: decompiled in our Ghidra database] Message 0x11 to the subtree; clears deferred slots <docs/47>
+0x0050DBD0,WindowManager_DetachWindow,function,[unverified: vtable 0xFBA698 slot +0x08; role inferred from callee 0x50C7E0] <docs/47>
+0x00515C80,Window_ctor,function,[verified: decompiled in our Ghidra database] UI/UTFWin/Controls/Window; vtables 0xFBAAB8 and +4 0x101E8F8 <docs/47>
+0x005172E0,UTFWinEffect_Update,function,[unverified: reads UI clock 0x11CD088; in 7 effect vtables; role inferred] <docs/47>
+0x005989C0,UIInput_ToWindowMessage,function,[verified: decompiled in our Ghidra database] Input event to UTFWin message; posts via window manager +0x38 <docs/47>
+0x005492E0,KeyList_Find16,function,[verified: decompiled in our Ghidra database] Linked-list search on a 16-byte key; generic (callers outside UTFWin) <docs/47>
+0x007EB6D0,SceneWindow_Draw,function,[verified: renderable vtable 0x101D100 slot +0xC] Renderer_BeginFrame/DrawScene/DrawMainPass/EndFrame inside the UI draw <docs/47>
+0x00FBA698,WindowManager_vtable,data,[verified: stored by WindowManager_ctor] 39 slots <docs/47>
+0x00FBA5CC,g_UTFWinWindowManagerLock,data,[verified: 10 references] Message queues + display-list publish/draw lock shared by sim and main <docs/47>
+0x00FBAAB8,Window_vtable,data,[verified: stored by Window_ctor] <docs/47>
+0x0101D100,SceneWindowRenderable_vtable,data,[verified: DumpPtrs; refs 0x7EBEE0 0x7EB690] Slot +0xC SceneWindow_Draw <docs/47>
+0x007F1553,UIService_SimUpdate_ret_UpdateVisuals,label,[verified: bytes of 0x7F1530] Return address after the +0x28 call (0x7F154A after +0x24) <docs/47>
+0x00450C70,EAText_UniscribeItemizeBreak,function,[verified: only caller of ScriptItemize and ScriptBreak; tag UI/EAText/] <docs/54>
+0x00451050,EAText_AnalyzeRuns,function,[verified: calls 0x450C70; callers 0x4514D0 0x459700 0x4635A0] [name inferred] <docs/54>
+0x004635A0,EAText_Typesetter_LayoutLine,function,[verified: reaches Uniscribe via 0x451050; called from UTFWin text controls] [name inferred] <docs/54>
+0x004667E0,EAText_Typesetter_Init,function,[verified: tags UI/EAText/Typesetter/Schedule and BidiRunInfoArray] [name inferred] <docs/54>
+0x00451770,EAText_GlyphCache_CreateCpuPage,function,[verified: vtable slot +0x24 of the EAWebkit glyph cache; size*size*bpp buffer UI/EAText/Cache/Texture] <docs/54>
+0x00451820,EAText_GlyphPage_ctor,function,[verified: 0x110-byte page object, called by AddPage] [name inferred] <docs/54>
+0x00452950,EAText_GlyphTextureMap_ctor,function,"[verified: max pages +0x58=4, page size +0x5C=512, format +0x60=3, 8 shelf classes, critical section +0xF8] <docs/54>"
+0x00452840,EAText_GlyphMap_Find,function,[verified: hash of (font<<16)+glyph code modulo bucket count] [name inferred] <docs/54>
+0x00452BD0,EAText_GlyphCache_AddGlyph,function,[verified: under the cache lock; slot +0x40 find space then +0x50 write] [name inferred] <docs/54>
+0x00452D30,EAText_GlyphCache_AddPage,function,[verified: vtable slot +0x34; refuses past max pages; calls slot +0x24 to create the page texture] <docs/54>
+0x00452630,EAText_GlyphCache_ClearPage,function,[verified: vtable slot +0x38; drops every glyph on one page and bumps generation +0x50] <docs/54>
+0x00452FE0,EAText_CompareStrings,function,[verified: CompareStringW; called by IC_EAText_Compare] <docs/54>
+0x00455730,EAText_FontTypeFromName,function,[verified: strings .bmpFont .polygonFont] [name inferred] <docs/54>
+0x00691310,TextGlyphCache_ctor,function,[verified: GlyphTextureMap ctor + vtable 0xFF22D0; +0x120=256 fallback page size] <docs/54>
+0x006916F0,TextGlyphCache_CreateTexturePage,function,[verified: vtable 0xFF22D0 slot +0x24; Texture_Create2D(pow2 size, 1 level) tag EATextRenderer] <docs/54>
+0x006917A0,EATextRenderer_Init,function,[verified: shader params glyphCacheTexture and screenSpaceAdjust; vertex format] <docs/54>
+0x00691AE0,EATextRenderer_DrawBatch,function,[verified: GraphicsDevice calls; reached from FrameDb_ConsumeAndInterpolate (main)] [name inferred] <docs/54>
+0x00691DE0,EATextRenderer_StyleFontCmd,function,"[verified: style command font/effectID; loads font resource type 0x062E9EE0 by FNV64 name into Renderer/FontData] <docs/54>"
+0x00724890,UI_GetTextGlyphCache,function,[verified: lazily creates the UI/TextGlyphCache singleton] <docs/54>
+0x011D2FE4,g_UITextGlyphCache,data,[verified: written by UI_GetTextGlyphCache] <docs/54>
+0x007E4500,UITextRenderer_Init,function,[verified: allocates UI/TextRenderer 0xA394 bytes and calls EATextRenderer_Init] <docs/54>
+0x007CFE40,HashStringFNV64_W,function,[verified: wcslen then ResourceKey_HashNameFNV64; 94 callers] <docs/54>
+0x0059AFC0,LocStrSvc_ctor,function,"[verified: Service id 0x6224DD27; STBL type 0x220557DA at +0x38; table list +0x48; stores g_LocStrSvc] <docs/54>"
+0x0059B0C0,LocStrSvc_Create,function,[verified: allocates String/LocalizedString/Service when not registered] <docs/54>
+0x0059BDE0,LocStrSvc_RebuildTableList,function,[verified: ResourceMan query; appends one list node per STBL whose instance top byte is the locale code] <docs/54>
+0x0059ADA0,LocStrSvc_Get,function,[verified: returns g_LocStrSvc] <docs/54>
+0x011CE2D0,g_LocStrSvc,data,[verified: written by LocStrSvc_ctor] <docs/54>
+0x0059C850,LocStrSvc_GetByString,function,[verified: HashStringFNV64_W then LocStrSvc_GetString_A] <docs/54>
+0x0059C800,LocStrSvc_GetByStringKey,function,[verified: parses the key (0x4AF200) then LocStrSvc_GetString_A] <docs/54>
+0x00799760,VertexShader_ctor,function,[verified: stores vtable 0x1015830; allocated as Shader/VertexShader by 0x79A930] <docs/53>
+0x007997E0,PixelShader_ctor,function,[verified: stores vtable 0x1015848; allocated as Shader/PixelShader by 0x79A930] <docs/53>
+0x00799910,Shader_ReadBytecode,function,"[verified: reads VSHD/PSHD tag + size, mallocs and reads bytecode, then calls Create (slot +0xC) unless the deferred flag is set] <docs/53>"
+0x0079A300,ShaderSet_Draw,function,"[verified: 59 callers; GraphicsDevice_Get then ShaderTechnique_DrawPasses with the draw callback] <docs/53>"
+0x0079A570,ShaderSet_Prepare,function,[verified: prepares every technique then sets +0x34 (prepared)] <docs/53>
+0x0079A7A0,ShaderDB_GetOrCreate,function,"[verified: 1-based index into the shader table; IsCreated (slot +8) false -> Create (slot +0xC) = CreateVertexShader/CreatePixelShader] <docs/53>"
+0x0079A930,ShaderDB_ReadLinkTable,function,"[verified: LINK chunk; per entry VS or PS object, kept only when its mask matches the model-level bit and the shadow-mode bit; then DBUF default-data chunk] <docs/53>"
+0x0079AC30,ShaderDB_ReadSamplerStates,function,[verified: SMPS chunk; Shader/SamplerState objects] <docs/53>
+0x0079AEC0,Shader_DetectModelLevel,function,"[verified: from caps VertexShaderVersion/PixelShaderVersion: 0 = SM3, 1 = SM2 with extended caps, 3 = SM2.0, 4/5 = below SM2] <docs/53>"
+0x0079B790,ShaderLibrary_FindSet,function,"[verified: shader set by name hash, fallback hash 0xA2A9B074; prepares the set on first lookup when the deferred flag is set] <docs/53>"
+0x0079B870,ShaderSystem_LoadPackage,function,"[verified: opens Shaders_<platform>.precomp (FileStream_Open), builds the load mask 1<<level | shadow bit, parses it; arg 1 = reload] <docs/53>"
+0x0079C340,ShaderSystem_BuildReloadMap,function,[verified: tag Shader/ShaderReloadMap; called only on reload] <docs/53>
+0x0079CE00,ShaderPackage_Parse,function,[verified: SPKG version 2 chunks SHDB (LINK+DBUF) SMDB SETS SHDS KNM END] <docs/53>
+0x0079D620,ShaderParam_Pack,function,[unverified: 2.5 KB; called per changed parameter from Shader_SetFloatConstants; inferred to copy/convert the value into the register scratch] <docs/53>
+0x0079E7F0,ShaderPass_Resolve,function,"[verified: resolves the pass VS/PS (ShaderDB_GetOrCreate, so D3D creation happens here), param, state and sampler ids] <docs/53>"
+0x0079EED0,ShaderPass_ReadStates,function,[verified: tags Shader/RenderStates and Shader/DynamicRenderStates] <docs/53>
+0x0079F690,Shader_LevelCompatible,function,[verified: keeps the stored model level when the detected level allows it] <docs/53>
+0x007A07A0,ShaderSystem_ctor,function,"[verified: service id 0x175F805; +0x10 = skip shader DB, +0x11 = deferred creation flag] <docs/53>"
+0x007A0810,ShaderSystem_Init,function,"[verified: vtable 0x1015DF4 slot 4; config (0x79B450) then ShaderSystem_LoadPackage(0)] <docs/53>"
+0x007A08D0,ShaderSystem_Create,function,"[verified: tag Services/ShaderSystem; two calls from 0x589080 at startup] <docs/53>"
+0x007A09E0,ShaderTechnique_Prepare,function,[verified: ShaderPass_Resolve for each pass] <docs/53>
+0x007A0A70,ShaderTechnique_DrawPasses,function,[verified: per pass Shader_Bind then the caller's draw callback] <docs/53>
+0x007A0BE0,ShaderTechnique_Read,function,[verified: TECH chunk; pass states] <docs/53>
+0x007A0D40,ShaderWatcher_Poll,function,"[verified body: every 3 s _wstat64 mtime of the package; reload via ShaderSystem_LoadPackage(1); caller not resolved] <docs/53>"
+0x006CA5B0,Material_FindShaderSet,function,"[verified: shader set by material kind (switch of name hashes), fallback shader set ""shadererror""] <docs/53>"
+0x006CA7D0,MaterialShaderBinding_Create,function,[verified: tag Renderer/MaterialShaderBinding] <docs/53>
+0x006CAB20,Material_Init,function,[verified: looks up the shader set (ShaderLibrary_FindSet) and builds the binding] <docs/53>
+0x006CAC30,Material_Create,function,[verified: tag Renderer/Material; 30 callers] <docs/53>
+0x006CB1E0,SubstitutedMaterialDef_Create,function,[verified: tag Renderer/Material/SubstitutedMaterialDef] <docs/53>
+0x01015830,VertexShader_vtable,data,"[verified: slot +0xC Shader_CreateVertexShader, +8 IsCreated] <docs/53>"
+0x01015848,PixelShader_vtable,data,"[verified: slot +0xC Shader_CreatePixelShader, +8 IsCreated] <docs/53>"
+0x01015DF4,ShaderSystem_vtable,data,[verified: ShaderSystem_ctor stores it] <docs/53>
+0x0050E880,UTFWin_DrawEffectSubtree,function,"[verified: decompiled in our Ghidra database] Collects an entry subtree by depth (+0x10/+0x12), calls effect +0x18(rc, entries, n, mode) <docs/52>"
+0x0050B100,WindowManager_MergeIncrementalVisuals,function,[verified: decompiled in our Ghidra database] Incremental adopt/publish: replaces each window old display list in place; old ones to the retired list <docs/52>
+0x0050AB90,UTFWin_ListSwap,function,[verified: decompiled in our Ghidra database] Swaps two intrusive list heads <docs/52>
+0x0050B640,WindowManager_FreeRetiredVisuals,function,"[verified: decompiled in our Ghidra database] Sim thread, after the publish lock: Releases renderables and effects, returns nodes to the pools <docs/52>"
+0x00509F10,UTFWin_DisplayListAlloc,function,[verified: decompiled in our Ghidra database] 0xF0-byte UI/UTFWin/DisplayList from free list 0x114E488 under lock 0xFBA474 <docs/52>
+0x0050E7D0,UTFWinRC_ctor,function,[verified: decompiled in our Ghidra database] UpdateVisualsRC / PlotRC (0xA0 bytes); renderable list +0x58 <docs/52>
+0x005064F0,UTFWinRC_BaseInit,function,[verified: decompiled in our Ghidra database] Stores RC vtable 0xFBA310 <docs/52>
+0x0050E710,UTFWinRC_CommitRenderable,function,"[verified: decompiled in our Ghidra database] Appends {renderable (AddRef), renderer +0x40} to the RC renderable list <docs/52>"
+0x0050E700,UTFWinRC_SetRenderer,function,[unverified: decompiled; role inferred] Stores RC +0x44 (window +0x208 or the default renderer) <docs/52>
+0x00505EA0,UTFWin_GetDefaultRenderer,function,[unverified: role inferred from UIRenderer_GetOrCreate] <docs/52>
+0x00505E60,UTFWin_SetDefaultRenderer,function,[unverified: role inferred from UIRenderer_GetOrCreate] Called with 0x11D2FF0 <docs/52>
+0x00505B80,UTFWinRC_GetCurrentRenderable,function,[unverified: role inferred from UTFWinRC_CommitRenderable] <docs/52>
+0x005065B0,Renderable2D_Alloc,function,[verified: decompiled in our Ghidra database] UI/UTFWin/Renderable2D (0x50 bytes) from the pool under lock 0xFBA244 <docs/52>
+0x00506550,Renderable2D_ctor,function,"[verified: decompiled in our Ghidra database] vtable 0xFBA3DC; lists Verts, GlyphInfos, TextSpans, Parts <docs/52>"
+0x00509890,Renderable2D_dtor,function,[verified: decompiled in our Ghidra database] <docs/52>
+0x005099C0,Renderable2D_ReturnToPool,function,[unverified: role inferred from Renderable2D_Release] Under the pool lock <docs/52>
+0x00505B70,Renderable2D_AddRef,function,[verified: decompiled in our Ghidra database] lock-prefixed increment <docs/52>
+0x00509C60,Renderable2D_Release,function,[verified: decompiled in our Ghidra database] lock-prefixed decrement; 1 -> return to pool <docs/52>
+0x00509900,Renderable2DPool_ctor,function,[verified: decompiled in our Ghidra database] <docs/52>
+0x00509A70,Renderable2DPool_Init,function,[verified: decompiled in our Ghidra database] Sets the UI glyph cache [0x11CC9A8] and the pool [0x11CC9B0] <docs/52>
+0x00509D80,RenderableList_AllocNode,function,[verified: decompiled in our Ghidra database] UI/UTFWin/RenderableList node under a pool lock <docs/52>
+0x00507270,Renderable2D_AppendVertex,function,"[verified: decompiled in our Ghidra database] 7-dword vertex {x,y,colour,u,v,u2,v2} into a node pool <docs/52>"
+0x00507460,Renderable2D_BeginBatch,function,"[verified: decompiled in our Ghidra database] Merges with the previous batch on same type/texture/mask, else AddRefs both textures and appends a batch record <docs/52>"
+0x00505EB0,Renderable2D_EndBatch,function,[verified: decompiled in our Ghidra database] Adds the vertex count; drops an empty batch and Releases its textures <docs/52>
+0x00507640,UTFWinRC_FillRect,function,[verified: RC vtable 0xFBA310 slot +0x38] Clip + one 4-vertex batch; skipped when alpha is 0 <docs/52>
+0x00506A30,UTFWinRC_DrawFrame,function,[verified: RC vtable 0xFBA310 slot +0x1C] Four FillRect calls <docs/52>
+0x00508570,UTFWinRC_DrawImageQuad,function,[verified: decompiled in our Ghidra database] Image quad with UV and optional mask UV <docs/52>
+0x00509560,UTFWinRC_DrawImage,function,[verified: RC vtable 0xFBA310 slot +0x58] Image interface 0x1BE6AB3 then DrawImageQuad <docs/52>
+0x00506410,Renderable2D_NextBatch,function,[verified: decompiled in our Ghidra database] Batch iterator for the UI renderer; expands text spans via UIGlyph_ExpandSpan <docs/52>
+0x00505EF0,UIGlyph_ExpandSpan,function,"[verified: decompiled in our Ghidra database] Main thread during the draw: glyph cache lookup, on a miss rasterize + LockRect/add/unlock the cache page <docs/52>"
+0x00FBA310,UTFWinRC_vtable,data,[verified: DumpPtrs; stored by 0x5064F0] UTFWin render context (record API) <docs/52>
+0x00FBA3DC,Renderable2D_vtable,data,[verified: DumpPtrs; stored by 0x506550] Slot +0xC is an empty stub <docs/52>
+0x00724840,UIRenderer_ctor,function,[verified: decompiled in our Ghidra database] Default UI renderer (vtable 0xFFCFE8) <docs/52>
+0x00723DF0,UIRenderer_Begin,function,[verified: UIRenderer vtable 0xFFCFE8 slot +0x10] Render states through the device state wrappers <docs/52>
+0x00724540,UIRenderer_DrawRenderable,function,"[verified: UIRenderer vtable 0xFFCFE8 slot +0x14] Batches up to 64 batches / 16 windata sets per flush; flushes on texture, mask or flag change <docs/52>"
+0x00724810,UIRenderer_End,function,[verified: UIRenderer vtable 0xFFCFE8 slot +0x18] Final flush <docs/52>
+0x007243B0,UIRenderer_Flush,function,"[verified: decompiled in our Ghidra database] Sets windata/texMap/texMaskMap, blend and filter, runs the uishader pass with UIRenderer_FillVB <docs/52>"
+0x00723F50,UIRenderer_FillVB,function,"[verified: decompiled in our Ghidra database] Copies linked vertex nodes into the immediate VB (<=2400 per lock), Device_ImmQuadFlush <docs/52>"
+0x00723CD0,UIRenderer_LoadShader,function,"[verified: UIRenderer vtable 0xFFCFE8 slot +0x1C] uishader effect; params windata, texMap, texDepthMap, texMaskMap <docs/52>"
+0x00FFCFE8,UIRenderer_vtable,data,[verified: DumpPtrs; stored by 0x724840] <docs/52>
+0x00691350,EATextGlyphCache_LockPage,function,[verified: EATextGlyphCache vtable 0xFF22D0 slot +0x44] Texture_LockRect <docs/52>
+0x006913B0,EATextGlyphCache_UnlockPage,function,[verified: EATextGlyphCache vtable 0xFF22D0 slot +0x48] Texture_UnlockRect <docs/52>
+0x00FF22D0,EATextGlyphCache_vtable,data,[verified: DumpPtrs] Slots +0x14/+0x20/+0x34/+0x38 call Lock_Acquire <docs/52>
+0x00691910,EAText_FillGlyphQuads,function,[verified: decompiled in our Ghidra database] Glyph quads into the immediate VB <docs/52>
+0x011CC9A8,g_UTFWinGlyphCache,data,[verified: xrefs] UI glyph cache; runtime reader only UIGlyph_ExpandSpan <docs/52>
+0x011D2FE4,g_UITextGlyphCache,data,[verified: xrefs] UI/TextGlyphCache object (0x691310) <docs/52>
+0x00FBA474,g_UTFWinDisplayListPoolLock,data,[verified: decompiled references] <docs/52>
+0x00FBA244,g_UTFWinRenderable2DPoolLock,data,[verified: decompiled references] <docs/52>
+0x007EBEE0,SceneWindow_PaintRenderable,function,[verified: decompiled in our Ghidra database] Renderer/SceneMgrWindow/Renderable (vtable 0x101D100) AddRefs the scene object window+0x270 <docs/52>
+0x007EB690,SceneWindowRenderable_dtor,function,[verified: decompiled in our Ghidra database] Releases the scene object <docs/52>
+0x00410290,Canvas_TrackMouseLeave,function,[verified: decompiled in our Ghidra database] Calls TrackMouseEvent (dynamically resolved) at the start of mouse handlers <docs/55>
+0x00410570,Canvas_DispatchEvent,function,[verified: decompiled in our Ghidra database] Canvas event 0x1EE1001 to listener +0x60 slot +0x38; else dispatcher +0x5C slot +0x18; else callback +0x64 <docs/55>
+0x00410620,Canvas_SetCursorPosAsync,function,[verified: disassembly] Canvas vtable +0x84: PostMessageA(hwnd; 0x501; x|y<<16); WndProc does SetCursorPos on main <docs/55>
+0x00410890,Canvas_PumpMessages,function,[verified: decompiled in our Ghidra database] Canvas vtable +0x8C: PeekMessageW loop with pre-dispatch event 0x1EE100B; returns 0 on WM_QUIT <docs/55>
+0x00410B80,Canvas_OnKeyDown,function,[verified: decompiled in our Ghidra database] WM_KEYDOWN and WM_SYSKEYDOWN handler (GetKeyState) <docs/55>
+0x00410C30,Canvas_OnKeyUp,function,[verified: WndProc cases 0x101/0x105] WM_KEYUP and WM_SYSKEYUP handler <docs/55>
+0x00410CE0,Canvas_OnChar,function,[verified: WndProc case 0x102] WM_CHAR handler <docs/55>
+0x00410D40,Canvas_OnMouseMove,function,[verified: decompiled in our Ghidra database] WM_MOUSEMOVE: delta from last pos (+0x14/+0x18); modifier bits via GetAsyncKeyState; canvas event type 7 <docs/55>
+0x00410E90,Canvas_OnMouseWheel,function,[verified: decompiled in our Ghidra database] WM_MOUSEWHEEL: ScreenToClient; SPI_GETWHEELSCROLLLINES per event; canvas event type 6 <docs/55>
+0x00410FB0,Canvas_SendMouseButtonEvent,function,[verified: decompiled in our Ghidra database] Shared mouse button event builder (canvas event type 5) <docs/55>
+0x00411070,Canvas_OnLButtonDown,function,[verified: WndProc cases 0x201/0x203] SetCapture then button event <docs/55>
+0x00411130,Canvas_OnLButtonUp,function,[verified: WndProc case 0x202] ReleaseCapture then button event <docs/55>
+0x004118C0,Canvas_WndProc,function,[verified: decompiled in our Ghidra database] Game window procedure: no WM_INPUT; mouse/keyboard/IME/size/activate; private 0x500 SetCursor and 0x501 SetCursorPos <docs/55>
+0x00412070,Canvas_ctor,function,[verified: stores vtable 0xF9A378] Canvas window object (global 0x11CDBD0) <docs/55>
+0x0049BA60,InputMan_Init,function,[verified: decompiled in our Ghidra database] InputMan vtable +0x04: probes 4 XInput ports; registers mouse (+0x340); keyboard (+0x350) and 4 pads <docs/55>
+0x0049BDF0,InputMan_AddHandler,function,[inferred: vtable +0x34 called as (6; UIInput_ToWindowMessage; service)] Registers an input event handler by slot <docs/55>
+0x0049C350,XInput_LoadLibrary,function,[verified: strings] Loads xinput1_3 / xinput1_1 / xinput9_1_0 and resolves XInputGetState etc. <docs/55>
+0x0049C3E0,InputMan_Get,function,[verified: decompiled in our Ghidra database] Returns [0x11C78B0] <docs/55>
+0x0049C5F0,InputMan_PollPad,function,[verified: decompiled in our Ghidra database] XInputGetState for one port; connect/disconnect and stick/trigger events <docs/55>
+0x0049CEB0,InputMan_ctor,function,[verified: decompiled in our Ghidra database] Services/Input/InputMan; vtable 0xFB0E88; 4 pad objects (vtable 0xFB0ED4) <docs/55>
+0x0049D040,InputMan_Update,function,[verified: decompiled in our Ghidra database] vtable +0x30: polls connected pads every call; one disconnected port every 250 ms (GetTickCount); then callback +0x18 <docs/55>
+0x005056D0,CursorManager_GetState,function,[verified: decompiled in our Ghidra database] Returns [0x11CC9A4]+0x10 <docs/55>
+0x00505620,CursorManager_Apply,function,[verified: decompiled in our Ghidra database] Picks override (+0x6C) or default (+0x68) cursor id; walks the provider list (+0x14..+0x18) slots +0x10/+0x14/+0x18; no lock <docs/55>
+0x005057F0,CursorManager_SetOverride,function,[verified: decompiled in our Ghidra database] Sets +0x6C then CursorManager_Apply; callers IC SetOverrideCursor (sim) and InputService_SetMouseFrozen <docs/55>
+0x0050ADC0,WindowManager_GetCursorPos,function,[verified: disassembly] WM vtable +0x48: copies WM+0xCC/+0xD0 floats <docs/55>
+0x0050B8A0,WindowManager_GetFlagE5,function,[verified: disassembly] WM vtable +0x3C: returns byte WM+0xE5 <docs/55>
+0x0050B8B0,WindowManager_SetFlagE5,function,[verified: disassembly] WM vtable +0x40: stores byte WM+0xE5 (set to !frozen by InputService_SetMouseFrozen) <docs/55>
+0x0050B8C0,WindowManager_SetFlagE4,function,[verified: disassembly] WM vtable +0x94: stores byte WM+0xE4 <docs/55>
+0x00588980,CanvasService_ctor,function,[verified: stores vtable 0xFCBD34] Service id 0x175D9C5 (depends on Input service 0x175EC4F) <docs/55>
+0x00588A00,CanvasService_Update,function,[verified: disassembly] Service +0x1C (main via ServiceList_Update): canvas +0x8C Canvas_PumpMessages; WM_QUIT -> 0x588770(1) <docs/55>
+0x005985B0,CanvasMsgHandler_SetSwallowMouseMove,function,[verified: decompiled in our Ghidra database] Private 0x502: flag +4; on set drains queued WM_MOUSEMOVE; on clear posts WM message 0x23 <docs/55>
+0x005986C0,CanvasMsgHandler_OnRawMessage,function,[verified: decompiled in our Ghidra database] Pre-dispatch 0x1EE100C: swallows WM_MOUSEMOVE when flag set; 0x501 -> PostMessage 0x502; 0x502 -> SetSwallowMouseMove <docs/55>
+0x00598750,CanvasMsgHandler_Create,function,[verified: decompiled in our Ghidra database] Services/Input/CanvasMessageHandler; registers on the canvas dispatcher for 0x1EE100C <docs/55>
+0x005987C0,CanvasMsgHandler_Get,function,[verified: decompiled in our Ghidra database] Lazy create of [0x11CE2BC] <docs/55>
+0x005987E0,InputService_ctor,function,[verified: decompiled in our Ghidra database] Service 0x175EC4F; vtable 0xFD9690; singleton [0x11CE2C0]; freeze state +0x48..+0x61 under lock 0xFD9674 <docs/55>
+0x00598660,InputService_Update,function,[verified: decompiled in our Ghidra database] Service +0x1C (main): InputMan_Update via vtable +0x30 <docs/55>
+0x00598C60,InputService_Create,function,[verified: decompiled in our Ghidra database] Services/Input/Service <docs/55>
+0x00598CC0,InputService_SetMouseFrozen,function,[verified: decompiled in our Ghidra database] Freeze/unfreeze mouse: ClipCursor; cursor warp (canvas +0x84 posts 0x501); CursorManager_SetOverride; WM +0x40/+0x48/+0x94; state under 0xFD9674; no window tree access <docs/55>
+0x00598F90,InputService_SetMouseFrozenIfAny,function,[verified: decompiled in our Ghidra database] Calls InputService_SetMouseFrozen when [0x11CE2C0] is set; callers IC FreezeMouse (sim) and camera controllers 0x96xxxx <docs/55>
+0x00598FF0,InputService_Init,function,[verified: decompiled in our Ghidra database] Service +0x10: creates InputMan and TriggerDispatcher; registers UIInput_ToWindowMessage as handler 6 <docs/55>
+0x005990E0,InputService_Shutdown,function,[verified: decompiled in our Ghidra database] Frees InputMan and TriggerDispatcher <docs/55>
+0x00C5FB40,WorldLoad_SetProgressCallback,function,[verified: disassembly] Stores callback and arg at [0x11ECBC8]/[0x11ECBCC] <docs/55>
+0x00ECA350,App_LoadPumpCallback,function,[verified: decompiled in our Ghidra database] World-load progress callback (stopwatch 5): WM ProcessMessages + UpdateVisuals on the caller thread; canvas pump and WndMsg_Render only on main <docs/55>
+0x011F416C,g_curInterpFrameArray,data,"[verified: operand scan] Base of the interpreter frame-info array; written only by ves_exec_method_with_context 0xE53EB0, read by 0xE534E0 (P4) <docs/56>"
+0x011F4130,interp_runtime_method_section,data,[verified: disassembly] CRITICAL_SECTION around the RuntimeMethod hash create/insert at 0xE53070 <docs/56>
+0x011F4168,interp_runtime_method_hash,data,"[verified: disassembly] Lazily created RuntimeMethod hash, under 0x11F4130 <docs/56>"
+0x011F4174,interp_transform_section,data,[verified: disassembly] CRITICAL_SECTION around the IL-to-mint transform 0xE643B0 <docs/29>
+0x011F4128,tramp_thunk_hash,data,"[verified: disassembly] tramp.c native-call thunk hash, created and filled by 0xE51400 without a lock <docs/56>"
+0x011F43A8,mono_loader_mutex,data,[verified: disassembly] Mono loader_mutex CRITICAL_SECTION (mono_loader_lock 0xE85020) <docs/29>
+0x01220F38,g_loaderErrorTlsIndex,data,[verified: import census] TLS key of the Mono loader error slot (TlsAlloc in 0xE84880) <docs/56>
+0x011F43C4,g_loadTypeInfoTlsIndex,data,[verified: assert string in 0xE92150] TLS key: marshal load-type-info marker <docs/56>
+0x011F43E0,g_lastErrorTlsIndex,data,[unverified: inferred from Mono 1.2.3 marshal.c] TLS key of the P/Invoke last error <docs/56>
+0x011F43E4,marshal_mutex,data,[unverified: inferred from Mono 1.2.3 marshal.c] CRITICAL_SECTION taken by 38 marshal.c sites <docs/56>
+0x011F4520,mono_debugger_section,data,[verified: mono-debug-debugger.c strings] CRITICAL_SECTION of mono_debugger_lock <docs/56>
+0x011F4538,mono_debugger_lock_depth,data,"[verified: disassembly] Recursion depth of mono_debugger_lock, under 0x11F4520 <docs/56>"
+0x011EE5A4,g_n2mCallList,data,"[verified: disassembly] Head of the native-to-managed call-record list (global, unlocked; per call) <docs/56>"
+0x011944C8,g_n2mCallSentinel,data,[verified: disassembly] Sentinel of the native-to-managed call-record list <docs/56>
+0x011944CC,g_n2mCallTail,data,[verified: disassembly] Tail of all native-to-managed call records <docs/56>
+0x011F2D84,g_icNestDepth,data,"[unverified: role inferred] Non-atomic nesting counter add/sub by 17 EA functions (ICs), tested > 0 by host glue <docs/56>"
+0x01220F40,mono_stats_new_objects,data,"[unverified: inferred from Mono 1.2.3] mono_stats counter, plain add per object allocation; first of 14 dwords to 0x1220F74 <docs/56>"
+0x011F47F8,sha1_workspace,data,[unverified: role inferred] 64-byte static workspace of the SHA-1 transform 0xEBCA20 <docs/56>
+0x011F4120,GC_world_stopped,data,"[verified: disassembly] Set by GC_stop_world 0xE511A0, cleared by GC_start_world 0xE51290 <docs/30>"
+0x011F4124,GC_thread_table_max,data,"[verified: disassembly] Highest used thread-table index, raised by GC_new_thread <docs/30>"
+0x00D8A830,ScriptHost_N2MCallPop,function,[verified: disassembly] Takes a call record from g_n2mCallList or allocates one with two mono_gc_malloc buffers <docs/56>
+0x00E51400,tramp_create_thunk,function,[verified: strings Tramp thunk was not found] Native-call trampoline lookup/creation; called from 0xE53EB0 and 0xE643B0 <docs/56>
+0x00E50F90,GC_make_descriptor,function,[unverified: inferred from Boehm typd_mlc.c] Called by 0xEA1CB0 at vtable creation; not under any P3 hook <docs/56>
+0x00E50460,GC_add_ext_descriptor,function,[unverified: inferred from Boehm typd_mlc.c] Grows the extended descriptor table [0x1222470] <docs/56>
+0x00E50EC0,GC_init_explicit_typing,function,[unverified: inferred from Boehm typd_mlc.c] Once: new kinds and the typed mark proc 0xE50D50 <docs/56>
+0x00E50D50,GC_typed_mark_proc,function,[unverified: inferred] Mark procedure registered by 0xE50EC0; sets [0x11F307C] on mark-stack overflow <docs/56>
+0x00EBCA20,sha1_transform,function,[unverified: inferred from byte swap and rol 5 rounds] Uses the static workspace 0x11F47F8 <docs/56>
+0x00E92150,mono_marshal_load_type_info,function,[verified: assert string] marshal.c load type info; uses TLS [0x11F43C4] <docs/56>
+0x00EA0510,mono_debugger_lock,function,"[verified: mono-debug-debugger.c strings] Enter 0x11F4520, depth++ <docs/56>"
+0x00EA0580,mono_debugger_unlock,function,"[verified: mono-debug-debugger.c strings] depth--, leave 0x11F4520 <docs/56>"
+0x00818EA0,RoutingDebug_FrameUpdate,function,"[verified: decompiled in our Ghidra database] Main thread (WorldService_Update); only when [0x11D90B0] and 0x814B50 are set: three short world+0x918 holds, debug displays 0x815A80/0x815B10/0x816D50/0x816570 run between them unlocked <docs/60>"
+0x008162D0,RoutingDebug_DisplayQuadtree,function,"[unverified: role inferred from allocator tags and callers] ""Routing/DisplayQuadtree""; called by RoutingDebug_FrameUpdate under world+0x918 <docs/60>"
+0x00816D50,RoutingDebug_DisplayWorldData,function,"[unverified: role inferred from allocator tags and callers] ""Routing/DisplayWorldRoutingData""; main thread outside world+0x918, reaches LotTable_GetOrInsert <docs/60>"
+0x00818CB0,RoutingDebug_DisplayFootprints,function,"[unverified: role inferred from allocator tags and callers] ""Routing/DisplayWorldFootprints"" <docs/60>"
+0x008361B0,RoutingSystem_SaveLot,function,"[verified: decompiled in our Ghidra database] From Lot_Save via 0xAB1E60: 0x82A810, lot rebuild 0x835110, 0x834DF0, then RoutingWorld_ApplyPendingUpdates without world+0x918 <docs/60>"
+0x00835240,RoutingSystem_OnExitBuildBuy,function,[verified: decompiled in our Ghidra database] IC_RouteManager_OnExitBuildBuy; no world+0x918 of its own; frees the world map +0x8BC via 0x82C630 <docs/60>
+0x0082C630,RoutingWorld_FreeLockKeyMap,function,"[unverified: role inferred from allocator tags and callers] Frees every node of a world hash map (+0x8BC/+0x8C0), vtable +0x94 on entries; called unlocked by RoutingSystem_OnExitBuildBuy and locked by 0x82D140 <docs/60>"
+0x00628A90,LotTable_Contains,function,[verified: decompiled in our Ghidra database] Lot table lookup without insert (P+0x4C/+0x50); not a RouteGate site; 370 callers reach it without world+0x918 <docs/60>
+0x00631AA0,LotTable_MarkDirty,function,"[verified: decompiled in our Ghidra database] LotTable_Contains, then LotTable_GetOrInsert and sets entry +0x8D <docs/60>"
+0x0082B3E0,RouteManager_FootprintLockKeyById,function,"[verified: decompiled in our Ghidra database] IC_RouteManager_Footprint*LockKey: ObjectService_FindById (no lock), then 0x82B2B0 <docs/60>"
+0x0082B2B0,RouteManager_FootprintLockKeyApply,function,[verified: decompiled in our Ghidra database] Reads world +0x8BC map and +0x974 without world+0x918; 0x62F600 reaches LotTable_GetOrInsert <docs/60>
+0x0082A720,RoutingWorld_ShouldUpdateObjectFootprint,function,[verified: decompiled in our Ghidra database] Reads world +0x976/+0x978/+0x97E and writes +0x97F before the locked footprint update <docs/60>
+0x00829A60,RoutingWorld_ShouldUpdateSimFootprint,function,[verified: decompiled in our Ghidra database] Called by Locomotion_Notify before 0x833560; reads world flags unlocked <docs/60>
+0x008297C0,Object_GetRoutingLotId,function,"[verified: decompiled in our Ghidra database] Lot id of an object (component or 0x68EC50), pure read <docs/60>"
+0x0082D140,RoutingWorld_Clear,function,"[verified: decompiled in our Ghidra database] Under world+0x918: drops P/water data, frees maps +0x87C/+0x89C/+0x8BC; no direct callers (vtable) <docs/60>"
+0x00829370,RoutingWorld_ReleaseAux,function,[verified: decompiled in our Ghidra database] Under world+0x918: releases the object at +0x948; vtable only <docs/60>
+0x008299E0,RoutingWorld_DestroyPlanners,function,[verified: decompiled in our Ghidra database] Under world+0x918: destroys P (+0x95C) and the water planner (+0x960); vtable only <docs/60>
+0x0082C820,RoutingWorld_SaveLotData,function,"[verified: decompiled in our Ghidra database] Under world+0x918, from Lot_Save path 0xAB1E60 <docs/60>"
+0x0082CA10,RoutingWorld_LoadLotData,function,"[verified: decompiled in our Ghidra database] Under world+0x918, from 0xAB4920 (lot load) <docs/60>"
+0x0082D280,RoutingWorld_UpdateObjectLot,function,[verified: decompiled in our Ghidra database] Under world+0x918: 0x82C120 for the object lot; from the object system 0x946160 <docs/60>
+0x00833680,RoutingWorld_UpdateObjectFootprint,function,[verified: decompiled in our Ghidra database] Under world+0x918: 0x8321F0 for one object; from 0x946160 <docs/60>
+0x00835110,RoutingSystem_RebuildLotRouting,function,"[verified: decompiled in our Ghidra database] No world+0x918 of its own: LotTable_Contains first, then lot footprint 0x630CF0, portals 0x832890, floor/object footprints (locked callees) <docs/60>"
+0x006399E0,LotRouting_RemovePortals,function,"[verified: decompiled in our Ghidra database] IC_RouteManager_RemovePortals; LotTable_Contains then LotTable_GetOrInsert, no world+0x918 <docs/60>"
+0x006379E0,LotRouting_AddPortal,function,"[verified: decompiled in our Ghidra database] IC_RouteManager_AddPortal; LotTable_Contains then LotTable_GetOrInsert, no world+0x918 <docs/60>"
+0x0082DE60,RoutingWorld_ctor,function,[unverified: role inferred from allocator tags and callers] Constructs the world+0x918 lock (0x4E1670) <docs/60>
+0x0082F910,RoutingWorld_LoadTuning,function,"[unverified: role inferred from allocator tags and callers] ""Routing: World Routing Tuning""; uses world+0x918 with 0x4E17E0 <docs/60>"
+0x00810310,WorldRoutingData_ctor,function,"[unverified: role inferred from allocator tags and callers] ""Routing/RoutingDataCT/streets|footpaths|waypoints"": world road and footpath graph; only reached from save/BuildRoutingData without world+0x918 <docs/60>"
+0x00810720,WorldRoutingData_LoadChunks,function,"[unverified: role inferred from allocator tags and callers] ""Routing/RTData/chunkOffset|rawData"" <docs/60>"
+0x008125D0,WorldRoutingData_BuildFootprints,function,"[unverified: role inferred from allocator tags and callers] ""Routing/poly"", ""Routing/FootprintVector"", ""Routing/trackingList"" <docs/60>"
+0x0062F8A0,LotRouting_QuadTreeBuild,function,"[unverified: role inferred from allocator tags and callers] ""Routing/QuadTree""; per-lot routing quadtree <docs/60>"
+0x00C68680,WorldManager_RebuildLotIndex,function,[verified: decompiled in our Ghidra database] Rebuilds the lot index vectors +0x1F4/+0x204 under lock [WM+0x228]; readers via 0xC68960 take no lock <docs/60>
+0x00C68960,WorldManager_GetLotList,function,"[verified: decompiled in our Ghidra database] Checks dirty flag +0x1CC unlocked, rebuilds via 0xC68680, returns the vector without a lock <docs/60>"
+0x0083B3A0,Routing_PhysicsRangeQuery,function,[unverified: role inferred from allocator tags and callers] Physics loose-quadtree range query used by routing; RouteGate worker proxy target (docs/18 S0) <docs/60>
+0x008293D0,RoutingWorld_LockedOp_Save,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00829410,RoutingWorld_LockedOp_WorldInit,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00829900,RoutingWorld_InitPathPlanner,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00829F10,RoutingWorld_LockedSaveStep,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x0082A0C0,RoutingWorld_RemoveFootprintLocked,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x0082B450,RoutingWorld_LockedLotUpdate,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x0082C120,RoutingWorld_UpdateLotLocked,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x0082F470,RoutingWorld_PortalCheckLocked,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00830940,RoutingWorld_UpdateLotWalls,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00831530,RoutingWorld_RouteToObjectCheck,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00831710,RoutingWorld_UpdateTerrainFootprints,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00831BA0,RoutingWorld_AddPrivateFootprint,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x008321F0,RoutingWorld_UpdateObjectFootprintCore,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x008334A0,RoutingWorld_ObjectFootprintFromTool,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00833560,RoutingWorld_UpdateSimFootprint,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x008336F0,RoutingWorld_UpdateLotFloorFootprints,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00834370,RoutingWorld_AddDiscourageFootprint,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00834860,RoutingWorld_RemoveDiscourageFootprint,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x0082F0B0,RoutingWorld_GoalFootprintGather,function,[verified: takes world+0x918 (Lock_Acquire 0x4E16F0 with ecx = world+0x918)] Role from tags and callers [inferred] <docs/60>
+0x00E4BE30,GC_malloc,function,"[verified: bytes match the Steam 1.67 exe] Small-object fast path on GC_objfreelist 0x12226E8 (kind 1), no lock; slow path GC_generic_malloc(lb,1) <docs/57>"
+0x00E4BDC0,GC_malloc_atomic,function,"[verified: bytes match the Steam 1.67 exe] Fast path on GC_aobjfreelist 0x1222EEC (kind 0), no lock <docs/57>"
+0x00E4BF90,GC_malloc_uncollectable,function,"[verified: bytes match the Steam 1.67 exe] Kind 2, GC_uobjfreelist 0x12236F0, adds to GC_non_gc_bytes; host callers only (docs/30 called it mono_gc_malloc) <docs/57>"
+0x00E50DE0,GC_malloc_explicitly_typed,function,"[verified: bytes match the Steam 1.67 exe] GC_eobjfreelist [0x1222404], kind [0x1222464], descriptor stored in the last word <docs/57>"
+0x00E4BCE0,GC_generic_malloc,function,"[verified: function entry in our Ghidra database] Slow path of all four fast paths (callers E4BE30, E4BDC0, E4BF90, E50DE0) <docs/57>"
+0x00E4BBB0,GC_generic_malloc_inner,function,"[verified: function entry in our Ghidra database] Inner small allocation; also used by the finalizer tables and typed init [name inferred] <docs/57>"
+0x00E4BCA0,GC_generic_malloc_inner_ignore_off_page,function,"[unverified: from our docs only] 0x1000 threshold, one caller 0xE4A9E0 [name inferred from Boehm] <docs/57>"
+0x00E4BB50,GC_alloc_large_and_clear,function,"[unverified: from our docs only] Calls GC_alloc_large [name inferred from Boehm] <docs/57>"
+0x00E4BEB0,GC_free,function,"[verified: bytes match the Steam 1.67 exe] Pushes onto the kind free list, adds GC_mem_freed, sets the mark bit; no lock; 10 callers incl. interpreter task teardown <docs/57>"
+0x00E4C1E0,GC_ea_alloc_unmark,function,"[verified: function entry in our Ghidra database] EA edit: every fast path clears the new object's mark bit and stamps hdr+0x18 with GC_gc_no <docs/57>"
+0x00E4C140,GC_set_mark_bit,function,"[unverified: from our docs only] Sets the mark bit of an object [name inferred] <docs/57>"
+0x00E4DBE0,GC_clear_stack,function,"[unverified: from our docs only] Tail of every slow-path return [name inferred from Boehm] <docs/57>"
+0x00E4D910,GC_push_roots,function,"[verified: function entry in our Ghidra database] Static roots 0x122FB14, kind free-list heads, finalizer tables, regs, then hook [0x11949CC] <docs/30, docs/57>"
+0x00E4D5F0,GC_add_roots_inner,function,"[verified: function entry in our Ghidra database] Writes the static root table; callers GC_add_roots, 0xE4EE10, 0xE4A870 <docs/57>"
+0x00E4DC30,GC_base,function,"[unverified: from our docs only] Object base from a pointer, 0 before init [name inferred] <docs/57>"
+0x00E4DD30,GC_get_heap_size,function,"[verified: bytes match the Steam 1.67 exe] mov eax,[0x12225A0]; ret <docs/57>"
+0x00E4DD40,GC_get_free_bytes,function,"[verified: bytes match the Steam 1.67 exe] mov eax,[0x12225B4]; ret <docs/57>"
+0x00E4DD50,GC_write,function,"[unverified: from our docs only] gc.log writer, takes GC_write_cs 0x1222580 [name inferred] <docs/30, docs/57>"
+0x00E4DFC0,GC_set_warn_proc,function,"[verified: bytes match the Steam 1.67 exe] Swaps [0x11949C0] <docs/57>"
+0x00E4DFD0,GC_enable,function,"[verified: bytes match the Steam 1.67 exe] GC_dont_gc -= 1, not atomic; via thunk 0xE696B0 <docs/57>"
+0x00E4DFE0,GC_disable,function,"[verified: bytes match the Steam 1.67 exe] GC_dont_gc += 1, not atomic; via thunk 0xE696A0 <docs/57>"
+0x00E4DFF0,GC_new_free_list_inner,function,"[unverified: from our docs only] Called by GC_init_explicit_typing [name inferred] <docs/57>"
+0x00E4AAC0,GC_general_register_disappearing_link,function,"[verified: function entry in our Ghidra database] Only caller Mono 0xE696C0 <docs/30, docs/57>"
+0x00E4ABE0,GC_unregister_disappearing_link,function,"[verified: function entry in our Ghidra database] Frees the entry with GC_free [role inferred] <docs/30, docs/57>"
+0x00E4AC60,GC_register_finalizer_inner,function,"[verified: function entry in our Ghidra database] Only via 0xE4AE30 <docs/30, docs/57>"
+0x00E4AE30,GC_register_finalizer,function,"[verified: function entry in our Ghidra database] Wrapper of 0xE4AC60; Mono callers 0xE78630, 0xE786F0, 0xE78E20 <docs/30, docs/57>"
+0x00E4AE60,GC_finalize,function,"[verified: function entry in our Ghidra database] Fills the ready queue [0x11F303C] after a mark <docs/30, docs/57>"
+0x00E4B3E0,GC_should_invoke_finalizers,function,"[verified: bytes match the Steam 1.67 exe] [0x11F303C] != 0 <docs/57>"
+0x00E4B480,GC_notify_or_invoke_finalizers,function,"[verified: function entry in our Ghidra database] Never runs finalizers here (on-demand flag 1, notifier NULL) <docs/30, docs/57>"
+0x00E4A3F0,GC_apply_to_each_object,function,"[verified: function entry in our Ghidra database] Walks all blocks via 0xE4B850; host caller 0xD702A0 <docs/30, docs/57>"
+0x00E4A9A0,GC_push_finalizer_structures,function,"[verified: function entry in our Ghidra database] Pushes both finalizer hash tables [name inferred] <docs/30, docs/57>"
+0x00E4BA10,GC_push_regs,function,"[verified: function entry in our Ghidra database] GC_push_one for 7 registers <docs/30, docs/57>"
+0x00E4D520,GC_push_one,function,"[verified: bytes match the Steam 1.67 exe] cdecl (p) <docs/30, docs/57>"
+0x00E4CEE0,GC_push_all_stack,function,"[verified: bytes match the Steam 1.67 exe] cdecl (lo, hi); only caller 0xD71820 <docs/30, docs/57>"
+0x00E51360,GC_get_next_stack,function,"[unverified: from our docs only] Reads thread-table stack bases <docs/30>"
+0x00E50F90,GC_make_descriptor,function,"[verified: function entry in our Ghidra database] Lazy GC_init_explicit_typing; caller Mono 0xEA1CB0 (vtable setup) <docs/57>"
+0x00E50EC0,GC_init_explicit_typing,function,"[verified: function entry in our Ghidra database] Writes GC_eobjfreelist and GC_explicit_kind <docs/57>"
+0x00E50460,GC_add_ext_descriptor,function,"[unverified: from our docs only] Grows the extended descriptor table with GC_malloc_atomic [name inferred] <docs/57>"
+0x00D71820,ScriptHost_GC_push_other_roots,function,"[verified: function entry in our Ghidra database] EA push_other_roots: VirtualQuery of own stack page, GC_push_all_stack <docs/30, docs/57>"
+0x00D71810,thunk_GC_free,function,[verified: bytes match the Steam 1.67 exe] jmp GC_free <docs/57>
+0x00D71800,ScriptHost_AllocInterpCtxCell,function,"[verified: bytes match the Steam 1.67 exe] GC_malloc_uncollectable(0x28); called by interp_mono_invoke_with_state [role inferred] <docs/57>"
+0x00D71900,ScriptHost_FrameArena_Alloc,function,"[verified: function entry in our Ghidra database] Interpreter frame arena grow: 2 KB typed chunks from global list [0x11EE508], nodes [0x11EE504], no lock <docs/57>"
+0x00D71A20,ScriptHost_FrameArena_Pop,function,"[verified: function entry in our Ghidra database] Arena pop on method exit: chunks back to [0x11EE508], no lock <docs/57>"
+0x00D71B70,ScriptHost_FrameArena_ReleaseAll,function,"[verified: function entry in our Ghidra database] Returns a task's whole arena chain to [0x11EE508] <docs/57>"
+0x00D718A0,ScriptHost_FrameArena_Refill,function,"[verified: function entry in our Ghidra database] 64 chunks of 0x7FC bytes, typed with [0x11F424C]; only caller 0xD71900 <docs/57>"
+0x00E697D0,mono_gc_alloc_fixed,function,"[unverified: from our docs only] GC_malloc or typed; callers domain, threads, GC handle tables [name inferred] <docs/57>"
+0x00E696A0,thunk_GC_disable,function,"[verified: function entry in our Ghidra database] mono_gc_disable [name inferred]; only caller 0xE78780 <docs/57>"
+0x00E696B0,thunk_GC_enable,function,"[verified: function entry in our Ghidra database] mono_gc_enable [name inferred]; only caller 0xE78780 <docs/57>"
+0x00E696C0,mono_gc_weak_link_add,function,"[unverified: from our docs only] Calls GC_general_register_disappearing_link [name inferred] <docs/30, docs/57>"
+0x00E696E0,mono_gc_weak_link_remove,function,"[unverified: from our docs only] Calls GC_unregister_disappearing_link [name inferred] <docs/57>"
+0x00E78780,mono_gchandle_alloc_handle,function,"[verified: function entry in our Ghidra database] GC handle table grow/insert; no critical section taken [name inferred] <docs/57>"
+0x00E78DA0,mono_gc_init,function,"[verified: function entry in our Ghidra database] Inits 3 sections 0x11F42F0/0x11F42D4/0x11F4314, registers two roots [name inferred] <docs/57>"
+0x00E52DD0,interp_free_task_state,function,"[unverified: from our docs only] Task state teardown: GC_free, arena release [name inferred] <docs/57>"
+0x01234320,GC_allocate_ml,data,"[verified: bytes match the Steam 1.67 exe] Boehm allocation lock: initialised in GC_init_public, never entered <docs/57>"
+0x01222580,GC_write_cs,data,"[verified: function entry in our Ghidra database] Taken only by GC_stop_world and GC_write <docs/30, docs/57>"
+0x012226E8,GC_objfreelist,data,[verified: bytes match the Steam 1.67 exe] Kind 1 free lists (513 words) <docs/57>
+0x01222EEC,GC_aobjfreelist,data,[verified: bytes match the Steam 1.67 exe] Kind 0 (pointer-free) free lists <docs/57>
+0x012236F0,GC_uobjfreelist,data,[verified: bytes match the Steam 1.67 exe] Kind 2 (uncollectable) free lists <docs/57>
+0x01222404,GC_eobjfreelist,data,[verified: bytes match the Steam 1.67 exe] Pointer to the explicitly typed free lists <docs/57>
+0x01222464,GC_explicit_kind,data,[verified: bytes match the Steam 1.67 exe] Kind index for typed objects <docs/57>
+0x012225D4,GC_mem_freed,data,[verified: bytes match the Steam 1.67 exe] Added to by GC_free [name inferred] <docs/57>
+0x011F2F8C,GC_non_gc_bytes,data,[verified: bytes match the Steam 1.67 exe] Uncollectable bytes <docs/57>
+0x01194868,GC_obj_kinds,data,"[verified: bytes match the Steam 1.67 exe] Kind table, 0x14 per kind (+0 free list) <docs/57>"
+0x0122FB14,GC_static_roots,data,"[verified: bytes match the Steam 1.67 exe] Root table, 0xC per entry, count [0x11F3084] <docs/57>"
+0x011EE508,ScriptHost_FrameArena_FreeChunks,data,[verified: bytes match the Steam 1.67 exe] Global circular list of free 2 KB arena chunks <docs/57>
+0x011EE504,ScriptHost_FrameArena_SpareNodes,data,[verified: bytes match the Steam 1.67 exe] Global list of spare arena list nodes <docs/57>
+0x011F424C,ScriptHost_FrameArena_ChunkDescr,data,[verified: bytes match the Steam 1.67 exe] Typed descriptor of arena chunks (set by 0xE69570) <docs/57>
+0x011F4120,GC_world_stopped,data,[verified: bytes match the Steam 1.67 exe] Set by GC_stop_world <docs/30; docs/57>
+0x011949CC,GC_push_other_roots_hook,data,[verified: bytes match the Steam 1.67 exe] Read at 0xE4D9DC; static value 0xE4EF90 <docs/30; docs/57>
+0x011F303C,GC_finalize_now,data,[verified: bytes match the Steam 1.67 exe] Finalizer ready queue <docs/30; docs/57>
+0x011F3028,GC_finalize_on_demand,data,[verified: bytes match the Steam 1.67 exe] Set to 1 by Mono init <docs/30; docs/57>
+0x011F3044,GC_finalizer_notifier,data,[verified: bytes match the Steam 1.67 exe] Never written <docs/30; docs/57>
+0x006583E0,Routing_PhysicsRayVertical,function,"[verified: function entry in our Ghidra database] Only caller of PhysicsWorld_RayCastVertical 0x686CC0; 5 planner/goal-step callers; also World_GetHeightAt and FindById; reaches no managed or remote call <docs/60 §2>"
+0x00631A60,LotTable_LotHasPendingUpdate,function,"[unverified: role inferred from its use] Per-lot test in RoutingWorld_ApplyPendingUpdates before 0x82B590; reaches LotTable_GetOrInsert <docs/60 §2>"
+0x0082B590,RoutingWorld_ApplyLotUpdate,function,"[unverified: role inferred from its use] Called per lot by RoutingWorld_ApplyPendingUpdates and by RoutingSystem_OnExitBuildBuy <docs/60 §2>"
+0x00C5FEC0,WorldManager_MarkLotIndexDirty,function,"[verified: function entry in our Ghidra database] First instruction sets WM+0x1CC = 1 (lot index dirty, rebuilt lazily by 0xC68680) <docs/60 §2>"
+0x00E85020,mono_loader_lock,function,[verified: disassembly] EnterCriticalSection(0x11F43A8); 61 callers <docs/58>
+0x00E85030,mono_loader_unlock,function,[verified: disassembly] LeaveCriticalSection(0x11F43A8) <docs/58>
+0x00E84880,mono_loader_init,function,[verified: disassembly] InitializeCriticalSection(0x11F43A8) then TlsAlloc loader error slot <docs/58>
+0x00E85040,mono_method_signature,function,[verified: loader.c asserts] Loader lock only when MonoMethod+0xC is not cached <docs/58>
+0x00E85390,mono_method_get_header,function,[unverified: inferred from loader.c assert and cached +0x20 check] Loader lock only on a miss <docs/58>
+0x00E85810,mono_get_method_full,function,[unverified: inferred from shape] Method cache lookup/insert under inline loader lock <docs/58>
+0x00E856B0,mono_get_method_from_token,function,[unverified: inferred] Only caller mono_get_method_full <docs/58>
+0x00E6EE20,mono_class_init,function,"[verified: string pending init %s.%s] Fast exit on class+0x14 bit 0, then loader lock <docs/58>"
+0x00E6DD30,mono_class_create_from_typedef,function,[verified: assert MONO_TABLE_TYPEDEF] Class cache lookup/insert under loader lock <docs/58>
+0x00E706A0,mono_bounded_array_class_get,function,[verified: assert rank <= 255] Array cache under loader lock <docs/58>
+0x00E70D50,mono_class_from_mono_type,function,[unverified: inferred from type switch and 108 callers] <docs/58>
+0x00E6E050,mono_generic_class_get_class,function,[unverified: inferred] Loader lock taken before the cached_class check <docs/58>
+0x00E69A60,generic_class_inflate,function,[unverified: inferred from assert ngclass == NULL] Loader lock <docs/58>
+0x00E9DF20,mono_metadata_lookup_generic_inst,function,[unverified: inferred from metadata.c assert count<(1<<6)] Loader lock <docs/58>
+0x011F44D8,generic_inst_cache,data,[unverified: inferred] Created once by 0xE9F300; read by 0xE9DF20 under loader lock <docs/58>
+0x00E6B220,mono_image_init_name_cache,function,[unverified: inferred] Creates image+0x2B0 under loader lock <docs/58>
+0x00E6A1E0,mono_class_setup_interface_id,function,"[verified: string Interface: assigned id] Writes [0x11F4264]; caller mono_class_init holds the loader lock <docs/58>"
+0x00E69F70,mono_class_setup_methods,function,[unverified: inferred] Loader lock when class+0x94 is NULL <docs/58>
+0x00E6A030,mono_class_setup_vtable,function,[unverified: inferred] Stores class+0x8C under loader lock <docs/58>
+0x00EA1E30,mono_class_create_runtime_vtable,function,[verified: object.c asserts and domain lock] Slow path of mono_class_vtable; domain lock then loader lock <docs/58>
+0x00EA1CB0,mono_class_compute_gc_descriptor,function,[verified: strings mono_object_new_ptrfree] Calls GC_make_descriptor outside the GC lock <docs/58>
+0x00EA3370,mono_runtime_class_init,function,[verified: string TypeInitializationException] Fast exit on vtable+0x18 bit 1; then 0x11F4574 and per-class lock <docs/58>
+0x00EA07D0,mono_type_initialization_init,function,[verified: disassembly] Inits 0x11F4574 and 0x11F45A0; creates 0x11F4590 and 0x11F4598 <docs/58>
+0x00EA0930,mono_release_type_locks,function,[unverified: inferred] Takes 0x11F4574; called from thread cleanup 0xEBAD00 <docs/58>
+0x011F4574,type_initialization_section,data,[verified: disassembly] CRITICAL_SECTION of mono_runtime_class_init <docs/58>
+0x011F4590,type_initialization_hash,data,[unverified: inferred from Mono 1.2.3 init order] <docs/58>
+0x011F4598,blocked_thread_hash,data,[unverified: inferred from Mono 1.2.3 init order] <docs/58>
+0x011F45A0,ldstr_section,data,[verified: disassembly] Guards domain+0x3C interned string table <docs/58>
+0x00EA1750,mono_string_intern,function,[unverified: inferred] No direct caller (icall); calls 0xEA16B0 <docs/58>
+0x00EA16B0,mono_string_is_interned_lookup,function,[unverified: inferred] Under ldstr_section <docs/58>
+0x00EA2870,mono_ldstr,function,[unverified: inferred] Callers transform 0xE643B0 and EA binder 0xD89D90 <docs/58>
+0x00EA17D0,mono_ldstr_metadata_sig,function,[unverified: inferred] Under ldstr_section <docs/58>
+0x00E82C70,mono_register_jit_icall,function,[verified: string jit icall already defined] Loader lock <docs/58>
+0x00E823F0,mono_icall_init,function,[verified: string class %s should come before class %s] Creates icall_hash <docs/58>
+0x011F436C,icall_hash,data,[verified: disassembly] Written by mono_icall_init; add/lookup under loader lock <docs/58>
+0x011F42F0,gc_handle_section,data,[unverified: inferred name; verified never entered] Initialised by 0xE78DA0 and deleted by 0xE78DE0 only <docs/58>
+0x011959E0,gc_handles,data,[verified: disassembly] 4 x 24-byte HandleData; no lock on any user <docs/58>
+0x00E78BF0,mono_gchandle_free,label,[unverified: inferred name; verified no lock] No Ghidra function; clears the bitmap bit with a non-atomic and <docs/58>
+0x00E78A70,mono_gchandle_get_target,function,[unverified: inferred name] Reads gc_handles unlocked <docs/58>
+0x00E78630,object_register_finalizer,function,[verified: gc.c assert] Domain lock (MonoDomain+0) around domain+0xA0 <docs/58>
+0x00E53070,mono_interp_get_runtime_method,function,[verified: disassembly] Hash 0x11F4168 under 0x11F4130; installed by mono_interp_init <docs/58>
+0x011F4290,appdomains_mutex,data,[unverified: inferred name] Guards domain table 0x11F42A8-0x11F42B4 <docs/58>
+0x0044CC70,EAMessageServer_ctor,function,"[verified: decompiled] 0xB8-byte EAMessage server: queue (Services/EAMessage/Queue), handler map (Services/EAMessage/Map), options +0xB0..+0xB5 all 1; vtable 0xFA1AF8; used for MessageServer and ScriptMessageServer <docs/61>"
+0x00FA1AF8,EAMessageServer_vtable,data,"[verified: stored by 0x44CC70] +0x18 Send, +0x1C Post, +0x20 PostFn, +0x24/+0x28 AddHandler, +0x2C/+0x30 RemoveHandler, +0x34 ProcessQueueTimed, +0x38 ProcessQueue <docs/61>"
+0x0044C490,EAMessageServer_GetOption,function,"[verified: decompiled] vtable +0x10; options 1-6 = bytes +0xB0..+0xB5 <docs/61>"
+0x0044C520,EAMessageServer_SetOption,function,"[verified: decompiled] vtable +0x14; both server inits call it with (4, 0) <docs/61>"
+0x0044D5A0,EAMessageServer_Send,function,"[verified: decompiled] vtable +0x18 (id, data, handler): synchronous on the caller thread; wildcard -1 handlers then id handlers; with option 1 or 2 copies the list under lock 0xFA1AC0 and calls outside it <docs/61>"
+0x0044CEE0,EAMessageServer_Post,function,"[verified: decompiled] vtable +0x1C: appends (id, data, handler object) to the queue under lock 0xFA1AC0; AddRefs with option 5 <docs/61>"
+0x0044CF80,EAMessageServer_PostFn,function,"[verified: decompiled] vtable +0x20: same as Post with a function callback fn(id, data, ctx) <docs/61>"
+0x0044C5C0,EAMessageServer_AddHandler,function,"[verified: decompiled] vtable +0x24 (handler object, id, refcount, priority) -> +0x44 <docs/61>"
+0x0044C620,EAMessageServer_AddHandlerFn,function,"[verified: decompiled] vtable +0x28 (fn, ctx, id, refcount, priority) -> +0x44 <docs/61>"
+0x0044C690,EAMessageServer_RemoveHandlerThunk,function,"[verified: decompiled] vtable +0x2C and +0x30: jumps to +0x48 <docs/61>"
+0x0044D320,EAMessageServer_ProcessQueueTimed,function,"[verified: decompiled] vtable +0x34 (minCount, maxCount, ms): repeats +0x38 with a GetTickCount budget; only when option 3 is set <docs/61>"
+0x0044D170,EAMessageServer_ProcessQueue,function,"[verified: decompiled] vtable +0x38: pops FIFO under lock, delivers outside it; with option 4 off only the messages queued at entry <docs/61>"
+0x0044C6A0,EAMessageServer_LockUnlock,function,"[verified: decompiled] vtable +0x40 (bool): takes or drops lock 0xFA1AC0 when option 1 is set <docs/61>"
+0x0044D020,EAMessageServer_InsertHandler,function,"[verified: decompiled] vtable +0x44: map id -> list (Services/EAMessage/List), inserted by priority <docs/61>"
+0x0044C9E0,EAMessageServer_RemoveHandler,function,[verified: decompiled] vtable +0x48: removes a handler under lock 0xFA1AC0 <docs/61>
+0x0044C480,MessageServer_Set,function,[verified: writes 0x11B1378] Returns the old value <docs/61>
+0x00FA1AC0,g_EAMessageServerLock,data,"[verified: every EAMessageServer method] One static lock shared by all EAMessage server instances <docs/61>"
+0x005888B0,MessageServerService_Register,function,"[verified: decompiled] Services/MessageServer service id 0x175D9C5, vtable 0xFCBCCC <docs/61>"
+0x00FCBCCC,MessageServerService_vtable,data,"[verified: stored by 0x5888B0] +0x10 Init 0x5887F0, +0x1C main update 0x588890, +0x20 stub <docs/61>"
+0x005887F0,MessageServerService_Init,function,"[verified: decompiled] Creates the EAMessage server, option 4 off, stores g_MessageServer <docs/61>"
+0x00588890,MessageServerService_Update,function,[verified: decompiled] Main-thread service slot +0x1C: g_MessageServer ProcessQueue <docs/61>
+0x00588850,MessageServerService_Slot14,function,"[verified: decompiled] Service slot +0x14: also ProcessQueue [role inferred] <docs/61>"
+0x007692C0,ScriptMessageServer_Get,function,[verified: decompiled] Returns [0x11D4BC0] <docs/61>
+0x007692D0,ScriptMessageServer_Set,function,[verified: writes 0x11D4BC0] <docs/61>
+0x011D4BC0,g_ScriptMessageServer,data,"[verified: written by 0x7692D0 from 0x76B100] Second EAMessageServer instance, queue drained on the sim thread <docs/61>"
+0x0076B540,ScriptServices_Register,function,"[verified: decompiled] Registers Services/Script (0x2957B48) and Services/ScriptMessageServer (0x557F63F2, vtable 0x1007B74) <docs/61>"
+0x01007B74,ScriptMessageServerService_vtable,data,"[verified: stored by 0x76B540] +0x10 Init 0x76B100, +0x18 0x76B160, +0x1C stub, +0x20 sim update 0x76B1A0 <docs/61>"
+0x0076B100,ScriptMessageServerService_Init,function,"[verified: decompiled] Creates the EAMessage server, option 4 off, stores g_ScriptMessageServer <docs/61>"
+0x0076B160,ScriptMessageServerService_Shutdown,function,[verified: decompiled] Clears g_ScriptMessageServer and destroys the server <docs/61>
+0x0076B1A0,ScriptMessageServerService_SimUpdate,function,"[verified: vtable 0x1007B74 slot +0x20] ProcessQueue of the script message server (sim thread); docs/36 listed it as Services/Script <docs/61>"
+0x00599260,Job_SetRefObject,function,"[verified: decompiled] Job (job+8 pointer): AddRef new object, Release old, store; RemoteCall_Dispatch async path keeps the call alive <docs/61>"
+0x00ABD3C0,RemoteMethodCall_Execute,function,"[verified: decompiled] Vtable 0x10650C4 +0x10: calls [call+0x10](byte +0x18, byte +0x19), sets done +0x08 {thiscall, ret} <docs/28, 61>"
+0x00ABD3E0,RemoteMethodCall_ExecuteRemove,function,"[verified: docs/28 hook bytes] Vtable 0x10650D8 +0x10: remove variant <docs/28, 61>"
+0x00AE0710,ScriptMessageServer_FlushCaller,function,"[verified: decompiled] Calls ScriptMessageServer ProcessQueue directly [caller role not traced] <docs/61>"
+0x00C65CB0,WorldManager_PushCameraSpeed,function,[verified: decompiled in our Ghidra database] Appends one camera speed sample to list WM+0x310 (free list WM+0x318); scoring keeps the last 10 <docs/65>
+0x00C7E1B0,LotGrid_FindLotAtPoint,function,"[verified: decompiled in our Ghidra database] Lot under a point on [0x11ECE58]: large-lot list +0x38, then 16 m grid cell; priority 3 lot in scoring <docs/65>"
+0x00C7DE60,LotGrid_Rebuild,function,[verified: decompiled in our Ghidra database] Fills the 16 m lot cell grid from lot bounds when flag +0xB0 is set <docs/65>
+0x00C7E100,LotGrid_FindLotInCell,function,[verified: decompiled in our Ghidra database] Tests the lots of one grid cell against a point <docs/65>
+0x00AE1B10,LotRenderer_GetMatrix,function,"[verified: decompiled; matrix inverse in 0x561E60 inferred] Lot renderer (lot+0x364) 4x4 matrix: copy of +0x1B0 or computed when +0x2A0; hottest leaf of lot scoring <docs/65>"
+0x00C66690,LotScores_Resize,function,[verified: decompiled in our Ghidra database] Resizes the 16-byte lot score array (128 inline on the stack; heap tag World/WorldManager/LotScores) <docs/65>
+0x00C64050,LotScores_PartialSort,function,"[verified: decompiled in our Ghidra database] std::partial_sort shape: priority desc, then score asc <docs/65>"
+0x00C63300,LotScores_MakeHeap,function,[verified: decompiled in our Ghidra database] make_heap over 16-byte score entries <docs/65>
+0x00C63370,LotScores_SortHeap,function,[verified: decompiled in our Ghidra database] sort_heap over 16-byte score entries <docs/65>
+0x00C620F0,LotScores_AdjustHeap,function,[verified: decompiled in our Ghidra database] Heap sift for the score entries <docs/65>
+0x006FDE10,SceneObjMgr_GetGlobal,function,[unverified: returns [0x11D1CF8]; scene object manager role inferred from 0x700DC0] <docs/65>
+0x00700DC0,SceneObjMgr_LotHasPendingModels,function,"[unverified: hash lookup by lot id then 0x6EDBB0 per entry; 'pending models' inferred] Used by WorldManager_AnyActiveLotPending <docs/65>"
+0x006E8390,Renderer_SetSceneRenderEnabled,function,"[unverified: writes Renderer+0x29D/+0x29E unless +0x290 (verified); name inferred from BeginFrame gate and loading-screen caller] <docs/65>"
+0x00C644D0,Lot_DrawOutlineDebug,function,"[unverified: string World/LotOutlineEAVerts and colours verified; debug-only inferred] Called from scoring when WM+0x1B4 == 2 <docs/65>"
+0x00C6A01A,LotPending_ForcedSceneDraw,label,[verified: disassembly] Calls 0x6F3C90 (cull and draw main view) when Renderer+0x29D is clear; load-time cost of lot scoring <docs/65>
+0x00C6C73B,LotScore_PendingCheckThrottled,label,[verified: disassembly] AnyActiveLotPending call when Throttle Lot LoD Transitions is on and a lot is due <docs/65>
+0x00C6C7D7,LotScore_PendingCheckUnthrottled,label,[verified: disassembly] AnyActiveLotPending call at the end of every unthrottled scoring pass <docs/65>
+0x00C6D6E4,WorldManager_Update_ScoreCall,label,[verified: disassembly] Call of WorldManager_ScoreAndStreamLots (dt; camera point; !camera+0x6DF; camera) <docs/65>
+0x0091A440,Swarm_ReleaseEntryRange,function,"[verified: disassembly] Walks 0x58-byte entries [begin,end): frees +0x48 via EA_Free, then virtual +0x3C (Release) on +0x38; crash 2026-10-14 call site 0x91A46C {stdcall-like, ret 8} <docs/67>"
+0x00930380,Swarm_EntryOwner_Reset,function,"[verified: disassembly] Secondary-base method (this-4 is the object): clears +0x26C/+0x270/+0x274, releases +0x22C/+0x234, then virtual +4 on every entry +0x38 and Swarm_ReleaseEntryRange on the 0x58-byte vector at +0x21C; reached from Swarm service 0x71E640 via 0x9160B0 <docs/67>"
+0x00915890,RefCounted_ReleaseAt8,function,"[verified: disassembly] Non-atomic release: --[this+8]; at 0 sets 1 and calls slot 0 of the secondary vtable [this+4] with arg 1 (deleting dtor); shared by Swarm, LotGraph_Build, RoutingWorld footprint code <docs/67>"
+0x00694690,FrameDb_DeviceEventThunk,label,"[verified: disassembly] mov ecx,[esp+4]; jmp 0x6945C0. A device callback registered by 0x6946A0 through GraphicsDevice_Get/0x60E840, never patched; crash 2026-10-14 wrote to this address as if it were data <docs/67>"
+0x006946A0,FrameDb_RegisterDeviceCallback,function,"[verified: disassembly] Registers FrameDb_DeviceEventThunk 0x694690 with the graphics device (0x60E840), inits 0x1158948, sets byte 0x1158988 <docs/67>"
+0x00692720,RefCounted_AtomicRelease,function,"[verified: disassembly] lock xadd -1 on [this+4]; at 0 stores 1 and calls vtable +8 with arg 1 (deleting dtor); called from SimService, ThumbnailManager 0xD4D9F0, IC_CASUtils_SetModelInGameObjectDelayedImpl, lot remote calls <docs/67>"
+0x004E3F70,EA_Free,function,"[verified: disassembly] free(p): if p, GeneralAllocator_Free(g_MemoryManHeap, p) <docs/67>"
+0x005CEB60,ModelBuilder_PartRecord_Dtor,function,"[verified: disassembly] Teardown of one 0x74-byte record: virtual +4 (Release) on each pointer in [+0x4C,+0x50) and in the inline vector [+0x28,+0x2C) (buffer at +0x44), then handles +0x14..+0x24 and +0x4..+0x10, then [+0]; crash 2026-10-15 at 0x5CEB9A (vptr read) <docs/67>"
+0x005DC450,ModelBuilder_Dtor,function,"[verified: disassembly] Destructor of the CAS model-builder object (vtable 0xFE3DC8, second vtable 0xFE3DC4 at +8); last loop runs ModelBuilder_PartRecord_Dtor over the 0x74-byte records [+0xC,+0x10) <docs/42, 67>"
+0x005DE360,ModelBuilder_DeletingDtor,function,"[verified: disassembly] ModelBuilder_Dtor then EA_Free when arg bit 0 <docs/67>"
+0x005D7C20,ModelBuilder_Ctor,function,"[verified: xref to vtable 0xFE3DC8] Constructor; callers SimBuilder 0x5DFE70/0x5E3CF0 and SimOutfit 0x5E8770 <docs/42, 67>"
+0x005F0820,SimService_ReleaseRequestRefs,function,"[unverified: name inferred from the disassembly] Called only by SimService_Update; releases request members (+0x1C, +0x20 via vtable +4); last release of a ModelBuilder in crash 2026-10-15 <docs/67>"

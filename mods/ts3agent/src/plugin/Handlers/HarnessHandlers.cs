@@ -43,6 +43,7 @@ namespace Ts3Agent
             Dispatcher.Register("keep_alive", KeepAlive);
             Dispatcher.Register("decline_requests", DeclineRequests);
             Dispatcher.Register("queues", Queues);
+            Dispatcher.Register("seed_rng", SeedRng);
             Dispatcher.Register("quiet_ui", QuietUi);
             Dispatcher.Register("autopilot", Autopilot);
             StartAutopilot();
@@ -366,6 +367,7 @@ namespace Ts3Agent
             r["active_household"] = active != null ? active.Name : null;
             r["households"] = Household.sHouseholdList != null ? Household.sHouseholdList.Count : 0;
             r["save_name"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveName;
+            r["load_file"] = GameStates.LoadFileName; // set by load_save too; save_name stays null until a save
             r["save_in_progress"] = Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveGameInProgress;
             return r;
         }
@@ -469,6 +471,64 @@ namespace Ts3Agent
             RunAsync("quit_game", delegate { GameStates.TransitionToGameStateQuitNoCheck(); });
             Dictionary<string, object> r = Util.Obj();
             r["quitting"] = true;
+            return r;
+        }
+
+        // xorshift128+ seeded with splitmix64: the script RNG stream for seed_rng (docs/27 §B). NextDouble in [0,1).
+        sealed class SeededRandom : IRandom
+        {
+            ulong mA, mB;
+            public SeededRandom(long seed)
+            {
+                ulong z = (ulong)seed;
+                mA = Mix(ref z);
+                mB = Mix(ref z);
+            }
+            static ulong Mix(ref ulong z)
+            {
+                ulong x = z += 0x9E3779B97F4A7C15UL;
+                x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9UL;
+                x = (x ^ (x >> 27)) * 0x94D049BB133111EBUL;
+                return x ^ (x >> 31);
+            }
+            public double NextDouble()
+            {
+                ulong x = mA, y = mB;
+                mA = y;
+                x ^= x << 23;
+                mB = x ^ y ^ (x >> 17) ^ (y >> 26);
+                return (mB + y >> 11) * (1.0 / 9007199254740992.0);
+            }
+        }
+
+        // seed_rng {seed}: swap RandomGen.gRandomGen (every RandomUtil draw) for a seeded stream; {seed: null} puts the
+        // game's back. Call at the start of the measured window. firstDraws come from a twin stream (ours is not consumed):
+        // same seed = same draws. System.Random() and the native RDTSC-seeded RNGs stay unseeded (docs/27).
+        static object SeedRng(Args a)
+        {
+            FieldInfo f = typeof(RandomGen).GetField("gRandomGen", BindingFlags.NonPublic | BindingFlags.Static);
+            if (f == null) throw new McpException("RandomGen.gRandomGen not found");
+            const string kSaved = "ts3agent.rng.original";
+            object cur = f.GetValue(null);
+            bool seeded = cur is SeededRandom || (cur != null && cur.GetType().Name == "SeededRandom"); // older plugin build after hot reload
+            Dictionary<string, object> r = Util.Obj();
+            if (!a.Has("seed"))
+            {
+                if (seeded) f.SetValue(null, AppDomain.CurrentDomain.GetData(kSaved));
+                r["seed"] = null;
+                r["restored"] = seeded;
+            }
+            else
+            {
+                long seed = a.Long("seed");
+                if (!seeded) AppDomain.CurrentDomain.SetData(kSaved, cur);
+                f.SetValue(null, new SeededRandom(seed));
+                SeededRandom twin = new SeededRandom(seed);
+                r["seed"] = seed;
+                r["firstDraws"] = new List<object> { twin.NextDouble(), twin.NextDouble(), twin.NextDouble() };
+            }
+            object orig = AppDomain.CurrentDomain.GetData(kSaved);
+            r["previous"] = orig != null ? orig.GetType().FullName : "null (game RNG not cached yet)";
             return r;
         }
     }

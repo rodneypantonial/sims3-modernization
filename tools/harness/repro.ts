@@ -68,17 +68,44 @@ if (set > 0) {
 const ACTIVE = join(ROOT, 'probe-out', 'repro-active.json');
 writeFileSync(ACTIVE, JSON.stringify({ id: r.id, sims: [...new Set([...(r.watch?.sims ?? []), ...(r.steps ?? []).map((x: any) => x.args?.sim).filter(Boolean)])] }));
 process.on('exit', () => rmSync(ACTIVE, { force: true }));
+// counter baseline before the steps: a step can trigger the counted event itself (bp-overwatch-stuckcheck)
+const counterStart = r.watch?.kind === 'counter' ? (await ag('patches')).result?.[r.watch.counter] ?? 0 : 0;
+// "memory": true on the entry logs the probe's /memory (commitMB, privateMB, largest free block) before the steps and after each,
+// plus allocations >= 32 MB from /allocations that are new or gone since the previous log (docs/08 M9)
+let allocs: Map<string, any> | null = null;
+const mem = async (what: string) => {
+  if (!r.memory) return;
+  try {
+    const m: any = await (await fetch('http://127.0.0.1:47891/memory', { signal: AbortSignal.timeout(20000) })).json();
+    console.log(`${stamp()} memory ${what}: commit ${m.commitMB} private ${m.privateMB} largest free ${m.largestFreeMB} MB`);
+  } catch (e) { console.log(`${stamp()} memory ${what}: ? (${e})`); }
+  try {
+    const a: any = await (await fetch('http://127.0.0.1:47891/allocations?minMB=32', { signal: AbortSignal.timeout(20000) })).json();
+    const now = new Map<string, any>(a.allocations.map((x: any) => [`${x.base}/${x.reservedMB}`, x]));
+    if (allocs) {
+      for (const [k, x] of now) if (!allocs.has(k)) console.log(`${stamp()}   new alloc ${x.base} ${x.reservedMB} MB reserved, ${x.committedMB} committed, ${x.type}${x.owner ? ` ${x.owner}` : ''}`);
+      for (const [k, x] of allocs) if (!now.has(k)) console.log(`${stamp()}   gone alloc ${x.base} ${x.reservedMB} MB ${x.type}`);
+    } else console.log(`${stamp()}   ${a.count} allocations >= 32 MB`);
+    allocs = now;
+  } catch (e) { console.log(`${stamp()}   allocations ${what}: ? (${e})`); }
+};
+await mem('before');
+let prev: any = null;
 for (const s of r.steps ?? []) {
-  const res = await ag(s.cmd, s.args);
-  console.log(`${stamp()} step ${s.cmd} ${JSON.stringify(s.args ?? {})}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`);
+  // "keysFromPrev": true fills args.keys with the keys of the previous step's items (e.g. cas_parts -> wear_parts)
+  const args = s.keysFromPrev && prev?.items ? { ...s.args, keys: prev.items.map((x: any) => x.key) } : s.args;
+  const res = await ag(s.cmd, args);
+  console.log(`${stamp()} step ${s.cmd} ${JSON.stringify(args ?? {}).slice(0, 200)}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`);
   if (!res.ok && !s.optional) { console.log('FAIL: step failed'); process.exit(1); }
+  if (res.ok) prev = res.result;
   if (s.waitS) await sleep(s.waitS * 1000);
+  await mem(`after ${s.cmd}`);
 }
 
 const w = r.watch, t0 = Date.now();
 let verdict = '';
 if (w.kind === 'counter') {
-  const start = (await ag('patches')).result?.[w.counter] ?? 0;
+  const start = counterStart;
   while (Date.now() - t0 < w.minutes * 60000) {
     await sleep(15000);
     const n = ((await ag('patches')).result?.[w.counter] ?? 0) - start;

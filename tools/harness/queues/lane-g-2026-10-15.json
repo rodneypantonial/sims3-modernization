@@ -1,0 +1,144 @@
+[
+  {
+    "id": "menu-memory",
+    "note": "M9 step 1 baseline: address space at the main menu, CC and Store as installed",
+    "asi": "tested",
+    "save": "menu",
+    "run": {
+      "menuMemory": {
+        "waitS": 90
+      }
+    },
+    "timeoutMin": 15
+  },
+  {
+    "id": "bp-128mb-confirm",
+    "note": "M9: which allocation appears on the first CC outfit build (/allocations diff in the repro log; /mallochook once)",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": {
+      "repro": "store-items-memory"
+    },
+    "timeoutMin": 25
+  },
+  {
+    "id": "ip-heightcache-verify",
+    "note": "[HeightCache] Verify=1 + [GcThreadCheck] in Isla Paradiso (water, houseboats), 10 min at speed 3",
+    "asi": "game-copy/ts3native.asi.heightcache",
+    "ini": {
+      "HeightCache.Enabled": 1,
+      "HeightCache.Verify": 1,
+      "GcThreadCheck.Enabled": 1
+    },
+    "save": "Baseline-IP",
+    "run": {
+      "soak": {
+        "minutes": 10,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-gccheck-save-matrix",
+    "note": "[GcThreadCheck] during saves (save worker threads): control + back-to-back",
+    "asi": "game-copy/ts3native.asi.heightcache",
+    "ini": {
+      "GcThreadCheck.Enabled": 1,
+      "SaveFlush.Enabled": 1,
+      "SaveCompress.Enabled": 1,
+      "FootprintIndex.Enabled": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "matrix": [
+        "--cases",
+        "control,back-to-back"
+      ]
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-future-travel",
+    "note": "save matrix travel case to the future (time portal)",
+    "asi": "tested",
+    "ini": {
+      "SaveFlush.Enabled": 1,
+      "SaveCompress.Enabled": 1,
+      "FootprintIndex.Enabled": 1,
+      "FootprintIndex.Verify": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "future"
+      ]
+    },
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-m3-soak30",
+    "note": "M3: address space after 30 min at speed 3 (memory before/after in the row)",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": {
+      "soak": {
+        "minutes": 30,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-alloc-soak-1",
+    "note": "[Alloc] crash suspect (2026-10-14 11:58), no --taskstall: 30 min at speed 3",
+    "asi": "tested",
+    "ini": {
+      "Alloc.Enabled": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "soak": {
+        "minutes": 30,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-alloc-soak-2",
+    "note": "[Alloc] crash suspect, second run",
+    "asi": "tested",
+    "ini": {
+      "Alloc.Enabled": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "soak": {
+        "minutes": 30,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 45
+  },
+  {
+    "id": "ip-alloc-soak-3",
+    "note": "[Alloc] crash suspect, third run in Isla Paradiso",
+    "asi": "tested",
+    "ini": {
+      "Alloc.Enabled": 1
+    },
+    "save": "Baseline-IP",
+    "run": {
+      "soak": {
+        "minutes": 30,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 45
+  }
+]

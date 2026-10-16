@@ -1,0 +1,17 @@
+# Queue verify 2026-10-16
+
+Tool: `tools/harness/queue.ts` (docs/TESTING.md). Times UTC (PHT in brackets). Rows: `probe-out/queue/verify-2026-10-16.jsonl`.
+
+## 2026-10-16T00:04 UTC, build 8e76007, jobs bp-verify, ip-verify
+
+| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
+|---|---|---|---|---|---|---|---|---|
+| bp-verify | 00:04 (08:04) | 9 | PASS | PASS: profile 7 min, unseeded (rng-compare.ts) | 0 | 2182.1/1838.6/1532.8 -> 2345.5/2091.7/1278.4 | vfThrD5D910Main +398, vfThrD5D910Sim +30, vfThrD5D910OffDevice +30, vfThrD5D910Us +82877, vfThrD5D910MaxUs +2401, vfThr619540Main +24364, vfThr619540Us +8627010, vfThr619540MaxUs +21495, vfThr60D290Main +20056, vfThr60D290Us +5217905, vfThr60D290MaxUs +7158, vfThr6F3DC0Main +1469, vfThr6F3DC0Us +1152104, vfThr6F3DC0MaxUs +14671, vfThr599720Main +148817, vfThr599720Sim +5733, vfThr599720Other +1023 | docs/51: inference ledger probes, BP, one load: [Verify] all groups (vf counters v21, maxima reset after the load), main-thread stacks, verify-sweep (moodlets, outfits, CAS, thumbnails + save, camera pan) |
+| ip-verify | 00:13 (08:13) | 9.1 | PASS | PASS: profile 7 min, unseeded (rng-compare.ts) | 0 | 2167.2/1833.3/1548.9 -> 2211.8/1876.1/1454.4 | vfThrD5D910Main +841, vfThrD5D910Sim +14, vfThrD5D910OffDevice +14, vfThrD5D910Us +335641, vfThrD5D910MaxUs +5008, vfThr619540Main +12919, vfThr619540Us +6743397, vfThr619540MaxUs +3703, vfThr60D290Main +8793, vfThr60D290Us +3902754, vfThr60D290MaxUs +1585, vfThr6F3DC0Main +303, vfThr6F3DC0Us +211643, vfThr6F3DC0MaxUs +25933, vfThr599720Main +94082, vfThr599720Sim +4927, vfThr599720Other +63361, v | docs/51: the same in IP (second world for terrain LOD, water and lot streaming) |
+
+## 2026-10-16T08:42 UTC, build c24fd55, jobs bp-verify, ip-verify
+
+| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
+|---|---|---|---|---|---|---|---|---|
+| bp-verify | 08:42 (16:42) | 10.2 | PASS | PASS: profile 8 min, unseeded (rng-compare.ts) | 0 | 2154.9/1852.9/1548.9 -> 2419.7/2131.9/1157.9 | vfThrD5D910Main +722, vfThrD5D910Sim +25, vfThrD5D910OffDevice +25, vfThrD5D910Us +132004, vfThrD5D910MaxUs +2831, vfThr619540Main +21807, vfThr619540Us +5977785, vfThr619540MaxUs +4661, vfThr60D290Main +18008, vfThr60D290Us +3640602, vfThr60D290MaxUs +823, vfThr6F3DC0Main +826, vfThr6F3DC0Us +1198485, vfThr6F3DC0MaxUs +32799, vfThr599720Main +195867, vfThr599720Sim +5111, vfThr599720Other +135639 | docs/51: inference ledger probes, BP, one load: [Verify] all groups (0.10.8, vf counters v22, maxima reset after the load; ThreadedObjects stays 0 so S3PP keeps its stage profiler, docs/68), main-thread stacks, verify-v22 (verify-sweep plus build/buy enter/exit, objects placed and removed, dwell pan) |
+| ip-verify | 08:53 (16:53) | 10 | PASS | PASS: profile 8 min, unseeded (rng-compare.ts) | 0 | 2275.7/1865.5/1492.9 -> 2258.7/2051.7/1262.3 | vfThrD5D910Main +1004, vfThrD5D910Sim +25, vfThrD5D910OffDevice +25, vfThrD5D910Us +246760, vfThrD5D910MaxUs +4291, vfThr619540Main +27138, vfThr619540Us +5786326, vfThr619540MaxUs -45608, vfThr60D290Main +23660, vfThr60D290Us +3411965, vfThr60D290MaxUs +4083, vfThr6F3DC0Main +2564, vfThr6F3DC0Us +569479, vfThr6F3DC0MaxUs +17325, vfThr599720Main +202494, vfThr599720Sim +8352, vfThr599720Other +134 | docs/51: the same in IP (second world for terrain LOD, water and lot streaming) |

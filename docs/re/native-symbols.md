@@ -436,7 +436,7 @@ See also: object layouts in [structs.md](structs.md), every hook and patch in [p
 | `0xC622D0` | `World_LotStreaming` | fn |  | main? |  | [18](../18-route-search-off-thread.md) | fn |
 | `0xC68990` | `World_LotLookup` | fn |  | sim |  | [11](../11-route-planner-re.md), [18](../18-route-search-off-thread.md) | fn |
 | `0xC6A540` | `Terrain_GetHeight` | fn |  | sim |  | [11](../11-route-planner-re.md), [18](../18-route-search-off-thread.md) | fn |
-| `0xC6BCC0` | `WorldManager_LotRebuildCaller` | fn |  | main? | World manager caller of lot rebuild | [18](../18-route-search-off-thread.md) | fn |
+| `0xC6BCC0` | `WorldManager_LotRebuildCaller` | fn |  | main? | World manager caller of lot rebuild; also World_Save step 5 (dirty lots, "World/WorldManager/DirtyLots") | [18](../18-route-search-off-thread.md), [25](../25-save-world-write.md) | fn |
 | `0xC6D570` | `WorldManager_Update` | fn | thiscall | main | Lot streaming; +0x258 skip-streaming flag (S3SS) | [03 anchors](../03-prior-art-re.md), [18](../18-route-search-off-thread.md) | fn |
 
 ## Resources, DBPF and decompression
@@ -542,7 +542,43 @@ See also: object layouts in [structs.md](structs.md), every hook and patch in [p
 | `0xAB134E` | `Save_call_Backup` | site | E8 -> 0xAB0F80 | sim |  | [15 Phase 7](../15-native-patches.md) | bytes |
 | `0xAB1363` | `Save_call_CopyNew` | site | E8 -> 0xAB0E80 | sim |  | [15 Phase 7](../15-native-patches.md) | bytes |
 | `0xAB1410` | `Save_call_Finalize` | site | E8 -> 0xAAF5F0 | sim |  | [15 Phase 7](../15-native-patches.md) | bytes |
-| `0xC6D460` | `World_Save` | fn |  | sim | Lots, objects, script state (OBJS) | [15 Phase 7](../15-native-patches.md) | fn |
+| `0xC6D460` | `World_Save` | fn |  | sim | Lots, objects, script state (OBJS). Order: World.ini resource, listeners, 3 package copies, dirty lots (0xC6BCC0), lot index (0xC61DC0), lots (0xC62860) | [15 Phase 7](../15-native-patches.md), [25](../25-save-world-write.md) | fn |
+| `0x4DDBD0` | `Stream_WriteU32` | fn | cdecl(stream, value, order) | any | Byte swap unless order == 1, then stream vtable +0x38 Write(ptr, 4) [verified]; `0x4DDCC0` has the same body | [25](../25-save-world-write.md) | fn |
+| `0x4DEFF0` | `MemStream_Write` | fn | thiscall(src, n) | any | memcpy into a buffer that grows by a float factor [verified] | [25](../25-save-world-write.md) | fn |
+| `0x5680A0` | `SaveCtx_WriteU32` | fn | thiscall(ctx, value) | sim | Stream_WriteU32 on ctx+8 with order ctx+0x10, error into the ctx [verified] | [25](../25-save-world-write.md) | fn |
+| `0x7D8290` | `SaveCtx_BeginResource` | fn |  | sim | Opens a resource by key in the save package [inferred from callers] | [25](../25-save-world-write.md) | fn |
+| `0x7D7840` | `SaveCtx_EndResource` | fn | fastcall(ctx) | sim | Stream close (+0x20) and release (+0x08); RefPack compression runs under it [body verified; compression from stacks] | [25](../25-save-world-write.md) | fn |
+| `0x7D8F00` | `Package_CopyResources` | fn | (dst, src, filter, ...) | sim | Dispatches on package kind ids 0x3DB0260 / 0x2A43BD44 / 0x3C4B9A4 [verified] | [25](../25-save-world-write.md) | fn |
+| `0xC63D90` | `World_SaveIni` | fn |  | sim | Writes a resource named by the World.ini string [verified string] | [25](../25-save-world-write.md) | fn |
+| `0xC61DC0` | `World_SaveLotIndex` | fn | thiscall(world, ctx, ...) | sim | Version 2, lot count, per lot 64-bit id + lot vtable +0x40 value; then the world lot id [verified] | [25](../25-save-world-write.md) | fn |
+| `0xC62860` | `World_SaveLots` | fn | thiscall(world, ctx, ...) | sim | Lot vector world+0x9C, lot vtable +0x1C each, world lot world+0xB0, script state 0x937100 [verified] | [25](../25-save-world-write.md) | fn |
+| `0xACB8A0` | `Lot_Save` | fn | thiscall(lot, ctx, a, b) | sim | Per lot: header, imposter (0xAE0540), routing (0xAB1E60), layers (0xAC5E30), objects (0xAB49C0); ~3.6 of the ~4.1 s native world write on BP [verified + measured] | [25](../25-save-world-write.md) | fn |
+| `0xAB1E60` | `Lot_SaveRouting` | fn | thiscall(lot, ctx, ...) | sim | Calls RoutingWorld_SaveLot when ctx ok and the routing world exists [verified] | [25](../25-save-world-write.md) | fn |
+| `0x82C820` | `RoutingWorld_SaveLot` | fn | thiscall(world, lotId lo, hi, ctx, flag) | sim | Under the routing lock: resource 0x046A7235 (0x63C690, 0x657390) and 0x07CD07EC (0x662A20) [verified] | [25](../25-save-world-write.md) | fn |
+| `0x63C690` | `LotRouting_SaveLevels` | fn |  | sim | Optional lot rebuild (0x82B810), save mode on P (0x62C670), per level L (lot graph +0x74) LotLevel_SaveFootprints, then the footprint save list (0x62B2A0) [verified] | [25](../25-save-world-write.md) | fn |
+| `0x63C850` | `SaveLevels_call_SaveFootprints` | site | E8 -> 0x6663C0, ecx = L | sim | Hook point for the owner-index option | [25](../25-save-world-write.md) | doc |
+| `0x6663C0` | `LotLevel_SaveFootprints` | fn | thiscall(L, ctx) | sim | Scans the whole footprint map [[L+0x20]+0x24] (P's, world-wide) per level, keeps entries owned by L, refcount +1/-1 on every entry: O(levels x entries), ~1.2 s per BP save [verified + measured] | [25](../25-save-world-write.md) | fn |
+| `0x664EA0` | `FootprintQuadTree_SaveNode` | fn | cdecl, recursive | sim | Inner nodes: mask + 4 children; leaves: entry indices from the per-level save map [verified] | [25](../25-save-world-write.md) | fn |
+| `0x62B1E0` | `PathPlanner_FootprintSaveIndex` | fn | thiscall(P, footprint) | sim | Find-or-assign the footprint's save index (P+0x9C map, counter P+0xA4, list P+0xA0) [verified] | [25](../25-save-world-write.md) | fn |
+| `0x62C670` | `PathPlanner_SetSaveMode` | fn | thiscall(P, on) | sim | Creates/frees "Routing/PathPlanner/FootprintSaveMap" and "FootprintLoadMap" [string refs verified, meaning inferred] | [25](../25-save-world-write.md) | fn |
+| `0x62B2A0` | `PathPlanner_WriteFootprintSaveList` | fn |  | sim | Uses "Routing/PathPlanner/FootprintSaveList" [string refs verified, meaning inferred] | [25](../25-save-world-write.md) | fn |
+| `0xD38B00` | `HashMapU32_Find` | fn | thiscall(map, out, key*) | any | EASTL hash map lookup, node next at +8 [verified] | [25](../25-save-world-write.md) | fn |
+| `0xB34440` | `HashMapU32_Insert` | fn | thiscall(map, out, kv*) | any | Insert, allocates a 12-byte node through 0x4E3F90, rehash 0x769AD0 [verified] | [25](../25-save-world-write.md) | fn |
+| `0x5492E0` | `List_Find4Key` | fn | cdecl(head, key*) | any | Linked list search on a 16-byte key, next at +0x10 [verified]; minor in saves | [25](../25-save-world-write.md) | fn |
+| `0xAC5E30` | `Lot_SaveLayers` | fn |  | sim | Deck foundation layer, data layers and ~15 sub-writers [verified strings] | [25](../25-save-world-write.md) | fn |
+| `0xAB49C0` | `Lot_SaveObjects` | fn | thiscall(lot, ctx, ...) | sim | Lot vtable +0x28 = 0xC6F520 [verified] | [25](../25-save-world-write.md) | fn |
+| `0xC6F520` | `Lot_SaveObjectGroup` | fn |  | sim | Resource 0x4D1A5589, per object 0x939220; calls ScriptCore.LoadSaveManager.SaveObjectGroup [verified string] | [25](../25-save-world-write.md) | fn |
+| `0x769CB0` | `Script_BeginSaveObjects` | fn |  | sim | Calls ScriptCore.LoadSaveManager.BeginSaveObjects [verified string] | [25](../25-save-world-write.md) | fn |
+| `0xAE0540` | `Lot_BuildImposter` | fn |  | sim | Wrapper of 0xADAF60; called by Lot_Save when lot+0x364 is set [verified] | [25](../25-save-world-write.md) | fn |
+| `0xADAF60` | `LotImposter_Build` | fn |  | sim | Creates the imposter job (JobManager 0x599160 vtable +0x10) and waits through 0xAD97E0 [verified] | [25](../25-save-world-write.md) | fn |
+| `0xAD97E0` | `Job_WaitOrPump` | fn | fastcall(job) | sim | Pumps frames itself on the thread 0x7D99D0 returns, else JobManager_Wait [verified] | [25](../25-save-world-write.md) | fn |
+| `0x59A500` | `JobManager_Wait` | fn | fastcall(job) | any | Takes the JobManager lock, 0x59A220 [verified] | [25](../25-save-world-write.md) | fn |
+| `0x59A220` | `JobManager_WaitLocked` | fn | thiscall(mgr, job) | any | Wait node ("Services/JobManager/WaitNode"), drops the lock, Semaphore_Wait until job state 0/1/6/7 [verified] | [25](../25-save-world-write.md) | fn |
+| `0x4E2760` | `Semaphore_Wait` | fn | thiscall(sem, deadline*) | any | WaitForSingleObject with count; S3SS hooks it. In saves: the imposter job waits, ~0.13 s time-weighted (not 0.9 s) [verified + measured] | [25](../25-save-world-write.md) | fn |
+| `0x939220` | `Object_SaveRecord` | fn | thiscall(obj, ?, ctx) | sim | One object's entry inside the lot's `0x4D1A5589` resource: a masked id list, three resource keys, then `0x935B50` (component/script part). Unchanged objects still change bytes here because the stored script indexes shift [verified decompile; index meaning inferred from save diffs] | [26](../26-incremental-save.md) | fn |
+| `0x937100` | `ScriptState_SaveSections` | fn | thiscall(state, ctx) | sim | Writes a 0x101 tag, a section count, then each section through its vtable `+0x20` with a back-patched length; called from World_SaveLots after all lots [verified] | [26](../26-incremental-save.md) | fn |
+| `0xC2AEF0` | `World_SaveTerrainData` | fn | thiscall(?, ctx, ...) | sim | Resource type `0x9063660D` ("Terrain/Data" string): world fields, per-lot terrain blocks and lists [verified decompile; name inferred] | [26](../26-incremental-save.md) | fn |
+| `0x788170` | `IC_World_MarkLotWorthDirty` | fn | internal call (lotId lo, hi) | sim | Looks the lot up (`0xC62D40`) and calls `0xAB2400` on it: a lot-value recompute flag, not a save flag [verified decompile; meaning inferred] | [26](../26-incremental-save.md) | fn |
 
 ## Rendering and frame loop
 

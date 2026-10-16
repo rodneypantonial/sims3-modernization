@@ -217,12 +217,130 @@ static bool SaveJobPromote(const wchar_t* name) {
     return true;
 }
 
+// --- [SaveFlush]: the flushes of steps 9 and 11 on a worker (docs/15 phase 10) ---
+// FUN_00AAF4B0 (cdecl, path) opens every file under path and calls FlushFileBuffers. Step 9's copy (call at 0xAAFD8A in
+// FUN_00AAFC50) and step 11 (call at 0xAAF737 in FUN_00AAF5F0) flush the new save. With flushMode 1 those two calls only
+// record the path while the save runs; after FUN_00AB1030 returns, a worker replays them in the same order. The bytes are
+// already written (in the OS file cache) when the game reports success, so a game crash loses nothing; only an OS crash or
+// power loss before the worker is done can (the .backup was flushed before, at step 8). The next save (and travel) and
+// the load copy (0xAB16ED, FUN_00AB0E80 dir 1) wait for the worker first, so the game never deletes or copies a save
+// folder the worker still has open.
+static const DWORD SAVE_FLUSH = 0x00AAF4B0, SAVE_FLUSH_COPY_SITE = 0x00AAFD8A, SAVE_FLUSH_FINAL_SITE = 0x00AAF737;
+static const DWORD LOAD_COPY_SITE = 0x00AB16ED;
+typedef void(__cdecl* SaveFlushFn)(const wchar_t* path);
+static SaveFlushFn g_saveFlushOrig = (SaveFlushFn)(uintptr_t)SAVE_FLUSH;
+static SaveCopyFn g_loadCopyOrig = (SaveCopyFn)(uintptr_t)SAVE_COPY;
+struct FlushJob { wchar_t path[8][MAX_PATH]; int n; HANDLE thread; LONG files, fails, us; DWORD tid; bool defer; };
+static FlushJob g_fj;
+
+static void __cdecl SaveFlushHook(const wchar_t* path) {
+    FlushJob& f = g_fj;
+    if (f.defer && f.tid == GetCurrentThreadId() && f.n < 8 && path && wcsnlen(path, MAX_PATH) < MAX_PATH) {
+        wcscpy_s(f.path[f.n++], path);
+        InterlockedIncrement(&ts3native_counters.flushDeferred);
+        return;
+    }
+    g_saveFlushOrig(path);
+}
+
+static void FlushFail(const wchar_t* path, const char* step) {  // worker thread; first few per save only
+    if (g_fj.fails++ < 4) Log("save flush FAIL %s (err %lu): %ls", step, GetLastError(), path);
+}
+
+static void FlushTree(const wchar_t* path) {  // as FUN_00AAF4B0, but shared so readers are not refused
+    FlushJob& f = g_fj;
+    const DWORD a = GetFileAttributesW(path);
+    if (a == INVALID_FILE_ATTRIBUTES) { FlushFail(path, "attributes"); return; }
+    if (!(a & FILE_ATTRIBUTE_DIRECTORY)) {
+        HANDLE h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        // Meta.data is briefly held without write sharing right after the save (err 32, Sunset Valley 2026-10-15): retry
+        for (int i = 0; i < 10 && h == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION; i++) {
+            Sleep(50);
+            h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (h == INVALID_HANDLE_VALUE) { FlushFail(path, "open"); return; }
+        const bool ok = FlushFileBuffers(h) != 0;
+        if (!ok) FlushFail(path, "flush");
+        CloseHandle(h);
+        if (ok) f.files++;
+        return;
+    }
+    wchar_t pat[MAX_PATH], p[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    if (!Join(pat, path, L"*")) { FlushFail(path, "path too long"); return; }
+    HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!IsDots(fd.cFileName) && Join(p, path, fd.cFileName)) FlushTree(p);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+static DWORD WINAPI FlushMain(LPVOID) {
+    FlushJob& f = g_fj;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    for (int i = 0; i < f.n; i++) FlushTree(f.path[i]);
+    f.us = UsSince(t0);
+    Ts3nCounters& k = ts3native_counters;
+    k.flushLastMs = f.us / 1000;
+    k.flushFails += f.fails;
+    Log("save flush: %d calls, %ld files flushed on the worker, %ld fails, %ld ms", f.n, f.files, f.fails, f.us / 1000);
+    return 0;
+}
+
+static void FlushWait() {  // sim thread: before anything that deletes, copies or rewrites a save folder
+    FlushJob& f = g_fj;
+    if (!f.thread) return;
+    if (WaitForSingleObject(f.thread, 0) == WAIT_TIMEOUT) {
+        LARGE_INTEGER t0;
+        QueryPerformanceCounter(&t0);
+        WaitForSingleObject(f.thread, INFINITE);
+        Ts3nCounters& k = ts3native_counters;
+        InterlockedIncrement(&k.flushWaits);
+        k.flushWaitMs += UsSince(t0) / 1000;
+    }
+    CloseHandle(f.thread);
+    f.thread = NULL;
+}
+
+static void FlushStart() {  // sim thread, after the save returned
+    FlushJob& f = g_fj;
+    f.defer = false;
+    if (!f.n) return;
+    f.files = f.fails = 0;
+    f.thread = CreateThread(NULL, 256 * 1024, FlushMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+    if (f.thread) { InterlockedIncrement(&ts3native_counters.flushJobs); return; }
+    for (int i = 0; i < f.n; i++) g_saveFlushOrig(f.path[i]);  // no thread: the game's flushes, here, as before
+    f.n = 0;
+}
+
+static DWORD __fastcall LoadCopyHook(void* lsm, void*, const wchar_t* name, int dir) {
+    FlushWait();
+    return g_loadCopyOrig(lsm, NULL, name, dir);
+}
+
 // --- call-site hooks (sim thread) ---
 static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSave, int traveling) {
+    FlushWait();  // the previous save's flushes, before this save touches any save folder
     memset(&g_st, 0, sizeof(g_st));
+    g_fj.n = 0;
+    g_fj.tid = GetCurrentThreadId();
     QueryPerformanceCounter(&g_st.t0);
+    const Ts3nCounters& k = ts3native_counters;
+    const LONG dc0 = k.compressDirectCalls, dms0 = k.compressDirectMs, dmb0 = k.compressDirectMB, cm0 = k.compressCommits;
+    const LONG ch0 = k.cacheHits, cmi0 = k.cacheMisses, chm0 = k.cacheHitMB, cx0 = k.cacheMismatches, chs0 = k.cacheHashMs;
     const DWORD r = g_saveGameOrig(lsm, NULL, info, travelSave, traveling);
+    if (k.compressReady)
+        Log("save compress: this save %ld codec compress calls outside a batch (%ld MB in, %ld ms), %ld commit calls (pending at the last: %ld)",
+            k.compressDirectCalls - dc0, k.compressDirectMB - dmb0, k.compressDirectMs - dms0, k.compressCommits - cm0, k.compressCommitPending);
+    if (k.cacheReady)
+        Log("save compress cache: hits %ld (%ld MB in), misses %ld, mismatches %ld, hash %ld ms, held %ld entries %ld KB, evicted %ld",
+            k.cacheHits - ch0, k.cacheHitMB - chm0, k.cacheMisses - cmi0, k.cacheMismatches - cx0, k.cacheHashMs - chs0, k.cacheEntries,
+            k.cacheKB, k.cacheEvicted);
     SaveJobDiscard();  // a save that never reached the backup step (error, travel) leaves no copy behind
+    const int deferred = g_fj.n;
+    FlushStart();
     const LONG total = UsSince(g_st.t0);
     ts3native_counters.saveLastUs = total;
     ts3native_counters.saveLastWriteUs = g_st.write;
@@ -230,12 +348,14 @@ static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSav
     ts3native_counters.saveLastCopyUs = g_st.copy;
     ts3native_counters.saveLastFinalUs = g_st.final;
     InterlockedIncrement(&ts3native_counters.saveCount);
-    Log("save: result %lu travel %d/%d total %ld ms: info %ld, write %ld, backup %ld (%s, worker %ld, wait %ld), copy %ld, final %ld ms",
+    Log("save: result %lu travel %d/%d total %ld ms: info %ld, write %ld, backup %ld (%s, worker %ld, wait %ld), copy %ld, final %ld ms, flushes deferred %d",
         r, travelSave, traveling, total / 1000, g_st.infoEnd / 1000, g_st.write / 1000, g_st.backup / 1000,
         g_st.job > 0 ? "worker copy" : g_st.job < 0 ? "fallback" : "game", g_st.job ? g_sj.us / 1000 : 0, g_st.wait / 1000,
-        g_st.copy / 1000, g_st.final / 1000);
+        g_st.copy / 1000, g_st.final / 1000, deferred);
     return r;
 }
+
+static bool FlushDeferOn() { return ts3native_counters.flushReady && ts3native_counters.flushMode == 1; }
 
 static DWORD __fastcall SaveInfoHook(void* lsm, void*, u8* info, int keepId, int travelSave) {
     const DWORD r = g_saveInfoOrig(lsm, NULL, info, keepId, travelSave);
@@ -272,7 +392,9 @@ static DWORD __fastcall SaveBackupHook(void* lsm, void*, const wchar_t* name) {
 static DWORD __fastcall SaveCopyHook(void* lsm, void*, const wchar_t* name, int dir) {
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    g_fj.defer = FlushDeferOn();
     const DWORD r = g_saveCopyOrig(lsm, NULL, name, dir);
+    g_fj.defer = false;
     g_st.copy = UsSince(t0);
     return r;
 }
@@ -280,7 +402,9 @@ static DWORD __fastcall SaveCopyHook(void* lsm, void*, const wchar_t* name, int 
 static DWORD __fastcall SaveFinalHook(void* info, void*) {
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    g_fj.defer = FlushDeferOn();
     const DWORD r = g_saveFinalOrig(info, NULL);
+    g_fj.defer = false;
     g_st.final = UsSince(t0);
     return r;
 }
@@ -320,5 +444,21 @@ static bool ApplySaveWrite(const wchar_t* ini) {
     if (!PatchCalls("save write", kSaveSites, sizeof(kSaveSites) / sizeof(kSaveSites[0]))) return false;
     ts3native_counters.saveReady = 1;
     Log("save write settings: Mode=%ld", ts3native_counters.saveMode);
+    return true;
+}
+
+static const CallSite kFlushSites[] = {{SAVE_FLUSH_COPY_SITE, SAVE_FLUSH, (void*)SaveFlushHook},
+                                       {SAVE_FLUSH_FINAL_SITE, SAVE_FLUSH, (void*)SaveFlushHook},
+                                       {LOAD_COPY_SITE, SAVE_COPY, (void*)LoadCopyHook}};
+
+// [SaveFlush] Enabled=1 (needs [SaveWrite] hooked): the flushes of steps 9 and 11 run on a worker after the save; Mode is
+// the start value of the runtime switch flushMode (0 = the game flushes, as before).
+static bool ApplySaveFlush(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"SaveFlush", L"Enabled", 0, ini)) { Log("save flush off (Enabled=0)"); return false; }
+    if (!ts3native_counters.saveReady) { Log("SKIP save flush: needs the [SaveWrite] hooks (Enabled=1)"); return false; }
+    ts3native_counters.flushMode = GetPrivateProfileIntW(L"SaveFlush", L"Mode", 1, ini) ? 1 : 0;
+    if (!PatchCalls("save flush", kFlushSites, sizeof(kFlushSites) / sizeof(kFlushSites[0]))) return false;
+    ts3native_counters.flushReady = 1;
+    Log("save flush settings: Mode=%ld", ts3native_counters.flushMode);
     return true;
 }

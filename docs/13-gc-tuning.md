@@ -37,16 +37,7 @@ Decompiles from this work: `game-copy/analysis/decomp/gc13/{core,more,more2}.c`,
 
 Profiler definition: a `GC_stopped_mark` (`0xE49980`) that runs outside the per-frame `GC_try_to_collect` (`0xE4A050`). Callers that can produce one:
 
-1. **Allocation, when the heap is out of free blocks (main source).** The path is `GC_allocobj` `0xE4A2B0` (small objects) or `GC_alloc_large` `0xE4BA90`, then `GC_collect_or_expand` `0xE4A120`:
-   ```c
-   if (GC_incremental) {                       // EA edit; stock 7.1 expands here
-     if (!GC_dont_gc && GC_words_allocd != 0) { // anything allocated since last GC
-       FUN_00e4a320();  // no cycle running: try_to_collect_inner(never_stop) = full STW GC
-       return 1;        // else: finish the running cycle with never_stop + full sweep
-     }
-   }
-   ... expand: blocks = heapsize/(4096*5) + needed; if > 0x800 -> clamp to 0x800 (8 MB, MAXHINCR)
-   ```
+1. **Allocation, when the heap is out of free blocks (main source).** The path is `GC_allocobj` `0xE4A2B0` (small objects) or `GC_alloc_large` `0xE4BA90`, then `GC_collect_or_expand` `0xE4A120`. EA edited this function; stock Boehm 7.1 expands the heap at this point. In incremental mode, when collection is not disabled (`GC_dont_gc`) and anything was allocated since the last GC (`GC_words_allocd` non-zero), it calls `0xE4A320` and returns success without expanding. `0xE4A320` runs a full stop-the-world collection with the "never stop" callback when no cycle is running, or finishes the running incremental cycle the same way with a full sweep. Only when that check fails does it expand: by heap size / (4096 * 5) blocks plus the blocks needed, clamped to `0x800` blocks (8 MB, `MAXHINCR`).
    **[code]** In incremental mode the heap grows only on the second pass, when `words_allocd == 0` right after that forced GC and the GC still did not free enough. So the heap tracks live data closely, and the next exhaustion comes soon. **[inferred]**
 2. **`System.GC.Collect()`.** The `InternalCollect` icall (table at `0x10B5838`, index 121) is `0xE786C0`, which jumps to `0xE69650`, which jumps to `GC_gcollect` `0xE4A0B0`. That is a full collection with `never_stop`. **[code]** The C# call sites (`game-copy/decompiled`) are:
    - `DynamicChallengeManager.DestroyChallenges()`: on world quit and on online logout. Not during play.

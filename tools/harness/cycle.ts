@@ -14,6 +14,7 @@ import { focusGame } from './focus-game.ts';
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const USER_DIR = process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
+const BIN = process.env.TS3_BIN ?? 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Sims 3\\Game\\Bin';
 const base = `http://127.0.0.1:${values.port}`;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
@@ -45,6 +46,11 @@ if (values.restart) {
     try { execFileSync('taskkill', ['/F', '/IM', 'TS3W.exe'], { stdio: 'ignore' }); } catch { /* already gone */ }
     await until('game closed', 60, async () => !gameRunning());
   }
+  // ts3native: install the source build when it differs (a stale asi broke the 2026-10-15 save matrix); the
+  // installed ts3native.ini is left alone so per-run test settings survive. Build with native/ts3native/build.cmd.
+  const asiNew = join(ROOT, 'native', 'ts3native', 'out', 'ts3native.asi'), asiBin = join(BIN, 'ts3native.asi');
+  const sha = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');
+  if (existsSync(asiNew) && existsSync(asiBin) && sha(asiNew) !== sha(asiBin)) { copyFileSync(asiNew, asiBin); log('ts3native.asi: installed the source build'); }
   // scriptCache holds compiled mods, so a stale one would run the old agent
   const pkgs = join(USER_DIR, 'Mods', 'Packages');
   mkdirSync(pkgs, { recursive: true });
@@ -89,7 +95,17 @@ if (values.save) {
   if (!sawWarning) log('no "Mod Scripts Found" warning within 120 s; loading anyway');
   // in-game autopilot clears popups within a frame once in a world (load, Edit Town, live); speed left alone
   await agent('autopilot', { enabled: true, speed: 'none', dialogs: true });
-  const r = await agent('load_save', { file: values.save });
+  // On a slow first start (script cache just rebuilt) the reply can time out although the load started
+  // (2026-10-16 bp-university-travel): check load_file before sending it again, so a load never starts twice.
+  let r = await agent('load_save', { file: values.save });
+  for (let i = 0; !r.ok && /no reply/.test(r.error ?? '') && i < 24; i++) {
+    await sleep(5000);
+    const s = await agent('game_state');
+    if (!s.ok) continue; // game still busy
+    if (s.result.in_world || s.result.load_file) { log(`load_save: reply lost, load already started (${s.result.load_file})`); r = s; break; }
+    log(`load_save: no reply and still at the menu; sending it again (${i + 1})`);
+    r = await agent('load_save', { file: values.save });
+  }
   if (!r.ok) throw new Error(`load_save: ${r.error}`);
   // The agent sets the mailbox's world-loaded flag in OnWorldLoadFinished; /agentstatus reads it without a round trip.
   // Dialogs once in the world are the autopilot's job; every 10 s also try a modal that blocks the load itself.

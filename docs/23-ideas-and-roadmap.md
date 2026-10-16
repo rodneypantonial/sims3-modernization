@@ -28,6 +28,32 @@ Claims here are `[inferred]` unless marked otherwise; most are proposals.
 
 Suggested order: 1, 2, 10, 9 first (they make every later contribution cheaper and comparable), then 7, 4, 3, 6, then the research bets as contributors with RE experience join.
 
+## Next big wins (2026-10-15)
+
+Ranked by expected gain against effort, with cheap gates first. Detail lives in `PLAN.md` (Action plan, lanes G/M/H) and the linked docs; this table only orders them.
+
+| # | Item | Expected gain | Effort | Risk | Gate (decides it) | Status |
+|---|---|---|---|---|---|---|
+| 1 | `kFastRefTable` default on ([CHANGELOG v0.1.2](../CHANGELOG.md)) | save BP 12.7 -> 10.3 s (-19%), IP 11.6 -> ~10.0 s (-14%) [measured] | low (one flag, rebuild) | low | university + future travel cases in the save matrix | 27/28 matrix cases PASS; waits for Rodney's OK |
+| 2 | `[HeightCache]` A/B ([docs/20 §4b](20-offload-candidates.md)) | ~3.5-10 ms/s [inferred]; BP A/B route ms per route -34% [measured, unconfirmed: uneven slices] | low (runs only) | low (Verify: 0 mismatches in 4.41M calls) | 20+ min A/B per world, ideally seeded; IP Verify with a terrain edit and a lot placement | built (0.10.2), off |
+| 3 | Route gate, H6 ([docs/18 "H6 plan"](18-route-search-off-thread.md)) | up to route 95/82/246 ms/s BP/SV/IP off the sim thread [measured upper bound]; real share = G11 | high (S0-S5 ~4.5-5 d) | high (async routing crashed 3 times before) | G11 `/routelock`: lock-free share >= 30 ms/s IP and >= 15 ms/s BP, plus gate-site entries | S0 done; G11 probe built, never run |
+| 4 | IC-transition lock `0x11F43A8` under `0xDA5970` ([docs/29 §5](29-mono-jit.md)) | 5-15 ms/s of ~14 ms/s self [inferred] | medium | medium | contention counter on the lock | not built |
+| 5 | S3PP type-hash cache confirm (`MonoTypeEHashProbe`, [docs/29 §5](29-mono-jit.md)) | ~20-30 ms/s inclusive, already S3PP's [inferred]; decides that we do not duplicate it | low (one simstack run) | low | simstack BP run, S3PP cache on vs off | pending |
+| 6 | Save levers ([docs/26](26-incremental-save.md), PLAN "Research done") | cached reflection ~0.5-1 s, compressed-bytes cache ~0.25 s, life-event trim ~0.3-1.2 s (opt-in) per save [inferred] | medium | medium (save path) | full save matrix + save s on/off | ranked, not built |
+| 7 | Mono second-thread patch `[MonoThread]` ([docs/30](30-mono-second-thread.md)) | enabler for managed offload (autonomy ~110 ms/s, [docs/28](28-sim-thread-map.md)); costs 0.2-1.5% sim-thread [inferred] | high (~2.5-3.5 weeks) | high (GC, interpreter state) | `[MonoThread]` Mode=1 proof with Verify; `[GcThreadCheck]` clean in IP, save, travel | design done; BP GcThreadCheck 0 foreign allocations [measured] |
+| 8 | Animation phase split + C++ rewrite ([docs/22 §7](22-parallel-animation.md)) | ~5-15 ms/s [inferred] | high | high | G10: docs/22 §6 timing split (per-phase ms/s of `0x940430`) | research done; timers not added |
+| 9 | Address space: S3SS mimalloc arena ([docs/08 §2.5](08-resource-offload-design.md)) | <= ~64 MB largest free block early in a session [inferred] | low (upstream ask for a 32 MiB option) | low | runtime confirm: `NtAllocateVirtualMemory` >= 32 MB reserve backtrace on `wear_parts` | cause inferred, no config switch |
+| 10 | Address space: catalog ~8 MB resident ([docs/08 §2.5](08-resource-offload-design.md)) | ~8 MB for 14,577 products [inferred]; lazy decode not viable | medium | medium | catalog cost at the main menu (docs/08 M9 step 1) | queue job pending |
+
+## Done or dropped (2026-10-15)
+
+- Skip-Evaluate for idle off-screen actors: dropped; idle actors already skip it ([docs/22 §5.1a](22-parallel-animation.md)).
+- Drop off-screen Sim meshes/textures: dropped; ~0.15 MB per Sim [measured] (PLAN lane G item 6, M11).
+- Mono JIT: dropped; EA "mint" interpreter, no JIT code, yielding tasks keep interpreter frames ([docs/29](29-mono-jit.md)).
+- Footprint quadtree cache (#8): NO-GO, physics radius query on moving Sims, 0.5% of samples ([docs/20 §4b](20-offload-candidates.md)).
+- Catalog lazy OBJD decode: not viable, the in-memory filter needs every decoded OBJD ([docs/08 §2.5](08-resource-offload-design.md)).
+- Done: sim-thread map ([docs/28](28-sim-thread-map.md)), Mono helper split G9 ([docs/29 §5](29-mono-jit.md)), second-thread design ([docs/30](30-mono-second-thread.md)), H6 plan ([docs/18](18-route-search-off-thread.md)), M9 128 MB block explained ([docs/08 §2.5](08-resource-offload-design.md)), `s3pp` label check (no stale labels, PLAN lane G item 4).
+
 ## Contributor infrastructure
 
 ### 1. Community baseline saves recipe
@@ -99,6 +125,7 @@ Results from different machines only compare when everyone measures the same sav
 
 - S3SS offers a mimalloc option; our ts3native 0.8.0 cache sits in front of EA's dlmalloc derivative (docs/15 Phase 8) and gave +19% iterations/s in one A/B (PLAN, 2026-10-13). Open: does S3SS's mimalloc replace the same heap, do they stack, and which wastes less 32-bit address space (Error 12)?
 - Measure: both, each alone, on the same save; address space after 30 min; crash-free hours.
+- 2026-10-15: the one-time 128 MB reservation on the first CC outfit build [measured] is most likely S3SS mimalloc arena doubling [inferred]; see Next big wins #9.
 - Risk high (heap corruption shows up late). Issue: `[research] Allocator: S3SS mimalloc vs ts3native alloc cache, address space and speed`.
 
 ### 12. Texture streaming and DXVK tuning for Error 12
@@ -115,11 +142,13 @@ Results from different machines only compare when everyone measures the same sav
 ### 14. Animation LOD
 
 - docs/22: parallel animation update is unsafe; §5 lists serial alternatives. Animation LOD (update off-screen or distant actors at a lower rate) is the cheapest. Measure first (docs/22 §6), then a native switch with in-load A/B.
+- 2026-10-15: skip-Evaluate variant dropped and off-screen mesh drop dropped (see "Done or dropped"); remaining path is Next big wins #8.
 - Issue: `[research] Animation LOD for off-screen Sims (docs/22 §5)`.
 
 ### 15. Mono interpreter speedups
 
 - docs/04 F6/F7: scripts run in Mono 1.2's interpreter, the largest sim-thread cost. Ideas: a method lookup cache, inline caches for virtual/interface calls, faster field access paths, cheaper `isinst`/`castclass`. Each is a native patch inside the interpreter loop, with correctness risk across all game scripts.
+- 2026-10-15: JIT dropped; helper split done ([docs/29 §5](29-mono-jit.md)): the top helper is already cached by S3PP, our first own target is the IC-transition lock (Next big wins #4, #5).
 - Research first: which interpreter opcodes and lookups dominate (sample the interpreter with the probe), and what upstream Mono later changed in those paths (as design ideas, not code).
 - Issue: `[research] Mono interpreter hot paths: method/virtual call caches`.
 
@@ -133,5 +162,6 @@ Results from different machines only compare when everyone measures the same sav
 - Goal (Rodney, 2026-10-14): move everything that can safely leave the sim thread to other cores, so the game scales with longer saves, more objects and more Sims instead of hitting one core's limit. Value high, effort high, risk high. Needs a redesign of how work reaches the sim thread, built step by step.
 - Acceptance rule: an offload step is accepted with no speed gain today, or up to ~2% fewer sim iterations/s, if it is stable (no crashes, no new stuck Sims, same results) and moves measurable work off the sim thread (route ms/s, stage ms/s, sampler share). Over ~2% needs a plan to win it back. See `PLAN.md` (Goal).
 - Known candidates and blockers: route search on a worker (`[RouteWorker]` works, synchronous today; async blocked by unlocked per-lot routing state, docs/18), save write and backup copy (`[SaveWrite]`), resource decoding (`[Decompress]`), CAS tile building (docs/21: mostly UI layout, which must stay on its thread), GC marking, autonomy scoring and story progression (Mono, research).
-- First step: a map of sim-thread work by owner (native vs Mono, per stage) from the existing profiles, ranked by what could run elsewhere and what shared state blocks it.
+- First step: a map of sim-thread work by owner (native vs Mono, per stage) from the existing profiles, ranked by what could run elsewhere and what shared state blocks it. Done 2026-10-15: [docs/28-sim-thread-map.md](28-sim-thread-map.md) (top: route search with a routing gate, save backup copy and compression; every managed offload waits on whether C# can run on a second thread).
+- Second managed thread: design in [docs/30-mono-second-thread.md](30-mono-second-thread.md) (`[MonoThread]`: four GC/interpreter patches, a first proof on copied input with Verify, ~2.5-3.5 weeks; game script state stays sim-thread-only).
 - Issue: `[research] Sim-thread offload architecture: map, blockers, step plan`.

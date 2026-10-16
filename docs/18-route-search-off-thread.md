@@ -380,3 +380,140 @@ Lot graphs have no version counter. Invalidation means clearing the built flags 
 ### Recommendation
 
 Drop option B. If async plans are revived, use the gate instead: the worker takes `world+0x918` for the whole job (start points, goal step, `PlanLocked`), and the unlocked sim-thread entries into P listed above take it too. The lock is recursive, so nesting under `PlanLocked` is safe, and the existing `LockAcquireHook` pump serves the worker's managed calls while the sim thread waits. That is about 10 small detours and no change to EA data structures. The gain is then limited to sim-thread work that touches no routing lock, as PLAN already says; measure `asyncPumpUs` against `asyncUs` before investing more. The PLAN direction (cheaper searches: water JPS precompute, route budget, fewer replans) remains the better bet.
+
+## H6 plan (2026-10-15)
+
+Static design for PLAN lane H item H6 ("route search async") after H2 (docs/28: route search is the top offload candidate, 95/82/246 ms/s BP/SV/IP base, 108/77/184 with all fixes [measured]), H4 (docs/29: no C# may run off the sim thread [verified]) and H5 (`[HeightCache]` built, off). Acceptance follows the PLAN offload rule: stable (no crashes, no new stuck Sims, same results) and at most ~2% loss in sim iterations/s, measured as sim-thread route ms/s moved off. Sources: the sections above, docs/28, docs/29, and one Ghidra headless run on a copy of the h1 project (`game-copy/ghidra-h6`, script `LockReach` kept in the session scratchpad: forward BFS over direct calls, depth 9, from `IC_Route_Plan 0x765160`, the goal step `0x75C2D0` and the locomotion obstacle query `0x82EDB0`, listing every `Lock_Acquire 0x4E16F0` site with its `ecx` and the shared functions reached).
+
+### Short answer
+
+- Native async stays possible only with a **routing gate**: the worker holds `world+0x918` for the whole job, and every sim-thread entry into routing state that today runs without that lock takes it too. Private copies of the per-lot state were ruled out (option B above).
+- So the gain is limited to sim-thread work that touches no routing state before the job ends. That window was never measured. **Measure it first (G11) with the probe that is already built, and build nothing until it clears the gate below.**
+- Managed callbacks keep the 0.7.1 path (the whole host call `0xD75FA0` and the runtime_invoke slot run on the sim thread). The gate adds one rule: while the sim thread serves a callback for the job, it borrows the job's lock instead of waiting for it.
+- First proof: a **Verify mode** (observe only) that counts entries into the planner's shared state made by a thread that does not hold `world+0x918`. Crash 3 had exactly this cause, and Verify must read 0 before async is switched on.
+- **S0 (static, done 2026-10-15) changes two things.** (a) The planner is entered without `+0x918` from 74 `IC_*` entries and from native sim-tick and build-tool code, so a short list of mid-level gates cannot cover it. The gate moves down to the 10 planner leaf functions, plus 2 coarse gates (list in "S0 results"). (b) The plan reads the **physics loose quadtree** (`0x83B3A0`), and object moves on the sim thread write it with no lock at all. On the worker, `0x83B3A0` must be proxied to the sim thread, like the managed calls. Lock order: no reversed order found [verified, direct calls].
+
+### (1) Shared state the planner touches
+
+New from the Ghidra run [verified, direct calls]: the goal step `0x75C2D0` (outside `Route_PlanLocked`) takes `world+0x918` itself, but only in pieces: in `0x82EDB0` (`lea ecx,[esi+0x918]` at `0x82EDD0`) and `0x82F0B0` (`lea ecx,[edi+0x918]` at `0x82F0D0`). Between those calls it runs the lot planner (`0x63F490` -> `0x62EAB0`, `0x63D2F0` -> `0x61E320` -> `0x61C020`) with no lock. The locomotion obstacle query `0x82EDB0` reaches the same lot table `0x62EAB0` (via `0x631F10` -> `0x62FB10`) under its own lock. So the sim thread's per-tick routing touches the same data as a job.
+
+| State | Address | Written by the plan? | Lock today | Gate treatment | Tag |
+|---|---|---|---|---|---|
+| Routing world graph, footprints, portals, pending updates | world (`0x8292D0`), `0x82C420` | pending updates applied at plan start | `world+0x918` | job holds it | verified (docs/18 Q2) |
+| Lot planner P (one per world) | `[world+0x95C]` (`0x829BC0`) | yes: lot table insert and rehash on a miss, lazy lot/room builds | none in the goal step | job holds `+0x918`; sim-thread entries gated | verified (option B) |
+| Per-lot table (the "per-lot search state") | find-or-insert `0x62EAB0`, `P+0x48` | yes, on a miss | none from `0x75C2D0`; `+0x918` from `0x82EDB0` | gate | verified |
+| A* scratch Q (the only instance), node table | `P+0xBC`, `[L+0x28]`; reset `0x61E320`, clear `0x61C020` | yes, every search | none | gate (the crash 3 site) | verified |
+| Search generation stamp | global word `0x11580C4`, `0x61E360` | yes, every search | none | gate | verified |
+| Cell and portal refcounts | word `+4`, int `+0x28`, plain `add`/`sub` | yes | none | gate (one thread at a time is the only safe use) | verified |
+| Route handle table | `0x74B2C0` (`Lock_Acquire` at `0x74B2E4`, `ecx` = table lock, docs: `0x1004124`) | no | own lock | unchanged | verified site |
+| Route object, options, result | route `+0x158`, `+0xE0`; AddRef/Release `+0x10`/`+0x14` | yes (own route) | refcount | unchanged (owner Sim sleeps) | verified |
+| Lot lookup / world lot manager | `0xC68680` (`lea ecx,[ebx+0x228]` at `0xC6869C`), reached from height `0xC6A540` and pending updates `0x82C420` -> `0xC68960` | no (read) | own lock | lock order `+0x918` -> `+0x228` | verified site; owner object inferred |
+| Height raycast | `0xC6A540`/`0xC6A250` -> `0xC2A570` -> kd-trees; rebuild `0xC2A840` | no; our `[HeightCache]` writes its table here | none | worker bypasses `[HeightCache]` (calls the original) | path verified; "pure" verified (docs/28 N10) |
+| Physics loose quadtree ("Physics/Realm/LooseQuadTree", not a routing structure) | read: `0x83B3A0` -> `0x682590` -> `0x681E00` -> `0x681CF0`. `0x83B3A0` has 3 callers: the goal step `0x75C2D0`, the planner `0x654CC0` (from `0x65E0D0`, inside `PlanLocked`) and `IC_RouteManager_IsOkToIdleAtCurrentLocation` | no (read); written by shape add `0x686ED0` -> `0x6823E0`, remove `0x686F50` -> `0x682080` and move `0x6871C0` -> `0x687130` -> `0x6819B0` (remove + reinsert), all on the calling thread | **none**: 264 callers of the writers, none inside a `+0x918` window | worker proxies `0x83B3A0` to the sim thread (S0 results) | verified (decompile, direct calls) |
+| Lazy lot build helpers | `0x63CB90` -> `0x80EED0` -> `0x80EDC0` (`ecx` = `0x11D9068`), `0x807400` (`0x11D8F90`); `0x666C50` -> `0x665C50` -> `0x61ED80` (`0x11CEFA8`); `0x628840` -> `0x931210` (`ecx` = `[esi+0x10]`) | yes (lot build) | their own leaf locks: three free-list pools and a debug log writer (S0 results) | lock order `+0x918` -> these; none of them calls out while held | verified (decompile) |
+| RoutingJob dtor path | `0x819AE0` -> `0x59A990`/`0x59A650`/`0x59A540` (three `Lock_Acquire` sites) | no | `0x59A990`: atomic refcount drop, then destroy (`0x59A650`) under the object's lock `[obj+8]` | unchanged | verified; `0x59A650`/`0x59A540` release in their callers, those windows not checked |
+| Portal-lock callback into C# | `0x64F2C0` -> `0x791C00` -> `0x78F2B0` (World event 59) -> host `0xD75FA0` -> runtime_invoke slot `[0x1195B60]` / `0xEA1400` | managed: `LotManager.PortalLockedCallback`, allocates | none | proxied to the sim thread (0.7.1) plus the borrow rule | verified (docs/18 above) |
+| Allocator | `0x4E3F90` -> lock wrapper `0x4E69D0`; `[Alloc]` thread cache | yes | own lock / per thread | unchanged | verified |
+| World A\*, water JPS, `0x6255B0` | world A* `0x676260`, water JPS `0x620560`/`0x61FE10` (and our `[WaterJps]` precompute), `0x6255B0` | own state: no global writes and no `lock`-prefixed ops within 3 call levels; global reads only (allocator `0x11CB864`, `0x11587D0`, `0x114C900`) | A* and JPS: reached only through `PlanLocked` -> `Route_SearchAStar` (`+0x918`). `0x6255B0` (small leaf, reads `[arg+0x94]`): also reached without the lock from the goal step (`0x63F490`) and from `IC_World_FindPlacesOnShoreline` -> `0xC75920` -> `0x640E00` | covered by the job's lock and the leaf gates | verified (direct calls); "state is per call or per object" inferred |
+
+Lock order (S0, all `Lock_Acquire 0x4E16F0` sites in the exe, direct calls) [verified]: no function holds another lock while it calls anything that reaches `+0x918` or the planner core. The two hits the scan reported were `+0x918` itself, set up with `add reg,0x918`: `0x818EA0` (world update, `add edi,0x918` at `0x818F36`) and `0x831530` (`add ecx,0x918` at `0x831559`). Every other lock reached from `IC_Route_Plan`, the goal step or `0x82EDB0` is a leaf: acquire, a short operation, release, no call in between that reaches routing. The order is therefore always `+0x918` first. Limits: indirect (vtable) calls are not followed; a held window is taken as acquire to the next release in address order.
+
+### S0 results (2026-10-15, static)
+
+Method: two Ghidra headless scripts on a copy of the h6 project (`game-copy/ghidra-s6`, scripts in the session scratchpad). (1) Every `Lock_Acquire` site in the exe, with `ecx` traced back through register moves. (2) For each non-`+0x918` site, the calls made before the next release, checked against every function that reaches `+0x918` or the planner core (reverse closure, depth 14). (3) A reverse walk from the planner core that stops only at call edges inside a `+0x918` window. Direct calls only.
+
+**Lock order [verified].** No reversed order (see the paragraph above). 30 functions take `+0x918`: 28 via `lea`/`mov`, plus `0x818EA0` and `0x831530` via `add`.
+
+**What the other locks guard [verified, decompile].**
+
+| Lock (`ecx`) | Site | Guards | Calls out while held |
+|---|---|---|---|
+| `0x11D9068` | `0x80EDC0` | free-list pool of footprint polygon blocks (head `0x1165D48`, "Routing/UnnamedFootprintPolygon") | pool refill `0x7272E0` only |
+| `0x11D8F90` | `0x807400` | free-list pool of 0x28-byte nodes (head `0x1165B80`); its vtable calls run before and after the lock | allocator only |
+| `0x11CEFA8` | `0x61ED80` | free-list pool (head `0x11581DC`) | refill `0xC37710` only |
+| `[esi+0x10]` | `0x931210` | debug log writer (`"%c%04x:%-.40s\n"`, on when flag `+0x56F` is set) | the log sink (vtable) |
+| `[ebx+0x228]` lot manager | `0xC68680` | lazy rebuild of the lot manager's cell index (dirty flag `+0x1CC`, from getter `0xC68960`); acquire and release in the same function | own helpers (`0xC66700`, `0x810DF0`, `0xB7B9A0`, `0xC68080`, `0x8621C0`), none reach routing |
+| `[obj+8]` | `0x59A990`/`0x59A650`/`0x59A540` | destroy on last release (RoutingJob dtor path) | none reaching routing |
+| table lock `[ecx+8]` (`0x1004124`) | `0x74B2C0` | route handle table lookup (handles `0x25xxxxxx`) | one vtable call (`+0xCC`, lookup, not followed) |
+
+All are thread-safe leaf locks, so the worker may take them while it holds `+0x918`.
+
+**`0x82F0B0` [verified site, role inferred from tags].** Called by the goal step. Under `+0x918` it finds the lots of the start and goal points (`0xC68990` twice) and runs `0x631E20` ("Routing/PortalCheckCache", "Routing/GetFootprintsWithinNode/FootprintSet"), which collects the footprints and portals in the routing nodes between the two points into the caller's set. It is the goal step's footprint gather, taken with its own short lock hold.
+
+**Who enters the planner without `+0x918` [verified, direct calls].** The reverse walk from the core (`0x62EAB0`, `0x61E320`, `0x61E360`, `0x61C020`, `0x63F490`, `0x63D2F0`, `0x63CB90`, `0x63D7B0`, `0x63D860`) finds 32 protected edges (inside `+0x918`: `PlanLocked`, `0x82EDB0`, `0x82F0B0`, `0x829D50`, `0x830940`, `0x831710`, `0x8321F0` and others), but 79 distinct unprotected callers of the core. Above them are 74 `IC_*` entries: all `IC_Route_Plan*`/`Replan*`, `IsPointRoutable`, `IsPointObstructedBySim`, `GetObstructionAtPoint`, `FindObstaclesForSimAlongRoute`, `RoutingBlockerCheck2d`, the `IC_RouteManager_*` portal and footprint lock-key setters, `IC_World_FindGoodLocation*`, `FindPlaceOnRoad*`, `TestObjectPlacement*`, `GetConnectedRooms`, `Slots_CanAttachToSlot*`, save, bulldoze and others. Native entries reach it too: the script tick (`MonoScriptHost_Simulate 0xD81840` -> `0x83CED0` -> ... -> `0x85F5A0` -> `0x62EF30` -> `0x62EAB0`), the world manager (`0xC6BCC0`, `0xC6B090`), and build/buy tool code (`0xB6D8F0`, `0xB57F20`, `0xCDxxxx`/`0xD1xxxx` chains). The option-B list (`0x63F6E0`, `0x633FA0`, ...) is a small part of this.
+
+**Gate-site list for `[RouteGate]`.** Gate at the leaves, not at the entries. Each detour checks: no job running, or this thread already holds `+0x918` -> call the original (fast path). Otherwise take `+0x918` with the pumping wait, call, release. Jobs start only on the sim thread from a top-level `Route.Plan`, so no sim-thread planner sequence is in flight when a job starts. Waiting at the first leaf touch is therefore enough for mutual exclusion [inferred from the yield guard]. Prologues [verified bytes]:
+
+| Site | Role | Prologue bytes | Stolen instructions (length) |
+|---|---|---|---|
+| `0x62EAB0` | lot table find-or-insert (every lot-planner caller goes through it) | `55 8B EC 83 E4 F0` | `push ebp; mov ebp,esp; and esp,-0x10` (6) |
+| `0x63F490` | goal-step lot planner | `83 EC 54 8B 44 24 5C` | `sub esp,0x54; mov eax,[esp+0x5C]` (7) |
+| `0x63D2F0` | lazy room connectivity | `55 8B EC 83 E4 F8` | `push ebp; mov ebp,esp; and esp,-8` (6) |
+| `0x63CB90` | lazy lot build | `83 EC 5C 53 8B 5C 24 64` | `sub esp,0x5C; push ebx; mov ebx,[esp+0x64]` (8) |
+| `0x63D7B0` | lot rebuild (all rooms) | `8B 44 24 08 55` | `mov eax,[esp+8]; push ebp` (5) |
+| `0x63D860` | room graph refresh | `8B 44 24 08 8B 54 24 04` | `mov eax,[esp+8]; mov edx,[esp+4]` (8) |
+| `0x61E320` | Q reset | `53 8B 5C 24 08` | `push ebx; mov ebx,[esp+8]` (5) |
+| `0x61E420` | Q reset (clear path, from `0x61EB20`) | `53 56 8B F1 8B 46 18` | `push ebx; push esi; mov esi,ecx; mov eax,[esi+0x18]` (7) |
+| `0x61E360` | search generation stamp | `66 83 05 C4 80 15 01 01` | `add word ptr [0x11580C4],1` (8, absolute address, relocates as is) |
+| `0x61C020` | Q node table clear | `B8 70 9C 00 00` | `mov eax,0x9C70` (5; the `call` to the stack probe at +5 stays in place) |
+| `0x75C2D0` | coarse: goal step (keeps the sync goal step atomic) | `55 8B EC 83 E4 F0` | `push ebp; mov ebp,esp; and esp,-0x10` (6) |
+| `0x7929F0` | coarse: `IC_World_GetConnectedRoomsImpl` | `83 EC 14 53 33 DB` | `sub esp,0x14; push ebx; xor ebx,ebx` (6) |
+
+Worker-side proxy (not a gate): `0x83B3A0`, `83 EC 10 53 55` (`sub esp,0x10; push ebx; push ebp`, 5). On the worker, run it on the sim thread through the same request slot as `ServeInvoke`. The sim thread serves it while it waits in the pumping acquire, and at that point it is not moving physics shapes. Gating the quadtree writers instead would stall the sim thread on every object move during a job.
+
+**Not covered statically.** Reads of P or Q that do not pass through one of the leaves first (the ~21 `[P+0xBC]`/`[L+0x28]` load sites); other physics or routing reads reached through vtables; `0x682590` callers other than `0x83B3A0` (`0x82A8F0`, `0x824FA0`, `0x82E340`) were not traced from the plan. S2 Verify adds entry checks on all 12 gate sites and counts worker entries into `0x681E00` that do not come through the proxy.
+
+### (2) Narrowest safe design: async with a routing gate
+
+| Part | What it does | Crash it avoids |
+|---|---|---|
+| Job scope | Worker runs the whole original `IC_Route_Plan 0x765160` (as 0.7.1) inside our own `Lock_Acquire(world+0x918)` ... `Lock_Release`. The lock is recursive, so the inner acquires in `0x82EDB0`, `0x82F0B0` and `PlanLocked` nest | 3 (goal step outside the lock) |
+| Gate sites (sim thread) | Detours take `world+0x918` around every entry into P that runs outside the lock today. After S0 these are the 10 planner leaves plus the coarse gates `0x75C2D0` and `0x7929F0` (the table in "S0 results"), with a fast path when no job runs or the thread already holds the lock. The option-B mid-level list is dropped: 74 `IC_*` and several native entries bypass it. While a job runs, the existing `LockAcquireHook` pump serves the worker's managed calls and the `0x83B3A0` proxy during the wait | 3 |
+| Physics quadtree proxy (new, S0) | On the worker, `0x83B3A0` runs on the sim thread (same slot as `ServeInvoke`). Its writers (shape add, remove, move) have no lock and run on the sim thread every tick | a new race: quadtree node vectors reallocated under a worker read |
+| Managed calls | Unchanged from 0.7.1: the whole host call `0xD75FA0` (boxing, task-id guard, invoke) and every runtime_invoke from the worker run on the sim thread; `ServeInvoke` saves, zeroes and restores host `+0xBD0/+0xBD4` there | 1 (NULL domain on the worker), 2 (task id zeroed under a running task) |
+| Borrow rule (new) | While the sim thread runs `ServeInvoke` for the job, the worker is blocked in `InvokeHook`. A sim-thread `Lock_Acquire(world+0x918)` or gate entry there is counted as nested in the job: our hook skips the real acquire and the matching release (per-thread depth). The behaviour is as before, when the callback ran nested in the plan on one thread. Without this rule a callback that touches routing deadlocks | the deadlock risk listed in "Risks" above |
+| Yield guard | Unchanged: `CanYield()` (current interpreter state == the task's root state), NOYIELD query, only `Route.Plan` from the Sim's own top-level task goes async | 2 |
+| Our caches on the worker | `[HeightCache]`: the worker calls the original `0xC2A570` (the kd-tree read is pure). `[RouteCache]`, `[WaterJps]`: reached only under `+0x918` (inside `PlanLocked`), and under the gate only one thread holds it. `[Alloc]`: per thread already | new race in our own code |
+| Scope limits | Jobs only in live mode with a world loaded; START refused during save, travel, build/buy and world unload (drain the job first, as CANCEL already does) | world teardown under a job |
+
+Not chosen: private per-thread search state (option B: 30+ patch sites plus unbounded refcount work, and the lock is still needed); offloading only the world A\* `0x676260` (smaller job, but it runs inside `PlanLocked` under the same lock, so the window is the same, and its state was not reviewed); a try-lock locomotion check (rank 5 in Q3: raises the window, but Sims may overlap; keep it as a later step if G11 shows locomotion is what ends the window).
+
+### (3) Gating measurement and acceptance
+
+**G11, routing-lock free window** (measure before building; worker and async off):
+
+- Per tick: the share of tick time in which no thread holds `world+0x918` and no gate site is running. Per synchronous plan: `gap` = time from the plan's return to the sim thread's next routing touch (an acquire of `+0x918` or a gate-site entry). The movable route time is `sum(min(plan length, gap))` per second, in ms/s, split by world.
+- Tool: the `/routelock` probe (built 2026-10-13, never run; docs/15 phase 3) reports this for `+0x918` already. It does not see the unlocked gate sites, so its number is an upper bound. S2's native counters give the exact one.
+- Go to async only if the movable time is **>= 30 ms/s in IP and >= 15 ms/s in BP** (the docs/18 rule of thumb). If locomotion ends most windows, do the try-lock obstacle check together with async, or drop H6 for cheaper searches (PLAN direction).
+
+**Acceptance (async run, `--ab routeasync` in one load per world, BP/SV/IP):**
+
+- Moved off: sim-thread route ms/s with async on vs off (`stutter-profile` route timer), cross-checked as `asyncUs - asyncPumpUs` (job time minus the time the sim thread waited for it). It must be > 0, and the target is the G11 estimate.
+- Stable: 0 crashes, 0 interp.c asserts, 0 watchdog lines, 0 Verify violations (`gateUnlocked`), no new stuck Sims (log only), plan failure rate `planOnFails/planOnCalls` within noise of `planOffFails/planOffCalls`, `asyncDropped` explained by resets.
+- Speed: iterations/s at most ~2% below off. A larger loss needs a plan to win it back (PLAN rule).
+
+### (4) Steps
+
+| Step | What | Effort | Risk |
+|---|---|---|---|
+| S0 | **Done 2026-10-15** ("S0 results"): no reversed lock order; gate moved to 12 leaf and coarse sites; physics quadtree writers have no lock, so the worker proxies `0x83B3A0`; `0x82F0B0` is the goal step's footprint gather | 0.5 d | none (Ghidra only) |
+| S1 | Run `/routelock` (worker off) on Baseline-BP and Baseline-IP, 10 min each, for the G11 upper bound: `node tools/harness/queue.ts tools/harness/queues/g11.json` (run kind `routelock`; the report's `g11` block also counts unlocked entries at the 12 S0 gate sites and ends the window there; job = the whole `IC_Route_Plan`). Probe safety: try the hooks on a dummy first; `Lock_Acquire` is engine-wide, so read `acquireHooksPerSec` and compare it with the timer | 0.5 d, one game slot | low (Frida cost may skew the timers) |
+| S2 | **Verify mode** `[RouteGate] Verify=1` (ts3native, observe only): `Lock_Release 0x4E17B0` detour plus owner/depth tracking for `+0x918` in `LockAcquireHook`; entry checks on the 12 S0 gate sites count `gateUnlocked` (thread, top return addresses) when the caller does not hold `+0x918`; a worker-thread check on `0x681E00` counts quadtree reads that do not come through the proxy; exact `gap` counters for G11. Run with worker Mode 0 and Mode 1 (sync). Expect non-zero today (the goal step); that list fixes the gate sites. **S2a built 2026-10-15, untested in game** (ts3native 0.10.3, `[RouteGate] Enabled=0`, `native/ts3native/routegate.cpp`): owner of `+0x918` from `LockAcquireHook` (success returns the recursion count) and a `Lock_Release` detour (owner cleared before the outermost release); pass-through stubs on all 12 S0 sites count per site the outermost entries (no other gate frame open on the thread; the stub swaps the return address, dead frames are dropped) by a thread that does not own `+0x918` (`rgUnlocked`), and the same during a worker or async job (`rgJob`); counters v16 at `+0x204`, first 32 site/caller pairs logged; all 14 prologues checked first, nothing installed on a mismatch; selftest covers recursive holds, outermost-only, another thread's hold, jobs, dead frames, a full frame stack. **S2b (open):** the worker-thread `0x681E00` quadtree read check and the exact G11 `gap` counters (time from a plan's return to the sim thread's next routing touch) | 1-1.5 d + selftest | low (no behaviour change) |
+| S3 | Gate on, still sync (`[RouteWorker] Mode=1`): job lock around `IC_Route_Plan`, gate detours, borrow rule, `[HeightCache]` bypass on the worker. Pass: Verify `gateUnlocked` = 0 during jobs, same plan results and counters as Mode 0, 0 crashes over a 10 min soak per world | 1 d | medium (deadlock from lock order or a callback) |
+| S4 | Async on (`[RouteAsync]` 0.7.1 path + gate). Repros: `bp-route-async`, `bp-overwatch-stuckcheck`, Sim reset during a job, save and travel requested during a job (START refused, job drained) | 1 d | medium-high (the window, stale paths, unknown unlocked state) |
+| S5 | `--ab routeasync` on BP/SV/IP, apply the acceptance rule, record in the change ledger and PLAN | 0.5 d, three game slots | low |
+
+Total about 4.5-5 days, with a stop after S1 (G11 too small) and after S2 (more unlocked entries than a short list of detours can cover).
+
+### Top risks
+
+1. **Small window [inferred]:** locomotion takes `+0x918` every tick for each walking Sim, and other script tasks in the same script phase route too (footprints, `IsPointObstructedBySim`, plans). The job may only overlap with the rest of that phase. S0 makes this more likely: 74 `IC_*` entries (placement tests, slot checks, obstruction queries) and the script tick reach the gated leaves, and each one ends the window. G11 decides this before any build, and its gap counter must count entries at the 12 S0 sites, not only `+0x918` acquires.
+2. **Deadlock:** a callback served on the sim thread that takes a lock the worker needs [inferred], or a caller that takes a second lock before `+0x918`: none on direct-call paths, and the other locks are leaves [verified, S0]. Vtable calls were not followed. The borrow rule covers the callback case. The 2 s watchdog only logs.
+3. **Unlocked state:** the physics quadtree has no lock and is written by every object move [verified, S0]. The worker must proxy `0x83B3A0`, and Verify must show no other worker reads of `0x681E00`. World A\* and water JPS are reached only under `PlanLocked` and write no globals [verified, direct calls]. P/Q reads that skip the gated leaves are still possible (S2 can only see entries).
+4. **Stale results:** a plan reflects the world when its job started and is used 1+ ticks later. Route following already replans when a path goes stale [inferred].
+5. **Our own detours:** `[HeightCache]` and any later cache on routing paths must be worker-aware. S3 bypasses the height cache on the worker.
+
+### Verified vs inferred
+
+- Verified: lock sites and `ecx` values listed in (1) (Ghidra, direct calls, depth 9); the goal step runs the lot planner between its own short `+0x918` holds; locomotion reaches the lot table under `+0x918`; height and physics quadtree reached from the goal step and from the planner (`0x654CC0`); S0: no reversed lock order on direct calls, the other locks are leaf pools/log/table locks, the planner leaves are entered without `+0x918` from 74 `IC_*` and native entries, the quadtree writers run with no lock, gate-site prologue bytes; the 0.7.1 managed-call path; the three crash causes (sections above, PLAN).
+- Inferred: lock order also holds through vtable calls; the borrow rule is safe (the worker is blocked for the whole served call); the size of the window; that height reads are safe on the worker while the cache is bypassed (pure kd-tree reads; rebuilds happen only outside live mode).

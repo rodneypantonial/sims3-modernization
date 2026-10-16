@@ -1,0 +1,75 @@
+[
+  {
+    "id": "menu-memory-nocc",
+    "note": "M9 step 1: main-menu address space with CC + Store repacks moved out (compare menu-memory)",
+    "asi": "tested",
+    "content": "no-cc",
+    "save": "menu",
+    "run": {
+      "menuMemory": {
+        "waitS": 90
+      }
+    },
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-university-travel",
+    "note": "save matrix travel case to University with the no-dialog travel_university (crash retry)",
+    "asi": "tested",
+    "ini": {
+      "SaveFlush.Enabled": 1,
+      "SaveCompress.Enabled": 1,
+      "FootprintIndex.Enabled": 1,
+      "FootprintIndex.Verify": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "university"
+      ]
+    },
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-iclock-soak",
+    "note": "[IcLockCheck]: Mono loader_mutex 0x11F43A8 enters, contended enters, wait us, waiters on unlock, callers; 10 min at speed 3 (docs/29 §5.1)",
+    "asi": "game-copy/ts3native.asi.iclock",
+    "ini": {
+      "IcLockCheck.Enabled": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "soak": {
+        "minutes": 10,
+        "speed": "ultra"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-future-travel-2",
+    "note": "future travel save case with portal_prepare (refuses fast if no portal is placed in Baseline-BP)",
+    "asi": "tested",
+    "ini": {
+      "SaveFlush.Enabled": 1,
+      "SaveCompress.Enabled": 1,
+      "FootprintIndex.Enabled": 1,
+      "FootprintIndex.Verify": 1
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "future"
+      ]
+    },
+    "timeoutMin": 45
+  }
+]

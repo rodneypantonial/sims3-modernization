@@ -8,9 +8,16 @@
 // --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) alternate on/off every --slice minutes, starting on;
 // slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
-// Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,stuck.json,houseboats.json}.
+// --seed N: seed_rng {seed: N} right after autopilot sets the speed (window start, docs/27 §B), game RNG put back at the end.
+// --repro ID: run the steps of that tools/harness/repros.json entry (agent commands, waitS after each) from the window start,
+// e.g. the lot streaming pan (lotstream-pan, docs/28 §5.5). The stack samplers are skipped (they suspend the sim thread);
+// with --mainstack too, only the main-thread stacks run, for the whole window (they never suspend the sim thread).
+// --mainstack main|all|TID: in the native sampler window also sample the main thread (or every non-sim game thread, or one id)
+// through /threadstack right after each sim sample, into <tag>-mainstack.jsonl (docs/20 §7); never suspends the sim thread.
+// Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,mainstack.jsonl,stuck.json,houseboats.json,
+// rng.json (seed reply, sim minutes at window start and end), activity.jsonl (every Sim's interaction per 30 s check; rng-compare.ts)}.
 import { spawn } from 'node:child_process';
-import { appendFileSync, createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
@@ -18,11 +25,14 @@ import { focusGame } from './focus-game.ts';
 import { endlessJob } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
+if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'profile');
 mkdirSync(OUT, { recursive: true });
+const reproSteps: any[] | undefined = values.repro ? (JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[]).find(r => r.id === values.repro)?.steps : [];
+if (!reproSteps) throw new Error(`--repro: no entry ${values.repro} in tools/harness/repros.json`);
 const mins = Number(values.minutes), secs = mins * 60, pre = join(OUT, `${values.tag}`);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
@@ -39,6 +49,14 @@ console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
 const alive = watchGame();
 console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fps capped, numbers not comparable)'}`);
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+const rng: any = { seed: values.seed === undefined ? null : Number(values.seed), reply: null, simMinutes: {} };
+if (rng.seed !== null) {
+  const r = await ag('seed_rng', { seed: rng.seed });
+  if (!r.ok) throw new Error(`seed_rng failed: ${r.error}`); // agent without seed_rng: a seeded run would be unseeded
+  rng.reply = r.result;
+  console.log(`${stamp()} seed_rng: ${JSON.stringify(r.result)}`);
+}
+rng.simMinutes.start = (await ag('time')).result?.minutes_total ?? null;
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
@@ -56,11 +74,22 @@ const toggler = (async () => {
   for (let i = 0, on = true; i * Number(values.slice) * 60 < secs; i++, on = !on) {
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
-    const patchNames = abNames.filter(n => !nativeNames.includes(n));
+    const patchNames = abNames.filter(n => !nativeNames.includes(n) && n !== 'heightcache');
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
+    // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4 };
+    for (const n of abNames.filter(n => n in counterSwitches))
+      await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${on ? 1 : 0}`);
     slices.push({ from: (Date.now() - t0) / 1000, on });
     console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'}`);
+  }
+})();
+const reproRun = (async () => {
+  for (const s of reproSteps) {
+    const r = await ag(s.cmd, s.args);
+    console.log(`${stamp()} repro ${values.repro} step ${s.cmd}: ${JSON.stringify(r).slice(0, 200)}`);
+    if (s.waitS) await sleep(s.waitS * 1000);
   }
 })();
 // Stuck Sims, as watchdog.ts judges them: same spot and interaction for 6 checks (3 min), or routing without moving for 3.
@@ -70,6 +99,7 @@ const stuck: any[] = [];
 async function checkStuck() {
   const r = await ag('sims_activity');
   if (!r.ok) return;
+  appendFileSync(`${pre}-activity.jsonl`, JSON.stringify({ t: Date.now() - t0, sims: r.result.map((s: any) => [s.name, s.interaction]) }) + '\n');
   const moved: Record<string, string> = (await ag('patches')).result?.moved ?? {}; // every Sim a shortcut moved
   for (const sim of r.result) {
     const key = `${sim.x},${sim.z},${sim.interaction},${sim.routing}`;
@@ -83,6 +113,7 @@ async function checkStuck() {
   }
 }
 writeFileSync(`${pre}-upkeep.log`, '');
+writeFileSync(`${pre}-activity.jsonl`, '');
 const upkeep = (async () => {
   while (Date.now() - t0 < secs * 1000) {
     const k = await ag('keep_alive', { threshold: -50 }); await ag('decline_requests');
@@ -98,19 +129,45 @@ const run = (args: string[], file: string) => new Promise(r => {
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
 // none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
-const window = abNames.length || values.taskstall ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const window = abNames.length || values.taskstall || values.repro ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const mainSample = async (t: number) => {
+  try {
+    const r = await get(`threadstack?which=${values.mainstack}&frames=24`, 5000);
+    appendFileSync(`${pre}-mainstack.jsonl`, r.threads.filter((x: any) => x.stack).map((x: any) =>
+      JSON.stringify({ t, thread: x.thread, role: x.role, name: x.name, start: x.start, module: x.module, stack: x.stack }) + '\n').join(''));
+  } catch { /* sample lost */ }
+};
+// --repro with --mainstack: main-thread stacks only (they never suspend the sim thread), the whole window, so the repro steps are covered
+const mainOnly = !!(values.repro && values.mainstack && !abNames.length && !values.taskstall);
+if (values.mainstack) writeFileSync(`${pre}-mainstack.jsonl`, '');
+const mainOnlyRun = mainOnly ? (async () => {
+  console.log(`${stamp()} mainstack only (repro mode): ${secs - 15} s`);
+  for (const end = at(secs - 15); Date.now() < end;) { const t = Date.now(); await mainSample(t); await sleep(Math.max(0, 200 - (Date.now() - t))); }
+})() : Promise.resolve();
 await sleep(Math.max(0, at(60) - Date.now()));
 console.log(`${stamp()} managed sampler ${window} s`);
 if (window) await run([join(ROOT, 'tools', 'probe', 'managed-sample.mjs'), String(window), '5', `${pre}-managed.jsonl`], `${pre}-managed.txt`);
 await sleep(Math.max(0, at(secs / 2) - Date.now()));
 console.log(`${stamp()} native sampler ${window} s`);
 writeFileSync(`${pre}-simstack.jsonl`, '');
+if (values.mainstack && !window && !mainOnly) console.log(`${stamp()} mainstack skipped: no sampler window in this mode`);
+let simLost = 0; // an empty simstack.jsonl went unnoticed for 3 days (2026-10-16-sampler-hang.md): print the loss
 for (const end = Date.now() + window * 1000; Date.now() < end;) {
   const t = Date.now();
-  try { appendFileSync(`${pre}-simstack.jsonl`, JSON.stringify({ t, stack: (await get('simstack?frames=24', 5000)).stack }) + '\n'); } catch { /* sample lost */ }
+  try {
+    const r = await get('simstack?frames=24', 5000);
+    if (r.stack?.length) appendFileSync(`${pre}-simstack.jsonl`, JSON.stringify({ t, stack: r.stack }) + '\n'); // busy or not found: no line
+    else simLost++;
+  } catch { simLost++; /* sample lost */ }
+  // one line per sampled thread: the simstack {t, stack} plus thread tags; 'all' takes ~0.1 s per round (fewer sim samples, never more)
+  if (values.mainstack) await mainSample(t);
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
-await Promise.all([upkeep, profDone, toggler]);
+if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
+await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun]);
+rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
+if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ?? false;
+writeFileSync(`${pre}-rng.json`, JSON.stringify(rng, null, 1));
 if (values.taskstall) { try { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); } catch (e) { console.log(`${stamp()} taskstall stop failed: ${e.message}`); } }
 if (abNames.length) { writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));

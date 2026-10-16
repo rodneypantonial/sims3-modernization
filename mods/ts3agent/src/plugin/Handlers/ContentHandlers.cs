@@ -30,6 +30,10 @@ namespace Ts3Agent
             Dispatcher.Register("cas_parts", CasParts);
             Dispatcher.Register("wear_parts", WearParts);
             Dispatcher.Register("restore_outfit", RestoreOutfit);
+            Dispatcher.Register("spawn_sims", SpawnSims);
+            Dispatcher.Register("remove_sims", RemoveSims);
+            Dispatcher.Register("camera", CameraView);
+            Dispatcher.Register("camera_pan", CameraPan);
         }
 
         const string kWearOutfit = "Ts3AgentWear";
@@ -85,21 +89,27 @@ namespace Ts3Agent
             return list;
         }
 
-        // catalog_objects {filter?, max?}
+        // catalog_objects {filter?, max?, pack?}: counts = matched products per "pack|category|source" (repacked Store
+        // content reports as installed EA content, so pick it by pack or source there); pack = only that ProductVersion name.
         static object CatalogObjects(Args a)
         {
             string f = OriginFilter(a);
             int max = (int)a.Long("max", 50);
+            string pack = a.Str("pack", null);
             List<object> items = new List<object>();
+            Dictionary<string, object> counts = Util.Obj();
             int matched = 0;
             foreach (BuildBuyProduct p in SortedCatalog())
             {
                 ResourceKey k = p.ProductResourceKey;
                 if (f != "all" && ContentOrigin(k) != f) continue;
-                matched++;
-                if (items.Count >= max) continue;
                 Dictionary<string, object> d = Util.Obj();
                 AddOrigin(d, k);
+                if (pack != null && Convert.ToString(d["pack"]) != pack) continue;
+                matched++;
+                string ck = d["pack"] + "|" + d["category"] + "|" + d["source"];
+                counts[ck] = (counts.ContainsKey(ck) ? (int)counts[ck] : 0) + 1;
+                if (items.Count >= max) continue;
                 d["name"] = p.CatalogName;
                 d["instance"] = p.ObjectInstanceName;
                 d["price"] = (int)p.Price;
@@ -109,6 +119,7 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             r["matched"] = matched;
             r["catalog"] = Catalog().Count;
+            r["counts"] = counts;
             r["items"] = items;
             return r;
         }
@@ -219,6 +230,187 @@ namespace Ts3Agent
             r["kept"] = kept;
             r["tracked"] = created.Count;
             return r;
+        }
+
+        static List<ulong> SpawnedSims() { return DomainState<List<ulong>>("ts3agent.content.sims"); }
+
+        // Sim objects in the world vs SimDescriptions in households (M11: MB per instantiated Sim).
+        static void AddSimCounts(Dictionary<string, object> r)
+        {
+            int descs = 0;
+            foreach (Household h in Household.sHouseholdList) descs += h.AllSimDescriptions.Count;
+            r["simObjects"] = Sims3.Gameplay.Queries.GetObjects<Sim>().Length;
+            r["simDescriptions"] = descs;
+            r["tracked"] = SpawnedSims().Count;
+        }
+
+        // spawn_sims {count}: the debug `spawn <n>` command (Commands.OnSpawn) but tracked: each new YA/adult/elder joins a
+        // random non-active household with a home lot and is instantiated near its lot corner. Returns ids for remove_sims.
+        static object SpawnSims(Args a)
+        {
+            RequireLive();
+            int n = (int)a.Long("count");
+            if (n < 1 || n > 50) throw new McpException("count must be 1..50");
+            List<Household> homes = new List<Household>();
+            foreach (Household h in Household.sHouseholdList)
+                if (!h.IsActive && !h.IsSpecialHousehold && h.LotHome != null) homes.Add(h);
+            if (homes.Count == 0) throw new McpException("no non-active household with a home lot");
+            List<ulong> spawned = SpawnedSims();
+            List<object> made = new List<object>();
+            for (int i = 0; i < n; i++)
+            {
+                Household h = RandomUtil.GetRandomObjectFromList(homes);
+                SimUtils.SimCreationSpec spec = new SimUtils.SimCreationSpec();
+                spec.Age = CASAgeGenderFlags.YoungAdult | CASAgeGenderFlags.Adult | CASAgeGenderFlags.Elder;
+                spec.Normalize();
+                SimDescription sd = spec.Instantiate();
+                h.Add(sd);
+                Vector3 pos = h.LotHome.Corners[RandomUtil.GetInt(3)];
+                pos.x += RandomUtil.GetFloat(-10f, 10f);
+                pos.z += RandomUtil.GetFloat(-10f, 10f);
+                spawned.Add(sd.SimDescriptionId);
+                bool ok = sd.Instantiate(pos) != null;
+                Dictionary<string, object> d = Util.Obj();
+                d["id"] = Util.Id(sd.SimDescriptionId);
+                d["name"] = sd.FullName;
+                d["household"] = h.Name;
+                if (!ok) d["error"] = "not instantiated";
+                made.Add(d);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["sims"] = made;
+            AddSimCounts(r);
+            return r;
+        }
+
+        // remove_sims {}: remove and dispose every Sim spawn_sims made (the debug `exterminate` path, limited to ours).
+        // A Sim already gone is dropped from the list. No Sims of the save are touched.
+        static object RemoveSims(Args a)
+        {
+            List<ulong> spawned = SpawnedSims();
+            List<object> removed = new List<object>();
+            foreach (ulong id in spawned.ToArray())
+            {
+                SimDescription sd = SimDescription.Find(id);
+                spawned.Remove(id);
+                if (sd == null) { removed.Add(Util.Id(id) + " (already gone)"); continue; }
+                if (sd.Household != null) sd.Household.Remove(sd);
+                sd.Dispose(true, false, true);
+                removed.Add(Util.Id(id));
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["removed"] = removed;
+            AddSimCounts(r);
+            return r;
+        }
+
+        // camera {pos?:{x,y,z}, target?:{x,y,z}}: set the camera (CameraController.SetPositionAndTarget, what
+        // -campos/-camtarget do at load); no args = read only. Returns the current pose.
+        // M10: max zoom out (high pos.y) and pan the town, diffing commitMB and the largest free block between poses.
+        static object CameraView(Args a)
+        {
+            RequireLive();
+            if (a.Has("pos") || a.Has("target"))
+                CameraController.SetPositionAndTarget(
+                    a.Has("pos") ? Vec(a, "pos") : CameraController.GetPosition(),
+                    a.Has("target") ? Vec(a, "target") : CameraController.GetTarget());
+            Dictionary<string, object> r = Util.Obj();
+            r["pos"] = Pos(CameraController.GetPosition());
+            r["target"] = Pos(CameraController.GetTarget());
+            return r;
+        }
+
+        // camera_pan {from?:{x,y,z}, to?:{x,y,z}, lots?, height?, seconds?, dwellS?, passes?} | {stop:true}: lot streaming repro
+        // (docs/28 §5.5). Pans the in-game camera at street zoom along a path, in a game task that moves it every tick by
+        // wall-clock time (not sim time), so lot scoring sees a steady camera speed. Path: from -> to (y ignored), else the
+        // `lots` (default 8) lots nearest the lot with the most other lots within 150 m, in x order (the densest
+        // neighbourhood). height (default 25 m) above the terrain, looking ahead; seconds (default 40) of movement per pass,
+        // plus dwellS (default 0) still at every path point (lots activate only while the camera is slow, docs/28 §5.2);
+        // passes (default 4) alternate there and back. Returns at once; a new camera_pan or {stop:true} ends a running one.
+        // Only the game camera moves: the game window is never moved or focused.
+        static volatile int sPanGen;
+        static object CameraPan(Args a)
+        {
+            RequireLive();
+            int gen = ++sPanGen;
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Has("stop")) { r["stopped"] = true; return r; }
+            List<Vector3> path = a.Has("from") && a.Has("to") ? new List<Vector3> { Vec(a, "from"), Vec(a, "to") } : DenseLotPath(a.Has("lots") ? (int)a.Double("lots") : 8);
+            if (path.Count < 2) throw new McpException("no path: fewer than 2 lots in this world");
+            float height = a.Has("height") ? (float)a.Double("height") : 25f;
+            int moveMs = (int)((a.Has("seconds") ? a.Double("seconds") : 40) * 1000), dwellMs = (int)((a.Has("dwellS") ? a.Double("dwellS") : 0) * 1000);
+            int passes = a.Has("passes") ? (int)a.Double("passes") : 4;
+            float total = 0;
+            for (int i = 1; i < path.Count; i++) total += Flat(path[i] - path[i - 1]).Length();
+            if (moveMs < 1000 || passes < 1 || total < 1) throw new McpException("seconds >= 1, passes >= 1 and a path longer than 1 m needed");
+            int passMs = moveMs + dwellMs * path.Count;
+            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+            {
+                int t0 = System.Environment.TickCount;
+                while (sPanGen == gen)
+                {
+                    int el = System.Environment.TickCount - t0;
+                    if (el >= passMs * passes) break;
+                    bool back = (el / passMs) % 2 == 1;
+                    int left = el % passMs;
+                    // walk the path: dwell at each point, then move along the next segment for its share of moveMs
+                    Vector3 at = path[back ? path.Count - 1 : 0], dir = Vector3.Empty;
+                    for (int i = 0; i < path.Count; i++)
+                    {
+                        Vector3 p = path[back ? path.Count - 1 - i : i];
+                        at = p;
+                        if (left < dwellMs || i == path.Count - 1) break;
+                        left -= dwellMs;
+                        Vector3 q = path[back ? path.Count - 2 - i : i + 1], seg = Flat(q - p);
+                        int segMs = (int)(moveMs * seg.Length() / total);
+                        dir = seg;
+                        if (left < segMs) { at = p + seg * ((float)left / Math.Max(1, segMs)); break; }
+                        left -= segMs;
+                    }
+                    if (dir.Length() < 0.01f) dir = Flat(path[path.Count - 1] - path[0]) * (back ? -1f : 1f);
+                    dir = dir * (1f / Math.Max(0.01f, dir.Length()));
+                    Vector3 target = new Vector3(at.x, World.GetTerrainHeight(at.x, at.z), at.z);
+                    CameraController.SetPositionAndTarget(target - dir * height + new Vector3(0, height, 0), target);
+                    Simulator.Sleep(0);
+                }
+            }));
+            List<object> pts = new List<object>();
+            foreach (Vector3 p in path) pts.Add(Pos(p));
+            r["path"] = pts;
+            r["lengthM"] = Math.Round(total);
+            r["passMs"] = passMs;
+            r["passes"] = passes;
+            r["height"] = height;
+            return r;
+        }
+
+        static Vector3 Flat(Vector3 v) { return new Vector3(v.x, 0, v.z); }
+
+        static List<Vector3> DenseLotPath(int k)
+        {
+            List<Vector3> c = new List<Vector3>();
+            foreach (Lot l in LotManager.AllLots) if (l != null && !l.IsWorldLot) c.Add(l.GetCenterPosition());
+            if (c.Count < 2) return c;
+            int best = 0, bestN = -1;
+            for (int i = 0; i < c.Count; i++)
+            {
+                int n = 0;
+                for (int j = 0; j < c.Count; j++) if (Flat(c[j] - c[i]).Length() < 150f) n++;
+                if (n > bestN) { bestN = n; best = i; }
+            }
+            Vector3 centre = c[best];
+            c.Sort(delegate(Vector3 x, Vector3 y) { return Flat(x - centre).Length().CompareTo(Flat(y - centre).Length()); });
+            if (c.Count > k) c.RemoveRange(k, c.Count - k);
+            c.Sort(delegate(Vector3 x, Vector3 y) { return x.x.CompareTo(y.x); });
+            return c;
+        }
+
+        static Vector3 Vec(Args a, string key)
+        {
+            Dictionary<string, object> d = a.Raw(key) as Dictionary<string, object>;
+            if (d == null || !d.ContainsKey("x") || !d.ContainsKey("y") || !d.ContainsKey("z")) throw new McpException(key + " needs {x, y, z}");
+            System.Globalization.CultureInfo ic = System.Globalization.CultureInfo.InvariantCulture;
+            return new Vector3((float)Convert.ToDouble(d["x"], ic), (float)Convert.ToDouble(d["y"], ic), (float)Convert.ToDouble(d["z"], ic));
         }
 
         // A part fits when it covers the Sim's age and gender and has the same species (none = human), as OutfitUtils does.

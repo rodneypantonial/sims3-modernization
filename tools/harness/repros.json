@@ -716,6 +716,7 @@
   },
   {
     "id": "store-items-memory",
+    "memory": true,
     "bug": "Memory per store item in use (docs/17 §4 M9): placed objects and worn CAS parts",
     "fix": "measurement only; read commitMB from the probe /memory before and after each step",
     "save": "Baseline-BP",
@@ -723,15 +724,15 @@
       {
         "cmd": "catalog_objects",
         "args": {
-          "filter": "store",
+          "filter": "cc",
           "max": 20
         },
-        "note": "if empty, the repacks report as ea: pick keys by the raw category/source/pack fields"
+        "note": "Store repacks report as kLocalUserCreated (cc) in this install, mixed with CC (2026-10-15: 2,438 of 5,608 listed products; no store origin)"
       },
       {
         "cmd": "place_objects",
         "args": {
-          "filter": "store",
+          "filter": "cc",
           "count": 20
         },
         "waitS": 60
@@ -744,8 +745,8 @@
       {
         "cmd": "cas_parts",
         "args": {
-          "filter": "store",
-          "max": 5
+          "filter": "cc",
+          "max": 5, "sim": "active"
         }
       },
       {
@@ -753,7 +754,8 @@
         "args": {
           "keys": []
         },
-        "note": "fill with 5 keys from cas_parts (one per body type)",
+        "keysFromPrev": true,
+        "note": "keys of the cas_parts step above",
         "optional": true,
         "waitS": 60
       },
@@ -771,6 +773,144 @@
       "minutes": 1
     },
     "expect": "commitMB delta per placed object and per worn part; objects removed and outfits restored; no script errors"
+  },
+  {
+    "id": "sims-memory",
+    "memory": true,
+    "bug": "Memory per instantiated Sim (docs/17 §4 M11): decides the off-screen Sim mesh/texture drop idea",
+    "fix": "measurement only; read commitMB and the largest free block from the probe /memory before and after each step",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "5 per call: 20 in one call outlast the 8 s agent reply"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "5 per call: 20 in one call outlast the 8 s agent reply"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "5 per call: 20 in one call outlast the 8 s agent reply"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "5 per call: 20 in one call outlast the 8 s agent reply"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 60
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "commitMB delta per Sim (spawn) and back near baseline after remove; no script errors"
+  },
+  {
+    "id": "camera-zoom-memory",
+    "memory": true,
+    "bug": "Memory of max zoom out and panning the town (docs/17 §4 M10): distant lots stay imposters? lot streaming cost",
+    "fix": "measurement only; read commitMB and the largest free block from the probe /memory before and after each step",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "read the start pose; world is about 0..2000 on x and z"
+      },
+      {
+        "cmd": "camera",
+        "args": {
+          "pos": {
+            "x": 0,
+            "y": 600,
+            "z": 0
+          },
+          "target": {
+            "x": 1000,
+            "y": 0,
+            "z": 1000
+          }
+        },
+        "waitS": 30,
+        "note": "max zoom out over the town (the game clamps the height)"
+      },
+      {
+        "cmd": "camera",
+        "args": {
+          "pos": {
+            "x": 2000,
+            "y": 600,
+            "z": 2000
+          },
+          "target": {
+            "x": 1000,
+            "y": 0,
+            "z": 1000
+          }
+        },
+        "waitS": 30,
+        "note": "pan to the far corner"
+      },
+      {
+        "cmd": "camera",
+        "args": {
+          "pos": {
+            "x": 2000,
+            "y": 600,
+            "z": 0
+          },
+          "target": {
+            "x": 1000,
+            "y": 0,
+            "z": 1000
+          }
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "camera",
+        "args": {
+          "pos": {
+            "x": 0,
+            "y": 600,
+            "z": 2000
+          },
+          "target": {
+            "x": 1000,
+            "y": 0,
+            "z": 1000
+          }
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "commitMB and largest free block per pose; growth while panning = lot streaming cost"
   },
   {
     "id": "bp-overwatch-stuckcheck",
@@ -1139,5 +1279,606 @@
       312.4,
       1497.0
     ]
+  },
+  {
+    "id": "lotstream-pan",
+    "bug": "Lot streaming cost while panning at street zoom across a dense neighbourhood (docs/28 §5.5, G13; extends M10 camera-zoom-memory): ms per lot add on the sim thread, adds per RunJobs pass, main-thread scoring",
+    "fix": "measurement only: ts3native [LotStream] Enabled=1 (counters v19, ts3native-lotstream.jsonl); run under profile-world.ts --repro for the per-second lot columns; S3SS LotStreamingOptimizations on vs off (queue s3ssToml)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "start pose, for the log"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 4
+        },
+        "waitS": 165,
+        "note": "steady pan through the 8 lots around the densest lot, there and back twice (160 s)"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "dwellS": 3,
+          "passes": 2
+        },
+        "waitS": 132,
+        "note": "same path with 3 s still at each lot, in case the camera speed threshold blocks activations while moving (128 s)"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "lotAdds and lotSetActive > 0 during the pan; per-second lotAddMaxMs / pumpMaxMs tell whether lot streaming is a stutter source (a few ms: no, N16/E8 close; tens of ms: time-budgeted pump candidate); no script errors, the game window is never moved or focused"
+  },
+  {
+    "id": "verify-moodlets",
+    "bug": "Moodlet add/remove rebuilds the buff grid through UI ICs on the sim thread while the main thread draws the window tree (docs/43 M-UI5, docs/47 R1)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "vf thread-role counters show which thread runs the window ICs and the draw; no script errors"
+  },
+  {
+    "id": "verify-outfits",
+    "bug": "Bulk outfit change: SimBuilder builds run through the SimService on the main thread with no time budget (docs/42 §1, CAS2)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "athletic"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "everyday"
+        },
+        "waitS": 30
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "six Sims change and change back; vf costs show SimService_Update time per frame on main; main-thread stacks in SimBuilder; no sim-thread samples in BuildStep"
+  },
+  {
+    "id": "verify-cas",
+    "bug": "CAS open with a category fill: part cache scan, preset parsing, UI image textures (docs/42 §1, docs/43 §1, docs/39 GetKeyList)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "CAS opens, fills hair, closes back to live mode; vf races counters for GetKeyList during registration and pending-texture hand-offs"
+  },
+  {
+    "id": "verify-thumbs-save",
+    "bug": "ThumbnailManager ICs (lot/household thumbnails, UpdateDirtyLotThumbnails) call IDirect3DDevice9::CreateTexture/LockRect from the sim thread with no D3DCREATE_MULTITHREADED (docs/43 §1, docs/37 §5 #3); save waits on main-thread imposter jobs (docs/44 §6)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 3,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20,
+        "note": "replies at once; the ICs run in a game task, none starts after maxS, so save_game still runs (docs/51)"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Verify-Scratch"
+        },
+        "waitS": 60,
+        "note": "a scratch save name: never the loaded Baseline save"
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "status": true
+        },
+        "waitS": 0,
+        "optional": true,
+        "note": "partial result of the thumbnails step (done, timed_out, finished, ms)"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "vf threads counters: device calls off the main thread > 0 confirms the sim-thread D3D path; save completes (save: result 0); no crash"
+  },
+  {
+    "id": "verify-pan",
+    "bug": "Lot streaming and terrain LOD swaps while panning: cell collision shape swap without a lock (docs/38 C1), lot grid rebuild race, SpeedTree cluster rebuilds (docs/34, docs/48)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "start pose, for the log"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "waitS": 85,
+        "note": "the lotstream-pan path, there and back once"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "vf races counters for cell+0x38 swap vs sim-thread height reads, lot grid rebuild thread, SpeedTree rebuild thread; lotAdds > 0"
+  },
+  {
+    "id": "verify-sweep",
+    "bug": "All verify paths in one load (bundle rule): moodlets, bulk outfit change, CAS open/fill/close, thumbnails + save, camera pan (docs/51)",
+    "fix": "measurement only (docs/51): run under profile-world.ts --repro with ts3native [Verify] (counters v21, vf*) and --mainstack main",
+    "save": "Baseline-BP",
+    "note": "the queue sets the save per job (Baseline-BP, Baseline-IP); about 5.5 min of steps",
+    "steps": [
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "athletic"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "everyday"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 3,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20,
+        "note": "replies at once; the ICs run in a game task, none starts after maxS, so save_game still runs (docs/51)"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Verify-Scratch"
+        },
+        "waitS": 60,
+        "note": "a scratch save name: never the loaded Baseline save"
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "status": true
+        },
+        "waitS": 0,
+        "optional": true,
+        "note": "partial result of the thumbnails step (done, timed_out, finished, ms)"
+      },
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "start pose, for the log"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "waitS": 85,
+        "note": "the lotstream-pan path, there and back once"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "every step answers ok; the vf counters and the main-thread stacks fill the docs/51 verdicts (tools/harness/verify-verdicts.ts)"
+  },
+  {
+    "id": "ui-motivebar-cache",
+    "bug": "MotiveBar.Update loads the moodlet icon and three background UI images (a new UI texture each) on every motive bar update, even when the moodlet is unchanged: 58 of 59 LoadUIImage samples, 0.48% managed (docs/49)",
+    "fix": "ts3fixes UiCaches.cs MotiveBarHook (switch motivebar, tuning kMotiveBarImageCache, default off): per bar and side, skip the image loads while the moodlet icon and background row are those the game's update last set; SetMinMaxValues and MotivesPanel.Dispose drop the state. A/B in one load: patches {motivebar:true} then {motivebar:false}",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "patches", "args": { "motivebar": true }, "waitS": 1 },
+      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -50 }, "waitS": 2, "note": "active Sim: Hungry moodlet on the hunger bar (negative side)" },
+      { "cmd": "set_motive", "args": { "motive": "Energy", "value": 95 }, "waitS": 2, "optional": true, "note": "positive moodlet on the energy bar" },
+      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 30, "note": "bars update with the same moodlets: motivebar_cached rises" },
+      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -90 }, "waitS": 5, "note": "Starving: new icon on the same side, one motivebar_loads" },
+      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": 100 }, "waitS": 5, "note": "moodlet gone: game's update, no image loads" },
+      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -90 }, "waitS": 10, "note": "same icon back on the same side: no new load needed" },
+      { "cmd": "patches", "waitS": 1 },
+      { "cmd": "patches", "args": { "motivebar": false }, "waitS": 30, "note": "B half: game's update every time" },
+      { "cmd": "patches", "waitS": 1 }
+    ],
+    "watch": { "kind": "counter", "counter": "motivebar_cached", "min": 1, "minutes": 2 },
+    "expect": "with the switch on: motivebar_cached >> motivebar_loads (loads only on first show, icon or polarity change); off: both flat. By eye: hunger bar moodlet icon switches Hungry -> Starving -> hidden -> Starving, tooltips match, arrows and bar length move as before; no blank icons, no script errors"
+  },
+  {
+    "id": "ui-buffgrid-inplace",
+    "bug": "SimDisplay.PopulateBuffGrid clears the moodlet grid and loads one HUDMoodletGridCell layout per moodlet on every buff change, also when only the time left changed: 30 of 36 LoadLayout samples, 0.29% managed (docs/49)",
+    "fix": "ts3fixes UiCaches.cs BuffGridHook (switch buffgrid, tuning kBuffGridInPlace, default off): same moodlets in the same order with the same polarity and icon -> the game's UpdateMoodletTimeouts on the existing cells; anything else -> the game's rebuild. A/B in one load: patches {buffgrid:true} then {buffgrid:false}",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "patches", "args": { "buffgrid": true }, "waitS": 1 },
+      { "cmd": "moodlet", "args": { "action": "add", "moodlet": "Inspired" }, "waitS": 5, "optional": true, "note": "add: rebuild" },
+      { "cmd": "moodlet", "args": { "action": "add", "moodlet": "Excited" }, "waitS": 5, "optional": true, "note": "add: rebuild" },
+      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 30, "note": "timeouts tick: buffgrid_inplace rises if the HUD reports value-only changes" },
+      { "cmd": "moodlet", "args": { "action": "remove", "moodlet": "Inspired" }, "waitS": 5, "optional": true, "note": "remove: rebuild" },
+      { "cmd": "moodlet", "args": { "action": "list" }, "waitS": 1, "note": "compare with the grid by eye: same moodlets, same order" },
+      { "cmd": "patches", "waitS": 1 },
+      { "cmd": "moodlet", "args": { "action": "remove", "moodlet": "Excited" }, "waitS": 5, "optional": true },
+      { "cmd": "patches", "args": { "buffgrid": false }, "waitS": 30, "note": "B half: game's rebuild every time" },
+      { "cmd": "patches", "waitS": 1 }
+    ],
+    "watch": { "kind": "counter", "counter": "buffgrid_rebuilds", "min": 1, "minutes": 2 },
+    "expect": "switch on: buffgrid_rebuilds counts each add/remove, buffgrid_inplace counts the rest (0 means the HUD only fires on add/remove: then the fix has nothing to save, report it). By eye: grid order and icons equal moodlet list, time-left text counts down, tooltips open on every cell; no script errors"
+  },
+  {
+    "id": "sim-name-cache",
+    "bug": "SimDescriptionCore.get_FirstName/get_LastName/get_FullName run the localized-string lookup (native FNV-64, table walk, new string) on every read: 22 of 51 GetLocalizedStringByString samples, ~0.14% managed (docs/54)",
+    "fix": "ts3fixes NameCache.cs NameCacheHook (switch namecache, tuning kSimNameCache, default off): answers cached by the stored name strings, robot check on every FullName read, cleared at world load and on locale change. Self-check Ts3Fixes.Fixes.NameCacheCheck compares off vs on for every Sim",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.NameCacheCheck" }, "waitS": 2, "note": "self-check: mismatches 0" },
+      { "cmd": "patches", "args": { "namecache": true }, "waitS": 1 },
+      { "cmd": "set_speed", "args": { "speed": "ultra" }, "waitS": 60, "note": "HUD and sim code read names: namecache_hits rises" },
+      { "cmd": "list_sims", "waitS": 2, "note": "reads every Sim's name through the getters" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.NameCacheCheck" }, "waitS": 2 },
+      { "cmd": "patches", "waitS": 1 },
+      { "cmd": "patches", "args": { "namecache": false }, "waitS": 1 }
+    ],
+    "watch": { "kind": "counter", "counter": "namecache_hits", "min": 1, "minutes": 2 },
+    "expect": "both NameCacheCheck calls: ready True, mismatches 0, sims > 0; namecache_hits >> namecache_misses after the speed step; rename a Sim in CAS (by hand, optional) and the HUD shows the new name at once"
+  },
+  {
+    "id": "verify-v22",
+    "bug": "docs/52-62 ledger rows (docs/51 I-52..I-62): Mono warm-up entries by thread, routing gate sites 13-15, object destroy, pump same pass, inline remote calls, lot add cost and managed code inside it, lot scoring max, glyph pages, XInput poll, shader creates, load pump, cursor manager overlap",
+    "fix": "measurement only (docs/51 §6): run under profile-world.ts --repro with ts3native 0.10.8 [Verify] (counters v22) and --mainstack main",
+    "save": "Baseline-BP",
+    "note": "verify-sweep plus build/buy enter and exit, 10 objects placed and removed, and a dwell pan; the queue sets the save per job; about 7.5 min of steps",
+    "steps": [
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "athletic"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "outfit_change",
+        "args": {
+          "count": 6,
+          "category": "everyday"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 3,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20,
+        "note": "replies at once; the ICs run in a game task, none starts after maxS, so save_game still runs (docs/51)"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Verify-Scratch"
+        },
+        "waitS": 60,
+        "note": "a scratch save name: never the loaded Baseline save"
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "status": true
+        },
+        "waitS": 0,
+        "optional": true,
+        "note": "partial result of the thumbnails step (done, timed_out, finished, ms)"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 15,
+        "note": "build/buy enter: lot routing rebuild 0x835110 (I-60-3)"
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 15,
+        "note": "build/buy exit 0x835240 (I-60-2)"
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "ea",
+          "count": 10
+        },
+        "waitS": 30,
+        "note": "objects on the home lot"
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 20,
+        "note": "destroys them: ObjectService_DestroyById 0x939420 by thread (I-60-4)"
+      },
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "start pose, for the log"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "waitS": 85,
+        "note": "the lotstream-pan path, there and back once"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "dwellS": 3,
+          "passes": 1
+        },
+        "waitS": 66,
+        "note": "dwell at each lot so lot scoring activates lots (lot adds, I-61-*)"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "every step answers ok; vfMono*/vfRt*/vfEv* and the v22 vfThr* keys fill the I-52..I-62 verdicts (tools/harness/verify-verdicts.ts)"
   }
 ]

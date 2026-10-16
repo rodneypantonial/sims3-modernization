@@ -1,6 +1,7 @@
 // Sim-thread stutter profiler for TS3W.exe (Steam build, SHA-256 10b2423e...0609).
 // Times what the simulation loop (MonoScriptHost::Simulate, 0xD81840) spends per iteration:
-// script tick, route searches, GC stop-the-world marking, finalizers, catch-up steps, and the four scheduler seams
+// script tick, route searches, GC stop-the-world marking, finalizers, catch-up steps, animation (two passes), locomotion,
+// render publish, and the four scheduler seams
 // (ScriptTick 0xD80BC0, TaskObjects 0xD7FC60, OneShotObjects 0xD74800, ThreadedObjects 0xD7F8B0; docs/04 F17) as
 // separate buckets, so each hitch is split by stage. S3PP's SimulatorStageProfiler detours the same prologues: turn it
 // off in Sims3Performance.ini while profiling (the byte check refuses to hook a detoured prologue).
@@ -34,7 +35,15 @@ const HOOKS = {
   Route_PlanFromPoint: [0x765240, '55 8b ec 83 e4 f0 0f 57'],
   Route_ReplanFromPosition: [0x765550, '55 8b ec 83 e4 f0 8b 0d'],
   Route_IsPointRoutable: [0x7538c0, '55 8b ec 83 e4 f0 8b 0d'],
+  // the rest of Simulate's untimed share (docs/28 G12): two animation passes (docs/22 §1: call 0xD81A70 -> SACS driver,
+  // time step, rig pose; call 0xD81C73 -> time step, rig pose 0x940430), locomotion, and the sim-to-render publish
+  animSacs: [0x571ad0, '53 56 8b f1 83 4e 28 08'],
+  animPose: [0x571b90, '83 ec 08 55 57 8b f9 8b'],
+  locomotion: [0x83ced0, '55 8b ec 83 e4 f0 81 ec'],
+  publish: [0x593590, '53 56 57 8b f1 8d 7e 48'], // triple-buffer sync (EnterCriticalSection); may nest in other stages
 };
+// sim-thread ms per stage, summed like the scheduler seams
+const EXTRA_STAGES = ['animSacs', 'animPose', 'locomotion', 'publish'];
 const ROUTE_ENTRIES = ['Route_Plan', 'Route_Replan', 'Route_PlanFromPoint', 'Route_ReplanFromPosition', 'Route_IsPointRoutable'];
 
 let cfg = { out: null, hitchMs: 50 };
@@ -52,13 +61,42 @@ function now() { qpc(qbuf); return Number(qbuf.readS64()) / ticksPerMs; }
 function blankIter() {
   return { script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0, gcForcedMs: 0, fin: 0, finRun: 0,
            steps: 0, route: 0, routeSearch: 0, routes: 0, routeFails: 0, byEntry: {},
-           taskObjects: 0, oneShot: 0, threaded: 0 };
+           taskObjects: 0, oneShot: 0, threaded: 0, animSacs: 0, animPose: 0, locomotion: 0, publish: 0 };
 }
 function blankSecond() {
   return { iters: 0, maxIterMs: 0, hitches: 0, script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0,
            gcForcedMs: 0, maxGcMarkMs: 0, fin: 0, finRun: 0, maxSteps: 0, route: 0, routeSearch: 0, routes: 0,
            routeFails: 0, maxRouteMs: 0, routeOtherThreads: 0,
-           taskObjects: 0, oneShot: 0, threaded: 0, maxTaskObjectsMs: 0 }; // new columns go last: readers use the header
+           taskObjects: 0, oneShot: 0, threaded: 0, maxTaskObjectsMs: 0,
+           animSacs: 0, animPose: 0, locomotion: 0, publish: 0,
+           // ts3native [LotStream] (docs/28 §5.5); 0 when the plugin or the section is off
+           lotAdds: 0, lotAddMs: 0, lotAddMaxMs: 0, lotAddObjs: 0, lotRemoves: 0, lotRemoveMs: 0, pumpMaxMs: 0, lotScoreMs: 0,
+           lotSetActive: 0 }; // new columns go last: readers use the header
+}
+
+// ts3native [LotStream] counters, v19 byte offsets (docs/registry.md; the names match tools/probe/agent.js nativeCounters).
+// Totals become per-second deltas; the *MaxUs fields hold the max since the last reset, so they are read and zeroed here.
+const LS_OFF = { lotAdds: 0x2cc, lotAddUs: 0x2d0, lotAddMaxUs: 0x2d4, lotAddObjs: 0x2d8, lotRemoves: 0x2e0, lotRemoveUs: 0x2e4,
+                 pumpMaxUs: 0x2f4, lotScoreUs: 0x304, lotSetOn: 0x310, lotSetOff: 0x314 };
+let lsCounters = null, lsPrev = null; // undefined once known absent
+function lotStreamSecond() {
+  if (lsCounters === undefined) return;
+  if (lsCounters === null) {
+    const m = Process.findModuleByName('ts3native.asi');
+    const c = m === null ? null : m.findExportByName('ts3native_counters');
+    lsCounters = c !== null && c.readS32() >= 19 && (c.add(0x2c4).readS32() & 31) === 31 ? c : undefined; // lsReady: all five hooks
+    console.log(`[ts3prof] ts3native lot stream counters ${lsCounters ? 'read every second' : 'not active (columns stay 0)'}`);
+    if (lsCounters === undefined) return;
+  }
+  const cur = Object.fromEntries(Object.entries(LS_OFF).map(([k, o]) => [k, lsCounters.add(o).readS32()]));
+  for (const k of ['lotAddMaxUs', 'pumpMaxUs']) lsCounters.add(LS_OFF[k]).writeS32(0);
+  if (lsPrev) {
+    const d = k => cur[k] - lsPrev[k];
+    Object.assign(sec, { lotAdds: d('lotAdds'), lotAddMs: d('lotAddUs') / 1000, lotAddMaxMs: cur.lotAddMaxUs / 1000, lotAddObjs: d('lotAddObjs'),
+      lotRemoves: d('lotRemoves'), lotRemoveMs: d('lotRemoveUs') / 1000, pumpMaxMs: cur.pumpMaxUs / 1000, lotScoreMs: d('lotScoreUs') / 1000,
+      lotSetActive: d('lotSetOn') + d('lotSetOff') });
+  } // the first read only sets the baseline (its maxima date from the game start)
+  lsPrev = cur;
 }
 let simThread = null;
 let iter = blankIter();
@@ -87,7 +125,7 @@ function endIteration(t) {
   sec.iters++;
   sec.maxIterMs = Math.max(sec.maxIterMs, wall);
   for (const k of ['script', 'gcMark', 'gcMarks', 'gcAborted', 'gcForced', 'gcForcedMs', 'fin', 'finRun',
-                   'route', 'routeSearch', 'routes', 'routeFails', 'taskObjects', 'oneShot', 'threaded']) sec[k] += iter[k];
+                   'route', 'routeSearch', 'routes', 'routeFails', 'taskObjects', 'oneShot', 'threaded', ...EXTRA_STAGES]) sec[k] += iter[k];
   sec.maxSteps = Math.max(sec.maxSteps, iter.steps);
   if (wall >= cfg.hitchMs) {
     sec.hitches++;
@@ -102,6 +140,7 @@ function endIteration(t) {
 }
 
 function flushSecond(t) {
+  lotStreamSecond();
   const row = Object.values(sec).map(v => round(v)).concat([round(t)]);
   csv.write(row.join(',') + '\n');
   csv.flush();
@@ -110,7 +149,8 @@ function flushSecond(t) {
       `routes ${sec.routes} (${sec.routeFails} failed, ${round(sec.route)} ms), gc ${round(sec.gcMark)} ms ` +
       `(${sec.gcAborted} aborted, ${sec.gcForced} forced ${round(sec.gcForcedMs)} ms), fin ${round(sec.fin)} ms, ` +
       `stages tick ${round(sec.script)} task ${round(sec.taskObjects)} (max ${round(sec.maxTaskObjectsMs)}) ` +
-      `oneShot ${round(sec.oneShot)} threaded ${round(sec.threaded)} ms`);
+      `oneShot ${round(sec.oneShot)} threaded ${round(sec.threaded)} anim ${round(sec.animSacs)}+${round(sec.animPose)} ` +
+      `locomotion ${round(sec.locomotion)} publish ${round(sec.publish)} ms`);
   sec = blankSecond();
   secStart = t;
 }
@@ -176,6 +216,12 @@ function install() {
       if (Process.getCurrentThreadId() !== simThread) return;
       iter[stage] += ms;
       if (stage === 'taskObjects') sec.maxTaskObjectsMs = Math.max(sec.maxTaskObjectsMs, ms);
+    });
+  }
+
+  for (const stage of EXTRA_STAGES) {
+    timed(stage, function (ms) {
+      if (Process.getCurrentThreadId() === simThread) iter[stage] += ms;
     });
   }
 

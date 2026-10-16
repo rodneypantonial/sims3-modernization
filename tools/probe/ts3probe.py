@@ -72,6 +72,9 @@ class Probe:
         self.events_file = open(self.out / 'events.jsonl', 'a', encoding='utf-8')
         self.lock = threading.Lock()
         self.agent_lock = threading.Lock()
+        # one stack sample in flight: a sampler whose client timed out must not queue more calls in front of agentstatus
+        # (the queued backlog read as a dead game, 2026-10-16-sampler-hang.md)
+        self.sample_lock = threading.Lock()
         self.script_errors = []
         self.alive = True
 
@@ -160,8 +163,8 @@ class Probe:
                 time.sleep(self.args.memory_interval)
 
     def keep_window_place(self):
-        """Puts the game window where it was last time (the game centers it on start), so tests can run beside other work.
-        The position is saved whenever it changes; on start the window is moved back while it still sits where the game put it."""
+        """Records where Rodney puts the game window (probe-out/window.json) whenever he moves it, and moves a newly started
+        game window there once, without focusing it (Rodney 2026-10-16 evening: runs go unattended; still never focus)."""
         import ctypes
         from ctypes import wintypes
         u = ctypes.windll.user32
@@ -189,11 +192,13 @@ class Probe:
                 if first is None:
                     first, t0 = (x, y), time.time()
                     print(f'[ts3probe] game window at {first}; saved place {saved}', flush=True)
-                if saved and (x, y) == first and (x, y) != (saved['x'], saved['y']) and time.time() - t0 < 120:
-                    u.SetWindowPos(h, 0, saved['x'], saved['y'], 0, 0, 0x1 | 0x4 | 0x10)  # NOSIZE | NOZORDER | NOACTIVATE
-                    print(f'[ts3probe] moved game window to {saved}', flush=True)
-                elif (x, y) != first and (not saved or (x, y) != (saved['x'], saved['y'])):
-                    saved = {'x': x, 'y': y}  # moved by Rodney (or by us, then equal to saved): remember it
+                    if saved and first != (saved['x'], saved['y']):
+                        # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE: position only, no focus, no z-order change
+                        if u.SetWindowPos(h, None, saved['x'], saved['y'], 0, 0, 0x0001 | 0x0004 | 0x0010):
+                            first = (saved['x'], saved['y'])
+                            print(f'[ts3probe] moved game window to saved place {saved}', flush=True)
+                if (x, y) != first and (not saved or (x, y) != (saved['x'], saved['y'])):
+                    saved = {'x': x, 'y': y}  # moved by Rodney: remember it
                     place.parent.mkdir(exist_ok=True)
                     place.write_text(json.dumps(saved))
                     print(f'[ts3probe] remembered game window place {saved}', flush=True)
@@ -226,8 +231,11 @@ class Probe:
         if path == 'net':  # network calls per API and target (start=1 hooks them once); does the game go online while playing?
             return rpc.net(q.get('start') == '1')
         if path == 'native':  # ts3native.asi counters (route cache, worker, budget), null when the plugin is not loaded; routeworker=0|1 / routebudget=0|1 / routeasync=0|1 flip them at runtime
-            sw = [q.get(k) for k in ('routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps')]
+            sw = [q.get(k) for k in ('routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps', 'vfresetmax')]  # vfresetmax=1: zero the [Verify] maxima after this read
             return rpc.native_counters(*[int(v) if v in ('0', '1') else None for v in sw])
+        if path == 'nativeexport':  # one exported ts3native DWORD: name=ts3native_footprintMode [&value=0|1]
+            v = q.get('value')
+            return rpc.native_export(q.get('name', ''), int(v) if v in ('0', '1') else None, int(q.get('offset', '0'), 0))
         if path == 'routelock':  # routing-lock hold/wait and plan overlap (docs/18 step 1a); start=1 hooks once, stop=1 unhooks
             return rpc.route_lock(q.get('start') == '1', q.get('stop') == '1')
         if path == 'taskstall':  # scheduler-stage stalls >= ms with task + managed stack samples (docs/04 F17); start=1 hooks, stop=1 unhooks.
@@ -237,12 +245,30 @@ class Probe:
             return rpc.interp_stack(int(q.get('frames', 64)))
         if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)
             return rpc.interp_frames(int(q.get('frames', 32)))
+        if path in ('simstack', 'threadstack') and not self.sample_lock.acquire(blocking=False):
+            return {'error': 'busy: previous stack sample still running', 'thread': None, 'stack': [], 'threads': []}
         if path == 'simstack':  # sim thread only; safe for frequent use (the all-thread /threads is not)
-            r = rpc.sim_stack(int(q.get('frames', 24)))
-            r['stack'] = self.symbols.stack([f.rstrip('?') for f in r['stack']])
-            return r
+            try:
+                r = rpc.sim_stack(int(q.get('frames', 24)))
+                r['stack'] = self.symbols.stack([f.rstrip('?') for f in r['stack']])
+                return r
+            finally:
+                self.sample_lock.release()
+        if path == 'threadstack':  # which=main (default) | <thread id> | all (every non-sim game thread, tagged); never the sim thread
+            try:
+                r = rpc.thread_stacks(q.get('which', 'main'), int(q.get('frames', 24)))
+                for t in r['threads']:
+                    if t['stack']:
+                        t['stack'] = self.symbols.stack([f.rstrip('?') for f in t['stack']])
+                return r
+            finally:
+                self.sample_lock.release()
         if path == 'memory':
             return rpc.address_space()
+        if path == 'allocations':  # allocations >= minMB grouped by AllocationBase, with type and image owner (docs/08 M9), read-only
+            return rpc.allocations(float(q.get('minMB', 32)))
+        if path == 'mallochook':  # first 5 bytes of MSVCR80!malloc/free and the module a jmp there leads to (S3SS mimalloc), read-only
+            return rpc.malloc_hook()
         if path == 'rescache':  # resource cache budget and fill (docs/08 phase 0), read-only
             return rpc.res_cache()
         if path == 'modules':

@@ -98,6 +98,8 @@ Planned: variants `nocc` / `cc` / `store` × `CacheBudget` 200/50/0, recording l
 | M7 | Optional: the same CC as `.package` vs as a `.dbc` bundle | Confirms "sims3pack causes lag" or not | Only if we have non-store `.sims3pack` test files (none in the backup: `dcdb0.dbc` is 11 KB) |
 | M8 | `store` + S3PP (one change) | Measured S3PP gain on load time and address space | After M1–M3 for `store` |
 | M9 | Store items **in use**: buy and place 20 objects, wear 20 CAS parts | MB per used item (docs/08 open item) | Agent buys and places; diff `commitMB` |
+| M10 | **Zoom out and pan**: camera to max zoom, pan across the town, back | Do distant lots stay imposters, and how much address space does lot streaming add while panning (inferred: little, imposters + streaming radius) | New agent action (zoom max, pan route, return) + `repros.json` entry; `/memory` CSV: `commitMB` and largest free block before, during, after |
+| M11 | **MB per instantiated Sim**: spawn 20 Sims on the active lot, then remove them | Decides the "off-screen Sims without meshes/textures" idea (keep skeleton, drop render data, rebuild on screen): worth it only if MB per Sim is large; textures are already in VRAM via DXVK, CAS part data is shared | New agent action (spawn N, remove N) + `repros.json` entry; diff `commitMB` per Sim; also count `Sim` objects vs `SimDescription`s in the world (are off-lot NPCs instantiated at all?) |
 
 Exit criterion: we know whether package count (M4) or resource count drives load time and lookup cost, how much STBL and CAS data cost in MB (M5), and S3PP's real gain (M8). Then candidates 4 and 5 are either justified or dropped.
 

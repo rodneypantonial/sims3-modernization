@@ -14,6 +14,7 @@ Paths below use placeholders: `<SteamLibrary>` is your Steam library (default `C
 | .NET Framework 4.x C# compiler | `C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe` (ships with Windows) | `ts3fixes`, `ts3agent` (C# 5, compiled against the game's own DLLs) |
 | MSVC x86 build tools | Visual Studio 2022 (Build Tools, Community or Professional) with "Desktop development with C++" | `ts3native` (`build.cmd` calls `vcvars32.bat` and `cl`) |
 | Python 3 + `frida` 17 + `frida-tools` | `pip install "frida>=17,<18" frida-tools` | probe server and profilers (testing only) |
+| Python 3.10+ + `unicorn` 2 + `capstone` 5 | `pip install unicorn capstone` | offline function tests on your exe copy: `python tools/emu/run.py --self-check` (docs/63) |
 | Git Bash | | the few `.sh` helpers (`tools/harness/restart-*.sh`, `tools/ghidra/run-headless.sh`) |
 | Optional: Ghidra 12 + JDK 21, `ilspycmd`, REA | | reverse engineering only (see docs/04 "How this was done") |
 

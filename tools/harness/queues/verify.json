@@ -1,0 +1,10 @@
+[
+  { "id": "bp-verify", "note": "docs/51: inference ledger probes, BP, one load: [Verify] all groups (0.10.8, vf counters v22, maxima reset after the load; ThreadedObjects stays 0 so S3PP keeps its stage profiler, docs/68), main-thread stacks, verify-v22 (verify-sweep plus build/buy enter/exit, objects placed and removed, dwell pan)",
+    "asi": "game-copy/ts3native.asi.verify", "save": "Baseline-BP", "minCounters": 22,
+    "ini": { "Verify.Enabled": 1, "Verify.Threads": 1, "Verify.Races": 1, "Verify.Costs": 1, "Verify.Memory": 1, "Verify.ThreadedObjects": 0 },
+    "run": { "profile": { "minutes": 8, "repro": "verify-v22", "mainstack": "main" } }, "timeoutMin": 20 },
+  { "id": "ip-verify", "note": "docs/51: the same in IP (second world for terrain LOD, water and lot streaming)",
+    "asi": "game-copy/ts3native.asi.verify", "save": "Baseline-IP", "minCounters": 22,
+    "ini": { "Verify.Enabled": 1, "Verify.Threads": 1, "Verify.Races": 1, "Verify.Costs": 1, "Verify.Memory": 1, "Verify.ThreadedObjects": 0 },
+    "run": { "profile": { "minutes": 8, "repro": "verify-v22", "mainstack": "main" } }, "timeoutMin": 20 }
+]

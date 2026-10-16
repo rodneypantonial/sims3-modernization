@@ -1,0 +1,14 @@
+[
+  { "id": "menu-tested", "note": "address space at the main menu, tested build, repo ini", "asi": "tested", "save": "menu",
+    "run": { "menuMemory": { "waitS": 60 } }, "timeoutMin": 15 },
+  { "id": "menu-cc-as-is", "note": "M9 catalog cost at the menu: CC/Store set as installed (caches cleared first, so both runs are cold)", "asi": "tested", "save": "menu",
+    "content": "as-is", "fixes": { "install": ["cache-clear"] }, "run": { "menuMemory": { "waitS": 60 } }, "timeoutMin": 15 },
+  { "id": "menu-cc-none", "note": "M9 catalog cost at the menu: CC/Store set moved out of Mods", "asi": "tested", "save": "menu",
+    "content": "no-cc", "run": { "menuMemory": { "waitS": 60 } }, "timeoutMin": 15 },
+  { "id": "heightcache-route", "note": "height cache build on the async route repro", "asi": "game-copy/ts3native.asi.heightcache",
+    "ini": { "HeightCache.Enabled": 1 }, "run": { "repro": "bp-route-async" }, "timeoutMin": 45 },
+  { "id": "alloc-soak", "note": "[Alloc] crash suspect: 30 min at speed 3", "asi": "tested", "ini": { "Alloc.Enabled": 1 },
+    "save": "Baseline-BP", "run": { "soak": { "minutes": 30, "speed": "ultra" } }, "timeoutMin": 50 },
+  { "id": "save-flush-matrix", "note": "save matrix with [SaveFlush] on", "asi": "tested", "ini": { "SaveFlush.Enabled": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--cases", "control,identical"] }, "timeoutMin": 60 }
+]

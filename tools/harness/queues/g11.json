@@ -1,0 +1,6 @@
+[
+  { "id": "bp-routelock", "note": "H6 S1 / G11: routing-lock free window, worker and async off; go needs >= 15 ms/s movable (docs/18)", "asi": "tested",
+    "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 }, "save": "Baseline-BP", "run": { "routelock": { "minutes": 10 } }, "timeoutMin": 30 },
+  { "id": "ip-routelock", "note": "H6 S1 / G11: same on Isla Paradiso; go needs >= 30 ms/s movable", "asi": "tested",
+    "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 }, "save": "Baseline-IP", "run": { "routelock": { "minutes": 10 } }, "timeoutMin": 30 }
+]

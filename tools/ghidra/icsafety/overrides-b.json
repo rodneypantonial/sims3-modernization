@@ -1,0 +1,16 @@
+{
+ "Audio::Audio_StartSoundImpl": {"verdict":"PROXY","confidence":"medium","note":"host +0x118 match is a false positive: the +0x118 call is on the audio object, not the script host [verified decompile]; writes the audio command buffer (docs/35: sim-side producer, no lock)"},
+ "Audio::Audio_StartSoundMP3Impl": {"verdict":"PROXY","confidence":"medium","note":"same body pattern as StartSound: +0x118 on the audio object [inferred from StartSound]; audio command buffer producer (docs/35)"},
+ "Audio::Audio_CreateSoundImpl": {"verdict":"PROXY","confidence":"medium","note":"same body pattern as StartSound [inferred]; audio command buffer producer (docs/35)"},
+ "Audio::Audio_StartSoundAtPositionImpl": {"verdict":"PROXY","confidence":"medium","note":"same body pattern as StartSound [inferred]; positional lookups read lot/room state (docs/35 2.1)"},
+ "Reflection": {"verdict":"UNSAFE","confidence":"medium","note":"Mono reflection/metadata; docs/30 keeps reflection and class init off the worker (loader locks, class init runs script)"},
+ "CASUtils::CASUtils_SimBuilderBuildModelImpl": {"note":"docs/42: posts message 0x30290F0 and sleeps the task until the main-thread build completes [verified]"},
+ "CASUtils::CASUtils_SimBuilderProcessModelImpl": {"note":"docs/42: posts message 0x30290F0 and sleeps the task [verified]"},
+ "CASUtils::CASUtils_SetOutfitInGameObjectImpl": {"note":"docs/42: posts and waits on the script task [verified]"},
+ "CASUtils::CASUtils_SetOutfitInGameObjectDelayedImpl": {"note":"docs/42: posts and waits on the script task [verified]"},
+ "CASUtils::CASUtils_SimBuilderShareOutfitImpl": {"note":"docs/43: reaches ThumbnailManager_CreateThumbnailTexture (CreateTexture + lock/fill on the calling thread, no owner check) [verified]"},
+ "DownloadContent::DownloadContent_SaveCustomSim": {"note":"docs/43: thumbnail texture created on the calling thread [verified path]"},
+ "LocalizedStringService": {"note":"docs/54: lookup walks every string table with no lock; a table-list rebuild on another thread would race it"},
+ "EAText": {"note":"docs/54: formatting and layout on the caller; glyph cache has its own lock"},
+ "Slots": {"note":"boundary class: slot queries on game objects; may overlap the Objects set of T-IC-a"}
+}

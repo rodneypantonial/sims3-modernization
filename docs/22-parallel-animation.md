@@ -94,6 +94,36 @@ Both passes share the same shape:
 1. **Skip Evaluate for actors that need no pose** [inferred]: off-screen, not moving, no root-motion track. Keep Advance every tick so clip events, track completion and SACS timing are unchanged. Root motion (rig state `+0x60..+0x7C`, extracted in step 6) feeds movement, so actors with a root-motion track or a routing component must still evaluate. This is a serial patch around step 6 with the same ceiling as the parallel version and none of the threading risk.
 2. Make the idle path cheaper. Resting actors still pay two list walks, two `0x942C00` calls, `0x93E190`/`0x582830` and the `0x940430` prologue every tick. Only measurement (§6) can say whether this matters.
 
+### 5.1a Static check of alternative 1 (2026-10-15): dropped as specified
+
+Ghidra headless, read-only, on a copy of the H3 project. No game run, no build.
+
+- **An off-screen signal exists** [verified]. `IC_World_IsObjectOnScreenImpl` (`0x78AAB0`, script `World.IsObjectOnScreen`, so callable on the sim thread) works in three steps:
+  - It gets the camera through `0x96B850` (`DAT_011E9400` -> `+0x14` -> `+0x8C` -> `+0xC` -> `0x9613F0`).
+  - It takes the object position from `0x959000` (transform component `DAT_011E9158`) and the bounding sphere from component `DAT_011E8FC4` (`0x949DB0`, `0x68BBB0`).
+  - It tests that sphere against the camera's frustum planes in `0x68D130`: about 30 multiply-adds, no locks.
+  - Whether the sim-side frustum is the current or the previous frame was not checked.
+- **Evaluate runs only for root-motion tracks** [verified gate, inferred meaning]. The Evaluate block in step 6 needs `cStack_46a9`, the OR of every track's `vtable+0x2C` in `0x583D00`. Its meaning is inferred: the clip flag is bit 1, and the only use of the result is the root delta (next point).
+  - For ClipController, `+0x2C` is `0x5681C0` (`mov al,[ecx+0x5FB]; ret`).
+  - `+0x5FB` is written only when a clip is assigned (`0x569C50`), from clip flag bit 1 (`0x57A690() >> 1 & 1`).
+  - So idle actors already skip Evaluate, through the idle early exit or because none of their tracks has that flag.
+- **The evaluated pose is thrown away** [verified]:
+  - The RigPose comes from the pool `0x5748A0` and is initialised by `0x574F50`, which is only the constructor (identity fill).
+  - It is filled by the graph root's `vtable+8` (`0x54C570`).
+  - Only the root delta (pose `+0x10..+0x2C` -> rig state `+0x60..+0x7C`) is kept. The pose is released by `0x55CFA0` in the same tick.
+  - The epilogue clears `+0x60..+0x7C`, so the delta only feeds this tick's transform publish (`0x959670`).
+  - This Evaluate does not build the drawn pose. Where the drawn pose is built (probably the render side) is not known [inferred].
+- **Consequence**:
+  - Skipping Evaluate for an actor that reaches it drops that tick's root motion, so the Sim's simulated position drifts (routing, slots, saves), on screen or not [inferred from the data flow].
+  - Running it every Nth tick keeps only the last tick's delta, unless the graph's delta covers the whole interval (unverified).
+  - So alternative 1 as specified either saves nothing (idle actors) or changes sim state (moving actors). **Dropped.**
+- **EA already has a one-shot skip** [verified]: bit 14 (`0x4000`) of `this+0x2C` skips the whole Evaluate block and is cleared on every call. Its setter was not looked up.
+- **Next options**:
+  - the §6 timing split first (drop the family if Evaluate is small);
+  - alternative 2 (the idle prologue);
+  - or find the drawn-pose path and apply the off-screen skip there.
+- Not checked: side effects of the graph node `vtable+8` evaluators (a pose cache, for example) and the `+0x2C` getters of the other controllers (`0x565B10` and others).
+
 ## 6. What to measure before any build
 
 Probe-only, in a test run (not done here):
@@ -103,3 +133,34 @@ Probe-only, in a test run (not done here):
 - clip events fired per second through `0x568710`.
 
 If Evaluate is under ~1% of sim-thread time, drop the idea. If it is above ~2%, prototype alternative 5.1 first.
+
+## 7. H3: callee sweep to depth 3 and controller vtables (2026-10-15)
+
+**Method.** Ghidra headless on the copy project `game-copy/ghidra-h1`, read-only: the call tree of `0x940430` to depth 3 (99 functions); every caller of the controller constructor `0x565A80` and the vtables they install (54 primary and secondary vtables in `0xFC1AA0-0xFC2548`, plus TrackManager `0xFCBA70`); slots `+0x8` (Advance) and `+0xC` (Evaluate) of each, to depth 1 (~100 more functions). Each function was tagged by pattern (Mono/IC names, event dispatchers `0x568710`/`0x5689A0`/`0x583AB0`/`0x805870`, allocators, `LOCK()` increments, plain `x[1]++`, global writes, routing range `0x82xxxx-0x83xxxx`, render publish) and the hits were read. Decompiled output stayed under `game-copy/`.
+
+### 7.1 Classification of the `0x940430` tree
+
+| Class | Functions | Notes |
+|---|---|---|
+| **Pure pose math / per-actor reads** (worker-safe) | `0x5833A0`, `0x5826B0`, `0x54C6E0`, `0x54C5C0`/`0x54C5D0`, `0x55DA60`, `0x7F1620`, `0x580430`, `0x5EB7C0`, `0x935770`/`0x935820` (component lookup by type), `0x554EE0`/`0x554D10`/`0x554DB0` (pose blend), `0x54C570` (root delta), `0x959170`, `0x575650` | No global writes, no refcounts, no calls out [verified] |
+| **Evaluate graph build** (per-actor arena) | `0x54C720` (inits a 0x4000-byte frame arena inside the 18 KB stack frame, `auStack_4350`), `0x5833C0` -> controller `vtable+0xC`, `0x54C770` (allocates a pose-graph node from that arena, factory looked up by type hash in the table `DAT_011CD124`), ClipController Evaluate `0x5695F0` (emits clip, time, weight and mask nodes `0x54DCD0..0x54DEF0`) | The arena lives on the caller's stack, so it is thread-private when each worker has its own stack [verified layout; factory table read-only during play inferred]. `IC_GameUtils_GetFrameNumber` and `IC_StreamHost_Flush` appear only as native function-pointer arguments to the arena init `0x4E85B0` (names from the IC map); they are not Mono calls [verified] |
+| **Pose build** | `0x574F50` (RigPose from the node graph, node vtable calls), pool `0x5748A0` (`EnterCriticalSection(0x11CD8D8)`) | Thread-safe through the pool lock [verified] |
+| **Shared refcounts, atomic** | resource handles in `0x56E6E0`, `0x56EEA0`, `0x5705B0`, `0x565BB0`, `0x568900`, `0x568E10`, `0x55DFF0`, `0x55E040`, `0x7460F0` all use `LOCK`-prefixed inc/dec | Correction to §3 row 2: the resource-handle refcounts (clips, rig data) **are atomic**. The plain `x[1]++` ones (`0x567A50`, `0x566650`, `0x566840`, `0x5665F0`, `0x56BF10`, `0xCF3C70`, `0x566FB0`, `0x56FE70`, `0x56BFA0`, and the self-AddRef `*(this-0x24)++` in `0x56E6E0`/`0x5705B0`/`0x56A670`) are on controllers and tracks, which belong to one actor's TrackManager [verified split; "one owner" inferred] |
+| **Non-atomic global counters / statics** | controller id `_DAT_0114F590++` in `0x565A80` (Advance only); Evaluate `0x566070` writes `_DAT_011CD7D8`; lazy statics `_DAT_011DC4A0` (step 7) and `DAT_01157D28` (`0x5EC9E0`, step 8, first-use init that allocates via `0x5EC820`) | Only `0x566070` and `_DAT_011DC4A0` sit in the parallel slice; both are fixable (thread-local / pre-initialise) [verified writes] |
+| **Clip events / script queue** | Advance slots only: ClipController `0x568E10` -> `0x5689A0` -> `0x568710`; `0x569070`; TrackManager `0x583AB0`; SACS `0x805870` -> EventQueue push `0x742710` | No event dispatcher is reachable from any `+0xC` Evaluate slot or from `0x5833C0`/`0x574F50` [verified to depth 1 under each slot] |
+| **Routing / locomotion** | `0x947590` -> `0x83B080`, `0x829A60`, `0x833560`, `0x8321F0` (allocates), `0x82AD60`, `0x82CBF0`, `0x82A720`, `0x8297C0`, `0x829840` | Step 4 only, before Evaluate [verified] |
+| **Render publish** | `0x959670` -> `0x958430`/`0x958560` -> `0x692F70` -> `0x593E60` | `0x593E60` takes the critical section at `this+0xD0` around the message-buffer push, so the publish is **lock-safe** (§3 row 9 said "not checked"). It stays serial for order (parent before child) [verified lock; order inferred] |
+| **Allocates** | `0x583D00` (TracksToRemove scratch, `0x4E3F90`), `0x5748A0` (RigPose pool), `0x5EC820`, `0x580BF0` (epilogue `0x5813C0`), routing `0x8321F0`; arena `0x4E69D0` is the locked EA allocator | Locked; contention only |
+| **Mono / scheduler** | none | No `mono_*` callee and no scheduler call anywhere in the depth-3 tree or under the controller slots [verified to that depth] |
+
+### 7.2 One new hazard in Evaluate: cross-actor reads
+
+The controller with vtable `0xFC2068` (constructor `0x56E580`; Evaluate `0x56EEA0`, 352 lines of quaternion math) looks up a component of **another object** (`0x935770(DAT_011E9138)` on a target, then its transform through `vtable+0x10/+0x3C`) during Evaluate. This looks like a look-at / aim or attach controller [inferred from the math and the lookup]. Its result depends on the target's transform, which another worker may be writing in the same phase. So those actors must either evaluate serially after the parallel batch, or read the target's previous-tick transform (EA's own order may already give that, unverified).
+
+### 7.3 Verdict after H3
+
+- **Feasible with a phase split, unchanged in shape** (§4): A serial (Advance + events + routing notify), B parallel (`0x54C720` + `0x5833C0` + `0x574F50` + root-motion math), C serial (publish, epilogue `0x5813C0`, post-loop work).
+- **Phase B is cleaner than §3 assumed** [verified]: no events, no Mono, no routing; arena on the stack; pool and render buffer locked; shared refcounts atomic. Remaining fixes for B: make `_DAT_011CD7D8` thread-local or skip it, pre-initialise `_DAT_011DC4A0`, keep actors with a `0xFC2068` controller (and any other controller whose Evaluate calls `0x935770`) in a serial tail.
+- **Must stay serial:** all of Advance (`0x583D00`, clip and SACS events, controller creation with the id counter, non-atomic controller refcounts), the routing notify `0x947590`, the transform publish in list order, the epilogue, and the post-loop track/deferred-id drains. Event *deferral* is not needed for the split, because events fire only in Phase A.
+- **Still a reimplementation:** B sits in the middle of `0x940430`'s single 18 KB frame, so the split needs a C++ rewrite of `0x940430` (not a hook). Effort L-XL as in §4.
+- **Movable estimate** [inferred, unmeasured]: Phase B is the only movable part, at most about half of the ~33 ms/s family (~16 ms/s); after fork/join and pool contention, **~5-15 ms/s** with 8 workers, only on lots with many animating actors. The §6 timing split (`0x583D00` vs `0x5833C0`+`0x574F50` vs `0x959670`) is still the go/no-go gate before any build; the serial skip-Evaluate option (§5.1) remains the cheaper first prototype.

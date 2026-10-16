@@ -1,0 +1,11 @@
+[
+  { "id": "bp-lotstream-s3ss-on", "note": "G13 / docs/28 §5.5: lot streaming cost during the street-zoom pan, S3SS LotStreamingOptimizations on (installed default)",
+    "asi": "game-copy/ts3native.asi.lotstream", "ini": { "LotStream.Enabled": 1 }, "s3ssToml": { "patches.LotStreamingOptimizations.enabled": true },
+    "save": "Baseline-BP", "run": { "profile": { "minutes": 6, "repro": "lotstream-pan" } }, "timeoutMin": 20 },
+  { "id": "bp-lotstream-s3ss-off", "note": "same with S3SS LotStreamingOptimizations off: the game's own unthrottled add (compare lotAddMaxMs, pumpMaxMs)",
+    "asi": "game-copy/ts3native.asi.lotstream", "ini": { "LotStream.Enabled": 1 }, "s3ssToml": { "patches.LotStreamingOptimizations.enabled": false },
+    "save": "Baseline-BP", "run": { "profile": { "minutes": 6, "repro": "lotstream-pan" } }, "timeoutMin": 20 },
+  { "id": "ip-lotstream-s3ss-on", "note": "same as bp-lotstream-s3ss-on on Isla Paradiso (other lot density, houseboats)",
+    "asi": "game-copy/ts3native.asi.lotstream", "ini": { "LotStream.Enabled": 1 }, "s3ssToml": { "patches.LotStreamingOptimizations.enabled": true },
+    "save": "Baseline-IP", "run": { "profile": { "minutes": 6, "repro": "lotstream-pan" } }, "timeoutMin": 20 }
+]

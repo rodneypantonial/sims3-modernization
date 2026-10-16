@@ -130,15 +130,15 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[68];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[80];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy" && n != "fastreftable" && n != "cachedreflection" && n != "motivebar" && n != "buffgrid" && n != "namecache"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -169,6 +169,9 @@ namespace Ts3Agent
             if (c.Length > 61) { r["casgrid_fills"] = c[59]; r["casmemo_hits"] = c[60]; r["casmemo_lookups"] = c[61]; } // CAS hair/makeup incremental fills, hair preset cache (docs/21)
             if (c.Length > 64) { r["spatialcache_hits"] = c[62]; r["spatialcache_misses"] = c[63]; r["spatialcache_clears"] = c[64]; } // lot object query cache: hits, native lot walks, clears on object destroy (docs/20)
             if (c.Length > 67) { r["routablecache_hits"] = c[65]; r["routablecache_plans"] = c[66]; r["stuckcheck_busy_skipped"] = c[67]; } // fewer route plans (FewerPlans.cs, docs/04a section 7)
+            if (c.Length > 70) { r["reftable_converted"] = c[68]; r["reftable_max_entries"] = c[69]; r["reftable_grows"] = c[70]; } // fast ReferenceHashtable (RefTable.cs)
+            if (c.Length > 73) { r["typecache_started"] = c[71]; r["typecache_hits"] = c[72]; r["typecache_stored"] = c[73]; } // serializer per-type answer cache (CachedReflection.cs)
+            if (c.Length > 79) { r["motivebar_cached"] = c[74]; r["motivebar_loads"] = c[75]; r["buffgrid_inplace"] = c[76]; r["buffgrid_rebuilds"] = c[77]; r["namecache_hits"] = c[78]; r["namecache_misses"] = c[79]; } // HUD caches (UiCaches.cs, docs/49), Sim name cache (NameCache.cs, docs/54)
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");
             return r;

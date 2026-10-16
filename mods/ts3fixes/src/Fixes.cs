@@ -53,6 +53,10 @@ namespace Ts3Fixes
             ApplyCasGrid();
             ApplySpatialCache();
             ApplyFewerPlans();
+            ApplyRefTable();
+            ApplyCachedReflection();
+            ApplyUiCaches();
+            ApplyNameCache();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -67,13 +71,16 @@ namespace Ts3Fixes
         // route plans started/yields/poll cap reached (RouteBackoff.cs, with ts3native [RouteAsync]), [59-61] CAS incremental
         // fills started / hair preset cache hits / preset lookups run (CasGrid.cs), [62-64] lot object query cache hits /
         // misses / clears on object destroy (SpatialCache.cs), [65-67] routability cache hits / plans
-        // recorded, stuck checks skipped for busy Sims (FewerPlans.cs).
+        // recorded, stuck checks skipped for busy Sims (FewerPlans.cs), [68-70] save identity tables converted / most entries
+        // in one table / table grows (RefTable.cs), [71-73] serializer type caches started / answers from the cache /
+        // answers stored (CachedReflection.cs), [74-75] motive bar updates without / with image loads, [76-77] moodlet grid
+        // in-place updates / rebuilds (UiCaches.cs), [78-79] Sim name cache hits / misses (NameCache.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[68]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[80];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -105,6 +112,11 @@ namespace Ts3Fixes
                 case "spatialcache": return Instantiator.kSpatialCache;
                 case "routablecache": return Instantiator.kRoutableCache;
                 case "stuckcheckbusy": return Instantiator.kStuckCheckBusy;
+                case "fastreftable": return Instantiator.kFastRefTable;
+                case "cachedreflection": return Instantiator.kCachedReflection;
+                case "motivebar": return Instantiator.kMotiveBarImageCache;
+                case "buffgrid": return Instantiator.kBuffGridInPlace;
+                case "namecache": return Instantiator.kSimNameCache;
                 case "spotspread": return true;
                 default: return true;
             }
