@@ -25,6 +25,7 @@ namespace Ts3Agent
             Dispatcher.Register("set_active_sim", SetActiveSim);
             Dispatcher.Register("household_funds", HouseholdFunds);
             Dispatcher.Register("set_motive", SetMotive);
+            Dispatcher.Register("autonomy", AutonomyCmd);
             Dispatcher.Register("set_skill", SetSkill);
             Dispatcher.Register("skill_options", SkillOptions);
             Dispatcher.Register("set_trait", SetTrait);
@@ -243,6 +244,55 @@ namespace Ts3Agent
             }
             Dictionary<string, object> r = Util.Obj();
             foreach (Sim s in sims) r[s.FullName] = MotiveValues(s);
+            return r;
+        }
+
+        // autonomy {sim?: name|id|active|household, enabled: bool}: the game's own switch, Sim.Autonomy.Increment/
+        // DecrementAutonomyDisabled (a counter). Every increment of ours is tracked per SimDescriptionId in AppDomain data
+        // (survives world switches and agent reloads), so enabled: true only takes back what this command added; enabled:
+        // true without sim restores every tracked Sim in the world. The counter is persisted (Autonomy.mAutonomyDisabledCount
+        // has no [Persistable(false)]), so a save made while disabled keeps it: restore before saving; Sims not in the world
+        // stay tracked (`pending`) until a later restore finds them.
+        static object AutonomyCmd(Args a)
+        {
+            AppDomain d = AppDomain.CurrentDomain;
+            Dictionary<ulong, int> off = d.GetData("ts3agent.autonomy_off") as Dictionary<ulong, int>;
+            if (off == null) { off = new Dictionary<ulong, int>(); d.SetData("ts3agent.autonomy_off", off); }
+            bool enable = a.Bool("enabled", true);
+            List<SimDescription> sds = new List<SimDescription>();
+            if (a.Str("sim", "") == "household")
+            {
+                Household hh = Household.ActiveHousehold;
+                if (hh == null) throw new McpException("no active household");
+                foreach (Sim s in hh.AllActors) sds.Add(s.SimDescription);
+            }
+            else if (a.Has("sim")) sds.Add(Util.FindSimDescription(a, "sim"));
+            else if (enable) foreach (ulong id in new List<ulong>(off.Keys)) { SimDescription sd = SimDescription.Find(id); if (sd != null) sds.Add(sd); }
+            else throw new McpException("enabled: false needs sim (name, id, active or household)");
+            List<object> changed = new List<object>();
+            foreach (SimDescription sd in sds)
+            {
+                Sim s = sd.CreatedSim;
+                if (s == null || s.Autonomy == null) continue;
+                int n;
+                off.TryGetValue(sd.SimDescriptionId, out n);
+                if (!enable && n == 0) { s.Autonomy.IncrementAutonomyDisabled(); off[sd.SimDescriptionId] = 1; changed.Add(sd.FullName); }
+                else if (enable && n > 0)
+                {
+                    for (int i = 0; i < n; i++) s.Autonomy.DecrementAutonomyDisabled(); // the game's Decrement stops at 0
+                    off.Remove(sd.SimDescriptionId);
+                    changed.Add(sd.FullName);
+                }
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["enabled"] = enable;
+            r["changed"] = changed;
+            List<object> pending = new List<object>();
+            foreach (ulong id in off.Keys) { SimDescription sd = SimDescription.Find(id); pending.Add(sd != null ? sd.FullName : Util.Id(id)); }
+            r["tracked"] = pending; // still disabled by us (enabled: true without sim takes them back once in the world)
+            Dictionary<string, object> now = Util.Obj();
+            foreach (SimDescription sd in sds) if (sd.CreatedSim != null && sd.CreatedSim.Autonomy != null) now[sd.FullName] = !sd.CreatedSim.Autonomy.AutonomyDisabled;
+            r["autonomy_on"] = now;
             return r;
         }
 

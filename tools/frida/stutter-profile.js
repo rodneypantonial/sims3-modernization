@@ -71,8 +71,17 @@ function blankSecond() {
            animSacs: 0, animPose: 0, locomotion: 0, publish: 0,
            // ts3native [LotStream] (docs/28 §5.5); 0 when the plugin or the section is off
            lotAdds: 0, lotAddMs: 0, lotAddMaxMs: 0, lotAddObjs: 0, lotRemoves: 0, lotRemoveMs: 0, pumpMaxMs: 0, lotScoreMs: 0,
-           lotSetActive: 0 }; // new columns go last: readers use the header
+           lotSetActive: 0,
+           // P-clock (docs/85 §6): 1 when Simulate's paused copy was set in any iteration of this second; the step accumulator
+           // host+0xC14 at the last iteration (-1 = the step branch did not run this second; NaN/Infinity = docs/85 H6)
+           simPaused: 0, stepAcc: -1 }; // new columns go last: readers use the header
 }
+
+// P-clock call site: `mov ecx, edi; call 0x8A6D10; test al, al` in Simulate's step branch, ecx = edi = host+0xA64
+// (lea at 0xD81A46). 0x8A6D10 is `mov al, [ecx+0x10]; ret` (4 bytes, too short for a Frida detour), so the call site is
+// hooked and reads the same byte; host+0xC14 (fstp at 0xD81B32) = ecx+0x1B0.
+const CLOCK_SITE = [0xd81b38, 'e8 d3 51 b2 ff 84 c0 75'];
+const CLOCK_GETTER = [0x8a6d10, '8a 41 10 c3'];
 
 // ts3native [LotStream] counters, v19 byte offsets (docs/registry.md; the names match tools/probe/agent.js nativeCounters).
 // Totals become per-second deltas; the *MaxUs fields hold the max since the last reset, so they are read and zeroed here.
@@ -251,7 +260,31 @@ function install() {
     e.n++; if (!ok) e.fail++; e.ms = round(e.ms + ms);
   });
 
+  installClock();
   console.log('[ts3prof] hooks installed; the sim thread is detected on the first GC_try_to_collect');
+}
+
+// Observe only. Optional: a patched call site leaves simPaused 0 and stepAcc -1 instead of stopping the whole profiler.
+function installClock() {
+  const hex = (p, n) => Array.from(new Uint8Array(p.readByteArray(n))).map(b => b.toString(16).padStart(2, '0')).join(' ');
+  const site = ptr(CLOCK_SITE[0]), got = hex(site, 8), getter = hex(ptr(CLOCK_GETTER[0]), 4);
+  if (got !== CLOCK_SITE[1] || getter !== CLOCK_GETTER[1]) {
+    console.log(`[ts3prof] P-clock off: call site ${got}, getter ${getter} (expected ${CLOCK_SITE[1]} / ${CLOCK_GETTER[1]})`);
+    return;
+  }
+  try {
+    Interceptor.attach(site, {
+      onEnter() {
+        const ecx = this.context.ecx;
+        if (ecx.add(0x10).readU8() !== 0) sec.simPaused = 1;
+        sec.stepAcc = ecx.add(0x1b0).readFloat();
+      },
+    });
+  } catch (e) {
+    console.log(`[ts3prof] P-clock off: ${e.message}`); // the other hooks are already in; keep them
+    return;
+  }
+  console.log('[ts3prof] P-clock: simPaused and stepAcc from the 0x8A6D10 call at 0xD81B38');
 }
 
 let started = false;

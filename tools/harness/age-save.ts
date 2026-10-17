@@ -6,6 +6,7 @@
 import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { GUARD_MS, stallGuard } from './game-alive.ts';
 
 // Marker the watchdog reads: a save pauses the clock, which must not count as a stall.
 const SAVING = join(resolve(import.meta.dirname, '..', '..'), 'probe-out', 'saving');
@@ -66,9 +67,21 @@ async function saveAsInner(name: string): Promise<void> {
   await dismissDialogs();
   const r = await agent('save_game', { name });
   if (!r.ok) { console.log(`${stamp()} save ${name} not started: ${r.error}`); return; }
+  // fail fast (Rodney 2026-10-16): every 30 s the save must be in progress or the game busy with it (generic guard: process,
+  // probe, heartbeat/commit/log moving); the agent answering with no save in progress and no line twice = it never ran.
+  // A guard failure prints no "saved" line, so queue.ts records no checkpoint (and no final save: FAIL).
+  const g = stallGuard(`save ${name}`, { port: Number(values.port) });
+  let idle = 0, idleAt = Date.now() + GUARD_MS;
   for (let i = 0; i < 120; i++) { // the save itself runs as a game task
-    const log = await agent('async_log');
+    const log = await agent('async_log').catch(e => ({ ok: false, error: String(e) }) as Reply);
     if (log.ok && log.result.some((l: string) => l.includes(`save ${name} -> `))) break;
+    if (Date.now() >= idleAt) {
+      idleAt = Date.now() + GUARD_MS;
+      const st = await agent('game_state').catch(() => null);
+      idle = st?.ok && st.result?.save_in_progress === false ? idle + 1 : 0;
+    }
+    const why = (await g()) || (idle >= 2 ? `not in progress and no async_log line for ~${2 * GUARD_MS / 1000} s (fail-fast guard)` : '');
+    if (why) { console.log(`${stamp()} save ${name} FAILED: ${why}`); return; }
     await sleep(2000);
   }
   console.log(`${stamp()} saved ${name}`);
@@ -93,6 +106,7 @@ await agent('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
 const t0 = Date.now();
 let last = start.result;
 let stalls = 0;
+let noReply = stallGuard('age loop: agent not answering', { port: Number(values.port) });
 let lastCheckpoint = -1;
 for (;;) {
   await dismissDialogs();
@@ -106,9 +120,21 @@ for (;;) {
   if (ap.ok) for (const c of ap.result.cleared) console.log(`${stamp()} autopilot dialog: ${String(c).slice(0, 80)}`);
   const s = await agent('set_speed', { speed: 'ultra' });
   const t = s.ok ? s.result : (await agent('time')).result;
-  if (!t) { console.log(`${stamp()} no reply (${s.error}); retrying`); await sleep(5000); continue; }
+  if (!t) {
+    // fail fast: no reply is fine while the game is busy (a long frame, a save); the guard fails it once the game is gone,
+    // the probe is down, or nothing moves (heartbeat, commit, log) for ~1 min
+    const why = await noReply();
+    if (why) { console.log(`${stamp()} FAIL: ${why}`); process.exit(1); }
+    console.log(`${stamp()} no reply (${s.error}); retrying`); await sleep(5000); continue;
+  }
+  noReply = stallGuard('age loop: agent not answering', { port: Number(values.port) }); // answered: start over
   stalls = t.minutes_total === last.minutes_total ? stalls + 1 : 0;
-  if (stalls === 6) console.log(`${stamp()} sim clock has not moved for a minute (speed ${t.speed}, locked ${t.speed_locked})`);
+  // fail fast: checks are 30 s apart and the autopilot holds speed 3, so two in a row without a clock move (~1 min) = stuck
+  if (stalls === 1) { // one recovery try, as watchdog.ts: Edit Town or another mode pauses the clock
+    const g = await agent('game_state').catch(() => null);
+    if (g?.ok && g.result.in_world && g.result.sub_state !== 'LiveModeState') { console.log(`${stamp()} clock stalled in ${g.result.sub_state}; entering live mode`); await agent('enter_live_mode').catch(() => null); }
+  }
+  if (stalls >= 2) { console.log(`${stamp()} FAIL: sim clock has not moved for ~${stalls * 30} s (speed ${t.speed}, locked ${t.speed_locked}; fail-fast guard)`); process.exit(1); }
   last = t;
   if (t.day_number >= targetDay) break;
   const every = Number(values.checkpoint);

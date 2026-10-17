@@ -57,15 +57,118 @@ static inline DWORD HcSlot(int cx, int cz) { return (DWORD)(cx & 63) | (DWORD)(c
 // floor(v) as 0xC2A570 computes it, for |v| < 2^31; outside that (and NaN) the cell is out of range either way
 static inline int HcFloor(float v) { const int n = (int)v; return n - ((float)n > v ? 1 : 0); }
 
+// --- [TerrainGrave] (docs/60 §2.2 #2, docs/38 C1 graveyard variant; H6 S3a) ---
+// The cell rebuild 0xC2A840 releases the cell's old collision shape (cell+0x38) with PhysShape_Release 0x682760 (return
+// address 0xC2A896) and then stores the new one, with no lock, while the sim thread and the route worker ray-cast through
+// 0xC2A570, which reads cell+0x38 without taking a reference [verified listing; "no reference" inferred, docs/38]. A release
+// that drops the count to 0 frees the shape under a running ray. PhysShape_Release [verified disassembly]: add [ecx+0x4C],-1;
+// at 0 call the deleting destructor (vtable slot 0, arg 1); return the new count, which the swap ignores (eax is rewritten
+// before any use after 0xC2A896) [verified]. With the switch on, that one release is parked in a 64-entry ring instead
+// (count untouched, shape alive) and run later by the next rebuild's entry, once no ray is in flight. g_tgInFlight counts
+// threads inside the game's 0xC2A570 (every call our HcHook passes on); the interlocked add orders it before the ray's load
+// of cell+0x38, and the drain reads it with an interlocked op after the swap's store, so 0 there means every ray that could
+// have read a parked pointer has ended. Ring full: wait (spin) for 0, then drain.
+// shortcut: parked shapes (at most 64) stay until the next rebuild, also across a world unload; that release then runs the
+// destructor later than the game would (its realm links are inferred to be gone by then). Upgrade: drain at world teardown.
+static const DWORD TG_RELEASE = 0x00682760;
+static DWORD g_tgSwapRet = 0x00C2A896;  // return address of the swap's release call (the selftest points it at its own)
+static const u8 kTgPrologue[5] = {0x83, 0x41, 0x4C, 0xFF, 0x56};  // add dword [ecx+0x4C],-1; push esi
+typedef LONG(__fastcall* TgReleaseFn)(void* shape, void* edx);
+static void* g_tgTramp;           // the original PhysShape_Release (trampoline)
+static volatile LONG g_tgVf;      // Verify probe index + 1 counted from inside the stub (rtShapeRelease)
+static bool g_tgOn;               // installed: HcHook keeps g_tgInFlight
+static volatile LONG g_tgInFlight;
+static void* g_tgRing[64];
+static int g_tgN;
+static SRWLOCK g_tgLock = SRWLOCK_INIT;
+
+static void __cdecl VfEnter(int id, DWORD* slot);  // verify.cpp
+
+static void TgDrainLocked() {  // caller holds g_tgLock and saw g_tgInFlight == 0
+    Ts3nCounters& k = ts3native_counters;
+    for (int i = 0; i < g_tgN; i++) {
+        ((TgReleaseFn)g_tgTramp)(g_tgRing[i], NULL);
+        InterlockedIncrement(&k.vfRtGraveFreed);
+    }
+    g_tgN = 0;
+    k.vfRtGraveHeld = 0;
+}
+
+static inline bool TgNoRays() { return InterlockedCompareExchange(&g_tgInFlight, 0, 0) == 0; }
+
+// Stub side: slot = the caller's return-address slot; ecx (the shape) at slot[-2]. Returns 1 = parked (skip the original).
+static LONG __cdecl TgRelease(DWORD* slot) {
+    if (g_tgVf) VfEnter(g_tgVf - 1, slot);  // count-only probe: no frame, *slot unchanged
+    if (*slot != g_tgSwapRet) return 0;
+    Ts3nCounters& k = ts3native_counters;
+    void* shape = (void*)(uintptr_t)slot[-2];
+    if (k.tgMode != 1) {
+        if (*(const LONG*)((const u8*)shape + 0x4C) == 1 && !TgNoRays()) InterlockedIncrement(&k.vfRtGraveRaces);
+        return 0;
+    }
+    AcquireSRWLockExclusive(&g_tgLock);
+    if (g_tgN == 64) {
+        InterlockedIncrement(&k.vfRtGraveSpins);
+        while (!TgNoRays()) YieldProcessor();  // rays take microseconds; the swap's thread holds nothing a ray waits on
+        TgDrainLocked();
+    }
+    g_tgRing[g_tgN++] = shape;
+    k.vfRtGraveHeld = g_tgN;
+    InterlockedIncrement(&k.vfRtGraveParked);
+    ReleaseSRWLockExclusive(&g_tgLock);
+    return 1;
+}
+
+// PhysShape_Release entry: parked -> return to the caller (its eax is not used, flags rewritten), else the original.
+static __declspec(naked) void TgStub() {
+    __asm {
+        pushad
+        pushfd
+        lea eax, [esp + 36]
+        push eax
+        call TgRelease
+        add esp, 4
+        test eax, eax
+        jnz parked
+        popfd
+        popad
+        jmp dword ptr [g_tgTramp]
+    parked:
+        popfd
+        popad
+        ret
+    }
+}
+
+// cell rebuild entry: release what an earlier swap parked once no ray is in flight; count the swap and an overlap with a ray
+static void TgOnSwap() {
+    Ts3nCounters& k = ts3native_counters;
+    InterlockedIncrement(&k.vfSwaps);
+    if (!TgNoRays()) InterlockedIncrement(&k.vfSwapsInRay);
+    if (!g_tgN) return;
+    AcquireSRWLockExclusive(&g_tgLock);
+    if (g_tgN && TgNoRays()) TgDrainLocked();
+    ReleaseSRWLockExclusive(&g_tgLock);
+}
+
+// the game's ray, counted in flight while the graveyard is installed (cache misses, Verify and mode 0 all come here)
+static inline double HcOrig(void* gridp, void* edx, float x, float z) {
+    if (!g_tgOn) return g_hcOrig(gridp, edx, x, z);
+    InterlockedIncrement(&g_tgInFlight);
+    const double h = g_hcOrig(gridp, edx, x, z);
+    InterlockedDecrement(&g_tgInFlight);
+    return h;
+}
+
 static double __fastcall HcHook(void* gridp, void* edx, float x, float z) {
     Ts3nCounters& s = ts3native_counters;
-    if (s.heightMode != 1) return g_hcOrig(gridp, edx, x, z);
+    if (s.heightMode != 1 || !g_hc) return HcOrig(gridp, edx, x, z);
     s.heightCalls++;  // shortcut: plain ++, a lost count from the route worker only skews the stats
     const u8* g = (const u8*)gridp;
     const int cx = HcFloor(x) >> 8, cz = HcFloor(z) >> 8;
     if ((DWORD)cx >= *(const DWORD*)(g + 0xCC) || (DWORD)cz >= *(const DWORD*)(g + 0xD0)) {
         s.heightMisses++;
-        return g_hcOrig(gridp, edx, x, z);  // no cell: the game returns its constant without a raycast
+        return HcOrig(gridp, edx, x, z);  // no cell: the game returns its constant without a raycast
     }
     const DWORD grid = (DWORD)(uintptr_t)gridp, xb = *(const DWORD*)&x, zb = *(const DWORD*)&z;
     const DWORD top = *(const DWORD*)(g + 0x34), gen = (DWORD)g_hcGen, cgen = (DWORD)g_hcCellGen[HcSlot(cx, cz)];
@@ -79,7 +182,7 @@ static double __fastcall HcHook(void* gridp, void* edx, float x, float z) {
                 s.heightHits++;
                 if (set[0].mru != w) set[0].mru = w;
                 if (!g_hcVerify) return h;
-                const double real = g_hcOrig(gridp, edx, x, z);
+                const double real = HcOrig(gridp, edx, x, z);
                 if (memcmp(&real, &h, sizeof(h)) == 0) return h;
                 if (InterlockedIncrement(&s.heightMismatches) <= 10)
                     Log("heightcache MISMATCH grid %08X x %.3f z %.3f cached %.6f real %.6f", grid, x, z, h, real);
@@ -88,7 +191,7 @@ static double __fastcall HcHook(void* gridp, void* edx, float x, float z) {
         }
     }
     s.heightMisses++;
-    const double h = g_hcOrig(gridp, edx, x, z);
+    const double h = HcOrig(gridp, edx, x, z);
     const DWORD w = set[0].mru ^ 1;  // replace the way not used last
     HcEntry& e = set[w];
     e.chk = 0;
@@ -101,6 +204,7 @@ static double __fastcall HcHook(void* gridp, void* edx, float x, float z) {
 // 0xC2A840 (cell rebuild): the game's function first, then the new generation, so an entry another thread computed
 // from the old shape during the rebuild carries the old generation.
 static DWORD __fastcall HcRebuildHook(void* gridp, void* edx, int x, int z, void* shape, void* shape2, void* bounds) {
+    if (g_tgOn) TgOnSwap();
     const DWORD r = g_hcRebuildOrig(gridp, edx, x, z, shape, shape2, bounds);
     const u8* g = (const u8*)gridp;
     if ((DWORD)(x >> 8) < *(const DWORD*)(g + 0xCC) && (DWORD)(z >> 8) < *(const DWORD*)(g + 0xD0))
@@ -113,24 +217,44 @@ static DWORD __fastcall HcRebuildHook(void* gridp, void* edx, int x, int z, void
 
 // [HeightCache] Enabled=1 hooks; Mode = start value of ts3native_counters.heightMode; Verify=1 checks every hit;
 // Entries = table size (power of two, 1024..1M, 40 B each, 2 ways per set).
+// [TerrainGrave] Enabled=1 (H6 S3a) needs the same two detours: alone, they are installed with no table (heightMode stays
+// 0, and a probe write of 1 still runs the game's ray); Mode = start value of tgMode (+0xD00, --ab terraingrave).
 static bool ApplyHeightCache(const wchar_t* ini) {
-    if (!GetPrivateProfileIntW(L"HeightCache", L"Enabled", 0, ini)) { Log("height cache disabled (Enabled=0)"); return false; }
-    DWORD n = GetPrivateProfileIntW(L"HeightCache", L"Entries", 65536, ini);
-    if (n < 1024) n = 1024;
-    if (n > (1u << 20)) n = 1u << 20;
-    while (n & (n - 1)) n &= n - 1;
-    g_hc = (HcEntry*)calloc(n, sizeof(HcEntry));
-    if (!g_hc) { Log("FAIL height cache: no memory for %lu entries", n); return false; }
-    g_hcMask = n / 2 - 1;
-    g_hcVerify = GetPrivateProfileIntW(L"HeightCache", L"Verify", 0, ini) != 0;
-    ts3native_counters.heightMode = GetPrivateProfileIntW(L"HeightCache", L"Mode", 1, ini) == 0 ? 0 : 1;
+    const bool hc = GetPrivateProfileIntW(L"HeightCache", L"Enabled", 0, ini) != 0;
+    const bool grave = GetPrivateProfileIntW(L"TerrainGrave", L"Enabled", 0, ini) != 0;
+    if (!hc) Log("height cache disabled (Enabled=0)");
+    if (!grave) Log("terrain graveyard disabled (Enabled=0)");
+    if (!hc && !grave) return false;
+    DWORD n = 0;
+    if (hc) {
+        n = GetPrivateProfileIntW(L"HeightCache", L"Entries", 65536, ini);
+        if (n < 1024) n = 1024;
+        if (n > (1u << 20)) n = 1u << 20;
+        while (n & (n - 1)) n &= n - 1;
+        g_hc = (HcEntry*)calloc(n, sizeof(HcEntry));
+        if (!g_hc) Log("FAIL height cache: no memory for %lu entries", n);
+        if (!g_hc && !grave) return false;
+        g_hcMask = n / 2 - 1;
+        g_hcVerify = GetPrivateProfileIntW(L"HeightCache", L"Verify", 0, ini) != 0;
+    }
+    ts3native_counters.heightMode = g_hc && GetPrivateProfileIntW(L"HeightCache", L"Mode", 1, ini) != 0 ? 1 : 0;
     // the invalidation first: the cache never runs without it
     g_hcRebuildOrig = (HcRebuildFn)InstallDetour("cell rebuild (height cache)", HC_REBUILD, kHcPrologue, sizeof(kHcPrologue), (void*)HcRebuildHook);
-    if (!g_hcRebuildOrig) { free(g_hc); g_hc = NULL; return false; }
+    if (!g_hcRebuildOrig) { free(g_hc); g_hc = NULL; ts3native_counters.heightMode = 0; return false; }
     g_hcOrig = (HcFn)InstallDetour("terrain height (height cache)", HC_FN, kHcPrologue, sizeof(kHcPrologue), (void*)HcHook);
     if (!g_hcOrig) return false;  // the rebuild detour stays: it only bumps counters after the game's code
-    ts3native_counters.heightReady = 1;
-    Log("OK   height cache: 0x%08X, 0x%08X (Mode=%ld Verify=%d Entries=%lu, 2-way, per-cell invalidation)", HC_FN, HC_REBUILD,
-        ts3native_counters.heightMode, g_hcVerify ? 1 : 0, n);
+    if (g_hc) {
+        ts3native_counters.heightReady = 1;
+        Log("OK   height cache: 0x%08X, 0x%08X (Mode=%ld Verify=%d Entries=%lu, 2-way, per-cell invalidation)", HC_FN, HC_REBUILD,
+            ts3native_counters.heightMode, g_hcVerify ? 1 : 0, n);
+    }
+    if (grave) {
+        g_tgOn = true;  // rays are counted from here on, before any release can park
+        ts3native_counters.tgMode = GetPrivateProfileIntW(L"TerrainGrave", L"Mode", 1, ini) == 0 ? 0 : 1;
+        g_tgTramp = InstallDetour("PhysShape_Release (terrain graveyard)", TG_RELEASE, kTgPrologue, sizeof(kTgPrologue), (void*)TgStub);
+        ts3native_counters.tgReady = g_tgTramp != NULL;
+        Log("%s terrain graveyard: 0x%08X (the release from 0x%08X is parked until no ray runs), Mode=%ld", g_tgTramp ? "OK  " : "FAIL",
+            TG_RELEASE, g_tgSwapRet, ts3native_counters.tgMode);
+    }
     return true;
 }

@@ -1,0 +1,10 @@
+[
+  { "id": "bp-native-batch2", "note": "PLAN Next 2, native fix batch 2 (0.10.9, counters v23), one bundle load in BP: #13 SimSkipShared alternates on/off every 3 min (--ab simskipshared); start-up fixes on for the whole load: #14 Workers=2, #4 D3DMultithreaded, [Alloc] with Dedupe (docs/67; allocDupFrees > 0 = the game double frees). Pass: no crash, 0 stuck Sims, jqSimSharedJobs/jqSimRenderJobs flat in on slices, jqWorkerTids = 2, d3dMtReady = 1, S3SS/S3PP install lines present (docs/68 §6.7), iterations/s on vs off within ~2%",
+    "asi": "game-copy/ts3native.asi.batch2", "save": "Baseline-BP", "minCounters": 23,
+    "ini": { "JobQueue.Enabled": 1, "JobQueue.SimSkipShared": 2, "JobQueue.Workers": 2, "D3DMultithreaded.Enabled": 1, "Alloc.Enabled": 1, "Alloc.Dedupe": 1 },
+    "run": { "profile": { "minutes": 12, "ab": "simskipshared", "slice": 3 } }, "timeoutMin": 30 },
+  { "id": "ip-native-batch2", "note": "the same bundle in IP (second world: houseboats, water, other lot density)",
+    "asi": "game-copy/ts3native.asi.batch2", "save": "Baseline-IP", "minCounters": 23,
+    "ini": { "JobQueue.Enabled": 1, "JobQueue.SimSkipShared": 2, "JobQueue.Workers": 2, "D3DMultithreaded.Enabled": 1, "Alloc.Enabled": 1, "Alloc.Dedupe": 1 },
+    "run": { "profile": { "minutes": 12, "ab": "simskipshared", "slice": 3 } }, "timeoutMin": 30 }
+]

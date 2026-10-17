@@ -450,6 +450,23 @@ static void __cdecl VfEnter(int id, DWORD* slot) {
     if (timed) VfPush(t, id, slot, role, extra, VfOvEnter(t, p, tid, ret));
 }
 
+// For an owner stub that ran VfEnter first (routegate.cpp, rtsites.cpp, the terrain graveyard): the caller behind our leave thunk
+// (any open frame: probe P1b reads the slot of a caller further up, lotfd.cpp)
+static DWORD VfRealRet(const DWORD* slot) {
+    const VfThread& t = t_vf;
+    if (*slot == (DWORD)(uintptr_t)VfLeaveThunk)
+        for (int i = t.n - 1; i >= 0; i--) if (t.f[i].slot == slot) return t.f[i].ret;
+    return *slot;
+}
+
+// docs/68 §6 rule 3: another section's stub owns this probe's address; it calls VfEnter(probe) itself (slot = index + 1)
+static volatile LONG* VfOwnerSlot(DWORD at) {
+    for (int s = 0; s < RG_SITES; s++) if (g_rgTramp[s] && kRgSites[s].addr == at) return &g_rgVf[s];
+    for (int s = 0; s < RT_N; s++) if (g_rtTramp[s] && kRtSites[s].addr == at) return &g_rtVf[s];
+    if (g_tgTramp && at == TG_RELEASE) return &g_tgVf;
+    return NULL;
+}
+
 static DWORD __cdecl VfLeave() {
     Ts3nCounters& k = ts3native_counters;
     VfThread& t = t_vf;
@@ -648,13 +665,16 @@ static bool ApplyVerify(const wchar_t* ini) {
     // its type-lookup speed-up, so the probe needs its own switch
     const bool threadedObjs = GetPrivateProfileIntW(L"Verify", L"ThreadedObjects", 0, ini) != 0;
     bool wanted[VF_N], ok[VF_N];
+    volatile LONG* owner[VF_N];
     char hex[64];
     for (int i = 0; i < VF_N; i++) {
         const VfProbe& p = kVf[i];
         wanted[i] = (p.group & g_vfGroups) && (p.at != VF_THREADED_OBJS || threadedObjs);
         if ((p.group & g_vfGroups) && !wanted[i]) Log("verify %s off (ThreadedObjects=0: S3PP's stage profiler owns 0x%08X)", p.name, p.at);
         ok[i] = wanted[i] && Matches((const void*)(uintptr_t)p.at, p.pro, p.len);
-        if (wanted[i] && !ok[i]) {
+        owner[i] = wanted[i] && !ok[i] && p.pair == VF_NONE ? VfOwnerSlot(p.at) : NULL;
+        if (owner[i]) Log("verify %s: counted inside the stub that owns 0x%08X", p.name, p.at);
+        else if (wanted[i] && !ok[i]) {
             if (Readable((const void*)(uintptr_t)p.at, p.len)) Hex((const u8*)(uintptr_t)p.at, p.len, hex, sizeof(hex)); else strcpy_s(hex, "<unreadable>");
             Log("SKIP verify %s: prologue at 0x%08X differs (found %s)", p.name, p.at, hex);
         }
@@ -677,7 +697,8 @@ static bool ApplyVerify(const wchar_t* ini) {
     int n = 0, want = 0;
     for (int i = 0; i < VF_N; i++) {
         want += wanted[i];
-        if (pairOk[i] && VfInstallAt(i, kVf[i].at, kVf[i].pro)) {
+        if (owner[i]) *owner[i] = i + 1;
+        if (owner[i] || (pairOk[i] && VfInstallAt(i, kVf[i].at, kVf[i].pro))) {
             if (i < 27) ready |= 1 << i; else if (i < 58) ready2 |= 1 << (i - 27); else ready3 |= 1 << (i - 58);
             n++;
         }

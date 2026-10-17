@@ -646,16 +646,61 @@
     "fix": "ts3fixes CasGrid.cs (switches casgrid, casmemo; tuning kCasGrid, default off): hair and makeup grids filled with ItemGrid.BeginPopulating at most 8 ms of tile work per UI tick (featured store tiles from the original first), hair preset data cached per CAS session. Run twice: --set casgrid=true,casmemo=true and --set casgrid=false,casmemo=false; Sim and outfit pinned so both runs list the same parts",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "cas_open", "args": { "sim": "Lala Angelista", "outfit": "everyday" }, "waitS": 30 },
-      { "cmd": "cas_category", "args": { "category": "hair" }, "waitS": 15 },
-      { "cmd": "cas_bench", "waitS": 30 },
-      { "cmd": "cas_category", "args": { "category": "makeup" }, "waitS": 10 },
-      { "cmd": "cas_category", "args": { "category": "hair" }, "waitS": 15 },
-      { "cmd": "cas_category", "args": { "category": "makeup" }, "waitS": 10 },
-      { "cmd": "cas_state", "waitS": 2 },
-      { "cmd": "patches", "waitS": 1 },
-      { "cmd": "cas_close", "waitS": 20 },
-      { "cmd": "cas_state" }
+      {
+        "cmd": "cas_open",
+        "args": {
+          "sim": "Lala Angelista",
+          "outfit": "everyday"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "cas_bench",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "makeup"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "makeup"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_state",
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "cas_state"
+      }
     ],
     "watch": {
       "kind": "stuck",
@@ -746,7 +791,8 @@
         "cmd": "cas_parts",
         "args": {
           "filter": "cc",
-          "max": 5, "sim": "active"
+          "max": 5,
+          "sim": "active"
         }
       },
       {
@@ -1654,18 +1700,90 @@
     "fix": "ts3fixes UiCaches.cs MotiveBarHook (switch motivebar, tuning kMotiveBarImageCache, default off): per bar and side, skip the image loads while the moodlet icon and background row are those the game's update last set; SetMinMaxValues and MotivesPanel.Dispose drop the state. A/B in one load: patches {motivebar:true} then {motivebar:false}",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "patches", "args": { "motivebar": true }, "waitS": 1 },
-      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -50 }, "waitS": 2, "note": "active Sim: Hungry moodlet on the hunger bar (negative side)" },
-      { "cmd": "set_motive", "args": { "motive": "Energy", "value": 95 }, "waitS": 2, "optional": true, "note": "positive moodlet on the energy bar" },
-      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 30, "note": "bars update with the same moodlets: motivebar_cached rises" },
-      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -90 }, "waitS": 5, "note": "Starving: new icon on the same side, one motivebar_loads" },
-      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": 100 }, "waitS": 5, "note": "moodlet gone: game's update, no image loads" },
-      { "cmd": "set_motive", "args": { "motive": "Hunger", "value": -90 }, "waitS": 10, "note": "same icon back on the same side: no new load needed" },
-      { "cmd": "patches", "waitS": 1 },
-      { "cmd": "patches", "args": { "motivebar": false }, "waitS": 30, "note": "B half: game's update every time" },
-      { "cmd": "patches", "waitS": 1 }
+      {
+        "cmd": "patches",
+        "args": {
+          "motivebar": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "motive": "Hunger",
+          "value": -50
+        },
+        "waitS": 2,
+        "note": "active Sim: Hungry moodlet on the hunger bar (negative side)"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "motive": "Energy",
+          "value": 95
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "positive moodlet on the energy bar"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 30,
+        "note": "bars update with the same moodlets: motivebar_cached rises"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "motive": "Hunger",
+          "value": -90
+        },
+        "waitS": 5,
+        "note": "Starving: new icon on the same side, one motivebar_loads"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "motive": "Hunger",
+          "value": 100
+        },
+        "waitS": 5,
+        "note": "moodlet gone: game's update, no image loads"
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "motive": "Hunger",
+          "value": -90
+        },
+        "waitS": 10,
+        "note": "same icon back on the same side: no new load needed"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "motivebar": false
+        },
+        "waitS": 30,
+        "note": "B half: game's update every time"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
     ],
-    "watch": { "kind": "counter", "counter": "motivebar_cached", "min": 1, "minutes": 2 },
+    "watch": {
+      "kind": "counter",
+      "counter": "motivebar_cached",
+      "min": 1,
+      "minutes": 2
+    },
     "expect": "with the switch on: motivebar_cached >> motivebar_loads (loads only on first show, icon or polarity change); off: both flat. By eye: hunger bar moodlet icon switches Hungry -> Starving -> hidden -> Starving, tooltips match, arrows and bar length move as before; no blank icons, no script errors"
   },
   {
@@ -1674,18 +1792,91 @@
     "fix": "ts3fixes UiCaches.cs BuffGridHook (switch buffgrid, tuning kBuffGridInPlace, default off): same moodlets in the same order with the same polarity and icon -> the game's UpdateMoodletTimeouts on the existing cells; anything else -> the game's rebuild. A/B in one load: patches {buffgrid:true} then {buffgrid:false}",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "patches", "args": { "buffgrid": true }, "waitS": 1 },
-      { "cmd": "moodlet", "args": { "action": "add", "moodlet": "Inspired" }, "waitS": 5, "optional": true, "note": "add: rebuild" },
-      { "cmd": "moodlet", "args": { "action": "add", "moodlet": "Excited" }, "waitS": 5, "optional": true, "note": "add: rebuild" },
-      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 30, "note": "timeouts tick: buffgrid_inplace rises if the HUD reports value-only changes" },
-      { "cmd": "moodlet", "args": { "action": "remove", "moodlet": "Inspired" }, "waitS": 5, "optional": true, "note": "remove: rebuild" },
-      { "cmd": "moodlet", "args": { "action": "list" }, "waitS": 1, "note": "compare with the grid by eye: same moodlets, same order" },
-      { "cmd": "patches", "waitS": 1 },
-      { "cmd": "moodlet", "args": { "action": "remove", "moodlet": "Excited" }, "waitS": 5, "optional": true },
-      { "cmd": "patches", "args": { "buffgrid": false }, "waitS": 30, "note": "B half: game's rebuild every time" },
-      { "cmd": "patches", "waitS": 1 }
+      {
+        "cmd": "patches",
+        "args": {
+          "buffgrid": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "add: rebuild"
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "add",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "add: rebuild"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 30,
+        "note": "timeouts tick: buffgrid_inplace rises if the HUD reports value-only changes"
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Inspired"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "remove: rebuild"
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "list"
+        },
+        "waitS": 1,
+        "note": "compare with the grid by eye: same moodlets, same order"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "moodlet",
+        "args": {
+          "action": "remove",
+          "moodlet": "Excited"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "buffgrid": false
+        },
+        "waitS": 30,
+        "note": "B half: game's rebuild every time"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
     ],
-    "watch": { "kind": "counter", "counter": "buffgrid_rebuilds", "min": 1, "minutes": 2 },
+    "watch": {
+      "kind": "counter",
+      "counter": "buffgrid_rebuilds",
+      "min": 1,
+      "minutes": 2
+    },
     "expect": "switch on: buffgrid_rebuilds counts each add/remove, buffgrid_inplace counts the rest (0 means the HUD only fires on add/remove: then the fix has nothing to save, report it). By eye: grid order and icons equal moodlet list, time-left text counts down, tooltips open on every cell; no script errors"
   },
   {
@@ -1694,15 +1885,59 @@
     "fix": "ts3fixes NameCache.cs NameCacheHook (switch namecache, tuning kSimNameCache, default off): answers cached by the stored name strings, robot check on every FullName read, cleared at world load and on locale change. Self-check Ts3Fixes.Fixes.NameCacheCheck compares off vs on for every Sim",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.NameCacheCheck" }, "waitS": 2, "note": "self-check: mismatches 0" },
-      { "cmd": "patches", "args": { "namecache": true }, "waitS": 1 },
-      { "cmd": "set_speed", "args": { "speed": "ultra" }, "waitS": 60, "note": "HUD and sim code read names: namecache_hits rises" },
-      { "cmd": "list_sims", "waitS": 2, "note": "reads every Sim's name through the getters" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.NameCacheCheck" }, "waitS": 2 },
-      { "cmd": "patches", "waitS": 1 },
-      { "cmd": "patches", "args": { "namecache": false }, "waitS": 1 }
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.NameCacheCheck"
+        },
+        "waitS": 2,
+        "note": "self-check: mismatches 0"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "namecache": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "HUD and sim code read names: namecache_hits rises"
+      },
+      {
+        "cmd": "list_sims",
+        "waitS": 2,
+        "note": "reads every Sim's name through the getters"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.NameCacheCheck"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "namecache": false
+        },
+        "waitS": 1
+      }
     ],
-    "watch": { "kind": "counter", "counter": "namecache_hits", "min": 1, "minutes": 2 },
+    "watch": {
+      "kind": "counter",
+      "counter": "namecache_hits",
+      "min": 1,
+      "minutes": 2
+    },
     "expect": "both NameCacheCheck calls: ready True, mismatches 0, sims > 0; namecache_hits >> namecache_misses after the speed step; rename a Sim in CAS (by hand, optional) and the HUD shows the new name at once"
   },
   {
@@ -1880,5 +2115,1798 @@
       "minutes": 1
     },
     "expect": "every step answers ok; vfMono*/vfRt*/vfEv* and the v22 vfThr* keys fill the I-52..I-62 verdicts (tools/harness/verify-verdicts.ts)"
+  },
+  {
+    "id": "jobqueue-shared",
+    "bug": "The sim pump at 0xD81FC3 drains the JobManager shared queue with no deadline, so CAS part loads, store jobs and frame jobs (mask -1) can run on the sim thread (docs/36 §1, docs/46 §5; PLAN #13/#21)",
+    "fix": "ts3native [JobQueue] Enabled=1, SimSkipShared=1 or 2 (runtime switch jqSimMode, --ab simskipshared); counters v23 jq*",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "cas_open",
+        "waitS": 30,
+        "note": "CAS outfit and part loads are shared-queue jobs"
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "everyday"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 15
+      },
+      {
+        "cmd": "buy_category",
+        "args": {
+          "category": "Decor"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 10
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 1
+        },
+        "waitS": 45,
+        "note": "lot streaming and frame jobs while the camera moves"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "jqReady has bits 0 and 1; with jqSimMode = 1: jqSimSkipPasses grows with jqSimPumps and jqSimSharedJobs / jqSimRenderJobs stop growing, jqWorkerJobs grows instead; with 0: jqSimSharedJobs > 0 is the baseline; CAS and Buy open and close in about the same time, no script errors, no stuck Sims"
+  },
+  {
+    "id": "thumbs-d3d-mt",
+    "bug": "ThumbnailManager ICs create, lock and fill a MANAGED texture (0xD5D910) on the sim thread while the main thread renders, on a device created without D3DCREATE_MULTITHREADED (docs/43 §1, confirmed twice by [Verify]; crash-on-save lead, PLAN #4)",
+    "fix": "ts3native [D3DMultithreaded] Enabled=1 (start-up only; counters v23 d3dMtReady = 1); A/B needs two loads",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 3,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20,
+        "note": "lot and household thumbnail ICs on the sim thread"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Verify-Scratch"
+        },
+        "waitS": 60,
+        "note": "LoadSaveManager_SaveWorld reaches 0xD5D910 too; scratch name, never the Baseline save"
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 6,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Verify-Scratch"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "status": true
+        },
+        "waitS": 0,
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "d3dMtReady = 1 and the S3SS log shows CreateDevice with the 0x4 flag; both saves complete (result 0), no crash or device-lost; frame time and iterations/s within ~2% of the same run without the switch"
+  },
+  {
+    "id": "alloc-dupfree",
+    "bug": "[Alloc] per-thread cache turns a game double free into two owners of one chunk (same thread: self-looping bin); leading cause of the 2026-10-14 crash (docs/67 §2)",
+    "fix": "ts3native [Alloc] Enabled=1 Dedupe=1 (counters v23 allocDupFrees; runtime switch allocDedupe, --ab allocdedupe)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "object, effect and Sim create/destroy churn through the EA heaps"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 30
+      },
+      {
+        "cmd": "catalog_objects",
+        "args": {
+          "filter": "cc",
+          "max": 20
+        }
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "cc",
+          "count": 20
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30,
+        "note": "CAS model build and release on main (docs/67 lead 2)"
+      },
+      {
+        "cmd": "cas_category",
+        "args": {
+          "category": "hair"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 20
+      },
+      {
+        "cmd": "thumbnails",
+        "args": {
+          "lots": 3,
+          "household": true,
+          "maxS": 15
+        },
+        "waitS": 20
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "no crash; allocDupFrees > 0 confirms the game double frees (then Dedupe=1 is required with [Alloc] on), 0 means this churn does not reach it. A Swarm-heavy trigger (fireworks, fire, spellcasting VFX) needs a new agent action (docs/67 §2.5); not in this repro"
+  },
+  {
+    "id": "lot-sincos",
+    "bug": "Lot_WorldToLocal2D 0xAB8540 runs x87 fsin + fcos of the lot angle on every call (0.60% sim self, route planning and C# world queries; docs/38 C2, PLAN #11)",
+    "fix": "ts3native [LotSinCos] Enabled=1 (runtime switch lscMode, --ab lotsincos); counters v24 lsc*; Verify=1 compares every hit with the game's function",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "Sims routing across lots: world-to-local calls per route"
+      },
+      {
+        "cmd": "place_sim",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "x": 312.4,
+          "z": 1496.7
+        }
+      },
+      {
+        "cmd": "sim_go_home",
+        "args": {
+          "sim": "Wogan Hemlock"
+        },
+        "waitS": 60,
+        "note": "cross-town route: many lots on the path"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [
+        "Wogan Hemlock"
+      ],
+      "minutes": 3
+    },
+    "expect": "lscCallsK rises and lscHitsK/lscCallsK > 0.9 (lots keep their angle); with Verify=1 lscMismatches stays 0; Wogan gets home"
+  },
+  {
+    "id": "object-id-cache",
+    "bug": "ObjectId_Lookup 0x939100 walks chains of 8-15 objects per id (1,033 fixed buckets, 438 FindById call sites; docs/45, docs/62 §5, PLAN #22)",
+    "fix": "ts3native [IdCache] Enabled=1 (runtime switch idcMode, --ab idcache); counters v24 idc*; Verify=1 walks the chain on every hit",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "more objects in the hash, script lookups by ObjectGuid every tick"
+      },
+      {
+        "cmd": "catalog_objects",
+        "args": {
+          "filter": "cc",
+          "max": 20
+        }
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "cc",
+          "count": 20
+        },
+        "waitS": 30,
+        "note": "inserts"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "autonomy and interactions: lookups of the same Sims and objects"
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 20,
+        "note": "DestroyById -> EraseNode: entries dropped (idcErases rises)"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "lookups after the destroys: with Verify=1 idcMismatches must stay 0"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "no crash; idcLookupsK rises with idcHitsK/idcLookupsK high; idcErases > 0 after the removals; with Verify=1 idcMismatches = 0; chain length idcStepsK / (idcFillsK + idcNotFoundK) near docs/62's 8-15"
+  },
+  {
+    "id": "detail-priority-cache",
+    "bug": "Lot.UpdateDetailPriority: every lot, every tick, builds the active household's actor list (two new lists) to see whether a player Sim stands on it: 1.77% of managed samples (docs/74 §6.1)",
+    "fix": "ts3fixes ScriptHotSpots.cs DetailPriorityHook (switch detailprio, tuning kDetailPriorityCache, default off): Home test live, the actor walk once per sim tick into a lot set (tick/household/100 ms/pause rules as SpatialCache); World.LotSetDetailPriority still called every pass. detailprioverify checks 1 answer in 8 against the game's",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "detailprio": true,
+          "detailprioverify": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 30,
+        "note": "active Sim at home: detailprio_hits and detailprio_sets rise (one set per tick)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 90,
+        "note": "active Sim walks off the home lot across other lots: PlayerSim moves from lot to lot; mid-tick lot changes are the only allowed mismatches"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 6,
+          "height": 25,
+          "seconds": 30,
+          "passes": 1
+        },
+        "optional": true
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "detailprio": false,
+          "detailprioverify": false
+        },
+        "waitS": 30,
+        "note": "B half: game's walk every lot; counters flat"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "detailprio_hits",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "switch on: detailprio_sets ~ sim ticks while running, detailprio_hits ~ lots x ticks; detailprio_mismatches 0 or a handful (only ticks where the active Sim crossed a lot border); off: counters flat; no script errors, no stuck Sims"
+  },
+  {
+    "id": "hours-memo",
+    "bug": "Lot.GetHoursOfOperation (from IsOpenVenue: camera, autonomy, route plans, doors, venue visits) re-reads two tuning dictionaries and, on bars, scans all live situations for a bachelor party on every call: 1.09% of managed samples (docs/74 §6.3)",
+    "fix": "ts3fixes ScriptHotSpots.cs HoursMemoHook (switch hoursmemo, tuning kHoursMemo, default off): (answer, open, close) per lot for one sim tick, outputs written only on true as the game's method; nothing kept while paused. hoursmemoverify checks 1 answer in 8 against the game's",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "hoursmemo": true,
+          "hoursmemoverify": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "note": "camera task asks IsOpenVenue for the closest visible lot each pass"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 5,
+        "note": "townies with community-lot autonomy and routes through venue doors"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 90,
+        "note": "autonomy and route plans: hoursmemo_hits rise"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "hoursmemo": false,
+          "hoursmemoverify": false
+        },
+        "waitS": 30,
+        "note": "B half: game's method on every call; counters flat"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "hoursmemo_hits",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "switch on: hoursmemo_hits >> hoursmemo_misses (repeat questions in a tick); hoursmemo_mismatches 0 (a bachelor party started on a bar mid-tick is the only allowed cause; start one by hand on a bar lot to see it); venues open and close at the same hours as with the switch off; no script errors"
+  },
+  {
+    "id": "cane-early-out",
+    "bug": "Cane.SimRequiresCaneWalk searches the Sim's inventory (Inventory.FindAll<Cane>) before testing the walk style, though only Run/FastWalk/FastJog/Jog/FastRun can answer true; asked per route sub-path and portal: 0.75% of managed samples (docs/74 §6.2)",
+    "fix": "ts3fixes ScriptHotSpots.cs CaneEarlyOutHook (switch caneearly, tuning kCaneEarlyOut, default off): any other style answers false at once (identical answer), the five call the game's method",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "caneearly": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 5,
+        "note": "more Sims routing"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 5,
+        "note": "active Sim walks a long route (Walk style: early answers)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "caneearly_skipped >> caneearly_passed when most routes walk"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "caneearly": false
+        },
+        "waitS": 30,
+        "note": "B half: game's method every time; counters flat"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "caneearly_skipped",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "switch on: caneearly_skipped rises, the ratio skipped/(skipped+passed) is the share of the 0.75% saved; by eye (optional, by hand): an elder with a cane in use still uses the cane walk when told to run or jog; no script errors, no stuck Sims"
+  },
+  {
+    "id": "tooltip-throttle",
+    "bug": "TooltipManager.Simulate walks the window chain under the cursor every sim tick (~33-44/s), reading each window's tooltip text through a string IC, even while the cursor rests: 0.61% of managed samples (docs/74 §5)",
+    "fix": "ts3fixes ScriptHotSpots.cs TooltipThrottleHook on Sims3.UI.UIManager.GetWindowFromPoint (switch tooltipthrottle, tuning kTooltipThrottle, default off): answers null to the tooltip task only while the cursor stands on its last walked point for < 100 ms (the game's loop then just sleeps a tick); other callers unchanged. Counters only: the harness never moves the mouse",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "applied: GetWindowFromPoint ok and 'TooltipManager.Simulate at patch time' (I-74-7)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "tooltipthrottle": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 60,
+        "note": "cursor at rest: tooltipthrottle_walks ~10/s, tooltipthrottle_skipped ~ the rest of the ticks"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "tooltipthrottle": false
+        },
+        "waitS": 30,
+        "note": "B half: walks every tick; counters flat"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "tooltipthrottle_skipped",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "applied lists UIManager.GetWindowFromPoint: ok (if refused: the task ran before the mod loaded; fix stays inert, game unchanged); switch on: tooltipthrottle_walks ~10 per second, tooltipthrottle_skipped ~70-77% of passes; by eye (Rodney, by hand): HUD tooltips still show after ~1.5 s, hide on leave and after 15 s"
+  },
+  {
+    "id": "hotspots-verify",
+    "bug": "docs/74 tick memos (detailprio, hoursmemo) may differ from the game's answer when a Sim changes lot or a bachelor party starts mid-tick",
+    "fix": "verify switches detailprioverify + hoursmemoverify on for the whole load (1 answer in 8 also computed the game's way, game's answer returned, mismatches counted); meant to run beside profile-world --ab detailprio,hoursmemo,caneearly,tooltipthrottle",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "detailprioverify": true,
+          "hoursmemoverify": true
+        },
+        "waitS": 1,
+        "note": "applied list: four hot-spot patches ok? (TooltipManager.Simulate at patch time, I-74-7)"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 5,
+        "note": "more routing and venue autonomy"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "note": "camera task asks IsOpenVenue"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "detailprio_hits",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "end of run: detailprio_mismatches and hoursmemo_mismatches 0 or a handful (each one a lot change or party start in that tick); detailprio_hits, hoursmemo_hits, caneearly_skipped, tooltipthrottle_skipped all > 0; no script errors, 0 stuck Sims"
+  },
+  {
+    "id": "rt-s2b-sweep",
+    "bug": "H6 S2b (docs/60 §2.3): how often each docs/60 §2.2 closure site is entered during a route job, and the exact G11 window, so the S3b closures and the M1 START limits are sized from counts, not guesses",
+    "fix": "measurement only: ts3native 0.10.11 [RouteGate] Enabled=1 Sites=1 (counters v25 rg*2, vfRt*, g11*) with [RouteWorker] Enabled=1 and --ab routeworker (Mode 0 / Mode 1 sync in one load)",
+    "save": "Baseline-BP",
+    "note": "world-agnostic (no Sim names or coordinates), so the queue sets BP or IP; autopilot keeps the Sims routing; the object churn runs twice so both Mode slices see destroys and quadtree writes; about 7 min of steps",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "more routing Sims and object moves"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "ea",
+          "count": 10
+        },
+        "waitS": 30,
+        "note": "quadtree adds (Realm_AddShape 0x6823E0)"
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 20,
+        "note": "destroys: ObjectService_DestroyById 0x939420 (vfRtDestroyInJob)"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 15,
+        "note": "lot routing rebuild 0x835110 (gate 15)"
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 15,
+        "note": "build/buy exit 0x835240 (gate 14)"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 2
+        },
+        "waitS": 85,
+        "note": "lot streaming: lot index rebuilds 0xC68680, pending lot updates"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "H6-S2b-Scratch"
+        },
+        "waitS": 60,
+        "note": "Save_WritePackage 0xAAC110, lot save 0x8361B0 (vfRtDrain*); a scratch name, never the loaded Baseline save"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "place_objects",
+        "args": {
+          "filter": "ea",
+          "count": 10
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "remove_objects",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 5
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "no crash, 0 watchdog lines; rgUnlocked_lotTableContains > 0; Mode 1 slices: sim-thread in-job counts 0 (only the worker's), vfRtQtBare = 0, vfRtTeardownInJob = 0; per job (divide by workerCalls) destroys, Contains calls and quadtree writes; Mode 0 slices: g11MovableUs / seconds = G11 movable ms/s (go >= 15 BP, >= 30 IP), g11End shows what closes the window"
+  },
+  {
+    "id": "terrain-grave-pan",
+    "bug": "Terrain cell shape swap 0xC2A840 frees the old collision shape while another thread may ray-cast through it (docs/38 C1, docs/60 §2.2 #2): vfSwapsInRay > 0 in the verify runs",
+    "fix": "ts3native 0.10.11 [TerrainGrave] Enabled=1 (H6 S3a; runtime switch tgMode, --ab terraingrave): the swap's release is parked until no ray is in flight",
+    "save": "Baseline-BP",
+    "note": "long pan so every A/B slice sees terrain LOD swaps; autopilot keeps Sims routing (sim-thread height rays); about 12 min",
+    "steps": [
+      {
+        "cmd": "camera",
+        "args": {},
+        "note": "start pose, for the log"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "lots": 8,
+          "height": 25,
+          "seconds": 40,
+          "passes": 16
+        },
+        "waitS": 690,
+        "note": "the lotstream-pan path, there and back 8 times"
+      },
+      {
+        "cmd": "camera_pan",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 5
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "no crash; vfSwaps > 0 in both slices; vfRtGraveRaces only in off slices; on slices vfRtGraveParked > 0 with vfRtGraveFreed following it and vfRtGraveHeld <= 64; vfRtGraveSpins small; memory flat"
+  },
+  {
+    "id": "make-spring-bp",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "New base save Baseline-BP-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
+    "save": "Baseline-BP",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-BP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "make-spring-ip",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "New base save Baseline-IP-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
+    "save": "Baseline-IP",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-IP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "make-spring-sv",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "New base save Baseline-SV-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
+    "save": "Baseline-SV",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-SV-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "make-spring-all",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "All three spring base saves (BP, IP, SV) in one game session: saves the game restart per world (Rodney, 2026-10-17)",
+    "save": "Baseline-BP",
+    "note": "steps of make-spring-bp/ip/sv joined with in-world loads between them",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-BP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      },
+      {
+        "cmd": "load_save",
+        "args": {
+          "file": "Baseline-IP.sims3",
+          "reload": true
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "in_world",
+              "equals": true
+            },
+            {
+              "path": "load_file",
+              "equals": "Baseline-IP.sims3"
+            },
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "load Baseline-IP in the same session (EA in-game load path)"
+      },
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "waitS": 3,
+        "note": "popups cleared in the new world, speed left to the steps"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-IP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      },
+      {
+        "cmd": "load_save",
+        "args": {
+          "file": "Baseline-SV.sims3",
+          "reload": true
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "in_world",
+              "equals": true
+            },
+            {
+              "path": "load_file",
+              "equals": "Baseline-SV.sims3"
+            },
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "load Baseline-SV in the same session (EA in-game load path)"
+      },
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "waitS": 3,
+        "note": "popups cleared in the new world, speed left to the steps"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 5,
+        "note": "fresh start: max motives, drop negative moodlets, repair, clean, clear clutter and bills"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "warm up until 35 degrees, no snow on the ground, sunny (polled every 5 s, max 5 min)",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "again: the moon may have moved on; want the start of the new moon"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "clean up after the warm-up, paused"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the cleanup take effect in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-SV-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "clock-minimize-pause",
+    "bug": "Game time stops for good in unattended runs while the sim loop keeps iterating with 0 steps (bp-p0-sync 2026-10-17, bp-h6-m1 2026-10-16; docs/85)",
+    "fix": "none (diagnosis, docs/85 §6 H5): minimizing the game window sets GameClock pause bit 2 (0x11CDD48+0x40) unless SimWhileMinimized; restoring clears it. Ledger I-85-1, I-85-2",
+    "save": "Baseline-BP-Spring",
+    "note": "window_minimize / window_restore are probe-side ShowWindowAsync(SW_SHOWMINNOACTIVE / SW_SHOWNOACTIVATE): never focus, never move (Rodney approved these two for this repro, 2026-10-17). minutes_moved = game minutes since the previous clock_state call",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10,
+        "note": "clock moves"
+      },
+      {
+        "cmd": "clock_state",
+        "waitS": 5,
+        "until": {
+          "cmd": "clock_state",
+          "all": [
+            {
+              "path": "minimize_pause",
+              "equals": false
+            },
+            {
+              "path": "window.iconic",
+              "equals": false
+            },
+            {
+              "path": "minutes_moved",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 5,
+          "maxS": 20
+        },
+        "note": "before: bit 2 clear, not iconic, clock moving"
+      },
+      {
+        "cmd": "window_minimize",
+        "waitS": 20
+      },
+      {
+        "cmd": "clock_state",
+        "waitS": 10,
+        "until": {
+          "cmd": "clock_state",
+          "all": [
+            {
+              "path": "minimize_pause",
+              "equals": true
+            },
+            {
+              "path": "window.iconic",
+              "equals": true
+            },
+            {
+              "path": "minutes_moved",
+              "atMost": 0
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        },
+        "note": "minimized: bit 2 set, iconic, minutes_total unchanged over 10 s (H5)"
+      },
+      {
+        "cmd": "window_restore",
+        "waitS": 20,
+        "note": "sends the restored WM_SIZE, no focus"
+      },
+      {
+        "cmd": "clock_state",
+        "waitS": 10,
+        "until": {
+          "cmd": "clock_state",
+          "all": [
+            {
+              "path": "minimize_pause",
+              "equals": false
+            },
+            {
+              "path": "window.iconic",
+              "equals": false
+            },
+            {
+              "path": "minutes_moved",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 5,
+          "maxS": 30
+        },
+        "note": "restored: bit 2 clear, clock moving again"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "window_restore"
+      }
+    ],
+    "expect": "PASS when every until holds: bit 2 set and clock frozen while minimized, clear and moving after restore. A FAIL at the minimized step with bit 2 clear refutes H5 (docs/85 §7)"
   }
 ]

@@ -2,6 +2,7 @@
 // Usage: node tools/harness/new-save.ts --world "Bridgeport.world" --save Baseline-BP-fresh [--household Name] [--members 2]
 // Without --household it picks the first household with --members Sims (sorted by name, so it is repeatable).
 import { parseArgs } from 'node:util';
+import { GUARD_MS, stallGuard } from './game-alive.ts';
 
 const { values } = parseArgs({ options: {
   world: { type: 'string' }, save: { type: 'string' }, household: { type: 'string' },
@@ -24,10 +25,13 @@ async function clearDialogs() {
     await sleep(1500);
   }
 }
-async function until(what: string, limitS: number, check: () => Promise<boolean>) {
+// guard: fail-fast check (game-alive.ts stallGuard), run outside check() so its verdict is not swallowed
+async function until(what: string, limitS: number, check: () => Promise<boolean>, guard = stallGuard(what, { port: Number(values.port) })) {
   const t0 = Date.now();
   while (!(await check().catch(() => false))) {
     if (Date.now() - t0 > limitS * 1000) throw new Error(`${what}: not reached within ${limitS} s`);
+    const why = await guard();
+    if (why) throw new Error(why);
     await clearDialogs();
     await sleep(3000);
   }
@@ -40,7 +44,10 @@ if (s0.result?.in_world) throw new Error('already in a world; restart to the mai
 {
   const t0 = Date.now();
   let saw = false, quietSince = Date.now();
+  const guard = stallGuard('main menu', { port: Number(values.port) });
   while (Date.now() - t0 < 150000 && (!saw ? Date.now() - t0 < 120000 : Date.now() - quietSince < 5000)) {
+    const why = await guard();
+    if (why) throw new Error(why);
     const d = await agent('auto_dialog').catch(() => null);
     if (d?.ok && d.result.open) { log(`menu dialog "${d.result.title}" -> ${d.result.clicked}`); saw ||= /mod scripts/i.test(d.result.title ?? ''); quietSince = Date.now(); }
     await sleep(2000);
@@ -64,6 +71,14 @@ await clearDialogs();
 await agent('set_speed', { speed: 'pause' });
 const saved = await agent('save_game', { name: values.save });
 if (!saved.ok) throw new Error(`save_game: ${saved.error}`);
-await until('saved', 240, async () => (await agent('game_state')).result?.save_in_progress === false
-  && (await agent('async_log')).result.some((l: string) => l.includes(`save ${values.save} -> `)));
+// Fail fast (Rodney 2026-10-16): the agent answers, no save in progress and no async_log line, twice ~30 s apart = the
+// save never ran or ended without its line. The generic guard cannot see that: the heartbeat moves while paused.
+const saveGuard = stallGuard('save', { port: Number(values.port) });
+let idle = 0, idleAt = Date.now() + GUARD_MS;
+await until('saved', 240, async () => {
+  const st = await agent('game_state');
+  const done = st.result?.save_in_progress === false && (await agent('async_log')).result.some((l: string) => l.includes(`save ${values.save} -> `));
+  if (!done && Date.now() >= idleAt) { idleAt = Date.now() + GUARD_MS; idle = st.ok && st.result?.save_in_progress === false ? idle + 1 : 0; }
+  return done;
+}, async () => (await saveGuard()) || (idle >= 2 ? `save ${values.save}: not in progress and no async_log line for ~${2 * GUARD_MS / 1000} s (fail-fast guard)` : ''));
 log(`created ${values.save}.sims3 in ${values.world} with the ${pick.name} household`);

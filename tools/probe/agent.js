@@ -386,7 +386,7 @@ function netStart() {
 // Routing-lock watch (opt-in, /routelock?start=1, stop=1 detaches; docs/18 step 1a): who holds RoutingWorld+0x918,
 // how long, and how much of each plan a worker could overlap with sim-thread work. Read-only hooks; the lock is learned
 // from the first Route_PlanLocked (ecx = RoutingWorld). Lock_Acquire is the engine-wide lock (resource lock too), so
-// every acquire enters this script: `acquireHooksPerSec` shows the cost; stop it when done.
+// every acquire enters a C callback (CModule, below): `acquireHooksPerSec` shows the cost; stop it when done.
 // Also G11 (docs/18 H6 plan): entries at the 12 S0 gate sites by threads not holding +0x918, and the lock-free window per
 // sim-thread IC_Route_Plan (report `g11`; `gateHooksPerSec` shows the cost of those hooks). Queue run kind: {routelock}.
 const ROUTE_PLAN_LOCKED = ptr(0x82c6e0), LOCK_ACQUIRE = ptr(0x4e16f0), LOCK_RELEASE = ptr(0x4e17b0), LOCOMOTION_UPDATE = ptr(0x83ced0);
@@ -483,90 +483,221 @@ function g11Tracker(t0) {
 }
 // --- g11 end
 
+// The hot hooks are CModule C callbacks, not JS (queue g11 2026-10-16: JS callbacks on the engine-wide Lock_Acquire ran
+// every lock in the engine through the JS lock; the sim fell to ~20% of normal and the probe hung after ~4 min). C filters
+// on the learned lock and appends events (tid, kind | site << 8, QPC, wait ticks) to a ring of 2^RL_RING_LOG2 records; a
+// JS timer drains it every RL_DRAIN_MS into the same accounting. A lapped ring counts `ring.lost` (queue.ts: FAIL).
+// To keep the ring and the drain small, C keeps each thread's +0x918 depth and gate depth (a TLS slot) and folds events
+// the accounting does not need one by one: a nested acquire becomes one record (count and wait), a nested release none,
+// and a gate entry under +0x918 or inside another gate entry only counts per site (`ring.folded`). The tracker then sees
+// depth 1 for nested holds, which gives the same numbers: nested holds never change busy time or the window.
+const RL_RING_LOG2 = 18, RL_DRAIN_MS = 25; // 2^18 x 24 bytes = 6 MB
+const RL_SITES = Object.keys(RL_GATES);
+const RL_C = `
+#include <gum/guminterceptor.h>
+typedef struct { volatile guint32 seq, tid, ev, lo, hi, dt; } Rec;
+typedef struct { guint32 on; guint64 t; } Acq;
+/* st: 0 lock (+0x918, 0 = not learned), 1 next write index, 2 acquire hooks, 3 gate hooks, 4 LocomotionUpdate, 5 sim tid,
+   6 generation (per start), 7 TLS index; fold: per site entries, unlocked, unlockedSim of folded gate entries */
+extern volatile guint32 st[8];
+extern volatile guint32 fold[3 * NSITES];
+extern Rec ring[];
+extern int __attribute__((stdcall)) QueryPerformanceCounter(guint64 *t);
+extern int __attribute__((stdcall)) TlsSetValue(guint32 i, void *v);
+static void add(volatile guint32 *p) { guint32 one = 1; __asm__ __volatile__("lock xaddl %0, (%1)" : "+r"(one) : "r"(p) : "memory"); }
+static guint64 now(void) { guint64 t; QueryPerformanceCounter(&t); return t; }
+static void put(GumInvocationContext *ic, guint32 ev, guint64 t, guint32 dt) {
+  guint32 i = 1; volatile guint32 *w = &st[1];
+  __asm__ __volatile__("lock xaddl %0, (%1)" : "+r"(i) : "r"(w) : "memory");
+  Rec *r = &ring[i & MASK];
+  r->tid = (guint32) gum_invocation_context_get_thread_id(ic); r->ev = ev; r->lo = (guint32) t; r->hi = (guint32) (t >> 32); r->dt = dt;
+  r->seq = i + 1; /* last: x86 keeps store order, the drain reads a record only once seq matches */
+}
+/* this thread's state word: generation << 16 | gate depth << 8 | lock depth; read from the TEB (no API call) */
+static volatile guint32 *slot(void) {
+  guint8 *teb; guint32 i = st[7];
+  __asm__ __volatile__("movl %%fs:0x18, %0" : "=r"(teb));
+  if (i < 64) return (volatile guint32 *) (teb + 0xe10 + i * 4);
+  if (*(guint32 **) (teb + 0xf94) == 0) TlsSetValue(i, 0); /* allocates the expansion slots; Gum restores the last error */
+  return *(volatile guint32 **) (teb + 0xf94) + (i - 64);
+}
+static guint32 state(volatile guint32 *s) { return (*s >> 16) == (st[6] & 0xffff) ? *s & 0xffff : 0; }
+static void store(volatile guint32 *s, guint32 v) { *s = (st[6] & 0xffff) << 16 | (v & 0xffff); }
+#define LD(v) ((v) & 0xff)
+#define GD(v) (((v) >> 8) & 0xff)
+#define ON (GUM_IC_GET_INVOCATION_DATA(ic, guint32))
+/* shortcut: the counters st[2..4] are plain increments (a rare lost count across threads); they are rates, not accounting */
+void plan_enter(GumInvocationContext *ic) { *ON = st[0] != 0; if (*ON) put(ic, 1, now(), 0); }
+void plan_leave(GumInvocationContext *ic) { if (*ON) put(ic, 2, now(), 0); }
+void gate_enter(GumInvocationContext *ic) {
+  st[3]++; *ON = 0;
+  if (st[0] == 0) return; /* before the lock is known, nobody's hold can be told apart */
+  guint32 site = GPOINTER_TO_UINT(gum_invocation_context_get_listener_function_data(ic));
+  volatile guint32 *s = slot(); guint32 v = state(s);
+  if (LD(v) > 0 || GD(v) > 0) { /* folded: under the lock, or nested in an outer entry that already made it busy */
+    *ON = 2; add(&fold[site * 3]);
+    if (LD(v) == 0) { add(&fold[site * 3 + 1]); if ((guint32) gum_invocation_context_get_thread_id(ic) == st[5]) add(&fold[site * 3 + 2]); }
+  } else { *ON = 1; put(ic, 3 | site << 8, now(), 0); }
+  if (GD(v) < 255) store(s, v + 0x100);
+}
+void gate_leave(GumInvocationContext *ic) {
+  if (*ON == 0) return;
+  volatile guint32 *s = slot(); guint32 v = state(s);
+  if (GD(v) > 0) store(s, v - 0x100);
+  if (*ON == 1) put(ic, 4, now(), 0);
+}
+void acq_enter(GumInvocationContext *ic) {
+  Acq *a = GUM_IC_GET_INVOCATION_DATA(ic, Acq);
+  st[2]++; a->on = st[0] != 0 && ic->cpu_context->ecx == st[0];
+  if (a->on) a->t = now();
+}
+void acq_leave(GumInvocationContext *ic) { /* one record per acquire: kind 5 outermost (enter = t - dt), 6 nested */
+  Acq *a = GUM_IC_GET_INVOCATION_DATA(ic, Acq);
+  if (!a->on) return;
+  volatile guint32 *s = slot(); guint32 v = state(s); guint64 t = now();
+  put(ic, LD(v) > 0 ? 6 : 5, t, (guint32) (t - a->t));
+  if (LD(v) < 255) store(s, v + 1);
+}
+void rel_enter(GumInvocationContext *ic) { /* only the outermost release is a record; one without a seen acquire is ignored */
+  if (st[0] == 0 || ic->cpu_context->ecx != st[0]) return;
+  volatile guint32 *s = slot(); guint32 v = state(s);
+  if (LD(v) == 0) return;
+  store(s, v - 1);
+  if (LD(v) == 1) put(ic, 7, now(), 0);
+}
+void rpl_enter(GumInvocationContext *ic) { if (st[0] == 0) st[0] = ic->cpu_context->ecx + 0x918; put(ic, 8, now(), 0); }
+void rpl_leave(GumInvocationContext *ic) { put(ic, 9, now(), 0); }
+void loco_enter(GumInvocationContext *ic) { st[4]++; }
+`;
 const rl = { started: null, stopped: null, listeners: [], lock: null, simTid: null, iterations: 0, acquireHooks: 0, gateHooks: 0, threads: {},
-             plans: [], plansByThread: {}, planMs: 0, overlapMs: 0, gaps: [], pending: null, g11: null };
+             plans: [], plansByThread: {}, planMs: 0, overlapMs: 0, gaps: [], pending: null, g11: null,
+             cm: null, st: null, fold: null, foldSnap: null, ring: null, timer: null, r: 0, perThread: {}, events: 0, lost: 0, maxBacklog: 0, drainMs: 0 };
 const OVERLAP_BUCKETS = [0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, Infinity];
 function rlThread(tid) {
   return rl.threads[tid] ??= { acquires: 0, waitMs: 0, maxWaitMs: 0, holdMs: 0, maxHoldMs: 0, held: 0 };
+}
+// one ring event, in ring order; the accounting the JS callbacks did before (per-thread state replaces `this`)
+function rlEvent(tid, ev, t, dtMs) {
+  const g = rl.g11, sim = tid === rl.simTid;
+  switch (ev & 0xff) {
+    case 1: g.planEnter(sim, t); break;
+    case 2: g.planLeave(sim, t); break;
+    case 3: g.gateEnter(tid, sim, RL_SITES[ev >>> 8], t); break;
+    case 4: g.gateLeave(tid, t); break;
+    case 5: case 6: { // acquire returned; 5 = outermost (entered at t - dtMs), 6 = nested (only count and wait)
+      const th = rlThread(tid);
+      th.acquires++; th.waitMs += dtMs; th.maxWaitMs = Math.max(th.maxWaitMs, dtMs);
+      if (ev === 6) break;
+      const t0 = t - dtMs;
+      g.lockEnter(tid, sim, t0);
+      if (sim && rl.pending) {
+        const ov = Math.min(rl.pending.len, t0 - rl.pending.end);
+        rl.overlapMs += ov;
+        if (rl.gaps.length < 20000) rl.gaps.push(ov);
+        rl.pending = null;
+      }
+      th.held = t;
+      g.lockHeld(tid, t);
+      break;
+    }
+    case 7:
+      if (g.lockRelease(tid, t)) {
+        const th = rlThread(tid), h = t - th.held;
+        th.holdMs += h; th.maxHoldMs = Math.max(th.maxHoldMs, h);
+      }
+      break;
+    case 8: (rl.perThread[tid] ??= []).push(t); break;
+    case 9: {
+      const t0 = rl.perThread[tid]?.pop();
+      if (t0 === undefined) break;
+      const len = t - t0;
+      rl.planMs += len;
+      rl.plansByThread[tid] = (rl.plansByThread[tid] || 0) + 1;
+      if (rl.plans.length < 20000) rl.plans.push(len);
+      rl.pending = { end: t, len }; // closed by the sim thread's next acquire of the routing lock
+      break;
+    }
+  }
+}
+function rlDrain() {
+  if (rl.st === null) return;
+  const t0 = nowMs(), n = 2 ** RL_RING_LOG2, mask = n - 1, wAt = rl.st.add(4);
+  rl.foldSnap = new Uint32Array(rl.fold.readByteArray(12 * RL_SITES.length)); // before the write index: the ring then covers it
+  let r = rl.r, c = (wAt.readU32() - r) >>> 0;
+  if (c > n) { rl.lost += c - n; r = (r + c - n) >>> 0; c = n; } // lapped while we were away
+  rl.maxBacklog = Math.max(rl.maxBacklog, c);
+  while (c > 0) {
+    const at = r & mask, k = Math.min(c, n - at);
+    const a = new Uint32Array(rl.ring.add(at * 24).readByteArray(k * 24)), w2 = wAt.readU32();
+    let i = 0;
+    for (; i < k; i++) {
+      const idx = (r + i) >>> 0, o = i * 6;
+      if (((w2 - idx) >>> 0) > n) { rl.lost++; continue; } // overwritten while copying
+      if (a[o] !== ((idx + 1) >>> 0)) break; // reserved, not written yet: next drain
+      rl.events++;
+      rlEvent(a[o + 1], a[o + 2], (a[o + 4] * 4294967296 + a[o + 3]) / qpfPerMs, a[o + 5] / qpfPerMs);
+    }
+    r = (r + i) >>> 0; c -= i;
+    if (i < k) break;
+  }
+  rl.r = r;
+  const st = new Uint32Array(rl.st.readByteArray(20));
+  // shortcut: u32 counters wrap at 4.29e9 (acquire hooks at 2M/s: 35 min); restart the watch for longer runs
+  rl.lock = st[0] ? ptr(st[0]) : null; rl.acquireHooks = st[2]; rl.gateHooks = st[3]; rl.iterations = st[4];
+  rl.drainMs += nowMs() - t0;
+}
+// the tracker's site counts plus the entries C folded (under +0x918 or nested; never outer, so unlockedOuter is unchanged)
+function rlFoldedSites(r) {
+  const f = rl.foldSnap;
+  if (!r || !f) return r;
+  RL_SITES.forEach((site, i) => {
+    if (!f[i * 3]) return;
+    const s = r.sites[site] ??= { entries: 0, unlocked: 0, unlockedSim: 0, unlockedOuter: 0, unlockedPerSec: 0 };
+    s.entries += f[i * 3]; s.unlocked += f[i * 3 + 1]; s.unlockedSim += f[i * 3 + 2];
+  });
+  return r;
 }
 function routeLockStart() {
   if (rl.listeners.length) return;
   const gateAt = Object.fromEntries(Object.entries(RL_GATES).map(([k, v]) => [k, rlHookAt(k, v)])); // throws before any attach
   const planAt = rlHookAt('IC_Route_Plan', RL_ROUTE_PLAN);
-  // a new start after stop measures afresh
-  Object.assign(rl, { started: nowMs(), stopped: null, iterations: 0, acquireHooks: 0, gateHooks: 0, threads: {}, plans: [], plansByThread: {},
-                      planMs: 0, overlapMs: 0, gaps: [], pending: null });
-  rl.g11 = g11Tracker(rl.started);
-  rl.simTid = findInterpThread();
-  const g = rl.g11;
-  rl.listeners.push(Interceptor.attach(planAt, {
-    onEnter() { this.sim = Process.getCurrentThreadId() === rl.simTid; if (rl.lock !== null) g.planEnter(this.sim, nowMs()); },
-    onLeave() { if (rl.lock !== null) g.planLeave(this.sim, nowMs()); },
-  }));
-  for (const [site, at] of Object.entries(gateAt)) {
-    rl.listeners.push(Interceptor.attach(at, {
-      onEnter() {
-        rl.gateHooks++;
-        this.on = rl.lock !== null; // before the lock is known, nobody's hold can be told apart
-        if (!this.on) return;
-        const tid = Process.getCurrentThreadId();
-        g.gateEnter(tid, tid === rl.simTid, site, nowMs());
-      },
-      onLeave() { if (this.on) g.gateLeave(Process.getCurrentThreadId(), nowMs()); },
-    }));
+  if (rl.cm === null) { // built once and kept (with its TLS slot): a thread may still be leaving a callback after a detach
+    rl.st = Memory.alloc(32);
+    rl.fold = Memory.alloc(12 * RL_SITES.length);
+    rl.ring = Memory.alloc(2 ** RL_RING_LOG2 * 24);
+    const tls = new NativeFunction(k32.getExportByName('TlsAlloc'), 'uint32', [])();
+    if (tls === 0xffffffff) throw new Error('routelock: TlsAlloc failed (nothing hooked)');
+    rl.st.add(28).writeU32(tls);
+    rl.cm = new CModule(`#define MASK ${2 ** RL_RING_LOG2 - 1}u\n#define NSITES ${RL_SITES.length}\n${RL_C}`,
+                        { st: rl.st, fold: rl.fold, ring: rl.ring, QueryPerformanceCounter: k32.getExportByName('QueryPerformanceCounter'),
+                          TlsSetValue: k32.getExportByName('TlsSetValue') });
   }
-  rl.listeners.push(Interceptor.attach(ROUTE_PLAN_LOCKED, {
-    onEnter() {
-      if (rl.lock === null) rl.lock = this.context.ecx.add(0x918);
-      this.t = nowMs();
-    },
-    onLeave() {
-      const tid = Process.getCurrentThreadId(), end = nowMs(), len = end - this.t;
-      rl.planMs += len;
-      rl.plansByThread[tid] = (rl.plansByThread[tid] || 0) + 1;
-      if (rl.plans.length < 20000) rl.plans.push(len);
-      rl.pending = { end, len }; // closed by the sim thread's next acquire of the routing lock
-    },
-  }));
-  rl.listeners.push(Interceptor.attach(LOCK_ACQUIRE, {
-    onEnter() {
-      rl.acquireHooks++;
-      this.match = rl.lock !== null && this.context.ecx.equals(rl.lock);
-      if (!this.match) return;
-      this.t = nowMs();
-      const tid = Process.getCurrentThreadId();
-      g.lockEnter(tid, tid === rl.simTid, this.t);
-      if (tid === rl.simTid && rl.pending && !(g.g.depth[tid] > 0)) {
-        const gap = this.t - rl.pending.end, ov = Math.min(rl.pending.len, gap);
-        rl.overlapMs += ov;
-        if (rl.gaps.length < 20000) rl.gaps.push(ov);
-        rl.pending = null;
-      }
-    },
-    onLeave() {
-      if (!this.match) return;
-      const tid = Process.getCurrentThreadId(), now = nowMs(), w = now - this.t, th = rlThread(tid);
-      th.acquires++; th.waitMs += w; th.maxWaitMs = Math.max(th.maxWaitMs, w);
-      if (!(g.g.depth[tid] > 0)) th.held = now;
-      g.lockHeld(tid, now);
-    },
-  }));
-  rl.listeners.push(Interceptor.attach(LOCK_RELEASE, {
-    onEnter() {
-      if (rl.lock === null || !this.context.ecx.equals(rl.lock)) return;
-      const tid = Process.getCurrentThreadId(), now = nowMs();
-      if (g.lockRelease(tid, now)) { // false: acquired before the watch started, or still nested
-        const th = rlThread(tid), h = now - th.held;
-        th.holdMs += h; th.maxHoldMs = Math.max(th.maxHoldMs, h);
-      }
-    },
-  }));
-  rl.listeners.push(Interceptor.attach(LOCOMOTION_UPDATE, { onEnter() { rl.iterations++; } }));
+  rl.simTid = findInterpThread();
+  // a new start after stop measures afresh: counters zeroed, new generation (every thread's depths read as 0), the lock
+  // stays learned, the write index runs on and the drain starts at it
+  rl.st.add(8).writeByteArray(new Uint8Array(12));
+  rl.st.add(20).writeU32(rl.simTid ?? 0);
+  rl.st.add(24).writeU32((rl.st.add(24).readU32() + 1) & 0xffff || 1);
+  rl.fold.writeByteArray(new Uint8Array(12 * RL_SITES.length));
+  Object.assign(rl, { started: nowMs(), stopped: null, iterations: 0, acquireHooks: 0, gateHooks: 0, threads: {}, plans: [], plansByThread: {},
+                      planMs: 0, overlapMs: 0, gaps: [], pending: null, r: rl.st.add(4).readU32(), perThread: {}, events: 0, lost: 0,
+                      maxBacklog: 0, drainMs: 0 });
+  rl.g11 = g11Tracker(rl.started);
+  const cm = rl.cm;
+  rl.listeners.push(Interceptor.attach(planAt, { onEnter: cm.plan_enter, onLeave: cm.plan_leave }));
+  RL_SITES.forEach((site, i) => rl.listeners.push(Interceptor.attach(gateAt[site], { onEnter: cm.gate_enter, onLeave: cm.gate_leave }, ptr(i))));
+  rl.listeners.push(Interceptor.attach(ROUTE_PLAN_LOCKED, { onEnter: cm.rpl_enter, onLeave: cm.rpl_leave }));
+  rl.listeners.push(Interceptor.attach(LOCK_ACQUIRE, { onEnter: cm.acq_enter, onLeave: cm.acq_leave }));
+  rl.listeners.push(Interceptor.attach(LOCK_RELEASE, { onEnter: cm.rel_enter }));
+  rl.listeners.push(Interceptor.attach(LOCOMOTION_UPDATE, { onEnter: cm.loco_enter }));
+  rl.timer = setInterval(rlDrain, RL_DRAIN_MS);
 }
 function routeLockStop() {
   if (rl.listeners.length) rl.stopped = nowMs();
   for (const l of rl.listeners) l.detach();
+  if (rl.listeners.length) Interceptor.flush();
   rl.listeners = [];
+  if (rl.timer !== null) { clearInterval(rl.timer); rl.timer = null; rlDrain(); }
 }
 // Scheduler-stage stall watch (opt-in, /taskstall?start=1&ms=250, stop=1 unhooks; docs/04 F17). Interceptor.attach on
 // the seams MonoScriptHost::Simulate calls each iteration; per call only one QPC read on enter and one on leave. A 50 ms
@@ -651,6 +782,7 @@ function pct(a, q) {
   return Math.round(s[Math.min(s.length - 1, Math.floor(q * s.length))] * 1000) / 1000;
 }
 function routeLockReport() {
+  if (rl.timer !== null) rlDrain();
   if (rl.started && rl.simTid === null) rl.simTid = findInterpThread();
   const end = rl.stopped ?? nowMs(), secs = rl.started ? (end - rl.started) / 1000 : 0, r3 = x => Math.round(x * 1000) / 1000;
   const hist = {};
@@ -669,7 +801,9 @@ function routeLockReport() {
                routeMsPerSec: secs ? r3(rl.planMs / secs) : null, overlapMsPerSec: secs ? r3(rl.overlapMs / secs) : null, histogramMs: hist },
     // G11 (docs/18): job = whole IC_Route_Plan, window also ended by unlocked gate-site entries; upper bound until S2's native counters
     gateHooksPerSec: secs ? Math.round(rl.gateHooks / secs) : 0,
-    g11: rl.g11 && rl.g11.report(end),
+    g11: rl.g11 && rlFoldedSites(rl.g11.report(end)),
+    // the C ring: lost > 0 means the accounting above missed events (queue.ts verdict FAIL); drainMsPerSec = JS drain cost
+    ring: { records: 2 ** RL_RING_LOG2, events: rl.events, lost: rl.lost, folded: rl.foldSnap ? rl.foldSnap.filter((_, i) => i % 3 === 0).reduce((x, y) => x + y, 0) : 0, maxBacklog: rl.maxBacklog, drainMsPerSec: secs ? r3(rl.drainMs / secs) : 0 },
   };
 }
 
@@ -781,6 +915,43 @@ rpc.exports = {
         'vfMonoD71900', 'vfMonoE4BEB0', 'vfMonoInvoke']
         .flatMap(a => ['Main', 'Sim', 'Other', 'OffDevice', 'Us', 'MaxUs'].map(s => `${a}${s}`)),
       'vfRace505620Overlap', 'vfCost799780Startup', 'vfCost799810Startup', 'vfMonoIcNestMax', 'vfMonoIcNestNegCalls'); // 0.10.8: [Verify] v22 (+0x8A8..)
+    if (c.readS32() >= 23) f.push('jqReady', 'jqSimMode', 'jqWorkers', 'jqSimPumps', 'jqSimSkipPasses', 'jqSimSharedJobs', 'jqSimRenderJobs',
+      'jqRenderJobs', 'jqWorkerTids', 'jqWorkerJobs', 'd3dMtReady', 'allocDedupe', 'allocDupFrees'); // 0.10.9: native fix batch 2 (+0xBF0..)
+    if (c.readS32() >= 24) f.push('lscReady', 'lscMode', 'lscCallsK', 'lscHitsK', 'lscMismatches', 'idcReady', 'idcMode',
+      'idcLookupsK', 'idcHitsK', 'idcFillsK', 'idcNotFoundK', 'idcStepsK', 'idcErases', 'idcMismatches', 'idcObjects'); // 0.10.10: native fix batch 3 (+0xC24..)
+    if (c.readS32() >= 25) f.push( // 0.10.11: H6 S2b gate sites 13-15, docs/60 §2.2 closure sites, exact G11 window, S3a terrain graveyard (+0xC60..)
+      ...['lotTableContains', 'exitBuildBuy', 'rebuildLotRouting'].map(k => 'rgUnlocked_' + k),
+      ...['lotTableContains', 'exitBuildBuy', 'rebuildLotRouting'].map(k => 'rgJob_' + k),
+      'rtReady', 'vfRtGateOffSim', 'vfRtQtReads', 'vfRtQtBare', 'vfRtQtWriteInJob', 'vfRtQtWaitUs', 'vfRtQtWaitMaxUs', 'vfRtDestroyInJob',
+      'vfRtDestroyOffSim', 'vfRtDestroyWaitUs', 'vfRtLotGridWorker', ...['Main', 'Sim', 'Worker', 'Other'].map(r => `vfRtLotIdxRebuildInJob${r}`),
+      'vfRtPendingInJob', 'vfRt228WaitUs', 'vfRtDrainSave', 'vfRtDrainBrd', 'vfRtDrainLotSave', 'vfRtDrainWaitUs', 'vfRtDebugSkip',
+      'vfRtTeardownInJob', 'g11Plans', 'g11PlanUs', 'g11MovableUs', 'g11GapUs',
+      ...['Lock', 'Gate', 'Gate13', 'Destroy', 'QtWrite', 'Plan'].map(s => `g11End${s}`),
+      'tgReady', 'tgMode', 'vfRtGraveParked', 'vfRtGraveFreed', 'vfRtGraveSpins', 'vfRtGraveRaces', 'vfRtGraveHeld');
+    if (c.readS32() >= 26) f.push( // 0.11.0: H6 S3b closures + M1 START limits (+0xD18..)
+      'rgEnforce', 'rgGateWaits', 'rgGateWaitUs', 'rgGateWaitMaxUs', 'rgBorrows', 'rgDropLocked',
+      ...['NoLock', 'Busy', 'Closing', 'Pending', 'DirtyIndex', 'FrameOpen'].map(s => `asyncRefusedM1${s}`),
+      'vfRtDestroyInInvoke', 'vfRtClosingDrains', 'rtBusy', 'rtClosing');
+    if (c.readS32() >= 27) f.push( // 0.11.2: vfG11CloseBy, closer key table (+0xD58..)
+      ...[...Array(32).keys()].map(i => `g11CloseKey_${i}`), ...[...Array(32).keys()].map(i => `g11CloseN_${i}`),
+      ...[...Array(32).keys()].map(i => `g11CloseLostUs_${i}`), 'g11CloseOther');
+    if (c.readS32() >= 28) f.push('asyncSkipped', 'asyncBackoffs', 'asyncQueueFull', 'asyncQueueMax'); // 0.11.3: async job queue (+0xEDC..)
+    if (c.readS32() >= 29) f.push(...['blockKey', 'blockN', 'blockUs'].flatMap(n => [...Array(32).keys()].map(i => `${n}_${i}`)), 'blockOther'); // 0.11.4: P0 owner-thread waits (+0xEEC..)
+    if (c.readS32() >= 30) f.push('discReady', 'discMode', 'discDeferredAdd', 'discDeferredRemove', 'discApplied', 'discDropped',
+      'discPendingMax', 'discDrainWaitUs', 'discAgeMaxMs', 'discForced', 'discNested', 'discOverflow'); // 0.12.0: design D (+0x1070..)
+    if (c.readS32() >= 31) f.push('steerReady', 'steerMode', 'steerShadow', 'steerCalls', 'steerTaken',
+      ...['State', 'QlBusy', 'Dirty', 'LotMiss', 'Deferred', 'Cache', 'Shape', 'Trip'].map(n => `steerFb${n}`),
+      'steerUs', 'steerMaxUs', 'steerShadowRuns', 'steerShadowMismatch', 'steerShadowOrder', 'steerShadowQueryMismatch',
+      'steerQlHolds', 'steerQlWaitUs', 'steerSimTreeWrite', 'steerSimCacheWrite', 'steerSimWriteInRo', 'steerPinMoved',
+      'steerSeqSkew', 'steerUntracked', // 0.13.0: design S2 (+0x10A0..)
+      'caReady', 'caMode', ...['FEB848', 'FEB970', 'FEBD10', 'FEBE38'].map(n => `caSimInJob${n}`), 'caWaits', 'caWaitUs',
+      'caQlHeld'); // 0.13.0: fix C-A (+0x110C..)
+    if (c.readS32() >= 32) f.push('ltReady', 'ltMode', 'ltShadow', 'ltCalls', 'ltTaken',
+      ...['State', 'Nested', 'NoWm', 'QlBusy', 'Shape', 'Broken'].map(n => `ltFb${n}`), 'ltUs', 'ltMaxUs', 'ltShadowRuns',
+      'ltShadowMismatch', 'ltQlHeldBlock',
+      ...['AddRef', 'Release'].flatMap(o => ['Sim', 'WorkerInQl', 'WorkerNoQl', 'Other'].map(t => `portalRef${o}${t}`)),
+      'p1bReady', ...['p1bKey', 'p1bN', 'p1bUs'].flatMap(n => [...Array(32).keys()].map(i => `${n}_${i}`)), 'p1bOther',
+      'p1bNoFrame'); // 0.14.0: design L1 + probe P1b (+0x1130..)
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
     if (vfResetMax === 1 && r.version >= 20) {

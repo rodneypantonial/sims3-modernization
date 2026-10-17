@@ -1,0 +1,14 @@
+[
+  { "id": "bp-h6-s2b", "note": "H6 S2b (docs/60 §2.3), observe only, ts3native 0.10.11 (counters v25): [RouteGate] gate sites 1-15 + Sites=1 closure-site counters + exact G11; route worker Mode 0 / Mode 1 sync alternate every 3 min in one load (--ab routeworker, starts on = Mode 1). Pass: no crash, 0 watchdog lines, Mode 1 slices: sim-thread in-job counts 0, vfRtQtBare 0, vfRtTeardownInJob 0; read per-job destroys / Contains / quadtree writes (/ workerCalls) and Mode 0 G11 movable ms/s (g11MovableUs delta / s; go >= 15 in BP); planOnFails/planOnCalls within noise of planOffFails/planOffCalls",
+    "asi": "game-copy/ts3native.asi.h6s2", "save": "Baseline-BP", "minCounters": 25,
+    "ini": { "RouteWorker.Enabled": 1, "RouteWorker.Mode": 0, "RouteGate.Enabled": 1, "RouteGate.Sites": 1 },
+    "run": { "profile": { "minutes": 12, "repro": "rt-s2b-sweep", "ab": "routeworker", "slice": 3 } }, "timeoutMin": 30 },
+  { "id": "ip-h6-s2b", "note": "the same in Isla Paradiso (water routing, houseboats, more lot streaming); G11 go needs >= 30 ms/s movable here",
+    "asi": "game-copy/ts3native.asi.h6s2", "save": "Baseline-IP", "minCounters": 25,
+    "ini": { "RouteWorker.Enabled": 1, "RouteWorker.Mode": 0, "RouteGate.Enabled": 1, "RouteGate.Sites": 1 },
+    "run": { "profile": { "minutes": 12, "repro": "rt-s2b-sweep", "ab": "routeworker", "slice": 3 } }, "timeoutMin": 30 },
+  { "id": "bp-h6-s3a", "note": "H6 S3a (docs/60 §2.2 #2): [TerrainGrave] alone ([HeightCache] off: its two detours run without a table), park vs release alternating every 3 min in one load (--ab terraingrave, starts on) during a 12 min street-level pan with Sims routing. Pass: no crash; vfRtGraveRaces only in off slices; parked shapes freed (vfRtGraveFreed follows vfRtGraveParked, vfRtGraveHeld <= 64); memory flat; 0 stuck Sims",
+    "asi": "game-copy/ts3native.asi.h6s2", "save": "Baseline-BP", "minCounters": 25,
+    "ini": { "TerrainGrave.Enabled": 1, "TerrainGrave.Mode": 1 },
+    "run": { "profile": { "minutes": 12, "repro": "terrain-grave-pan", "ab": "terraingrave", "slice": 3 } }, "timeoutMin": 30 }
+]

@@ -57,6 +57,7 @@ namespace Ts3Fixes
             ApplyCachedReflection();
             ApplyUiCaches();
             ApplyNameCache();
+            ApplyScriptHotSpots();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -74,13 +75,16 @@ namespace Ts3Fixes
         // recorded, stuck checks skipped for busy Sims (FewerPlans.cs), [68-70] save identity tables converted / most entries
         // in one table / table grows (RefTable.cs), [71-73] serializer type caches started / answers from the cache /
         // answers stored (CachedReflection.cs), [74-75] motive bar updates without / with image loads, [76-77] moodlet grid
-        // in-place updates / rebuilds (UiCaches.cs), [78-79] Sim name cache hits / misses (NameCache.cs).
+        // in-place updates / rebuilds (UiCaches.cs), [78-79] Sim name cache hits / misses (NameCache.cs),
+        // [80-82] lot detail priority answers from the tick set / tick sets built / verify mismatches,
+        // [83-84] cane-walk checks answered early / passed to the game, [85-87] hours-of-operation memo hits / misses / verify mismatches,
+        // [88-89] tooltip window walks skipped / run (ScriptHotSpots.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[80];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[90]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -117,6 +121,11 @@ namespace Ts3Fixes
                 case "motivebar": return Instantiator.kMotiveBarImageCache;
                 case "buffgrid": return Instantiator.kBuffGridInPlace;
                 case "namecache": return Instantiator.kSimNameCache;
+                case "detailprio": return Instantiator.kDetailPriorityCache;
+                case "hoursmemo": return Instantiator.kHoursMemo;
+                case "caneearly": return Instantiator.kCaneEarlyOut;
+                case "tooltipthrottle": return Instantiator.kTooltipThrottle;
+                case "detailprioverify": case "hoursmemoverify": return false; // verify switches: test runs only, no tuning
                 case "spotspread": return true;
                 default: return true;
             }

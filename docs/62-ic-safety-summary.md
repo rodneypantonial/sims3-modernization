@@ -13,8 +13,8 @@ The two parts used the same four words with different meanings. Part A called a 
 | Verdict | Meaning in `ic-safety.csv` | Count |
 |---|---|---|
 | **SAFE** | A second managed thread may call the IC directly. No sim-mutated native state, no lock, no post and no unresolved virtual call in the closure. Mostly empty stubs and getters of init-time config. docs/30 P1-P4 and the worker rules still apply (§2) | 159 (82 after §8) |
-| **PROXY** | Reads or writes sim-owned native state with no covering lock. A worker must forward it to the sim thread: `proxy` = `sync` for a value return, `queued` for `void`, `sync-or-queued` where part B did not record the return type | 1,502 |
-| **UNSAFE** | Not forwardable as a plain native call. It yields or waits on the calling script task, reads the running task id, or re-enters managed code synchronously (`World_FireEvent`, `ScriptHost_InvokeDelegate`, `mono_runtime_invoke`, managed object registration). Also Mono reflection. It can only run inside a sim-thread script task | 62 |
+| **PROXY** | Reads or writes sim-owned native state with no covering lock. A worker must forward it to the sim thread: `proxy` = `sync` for a value return, `queued` for `void`, `sync-or-queued` where part B did not record the return type | 1,502 (1,587 after §9) |
+| **UNSAFE** | Not forwardable as a plain native call. It yields or waits on the calling script task, reads the running task id, or re-enters managed code synchronously (`World_FireEvent`, `ScriptHost_InvokeDelegate`, `mono_runtime_invoke`, managed object registration). Also Mono reflection. It can only run inside a sim-thread script task | 62 (83 after §9) |
 | **MAIN** | Device work on the calling thread with no owner check. It is already a race from the sim thread (docs/43). Needs a hand-off to the main thread, not a proxy | 6 |
 
 Mapping applied, per row:
@@ -140,9 +140,9 @@ Autonomy reaches three UNSAFE ICs, no MAIN IC, and one open-ended unsafe set tha
 
 | IC or set | Why it cannot be proxied | Snapshot design consequence [inferred] |
 |---|---|---|
-| `Simulator_SleepImpl` (Y1, Y2, Y3) | yields the calling script task | The worker runs the whole search in one go: no `YieldIfPossible`, no stopwatch. The meta-autonomy 1 ms slicing (docs/59 §1.3) exists only to share the sim thread and is dropped on a worker. The interrupt check that the yield guards (`mAutonomySearchWasInterrupted`, actor destroyed) moves to the apply step: the sim thread drops the result if the Sim's search type changed or the actor died since the snapshot. |
-| `Simulator_GetCurrentTaskImpl` (`CheckYieldingContext`) | returns the running task id; on a worker or in a proxy it names the wrong task | Not called on the worker (no yields). The task identity is captured with the snapshot if apply needs it. |
-| `Simulator_AddObjectImpl` (D5 immediate interactions) | registers a managed object and calls into managed code | The pick and push (D) stay on the sim thread, as docs/59 §1.6 already concludes. The worker returns a candidate list or a pick, never an `InteractionInstance`. |
+| `Simulator_SleepImpl` (Y1, Y2, Y3) | yields the calling script task (host vtable 0x108B818 +0x20, then the yield mark: verified in the body, §9) | The worker runs the whole search in one go: no `YieldIfPossible`, no stopwatch. The meta-autonomy 1 ms slicing (docs/59 §1.3) exists only to share the sim thread and is dropped on a worker. The interrupt check that the yield guards (`mAutonomySearchWasInterrupted`, actor destroyed) moves to the apply step: the sim thread drops the result if the Sim's search type changed or the actor died since the snapshot. |
+| `Simulator_GetCurrentTaskImpl` (`CheckYieldingContext`) | returns the running task id (tail-jumps to host +0x118: verified, §9); on a worker or in a proxy it names the wrong task | Not called on the worker (no yields). The task identity is captured with the snapshot if apply needs it. |
+| `Simulator_AddObjectImpl` (D5 immediate interactions) | registers a managed object and calls into managed code (+0x14 = ScriptHost_RegisterManagedObject: verified, §9) | The pick and push (D) stay on the sim thread, as docs/59 §1.6 already concludes. The worker returns a candidate list or a pick, never an `InteractionInstance`. |
 | Interaction `Test()` bodies, tuning scoring functions, `Check.Test`, posture multipliers (C3, C8, C11) | arbitrary script, mods included; their ICs are not mapped (docs/59 §1.4 "not mapped") | This is the real blocker, not the 21 ICs. A snapshot can cover the base Test (C3-C7) and scoring (C8-C10) because their ICs are known. A definition's own `Test` can reach any IC, including UNSAFE ones (`World_CanSeeObjectImpl` and `Query_GetObjectsOverlappingObject` re-enter script through `World_FireEvent`). The worker needs an allow-list of audited definitions, and the sim thread scores all others as today. |
 | Rain/hail path (C8) | allocates an `InteractionInstance` per outdoor pair | Replace with a snapshot shelter flag per target; never construct game objects on the worker. |
 | Low-LOD `Update` (B3) | sends events, arbitrary listeners | Stays on the sim thread, before the snapshot. |
@@ -175,12 +175,12 @@ No runtime fact contradicts a verdict. The one contradiction is the lock naming 
 | `World_IsPositionOutsideImpl` is low confidence (closure 52 functions, a `Lock_Acquire` at depth 3 via `0xB96380`) | Hot set rank 3. If the lock covers the room or lot data it reads, the snapshot could skip it; if not, it stays PROXY. Same lock path in `World_HasAnyRoofOrFloorAbovePosImpl` | Read `0xB96380` and the `ecx` lock (not the timeout operand) in Ghidra |
 | `World_GetLotLocationImpl` low (closure 42, lock via `0xC68680`) | Weather path, per outdoor pair | Same check as above |
 | `Slots_GetParentIdImpl` medium; both scans see only `g_ObjectService` / transform component reads behind 2 unresolved virtual calls | Hottest IC. Verdict PROXY is not in doubt (object state, no lock), but the read set decides what the snapshot must copy | Hand-check the body (5 functions) |
-| Part A task ICs re-classified by name (`Simulator_SleepImpl`, `GetCurrentTaskImpl`, `SetYieldingDisabledImpl`) | They decide the "no yield on the worker" rule | Confirm host `+0x118` / `+0x11C` in their bodies |
+| Part A task ICs re-classified by name (`Simulator_SleepImpl`, `GetCurrentTaskImpl`, `SetYieldingDisabledImpl`) | They decide the "no yield on the worker" rule | Done 2026-10-16 (§9): confirmed in the bodies through host `+0x17C`; all three stay UNSAFE |
 | `Random_NextDoubleImpl`, `StopWatch_*` return types not recorded in part B (`sync-or-queued`) | Minor: autonomy replaces them anyway | none |
 | SACS (about 29 ICs) has no row | Not on the scoring path, but interaction `Run` and posture code use state machines; a later "run interactions off thread" idea would need them | Done 2026-10-16 (§7): 26 PROXY, 3 UNSAFE |
 | Interaction `Test` bodies and scoring functions not mapped (docs/59) | The real blocker for T-AUT-c (§4) | Map the ICs reached by the most-scored definitions first (a managed call graph from the decompiled scripts, as in docs/59) |
 | EA IC nesting counter `[0x11F2D84]` (docs/56) | Decides whether even SAFE ICs are callable from a worker | Check whether the IC transition or any SAFE body writes it |
-| Thunk entries in the original part B scan (§8): before the fix the scan never read a body behind an IC entry thunk. Unscanned bodies came out SAFE (fixed for those rows), but a non-SAFE row whose verdict came from an override may still hide an UNSAFE path (a yield or managed callback) | A PROXY that is really UNSAFE would break a forwarder | Rerun `ICSafety.java` depth 6 on all part B rows and diff verdicts |
+| Thunk entries in the original part B scan (§8): before the fix the scan never read a body behind an IC entry thunk. Unscanned bodies came out SAFE (fixed for those rows), but a non-SAFE row whose verdict came from an override may still hide an UNSAFE path (a yield or managed callback) | A PROXY that is really UNSAFE would break a forwarder | Done 2026-10-16 (§9): no part B or SACS PROXY row moved; 18 part A rows moved to UNSAFE |
 | 760 low-confidence rows, nearly all PROXY behind unresolved virtual calls | Errs toward PROXY, so not a safety risk; only a lost chance of more SAFE rows. None is on the autonomy path except those listed above | Resolve object and component vtables (part A Limits) only if a worker needs them |
 
 ## 7. SACS update (2026-10-16)
@@ -197,7 +197,7 @@ The 29 `SACS_*` ICs (animation state machines) that had no row now have one, `so
 
 SACS confidence: 9 medium, 20 low (most closures end in many unresolved virtual calls into the animation system).
 
-- **UNSAFE (3):** `SACS_RequestStateImpl` (yields, host `+0x124`; also posts `PostRenderMessage`), `SACS_AcquireDriverImpl` (marks a yield, host `+0x11C`, and reads the task id), `SACS_GetActiveClipCountImpl` (reaches `mono_runtime_invoke` within depth 6, so a managed callback; surprising for a getter, the path is not hand-checked). These must stay in a sim-thread script task. `SACS_AcquireDriverNoYieldImpl` is PROXY, so the no-yield variant is the one a forwarder could use.
+- **UNSAFE (3, 2 after §9):** `SACS_RequestStateImpl` (yields, host `+0x124`; also posts `PostRenderMessage`; **PROXY since §9**: `+0x124` signals a waiter, is not a yield, and is not reached from this IC), `SACS_AcquireDriverImpl` (marks a yield, host `+0x11C`, and reads the task id), `SACS_GetActiveClipCountImpl` (reaches `mono_runtime_invoke` within depth 6, so a managed callback; surprising for a getter, the path is not hand-checked). These must stay in a sim-thread script task. `SACS_AcquireDriverNoYieldImpl` is PROXY, so the no-yield variant is the one a forwarder could use.
 - **Override (1):** `SACS_SetParamImpl` scanned SAFE (closure of 2). Its body calls the script host vtable `+0xCC` (handle lookup) and then a setter on the state machine; the scan stopped at the indirect call [verified, bytes]. Set to PROXY, like `SetParamStringImpl`.
 - **PROXY (26):** everything else, state machine objects reached through the script handle table (table locked, object not). No SACS IC is SAFE.
 
@@ -236,6 +236,38 @@ Hand checks of three rows that stay SAFE [verified, disassembly]:
 - `Camera_GetCustomFlyThroughIndex`: camera global `0x11E9400`, then three plain field loads (`+0x14`, `+0xAC`, `+0x19C`), no virtual call, no write. SAFE by the rule, but it reads live camera object state with no lock: a word-sized racy read, and the object chain could change under a worker [inferred]. A worker that needs a stable value should proxy it anyway.
 
 The ledger claim I-62-1 (docs/51) now reads 82.
+
+## 9. Full rescan of all rows with the fixed scan (2026-10-16)
+
+§8 rescanned only the SAFE rows. This pass ran the fixed `ICSafety.java` at depth 6 on all 1,758 bindings (1,714 bodies, on a private copy of the Ghidra project), classified them with `classify.ts` and `overrides-b.json`, and diffed the result against the CSV. Every changed row's note starts with "full rescan 2026-10-16 (docs/62 §9)".
+
+**The thunk bug did not hide anything in the part B or SACS rows.** No part B or SACS PROXY row moved. A non-SAFE part B row could not have come from an unread thunk body (an empty closure classified SAFE), so the §6 worry about override rows is cleared [verified: scan diff]. Of the 45 rows where scan and CSV differ, 43 are part A rows (scanned at depth 4 with other rules by `IcSafetyDepth4.java`); the other two hinged on one mislabelled scan flag.
+
+| | Before | After |
+|---|---|---|
+| SAFE | 82 | 82 |
+| PROXY | 1,603 | **1,587** (-18, +2) |
+| UNSAFE | 67 | **83** (+18, -2) |
+| MAIN | 6 | 6 |
+
+**Scan rule fix: host `+0x124` is not a yield.** In the host's primary vtable, `+0x120` (`0xD77F30`) puts a key, two values and an object into the host map at `+0x1720` and queues it. `+0x124` (`0xD77FB0`) looks the key up in that map and queues it to be woken (`+0x175C`). A depth-6 scan of `0xD77FB0` finds no yield, wait or managed call [verified: asm and scan]. So `+0x120` registers a waiter (every IC that calls it also calls the yield mark `+0x11C`), and `+0x124` signals one: a post, not a yield [inferred from the asm]. `ICSafety.java` now flags `+0x124` as `post:host+124_SignalWaiter`. Two rows were UNSAFE only through `+0x124` and are now PROXY:
+- `SACS_RequestStateImpl`: also, the only `+0x124` call (in `0x8042D0`) runs only when its 5th argument is non-zero, and the IC passes 0, as does the one recursive call [verified asm]. The IC does not reach `+0x124` at all and has no other yield or managed call in its closure. This agrees with docs/73 §1 (I-73-4): the yield of `StateMachineClient.RequestState` is its managed `Sleep(0)` loop. PROXY, `sync-or-queued`, low (104 unresolved virtual calls).
+- `CASUtils_SimBuilderResetAnimationImpl`: reaches `0x8042D0` through `0x804A20`, which passes its caller's 5th argument on. Whichever way that goes, `+0x124` is not a yield. PROXY, low.
+
+**PROXY to UNSAFE (18, all part A, none on the autonomy path)** [verified: scan paths at depth 6 through direct calls; branch conditions not traced]:
+- **Synchronous managed callback via `World_FireEvent 0x78F2B0` (10):** `Objects_SetPosition`, `SetForward`, `SetRotation`; `World_SetRoomMarkerSeed`, `ClearRoomMarkerSeed`, `DesignModeSwap_ApplyToObjectImpl`, `DesignModeSwap_DisableSubmitOfUndoableImpl`, `RestrictBuildBuyInBuildingsImpl`, `GetLotWorth`, `GetUnfurnishedLotWorth` (both getters reach it through a lazy lot worth recompute). Part A stopped at depth 4; these paths are 5 or 6 calls deep.
+- **Host delegate call `+0x134` (2):** `World_FindGoodLocation`, `World_FindGoodLocationAtCustomDepth` (through the FGL core `0xB470C0`).
+- **`mono_runtime_invoke` (1):** `Route_InsertCustomPathAtIndex`, through host `+0x130` (`0xD71280`, a managed member read that ends in `0xEA1400`).
+- **Task context or yield (5):** `RouteManager_BeginPortalRouting` (reads the running task id, host `+0x118`, in its own body); `World_CapturePhoto`, `CaptureSceneForMemoryOrPicture`, `CaptureMeshForSculpture` (task id, register waiter, yield mark in the body); `World_WaitForDetailedLots` (yield mark plus `mono_runtime_invoke`).
+
+**Kept against the scan (25 rows):**
+- **5 `Simulator_*` task ICs stay UNSAFE.** The scan sees PROXY because each body calls host `+0x17C`, which returns the host itself (docs/27), and then a slot of the host's second vtable `0x108B818` that the scan does not follow. The slots [verified asm]: `SleepImpl` +0x20 = `0xD77B20` (puts the task in the host sleep map, then the yield mark `+0x11C`); `GetCurrentTaskImpl` +0x1C = `0xD71500` (tail-jumps to `+0x118`, `0xD70E90`, which returns the task id at host `+0xBC8`); `AddObjectImpl` +0x14 = `0xD77920` (`ScriptHost_RegisterManagedObject`, docs/50); `CreateObjectImpl` +0x04 = `0xD7B550`; `SetYieldingDisabledImpl` +0x10 = `0xD70B80` (task-keyed host calls; what it sets is [inferred]). This closes the §6 gap "confirm host `+0x118` / `+0x11C`". Sleep, GetCurrentTask and AddObject are now high confidence.
+- **19 rows the scan calls SAFE stay PROXY.** The SAFE rule ignores global reads. 17 of the 19 are part A getters with a recorded unlocked read of sim-mutated state (sun and moon times, sea level, object designer state); `World_ExportInfoImpl` and `World_HandToolGetObjectHeld` were not hand-checked. Three are autonomy rows (`World_GetSeaLevelImpl` C5, `GetSunsetTime` C6, `GetSunriseTime` C7): closures of 1-2 functions with no virtual call, so the snapshot copy in §3 is cheap, but they stay PROXY.
+- **`World_SetLightingValuesImpl` stays MAIN.** The depth-6 scan leaves 19 callees past the depth limit and does not reach the device call part A found; part A's path is kept [not rechecked].
+
+**Hand checks** [verified asm unless marked]: the five `Simulator_*` rows and `SACS_RequestStateImpl` (above); `RouteManager_BeginPortalRouting` (calls host `+0x118` on every non-null path after the object lookup) and `Route_InsertCustomPathAtIndex` (the host `+0x130` call is in the body; `0xD71280` ends in `mono_runtime_invoke`), the two routing rows; and three others: `Objects_SetPosition` (`0xC8A290` fires event type `0x11` through `World_FireEvent`), `World_FindGoodLocation` (the FGL core calls host `+0x134` with the delegate at params `+0x28`) and `World_GetLotWorth` (lot lookup, then a lazy worth recompute `0xABB390` that writes lot fields and calls the setter `0xB036E0` that fires the event [path verified, "lazy" inferred]).
+
+**Design impact.** None on autonomy: no autonomy row changes verdict, so §3 and §4 stand, now with the three task ICs confirmed in their bodies. docs/60 (async routing) does not rely on any moved row: route planning, the `+0x918` lock sites and the physics readers are unchanged. `BeginPortalRouting` and `InsertCustomPathAtIndex` show that portal routing and custom path edits are script-task operations (task id, managed reads), so they stay on the sim thread in any off-thread routing design. docs/61 and docs/30 name no moved IC. One new fact for docs/30 workers: `Objects_SetPosition` / `SetForward` / `SetRotation` fire managed events synchronously, so an off-thread result can never move an object directly; it must be applied on the sim thread.
 
 ## Reproduce
 

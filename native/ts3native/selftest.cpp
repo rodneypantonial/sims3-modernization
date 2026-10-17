@@ -338,6 +338,7 @@ static LONG __fastcall FakeLockAcquire(void* lock, void*, const DWORD* deadline)
     if (*deadline == 0xFFFFFFFF) { EnterCriticalSection((CRITICAL_SECTION*)lock); return 1; }
     return TryEnterCriticalSection((CRITICAL_SECTION*)lock) ? 1 : -2;
 }
+static LONG __fastcall FakeLockRelease(void* lock, void*) { LeaveCriticalSection((CRITICAL_SECTION*)lock); return 0; }
 static u8 __cdecl FakeGetOption(DWORD, DWORD, DWORD, DWORD) { return 0; }  // the game: bit 58 is never set
 static u8* __cdecl FakeIc(u8* out, DWORD handle) {
     memset(out, 0, 0x48);
@@ -383,6 +384,16 @@ static void TestRouteAsync() {
     assert(!Start(kH1) && c.asyncStarted == 0);  // detours not all in place (only Route_GetOption, for NOYIELD): START says no
     ts3native_counters.asyncReady = 1;
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);  // no job: plain call
+    // H6 M1: START needs the gate's closures and a quiet world; the worker then holds the world's +0x918 for the job
+    static u8 m1World[0xA00], m1P[0x200], m1Wm[0x200];
+    *(u8**)(m1World + 0x95C) = m1P;
+    *(u8**)(m1World + 0x964) = m1Wm;
+    CRITICAL_SECTION* m1Lock = (CRITICAL_SECTION*)(m1World + 0x918);
+    InitializeCriticalSection(m1Lock);
+    g_rgLock = m1Lock;
+    g_rgRelOrig = FakeLockRelease;
+    assert(!Start(kH1) && c.asyncRefusedM1[0] == 1 && c.asyncStarted == 0);  // closures off
+    ts3native_counters.rgEnforce = 1;
 
     // started -> not ready while running -> ready -> the next Route.Plan takes the worker's result
     g_icSleepMs = 30;
@@ -391,7 +402,9 @@ static void TestRouteAsync() {
     assert(Ready(kH2));  // no job for that route: "ready", nothing armed
     WaitReady(kH1);
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid && *(DWORD*)(out + 4) == kH1);
-    assert(c.asyncCollected == 1 && g_async.state == A_IDLE);
+    assert(c.asyncCollected == 1 && g_async.state == A_IDLE && g_async.lock == m1Lock);
+    assert(TryEnterCriticalSection(m1Lock));  // the worker released the job's lock
+    LeaveCriticalSection(m1Lock);
     Cancel(kH1);
 
     // CANCEL after READY (destination went invalid, Plan returned before the internal call): the result is not handed to a later plan
@@ -400,19 +413,41 @@ static void TestRouteAsync() {
     Cancel(kH1);
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 1 && c.asyncCollected == 1);
 
-    // another route's START while a job runs is refused; a plain plan of the running route waits for it, then plans itself
+    // 0.11.3 queue: another route's START while a job runs is queued behind it; a plain plan of the running route waits
+    // for it, drops the result and plans itself; the queued one runs next on the worker and is collected
     g_icSleepMs = 50;
     assert(Start(kH1));
-    assert(!Start(kH2) && c.asyncRefused == 1);
-    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 2 && g_async.state == A_IDLE);
-
-    // a result nobody collected (the Sim was reset while sleeping) is dropped by the next START
+    assert(Start(kH2) && c.asyncRefused == 1 && c.asyncQueueMax >= 2);  // 1 = the M1 refusal above
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 2);
+    WaitReady(kH2);
+    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == g_workerTid && c.asyncCollected == 2 && !AsyncBusy());
+    // a queued job that has not started yet is taken back by its route's own plan and planned on this thread
+    g_icSleepMs = 50;
+    assert(Start(kH1) && Start(kH2));
+    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 3);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid && c.asyncCollected == 3 && !AsyncBusy());
+    // the same route started again drops its older request; a result whose Sim vanished is reclaimed when the queue is full
     g_icSleepMs = 0;
     assert(Start(kH1));
-    while (g_async.state == A_RUNNING) Sleep(1);
-    assert(Start(kH2) && c.asyncDropped == 3);
+    WaitReady(kH1);
+    assert(Start(kH1) && c.asyncDropped == 4);
+    WaitReady(kH1);
+    Cancel(kH1);
+    assert(c.asyncDropped == 5 && !JobFor(kH1));
+    for (DWORD i = 0; i < 8; i++) assert(Start(0x25000100 + i));
+    for (DWORD i = 0; i < 8; i++) WaitReady(0x25000100 + i);
+    const LONG full0 = c.asyncQueueFull;
+    assert(!Start(kH2) && c.asyncQueueFull == full0 + 1);  // 8 uncollected results, all fresh
+    g_jobs[3].doneTick -= kDoneKeepMs;
+    assert(Start(kH2) && c.asyncDropped == 6 && !JobFor(0x25000103));
     WaitReady(kH2);
-    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == g_workerTid && c.asyncCollected == 2);
+    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == g_workerTid && c.asyncCollected == 4);
+    for (DWORD i = 0; i < 8; i++) Cancel(0x25000100 + i);
+    assert(c.asyncDropped == 13 && !AsyncBusy());
+    // the counts below continue from the single-slot test: dropped 3, collected 2 (relative checks keep them readable)
+    ts3native_counters.asyncDropped = 3;
+    ts3native_counters.asyncCollected = 2;
 
     // lock pump: the job holds the routing lock and makes a managed call; the owner, blocked on that lock, runs it meanwhile
     g_icHoldLock = g_icInvoke = 1;
@@ -437,8 +472,9 @@ static void TestRouteAsync() {
     u8 opts[0x38] = {0};
     int s[2] = {1, 2}, g[2] = {3, 4}, list[2];
     assert(Start(kH1));
+    while (g_async.state != A_RUNNING) Sleep(0);  // the worker has claimed it (queued jobs start a moment later)
     assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == me);
-    assert(g_async.state == A_DONE && g_invokeTid == me && c.invokes == inv0 + 2);
+    assert(JobFor(kH1) && JobFor(kH1)->state == J_DONE && g_invokeTid == me && c.invokes == inv0 + 2);
     Cancel(kH1);  // drops the done kH1 result nobody collected
     assert(c.asyncDropped == 4 && g_async.state == A_IDLE);
     assert(Start(kH2) && c.asyncDropped == 4);
@@ -451,7 +487,7 @@ static void TestRouteAsync() {
     g_icSleepMs = 40;
     assert(Start(kH1));
     Cancel(kH2);  // another route's CANCEL leaves it alone
-    assert(g_async.state == A_RUNNING);
+    assert(JobFor(kH1) != NULL);
     Cancel(kH1);
     assert(g_async.state == A_IDLE && c.asyncDropped == 5);
     assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && c.asyncDropped == 5);
@@ -502,6 +538,12 @@ static void TestRouteAsync() {
     assert(NoYield(0) == 1);
     FakeTask(kRoot, 7);
     assert(GetOptionHook(kH1, 0, kNoYieldHi, 1) == 0 && GetOptionHook(kH1, 1, kAsyncOptHi | kNoYieldHi, 1) == 0);  // not ours: passes through
+    ts3native_counters.rgEnforce = 0;
+    ts3native_counters.rgOwnerTid = 0;
+    ts3native_counters.rgAcquires = 0;  // the worker took m1Lock as the learned lock
+    g_rgLock = NULL;
+    g_async.lock = NULL;
+    DeleteCriticalSection(m1Lock);
 }
 
 // --- save write: the backup job against a fake native save on real temp folders ---
@@ -1098,6 +1140,41 @@ static void TestAlloc() {
     assert(g_fakeMallocs == m + 1 && g_fakeFrees == f + 1);
     c.allocMode = 1;
 
+    // docs/67 double free on one thread: with Dedupe the second Free is dropped (counted), the bin keeps one link, and two
+    // Mallocs of that size get two different chunks (without it they got the same chunk twice)
+    {
+        c.allocDedupe = 1;
+        const LONG d0 = c.allocDupFrees;
+        void* a = EaMallocHook(kHeapA, NULL, 300, 0);
+        const int f0 = g_fakeFrees;
+        EaFreeHook(kHeapA, NULL, a);
+        EaFreeHook(kHeapA, NULL, a);
+        assert(c.allocDupFrees == d0 + 1 && g_fakeFrees == f0);
+        void* x = EaMallocHook(kHeapA, NULL, 300, 0);
+        void* y = EaMallocHook(kHeapA, NULL, 300, 0);
+        assert(x == a && y != a);
+        EaFreeHook(kHeapA, NULL, x);
+        EaFreeHook(kHeapA, NULL, y);
+        EaFreeHook(kHeapA, NULL, x);  // dup behind another link: found by the walk
+        assert(c.allocDupFrees == d0 + 2);
+        // switch off: still counted, old behaviour (pushed again)
+        c.allocDedupe = 0;
+        void* u = EaMallocHook(kHeapA, NULL, 300, 0);
+        EaFreeHook(kHeapA, NULL, u);
+        EaFreeHook(kHeapA, NULL, u);
+        assert(c.allocDupFrees == d0 + 3);
+        // count 0 with a head (what the old double free left behind): AcPop treats the bin as empty
+        AcThread* tt = (AcThread*)FlsGetValue(g_acFls);
+        AcHeap* hh = AcFind(tt, kHeapA, false);
+        AcBin* bb = &hh->bins[AcChunk(300) / 16 - 1];
+        const DWORD keep = bb->count;
+        bb->count = 0;
+        const int mm = g_fakeMallocs;
+        assert(EaMallocHook(kHeapA, NULL, 300, 0) != u && g_fakeMallocs == mm + 1);
+        tt->bytes -= keep * AcChunk(300);  // drop the looped bin before later tests
+        bb->head = NULL;
+    }
+
     // heap A shuts down: its chunks are forgotten (not freed), heap B's go back to B
     void* b1 = EaMallocHook(kHeapB, NULL, 60, 0);
     EaFreeHook(kHeapB, NULL, b1);
@@ -1255,6 +1332,100 @@ static void TestHeightCache() {
     s.heightMode = 0;
     free(g_hc);
     g_hc = NULL;
+}
+
+// --- [TerrainGrave] (H6 S3a): the game's PhysShape_Release bytes under our detour, called from a fake swap site ---
+static int g_tgDtors;
+static void* g_tgLastDtor;
+static void __fastcall TgFakeDtor(void* self, void*, int flag) { g_tgDtors++; g_tgLastDtor = self; assert(flag == 1); }
+static void* g_tgFakeVtbl[1] = {(void*)TgFakeDtor};
+struct TgShape { void** vtbl; u8 pad[0x48]; LONG count; };  // count at +0x4C
+static_assert(offsetof(TgShape, count) == 0x4C, "shape layout");
+static volatile LONG g_tgSeenInFlight;
+static double __fastcall TgFakeRay(void*, void*, float, float) { g_tgSeenInFlight = g_tgInFlight; return 1.0; }
+
+static void TestTerrainGrave() {
+    Ts3nCounters& k = ts3native_counters;
+    // PhysShape_Release 0x682760 as in the exe [verified disassembly]: add [ecx+4Ch],-1; push esi; mov esi,[ecx+4Ch];
+    // jne +8; mov eax,[ecx]; mov edx,[eax]; push 1; call edx; mov eax,esi; pop esi; ret
+    static const u8 kRelease[] = {0x83, 0x41, 0x4C, 0xFF, 0x56, 0x8B, 0x71, 0x4C, 0x75, 0x08, 0x8B, 0x01, 0x8B, 0x10, 0x6A, 0x01,
+                                  0xFF, 0xD2, 0x8B, 0xC6, 0x5E, 0xC3};
+    u8* code = (u8*)VirtualAlloc(NULL, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    u8* rel = code;
+    memcpy(rel, kRelease, sizeof(kRelease));
+    // the swap site: ecx = [esp+4]; call rel; ret  (the return address after the call stands for 0xC2A896)
+    u8* swap = code + 64;
+    swap[0] = 0x8B; swap[1] = 0x4C; swap[2] = 0x24; swap[3] = 0x04;
+    swap[4] = 0xE8;
+    *(LONG*)(swap + 5) = (LONG)(rel - (swap + 9));
+    swap[9] = 0xC3;
+    typedef void(__cdecl* SwapFn)(void* shape);
+    typedef LONG(__fastcall* RelFn)(void* shape, void*);
+    const SwapFn Swap = (SwapFn)(void*)swap;
+    const RelFn Release = (RelFn)(void*)rel;
+    g_tgSwapRet = (DWORD)(uintptr_t)(swap + 9);
+    g_tgTramp = InstallDetour("graveyard release", (DWORD)(uintptr_t)rel, kTgPrologue, sizeof(kTgPrologue), (void*)TgStub);
+    assert(g_tgTramp);
+    static TgShape shapes[70];
+    for (TgShape& s : shapes) { s.vtbl = g_tgFakeVtbl; s.count = 1; }
+
+    // other callers and the shared count: the game's release (count 2 -> 1, returns the new count, no destructor)
+    shapes[0].count = 2;
+    assert(Release(&shapes[0], NULL) == 1 && g_tgDtors == 0);
+    // switch off: the swap frees at once; with a ray in flight that free is a race
+    k.tgMode = 0;
+    Swap(&shapes[0]);
+    assert(shapes[0].count == 0 && g_tgDtors == 1 && g_tgLastDtor == &shapes[0] && k.vfRtGraveRaces == 0);
+    g_tgInFlight = 1;
+    Swap(&shapes[1]);
+    assert(g_tgDtors == 2 && k.vfRtGraveRaces == 1);
+    shapes[2].count = 2;  // shared: not freed, not a race
+    Swap(&shapes[2]);
+    assert(g_tgDtors == 2 && shapes[2].count == 1 && k.vfRtGraveRaces == 1);
+    // switch on: parked (count untouched, no destructor) until a rebuild entry sees no ray in flight
+    k.tgMode = 1;
+    Swap(&shapes[3]);
+    assert(shapes[3].count == 1 && g_tgDtors == 2 && k.vfRtGraveParked == 1 && k.vfRtGraveHeld == 1 && k.vfRtGraveRaces == 1);
+    assert(Release(&shapes[4], NULL) == 0 && g_tgDtors == 3);  // not the swap: the game's release even when on
+    TgOnSwap();  // a ray is in flight: nothing released
+    assert(g_tgDtors == 3 && k.vfRtGraveHeld == 1 && k.vfSwaps == 1 && k.vfSwapsInRay == 1);
+    g_tgInFlight = 0;
+    TgOnSwap();
+    assert(g_tgDtors == 4 && g_tgLastDtor == &shapes[3] && shapes[3].count == 0 && k.vfRtGraveFreed == 1 && k.vfRtGraveHeld == 0 &&
+           k.vfSwaps == 2 && k.vfSwapsInRay == 1);
+    // ring full: the 65th park waits for no ray, drains the 64, then parks itself
+    for (int i = 5; i < 69; i++) Swap(&shapes[i]);
+    assert(k.vfRtGraveHeld == 64 && g_tgDtors == 4);
+    Swap(&shapes[69]);
+    assert(k.vfRtGraveSpins == 1 && g_tgDtors == 68 && k.vfRtGraveFreed == 65 && k.vfRtGraveHeld == 1 && k.vfRtGraveParked == 66);
+    TgOnSwap();
+    assert(g_tgDtors == 69 && g_tgLastDtor == &shapes[69] && k.vfRtGraveHeld == 0);
+    // switching off with nothing parked: back to the game's release
+    k.tgMode = 0;
+    shapes[0].count = 1;
+    Swap(&shapes[0]);
+    assert(g_tgDtors == 70 && k.vfRtGraveParked == 66);
+
+    // the ray counts itself in flight only while the graveyard is installed
+    const HcFn savedRay = g_hcOrig;
+    g_hcOrig = TgFakeRay;
+    g_tgOn = false;
+    HcOrig(NULL, NULL, 0, 0);
+    assert(g_tgSeenInFlight == 0);
+    g_tgOn = true;
+    assert(HcOrig(NULL, NULL, 0, 0) == 1.0 && g_tgSeenInFlight == 1 && g_tgInFlight == 0);
+    k.heightMode = 1;  // no table (graveyard alone): the switch cannot reach the cache
+    assert(HcHook(NULL, NULL, 0, 0) == 1.0 && g_tgSeenInFlight == 1);
+    k.heightMode = 0;
+    g_tgOn = false;
+    g_hcOrig = savedRay;
+
+    // Verify's release probe is counted inside this stub
+    assert(VfOwnerSlot(TG_RELEASE) == &g_tgVf);
+    g_tgTramp = NULL;  // the detour stays on the test code, which nothing calls again
+    assert(!VfOwnerSlot(TG_RELEASE));
+    memset(&k.tgReady, 0, offsetof(Ts3nCounters, vfRtGraveHeld) + 4 - offsetof(Ts3nCounters, tgReady));
+    k.vfSwaps = k.vfSwapsInRay = 0;
 }
 
 // --- loader lock check: counting on a local section, contention from a second thread ---
@@ -1767,6 +1938,62 @@ static void TestVerifyV22(DWORD me, DWORD* stack) {
     assert(k.vfOverlapCur == 1 && VfLeave() == 0xDDD && g_vfOvIn[4][0] == 0 && g_vfOvIn[4][1] == 0 && t_vf.n == 0);
 }
 
+// --- [JobQueue] (v23): sim record mask switch and ExecuteJob counters on fake records and jobs ---
+static void TestJobQueue() {
+    static_assert(offsetof(Ts3nCounters, jqReady) == 0xBF0 && offsetof(Ts3nCounters, jqSimMode) == 0xBF4 &&
+                  offsetof(Ts3nCounters, jqWorkerJobs) == 0xC14 && offsetof(Ts3nCounters, d3dMtReady) == 0xC18 &&
+                  offsetof(Ts3nCounters, allocDedupe) == 0xC1C && offsetof(Ts3nCounters, allocDupFrees) == 0xC20, "v23 layout");
+    // only the dedicated sim record (0x80000004) is switched; the merged main+sim record (0x80000005) and others never
+    assert(JqSimMask(0x80000004, 1) == 4 && JqSimMask(4, 0) == 0x80000004 && JqSimMask(4, 1) == 4 && JqSimMask(0x80000004, 0) == 0x80000004);
+    assert(JqSimMask(0x80000005, 1) == 0x80000005 && JqSimMask(0x80000001, 1) == 0x80000001 && JqSimMask(0x80000000, 1) == 0x80000000 &&
+           JqSimMask(2, 1) == 2);
+    Ts3nCounters& k = ts3native_counters;
+    __declspec(align(4)) u8 job[0x50] = {};
+    *(DWORD*)(job + 0x10) = kJqRenderFns[2];
+    *(LONG*)(job + 0x28) = -1;
+    DWORD simTid = 0;
+    g_jqSimTid = &simTid;
+    const LONG r0 = k.jqRenderJobs, w0 = k.jqWorkerJobs, t0 = k.jqWorkerTids;
+    JqNote(job);  // this thread is neither main (g_mainTid) nor sim
+    assert(k.jqRenderJobs == r0 + 1 && k.jqWorkerJobs == w0 + 1 && k.jqWorkerTids == t0 + 1);
+    JqNote(job);  // same thread: not a new worker
+    assert(k.jqWorkerTids == t0 + 1 && k.jqWorkerJobs == w0 + 2);
+    *(LONG*)(job + 0x28) = 4;  // sim-only job on a worker: not shared, not counted as worker work
+    JqNote(job);
+    assert(k.jqWorkerJobs == w0 + 2 && k.jqRenderJobs == r0 + 3);
+    *(DWORD*)(job + 0x10) = 0;  // no fn: completes without running, ignored
+    JqNote(job);
+    assert(k.jqRenderJobs == r0 + 3);
+    // as the sim thread: shared and frame jobs counted as sim work
+    simTid = GetCurrentThreadId();
+    *(DWORD*)(job + 0x10) = kJqRenderFns[0];
+    *(LONG*)(job + 0x28) = -1;
+    const LONG s0 = k.jqSimSharedJobs, sr0 = k.jqSimRenderJobs;
+    JqNote(job);
+    assert(k.jqSimSharedJobs == s0 + 1 && k.jqSimRenderJobs == sr0 + 1 && k.jqWorkerJobs == w0 + 2);
+    // the slot stub flips bit 31 of the sim record per the switch and counts passes; other threads' records untouched
+    static int calls;
+    struct Fake { static DWORD __fastcall Run(void*, void*, u8*, DWORD, DWORD) { calls++; return 1; } };
+    g_jqRunJobsOrig = Fake::Run;
+    __declspec(align(4)) u8 rec[0x44] = {};
+    *(DWORD*)(rec + 0x2C) = 0x80000004;
+    k.jqSimMode = 1;
+    const LONG p0 = k.jqSimPumps, sp0 = k.jqSimSkipPasses;
+    assert(JqRunJobsHook(NULL, NULL, rec, 0, 1) == 1 && *(DWORD*)(rec + 0x2C) == 4 && k.jqSimSkipPasses == sp0 + 1);
+    k.jqSimMode = 0;
+    assert(JqRunJobsHook(NULL, NULL, rec, 0, 1) == 1 && *(DWORD*)(rec + 0x2C) == 0x80000004 && k.jqSimSkipPasses == sp0 + 1);
+    assert(k.jqSimPumps == p0 + 2 && calls == 2);
+    *(DWORD*)(rec + 0x2C) = 0x80000005;  // merged main+sim record: never switched
+    k.jqSimMode = 1;
+    JqRunJobsHook(NULL, NULL, rec, 0, 1);
+    assert(*(DWORD*)(rec + 0x2C) == 0x80000005 && k.jqSimPumps == p0 + 2);
+    simTid = 0;
+    k.jqSimMode = 0;
+    // #14: one Init bit per worker, clamped to 1-4
+    assert(JqWorkerBits(1) == 1 && JqWorkerBits(2) == 3 && JqWorkerBits(3) == 7 && JqWorkerBits(4) == 0xF && JqWorkerBits(9) == 0xF &&
+           JqWorkerBits(0) == 1);
+}
+
 static void TestVerify() {
     static_assert(offsetof(Ts3nCounters, vfReady) == 0x348 && offsetof(Ts3nCounters, vfMode) == 0x34C && offsetof(Ts3nCounters, vfThread) == 0x350 &&
                   offsetof(Ts3nCounters, vfSwaps) == 0x470 && offsetof(Ts3nCounters, vfIdOffSimRet) == 0x494 && offsetof(Ts3nCounters, vfPkgCalls) == 0x4B4 &&
@@ -1777,7 +2004,7 @@ static void TestVerify() {
                   offsetof(Ts3nCounters, vfFdbPublishes) == 0x8A0 && offsetof(Ts3nCounters, vfFpsLoops) == 0x8A4 &&
                   VF_NSLOT - VF_NT == 68, "v21 layout");
     static_assert(offsetof(Ts3nCounters, vfReady3) == 0x8A8 && offsetof(Ts3nCounters, vfThread3) == 0x8AC && offsetof(Ts3nCounters, vfOverlapCur) == 0xBDC &&
-                  offsetof(Ts3nCounters, vfShaderStartup) == 0xBE0 && offsetof(Ts3nCounters, vfMonoIcNestNeg) == 0xBEC && sizeof(Ts3nCounters) == 764 * 4 &&
+                  offsetof(Ts3nCounters, vfShaderStartup) == 0xBE0 && offsetof(Ts3nCounters, vfMonoIcNestNeg) == 0xBEC && sizeof(Ts3nCounters) >= 764 * 4 &&
                   VF_N - VF_LOOP - 1 == 31, "v22 layout");
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER f;
@@ -2048,7 +2275,1569 @@ static void TestVerify() {
     VirtualFree(code, 0, MEM_RELEASE);
 }
 
+// [LotSinCos]: the fake game function is plain C (x87 sin/cos, then float math as docs/63's model); the hook must return
+// the same bits with the cache cold, warm, off, and through Verify.
+static int g_fakeW2LCalls;
+static bool g_fakeW2LLie;
+static void __fastcall FakeW2L(void* lotp, void*, float x, float z, float* outX, float* outZ) {
+    g_fakeW2LCalls++;
+    const u8* lot = (const u8*)lotp;
+    float s, c;
+    LscSinCos((const float*)(lot + 0x1A0), &s, &c);
+    const float dx = x - *(const float*)(lot + 0x190), dz = z - *(const float*)(lot + 0x198);
+    const float ns = g_lscNegZero - s;
+    const float p1 = ns * dz, p2 = c * dx, p3 = s * dx, p4 = c * dz;
+    *outX = p1 + p2;
+    *outZ = p3 + p4;
+    if (g_fakeW2LLie) *outX += 1.0f;
+}
+
+static void TestLotSinCos() {
+    static_assert(offsetof(Ts3nCounters, lscReady) == 0xC24 && offsetof(Ts3nCounters, lscMode) == 0xC28 &&
+                  offsetof(Ts3nCounters, lscMismatches) == 0xC34 && offsetof(Ts3nCounters, idcMode) == 0xC3C &&
+                  offsetof(Ts3nCounters, idcObjects) == 0xC5C && sizeof(Ts3nCounters) >= 792 * 4, "v24 layout");
+    Ts3nCounters& k = ts3native_counters;
+    g_lscOrig = FakeW2L;
+    __declspec(align(16)) static u8 lots[4][0x200];
+    const float angles[6] = {0.0f, -0.0f, 1.5707964f, 3.1415927f, -2.1f, 5.0e3f};
+    unsigned seed = 12345;
+    auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return (float)((seed >> 8) & 0xFFFF) / 65536.0f; };
+    k.lscMode = 1;
+    g_lscVerify = false;
+    memset(g_lsc, 0, sizeof(g_lsc));
+    for (int i = 0; i < 4000; i++) {
+        u8* lot = lots[i & 3];
+        *(float*)(lot + 0x190) = rnd() * 2048.0f;
+        *(float*)(lot + 0x198) = rnd() * 2048.0f;
+        *(float*)(lot + 0x1A0) = (i % 7 == 6) ? (rnd() - 0.5f) * 12.0f : angles[i % 6];  // repeats (hits) and fresh angles
+        const float x = *(float*)(lot + 0x190) + (rnd() - 0.5f) * 128.0f, z = *(float*)(lot + 0x198) + (rnd() - 0.5f) * 128.0f;
+        float ax, az, bx, bz;
+        const int calls = g_fakeW2LCalls;
+        LscHook(lot, NULL, x, z, &ax, &az);
+        assert(g_fakeW2LCalls == calls);  // mode 1 never runs the game's function without Verify
+        FakeW2L(lot, NULL, x, z, &bx, &bz);
+        assert(LscBits(ax) == LscBits(bx) && LscBits(az) == LscBits(bz));
+    }
+    // fixed angles only: each misses at most once, then hits (random angles above may have evicted them)
+    const unsigned __int64 h0 = g_lscHits;
+    for (int i = 0; i < 600; i++) {
+        *(float*)(lots[1] + 0x1A0) = angles[i % 6];
+        float ax, az;
+        LscHook(lots[1], NULL, 1.f, 2.f, &ax, &az);
+    }
+    assert(g_lscHits - h0 >= 594);
+    // -0.0 and +0.0 are different keys (fsin keeps the sign): both answers stay exact
+    float o1[2], o2[2];
+    *(float*)(lots[0] + 0x1A0) = -0.0f; LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    *(float*)(lots[0] + 0x1A0) = 0.0f; LscHook(lots[0], NULL, 5.f, 7.f, &o2[0], &o2[1]);
+    float r[2];
+    FakeW2L(lots[0], NULL, 5.f, 7.f, &r[0], &r[1]);
+    assert(LscBits(o2[0]) == LscBits(r[0]) && LscBits(o2[1]) == LscBits(r[1]));
+    // Verify: a hit that disagrees with the game is counted and the game's bits are returned
+    g_lscVerify = true;
+    g_fakeW2LLie = true;
+    const LONG m0 = k.lscMismatches;
+    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    assert(k.lscMismatches == m0 + 1 && LscBits(o1[0]) == LscBits(r[0] + 1.0f) && LscBits(o1[1]) == LscBits(r[1]));
+    g_fakeW2LLie = false;
+    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    assert(k.lscMismatches == m0 + 1 && LscBits(o1[0]) == LscBits(r[0]));
+    // a torn entry (check word not matching) is a miss, never a wrong answer
+    g_lscVerify = false;
+    LscEntry& e = LscSlot(LscBits(0.0f));
+    e.s = 0.75f;
+    const int calls = g_fakeW2LCalls;
+    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    assert(LscBits(o1[0]) == LscBits(r[0]) && LscBits(o1[1]) == LscBits(r[1]) && g_fakeW2LCalls == calls);
+    // mode 0: the game's function only
+    k.lscMode = 0;
+    LscHook(lots[0], NULL, 5.f, 7.f, &o1[0], &o1[1]);
+    assert(g_fakeW2LCalls == calls + 1);
+    // install in this process: Enabled=0 does nothing; Enabled=1 finds no matching prologue in our own image
+    wchar_t ini[MAX_PATH];
+    GetTempPathW(MAX_PATH, ini);
+    wcscat_s(ini, L"ts3n-lsc-test.ini");
+    WritePrivateProfileStringW(L"LotSinCos", L"Enabled", L"0", ini);
+    assert(!ApplyLotSinCos(ini));
+    DeleteFileW(ini);
+}
+
+// [IdCache]: a fake bucket array with the game's layout (buckets at +0, sentinel at +0x1024, count at +0x1028; node id at
+// +8/+0xC, next at +0x10). FakeIdLookup is the game's lookup as a C model (also checked against the exe by tools/emu
+// object_id_lookup.py); FakeIdErase unlinks like 0x938D00.
+static int g_fakeIdLookups;
+static DWORD* __fastcall FakeIdLookup(u8* tbl, void*, DWORD* out, const DWORD* id) {
+    g_fakeIdLookups++;
+    u8** b = (u8**)(tbl + (id[0] % 0x409) * 4);
+    for (u8* n = *b; n; n = *(u8**)(n + 0x10))
+        if (*(DWORD*)(n + 8) == id[0] && *(DWORD*)(n + 0xC) == id[1]) { out[0] = (DWORD)(uintptr_t)n; out[1] = (DWORD)(uintptr_t)b; return out; }
+    out[0] = *(DWORD*)(tbl + 0x1024);
+    out[1] = (DWORD)(uintptr_t)(tbl + 0x1024);
+    return out;
+}
+static void* __fastcall FakeIdErase(u8* tbl, void*, void* out, u8* node, void* bucket) {
+    u8** p = (u8**)bucket;
+    while (*p != node) p = (u8**)(*p + 0x10);
+    *p = *(u8**)(node + 0x10);
+    --*(LONG*)(tbl + 0x1028);
+    return out;
+}
+static void IdTestInsert(u8* tbl, u8* node, DWORD lo, DWORD hi) {
+    *(DWORD*)(node + 8) = lo;
+    *(DWORD*)(node + 0xC) = hi;
+    u8** b = (u8**)(tbl + (lo % 0x409) * 4);
+    *(u8**)(node + 0x10) = *b;
+    *b = node;
+    ++*(LONG*)(tbl + 0x1028);
+}
+
+static void TestIdCache() {
+    Ts3nCounters& k = ts3native_counters;
+    static u8 tbl[0x1040];
+    static u8 nodes[3000][0x20];
+    static DWORD simTid;
+    simTid = GetCurrentThreadId();
+    g_idcSimTid = &simTid;
+    g_idcLookupOrig = FakeIdLookup;
+    g_idcEraseOrig = FakeIdErase;
+    g_idcTbl = NULL;
+    *(DWORD*)(tbl + 0x1024) = 0xE11D;  // sentinel value
+    unsigned seed = 777;
+    auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return seed; };
+    for (int i = 0; i < 3000; i++) IdTestInsert(tbl, nodes[i], rnd(), rnd());  // ~3 per bucket, as in play
+    k.idcMode = 1;
+    g_idcVerify = false;
+    // every answer (hit, fill, miss) equals the game's, iterator included
+    auto same = [&](DWORD lo, DWORD hi) {
+        const DWORD id[2] = {lo, hi};
+        DWORD a[2], b[2];
+        const int calls = g_fakeIdLookups;
+        assert(IdcLookupHook(tbl, NULL, a, id) == a);
+        assert(g_fakeIdLookups == calls);  // mode 1 on the sim thread never runs the game's walk
+        FakeIdLookup(tbl, NULL, b, id);
+        assert(a[0] == b[0] && a[1] == b[1]);
+        return a[0];
+    };
+    for (int r = 0; r < 4; r++)
+        for (int i = 0; i < 3000; i += 7) same(*(DWORD*)(nodes[i] + 8), *(DWORD*)(nodes[i] + 0xC));
+    assert(g_idcHits > 1000 && g_idcFills >= 400 && g_idcSteps > 0);
+    assert(same(1, 2) == 0xE11D && g_idcNotFound == 1);  // not in the hash: sentinel, nothing stored
+    assert(same(1, 2) == 0xE11D && g_idcNotFound == 2);
+    // erase drops the entry: the next lookup misses (sentinel), never the freed node
+    u8* victim = nodes[21];
+    const DWORD vlo = *(DWORD*)(victim + 8), vhi = *(DWORD*)(victim + 0xC);
+    assert(same(vlo, vhi) == (DWORD)(uintptr_t)victim);
+    IdcEraseHook(tbl, NULL, NULL, victim, tbl + (vlo % 0x409) * 4);
+    assert(k.idcErases == 1 && same(vlo, vhi) == 0xE11D);
+    // inserted again: found and cached again
+    IdTestInsert(tbl, victim, vlo, vhi);
+    assert(same(vlo, vhi) == (DWORD)(uintptr_t)victim);
+    // erase while the switch is off still clears: switching back on cannot return a stale node
+    k.idcMode = 0;
+    IdcEraseHook(tbl, NULL, NULL, victim, tbl + (vlo % 0x409) * 4);
+    k.idcMode = 1;
+    assert(same(vlo, vhi) == 0xE11D);
+    // the bucket array emptied behind our back (constructor re-run): no hit on a cached node
+    {
+        u8* n = nodes[84];
+        const DWORD lo = *(DWORD*)(n + 8), hi = *(DWORD*)(n + 0xC);
+        assert(same(lo, hi) == (DWORD)(uintptr_t)n);
+        u8** b = (u8**)(tbl + (lo % 0x409) * 4);
+        u8* keep = *b;
+        *b = NULL;
+        assert(same(lo, hi) == 0xE11D);
+        *b = keep;
+    }
+    // Verify: a wrong entry (id still matches, node no longer in the chain) is caught, dropped and the walk's answer returned
+    {
+        u8* n = nodes[99];
+        const DWORD lo = *(DWORD*)(n + 8), hi = *(DWORD*)(n + 0xC);
+        assert(same(lo, hi) == (DWORD)(uintptr_t)n);
+        FakeIdErase(tbl, NULL, NULL, n, tbl + (lo % 0x409) * 4);  // unlinked without our hook
+        g_idcVerify = true;
+        const LONG m = k.idcMismatches;
+        assert(same(lo, hi) == 0xE11D && k.idcMismatches == m + 1 && IdcSlot(lo, hi).node == NULL);
+        g_idcVerify = false;
+    }
+    // other threads and other tables go to the game
+    {
+        const DWORD id[2] = {*(DWORD*)(nodes[5] + 8), *(DWORD*)(nodes[5] + 0xC)};
+        DWORD a[2];
+        int calls = g_fakeIdLookups;
+        simTid = GetCurrentThreadId() + 1;
+        IdcLookupHook(tbl, NULL, a, id);
+        assert(g_fakeIdLookups == calls + 1 && a[0] == (DWORD)(uintptr_t)nodes[5]);
+        simTid = GetCurrentThreadId();
+        static u8 other[0x1040];
+        IdcLookupHook(other, NULL, a, id);
+        assert(g_fakeIdLookups == calls + 2);
+        k.idcMode = 0;
+        IdcLookupHook(tbl, NULL, a, id);
+        assert(g_fakeIdLookups == calls + 3);
+    }
+    IdcPublish(tbl);
+    assert(k.idcObjects == 2998 && k.idcLookupsK == (LONG)(g_idcLookups / 1000));
+    wchar_t ini[MAX_PATH];
+    GetTempPathW(MAX_PATH, ini);
+    wcscat_s(ini, L"ts3n-idc-test.ini");
+    WritePrivateProfileStringW(L"IdCache", L"Enabled", L"0", ini);
+    assert(!ApplyIdCache(ini));
+    DeleteFileW(ini);
+}
+
+// --- H6 S2b: gate sites 13-15, exact G11 window, docs/60 §2.2 count-only sites, Verify counted inside an owner stub ---
+// Runs after TestVerify (its role slots point at this thread as the sim thread).
+static void TestRouteSites() {
+    static_assert(offsetof(Ts3nCounters, rgUnlocked2) == 0xC60 && offsetof(Ts3nCounters, rgJob2) == 0xC6C &&
+                  offsetof(Ts3nCounters, rtReady) == 0xC78 && offsetof(Ts3nCounters, vfRtDestroyInJob) == 0xC94 &&
+                  offsetof(Ts3nCounters, vfRtLotIdxRebuildInJob) == 0xCA4 && offsetof(Ts3nCounters, vfRtPendingInJob) == 0xCB4 &&
+                  offsetof(Ts3nCounters, vfRtTeardownInJob) == 0xCD0 && offsetof(Ts3nCounters, g11Plans) == 0xCD4 &&
+                  offsetof(Ts3nCounters, g11End) == 0xCE4 && offsetof(Ts3nCounters, tgReady) == 0xCFC &&
+                  offsetof(Ts3nCounters, tgMode) == 0xD00 && offsetof(Ts3nCounters, vfRtGraveHeld) == 0xD14 &&
+                  sizeof(Ts3nCounters) >= 838 * 4, "v25 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.rgUnlocked2, 0, offsetof(Ts3nCounters, vfRtGraveHeld) + 4 - offsetof(Ts3nCounters, rgUnlocked2));
+    const DWORD me = GetCurrentThreadId(), inf = 0xFFFFFFFF;
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgFakeAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    k.rgReady = 7;
+    g_rgLock = g_rgLockObj;
+    k.rgOwnerTid = 0;
+    DWORD stack[24] = {};
+    auto reset = [&] { t_rg.n = 0; t_rg.readers = 0; };
+
+    // gate sites 13-15 count in the v25 arrays
+    RgEnter(12, &stack[20]);
+    assert(k.rgUnlocked2[0] == 1 && k.rgJob2[0] == 0 && t_rg.n == 1 && stack[20] == (DWORD)(uintptr_t)RgLeaveThunk);
+    reset();
+    g_callerTid = 1234;
+    RgEnter(14, &stack[20]);
+    assert(k.rgUnlocked2[2] == 1 && k.rgJob2[2] == 1);
+    g_callerTid = 0;
+    reset();
+
+    // G11: plan, then a gate entry closes the window (min(plan, gap) <= both); a second touch adds nothing
+    assert(G11PlanBegin());
+    Sleep(2);
+    G11PlanEnd(true);
+    assert(k.g11Plans == 0 && t_g11.end.QuadPart != 0);
+    Sleep(1);
+    RgEnter(13, &stack[20]);
+    reset();
+    assert(k.g11Plans == 1 && k.g11End[G11_GATE13] == 1 && k.g11PlanUs >= 1000 && k.g11MovableUs > 0 &&
+           k.g11MovableUs <= k.g11PlanUs && k.g11MovableUs <= k.g11GapUs);
+    G11Touch(G11_LOCK, 1);
+    assert(k.g11Plans == 1);
+    // nested plans: the inner one opens nothing and touches inside a plan are ignored
+    assert(G11PlanBegin() && G11PlanBegin());
+    G11Touch(G11_LOCK, 1);
+    G11PlanEnd(true);
+    assert(t_g11.end.QuadPart == 0 && k.g11Plans == 1);
+    G11PlanEnd(true);
+    assert(t_g11.end.QuadPart != 0);
+    // an outermost +0x918 acquire closes it; a recursive one does not count again
+    assert(LockAcquireHook(g_rgLockObj, NULL, &inf) == 1 && k.g11End[G11_LOCK] == 1 && k.g11Plans == 2);
+    assert(LockReleaseHook(g_rgLockObj, NULL) == 0);
+    // the next plan closes an open window
+    G11PlanBegin(); G11PlanEnd(true);
+    G11PlanBegin();
+    assert(k.g11End[G11_PLAN] == 1 && k.g11Plans == 3);
+    G11PlanEnd(true);
+    // destroys and quadtree writes on the sim thread close it too (rtsites.cpp)
+    k.rtReady = 1;
+    RtEnter(7, &stack[20]);
+    assert(k.g11End[G11_DESTROY] == 1 && k.g11Plans == 4 && k.vfRtDestroyInJob == 0 && k.vfRtDestroyOffSim == 0);
+    G11PlanBegin(); G11PlanEnd(true);
+    RtEnter(3, &stack[20]);
+    assert(k.g11End[G11_QTWRITE] == 1 && k.g11Plans == 5 && k.vfRtQtWriteInJob == 0);
+    // not the sim thread: no plan window; an unlocked gate entry counts as off-sim
+    simTid = me + 1;
+    assert(!G11PlanBegin());
+    RgEnter(0, &stack[20]);
+    assert(k.vfRtGateOffSim == 1);
+    reset();
+
+    // the worker: quadtree leaves outside a reader are bare; readers push frames (not gate frames)
+    g_workerTid = me;
+    RtEnter(5, &stack[20]);
+    assert(k.vfRtQtBare == 1 && t_rg.n == 0);
+    stack[20] = 0x111; stack[15] = 0x222; stack[8] = 0x333;
+    RtEnter(0, &stack[20]);
+    RtEnter(1, &stack[15]);  // nested reader: one outermost read
+    assert(k.vfRtQtReads == 1 && t_rg.n == 2 && t_rg.readers == 2 && stack[15] == (DWORD)(uintptr_t)RgLeaveThunk);
+    RtEnter(6, &stack[10]);
+    assert(k.vfRtQtBare == 1);
+    const LONG unl0 = k.rgUnlocked[0];
+    RgEnter(0, &stack[8]);  // a gate entry inside a reader is still outermost; the worker is not off-sim
+    assert(k.rgUnlocked[0] == unl0 + 1 && k.vfRtGateOffSim == 1 && t_rg.n == 3 && t_rg.readers == 2);
+    assert(RgLeave() == 0x333 && RgLeave() == 0x222 && t_rg.readers == 1 && RgLeave() == 0x111 && t_rg.n == 0 && t_rg.readers == 0);
+    RtEnter(0, &stack[10]);
+    RtEnter(5, &stack[12]);  // above the reader's slot: the reader frame is dead, so this read is bare
+    assert(k.vfRtQtBare == 2 && t_rg.n == 0 && t_rg.readers == 0);
+    // pending lot updates applied by the worker: ecx = world (pushad slot -2), P = [world+0x95C], flag P+0x10E
+    static u8 world[0xA00], planner[0x200];
+    *(u8**)(world + 0x95C) = planner;
+    stack[18] = (DWORD)(uintptr_t)world;
+    RtEnter(9, &stack[20]);
+    assert(k.vfRtPendingInJob == 0);
+    planner[0x10E] = 1;
+    RtEnter(9, &stack[20]);
+    assert(k.vfRtPendingInJob == 1);
+    RtEnter(8, &stack[20]);
+    assert(k.vfRtLotGridWorker == 1);
+    g_workerTid = savedWorker;
+    RtEnter(9, &stack[20]);  // not the worker: not counted
+    RtEnter(8, &stack[20]);
+    assert(k.vfRtPendingInJob == 1 && k.vfRtLotGridWorker == 1);
+
+    // during a job (Mode 1 caller set): every in-job counter; outside a job none
+    simTid = me;
+    g_callerTid = 1234;
+    for (int i = 2; i < RT_N; i++) if (i != 5 && i != 6) RtEnter(i, &stack[20]);
+    assert(k.vfRtQtWriteInJob == 3 && k.vfRtDestroyInJob == 1 && k.vfRtDestroyOffSim == 0 && k.vfRtLotIdxRebuildInJob[1] == 1 &&
+           k.vfRtDrainSave == 1 && k.vfRtDrainBrd == 1 && k.vfRtDrainLotSave == 1 && k.vfRtDebugSkip == 1 && k.vfRtTeardownInJob == 3);
+    g_callerTid = 0;
+    for (int i = 2; i < RT_N; i++) if (i != 5 && i != 6) RtEnter(i, &stack[20]);
+    assert(k.vfRtQtWriteInJob == 3 && k.vfRtDestroyInJob == 1 && k.vfRtDrainSave == 1 && k.vfRtTeardownInJob == 3);
+    simTid = me + 1;
+    RtEnter(7, &stack[20]);
+    assert(k.vfRtDestroyOffSim == 1);
+    simTid = me;
+    k.rtReady = 0;
+    RtEnter(7, &stack[20]);  // not installed: nothing
+    assert(k.vfRtDestroyOffSim == 1 && k.vfRtDestroyInJob == 1);
+
+    // every stub pushes its own site index and jumps through its own trampoline slot
+    for (int i = 0; i < RT_N; i++) {
+        const u8* s = (const u8*)(void*)kRtStubs[i];
+        const DWORD slot = (DWORD)(uintptr_t)&g_rtTramp[i];
+        bool push = false, jmp = false;
+        for (int j = 0; j < 40; j++) {
+            push |= s[j] == 0x6A && s[j + 1] == i;
+            jmp |= s[j] == 0xFF && s[j + 1] == 0x25 && *(const DWORD*)(s + j + 2) == slot;
+        }
+        assert(push && jmp);
+    }
+
+    // Verify counted inside the owner stub (docs/68 §6 rule 3): the owner table, then a timed thread probe through RtEnter
+    assert(!VfOwnerSlot(0x00939420) && !VfOwnerSlot(0x00628A90));
+    g_rtTramp[7] = (void*)1;
+    g_rgTramp[12] = (void*)1;
+    assert(VfOwnerSlot(0x00939420) == &g_rtVf[7] && VfOwnerSlot(0x00628A90) == &g_rgVf[12] && !VfOwnerSlot(0x00939421));
+    g_rtTramp[7] = g_rgTramp[12] = NULL;
+    int probe = -1;
+    for (int i = 0; i < VF_N; i++) if (kVf[i].at == 0x00939420) probe = i;
+    assert(probe >= 0 && kVf[probe].thr != VF_NONE);
+    k.vfMode = 1;
+    k.rtReady = 1;
+    g_rtVf[7] = probe + 1;
+    const LONG sims = VfSlot(kVf[probe].thr)[1];
+    stack[20] = 0x777;
+    RtEnter(7, &stack[20]);
+    assert(VfSlot(kVf[probe].thr)[1] == sims + 1 && stack[20] == (DWORD)(uintptr_t)VfLeaveThunk && VfRealRet(&stack[20]) == 0x777);
+    assert(VfLeave() == 0x777 && t_vf.n == 0 && VfRealRet(&stack[20]) == (DWORD)(uintptr_t)VfLeaveThunk);
+    g_rtVf[7] = 0;
+    k.vfMode = 0;
+    k.rtReady = 0;
+
+    reset();
+    memset(&t_g11, 0, sizeof(t_g11));
+    k.rgReady = 0;
+    g_rgLock = NULL;
+    g_lockOrig = savedLock;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- H6 S3b + M1: gate enforced during an async job, borrow rule, closures, START limits (routegate.cpp, rtsites.cpp) ---
+static LONG __fastcall RgTryAcquire(void* lock, void*, const DWORD* deadline) {  // 0x4E16F0 with deadline 0 = try once
+    if (*deadline == 0) {
+        if (!TryEnterCriticalSection(&g_rgFakeCs)) return -2;
+    } else {
+        EnterCriticalSection(&g_rgFakeCs);
+    }
+    return ++*(LONG*)((u8*)lock + 0x20);
+}
+static HANDLE g_enfHeld;
+static DWORD WINAPI EnfWorker(LPVOID) {  // plays the worker: holds the job's lock for 30 ms, then ends the job
+    static const DWORD inf = 0xFFFFFFFF;
+    LockAcquireHook(g_rgLockObj, NULL, &inf);
+    SetEvent(g_enfHeld);
+    Sleep(30);
+    LockReleaseHook(g_rgLockObj, NULL);
+    InterlockedExchange(&g_async.state, A_IDLE);
+    SetEvent(g_asyncDone);
+    return 0;
+}
+static HANDLE EnfStartWorker() {
+    ResetEvent(g_enfHeld);
+    ResetEvent(g_asyncDone);
+    InterlockedExchange(&g_async.state, A_RUNNING);
+    HANDLE w = CreateThread(NULL, 0, EnfWorker, NULL, 0, NULL);
+    WaitForSingleObject(g_enfHeld, INFINITE);
+    return w;
+}
+static void EnfJoin(HANDLE w) {
+    WaitForSingleObject(w, INFINITE);
+    CloseHandle(w);
+}
+
+static void TestRouteEnforce() {
+    static_assert(offsetof(Ts3nCounters, rgEnforce) == 0xD18 && offsetof(Ts3nCounters, asyncRefusedM1) == 0xD30 &&
+                  offsetof(Ts3nCounters, vfRtDestroyInInvoke) == 0xD48 && offsetof(Ts3nCounters, rtClosing) == 0xD54 &&
+                  sizeof(Ts3nCounters) >= 854 * 4, "v26 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.rgEnforce, 0, offsetof(Ts3nCounters, rtClosing) + 4 - offsetof(Ts3nCounters, rgEnforce));
+    const DWORD me = GetCurrentThreadId(), inf = 0xFFFFFFFF;
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    const LockAcquireFn savedLock = g_lockOrig;
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    InitializeCriticalSection(&g_qtCs);
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_enfHeld = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    k.rgReady = 7;
+    k.rtReady = RT_ALL;
+    k.rgEnforce = 1;
+    k.rgOwnerTid = 0;
+    g_workerTid = me + 7;  // nobody: the test thread is sim and owner
+    g_async.owner = me;
+    g_async.lock = g_rgLockObj;
+    LONG& count = *(LONG*)(g_rgLockObj + 0x20);
+    DWORD stack[24] = {};
+    auto reset = [&] { t_rg.n = 0; t_rg.readers = 0; g_rgOffSimOpen = 0; };
+
+    // M1: each refusal reason, then allowed with the world's lock
+    static u8 world[0xA00], planner[0x200], wm[0x200];
+    *(u8**)(world + 0x95C) = planner;
+    *(u8**)(world + 0x964) = wm;
+    g_rgLock = world + 0x918;
+    void* lock = NULL;
+    k.rgEnforce = 0;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[0] == 1);
+    k.rgEnforce = 1;
+    k.rtBusy = 1;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[1] == 1);
+    k.rtBusy = 0;
+    k.rtClosing = 1;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[2] == 1);
+    k.rtClosing = 0;
+    planner[0x10E] = 1;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[3] == 1);
+    planner[0x10E] = 0;
+    wm[0x1CC] = 1;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[4] == 1);
+    wm[0x1CC] = 0;
+    k.rgOwnerTid = (LONG)me;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[5] == 1);
+    k.rgOwnerTid = 0;
+    assert(RtM1Allows(&lock) && lock == world + 0x918 && !lock == false);
+    g_rgLock = NULL;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[0] == 2);  // no lock learned in this world yet
+    g_rgLock = g_rgLockObj;
+
+    // borrow: the owner inside a callback for the job takes no real lock, and releases without one
+    g_async.state = A_RUNNING;
+    g_inInvoke = 1;
+    assert(LockAcquireHook(g_rgLockObj, NULL, &inf) == 2 && count == 0 && k.rgBorrows == 1 && t_borrow == 1);
+    assert(LockReleaseHook(g_rgLockObj, NULL) == 1 && t_borrow == 0 && count == 0);
+    RgEnter(0, &stack[20]);
+    assert(k.rgBorrows == 2 && t_rg.n == 1 && t_rg.f[0].rel == RG_REL_OFFSIM && k.rgGateWaits == 0);
+    reset();
+    RtEnter(7, &stack[20]);  // a destroy there cannot wait for the job
+    assert(k.vfRtDestroyInInvoke == 1 && k.vfRtDestroyWaitUs == 0);
+    g_inInvoke = 0;
+    g_async.state = A_IDLE;
+
+    // a gate entry during a job waits for the worker's hold (pumping), holds +0x918 for the call, the leave releases it
+    HANDLE w = EnfStartWorker();
+    stack[20] = 0x444;
+    RgEnter(0, &stack[20]);
+    assert(k.rgGateWaits == 1 && k.rgGateWaitUs >= 10000 && count == 1 && t_rg.n == 1 && t_rg.f[0].rel == (RG_REL_LOCK | RG_REL_OFFSIM));
+    assert(k.rgOwnerTid == (LONG)me);
+    RgEnter(1, &stack[16]);  // nested: no second acquire
+    assert(count == 1 && k.rgGateWaits == 1 && t_rg.n == 2);
+    RgLeave();
+    assert(RgLeave() == 0x444 && count == 0 && t_rg.n == 0 && g_rgOffSimOpen == 0 && k.rgOwnerTid == 0);
+    EnfJoin(w);
+    assert(g_async.state == A_IDLE);
+    // no job running: the gate takes nothing
+    g_async.state = A_IDLE;
+    RgEnter(0, &stack[20]);
+    assert(count == 0 && t_rg.f[0].rel == RG_REL_OFFSIM && k.rgGateWaits == 1);
+    reset();
+
+    // destroy and save during a job wait for it; the save refuses START until it returns
+    w = EnfStartWorker();
+    RtEnter(7, &stack[20]);
+    assert(g_async.state == A_IDLE && k.vfRtDestroyWaitUs >= 10000 && t_rg.n == 1 && g_rgOffSimOpen == 1);
+    EnfJoin(w);
+    w = EnfStartWorker();
+    stack[20] = 0x555;
+    RtEnter(11, &stack[20]);
+    assert(g_async.state == A_IDLE && k.vfRtDrainWaitUs >= 10000 && k.rtBusy == 1 && t_rg.n == 1);
+    EnfJoin(w);
+    g_rgLock = world + 0x918;
+    assert(!RtM1Allows(&lock) && k.asyncRefusedM1[1] == 2);
+    g_rgLock = g_rgLockObj;
+    assert(RgLeave() == 0x555 && k.rtBusy == 0);
+    // a thread that really holds +0x918 does not wait (the worker cannot be in its job body)
+    g_async.state = A_RUNNING;
+    k.rgOwnerTid = (LONG)me;
+    RtEnter(7, &stack[20]);
+    assert(g_async.state == A_RUNNING);
+    k.rgOwnerTid = 0;
+
+    // the routing debug frame is skipped during a job only
+    assert(RtEnter(14, &stack[20]) == 1);
+    g_async.state = A_IDLE;
+    assert(RtEnter(14, &stack[20]) == 0);
+
+    // quadtree: a worker reader holds g_qtCs until its leave; a mutator during a job takes it, outside a job not
+    g_workerTid = me;
+    stack[20] = 0x666;
+    RtEnter(0, &stack[20]);
+    assert(t_rg.n == 1 && t_rg.f[0].rel == RG_REL_QT && g_qtCs.RecursionCount == 1);
+    assert(RgLeave() == 0x666 && g_qtCs.RecursionCount == 0);
+    // 0.11.1: the extra readers lock too; a bare leaf read on the worker takes the lock as a fallback (and still counts)
+    stack[20] = 0x676;
+    RtEnter(20, &stack[20]);
+    assert(t_rg.n == 1 && t_rg.f[0].rel == RG_REL_QT && g_qtCs.RecursionCount == 1);
+    assert(RgLeave() == 0x676 && g_qtCs.RecursionCount == 0);
+    const LONG bare0 = k.vfRtQtBare;
+    stack[20] = 0x686;
+    RtEnter(5, &stack[20]);
+    assert(k.vfRtQtBare == bare0 + 1 && t_rg.n == 1 && g_qtCs.RecursionCount == 1);
+    assert(RgLeave() == 0x686 && g_qtCs.RecursionCount == 0);
+    g_workerTid = me + 7;
+    g_async.state = A_RUNNING;
+    stack[20] = 0x777;
+    RtEnter(2, &stack[20]);
+    assert(t_rg.n == 1 && g_qtCs.RecursionCount == 1);
+    assert(RgLeave() == 0x777 && g_qtCs.RecursionCount == 0);
+    g_async.state = A_IDLE;
+    RtEnter(2, &stack[20]);
+    assert(t_rg.n == 1 && g_rgOffSimOpen == 1 && g_qtCs.RecursionCount == 0);
+
+    // travel / quit ICs set the closing flag; world init clears it and forgets the lock
+    RtEnter(18, &stack[20]);
+    RtEnter(19, &stack[20]);
+    assert(k.rtClosing == 1 && k.vfRtClosingDrains == 2);
+    RtEnter(15, &stack[20]);
+    assert(k.rtClosing == 0 && g_rgLock == NULL);
+    g_rgLock = g_rgLockObj;
+
+    // an off-sim thread inside a gate leaf is published until its leave
+    simTid = me + 1;
+    stack[20] = 0x888;
+    RgEnter(0, &stack[20]);
+    assert(g_rgOffSimOpen == 1 && t_rg.f[0].rel == RG_REL_OFFSIM);
+    assert(RgLeave() == 0x888 && g_rgOffSimOpen == 0);
+    simTid = me;
+
+    // a gate frame that held +0x918 and was left without returning is released at the next entry
+    LockAcquireHook(g_rgLockObj, NULL, &inf);
+    RgPush(t_rg, &stack[20], 0, RG_REL_LOCK, g_rgLockObj);
+    RgEnter(0, &stack[22]);
+    assert(k.rgDropLocked == 1 && count == 0 && t_rg.n == 1);
+    reset();
+
+    g_async.state = A_IDLE;
+    g_async.lock = NULL;
+    g_async.owner = 0;
+    k.rgEnforce = 0;
+    k.rgReady = 0;
+    k.rtReady = 0;
+    k.rgOwnerTid = 0;
+    g_rgLock = NULL;
+    g_workerTid = savedWorker;
+    g_lockOrig = savedLock;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    CloseHandle(g_enfHeld);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_qtCs);
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- vfG11CloseBy (0.11.2): each G11 close is keyed by its closer; a +0x918 acquire inside a steering query by its caller ---
+static void TestG11CloseBy() {
+    static_assert(offsetof(Ts3nCounters, g11CloseKey) == 0xD58 && offsetof(Ts3nCounters, g11CloseN) == 0xDD8 &&
+                  offsetof(Ts3nCounters, g11CloseLostUs) == 0xE58 && offsetof(Ts3nCounters, g11CloseOther) == 0xED8 &&
+                  sizeof(Ts3nCounters) >= 951 * 4, "v27 layout");
+    static_assert(offsetof(Ts3nCounters, asyncSkipped) == 0xEDC && offsetof(Ts3nCounters, asyncQueueMax) == 0xEE8 &&
+                  sizeof(Ts3nCounters) >= 955 * 4, "v28 layout");
+    static_assert(offsetof(Ts3nCounters, blockKey) == 0xEEC && offsetof(Ts3nCounters, blockOther) == 0x106C &&
+                  sizeof(Ts3nCounters) >= 1052 * 4, "v29 layout");
+    static_assert(offsetof(Ts3nCounters, discReady) == 0x1070 && offsetof(Ts3nCounters, discOverflow) == 0x109C &&
+                  sizeof(Ts3nCounters) >= 1064 * 4, "v30 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.g11CloseKey, 0, offsetof(Ts3nCounters, g11CloseOther) + 4 - offsetof(Ts3nCounters, g11CloseKey));
+    const DWORD me = GetCurrentThreadId(), inf = 0xFFFFFFFF;
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    k.rgReady = 7;
+    k.rtReady = RT_ALL;
+    g_rgLock = g_rgLockObj;
+    memset(&t_g11, 0, sizeof(t_g11));
+    DWORD stack[24] = {};
+
+    // a plan, then the steering query called from 0x85FE10 takes +0x918: the close is keyed by that call site
+    G11PlanBegin();
+    Sleep(1);
+    G11PlanEnd(true);
+    stack[20] = 0x0085FE10;
+    RtEnter(23, &stack[20]);
+    assert(t_steerRet == 0x0085FE10 && t_rg.n == 1);
+    RtEnter(24, &stack[16]);  // nested gather: keeps the outer caller
+    assert(t_steerRet == 0x0085FE10 && t_rg.n == 1);
+    assert(LockAcquireHook(g_rgLockObj, NULL, &inf) == 1);
+    assert(k.g11CloseKey[0] == 0x0085FE10 && k.g11CloseN[0] == 1 && k.g11CloseLostUs[0] >= 0);
+    LockReleaseHook(g_rgLockObj, NULL);
+    assert(RgLeave() == 0x0085FE10 && t_steerRet == 0 && t_rg.n == 0);
+    // outside a steering query an acquire is keyed by Lock_Acquire's return address (here: inside this test)
+    G11PlanBegin();
+    G11PlanEnd(true);
+    LockAcquireHook(g_rgLockObj, NULL, &inf);
+    LockReleaseHook(g_rgLockObj, NULL);
+    assert(k.g11CloseKey[1] != 0 && k.g11CloseKey[1] != 0x0085FE10 && k.g11CloseN[1] == 1);
+    // a gate entry and a repeat of the first key
+    G11PlanBegin();
+    G11PlanEnd(true);
+    RgEnter(0, &stack[20]);
+    t_rg.n = 0;
+    t_rg.readers = 0;
+    assert(k.g11CloseKey[2] == 0x01000000 && k.g11CloseN[2] == 1);
+    G11PlanBegin();
+    G11PlanEnd(true);
+    G11Touch(G11_LOCK, 0x0085FE10);
+    assert(k.g11CloseN[0] == 2 && k.g11CloseKey[3] == 0);
+    // a full table: the 33rd key counts as other
+    for (DWORD i = 0; i < 40; i++) {
+        G11PlanBegin();
+        G11PlanEnd(true);
+        G11Touch(G11_LOCK, 0x00900000 + i);
+    }
+    assert(k.g11CloseKey[31] != 0 && k.g11CloseOther == 40 - 29);
+
+    k.rgReady = 0;
+    k.rtReady = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    g_rgLock = NULL;
+    g_lockOrig = savedLock;
+    memset(&t_g11, 0, sizeof(t_g11));
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- design D (0.12.0, docs/84 §2.4): discourage footprints deferred while a job runs, applied in order later ---
+static char g_dLog[64];
+static int g_dLogN;
+static u8 g_dObjA[16], g_dObjB[16];
+static bool g_dNestOnce;
+static u8 __fastcall FakeDiscAdd(void* world, void*, void* obj, void* points, int, int, int) {
+    const u8* const* v = (const u8* const*)points;
+    g_dLog[g_dLogN++] = obj == g_dObjA ? 'A' : 'B';
+    assert(v && ((v[1] - v[0]) / 16 < 3 || *(const float*)v[0] == 1.5f));  // 3+ points: the copy made at defer time
+    assert(((uintptr_t)v[0] & 15) == 0);  // the original reads them with movaps (0xAB88BD)
+    if (g_dNestOnce) { g_dNestOnce = false; DiscRemoveHook(world, NULL, g_dObjB); }  // an event handler during the drain
+    return 1;
+}
+static u8 __fastcall FakeDiscRemove(void* world, void*, void* obj) {
+    g_dLog[g_dLogN++] = obj == g_dObjA ? 'a' : 'b';
+    return world ? 1 : 0;
+}
+static void* __cdecl FakeSvc() { return (void*)1; }
+static bool g_dObjBGone;
+static u8 __fastcall FakeFindRef(void*, void*, DWORD lo, DWORD, void** out) {  // same convention as 0x9395A0 (ret 0xC)
+    void* o = lo == 0xA ? (void*)g_dObjA : g_dObjBGone ? NULL : (void*)g_dObjB;
+    if (o) *out = o;
+    return o != NULL;
+}
+static int g_dReleases;
+static void __fastcall FakeObjRelease(void** pp, void*) { assert(*pp); g_dReleases++; }
+
+static void TestDiscourage() {
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    const DWORD me = GetCurrentThreadId();
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_discAddOrig = FakeDiscAdd;
+    g_discRemoveOrig = FakeDiscRemove;
+    g_objSvc = FakeSvc;
+    g_findRef = FakeFindRef;
+    g_objRelease = FakeObjRelease;
+    static u8 world[0xA00];
+    world[0x974] = 1;
+    g_rgLock = world + 0x918;
+    *(DWORD*)(g_dObjA + 8) = 0xA;
+    *(DWORD*)(g_dObjB + 8) = 0xB;
+    k.discMode = 1;
+    g_async.owner = me;
+    __declspec(align(16)) float pts[3][4] = {{1.5f}, {2}, {3}};
+    u8* vec[3] = {(u8*)pts, (u8*)pts + 48, (u8*)pts + 48};
+    g_dLogN = 0;
+
+    // no job: straight to the original
+    assert(DiscAddHook(world, NULL, g_dObjA, vec, 0, 1, 0) == 1 && g_dLogN == 1 && k.discDeferredAdd == 0);
+    // a job runs: recorded (points copied), answered 1, nothing applied yet; early outs still go to the original
+    g_async.state = A_RUNNING;
+    assert(DiscAddHook(world, NULL, g_dObjA, vec, 0, 1, 0) == 1 && DiscRemoveHook(world, NULL, g_dObjB) == 1);
+    assert(DiscRemoveHook(world, NULL, g_dObjA) == 1 && g_dLogN == 1 && k.discDeferredAdd == 1 && k.discDeferredRemove == 2);
+    pts[0][0] = 9;  // the record holds its own copy
+    u8* shortVec[3] = {(u8*)pts, (u8*)pts + 32, (u8*)pts + 32};
+    assert(DiscAddHook(world, NULL, g_dObjA, shortVec, 0, 0, 0) == 1 && g_dLogN == 2);  // fewer than 3 points: original
+    DiscPoll();  // a job still runs and the records are fresh: nothing applied
+    assert(g_dLogN == 2 && g_discCount == 3);
+    // job over: the next poll applies all three in order with the object's reference held
+    g_async.state = A_IDLE;
+    g_dLogN = 0;
+    DiscPoll();
+    assert(g_dLogN == 3 && memcmp(g_dLog, "Aba", 3) == 0 && g_discCount == 0 && k.discApplied == 3 && g_dReleases == 3);
+    assert(*(LONG*)(g_rgLockObj + 0x20) == 0);
+    // an object gone by then is dropped; a record from another world is dropped
+    pts[0][0] = 1.5f;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, g_dObjB);
+    DiscAddHook(world, NULL, g_dObjA, vec, 0, 0, 0);
+    g_async.state = A_IDLE;
+    g_dObjBGone = true;
+    g_dLogN = 0;
+    DiscPoll();
+    assert(g_dLogN == 1 && g_dLog[0] == 'A' && k.discDropped == 1);
+    g_dObjBGone = false;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, g_dObjA);
+    static u8 world2[0xA00];
+    world2[0x974] = 1;
+    g_rgLock = world2 + 0x918;  // travel: a new world before the drain
+    g_async.state = A_IDLE;
+    g_dLogN = 0;
+    DiscPoll();
+    assert(g_dLogN == 0 && k.discDropped == 2);
+    g_rgLock = world + 0x918;
+    // a record made during a drain (event handler) is applied in the same drain, after the one that made it
+    g_async.state = A_RUNNING;
+    DiscAddHook(world, NULL, g_dObjA, vec, 0, 0, 0);
+    g_async.state = A_IDLE;
+    g_dNestOnce = true;
+    g_dLogN = 0;
+    DiscPoll();
+    assert(g_dLogN == 2 && memcmp(g_dLog, "Ab", 2) == 0 && k.discNested == 1 && g_discCount == 0);
+    // a record older than the age limit is applied even while a job runs (the drain waits for it: here none runs)
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, g_dObjA);
+    g_disc[g_discHead].t -= kDiscMaxAgeMs;
+    g_async.state = A_IDLE;  // WaitAsyncDone returns at once in the test
+    DiscPoll();
+    assert(g_discCount == 0 && k.discForced == 0);  // no job ran: a plain drain
+    // mode 0: never deferred
+    k.discMode = 0;
+    g_async.state = A_RUNNING;
+    g_dLogN = 0;
+    assert(DiscRemoveHook(world, NULL, g_dObjA) == 1 && g_dLogN == 1 && g_discCount == 0);
+    g_async.state = A_IDLE;
+
+    g_async.owner = 0;
+    g_rgLock = NULL;
+    k.discMode = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    g_lockOrig = savedLock;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- design S2 (0.13.0, docs/84 §3.6): QL frames on the worker, W4, tripwires and the clone's give-up paths on fakes.
+// The clone against the game's own code: steerro-test.exe (needs the exe). ---
+static int g_srLocoCalls;
+static void __fastcall FkLoco(u8*, void*, u8*, const void*, DWORD, const void*, DWORD) { g_srLocoCalls++; }
+static u8 __fastcall FkS60(const u8*, void*, DWORD) { return 1; }
+static u8 __fastcall FkSFalse(const u8*, void*) { return 0; }
+static u8 __fastcall FkSTrue(const u8*, void*) { return 1; }
+static int __fastcall FkS8(const u8* o, void*, const void*, DWORD) { return o[0x34]; }
+static int __fastcall FkSC(const u8* o, void*) { return o[0x35]; }
+static unsigned __int64 __fastcall FkSId(const u8* o, void*) { return *(const unsigned __int64*)(o + 0x14); }
+static unsigned __int64 __fastcall FkSubId(const u8* s, void*) { return *(const unsigned __int64*)(s - 4 + 0x14); }
+static int __fastcall FkSubType(const u8* s, void*) { return s[-4 + 0x35]; }
+static bool g_srE8Touch;
+static u8 __fastcall FkSE8(const u8* o, void*, DWORD, const float* a, const float* b) {
+    assert(((uintptr_t)a & 15) == 0 && ((uintptr_t)b & 15) == 0);  // 0x80E690 reads them with movaps
+    if (g_srE8Touch) (*(u8**)(o + 0x38))[0x10]++;                 // a bounds write by someone else meanwhile
+    return 1;
+}
+static void* g_srFkVt[0x40];
+static void* g_srFkSubVt[4];
+static u8* SrFakeFp(u8 cls, u8 type, DWORD id) {
+    u8* f = (u8*)_aligned_malloc(0x80, 16);
+    memset(f, 0, 0x80);
+    *(void***)f = g_srFkVt;
+    *(void***)(f + 4) = g_srFkSubVt;
+    f[0x34] = cls;
+    f[0x35] = type;
+    *(DWORD*)(f + 0x14) = id;
+    u8* cache = (u8*)_aligned_malloc(0x24, 16);
+    memset(cache, 0, 0x24);
+    cache[0x20] = 1;
+    *(u8**)(f + 0x38) = cache;
+    return f;
+}
+static u8 g_srLeaf[0x20];
+static u8 g_srIter[0x24];
+static bool g_srBumpQ;
+static void __fastcall FkWalkPt(const void* q, void*, void* ctx, float, float, float, void* visit, void* list) {
+    if (g_srBumpQ) (*(LONG*)((u8*)q + 0x48))++;  // a job's query or pin on the same tree during the walk
+    ((u8(__stdcall*)(void*, const u8*, void*))visit)(ctx, g_srIter, list);
+}
+
+static void TestSteerRO() {
+    static_assert(offsetof(Ts3nCounters, steerReady) == 0x10A0 && offsetof(Ts3nCounters, steerMode) == 0x10A4 &&
+                  offsetof(Ts3nCounters, steerShadow) == 0x10A8 && offsetof(Ts3nCounters, steerFb) == 0x10B4 &&
+                  offsetof(Ts3nCounters, steerUntracked) == 0x1108 && offsetof(Ts3nCounters, caMode) == 0x1110 &&
+                  offsetof(Ts3nCounters, caSimInJob) == 0x1114 && offsetof(Ts3nCounters, caQlHeld) == 0x112C &&
+                  sizeof(Ts3nCounters) >= 1100 * 4, "v31 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.steerReady, 0, offsetof(Ts3nCounters, caQlHeld) + 4 - offsetof(Ts3nCounters, steerReady));
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me + 3;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    DWORD stack[40] = {};
+    auto reset = [&] { t_rg.n = 0; t_rg.readers = 0; };
+
+    // worker: QlEnter holds QL exclusive until the leave; nested entries count up; the leave releases
+    g_workerTid = me;
+    stack[30] = 0x111;
+    QlEnter(4, &stack[30]);
+    assert(t_qlDepth == 1 && t_rg.n == 1 && t_rg.f[0].rel == RG_REL_QL && t_rg.readers == 1 && !TryAcquireSRWLockShared(&g_ql));
+    stack[20] = 0x222;
+    QlEnter(0, &stack[20]);
+    assert(t_qlDepth == 2 && k.steerQlHolds == 1);
+    assert(RgLeave() == 0x222 && t_qlDepth == 1);
+    assert(RgLeave() == 0x111 && t_qlDepth == 0 && TryAcquireSRWLockShared(&g_ql));
+    ReleaseSRWLockShared(&g_ql);
+    // a frame left without returning is released at the next entry (RgDrop)
+    QlEnter(4, &stack[20]);
+    QlEnter(4, &stack[30]);  // the slot above the open frame: that frame is gone
+    assert(t_qlDepth == 1 && t_rg.n == 1);
+    RgLeave();
+    assert(t_qlDepth == 0);
+    // no frame left (16 open): QL is released at once and the clone is switched off for good
+    for (int i = 0; i < 16; i++) RgPush(t_rg, &stack[39 - i], 1);
+    QlEnter(4, &stack[2]);
+    assert(k.steerUntracked == 1 && g_steerBroken == 1 && t_qlDepth == 0 && TryAcquireSRWLockShared(&g_ql));
+    ReleaseSRWLockShared(&g_ql);
+    reset();
+    // W4: the LotGraph_Build gate stub (site 3) on the worker holds QL; other sites and other threads do not
+    static u8 world[0xA00];
+    g_rgLock = world + 0x918;
+    k.rgReady = 7;
+    g_qlOn = 1;
+    stack[30] = 0x333;
+    RgEnter(3, &stack[30]);
+    assert(t_rg.n == 1 && t_rg.f[0].rel == RG_REL_QL && t_qlDepth == 1);
+    assert(RgLeave() == 0x333 && t_qlDepth == 0);
+    RgEnter(2, &stack[30]);
+    assert(t_rg.f[0].rel == 0 && t_qlDepth == 0);
+    reset();
+    g_workerTid = me + 7;
+    RgEnter(3, &stack[30]);
+    assert(t_rg.f[0].rel == 0 && t_qlDepth == 0);
+    reset();
+    k.rgReady = 0;
+    g_rgLock = NULL;
+    // sim-thread writes during a job are counted; inside the clone the answer is dropped
+    simTid = me;
+    g_async.state = A_RUNNING;
+    QlEnter(5, &stack[30]);
+    QlEnter(1, &stack[30]);
+    assert(k.steerSimCacheWrite == 1 && k.steerSimTreeWrite == 1 && t_rg.n == 0);
+    t_inRo = true;
+    QlEnter(5, &stack[30]);
+    assert(k.steerSimWriteInRo == 1 && t_srFail == SR_FB_TRIP);
+    t_inRo = false;
+    t_srFail = 0;
+    g_async.state = A_IDLE;
+    QlEnter(5, &stack[30]);
+    assert(k.steerSimCacheWrite == 2);
+
+    // fix C-A: on the sim thread during a job, an invalid level of one of the four classes takes +0x918 in the W6a stub,
+    // i.e. before the original body marks the level valid and frees its polygons; never with QL held
+    {
+        const LockAcquireFn savedLock = g_lockOrig;
+        g_lockOrig = RgTryAcquire;
+        g_rgRelOrig = RgFakeRelease;
+        InitializeCriticalSection(&g_rgFakeCs);
+        if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+        LONG& count = *(LONG*)(g_rgLockObj + 0x20);
+        g_rgLock = g_rgLockObj;
+        g_async.lock = g_rgLockObj;
+        g_async.owner = me;
+        g_async.state = A_RUNNING;
+        g_caOn = 1;
+        static u8 caFp[0x40], caCache[0x24 * 2];
+        *(DWORD*)caFp = g_caClasses[1];
+        *(u8**)(caFp + 0x38) = caCache;
+        DWORD fr[8] = {};
+        fr[2] = (DWORD)(uintptr_t)caFp;  // ecx in the pushad frame (slot[-2])
+        fr[4] = 0x444;                   // return address (slot)
+        fr[5] = 1;                       // level argument (slot[1])
+        k.caMode = 0;  // count only
+        QlEnter(QL_W6A, &fr[4]);
+        assert(k.caSimInJob[1] == 1 && k.caWaits == 0 && count == 0 && t_rg.n == 0);
+        k.caMode = 1;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(count == 1 && k.caWaits == 1 && caCache[0x24 + 0x20] == 0);  // held before the body touches the level
+        assert(t_rg.n == 1 && t_rg.f[0].rel == (RG_REL_LOCK | RG_REL_OFFSIM) && fr[4] == (DWORD)(uintptr_t)RgLeaveThunk);
+        caCache[0x24 + 0x20] = 1;  // the body ran: level valid
+        assert(RgLeave() == 0x444 && count == 0 && g_rgOffSimOpen == 0);
+        // valid level, other class, other level index: nothing
+        fr[4] = 0x444;
+        QlEnter(QL_W6A, &fr[4]);
+        *(DWORD*)caFp = 0x00FEBBC0;
+        caCache[0x24 + 0x20] = 0;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(count == 0 && t_rg.n == 0 && k.caSimInJob[1] == 2 && k.caSimInJob[0] + k.caSimInJob[2] + k.caSimInJob[3] == 0);
+        // QL held on this thread: counted, no wait (lock order: +0x918 is never awaited under QL)
+        *(DWORD*)caFp = g_caClasses[3];
+        t_qlDepth = 1;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(k.caQlHeld == 1 && count == 0 && t_rg.n == 0 && k.caSimInJob[3] == 1);
+        t_qlDepth = 0;
+        // the +0x918 owner, or a callback served for the job: no wait
+        k.rgOwnerTid = (LONG)me;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(count == 0 && t_rg.n == 0);
+        k.rgOwnerTid = 0;
+        g_inInvoke = 1;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(count == 0 && t_rg.n == 0);
+        g_inInvoke = 0;
+        // no job: the stub does nothing
+        g_async.state = A_IDLE;
+        QlEnter(QL_W6A, &fr[4]);
+        assert(k.caSimInJob[3] == 3 && k.caWaits == 1);  // counted twice above (owner, invoke), not here
+        g_caOn = 0;
+        k.caMode = 0;
+        g_async.lock = NULL;
+        g_rgLock = NULL;
+        k.rgOwnerTid = 0;
+        k.rgAcquires = 0;
+        g_lockOrig = savedLock;
+        DeleteCriticalSection(&g_rgFakeCs);
+    }
+
+    // the clone's pieces on fakes (slot whitelist off: these vtables are ours)
+    g_srCheckSlots = false;
+    const float* savedOne = g_srOne;
+    static const float one = 1.0f;
+    g_srOne = &one;  // 0x107A538 does not exist here
+    g_srFkVt[0x60 / 4] = (void*)FkS60;
+    g_srFkVt[0x28 / 4] = (void*)FkSFalse;
+    g_srFkVt[2] = (void*)FkS8;
+    g_srFkVt[3] = (void*)FkSC;
+    g_srFkVt[0x84 / 4] = (void*)FkSId;
+    g_srFkVt[0xC0 / 4] = (void*)FkSTrue;
+    g_srFkVt[0xE8 / 4] = (void*)FkSE8;
+    g_srFkSubVt[1] = (void*)FkSubId;
+    g_srFkSubVt[2] = (void*)FkSubType;
+    // a leaf with a heap list: class 3 type 5; class 2 (local list) type 5; type 0x1F ("seen"); class 1; class 0xD; id 0
+    u8* fps[6] = {SrFakeFp(3, 5, 0x10), SrFakeFp(2, 5, 0x11), SrFakeFp(3, 0x1F, 0x12), SrFakeFp(1, 5, 0x13), SrFakeFp(0xD, 5, 0x14),
+                  SrFakeFp(3, 5, 0)};
+    u8 ents[6][0x20] = {};
+    DWORD list[6][3];
+    for (int i = 0; i < 6; i++) {
+        *(u8**)(ents[i] + 8) = fps[i];
+        list[i][0] = (DWORD)(uintptr_t)ents[i];
+        list[i][1] = list[i][2] = 0xFFFFFFFF;
+    }
+    *(DWORD*)(g_srLeaf + 8) = (DWORD)(uintptr_t)list | 1;
+    *(DWORD*)(g_srLeaf + 0xC) = 6;
+    static SrCtx c;
+    auto collect = [&](const u8* rec, DWORD flag) {
+        c.n = 0;
+        c.fail = 0;
+        c.rec = rec;
+        c.flag = flag;
+        SrCollect(&c, g_srLeaf, false, 0);
+    };
+    collect(NULL, 1);  // EditPath's filter: class >= 2 and not 0xD; class 2 only with a "seen" entry in the same leaf
+    assert(!c.fail && c.n == 3 && c.objs[0] == fps[0] && c.objs[1] == fps[5] && c.objs[2] == fps[1]);
+    fps[2][0x35] = 5;
+    collect(NULL, 1);
+    assert(c.n == 3 && c.objs[0] == fps[0] && c.objs[1] == fps[2] && c.objs[2] == fps[5]);  // no "seen": class 2 dropped
+    __declspec(align(16)) u8 rec[0x30] = {};
+    collect(rec, 0);  // the obstacle query: all classes, but not the record's own id (0)
+    assert(c.n == 5 && c.objs[4] == fps[4]);
+    // masked lists: the entry's bit for the sub-cell
+    list[0][1] = 0;
+    list[0][2] = 1u << 3;
+    c.n = 0;
+    c.fail = 0;
+    c.rec = rec;
+    c.flag = 0;
+    SrCollect(&c, g_srLeaf, true, 35);
+    assert(c.n == 5);
+    c.n = 0;
+    SrCollect(&c, g_srLeaf, true, 3);
+    assert(c.n == 4);  // fps[0] not in sub-cell 3
+    list[0][1] = list[0][2] = 0xFFFFFFFF;
+    // a NULL footprint (the original would dereference it), the whitelist, overflow: give up
+    *(u8**)(ents[3] + 8) = NULL;
+    collect(rec, 0);
+    assert(c.fail == SR_FB_SHAPE);
+    *(u8**)(ents[3] + 8) = fps[3];
+    g_srCheckSlots = true;
+    collect(rec, 0);
+    assert(c.fail == SR_FB_SHAPE);
+    g_srCheckSlots = false;
+    c.n = kSrCap;
+    c.fail = 0;
+    c.flag = 0;
+    SrCollect(&c, g_srLeaf, false, 0);
+    assert(c.fail == SR_FB_SHAPE);
+
+    // walks: the deferred flag with the pin counter below 1 (the original flushes first), the pin counter moving meanwhile
+    static u8 q[0x60];
+    *(u8**)(g_srIter + 0xC) = g_srLeaf;
+    g_srIter[0x1C] = 0;
+    const SrWalkPtFn savedWalk = g_srWalkPt;
+    g_srWalkPt = FkWalkPt;
+    q[0x4C] = 1;
+    *(LONG*)(q + 0x48) = 0;
+    c.fail = 0;
+    c.n = 0;
+    assert(SrWalk(&c, q, true, 0, 0, 1) == SR_FB_DEFERRED && c.n == 0);
+    *(LONG*)(q + 0x48) = 1;
+    assert(SrWalk(&c, q, true, 0, 0, 1) == SR_OK && c.n == 5);
+    g_srBumpQ = true;
+    c.n = 0;
+    assert(SrWalk(&c, q, true, 0, 0, 1) == SR_FB_TRIP && k.steerPinMoved == 1);
+    g_srBumpQ = false;
+    g_srWalkPt = savedWalk;
+
+    // EditPath's consumer: the level-0 test needs a valid cache, and the cache must not change under it (T3)
+    static u8 entry[0x100];  // lot entry: rows identity
+    float* rows = (float*)(((uintptr_t)entry + 15) & ~(uintptr_t)15);
+    (void)rows;
+    SrNode nd = {};
+    static float rawPt[4] = {1, 0, 2, 0};
+    nd.raw = (const u8*)rawPt;
+    nd.eLot = false;
+    static SrOut out;
+    out.nIds = 0;
+    c.n = 1;
+    c.objs[0] = fps[0];
+    const SrIdListFn savedIdList = g_srIdList;
+    g_srIdList = [](DWORD lo, DWORD hi, const void* l, DWORD n) -> u8 {  // IdList_Contains 0x85AAA0
+        for (DWORD i = 0; l && i < n; i++) if (((const DWORD*)l)[i * 2] == lo && ((const DWORD*)l)[i * 2 + 1] == hi) return 1;
+        return 0;
+    };
+    assert(SrConsume(&c, NULL, nd, NULL, 0, &out, NULL, 0, NULL, 0, NULL, 0) == SR_OK && out.nIds == 1 && out.ids[0][0] == 0x10);
+    // ignore list, ids already present, exclude list: no second append
+    const DWORD have[2] = {0x10, 0};
+    out.nIds = 0;
+    assert(SrConsume(&c, NULL, nd, have, 1, &out, NULL, 0, NULL, 0, NULL, 0) == SR_OK && out.nIds == 0);
+    assert(SrConsume(&c, NULL, nd, NULL, 0, &out, have, 1, NULL, 0, NULL, 0) == SR_OK && out.nIds == 0);
+    assert(SrConsume(&c, NULL, nd, NULL, 0, &out, NULL, 0, have, 1, NULL, 0) == SR_OK && out.nIds == 0);
+    // with a lot for the level-0 test: an invalid cache gives up (the original would rebuild it), a changed one too (T3)
+    static u8 p[0x200], lotNode[0x200];
+    static DWORD buckets[2];
+    u8* ln = (u8*)(((uintptr_t)lotNode + 15) & ~(uintptr_t)15);
+    *(DWORD*)ln = 0x20;
+    float* r = (float*)(ln + 0x10 + 0xA0);
+    r[0] = r[5] = r[10] = r[15] = 1;
+    buckets[0] = (DWORD)(uintptr_t)ln;
+    buckets[1] = 0x5E117E1;
+    *(DWORD**)(p + 0x4C) = buckets;
+    *(DWORD*)(p + 0x50) = 1;
+    const SrLotFindFn savedFind = g_srLotFind;
+    g_srLotFind = [](const void* tbl, void*, DWORD* o, const DWORD* key) {  // LotTable_Find 0x627E00, one bucket
+        const u8* n = (const u8*)(uintptr_t)(*(const DWORD* const*)((const u8*)tbl + 4))[0];
+        o[0] = *(const DWORD*)n == key[0] ? (DWORD)(uintptr_t)n : 0x5E117E1;
+        o[1] = 0;
+    };
+    nd.eLot = true;
+    nd.eLo = 0x20;
+    (*(u8**)(fps[0] + 0x38))[0x20] = 0;
+    assert(SrConsume(&c, p, nd, NULL, 0, &out, NULL, 0, NULL, 0, NULL, 0) == SR_FB_CACHE);
+    (*(u8**)(fps[0] + 0x38))[0x20] = 1;
+    g_srE8Touch = true;
+    assert(SrConsume(&c, p, nd, NULL, 0, &out, NULL, 0, NULL, 0, NULL, 0) == SR_FB_CACHE);
+    g_srE8Touch = false;
+    out.nIds = 0;
+    assert(SrConsume(&c, p, nd, NULL, 0, &out, NULL, 0, NULL, 0, NULL, 0) == SR_OK && out.nIds == 1);
+    nd.eLo = 0x21;  // EditPath's lot not in the table: GetOrInsert would insert it
+    assert(SrConsume(&c, p, nd, NULL, 0, &out, NULL, 0, NULL, 0, NULL, 0) == SR_FB_LOTMISS);
+    // Contains rules: key 0 and -1 and the active lot have no entry; a key mismatch at the entry neither
+    static u8 act[0x60];
+    static const u8* actp;
+    actp = act;
+    const SrActiveLotFn savedAct = g_srActiveLot;
+    g_srActiveLot = []() -> const u8* { return actp; };
+    const u8* e;
+    assert(SrEntry(p, 0, 0, true, &e) == SR_OK && !e);
+    assert(SrEntry(p, 0xFFFFFFFF, 0xFFFFFFFF, true, &e) == SR_OK && !e);
+    *(DWORD*)(act + 0x48) = 0x20;
+    assert(SrEntry(p, 0x20, 0, true, &e) == SR_OK && !e);
+    *(DWORD*)(act + 0x48) = 0x99;
+    assert(SrEntry(p, 0x20, 0, true, &e) == SR_OK && !e);  // node+0x10 holds no key yet
+    *(DWORD*)(ln + 0x10) = 0x20;
+    assert(SrEntry(p, 0x20, 0, true, &e) == SR_OK && e == ln + 0x10);
+    assert(SrEntry(p, 0x21, 0, true, &e) == SR_OK && !e);
+    actp = NULL;
+    assert(SrEntry(p, 0x20, 0, true, &e) == SR_FB_SHAPE);
+    // cell graph bounds (level base +0x40, vector +0x74/+0x78)
+    static DWORD qv[2] = {0x1234, 0x5678};
+    *(LONG*)(ln + 0x10 + 0x40) = 1;
+    *(DWORD**)(ln + 0x10 + 0x74) = qv;
+    *(DWORD**)(ln + 0x10 + 0x78) = qv + 2;
+    assert(!SrCell(ln + 0x10, 0) && SrCell(ln + 0x10, 1) == (const u8*)0x1234 && SrCell(ln + 0x10, 2) == (const u8*)0x5678 && !SrCell(ln + 0x10, 3));
+    g_srActiveLot = savedAct;
+    g_srLotFind = savedFind;
+    g_srIdList = savedIdList;
+
+    // the hook: no switch, not the owner, a job with QL held elsewhere, the job's callback, the broken flag
+    g_locoOrig = FkLoco;
+    static u8 agent[0x100], node[0x40];
+    *(u8**)(agent + 8) = node;
+    *(u8**)node = agent + 8;
+    node[0x30] = 1;
+    static DWORD idsv[3];
+    g_srLocoCalls = 0;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 1 && k.steerCalls == 0);
+    k.steerMode = 1;
+    g_async.owner = me + 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 2 && k.steerCalls == 0);
+    g_async.owner = me;
+    g_async.state = A_RUNNING;
+    g_steerBroken = 0;
+    g_inInvoke = 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 3 && k.steerFb[SR_FB_STATE - 1] == 1);
+    g_inInvoke = 0;
+    g_steerBroken = 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 4 && k.steerFb[SR_FB_STATE - 1] == 2);
+    g_steerBroken = 0;
+    // QL held exclusive by another thread (a worker writer): try fails, today's call (fake world: World_Get answers it)
+    static u8 fworld[0xA00], fwm[0x200], fp[0x200];
+    fworld[0x974] = 1;
+    *(u8**)(fworld + 0x95C) = fp;
+    *(u8**)(fworld + 0x964) = fwm;
+    static u8* fwmSlot;
+    fwmSlot = fwm;
+    const SrWorldFn savedWorld = g_srWorldGet;
+    u8* const* savedWm = g_srWmSlot;
+    const SrConvFn savedConv = g_srConv;
+    const SrLotLookupFn savedLook = g_srLotLookup;
+    g_srWorldGet = []() -> u8* { return fworld; };
+    g_srWmSlot = &fwmSlot;
+    g_srConv = [](const void*, void*) {};
+    g_srLotLookup = [](void*, void*, float, float) -> u8* { return NULL; };
+    HANDLE held = CreateEventW(NULL, TRUE, FALSE, NULL), go = CreateEventW(NULL, TRUE, FALSE, NULL);
+    struct Hold { HANDLE held, go; } h = {held, go};
+    HANDLE th = CreateThread(NULL, 0, [](void* p) -> DWORD {
+        Hold* hh = (Hold*)p;
+        AcquireSRWLockExclusive(&g_ql);
+        SetEvent(hh->held);
+        WaitForSingleObject(hh->go, 5000);
+        ReleaseSRWLockExclusive(&g_ql);
+        return 0;
+    }, &h, 0, NULL);
+    WaitForSingleObject(held, 5000);
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 5 && k.steerFb[SR_FB_TRY - 1] == 1);
+    SetEvent(go);
+    WaitForSingleObject(th, 5000);
+    CloseHandle(th);
+    CloseHandle(held);
+    CloseHandle(go);
+    // QL free, no lot anywhere: the read-only answer is "nothing to add" without the game's call
+    const LONG taken0 = k.steerTaken;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 5 && k.steerTaken == taken0 + 1);
+    // a dirty lot index: give up
+    fwm[0x1CC] = 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 6 && k.steerFb[SR_FB_DIRTY - 1] == 1);
+    fwm[0x1CC] = 0;
+    g_srWorldGet = savedWorld;
+    g_srWmSlot = savedWm;
+    g_srConv = savedConv;
+    g_srLotLookup = savedLook;
+    g_srOne = savedOne;
+    g_srCheckSlots = true;
+    g_async.state = A_IDLE;
+    g_async.owner = 0;
+    g_qlOn = 0;
+    g_workerTid = savedWorker;
+    k.steerMode = 0;
+    simTid = 0;
+    for (u8* f : fps) { _aligned_free(*(u8**)(f + 0x38)); _aligned_free(f); }
+}
+
+// --- design L1 and probe P1b (0.14.0, lotfd.cpp): clone rules on fakes, no writes, QL rules, hook dispatch, P1b keys, T-L3 ---
+static u64 g_fdSkew;
+static int g_fdCalls;
+static u64 __fastcall FkFd(const u8* p, void*, DWORD lo, DWORD hi, DWORD type, const u8** out) {  // stands for 0x631800
+    g_fdCalls++;
+    u64 r;
+    const u8* pt;
+    LtFrontDoor(p, lo, hi, type, &r, &pt);
+    if (out && pt) *out = pt;
+    return r + g_fdSkew;
+}
+static LONG __fastcall FkPortalAddRef(u8* o, void*) { return ++*(LONG*)(o + 0x70); }
+static LONG __fastcall FkPortalRelease(u8* o, void*) { return --*(LONG*)(o + 0x70); }
+static DWORD Fnv32(const void* p, size_t n) {
+    DWORD h = 2166136261u;
+    for (size_t i = 0; i < n; i++) h = (h ^ ((const u8*)p)[i]) * 16777619u;
+    return h;
+}
+
+static void TestLotFd() {
+    static_assert(offsetof(Ts3nCounters, ltReady) == 0x1130 && offsetof(Ts3nCounters, ltMode) == 0x1134 &&
+                  offsetof(Ts3nCounters, ltShadow) == 0x1138 && offsetof(Ts3nCounters, ltFb) == 0x1144 &&
+                  offsetof(Ts3nCounters, ltUs) == 0x115C && offsetof(Ts3nCounters, ltShadowMismatch) == 0x1168 &&
+                  offsetof(Ts3nCounters, ltQlHeldBlock) == 0x116C && offsetof(Ts3nCounters, portalRef) == 0x1170 &&
+                  offsetof(Ts3nCounters, p1bReady) == 0x1190 && offsetof(Ts3nCounters, p1bKey) == 0x1194 &&
+                  offsetof(Ts3nCounters, p1bN) == 0x1214 && offsetof(Ts3nCounters, p1bUs) == 0x1294 &&
+                  offsetof(Ts3nCounters, p1bOther) == 0x1314 && offsetof(Ts3nCounters, p1bNoFrame) == 0x1318 &&
+                  sizeof(Ts3nCounters) == 1223 * 4, "v32 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.ltReady, 0, offsetof(Ts3nCounters, p1bNoFrame) + 4 - offsetof(Ts3nCounters, ltReady));
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    g_workerTid = me + 7;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+
+    // a lot table: P+0x48, buckets +0x4C (2 + the end slot), count +0x50; lots 0x10 (head of bucket 0), 0x12 (behind it),
+    // 0x13 (bucket 1; its node+0x10 holds another key); the active lot 0x99
+    static u8 p[0x200], wm[0x200], act[0x60], nodes[3][0x1A0], portals[3][0x80];
+    static DWORD bk[3], vt[2], vec[4];
+    static u8* wmSlot;
+    wmSlot = wm;
+    u8* const* savedWm = g_srWmSlot;
+    g_srWmSlot = &wmSlot;
+    *(u8**)(wm + 0xB0) = act;
+    *(DWORD*)(act + 0x48) = 0x99;
+    const DWORD keys[3] = {0x10, 0x12, 0x13};
+    for (int i = 0; i < 3; i++) {
+        *(DWORD*)nodes[i] = keys[i];
+        *(DWORD*)(nodes[i] + 0x10) = keys[i];
+    }
+    *(DWORD*)(nodes[2] + 0x10) = 0x77;
+    bk[0] = (DWORD)(uintptr_t)nodes[0];
+    *(u8**)(nodes[0] + 0x190) = nodes[1];
+    bk[1] = (DWORD)(uintptr_t)nodes[2];
+    bk[2] = 0x5E117E1;
+    *(DWORD**)(p + 0x4C) = bk;
+    *(DWORD*)(p + 0x50) = 2;
+    // lot 0x12's entry: 3 portals (the middle one NULL), front door indices +0x18 = 0, +0x1C = 2
+    u8* e = nodes[1] + 0x10;
+    vt[0] = (DWORD)(uintptr_t)FkPortalAddRef;
+    vt[1] = (DWORD)(uintptr_t)FkPortalRelease;
+    for (int i = 0; i < 3; i++) {
+        *(DWORD**)portals[i] = vt;
+        *(DWORD*)(portals[i] + 8) = 0x1000 + i;
+        *(DWORD*)(portals[i] + 0xC) = 0xA0 + i;
+        *(LONG*)(portals[i] + 0x70) = 1;
+        vec[i] = i == 1 ? 0 : (DWORD)(uintptr_t)portals[i];
+    }
+    *(DWORD**)(e + 0x44) = vec;
+    *(DWORD**)(e + 0x48) = vec + 3;
+    *(DWORD*)(e + 0x18) = 0;
+    *(DWORD*)(e + 0x1C) = 2;
+    const DWORD savedAdd = g_ltAddRef, savedRel = g_ltRelease;
+    g_ltAddRef = vt[0];
+    g_ltRelease = vt[1];
+    auto sum = [&] { return Fnv32(p, sizeof(p)) ^ Fnv32(nodes, sizeof(nodes)) ^ Fnv32(portals, sizeof(portals)) ^ Fnv32(vec, sizeof(vec)) ^ Fnv32(act, sizeof(act)); };
+    auto fd = [&](DWORD lo, DWORD hi, DWORD type, u64 want, const u8* wantPt) {
+        u64 r;
+        const u8* pt;
+        const DWORD before = sum();
+        const int why = LtFrontDoor(p, lo, hi, type, &r, &pt);
+        assert(sum() == before);  // the clone writes nothing (no refcount either)
+        if (!why) assert(r == want && pt == wantPt);
+        return why;
+    };
+    const u64 id0 = 0xA0ull << 32 | 0x1000, id2 = 0xA2ull << 32 | 0x1002;
+    assert(fd(0, 0, 0, 0, NULL) == 0 && fd(0xFFFFFFFF, 0xFFFFFFFF, 0, 0, NULL) == 0);  // Contains rejects
+    *(DWORD*)(act + 0x48) = 0x12;
+    assert(fd(0x12, 0, 0, 0, NULL) == 0);  // the active lot
+    *(DWORD*)(act + 0x48) = 0x99;
+    assert(fd(0x12, 0, 0, id2, portals[2]) == 0);  // type 0: +0x1C valid
+    assert(fd(0x12, 0, 1, id2, portals[2]) == 0 && fd(0x12, 0, 2, id0, portals[0]) == 0 && fd(0x12, 0, 3, 0, NULL) == 0);
+    assert(fd(0x12, 1, 0, 0, NULL) == 0 && fd(0x14, 0, 0, 0, NULL) == 0);  // chain miss (hi differs), chain end
+    assert(fd(0x13, 0, 0, 0, NULL) == 0);  // node+0x10 holds another key: Contains says no
+    *(DWORD*)(e + 0x1C) = 0xFFFFFFFF;
+    assert(fd(0x12, 0, 0, id0, portals[0]) == 0 && fd(0x12, 0, 1, 0, NULL) == 0);  // -1: type 0 takes +0x18, type 1 none
+    *(DWORD*)(e + 0x1C) = 3;
+    assert(fd(0x12, 0, 0, id0, portals[0]) == 0 && fd(0x12, 0, 1, 0, NULL) == 0);  // >= n: the same
+    *(DWORD*)(e + 0x18) = 1;
+    assert(fd(0x12, 0, 0, 0, NULL) == 0 && fd(0x12, 0, 2, 0, NULL) == 0);  // NULL portal
+    *(DWORD*)(e + 0x18) = 0xFFFFFFFF;
+    assert(fd(0x12, 0, 2, 0, NULL) == 0);
+    *(DWORD*)(e + 0x18) = 0;
+    *(DWORD*)(e + 0x1C) = 2;
+    assert(fd(0x10, 0, 0, 0, NULL) == 0);  // head of the chain, no portals
+    // doubts: slots that are not the count pair, a count below 1 (the original's Release would delete), no table, no active lot
+    vt[1] = (DWORD)(uintptr_t)FkPortalAddRef;
+    assert(fd(0x12, 0, 0, 0, NULL) == LT_FB_SHAPE);
+    vt[1] = (DWORD)(uintptr_t)FkPortalRelease;
+    *(LONG*)(portals[2] + 0x70) = 0;
+    assert(fd(0x12, 0, 0, 0, NULL) == LT_FB_SHAPE);
+    *(LONG*)(portals[2] + 0x70) = 1;
+    *(DWORD*)(p + 0x50) = 0;
+    assert(fd(0x12, 0, 0, 0, NULL) == LT_FB_SHAPE);
+    *(DWORD*)(p + 0x50) = 2;
+    *(u8**)(wm + 0xB0) = NULL;
+    assert(fd(0x12, 0, 0, 0, NULL) == LT_FB_NOWM);
+    *(u8**)(wm + 0xB0) = act;
+    wmSlot = NULL;
+    assert(fd(0x12, 0, 0, 0, NULL) == LT_FB_NOWM);
+    wmSlot = wm;
+
+    // QL rules: never nested (QL exclusive or shared already held on this thread), never with a lost writer frame; T-L2 flag
+    // set only inside the hold
+    u64 r;
+    const u8* pt;
+    assert(LtClone(p, 0x12, 0, 0, &r, &pt) == LT_OK && r == id2 && t_qlShared == 0 && TryAcquireSRWLockExclusive(&g_ql));
+    ReleaseSRWLockExclusive(&g_ql);
+    t_qlDepth = 1;
+    assert(LtClone(p, 0x12, 0, 0, &r, &pt) == LT_FB_NESTED && r == 0);
+    t_qlDepth = 0;
+    t_qlShared = 1;
+    assert(LtClone(p, 0x12, 0, 0, &r, &pt) == LT_FB_NESTED);
+    t_qlShared = 0;
+    g_steerBroken = 1;
+    assert(LtClone(p, 0x12, 0, 0, &r, &pt) == LT_FB_BROKEN && TryAcquireSRWLockExclusive(&g_ql));
+    ReleaseSRWLockExclusive(&g_ql);
+    g_steerBroken = 0;
+    // T-L2: a Lock_Acquire while this thread holds QL shared is counted
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = [](void*, void*, const DWORD*) -> LONG { return 1; };
+    static const DWORD inf = 0xFFFFFFFF;
+    static u8 otherLock[0x28];
+    t_qlShared = 1;
+    LockAcquireHook(otherLock, NULL, &inf);
+    t_qlShared = 0;
+    LockAcquireHook(otherLock, NULL, &inf);
+    assert(k.ltQlHeldBlock == 1);
+    g_lockOrig = savedLock;
+
+    // the hook: switches off, not the owner, no job, a job (read-only answer), each fall-back
+    const FdFn savedFd = g_fdOrig;
+    g_fdOrig = FkFd;
+    g_fdCalls = 0;
+    const u8* out = NULL;
+    g_async.owner = me;
+    assert(FdHook(p, NULL, 0x12, 0, 0, &out) == id2 && g_fdCalls == 1 && k.ltCalls == 0);  // switches off
+    k.ltMode = 1;
+    g_async.owner = me + 1;
+    assert(FdHook(p, NULL, 0x12, 0, 0, &out) == id2 && g_fdCalls == 2 && k.ltCalls == 0);
+    g_async.owner = me;
+    g_async.state = A_IDLE;
+    assert(FdHook(p, NULL, 0x12, 0, 0, &out) == id2 && g_fdCalls == 3 && k.ltCalls == 1 && k.ltShadowRuns == 0);
+    g_async.state = A_RUNNING;
+    out = NULL;
+    assert(FdHook(p, NULL, 0x12, 0, 0, &out) == id2 && g_fdCalls == 3 && k.ltTaken == 1 && out == portals[2]);
+    assert(FdHook(p, NULL, 0x12, 0, 3, NULL) == 0 && g_fdCalls == 3 && k.ltTaken == 2);
+    g_inInvoke = 1;
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 4 && k.ltFb[LT_FB_STATE - 1] == 1);
+    g_inInvoke = 0;
+    k.rgOwnerTid = (LONG)me;
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 5 && k.ltFb[LT_FB_STATE - 1] == 2);
+    k.rgOwnerTid = 0;
+    t_rg.n = 1;  // a gate frame open on this thread
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 6 && k.ltFb[LT_FB_STATE - 1] == 3);
+    t_rg.n = 0;
+    t_qlDepth = 1;
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 7 && k.ltFb[LT_FB_NESTED - 1] == 1);
+    t_qlDepth = 0;
+    *(LONG*)(portals[2] + 0x70) = 0;
+    FdHook(p, NULL, 0x12, 0, 0, NULL);  // (the fake game call refuses it too)
+    assert(g_fdCalls == 8 && k.ltFb[LT_FB_SHAPE - 1] == 1);
+    *(LONG*)(portals[2] + 0x70) = 1;
+    // QL held exclusive by a worker writer: try fails, the game's call
+    HANDLE held = CreateEventW(NULL, TRUE, FALSE, NULL), go = CreateEventW(NULL, TRUE, FALSE, NULL);
+    struct Hold { HANDLE held, go; } h = {held, go};
+    HANDLE th = CreateThread(NULL, 0, [](void* a) -> DWORD {
+        Hold* hh = (Hold*)a;
+        AcquireSRWLockExclusive(&g_ql);
+        SetEvent(hh->held);
+        WaitForSingleObject(hh->go, 5000);
+        ReleaseSRWLockExclusive(&g_ql);
+        return 0;
+    }, &h, 0, NULL);
+    WaitForSingleObject(held, 5000);
+    assert(LtClone(p, 0x12, 0, 0, &r, &pt) == LT_FB_TRY);
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 9 && k.ltFb[LT_FB_TRY - 1] == 1);
+    SetEvent(go);
+    WaitForSingleObject(th, 5000);
+    CloseHandle(th);
+    CloseHandle(held);
+    CloseHandle(go);
+    // shadow (no job): the game's call, then the clone; a different answer is counted, *out compared with what the game left
+    k.ltMode = 0;
+    k.ltShadow = 1;
+    assert(FdHook(p, NULL, 0x12, 0, 0, NULL) == id2 && g_fdCalls == 10 && k.ltFb[LT_FB_TRY - 1] == 1);  // job: game only
+    g_async.state = A_IDLE;
+    out = (const u8*)(uintptr_t)0x1234;
+    assert(FdHook(p, NULL, 0x14, 0, 0, &out) == 0 && out == (const u8*)(uintptr_t)0x1234 && g_fdCalls == 11);
+    assert(FdHook(p, NULL, 0x12, 0, 0, &out) == id2 && out == portals[2] && g_fdCalls == 12);
+    assert(k.ltShadowRuns == 2 && k.ltShadowMismatch == 0 && g_rgOffSimOpen == 0);
+    g_fdSkew = 1;
+    FdHook(p, NULL, 0x12, 0, 0, NULL);
+    assert(k.ltShadowRuns == 3 && k.ltShadowMismatch == 1);
+    g_fdSkew = 0;
+    k.ltShadow = 0;
+    g_fdOrig = savedFd;
+
+    // P1b: second frames at the fixed offsets of the four gate-12 keys, the ebp frame of the gate-0 key
+    DWORD st[48] = {};
+    st[37] = 0x0080CF36;  // slot[7]
+    P1bNote(12, 0x0062F782, &st[30], 100);
+    P1bNote(12, 0x0062F782, &st[30], 50);
+    assert(k.p1bKey[0] == (LONG)(1u << 24 | 0x80CF36) && k.p1bN[0] == 2 && k.p1bUs[0] == 150);
+    st[34] = 0x0076F15D;  // slot[4]
+    P1bNote(12, 0x0062FB74, &st[30], 1);
+    st[34] = 0x00788373;
+    P1bNote(12, 0x00631814, &st[30], 1);
+    st[39] = 0x00634F15;  // slot[9]
+    P1bNote(12, 0x00631F40, &st[30], 1);
+    assert(k.p1bKey[1] == (LONG)(2u << 24 | 0x76F15D) && k.p1bKey[2] == (LONG)(3u << 24 | 0x788373) &&
+           k.p1bKey[3] == (LONG)(4u << 24 | 0x634F15));
+    st[24] = (DWORD)(uintptr_t)&st[40];  // slot[-6] = ebp of 0x62EF30; [ebp + 4] = its return address
+    st[41] = 0x0062F3D0;
+    P1bNote(0, 0x0062EF7A, &st[30], 1);
+    assert(k.p1bKey[4] == (LONG)(5u << 24 | 0x62F3D0) && k.p1bN[4] == 1);
+    st[24] = (DWORD)(uintptr_t)&st[10];  // ebp below the slot: no frame
+    P1bNote(0, 0x0062EF7A, &st[30], 1);
+    assert(k.p1bNoFrame == 1);
+    P1bNote(0, 0x0062F782, &st[30], 1);  // a gate-12 key seen at another gate, an unknown key: nothing
+    P1bNote(12, 0x00123456, &st[30], 1);
+    st[37] = 0x10001000;  // a return address outside the exe
+    P1bNote(12, 0x0062F782, &st[30], 1);
+    assert(k.p1bKey[5] == (LONG)(1u << 24 | 0xFFFFFF) && !k.p1bKey[6] && k.p1bNoFrame == 1);
+    for (DWORD i = 0; i < 32; i++) {  // the table fills, then p1bOther
+        st[37] = 0x00500000 + i;
+        P1bNote(12, 0x0062F782, &st[30], 1);
+    }
+    assert(k.p1bOther == 6 && k.p1bKey[31] == (LONG)(1u << 24 | 0x500019));
+    // through the gate stub's entry: an enforced gate-12 wait during a job is keyed by its second frame too
+    memset(k.p1bKey, 0, sizeof(k.p1bKey) * 3 + 8);
+    {
+        const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+        g_lockOrig = RgTryAcquire;
+        g_rgRelOrig = RgFakeRelease;
+        InitializeCriticalSection(&g_rgFakeCs);
+        g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+        g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+        g_enfHeld = CreateEventW(NULL, TRUE, FALSE, NULL);
+        k.rgReady = 7;
+        k.rgEnforce = 1;
+        g_async.lock = g_rgLockObj;
+        g_rgLock = g_rgLockObj;
+        g_p1bOn = 1;
+        st[30] = 0x0062FB74;
+        st[34] = 0x0080D798;
+        HANDLE w = EnfStartWorker();
+        RgEnter(12, &st[30]);
+        assert(k.p1bKey[0] == (LONG)(2u << 24 | 0x80D798) && k.p1bN[0] == 1 && k.p1bUs[0] >= 10000 && t_rg.n == 1);
+        assert(RgLeave() == 0x0062FB74 && *(LONG*)(g_rgLockObj + 0x20) == 0 && g_rgOffSimOpen == 0);
+        EnfJoin(w);
+        g_p1bOn = 0;
+        g_async.state = A_IDLE;
+        g_async.lock = NULL;
+        g_rgLock = NULL;
+        k.rgEnforce = 0;
+        k.rgReady = 0;
+        k.rgOwnerTid = 0;
+        g_lockOrig = savedLock;
+        CloseHandle(g_asyncDone);
+        CloseHandle(g_invReady);
+        CloseHandle(g_enfHeld);
+        g_asyncDone = savedDone;
+        g_invReady = savedInv;
+        DeleteCriticalSection(&g_rgFakeCs);
+    }
+
+    // T-L3: the counting thunks in the vtable slots, by thread, during a job only
+    static u8 portal[0x80];
+    static DWORD pvt[2];
+    pvt[0] = vt[0];
+    pvt[1] = vt[1];
+    assert(InstallPortalRefThunks(pvt) && pvt[0] == (DWORD)(uintptr_t)PortalAddRefThunk);
+    assert(!InstallPortalRefThunks(pvt));  // swapped already: refused
+    *(DWORD**)portal = pvt;
+    *(LONG*)(portal + 0x70) = 1;
+    typedef LONG(__fastcall * RefFn)(u8*, void*);
+    g_async.state = A_RUNNING;
+    assert(((RefFn)(uintptr_t)pvt[0])(portal, NULL) == 2 && ((RefFn)(uintptr_t)pvt[1])(portal, NULL) == 1);
+    assert(k.portalRef[0] == 1 && k.portalRef[4] == 1);
+    simTid = me + 3;
+    g_workerTid = me;
+    t_qlDepth = 1;
+    ((RefFn)(uintptr_t)pvt[0])(portal, NULL);
+    t_qlDepth = 0;
+    ((RefFn)(uintptr_t)pvt[1])(portal, NULL);
+    g_workerTid = me + 7;
+    ((RefFn)(uintptr_t)pvt[0])(portal, NULL);
+    g_async.state = A_IDLE;
+    ((RefFn)(uintptr_t)pvt[0])(portal, NULL);
+    assert(k.portalRef[1] == 1 && k.portalRef[6] == 1 && k.portalRef[3] == 1 && *(LONG*)(portal + 0x70) == 3);
+    assert(k.portalRef[0] + k.portalRef[1] + k.portalRef[2] + k.portalRef[3] == 3);
+
+    g_ltAddRef = savedAdd;
+    g_ltRelease = savedRel;
+    g_srWmSlot = savedWm;
+    g_workerTid = savedWorker;
+    g_async.owner = 0;
+    k.ltMode = 0;
+    simTid = 0;
+}
+
 int main() {
+    static DWORD noSimTid;  // the game global 0x11D8A8C does not exist here
+    g_rtSimTidSlot = &noSimTid;
     // PatchImm32: all sites match -> written; one differs -> nothing written.
     static u8 buf[16] = {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C, 0xB8, 0x00, 0x08, 0x00, 0x00, 0x50};
     Site ok[] = {{(DWORD)(uintptr_t)buf, {0x3D, 0x00, 0x08, 0x00, 0x00, 0x76, 0x2C}, 7, 1},
@@ -2079,11 +3868,21 @@ int main() {
     TestWaterJps();
     TestSaveCompress();
     TestHeightCache();
+    TestTerrainGrave();
     TestIcLock();
     TestRouteGate();
     TestMonoThread();
     TestLotStream();
     TestVerify();
+    TestRouteSites();
+    TestRouteEnforce();
+    TestG11CloseBy();
+    TestDiscourage();
+    TestSteerRO();
+    TestLotFd();
+    TestJobQueue();
+    TestLotSinCos();
+    TestIdCache();
     puts("selftest ok");
     return 0;
 }

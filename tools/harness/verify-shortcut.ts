@@ -6,7 +6,7 @@
 // Sim, more than --max-stuck stuck Sims of any kind, or when --minutes run out. Exit code 0 = pass. Needs the probe server and a world in live mode.
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
-import { endlessJob } from './stuck-rule.ts';
+import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 
 const { values } = parseArgs({ options: { name: { type: 'string' }, tries: { type: 'string', default: '20' }, minutes: { type: 'string', default: '5' }, 'max-stuck': { type: 'string', default: '5' }, off: { type: 'string' } } });
@@ -43,7 +43,7 @@ while (Date.now() - t0 < limit) {
     const prev = seen.get(s.id);
     const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     seen.set(s.id, e);
-    if (!e.reported && s.interaction && !endlessJob(s.interaction) && e.checks >= (s.routing ? 3 : 6)) {
+    if (!e.reported && mayBeStuck(s.interaction, !!s.routing) && e.checks >= (s.routing ? 3 : 6)) {
       e.reported = true;
       const teleported = s.name in moved;
       stuck.push(`${s.name}${teleported ? ' [teleported]' : ''} on ${s.interaction}`);

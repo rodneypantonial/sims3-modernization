@@ -17,8 +17,8 @@ public class ICSafety extends GhidraScript {
     static final Map<Long, String> HOSTFLAG = new HashMap<>();
     static {
         HOSTFLAG.put(0x118L, "task:CurrentTaskId"); HOSTFLAG.put(0x11CL, "yield:host+11C_MarkYield"); HOSTFLAG.put(0x120L, "yield:host+120_Wait");
-        HOSTFLAG.put(0x124L, "yield:host+124"); HOSTFLAG.put(0x134L, "managed:host+134_InvokeDelegate"); HOSTFLAG.put(0xC8L, "handle:create");
-        HOSTFLAG.put(0xD0L, "handle:release"); HOSTFLAG.put(0xD4L, "handle:remove");
+        HOSTFLAG.put(0x124L, "post:host+124_SignalWaiter"); HOSTFLAG.put(0x134L, "managed:host+134_InvokeDelegate"); HOSTFLAG.put(0xC8L, "handle:create");
+        HOSTFLAG.put(0xD0L, "handle:release"); HOSTFLAG.put(0xD4L, "handle:remove"); // +0x124 = 0xD77FB0 wakes the task waiting on a key: a post, not a yield (docs/62 §9)
     }
 
     String classify(Function fn) {

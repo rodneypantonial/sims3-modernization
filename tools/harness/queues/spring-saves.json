@@ -1,0 +1,29 @@
+[
+  {
+    "id": "make-spring-bp",
+    "note": "Make Baseline-BP-Spring (spring, new moon, warm, no snow)",
+    "asi": "tested",
+    "run": {
+      "repro": "make-spring-bp"
+    },
+    "timeoutMin": 20
+  },
+  {
+    "id": "make-spring-ip",
+    "note": "Make Baseline-IP-Spring (spring, new moon, warm, no snow)",
+    "asi": "tested",
+    "run": {
+      "repro": "make-spring-ip"
+    },
+    "timeoutMin": 20
+  },
+  {
+    "id": "make-spring-sv",
+    "note": "Make Baseline-SV-Spring (spring, new moon, warm, no snow)",
+    "asi": "tested",
+    "run": {
+      "repro": "make-spring-sv"
+    },
+    "timeoutMin": 20
+  }
+]

@@ -1,0 +1,20 @@
+[
+  { "id": "bp-travel-university", "note": "travel save case to University, queued moving van (actions ended, needs max, autonomy off for the student)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "university"] }, "timeoutMin": 45 },
+  { "id": "bp-travel-future", "note": "travel save case to the future, queued portal Travel (portal_prepare; actions ended, needs max, autonomy off for the traveller)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future"] }, "timeoutMin": 45 },
+  { "id": "bp-travel-future-direct", "note": "travel save case to the future, direct switch (docs/77 order; verifies docs/51 I-77-2 from the unwrapped async_log exception)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] }, "timeoutMin": 45 },
+  { "id": "bp-travel-china", "note": "travel save case to Shang Simla (vacation)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "china"] }, "timeoutMin": 45 },
+  { "id": "bp-travel-egypt", "note": "travel save case to Al Simhara (vacation)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "egypt"] }, "timeoutMin": 45 },
+  { "id": "bp-travel-france", "note": "travel save case to Champs Les Sims from Bridgeport (IP -> France passed 2026-10-15)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "france"] }, "timeoutMin": 45 }
+]

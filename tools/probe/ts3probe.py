@@ -162,33 +162,75 @@ class Probe:
                     pass  # game busy or gone; the detach handler reports that
                 time.sleep(self.args.memory_interval)
 
-    def keep_window_place(self):
-        """Records where Rodney puts the game window (probe-out/window.json) whenever he moves it, and moves a newly started
-        game window there once, without focusing it (Rodney 2026-10-16 evening: runs go unattended; still never focus)."""
+    def game_window(self, iconic_ok=False):
+        """Largest visible top-level game window as (area, hwnd, x, y, iconic); a minimized one (area 0) only with iconic_ok."""
         import ctypes
         from ctypes import wintypes
         u = ctypes.windll.user32
+        if not hasattr(self, 'pid'):
+            self.pid = frida.get_local_device().get_process('TS3W.exe').pid
+        found = []
+        def cb(h, _):
+            p = wintypes.DWORD()
+            u.GetWindowThreadProcessId(h, ctypes.byref(p))
+            r = wintypes.RECT()
+            if p.value == self.pid and u.IsWindowVisible(h) and u.GetWindowRect(h, ctypes.byref(r)):
+                iconic = bool(u.IsIconic(h))
+                if iconic_ok or not iconic:
+                    found.append((0 if iconic else (r.right - r.left) * (r.bottom - r.top), h, r.left, r.top, iconic))
+            return True
+        u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(cb), 0)
+        return max(found, default=None, key=lambda w: w[0])
+
+    def window_state(self):
+        """Game window state for clock_state (docs/85 §6): read-only."""
+        import ctypes
+        from ctypes import wintypes
+        w = self.game_window(iconic_ok=True)
+        if w is None:
+            return {'found': False}
+        u = ctypes.windll.user32
+        fg, p = ctypes.WINFUNCTYPE(wintypes.HWND)(('GetForegroundWindow', u))(), wintypes.DWORD()
+        u.GetWindowThreadProcessId(wintypes.HWND(fg), ctypes.byref(p))
+        return {'found': True, 'iconic': w[4], 'foreground': p.value == self.pid}  # any game window in front
+
+    def window_show(self, cmd):
+        """window_minimize / window_restore for the clock-minimize-pause repro (docs/85 §6; Rodney approved exactly these two
+        on 2026-10-17). SW_SHOWMINNOACTIVE (7) / SW_SHOWNOACTIVATE (4): never focus, never move. ShowWindowAsync posts the
+        change, so a busy game thread cannot block the probe."""
+        import ctypes
+        from ctypes import wintypes
+        w = self.game_window(iconic_ok=True)
+        if w is None:
+            return {'ok': False, 'error': 'no visible game window'}
+        minimize = cmd == 'window_minimize'
+        # only a real change: SW_SHOWNOACTIVATE on a window that is not minimized would un-maximize it
+        acted = w[4] != minimize and bool(ctypes.windll.user32.ShowWindowAsync(wintypes.HWND(w[1]), 7 if minimize else 4))
+        return {'ok': True, 'result': {'cmd': cmd, 'was_iconic': w[4], 'acted': acted}}
+
+    def keep_window_place(self):
+        """Records where Rodney puts the game window (probe-out/window.json) whenever he moves it, and moves a newly started
+        game window there once, without focusing it (Rodney 2026-10-16 evening: runs go unattended; still never focus).
+        Also logs every minimize and restore (a minimized window pauses the sim clock, docs/85 §3)."""
+        import ctypes
+        u = ctypes.windll.user32
         place = ROOT / 'probe-out' / 'window.json'
         saved = json.loads(place.read_text()) if place.exists() else None
-        pid = frida.get_local_device().get_process('TS3W.exe').pid
+        game_window = self.game_window
 
-        def game_window():
-            found = []
-            def cb(h, _):
-                p = wintypes.DWORD()
-                u.GetWindowThreadProcessId(h, ctypes.byref(p))
-                r = wintypes.RECT()
-                if p.value == pid and u.IsWindowVisible(h) and not u.IsIconic(h) and u.GetWindowRect(h, ctypes.byref(r)):
-                    found.append(((r.right - r.left) * (r.bottom - r.top), h, r.left, r.top))
-                return True
-            u.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(cb), 0)
-            return max(found, default=None)
-
-        first, t0 = None, None
+        first, t0, iconic = None, None, None
         while self.alive:
+            any_w = game_window(iconic_ok=True)
+            now_iconic = any_w[4] if any_w else None
+            if now_iconic is not None and iconic is not None and now_iconic != iconic:
+                state = 'minimized' if now_iconic else 'restored'
+                self.log({'kind': 'window', 'reason': f'game window {state}', 'state': state,
+                          'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+            if now_iconic is not None:
+                iconic = now_iconic
             w = game_window()
             if w and w[0] > 200 * 200:
-                _, h, x, y = w
+                _, h, x, y, _ = w
                 if first is None:
                     first, t0 = (x, y), time.time()
                     print(f'[ts3probe] game window at {first}; saved place {saved}', flush=True)
@@ -304,17 +346,26 @@ class Probe:
             return rpc.exception_counts()
         if path == 'agentstatus':
             return rpc.agent_status()
+        if path == 'agent' and q['cmd'] in ('window_minimize', 'window_restore'):  # probe-side: the game's Mono has no user32
+            return self.window_show(q['cmd'])
         if path == 'agent':  # in-game ts3agent command, e.g. agent?cmd=list_sims&args={"household":"active"}
             args = json.loads(q['args']) if 'args' in q else None
+            reply = None
             with self.agent_lock:  # one request in the mailbox at a time
                 seq = rpc.agent_send(q['cmd'], args)
                 deadline = time.time() + int(q.get('timeout', 30000)) / 1000
-                while time.time() < deadline:
+                while time.time() < deadline and reply is None:
                     reply = rpc.agent_reply(seq)
-                    if reply is not None:
-                        return reply
-                    time.sleep(0.02)
-            return {'ok': False, 'error': f"no reply to '{q['cmd']}' (game paused, loading or blocked?)", 'seq': seq}
+                    if reply is None:
+                        time.sleep(0.02)
+            if reply is None:
+                return {'ok': False, 'error': f"no reply to '{q['cmd']}' (game paused, loading or blocked?)", 'seq': seq}
+            if q['cmd'] == 'clock_state' and reply.get('ok') and isinstance(reply.get('result'), dict):
+                try:  # the agent reads the clock; the window state comes from here (docs/85 §6)
+                    reply['result']['window'] = self.window_state()
+                except Exception as e:
+                    reply['result']['window'] = {'error': f'{type(e).__name__}: {e}'}
+            return reply
         if path == 'scripterrors':
             with self.lock:
                 return self.script_errors[int(q.get('since', 0)):]

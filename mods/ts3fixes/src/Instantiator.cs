@@ -34,6 +34,10 @@ namespace Ts3Fixes
         [Tunable] public static bool kMotiveBarImageCache = true;  // on since v0.1.2 (BP A/B PASS, UI only): motive bars keep their moodlet images while the moodlet is unchanged (UiCaches.cs)
         [Tunable] public static bool kBuffGridInPlace = true;      // on since v0.1.2 (BP A/B PASS, UI only): the moodlet grid updates its cells in place unless moodlets were added, removed or changed icon (UiCaches.cs)
         [Tunable] public static bool kSimNameCache = true;         // on since v0.1.2 (BP A/B PASS, UI only): Sim first/last/full names cached by their stored strings (NameCache.cs)
+        [Tunable] public static bool kDetailPriorityCache = false; // opt-in until measured: lots learn whether an active-household Sim stands on them from one lot set per sim tick (ScriptHotSpots.cs, docs/74)
+        [Tunable] public static bool kCaneEarlyOut = false;        // opt-in until measured: route walk styles skip the inventory search for a cane when the style can never need one (same answer; ScriptHotSpots.cs, docs/74)
+        [Tunable] public static bool kTooltipThrottle = false;     // opt-in until measured: with the mouse at rest the tooltip task looks for the window under the cursor at most every 100 ms (ScriptHotSpots.cs, docs/74)
+        [Tunable] public static bool kHoursMemo = false;           // opt-in until measured: a lot's opening hours are worked out once per sim tick (ScriptHotSpots.cs, docs/74)
 
         public const string Version = "0.1.0";
 
