@@ -66,5 +66,12 @@ jobs:
           # releases ship only the stable patches ([GC], [WaterJps], [Decompress], [SaveWrite]): any other enabled section fails the release
           extra=$(awk -F= '{sub(/\r$/, "")} /^\[/ {s=$0} $1=="Enabled" && $2+0 && s!="[GC]" && s!="[WaterJps]" && s!="[Decompress]" && s!="[SaveWrite]" {print s}' ts3native/ts3native.ini)
           test -z "$extra" || { echo "Not stable, must be Enabled=0 in ts3native.ini: $extra"; exit 1; }
+          # every release lists everything switched on plus install steps (docs/PLAYERS.md): it must name each enabled
+          # ts3native section and each ts3fixes tunable shipped True (kInstantiator is the loader, not a feature)
+          on=$(awk -F= '{sub(/\r$/, "")} /^\[/ {s=$0} $1=="Enabled" && $2+0 {print s}' ts3native/ts3native.ini;
+               grep -oE '<k[A-Za-z]+ value="True"' tools/setup/build-fixes.ts | grep -oE 'k[A-Za-z]+' | grep -v '^kInstantiator$')
+          missing=$(for f in $on; do grep -qF "$f" docs/PLAYERS.md || echo "$f"; done)
+          test -z "$missing" || { echo "docs/PLAYERS.md does not list: $missing"; exit 1; }
+          { echo; echo '---'; echo; cat docs/PLAYERS.md; } >> notes.md
           (cd ts3native && zip -q "../ts3native-$TAG.zip" ts3native.asi ts3native.ini)
           gh release create "$TAG" "ts3native-$TAG.zip" --draft --title "$TAG" --notes-file notes.md

@@ -2,9 +2,11 @@
 
 Make The Sims 3 run well on modern PCs: less in-game stutter, fewer Error 12 (out of address space) crashes, and room for heavy store content and custom content (CC). First we collect and measure what the community fixes already do, then we reverse engineer the game and build our own fixes where those fall short: a C# script mod, a native ASI plugin, and the test tools to prove each change.
 
-Target: The Sims 3 Steam edition, patch 1.67, all expansion and stuff packs, Windows 10/11.
+Target: The Sims 3 **Steam** edition, patch 1.67, all expansion and stuff packs, Windows 10/11. The Origin / EA app version is not supported.
 
-**Status:** research project, early. Results are measured on one laptop (i7-11800H, 32 GB, RTX 3070 Laptop GPU). They are not yet confirmed on other machines; that is one of the things contributors can help with.
+**Just want to play with the fixes?** Download the latest [release](https://github.com/rodneypantonial/sims3-modernization/releases) and follow [docs/PLAYERS.md](docs/PLAYERS.md): what's switched on, and how to install it in a few steps.
+
+**Status:** research project. Latest release: **v0.1.3** (2026-10-16): faster saves, a lighter Sim panel, and the stutter fixes from v0.1.0-v0.1.1. Results are measured on one laptop (i7-11800H, 32 GB, RTX 3070 Laptop GPU). They are not yet confirmed on other machines; that is one of the things contributors can help with.
 
 `PLAN.md` is the source of truth for what is done, what is open and what comes next.
 
@@ -41,6 +43,8 @@ Repeat Bridgeport runs on later builds land at 37.8-41 iterations/s (+25-30%) an
 - **Save cleanup (opt-in):** on a Bridgeport test save, -266 weak townie relationships and -9 stray other-world Sims, households and Sims unchanged, a second run removes nothing, the save reloads clean (docs/14).
 - **Heavy store content:** CC + store repacks add ~29 s to a cold load and ~100 MB address space; load time is the main cost, not stutter (docs/17 §6).
 - **Online features:** with our settings the game makes no network calls while playing (docs/16).
+- **Faster saving (v0.1.2/v0.1.3):** Bridgeport 12.7 -> 10.3 s (-19%), Sunset Valley -17% to -24%, Isla Paradiso -14% to -23%; same save file; 27 of 28 save tests PASS, 1 test-tool fail (fixed) ([CHANGELOG.md](CHANGELOG.md)).
+- **Routing off the sim thread (in development, off by default):** route planning on a worker thread halves the sim thread's own routing time (about 116 -> 57 ms per second in Bridgeport). Whether that makes the whole game faster is not settled yet: the daytime runs on 2026-10-17 had outside load and are being redone on a clean machine ([docs/84](docs/84-async-wait-sites.md), `PLAN.md`).
 
 All numbers come from one machine and one set of saves. Treat percentages as "this is what we saw", not as a promise.
 
@@ -53,7 +57,7 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | `ts3native` ASI plugin | `native/ts3native` | 32-bit native plugin loaded by Ultimate ASI Loader. GC heap patches and faster water route search, plus opt-in experiments (route cache, route worker, allocator cache, faster decompression, save write). Every patch checks the original bytes first and skips itself on a different exe. Settings in `ts3native.ini`. |
 | `ts3agent` test agent | `mods/ts3agent` | In-game script mod that lets our tools read and drive the game (load saves, place Sims, trigger routes, switch fixes, count things). Test-only, never for players. Forked from Sims3-MCP (MIT). |
 | Probe and harness | `tools/probe`, `tools/frida`, `tools/harness` | Frida-based probe server (memory, stacks, native counters), stutter profiler, frame-time hook, repro library, profiling and A/B runs, crash and change ledgers. |
-| Research | `docs/01`-`docs/22` | Community fixes compared, reverse-engineering findings (native and C#), designs, measurements. Raw data in `docs/data`. |
+| Research | `docs/01`-`docs/85` | Community fixes compared, reverse-engineering findings (native and C#), designs, measurements. Raw data in `docs/data`. |
 
 ### What we ship vs what is only for setup
 
@@ -75,15 +79,23 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Water route search (`[WaterJps]`) | `ts3native` | **on by default** (stable build, release v0.1.0), verified in game: 5.4M searches compared with the game's own code in Isla Paradiso, 0 mismatches |
 | Allocator cache (`[Alloc]`) | `ts3native` | **experimental**: +19% and +9% in two A/Bs, but worse worst-case iterations and route fails; crash suspect, needs a long stability run |
 | Route worker, synchronous (`[RouteWorker]`) | `ts3native` | **experimental**: stable in game, no speed gain on its own |
-| Async route plan (`[RouteAsync]`) | `ts3native` + `ts3fixes` | **paused**: the routing code shares per-lot state outside its lock; see [docs/18](docs/18-route-search-off-thread.md) |
+| Async route plan (`[RouteAsync]`, job queue, `[RouteGate]`) | `ts3native` | **in development, off by default** (0.12.4): stable in game (2 clean runs), sim-thread routing time halved; speed gain not confirmed yet ([docs/84](docs/84-async-wait-sites.md)) |
+| Waits left while routing runs off-thread: discourage footprints (`[Discourage]`, design D), read-only steering (`[SteerRO]`, S2), footprint rebuild race fix (`[FpRebuildLock]`, C-A), read-only lot front door (`[LotFrontDoorRO]`, L1) | `ts3native` | **built, off by default** (0.13.0-0.14.0): proven offline against the game's own code; live shadow and on runs queued ([docs/84](docs/84-async-wait-sites.md)) |
 | Route search budget (`[RouteBudget]`) | `ts3native` | **paused**: stranded Sims (41 stuck vs 0) |
 | Faster RefPack decoder (`[Decompress]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: 0 mismatches over a full load, ~144k decodes in 4 sessions |
 | Save write (`[SaveWrite]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: old-save backup copied by a worker thread, saves reload |
 | Route negative cache (`[RouteCache]`) | `ts3native` | **off**: tested in game 2026-10-14, 0.2% hits, no gain |
+| Faster save object table (`kFastRefTable`) | `ts3fixes` | **on by default** (release v0.1.3): saves 14-24% faster, same save file, save tests PASS |
+| Lighter Sim panel (`kMotiveBarImageCache`, `kBuffGridInPlace`, `kSimNameCache`) | `ts3fixes` | **on by default** (release v0.1.3): UI only, nothing in the save changes |
+| Save footprint index, delayed flush, compression timing (`[FootprintIndex]`, `[SaveFlush]`, `[SaveCompress]`) | `ts3native` | **off, opt-in** (release v0.1.2): no gain above save-to-save variation on an NVMe SSD |
 
 ## Quick start: players
 
-Just want our fixes? Download them from the [releases](https://github.com/rodneypantonial/sims3-modernization/releases) page. The steps below set up the full test install (community fixes layer plus `ts3fixes`), the one contributors use. Everything else is for testers.
+Just want our fixes? Download them from the [releases](https://github.com/rodneypantonial/sims3-modernization/releases) page and follow **[docs/PLAYERS.md](docs/PLAYERS.md)** (copy the script mod into `Mods\Packages`, the native plugin into `Game\Bin`; about five minutes). Every release lists everything that is switched on.
+
+## Quick start: full test install
+
+The steps below set up the full test install (community fixes layer plus `ts3fixes`), the one contributors and testers use.
 
 1. **Back up first:** copy `<Documents>\Electronic Arts\The Sims 3\` (saves, Mods, settings) somewhere safe. Keep a copy of `TS3W.exe` as `TS3W.exe.orig` if you ever patch the exe yourself (our tools never do).
 2. Install Node.js 22.18 or newer, then clone this repo.
