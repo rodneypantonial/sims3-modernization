@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Sims3.Gameplay;
 using Sims3.Gameplay.Academics;
+using Sims3.Gameplay.ActorSystems;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
@@ -11,9 +12,11 @@ using Sims3.Gameplay.EventSystem;
 using Sims3.Gameplay.Interactions;
 using Sims3.Gameplay.Moving;
 using Sims3.Gameplay.Objects.Miscellaneous;
+using Sims3.Gameplay.Situations;
 using Sims3.Gameplay.TimeTravel;
 using Sims3.Gameplay.Tutorial;
 using Sims3.Gameplay.UI;
+using Sims3.Gameplay.Utilities;
 using Sims3.Gameplay.Visa;
 using Sims3.SimIFace;
 
@@ -32,6 +35,7 @@ namespace Ts3Agent
             Dispatcher.Register("portal_prepare", PortalPrepare);
             Dispatcher.Register("travel_home", TravelHome);
             Dispatcher.Register("travel_state", TravelState);
+            Dispatcher.Register("uni_move_in", UniMoveIn);
         }
 
         static bool AwayFromHome()
@@ -158,6 +162,7 @@ namespace Ts3Agent
         // DegreeManager.SetEnrollmentData + kEnrolledInUniversity event, GlobalTermLength, PlayerMadeTravelRequest, then
         // TravelUtil.TriggerTravelToUniversityWorld (moving van) with the dialog's tuition. sims default: the active Sim alone
         // (the dialog's preselection); degree default: each Sim's last studied degree, else Business. dialog: true = old path.
+        // direct: true = no moving van: after the enrolment, UniversityDirect starts the world switch at once.
         static object TravelUniversity(Args a)
         {
             if (a.Bool("dialog", false)) return TravelUniversityDialog(a);
@@ -179,6 +184,8 @@ namespace Ts3Agent
             bool fixedDegree = a.Has("degree");
             AcademicDegreeNames degreeArg = fixedDegree ? DegreeArg(a.Str("degree")) : AcademicDegreeNames.Undefined;
             int days = a.Has("days") ? (int)a.Double("days") : 0;
+            bool direct = a.Bool("direct", false);
+            sMoveInHousehold = ulong.MaxValue; // uni_move_in: a new trip, a new arrival
 
             List<Sim> wanted = new List<Sim>();
             List<object> names = a.List("sims");
@@ -232,6 +239,8 @@ namespace Ts3Agent
                         EventTracker.SendEvent(new AcademicEvent(EventTypeId.kEnrolledInUniversity, students[i].CreatedSim, degrees[i]));
                     }
                     AcademicCareer.GlobalTermLength = (AcademicCareer.TermLength)terms;
+                    // queued stays false, so the finally clears PlayerMadeTravelRequest the way the van's Run does
+                    if (direct) { UniversityDirect(students, tuition, days > 0 ? days : terms * 7); return; }
                     TravelUtil.TriggerTravelToUniversityWorld(students, tuition);
                     foreach (SimDescription sd in students)
                     {
@@ -258,7 +267,41 @@ namespace Ts3Agent
             r["course_load"] = courseLoadArg;
             r["tuition"] = tuition;
             r["days"] = days > 0 ? (object)days : terms * 7;
+            r["direct"] = direct;
             return r;
+        }
+
+        // direct: the end of SitInMovingVanToTriggerTravelToUniversity.Run (its private TriggerTravelToUniversityWorld) without
+        // the walk to the gathering point, the moving van and the suitcase: FinalBoardingCall, tuition, kill the visitor
+        // situations, map view, GameStates.TravelToVacationWorld(University). Also TriggerTravelToUniversityWorld's EP11 step.
+        // Skips the see-off interactions of the Sims who stay home.
+        static void UniversityDirect(List<SimDescription> students, int tuition, int days)
+        {
+            Household hh = Household.ActiveHousehold;
+            List<Sim> sims = new List<Sim>();
+            List<ulong> ids = new List<ulong>();
+            foreach (SimDescription sd in students)
+            {
+                if (sd.CreatedSim == null) throw new Exception(sd.FullName + " is not in the world");
+                sims.Add(sd.CreatedSim);
+                ids.Add(sd.SimDescriptionId);
+            }
+            if (GameUtils.IsInstalled(ProductVersion.EP11) && CauseEffectService.OpportunityPortal != null)
+                CauseEffectService.OpportunityPortal.RemoveBannedOpportunities(sims);
+            if (!TravelUtil.FinalBoardingCall(hh, sims, WorldName.University, false))
+            {
+                List<string> why = new List<string>();
+                foreach (Sim s in sims) why.Add(s.FullName + ": " + TravelFailReason(s.SimDescription, WorldName.University));
+                throw new Exception("FinalBoardingCall refused the trip (" + string.Join("; ", why.ToArray()) + ")");
+            }
+            sims[0].ModifyFunds(-tuition);
+            ForeignVisitorsSituation.ForceKillForeignVisitorsSituation();
+            HolographicProjectionSituation.ForceKillHolographicVisitorsSituation();
+            Sims3.Gameplay.Core.Camera.SetView(Sims3.UI.CameraView.MapView, false, true);
+            int last = int.MinValue;
+            foreach (Sim s in sims) if (s.DegreeManager != null && s.DegreeManager.LastTimeAtUniversity > last) last = s.DegreeManager.LastTimeAtUniversity;
+            int daysSince = last >= 0 ? (int)SimClock.ElapsedCalendarDays() - last : -1;
+            GameStates.TravelToVacationWorld(WorldName.University, ids, TravelUtil.sOverriddenTripLength > 0 ? TravelUtil.sOverriddenTripLength : days, daysSince);
         }
 
         // travel_university {dialog: true, days?}: the phone's "Enroll for University" path: AcademicCareer.EnrollInAcademicCareer
@@ -380,13 +423,17 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             r["queued"] = s.InteractionQueue.Add(i);
             r["sim"] = s.FullName;
+            // Travel.Run returns false at once (interaction gone, no message) while this is false or the tutorial runs
+            r["modal_ok"] = Sims3.UI.UIUtils.IsOkayToStartModalDialog();
             // the interaction's Test (not run here) also needs these; portal_prepare sets them
             foreach (KeyValuePair<string, object> kv in PortalReport(portal)) r[kv.Key] = kv.Value;
             return r;
         }
 
-        // travel_future {prepare?}: the active Sim alone through the time portal (TravelWith, the group version, is not wired).
-        // prepare: true runs portal_prepare first (test saves without a summoned traveler or an active portal).
+        // travel_future {prepare?, direct?}: the active Sim alone through the time portal (TravelWith, the group version, is not
+        // wired). prepare: true runs portal_prepare first (test saves without a summoned traveler or an active portal).
+        // direct: true skips the queued interaction (confirm dialog, walk, animations) and starts the switch from a fresh
+        // one-shot task in the order of docs/77 §4.2 (FutureDirect). Default: the queued portal Travel interaction.
         static object TravelFuture(Args a)
         {
             CheckCanLeave();
@@ -395,8 +442,153 @@ namespace Ts3Agent
             GreyedOutTooltipCallback why = null;
             if (!TravelUtil.CanSimTriggerTravelToFutureWorld(s, ref why))
                 throw new McpException(s.FullName + " cannot travel to the future now" + (why != null ? ": " + why() : ""));
-            Dictionary<string, object> r = (Dictionary<string, object>)QueuePortalTravel(s);
+            Dictionary<string, object> r;
+            if (a.Bool("direct", false))
+            {
+                TimePortal portal = FindTimePortal();
+                if (portal.IsBroken || !portal.Active) throw new McpException("the time portal is broken or inactive; pass prepare: true");
+                if (TravelUtil.PlayerMadeTravelRequest) throw new McpException("another trip is already requested");
+                FutureSwitch sw = new FutureSwitch(); // resolve every private member now: a game update fails the command, not the trip
+                RunAsync("travel_future direct", delegate { FutureDirect(s, portal, sw); });
+                r = PortalReport(portal);
+                r["sim"] = s.FullName;
+                r["direct"] = true;
+            }
+            else r = (Dictionary<string, object>)QueuePortalTravel(s);
             if (prepared != null) r["prepare"] = prepared;
+            return r;
+        }
+
+        // The private members of GameStates.TravelToVacationWorld (data, flag, switch task) and TimePortal's boarding helpers.
+        class FutureSwitch
+        {
+            const BindingFlags SP = BindingFlags.NonPublic | BindingFlags.Static, IP = BindingFlags.NonPublic | BindingFlags.Instance;
+            public readonly FieldInfo Data = Need(typeof(GameStates).GetField("sTravelData", SP), "GameStates.sTravelData");
+            public readonly FieldInfo Flag = Need(typeof(GameStates).GetField("sIsChangingWorlds", SP), "GameStates.sIsChangingWorlds");
+            public readonly MethodInfo StopOps = Need(typeof(GameStates).GetMethod("StopOperationsThatCannotTravel", SP), "GameStates.StopOperationsThatCannotTravel");
+            public readonly MethodInfo Switch = Need(typeof(GameStates).GetMethod("SwitchWorlds", SP), "GameStates.SwitchWorlds");
+            public readonly Type DataType = Need(typeof(GameStates).GetNestedType("TravelData", BindingFlags.NonPublic), "GameStates.TravelData");
+            public readonly MethodInfo Vehicles = Need(typeof(TimePortal).GetMethod("CleanUpReservedVehicles", IP), "TimePortal.CleanUpReservedVehicles");
+            public readonly MethodInfo StopFx = Need(typeof(TimePortal).GetMethod("StopActiveFX", IP), "TimePortal.StopActiveFX");
+
+            static T Need<T>(T m, string name) where T : class
+            {
+                if (m == null) throw new McpException(name + " not found (game version?)");
+                return m;
+            }
+        }
+
+        static void SetField(object o, string name, object v)
+        {
+            FieldInfo f = o.GetType().GetField(name);
+            if (f == null) throw new Exception("GameStates.TravelData." + name + " not found");
+            f.SetValue(o, v);
+        }
+
+        // Direct future trip (docs/77 §4.2, Traveler's order in our own code): EA's TravelToVacationWorld sets
+        // sIsChangingWorlds before the unguarded descendant build, so a throw there leaves the game "travelling" with no
+        // switch queued. Here: boarding call, then the future-world preparation in a try/catch with no flag set yet, then
+        // the trip data, the flag and EA's own SwitchWorlds task. Any failure after the flag clears it again.
+        // Runs on its own one-shot task (RunAsync), never inside an interaction.
+        static void FutureDirect(Sim s, TimePortal portal, FutureSwitch sw)
+        {
+            TravelUtil.PlayerMadeTravelRequest = true;
+            bool flagged = false;
+            try
+            {
+                EventTracker.SendEvent(EventTypeId.kTravelToFuture, s);
+                Household hh = s.Household;
+                List<Sim> followers = new List<Sim>(); // travel_future takes the active Sim alone
+                if (!TravelUtil.FinalBoardingCall(hh, followers, WorldName.FutureWorld, false))
+                    throw new Exception("FinalBoardingCall refused the trip: " + TravelFailReason(s.SimDescription, WorldName.FutureWorld));
+                try
+                {
+                    CauseEffectService.GetInstance().PreFutureWorldLoadProcess();
+                    FutureDescendantService.GetInstance().BuildDescendantHouseholdSpecs();
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("future-world preparation threw (PreFutureWorldLoadProcess / BuildDescendantHouseholdSpecs); trip stopped before sIsChangingWorlds", e);
+                }
+                // TimePortal.TravelToFuture's boarding side effects
+                ForeignVisitorsSituation.ForceKillForeignVisitorsSituation();
+                HolographicProjectionSituation.ForceKillHolographicVisitorsSituation();
+                Sims3.Gameplay.Core.Camera.SetView(Sims3.UI.CameraView.MapView, false, true);
+                sw.Vehicles.Invoke(portal, new object[] { s, followers });
+                sw.StopFx.Invoke(portal, null);
+                CauseEffectService.GetInstance().SetDepartureTimePortal(portal.ObjectId);
+                // GameStates.TravelToVacationWorld(FutureWorld, ids, 0, 0) minus the future-world step done above
+                sw.StopOps.Invoke(null, null);
+                object data = Activator.CreateInstance(sw.DataType, true);
+                Type state = sw.DataType.GetNestedType("TravelState");
+                SetField(data, "mState", Enum.Parse(state, "StartVacation"));
+                SetField(data, "mTravelerIds", new List<ulong>(new ulong[] { s.SimDescription.SimDescriptionId }));
+                SetField(data, "mHomeWorld", GameStates.GetCurrentWorldName(true));
+                SetField(data, "mHomeWorldMetadataName", GameStates.GetCurrentWorldName(false));
+                SetField(data, "mDestWorld", WorldName.FutureWorld);
+                SetField(data, "mTripLength", 0);
+                SetField(data, "mCurrentDayOfTrip", 0);
+                SetField(data, "mTimeInHomeworld", SimClock.CurrentTime());
+                SetField(data, "mNumDaysSinceLastInDestWorld", 0);
+                SetField(data, "mNumberAgingYearsElapsed", AgingManager.NumberAgingYearsElapsed != -1f ? AgingManager.NumberAgingYearsElapsed : 0f);
+                SetField(data, "mRealEstateManager", hh.RealEstateManager);
+                sw.Data.SetValue(null, data);
+                sw.Flag.SetValue(null, true);
+                flagged = true;
+                hh.RealEstateManager.SavePropertyNamesForTravel();
+                // a delegate, not Invoke: SwitchWorlds yields through the loads and saves
+                Sims3.Gameplay.Function f = (Sims3.Gameplay.Function)Delegate.CreateDelegate(typeof(Sims3.Gameplay.Function), sw.Switch);
+                Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(f));
+                flagged = false; // queued: SwitchWorlds owns the flag from here
+            }
+            finally
+            {
+                if (flagged) { sw.Data.SetValue(null, null); sw.Flag.SetValue(null, false); }
+                TravelUtil.PlayerMadeTravelRequest = false;
+            }
+        }
+
+        // uni_move_in {lot?}: the University arrival step (docs/77 §2.1). After a University trip the game waits in the
+        // play-flow "choose a lot" map; this does what confirming a lot there does: PlayFlowModel.PlayWithTravelHousehold
+        // on a game task. Dorm only (Lot.IsDormitoryLot; a rented house has a rent step we have not traced). lot: a dorm lot
+        // id, default the first dorm. Poll it: answers {done} once live mode has the household, {waiting: why} until the
+        // map is ready (fly-through, open dialog: answer it with auto_dialog), {started, lot} once, {started_before} after.
+        static ulong sMoveInHousehold = ulong.MaxValue;
+        static object UniMoveIn(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            if (!GameUtils.IsUniversityWorld()) throw new McpException("not in the University world (" + GameUtils.GetCurrentWorld() + ")");
+            if (!GameStates.IsTravelling && Household.ActiveHousehold != null && !GameStates.IsPlayFlowState)
+            {
+                sMoveInHousehold = ulong.MaxValue;
+                r["done"] = true;
+                r["household"] = Household.ActiveHousehold.Name;
+                return r;
+            }
+            string waiting = null;
+            PlayFlowModel model = PlayFlowModel.Singleton;
+            Household travel = GameStates.TravelHousehold;
+            if (!GameStates.IsPlayFlowState) waiting = "not in the play-flow state yet";
+            else if (model == null || !model.IsInitialized) waiting = "play-flow model not ready (fly-through)";
+            else if (travel == null) waiting = "no travel household";
+            else if (Sims3.UI.UIManager.GetModalWindow() != null) waiting = "a dialog is open";
+            if (waiting != null) { r["waiting"] = waiting; return r; }
+            if (sMoveInHousehold == travel.HouseholdId) { r["started_before"] = true; return r; }
+            Lot lot = null;
+            if (a.Has("lot"))
+            {
+                lot = LotManager.GetLot(a.ULong("lot"));
+                if (lot == null || !lot.IsDormitoryLot) throw new McpException("lot " + a.Str("lot") + " is not a dorm lot (dorm only)");
+            }
+            else foreach (Lot l in LotManager.AllLots) if (l.IsDormitoryLot) { lot = l; break; }
+            if (lot == null) throw new McpException("no dorm lot in this world");
+            sMoveInHousehold = travel.HouseholdId;
+            ulong id = lot.LotId;
+            RunAsync("uni_move_in " + id, delegate { model.PlayWithTravelHousehold(id); });
+            r["started"] = true;
+            r["lot"] = id.ToString();
+            r["lot_name"] = lot.Name;
+            r["household"] = travel.Name;
             return r;
         }
 

@@ -41,6 +41,7 @@
 // crashed twice (today's rows of this queue count, so a resume remembers) or two jobs crash in a row.
 // After each job: `ai-usage.ts G <job id>`; at >= 80% in either window the queue pauses and prints the --from line to resume.
 // Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT).
+// After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog).
 // At the end the tested build (native/ts3native/out/ts3native.asi) and the Bin ts3native.ini found at the start are put back
 // (copies of what was in Bin at the start: probe-out/queue/bin-before/). Windows-only by nature (TS3W.exe, taskkill).
 import { execFileSync, spawn } from 'node:child_process';
@@ -51,6 +52,8 @@ import { basename, dirname, join, normalize, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { CSV_HEADER, csvLine, summarize, type AgeRow } from './age-report.ts';
 import { saveStats } from './save-stats.ts';
+import { GUARD_MS } from './game-alive.ts';
+import { saveForeground } from './focus-game.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   'dry-run': { type: 'boolean' }, from: { type: 'string' }, only: { type: 'string' }, 'self-check': { type: 'boolean' }, 'restore-content': { type: 'boolean' }, port: { type: 'string', default: '47891' },
@@ -502,6 +505,8 @@ async function get(path: string, timeoutMs = 20000): Promise<any> {
 const agent = (cmd: string, args?: object) => { const q = new URLSearchParams({ cmd, timeout: '8000' }); if (args) q.set('args', JSON.stringify(args)); return get(`agent?${q}`); };
 const killTree = (pid?: number) => { if (pid) try { execFileSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' }); } catch { /* gone */ } };
 
+// set while a job's game runs: '' when the game and the probe server are up, else why not; stall = the guard's verdict
+let jobGuard: (() => string) | null = null, stall = '';
 // child process with output to the console and the job log; killed (whole tree) at the deadline
 function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; out: string; timedOut: boolean }> {
   return new Promise(res => {
@@ -514,8 +519,16 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
     };
     p.stdout.on('data', on); p.stderr.on('data', on);
     const t = setTimeout(() => { timedOut = true; killTree(p.pid); }, Math.max(1000, deadline - Date.now()));
+    // fail fast (Rodney 2026-10-16): once the game is launched, every 30 s the game and the probe server must still be up;
+    // two misses in a row end the child instead of waiting for the job deadline (default 60 min)
+    let misses = 0;
+    const g = jobGuard && setInterval(() => {
+      const why = jobGuard!();
+      misses = why ? misses + 1 : 0;
+      if (misses >= 2) { stall ||= `${why} for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; on(Buffer.from(`FAIL: ${stall}; child stopped\n`)); killTree(p.pid); }
+    }, GUARD_MS);
     p.on('error', e => on(Buffer.from(`spawn failed: ${e}\n`)));
-    p.on('close', code => { clearTimeout(t); f.end(); res({ code, out, timedOut }); });
+    p.on('close', code => { clearTimeout(t); if (g) clearInterval(g); f.end(); res({ code, out, timedOut }); });
   });
 }
 const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void) => run(process.execPath, args, logFile, deadline, onLine);
@@ -544,6 +557,7 @@ appendFileSync(md, `\n## ${new Date().toISOString().slice(0, 16)} UTC, build ${b
 
 // keep what Bin had, to restore the ini and fall back for the asi at the end
 const BEFORE = join(OUT, 'bin-before');
+if (!values['dry-run']) saveForeground(); // the window to give focus back to once the game takes it (focus-game.ts)
 mkdirSync(BEFORE, { recursive: true });
 for (const f of ['ts3native.asi', 'ts3native.ini', 'Default.ini', 'Sims3Performance.ini']) if (existsSync(join(BIN, f))) copyFileSync(join(BIN, f), join(BEFORE, f));
 if (existsSync(S3SS_TOML)) copyFileSync(S3SS_TOML, join(BEFORE, 'S3SS.toml'));
@@ -596,10 +610,21 @@ for (const [n, j] of jobs.entries()) {
     const pf = createWriteStream(join(OUT, `${queueName}-${date}-${j.id}-probe.log`), { flags: 'a' });
     probe = spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port!, ...(j.gameArgs?.length ? ['--', ...j.gameArgs] : [])], { cwd: ROOT });
     probe.stdout?.pipe(pf); probe.stderr?.pipe(pf); launched = true;
+    const pr = probe;
+    jobGuard = () => pr.exitCode !== null || pr.signalCode !== null ? `probe server exited (${pr.exitCode ?? pr.signalCode})` : !gameRunning() ? 'TS3W.exe process gone' : '';
     if (s === 'menu') {
-      let up = false;
+      let up = false, misses = 0, nextCheck = Date.now() + GUARD_MS;
       const end = Math.min(deadline, Date.now() + 300000);
-      while (!up && Date.now() < end) { up = (await agent('ping'))?.ok === true; if (!up) await sleep(2000); }
+      while (!up && Date.now() < end) {
+        up = (await agent('ping'))?.ok === true;
+        if (!up && Date.now() >= nextCheck) { // same fail-fast rule as run(): two misses ~30 s apart
+          nextCheck = Date.now() + GUARD_MS;
+          const why = jobGuard();
+          misses = why ? misses + 1 : 0;
+          if (misses >= 2) { stall = `${why} for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; throw new Error(`waiting for the menu: ${stall}`); }
+        }
+        if (!up) await sleep(2000);
+      }
       if (!up) throw new Error('agent not answering at the menu within 300 s');
     } else {
       const r = await node([H('cycle.ts'), '--save', saveFile(s)], logFile, deadline);
@@ -664,10 +689,11 @@ for (const [n, j] of jobs.entries()) {
       writeFileSync(join(OUT, `${queueName}-${date}-${j.id}-routelock.json`), JSON.stringify(rep, null, 1));
       row.routelock = routelockSummary(rep);
       const g = rep?.g11;
-      row.exitCode = wd.timedOut && g ? 0 : 1;
+      const lost = rep?.ring?.lost ?? 0; // events the probe's ring dropped: the g11 accounting is incomplete
+      row.exitCode = wd.timedOut && g && !lost ? 0 : 1;
       row.verdict = [!wd.timedOut ? `FAIL: watchdog: ${wd.out.trim().split(/\r?\n/).at(-1) ?? `exit ${wd.code}`}`
         : !g ? `FAIL: /routelock report without g11: ${JSON.stringify(rep)?.slice(0, 200)}`
-        : `PASS: routelock ${j.run.routelock.minutes} min: movable ${g.movableMsPerSec} ms/s of ${g.planMsPerSec} plan ms/s (${g.plans} plans), ` +
+        : `${lost ? `FAIL: ring lost ${lost} of ${rep.ring.events + lost} events, numbers incomplete:` : 'PASS:'} routelock ${j.run.routelock.minutes} min: movable ${g.movableMsPerSec} ms/s of ${g.planMsPerSec} plan ms/s (${g.plans} plans), ` +
           `free ${g.freeShare}, unlocked gate entries ${g.unlockedGatePerSec}/s, hooks ${rep.acquireHooksPerSec}+${rep.gateHooksPerSec}/s; ${g11Gate(s, g.movableMsPerSec)}`];
     } else {
       row.exitCode = row.memory.before ? 0 : 1;
@@ -679,10 +705,15 @@ for (const [n, j] of jobs.entries()) {
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
+  jobGuard = null;
+  if (stall && !row.error?.includes(stall)) row.error = [row.error, stall].filter(Boolean).join('; ');
+  stall = '';
   row.crashed = launched && !gameRunning() || row.verdict.some((v: string) => /game died/.test(v));
   if (row.crashed) { row.crash = triage(); log(`${j.id}: game crashed\n${row.crash}`); }
   row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut;
   await closeGame(probe?.pid);
+  // the game rewrites Bin/ts3native.log at every start: keep this job's copy (travel save lines, hook OK lines)
+  if (launched && existsSync(LOG)) try { copyFileSync(LOG, row.nativeLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-ts3native.log`)); } catch (e) { log(`${j.id}: copy ts3native.log: ${e}`); }
   if (defaultIniOrig !== null) try { writeFileSync(DEFAULT_INI, defaultIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Default.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ppIniOrig !== null) try { writeFileSync(S3PP_INI, s3ppIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Sims3Performance.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ssTomlOrig !== null) try { writeFileSync(S3SS_TOML, s3ssTomlOrig); } catch (e) { stopWhy ||= `could not put back S3SS/S3SS.toml (${e}; copy in probe-out/queue/bin-before)`; }

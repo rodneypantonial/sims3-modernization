@@ -85,7 +85,8 @@ static void AcPublish(AcThread* t) {
 static void AcEmpty(AcThread* t, AcHeap* h, bool give) {
     LONG n = 0;
     for (DWORD i = 0; i < kAcBins; i++) {
-        for (u8* p = h->bins[i].head; p;) {
+        DWORD left = h->bins[i].count;  // bounded: a double free (Dedupe=0) can make a bin link to itself
+        for (u8* p = h->bins[i].head; p && left; left--) {
             u8* next = *(u8**)(p - 4);
             if (give) g_eaFreeOrig(h->heap, NULL, p);
             t->bytes -= (i + 1) * 16;
@@ -170,7 +171,7 @@ static u8* AcPop(void* heap, DWORD n, DWORD flags) {
     AcHeap* h = AcFind(t, heap, false);
     AcBin* b = h && sz <= kAcMaxChunk ? &h->bins[sz / 16 - 1] : NULL;
     if (++t->ops >= 1024) AcPublish(t);
-    if (!b || !b->head) { t->misses++; return NULL; }
+    if (!b || !b->head || !b->count) { t->misses++; return NULL; }  // count 0 with a head: corrupted bin, treat as empty (docs/67)
     u8* p = b->head;
     b->head = *(u8**)(p - 4);
     b->count--;
@@ -206,6 +207,16 @@ static void* __fastcall EaMemalignHook(void* heap, void* edx, DWORD n, DWORD ali
     return r;
 }
 
+// True when p is already in this bin. Walks at most count links (<= PerBin), so a looped bin cannot hang it.
+// shortcut: same thread only; a double free across threads needs a marker in the chunk (docs/67 §2.4), add it if allocDupFrees
+// shows dups here.
+static bool AcInBin(const AcBin* b, const u8* p) {
+    const u8* q = b->head;
+    for (DWORD i = 0; q && i < b->count; i++, q = *(u8* const*)(q - 4))
+        if (q == p) return true;
+    return false;
+}
+
 static void __fastcall EaFreeHook(void* heap, void* edx, void* ptr) {
     if (ptr && ts3native_counters.allocMode) {
         u8* p = (u8*)ptr;
@@ -218,6 +229,11 @@ static void __fastcall EaFreeHook(void* heap, void* edx, void* ptr) {
                 AcHeap* h = AcFind(t, heap, true);
                 AcBin* b = h ? &h->bins[sz / 16 - 1] : NULL;
                 if (++t->ops >= 1024) AcPublish(t);
+                if (b && AcInBin(b, p)) {
+                    // second Free of a chunk this thread already holds (docs/67): pushing it again would hand it to two owners
+                    InterlockedIncrement(&ts3native_counters.allocDupFrees);
+                    if (ts3native_counters.allocDedupe) return;  // the first Free still owns it
+                }
                 if (b && b->count < g_acPerBin && t->bytes + sz <= g_acThreadBytes) {
                     *(u8**)(p - 4) = b->head;
                     b->head = p;
@@ -260,6 +276,7 @@ static bool ApplyAlloc(const wchar_t* ini) {
     const int maxMB = Clamp((int)GetPrivateProfileIntW(L"Alloc", L"MaxMB", 4, ini), 1, 32);
     const int perBin = Clamp((int)GetPrivateProfileIntW(L"Alloc", L"PerBin", 32, ini), 4, 256);
     c.allocMode = GetPrivateProfileIntW(L"Alloc", L"Mode", 1, ini) ? 1 : 0;
+    c.allocDedupe = GetPrivateProfileIntW(L"Alloc", L"Dedupe", 0, ini) ? 1 : 0;
     if (!AcInit(threadKB, maxMB, perBin)) { Log("FAIL alloc cache: FlsAlloc (err %lu)", GetLastError()); return false; }
     // all four or none: the cache must see every shutdown of a heap it holds chunks of
     if (!Matches((void*)(uintptr_t)EA_MALLOC, kEaLockedPrologue, sizeof(kEaLockedPrologue)) ||

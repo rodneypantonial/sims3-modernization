@@ -9,7 +9,8 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { focusGame } from './focus-game.ts';
+import { focusGame, giveFocusBack } from './focus-game.ts';
+import { stallGuard } from './game-alive.ts';
 
 const { values } = parseArgs({ options: { save: { type: 'string' }, restart: { type: 'boolean' }, port: { type: 'string', default: '47891' } } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -29,10 +30,13 @@ async function agent(cmd: string, args?: object): Promise<any> {
   if (args) q.set('args', JSON.stringify(args));
   return get(`agent?${q}`);
 }
-async function until(what: string, limitS: number, check: () => Promise<boolean>, everyMs = 1000): Promise<void> {
+// guard: fail-fast check (game-alive.ts stallGuard), run outside check() so its verdict is not swallowed
+async function until(what: string, limitS: number, check: () => Promise<boolean>, everyMs = 1000, guard?: () => Promise<string>): Promise<void> {
   const t0 = Date.now();
   while (!(await check().catch(() => false))) {
     if (Date.now() - t0 > limitS * 1000) throw new Error(`${what}: not reached within ${limitS} s`);
+    const why = await guard?.();
+    if (why) throw new Error(why);
     await sleep(everyMs);
   }
   log(`${what} after ${Math.round((Date.now() - t0) / 1000)} s`);
@@ -78,12 +82,15 @@ if (values.restart) {
 
 // load a save, ending in live mode (a save can come back in Edit Town, which pauses the clock)
 if (values.save) {
-  await until('agent answering', 300, async () => (await agent('ping')).ok === true);
+  // game start: the probe launches TS3W.exe; only "process gone for ~1 min" fails before the agent exists
+  await until('agent answering', 300, async () => (await agent('ping')).ok === true, 1000, stallGuard('game start', { port: Number(values.port), liveOnly: true }));
   // "Mod Scripts Found" (native, script mods present) opens at the menu up to ~90 s after the agent answers.
   // Accepting it during a load leaves the game stuck on the loading screen, so clear it first and wait for quiet.
   let quietSince = Date.now(), sawWarning = false;
-  const t0 = Date.now();
+  const t0 = Date.now(), menuGuard = stallGuard('main menu', { port: Number(values.port) });
   while (Date.now() - t0 < 150000 && (!sawWarning ? Date.now() - t0 < 120000 : Date.now() - quietSince < 5000)) {
+    const why = await menuGuard();
+    if (why) throw new Error(why);
     const d = await agent('auto_dialog');
     if (d.ok && d.result.open) {
       log(`menu dialog "${d.result.title}" -> ${d.result.clicked}`);
@@ -98,8 +105,11 @@ if (values.save) {
   // On a slow first start (script cache just rebuilt) the reply can time out although the load started
   // (2026-10-16 bp-university-travel): check load_file before sending it again, so a load never starts twice.
   let r = await agent('load_save', { file: values.save });
+  const loadGuard = stallGuard('world load', { port: Number(values.port) }); // the agent is silent while loading: heartbeat, flag, commit, log
   for (let i = 0; !r.ok && /no reply/.test(r.error ?? '') && i < 24; i++) {
     await sleep(5000);
+    const why = await loadGuard();
+    if (why) throw new Error(why);
     const s = await agent('game_state');
     if (!s.ok) continue; // game still busy
     if (s.result.in_world || s.result.load_file) { log(`load_save: reply lost, load already started (${s.result.load_file})`); r = s; break; }
@@ -114,7 +124,7 @@ if (values.save) {
     if ((await get('agentstatus', 5000)).worldLoaded === true) return true;
     if (++waits % 20 === 0) { const d = await agent('auto_dialog'); if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`); }
     return false;
-  }, 500);
+  }, 500, loadGuard);
   // Settle: dialogs and notifications keep appearing for a few seconds after a load (new lots, lots in the
   // world, tutorials). Poll every second until 2 s pass without one (at most 30 s), then clear the corner.
   {
@@ -139,9 +149,10 @@ if (values.save) {
       const d = await agent('auto_dialog');
       if (d.ok && d.result.open) log(`dialog "${d.result.title}" -> ${d.result.clicked}`);
       return (await agent('game_state')).result?.sub_state === 'LiveModeState';
-    });
+    }, 1000, stallGuard('enter live mode', { port: Number(values.port) }));
   }
-  log(`ready: ${JSON.stringify((await agent('game_state')).result)}; window ${focusGame() ? 'focused' : 'NOT focused'}`);
+  // never leave the game in front (the game takes focus at launch): return it to the window saved by queue.ts
+  log(`ready: ${JSON.stringify((await agent('game_state')).result)}; focus: ${giveFocusBack()}; window ${focusGame() ? 'focused' : 'NOT focused'}`);
   // record the change set this run uses, so a later crash can be tied to it (crash-ledger.ts triage)
   log(execFileSync(process.execPath, [join(ROOT, 'tools', 'harness', 'crash-ledger.ts'), 'snapshot']).toString().trim());
 }

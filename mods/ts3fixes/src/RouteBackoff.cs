@@ -75,9 +75,11 @@ namespace Ts3Fixes
             // CheckYieldingContext is not enough: when this plan runs inside a native->managed call during the task, a
             // yield aborts the game (interp.c:3595 `pState->yieldReturn'), so ts3native refuses START there (MayYield).
             // Switch "asyncroute" (default on; ts3native decides). Counters: [56] started, [57] yields, [58] poll cap.
+            // H6 M1 (docs/60 §2.4): live mode only, no travel, no world shutdown (ts3native also refuses START then).
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
                 if (sim == null || !ShortcutOn("asyncroute") || Simulator.CurrentTask != sim.ObjectId
+                    || !GameStates.IsLiveState || GameStates.IsTravelling || GameStates.IsWorldShuttingDown
                     || !Simulator.CheckYieldingContext(false) || !GetOption(kAsyncStart))
                     return PlanOrig();
                 int[] c = PatchCounters();

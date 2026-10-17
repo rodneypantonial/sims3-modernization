@@ -11,7 +11,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { endlessJob } from './stuck-rule.ts';
+import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -90,20 +90,40 @@ const mem = async (what: string) => {
   } catch (e) { console.log(`${stamp()}   allocations ${what}: ? (${e})`); }
 };
 await mem('before');
+// "cleanup": [{cmd, args?}] runs before a FAIL exit, e.g. window_restore so a failed clock-minimize-pause never leaves the
+// game minimized (and paused) for the next job
+const fail = async (msg: string) => {
+  console.log(msg);
+  for (const c of r.cleanup ?? []) { const res = await ag(c.cmd, c.args); console.log(`${stamp()} cleanup ${c.cmd}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`); }
+  process.exit(1);
+};
 let prev: any = null;
 for (const s of r.steps ?? []) {
   // "keysFromPrev": true fills args.keys with the keys of the previous step's items (e.g. cas_parts -> wear_parts)
   const args = s.keysFromPrev && prev?.items ? { ...s.args, keys: prev.items.map((x: any) => x.key) } : s.args;
   const res = await ag(s.cmd, args);
   console.log(`${stamp()} step ${s.cmd} ${JSON.stringify(args ?? {}).slice(0, 200)}: ${res.ok ? JSON.stringify(res.result).slice(0, 160) : 'ERROR ' + res.error}`);
-  if (!res.ok && !s.optional) { console.log('FAIL: step failed'); process.exit(1); }
+  if (!res.ok && !s.optional) await fail('FAIL: step failed');
   if (res.ok) prev = res.result;
   if (s.waitS) await sleep(s.waitS * 1000);
+  // "until": poll an agent command until every condition holds (fail-fast: give up after maxS with a FAIL), e.g. the
+  // warm-up waits for temperature instead of a fixed time and the save step for save_in_progress false (2026-10-17)
+  if (s.until) {
+    const u = s.until, t0 = Date.now(), get = (o: any, path: string) => path.split('.').reduce((x, k) => x?.[k], o);
+    const ok = (res: any) => res?.ok && u.all.every((c: any) => { const v = get(res.result, c.path);
+      return c.equals !== undefined ? v === c.equals : c.atLeast !== undefined ? v >= c.atLeast : c.atMost !== undefined ? v <= c.atMost : !!v; });
+    let last: any = null;
+    while (!ok(last = await ag(u.cmd, u.args ?? {}))) {
+      if (Date.now() - t0 > (u.maxS ?? 300) * 1000) await fail(`${stamp()} FAIL: ${s.cmd} until ${JSON.stringify(u.all)} not met in ${u.maxS ?? 300} s: ${JSON.stringify(last?.result ?? last?.error).slice(0, 200)}`);
+      await sleep((u.everyS ?? 5) * 1000);
+    }
+    console.log(`${stamp()}   until met after ${((Date.now() - t0) / 1000).toFixed(0)} s: ${JSON.stringify(last.result).slice(0, 160)}`);
+  }
   await mem(`after ${s.cmd}`);
 }
 
-const w = r.watch, t0 = Date.now();
-let verdict = '';
+const w = r.watch ?? { kind: 'none' }, t0 = Date.now(); // no watch: a steps-only repro (e.g. making a base save)
+let verdict = w.kind === 'none' ? 'PASS: steps done (no watch)' : '';
 if (w.kind === 'counter') {
   const start = counterStart;
   while (Date.now() - t0 < w.minutes * 60000) {
@@ -113,7 +133,7 @@ if (w.kind === 'counter') {
     if (n >= w.min) { verdict = 'PASS'; break; }
   }
   verdict ||= `FAIL: ${w.counter} rose less than ${w.min} in ${w.minutes} min`;
-} else {
+} else if (w.kind !== 'none') {
   const seen = new Map<string, { key: string; checks: number }>();
   const stuck = new Set<string>();
   while (Date.now() - t0 < w.minutes * 60000) {
@@ -126,7 +146,7 @@ if (w.kind === 'counter') {
       const p = seen.get(s.id);
       const e = p && p.key === key ? { key, checks: p.checks + 1 } : { key, checks: 1 };
       seen.set(s.id, e);
-      if (s.interaction && !endlessJob(s.interaction) && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
+      if (mayBeStuck(s.interaction, !!s.routing) && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
     }
     console.log(`${stamp()} stuck: ${stuck.size ? [...stuck].join('; ') : 'none'}`);
   }
@@ -134,4 +154,4 @@ if (w.kind === 'counter') {
 }
 await alive.check();
 console.log(`${stamp()} ${r.id}: ${verdict} (expected: ${r.expect})`);
-process.exit(verdict === 'PASS' ? 0 : 1);
+process.exit(verdict.startsWith('PASS') ? 0 : 1);

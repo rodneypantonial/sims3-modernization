@@ -1,0 +1,456 @@
+[
+  {
+    "id": "bp-h6-m1",
+    "note": "H6 S3b + M1 (docs/60 §2.3/§2.4), ts3native 0.11.0 (counters v26): async route plans with the gate enforced ([RouteGate] Enabled/Sites/Enforce=1, [RouteAsync] Mode 1), async on/off alternating every 3 min in one load (--ab routeasync, starts on) during the S2b routing sweep. Pass: no crash or interp.c assert, 0 watchdog lines, asyncStarted > 0 with asyncCollected + asyncDropped ~ asyncStarted, vfRtQtBare 0, vfRtTeardownInJob 0, rgDropLocked 0, vfRtGateOffSim and vfRtDestroyInInvoke read (abort rule docs/60 §2.4), 0 stuck Sims; read moved ms/s = asyncUs - asyncPumpUs - rgGateWaitUs per on-second, asyncRefusedM1 reasons, it/s on vs off (accept down to ~-2%)",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 26,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "repro": "rt-s2b-sweep",
+        "ab": "routeasync",
+        "slice": 3
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-h6-m1",
+    "note": "the same in Isla Paradiso (G11 there: 6.3 of 65.9 plan ms/s movable; window closed by lotTableFind 0x62EAB0 ~1,860/s)",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP",
+    "minCounters": 26,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "repro": "rt-s2b-sweep",
+        "ab": "routeasync",
+        "slice": 3
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-h6-m1-seed-off",
+    "note": "H6 M1 timing, seeded pair 1/2: async installed, Mode 0 (all plans synchronous), seed 12345, story progression off, 10 min profile; compare iterations/s, route ms/s, hitches with bp-h6-m1-seed-on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 26,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-h6-m1-seed-on",
+    "note": "H6 M1 timing, seeded pair 2/2: same with Mode 1 (async); pass = no crash, 0 watchdog lines, vfRtQtBare 0; accept iterations/s down to ~-2% vs seed-off",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 26,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-g11-closeby",
+    "note": "vfG11CloseBy (docs/82 §9, ts3native 0.11.2, counters v27): async off, gate + sites counting only; per close key (steering call site 0x85FE10/0x85FE81/0x846D21/0x85B50C/0x85F6CB, other +0x918 acquire site, gate site, destroy, quadtree write, next plan) the closes and movable time lost. Decides design E: build it if the steering sites are >= ~75% of the lost time",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 27,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "ini": {
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "rt-s2b-sweep"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-g11-closeby",
+    "note": "vfG11CloseBy (docs/82 §9, ts3native 0.11.2, counters v27): async off, gate + sites counting only; per close key (steering call site 0x85FE10/0x85FE81/0x846D21/0x85B50C/0x85F6CB, other +0x918 acquire site, gate site, destroy, quadtree write, next plan) the closes and movable time lost. Decides design E: build it if the steering sites are >= ~75% of the lost time",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP",
+    "minCounters": 27,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "ini": {
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "rt-s2b-sweep"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-h6-queue-seed-on",
+    "note": "H6 job queue (0.11.3, counters v28): async on with 8 per-route slots run FIFO, same seed as bp-h6-m1-seed-off/on; stability first (no crash, 0 watchdog lines, vfRtQtBare 0, asyncSkipped/asyncBackoffs/asyncQueueFull read); timing vs seed-off expected still worse until the 0x82F0B0 read-only fix",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 28,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p0-sync",
+    "note": "P0 (docs/83): same as bp-g11-closeby with RouteFollow_EditPath keyed by its caller: 0x85FEDC = locomotion, 0x85FFC7 = the plan's own Route_PlanCommon tail (not a window closer in async mode)",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 29,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "ini": {
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "rt-s2b-sweep"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p0-async",
+    "note": "P0 (docs/83): job queue on, seeded; blockKey/N/Us = what the sim thread really waits on during jobs (locomotion EditPath 0x85FEDC, gate sites, destroys, other lock sites)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 29,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p0-sync-noedit",
+    "note": "Bisect: bp-p0-sync with the RouteFollow_EditPath frame unhooked (game time froze after the save_game step in 2 of 2 bp-p0-sync runs on 0.11.4)",
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 29,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "ini": {
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.EditPathFrame": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "rt-s2b-sweep"
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-d-async",
+    "note": "Design D + P1 (0.12.0, counters v30): job queue on, discourage footprints deferred while a job runs; seeded, compare iterations/s and blockKey/N/Us totals with bp-p0-async (74 ms/s sim waits) and seed-off (28.4 it/s); pass also needs discDropped explained, discOverflow 0, 0 watchdog lines, vfRtQtBare 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-d-async-2",
+    "note": "Design D after the FindByIdAddRef fix (0.12.2; 0.12.0/0.12.1 crashed 10 s in: wrong argument count corrupted the stack). Design D + P1 (0.12.0, counters v30): job queue on, discourage footprints deferred while a job runs; seeded, compare iterations/s and blockKey/N/Us totals with bp-p0-async (74 ms/s sim waits) and seed-off (28.4 it/s); pass also needs discDropped explained, discOverflow 0, 0 watchdog lines, vfRtQtBare 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-d-async-3",
+    "note": "Design D with the aligned points copy (0.12.4; 0.12.2 crashed: the original reads the points with movaps at 0xAB88BD and our malloc'd copy was 8-byte aligned). Design D + P1 (0.12.0, counters v30): job queue on, discourage footprints deferred while a job runs; seeded, compare iterations/s and blockKey/N/Us totals with bp-p0-async (74 ms/s sim waits) and seed-off (28.4 it/s); pass also needs discDropped explained, discOverflow 0, 0 watchdog lines, vfRtQtBare 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-d-off-same",
+    "note": "Baseline on the same build (0.12.4) and window state: async installed but Mode 0 (all plans synchronous), seeded; compare with bp-d-async-3 / bp-d-async-4",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-d-async-4",
+    "note": "Second clean run of design D on 0.12.4 (crash rule: two clean runs) and timing repeat of bp-d-async-3",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-env-off",
+    "note": "Fresh baseline in the realistic test_env (winter/extreme cold -> spring, full moon -> first quarter): async installed, Mode 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-env-on",
+    "note": "Same with async + job queue + design D on (0.12.4)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-env-off",
+    "note": "Isla Paradiso, realistic test_env, async Mode 0 (first IP run of the queue + D build)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-env-on",
+    "note": "Isla Paradiso, realistic test_env, async + queue + D on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

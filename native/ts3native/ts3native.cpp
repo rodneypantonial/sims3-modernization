@@ -10,8 +10,9 @@
 #include <math.h>
 #include <xmmintrin.h>
 #include <emmintrin.h>
+#include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.10.8"
+#define TS3NATIVE_VERSION "0.14.0"
 
 typedef unsigned char u8;
 
@@ -129,6 +130,45 @@ static const Site kBudgetCeiling[] = {
 
 static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+// [Crash] Log=1 (0.12.1): the first 16 first-chance exceptions with code, address, thread and up to 8 code addresses found
+// on the stack (game .text or this module), written unbuffered to ts3native.log. Added after a run died with no EA xcpt
+// report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
+static volatile LONG g_xcptN, g_xcptCpp;
+static DWORD g_selfLo, g_selfHi;
+static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
+    const EXCEPTION_RECORD* r = e->ExceptionRecord;
+    const DWORD code = r->ExceptionCode;
+    if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == DBG_CONTROL_C) return EXCEPTION_CONTINUE_SEARCH;
+    if (code == 0xE06D7363 && InterlockedIncrement(&g_xcptCpp) > 2) return EXCEPTION_CONTINUE_SEARCH;
+    if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
+    const CONTEXT* c = e->ContextRecord;
+    char refs[128];
+    int len = 0, k = 0;
+    refs[0] = 0;
+    const DWORD* sp = (const DWORD*)(uintptr_t)c->Esp;
+    for (int i = 0; i < 512 && k < 8 && Readable(sp + i, 4); i++) {
+        const DWORD v = sp[i];
+        if ((v >= 0x00401000 && v < 0x00F00000) || (v >= g_selfLo && v < g_selfHi)) {
+            len += sprintf_s(refs + len, sizeof(refs) - len, " %08lX", v);
+            k++;
+        }
+    }
+    Log("exception %08lX at 0x%08lX (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
+        (DWORD)(uintptr_t)r->ExceptionAddress, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
+        r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0, GetCurrentThreadId(), c->Eip, c->Esp, refs);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void InstallXcptLog(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"Crash", L"Log", 1, ini)) return;
+    HMODULE self = NULL;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)(void*)XcptLog, &self);
+    const IMAGE_NT_HEADERS* nt = self ? (const IMAGE_NT_HEADERS*)((const u8*)self + ((const IMAGE_DOS_HEADER*)self)->e_lfanew) : NULL;
+    g_selfLo = (DWORD)(uintptr_t)self;
+    g_selfHi = nt ? g_selfLo + nt->OptionalHeader.SizeOfImage : g_selfLo;
+    if (AddVectoredExceptionHandler(1, XcptLog)) Log("crash log: first 16 first-chance exceptions (module 0x%08lX-0x%08lX)", g_selfLo, g_selfHi);
+}
+
 static void ApplyGc(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"GC", L"Enabled", 1, ini)) { Log("GC patches disabled (Enabled=0)"); return; }
     int heapMB = GetPrivateProfileIntW(L"GC", L"InitialHeapMB", 256, ini);
@@ -155,7 +195,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 764 int32 (v22).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 1223 int32 (v32).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -418,8 +458,175 @@ struct Ts3nCounters {
     LONG vfShaderStartup[2];      // +0xBE0, Shader_CreateVertexShader 0x799780 / CreatePixelShader 0x799810 calls before the first world load 0xC6D970
     LONG vfMonoIcNestMax;         // +0xBE8, readout: largest [0x11F2D84] (EA IC nesting counter, docs/56) seen by the 1 s poll
     LONG vfMonoIcNestNeg;         // +0xBEC, polls that read it below 0
+    // v23: native fix batch 2 (PLAN "Next, in order" 2): [JobQueue], [D3DMultithreaded], [Alloc] Dedupe
+    LONG jqReady;                 // +0xBF0, bit 0 sim pump slot stub, bit 1 ExecuteJob counters, bit 2 worker count patched
+    LONG jqSimMode;               // +0xBF4, switch (#13): 1 = sim pump skips the shared queue (bit 31 of its record cleared)
+    LONG jqWorkers;               // +0xBF8, generic JobManager workers asked for (#14; 0 = game default 1, not patched)
+    LONG jqSimPumps;              // +0xBFC, sim-thread RunJobs calls seen by the slot stub
+    LONG jqSimSkipPasses;         // +0xC00, of those, passes run with bit 31 cleared
+    LONG jqSimSharedJobs;         // +0xC04, mask -1 (shared) jobs executed on the sim thread (0 while jqSimMode = 1)
+    LONG jqSimRenderJobs;         // +0xC08, frame jobs (docs/46 §2 fns) executed on the sim thread
+    LONG jqRenderJobs;            // +0xC0C, frame jobs executed on any thread
+    LONG jqWorkerTids;            // +0xC10, distinct non-main, non-sim threads that ran a shared job (JobThread0..n)
+    LONG jqWorkerJobs;            // +0xC14, shared jobs executed on those threads
+    LONG d3dMtReady;              // +0xC18, 1 = CreateDevice behaviour flags got D3DCREATE_MULTITHREADED (#4)
+    LONG allocDedupe;             // +0xC1C, switch: 1 = [Alloc] drops a Free of a chunk already in this thread's bin
+    LONG allocDupFrees;           // +0xC20, duplicate frees seen (and dropped while allocDedupe = 1)
+    // v24: native fix batch 3 (PLAN "Next, in order" 3, in-place sim savings): [LotSinCos] (#11), [IdCache] (#22)
+    LONG lscReady;                // +0xC24, 1 = Lot_WorldToLocal2D 0xAB8540 detoured
+    volatile LONG lscMode;        // +0xC28, switch: 0 = the game's code, 1 = sin/cos from the cache
+    LONG lscCallsK;               // +0xC2C, calls with the switch on, thousands (published every 1024 calls)
+    LONG lscHitsK;                // +0xC30, of those, sin/cos taken from the cache, thousands
+    LONG lscMismatches;           // +0xC34, Verify=1: hits whose output bits differ from the game's (the game's answer is returned)
+    LONG idcReady;                // +0xC38, 1 = ObjectId_Lookup 0x939100 and EraseNode 0x938D00 detoured
+    volatile LONG idcMode;        // +0xC3C, switch: 0 = the game's walk, 1 = sim-thread lookups use the id cache
+    LONG idcLookupsK;             // +0xC40, sim-thread lookups with the switch on, thousands (published every 1024)
+    LONG idcHitsK;                // +0xC44, of those, answered from the cache
+    LONG idcFillsK;               // +0xC48, found by our walk and stored
+    LONG idcNotFoundK;            // +0xC4C, not in the hash (sentinel returned, nothing stored)
+    LONG idcStepsK;               // +0xC50, chain nodes visited by our walks (chain length = steps / (fills + notFound))
+    LONG idcErases;               // +0xC54, EraseNode calls (each drops its cache entry)
+    LONG idcMismatches;           // +0xC58, Verify=1: hits the chain walk disagreed with (entry dropped, walk answer returned)
+    LONG idcObjects;              // +0xC5C, objects in the hash (service +0x1038), last publish
+    // v25: H6 S2b closure-site measurement ([RouteGate] Sites=1, routegate.cpp + rtsites.cpp, docs/60 §2.2-2.3) and S3a
+    // terrain graveyard ([TerrainGrave], heightcache.cpp, docs/60 §2.2 #2). "Job" = a route-worker plan (Mode 1 sync) or an
+    // async plan runs. *WaitUs fields belong to S3b (the closures that wait) and stay 0 in this build.
+    LONG rgUnlocked2[3];          // +0xC60, rgUnlocked for gate sites 13-15 (0x628A90, 0x835240, 0x835110)
+    LONG rgJob2[3];               // +0xC6C, rgJob for gate sites 13-15
+    LONG rtReady;                 // +0xC78, bit i = rtsites.cpp site i hooked
+    LONG vfRtGateOffSim;          // +0xC7C, outermost unlocked gate entries (sites 1-15) by a thread neither sim nor worker
+    LONG vfRtQtReads;             // +0xC80, worker entries into the quadtree readers 0x6583E0 / 0x83B3A0 (outermost)
+    LONG vfRtQtBare;              // +0xC84, worker entries into the leaves 0x681820 / 0x681E00 outside a reader (must be 0)
+    LONG vfRtQtWriteInJob;        // +0xC88, quadtree mutator calls (0x6823E0, 0x682080, 0x6819B0) while a job runs
+    LONG vfRtQtWaitUs;            // +0xC8C, S3b
+    LONG vfRtQtWaitMaxUs;         // +0xC90, S3b
+    LONG vfRtDestroyInJob;        // +0xC94, ObjectService_DestroyById 0x939420 calls while a job runs
+    LONG vfRtDestroyOffSim;       // +0xC98, 0x939420 calls on a thread other than the sim thread
+    LONG vfRtDestroyWaitUs;       // +0xC9C, S3b
+    LONG vfRtLotGridWorker;       // +0xCA0, worker entries into WorldManager_LotGridLookup 0xC688A0
+    LONG vfRtLotIdxRebuildInJob[4];  // +0xCA4, lot index rebuild 0xC68680 entries during a job: main, sim, worker, other
+    LONG vfRtPendingInJob;        // +0xCB4, worker entries into ApplyPendingUpdates 0x82C420 with P+0x10E set
+    LONG vfRt228WaitUs;           // +0xCB8, S3b
+    LONG vfRtDrainSave;           // +0xCBC, Save_WritePackage 0xAAC110 entries while a job runs (S3b drains there)
+    LONG vfRtDrainBrd;            // +0xCC0, IC_World_BuildRoutingDataImpl 0x78AE40 entries while a job runs
+    LONG vfRtDrainLotSave;        // +0xCC4, RoutingSystem_SaveLot 0x8361B0 entries while a job runs
+    LONG vfRtDrainWaitUs;         // +0xCC8, S3b
+    LONG vfRtDebugSkip;           // +0xCCC, RoutingDebug_FrameUpdate 0x818EA0 entries while a job runs (S3b skips them)
+    LONG vfRtTeardownInJob;       // +0xCD0, 0x829410 / 0x82D140 / 0x8299E0 entries while a job runs (must be 0)
+    LONG g11Plans;                // +0xCD4, sim-thread plans whose free window was closed by a routing touch
+    LONG g11PlanUs;               // +0xCD8, their summed length (Route_PlanLocked on the sim thread, wait included in Mode 1)
+    LONG g11MovableUs;            // +0xCDC, sum of min(plan length, gap to the sim thread's next routing touch)
+    LONG g11GapUs;                // +0xCE0, sum of those gaps, each capped at 1 s
+    LONG g11End[6];               // +0xCE4, what closed the window: +0x918 acquire, gate 1-12, gate 13-15, destroy, quadtree write, next plan
+    LONG tgReady;                 // +0xCFC, 1 = PhysShape_Release 0x682760 and the [HeightCache] stubs carry the graveyard
+    volatile LONG tgMode;         // +0xD00, switch: 0 = the game's release, 1 = park the swap's old shape until no ray runs
+    LONG vfRtGraveParked;         // +0xD04, old cell shapes parked instead of released
+    LONG vfRtGraveFreed;          // +0xD08, parked shapes released later (no ray in flight)
+    LONG vfRtGraveSpins;          // +0xD0C, ring full: waits for the rays in flight to end before the drain
+    LONG vfRtGraveRaces;          // +0xD10, swap releases that freed the shape while a ray was in flight (switch off)
+    LONG vfRtGraveHeld;           // +0xD14, shapes parked now
+    // v26 (0.11.0): H6 S3b + M1 (docs/60 §2.3/§2.4): gate enforced while an async job runs, closures, START limits
+    LONG rgEnforce;               // +0xD18, 1 = [RouteGate] Enforce=1 and every closure site hooked: async START allowed
+    LONG rgGateWaits;             // +0xD1C, outermost gate entries during an async job that took +0x918 (waited for the job)
+    LONG rgGateWaitUs;            // +0xD20, their summed wait for the lock
+    LONG rgGateWaitMaxUs;         // +0xD24
+    LONG rgBorrows;               // +0xD28, +0x918 acquires and gate entries by the owner inside a callback it serves for the job
+    LONG rgDropLocked;            // +0xD2C, gate frames left without returning that still held +0x918 (released late)
+    LONG asyncRefusedM1[6];       // +0xD30, START refused by M1: no lock/world, save busy, world closing, pending lot updates,
+                                  //         dirty lot index, gate frame or +0x918 hold open
+    LONG vfRtDestroyInInvoke;     // +0xD48, destroys inside a callback served for the job (cannot wait; run as is)
+    LONG vfRtClosingDrains;       // +0xD4C, travel / quit transition ICs (0xEC1180, 0xEC11B0) that set the closing flag
+    LONG rtBusy;                  // +0xD50, save / BuildRoutingData / lot save calls open now (START refused while > 0)
+    LONG rtClosing;               // +0xD54, 1 = a world transition was asked for, until the next world init
+    // v27 (0.11.2): G11 closer attribution (vfG11CloseBy, docs/80-82): per closing key, closes and the movable time lost.
+    // Key: a +0x918 acquire inside RoutingWorld_ObstacleQuery 0x82EDB0 / GoalFootprintGather 0x82F0B0 = the return
+    // address of the call into them (the steering call site); any other +0x918 acquire = Lock_Acquire's return address;
+    // 0x01000000 | gate site; 0x02000000 destroy; 0x03000000 | rtsites index (quadtree write); 0x04000000 next plan.
+    LONG g11CloseKey[32];         // +0xD58
+    LONG g11CloseN[32];           // +0xDD8
+    LONG g11CloseLostUs[32];      // +0xE58, sum of (plan length - movable) for the closes with this key
+    LONG g11CloseOther;           // +0xED8, closes whose key did not fit the 32 slots
+    // v28 (0.11.3): async job queue (8 per-route slots, FIFO)
+    LONG asyncSkipped;            // +0xEDC, queued jobs not run: the world changed since START (M1 limits, closing, save, new world)
+    LONG asyncBackoffs;           // +0xEE0, job starts taken back because a guarded routing call was open elsewhere
+    LONG asyncQueueFull;          // +0xEE4, STARTs refused: all 8 slots busy
+    LONG asyncQueueMax;           // +0xEE8, most jobs queued or running at once
+    // v29 (0.11.4): what the owner (sim) thread waits on while async jobs run (probe P0, docs/83). Key as g11CloseKey:
+    // steering caller (outermost of RouteFollow_EditPath 0x85F5A0 / 0x82EDB0 / 0x82F0B0), else the lock wait's
+    // Lock_Acquire return address; 0x01000000 | gate site; 0x02000000 | rtsites kind (destroy, save drain);
+    // 0x05000000 a sync plan waiting for the running job (RunPlan).
+    LONG blockKey[32];             // +0xEEC
+    LONG blockN[32];               // +0xF6C
+    LONG blockUs[32];             // +0xFEC
+    LONG blockOther;              // +0x106C
+    // v30 (0.12.0): design D, discourage footprints deferred while a job runs (discourage.cpp, docs/84 §2.4)
+    LONG discReady;               // +0x1070, 1 = both detours in place
+    volatile LONG discMode;       // +0x1074, switch: 0 = the game's calls, 1 = defer while a job runs
+    LONG discDeferredAdd;         // +0x1078
+    LONG discDeferredRemove;      // +0x107C
+    LONG discApplied;             // +0x1080, records applied later in order
+    LONG discDropped;             // +0x1084, records whose object was gone or whose world changed
+    LONG discPendingMax;          // +0x1088
+    LONG discDrainWaitUs;         // +0x108C, waits for a running job before a drain
+    LONG discAgeMaxMs;            // +0x1090, oldest record at its drain
+    LONG discForced;              // +0x1094, drains that waited for a job (record too old, queue full, save, transition)
+    LONG discNested;              // +0x1098, records made during a drain (event handlers)
+    LONG discOverflow;            // +0x109C, calls not deferred because the queue was full
+    // v31 (0.13.0): design S2, read-only Locomotion_ObstacleCheck while a job runs (steerro.cpp, docs/84 §3.6)
+    LONG steerReady;              // +0x10A0, 1 = 0x85FD10 and the 12 worker writer detours in place
+    volatile LONG steerMode;      // +0x10A4, switch: 1 = answer from the read-only clone while a job runs
+    volatile LONG steerShadow;    // +0x10A8, switch: 1 = with no job running, game call then clone, differences counted
+    LONG steerCalls;              // +0x10AC, owner-thread calls with a flagged node while a switch is on
+    LONG steerTaken;              // +0x10B0, read-only answers given during a job
+    LONG steerFb[8];              // +0x10B4, gave up: state (lock owner, job callback, gate frame), QL busy, dirty lot index,
+                                  //          lot not in table, deferred quadtree flag, polygon cache, shape (slot/overflow/null), tripwire
+    LONG steerUs;                 // +0x10D4, time of the read-only answers
+    LONG steerMaxUs;              // +0x10D8
+    LONG steerShadowRuns;         // +0x10DC
+    LONG steerShadowMismatch;     // +0x10E0, appended ids differ (must stay 0)
+    LONG steerShadowOrder;        // +0x10E4, same ids in another order
+    LONG steerShadowQueryMismatch; // +0x10E8, 0x82EDB0's footprints differ from the clone's point query (must stay 0)
+    LONG steerQlHolds;            // +0x10EC, worker QL exclusive holds (outermost)
+    LONG steerQlWaitUs;           // +0x10F0, worker waits for QL (a clone was reading)
+    LONG steerSimTreeWrite;       // +0x10F4, sim-thread W1-W5 entries during a job (tree / lot table writes; existing race)
+    LONG steerSimCacheWrite;      // +0x10F8, sim-thread W6 entries during a job (polygon cache rebuilds; existing race)
+    LONG steerSimWriteInRo;       // +0x10FC, of those while the clone ran (answer dropped; must stay 0)
+    LONG steerPinMoved;           // +0x1100, Q+0x48 / Q+0x4C moved during a clone walk (answer dropped)
+    LONG steerSeqSkew;            // +0x1104, an exclusive QL hold during a shared one (must stay 0)
+    LONG steerUntracked;          // +0x1108, worker W frames without a leave slot (clone switched off for good)
+    // v31 too: fix C-A (docs/84 §4.4), sim-thread polygon level rebuilds take +0x918 first while a job runs (steerro.cpp)
+    LONG caReady;                 // +0x110C, 1 = the W6a stub on 0x80E5B0 is in place with [FpRebuildLock] Enabled=1
+    volatile LONG caMode;         // +0x1110, switch: 0 = count only (T-L5), 1 = take +0x918 before the rebuild
+    LONG caSimInJob[4];           // +0x1114, T-L5: sim rebuilds of an invalid level during a job, by class 0xFEB848,
+                                  //          0xFEB970, 0xFEBD10, 0xFEBE38 (the classes whose rebuild reaches the lot table)
+    LONG caWaits;                 // +0x1124, of those that took +0x918 (waited for the job)
+    LONG caWaitUs;                // +0x1128
+    LONG caQlHeld;                // +0x112C, would have waited while this thread held QL (not taken; must stay 0)
+    // v32: design L1 (read-only LotRouting_FrontDoorPortal 0x631800) and probe P1b (docs/84 §4.6), lotfd.cpp
+    LONG ltReady;                 // +0x1130, 1 = the L1 detour on 0x631800 is in place ([LotFrontDoorRO] Enabled=1)
+    volatile LONG ltMode;         // +0x1134, switch: 1 = while a job runs, answer from the read-only clone
+    volatile LONG ltShadow;       // +0x1138, switch: 1 = with no job running, the game's call then the clone, compared
+    LONG ltCalls;                 // +0x113C, owner-thread entries with a switch on
+    LONG ltTaken;                 // +0x1140, read-only answers during a job (no +0x918 wait)
+    LONG ltFb[6];                 // +0x1144, fall-backs to the game's call: state, nested QL, no world manager / active lot,
+                                  //          QL busy, shape (table, portal vtable or count), QL frames lost (broken)
+    LONG ltUs;                    // +0x115C
+    LONG ltMaxUs;                 // +0x1160
+    LONG ltShadowRuns;            // +0x1164
+    LONG ltShadowMismatch;        // +0x1168, T-L4: EDX:EAX or *out differ from the game's (must stay 0)
+    LONG ltQlHeldBlock;           // +0x116C, T-L2: Lock_Acquire, host or managed call while this thread holds QL shared (= 0)
+    LONG portalRef[8];            // +0x1170, T-L3: portal AddRef (0..3) / Release (4..7) through vtable 0xFED048 during a job,
+                                  //          by thread: sim, worker inside a QL writer stub, worker outside, other
+    LONG p1bReady;                // +0x1190, 1 = [ProbeP1b] Enabled=1
+    LONG p1bKey[32];              // +0x1194, gate waits by second frame: (first-key index 1-5) << 24 | caller's return address
+                                  //          (0xFFFFFF = outside the exe); 1 0x62F782, 2 0x62FB74, 3 0x631814, 4 0x631F40 (gate
+                                  //          12), 5 0x62EF7A (gate 0)
+    LONG p1bN[32];                // +0x1214
+    LONG p1bUs[32];               // +0x1294
+    LONG p1bOther;                // +0x1314, table full
+    LONG p1bNoFrame;              // +0x1318, a known first key whose second frame could not be read (gate 0: bad ebp)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -529,6 +736,13 @@ static LONG UsSince(LARGE_INTEGER t0) {
 
 static void Max(LONG* m, LONG v) {
     for (LONG o; v > (o = *m) && InterlockedCompareExchange(m, v, o) != o;) {}
+}
+
+// T-L2 (docs/84 §4.4): set while this thread holds QL shared (S2 and L1 clones); a lock, host or managed call then could
+// wait for a job that needs QL exclusive (deadlock), so it must never happen
+static __declspec(thread) LONG t_qlShared;
+static inline void QlSharedTrip() {
+    if (t_qlShared) InterlockedIncrement(&ts3native_counters.ltQlHeldBlock);
 }
 
 // --- Route search budget (docs/11 Q3, docs/15 phase 4) ---
@@ -651,23 +865,55 @@ static DWORD g_workerTid;
 static volatile DWORD g_callerTid;  // the thread waiting for the worker's current plan, 0 when idle
 static CRITICAL_SECTION g_workerCs;  // one caller at a time; another calling thread waits here (recursive for nesting)
 
-// Async route plan (docs/18 "Async plan"): one job slot. The owner (sim) thread writes it while idle or done, the worker
-// while running; `state` is the hand-off.
-enum { A_IDLE, A_RUNNING, A_DONE };
+// Async route plan (docs/18 "Async plan"). 0.11.3: a queue of per-route jobs (g_jobs, FIFO by seq) that the worker runs
+// one after another; g_async is the job the worker runs NOW: state A_RUNNING exactly while the worker holds that job's
+// routing lock (the "job live" test of every closure), A_IDLE between jobs.
+enum { A_IDLE, A_RUNNING };
 struct AsyncSlot {
     volatile LONG state;
-    DWORD handle;  // script route handle (0x25xxxxxx)
-    DWORD owner;   // thread that started the job (the Mono sim thread); only it can run the job's managed calls
+    DWORD handle;  // script route handle (0x25xxxxxx) of the running job
+    DWORD owner;   // the thread that starts jobs (the Mono sim thread); only it can run the jobs' managed calls
+    void* lock;    // routing lock world+0x918 the worker holds for the whole running job (H6 S3b)
+};
+enum { J_FREE, J_QUEUED, J_RUNNING, J_DONE, J_SKIPPED };
+struct AsyncJob {
+    volatile LONG state;  // FREE -> QUEUED (sim) -> RUNNING (worker claims) -> DONE / SKIPPED (worker) -> FREE (sim)
+    DWORD handle, seq, doneTick;
     unsigned short x87;
     unsigned int mxcsr;
-    u8 result[0x48];  // RoutePlanResult as IC_Route_Plan writes it
+    void* lock;        // world+0x918 when START was accepted; the job is skipped if the world changed since
+    u8 result[0x48];   // RoutePlanResult as IC_Route_Plan writes it
 };
+static const int kJobs = 8;
+static const DWORD kDoneKeepMs = 5000;  // a Sim collects within a tick or two; older results lost their caller (reset)
 static AsyncSlot g_async;
+static AsyncJob g_jobs[kJobs];
+static DWORD g_jobSeq;  // sim thread only
+// routegate.cpp / rtsites.cpp: guarded routing calls open now on threads other than the worker (gate leaves, quadtree
+// mutators, destroys, saves). The worker does not start a job while > 0: it sets A_RUNNING, then reads this, and backs
+// off if set; those callers add 1, then read A_RUNNING (Dekker order, both interlocked).
+static volatile LONG g_rgOffSimOpen;
+// [RouteGate] (routegate.cpp): the routing lock world+0x918, learned in PlanLockedHook
+static void* volatile g_rgLock;
+static __declspec(thread) DWORD t_steerRet;  // rtsites.cpp: caller of 0x82EDB0 / 0x82F0B0 while one runs on this thread
+static __declspec(thread) DWORD t_waitKey;   // routegate.cpp: set around a gate's +0x918 wait (probe P0)
+// P0: one owner-thread wait of `us` for `key` (only the owner thread waits for jobs, so no interlocked insert)
+static void WaitNote(DWORD key, LONG us) {
+    Ts3nCounters& k = ts3native_counters;
+    int i = 0;
+    while (i < 32 && k.blockKey[i] && k.blockKey[i] != (LONG)key) i++;
+    if (i == 32) { InterlockedIncrement(&k.blockOther); return; }
+    k.blockKey[i] = (LONG)key;
+    InterlockedIncrement(&k.blockN[i]);
+    InterlockedExchangeAdd(&k.blockUs[i], us);
+}
 static HANDLE g_asyncReady, g_asyncDone;
 // IC_Route_Plan 0x765160: cdecl, [esp+4] = hidden RoutePlanResult* (also returned in eax), [esp+8] = route handle.
 typedef u8*(__cdecl* IcPlanFn)(u8* out, DWORD handle);
 static IcPlanFn g_icPlanOrig;
 static void WaitAsyncDone();
+static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline);
+static LONG __fastcall LockReleaseHook(void* lock, void* edx);  // routegate.cpp
 static int g_inInvoke;  // > 0 while the caller/owner thread runs a managed call for the worker (ServeInvoke)
 
 // Managed calls (docs/18 "Crash 2026-10-13"): the planner can call script code through mono_runtime_invoke, and the worker
@@ -767,6 +1013,7 @@ static void* Proxy(InvokeJob& v) {
 
 // In the runtime_invoke slot: every thread but the worker goes straight to the original.
 static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** exc) {
+    QlSharedTrip();
     if (!ForCaller()) return g_invokeOrig(method, obj, params, exc);
     InvokeJob v = {{method, obj, params, exc}, NULL, NULL};
     return Proxy(v);
@@ -774,6 +1021,7 @@ static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** e
 
 // Detour of 0xD75FA0: the same for the whole host delegate call (boxing and EA's task-id guard included).
 static void* __fastcall HostCallHook(void* self, void* edx, void* out, void* a2, void* a3, void* a4) {
+    QlSharedTrip();
     if (!ForCaller()) return g_hostCallOrig(self, edx, out, a2, a3, a4);
     InvokeJob v = {{out, a2, a3, a4}, self, NULL};
     return Proxy(v);
@@ -805,22 +1053,58 @@ static bool EnsureInvokeHook() {
 
 // Worker side of an async job: the whole original IC_Route_Plan (start points, Route_PlanCommon, Route_PlanLocked under
 // the routing lock, result mapping) with the starter's FPU state. Its managed calls go to the owner thread (InvokeHook).
+static bool RtQuietWorld(const void* lock);  // rtsites.cpp: M1 world conditions that do not need the sim thread
+
+// Worker side: runs every queued job, oldest first. Each job: the whole original IC_Route_Plan (start points,
+// Route_PlanCommon, Route_PlanLocked, result mapping) with the starter's FPU state, under +0x918 for the whole job (H6 S3b;
+// recursive, so the planner's own acquires nest). Its managed calls go to the owner thread (InvokeHook).
 static void ServeAsync() {
-    AsyncSlot& a = g_async;
-    const unsigned short cw = GetX87();
-    const unsigned int csr = _mm_getcsr();
-    SetX87(a.x87);
-    _mm_setcsr(a.mxcsr);
-    LARGE_INTEGER t0;
-    QueryPerformanceCounter(&t0);
-    g_icPlanOrig(a.result, a.handle);
-    LONG us = UsSince(t0);
-    InterlockedExchangeAdd(&ts3native_counters.asyncUs, us);
-    Max(&ts3native_counters.asyncMaxUs, us);
-    SetX87(cw);
-    _mm_setcsr(csr);
-    InterlockedExchange(&a.state, A_DONE);
-    SetEvent(g_asyncDone);
+    Ts3nCounters& k = ts3native_counters;
+    static const DWORD kInfinite = 0xFFFFFFFF;
+    for (;;) {
+        AsyncJob* j = NULL;
+        for (int i = 0; i < kJobs; i++)
+            if (g_jobs[i].state == J_QUEUED && (!j || (LONG)(g_jobs[i].seq - j->seq) < 0)) j = &g_jobs[i];
+        if (!j) return;
+        if (InterlockedCompareExchange(&j->state, J_RUNNING, J_QUEUED) != J_QUEUED) continue;  // cancelled meanwhile
+        // the world may have changed since START: wrong world, closing, saving, pending lot updates, dirty lot index
+        if (j->lock != g_rgLock || k.rtClosing || k.rtBusy || !RtQuietWorld(j->lock)) {
+            InterlockedIncrement(&k.asyncSkipped);
+            j->doneTick = GetTickCount();
+            InterlockedExchange(&j->state, J_SKIPPED);
+            SetEvent(g_asyncDone);
+            continue;
+        }
+        // start only when no guarded routing call is open elsewhere (g_rgOffSimOpen); else back off and retry
+        for (;;) {
+            while (g_rgOffSimOpen) Sleep(0);
+            LockAcquireHook(j->lock, NULL, &kInfinite);
+            g_async.handle = j->handle;
+            g_async.lock = j->lock;
+            InterlockedExchange(&g_async.state, A_RUNNING);
+            if (!g_rgOffSimOpen) break;
+            InterlockedExchange(&g_async.state, A_IDLE);
+            LockReleaseHook(j->lock, NULL);
+            InterlockedIncrement(&k.asyncBackoffs);
+        }
+        const unsigned short cw = GetX87();
+        const unsigned int csr = _mm_getcsr();
+        SetX87(j->x87);
+        _mm_setcsr(j->mxcsr);
+        LARGE_INTEGER t0;
+        QueryPerformanceCounter(&t0);
+        g_icPlanOrig(j->result, j->handle);
+        const LONG us = UsSince(t0);
+        SetX87(cw);
+        _mm_setcsr(csr);
+        LockReleaseHook(j->lock, NULL);
+        InterlockedExchange(&g_async.state, A_IDLE);
+        InterlockedExchangeAdd(&k.asyncUs, us);
+        Max(&k.asyncMaxUs, us);
+        j->doneTick = GetTickCount();
+        InterlockedExchange(&j->state, J_DONE);
+        SetEvent(g_asyncDone);
+    }
 }
 
 static DWORD WINAPI WorkerMain(LPVOID) {
@@ -858,7 +1142,12 @@ static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals,
     // worker, which waits in InvokeHook. Any other plan waits here for the job, running its managed calls, then goes on.
     if (g_async.state == A_RUNNING && me == g_async.owner) {
         if (g_inInvoke) viaWorker = true;
-        else WaitAsyncDone();
+        else {
+            LARGE_INTEGER w0;
+            QueryPerformanceCounter(&w0);
+            WaitAsyncDone();
+            WaitNote(0x05000000, UsSince(w0));
+        }
     }
     if (!viaWorker || !ts3native_counters.workerReady)
         return CallPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
@@ -923,8 +1212,11 @@ static u8 PlanCached(void* world, void* edx, int* outList, int* starts, int* goa
     return r;
 }
 
-// [RouteGate] (routegate.cpp): the routing lock world+0x918, set from every plan while the gate measurement is on
-static void* volatile g_rgLock;
+// exact G11 window (docs/18 (3), S2b): what closed a sim-thread plan's free window (index into g11End)
+enum { G11_LOCK, G11_GATE, G11_GATE13, G11_DESTROY, G11_QTWRITE, G11_PLAN };
+static void G11Touch(int kind, DWORD key);
+static bool G11PlanBegin();
+static void G11PlanEnd(bool begun);
 
 static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
                                     DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
@@ -943,7 +1235,9 @@ static u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* s
     const Ts3nCounters& c = ts3native_counters;
     const bool on = (c.workerMode == 1 && c.workerReady) || (c.asyncMode == 1 && c.asyncReady);
     InterlockedIncrement(on ? &ts3native_counters.planOnCalls : &ts3native_counters.planOffCalls);
+    const bool g11 = G11PlanBegin();
     const u8 r = PlanCached(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi, now);
+    G11PlanEnd(g11);
     if (!r) InterlockedIncrement(on ? &ts3native_counters.planOnFails : &ts3native_counters.planOffFails);
     return r;
 }
@@ -981,9 +1275,11 @@ typedef u8(__cdecl* GetOptionFn)(DWORD handle, DWORD optLo, DWORD optHi, DWORD o
 typedef LONG(__fastcall* LockAcquireFn)(void* lock, void* edx, const DWORD* deadline);       // 0x4E16F0 thiscall, ret 4
 static GetOptionFn g_getOptOrig;
 static LockAcquireFn g_lockOrig;
+static bool RtM1Allows(void** lock);  // rtsites.cpp
+static void DiscPoll();               // discourage.cpp
 static DWORD g_collect;  // handle whose READY said "done": the owner's next IC_Route_Plan for it takes the stored result
 
-// Owner side: runs the job's managed calls until it is done (2 s watchdog: log and keep waiting, as RunPlan does).
+// Owner side: runs the running job's managed calls until no job runs (2 s watchdog: log and keep waiting, as RunPlan does).
 static void WaitAsyncDone() {
     for (DWORD s = 0; g_async.state == A_RUNNING;) {
         HANDLE h[2] = {g_asyncDone, g_invReady};
@@ -997,50 +1293,102 @@ static void WaitAsyncDone() {
     }
 }
 
-// Owner side: waits for its job (running the job's managed calls) and throws the result away. No-op on other threads.
-static void DropOwnJob() {
-    if (g_async.state == A_IDLE || GetCurrentThreadId() != g_async.owner) return;
-    WaitAsyncDone();
-    InterlockedIncrement(&ts3native_counters.asyncDropped);
-    InterlockedExchange(&g_async.state, A_IDLE);
+// Owner side: the same for one job (queued jobs ahead of it run first)
+static void WaitJobDone(AsyncJob* j) {
+    for (DWORD s = 0; j->state == J_QUEUED || j->state == J_RUNNING;) {
+        HANDLE h[2] = {g_asyncDone, g_invReady};
+        const DWORD w = WaitForMultipleObjects(2, h, FALSE, 2000);
+        if (w == WAIT_OBJECT_0 + 1) ServeInvoke();
+        else if (w == WAIT_TIMEOUT) {
+            s += 2;
+            InterlockedIncrement(&ts3native_counters.watchdogs);
+            Log("route async: thread %lu waited %lu s for the job of route %08lX, still waiting", GetCurrentThreadId(), s, j->handle);
+        }
+    }
+}
+
+static AsyncJob* JobFor(DWORD handle) {
+    for (int i = 0; i < kJobs; i++)
+        if (g_jobs[i].state != J_FREE && g_jobs[i].handle == handle) return &g_jobs[i];
+    return NULL;
+}
+
+// Owner side: a queued job is taken back; a running one is waited for (its managed calls served); the result is thrown away.
+static void DropJob(AsyncJob* j) {
+    if (InterlockedCompareExchange(&j->state, J_FREE, J_QUEUED) == J_QUEUED) { InterlockedIncrement(&ts3native_counters.asyncDropped); return; }
+    WaitJobDone(j);
+    if (j->state == J_DONE) InterlockedIncrement(&ts3native_counters.asyncDropped);
+    InterlockedExchange(&j->state, J_FREE);
+}
+
+// Owner side, async switched off mid-run: no job may be left without a collector. No-op on other threads.
+static void DropAllJobs() {
+    if (GetCurrentThreadId() != g_async.owner) return;
+    for (int i = 0; i < kJobs; i++)
+        if (g_jobs[i].state != J_FREE) DropJob(&g_jobs[i]);
 }
 
 static u8* __cdecl IcPlanHook(u8* out, DWORD handle) {
-    if (ts3native_counters.asyncMode != 1) DropOwnJob();  // switched off mid-job: no job left without a collector
+    if (ts3native_counters.asyncMode != 1) DropAllJobs();  // switched off mid-job: no job left without a collector
     // only the Mono sim thread calls internal calls (the worker calls g_icPlanOrig directly), so g_collect needs no lock
     const bool collect = g_collect == handle;
     g_collect = 0;
-    if (g_async.state == A_IDLE || GetCurrentThreadId() != g_async.owner) return g_icPlanOrig(out, handle);
-    // another route: its Route_PlanLocked waits for the job first (RunPlan)
-    if (g_async.handle != handle) return g_icPlanOrig(out, handle);
-    WaitAsyncDone();  // normally already done (READY said so)
-    if (collect) {
-        memcpy(out, g_async.result, sizeof(g_async.result));
+    AsyncJob* j = GetCurrentThreadId() == g_async.owner ? JobFor(handle) : NULL;
+    // no job for this route: plan as asked (its Route_PlanLocked waits for a running job first: Lock_Acquire pump)
+    if (!j) return g_icPlanOrig(out, handle);
+    // never started: take it back and plan it here
+    if (InterlockedCompareExchange(&j->state, J_FREE, J_QUEUED) == J_QUEUED) {
+        InterlockedIncrement(&ts3native_counters.asyncDropped);
+        return g_icPlanOrig(out, handle);
+    }
+    WaitJobDone(j);  // normally already done (READY said so)
+    const bool done = j->state == J_DONE;
+    if (done && collect) {
+        memcpy(out, j->result, sizeof(j->result));
         InterlockedIncrement(&ts3native_counters.asyncCollected);
-    } else {
+    } else if (done) {
         InterlockedIncrement(&ts3native_counters.asyncDropped);  // a plan the C# hook did not arm: plan it now, as asked
     }
-    InterlockedExchange(&g_async.state, A_IDLE);
-    return collect ? out : g_icPlanOrig(out, handle);
+    InterlockedExchange(&j->state, J_FREE);
+    return done && collect ? out : g_icPlanOrig(out, handle);
 }
 
 static u8 AsyncStart(DWORD handle) {
     g_collect = 0;
-    if (ts3native_counters.asyncMode != 1 || !ts3native_counters.asyncReady) return 0;  // asyncMode is writable at runtime
-    // another job runs, or the caller could not sleep (nested native->managed call: its yield would abort the game)
-    if (g_async.state == A_RUNNING || !CanYield()) { InterlockedIncrement(&ts3native_counters.asyncRefused); return 0; }
-    if (g_async.state == A_DONE) InterlockedIncrement(&ts3native_counters.asyncDropped);  // its caller gave up
+    Ts3nCounters& k = ts3native_counters;
+    if (k.asyncMode != 1 || !k.asyncReady) return 0;  // asyncMode is writable at runtime
+    // the caller could not sleep (nested native->managed call: its yield would abort the game)
+    if (!CanYield()) { InterlockedIncrement(&k.asyncRefused); return 0; }
+    // H6 M1 (docs/60 §2.4): only a quiet world, and only with the gate enforced (rtsites.cpp); the job's lock comes from there
+    void* lock = NULL;
+    if (!RtM1Allows(&lock)) { InterlockedIncrement(&k.asyncRefused); return 0; }
+    AsyncJob* j = JobFor(handle);
+    if (j) {
+        if (j->state == J_RUNNING) { InterlockedIncrement(&k.asyncRefused); return 0; }  // planned now; READY / plan collects it
+        DropJob(j);  // the same route again: the older request lost its caller
+    }
+    for (int i = 0; i < kJobs && !j; i++) if (g_jobs[i].state == J_FREE) j = &g_jobs[i];
+    for (int i = 0; i < kJobs && !j; i++)  // full: reclaim a finished result its Sim never collected (reset)
+        if ((g_jobs[i].state == J_DONE || g_jobs[i].state == J_SKIPPED) && GetTickCount() - g_jobs[i].doneTick >= kDoneKeepMs) {
+            if (g_jobs[i].state == J_DONE) InterlockedIncrement(&k.asyncDropped);
+            j = &g_jobs[i];
+        }
+    if (!j) { InterlockedIncrement(&k.asyncQueueFull); InterlockedIncrement(&k.asyncRefused); return 0; }
     EnterCriticalSection(&g_workerCs);
-    const bool invokeOk = EnsureInvokeHook();  // the job's managed calls must come back to this thread
+    const bool invokeOk = EnsureInvokeHook();  // the jobs' managed calls must come back to this thread
     LeaveCriticalSection(&g_workerCs);
     if (!invokeOk) return 0;
-    g_async.handle = handle;
     g_async.owner = GetCurrentThreadId();
-    g_async.x87 = GetX87();
-    g_async.mxcsr = _mm_getcsr();
-    ResetEvent(g_asyncDone);
-    InterlockedExchange(&g_async.state, A_RUNNING);
-    InterlockedIncrement(&ts3native_counters.asyncStarted);
+    j->handle = handle;
+    j->seq = ++g_jobSeq;
+    j->x87 = GetX87();
+    j->mxcsr = _mm_getcsr();
+    j->lock = lock;
+    InterlockedExchange(&j->state, J_QUEUED);
+    LONG queued = 0;
+    for (int i = 0; i < kJobs; i++) queued += g_jobs[i].state == J_QUEUED || g_jobs[i].state == J_RUNNING;
+    Max(&k.asyncQueueMax, queued);
+    InterlockedIncrement(&k.asyncStarted);
     SetEvent(g_asyncReady);
     return 1;
 }
@@ -1048,17 +1396,24 @@ static u8 AsyncStart(DWORD handle) {
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
     if (optLo != 0 || (optHi & ~(kAsyncCancelHi | kNoYieldHi)) != kAsyncOptHi) return g_getOptOrig(handle, optLo, optHi, options2);
     if (optHi & kNoYieldHi) return !CanYield();
-    if (ts3native_counters.asyncMode != 1) DropOwnJob();  // switched off mid-job: READY then says "done", Route.Plan plans inline
+    if (ts3native_counters.asyncMode != 1) DropAllJobs();  // switched off mid-job: READY then says "done", Route.Plan plans inline
+    DiscPoll();  // a script-IC point: deferred discourage footprints may be applied here (docs/84 §2.4)
     if (!(u8)options2) return AsyncStart(handle);
-    const bool mine = g_async.state != A_IDLE && g_async.handle == handle && GetCurrentThreadId() == g_async.owner;
+    AsyncJob* j = GetCurrentThreadId() == g_async.owner ? JobFor(handle) : NULL;
     if (optHi & kAsyncCancelHi) {  // the caller gives up (finally, Sim reset): its job must not outlive it
         g_collect = 0;
-        if (mine) DropOwnJob();
+        if (j) DropJob(j);
         return 1;
     }
-    if (mine && g_async.state == A_RUNNING && WaitForSingleObject(g_invReady, 0) == WAIT_OBJECT_0) ServeInvoke();  // keep it moving
-    if (mine && g_async.state == A_RUNNING) return 0;
-    g_collect = mine ? handle : 0;
+    if (j && (j->state == J_QUEUED || j->state == J_RUNNING)) {
+        if (WaitForSingleObject(g_invReady, 0) == WAIT_OBJECT_0) ServeInvoke();  // keep the running job moving
+        return 0;
+    }
+    if (j && j->state == J_SKIPPED) {  // not planned (world changed): the plan runs synchronously
+        InterlockedExchange(&j->state, J_FREE);
+        j = NULL;
+    }
+    g_collect = j ? handle : 0;
     return 1;
 }
 
@@ -1066,27 +1421,52 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
 // finite deadlines, an absolute GetTickCount): try-lock (deadline 0 = one TryEnter/0 ms wait in the original) in a loop,
 // running the job's managed calls in between. A finite deadline that passes ends with one original call with it (one
 // last try; the original's own result, -2 = timed out).
-static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline);
+static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD key);
 // [RouteGate] (routegate.cpp) owner tracking for world+0x918: success returns the recursion count (> 0), -1/-2 = failed
+static __declspec(thread) LONG t_borrow;  // routegate.cpp releases these without the lock
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline) {
-    const LONG r = LockAcquireAsync(lock, edx, deadline);
+    QlSharedTrip();
+    // H6 borrow rule: the owner runs a callback for the job while the worker, holding the job's lock, waits in it; an acquire
+    // of that lock here is nested in the job, as it was when the plan ran on this thread. Waiting would deadlock.
+    if (lock == g_async.lock && g_inInvoke && g_async.state == A_RUNNING && GetCurrentThreadId() == g_async.owner) {
+        t_borrow++;
+        InterlockedIncrement(&ts3native_counters.rgBorrows);
+        return 2;
+    }
+    const LONG r = LockAcquireAsync(lock, edx, deadline,
+                                    t_waitKey ? t_waitKey : t_steerRet ? t_steerRet : (DWORD)(uintptr_t)_ReturnAddress());
     if (lock == g_rgLock && r > 0) {
-        if (r == 1) InterlockedIncrement(&ts3native_counters.rgAcquires);
+        if (r == 1) {
+            InterlockedIncrement(&ts3native_counters.rgAcquires);
+            G11Touch(G11_LOCK, t_steerRet ? t_steerRet : (DWORD)(uintptr_t)_ReturnAddress());
+        }
         ts3native_counters.rgOwnerTid = (LONG)GetCurrentThreadId();
     }
     return r;
 }
 
-static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline) {
-    if (g_async.state != A_RUNNING || *deadline == 0 || GetCurrentThreadId() != g_async.owner) return g_lockOrig(lock, edx, deadline);
+// A job runs or waits in the queue (only the owner thread queues jobs, so on the owner this cannot turn true meanwhile).
+static bool AsyncBusy() {
+    if (g_async.state == A_RUNNING) return true;
+    for (int i = 0; i < kJobs; i++)
+        if (g_jobs[i].state == J_QUEUED || g_jobs[i].state == J_RUNNING) return true;
+    return false;
+}
+
+static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD key) {
+    // with jobs queued the worker may take any lock between jobs and then need this thread for a managed call: pump
+    if (*deadline == 0 || GetCurrentThreadId() != g_async.owner || !AsyncBusy()) return g_lockOrig(lock, edx, deadline);
     static const DWORD kTry = 0;
     LONG r = g_lockOrig(lock, edx, &kTry);
     if (r != -2) return r;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     InterlockedIncrement(&ts3native_counters.asyncPumpWaits);
+    // waiting for the routing lock: the worker starts no further job until this thread has had it (g_rgOffSimOpen)
+    const bool hold = lock == g_rgLock;
+    if (hold) InterlockedIncrement(&g_rgOffSimOpen);
     for (DWORD start = GetTickCount(), next = 2000;;) {
-        if (g_async.state != A_RUNNING) { r = g_lockOrig(lock, edx, deadline); break; }  // job over: wait as the game would
+        if (!AsyncBusy()) { r = g_lockOrig(lock, edx, deadline); break; }  // no job left: wait as the game would
         HANDLE h[2] = {g_invReady, g_asyncDone};
         if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) ServeInvoke();
         if ((r = g_lockOrig(lock, edx, &kTry)) != -2) break;
@@ -1097,7 +1477,10 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline) {
             Log("route async: lock %p busy for %lu s during the job of route %08lX, still waiting", lock, next / 1000 - 2, g_async.handle);
         }
     }
-    InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, UsSince(t0));
+    if (hold) InterlockedDecrement(&g_rgOffSimOpen);
+    const LONG waited = UsSince(t0);
+    InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, waited);
+    WaitNote(key, waited);
     return r;
 }
 
@@ -1190,9 +1573,35 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "gcthreads.cpp"
 #include "iclock.cpp"
 #include "routegate.cpp"
+#include "rtsites.cpp"
+#include "discourage.cpp"
+#include "steerro.cpp"
+#include "lotfd.cpp"
 #include "monothread.cpp"
 #include "lotstream.cpp"
+#include "jobqueue.cpp"
+#include "lotsincos.cpp"
+#include "idcache.cpp"
 #include "verify.cpp"
+
+// [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
+// flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
+// D3DCREATE_MULTITHREADED (4) makes the device lock every call, so the ThumbnailManager ICs that create and fill a texture
+// on the sim thread (0xD5D910) no longer race the main thread's rendering. The deferral to the device thread is not built:
+// the IC callers wait for the result, and a sim-to-main wait can deadlock against the frame lock (docs/41 S1) [inferred].
+static const Site kD3dFlags[] = {
+    {0x006112A4, {0xBE, 0x40, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,40h (D3DCREATE_SOFTWARE_VERTEXPROCESSING)
+    {0x006112B9, {0xBE, 0x20, 0x00, 0x00, 0x00}, 5, 1},  // mov esi,20h (D3DCREATE_HARDWARE_VERTEXPROCESSING)
+};
+static bool ApplyD3dMultithreaded(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"D3DMultithreaded", L"Enabled", 0, ini)) { Log("d3d multithreaded disabled (Enabled=0)"); return false; }
+    for (const Site& s : kD3dFlags)  // both or neither (PatchImm32 checks one group)
+        if (!Matches((const void*)(uintptr_t)s.addr, s.expect, s.len)) { Log("SKIP d3d multithreaded: bytes at 0x%08X differ", s.addr); return false; }
+    const bool ok = PatchImm32("D3DCREATE_MULTITHREADED (software VP)", &kD3dFlags[0], 1, 0x44) &&
+                    PatchImm32("D3DCREATE_MULTITHREADED (hardware VP)", &kD3dFlags[1], 1, 0x24);
+    ts3native_counters.d3dMtReady = ok ? 1 : 0;
+    return false;  // start-up patch only: no periodic log needed
+}
 
 static void Run(HMODULE self) {
     wchar_t path[MAX_PATH], ini[MAX_PATH], log[MAX_PATH], exe[MAX_PATH];
@@ -1216,6 +1625,7 @@ static void Run(HMODULE self) {
     if (base != (HMODULE)0x400000 || _wcsicmp(name ? name + 1 : exe, L"TS3W.exe") != 0) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
+        InstallXcptLog(ini);
         ApplyGc(ini);
         bool cache = ApplyRouteCache(ini);
         bool worker = ApplyRouteWorker(ini);
@@ -1224,7 +1634,11 @@ static void Run(HMODULE self) {
         const bool gate = ReadRouteGate(ini);  // checks every prologue first: nothing is hooked if one differs
         keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini), gate);
         if (asyncMode >= 0 && worker && keepLog) InstallAsync(asyncMode);
-        if (gate) InstallRouteGate(g_planOrig != NULL);
+        InstallRtSites(ini, gate && InstallRouteGate(g_planOrig != NULL));
+        InstallDiscourage(ini);
+        InstallSteerRO(ini);
+        InstallLotFd(ini);
+        InstallLotFd(ini);
         keepLog = ApplySaveWrite(ini) || keepLog;
         ApplySaveFlush(ini);
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
@@ -1240,6 +1654,10 @@ static void Run(HMODULE self) {
         keepLog = ApplyIcLockCheck(ini) || keepLog;
         keepLog = ApplyMonoThread(ini) || keepLog;
         keepLog = ApplyLotStream(ini) || keepLog;
+        keepLog = ApplyJobQueue(ini) || keepLog;
+        ApplyD3dMultithreaded(ini);
+        keepLog = ApplyLotSinCos(ini) || keepLog;
+        keepLog = ApplyIdCache(ini) || keepLog;
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
     }
     Log("done");

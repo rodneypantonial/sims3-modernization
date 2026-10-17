@@ -8,7 +8,7 @@
 // --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) alternate on/off every --slice minutes, starting on;
 // slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
-// --seed N: seed_rng {seed: N} right after autopilot sets the speed (window start, docs/27 §B), game RNG put back at the end.
+// --seed N: seed_rng {seed: N} while paused, just before the unpause that starts the window (docs/27 §B); game RNG put back at the end.
 // --repro ID: run the steps of that tools/harness/repros.json entry (agent commands, waitS after each) from the window start,
 // e.g. the lot streaming pan (lotstream-pan, docs/28 §5.5). The stack samplers are skipped (they suspend the sim thread);
 // with --mainstack too, only the main-thread stacks run, for the whole window (they never suspend the sim thread).
@@ -21,11 +21,12 @@ import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSy
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
-import { focusGame } from './focus-game.ts';
-import { endlessJob } from './stuck-rule.ts';
+import { focusGame, giveFocusBack } from './focus-game.ts';
+import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
+import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, 'no-env': { type: 'boolean' } } });
 if (!values.tag) throw new Error('--tag required');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -47,8 +48,21 @@ const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
 const alive = watchGame();
-console.log(`${stamp()} game window ${focusGame() ? 'focused' : 'NOT focused (fps capped, numbers not comparable)'}`);
-await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true });
+// runs are measured unfocused (Rodney, 2026-10-17): the game takes focus at launch; give it back to the window that was in
+// front when the queue started, then record the state (a focused run is not comparable with unfocused ones)
+console.log(`${stamp()} focus: ${giveFocusBack()}`);
+console.log(`${stamp()} game window ${focusGame() ? 'FOCUSED (not comparable with unfocused runs)' : 'not focused (standard)'}`);
+// set up while paused (Rodney, 2026-10-17): test_env, seed, profiler attach happen with the world still; the measured
+// window starts when autopilot unpauses to x3 right after the profiler spawn (seeded draws only start there)
+await ag('autopilot', { enabled: true, speed: 'none', dialogs: true });
+const paused = await ag('set_speed', { speed: 'pause' });
+if (!paused.ok) throw new Error(`pause before setup failed: ${paused.error}`);
+// world conditions that skew measurements (agent test_env, docs/TESTING.md): the save's season, weather and moon play out;
+// winter / extreme cold (Sims freeze solid) becomes spring and a near full moon becomes first quarter. Before seeding so
+// a correction does not shift the seeded draws; the clock guard below repeats it every 30 s. --no-env turns it off.
+const env = values['no-env'] ? null : await ag('test_env', {});
+if (env && !env.ok) throw new Error(`test_env failed: ${env.error}`); // an agent without test_env would silently test another season
+if (env) console.log(`${stamp()} test_env: ${JSON.stringify(env.result)}`);
 const rng: any = { seed: values.seed === undefined ? null : Number(values.seed), reply: null, simMinutes: {} };
 if (rng.seed !== null) {
   const r = await ag('seed_rng', { seed: rng.seed });
@@ -57,6 +71,27 @@ if (rng.seed !== null) {
   console.log(`${stamp()} seed_rng: ${JSON.stringify(r.result)}`);
 }
 rng.simMinutes.start = (await ag('time')).result?.minutes_total ?? null;
+// fail fast (docs/TESTING.md): game time must move unless the game says it is paused; 2026-10-17 bp-p0-sync froze after its
+// save step twice and still "passed" with 39-47 stuck Sims. 2 checks 30 s apart without movement = FAIL.
+const clockGuard = (async () => {
+  let last = rng.simMinutes.start, misses = 0;
+  for (const end = Date.now() + secs * 1000; Date.now() < end;) {
+    await sleep(30000);
+    if (env) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
+      const g = (await ag('test_env', { min_days_to_full: 1 }).catch(() => null))?.result;
+      if (g?.changed?.length) console.log(`${stamp()} test_env guard: ${g.changed.join(', ')} (season ${g.season}, moon ${g.moon_phase})`);
+    }
+    const t = (await ag('time').catch(() => null))?.result;
+    if (!t || t.speed === 'Paused' || t.minutes_total !== last) { misses = 0; last = t?.minutes_total ?? last; continue; }
+    if (++misses < 2) continue;
+    console.log(`${stamp()} FAIL: sim clock stuck at day ${t.day_number} ${t.clock} for ~60 s (speed ${t.speed}; fail-fast guard)`);
+    // pause bits, game dt, speed and window state at the trip (docs/85 §6: minimize pause = bit 2, device pause = bit 4)
+    const cs = await ag('clock_state');
+    console.log(`${stamp()} clock_state at the trip: ${JSON.stringify(cs.ok ? cs.result : cs.error)}`);
+    prof.kill();
+    process.exit(1);
+  }
+})();
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
@@ -65,7 +100,10 @@ const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', 
 const plog = createWriteStream(`${pre}-${secs}.log`);
 prof.stdout.pipe(plog); prof.stderr.pipe(plog);
 const profDone = new Promise(r => prof.on('exit', r));
+// fail fast: the profiler stops itself after -t; one still running 90 s past that is hung, and the run would wait on it forever
+setTimeout(() => { if (prof.exitCode === null && prof.signalCode === null) { console.log(`${stamp()} FAIL: stutter profiler still running 90 s past -t ${secs}; killed (fail-fast guard)`); prof.kill(); } }, (secs + 90) * 1000).unref();
 
+await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true }); // window start: unpause to x3
 const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
@@ -74,11 +112,11 @@ const toggler = (async () => {
   for (let i = 0, on = true; i * Number(values.slice) * 60 < secs; i++, on = !on) {
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
-    const patchNames = abNames.filter(n => !nativeNames.includes(n) && n !== 'heightcache');
+    // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138 };
+    const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
-    // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4 };
     for (const n of abNames.filter(n => n in counterSwitches))
       await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${on ? 1 : 0}`);
     slices.push({ from: (Date.now() - t0) / 1000, on });
@@ -106,13 +144,15 @@ async function checkStuck() {
     const prev = simSeen.get(sim.id);
     const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     simSeen.set(sim.id, e);
-    if (!e.reported && sim.interaction && !endlessJob(sim.interaction) && e.checks >= (sim.routing ? 3 : 6)) {
+    if (!e.reported && mayBeStuck(sim.interaction, !!sim.routing) && e.checks >= (sim.routing ? 3 : 6)) {
       e.reported = true;
       stuck.push({ ...sim, checks: e.checks, shortcut: moved[sim.name] ?? false });
     }
   }
 }
 writeFileSync(`${pre}-upkeep.log`, '');
+writeFileSync(`${pre}-machine.jsonl`, '');
+const stopLoad = startMachineLoad(`${pre}-machine.jsonl`); // other processes and CPU clock (machine-load.ts)
 writeFileSync(`${pre}-activity.jsonl`, '');
 const upkeep = (async () => {
   while (Date.now() - t0 < secs * 1000) {
@@ -165,6 +205,8 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
 }
 if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
 await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun]);
+stopLoad();
+console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
 rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
 if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ?? false;
 writeFileSync(`${pre}-rng.json`, JSON.stringify(rng, null, 1));

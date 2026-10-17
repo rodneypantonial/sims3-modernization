@@ -9,6 +9,7 @@ using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
 using Sims3.Gameplay.Interfaces;
 using Sims3.SimIFace;
+using Sims3.SimIFace.Enums;
 using Sims3.UI;
 using Sims3.UI.GameEntry;
 
@@ -44,6 +45,8 @@ namespace Ts3Agent
             Dispatcher.Register("decline_requests", DeclineRequests);
             Dispatcher.Register("queues", Queues);
             Dispatcher.Register("seed_rng", SeedRng);
+            Dispatcher.Register("test_env", TestEnv);
+            RegisterFreshWorld();
             Dispatcher.Register("quiet_ui", QuietUi);
             Dispatcher.Register("autopilot", Autopilot);
             StartAutopilot();
@@ -397,13 +400,19 @@ namespace Ts3Agent
         // file: a save such as "Baseline-SV.sims3" from Documents\Electronic Arts\The Sims 3\Saves.
         static object LoadSave(Args a)
         {
-            if (GameStates.IsInWorld()) throw new McpException("already in a world; quit to the main menu first");
+            // reload: true loads another save from inside a world with EA's in-game load path (ReloadWorld), so several
+            // saves can be made in one game session (spring base saves, 2026-10-17)
+            bool reload = a.Bool("reload", false);
+            if (GameStates.IsInWorld() && !reload) throw new McpException("already in a world; quit to the main menu first, or pass reload: true");
             string file = a.Str("file");
             SaveGameMetadata info = new SaveGameMetadata();
             info.mSaveFile = file;
             if (!Sims3.Gameplay.UI.Responder.Instance.MainMenuModel.GetSaveFileDetails(ref info))
                 throw new McpException("unknown save '" + file + "'");
-            RunAsync("load_save " + file, delegate { GameStates.TransitionToGameStateToInWorld(file, info, InWorldState.SubState.LiveMode, true); });
+            if (GameStates.IsInWorld())
+                RunAsync("load_save " + file, delegate { GameStates.TransitionToGameStateReloadWorld(file, info, InWorldState.SubState.LiveMode, true); });
+            else
+                RunAsync("load_save " + file, delegate { GameStates.TransitionToGameStateToInWorld(file, info, InWorldState.SubState.LiveMode, true); });
             Dictionary<string, object> r = Util.Obj();
             r["loading"] = file;
             return r;
@@ -499,6 +508,76 @@ namespace Ts3Agent
                 mB = x ^ y ^ (x >> 17) ^ (y >> 26);
                 return (mB + y >> 11) * (1.0 / 9007199254740992.0);
             }
+        }
+
+        // test_env: world conditions that skew measurements, corrected without making runs unrealistic (Rodney, 2026-10-17:
+        // a Sim frozen solid in winter counted as stuck; the goal is no skew, not a fake world). Only the running session
+        // changes (forced season, weather queue, moon phase); no option is written.
+        // mode realistic (default): the save's own season, weather and moon play out; winter or extreme cold switches to spring
+        //   (freezing needs extreme cold), and a full moon closer than min_days_to_full (default 3) moves the moon to first
+        //   quarter. Idempotent: profile-world calls it again every 30 s as a guard (min_days_to_full 1 there).
+        // mode fixed: season (summer|fall|winter|spring, default summer), sunny weather for weather_hours (default 48),
+        //   moon_phase (0 full .. 7 waning crescent, LunarCycleManager.LunarPhase; default 2 first quarter): identical runs.
+        static object TestEnv(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            string mode = a.Str("mode", "realistic").ToLowerInvariant();
+            bool fixedMode = mode == "fixed", readOnly = mode == "read"; // read: report only (polling)
+            List<object> changed = new List<object>();
+            if (GameUtils.IsInstalled(ProductVersion.EP8))
+            {
+                if (readOnly) { }
+                else if (fixedMode)
+                {
+                    string s = a.Str("season", "summer").ToLowerInvariant();
+                    Season season = s == "fall" ? Season.Fall : s == "winter" ? Season.Winter : s == "spring" ? Season.Spring : Season.Summer;
+                    Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestSeason(season);
+                    Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestWeather(Weather.Sunny, (float)a.Double("weather_hours", 48));
+                    changed.Add("season and weather fixed");
+                }
+                else if (Sims3.Gameplay.Seasons.SeasonsManager.CurrentSeason == Season.Winter || Sims3.Gameplay.Seasons.SeasonsManager.IsExtremeCold())
+                {
+                    changed.Add("winter or extreme cold -> spring");
+                    if (Sims3.Gameplay.Seasons.SeasonsManager.CurrentSeason != Season.Spring)
+                        Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestSeason(Season.Spring);
+                    // the season switch keeps the running weather: snow or hail would keep it freezing into spring
+                    // (2026-10-17 first run: spring, snow, 21.5 degrees); end it with a few hours of sun, then the
+                    // spring weather queue takes over
+                    Weather w = Sims3.Gameplay.Seasons.SeasonsManager.CurrentWeather;
+                    if (w == Weather.Snow || w == Weather.Hail)
+                    {
+                        Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestWeather(Weather.Sunny, 6f);
+                        changed.Add("snow or hail -> 6 h sun");
+                    }
+                }
+                r["season"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentSeason.ToString();
+                r["weather"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentWeather.ToString();
+                r["temperature"] = Sims3.Gameplay.Seasons.SeasonsManager.Temperature;
+                r["snow_level"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentSnowLevel.ToString();
+            }
+            else r["season"] = "Seasons (EP8) not installed";
+            if (GameUtils.IsInstalled(ProductVersion.EP7))
+            {
+                if (readOnly) { }
+                else if (fixedMode)
+                {
+                    int phase = (int)a.Long("moon_phase", 2);
+                    if (phase < 0 || phase > 7) throw new McpException("moon_phase must be 0..7");
+                    World.ForceLunarPhase(phase);
+                    changed.Add("moon phase fixed");
+                }
+                // GetNumDaysUntilFullMoon returns -1 after a forced phase (2026-10-17): unknown, not "today"
+                else if (World.GetLunarPhase() == 0 || (World.GetNumDaysUntilFullMoon() >= 0 && World.GetNumDaysUntilFullMoon() < a.Long("min_days_to_full", 3)))
+                {
+                    changed.Add("full moon near -> first quarter");
+                    World.ForceLunarPhase(2);
+                }
+                r["moon_phase"] = World.GetLunarPhase();
+                r["days_to_full_moon"] = World.GetNumDaysUntilFullMoon();
+            }
+            else r["moon_phase"] = "Supernatural (EP7) not installed";
+            r["changed"] = changed;
+            return r;
         }
 
         // seed_rng {seed}: swap RandomGen.gRandomGen (every RandomUtil draw) for a seeded stream; {seed: null} puts the

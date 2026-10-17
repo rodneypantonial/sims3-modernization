@@ -1,6 +1,6 @@
 # 74. Script hot spots: Stereo, motive panel, tooltips and other cheap wins (PLAN gap 8)
 
-PLAN.md "Gaps" item 8 named three managed hot spots from the older pooled samples: `Stereo.AddEnjoyingMusicCallback` 1.8%, `SimInfo.OnMotivesChanged` 1.1%, `TooltipManager` 0.5% of sim-thread samples. This doc re-measures them in the trusted 2026-10-16 samples, explains why each is hot from the extracted script DLLs, designs the smallest in-place fix that keeps game results identical, and adds the other cheap wins of the same kind from the top of the managed list. No game run was made and nothing was built; `mods/` is untouched.
+PLAN.md "Gaps" item 8 named three managed hot spots from the older pooled samples: `Stereo.AddEnjoyingMusicCallback` 1.8%, `SimInfo.OnMotivesChanged` 1.1%, `TooltipManager` 0.5% of sim-thread samples. This doc re-measures them in the trusted 2026-10-16 samples, explains why each is hot from the extracted script DLLs, designs the smallest in-place fix that keeps game results identical, and adds the other cheap wins of the same kind from the top of the managed list. No game run was made. The four new fixes were built afterwards (2026-10-16, §10), opt-in and not yet run in game.
 
 Tags: [verified] = read in the decompiled script DLLs (`game-copy/decompiled/`, from `tools/extract-assemblies.ts`; not copied here); [measured] = managed samples from the runs below; [inferred] = reasoning from both, not checked live.
 
@@ -59,6 +59,7 @@ Rejected: skipping bars whose inputs did not change (the motive values decay on 
 - What changes for the player: a tooltip may appear up to 100 ms later than its 1.5 s delay, and a tooltip whose text is set while the cursor stands still appears up to 100 ms later. Below what anyone can see [inferred].
 - Saving: with the cursor still, 33-44 walks/s become 10/s, ~70-77% of the cost; with the cursor moving, nothing changes. ~0.4-0.5% = 4-5 ms/s with the mouse idle [inferred].
 - Risk to check first: the task starts at UI init, possibly before `Ts3Fixes.Instantiator`'s static constructor patches methods. If `Simulate` is already running, the patch helper's "already compiled" guard refuses it and `ts3fixes.applied` says so. Fallback in that case: at world load, destroy the running `TooltipManager` (found through `Simulator` by type) and add a new one, which runs the patched body. Decide after reading `ts3fixes.applied` from one load [inferred: order unknown].
+- **As built (§10):** the gate sits on `Sims3.UI.UIManager.GetWindowFromPoint` instead of a replaced `Simulate`. When that lookup returns null the game's loop just sleeps one tick and changes no state [verified], so answering null to the tooltip task (identified by `Simulator.CurrentTask`) while the cursor rests and < 100 ms passed is the same gate without copying the loop. The restart fallback above would not work: `Patch` refuses any method already compiled, and a new `TooltipManager` would run the same compiled `Simulate`. So a refused patch leaves the fix inert, and `Apply` logs `TooltipManager.Simulate at patch time: already running / not started` to answer the order question from the first load.
 
 ## 6. Other cheap wins from the top of the managed list
 
@@ -123,9 +124,9 @@ All new fixes follow the house pattern: tuning switch default **off** until meas
 
 Repro entries to add with the build (memory `repro-actions`): `detail-priority-cache` (switch active household / travel a Sim between lots: counters rise, mismatches 0), `cane-early-out` (an elder with a cane runs and walks), `hours-memo` (bar lot with a bachelor party starting), `tooltip-throttle` (counters only; no mouse).
 
-## 8. Counter slots needed (not reserved)
+## 8. Counter slots (reserved 2026-10-16 in docs/registry.md, array raised to 90)
 
-Next free ts3fixes slot is **80** (docs/registry.md, 2026-10-16). The build needs 10 slots and must raise the array from 80 to 90 in both `Fixes.cs` and `PatchHandlers.cs`:
+The build took the 10 slots from 80 and raised the array from 80 to 90 in both `Fixes.cs` and `PatchHandlers.cs`:
 
 | Proposed | Switch | Meaning |
 |---|---|---|
@@ -134,8 +135,22 @@ Next free ts3fixes slot is **80** (docs/registry.md, 2026-10-16). The build need
 | 85-87 | `hoursmemo` | memo hits, misses, mismatches (verify) |
 | 88-89 | `tooltipthrottle` | walks skipped, walks run |
 
-Not reserved here: reserve at build time in the PR (registry rule 1), since other lanes may take 80+ first. No ts3native counters are needed.
+Agent `patches` keys: `detailprio_hits/_sets/_mismatches`, `caneearly_skipped/_passed`, `hoursmemo_hits/_misses/_mismatches`, `tooltipthrottle_skipped/_walks`. No ts3native counters are needed.
 
 ## 9. Ledger
 
 Rows I-74-1 to I-74-8 in docs/51 §8.
+
+## 10. Build status (2026-10-16, not run in game)
+
+| Fix | Hook | Tuning (default) | Switches | Counters | Repro |
+|---|---|---|---|---|---|
+| §6.1 detail priority | `Lot.CalculateDetailPriority` | `kDetailPriorityCache` (off) | `detailprio`, `detailprioverify` | 80-82 | `detail-priority-cache` |
+| §6.2 cane early-out | `Cane.SimRequiresCaneWalk` | `kCaneEarlyOut` (off) | `caneearly` | 83-84 | `cane-early-out` |
+| §6.3 hours memo | `Lot.GetHoursOfOperation(ref, ref)` | `kHoursMemo` (off) | `hoursmemo`, `hoursmemoverify` | 85-87 | `hours-memo` |
+| §5 tooltip throttle | `Sims3.UI.UIManager.GetWindowFromPoint` | `kTooltipThrottle` (off) | `tooltipthrottle` | 88-89 | `tooltip-throttle` |
+
+- Code: `mods/ts3fixes/src/ScriptHotSpots.cs` (hooks), `TickMemo.cs` (game-independent `TickStamp`, `RefSet`, `HoursMemo`, `PollGate`); offline self-test `node tools/selftest/hotspots/run.ts` (stamp rules incl. clock wrap, reference set vs a list model, hours memo vs a write-only-on-true model over 50k calls, poll gate) passes.
+- Verify switches check **one answer in 8** against the game's method and return the game's answer, so an A/B half with verify on keeps most of the saving; a mismatch is counted, not logged per lot (deviation from §7 step 2's "logged with the Sim or lot id": cheaper, and the allowed causes are rare).
+- Tick memos follow `SpatialCache.cs`: rebuilt on a new `Simulator.TicksElapsed()`, after 100 ms of wall time, on an active-household change (detail priority), and never kept while paused.
+- Draft queue `tools/harness/queues/ts3fixes-hotspots.json` (BP + IP, 12 min, bundle `--ab detailprio,hoursmemo,caneearly,tooltipthrottle`, 3-min slices, repro `hotspots-verify` turns both verify switches on for the load); `queue.ts --dry-run` parses it. Not run. The `--ab` mode runs no managed sampler, so the share drop per frame (I-74-4, I-74-8) needs a second, sampler run (`profile-world` without `--ab`, switch on vs off) once the mismatch check passes.

@@ -1,0 +1,10 @@
+[
+  { "id": "bp-native-batch3", "note": "PLAN Next 3, native fix batch 3 (0.10.10, counters v24), one bundle load in BP: #11 [LotSinCos] and #22 [IdCache] alternate on/off together every 3 min (--ab lotsincos,idcache), both with Verify=1 (first live run: every hit is checked against the game's code, so the on slices pay for a second computation). [Alloc] stays off until batch 2 passes. Pass: no crash, 0 stuck Sims, lscMismatches = 0, idcMismatches = 0, lscHitsK/lscCallsK > 0.9, idcHitsK > 0, idcErases > 0, chain length idcStepsK / (idcFillsK + idcNotFoundK) recorded; then a Verify=0 rerun for the timing A/B",
+    "asi": "game-copy/ts3native.asi.batch3", "save": "Baseline-BP", "minCounters": 24,
+    "ini": { "LotSinCos.Enabled": 1, "LotSinCos.Verify": 1, "IdCache.Enabled": 1, "IdCache.Verify": 1 },
+    "run": { "profile": { "minutes": 12, "ab": "lotsincos,idcache", "slice": 3 } }, "timeoutMin": 30 },
+  { "id": "ip-native-batch3", "note": "the same bundle in IP (second world: houseboats, water, other lot density and angles)",
+    "asi": "game-copy/ts3native.asi.batch3", "save": "Baseline-IP", "minCounters": 24,
+    "ini": { "LotSinCos.Enabled": 1, "LotSinCos.Verify": 1, "IdCache.Enabled": 1, "IdCache.Verify": 1 },
+    "run": { "profile": { "minutes": 12, "ab": "lotsincos,idcache", "slice": 3 } }, "timeoutMin": 30 }
+]

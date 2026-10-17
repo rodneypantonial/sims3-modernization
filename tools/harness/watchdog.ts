@@ -7,8 +7,9 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { endlessJob } from './stuck-rule.ts';
+import { parseArgs } from 'node:util';
+import { mayBeStuck } from './stuck-rule.ts';
+import { sampleGame, stallStep } from './game-alive.ts';
 
 const { values } = parseArgs({ options: {
   every: { type: 'string', default: '1' }, port: { type: 'string', default: '47891' }, 'min-free-mb': { type: 'string', default: '300' },
@@ -59,7 +60,7 @@ async function checkSims(): Promise<void> {
     const entry = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     simSeen.set(s.id, entry);
     const limit = s.routing ? 3 : 6; // routing without moving for ~1 sim day, or one activity for ~2 sim days
-    if (!entry.reported && s.interaction && !endlessJob(s.interaction) && entry.checks >= limit) {
+    if (!entry.reported && mayBeStuck(s.interaction, !!s.routing) && entry.checks >= limit) {
       entry.reported = true;
       log(`STUCK SIM? ${s.name} on "${s.interaction}" at (${s.x}, ${s.z}) ${s.lot ?? ''}${s.routing ? ' while routing' : ''} for ${entry.checks} checks (queue ${s.queue})`);
       appendFileSync(STUCK_FILE, JSON.stringify({ time: stamp(), checks: entry.checks, ...s }) + '\n');
@@ -87,6 +88,7 @@ function fail(reason: string, details: string[]): never {
 
 let lastMinutes: number | null = null;
 let stalledChecks = 0;
+const outside = { last: null as string | null, misses: 0 }; // fail-fast state for checks out of a world
 log(`watchdog started, checking every ${values.every} min`);
 for (;;) {
   await sleep(Number(values.every) * 60000);
@@ -107,12 +109,17 @@ for (;;) {
     `dialog: ${dialog?.ok ? (dialog.result.open ? JSON.stringify(dialog.result.dialog.text?.[0] ?? '').slice(0, 80) : 'none') : 'unavailable'}`,
   ];
 
-  if (!(state.ok && state.result.in_world)) { // menu or loading: nothing to judge yet
-    log(`not in a world yet (main menu or loading) | ${summary.join(' | ')}`);
+  if (!(state.ok && state.result.in_world)) { // menu, loading, or the agent not answering: no clock to judge
+    // fail fast: two checks in a row with nothing moving (heartbeat, world flag, committed MB, ts3native.log) = hung,
+    // not loading; before, this branch logged "not in a world yet" forever while a hung game sat at the soak deadline
+    const why = stallStep(outside, await sampleGame(Number(values.port)));
+    log(`not in a world yet (main menu or loading)${outside.misses ? ` and nothing moved (${outside.misses})` : ''} | ${summary.join(' | ')}`);
+    if (why) fail(`out of the world and ${why} for ${outside.misses} checks`, [...summary, `sim thread: ${await simStack()}`]);
     lastMinutes = null;
     stalledChecks = 0;
     continue;
   }
+  outside.last = null; outside.misses = 0;
   const saveAge = savingFor();
   if ((saveAge !== null && saveAge < SAVE_GRACE_MS) || state.result.save_in_progress) { // a save pauses the clock
     log(`saving (${saveAge !== null ? Math.round(saveAge / 1000) + ' s' : 'in progress'}); stall rule paused for up to 3 min | ${summary.join(' | ')}`);

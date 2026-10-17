@@ -3335,3 +3335,70 @@ address,name,type,comment
 0x005DE360,ModelBuilder_DeletingDtor,function,"[verified: disassembly] ModelBuilder_Dtor then EA_Free when arg bit 0 <docs/67>"
 0x005D7C20,ModelBuilder_Ctor,function,"[verified: xref to vtable 0xFE3DC8] Constructor; callers SimBuilder 0x5DFE70/0x5E3CF0 and SimOutfit 0x5E8770 <docs/42, 67>"
 0x005F0820,SimService_ReleaseRequestRefs,function,"[unverified: name inferred from the disassembly] Called only by SimService_Update; releases request members (+0x1C, +0x20 via vtable +4); last release of a ModelBuilder in crash 2026-10-15 <docs/67>"
+0x00627E00,LotTable_Find,function,"[verified: disassembly] Read-only bucket walk of the lot table (count +8, buckets +4, next node+0x190, 8-byte key at node+0); writes only the caller's iterator <docs/80>"
+0x0062EF30,LotXformA_XY,function,[verified: decompiled] LotTable_GetOrInsert then XY through the lot matrix at entry+0xA0..+0xD8; pure read; steering hot path <docs/80>
+0x0062ED40,LotXformA_XYZ,function,[verified: decompiled] As LotXformA_XY for a 3-vector (z copied) <docs/80>
+0x0062EC00,LotXformB_XY,function,[verified: decompiled] XY through the second lot matrix at entry+0xE0..+0x118; pure read <docs/80>
+0x0062EB40,LotXformB_XYZ,function,[verified: decompiled] As LotXformB_XY for a 3-vector (z copied) <docs/80>
+0x0062FB60,LotTable_GetIfPresent,function,[verified: decompiled] LotTable_Contains then LotTable_GetOrInsert (never inserts); returns the lot graph or 0 <docs/80>
+0x0062FB10,LotTable_GetCellGraph,function,[verified: decompiled] Lot graph per-level cell graph from the vector at entry+0x74 (index minus entry+0x40) <docs/80>
+0x0062F760,LotRouting_PortalsForObject,function,[verified: decompiled] Copies matching portal pointers from entry+0x44 into a vector and AddRefs each through vtable slot 0 (plain refcount) <docs/80>
+0x0062F600,LotRouting_FindFootprintByKey,function,[verified: decompiled] Footprint lookup by key; plain +1/-1 on footprint refcounts <docs/80>
+0x00AB9580,World_SurfaceTypeAtPoint,function,"[verified: decompiled] Surface enum at a point (strings cment, concrete, grass, ...); flag 0x20 goes to RoutingWorld_SurfaceAtPoint <docs/80>"
+0x00834B80,RoutingWorld_SurfaceAtPoint,function,[verified: decompiled] Per-lot footprint query at a point (0x631FD0) then lot graph +0x164; no world+0x918 <docs/80>
+0x008341D0,RoutingWorld_EnsureTerrainFootprints,function,[unverified: name inferred from the decompile] LotTable_GetIfPresent then RoutingWorld_UpdateTerrainFootprints when needed (takes world+0x918) <docs/80>
+0x008693E0,FootstepAudio_Surface,function,"[unverified: name inferred from strings Audio/TempObjectList, puddle] Calls World_SurfaceTypeAtPoint with flags 0x27; from vtable 0x1029664 entry 0x86C000 <docs/80>"
+0x0082E340,RoutingWorld_BlockerCheck2d,function,[verified: decompiled] Lot transforms then 0x631E20 portal-check gather and Realm_RangeQuery; no world+0x918; from IC_RouteManager_RoutingBlockerCheck2d and vtable 0x1045A14 entry 0x970200 <docs/80>
+0x00667480,LotQuadTree_QueryPoint,function,[verified: decompiled] thiscall on the per-level lot quadtree: Q+0x48 += 1 around the walk 0x663E20; flushes deferred changes (0x666A40) when Q+0x48 < 1 <docs/81>
+0x00667400,LotQuadTree_QuerySegment,function,[verified: decompiled] Segment variant of 0x667480 (walk 0x663B20); same Q+0x48 counter and flush <docs/81>
+0x00666A40,LotQuadTree_FlushDeferred,function,[verified: decompiled] If Q+0x4C is set: applies queued inserts (0x665C50) and removes (0x666750) from the maps at [Q+0x20]+0x30/+0x3C; clears Q+0x4C <docs/81>
+0x00666C50,LotQuadTree_Insert,function,[verified: decompiled] Q+0x48 < 1: flush then insert now; else set Q+0x4C and queue <docs/81>
+0x00666E30,LotQuadTree_Remove,function,[verified: decompiled] Q+0x48 < 1: flush then remove now; else set Q+0x4C and queue <docs/81>
+0x00666F70,LotQuadTree_Pin,function,[verified: disassembly] Plain add [Q+0x48] 1 (pin against flush) <docs/81>
+0x00631F10,LotRouting_FootprintsNearPoint,function,[verified: decompiled] thiscall on lot planner P: LotTable_Contains; 0x62FB10 quadtree for the level; 0x62ED40 transform; 0x667480. Called by RoutingWorld_ObstacleQuery <docs/81>
+0x00631E20,LotRouting_FootprintsAlongSegment,function,[verified: decompiled] Segment variant of 0x631F10 (0x667400). Called by GoalFootprintGather and BlockerCheck2d (no +0x918 there) <docs/81>
+0x00631BF0,LotRouting_PinLotQuadTrees,function,[verified: call sites] From LotPlan_Inner 0x63FB79; reaches 0x62FB90 -> LotQuadTree_Pin <docs/81>
+0x0063C5B0,LotRouting_UnpinLotQuadTrees,function,[verified: decompiled] P+200 -= 1; 0x662CF0 (Q+0x48 -= 1) on every level; 7 call sites in LotPlan_Inner <docs/81>
+0x00AAC090,FootprintRefVec_ReleaseRange,function,[verified: decompiled] Plain -1 on [fp+4] per element; vtable slot 0 delete at zero <docs/81>
+0x01044590,vt_LocomotionAgent,data,[verified: unique .rdata match of slot signatures plus code reference] Locomotion agent vtable; +0x60 obstacle ids (0x954750) and +0x64 goal obstructed (0x954790) forward to the listener at [agent+0x90] <docs/82>
+0x00954750,LocomotionAgent_NotifyObstacles,function,[verified: disassembly] Agent vtable +0x60 from Locomotion_UpdateAgent 0x9573DB; forwards id list to listener slot 0 <docs/82>
+0x00954790,LocomotionAgent_NotifyGoalObstructed,function,[verified: disassembly] Agent vtable +0x64 from ObstacleAvoidance 0x8476AD; listener slot +8 with route event type 0x12 <docs/82>
+0x010047CC,vt_Route,data,"[unverified: role inferred from IC_Route_CreateRoute and slot signatures] Native Route object vtable; agent listener at [agent+0x90] <docs/82>"
+0x0074B280,Route_OnObstacleIds,function,[verified: disassembly] Route vtable slot 0: forwards to 0x796580 (World_FireEvent 0x3A) <docs/82>
+0x007521B0,Route_OnRouteEvent,function,[verified: decompiled] Route vtable slot 8: lock route+0xB0; progress fields; then 0x791510 (World_FireEvent 0x39) <docs/82>
+0x00796580,Route_FireObstacleEvent,function,[verified: disassembly] Variant array of object ids then World_FireEvent(0x3A) <docs/82>
+0x00791510,Route_FireRouteEvent,function,[verified: disassembly] Variant args then World_FireEvent(0x39) <docs/82>
+0x0080E5B0,Footprint_EnsureLevelPolygons,function,[verified: disassembly] Lazy per-level polygon cache at [fp+0x38]+lvl*0x24 (valid byte +0x20); rebuild via vtable +0xF8/+0xFC; also called by RouteFollow_EditPath 0x85FA50 <docs/82>
+0x0080E610,Footprint_EnsureAllPolygons,function,[verified: disassembly] Footprint vtable +0x70: all levels; called by quadtree apply-insert 0x665D36 <docs/82>
+0x0080E0B0,Footprint_InvalidatePolygons,function,[verified: disassembly] Footprint vtable +0x18: clears the valid byte of every level <docs/82>
+0x00807A20,Footprint_BaseCtor,function,[verified: disassembly] Footprint base constructor (outer 0x10205B8; sub-object at +4 with refcount at +8) <docs/82>
+0x0080EED0,Footprint_MidCtor,function,[verified: disassembly] Middle footprint constructor (outer 0x1020AE8); 17 callers <docs/82>
+0x0080F3D0,Footprint_Dtor,function,[verified: disassembly] Footprint destructor; 0x80F2F0 takes global lock 0x11D9068 <docs/82>
+0x00669CD0,LotQuadTree_FootprintVisitor,function,"[verified: disassembly] Quadtree walk visitor body (via 0x662DD0/0x662DB0): masked list 0x669230, leaf list 0x669850 or children 0x669B90 <docs/83>"
+0x00669230,LotQuadTree_CollectMasked,function,[verified: decompiled] Leaf entry list filtered by a 64-bit mask bit; addrefs footprints into the set and a local list <docs/83>
+0x00669850,LotQuadTree_CollectLeaf,function,[verified: decompiled] Leaf entry list collector; footprint slots +0x60/+0x28/+8/+0xC; set insert or local list (+0x90/+0x94) <docs/83>
+0x00669B30,LotQuadTree_CollectSubtree,function,[verified: disassembly] Leaf: tail jump to 0x669850; else recurse into the 4 children at node+0xC <docs/83>
+0x00669B90,LotQuadTree_CollectChildren,function,[verified: disassembly] Calls 0x669B30 for the 4 children at node+0xC <docs/83>
+0x00665C50,LotQuadTree_ApplyInsert,function,"[verified: decompiled] Creates one FootprintMapEntry per level (footprint ref at entry+8, 0x665D99), links it into tree nodes (0x6653A0); called by Flush and Insert only <docs/83>"
+0x00666750,LotQuadTree_ApplyRemove,function,[verified: callers] Unlinks and releases FootprintMapEntry objects (0x666010); called by Flush and Remove only <docs/83>
+0x0061ECF0,FootprintMapEntry_ctor,function,"[verified: disassembly] ""Routing/FootprintMapEntry"" (0x14 bytes, vtable 0xFEAC7C, refcount +4, footprint +8, quadtree +0xC, level/flags +0x10) <docs/83>"
+0x0061ED10,FootprintMapEntry_DeletingDtor,function,[verified: disassembly] Releases the quadtree (+0xC slot 4) and the footprint (+8 slot +0x94); pool lock 0x11CEFA8 <docs/83>
+0x00FEAC7C,vt_FootprintMapEntry,data,[verified: constructor store 0x61ECF7] FootprintMapEntry vtable; slot 0 = 0x61ED10 <docs/83>
+0x00628340,FootprintSet_Insert,function,[verified: decompiled] Red-black tree insert keyed by footprint pointer (node alloc and +0x90 in 0x626B70) <docs/83>
+0x00626B70,FootprintSet_InsertNode,function,[verified: disassembly] Allocates a set node and addrefs the footprint (+0x90 at 0x626BCF) <docs/83>
+0x006282F0,FootprintSet_FreeTree,function,[verified: decompiled] Frees the set tree; +0x94 release per node <docs/83>
+0x00915880,RefCounted_AddRefAt8,function,[verified: disassembly] Non-atomic ++[this+8] (footprint outer slot +0x90) <docs/83>
+0x0080F6A0,Footprint_SetLevelPolygons,function,"[verified: disassembly] Stores a level's polygons (0x80BA90), +0xFC bounds, then valid byte +0x20 = 1; callers LotGraph_Build, 0x639DE0, 0x63A1C0, footprint writers <docs/83>"
+0x0085FF30,RouteFollow_EditPathForRoute,function,"[verified: callers] Calls RouteFollow_EditPath (return 0x85FFC7); from Route_PlanCommon 0x760F92 after Route_PlanLocked, and from IC_Route_SetAGS/Insert*PathAtIndex <docs/83>"
+0x00572400,IdVec_PushBack,function,[verified: disassembly] Appends an 8-byte object id to a vector (grow in 0x572260) <docs/83>
+0x0085AAA0,IdList_Contains,function,[verified: disassembly] Linear search of an (id lo/hi) array of n entries <docs/83>
+0x0080E690,Footprint_SegmentHitsLevel,function,"[verified: decompiled] Footprint slot +0xE8: level <= slot 0 count, 0x80E5B0 if the level cache is invalid, segment vs polygons (0x7CE550) <docs/83>"
+0x00C8ADD0,Object_UpdateLotMembership,function,"[verified: decompiled] Stores a new lot id in the lot component (+8/+0xC) when it differs, then 0xC89AB0 and 0xC8A290 (World_FireEvent 0x11); reached from AddDiscourageFootprint <docs/84>"
+0x00C8A290,Object_FireLotChangedEvent,function,"[verified: decompiled] World_FireEvent(0x11) with the object id and lot data when the object has a script component <docs/84>"
+0x00947A90,FootprintComp_SetPolygon,function,"[verified: decompiled] Footprint component: swap polygon pointer +0x2C (AddRef/Release), rebuild array +0x48 from the 0x9342D0 list <docs/84>"
+0x00807110,Footprint_SetLockKeyObject,function,"[verified: disassembly] Footprint slot +0x8C: replaces the refcounted object at +0x20 (plain refcounts); role from RouteManager_FootprintLockKeyApply [inferred] <docs/84>"
+0x00663E20,LotQuadTree_WalkPoint,function,"[verified: decompiled] Per-level quadtree walk around a point and radius (cell test 0x66A8E0), visitor callback per hit cell; writes only its stack iterators <docs/84>"
+0x00631FD0,LotRouting_FootprintsAtPointNoLock,function,"[verified: decompiled] Contains, 0x62FB10, QueryPoint 0x667480 without world+0x918; only caller RoutingWorld_SurfaceAtPoint <docs/84>"
+0x0062DDB0,LotTable_Erase,function,"[verified: only caller LotGraph_Reset 0x62E420] Erase of the lot table node found by LotTable_Find [inferred from the call order] <docs/84>"
+0x00635700,LotRouting_RemoveObjectFootprints,function,"[verified: decompiled] Removes an object's footprints from the lot quadtrees per level (0x6649C0, 0x635440, 0x6675B0) and marks the lot (0x62D9F0) <docs/84>"
+0x0066A8E0,QuadTreeCell_HitsCircle,function,"[verified: decompiled] Cell iterator vs point and radius test used by LotQuadTree_WalkPoint <docs/84>"

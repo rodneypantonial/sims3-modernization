@@ -20,7 +20,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import assert from 'node:assert/strict';
 import { focusGame } from './focus-game.ts';
-import { watchGame } from './game-alive.ts';
+import { GUARD_MS, watchGame } from './game-alive.ts';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'tests');
@@ -169,6 +169,8 @@ if (only.includes('B')) {
   prof.stdout.on('data', d => profLog += d); prof.stderr.on('data', d => profLog += d);
   let profExited = false;
   const profDone = new Promise(r => prof.on('exit', () => { profExited = true; r(null); }));
+  // fail fast: the profiler stops itself after -t; one still running 60 s past that is hung and would block forever
+  setTimeout(() => { if (!profExited) { profLog += '\nNOT PROFILING: killed, still running 60 s past -t (fail-fast guard)\n'; prof.kill(); } }, (B_SECONDS + 5 + 30 + 60) * 1000).unref();
   for (const due = Date.now() + 30000; !profLog.includes('hooks installed') && !profExited && Date.now() < due;) await sleep(250);
   const t0 = Date.now(); // B window starts once the profiler is hooked: its attach hitches stay out of the stats
   await sleep(B_SECONDS * 1000);
@@ -198,13 +200,19 @@ if (only.includes('C')) {
       const q = await ag(cmd, cmd === 'sim_visit_lot' ? { sim, lot: target } : { sim });
       const dest = cmd === 'sim_visit_lot' ? q.result?.lot : q.result?.home;
       if (!q.ok || !dest || q.result?.queued === false) { legs.push({ leg, error: q.error ?? `not queued: ${JSON.stringify(q.result)}` }); break; }
-      let arrived = 0;
+      let arrived = 0, idle = 0, nextCheck = Date.now() + GUARD_MS, dropped = '';
       while (!arrived && Date.now() - t0 < TRIP_TIMEOUT_S * 1000) {
         await sleep(2000); // shortcut: arrival known to ~2 s; the arrival window below is wider than that
         const me = ((await ag('sims_activity')).result ?? []).find((x: any) => x.name === sim);
         if (me?.lot === dest) arrived = Date.now();
+        // fail fast: every 30 s the Sim must still have an interaction (the trip); none twice in a row (~1 min) = dropped
+        else if (me && Date.now() >= nextCheck) {
+          nextCheck = Date.now() + GUARD_MS;
+          idle = me.interaction ? 0 : idle + 1;
+          if (idle >= 2) { dropped = `trip dropped: ${sim} idle (no interaction) for ~${2 * GUARD_MS / 1000} s, not at ${dest} (fail-fast guard)`; break; }
+        }
       }
-      legs.push({ leg, cmd, dest, t0, arrived: arrived || null, tripS: arrived ? (arrived - t0) / 1000 : null });
+      legs.push({ leg, cmd, dest, t0, arrived: arrived || null, tripS: arrived ? (arrived - t0) / 1000 : null, ...(dropped ? { error: dropped } : {}) });
       if (!arrived) break;
       await sleep(10000); // the lot settles: streaming hitches often land just after arrival
     }
@@ -251,7 +259,7 @@ if (only.includes('E')) {
   const name = `TestE-${tag}`, dir = join(SAVES, `${name}.sims3`);
   const t0 = Date.now();
   const q = await ag('save_game', { name });
-  let sawSaving = false, done = 0, unanswered = 0;
+  let sawSaving = false, done = 0, unanswered = 0, idle = 0, nextCheck = Date.now() + GUARD_MS, never = '';
   while (q.ok && !done && Date.now() - t0 < SAVE_TIMEOUT_S * 1000) {
     await sleep(250);
     const s = await ag('game_state', undefined, 5000);
@@ -259,6 +267,9 @@ if (only.includes('E')) {
     if (s.result.save_in_progress) sawSaving = true;
     // shortcut: a save quicker than one poll is caught by the file being written after t0
     else if (sawSaving || (existsSync(dir) && statSync(dir).mtimeMs > t0)) done = Date.now();
+    // fail fast: answering, not saving, nothing written, at two checks ~30 s apart = the save never started
+    else if (Date.now() >= nextCheck && ++idle >= 2) { never = `save never started: not in progress and no file written for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; break; }
+    if (Date.now() >= nextCheck) nextCheck = Date.now() + GUARD_MS;
   }
   const files = existsSync(dir) ? readdirSync(dir).map(f => statSync(join(dir, f))) : [];
   const bytes = files.reduce((a, f) => a + f.size, 0);
@@ -266,7 +277,7 @@ if (only.includes('E')) {
   const ok = q.ok && !!done && files.length > 0;
   write('E', { name, dir, ok, error: q.error, saveS: done ? (done - t0) / 1000 : null, lastWriteS, sizeMB: Math.round(bytes / 1048576 * 100) / 100,
     unansweredPolls: unanswered }, ok ? `saved in ${(done - t0) / 1000} s (last file write ${lastWriteS} s), ${Math.round(bytes / 1048576 * 100) / 100} MB, ${unanswered} polls unanswered`
-    : `FAILED: ${q.error ?? (done ? 'no save files' : `still saving after ${SAVE_TIMEOUT_S} s`)}`);
+    : `FAILED: ${q.error ?? (done ? 'no save files' : never || `still saving after ${SAVE_TIMEOUT_S} s`)}`);
 }
 await alive.check();
 console.log(`${stamp()} done; game ${(await ag('game_state')).ok ? 'alive' : 'NOT answering'}`);

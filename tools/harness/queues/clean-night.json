@@ -1,0 +1,340 @@
+[
+  {
+    "id": "bp-env-off",
+    "note": "Fresh baseline in the realistic test_env (winter/extreme cold -> spring, full moon -> first quarter): async installed, Mode 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-env-on",
+    "note": "Same with async + job queue + design D on (0.12.4)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-env-on",
+    "note": "Isla Paradiso, realistic test_env, async + queue + D on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-env-off",
+    "note": "Isla Paradiso, realistic test_env, async Mode 0 (first IP run of the queue + D build)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 0,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ab-routeasync",
+    "note": "In-load A/B: async Mode 1 on/off every 2 min, one load (rules out load-to-load noise)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345,
+        "ab": "routeasync",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ab-routeasync",
+    "note": "In-load A/B: async Mode 1 on/off every 2 min, one load (rules out load-to-load noise)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345,
+        "ab": "routeasync",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h6m1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 30,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-clock-minimize-pause",
+    "note": "docs/85 §6: does minimizing the game window pause the sim clock (pause bit 2) and restoring resume it? ~90 s of steps",
+    "asi": "tested",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "repro": "clock-minimize-pause"
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 15
+  },
+  {
+    "id": "bp-s2-shadow",
+    "note": "Design S2 shadow (0.13.0, counters v31): clone vs game outside jobs; pass = steerShadowMismatch 0, steerShadowQueryMismatch 0, steerShadowRuns > 1000, 0 watchdog lines, vfRtQtBare 0; C-A observe-only (T-L5 caSimInJob)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 0,
+      "SteerRO.Shadow": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 31,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2-on",
+    "note": "Design S2 on + shadow (0.13.0): pass = steerTaken > 0, steerSimWriteInRo/steerSeqSkew/steerUntracked 0, shadow mismatches 0, blockKey 0x85FE10 near 0; compare iterations/s and blockUs with bp-env-on (only if both machine load lines ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 1,
+      "SteerRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 31,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p1b",
+    "note": "Probe P1b observe (0.14.0, counters v32): gate-12/gate-0 waits by second frame, T-L3 portalRef, T-L5 caSimInJob; pass = node tools/harness/p1b-report.ts PASS on both checks, ltQlHeldBlock 0, 0 watchdog lines, game alive",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-p1b",
+    "note": "Probe P1b observe on Isla Paradiso (0.14.0): as bp-p1b",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-l1-shadow",
+    "note": "Design L1 shadow (0.14.0): clone vs game outside jobs; pass = ltShadowMismatch 0, ltShadowRuns > 100, ltQlHeldBlock 0, 0 watchdog lines (P1b on: 0x631814 second frames show 0x788373)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "LotFrontDoorRO.Enabled": 1,
+      "LotFrontDoorRO.Mode": 0,
+      "LotFrontDoorRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-l1-on",
+    "note": "Design L1 on + shadow (0.14.0): pass = ltTaken > 0, ltShadowMismatch 0, ltQlHeldBlock 0, P0 blockKey 0x631814 near 0; compare total blockUs and iterations/s with bp-p1b (only if both machine load lines ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "LotFrontDoorRO.Enabled": 1,
+      "LotFrontDoorRO.Mode": 1,
+      "LotFrontDoorRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

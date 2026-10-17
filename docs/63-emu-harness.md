@@ -8,7 +8,7 @@ Tags: **[verified]** = shown by a harness run or the disassembly; **[inferred]**
 
 ```
 pip install unicorn capstone            # tested with unicorn 2.1.4, capstone 5.0.9, Python 3.15
-python tools/emu/run.py --self-check    # the three example specs below + a negative check of the harness
+python tools/emu/run.py --self-check    # the five example specs below + a negative check of the harness
 python tools/emu/run.py [--exe PATH] [--cases N] [--seed S] tools/emu/specs/<spec>.py ...
 ```
 
@@ -59,6 +59,11 @@ The report per spec: pass/fail counts, the first 5 mismatches, coverage of the t
 | `fnv64.py` | `HashStringFNV64_W 0x7CFE40` (cdecl(wchar_t*) -> EDX:EAX), following `ResourceKey_HashNameFNV64 0x4AEB90` and the CRT 64-bit multiply `0xF7EB40` | 312 (12 edge: empty, 1000 chars, non-ASCII, lone surrogate, 0xFFFF; 300 random) | 312 pass | target 3/3, `0x4AEB90` 5/5, `0xF7EB40` 2/3 (missed block = the both-high-dwords-zero fast path of the MSVC `__allmul` shape [inferred]; it cannot occur because the FNV prime has a high dword of 1) | `msvcr80!towlower` ("C" locale: A-Z only) | Python FNV-1 64 over UTF-16 code units, lowercased; plus `tools/dbpf.ts` `fnv64` on the 218 ASCII cases |
 | `lot_world_to_local.py` | `Lot_WorldToLocal2D 0xAB8540` (thiscall(lot, x, z, float* outX, float* outZ), ret 0x10) | 438 (38 edge: angles 0, ±π, 2^62, 2^64, ±inf, NaN; coords ±0, subnormal, ±3e38, inf, NaN; 400 random) | 438 pass, all bit-exact (also 3,038 of 3,038 with `--cases 3000`) | 1/1 (straight-line code) | none | `s = f32(sin a)`, `c = f32(cos a)`, `dx = x - ox`, `dz = z - oz`; `outX = (-0.0 - s)*dz + c*dx`, `outZ = s*dx + c*dz`, each step rounded to float32 |
 | `refpack.py` | `RefPack_DecompressCore 0x4EB3B0` (cdecl(dst, dstCap, src, srcLen) -> size or 0) | 212 (200 round trips of 0 B to ~48 KB with every opcode form and header variant; 11 error cases; 1 header quirk) | 212 pass | 66/66 | none | encoder in the spec, decode checked against the original data and `refpack()` from `tools/extract-assemblies.ts` |
+| `object_id_lookup.py` | `ObjectId_Lookup 0x939100` (thiscall(buckets, out, id*) -> out, ret 8) | 308 (8 edge: empty, one node, hit first/last of 20, same id_lo or id_hi only; 300 random chains of 0-16) | 308 pass | 8/8 | none | bucket `id_lo % 0x409`, walk `+0x10`; hit `{node, &bucket}`, miss `{[ecx+0x1024], ecx+0x1024}`: the rule ts3native `[IdCache]` reimplements (added 2026-10-16) |
+| `object_id_erase.py` | `ObjectIdHash_EraseNode 0x938D00` (thiscall(buckets, out, node, bucket slot), ret 0xC) | 204 (only, head, tail, middle; 200 random) | 204 pass | 9/9 | none | node unlinked, order kept, count `+0x1028` - 1: arg 2 is the node `[IdCache]` drops from its cache (added 2026-10-16) |
+| `phys_shape_release.py` | `PhysShape_Release 0x682760` (thiscall(shape), no args, plain ret) | 205 (counts 0, 1, 2, 3, `0x7FFFFFFF`; 200 random) | 205 pass | 3/3 | the deleting destructor (vtable slot 0) | count `+0x4C` - 1 is returned; only at 0 the destructor runs with `ecx` = shape and argument 1: skipping the call leaves the shape alive and untouched, so `[TerrainGrave]` (H6 S3a) can park it and run the original later (added 2026-10-16) |
+| `lot_table_contains.py` | `LotTable_Contains 0x628A90` (thiscall(P)(keyLo, keyHi), ret 8, AL), following `LotTable_Find 0x627E00` and `0xC88FD0` | 311 (11 edge: key 0, all-ones, low word all-ones only, empty bucket, chain miss, hi miss, hit at head / middle / tail, entry key differs, active lot in the table; 300 random tables of 1-64 lots) | 311 pass | 9/9 (`0x627E00` 8/8) | none | the read-only find of ts3native L1 (`LtFind`): Contains rules, bucket `keyLo % count`, chain `+0x190`, key again at `node+0x10`; the scratch heap is byte-identical after every call and no `.data` address is written (added 2026-10-17, docs/84 §4.6) |
+| `lot_front_door.py` | `LotRouting_FrontDoorPortal 0x631800` (thiscall(P)(lotLo, lotHi, type, Portal** out), ret 0x10, EDX:EAX), following `0x628A90`, `0x627E00`, `0x62EAB0`, `0xC88FD0` | 426 (26 edge: the Contains edges, door index by type incl. -1 / >= n / negative n, NULL portal, no portals, `out` NULL; 400 random) | 426 pass | 17/17 (`0x62EAB0` 2/3: the insert path cannot follow a true Contains) | portal AddRef / Release (counters on `+0x70`) | L1's clone `LtFrontDoor`: same EDX:EAX and `*out`, one AddRef and one Release per door on that portal, counts unchanged (added 2026-10-17, docs/84 §4.6) |
 
 Findings from these runs:
 
@@ -88,6 +93,6 @@ Does not prove:
 | `tools/emu/emu.py` | loader, emulator, stubs, CFG and coverage |
 | `tools/emu/run.py` | spec runner, `--self-check` |
 | `tools/emu/ts-ref.ts` | the repo's TypeScript reference functions (`refpack`, `fnv64`) over a JSON batch on stdin |
-| `tools/emu/specs/*.py` | the three example specs |
+| `tools/emu/specs/*.py` | the example specs (`run.py --self-check` runs eight of them; `ro_point_visitor.py` is run by name) |
 
 No EA bytes are stored: specs hold addresses and models only, and the exe is read from your own copy at run time.

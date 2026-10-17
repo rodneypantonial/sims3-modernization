@@ -53,6 +53,7 @@ Registers at the fault: `esp = 0x1AFCE8`, `[esp] = 1`, `[esp+4] = 0x91A46E`, `[e
 ### 2.4 Fix or workaround
 
 - Keep `[Alloc] Enabled=0` (default, current ini) until the cache is fixed [verified ini].
+- **Built 2026-10-16 (ts3native 0.10.9, not run in game):** `[Alloc] Dedupe=1` walks the bin (at most `count` links) before a push and drops a Free of a chunk already there (counter `allocDupFrees`, v23; runtime switch `allocDedupe`); `AcPop` treats `count == 0` as empty; `AcEmpty` walks at most `count` links, so an old looped bin cannot hang a flush. Same-thread only; the cross-thread marker is left until `allocDupFrees` shows dups. Selftest covers both same-thread cases (dup at the head and behind another link). Repro `alloc-dupfree` (no VFX action yet).
 - Cache fix (code change for a later task): in `EaFreeHook`, reject a pointer that is already cached: walk the bin (at most `PerBin` = 32 links) before pushing, count it in a new counter, and pass nothing to the game's Free (the first free still owns it); in `AcPop`, treat `count == 0` as empty. A cross-thread double free needs a marker in the chunk (for example a tag word in the unused header slot, cleared on pop) or a global set; measure the cost before choosing.
 
 ### 2.5 Repro and confirmation

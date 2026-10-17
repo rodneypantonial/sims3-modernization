@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Sims3.Gameplay;
 using Sims3.Gameplay.Abstracts;
 using Sims3.Gameplay.Actors;
@@ -29,6 +30,7 @@ namespace Ts3Agent
             Dispatcher.Register("look", Look);
             Dispatcher.Register("time", TimeInfo);
             Dispatcher.Register("set_speed", SetSpeed);
+            Dispatcher.Register("clock_state", ClockState);
             Dispatcher.Register("list_lots", ListLots);
             Dispatcher.Register("list_objects", ListObjects);
             Dispatcher.Register("object_details", ObjectDetails);
@@ -71,13 +73,30 @@ namespace Ts3Agent
             {
                 string result;
                 try { work(); result = "ok"; }
-                catch (Exception e) { result = "error: " + e.GetType().Name + ": " + e.Message; }
+                catch (Exception e) { result = "error: " + DescribeError(e); }
                 lock (sAsyncLog)
                 {
                     sAsyncLog.Add(SimClock.CurrentTime().ToString() + " " + label + " -> " + result);
                     if (sAsyncLog.Count > 30) sAsyncLog.RemoveAt(0);
                 }
             }));
+        }
+
+        // Every exception of the InnerException chain (reflection wraps the real cause in TargetInvocationException,
+        // docs/77 §2.2), then the first stack lines of the innermost one, where the cause was thrown.
+        public static string DescribeError(Exception e)
+        {
+            List<string> chain = new List<string>();
+            Exception inner = e;
+            for (Exception x = e; x != null && chain.Count < 6; x = x.InnerException)
+            {
+                chain.Add(x.GetType().Name + ": " + x.Message);
+                inner = x;
+            }
+            string[] stack = (inner.StackTrace ?? "").Split('\n');
+            List<string> top = new List<string>();
+            for (int i = 0; i < stack.Length && top.Count < 6; i++) if (stack[i].Trim().Length > 0) top.Add(stack[i].Trim());
+            return string.Join(" > inner ", chain.ToArray()) + (top.Count > 0 ? " | stack: " + string.Join(" | ", top.ToArray()) : "");
         }
 
         static object AsyncLog(Args a)
@@ -171,6 +190,37 @@ namespace Ts3Agent
             return d;
         }
 
+        // clock_state (read-only, docs/85 §6 P-clock): the native GameClock at 0x11CDD48 (GameClock_IsPaused 0x594540 reads
+        // +0x40 and +0x68 under its lock; single aligned dword reads here, no lock), the managed speed and game time, and the
+        // game minutes since the previous clock_state call. The probe server adds the window state (iconic, foreground):
+        // the game's Mono resolves DllImport through its internal-call table, so user32 is out of reach here (docs/06).
+        const int kGameClock = 0x11CDD48;
+        static double sLastClockMinutes = -1;
+
+        static float ReadF32(int addr) { return BitConverter.ToSingle(BitConverter.GetBytes(Marshal.ReadInt32(new IntPtr(addr))), 0); }
+
+        static object ClockState(Args a)
+        {
+            Dictionary<string, object> d = Util.Obj();
+            int bits = Marshal.ReadInt32(new IntPtr(kGameClock + 0x40));
+            float speed = ReadF32(kGameClock + 0x68);
+            d["pause_bits"] = bits;
+            d["script_pause"] = (bits & 1) != 0;   // IC_GameUtils_PauseImpl, modal pump
+            d["minimize_pause"] = (bits & 2) != 0; // window minimized (0x1EE1008), unless SimWhileMinimized
+            d["device_pause"] = (bits & 4) != 0;   // MainLoop while device +0x8D is set
+            d["native_paused"] = bits != 0 || Math.Abs(speed) <= 1.2e-7; // GameClock_IsPaused 0x594540
+            d["game_dt"] = ReadF32(kGameClock + 0x64);
+            d["speed"] = speed;
+            d["scale"] = ReadF32(kGameClock + 0x74);
+            d["game_speed"] = GF.CurrentGameSpeed.ToString();
+            double minutes = Math.Round(SimClock.ConvertFromTicks(SimClock.CurrentTicks, TimeUnit.Minutes), 1);
+            d["minutes_total"] = minutes;
+            d["minutes_moved"] = sLastClockMinutes < 0 ? null : (object)Math.Round(minutes - sLastClockMinutes, 1);
+            sLastClockMinutes = minutes;
+            d["clock"] = SimClock.Hours24.ToString("00") + ":" + SimClock.Minutes60.ToString("00");
+            return d;
+        }
+
         static object SetSpeed(Args a)
         {
             string s = a.Str("speed").ToLowerInvariant();
@@ -186,6 +236,10 @@ namespace Ts3Agent
             }
             if (GF.GameSpeedLocked && target != GameSpeed.Pause)
                 throw new McpException("game speed is locked (a dialog is open or the game is saving)");
+            // An explicit speed is the autopilot's new target: pause holds nothing (2026-10-17: the autopilot, left at
+            // "ultra" by repro.ts, undid every pause within a second, so "paused" cleanups ran at x3 and Sims arrived)
+            Dictionary<string, object> ap = ApCfg();
+            ap["speed"] = target == GameSpeed.Pause ? "none" : target == GameSpeed.Normal ? "normal" : target == GameSpeed.Double ? "fast" : target == GameSpeed.Triple ? "ultra" : ap["speed"];
             // SetGameSpeed(Pause) toggles when already paused, so only call it when it changes something.
             if (GF.CurrentGameSpeed != target) GF.SetGameSpeed(target, GF.SetGameSpeedContext.User);
             return TimeInfo(a);

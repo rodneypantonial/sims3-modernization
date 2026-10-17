@@ -41,6 +41,10 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kMotiveBarImageCache value="True" />
     <kBuffGridInPlace value="True" />
     <kSimNameCache value="True" />
+    <kDetailPriorityCache value="False" />
+    <kHoursMemo value="False" />
+    <kCaneEarlyOut value="False" />
+    <kTooltipThrottle value="False" />
   </Current_Tuning>
 </base>
 `;

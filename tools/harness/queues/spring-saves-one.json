@@ -1,0 +1,11 @@
+[
+  {
+    "id": "make-spring-all",
+    "note": "All three spring base saves in one session",
+    "asi": "tested",
+    "run": {
+      "repro": "make-spring-all"
+    },
+    "timeoutMin": 40
+  }
+]

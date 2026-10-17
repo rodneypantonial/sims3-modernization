@@ -16,7 +16,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-SELF_CHECK = ['fnv64.py', 'lot_world_to_local.py', 'refpack.py']
+SELF_CHECK = ['fnv64.py', 'lot_world_to_local.py', 'refpack.py', 'object_id_lookup.py', 'object_id_erase.py', 'phys_shape_release.py',
+              'lot_table_contains.py', 'lot_front_door.py']
 
 
 def load_spec(path):
