@@ -39,3 +39,11 @@ Tool: `tools/harness/queue.ts` (docs/TESTING.md). Times UTC (PHT in brackets). R
 | job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
 |---|---|---|---|---|---|---|---|---|
 | make-spring-bp | 05:23 (13:23) | 3.2 | PASS | make-spring-bp: PASS: steps done (no watch) (expected: undefined) | 0 | 2233.4/1839.3/1532.8 -> 2179.3/1840.7/1516.8 | - | Make Baseline-BP-Spring (spring, new moon, warm, no snow) |
+
+## 2026-10-17T10:52 UTC, build 3a0681b, jobs make-spring-bp, make-spring-ip, make-spring-sv
+
+| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
+|---|---|---|---|---|---|---|---|---|
+| make-spring-bp | 10:52 (18:52) | 4.8 | **FAIL** | cycle.ts --save exit 1; probe server exited (0) for ~60 s (fail-fast guard) | - | ? -> ? | - | Make Baseline-BP-Spring (spring, new moon, warm, no snow) |
+| make-spring-ip | 10:56 (18:56) | 1 | **FAIL** | cycle.ts --restart exit 3221225794 | - | ? -> ? | - | Make Baseline-IP-Spring (spring, new moon, warm, no snow) |
+| make-spring-sv | 10:57 (18:57) | 1 | **FAIL** | cycle.ts --restart exit 3221225794 | - | ? -> ? | - | Make Baseline-SV-Spring (spring, new moon, warm, no snow) |

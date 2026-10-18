@@ -16,6 +16,10 @@ namespace Ts3Fixes
         {
             // ScriptCore.Route.Plan is the one funnel for every PlanTo* helper (Sims3.SimIFace.Route) and is not overloaded
             Patch(typeof(ScriptCore.Route), "Plan", typeof(RouteBackoffHook), "PlanHook", "PlanOrig");
+            // A10 (docs/87 §5): the Replan family through the same async handshake; ts3native [RouteAsync] Kinds decides
+            Patch(typeof(ScriptCore.Route), "Replan", typeof(RouteBackoffHook), "ReplanHook", "ReplanOrig");
+            Patch(typeof(ScriptCore.Route), "PlanFromPoint", typeof(RouteBackoffHook), "PlanFromPointHook", "PlanFromPointOrig");
+            Patch(typeof(ScriptCore.Route), "ReplanFromPoint", typeof(RouteBackoffHook), "ReplanFromPointHook", "ReplanFromPointOrig");
         }
 
         // Route-failure backoff (docs/11 recommendation 3): a failed plan expands every reachable node, then runs a native
@@ -78,22 +82,11 @@ namespace Ts3Fixes
             // H6 M1 (docs/60 §2.4): live mode only, no travel, no world shutdown (ts3native also refuses START then).
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
-                if (sim == null || !ShortcutOn("asyncroute") || Simulator.CurrentTask != sim.ObjectId
-                    || !GameStates.IsLiveState || GameStates.IsTravelling || GameStates.IsWorldShuttingDown
-                    || !Simulator.CheckYieldingContext(false) || !GetOption(kAsyncStart))
+                if (!AsyncEligible(sim, "asyncroute") || !GetOption(kAsyncStart))
                     return PlanOrig();
-                int[] c = PatchCounters();
-                c[56]++;
                 try
                 {
-                    for (int i = 0; !GetOption2(kAsyncReady); i++)
-                    {
-                        // shortcut: a fixed cap (~10-20 s real time); past it the plan waits natively and is then made
-                        // again synchronously. Upgrade to a time-based cap if long searches ever reach it.
-                        if (i >= kAsyncMaxPolls) { c[58]++; break; }
-                        c[57]++;
-                        Simulator.Sleep(0);
-                    }
+                    AsyncWait();
                     return PlanOrig();
                 }
                 finally
@@ -101,9 +94,76 @@ namespace Ts3Fixes
                     GetOption2(kAsyncCancel); // disarm, also when the Sim is reset while sleeping
                 }
             }
+
+            bool AsyncEligible(Sims3.Gameplay.Actors.Sim sim, string shortcut)
+            {
+                return sim != null && ShortcutOn(shortcut) && Simulator.CurrentTask == sim.ObjectId
+                    && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
+                    && Simulator.CheckYieldingContext(false);
+            }
+
+            // after a START answered yes: sleep a tick at a time until READY
+            void AsyncWait()
+            {
+                int[] c = PatchCounters();
+                c[56]++;
+                for (int i = 0; !GetOption2(kAsyncReady); i++)
+                {
+                    // shortcut: a fixed cap (~10-20 s real time); past it the plan waits natively and is then made
+                    // again synchronously. Upgrade to a time-based cap if long searches ever reach it.
+                    if (i >= kAsyncMaxPolls) { c[58]++; break; }
+                    c[57]++;
+                    Simulator.Sleep(0);
+                }
+            }
+
+            // A10 (docs/87 §5, ts3native [RouteAsync] Kinds): Replan (kind 1), PlanFromPoint (2) and ReplanFromPoint (3) the
+            // same way. START is GetOption2 with bits 58 + 59 and the kind in bits 56-57; kinds 2-3 first send the point,
+            // one component per call (bit 60, component in bits 56-57, float bits in the low dword). The game has no
+            // RouteOption2 names up there, so without ts3native START answers false (the point calls are reads whose
+            // answer is ignored). ts3native refuses a route that is being followed. Switch "asyncreplan" (default on).
+            public RoutePlanResult ReplanHook()
+            {
+                if (!AsyncKindStart(1, Vector3.Origin)) return ReplanOrig();
+                try { AsyncWait(); return ReplanOrig(); }
+                finally { GetOption2(kAsyncCancel); }
+            }
+            public RoutePlanResult ReplanOrig() { return default(RoutePlanResult); }
+
+            public RoutePlanResult PlanFromPointHook(Vector3 startPosition)
+            {
+                if (!AsyncKindStart(2, startPosition)) return PlanFromPointOrig(startPosition);
+                try { AsyncWait(); return PlanFromPointOrig(startPosition); }
+                finally { GetOption2(kAsyncCancel); }
+            }
+            public RoutePlanResult PlanFromPointOrig(Vector3 startPosition) { return default(RoutePlanResult); }
+
+            public RoutePlanResult ReplanFromPointHook(Vector3 fromPt)
+            {
+                if (!AsyncKindStart(3, fromPt)) return ReplanFromPointOrig(fromPt);
+                try { AsyncWait(); return ReplanFromPointOrig(fromPt); }
+                finally { GetOption2(kAsyncCancel); }
+            }
+            public RoutePlanResult ReplanFromPointOrig(Vector3 fromPt) { return default(RoutePlanResult); }
+
+            bool AsyncKindStart(int kind, Vector3 p)
+            {
+                IScriptProxy proxy = Follower;
+                if (!AsyncEligible(proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null, "asyncreplan")) return false;
+                if (kind >= 2) { AsyncPoint(0, p.x); AsyncPoint(1, p.y); AsyncPoint(2, p.z); }
+                return GetOption2((Sims3.SimIFace.Route.RouteOption2)(kArStart | (ulong)kind << 56));
+            }
+            void AsyncPoint(int i, float f)
+            {
+                FloatBits b = default(FloatBits);
+                b.F = f;
+                GetOption2((Sims3.SimIFace.Route.RouteOption2)(kArPoint | (ulong)i << 56 | b.U));
+            }
+
             const Sims3.SimIFace.Route.RouteOption kAsyncStart = (Sims3.SimIFace.Route.RouteOption)0x0400000000000000L;
             const Sims3.SimIFace.Route.RouteOption2 kAsyncReady = (Sims3.SimIFace.Route.RouteOption2)0x0400000000000000L;
             const Sims3.SimIFace.Route.RouteOption2 kAsyncCancel = (Sims3.SimIFace.Route.RouteOption2)0x4400000000000000L;
+            const ulong kArStart = 0x0C00000000000000UL, kArPoint = 0x1C00000000000000UL;
             const int kAsyncMaxPolls = 1000;
 
             // What Plan leaves after a real failure, minus the blocker (so no fail-path plans): empty paths, invalid start points.
@@ -125,6 +185,9 @@ namespace Ts3Fixes
             }
             static FieldInfo[] sStartFields;
         }
+
+        [StructLayout(LayoutKind.Explicit)]
+        struct FloatBits { [FieldOffset(0)] public float F; [FieldOffset(0)] public uint U; }
 
         // Whether a Simulator.Sleep here is safe. CheckYieldingContext only tests for a current task; EA's yield also needs
         // the running code to be the task's own top-level interpreter state, not a native->managed call made during the

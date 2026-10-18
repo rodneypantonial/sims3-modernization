@@ -2918,7 +2918,7 @@
     "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
     "fix": "New base save Baseline-BP-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
     "save": "Baseline-BP",
-    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save; final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
     "steps": [
       {
         "cmd": "test_env",
@@ -2930,6 +2930,14 @@
         },
         "waitS": 5,
         "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
       },
       {
         "cmd": "fresh_world",
@@ -3019,6 +3027,226 @@
         },
         "waitS": 1,
         "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-BP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "update-spring-bp",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "Add a household pet to Baseline-BP-Spring and re-check it (Rodney, 2026-10-17): build on the current save, not from scratch",
+    "save": "Baseline-BP-Spring",
+    "note": "overwrites Baseline-BP-Spring (backup in Documents/Electronic Arts/ts3-save-backups/spring-2026-10-17); final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the new pet settle in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "new moon (LunarPhase 4), spring, 72 h sun: the old spring saves were at phase 0/1 (IP at the full moon)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "max motives (pet too), drop negative moodlets, repair, clean"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
       },
       {
         "cmd": "test_env",
@@ -3057,7 +3285,7 @@
     "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
     "fix": "New base save Baseline-IP-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
     "save": "Baseline-IP",
-    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save; final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
     "steps": [
       {
         "cmd": "test_env",
@@ -3069,6 +3297,14 @@
         },
         "waitS": 5,
         "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
       },
       {
         "cmd": "fresh_world",
@@ -3158,6 +3394,226 @@
         },
         "waitS": 1,
         "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-IP-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "update-spring-ip",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "Add a household pet to Baseline-IP-Spring and re-check it (Rodney, 2026-10-17): build on the current save, not from scratch",
+    "save": "Baseline-IP-Spring",
+    "note": "overwrites Baseline-IP-Spring (backup in Documents/Electronic Arts/ts3-save-backups/spring-2026-10-17); final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the new pet settle in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "new moon (LunarPhase 4), spring, 72 h sun: the old spring saves were at phase 0/1 (IP at the full moon)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "max motives (pet too), drop negative moodlets, repair, clean"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
       },
       {
         "cmd": "test_env",
@@ -3196,7 +3652,7 @@
     "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
     "fix": "New base save Baseline-SV-Spring: spring, new moon, sunny and warming, no snow; test runs start from it (test_env still guards during runs)",
     "save": "Baseline-SV",
-    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save",
+    "note": "makes a save, changes no existing file; check the test_env readbacks in the log before using the new save; final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
     "steps": [
       {
         "cmd": "test_env",
@@ -3208,6 +3664,14 @@
         },
         "waitS": 5,
         "note": "spring, 72 h sun, new moon (LunarPhase 4)"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
       },
       {
         "cmd": "fresh_world",
@@ -3297,6 +3761,226 @@
         },
         "waitS": 1,
         "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {},
+        "waitS": 2,
+        "note": "readback in realistic mode: changed must be empty"
+      },
+      {
+        "cmd": "time",
+        "args": {},
+        "waitS": 1
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Baseline-SV-Spring"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ]
+  },
+  {
+    "id": "update-spring-sv",
+    "bug": "Test runs started in winter (Sims froze solid and counted as stuck) or near a full moon (zombies, werewolf changes): skewed data (Rodney, 2026-10-17)",
+    "fix": "Add a household pet to Baseline-SV-Spring and re-check it (Rodney, 2026-10-17): build on the current save, not from scratch",
+    "save": "Baseline-SV-Spring",
+    "note": "overwrites Baseline-SV-Spring (backup in Documents/Electronic Arts/ts3-save-backups/spring-2026-10-17); final checks: fresh_world check, pet, season/temperature/weather/snow/moon",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 5,
+        "note": "household pet: a dog joins the active household if it has none (kept in the save)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20,
+        "note": "let the new pet settle in game"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "moon_phase": 4,
+          "weather_hours": 72
+        },
+        "waitS": 5,
+        "note": "new moon (LunarPhase 4), spring, 72 h sun: the old spring saves were at phase 0/1 (IP at the full moon)"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3,
+        "note": "max motives (pet too), drop negative moodlets, repair, clean"
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {},
+        "waitS": 3
+      },
+      {
+        "cmd": "fresh_world",
+        "args": {
+          "check": true,
+          "fail_if_dirty": true
+        },
+        "waitS": 1,
+        "note": "final check while paused"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "ensure"
+        },
+        "waitS": 1,
+        "note": "final check: the household has a pet",
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "ensure"
+          },
+          "all": [
+            {
+              "path": "pets",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "final check: spring, warm, sunny, no snow, new moon",
+        "until": {
+          "cmd": "test_env",
+          "args": {
+            "mode": "read"
+          },
+          "all": [
+            {
+              "path": "season",
+              "equals": "Spring"
+            },
+            {
+              "path": "temperature",
+              "atLeast": 35
+            },
+            {
+              "path": "snow_level",
+              "equals": "None"
+            },
+            {
+              "path": "weather",
+              "equals": "Sunny"
+            },
+            {
+              "path": "moon_phase",
+              "equals": 4
+            }
+          ],
+          "everyS": 2,
+          "maxS": 6
+        }
       },
       {
         "cmd": "test_env",
@@ -3908,5 +4592,532 @@
       }
     ],
     "expect": "PASS when every until holds: bit 2 set and clock frozen while minimized, clear and moving after restore. A FAIL at the minimized step with bit 2 clear refutes H5 (docs/85 §7)"
+  },
+  {
+    "id": "pet-guard-cancel",
+    "bug": "Design D (docs/84 §2.4) dropped a deferred discourage Remove whose object was destroyed before the drain: the footprint stayed under a dead id (docs/84 §7.2, PetGuardSitutation Remove then Destroy)",
+    "fix": "ts3native 0.16.0 fix D-X: [Discourage] DestroyApply=1 (destroy gate applies the queued Removes) + DeadSweep=1 (dead-id sweep 0x635700); needs [RouteAsync] + [RouteGate] Enforce=1 + [Discourage] Enabled=1; A/B in one load with --ab discdestroy (or discourage on the 0.15.x build)",
+    "save": "Baseline-BP-Spring",
+    "note": "world-agnostic: any save whose active household has a home lot. pet_guard uses the household's pet or makes a dog (GeneticsPet.MakeRandomPet) next to a random home-lot object; remove_sims removes the dog and the routing Sims. Spawned Sims at ultra speed keep route jobs running so the cancels land during jobs. 8 guard/cancel cycles of ~55 s spread over a 10-min profile, so every --ab slice of 2 min sees about two",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 20,
+        "note": "route plans in the background (jobs running when the guard is cancelled)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "the pet routes to the object and adds its discourage footprint (Add, D1); a dog joins the active household when it has no pet"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "GuardObject.Cleanup: RemoveDiscourageFootprint then Destroy of the slot in one script call (D2 deferred while a job runs, then DestroyById)"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 2"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 2"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 3"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 3"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 4"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 4"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 5"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 5"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 6"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 6"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 7"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 7"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 40,
+        "until": {
+          "cmd": "pet_guard",
+          "args": {
+            "action": "state"
+          },
+          "all": [
+            {
+              "path": "area",
+              "equals": true
+            }
+          ],
+          "everyS": 5,
+          "maxS": 120
+        },
+        "note": "cycle 8"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 15,
+        "note": "cycle 8"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20,
+        "note": "Sim disposal with their footprints (docs/51 I-84-7-15) and the dog, if one was made"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 5
+      }
+    ],
+    "watch": {
+      "kind": "native",
+      "minutes": 1,
+      "checks": [
+        {
+          "name": "discDropRemove",
+          "equalsName": "discDeadSweep"
+        },
+        {
+          "name": "discIdMismatch",
+          "equals": 0
+        },
+        {
+          "name": "discDestroyApplied",
+          "atLeast": 1
+        }
+      ]
+    },
+    "expect": "After D-X (0.16.0, D on): T-D5 discDropRemove = discDeadSweep, discIdMismatch 0, discDestroyApplied > 0 (each = a Remove vanilla ran before its destroy), discDeadHit near 0 (the gate catches them first); no crash. --ab discdestroy: the off slices show discDropRemove > 0 and discDeadHit > 0 (zombie footprint proven live, swept). Before D-X (0.15.x, --ab discourage): discDropped > 0 in discMode 1 slices with discDeferredRemove > 0 shows the bug. discDeferredRemove 0 = no cancel landed during a job: inconclusive, rerun"
+  },
+  {
+    "id": "steer-crowd",
+    "bug": "none (feature check): design S2 read-only steering (docs/84 §3) answers locomotion steering checks off the sim thread's lock while route jobs run; needs a crowd steering near each other",
+    "fix": "ts3native 0.15.0 [SteerRO] Enabled=1 Mode=1 (Shadow=1: with no job running, the game's call then the clone, compared); needs [RouteGate] Enforce=1 and [RouteAsync]; A/B in one load with --ab steerro (or --ab steershadow)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Crowd = 10 spawned Sims round a home lot plus 6 named townies sent to Hogan's Deep-Fried Diner at once, active Sim walks there too, ultra speed so route jobs overlap the walks. Visits are optional: a missing townie does not fail the run. Counters are deltas over watch.minutes (steer* from counters v31/v33)",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "background route plans (jobs running while the crowd steers)"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Paul Hogue",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Lilly-Bo Chique",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Marie Desmarais",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wayne Bumble",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 90,
+        "note": "active Sim joins the crowd at the diner; arrivals steer round each other"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "remove_sims",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "native",
+      "minutes": 3,
+      "checks": [
+        {
+          "name": "steerCalls",
+          "atLeast": 1
+        },
+        {
+          "name": "steerTaken",
+          "atLeast": 1
+        },
+        {
+          "name": "steerShadowMismatch",
+          "equals": 0
+        },
+        {
+          "name": "steerShadowQueryMismatch",
+          "equals": 0
+        }
+      ]
+    },
+    "expect": "With S2 on (Mode 1, Shadow 1): steerCalls and steerTaken > 0, both shadow mismatch counters 0, no crash, no stuck Sim. steerTaken 0 with steerCalls > 0 = no job held the lock during the walks or every check fell back (read steerFb*): inconclusive, rerun. Off slices of --ab: steerTaken stays 0"
+  },
+  {
+    "id": "lot-front-door-burst",
+    "bug": "none (feature check): design L1 read-only lot front door (docs/84 §4) answers the front-door lookup (LotRouting_FrontDoorPortal 0x631800, Lot.GetFrontDoor) without the +0x918 wait while a route job runs; needs many Sims sent to one lot's front door at once",
+    "fix": "ts3native 0.14.0 [LotFrontDoorRO] Enabled=1 Mode=1 (Shadow=1: with no job running, the game's call then the clone, compared); needs [RouteGate] Enforce=1 and [RouteAsync]; A/B in one load with --ab lotfdro (or --ab lotfdshadow)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. 6 named townies get the game's visit interaction to one lot in the same second (no waitS between steps), 2 more 60 s later. Hogan's Deep-Fried Diner is a community lot (VisitCommunityLot); if lt counters stay 0 there, retry with a home lot (VisitLot routes to the front door). Visits are optional. Counters are deltas over watch.minutes (lt* from counters v32)",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "background route plans (jobs running during the burst)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Paul Hogue",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Lilly-Bo Chique",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Marie Desmarais",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wayne Bumble",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true,
+        "waitS": 60
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Suzy Strummer",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Lala Angelista",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "remove_sims",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "native",
+      "minutes": 3,
+      "checks": [
+        {
+          "name": "ltCalls",
+          "atLeast": 1
+        },
+        {
+          "name": "ltTaken",
+          "atLeast": 1
+        },
+        {
+          "name": "ltShadowMismatch",
+          "equals": 0
+        }
+      ]
+    },
+    "expect": "With L1 on (Mode 1, Shadow 1): ltCalls and ltTaken > 0, ltShadowMismatch 0, no crash, no stuck Sim. ltCalls 0 = the burst did not reach the front-door lookup (try a home lot): inconclusive. ltTaken 0 with ltCalls > 0 = every call fell back (read ltFb*). Off slices of --ab: ltTaken stays 0"
   }
 ]

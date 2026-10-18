@@ -1,0 +1,283 @@
+[
+  {
+    "id": "bp-async-matrix",
+    "note": "Async release check: full save matrix with async + queue + D on (0.16.0 with fix D-X)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": []
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 60,
+    "minCounters": 34
+  },
+  {
+    "id": "sv-async-matrix",
+    "note": "Async release check: full save matrix with async + queue + D on (0.16.0 with fix D-X)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "matrix": []
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 60,
+    "minCounters": 34
+  },
+  {
+    "id": "ip-async-matrix",
+    "note": "Async release check: full save matrix with async + queue + D on (0.16.0 with fix D-X)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-IP-Spring",
+    "run": {
+      "matrix": []
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 60,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-travel-france",
+    "note": "Async release check: travel save case to france with async on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "france"
+      ]
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-travel-china",
+    "note": "Async release check: travel save case to china with async on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "china"
+      ]
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-travel-egypt",
+    "note": "Async release check: travel save case to egypt with async on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "egypt"
+      ]
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-travel-university",
+    "note": "Async release check: travel save case to university with async on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "university"
+      ]
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-travel-future",
+    "note": "Async release check: travel save case to future with async on",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "future"
+      ]
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45,
+    "minCounters": 34
+  },
+  {
+    "id": "bp-async-soak",
+    "note": "Async release check: 45 min at speed 3 with async on (watchdog: crashes, stuck Sims, memory)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "soak": {
+        "minutes": 45,
+        "speed": "ultra"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 70,
+    "minCounters": 34
+  },
+  {
+    "id": "sv-async-off",
+    "note": "Async release check: Sunset Valley profile, async Mode 0 (compare only if both machine load lines are ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "minCounters": 34,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-async-on",
+    "note": "Async release check: Sunset Valley profile, async Mode 1 (compare only if both machine load lines are ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "minCounters": 34,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

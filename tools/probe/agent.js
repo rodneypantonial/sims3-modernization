@@ -952,8 +952,39 @@ rpc.exports = {
       ...['AddRef', 'Release'].flatMap(o => ['Sim', 'WorkerInQl', 'WorkerNoQl', 'Other'].map(t => `portalRef${o}${t}`)),
       'p1bReady', ...['p1bKey', 'p1bN', 'p1bUs'].flatMap(n => [...Array(32).keys()].map(i => `${n}_${i}`)), 'p1bOther',
       'p1bNoFrame'); // 0.14.0: design L1 + probe P1b (+0x1130..)
+    if (c.readS32() >= 33) f.push('steerTwStubs', 'steerT4Bare', 'steerS7Foreign', 'steerS7Sim', 'steerTripDiscard',
+      ...['6653A0', '666010', '61ED80', '61ED10', '807110', '8077A0', '62E420', '947FA0', '948050', '9479D0', '947620']
+        .map(n => `steerTwSite${n}`)); // 0.15.0: S2 tripwires T4 + T-S7 (+0x131C..)
+    if (c.readS32() >= 34) f.push('discDestroyMode', 'discSweepMode', 'discDropAdd', 'discDropRemove', 'discDestroyApplied',
+      'discDestroyInInvoke', 'discDeadSweep', 'discDeadHit', 'discDeadKeyMap', 'discIdMismatch'); // 0.16.0: fix D-X (+0x135C..)
+    if (c.readS32() >= 35) f.push('rfbLogMs', 'rfbMsRefused', 'rfbMsQueue', 'rfbMsOther', 'rfbNRefused', 'rfbNQueue', 'rfbNOther',
+      'rfbMax'); // 0.17.0: sync fallbacks >= 50 ms by reason group; rfbMax = ms << 8 | reason (+0x1384..)
+    if (c.readS32() >= 36) f.push('s2TscPerUs', 's2ArmJobs', 's2JobEndDrop', 's2EntryKt', 's2EntryMaxT', 's2TwCalls', 's2TwKt',
+      's2TwMaxT', 's2QlCalls', 's2QlKt', 's2QlMaxT', 's2ShadowKt', 's2ShadowMaxT', 's2TryCalls', 's2TryKt', 's2TryMaxT'); // 0.18.0: S2 armed stubs + timers (+0x13A4..)
+    if (c.readS32() >= 37) f.push('g0wReady', 'g0wMode', 'g0wPasses', 'g0wPassUs', 'g0wPassMaxUs', 'g0wRunningAtEntry',
+      'g0wJobStartInPass', 'g0wJobsHeld', 'g0wHoldUs', 'g0wHoldMaxUs', 'g0wDropJobWait', 'g0wDropSyncPlan', 'g0wWatchdog',
+      'g0wGateWaits', 'g0wGate0Waits', 'g0wGate0Us'); // 0.19.0: design H2 locomotion window (+0x13E4..)
+    if (c.readS32() >= 38) f.push('p10Ready', 'p10EntriesPlan', 'p10EntriesReplan', 'p10EntriesPlanFromPoint',
+      'p10EntriesReplanFromPosition', 'p10PlanUsPlan', 'p10PlanUsReplan', 'p10PlanUsPlanFromPoint', 'p10PlanUsReplanFromPosition',
+      'p10EarlyRetPlan', 'p10EarlyRetReplan', 'p10EarlyRetPlanFromPoint', 'p10EarlyRetReplanFromPosition', 'p10CanYieldReplan',
+      'p10CanYieldPlanFromPoint', 'p10CanYieldReplanFromPosition'); // 0.20.0: probe P10 + G10-C (+0x1424..)
+    if (c.readS32() >= 39) f.push(...['ObjCap', 'NullFp', 'Slot', 'LocalCap', 'Depth', 'NoActLot', 'LotTbl', 'IdCap', 'NoPlanner',
+      'NodeCap', 'NodeCap2'].map(n => `s2Shape${n}`), 's2MaxObjs', 's2MaxLocal', 's2MaxNodes', 's2MaxIds', 's2MaxDepth'); // 0.21.0: S2 shape split (+0x1464..)
+    if (c.readS32() >= 40) f.push('arReady', 'arMode', ...['Started', 'Collected', 'Refused', 'Dropped', 'Shadow', 'Active', 'JobUs',
+      'SyncUs', 'SyncN'].flatMap(n => ['Replan', 'PlanFromPoint', 'ReplanFromPosition'].map(ic => `ar${n}${ic}`)), 'arMismatch',
+      'arOrphan', 'arReserved'); // 0.22.0: design A10 (+0x14A4..0x1523)
+    if (c.readS32() >= 41) f.push('orReady', 'orMode', 'orShadow', 'orCalls', 'orTaken', ...['State', 'Try', 'Lot', 'Cache', 'Shape',
+      'Trip'].map(n => `orFb${n}`), 'orUs', 'orMaxUs', 'orShadowRuns', 'orShadowMismatch', 'orHits'); // 0.22.1: read-only IsPointObstructedBySim (+0x1524..)
+    if (c.readS32() >= 42) f.push('slReady', 'slMode', 'slShadow', 'slCalls', 'slTaken', 'slUs', 'slMaxUs', 'slPass12', 'slPass0',
+      ...['Gate', 'Miss', 'Portal', 'Lock', 'Managed', 'Table'].map(n => `slDrop${n}`),
+      ...['State', 'Nested', 'Broken', 'Try'].map(n => `slFb${n}`), 'slShadowRuns', 'slShadowMismatch', 'slShadowDrop',
+      'slRefSwap', 'slRelRetry'); // 0.22.2: design SH slot position hold (+0x1564..)
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
+    if (r.version >= 35) { // reason codes: RFB_* in ts3native.cpp (5 = M1Pending, 9 = QueueFull); the log names them
+      r.rfbMaxMs = r.rfbMax >> 8;
+      r.rfbMaxWhy = r.rfbMax & 0xFF;
+    }
     if (vfResetMax === 1 && r.version >= 20) {
       let n = 0;
       f.forEach((name, i) => { if (/^vf\w*Max/.test(name)) { c.add(i * 4).writeS32(0); n++; } });

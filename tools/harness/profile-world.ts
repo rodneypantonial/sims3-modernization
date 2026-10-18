@@ -5,8 +5,8 @@
 // Needs the probe server (ts3probe.py serve) and a world in live mode (cycle.ts --save X). For the whole run:
 // autopilot at x3 with popups cleared, keep_alive + decline_requests every 30 s, and the native stutter profiler
 // (separate Frida session). Samplers in turn: managed C# stack (minutes 1-4), native sim-thread stack (5-8).
-// --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) alternate on/off every --slice minutes, starting on;
-// slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
+// --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) switch every --slice minutes: a warm-up slice
+// (on, not counted), then off,on,on,off repeating (ABBA); use minutes = slice x (1 + multiple of 4). Slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
 // --seed N: seed_rng {seed: N} while paused, just before the unpause that starts the window (docs/27 §B); game RNG put back at the end.
 // --repro ID: run the steps of that tools/harness/repros.json entry (agent commands, waitS after each) from the window start,
@@ -109,17 +109,21 @@ const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 const toggler = (async () => {
   if (!abNames.length) return;
-  for (let i = 0, on = true; i * Number(values.slice) * 60 < secs; i++, on = !on) {
+  for (let i = 0; i * Number(values.slice) * 60 < secs; i++) {
+    // slice 0 is warm-up (on, not counted); then off,on,on,off (ABBA) so a drift in world activity hits both sides alike
+    const on = i === 0 || [false, true, true, false][(i - 1) % 4];
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
+    // ts3native counters at every switch (end of the previous slice): wait-ab.ts splits the sim-thread waits per side
+    await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
     // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138 };
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C };
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
     for (const n of abNames.filter(n => n in counterSwitches))
       await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n]}&value=${on ? 1 : 0}`);
-    slices.push({ from: (Date.now() - t0) / 1000, on });
+    slices.push({ from: (Date.now() - t0) / 1000, on, ...(i === 0 && { warmup: true }) });
     console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'}`);
   }
 })();
@@ -211,7 +215,8 @@ rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
 if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ?? false;
 writeFileSync(`${pre}-rng.json`, JSON.stringify(rng, null, 1));
 if (values.taskstall) { try { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); } catch (e) { console.log(`${stamp()} taskstall stop failed: ${e.message}`); } }
-if (abNames.length) { writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
+if (abNames.length) await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
+if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
 if (stuck.length) await reproSave(ag, values.tag!, stuck);
 console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ` [teleported: ${x.shortcut}]` : ''} on ${x.interaction}`).join('; ')})` : ''}`);

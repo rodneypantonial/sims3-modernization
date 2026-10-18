@@ -112,7 +112,7 @@
     },
     "run": {
       "profile": {
-        "minutes": 12,
+        "minutes": 18,
         "seed": 12345,
         "ab": "routeasync",
         "slice": 2
@@ -139,7 +139,7 @@
     },
     "run": {
       "profile": {
-        "minutes": 12,
+        "minutes": 18,
         "seed": 12345,
         "ab": "routeasync",
         "slice": 2
@@ -168,7 +168,7 @@
   },
   {
     "id": "bp-s2-shadow",
-    "note": "Design S2 shadow (0.13.0, counters v31): clone vs game outside jobs; pass = steerShadowMismatch 0, steerShadowQueryMismatch 0, steerShadowRuns > 1000, 0 watchdog lines, vfRtQtBare 0; C-A observe-only (T-L5 caSimInJob)",
+    "note": "Design S2 shadow (0.15.0 with tripwires T4/T-S7, counters v31): clone vs game outside jobs; pass = steerShadowMismatch 0, steerShadowQueryMismatch 0, steerShadowRuns > 1000, 0 watchdog lines, vfRtQtBare 0; C-A observe-only (T-L5 caSimInJob); also steerTwStubs 11, steerT4Bare 0, steerS7Foreign 0, steerTripDiscard 0, steerUntracked 0 (else name the writer via steerTwSite*)",
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteAsync.Mode": 1,
@@ -188,9 +188,9 @@
         "seed": 12345
       }
     },
-    "asi": "game-copy/ts3native.asi.s2",
+    "asi": "game-copy/ts3native.asi.s2t",
     "save": "Baseline-BP-Spring",
-    "minCounters": 31,
+    "minCounters": 33,
     "gameArgs": [
       "-disablestoryprogression"
     ],
@@ -198,7 +198,7 @@
   },
   {
     "id": "bp-s2-on",
-    "note": "Design S2 on + shadow (0.13.0): pass = steerTaken > 0, steerSimWriteInRo/steerSeqSkew/steerUntracked 0, shadow mismatches 0, blockKey 0x85FE10 near 0; compare iterations/s and blockUs with bp-env-on (only if both machine load lines ok)",
+    "note": "Design S2 on + shadow (0.15.0 with tripwires T4/T-S7): pass = steerTaken > 0, steerSimWriteInRo/steerSeqSkew/steerUntracked 0, shadow mismatches 0, blockKey 0x85FE10 near 0; compare iterations/s and blockUs with bp-env-on (only if both machine load lines ok); also steerTwStubs 11, steerT4Bare 0, steerS7Foreign 0, steerTripDiscard 0, steerUntracked 0 (else name the writer via steerTwSite*)",
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteAsync.Mode": 1,
@@ -216,9 +216,9 @@
         "seed": 12345
       }
     },
-    "asi": "game-copy/ts3native.asi.s2",
+    "asi": "game-copy/ts3native.asi.s2t",
     "save": "Baseline-BP-Spring",
-    "minCounters": 31,
+    "minCounters": 33,
     "gameArgs": [
       "-disablestoryprogression"
     ],
@@ -332,6 +332,36 @@
     "asi": "game-copy/ts3native.asi.l1",
     "save": "Baseline-BP-Spring",
     "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-pet-guard-dx-ab",
+    "note": "Fix D-X (docs/84 §7.2, 0.16.0): pet guard then cancel during route jobs; in-load A/B of the destroy gate (DeadSweep on in both halves); pass: T-D5 holds, gate-on discDestroyApplied > 0 and discDeadHit near 0, discIdMismatch 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "Discourage.Mode": 1,
+      "Discourage.DestroyApply": 1,
+      "Discourage.DeadSweep": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 34,
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "repro": "pet-guard-cancel",
+        "ab": "discdestroy",
+        "slice": 2
+      }
+    },
     "gameArgs": [
       "-disablestoryprogression"
     ],

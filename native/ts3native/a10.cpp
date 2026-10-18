@@ -1,0 +1,55 @@
+// [RouteAsync] Kinds (design A10, docs/87 §5): the Replan-family route ICs as async jobs, like Route.Plan. Included by
+// ts3native.cpp after p10.cpp. Off by default (Kinds=0: nothing hooked, today's behaviour).
+//
+// The three ICs [verified disassembly, Steam 1.67; docs/87 §2]: IC_Route_Replan 0x765490 cdecl(result*, handle) like
+// IC_Route_Plan (plus `add [route+0x1F4],1` before its start-point builder 0x7641D0); IC_Route_PlanFromPoint 0x765240 and
+// IC_Route_ReplanFromPosition 0x765550 cdecl(result*, handle, x, y, z): the point is three floats by value, so the job
+// keeps its own copy and no argument points into managed memory. Each wraps its work in the route's vtable +0x10/+0x14
+// AddRef/Release and copies a 0x48-byte RoutePlanResult to result*. Their direct-call closure to Route_PlanCommon (5 hops)
+// is a subset of the IC_Route_Plan job's (9 hops), except Route_StartPointsBuild 0x7642C0 and its lot helper 0x74BE50
+// (World_LotLookup, 0xB01390, 0xADD800: lot reads the goal step makes in every Plan job) [verified closure]; no managed
+// entry before Route_PlanLocked [verified]. So a job runs the whole original IC on the worker, exactly as a Plan job.
+//
+// Handshake (ts3fixes RouteBackoff.cs ReplanHook / PlanFromPointHook / ReplanFromPointHook): POINT x 3 (kinds 2-3), START
+// of the kind (GetOptionHook in ts3native.cpp), READY / CANCEL as for Route.Plan; the C# side then calls the original
+// method, whose internal call lands here and takes the stored result (IcCollect: same route, same kind, same point).
+// Every rule of the Plan path is the shared code: yield check, M1 refusals, queue, D drains at START, gate waits, H2,
+// G10-C, D-X destroy waits, a stale job dropped by the next START of its route or by its own IC.
+// New refusal: the route is being followed (Route_IsActive), arActive.
+// Mode (arMode, --ab asyncreplan): 0 = shadow, every check runs and START is refused (arShadow), 1 = async.
+
+static __declspec(noinline) u8* __cdecl ArReplanHook(u8* out, DWORD handle) {
+    const void* ret = _ReturnAddress();
+    if (g_p10On) P10Enter(1, (DWORD*)_AddressOfReturnAddress());  // P10 tags it here: its own stub is not installed then
+    return IcCollect(1, out, handle, NULL, ret);
+}
+static __declspec(noinline) u8* __cdecl ArPlanFromPointHook(u8* out, DWORD handle, float x, float y, float z) {
+    const void* ret = _ReturnAddress();
+    if (g_p10On) P10Enter(2, (DWORD*)_AddressOfReturnAddress());
+    const float pt[3] = {x, y, z};
+    return IcCollect(2, out, handle, pt, ret);
+}
+static __declspec(noinline) u8* __cdecl ArReplanFromPositionHook(u8* out, DWORD handle, float x, float y, float z) {
+    const void* ret = _ReturnAddress();
+    if (g_p10On) P10Enter(3, (DWORD*)_AddressOfReturnAddress());
+    const float pt[3] = {x, y, z};
+    return IcCollect(3, out, handle, pt, ret);
+}
+static void* const kArHooks[4] = {NULL, (void*)ArReplanHook, (void*)ArPlanFromPointHook, (void*)ArReplanFromPositionHook};
+static const int kArBuilt = 7;  // the Kinds bits this build hooks (ts3fixes hooks the same methods)
+
+// [RouteAsync] Kinds = bit 0 Replan, bit 1 PlanFromPoint, bit 2 ReplanFromPosition (7 = all); KindsMode = arMode's start.
+// Needs the async path (InstallAsync). Before InstallP10, which then leaves the hooked ICs to these detours.
+static void InstallA10(const wchar_t* ini) {
+    Ts3nCounters& k = ts3native_counters;
+    const int kinds = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"Kinds", 0, ini), 0, 7);
+    if (!kinds) { Log("route async A10 off (Kinds=0)"); return; }
+    if (!k.asyncReady || !g_icPlanOrig) { Log("SKIP route async A10: needs the async route path"); return; }
+    k.arMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KindsMode", 1, ini), 0, 1);
+    for (int kind = 1; kind <= 3; kind++) {
+        if (!(kinds & kArBuilt & (1 << (kind - 1)))) continue;
+        g_arOrig[kind] = InstallDetour(kP10Name[kind], kP10Ic[kind], kP10Pro[kind], sizeof(kP10Pro[kind]), kArHooks[kind]);
+        if (g_arOrig[kind]) k.arReady |= 1 << (kind - 1);  // a kind without its detour is refused at START
+    }
+    Log("route async A10: Kinds=%d KindsMode=%ld, hooked mask %ld", kinds, k.arMode, k.arReady);
+}

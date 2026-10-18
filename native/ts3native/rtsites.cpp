@@ -109,7 +109,7 @@ static int RtWorldState(const void* lock) {
 static bool RtQuietWorld(const void* lock) { return RtWorldState(lock) == 0; }  // worker, before each queued job
 
 // H6 M1 (docs/60 §2.4), on the sim thread from AsyncStart: true = this START may go async, *lock = the job's lock.
-static bool RtM1Allows(void** lock) {
+static bool RtM1Allows(void** lock, int* whyOut) {
     Ts3nCounters& k = ts3native_counters;
     int why = -1;
     const RgThread& t = t_rg;
@@ -119,12 +119,17 @@ static bool RtM1Allows(void** lock) {
     else if (k.rtClosing) why = 2;
     else if (ws) why = ws;
     else if (t.n > t.readers || k.rgOwnerTid == (LONG)GetCurrentThreadId()) why = 5;
-    if (why >= 0) { InterlockedIncrement(&k.asyncRefusedM1[why]); return false; }
+    if (why >= 0) {
+        InterlockedIncrement(&k.asyncRefusedM1[why]);
+        if (whyOut) *whyOut = why;
+        return false;
+    }
     *lock = g_rgLock;
     return true;
 }
 
 static void DiscDrain(bool force);  // discourage.cpp
+static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait);
 
 // 1 = skip the site's body and return to its caller (only the routing debug frame, a plain `ret` function)
 static int __cdecl RtEnter(int i, DWORD* slot) {
@@ -174,7 +179,10 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
             if (enforce && !worker) {  // published first (no job starts during the destroy), then wait for a running one
                 InterlockedIncrement(&g_rgOffSimOpen);
                 if (!RgPush(t, slot, 1, RG_REL_OFFSIM)) InterlockedDecrement(&g_rgOffSimOpen);
-                if (!RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY)) { InterlockedIncrement(&k.vfRtDestroyInInvoke); note = "destroy inside a job callback"; }
+                const bool waited = RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY);
+                if (!waited) { InterlockedIncrement(&k.vfRtDestroyInInvoke); note = "destroy inside a job callback"; }
+                // D-X (docs/84 §7.2): thiscall(svc; idLo, idHi), ret 8 [verified 0x939420..0x939506]: slot[1], slot[2]
+                DiscOnDestroy(slot[1], slot[2], waited);
             }
             break;
         case RT_LOTGRID:

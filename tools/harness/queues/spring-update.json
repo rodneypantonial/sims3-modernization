@@ -1,0 +1,29 @@
+[
+  {
+    "id": "update-spring-bp",
+    "note": "Add a pet to Baseline-BP-Spring, clean, check, save over it",
+    "asi": "tested",
+    "run": {
+      "repro": "update-spring-bp"
+    },
+    "timeoutMin": 15
+  },
+  {
+    "id": "update-spring-ip",
+    "note": "Add a pet to Baseline-IP-Spring, clean, check, save over it",
+    "asi": "tested",
+    "run": {
+      "repro": "update-spring-ip"
+    },
+    "timeoutMin": 15
+  },
+  {
+    "id": "update-spring-sv",
+    "note": "Add a pet to Baseline-SV-Spring, clean, check, save over it",
+    "asi": "tested",
+    "run": {
+      "repro": "update-spring-sv"
+    },
+    "timeoutMin": 15
+  }
+]

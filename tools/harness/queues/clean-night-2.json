@@ -1,0 +1,776 @@
+[
+  {
+    "id": "bp-s2t-off",
+    "note": "S2 overhead 1/3: same 0.15.0 build, async + queue + D on, S2 not installed (no tripwire stubs): baseline for the two runs below",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 0,
+      "SteerRO.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2t",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 33,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2-noshadow",
+    "note": "S2 overhead 2/3: S2 on, shadow OFF, whole run (stubs + S2); compare with bp-s2t-off (only if both machine load lines ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 1,
+      "SteerRO.Shadow": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2t",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 33,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2-ab",
+    "note": "S2 overhead 3/3: S2 installed (stubs on all run), shadow off, S2 answering switched on/off every 2 min in one load; ignore the first slice (warm-up)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 1,
+      "SteerRO.Shadow": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "steerro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2t",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 33,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2arm-on",
+    "note": "S2 armed stubs (0.18.0, counters v36): S2 on, shadow off, tripwire stubs armed only during jobs; compare with bp-s2t-off and bp-s2-noshadow (machine load ok). Read s2EntryKt/s2TwKt/s2QlKt/s2TryKt (us = Kt*1024/s2TscPerUs) against steerCalls/s2TwCalls/s2QlCalls/s2TryCalls; pass = steerShadowMismatch 0, steerUntracked 0, steerSimWriteInRo 0, 0 watchdog lines",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 1,
+      "SteerRO.Shadow": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2arm",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 36,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2arm-ab",
+    "note": "S2 armed stubs (0.18.0): in-load --ab steerro (S2 answering on/off every 2 min; stubs still armed during jobs in both halves), shadow off; ignore the first slice (warm-up); compare the gain with bp-s2-ab",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 1,
+      "SteerRO.Shadow": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "steerro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2arm",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 36,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p1b",
+    "note": "Probe P1b observe (0.14.0, counters v32): gate-12/gate-0 waits by second frame, T-L3 portalRef, T-L5 caSimInJob; pass = node tools/harness/p1b-report.ts PASS on both checks, ltQlHeldBlock 0, 0 watchdog lines, game alive",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-p1b",
+    "note": "Probe P1b observe on Isla Paradiso (0.19.0, l1b: single InstallLotFd): as bp-p1b",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1b",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-l1-shadow",
+    "note": "Design L1 shadow (0.19.0, l1b: single InstallLotFd): clone vs game outside jobs; pass = ltShadowMismatch 0, ltShadowRuns > 100, ltQlHeldBlock 0, 0 watchdog lines (P1b on: 0x631814 second frames show 0x788373)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP1b.Enabled": 1,
+      "LotFrontDoorRO.Enabled": 1,
+      "LotFrontDoorRO.Mode": 0,
+      "LotFrontDoorRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-l1-on",
+    "note": "Design L1 on + shadow (0.19.0, l1b: single InstallLotFd): pass = ltTaken > 0, ltShadowMismatch 0, ltQlHeldBlock 0, P0 blockKey 0x631814 near 0; compare total blockUs and iterations/s with bp-p1b (only if both machine load lines ok)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "LotFrontDoorRO.Enabled": 1,
+      "LotFrontDoorRO.Mode": 1,
+      "LotFrontDoorRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.l1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 32,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-pet-guard-dx-ab",
+    "note": "Fix D-X (docs/84 §7.2, 0.16.0): pet guard then cancel during route jobs; in-load A/B of the destroy gate (DeadSweep on in both halves); pass: T-D5 holds, gate-on discDestroyApplied > 0 and discDeadHit near 0, discIdMismatch 0",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "Discourage.Mode": 1,
+      "Discourage.DestroyApply": 1,
+      "Discourage.DeadSweep": 1
+    },
+    "asi": "game-copy/ts3native.asi.dx",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 34,
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "repro": "pet-guard-cancel",
+        "ab": "discdestroy",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ab-routeasync-rlog",
+    "note": "ip-ab-routeasync on 0.17.0 (counters v35, docs/60 §2.3): log why long route plans fall back to sync. In-load A/B async Mode 1 on/off (warm-up slice, then ABBA). Read: rfbN*/rfbMs* by group and rfbMaxMs/rfbMaxWhy in the on slices, and the \"route async: sync plan\" lines in ts3native.log (reason per plan >= 200 ms)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteAsync.LogFallbackMs": 200
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "routeasync",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.rlog",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 35,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-g0w-shadow",
+    "note": "Design H2 shadow (0.19.0, counters v37, docs/86 §6): [LocoWindow] Mode 0 = count only. Pass = game alive, 0 watchdog lines, clock guard ok, g0wDropJobWait = g0wDropSyncPlan = 0, g0wWatchdog = 0, g0wPasses about = sim iterations, and g0wJobStartInPass > 0 (else H2 has nothing to remove). Also read g0wRunningAtEntry, g0wPassUs/g0wPasses, g0wGate0Waits",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "LocoWindow.Enabled": 1,
+      "LocoWindow.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 37,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-g0w-ab",
+    "note": "Design H2 A/B (0.19.0): in-load --ab locowin (g0wMode 1/0 every 2 min); ignore the first slice (warm-up). Mode 1 halves: g0wJobStartInPass = 0, g0wWatchdog = 0, g0wDrop* = 0, g0wHoldUs/g0wJobsHeld under 1 ms, gate-0 waits (g0wGate0Waits, blockKey 0x62EF7A) near 0; compare total blockUs and iterations/s with the Mode 0 halves; 0 stuck Sims (log only). Re-run P0 after (gains do not add)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "LocoWindow.Enabled": 1,
+      "LocoWindow.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "locowin",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 37,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-g0w-ab",
+    "note": "bp-g0w-ab in Isla Paradiso (0.19.0): in-load --ab locowin, same pass rules; IP gate-0 waits were 5.3-6.2 ms/s",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "LocoWindow.Enabled": 1,
+      "LocoWindow.Mode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "locowin",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.h2",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 37,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-s2cov-shadow",
+    "note": "S2 coverage (0.21.0, counters v39): same ini as bp-s2-shadow; SR_FB_SHAPE split per site (s2Shape*) and buffer demand (s2MaxObjs/Local/Nodes/Ids/Depth) after the limits doubled (kSrCap 1024, kSrLocal 128, kSrNodes 32, kSrIds 512); pass = steerShadowMismatch 0, steerShadowQueryMismatch 0, steerShadowRuns > 1000, fallback share (sum of steerFb* / steerCalls) well under 10% (bp-s2-shadow: 28% shape), 0 watchdog lines; report which s2Shape* site dominates and s2Max* against the limits",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SteerRO.Enabled": 1,
+      "SteerRO.Mode": 0,
+      "SteerRO.Shadow": 1,
+      "FpRebuildLock.Enabled": 1,
+      "FpRebuildLock.Mode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.s2cov",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 39,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-p10",
+    "note": "Probe P10 observe (0.20.0, counters v38, docs/87 §6): sync plans by route IC. Pass = game alive, 0 watchdog lines, clock guard ok, p10Ready 1, p10Entries* > 0. Read with node tools/harness/p10-report.ts: per IC entries, Route_PlanLocked ms/s, early returns, CanYield share; gate-10 waits by IC (P1b row 6); decides A10's order and size (docs/87 §5)",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP10.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.p10",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 38,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-p10",
+    "note": "bp-p10 in Isla Paradiso (0.20.0): same pass rules; IP sync plans were 125 ms/s",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ProbeP10.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.p10",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 38,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ar-shadow",
+    "note": "Design A10 shadow (0.22.0, counters v40, docs/87 §5-§6): Kinds=7, KindsMode=0: the three Replan-family ICs run every START check, count would-be jobs (arShadow*) and plan synchronously. Pass = game alive, 0 watchdog lines, arReady 7, arMismatch = 0, arOrphan = 0, arStarted* = 0. Read with node tools/harness/p10-report.ts: arShadow vs arRefused/arActive per IC (refusals by reason in the log), arSyncUs per IC (the plan time A10 could move). Needs the A10 ts3fixes (RouteBackoff.cs Replan/PlanFromPoint/ReplanFromPoint hooks) installed in Mods before the run: node tools/setup/install-fixes.ts install --only stutter-fixes from the merged checkout (the queue does not pick a ts3fixes build per job).",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteAsync.Kinds": 7,
+      "RouteAsync.KindsMode": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.a10",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 40,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ar-ab",
+    "note": "Design A10 A/B (0.22.0): in-load --ab asyncreplan (arMode 1/0 every 2 min, ABBA after a warm-up slice; ignore the first). Mode 1 halves: arCollected* > 0, arMismatch = 0, arOrphan = 0, gate-10 waits (blockKey 0x760BFF) near 0, arSyncUs* and g11PlanUs down; compare total blockUs and iterations/s with the Mode 0 halves; 0 stuck Sims (log only). Re-run P0 after (gains do not add). Needs the A10 ts3fixes (RouteBackoff.cs Replan/PlanFromPoint/ReplanFromPoint hooks) installed in Mods before the run: node tools/setup/install-fixes.ts install --only stutter-fixes from the merged checkout (the queue does not pick a ts3fixes build per job).",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteAsync.Kinds": 7,
+      "RouteAsync.KindsMode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "asyncreplan",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.a10",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 40,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ar-ab",
+    "note": "bp-ar-ab in Isla Paradiso (0.22.0): same pass rules; P10 had ReplanFromPosition at 77 ms/s of sim plan time in IP (~38 ms per call), the main target. Needs the A10 ts3fixes (RouteBackoff.cs Replan/PlanFromPoint/ReplanFromPoint hooks) installed in Mods before the run: node tools/setup/install-fixes.ts install --only stutter-fixes from the merged checkout (the queue does not pick a ts3fixes build per job).",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteAsync.Kinds": 7,
+      "RouteAsync.KindsMode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "asyncreplan",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.a10",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 40,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-g0ro-shadow",
+    "note": "Gate-0 fix shadow (0.21.1, counters v41, docs/86 §10): [ObstructedRO] Mode=0 Shadow=1, async + queue + D on. Pass = game alive, 0 watchdog lines, clock guard ok, orReady 1, orShadowRuns > 100, orShadowMismatch 0, ltQlHeldBlock 0, steerT4Bare 0, steerS7Foreign 0; report orFb* (state, QL busy, lot, cache, shape, tripwire) against orCalls",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ObstructedRO.Enabled": 1,
+      "ObstructedRO.Mode": 0,
+      "ObstructedRO.Shadow": 1,
+      "ProbeP1b.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.g0ro",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 41,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-g0ro-ab",
+    "note": "Gate-0 fix A/B (0.21.1): in-load --ab obstructedro, 2-min slices, Shadow=1 in both halves. Pass = game alive, 0 watchdog lines, clock guard ok, orShadowMismatch 0, orTaken > 0 in the on halves; gate-0 waits (P0 key 0x62EF7A / P1b second frame 0x75167F) near 0 in the on halves (bp-p1b: 1,041 waits, 11.9 ms/s for the whole key), total sim wait (blockUs sum) and iterations/s against the off halves; watch the next touch (0x82EDB0 keys) for the wait moving, stuck Sims log only",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ObstructedRO.Enabled": 1,
+      "ObstructedRO.Mode": 1,
+      "ObstructedRO.Shadow": 1,
+      "ProbeP1b.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "obstructedro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.g0ro",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 41,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-g0ro-ab",
+    "note": "bp-g0ro-ab in Isla Paradiso (0.21.1): same pass rules; IP gate-0 waits were 5.3-6.2 ms/s",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "ObstructedRO.Enabled": 1,
+      "ObstructedRO.Mode": 1,
+      "ObstructedRO.Shadow": 1,
+      "ProbeP1b.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "obstructedro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.g0ro",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 41,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-slotro-shadow",
+    "note": "Design SH shadow (0.22.2, counters v42, docs/90): [SlotEnabledRO] Mode 0 Shadow 1 = with no job the game's call then a dry hold, compared. Pass = game alive, 0 watchdog lines, clock guard ok, slShadowMismatch 0 with slShadowRuns > 100, slShadowDrop small, ltQlHeldBlock 0. Also read slCalls, slDrop* split.",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1,
+      "SlotEnabledRO.Mode": 0,
+      "SlotEnabledRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "asi": "game-copy/ts3native.asi.slotro",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 42,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-slotro-ab",
+    "note": "Design SH A/B (0.22.2): in-load --ab slotenabledro (slMode 1/0 every 2 min), shadow on; ignore the first slice (warm-up). Mode 1 halves: slTaken > 0, gate-12 waits (blockKey 0x62F782, second frame 0x76F15D) and slPass12/slPass0 rise, slShadowMismatch 0, slDrop Lock/Managed small; compare total blockUs and iterations/s with the Mode 0 halves; 0 stuck Sims (log only). Re-run P0 after (gains do not add).",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1,
+      "SlotEnabledRO.Mode": 1,
+      "SlotEnabledRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.slotro",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 42,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-slotro-ab",
+    "note": "Design SH A/B on an IP save (0.22.2): --ab slotenabledro, 18 min, 2-min slices, shadow on. Same pass criteria as bp-slotro-ab.",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1,
+      "SlotEnabledRO.Mode": 1,
+      "SlotEnabledRO.Shadow": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.slotro",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 42,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ar-ab-wait",
+    "note": "A10 A/B in IP again, with counter snapshots at every switch (profile-world <tag>-ab-native.jsonl): node tools/harness/wait-ab.ts <tag> splits the sim-thread waits (P0 keys, pump, worker time) per side. Question: where did the planning time A10 moved off the sim thread come back (ip-ar-ab 2026-10-18: no stutter gain)?",
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteAsync.Kinds": 7,
+      "RouteAsync.KindsMode": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 18,
+        "seed": 12345,
+        "ab": "asyncreplan",
+        "slice": 2
+      }
+    },
+    "asi": "game-copy/ts3native.asi.a10",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 40,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

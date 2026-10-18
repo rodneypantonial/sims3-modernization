@@ -7,6 +7,7 @@
 //   watch.kind "stuck":  watch these Sims (or all, if "sims" is empty) for watch.minutes; PASS when none is stuck
 //                        (same spot and interaction for 6 checks of 30 s, or routing without moving for 3).
 //   watch.kind "counter": PASS when patches.<watch.counter> rose by at least watch.min within watch.minutes.
+//   watch.kind "native": PASS when the ts3native counter deltas (steps + watch.minutes) meet every watch.checks entry.
 // Steps are agent commands (place_sim, sim_go_home, do_interaction, patches {name:false}, ...), run in order.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -43,9 +44,9 @@ if (cmd === 'run-many') {
   }
   if (!batch.length) { console.error('no matching entries'); process.exit(2); }
   if (later.length) console.log(`not in this batch (same place, Sim or another save): ${later.join(', ')}`);
-  const counters = batch.filter(e => e.watch.kind === 'counter');
-  if (counters.length) console.log(`counter watches run separately: ${counters.map(e => e.id).join(', ')}`);
-  const stuckOnes = batch.filter(e => e.watch.kind !== 'counter');
+  const counters = batch.filter(e => e.watch.kind === 'counter' || e.watch.kind === 'native');
+  if (counters.length) console.log(`counter / native watches run separately: ${counters.map(e => e.id).join(', ')}`);
+  const stuckOnes = batch.filter(e => e.watch.kind !== 'counter' && e.watch.kind !== 'native');
   r = { id: stuckOnes.map(e => e.id).join('+'), bug: `${stuckOnes.length} repros together`, fix: '-', save: batch[0].save,
     steps: stuckOnes.flatMap(e => e.steps ?? []),
     watch: { kind: 'stuck', sims: stuckOnes.flatMap(e => e.watch.sims ?? []), minutes: Math.max(...stuckOnes.map(e => e.watch.minutes)) },
@@ -70,6 +71,12 @@ writeFileSync(ACTIVE, JSON.stringify({ id: r.id, sims: [...new Set([...(r.watch?
 process.on('exit', () => rmSync(ACTIVE, { force: true }));
 // counter baseline before the steps: a step can trigger the counted event itself (bp-overwatch-stuckcheck)
 const counterStart = r.watch?.kind === 'counter' ? (await ag('patches')).result?.[r.watch.counter] ?? 0 : 0;
+// watch.kind "native": ts3native counters (/native) before the steps and after watch.minutes; PASS when every delta check holds,
+// checks: [{name, atLeast | atMost | equals | equalsName (same delta as that counter)}] (pet-guard-cancel: T-D5)
+const native = async (): Promise<any> => {
+  try { return await (await fetch('http://127.0.0.1:47891/native', { signal: AbortSignal.timeout(20000) })).json(); } catch { return null; }
+};
+const nativeStart = r.watch?.kind === 'native' ? await native() : null;
 // "memory": true on the entry logs the probe's /memory (commitMB, privateMB, largest free block) before the steps and after each,
 // plus allocations >= 32 MB from /allocations that are new or gone since the previous log (docs/08 M9)
 let allocs: Map<string, any> | null = null;
@@ -133,6 +140,20 @@ if (w.kind === 'counter') {
     if (n >= w.min) { verdict = 'PASS'; break; }
   }
   verdict ||= `FAIL: ${w.counter} rose less than ${w.min} in ${w.minutes} min`;
+} else if (w.kind === 'native') {
+  while (Date.now() - t0 < w.minutes * 60000) await sleep(Math.min(30000, w.minutes * 60000 - (Date.now() - t0))); // game death ends it (watchGame)
+  const end = await native();
+  if (!nativeStart || !end || nativeStart.error || end.error) verdict = `FAIL: /native unreadable (${nativeStart?.error ?? end?.error ?? 'no answer'})`;
+  else {
+    const d = (n: string) => (end[n] ?? 0) - (nativeStart[n] ?? 0);
+    console.log(`${stamp()} native deltas: ${(w.checks as any[]).map(c => `${c.name} ${d(c.name)}`).join(', ')}`);
+    const bad = (w.checks as any[]).filter(c => {
+      const v = d(c.name);
+      return c.equalsName !== undefined ? v !== d(c.equalsName) : c.equals !== undefined ? v !== c.equals
+        : c.atLeast !== undefined ? v < c.atLeast : c.atMost !== undefined ? v > c.atMost : !v;
+    });
+    verdict = bad.length ? `FAIL: ${bad.map(c => JSON.stringify(c)).join('; ')}` : 'PASS';
+  }
 } else if (w.kind !== 'none') {
   const seen = new Map<string, { key: string; checks: number }>();
   const stuck = new Set<string>();

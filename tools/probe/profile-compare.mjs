@@ -25,8 +25,17 @@ const runs = tags.map(full => {
   let rows = csv.map(l => Object.fromEntries(l.split(',').map((v, i) => [head[i], Number(v)])));
   if (side) {
     const { slices } = JSON.parse(readFileSync(join(DIR, `${tag}-ab.json`), 'utf8'));
-    const sideOf = sec => { let cur = null; for (const sl of slices) if (sec >= sl.from) cur = sl; return cur && sec - cur.from >= 15 ? (cur.on ? 'on' : 'off') : null; };
-    rows = rows.filter((r, i) => sideOf(i) === side); // row i is roughly second i of the run
+    // slice 0 is warm-up (older runs did not mark it, but it ran slower there too); a last slice cut short by the
+    // profiler's end (under half a slice of rows) is dropped: one short slice swung ip-ab-routeasync 2026-10-17
+    const len = slices.length > 1 ? slices[1].from - slices[0].from : Infinity;
+    const keep = slices.map((sl, i) => i > 0 && (i < slices.length - 1 || rows.length - sl.from >= len / 2));
+    const sliceOf = sec => { let cur = -1; slices.forEach((sl, i) => { if (sec >= sl.from) cur = i; }); return cur >= 0 && keep[cur] && sec - slices[cur].from >= 15 ? cur : -1; };
+    const all = rows;
+    rows = all.filter((r, i) => sliceOf(i) >= 0 && slices[sliceOf(i)].on === (side === 'on')); // row i is roughly second i of the run
+    if (side === 'on') slices.forEach((sl, i) => { // per slice, so one odd slice shows instead of hiding in the mean
+      const s = all.filter((r, j) => sliceOf(j) === i), n = s.length || 1;
+      if (keep[i]) console.log(`${tag} slice ${i} ${sl.on ? 'on ' : 'off'} ${s.length} s: ${(s.reduce((a, r) => a + r.iters, 0) / n).toFixed(1)} it/s, ${(s.reduce((a, r) => a + r.hitches, 0) / n).toFixed(2)} hitches/s, route ${(s.reduce((a, r) => a + r.route, 0) / n).toFixed(0)} ms/s, worst ${Math.max(0, ...s.map(r => r.maxIterMs)).toFixed(0)} ms`);
+    });
   }
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0), n = rows.length || 1;
   // patched methods sample under the hook's name (docs/04 F8); count them as the method they replace

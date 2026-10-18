@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using Sims3.Gameplay.Abstracts;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
+using Sims3.Gameplay.Situations;
 using Sims3.SimIFace;
+using Sims3.SimIFace.CAS;
 
 namespace Ts3Agent
 {
@@ -22,6 +26,86 @@ namespace Ts3Agent
             Dispatcher.Register("sim_portal_trip", SimPortalTrip);
             Dispatcher.Register("thumbnails", Thumbnails);
             Dispatcher.Register("outfit_change", OutfitChange);
+            Dispatcher.Register("pet_guard", PetGuard);
+        }
+
+        // pet_guard {action: "start" | "state" | "cancel", target?}: docs/84 §7.2 fix D-X repro (repros.json pet-guard-cancel).
+        // start: a pet of the active household guards an object on the home lot (PetGuardSitutation.GuardObject, the Guard
+        // interaction); with no pet in the household a random adult dog is made, joins it next to the object and is tracked
+        // for remove_sims. target = an object id, else a random object on the home lot (no Sim, not carried). Once the pet
+        // arrives the guard adds a route discourage footprint on a hidden DynamicSlot (Route.AddDiscourageFootprint).
+        // cancel: cancels the pet's interactions; the guard's Cleanup then removes the footprint and destroys the slot in the
+        // same script call (Remove, then Destroy: the case D dropped). state: guarding / area present, for an "until" step.
+        // ensure: base saves (spring-saves): with no pet in the household, a random adult dog joins it on the home lot and is
+        // NOT tracked, so it stays in the save; returns pets (the household's pet count) for an "until" check.
+        static object PetGuard(Args a)
+        {
+            RequireLive();
+            string action = a.Str("action", "start");
+            Household h = Household.ActiveHousehold;
+            if (h == null || h.LotHome == null) throw new McpException("no active household with a home lot");
+            Sim pet = null;
+            foreach (Sim s in h.Pets) if (s != null && s.InteractionQueue != null) { pet = s; break; }
+            Dictionary<string, object> r = Util.Obj();
+            if (action == "ensure")
+            {
+                if (pet == null)
+                {
+                    SimDescription sd = GeneticsPet.MakeRandomPet(CASAgeGenderFlags.Adult, CASAgeGenderFlags.Female, CASAgeGenderFlags.Dog);
+                    if (sd == null) throw new McpException("could not make a dog (Pets not installed?)");
+                    h.Add(sd);
+                    Sim near = Sim.ActiveActor; // next to the active Sim (inside the house, on the lot); the lot centre may be inside a wall
+                    Vector3 pos = near != null && near.LotCurrent == h.LotHome ? near.Position : h.LotHome.GetCenterPosition();
+                    pet = sd.Instantiate(pos);
+                    if (pet == null) throw new McpException("dog made but not instantiated");
+                    r["spawned"] = true;
+                }
+                int n = 0;
+                foreach (Sim s in h.Pets) if (s != null) n++;
+                r["pets"] = n;
+                r["pet"] = pet.FullName;
+                return r;
+            }
+            if (action == "start")
+            {
+                GameObject target = a.Has("target") ? Util.FindObject(a, "target") : null;
+                if (target == null)
+                {
+                    List<GameObject> cand = h.LotHome.GetObjects<GameObject>(delegate(GameObject o)
+                        { return !(o is Sim) && o.Parent == null && o.InWorld; });
+                    if (cand.Count == 0) throw new McpException("no object on the home lot to guard");
+                    target = RandomUtil.GetRandomObjectFromList(cand);
+                }
+                if (pet == null)
+                {
+                    SimDescription sd = GeneticsPet.MakeRandomPet(CASAgeGenderFlags.Adult, CASAgeGenderFlags.Female, CASAgeGenderFlags.Dog);
+                    if (sd == null) throw new McpException("could not make a dog (Pets not installed?)");
+                    h.Add(sd);
+                    SpawnedSims().Add(sd.SimDescriptionId);
+                    Vector3 pos = target.Position;
+                    pos.x += 2f;
+                    pet = sd.Instantiate(pos);
+                    if (pet == null) throw new McpException("dog made but not instantiated");
+                    r["spawned"] = true;
+                }
+                pet.InteractionQueue.CancelAllInteractions();
+                InteractionInstance ii = PetGuardSitutation.GuardObject.Singleton.CreateInstance(target, pet,
+                    new InteractionPriority(InteractionPriorityLevel.UserDirected), false, true);
+                r["queued"] = pet.InteractionQueue.Add(ii);
+                r["target"] = Util.ObjectName(target);
+                r["targetId"] = Util.Id(target.ObjectId);
+            }
+            else if (pet == null) throw new McpException("the active household has no pet (run pet_guard start first)");
+            else if (action == "cancel") pet.InteractionQueue.CancelAllInteractions();
+            else if (action != "state") throw new McpException("action must be ensure, start, state or cancel");
+            PetGuardSitutation.GuardObject g = pet.InteractionQueue.GetHeadInteraction() as PetGuardSitutation.GuardObject;
+            FieldInfo area = typeof(PetGuardSitutation.GuardObject).GetField("mDiscourageArea", BindingFlags.NonPublic | BindingFlags.Instance);
+            GameObject slot = g != null && area != null ? area.GetValue(g) as GameObject : null;
+            r["pet"] = pet.FullName;
+            r["guarding"] = g != null;
+            r["area"] = slot != null;
+            if (slot != null) r["areaId"] = Util.Id(slot.ObjectId);
+            return r;
         }
 
         // thumbnails {lots?, household?, maxS?, status?}: the ThumbnailManager ICs that create D3D textures from the calling

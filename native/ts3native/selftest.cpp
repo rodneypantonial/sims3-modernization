@@ -362,6 +362,420 @@ static void Cancel(DWORD h) { assert(GetOptionHook(h, 0, kAsyncOptHi | kAsyncCan
 static void WaitReady(DWORD h) { while (!Ready(h)) Sleep(1); }
 static u8 NoYield(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi | kNoYieldHi, 1); }
 
+// --- H2 locomotion window (locowin.cpp): thunk convention, hold, running at entry, drop before a wait, watchdog, nesting ---
+static void* g_lpSelf;
+static float g_lpDt;
+static int g_lpCase, g_lpRuns;
+static DWORD g_lpMs;  // case 4: how long the raw wait took
+static void __fastcall FakePass(void* self, void*, float dt) {
+    g_lpSelf = self;
+    g_lpDt = dt;
+    g_lpRuns++;
+    const Ts3nCounters& c = ts3native_counters;
+    u8 out[0x48];
+    const int which = g_lpCase;
+    g_lpCase = 0;  // a nested pass runs case 0
+    switch (which) {
+        case 1:  // Mode 1: a job queued inside the pass is not started before it returns (claimed at most, held)
+            assert(g_g0Win == 1 && g_g0wIn == 1 && t_g0wDepth == 1);
+            assert(Start(kH1));
+            Sleep(60);
+            assert(g_async.state != A_RUNNING && JobFor(kH1)->state != J_DONE && c.g0wJobsHeld >= 1);
+            break;
+        case 2:  // a job running at entry finishes inside; the one queued meanwhile is held
+            assert(JobFor(kH1)->state == J_RUNNING || JobFor(kH1)->state == J_DONE);
+            assert(Start(kH2));
+            while (JobFor(kH1)->state != J_DONE) Sleep(1);  // waits only for the running job: allowed
+            Sleep(40);
+            assert(JobFor(kH2)->state != J_DONE && g_async.state != A_RUNNING);
+            break;
+        case 3: {  // a sim wait for a held job drops the window first and completes (no 250 ms watchdog)
+            assert(Start(kH1));
+            while (JobFor(kH1)->state != J_RUNNING) Sleep(0);  // claimed by the worker, start held
+            Sleep(10);
+            assert(g_async.state != A_RUNNING);
+            const DWORD t0 = GetTickCount();
+            assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == GetCurrentThreadId());  // not READY: planned here
+            assert(GetTickCount() - t0 < 200 && g_g0Win == 0 && g_g0wIn == 1 && c.g0wDrop[G0W_JOBWAIT] == 1);
+            break;
+        }
+        case 4: {  // [RouteWorker] Mode 1 sync plan while a start is held: dropped, the worker runs the job then the plan
+            assert(Start(kH1));
+            while (JobFor(kH1)->state != J_RUNNING) Sleep(0);
+            u8 opts[0x38] = {0};
+            int s[2] = {1, 2}, g[2] = {3, 4}, list[2];
+            assert(PlanLockedHook(NULL, NULL, list, s, g, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_planTid == g_workerTid);
+            assert(g_g0Win == 0 && c.g0wDrop[G0W_SYNCPLAN] == 1);
+            break;
+        }
+        case 5: {  // a wait no G0wDrop covers: the worker lets go after 250 ms (watchdog), no deadlock
+            assert(Start(kH1));
+            const DWORD t0 = GetTickCount();
+            while (JobFor(kH1)->state != J_DONE) Sleep(1);
+            g_lpMs = GetTickCount() - t0;
+            break;
+        }
+        case 6:  // nested pass: the inner call leaves the outer window alone
+            LocoWinThunk((void*)0x77, NULL, 2.5f);
+            assert(g_lpSelf == (void*)0x77 && g_lpDt == 2.5f && g_g0Win == 1 && g_g0wIn == 1 && t_g0wDepth == 1);
+            g_lpSelf = self;
+            g_lpDt = dt;
+            break;
+        case 7:  // Mode 0: count only, the job starts inside
+            assert(g_g0Win == 0 && g_g0wIn == 1);
+            assert(Start(kH1));
+            while (JobFor(kH1)->state != J_DONE) Sleep(1);
+            break;
+        case 8:  // an exception leaves the pass: the window must not stay open
+            RaiseException(0xE0000001, 0, 0, NULL);
+    }
+}
+// the thunk as the game calls it: ecx = self, one float pushed, callee pops it (ret 4)
+static void* volatile g_ctSelf;
+static volatile float g_ctDt;
+static void* g_ctThunk = (void*)LocoWinThunk;
+static volatile DWORD g_ctEsp0, g_ctEsp1;
+static __declspec(noinline) void CallThunk(void* self, float dt) {
+    g_ctSelf = self;
+    g_ctDt = dt;
+    __asm {
+        mov g_ctEsp0, esp
+        push g_ctDt
+        mov ecx, g_ctSelf
+        call g_ctThunk
+        mov g_ctEsp1, esp
+    }
+    assert(g_ctEsp0 == g_ctEsp1 && g_lpSelf == g_ctSelf && g_lpDt == g_ctDt);
+}
+static void Collect(DWORD h) {
+    u8 out[0x48];
+    WaitReady(h);
+    assert(IcPlanHook(out, h) == out && *(DWORD*)(out + 0x40) == g_workerTid && *(DWORD*)(out + 4) == h);
+}
+static void TestLocoWindow() {
+    static_assert(offsetof(Ts3nCounters, g0wReady) == 0x13E4 && offsetof(Ts3nCounters, g0wMode) == 0x13E8 &&
+                  offsetof(Ts3nCounters, g0wDrop) == 0x140C && offsetof(Ts3nCounters, g0wGate0Us) == 0x1420 &&
+                  sizeof(Ts3nCounters) >= 1289 * 4, "v37 layout");
+    Ts3nCounters& k = ts3native_counters;
+    const LONG wd0 = k.watchdogs;
+    g_g0wOrig = FakePass;
+    k.g0wReady = 1;
+    k.g0wMode = 1;
+    g_icSleepMs = 0;
+    // 1. hold, through the game's calling convention
+    g_lpCase = 1;
+    CallThunk((void*)0x55, 1.5f);
+    assert(g_g0Win == 0 && g_g0wIn == 0 && t_g0wDepth == 0 && g_rgOffSimOpen == 0);
+    Collect(kH1);
+    assert(k.g0wPasses == 1 && k.g0wJobsHeld == 1 && k.g0wJobStartInPass == 0 && k.g0wHoldUs >= 40000 && k.g0wRunningAtEntry == 0);
+    // 2. running at entry
+    g_icSleepMs = 50;
+    assert(Start(kH1));
+    while (g_async.state != A_RUNNING) Sleep(0);
+    g_lpCase = 2;
+    CallThunk((void*)0x55, 1.0f);
+    assert(k.g0wRunningAtEntry == 1 && k.g0wJobStartInPass == 0 && k.g0wJobsHeld == 2);
+    Collect(kH1);
+    Collect(kH2);
+    g_icSleepMs = 0;
+    // 3. drop before WaitJobDone
+    g_lpCase = 3;
+    CallThunk((void*)0x55, 1.0f);
+    assert(k.g0wDrop[G0W_JOBWAIT] == 1 && k.g0wWatchdog == 0 && k.g0wJobStartInPass == 1);  // it started after the drop
+    // 4. drop before a sync worker plan
+    k.workerReady = k.workerMode = 1;
+    g_planOrig = WorkerPlan;
+    g_lpCase = 4;
+    CallThunk((void*)0x55, 1.0f);
+    k.workerReady = k.workerMode = 0;
+    Collect(kH1);
+    assert(k.g0wDrop[G0W_SYNCPLAN] == 1 && k.g0wWatchdog == 0);
+    // 5. watchdog: a raw wait with the window up ends after ~250 ms, logged once
+    g_lpCase = 5;
+    CallThunk((void*)0x55, 1.0f);
+    assert(g_lpMs >= 240 && g_lpMs < 2000 && k.g0wWatchdog == 1 && k.g0wHoldMaxUs >= 240000);
+    Collect(kH1);
+    // 6. nested
+    const LONG passes = k.g0wPasses;
+    g_lpCase = 6;
+    CallThunk((void*)0x55, 3.0f);
+    assert(g_lpRuns > 0 && k.g0wPasses == passes + 1 && g_g0Win == 0 && g_g0wIn == 0);
+    // 7. Mode 0 counts the start it would have held
+    k.g0wMode = 0;
+    const LONG held = k.g0wJobsHeld, inPass = k.g0wJobStartInPass;
+    g_lpCase = 7;
+    CallThunk((void*)0x55, 1.0f);
+    assert(k.g0wJobsHeld == held && k.g0wJobStartInPass == inPass + 1);
+    Collect(kH1);
+    // 8. an exception through the pass closes the window
+    k.g0wMode = 1;
+    g_lpCase = 8;
+    __try { LocoWinThunk((void*)0x55, NULL, 1.0f); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    assert(g_g0Win == 0 && g_g0wIn == 0 && t_g0wDepth == 0 && k.g0wPasses == passes + 3);
+    // nothing left: no job, no window, no open off-sim frame, only the deliberate watchdog
+    assert(!AsyncBusy() && g_rgOffSimOpen == 0 && k.watchdogs == wd0 && k.g0wPassMaxUs >= 240000);
+    g_g0wOrig = (LocoUpdateFn)(uintptr_t)LOCO_UPDATE;
+    memset(&k.g0wReady, 0, sizeof(LONG) * 16);
+}
+
+// --- A10 (a10.cpp, docs/87 §5-§6): Replan-family jobs through the real worker, M1 world and gate (TestRouteAsync's setup) ---
+// fake originals: FakeIc's result plus the kind at +0x3C and the point at +0x10 (kinds 2-3)
+static u8* __cdecl ArFakeReplan(u8* out, DWORD h) { FakeIc(out, h); out[0x3C] = 1; return out; }
+static float g_arSeen[3];
+static u8* ArFakePt(int kind, u8* out, DWORD h, float x, float y, float z) {
+    FakeIc(out, h);
+    out[0x3C] = (u8)kind;
+    const float p[3] = {x, y, z};
+    memcpy(out + 0x10, p, 12);
+    memcpy(g_arSeen, p, 12);
+    return out;
+}
+static u8* __cdecl ArFakePt2(u8* out, DWORD h, float x, float y, float z) { return ArFakePt(2, out, h, x, y, z); }
+static u8* __cdecl ArFakePt3(u8* out, DWORD h, float x, float y, float z) { return ArFakePt(3, out, h, x, y, z); }
+static u8 g_arActive;
+static u8 __cdecl ArFakeIsActive(DWORD) { return g_arActive; }
+static u8 ArStart(DWORD h, int kind, const float* pt) {
+    for (int i = 0; pt && i < 3; i++) {
+        DWORD b;
+        memcpy(&b, &pt[i], 4);
+        assert(GetOptionHook(h, b, kAsyncOptHi | kArHi | kArPtHi | (DWORD)i << 24, 1) == 1);
+    }
+    return GetOptionHook(h, 0, kAsyncOptHi | kArHi | (DWORD)kind << 24, 1);
+}
+static u8* ArCollect(int kind, u8* out, DWORD h, const float* pt) {
+    switch (kind) {
+        case 0: return IcPlanHook(out, h);
+        case 1: return ArReplanHook(out, h);
+        case 2: return ArPlanFromPointHook(out, h, pt[0], pt[1], pt[2]);
+        default: return ArReplanFromPositionHook(out, h, pt[0], pt[1], pt[2]);
+    }
+}
+// the result came from the worker's job of this kind (and point)
+static bool ArFromJob(const u8* out, DWORD h, int kind, const float* pt) {
+    return *(const DWORD*)(out + 4) == h && *(const DWORD*)(out + 0x40) == g_workerTid && out[0x3C] == kind &&
+           (kind < 2 || memcmp(out + 0x10, pt, 12) == 0);
+}
+static bool ArSync(const u8* out, int kind) { return *(const DWORD*)(out + 0x40) == GetCurrentThreadId() && out[0x3C] == kind; }
+static char g_arDLog[8];
+static int g_arDLogN, g_arDAtJob;
+static u8 __fastcall ArDRemove(void*, void*, void*) { g_arDLog[g_arDLogN++] = 'r'; return 1; }
+static u8 g_arDObj[16];
+static u8 __fastcall ArDFind(void*, void*, DWORD lo, DWORD, void** out) { *out = g_arDObj; return lo == 0xD; }
+static void __fastcall ArDRelease(void**, void*) {}
+static void* __cdecl ArDSvc() { return (void*)1; }
+static u8* __cdecl ArFakePt3D(u8* out, DWORD h, float x, float y, float z) { g_arDAtJob = g_arDLogN; return ArFakePt3(out, h, x, y, z); }
+
+static void TestA10() {
+    static_assert(offsetof(Ts3nCounters, arReady) == 0x14A4 && offsetof(Ts3nCounters, arMode) == 0x14A8 &&
+                  offsetof(Ts3nCounters, arStarted) == 0x14AC && offsetof(Ts3nCounters, arCollected) == 0x14B8 &&
+                  offsetof(Ts3nCounters, arRefused) == 0x14C4 && offsetof(Ts3nCounters, arDropped) == 0x14D0 &&
+                  offsetof(Ts3nCounters, arShadow) == 0x14DC && offsetof(Ts3nCounters, arActive) == 0x14E8 &&
+                  offsetof(Ts3nCounters, arJobUs) == 0x14F4 && offsetof(Ts3nCounters, arSyncUs) == 0x1500 &&
+                  offsetof(Ts3nCounters, arSyncN) == 0x150C && offsetof(Ts3nCounters, arMismatch) == 0x1518 &&
+                  offsetof(Ts3nCounters, arOrphan) == 0x151C && offsetof(Ts3nCounters, arReserved) == 0x1520 && sizeof(Ts3nCounters) >= 1353 * 4, "v40 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.arReady, 0, sizeof(LONG) * 32);
+    const LONG wd0 = k.watchdogs;
+    const RouteIsActiveFn savedActive = g_routeIsActive;
+    g_routeIsActive = ArFakeIsActive;
+    g_arOrig[1] = (void*)ArFakeReplan;
+    g_arOrig[2] = (void*)ArFakePt2;
+    g_arOrig[3] = (void*)ArFakePt3;
+    u8 out[0x48];
+    const float p1[3] = {1.5f, 2.25f, -3.0f}, p2[3] = {7.0f, 0.5f, 9.75f};
+    const DWORD kH3 = 0x25000003;
+    g_icSleepMs = 0;
+
+    // 1. a kind whose detour is not in place: refused, plain sync plan; the old encodings stay what they were
+    k.arMode = 1;
+    assert(!ArStart(kH1, 3, p1) && k.arRefused[2] == 1 && k.arStarted[2] == 0 && !JobFor(kH1));
+    assert(!ArStart(kH1, 0, NULL));  // kind 0 is not an A10 START
+    k.arRefused[2] = 0;
+    k.arReady = kArBuilt;
+    for (int kind = 1; kind <= 3; kind++) {
+        const int i = kind - 1;
+        if (!(kArBuilt >> i & 1)) continue;
+        const float* pt = kind >= 2 ? p1 : NULL;
+        k.arSyncN[i] = 0;  // the previous kind's mismatch case planned this IC once
+        // 2. start -> not ready while running -> ready -> the IC takes the worker's result of its own kind
+        g_icSleepMs = 30;
+        assert(ArStart(kH1, kind, pt) && k.arStarted[i] == 1 && JobFor(kH1)->kind == kind);
+        assert(!Ready(kH1));
+        WaitReady(kH1);
+        assert(ArCollect(kind, out, kH1, pt) == out && ArFromJob(out, kH1, kind, pt) && k.arCollected[i] == 1 && k.arJobUs[i] >= 25000);
+        assert(!JobFor(kH1) && k.arSyncN[i] == 0);
+        Cancel(kH1);
+        g_icSleepMs = 0;
+        // 3. refusals: nested interpreter state (NoYield), route being followed (Active), M1 (save busy); each planned sync
+        FakeTask(kNested, 7);
+        assert(!ArStart(kH1, kind, pt) && k.arRefused[i] == 1);
+        FakeTask(kRoot, 7);
+        g_arActive = 1;
+        assert(!ArStart(kH1, kind, pt) && k.arActive[i] == 1 && k.arRefused[i] == 2);
+        g_arActive = 0;
+        k.rtBusy = 1;
+        assert(!ArStart(kH1, kind, pt) && k.arRefused[i] == 3);
+        k.rtBusy = 0;
+        assert(ArCollect(kind, out, kH1, pt) == out && ArSync(out, kind) && k.arSyncN[i] == 1 && !JobFor(kH1));
+        // kinds 2-3 need the point first (all three components since the last START)
+        if (kind >= 2) {
+            assert(!ArStart(kH1, kind, NULL) && k.arRefused[i] == 4 && !JobFor(kH1));
+            k.arRefused[i] = 3;
+        }
+        // 4. Mode 0 (shadow): counted, refused, no job, nothing else touched (a done job of the route stays)
+        assert(ArStart(kH2, kind, pt));
+        WaitReady(kH2);
+        k.arMode = 0;
+        assert(!ArStart(kH2, kind, pt) && k.arShadow[i] == 1 && k.arStarted[i] == 2 && JobFor(kH2) && JobFor(kH2)->state == J_DONE);
+        k.arMode = 1;
+        // 5. the same route started again drops the older request (its caller is gone)
+        assert(ArStart(kH2, kind, pt) && k.arDropped[i] == 1);
+        WaitReady(kH2);
+        assert(ArCollect(kind, out, kH2, pt) == out && ArFromJob(out, kH2, kind, pt) && k.arCollected[i] == 2);
+        Cancel(kH2);
+        // 6. kind mismatch: another IC of the same route meets the job: dropped, that IC plans here, logged once
+        const LONG mm = k.arMismatch;
+        assert(ArStart(kH2, kind, pt));
+        WaitReady(kH2);
+        const int other = kind < 3 && (kArBuilt >> kind & 1) ? kind + 1 : 0;
+        assert(ArCollect(other, out, kH2, p2) == out && ArSync(out, other) && k.arMismatch == mm + 1 && k.arDropped[i] == 2 && !JobFor(kH2));
+        Cancel(kH2);
+        // ... and Route.Plan's job met by this IC
+        assert(Start(kH2));
+        WaitReady(kH2);
+        assert(ArCollect(kind, out, kH2, pt) == out && ArSync(out, kind) && k.arMismatch == mm + 2 && !JobFor(kH2));
+        Cancel(kH2);
+        if (kind >= 2) {  // another start point is another plan
+            assert(ArStart(kH2, kind, p1));
+            WaitReady(kH2);
+            assert(ArCollect(kind, out, kH2, p2) == out && ArSync(out, kind) && memcmp(g_arSeen, p2, 12) == 0 && k.arMismatch == mm + 3);
+            Cancel(kH2);
+        }
+        // 7. a job queued behind another route's running one, its IC called before it started: taken back, planned here
+        g_icSleepMs = 40;
+        assert(Start(kH1) && ArStart(kH2, kind, pt));
+        const LONG dr = k.arDropped[i];
+        assert(ArCollect(kind, out, kH2, pt) == out && ArSync(out, kind) && k.arDropped[i] == dr + 1);
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid && out[0x3C] == 0);
+        g_icSleepMs = 0;
+        // 8. armed by READY, then async switched off before the IC: the job is drained, the IC plans here (tripwire)
+        const LONG orphan = k.arOrphan;
+        assert(ArStart(kH2, kind, pt));
+        WaitReady(kH2);
+        k.asyncMode = 0;
+        assert(ArCollect(kind, out, kH2, pt) == out && ArSync(out, kind) && k.arOrphan == orphan + 1);
+        k.asyncMode = 1;
+        // 9. CANCEL while running (Sim reset): waited for, dropped; the next START is not refused
+        g_icSleepMs = 30;
+        assert(ArStart(kH1, kind, pt));
+        Cancel(kH1);
+        assert(g_async.state == A_IDLE && !JobFor(kH1) && ArStart(kH1, kind, pt));
+        WaitReady(kH1);
+        assert(ArCollect(kind, out, kH1, pt) == out && ArFromJob(out, kH1, kind, pt));
+        g_icSleepMs = 0;
+        // 10. a destroy during the job (RT_DESTROY, closure #4) waits for it; the result is still collected after
+        k.rtReady = RT_ALL;
+        g_icSleepMs = 40;
+        assert(ArStart(kH3, kind, pt));
+        while (g_async.state != A_RUNNING) Sleep(0);
+        DWORD stack[24] = {};
+        stack[20] = 0x999;
+        stack[21] = 0x77;
+        static DWORD simTid;
+        simTid = GetCurrentThreadId();  // the destroy comes from the sim thread
+        const DWORD* const savedSim = g_rtSimTidSlot;
+        g_rtSimTidSlot = &simTid;
+        RtEnter(7, &stack[20]);
+        g_rtSimTidSlot = savedSim;
+        assert(JobFor(kH3)->state == J_DONE && g_rgOffSimOpen == 1);
+        assert(RgLeave() == 0x999 && g_rgOffSimOpen == 0);
+        assert(Ready(kH3) && ArCollect(kind, out, kH3, pt) == out && ArFromJob(out, kH3, kind, pt));
+        k.rtReady = 0;
+        g_icSleepMs = 0;
+        assert(!AsyncBusy() && g_rgOffSimOpen == 0);
+    }
+
+    // 11. design D: a discourage Remove deferred during a Replan job is applied at the next A10 START, before that job runs
+    {
+        u8* world = (u8*)g_rgLock - 0x918;
+        const u8 w974 = world[0x974];
+        world[0x974] = 1;  // DiscWorldOk
+        LONG* const depth = (LONG*)((u8*)g_rgLock + 0x20);  // the game lock's count: the drain's release ends the ownership
+        *depth = 1;
+        *(DWORD*)(g_arDObj + 8) = 0xD;
+        g_discRemoveOrig = ArDRemove;
+        g_findRef = ArDFind;
+        g_objSvc = ArDSvc;
+        g_objRelease = ArDRelease;
+        k.discMode = 1;
+        g_icSleepMs = 30;
+        assert(ArStart(kH1, 3, p1));
+        while (g_async.state != A_RUNNING) Sleep(0);
+        assert(DiscRemoveHook(world, NULL, g_arDObj) == 1 && g_discCount == 1 && g_arDLogN == 0);  // deferred
+        while (JobFor(kH1)->state != J_DONE) Sleep(1);  // no READY in between (READY is a drain point too)
+        g_arOrig[3] = (void*)ArFakePt3D;
+        g_arDAtJob = -1;
+        assert(ArStart(kH2, 3, p1) && g_discCount == 0 && g_arDLogN == 1);  // drained by the START, then queued
+        WaitReady(kH1);
+        assert(ArCollect(3, out, kH1, p1) == out && ArFromJob(out, kH1, 3, p1));
+        WaitReady(kH2);
+        assert(ArCollect(3, out, kH2, p1) == out && ArFromJob(out, kH2, 3, p1) && g_arDAtJob == 1);  // the job ran after the apply
+        g_arOrig[3] = (void*)ArFakePt3;
+        g_icSleepMs = 0;
+        k.discMode = 0;
+        world[0x974] = w974;
+        *depth = 0;
+        memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    }
+
+    // 12. random order over 4 routes and all kinds (incl. Route.Plan): START / READY / IC / CANCEL; every collected result
+    // is its own route's and kind's, nothing is left at the end
+    {
+        static const DWORD kHs[4] = {0x25000011, 0x25000012, 0x25000013, 0x25000014};
+        int want[4] = {-1, -1, -1, -1};  // kind of the START each route last got answered yes, -1 = none
+        float pts[4][3];
+        DWORD seed = 0xA10;
+        auto rnd = [&seed](DWORD n) { seed = seed * 1103515245 + 12345; return (seed >> 16) % n; };
+        long collected = 0, sync = 0;
+        for (int step = 0; step < 600; step++) {
+            const int r = (int)rnd(4), op = (int)rnd(4);
+            const DWORD h = kHs[r];
+            g_icSleepMs = rnd(3) ? 0 : rnd(4) + 1;
+            if (op == 0) {
+                int kind = (int)rnd(4);
+                if (kind && !(kArBuilt >> (kind - 1) & 1)) kind = 0;  // an IC this build does not hook: Route.Plan
+                for (int c = 0; c < 3; c++) pts[r][c] = (float)rnd(100) * 0.25f;
+                const u8 ok = kind ? ArStart(h, kind, pts[r]) : Start(h);
+                want[r] = ok ? kind : -1;
+            } else if (op == 1 && want[r] >= 0) {  // the C# side: READY loop, then the original method's IC
+                WaitReady(h);
+                assert(ArCollect(want[r], out, h, pts[r]) == out && ArFromJob(out, h, want[r], pts[r]));
+                Cancel(h);
+                want[r] = -1;
+                collected++;
+            } else if (op == 2) {  // an IC call nobody armed (another caller of the route): plans here
+                int kind = (int)rnd(4);
+                if (kind && !(kArBuilt >> (kind - 1) & 1)) kind = 0;  // an IC this build does not hook: Route.Plan
+                assert(ArCollect(kind, out, h, pts[r]) == out && ArSync(out, kind) && !JobFor(h));
+                want[r] = -1;
+                sync++;
+            } else {
+                Cancel(h);
+                want[r] = -1;
+            }
+        }
+        for (int r = 0; r < 4; r++) Cancel(kHs[r]);
+        g_icSleepMs = 0;
+        assert(collected > 20 && sync > 20 && !AsyncBusy() && g_rgOffSimOpen == 0 && g_async.state == A_IDLE);
+        for (int i = 0; i < kJobs; i++) assert(g_jobs[i].state == J_FREE);
+    }
+    assert(k.watchdogs == wd0);
+    g_routeIsActive = savedActive;
+    memset(g_arOrig, 0, sizeof(g_arOrig));
+    memset(&k.arReady, 0, sizeof(LONG) * 32);
+}
+
 static void TestRouteAsync() {
     const DWORD me = GetCurrentThreadId();
     const Ts3nCounters& c = ts3native_counters;
@@ -538,6 +952,31 @@ static void TestRouteAsync() {
     assert(NoYield(0) == 1);
     FakeTask(kRoot, 7);
     assert(GetOptionHook(kH1, 0, kNoYieldHi, 1) == 0 && GetOptionHook(kH1, 1, kAsyncOptHi | kNoYieldHi, 1) == 0);  // not ours: passes through
+
+    // v35: a long sync plan after a refused START is counted under its reason; short ones and LogFallbackMs=0 are not
+    static_assert(offsetof(Ts3nCounters, rfbLogMs) == 0x1384 && offsetof(Ts3nCounters, rfbMs) == 0x1388 &&
+                  offsetof(Ts3nCounters, rfbN) == 0x1394 && offsetof(Ts3nCounters, rfbMax) == 0x13A0 &&
+                  sizeof(Ts3nCounters) >= 1257 * 4, "v35 layout");
+    Ts3nCounters& w = ts3native_counters;
+    w.rtBusy = 1;  // save busy: M1 refuses (asyncRefusedM1[1])
+    g_icSleepMs = 60;
+    assert(!Start(kH1) && IcPlanHook(out, kH1) == out && w.rfbN[0] == 0);  // LogFallbackMs=0: not timed
+    w.rfbLogMs = 55;
+    assert(!Start(kH1) && IcPlanHook(out, kH1) == out && w.rfbN[0] == 1 && w.rfbMs[0] >= 55);
+    assert((w.rfbMax & 0xFF) == RFB_M1 + 1 && (w.rfbMax >> 8) >= 55 && g_rfbLines == 1 && g_rfbHandle == 0);
+    assert(IcPlanHook(out, kH2) == out && w.rfbN[2] == 1);  // no START for this route: NoStart
+    w.rtBusy = 0;
+    g_icSleepMs = 0;
+    assert(Start(kH1));
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out);  // async: collected, not counted
+    assert(w.rfbN[0] == 1 && w.rfbN[1] == 0 && w.rfbN[2] == 1);
+    for (int i = 0; i < 30; i++) RfbNote(RFB_QFULL, 300, "nojob", kH1, NULL);
+    assert(w.rfbN[1] == 30 && w.rfbMs[1] == 9000 && (w.rfbMax >> 8) == 300 && (w.rfbMax & 0xFF) == RFB_QFULL);
+    assert(g_rfbLines == (DWORD)kRfbLinesPerMin && g_rfbDropped == 30 - (kRfbLinesPerMin - 2));  // rate limit: 20 lines/min
+    memset(&w.rfbLogMs, 0, sizeof(LONG) * 8);
+    TestA10();         // A10 on the same setup
+    TestLocoWindow();  // H2 on the same async setup (real worker, M1 world, gate enforced)
     ts3native_counters.rgEnforce = 0;
     ts3native_counters.rgOwnerTid = 0;
     ts3native_counters.rgAcquires = 0;  // the worker took m1Lock as the learned lock
@@ -3077,6 +3516,201 @@ static void TestDiscourage() {
     DeleteCriticalSection(&g_rgFakeCs);
 }
 
+// --- fix D-X (0.16.0, docs/84 §7.2): destroy-gate apply, dead-id sweep, pointer check ---
+static u8 g_xObj[3][16];          // objects with ids 0xA, 0xB, 0xC
+static u8* g_xLive[3];            // what the id hash answers per id (NULL = gone, another object = reused id)
+static char g_xLog[64];
+static int g_xLogN, g_xSweeps, g_xKeyFinds;
+static bool g_xSweepHit, g_xKeyHit;
+static DWORD g_xSweepArgs[4];
+static int XIdx(const void* o) { return o == g_xObj[0] ? 0 : o == g_xObj[1] ? 1 : 2; }
+static u8 __fastcall XAdd(void*, void*, void* obj, void*, int, int, int) { g_xLog[g_xLogN++] = (char)('A' + XIdx(obj)); return 1; }
+static u8 __fastcall XRemove(void*, void*, void* obj) { g_xLog[g_xLogN++] = (char)('a' + XIdx(obj)); return 1; }
+static u8 __fastcall XFindRef(void*, void*, DWORD lo, DWORD hi, void** out) {
+    assert(hi == 0 && lo >= 0xA && lo <= 0xC);
+    u8* o = g_xLive[lo - 0xA];
+    if (o) *out = o;
+    return o != NULL;
+}
+static u8 __fastcall XLotRemove(void* p, void*, DWORD lotLo, DWORD lotHi, DWORD idLo, DWORD idHi) {
+    assert(p != NULL);
+    g_xSweeps++;
+    g_xSweepArgs[0] = lotLo, g_xSweepArgs[1] = lotHi, g_xSweepArgs[2] = idLo, g_xSweepArgs[3] = idHi;
+    return g_xSweepHit;
+}
+static void __fastcall XKeyFind(void* map, void*, DWORD* out, const DWORD* id) {
+    g_xKeyFinds++;
+    const DWORD* buckets = *(const DWORD* const*)((u8*)map + 4);
+    out[0] = g_xKeyHit && id[0] == 0xA ? 0x1234 : buckets[*(const DWORD*)((u8*)map + 8)];
+    out[1] = 0;
+}
+
+static void TestDiscourageDX() {
+    static_assert(offsetof(Ts3nCounters, discDestroyMode) == 0x135C && offsetof(Ts3nCounters, discSweepMode) == 0x1360 &&
+                  offsetof(Ts3nCounters, discDropAdd) == 0x1364 && offsetof(Ts3nCounters, discDropRemove) == 0x1368 &&
+                  offsetof(Ts3nCounters, discDestroyApplied) == 0x136C && offsetof(Ts3nCounters, discDestroyInInvoke) == 0x1370 &&
+                  offsetof(Ts3nCounters, discDeadSweep) == 0x1374 && offsetof(Ts3nCounters, discDeadHit) == 0x1378 &&
+                  offsetof(Ts3nCounters, discDeadKeyMap) == 0x137C && offsetof(Ts3nCounters, discIdMismatch) == 0x1380 &&
+                  sizeof(Ts3nCounters) >= 1249 * 4, "v34 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
+    const DWORD me = GetCurrentThreadId();
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_discAddOrig = XAdd;
+    g_discRemoveOrig = XRemove;
+    g_objSvc = FakeSvc;
+    g_findRef = XFindRef;
+    g_objRelease = FakeObjRelease;
+    g_lotRemove = XLotRemove;
+    g_keyFind = XKeyFind;
+    static u8 world[0xA00];
+    static u8 planner[0x200];
+    static DWORD buckets[2] = {0, 0x5E5E5E5E};  // one bucket, then the end sentinel
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = planner;
+    *(DWORD**)(world + 0x8BC) = buckets;
+    *(DWORD*)(world + 0x8C0) = 1;
+    *(DWORD*)(world + 0x8C4) = 1;  // the lock-key map holds entries
+    g_rgLock = world + 0x918;
+    for (int i = 0; i < 3; i++) { *(DWORD*)(g_xObj[i] + 8) = 0xA + i; *(DWORD*)(g_xObj[i] + 0xC) = 0; g_xLive[i] = g_xObj[i]; }
+    u8* const A = g_xObj[0], * const B = g_xObj[1], * const C = g_xObj[2];
+    k.discMode = 1;
+    k.discDestroyMode = 1;
+    k.discSweepMode = 1;
+    g_async.owner = me;
+    __declspec(align(16)) float pts[3][4] = {{1.5f}, {2}, {3}};
+    u8* vec[3] = {(u8*)pts, (u8*)pts + 48, (u8*)pts + 48};
+    const int rel0 = g_dReleases;
+
+    // 1. destroy of A with A's and others' records queued: A's Removes applied in order, A's Add dropped, B and C keep order
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, A);
+    DiscAddHook(world, NULL, B, vec, 0, 0, 0);
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    DiscRemoveHook(world, NULL, C);
+    DiscRemoveHook(world, NULL, A);
+    assert(g_discCount == 5 && g_xLogN == 0);
+    g_async.state = A_IDLE;  // RT_DESTROY waited for the job
+    DiscOnDestroy(0xA, 0, true);
+    assert(g_xLogN == 2 && memcmp(g_xLog, "aa", 2) == 0 && k.discDestroyApplied == 2 && k.discDropAdd == 1 && k.discDropped == 1);
+    assert(g_discCount == 2 && k.rgOwnerTid == 0 && !g_discDraining);
+    DiscPoll();
+    assert(g_xLogN == 4 && memcmp(g_xLog, "aaBc", 4) == 0 && g_discCount == 0 && k.discApplied == 4 && g_dReleases - rel0 == 4);
+    // a destroy of an object with no record, and one with an empty queue: nothing happens
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, B);
+    DiscOnDestroy(0xC, 0, true);
+    assert(g_discCount == 1 && g_xLogN == 4);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    DiscOnDestroy(0xA, 0, true);
+    assert(g_xLogN == 5 && g_xLog[4] == 'b' && g_discCount == 0);
+
+    // 2. destroy inside a job callback: skipped and counted, the record stays; at the drain the object is gone: dead-id sweep
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, A);
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    DiscOnDestroy(0xA, 0, false);
+    assert(k.discDestroyInInvoke == 1 && g_discCount == 2 && k.discDestroyApplied == 2);
+    g_xLive[0] = NULL;  // DestroyById ran
+    g_xSweepHit = true;
+    g_xKeyHit = true;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(g_xLogN == 5 && g_discCount == 0 && k.discDropRemove == 1 && k.discDropAdd == 2 && k.discDropped == 3);
+    assert(k.discDeadSweep == 1 && k.discDeadHit == 1 && k.discDeadKeyMap == 1 && g_xSweeps == 1 && g_xKeyFinds == 1);
+    assert(g_xSweepArgs[0] == 0 && g_xSweepArgs[1] == 0 && g_xSweepArgs[2] == 0xA && g_xSweepArgs[3] == 0);  // lot 0 = all lots
+    assert(world[0x994] == 0 && k.discDropRemove == k.discDeadSweep);  // T-D5
+    // an empty lock-key map is not looked up; a sweep that finds nothing is not a hit
+    world[0x994] = 1;
+    *(DWORD*)(world + 0x8C4) = 0;
+    g_xSweepHit = false;
+    g_async.state = A_RUNNING;
+    g_xLive[0] = A;
+    DiscRemoveHook(world, NULL, A);
+    g_xLive[0] = NULL;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(k.discDeadSweep == 2 && k.discDeadHit == 1 && g_xKeyFinds == 1 && world[0x994] == 0 && k.discDropRemove == k.discDeadSweep);
+
+    // 3. switches off: no gate, no sweep (the A/B baseline of the bug: discDropRemove > discDeadSweep)
+    k.discDestroyMode = 0;
+    k.discSweepMode = 0;
+    g_xLive[0] = A;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, A);
+    DiscOnDestroy(0xA, 0, true);
+    assert(g_discCount == 1 && k.discDestroyApplied == 2);
+    g_xLive[0] = NULL;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(k.discDropRemove == 3 && k.discDeadSweep == 2 && g_xSweeps == 2);
+    k.discDestroyMode = 1;
+    k.discSweepMode = 1;
+
+    // 4. pointer check: the id now names another object (reused): dropped, counted, released, never swept or applied
+    g_xLive[0] = A;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, B);
+    DiscAddHook(world, NULL, B, vec, 0, 0, 0);
+    g_xLive[1] = C;
+    const int rel1 = g_dReleases;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(k.discIdMismatch == 2 && g_xLogN == 5 && g_xSweeps == 2 && g_dReleases - rel1 == 2 && k.discDropRemove == 3);
+    // the destroy gate does the same check: a reused id is not applied there either
+    g_async.state = A_RUNNING;
+    g_xLive[1] = B;
+    DiscRemoveHook(world, NULL, B);
+    g_xLive[1] = C;
+    DiscOnDestroy(0xB, 0, true);
+    assert(k.discIdMismatch == 3 && k.discDestroyApplied == 2 && g_discCount == 0 && g_xLogN == 5);
+    g_xLive[1] = B;
+    g_async.state = A_IDLE;
+
+    // 5. through the RT_DESTROY stub: DestroyById's arguments (idLo, idHi) are slot[1], slot[2]
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    k.rtReady = RT_ALL;
+    k.rgEnforce = 1;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, C);
+    DiscRemoveHook(world, NULL, B);
+    g_async.state = A_IDLE;
+    DWORD stack[24] = {};
+    stack[20] = 0x999;
+    stack[21] = 0xC;
+    stack[22] = 0;
+    RtEnter(7, &stack[20]);
+    assert(k.discDestroyApplied == 3 && g_discCount == 1 && g_xLogN == 6 && g_xLog[5] == 'c' && g_rgOffSimOpen == 1);
+    assert(RgLeave() == 0x999 && g_rgOffSimOpen == 0);
+    DiscPoll();
+    assert(g_discCount == 0 && g_xLogN == 7 && g_xLog[6] == 'b');
+    k.rtReady = 0;
+    k.rgEnforce = 0;
+
+    g_async.owner = 0;
+    g_rgLock = NULL;
+    k.discMode = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    g_lockOrig = savedLock;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
 // --- design S2 (0.13.0, docs/84 §3.6): QL frames on the worker, W4, tripwires and the clone's give-up paths on fakes.
 // The clone against the game's own code: steerro-test.exe (needs the exe). ---
 static int g_srLocoCalls;
@@ -3315,17 +3949,20 @@ static void TestSteerRO() {
     // a NULL footprint (the original would dereference it), the whitelist, overflow: give up
     *(u8**)(ents[3] + 8) = NULL;
     collect(rec, 0);
-    assert(c.fail == SR_FB_SHAPE);
+    assert(c.fail == SR_FB_SHAPE && t_srShape == SRS_NULLFP);
     *(u8**)(ents[3] + 8) = fps[3];
     g_srCheckSlots = true;
     collect(rec, 0);
-    assert(c.fail == SR_FB_SHAPE);
+    assert(c.fail == SR_FB_SHAPE && t_srShape == SRS_SLOT);
     g_srCheckSlots = false;
-    c.n = kSrCap;
+    c.n = kSrCap;  // full: the walk goes on counting (v39 s2MaxObjs), SrWalk gives up after it
+    memset(c.objs, 0, sizeof(c.objs));  // none of the leaf's footprints stored yet
     c.fail = 0;
+    c.over = 0;
     c.flag = 0;
     SrCollect(&c, g_srLeaf, false, 0);
-    assert(c.fail == SR_FB_SHAPE);
+    assert(!c.fail && c.n == kSrCap && c.over == 5);
+    c.over = 0;
 
     // walks: the deferred flag with the pin counter below 1 (the original flushes first), the pin counter moving meanwhile
     static u8 q[0x60];
@@ -3416,7 +4053,14 @@ static void TestSteerRO() {
     assert(SrEntry(p, 0x20, 0, true, &e) == SR_OK && e == ln + 0x10);
     assert(SrEntry(p, 0x21, 0, true, &e) == SR_OK && !e);
     actp = NULL;
-    assert(SrEntry(p, 0x20, 0, true, &e) == SR_FB_SHAPE);
+    assert(SrEntry(p, 0x20, 0, true, &e) == SR_FB_SHAPE && t_srShape == SRS_NOACTLOT);
+    static_assert(offsetof(Ts3nCounters, p10Ready) == 0x1424 && offsetof(Ts3nCounters, s2Shape) == 0x1464 &&
+                      offsetof(Ts3nCounters, s2MaxObjs) == 0x1490 && offsetof(Ts3nCounters, s2MaxDepth) == 0x14A0 &&
+                      sizeof(Ts3nCounters) >= 1321 * 4 && SRS_N == 11,
+                  "v39 layout");
+    const LONG sh0 = k.s2Shape[SRS_NOACTLOT], fbs0 = k.steerFb[SR_FB_SHAPE - 1];
+    SrFallback(SR_FB_SHAPE);  // counted under the last site
+    assert(k.s2Shape[SRS_NOACTLOT] == sh0 + 1 && k.steerFb[SR_FB_SHAPE - 1] == fbs0 + 1);
     // cell graph bounds (level base +0x40, vector +0x74/+0x78)
     static DWORD qv[2] = {0x1234, 0x5678};
     *(LONG*)(ln + 0x10 + 0x40) = 1;
@@ -3443,6 +4087,7 @@ static void TestSteerRO() {
     assert(g_srLocoCalls == 2 && k.steerCalls == 0);
     g_async.owner = me;
     g_async.state = A_RUNNING;
+    g_twArmed = 1;  // the worker arms the tripwire stubs for its job (0.18.0)
     g_steerBroken = 0;
     g_inInvoke = 1;
     LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
@@ -3502,12 +4147,204 @@ static void TestSteerRO() {
     g_srOne = savedOne;
     g_srCheckSlots = true;
     g_async.state = A_IDLE;
+    g_twArmed = 0;
     g_async.owner = 0;
     g_qlOn = 0;
     g_workerTid = savedWorker;
     k.steerMode = 0;
     simTid = 0;
     for (u8* f : fps) { _aligned_free(*(u8**)(f + 0x38)); _aligned_free(f); }
+}
+
+// --- S2 tripwires T4 and T-S7 (0.15.0): who is counted, the frame and its leave, a clone dropping its answer ---
+// One tripwire call on a thread that is neither the sim nor (unless `worker`) the worker: enter, optionally block, leave.
+struct TwCall { int site; bool worker; LONG qlDepth; HANDLE in, go; int nested; int fill; };
+static DWORD WINAPI TwThread(void* p) {
+    TwCall* c = (TwCall*)p;
+    if (c->worker) g_workerTid = GetCurrentThreadId();
+    t_qlDepth = c->qlDepth;
+    DWORD stack[40] = {};
+    for (int i = 0; i < c->fill; i++) RgPush(t_rg, &stack[39 - i], 0);  // frames already open on this thread
+    stack[20] = 0x555;
+    TwEnter(c->site, &stack[20]);
+    if (c->nested) {  // a second tripwire call inside the first: the outer frame covers it
+        stack[10] = 0x666;
+        TwEnter(c->nested, &stack[10]);
+        assert(stack[10] == 0x666 && t_twDepth == 1);
+    }
+    if (c->in) { SetEvent(c->in); WaitForSingleObject(c->go, 5000); }
+    if (stack[20] != 0x555) assert(RgLeave() == 0x555);  // the site returned through the leave thunk
+    assert(t_twDepth == 0);
+    t_qlDepth = 0;
+    return 0;
+}
+static void TwRun(TwCall c) {
+    HANDLE t = CreateThread(NULL, 0, TwThread, &c, 0, NULL);
+    WaitForSingleObject(t, 5000);
+    CloseHandle(t);
+}
+static int g_twFkMode;  // inside the clone (from the fake active-lot lookup): 1 = a foreign tripwire call starts and ends;
+                        // 2 = the job ends (the worker disarms the stubs); 3 = the job ends and the next one arms them again
+static u8 g_twAct[0x60];
+static const u8* TwFkActiveLot() {
+    if (g_twFkMode == 1) TwRun({6});
+    if (g_twFkMode >= 2) TwArm(false);
+    if (g_twFkMode == 3) TwArm(true);
+    return g_twAct;
+}
+
+static void TestSteerTrip() {
+    static_assert(offsetof(Ts3nCounters, steerTwStubs) == 0x131C && offsetof(Ts3nCounters, steerT4Bare) == 0x1320 &&
+                  offsetof(Ts3nCounters, steerS7Foreign) == 0x1324 && offsetof(Ts3nCounters, steerS7Sim) == 0x1328 &&
+                  offsetof(Ts3nCounters, steerTripDiscard) == 0x132C && offsetof(Ts3nCounters, steerTwSite) == 0x1330 &&
+                  sizeof(Ts3nCounters) >= 1239 * 4, "v33 layout");
+    static_assert(offsetof(Ts3nCounters, rfbLogMs) == 0x1384 && offsetof(Ts3nCounters, s2TscPerUs) == 0x13A4 &&
+                  offsetof(Ts3nCounters, s2EntryKt) == 0x13B0 && offsetof(Ts3nCounters, s2TwCalls) == 0x13B8 &&
+                  offsetof(Ts3nCounters, s2QlCalls) == 0x13C4 && offsetof(Ts3nCounters, s2ShadowKt) == 0x13D0 &&
+                  offsetof(Ts3nCounters, s2TryMaxT) == 0x13E0 && sizeof(Ts3nCounters) >= 1273 * 4, "v36 layout");
+    static_assert(TW_N == 11 && TW_T4 == 4, "sites");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.steerTwStubs, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, steerTwStubs));
+    const LONG fb0 = k.steerFb[SR_FB_TRIP - 1], inRo0 = k.steerSimWriteInRo, unt0 = k.steerUntracked;
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    const DWORD* const savedSimSlot = g_rtSimTidSlot;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    g_workerTid = me + 7;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+
+    // no job and no clone: nothing counted, nothing held
+    LONG e0 = g_twEpoch;
+    TwRun({4});
+    assert(k.steerS7Foreign == 0 && g_twActive == 0 && g_twEpoch == e0);
+    // a job: T-S7 on another thread is counted, held for the call, the epoch moves on the leave
+    g_async.state = A_RUNNING;
+    TwRun({4});
+    assert(k.steerS7Foreign == 1 && k.steerTwSite[4] == 1 && g_twActive == 0 && g_twEpoch == e0 + 1);
+    TwRun({0});  // T4 on a thread outside QL
+    assert(k.steerT4Bare == 1 && k.steerTwSite[0] == 1 && g_twEpoch == e0 + 2);
+    // the worker: T4 inside a W frame (QL depth > 0) is covered; outside it counts; T-S7 counts either way
+    TwRun({1, true, 1});
+    assert(k.steerT4Bare == 1 && g_twEpoch == e0 + 2);
+    TwRun({1, true, 0});
+    assert(k.steerT4Bare == 2 && k.steerTwSite[1] == 1);
+    TwRun({5, true, 1});
+    assert(k.steerS7Foreign == 2 && k.steerTwSite[5] == 1);
+    g_workerTid = me + 7;
+    // the sim thread: T-S7 by design (counted apart), T4 not at all; inside the clone either one drops the answer
+    DWORD fr[4] = {0, 0x777, 0, 0};
+    const int rgN = t_rg.n;
+    TwEnter(4, &fr[1]);
+    TwEnter(2, &fr[1]);
+    assert(k.steerS7Sim == 1 && k.steerS7Foreign == 2 && k.steerT4Bare == 2 && fr[1] == 0x777 && t_rg.n == rgN);
+    t_inRo = true;
+    TwEnter(3, &fr[1]);
+    assert(t_srFail == SR_FB_TRIP && k.steerSimWriteInRo == inRo0 + 1 && fr[1] == 0x777);
+    t_inRo = false;
+    t_srFail = 0;
+    // nested on one thread: one frame, the inner call only moves the epoch
+    e0 = g_twEpoch;
+    TwRun({6, false, 0, NULL, NULL, 7});
+    assert(k.steerTwSite[6] == 1 && k.steerTwSite[7] == 1 && g_twActive == 0 && g_twEpoch == e0 + 2);
+    // no frame left (16 open): the call is counted, the clone is switched off for good (it could not see this writer leave)
+    TwRun({8, false, 0, NULL, NULL, 0, 16});
+    assert(k.steerTwSite[8] == 1 && g_steerBroken == 1 && k.steerUntracked == unt0 + 1 && g_twActive == 0);
+    g_steerBroken = 0;
+
+    // the clone: a fake world whose only flagged node lies on a lot the active-lot check rejects (no walk, nothing appended)
+    static u8 fworld[0xA00], fwm[0x200], fp[0x200], flot[0x60];
+    fworld[0x974] = 1;
+    *(u8**)(fworld + 0x95C) = fp;
+    *(u8**)(fworld + 0x964) = fwm;
+    *(DWORD*)(flot + 0x48) = 0x55;
+    *(DWORD*)(g_twAct + 0x48) = 0x55;
+    static u8* fwmSlot;
+    fwmSlot = fwm;
+    const SrWorldFn savedWorld = g_srWorldGet;
+    u8* const* savedWm = g_srWmSlot;
+    const SrConvFn savedConv = g_srConv;
+    const SrLotLookupFn savedLook = g_srLotLookup;
+    const SrActiveLotFn savedAct = g_srActiveLot;
+    const float* savedOne = g_srOne;
+    static const float one = 1.0f;
+    g_srOne = &one;
+    g_srWorldGet = []() -> u8* { return fworld; };
+    g_srWmSlot = &fwmSlot;
+    g_srConv = [](const void*, void*) {};
+    g_srLotLookup = [](void*, void*, float, float) -> u8* { return flot; };
+    g_srActiveLot = TwFkActiveLot;
+    g_locoOrig = FkLoco;
+    g_srLocoCalls = 0;
+    static u8 agent[0x100], node[0x40];
+    *(u8**)(agent + 8) = node;
+    *(u8**)node = agent + 8;
+    node[0x30] = 1;
+    static DWORD idsv[3];
+    g_async.owner = me;
+    k.steerMode = 1;
+    // the stubs not armed (a job seen running, but the worker has already disarmed): no answer, the game's call (0.18.0)
+    const LONG tkA = k.steerTaken;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 1 && k.s2JobEndDrop == 1 && k.steerTaken == tkA && g_srInClone == 0);
+    g_srLocoCalls = 0;
+    TwArm(true);
+    assert(g_twArmed == 1 && k.s2ArmJobs == 1);
+    // no tripwire call: a read-only answer
+    const LONG tk0 = k.steerTaken;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 0 && k.steerTaken == tk0 + 1 && k.steerTripDiscard == 0 && g_srInClone == 0);
+    // the job ends during the clone (disarm), with or without the next job's arm before the clone ends: writers after the
+    // disarm were not seen, so the answer is dropped (generation moved)
+    for (int m = 2; m <= 3; m++) {
+        const LONG d0 = k.s2JobEndDrop, c0 = g_srLocoCalls;
+        g_twFkMode = m;
+        LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+        g_twFkMode = 0;
+        assert(g_srLocoCalls == c0 + 1 && k.s2JobEndDrop == d0 + 1 && k.steerTaken == tk0 + 1 && g_srInClone == 0);
+        TwArm(true);
+    }
+    g_srLocoCalls = 0;
+    assert(k.s2EntryMaxT > 0 && k.s2TryCalls == 4 && k.steerTaken == tk0 + 1);
+    // a writer already running on another thread: the clone gives up at once, the game's call runs
+    HANDLE in = CreateEventW(NULL, FALSE, FALSE, NULL), go = CreateEventW(NULL, FALSE, FALSE, NULL);
+    TwCall blk = {9, false, 0, in, go};
+    HANDLE th = CreateThread(NULL, 0, TwThread, &blk, 0, NULL);
+    WaitForSingleObject(in, 5000);
+    assert(g_twActive == 1);
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 1 && k.steerTripDiscard == 1 && k.steerFb[SR_FB_TRIP - 1] == fb0 + 1 && k.steerTaken == tk0 + 1);
+    SetEvent(go);
+    WaitForSingleObject(th, 5000);
+    CloseHandle(th);
+    assert(g_twActive == 0);
+    // a writer that starts and ends inside the clone: the epoch moved, the answer is dropped
+    g_twFkMode = 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 2 && k.steerTripDiscard == 2 && k.steerFb[SR_FB_TRIP - 1] == fb0 + 2 && k.steerTwSite[6] == 2);
+    // shadow (no job, stubs disarmed): the clone's window alone makes the call count, and the clone's answer is dropped
+    g_async.state = A_IDLE;
+    TwArm(false);
+    k.steerShadow = 1;
+    LocoHook(agent, NULL, (u8*)idsv, NULL, 0, NULL, 0);
+    assert(g_srLocoCalls == 3 && k.steerTwSite[6] == 3 && k.steerTripDiscard == 3 && k.steerShadowMismatch == 0 &&
+           g_rgOffSimOpen == 0 && g_srInClone == 0);
+    g_twFkMode = 0;
+    k.steerShadow = 0;
+    assert(k.steerS7Foreign == 8 && k.steerT4Bare == 2 && g_twActive == 0);
+    CloseHandle(in);
+    CloseHandle(go);
+    g_srWorldGet = savedWorld;
+    g_srWmSlot = savedWm;
+    g_srConv = savedConv;
+    g_srLotLookup = savedLook;
+    g_srActiveLot = savedAct;
+    g_srOne = savedOne;
+    g_async.owner = 0;
+    k.steerMode = 0;
+    g_workerTid = savedWorker;
+    g_rtSimTidSlot = savedSimSlot;
 }
 
 // --- design L1 and probe P1b (0.14.0, lotfd.cpp): clone rules on fakes, no writes, QL rules, hook dispatch, P1b keys, T-L3 ---
@@ -3537,7 +4374,7 @@ static void TestLotFd() {
                   offsetof(Ts3nCounters, p1bReady) == 0x1190 && offsetof(Ts3nCounters, p1bKey) == 0x1194 &&
                   offsetof(Ts3nCounters, p1bN) == 0x1214 && offsetof(Ts3nCounters, p1bUs) == 0x1294 &&
                   offsetof(Ts3nCounters, p1bOther) == 0x1314 && offsetof(Ts3nCounters, p1bNoFrame) == 0x1318 &&
-                  sizeof(Ts3nCounters) == 1223 * 4, "v32 layout");
+                  sizeof(Ts3nCounters) >= 1223 * 4, "v32 layout");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.ltReady, 0, offsetof(Ts3nCounters, p1bNoFrame) + 4 - offsetof(Ts3nCounters, ltReady));
     const DWORD me = GetCurrentThreadId();
@@ -3835,6 +4672,656 @@ static void TestLotFd() {
     simTid = 0;
 }
 
+// --- P10 (docs/87 §6): route IC tags, plan time, early returns, gate-10 waits by IC; G10-C frame (docs/87 §5) ---
+static DWORD g_p10PlanTid;
+static u8 __fastcall P10FakePlan(void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) {
+    g_p10PlanTid = GetCurrentThreadId();
+    Sleep(2);
+    return 1;
+}
+// --- design SH (slotro.cpp, docs/90): interlocked portal counts, gate pass / drop, hook dispatch, shadow, fallbacks ---
+static int g_slDel;
+static void __fastcall SlFkDelete(u8* p, void*, DWORD flag) { assert(flag == 1 && *(LONG*)(p + 0x70) <= 1); g_slDel++; }
+static int g_slOrigCalls, g_slOrigHold, g_slTripLock, g_slSkew, g_slThrow;
+static DWORD __cdecl SlFkOrig(float* pt, const u8*, DWORD ags, DWORD) {
+    g_slOrigCalls++;
+    g_slOrigHold = t_slHold * 10 + t_qlShared;
+    if (g_slTripLock) QlSharedTrip(SLD_LOCK);  // a Lock_Acquire inside the call
+    if (g_slThrow) RaiseException(0xE0005151, 0, 0, NULL);
+    pt[0] += 1.0f;
+    pt[1] = (float)ags;
+    return t_slDry && g_slSkew ? 0 : 1;
+}
+static void TestSlotRo() {
+    static_assert(offsetof(Ts3nCounters, arReady) == 0x14A4 && offsetof(Ts3nCounters, orReady) == 0x1524 &&
+                  offsetof(Ts3nCounters, slReady) == 0x1564 && offsetof(Ts3nCounters, slMode) == 0x1568 &&
+                  offsetof(Ts3nCounters, slShadow) == 0x156C && offsetof(Ts3nCounters, slPass12) == 0x1580 &&
+                  offsetof(Ts3nCounters, slDrop) == 0x1588 && offsetof(Ts3nCounters, slFb) == 0x15A0 &&
+                  offsetof(Ts3nCounters, slShadowRuns) == 0x15B0 && offsetof(Ts3nCounters, slRelRetry) == 0x15C0 &&
+                  sizeof(Ts3nCounters) == 1393 * 4, "v42 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.slReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, slReady));
+    // interlocked count pair: same results as 0x64E8E0 / 0x64E8F0, delete through slot +8 at a count <= 1, no lost update
+    static DWORD vt[3];
+    static u8 pt[0x80];
+    vt[2] = (DWORD)(uintptr_t)SlFkDelete;
+    *(DWORD**)pt = vt;
+    *(LONG*)(pt + 0x70) = 1;
+    assert(PortalAddRefX(pt, NULL) == 2 && PortalReleaseX(pt, NULL) == 1 && g_slDel == 0);
+    assert(PortalReleaseX(pt, NULL) == 0 && g_slDel == 1 && *(LONG*)(pt + 0x70) == 1);  // deleted, count left as the original does
+    HANDLE th[2];
+    for (int i = 0; i < 2; i++)
+        th[i] = CreateThread(NULL, 0, [](void*) -> DWORD {
+            for (int n = 0; n < 200000; n++) { PortalAddRefX(pt, NULL); PortalReleaseX(pt, NULL); }
+            return 0;
+        }, NULL, 0, NULL);
+    for (int n = 0; n < 200000; n++) { PortalAddRefX(pt, NULL); PortalReleaseX(pt, NULL); }
+    WaitForMultipleObjects(2, th, TRUE, INFINITE);
+    CloseHandle(th[0]);
+    CloseHandle(th[1]);
+    assert(*(LONG*)(pt + 0x70) == 1 && g_slDel == 1);  // 600,000 pairs on three threads: no update lost, never deleted
+
+    // a lot table with lot 0x12 holding two portals of object 0x5000:0x7, one of another object
+    const DWORD me = GetCurrentThreadId();
+    static u8 p[0x200], wm[0x200], act[0x60], node[0x1A0], prt[3][0x80];
+    static DWORD bk[2], vec[3];
+    static u8* wmSlot;
+    wmSlot = wm;
+    u8* const* savedWm = g_srWmSlot;
+    g_srWmSlot = &wmSlot;
+    *(u8**)(wm + 0xB0) = act;
+    *(DWORD*)(act + 0x48) = 0x99;
+    *(DWORD*)node = 0x12;
+    *(DWORD*)(node + 0x10) = 0x12;
+    bk[0] = (DWORD)(uintptr_t)node;
+    bk[1] = 0x5E117E1;
+    *(DWORD**)(p + 0x4C) = bk;
+    *(DWORD*)(p + 0x50) = 1;
+    for (int i = 0; i < 3; i++) {
+        *(DWORD*)prt[i] = LT_PORTAL_VT;
+        *(DWORD*)(prt[i] + 8) = i < 2 ? 0x5000 : 0x6000;
+        *(DWORD*)(prt[i] + 0xC) = 7;
+        *(LONG*)(prt[i] + 0x70) = 1;
+        vec[i] = (DWORD)(uintptr_t)prt[i];
+    }
+    *(DWORD**)(node + 0x10 + 0x44) = vec;
+    *(DWORD**)(node + 0x10 + 0x48) = vec + 3;
+    // gate stacks: f[2] = ecx of the stub's pushad frame (slot[-2]), slot = f + 4
+    DWORD f[16] = {};
+    DWORD* slot = f + 4;
+    auto hold = [&] { assert(SlBegin(false) == SL_OK && t_slHold == 1 && t_qlShared == 1); };
+    auto end = [&] { return SlEnd(); };
+    auto g12 = [&](DWORD lo, DWORD ret, DWORD idLo) {
+        slot[-2] = (DWORD)(uintptr_t)p, slot[0] = ret, slot[1] = lo, slot[2] = 0, slot[9] = idLo, slot[10] = 7;
+        return SlGate(12, slot);
+    };
+    DWORD key[2];
+    auto g0 = [&](DWORD lo) {
+        key[0] = lo, key[1] = 0;
+        slot[-2] = (DWORD)(uintptr_t)(p + 0x48), slot[0] = 0x0062F7A2, slot[1] = (DWORD)(uintptr_t)key;
+        return SlGate(0, slot);
+    };
+    hold();
+    assert(g12(0x12, SL_PFO_RET, 0x5000) && g12(0x12, 0x0062FB74, 0x5000) && g12(0x44, SL_PFO_RET, 0x5000));  // hit, other caller, miss
+    assert(g0(0x12) && t_slHold == 1 && k.slPass12 == 3 && k.slPass0 == 1);
+    *(LONG*)(prt[1] + 0x70) = 0;  // its Release would delete
+    assert(!g12(0x12, SL_PFO_RET, 0x5000) && t_slHold == 2 && t_qlShared == 0 && k.slDrop[SLD_PORTAL] == 1);
+    assert(!end() && t_slHold == 0);
+    hold();
+    assert(g12(0x12, SL_PFO_RET, 0x6000));  // another object's portals only: the bad one is not its
+    *(LONG*)(prt[1] + 0x70) = 1;
+    *(DWORD*)prt[0] = 0x00FED999;  // another class
+    assert(!g12(0x12, SL_PFO_RET, 0x5000) && k.slDrop[SLD_PORTAL] == 2);
+    end();
+    *(DWORD*)prt[0] = LT_PORTAL_VT;
+    hold();
+    assert(!g0(0x44) && k.slDrop[SLD_MISS] == 1 && t_slHold == 2);  // GetOrInsert miss would insert under shared QL
+    end();
+    hold();
+    assert(!g0(0x99) && k.slDrop[SLD_MISS] == 2);  // the active lot: Contains rules say no entry, so no pass
+    end();
+    hold();
+    assert(!SlGate(3, slot) && k.slDrop[SLD_GATE] == 1);  // any other gate site
+    end();
+    hold();
+    *(DWORD*)(p + 0x50) = 0;
+    assert(!g0(0x12) && k.slDrop[SLD_TABLE] == 1);  // the original would divide by 0
+    *(DWORD*)(p + 0x50) = 1;
+    end();
+    hold();
+    const LONG tl2 = k.ltQlHeldBlock;
+    QlSharedTrip(SLD_MANAGED);
+    assert(t_slHold == 2 && k.slDrop[SLD_MANAGED] == 1 && k.ltQlHeldBlock == tl2);  // a managed call drops, never counts in T-L2
+    end();
+    // SlBegin fallbacks
+    t_qlDepth = 1;
+    assert(SlBegin(false) == SL_FB_NESTED);
+    t_qlDepth = 0;
+    g_steerBroken = 1;
+    assert(SlBegin(false) == SL_FB_BROKEN);
+    g_steerBroken = 0;
+
+    // the hook: off, no flags, not the owner, no job, job (hold), drop inside, state fallbacks, QL busy, shadow, unwind
+    g_slOrig = SlFkOrig;
+    g_async.owner = me;
+    g_async.state = A_RUNNING;
+    __declspec(align(16)) float pt4[4] = {1, 2, 3, 0};
+    const u8* obj = p;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slCalls == 0);  // both switches off
+    k.slMode = 1;
+    assert(SlHook(pt4, obj, 0, 0) == 1 && SlHook(pt4, NULL, 4, 0) == 1 && k.slCalls == 0);  // returns before any routing read
+    g_async.owner = me + 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slCalls == 0);
+    g_async.owner = me;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 11 && k.slCalls == 1 && k.slTaken == 1 && t_slHold == 0 && t_qlShared == 0);
+    assert(TryAcquireSRWLockExclusive(&g_ql));  // released after the call
+    ReleaseSRWLockExclusive(&g_ql);
+    g_slTripLock = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && k.slTaken == 1 && k.slDrop[SLD_LOCK] == 1 && t_slHold == 0);
+    g_slTripLock = 0;
+    g_inInvoke = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slFb[SL_FB_STATE - 1] == 1);
+    g_inInvoke = 0;
+    k.rgOwnerTid = (LONG)me;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slFb[SL_FB_STATE - 1] == 2);
+    k.rgOwnerTid = 0;
+    t_rg.n = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slFb[SL_FB_STATE - 1] == 3);
+    t_rg.n = 0;
+    {
+        HANDLE ev = CreateEventW(NULL, FALSE, FALSE, NULL);
+        HANDLE qh = CreateThread(NULL, 0, [](void* e) -> DWORD {
+            AcquireSRWLockExclusive(&g_ql);
+            SetEvent((HANDLE)e);
+            Sleep(200);
+            ReleaseSRWLockExclusive(&g_ql);
+            return 0;
+        }, ev, 0, NULL);
+        WaitForSingleObject(ev, INFINITE);
+        assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slFb[SL_FB_TRY - 1] == 1);  // a worker writer holds QL
+        WaitForSingleObject(qh, INFINITE);
+        CloseHandle(qh);
+        CloseHandle(ev);
+    }
+    // an exception through the held call still releases QL
+    g_slThrow = 1;
+    __try {
+        SlHook(pt4, obj, 4, 0);
+        assert(!"no exception");
+    } __except (GetExceptionCode() == 0xE0005151 ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+    }
+    g_slThrow = 0;
+    assert(t_slHold == 0 && t_qlShared == 0 && TryAcquireSRWLockExclusive(&g_ql));
+    ReleaseSRWLockExclusive(&g_ql);
+    // shadow (no job): the game's call on the point, then the dry hold on a copy; equal, then a skewed answer counted
+    g_async.state = A_IDLE;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigHold == 0 && k.slShadowRuns == 0);  // shadow off: the game's call only
+    k.slShadow = 1;
+    const int calls0 = g_slOrigCalls;
+    pt4[0] = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && g_slOrigCalls == calls0 + 2 && g_slOrigHold == 11 && pt4[0] == 2.0f);
+    assert(k.slShadowRuns == 1 && k.slShadowMismatch == 0 && g_rgOffSimOpen == 0 && t_slHold == 0);
+    g_slSkew = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && k.slShadowMismatch == 1);  // the game's answer is returned
+    g_slSkew = 0;
+    g_slTripLock = 1;
+    assert(SlHook(pt4, obj, 4, 0) == 1 && k.slShadowDrop == 1 && k.slShadowMismatch == 1);
+    g_slTripLock = 0;
+    k.slMode = k.slShadow = 0;
+    g_async.owner = 0;
+    g_srWmSlot = savedWm;
+    memset(&k.slReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, slReady));
+    puts("slot position RO (SH): interlocked counts, gate pass/drop, hook, fallbacks, shadow, unwind ok");
+}
+
+static void TestP10() {
+    static_assert(offsetof(Ts3nCounters, p10Ready) == 0x1424 && offsetof(Ts3nCounters, p10Entries) == 0x1428 &&
+                  offsetof(Ts3nCounters, p10PlanUs) == 0x1438 && offsetof(Ts3nCounters, p10EarlyRet) == 0x1448 &&
+                  offsetof(Ts3nCounters, p10CanYield) == 0x1458 && sizeof(Ts3nCounters) >= 1305 * 4, "v38 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.p10Ready, 0, sizeof(LONG) * 16);
+    memset(k.p1bKey, 0, sizeof(k.p1bKey) * 3 + 8);
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    const LockAcquireFn savedLock = g_lockOrig;
+    const PlanLockedFn savedPlan = g_planOrig;
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_enfHeld = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    g_workerTid = me + 7;
+    g_async.owner = me;
+    g_rgLock = g_rgLockObj;
+    g_planOrig = P10FakePlan;
+    g_hostPtr = &g_fakeHostPtr;
+    g_curState = &g_fakeCur;
+    FakeTask(kRoot, 7);
+    DWORD st[48] = {};
+    const DWORD thunk = (DWORD)(uintptr_t)RgLeaveThunk;
+    int list[2] = {}, pts[2] = {1, 2};  // starts != ends: the hook plans (no early-out)
+    u8 opts[0x38] = {};
+
+    // off: nothing tagged
+    st[40] = 0x111;
+    P10Enter(1, &st[40]);
+    assert(t_p10 == 0 && t_rg.n == 0 && st[40] == 0x111 && k.p10Entries[1] == 0);
+    g_p10On = 1;
+    // another thread than the sim: not tagged
+    simTid = me + 1;
+    P10Enter(1, &st[40]);
+    assert(t_p10 == 0 && t_rg.n == 0);
+    simTid = me;
+
+    // 1. tags nest and clear; a reader frame, not a gate frame; CanYield counted (not for Plan)
+    P10Enter(1, &st[40]);
+    assert(t_p10 == 2 && st[40] == thunk && t_rg.n == 1 && t_rg.readers == 1 && k.p10Entries[1] == 1 && k.p10CanYield[0] == 1);
+    st[30] = 0x222;
+    FakeTask(kNested, 7);  // a nested interpreter state: no yield here
+    P10Enter(2, &st[30]);
+    FakeTask(kRoot, 7);
+    assert(t_p10 == 3 && t_rg.n == 2 && k.p10Entries[2] == 1 && k.p10CanYield[1] == 0);
+    // gate site 10 reached inside PlanFromPoint, no plan: an early return of that IC at its leave
+    k.rgReady = 7;
+    const LONG unl10 = k.rgUnlocked[10];
+    st[20] = 0x00760BFF;
+    RgEnter(10, &st[20]);
+    assert(t_p10 == (3 | P10_REACHED) && k.rgUnlocked[10] == unl10 + 1 && t_rg.n == 3);
+    assert(RgLeave() == 0x00760BFF && RgLeave() == 0x222 && t_p10 == 2 && k.p10EarlyRet[2] == 1);
+    // a plan inside Replan: timed and charged to Replan; reached + planned is no early return
+    st[20] = 0x00760BFF;
+    RgEnter(10, &st[20]);
+    RgLeave();
+    k.rgReady = 0;  // PlanLockedHook would learn a lock from the NULL world otherwise
+    assert(PlanLockedHook(NULL, NULL, list, pts, pts, 0x100, 1, opts, NULL, NULL, 1, 0) == 1 && g_p10PlanTid == me);
+    assert(k.p10PlanUs[1] >= 1000 && k.p10PlanUs[0] == 0 && t_p10 == (2 | P10_REACHED | P10_PLANNED));
+    assert(RgLeave() == 0x111 && t_p10 == 0 && t_rg.n == 0 && t_rg.readers == 0 && k.p10EarlyRet[1] == 0);
+    // no tag: a plan is not charged
+    const LONG planUs1 = k.p10PlanUs[1];
+    PlanLockedHook(NULL, NULL, list, pts, pts, 0x100, 1, opts, NULL, NULL, 1, 0);
+    assert(k.p10PlanUs[1] == planUs1 && k.p10PlanUs[0] + k.p10PlanUs[2] + k.p10PlanUs[3] == 0);
+
+    // 2. a frame left without returning (managed exception): dropped at the next entry, its tag cleared
+    k.rgReady = 7;
+    st[40] = 0x333;
+    P10Enter(3, &st[40]);
+    st[30] = 0x00760BFF;
+    RgEnter(10, &st[30]);
+    assert(t_p10 == (4 | P10_REACHED) && t_rg.n == 2);
+    st[44] = 0x444;
+    P10Enter(1, &st[44]);  // above both: they are dead
+    assert(t_p10 == 2 && t_rg.n == 1 && t_rg.f[0].ret == 0x444 && k.p10EarlyRet[3] == 1 && k.p10Entries[3] == 1);
+    // a stale tag is not charged to a plan outside that IC: the plan's own slot drops it first
+    k.rgReady = 0;
+    const LONG planUs1b = k.p10PlanUs[1];
+    t_rg.f[0].slot = (DWORD*)((u8*)st - 0x10000);  // pretend the Replan frame lay below this call (left by an exception)
+    PlanLockedHook(NULL, NULL, list, pts, pts, 0x100, 1, opts, NULL, NULL, 1, 0);
+    assert(t_p10 == 0 && t_rg.n == 0 && k.p10PlanUs[1] == planUs1b);
+    k.rgReady = 7;
+
+    // 3. IcPlanHook tags Plan through its own return slot (no job: plain sync plan)
+    {
+        struct Fake { static u8* __cdecl Ic(u8* out, DWORD) {
+            assert(t_p10 == 1 && t_rg.n == 1);
+            return out;
+        } };
+        const IcPlanFn savedIc = g_icPlanOrig;
+        g_icPlanOrig = Fake::Ic;
+        u8 out[0x48];
+        assert(IcPlanHook(out, 0x77) == out && t_p10 == 0 && t_rg.n == 0 && k.p10Entries[0] == 1);
+        g_icPlanOrig = savedIc;
+    }
+
+    // 4. a gate-10 wait during a job, keyed in the P1b table by the IC (row 6): Replan
+    k.rgEnforce = 1;
+    g_async.lock = g_rgLockObj;
+    st[40] = 0x555;
+    P10Enter(1, &st[40]);
+    st[30] = 0x00760BFF;
+    HANDLE w = EnfStartWorker();
+    RgEnter(10, &st[30]);
+    assert(k.p1bKey[0] == (LONG)(6u << 24 | 0x765490) && k.p1bN[0] == 1 && k.p1bUs[0] >= 10000);
+    assert(RgLeave() == 0x00760BFF && RgLeave() == 0x555 && *(LONG*)(g_rgLockObj + 0x20) == 0 && g_rgOffSimOpen == 0);
+    EnfJoin(w);
+    // without P10 (P1b alone) the row keys by Route_PlanCommon's caller through the ebp frame
+    g_p10On = 0;
+    st[24] = (DWORD)(uintptr_t)&st[40];
+    st[41] = 0x0076429D;
+    P1bNote(10, 0x00760BFF, &st[30], 1);
+    assert(k.p1bKey[1] == (LONG)(6u << 24 | 0x76429D));
+    g_p10On = 1;
+
+    // 5. G10-C: the prologue is checked; the frame on Route_PlanCommon keeps job starts off for the whole plan, the goal
+    // step and other gate sites inside are nested (not counted), the plan stays on this thread, a dropped frame closes
+    static const u8 badPro[6] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x10};
+    static const u8 goodPro[6] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0};
+    const RgSite saved10 = kRgSites[10];
+    assert(!RgUseG10Common(badPro) && !g_g10c && kRgSites[10].addr == 0x0075C2D0);
+    assert(RgUseG10Common(goodPro) && g_g10c && kRgSites[10].addr == (DWORD)(uintptr_t)goodPro);
+    g_async.state = A_IDLE;
+    st[30] = 0x0076429D;
+    RgEnter(10, &st[30]);
+    assert(t_g10cOpen == 1 && g_rgOffSimOpen == 1 && t_rg.f[0].rel == (RG_REL_OFFSIM | RG_REL_G10C));
+    const LONG unl1 = k.rgUnlocked[1];
+    RgEnter(1, &st[26]);  // the goal step's lot planner inside the frame
+    assert(k.rgUnlocked[1] == unl1 && t_rg.n == 2 && g_rgOffSimOpen == 1);
+    RgLeave();
+    k.workerMode = k.workerReady = 1;  // a sync worker plan would wait for a worker held by this frame: planned here
+    g_p10PlanTid = 0;
+    RunPlan(NULL, NULL, list, pts, pts, 0x100, 1, opts, NULL, NULL, 1, 0);
+    assert(g_p10PlanTid == me);
+    k.workerMode = k.workerReady = 0;
+    assert(RgLeave() == 0x0076429D && t_g10cOpen == 0 && g_rgOffSimOpen == 0);
+    // a job running at entry: one wait, +0x918 held to the frame's end
+    w = EnfStartWorker();
+    st[30] = 0x0076429D;  // a leave does not write the slot back (the thunk returns there itself)
+    RgEnter(10, &st[30]);
+    assert(*(LONG*)(g_rgLockObj + 0x20) == 1 && t_rg.f[0].rel == (RG_REL_LOCK | RG_REL_OFFSIM | RG_REL_G10C) && t_g10cOpen == 1);
+    EnfJoin(w);
+    RgEnter(2, &st[26]);
+    assert(*(LONG*)(g_rgLockObj + 0x20) == 1 && t_rg.n == 2);  // no second acquire inside
+    RgLeave();
+    assert(RgLeave() == 0x0076429D && *(LONG*)(g_rgLockObj + 0x20) == 0 && t_g10cOpen == 0 && t_rg.n == 0);
+    // dropped: the next outer entry closes it
+    RgEnter(10, &st[30]);
+    RgEnter(0, &st[34]);
+    assert(t_g10cOpen == 0 && t_rg.n == 1 && g_rgOffSimOpen == 1);
+    RgLeave();
+    assert(g_rgOffSimOpen == 0);
+    kRgSites[10] = saved10;
+    g_g10c = 0;
+
+    g_p10On = 0;
+    k.rgEnforce = 0;
+    k.rgReady = 0;
+    k.rgOwnerTid = 0;
+    g_async.state = A_IDLE;
+    g_async.lock = NULL;
+    g_async.owner = 0;
+    g_rgLock = NULL;
+    g_workerTid = savedWorker;
+    g_lockOrig = savedLock;
+    g_planOrig = savedPlan;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    CloseHandle(g_enfHeld);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+    simTid = 0;
+    memset(&k.p10Ready, 0, sizeof(LONG) * 16);
+}
+
+// --- [ObstructedRO] (obstructro.cpp, docs/86 §10): read-only IC_Route_IsPointObstructedBySim ---
+static int g_orRefIn, g_orRefOut, g_orGameCalls, g_orQueryWhy;
+static u64 g_orGameAnswer;
+static u8* g_orFakeRoute;
+static const u8* g_orFps[8];
+static int g_orNFps;
+static float g_orPtU, g_orPtV;
+static u8* g_orCacheSkew;  // the +0xD4 fake writes this cache (a writer the clone must notice)
+static void __fastcall FkOrRef(u8*, void*) { g_orRefIn++; }
+static void __fastcall FkOrUnref(u8*, void*) { g_orRefOut++; }
+static u8* __fastcall FkOrRoute(const void*, void*, DWORD handle) { return handle == 0x25000001 || handle == 0x25000002 ? g_orFakeRoute : NULL; }
+static void __cdecl FkOrLevel(const u8*, const float* pt, float* io) {
+    assert(((uintptr_t)pt & 15) == 0 && pt[3] == pt[0]);  // 0x76BF90's {x, y, z, x}, 16-aligned as the IC's frame
+    io[0] = io[1] = 7.0f;
+    *(LONG*)&io[2] = 0;
+}
+static int FkOrQuery(SrCtx* c, const u8*, DWORD lo, DWORD, const SrPt& pt, float r, const u8* rec) {
+    assert(lo == 0x30 && r == 0.25f && pt.v[0] == 3.0f && pt.v[2] == 5.0f && *(const DWORD*)rec == 0xABCD && rec[0x24] == 1);
+    c->n = g_orNFps;
+    for (int i = 0; i < g_orNFps; i++) c->objs[i] = g_orFps[i];
+    return g_orQueryWhy;
+}
+static int __fastcall FkOrType(const u8* o, void*) { return (signed char)o[0x35]; }
+static unsigned __int64 __fastcall FkOrId(const u8* o, void*) { return (u64)*(const DWORD*)(o + 0x18) << 32 | *(const DWORD*)(o + 0x14); }
+static u8 __fastcall FkOrC0(const u8* o, void*) { return o[0x48]; }
+static u8 __fastcall FkOrPt(const u8* o, void*, DWORD level, float u, float v, float r) {
+    assert(level == 0 && r == 0.25f);
+    g_orPtU = u, g_orPtV = v;
+    if (g_orCacheSkew) g_orCacheSkew[0] ^= 1;
+    return o[0x49];
+}
+static u64 __cdecl FkOrGame(DWORD, OrV3) { g_orGameCalls++; return g_orGameAnswer; }
+static void TestObstructedRO() {
+    static_assert(offsetof(Ts3nCounters, arReady) == 0x14A4 && offsetof(Ts3nCounters, orReady) == 0x1524 &&
+                      offsetof(Ts3nCounters, orMode) == 0x1528 && offsetof(Ts3nCounters, orShadow) == 0x152C &&
+                      offsetof(Ts3nCounters, orFb) == 0x1538 && offsetof(Ts3nCounters, orUs) == 0x1550 &&
+                      offsetof(Ts3nCounters, orShadowMismatch) == 0x155C && offsetof(Ts3nCounters, orHits) == 0x1560 &&
+                      sizeof(Ts3nCounters) >= 1369 * 4,
+                  "v41 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.orReady, 0, 16 * 4);
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    g_workerTid = me + 7;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    // world, world manager, planner P with one lot (key 0x30) in a 1-bucket table; identity rows, so (u, v) = (x, z)
+    static u8 world[0xA00], wm[0x200], wmw[0x200], p[0x200], lot[0x60], act[0x60], rm[0x10];
+    static __declspec(align(16)) u8 node[0x200];
+    static DWORD bk[2];
+    static u8 *wmSlot, *rmSlot;
+    wmSlot = wm;
+    rmSlot = rm;
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = p;
+    *(u8**)(world + 0x964) = wmw;
+    *(u8**)(wm + 0xB0) = act;
+    *(DWORD*)(act + 0x48) = 0x99;
+    *(DWORD*)(lot + 0x48) = 0x30;
+    *(DWORD*)node = 0x30;
+    *(DWORD*)(node + 0x10) = 0x30;
+    float* rows = (float*)(node + 0x10 + 0xA0);
+    memset(rows, 0, 64);
+    rows[0] = rows[5] = rows[10] = rows[15] = 1.0f;
+    rows[12] = 10.0f;  // translation in x: u = x + 10
+    bk[0] = (DWORD)(uintptr_t)node;
+    bk[1] = 0x5E117E1;
+    *(DWORD**)(p + 0x4C) = bk;
+    *(DWORD*)(p + 0x50) = 1;
+    static float one = 1.0f, radius = 0.25f;
+    static bool lotMissing;
+    const SrWorldFn savedWorld = g_srWorldGet;
+    const SrLotLookupFn savedLook = g_srLotLookup;
+    const SrLotFindFn savedFind = g_srLotFind;
+    u8* const* savedWm = g_srWmSlot;
+    const float* savedOne = g_srOne;
+    g_srWorldGet = []() -> u8* { return world; };
+    g_srLotLookup = [](void*, void*, float, float) -> u8* { return lotMissing ? NULL : lot; };
+    g_srLotFind = [](const void* tbl, void*, DWORD* o, const DWORD* key) {
+        const DWORD* b = *(const DWORD* const*)((const u8*)tbl + 4);
+        o[0] = key[0] == *(const DWORD*)(uintptr_t)b[0] ? b[0] : b[1];
+    };
+    g_srWmSlot = &wmSlot;
+    g_srOne = &one;
+    g_orRmSlot = &rmSlot;
+    g_orRadius = &radius;
+    g_orRoute = FkOrRoute;
+    g_orLevel = FkOrLevel;
+    g_orQuery = FkOrQuery;
+    g_srCheckSlots = false;
+    // the route: vtable pair +0x10 / +0x14, option word +0x3C, own Sim id +0x40, ignore list at +0x158 + 0x38
+    static DWORD rvt[8], ign[4];
+    rvt[4] = (DWORD)(uintptr_t)FkOrRef;
+    rvt[5] = (DWORD)(uintptr_t)FkOrUnref;
+    static u8 route[0x200];
+    g_orFakeRoute = route;
+    *(DWORD**)route = rvt;
+    *(DWORD*)(route + 0x3C) = 0xABCD;
+    *(DWORD*)(route + 0x40) = 0x500;
+    ign[0] = 0x600;
+    *(DWORD**)(route + 0x190) = ign;
+    *(DWORD**)(route + 0x194) = ign + 2;
+    // footprints (fake class): type +0x35, id +0x14/+0x18, slot +0xC0 = byte +0x48, slot +0xD4 = byte +0x49, cache +0x38
+    static DWORD fvt[0x40];
+    fvt[3] = (DWORD)(uintptr_t)FkOrType;
+    fvt[0x84 / 4] = (DWORD)(uintptr_t)FkOrId;
+    fvt[0xC0 / 4] = (DWORD)(uintptr_t)FkOrC0;
+    fvt[0xD4 / 4] = (DWORD)(uintptr_t)FkOrPt;
+    static u8 fps[6][0x60], caches[6][0x24];
+    const DWORD ids[6] = {0x700, 0x500, 0x600, 0x701, 0x702, 0x703};  // own Sim and ignored at 1 and 2
+    for (int i = 0; i < 6; i++) {
+        *(DWORD**)fps[i] = fvt;
+        *(DWORD*)(fps[i] + 0x14) = ids[i];
+        fps[i][0x35] = 0x14;
+        fps[i][0x48] = 1;
+        *(u8**)(fps[i] + 0x38) = caches[i];
+        caches[i][0x20] = 1;
+        g_orFps[i] = fps[i];
+    }
+    fps[0][0x35] = 3;     // not a Sim
+    fps[3][0x48] = 0;     // slot +0xC0 false
+    fps[4][0x49] = 0;     // the point test misses
+    fps[5][0x49] = 1;     // the answer
+    g_orNFps = 6;
+    const OrV3 at = {3.0f, 1.0f, 5.0f};
+    u64 r;
+    auto run = [&](bool job) {
+        const int in0 = g_orRefIn, out0 = g_orRefOut;
+        const int why = OrRun(0x25000001, at, job, &r);
+        assert(g_orRefIn - in0 == g_orRefOut - out0 && t_qlShared == 0 && t_inRo == false && g_srInClone == 0);  // pair balanced
+        return why;
+    };
+    assert(run(false) == SR_OK && r == 0x703 && g_orPtU == 13.0f && g_orPtV == 5.0f && g_orRefIn == 1);
+    assert(run(true) == SR_FB_STATE && r == 0);  // a job answer needs the tripwire stubs armed
+    TwArm(true);
+    assert(run(true) == SR_OK && r == 0x703);
+    fps[5][0x49] = 0;
+    assert(run(true) == SR_OK && r == 0);  // no footprint covers the point
+    fps[5][0x49] = 1;
+    // shapes and doubts: no route, no world manager, no lot: 0 as the IC; dirty lot index, lot not in the table, deferred
+    // flush (query), invalid or changed cache, unknown +0xD4 target, planner missing, tripwire, lost writer frame
+    assert(OrRun(0x25000009, at, true, &r) == SR_OK && r == 0);
+    wmSlot = NULL;
+    assert(run(true) == SR_OK && r == 0);
+    wmSlot = wm;
+    lotMissing = true;
+    assert(run(true) == SR_OK && r == 0);
+    lotMissing = false;
+    wmw[0x1CC] = 1;
+    assert(run(true) == SR_FB_DIRTY);
+    wmw[0x1CC] = 0;
+    *(DWORD*)(lot + 0x48) = 0x31;
+    assert(run(true) == SR_FB_LOTMISS && r == 0);  // GetOrInsert would insert
+    *(DWORD*)(lot + 0x48) = 0x30;
+    g_orQueryWhy = SR_FB_DEFERRED;
+    assert(run(true) == SR_FB_DEFERRED && OrMap(SR_FB_DEFERRED) == OR_FB_LOT);
+    g_orQueryWhy = SR_OK;
+    caches[4][0x20] = 0;
+    assert(run(true) == SR_FB_CACHE && r == 0);  // the original would rebuild level 0
+    caches[4][0x20] = 1;
+    g_orCacheSkew = caches[4];
+    assert(run(true) == SR_FB_CACHE);
+    g_orCacheSkew = NULL;
+    caches[4][0] = 0;
+    g_srCheckSlots = true;
+    assert(run(true) == SR_FB_SHAPE);  // +0xD4 is not 0x80F030
+    g_srCheckSlots = false;
+    world[0x974] = 0;
+    assert(run(true) == SR_FB_SHAPE);
+    world[0x974] = 1;
+    g_twActive = 1;
+    assert(run(true) == SR_FB_TRIP);
+    g_twActive = 0;
+    g_steerBroken = 1;
+    assert(run(true) == SR_FB_STATE);
+    g_steerBroken = 0;
+    t_qlDepth = 1;
+    assert(run(true) == SR_FB_STATE);
+    t_qlDepth = 0;
+    assert(run(true) == SR_OK && r == 0x703);
+
+    // the hook: switches off, not the owner, no job, a job (read-only answer), each state fall-back, QL busy, shadow
+    const OrFn savedOrig = g_orOrig;
+    g_orOrig = FkOrGame;
+    g_orGameAnswer = 0x703;
+    g_async.owner = me;
+    g_async.handle = 0x25000002;
+    g_async.state = A_RUNNING;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 1 && k.orCalls == 0);  // switches off
+    k.orMode = 1;
+    g_async.owner = me + 1;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 2 && k.orCalls == 0);
+    g_async.owner = me;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 2 && k.orTaken == 1 && k.orHits == 1);
+    fps[5][0x49] = 0;
+    assert(OrHook(0x25000001, at) == 0 && g_orGameCalls == 2 && k.orTaken == 2 && k.orHits == 1);
+    fps[5][0x49] = 1;
+    assert(OrHook(0x25000002, at) == 0x703 && g_orGameCalls == 3 && k.orFb[OR_FB_STATE - 1] == 1);  // the job plans this route
+    g_inInvoke = 1;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 4 && k.orFb[OR_FB_STATE - 1] == 2);
+    g_inInvoke = 0;
+    k.rgOwnerTid = (LONG)me;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 5 && k.orFb[OR_FB_STATE - 1] == 3);
+    k.rgOwnerTid = 0;
+    t_rg.n = 1;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 6 && k.orFb[OR_FB_STATE - 1] == 4);
+    t_rg.n = 0;
+    caches[4][0x20] = 0;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 7 && k.orFb[OR_FB_CACHE - 1] == 1);
+    caches[4][0x20] = 1;
+    g_twActive = 1;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 8 && k.orFb[OR_FB_TRIP - 1] == 1);
+    g_twActive = 0;
+    // QL held exclusive by a worker writer: the try fails, the game's call
+    HANDLE held = CreateEventW(NULL, TRUE, FALSE, NULL), go = CreateEventW(NULL, TRUE, FALSE, NULL);
+    struct Hold { HANDLE held, go; } h = {held, go};
+    HANDLE th = CreateThread(NULL, 0, [](void* a) -> DWORD {
+        Hold* hh = (Hold*)a;
+        AcquireSRWLockExclusive(&g_ql);
+        SetEvent(hh->held);
+        WaitForSingleObject(hh->go, 5000);
+        ReleaseSRWLockExclusive(&g_ql);
+        return 0;
+    }, &h, 0, NULL);
+    WaitForSingleObject(held, 5000);
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 9 && k.orFb[OR_FB_TRY - 1] == 1);
+    SetEvent(go);
+    WaitForSingleObject(th, 5000);
+    CloseHandle(th);
+    CloseHandle(held);
+    CloseHandle(go);
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 9 && k.orTaken == 3);
+    // no job: the game's call (Mode 1 alone), then shadow: the game's call and the clone compared, job starts held meanwhile
+    TwArm(false);
+    g_async.state = A_IDLE;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 10 && k.orShadowRuns == 0);
+    k.orShadow = 1;
+    assert(OrHook(0x25000001, at) == 0x703 && g_orGameCalls == 11 && k.orShadowRuns == 1 && k.orShadowMismatch == 0);
+    g_orGameAnswer = 0x702;
+    assert(OrHook(0x25000001, at) == 0x702 && g_orGameCalls == 12 && k.orShadowRuns == 2 && k.orShadowMismatch == 1);
+    caches[4][0x20] = 0;  // a shadow clone that gives up is counted, not compared
+    assert(OrHook(0x25000001, at) == 0x702 && k.orShadowRuns == 3 && k.orShadowMismatch == 1 && k.orFb[OR_FB_CACHE - 1] == 2);
+    caches[4][0x20] = 1;
+    assert(g_rgOffSimOpen == 0 && g_orRefIn == g_orRefOut);
+    printf("obstructed RO: clone, %ld read-only answers, fallbacks %ld/%ld/%ld/%ld/%ld/%ld, shadow %ld runs\n", k.orTaken, k.orFb[0],
+           k.orFb[1], k.orFb[2], k.orFb[3], k.orFb[4], k.orFb[5], k.orShadowRuns);
+
+    g_orOrig = savedOrig;
+    g_srWorldGet = savedWorld;
+    g_srLotLookup = savedLook;
+    g_srLotFind = savedFind;
+    g_srWmSlot = savedWm;
+    g_srOne = savedOne;
+    g_srCheckSlots = true;
+    g_orQuery = OrQueryGame;
+    g_workerTid = savedWorker;
+    g_async.owner = 0;
+    g_async.handle = 0;
+    memset(&k.orReady, 0, 16 * 4);
+    simTid = 0;
+}
+
 int main() {
     static DWORD noSimTid;  // the game global 0x11D8A8C does not exist here
     g_rtSimTidSlot = &noSimTid;
@@ -3878,8 +5365,13 @@ int main() {
     TestRouteEnforce();
     TestG11CloseBy();
     TestDiscourage();
+    TestDiscourageDX();
     TestSteerRO();
+    TestSteerTrip();
     TestLotFd();
+    TestObstructedRO();
+    TestSlotRo();
+    TestP10();
     TestJobQueue();
     TestLotSinCos();
     TestIdCache();
