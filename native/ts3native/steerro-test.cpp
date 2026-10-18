@@ -624,6 +624,15 @@ int main(int argc, char** argv) {
     auto callsTo = [](DWORD at, DWORD to) { const u8* p = (const u8*)(uintptr_t)at; return p[0] == 0xE8 && at + 5 + *(const DWORD*)(p + 1) == to; };
     assert(callsTo(0x00760BFA, 0x0075C2D0) && callsTo(0x00764298, ROUTE_PLAN_COMMON) && callsTo(0x007643FB, ROUTE_PLAN_COMMON));
     printf("P10 / G10-C: IC prologues, Route_PlanCommon prologue and the three call edges match\n");
+    // [ProbeValues] (values.cpp, docs/108): every entry prologue and call edge of the table, on the image
+    for (int i = 0; i < PV_N; i++) {
+        u8 want[8];
+        PvExpect(kPv[i], kPv[i].at, kPv[i].target, want);
+        if (!Matches((const void*)(uintptr_t)kPv[i].at, want, kPv[i].len)) printf("values site %s 0x%08lX differs\n", kPv[i].name, kPv[i].at);
+        assert(Matches((const void*)(uintptr_t)kPv[i].at, want, kPv[i].len));
+    }
+    assert(callsTo(PV_INROOM_RET - 5, 0x0064F550));  // the in-room path's Portal_IsLocked call (0x632554)
+    printf("values: %d sites match\n", (int)PV_N);
     Jmp(0x004E69D0, (void*)FkMalloc);
     Jmp(0x004E6A20, (void*)FkMemalign);
     Jmp(0x004E5920, (void*)FkFree);

@@ -27,6 +27,74 @@ namespace Ts3Agent
             Dispatcher.Register("thumbnails", Thumbnails);
             Dispatcher.Register("outfit_change", OutfitChange);
             Dispatcher.Register("pet_guard", PetGuard);
+            Dispatcher.Register("wildflower_drain", WildflowerDrain);
+        }
+
+        static Sims3.Gameplay.Utilities.AlarmHandle sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle;
+
+        // wildflower_drain {lots?: 20, every_min?: 30, clear?: false, stop?: false}: docs/110 §7.5 repro (repros.json
+        // wildflower-drain), so no test waits for spring. Replaces Wildflower's spring drain list with `lots` community lot
+        // ids (cycling through them, shuffled with our own seed so the game's RNG stream is untouched) and starts our own
+        // repeating alarm, every `every_min` sim minutes, that calls the game's drain handler OnGrowWildflowersOnLot (as the
+        // game's hourly alarm does; with ts3fixes loaded that is the wildflower hook). The game's own alarm, if live, drains
+        // the same list. clear: before each fire destroy uncollected wildflowers lying in the world, else the game's
+        // 20-flower cap stops the drain after 20 placed. Our alarm ends itself when the list is empty; stop removes it.
+        // Returns the list size before and after, whether the game's alarm is live, can_spawn and the uncollected count.
+        static object WildflowerDrain(Args a)
+        {
+            RequireLive();
+            const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic;
+            Type wt = typeof(Sims3.Gameplay.Objects.Wildflower);
+            FieldInfo lotsF = wt.GetField("sLotsToGetWildflowers", st), alarmF = wt.GetField("sGrowWildflowerInSpringAlarm", st);
+            FieldInfo collected = wt.GetField("mCollected", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo grow = wt.GetMethod("OnGrowWildflowersOnLot", st);
+            if (lotsF == null || alarmF == null || collected == null || grow == null) throw new McpException("Wildflower drain members not found (no Seasons/wildflower content?)");
+            Sims3.Gameplay.Utilities.AlarmManager.Global.RemoveAlarm(sWfDrainAlarm);
+            sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle;
+            Dictionary<string, object> r = Util.Obj();
+            List<ulong> before = lotsF.GetValue(null) as List<ulong>;
+            r["list_before"] = before == null ? -1 : before.Count;
+            if (!a.Bool("stop", false))
+            {
+                int n = (int)a.Long("lots", 20);
+                List<Lot> comm = LotManager.GetAllCommunityLots();
+                if (comm == null || comm.Count == 0) throw new McpException("no community lots in this world");
+                Random rnd = new Random(110);
+                List<ulong> ids = new List<ulong>();
+                for (int i = 0; i < n; i++)
+                {
+                    if (i % comm.Count == 0)
+                        for (int k = comm.Count - 1; k > 0; k--) { int j = rnd.Next(k + 1); Lot t = comm[k]; comm[k] = comm[j]; comm[j] = t; }
+                    ids.Add(comm[i % comm.Count].LotId);
+                }
+                lotsF.SetValue(null, ids);
+                bool clear = a.Bool("clear", false);
+                float every = (float)a.Double("every_min", 30);
+                sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmManager.Global.AddAlarmRepeating(every, Sims3.Gameplay.Utilities.TimeUnit.Minutes, delegate
+                {
+                    List<ulong> l = lotsF.GetValue(null) as List<ulong>;
+                    if (l == null || l.Count == 0)
+                    {
+                        Sims3.Gameplay.Utilities.AlarmManager.Global.RemoveAlarm(sWfDrainAlarm);
+                        sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle;
+                        return;
+                    }
+                    if (clear)
+                        foreach (Sims3.Gameplay.Objects.Wildflower w in Sims3.Gameplay.Queries.GetObjects<Sims3.Gameplay.Objects.Wildflower>())
+                            if (w.InWorld && !(bool)collected.GetValue(w)) w.Destroy();
+                    grow.Invoke(null, null);
+                }, every, Sims3.Gameplay.Utilities.TimeUnit.Minutes, "ts3agent wildflower drain", Sims3.Gameplay.Utilities.AlarmType.NeverPersisted, null);
+            }
+            List<ulong> after = lotsF.GetValue(null) as List<ulong>;
+            r["list_after"] = after == null ? -1 : after.Count;
+            r["game_alarm_live"] = !((Sims3.Gameplay.Utilities.AlarmHandle)alarmF.GetValue(null)).Equals(Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle);
+            r["our_alarm_live"] = !sWfDrainAlarm.Equals(Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle);
+            r["can_spawn"] = Sims3.Gameplay.Objects.Wildflower.CanSpawnWildflowers();
+            int un = 0;
+            foreach (Sims3.Gameplay.Objects.Wildflower w in Sims3.Gameplay.Queries.GetObjects<Sims3.Gameplay.Objects.Wildflower>())
+                if (!(bool)collected.GetValue(w)) un++;
+            r["uncollected"] = un;
+            return r;
         }
 
         // pet_guard {action: "start" | "state" | "cancel", target?}: docs/84 §7.2 fix D-X repro (repros.json pet-guard-cancel).

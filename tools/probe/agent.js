@@ -979,6 +979,19 @@ rpc.exports = {
       ...['Gate', 'Miss', 'Portal', 'Lock', 'Managed', 'Table'].map(n => `slDrop${n}`),
       ...['State', 'Nested', 'Broken', 'Try'].map(n => `slFb${n}`), 'slShadowRuns', 'slShadowMismatch', 'slShadowDrop',
       'slRefSwap', 'slRelRetry'); // 0.22.2: design SH slot position hold (+0x1564..)
+    if (c.readS32() >= 43) f.push('vcReady', 'vcSites', 'vcSkipped', 'vcHits', 'vcPairs', 'vcOutside', 'vcOverflow', 'vcFaults',
+      'vcWindows', 'vcArmed'); // 0.23.0: [ProbeSnap] indirect call target sampler (+0x15C4..)
+    if (c.readS32() >= 44) { // 0.24.0: [ProbeValues] routing value probe (+0x15EC..0x19DB, 252 fields; docs/108, values-report.ts)
+      const n = (name, count, inner) => [...Array(count).keys()].map(i => inner ? `${name}_${Math.floor(i / inner)}_${i % inner}` : `${name}_${i}`);
+      f.push('pvReady', 'pvHooks', 'pvSkipped', 'pvWorlds', ...n('pvTune', 13), ...n('pvWm', 4), 'pvSeaY', 'pvSeaChanges', 'pvWmDirty',
+        'pvWorld983', ...n('pvG', 5), ...n('pvR', 5), ...n('pvGuard', 3), ...n('pvGBuild', 2), 'pvGBuildUs', 'pvGBuildMaxUs',
+        ...n('pvGBuildThr', 3), ...n('pvGMsg', 3), ...n('pvRebuild', 3), 'pvDirtyPosts', 'pvJobs', 'pvTies', ...n('pvAStar', 3),
+        ...n('pvAStarBit', 30, 10), ...n('pvAStarRef14', 3), ...n('pvAStarRef44', 3), ...n('pvLotPlan', 3), ...n('pvLotPlanBit', 33, 11),
+        ...n('pvLotPlanObst', 3), ...n('pvStatus', 40, 20), 'pvIpAlloc', 'pvIpCalls', 'pvIpNonZero', ...n('pvPortal', 25, 5),
+        ...n('pvQuery', 10, 5), 'pvQueryInPlan', ...n('pvH9', 2), 'pvH9InPlan', 'pvH9Plans', 'pvH9Max', ...n('pvPart', 2),
+        ...n('pvPartOffSim', 2), ...n('pvLazy', 24, 3), ...n('pvBlk', 2), 'pvHighCost', 'pvCanSee', 'pvCanSeeRaise', 'pvEv68',
+        'pvEv68InCanSee', 'pvFrameFull');
+    }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
     if (r.version >= 35) { // reason codes: RFB_* in ts3native.cpp (5 = M1Pending, 9 = QueueFull); the log names them

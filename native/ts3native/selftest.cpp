@@ -4698,7 +4698,7 @@ static void TestSlotRo() {
                   offsetof(Ts3nCounters, slShadow) == 0x156C && offsetof(Ts3nCounters, slPass12) == 0x1580 &&
                   offsetof(Ts3nCounters, slDrop) == 0x1588 && offsetof(Ts3nCounters, slFb) == 0x15A0 &&
                   offsetof(Ts3nCounters, slShadowRuns) == 0x15B0 && offsetof(Ts3nCounters, slRelRetry) == 0x15C0 &&
-                  sizeof(Ts3nCounters) == 1393 * 4, "v42 layout");
+                  sizeof(Ts3nCounters) >= 1393 * 4, "v42 layout");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.slReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, slReady));
     // interlocked count pair: same results as 0x64E8E0 / 0x64E8F0, delete through slot +8 at a count <= 1, no lost update
@@ -5322,6 +5322,209 @@ static void TestObstructedRO() {
     simTid = 0;
 }
 
+// --- [ProbeSnap] indirect call target sampler (vcall.cpp): decode, target, live int3 round trip on our own code ---
+static volatile LONG g_vcT;
+static void __cdecl VcT1() { g_vcT += 1; }
+static void __cdecl VcT2() { g_vcT += 10; }
+static void VcExec(DWORD code, DWORD eaxv, DWORD ecxv, DWORD arg) {
+    __asm {
+        mov eax, eaxv
+        mov ecx, ecxv
+        push arg
+        call code
+        add esp, 4
+    }
+}
+static void TestProbeSnap() {
+    static_assert(offsetof(Ts3nCounters, vcReady) == 0x15C4 && offsetof(Ts3nCounters, vcHits) == 0x15D0 &&
+                  offsetof(Ts3nCounters, vcFaults) == 0x15E0 && offsetof(Ts3nCounters, vcArmed) == 0x15E8 &&
+                  sizeof(Ts3nCounters) >= 1403 * 4, "v43 layout");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.vcReady, 0, 10 * sizeof(LONG));
+    static DWORD tbl[3], vt[2];
+    tbl[0] = tbl[2] = vt[1] = (DWORD)(uintptr_t)VcT1;
+    tbl[1] = (DWORD)(uintptr_t)VcT2;
+    VcSite d;
+    const u8 a1[] = {0xFF, 0x50, 0x08}, a2[] = {0xFF, 0x24, 0x85, 0x10, 0, 0, 0}, a3[] = {0xFF, 0x54, 0x24, 0x04},
+             a4[] = {0xFF, 0x15, 0, 0, 0, 0}, a5[] = {0xFF, 0x30}, a6[] = {0xFF, 0x94, 0x8E, 0x00, 0x01, 0x00, 0x00};
+    assert(VcDecode(a1, 3, d) && d.call && d.mod == 1 && d.base == 0 && d.index == 8 && d.disp == 8);
+    assert(!VcDecode(a1, 2, d));  // length differs from the table
+    assert(VcDecode(a2, 7, d) && !d.call && d.base == 8 && d.index == 0 && d.scale == 2 && d.disp == 0x10);
+    assert(VcDecode(a3, 4, d) && d.call && d.base == 4 && d.index == 8 && d.disp == 4);
+    assert(!VcDecode(a4, 6, d) && !VcDecode(a5, 2, d));  // call [abs], push [eax]
+    assert(VcDecode(a6, 7, d) && d.base == 6 && d.index == 1 && d.scale == 2 && d.disp == 0x100);  // call [esi+ecx*4+0x100]
+    CONTEXT c = {};
+    c.Esi = (DWORD)(uintptr_t)tbl - 0x100 - 8;
+    c.Ecx = 3;
+    DWORD t = 0;
+    assert(VcTarget(d, c, &t) && t == tbl[1]);
+    VcDecode(a1, 3, d);
+    c.Eax = 0x10;
+    assert(!VcTarget(d, c, &t));  // unreadable operand
+
+    // live: call [eax+4], call ecx, jmp [eax*4+tbl], call [esp+4], and a row whose bytes differ from memory
+    u8* code = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    assert(code);
+    memset(code, 0xC3, 64);
+    const DWORD b = (DWORD)(uintptr_t)code, ta = (DWORD)(uintptr_t)tbl;
+    VcSiteDef defs[5] = {{b, 3, {0xFF, 0x50, 0x04}}, {b + 8, 2, {0xFF, 0xD1}}, {b + 16, 7, {0xFF, 0x24, 0x85}},
+                         {b + 24, 4, {0xFF, 0x54, 0x24, 0x04}}, {b + 32, 2, {0xFF, 0xD0}}};
+    memcpy(defs[2].bytes + 3, &ta, 4);
+    for (int i = 0; i < 4; i++) memcpy(code + defs[i].addr - b, defs[i].bytes, defs[i].len);
+    code[32] = code[33] = 0x90;
+    assert(VcSetup(defs, 5) == 5 && k.vcSites == 5);
+    g_vcPer = 3;
+    PVOID h = AddVectoredExceptionHandler(1, VcVeh);
+    assert(h);
+    VcArmAll();
+    assert(code[0] == 0xCC && code[8] == 0xCC && code[16] == 0xCC && code[24] == 0xCC && code[32] == 0x90);
+    assert(k.vcSkipped == 1 && k.vcArmed == 4 && k.vcWindows == 1);
+    g_vcT = 0;
+    VcExec(b, (DWORD)(uintptr_t)vt, 0, 0);
+    assert(g_vcT == 1);
+    VcExec(b + 8, 0, (DWORD)(uintptr_t)VcT2, 0);
+    assert(g_vcT == 11);
+    VcExec(b + 16, 1, 0, 0);
+    VcExec(b + 16, 0, 0, 0);
+    assert(g_vcT == 22);
+    VcExec(b + 24, 0, 0, (DWORD)(uintptr_t)VcT2);
+    assert(g_vcT == 32 && k.vcHits == 5 && k.vcPairs == 5 && k.vcOutside == 0 && g_vc[2].p[0].tgt == (LONG)tbl[1]);
+    VcExec(b, (DWORD)(uintptr_t)vt, 0, 0);
+    VcExec(b, (DWORD)(uintptr_t)vt, 0, 0);  // third hit: the site disarms itself
+    assert(code[0] == 0xFF && k.vcArmed == 3 && g_vc[0].p[0].n == 3);
+    VcExec(b, (DWORD)(uintptr_t)vt, 0, 0);  // runs natively now
+    assert(g_vcT == 35 && k.vcHits == 7);
+    // targets in another module, and more than 8 targets on one site
+    g_vcPer = 1000;
+    const HMODULE k32 = GetModuleHandleA("kernel32.dll");
+    const char* const fn[8] = {"GetTickCount", "GetCurrentThreadId", "GetCurrentProcessId", "GetLastError",
+                               "GetCurrentThread", "GetCurrentProcess", "GetProcessHeap", "GetOEMCP"};
+    for (int i = 0; i < 8; i++) VcExec(b + 8, 0, (DWORD)(uintptr_t)GetProcAddress(k32, fn[i]), 0);
+    assert(k.vcOutside == 7 && k.vcOverflow == 1 && g_vc[1].over == 1 && k.vcPairs == 12);
+    assert(VcLogPairs() == 13 && VcLogPairs() == 0);  // 1 + (8 + overflow) + 2 + 1 changed pairs, then none
+    // next window: hit budget reset, a site whose bytes another hook changed is dropped for good
+    code[1] = 0x51;
+    VcArmAll();
+    assert(g_vc[0].dead && code[0] == 0xFF && k.vcSkipped == 2 && k.vcWindows == 2 && k.vcArmed == 3);
+    assert(RemoveVectoredExceptionHandler(h));
+    AcquireSRWLockExclusive(&g_vcPoke);
+    for (int i = 0; i < g_vcN; i++) VcPokeLocked(g_vc[i], false);
+    ReleaseSRWLockExclusive(&g_vcPoke);
+    assert(code[8] == 0xFF && code[16] == 0xFF && code[24] == 0xFF && k.vcArmed == 0);
+    VirtualFree(code, 0, MEM_RELEASE);
+    free(g_vc);
+    g_vc = NULL;
+    g_vcN = 0;
+    g_vcPer = 16;
+    memset(&k.vcReady, 0, 10 * sizeof(LONG));
+}
+
+// --- [ProbeValues] (values.cpp, docs/108): layout, R checksum (same constants as tools/rtdata-decode.ts), frames, live stubs ---
+static int __stdcall PvFakeQuery(DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD) { return 2; }
+typedef int(__stdcall* PvLotFn)(DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD);
+
+static void TestProbeValues() {
+    static_assert(offsetof(Ts3nCounters, pvReady) == 0x15EC && offsetof(Ts3nCounters, pvTune) == 0x15FC &&
+                  offsetof(Ts3nCounters, pvG) == 0x1650 && offsetof(Ts3nCounters, pvR) == 0x1664 &&
+                  offsetof(Ts3nCounters, pvGBuild) == 0x1684 && offsetof(Ts3nCounters, pvAStarBit) == 0x16D0 &&
+                  offsetof(Ts3nCounters, pvLotPlanBit) == 0x176C && offsetof(Ts3nCounters, pvStatus) == 0x17FC &&
+                  offsetof(Ts3nCounters, pvPortal) == 0x18A8 && offsetof(Ts3nCounters, pvQuery) == 0x190C &&
+                  offsetof(Ts3nCounters, pvLazy) == 0x195C && offsetof(Ts3nCounters, pvFrameFull) == 0x19D8 &&
+                  sizeof(Ts3nCounters) == 1655 * 4, "v44 layout");
+    static_assert(PV_N == 42 && sizeof(kPvStubs) / sizeof(kPvStubs[0]) == PV_N, "one stub per site");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.pvReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, pvReady));
+
+    // R checksum: the 2x1-chunk graph of rtdata-decode's self-check in memory form (version 2 records)
+    static const u8 raw[31] = {0x02, 0x00, 0x06, 0x00, 0x0E, 0x00, 0x01, 0x41, 0x28, 0x08, 0x10, 0x00, 0x70, 0x04, 0x00, 0x8E,
+                               0x28, 0x01, 0x02, 0x01, 0x00, 0x04, 0x00, 0x01, 0x42, 0x28, 0xC8, 0xFF, 0x00, 0x68, 0x03};
+    static DWORD tbl[2] = {0, 19};
+    DWORD R[5] = {2, 1, (DWORD)(uintptr_t)tbl, (DWORD)(uintptr_t)raw, sizeof(raw)}, out[4] = {};
+    assert(PvRSum((const u8*)R, out) && out[0] == 0xE6F9D31A && out[1] == 0x1750A4D1 && out[2] == 3 && out[3] == 1);
+    R[4] = 30;  // one byte short: the last record runs past the area
+    assert(!PvRSum((const u8*)R, out));
+    R[3] = 0;
+    assert(!PvRSum((const u8*)R, out));
+
+    // frames on a fake stack: plan scope, H9 per plan, family, dead frames, portal path and state
+    DWORD stk[64] = {};
+    DWORD mType = 16, opts[20] = {};
+    opts[0] = 0x31;  // bits 1, 0x10, 0x20
+    opts[5] = 7;     // +0x14
+    stk[40] = 0x1234;
+    PvEnter(PV_JOB, &stk[40]);
+    assert(t_pv.n == 1 && stk[40] == (DWORD)(uintptr_t)PvLeaveThunk && k.pvJobs == 1);
+    PvEnter(PV_H9REM, &stk[30]);
+    PvEnter(PV_H9INS, &stk[30]);
+    stk[22] = (DWORD)(uintptr_t)&mType;
+    stk[20] = 0x5678;
+    PvEnter(PV_PC_POINT, &stk[20]);
+    stk[16] = (DWORD)(uintptr_t)opts;
+    PvEnter(PV_ASTAR, &stk[10]);
+    assert(k.pvH9[0] == 1 && k.pvH9[1] == 1 && k.pvH9InPlan == 2 && k.pvAStar[2] == 1 && k.pvAStarBit[2][0] == 1 &&
+           k.pvAStarBit[2][4] == 1 && k.pvAStarBit[2][5] == 1 && k.pvAStarBit[2][1] == 0 && k.pvAStarRef14[2] == 1 && k.pvAStarRef44[2] == 0);
+    assert(PvLeave(&stk[20]) == 0x5678 && k.pvStatus[1][16] == 1 && t_pv.n == 1);
+    stk[19] = 0;  // eax
+    assert(PvLeave(&stk[40]) == 0x1234 && k.pvH9Plans == 1 && k.pvH9Max == 2 && t_pv.n == 0);
+    PvEnter(PV_JOB, &stk[40]);
+    PvEnter(PV_PC_PLAN, &stk[30]);
+    PvEnter(PV_TIE, &stk[50]);  // above both: they were unwound
+    assert(t_pv.n == 0 && k.pvTies == 1 && k.pvH9Plans == 1);
+    PvEnter(PV_PATH_LOT, &stk[40]);
+    stk[23] = 0x00641234;  // some other caller of the wrapper
+    PvEnter(PV_LS_LOCKED, &stk[20]);
+    stk[19] = 1;
+    PvLeave(&stk[20]);
+    stk[23] = PV_INROOM_RET;
+    PvEnter(PV_LS_DISC, &stk[20]);
+    stk[19] = 3;
+    PvLeave(&stk[20]);
+    stk[29] = 1;  // initialLocked (arg 9 of the query at slot 20)
+    PvEnter(PV_QUERY, &stk[20]);
+    stk[19] = 7;
+    PvLeave(&stk[20]);
+    assert(k.pvPortal[2][1] == 1 && k.pvPortal[4][3] == 1 && k.pvQuery[1][4] == 1 && t_pv.n == 1);
+    PvLeave(&stk[40]);
+    assert(t_pv.n == 0);
+
+    // live: a call site (frame, args, return value) and an entry detour, on dummies of the same shape
+    u8* code = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    assert(code);
+    u8* c = code;
+    *c++ = 0x6A; *c++ = 0x01;                              // push 1 (arg 9, initialLocked)
+    for (int i = 0; i < 8; i++) { *c++ = 0x6A; *c++ = 0x00; }  // push 0 (args 8..1)
+    const DWORD site = (DWORD)(uintptr_t)c, fake = (DWORD)(uintptr_t)PvFakeQuery;
+    *c++ = 0xE8;
+    const LONG rel = (LONG)(fake - (site + 5));
+    memcpy(c, &rel, 4);
+    c += 4;
+    *c++ = 0xC3;
+    assert(PvInstallAt(PV_QUERY, site, fake + 1) == 0);  // E8 to another target: skipped
+    assert(PvInstallAt(PV_QUERY, site, fake) == 1 && g_pvJmp[PV_QUERY] == (void*)PvFakeQuery);
+    assert(((int(__cdecl*)())code)() == 2 && k.pvQuery[1][2] == 1 && t_pv.n == 0);
+    u8* lp = code + 256;
+    static const u8 kLp[] = {0x81, 0xEC, 0xC0, 0x01, 0x00, 0x00, 0x81, 0xC4, 0xC0, 0x01, 0x00, 0x00, 0xC2, 0x34, 0x00};
+    memcpy(lp, kLp, sizeof(kLp));
+    assert(PvInstallAt(PV_LOTPLAN, (DWORD)(uintptr_t)lp, 0) == 1);
+    stk[42] = (DWORD)(uintptr_t)&mType;
+    stk[40] = 0x1111;
+    PvEnter(PV_PC_PLAN, &stk[40]);  // the plan family frame (its slot is above this function's callees)
+    ((PvLotFn)lp)(1, 2, 3, 4, 5, 6, 7, 8, 0x200011, 10, 11, 1, 13);
+    assert(k.pvLotPlan[1] == 1 && k.pvLotPlanBit[1][0] == 1 && k.pvLotPlanBit[1][4] == 1 && k.pvLotPlanBit[1][9] == 1 &&
+           k.pvLotPlanBit[1][1] == 0 && k.pvLotPlanObst[1] == 1 && t_pv.n == 1);
+    assert(PvLeave(&stk[40]) == 0x1111 && k.pvStatus[0][16] == 1);
+    VirtualFree(code, 0, MEM_RELEASE);
+
+    // an entry owned by a route gate stub is counted from inside it (0x63D2F0 is not mapped here: the bytes differ)
+    void* saved = g_rgTramp[2];
+    g_rgTramp[2] = (void*)1;
+    assert(PvInstallAt(PV_LAZY2, kRgSites[2].addr, 0) == 2 && g_pvRg[2] == PV_LAZY2 + 1);
+    g_rgTramp[2] = saved;
+    g_pvRg[2] = 0;
+    assert(PvInstallAt(PV_LAZY1, 0x10, 0) == 0);  // unreadable, no owner: skipped
+    memset(&k.pvReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, pvReady));
+}
+
 int main() {
     static DWORD noSimTid;  // the game global 0x11D8A8C does not exist here
     g_rtSimTidSlot = &noSimTid;
@@ -5372,6 +5575,8 @@ int main() {
     TestObstructedRO();
     TestSlotRo();
     TestP10();
+    TestProbeSnap();
+    TestProbeValues();
     TestJobQueue();
     TestLotSinCos();
     TestIdCache();

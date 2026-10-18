@@ -93,3 +93,9 @@ Paused after bp-p10 (AI usage 5h 54% (reset 13:10 PHT) | 7d 81% (reset 14:00 PHT
 | job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
 |---|---|---|---|---|---|---|---|---|
 | ip-p1b | 07:54 (15:54) | 13.1 | PASS | PASS: profile 10 min, seed 12345 (rng-compare.ts) | 0 | 2229.9/1837.8/1484.9 -> 2325.2/1992.2/1228.6 | asyncStarted +6598, asyncRefused +43, asyncCollected +6584, asyncDropped +14, asyncUs +73778584, asyncMaxUs +296012, asyncPumpUs +51105126, asyncPumpWaits +5724, asyncRefusedM1Pending +41, asyncBackoffs +2, asyncQueueFull +2, asyncQueueMax +6 | Probe P1b observe on Isla Paradiso (0.19.0, l1b: single InstallLotFd): as bp-p1b |
+
+## 2026-10-18T08:08 UTC, build 77eca0f, jobs ip-ar-ab-wait
+
+| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
+|---|---|---|---|---|---|---|---|---|
+| ip-ar-ab-wait | 08:08 (16:08) | 21.2 | PASS | PASS: profile 18 min, seed 12345 (rng-compare.ts) | 0 | 2228.1/1829.4/1516.9 -> 2432.2/2098.3/988.5 | asyncStarted +12441, asyncRefused +68, asyncCollected +12411, asyncDropped +30, asyncUs +151766871, asyncMaxUs +448160, asyncPumpUs +107179673, asyncPumpWaits +10236, asyncRefusedM1Pending +57, asyncBackoffs +11, asyncQueueFull +11, asyncQueueMax +5 | A10 A/B in IP again, with counter snapshots at every switch (profile-world <tag>-ab-native.jsonl): node tools/harness/wait-ab.ts <tag> splits the sim-thread waits (P0 keys, pump, worker time) per side. Question: where did the planning time A10 moved off the sim thread come back (ip-ar-ab 2026-10-18: no stutter gain)? |

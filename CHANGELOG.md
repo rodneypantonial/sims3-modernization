@@ -4,6 +4,15 @@ Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub r
 
 ## Unreleased
 
+### Recommended setting (optional)
+
+- **NRaas Overwatch: turn off "Clean up Inventory".** Once per game day Overwatch's nightly cleanup looks up the name of every inventory item and the game freezes for about half a second (docs/96). In game: City Hall > NRaas > Overwatch > Settings > Clean up Inventory = off. For new saves the installer entry `overwatch-no-invcleanup` sets it. Trade-off: broken or orphaned inventory items are no longer removed. Not yet measured; see queue job `bp-overwatch-cleanup-ab`.
+
+### New in `ts3fixes` (experimental, off by default)
+
+- **SafeSpot placement reuse (`kSafeSpotReuse`, switch `safespotreuse`).** A townie placed by a trip shortcut at a spot already verified on that lot no longer runs another native placement search (`FindGoodLocation`, up to five per child at the Isla Paradiso school run); it gets the spot and facing stored from the first search while the spot's cached routability verdict holds. Experimental: off in the tuning; not tested in a live game yet and no gain is claimed (queue job `ip-safespot-ab`).
+- **Spring wildflowers without the hitch (`kWildflowerTask`, switch `wildflowertask`).** With Seasons, each spring the game grows wildflowers on up to ~32 lots, one lot per sim hour, and tries up to 20 spots per lot inside one alarm call: 0.3-1 s freezes (docs/110). With this on the tries run one per sim tick in their own task: same lots, flowers, try limit and outcome; a flower may appear a fraction of a second later. A save while a try is pending drops that one flower. A measure mode (`wildflowerprobe`) logs tries and times per fire without changing anything. Experimental: off in the tuning; not tested in a live game yet and no gain is claimed (queue `wildflower.json`).
+
 ### New in `ts3native` (experimental, off by default)
 
 - **Read-only steering (`[SteerRO]`).** While a background route job holds the routing lock, walking Sims can check their steering against a read-only copy instead of waiting for the job. Experimental: switched off in `ts3native.ini` (`Enabled=0`); no speed gain is claimed yet, and the first live test was correct but slower.

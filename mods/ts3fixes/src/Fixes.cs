@@ -78,13 +78,15 @@ namespace Ts3Fixes
         // in-place updates / rebuilds (UiCaches.cs), [78-79] Sim name cache hits / misses (NameCache.cs),
         // [80-82] lot detail priority answers from the tick set / tick sets built / verify mismatches,
         // [83-84] cane-walk checks answered early / passed to the game, [85-87] hours-of-operation memo hits / misses / verify mismatches,
-        // [88-89] tooltip window walks skipped / run (ScriptHotSpots.cs).
+        // [90-92] SafeSpot placements answered by a stored FindGoodLocation result / searches run / verify differences (switch safespotreuse),
+        // [88-89] tooltip window walks skipped / run (ScriptHotSpots.cs),
+        // [93-98] spring wildflower fires / tries / placed / failed / longest ms / save aborts (wildflowerprobe, wildflowertask; ScriptHotSpots.cs, docs/110).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[90]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[99];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -126,6 +128,10 @@ namespace Ts3Fixes
                 case "caneearly": return Instantiator.kCaneEarlyOut;
                 case "tooltipthrottle": return Instantiator.kTooltipThrottle;
                 case "detailprioverify": case "hoursmemoverify": return false; // verify switches: test runs only, no tuning
+                case "safespotreuse": return Instantiator.kSafeSpotReuse;
+                case "safespotreuseverify": return false; // verify switch: test runs only
+                case "wildflowerprobe": return Instantiator.kWildflowerProbe;
+                case "wildflowertask": return Instantiator.kWildflowerTask;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -258,13 +264,36 @@ namespace Ts3Fixes
             RouteProfile prof = ProfileOf(sim);
             // "spotspread" off = the earlier build: always start from the lot's last verified spot (A/B for the Bridgeport slowdown)
             bool spread = ShortcutOn("spotspread");
+            bool reuse = ShortcutOn("safespotreuse");
+            int[] c = PatchCounters();
             for (int i = 0; i < 2 + 3; i++)
             {
                 bool fresh = i >= 2;
                 if (!fresh && v.Good.Count == 0) continue;
                 Sims3.SimIFace.Vector3 start = fresh ? near : v.Good[spread ? v.Next++ % v.Good.Count : v.Good.Count - 1];
+                // A verified spot is itself an earlier FindGoodLocation result (a native placement search, hundreds of ms
+                // in Isla Paradiso at the school run): answer with it and the facing stored then, while its cached verdict
+                // (same cell and route profile; the lot's verdicts reset on a move-in, a moved lot or a day) still says
+                // routable. A Sim already standing on the spot is not checked: placed Sims walk on at once.
+                bool verify = false;
+                Sims3.SimIFace.Vector3 sf;
+                if (reuse && !fresh && prof.Ok && v.Fwds.TryGetValue(KeyOf(prof, start), out sf)
+                    && LotManager.GetLotAtPoint(start) == lot && SpotVerdict(sim, lot, v, prof, start, false, false, false) == true)
+                {
+                    if (!VerifyNow("safespotreuseverify"))
+                    {
+                        c[90]++;
+                        if (lot.IsHouseboatLot()) c[21]++;
+                        pos = start; fwd = sf;
+                        return true;
+                    }
+                    verify = true; // 1 in 8: also search, return the game's answer, count a different spot
+                }
+                c[91]++;
                 if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd)) continue;
+                if (verify && (pos - start).Length() > 0.5f) c[92]++;
                 if (LotManager.GetLotAtPoint(pos) != lot || SpotVerdict(sim, lot, v, prof, pos, fresh, false, true) != true) continue;
+                if (reuse && prof.Ok && v.Fwds.Count < 64) v.Fwds[KeyOf(prof, pos)] = fwd;
                 if (lot.IsHouseboatLot()) PatchCounters()[21]++;
                 return true;
             }
@@ -287,6 +316,7 @@ namespace Ts3Fixes
             public Sims3.SimIFace.Vector3 LotPos;
             public readonly Dictionary<VerdictKey, bool> Cells = new Dictionary<VerdictKey, bool>(new VerdictKeyComparer());
             public readonly List<Sims3.SimIFace.Vector3> Good = new List<Sims3.SimIFace.Vector3>();
+            public readonly Dictionary<VerdictKey, Sims3.SimIFace.Vector3> Fwds = new Dictionary<VerdictKey, Sims3.SimIFace.Vector3>(new VerdictKeyComparer()); // facing found with a verified spot (switch safespotreuse)
             public int Next;
         }
         static readonly Dictionary<ulong, SpotVerdicts> sSpotVerdicts = new Dictionary<ulong, SpotVerdicts>();

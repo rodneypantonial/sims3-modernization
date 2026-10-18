@@ -1,0 +1,40 @@
+[
+  {
+    "id": "bp-snap-probe",
+    "note": "docs/94 §7: [ProbeSnap] indirect call/jmp targets of the routing closure (0.23.0, counters v43), env-on settings (async + job queue + D), BP Spring, seeded; after: node tools/harness/snap-report.ts <row.nativeLog>; pass = vcReady 1, vcFaults 0, no crash, vcHits / 600 s within the overhead budget",
+    "asi": "game-copy/ts3native.asi.snapprobe",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-probe",
+    "note": "the same on Isla Paradiso (houseboats, water, EP objects)",
+    "asi": "game-copy/ts3native.asi.snapprobe",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

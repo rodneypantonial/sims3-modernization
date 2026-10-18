@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    {
+      "id": "bp-inroom-reads",
+      "note": "docs/111 / docs/51 §47: in-room routing live reads, read-only Frida (tools/frida/inroom-reads.js), no native change. Tree root-border dumps at the window start and ~25 s before the end (I-98-15), SetBounds lot rectangle and c, planner +0xB8 and static 0x11CF02C (I-98-21, I-101-4), X+0x50 / X+0x4C per in-room caller (U6, U7). RouteWorker and RouteAsync off so every plan, and so every dump, runs on the sim thread. Stack samplers skipped. ~8 min with load and teardown. After: node tools/harness/inroom-report.ts probe-out/profile/<tag>-inroom.json; pass = reason complete, two dumps, no refused hooks.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "inroom": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-inroom-reads",
+      "note": "bp-inroom-reads on Isla Paradiso (houseboat lots, water, EP objects; more lot shapes for the root-border and SetBounds reads). Queue total ~16 min.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "inroom": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

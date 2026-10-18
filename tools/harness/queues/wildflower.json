@@ -1,0 +1,34 @@
+{
+  "jobs": [
+    {
+      "id": "bp-firstmin-wildflowerprobe",
+      "note": "docs/110 §7.5 verify run: bp-firstmin-taskstall with ts3fixes wildflowerprobe on (repro wildflower-probe sets it at the window start; game behaviour unchanged). Read the patches step: wildflower_* counters and wildflower_log (tries, max/sum ms per fire: 20 failing searches or one long one), and the taskstall rows against probe-out/20261018-182629-taskstall.jsonl",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "wildflower-probe" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-firstmin-wildflowerprobe",
+      "note": "bp-firstmin-wildflowerprobe in Isla Paradiso; the wildflower_log simmin column explains the IP fire spacing (docs/110 §2)",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "wildflower-probe" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ab-wildflowertask",
+      "note": "docs/110 W1 in-load A/B: repro wildflower-drain (probe on all load, drain refilled with 150 community lots, a fire per 30 sim-minutes) with wildflowertask alternating (warm-up, then ABBA, 2 min slices). Pass: no /taskstall row >= 250 ms from OnGrowWildflowersOnLot in the on slices, placed/fires ratio the same in both halves, no script errors. Only meaningful if the probe jobs showed 20 failing tries per slow fire",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "taskstall": 250, "repro": "wildflower-drain", "ab": "wildflowertask", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    }
+  ]
+}

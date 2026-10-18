@@ -52,6 +52,8 @@ typedef LONG(__fastcall* LockReleaseFn)(void* lock, void* edx);  // 0x4E17B0 thi
 static LockReleaseFn g_rgRelOrig;
 static void* g_rgTramp[RG_SITES];
 static volatile LONG g_rgVf[RG_SITES];  // Verify probe index + 1 counted from inside the stub, 0 = none
+static volatile LONG g_pvRg[RG_SITES];  // [ProbeValues] site index + 1 counted from inside the stub, 0 = none (values.cpp)
+static void __cdecl PvEnter(int id, DWORD* slot);  // values.cpp
 
 static void __cdecl VfEnter(int id, DWORD* slot);  // verify.cpp
 static DWORD VfRealRet(const DWORD* slot);          // verify.cpp: the caller behind a Verify leave thunk in *slot
@@ -235,6 +237,7 @@ static void G11Touch(int kind, DWORD key) {
 // Stub side: slot = the caller's return-address slot ([esp] at the site's entry).
 static void __cdecl RgEnter(int site, DWORD* slot) {
     if (g_rgVf[site]) VfEnter(g_rgVf[site] - 1, slot);
+    if (g_pvRg[site]) PvEnter(g_pvRg[site] - 1, slot);  // count only: no frame, *slot unchanged
     Ts3nCounters& k = ts3native_counters;
     if (k.rgReady != 7 || !g_rgLock) return;  // before the lock is known nobody's hold can be told apart
     InterlockedIncrement(&k.rgEntries);

@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.22.2"
+#define TS3NATIVE_VERSION "0.24.0"
 
 typedef unsigned char u8;
 
@@ -195,7 +195,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 1369 int32 (v41).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 1655 int32 (v44).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -750,8 +750,71 @@ struct Ts3nCounters {
     LONG slShadowDrop;               // +0x15B8, dry holds that dropped (reasons in slDrop)
     LONG slRefSwap;                  // +0x15BC, 1 = portal vtable 0xFED048 AddRef/Release are interlocked (ours, or P1b's thunks to ours)
     LONG slRelRetry;                 // +0x15C0, interlocked Release compare-exchange retries (another thread changed the count)
+    // v43 (0.23.0): [ProbeSnap] indirect call/jmp target sampler over the routing closure (vcall.cpp, docs/94 §7)
+    LONG vcReady;                    // +0x15C4, 1 = vectored handler in place and the sites armed (DelaySec after start-up)
+    LONG vcSites;                    // +0x15C8, sites in the table that decoded
+    LONG vcSkipped;                  // +0x15CC, sites rejected (decode, order) or dropped (bytes rewritten by another hook)
+    LONG vcHits;                     // +0x15D0, int3 hits handled (each one is an exception dispatch: the probe's cost)
+    LONG vcPairs;                    // +0x15D4, distinct (site, target) pairs seen
+    LONG vcOutside;                  // +0x15D8, of those, targets outside TS3W.exe (other DLLs, mods, heap code)
+    LONG vcOverflow;                 // +0x15DC, hits whose target did not fit (more than 8 per site)
+    LONG vcFaults;                   // +0x15E0, unreadable or null targets (site disarmed for good, the original ran)
+    LONG vcWindows;                  // +0x15E4, arming windows started
+    LONG vcArmed;                    // +0x15E8, sites armed now
+    // v44 (0.24.0): [ProbeValues] routing value probe, observe only (values.cpp, docs/108). Load-time values are float or raw
+    // bits of the latest world (0x7FC00000 = object missing); everything else counts from start-up
+    LONG pvReady;                    // +0x15EC, bit 0 = sites hooked (pvHooks), bit 1 = poll thread running
+    LONG pvHooks;                    // +0x15F0, sites hooked (own stubs, or counted inside a route gate stub)
+    LONG pvSkipped;                  // +0x15F4, sites not hooked (bytes differ, no owner stub)
+    LONG pvWorlds;                   // +0x15F8, world snapshots (load, travel)
+    LONG pvTune[13];                 // +0x15FC, W+0x18 +0x24 threshold, +0x28..+0x3C SHORT, +0x4C..+0x60 LONG (keep, trespass, sidewalk, riding, street, water-lot)
+    LONG pvWm[4];                    // +0x1630, WM+0xB4 / +0xB8 world origin x, z; +0xBC / +0xC0 max x, z
+    LONG pvSeaY;                     // +0x1640, [WM+0x60]+0x14 sea height
+    LONG pvSeaChanges;               // +0x1644, polls that saw a new sea height in the same world
+    LONG pvWmDirty;                  // +0x1648, WM+0x1B4 (latest)
+    LONG pvWorld983;                 // +0x164C, routing world +0x983 byte (latest)
+    LONG pvG[5];                     // +0x1650, G = world+0x8C: built byte, cells, water cells, bodies, blockedNodeMap size (max)
+    LONG pvR[5];                     // +0x1664, R = world+0x54: checksum (flags & 0x7F), checksum (flags & 0x60), waypoints, blocked now, checksum changes
+    LONG pvGuard[3];                 // +0x1678, dwords 0x11CF010, 0x11CF02C, 0x11CF030 (docs/101 §2.2 #12, #14)
+    LONG pvGBuild[2];                // +0x1684, G builds 0x6734A0 by call site 0x82A098 (message path), 0x834A82 (BuildWorldRoutingData)
+    LONG pvGBuildUs;                 // +0x168C
+    LONG pvGBuildMaxUs;              // +0x1690
+    LONG pvGBuildThr[3];             // +0x1694, builds on the main, sim, other thread
+    LONG pvGMsg[3];                  // +0x16A0, 0x82A030 calls from 0x8352F1, 0x835390, 0x8358B5
+    LONG pvRebuild[3];               // +0x16AC, 0x8349C0 calls from 0xC6BE53, 0xC6CD02, 0x835A27
+    LONG pvDirtyPosts;               // +0x16B8, WorldManager_PostWaterGridDirty 0xC61FE0 entries
+    LONG pvJobs;                     // +0x16BC, RoutingJob_Execute calls (plans that search)
+    LONG pvTies;                     // +0x16C0, RNG goal ties (0x81BC65)
+    LONG pvAStar[3];                 // +0x16C4, world A* entries by family: 0 no Route_PlanCommon frame, 1 Plan/Replan, 2 point ICs
+    LONG pvAStarBit[3][10];          // +0x16D0, opts flag bits 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200 at entry
+    LONG pvAStarRef14[3];            // +0x1748, opts+0x14 non-zero
+    LONG pvAStarRef44[3];            // +0x1754, opts+0x44 non-zero
+    LONG pvLotPlan[3];               // +0x1760, LotPlan_Inner entries by family
+    LONG pvLotPlanBit[3][11];        // +0x176C, caller flag bits 1, 2, 4, 8, 0x10, 0x20, 0x100, 0x80000, 0x100000, 0x200000, 0x2000000
+    LONG pvLotPlanObst[3];           // +0x17F0, obstacle mode (adds 0xF)
+    LONG pvStatus[2][20];            // +0x17FC, mType at Route_PlanCommon return: Plan/Replan, point ICs; [19] = 19 or more
+    LONG pvIpAlloc;                  // +0x189C, interest point record allocations (0x821B3D)
+    LONG pvIpCalls;                  // +0x18A0, IC_Route_GetNumInterestPoints calls
+    LONG pvIpNonZero;                // +0x18A4, of those, non-zero answers
+    LONG pvPortal[5][5];             // +0x18A8, Portal_LockState state 0-3 / other by path: other, goal step, lot search, lot A*, in-room
+    LONG pvQuery[2][5];              // +0x190C, World_FirePortalLockedQuery answer 0-3 / other by initialLocked 0, 1
+    LONG pvQueryInPlan;              // +0x1934, queries (event 59) inside RoutingJob_Execute
+    LONG pvH9[2];                    // +0x1938, H9 quadtree rewrites: remove 0x63257E, insert 0x632595
+    LONG pvH9InPlan;                 // +0x1940, of those, inside RoutingJob_Execute
+    LONG pvH9Plans;                  // +0x1944, plans with at least one rewrite
+    LONG pvH9Max;                    // +0x1948, most rewrites in one plan
+    LONG pvPart[2];                  // +0x194C, partition grid writers 0xC08C30, 0xC094E0
+    LONG pvPartOffSim[2];            // +0x1954, of those, off the sim thread
+    LONG pvLazy[8][3];               // +0x195C, calls / inside a plan / off the sim thread: LotTable_Insert, LotGraph_Build, RoomGraph_FirstUse, ApplyLotUpdate, FlushDeferred with work, Footprint_EnsureLevelPolygons, 0x670510, 0x670750
+    LONG pvBlk[2];                   // +0x19BC, blockedNodeMap writers 0x66FB40, 0x66F6D0
+    LONG pvHighCost;                 // +0x19C4, high-cost polygon stamps 0x6733C0
+    LONG pvCanSee;                   // +0x19C8, World_CanSeeObject from radial goal validation (0x75AC22)
+    LONG pvCanSeeRaise;              // +0x19CC, Lot_SetDisplayLevel calls inside it (0x789EB5, 0x78A218)
+    LONG pvEv68;                     // +0x19D0, World event 68 fires from Lot_SetDisplayLevel (0xAC0763)
+    LONG pvEv68InCanSee;             // +0x19D4, of those, inside World_CanSeeObject from 0x75AC22
+    LONG pvFrameFull;                // +0x19D8, leave frames not taken (16 open on the thread)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {42,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {44,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1946,6 +2009,8 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "lotsincos.cpp"
 #include "idcache.cpp"
 #include "verify.cpp"
+#include "vcall.cpp"
+#include "values.cpp"
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -2024,6 +2089,8 @@ static void Run(HMODULE self) {
         ApplyD3dMultithreaded(ini);
         keepLog = ApplyLotSinCos(ini) || keepLog;
         keepLog = ApplyIdCache(ini) || keepLog;
+        keepLog = ApplyProbeValues(ini) || keepLog;  // after every behaviour section: it counts inside their stubs or skips
+        keepLog = ApplyProbeSnap(ini) || keepLog;
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
     }
     Log("done");

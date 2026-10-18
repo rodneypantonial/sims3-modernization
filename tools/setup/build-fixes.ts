@@ -43,6 +43,9 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSimNameCache value="True" />
     <kDetailPriorityCache value="False" />
     <kHoursMemo value="False" />
+    <kSafeSpotReuse value="False" />
+    <kWildflowerProbe value="False" />
+    <kWildflowerTask value="False" />
     <kCaneEarlyOut value="False" />
     <kTooltipThrottle value="False" />
   </Current_Tuning>

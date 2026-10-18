@@ -101,4 +101,36 @@ namespace Ts3Fixes
             mEntries[id] = e;
         }
     }
+
+    // docs/110 §7.2: one spring wildflower fire (ScriptHotSpots.cs WildflowerTaskHook). The placement loop it books
+    // follows the game's: stop at the first placed try or after MaxTries; then the fire adds itself to counters [93-97].
+    public sealed class WildflowerFire
+    {
+        public readonly int MaxTries;
+        public int Tries, MaxTryUs, SumUs;
+        public bool Placed;
+
+        public WildflowerFire(int maxTries) { MaxTries = maxTries; }
+
+        // Books one try; true when the fire is over (placed, or out of tries).
+        public bool Try(bool placed, int us)
+        {
+            Tries++;
+            SumUs += us;
+            if (us > MaxTryUs) MaxTryUs = us;
+            if (placed) Placed = true;
+            return Placed || Tries >= MaxTries;
+        }
+
+        // [93] fires, [94] tries, [95] placed, [96] failed, [97] longest ms: the whole fire when it ran in the alarm,
+        // else the longest single try (one slice of the task).
+        public void Count(int[] c, bool wholeFire)
+        {
+            c[93]++;
+            c[94] += Tries;
+            if (Placed) c[95]++; else c[96]++;
+            int ms = (wholeFire ? SumUs : MaxTryUs) / 1000;
+            if (ms > c[97]) c[97] = ms;
+        }
+    }
 }

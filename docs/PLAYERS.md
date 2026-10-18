@@ -58,4 +58,6 @@ Close the game and delete what you added: `ts3fixes.package` from `Mods\Packages
 
 ### Other mods
 
+If you use NRaas Overwatch and notice a half-second freeze about once per game day, turn off City Hall > NRaas > Overwatch > Settings > Clean up Inventory. That nightly job looks up the name of every inventory item; with it off, broken or orphaned inventory items are no longer removed. The setting is saved per save game.
+
 Tested together with DXVK, Sims 3 Settings Setter, NRaas (ErrorTrap, Overwatch), the Smooth Patch and the Sims 3 Performance Patch. If something looks wrong, remove our files first and see if it goes away, then [open an issue](https://github.com/rodneypantonial/sims3-modernization/issues) with what you saw.

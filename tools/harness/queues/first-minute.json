@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    {
+      "id": "bp-firstmin-taskstall",
+      "note": "docs/96 cause C (first minute after a load, 16.5% of >=300 ms hitch time, never sampled): fresh load, 5 min seeded, --taskstall 250 records the task and C# stack of every stage stall >= 250 ms from the window start; S3PP SimulatorStageProfiler off (taskstall needs it off). Read the probe-out/<session>-taskstall.jsonl first-minute rows.",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-firstmin-taskstall",
+      "note": "bp-firstmin-taskstall in Isla Paradiso (docs/96 cause C and the unsampled class D cases)",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

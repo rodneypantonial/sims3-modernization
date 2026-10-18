@@ -10,10 +10,12 @@ import { fnv64, writePackage } from '../dbpf.ts';
 
 const TYPE_XML = 0x0333406c;
 const CLASS = 'NRaas.OverwatchSpace.PersistedSettings';
+const INVENTORY = process.argv[2] === 'inventory';
+const [KEY, FILE] = INVENTORY ? ['kCleanupInventory', 'ts3-overwatch-noinvcleanup.package'] : ['kStuckCheck', 'ts3-overwatch-nostuckcheck.package'];
 const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
 <base>
   <Current_Tuning>
-    <kStuckCheck value="False" />
+    <${KEY} value="False" />
   </Current_Tuning>
 </base>
 `;
@@ -22,5 +24,5 @@ console.assert(fnv64(CLASS) === 0x85842a96aec69641n, 'instance id of the Persist
 const out = join(resolve(import.meta.dirname, '..', '..'), 'build');
 mkdirSync(out, { recursive: true });
 const pkg = writePackage([{ type: TYPE_XML, group: 0, instance: fnv64(CLASS), data: Buffer.from(TUNING_XML, 'utf8') }]);
-writeFileSync(join(out, 'ts3-overwatch-nostuckcheck.package'), pkg);
-console.log(`built ${join(out, 'ts3-overwatch-nostuckcheck.package')} (${pkg.length} bytes)`);
+writeFileSync(join(out, FILE), pkg);
+console.log(`built ${join(out, FILE)} (${pkg.length} bytes)`);

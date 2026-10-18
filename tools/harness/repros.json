@@ -2707,6 +2707,29 @@
     "expect": "applied lists UIManager.GetWindowFromPoint: ok (if refused: the task ran before the mod loaded; fix stays inert, game unchanged); switch on: tooltipthrottle_walks ~10 per second, tooltipthrottle_skipped ~70-77% of passes; by eye (Rodney, by hand): HUD tooltips still show after ~1.5 s, hide on leave and after 15 s"
   },
   {
+    "id": "safespotreuse-verify",
+    "bug": "docs/95 5.1: SafeSpot runs FindGoodLocation (a native placement search) on every try, up to 5 per child at the Isla Paradiso school run",
+    "fix": "ts3fixes Fixes.cs SafeSpot (switch safespotreuse, tuning kSafeSpotReuse, default off): a verified spot is answered with the facing stored from its first search while its cached verdict holds; safespotreuseverify (this repro, whole load) also searches 1 in 8 and counts a fresh search that lands more than 0.5 m away; meant to run beside profile-world --ab safespotreuse",
+    "save": "Baseline-IP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "safespotreuseverify": true
+        },
+        "waitS": 1,
+        "note": "verify on for the whole load"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "safespotreuse_hits",
+      "min": 1,
+      "minutes": 10
+    },
+    "expect": "end of run: safespotreuse_hits > 0 and safespotreuse_searches far below the off half; safespotreuse_mismatches a small share of the verified hits (a Sim standing on the spot); no script errors, 0 stuck Sims, no Sims stacked on one spot"
+  },
+  {
     "id": "hotspots-verify",
     "bug": "docs/74 tick memos (detailprio, hoursmemo) may differ from the game's answer when a Sim changes lot or a bachelor party starts mid-tick",
     "fix": "verify switches detailprioverify + hoursmemoverify on for the whole load (1 answer in 8 also computed the game's way, game's answer returned, mismatches counted); meant to run beside profile-world --ab detailprio,hoursmemo,caneearly,tooltipthrottle",
@@ -5119,5 +5142,131 @@
       ]
     },
     "expect": "With L1 on (Mode 1, Shadow 1): ltCalls and ltTaken > 0, ltShadowMismatch 0, no crash, no stuck Sim. ltCalls 0 = the burst did not reach the front-door lookup (try a home lot): inconclusive. ltTaken 0 with ltCalls > 0 = every call fell back (read ltFb*). Off slices of --ab: ltTaken stays 0"
+  },
+  {
+    "id": "wildflower-probe",
+    "bug": "docs/110: the Seasons spring wildflower drain (Wildflower.OnGrowWildflowersOnLot, persisted hourly alarm) runs up to 20 native placement searches per fire inside the alarm: 0.3-1 s stalls in the first minute of the spring saves",
+    "fix": "measurement only: ts3fixes switch wildflowerprobe (measure mode, game behaviour unchanged) for the whole load; the save's own drain fires. Used by tools/harness/queues/wildflower.json first-minute jobs",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "wildflowerprobe": true
+        },
+        "waitS": 120,
+        "note": "set right after the window start; the saved drain fires 6-50 s later (docs/110 §2, docs/96 §4.2)"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "wildflower_* counters and wildflower_log (one line per fire: sim minute, lot, tries, max/sum ms, placed or destroyed, distance from the try's start, on/off lot)"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "wildflower_fires",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "applied lists Wildflower.OnGrowWildflowersOnLot: ok; wildflower_fires >= 1 (BP ~3-4, IP ~4); per fire tries and summs settle docs/110 §1 'which case': tries 20 + destroyed with summs ~= the /taskstall stall = 20 failing searches (W1 helps); tries 1-2 with one long try = one long search (W1 gains nothing, bring W3 to Rodney); the simmin column explains the IP spacing (§2). wildflower_fires 0 = the save's drain list is empty or can_spawn is false (cold, or 20 flowers in the world): run wildflower-drain instead"
+  },
+  {
+    "id": "wildflower-drain",
+    "bug": "docs/110: the Seasons spring wildflower drain runs up to 20 native placement searches per fire inside the alarm (0.3-1 s stalls); it only fires in spring",
+    "fix": "ts3fixes ScriptHotSpots.cs WildflowerTaskHook (switch wildflowertask, tuning kWildflowerTask, default off): the tries run in our one-shot task, one per sim tick; wildflowerprobe times the in-alarm path. Agent wildflower_drain refills the drain list with community lots and fires the game's handler from its own alarm, so no wait for spring; meant to run under profile-world --ab wildflowertask --taskstall 250",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "wildflowerprobe": true
+        },
+        "waitS": 1,
+        "note": "measure mode for the whole load: off slices of --ab run the in-alarm path timed, on slices the task"
+      },
+      {
+        "cmd": "wildflower_drain",
+        "args": {
+          "lots": 150,
+          "every_min": 30,
+          "clear": true
+        },
+        "waitS": 1,
+        "note": "one fire per 30 sim-minutes (~6 s at x3); clear keeps the 20-flower cap from stopping the drain; reply: list_after 150, our_alarm_live true, can_spawn true (false = too cold: test_env should have made it spring)"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "wildflower_drain",
+        "args": {
+          "stop": true
+        }
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "wildflower_fires",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "wildflower_fires rises in both halves; wildflower_placed / wildflower_fires about the same in the off and on slices (within noise); on slices: no /taskstall row >= 250 ms from OnGrowWildflowersOnLot and wildflower_log lines say 'task'; off slices: 'alarm' lines whose summs match the stalls; wildflower_saveaborts 0; no script errors, no stuck Sims"
+  },
+  {
+    "id": "wildflower-save-abort",
+    "bug": "docs/110 §7.3: with wildflowertask a save can come while a wildflower is out of world between tries",
+    "fix": "ts3fixes WildflowerTaskHook save guard: a save in progress before or after a yield destroys the flower and ends the fire as failed (wildflower_saveaborts)",
+    "save": "Baseline-BP-Spring",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "wildflowertask": true,
+          "wildflowerprobe": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "wildflower_drain",
+        "args": {
+          "lots": 40,
+          "every_min": 10,
+          "clear": true
+        },
+        "waitS": 20,
+        "note": "a fire every 10 sim-minutes so a task is often between tries"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Wildflower-Scratch"
+        },
+        "waitS": 60,
+        "note": "a scratch save name: never the loaded Baseline save"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "wildflower_drain",
+        "args": {
+          "stop": true
+        }
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "wildflower_fires",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "save succeeds; a task pending at the save shows a '(save)' line in wildflower_log and wildflower_saveaborts +1 (none pending = inconclusive, rerun; it only hits when fires fail tries); reload Wildflower-Scratch: no uncollected wildflower lying out of world (list_objects), no script errors"
   }
 ]

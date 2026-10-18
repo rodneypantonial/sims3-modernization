@@ -1,0 +1,1535 @@
+# site	len	kind	function	name	hops	root	vs-base
+0x44C720	2	call	0x44C6F0	FUN_0044c6f0	9	0x834DC0 lot rebuild	pass1
+0x45594F	2	call	0x455930	FUN_00455930	10	0x7606E0 Route_PlanCommon	pass1
+0x4AECD5	2	call	0x4AECC0	FUN_004aecc0	7	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AEDDF	2	call	0x4AECE0	FUN_004aece0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AEE4A	2	call	0x4AECE0	FUN_004aece0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AEE6A	2	call	0x4AECE0	FUN_004aece0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AEE91	2	call	0x4AECE0	FUN_004aece0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AEEB6	2	call	0x4AECE0	FUN_004aece0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x4AFDAF	2	call	0x4AFDA0	ResourceMan_FindDatabase	0	0x4AFDA0 ResourceMan_FindDatabase	new
+0x4B3EF6	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3F24	7	jmp	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3F4D	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3F6F	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3F87	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3F98	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3FA9	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3FB6	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B3FD9	2	call	0x4B3EE0	FUN_004b3ee0	8	0x834DC0 lot rebuild	pass1
+0x4B5A5F	2	call	0x4B5A30	FUN_004b5a30	11	0x834DC0 lot rebuild	pass1
+0x4B5A9B	2	call	0x4B5A80	FUN_004b5a80	1	0x4B5CF0 FUN_4b5cf0	pass1
+0x4B5D17	2	call	0x4B5CF0	FUN_004b5cf0	0	0x4B5CF0 FUN_4b5cf0	new
+0x4B5D60	2	call	0x4B5CF0	FUN_004b5cf0	0	0x4B5CF0 FUN_4b5cf0	new
+0x4B5E32	2	call	0x4B5E10	FUN_004b5e10	10	0x834DC0 lot rebuild	pass1
+0x4B61BD	2	call	0x4B6190	FUN_004b6190	10	0x834DC0 lot rebuild	pass1
+0x4B61CA	2	call	0x4B6190	FUN_004b6190	10	0x834DC0 lot rebuild	pass1
+0x4B61D6	2	call	0x4B6190	FUN_004b6190	10	0x834DC0 lot rebuild	pass1
+0x4B6204	7	jmp	0x4B61E0	FUN_004b61e0	9	0x834DC0 lot rebuild	pass1
+0x4B69FD	2	call	0x4B69C0	FUN_004b69c0	8	0x834DC0 lot rebuild	pass1
+0x4B6A10	2	call	0x4B69C0	FUN_004b69c0	8	0x834DC0 lot rebuild	pass1
+0x4B6A28	2	call	0x4B69C0	FUN_004b69c0	8	0x834DC0 lot rebuild	pass1
+0x4B6F7B	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6F88	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6F93	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6FBA	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6FC8	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6FD3	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B6FFE	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B700C	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B7017	2	call	0x4B6F40	FUN_004b6f40	9	0x834DC0 lot rebuild	pass1
+0x4B7162	2	call	0x4B7090	FUN_004b7090	10	0x834DC0 lot rebuild	pass1
+0x4B722F	2	call	0x4B7200	FUN_004b7200	8	0x834DC0 lot rebuild	pass1
+0x4B726F	2	call	0x4B7200	FUN_004b7200	8	0x834DC0 lot rebuild	pass1
+0x4B8037	2	call	0x4B7FE0	FUN_004b7fe0	9	0x834DC0 lot rebuild	pass1
+0x4B8062	2	call	0x4B7FE0	FUN_004b7fe0	9	0x834DC0 lot rebuild	pass1
+0x4B8071	2	call	0x4B7FE0	FUN_004b7fe0	9	0x834DC0 lot rebuild	pass1
+0x4B807D	2	call	0x4B7FE0	FUN_004b7fe0	9	0x834DC0 lot rebuild	pass1
+0x4B80E8	7	jmp	0x4B7FE0	FUN_004b7fe0	9	0x834DC0 lot rebuild	pass1
+0x4B85C2	2	call	0x4B85A0	FUN_004b85a0	9	0x834DC0 lot rebuild	pass1
+0x4B85FD	2	call	0x4B85D0	FUN_004b85d0	10	0x834DC0 lot rebuild	pass1
+0x4B8655	2	call	0x4B8620	FUN_004b8620	10	0x834DC0 lot rebuild	pass1
+0x4B8758	2	call	0x4B8700	FUN_004b8700	11	0x834DC0 lot rebuild	pass1
+0x4B87BB	2	call	0x4B8770	FUN_004b8770	10	0x834DC0 lot rebuild	pass1
+0x4CF583	4	call	0x4CF560	FUN_004cf560	6	0x832890 R blocked bits / lot rebuild	pass1
+0x4DEAA7	2	call	0x4DEA80	FUN_004dea80	9	0x834DC0 lot rebuild	pass1
+0x4DEAB1	2	call	0x4DEA80	FUN_004dea80	9	0x834DC0 lot rebuild	pass1
+0x4DEAD3	7	jmp	0x4DEAC0	FUN_004deac0	8	0x834DC0 lot rebuild	pass1
+0x4DEC15	2	call	0x4DEBE0	FUN_004debe0	10	0x834DC0 lot rebuild	pass1
+0x4DEF07	2	call	0x4DEE40	FUN_004dee40	9	0x834DC0 lot rebuild	pass1
+0x4DEF11	2	call	0x4DEE40	FUN_004dee40	9	0x834DC0 lot rebuild	pass1
+0x4E053A	2	call	0x4E0510	FUN_004e0510	10	0x834DC0 lot rebuild	pass1
+0x4E1135	2	call	0x4E10E0	FUN_004e10e0	5	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4E1283	2	call	0x4E1270	FUN_004e1270	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4E12A8	2	call	0x4E1270	FUN_004e1270	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4E12AC	2	call	0x4E1270	FUN_004e1270	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4E12F2	2	call	0x4E1270	FUN_004e1270	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4E288B	2	call	0x4E2810	FUN_004e2810	6	0x82C6E0 Route_PlanLocked	pass1
+0x4E28A1	2	call	0x4E2810	FUN_004e2810	6	0x82C6E0 Route_PlanLocked	pass1
+0x4E431F	2	call	0x4E42F0	FUN_004e42f0	3	0x665C50 W1	pass1
+0x4E5909	2	call	0x4E5710	FUN_004e5710	6	0x5C2880 FUN_5c2880	pass1
+0x4E626C	2	call	0x4E5E40	FUN_004e5e40	4	0x5C2880 FUN_5c2880	pass1
+0x4E68CE	7	jmp	0x4E6710	FUN_004e6710	7	0xD7D2F0 FUN_d7d2f0	new
+0x4F3D45	2	call	0x4F3CC0	FUN_004f3cc0	8	0xD7D2F0 FUN_d7d2f0	pass1
+0x4F3D6C	2	call	0x4F3CC0	FUN_004f3cc0	8	0xD7D2F0 FUN_d7d2f0	pass1
+0x4F4071	7	jmp	0x4F3CC0	FUN_004f3cc0	8	0xD7D2F0 FUN_d7d2f0	pass1
+0x4F5966	2	call	0x4F5800	FUN_004f5800	1	0x4F65B0 FUN_4f65b0	pass1
+0x4F6612	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F666D	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F68B2	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6963	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6A31	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6B86	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6C5A	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6C90	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6D9E	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6E34	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6F42	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F6FDE	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F70EF	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F71A9	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F72BA	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7436	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F753F	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7666	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F777A	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F78F4	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7A0F	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7A71	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7B8F	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7D90	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F7E9E	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F80A3	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F81C0	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F8733	7	jmp	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F8DD4	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F8DF6	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F8F1B	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F9026	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F903D	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4F90EF	2	call	0x4F65B0	FUN_004f65b0	0	0x4F65B0 FUN_4f65b0	new
+0x4FABF7	7	jmp	0x4FAB90	FUN_004fab90	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FAD32	7	jmp	0x4FAB90	FUN_004fab90	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FAE52	7	jmp	0x4FAB90	FUN_004fab90	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FB01C	7	jmp	0x4FAFD0	FUN_004fafd0	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FB255	7	jmp	0x4FB1F0	FUN_004fb1f0	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FB5A0	7	jmp	0x4FB460	FUN_004fb460	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FB93E	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FB996	7	jmp	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBC4F	7	jmp	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBCF0	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBD23	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBD4B	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBD7F	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x4FBDBB	7	call	0x4FB8D0	FUN_004fb8d0	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x55CFBE	2	call	0x55CFA0	FUN_0055cfa0	3	0x7606E0 Route_PlanCommon	pass1
+0x570006	2	call	0x56FFD0	FUN_0056ffd0	0	0x56FFD0 FUN_56ffd0	new
+0x574C2D	2	call	0x574BE0	FUN_00574be0	1	0x574F10 FUN_574f10	new
+0x59974F	2	call	0x599720	FUN_00599720	7	0x82C6E0 Route_PlanLocked	pass1
+0x59A603	2	call	0x59A540	FUN_0059a540	4	0x82C6E0 Route_PlanLocked	pass1
+0x59A688	2	call	0x59A650	FUN_0059a650	3	0x82C6E0 Route_PlanLocked	pass1
+0x59A6A1	2	call	0x59A650	FUN_0059a650	3	0x82C6E0 Route_PlanLocked	pass1
+0x5A8CE3	2	call	0x5A8CD0	FUN_005a8cd0	0	0x5A8CD0 FUN_5a8cd0	new
+0x5AF17B	2	call	0x5AF160	FUN_005af160	2	0x80CB40 W6g	pass1
+0x5AF18A	2	call	0x5AF160	FUN_005af160	2	0x80CB40 W6g	pass1
+0x5AF2C5	2	call	0x5AF2A0	FUN_005af2a0	2	0x62F8A0 W3	pass1
+0x5AF2D4	2	call	0x5AF2A0	FUN_005af2a0	2	0x62F8A0 W3	pass1
+0x5B6D88	2	call	0x5B6D70	FUN_005b6d70	10	0x834DC0 lot rebuild	pass1
+0x5B6E48	2	call	0x5B6E30	FUN_005b6e30	9	0x834DC0 lot rebuild	pass1
+0x5B76C8	2	call	0x5B7670	FUN_005b7670	7	0x834DC0 lot rebuild	pass1
+0x5B8693	2	call	0x5B8680	FUN_005b8680	9	0x834DC0 lot rebuild	pass1
+0x5BB010	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB063	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB086	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB099	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB0AD	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB0BC	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB0C6	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB0D6	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB0E9	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB148	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB15C	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB1C2	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB1D1	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB1F2	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BB201	2	call	0x5BB000	FUN_005bb000	7	0x834DC0 lot rebuild	pass1
+0x5BE7C2	2	call	0x5BE7B0	FUN_005be7b0	5	0x834DC0 lot rebuild	pass1
+0x5BF1FB	2	call	0x5BF1E0	FUN_005bf1e0	1	0x80CB40 W6g	pass1
+0x5C0EA6	2	call	0x5C0E60	FUN_005c0e60	1	0x5C2880 FUN_5c2880	new
+0x5C3512	2	call	0x5C34E0	FUN_005c34e0	3	0x5C2880 FUN_5c2880	new
+0x5C3524	2	call	0x5C34E0	FUN_005c34e0	3	0x5C2880 FUN_5c2880	new
+0x5C36D1	7	jmp	0x5C36A0	FUN_005c36a0	2	0x5C2880 FUN_5c2880	new
+0x5C3DC9	2	call	0x5C3DA0	FUN_005c3da0	3	0x5C2880 FUN_5c2880	new
+0x5C3E55	2	call	0x5C3E40	FUN_005c3e40	3	0x5C2880 FUN_5c2880	new
+0x5C3EC7	2	call	0x5C3EB0	FUN_005c3eb0	3	0x5C2880 FUN_5c2880	new
+0x5C3F47	2	call	0x5C3F30	FUN_005c3f30	3	0x5C2880 FUN_5c2880	new
+0x5C3FD5	2	call	0x5C3FC0	FUN_005c3fc0	3	0x5C2880 FUN_5c2880	new
+0x5C4275	2	call	0x5C4260	FUN_005c4260	3	0x5C2880 FUN_5c2880	new
+0x5C42F0	7	jmp	0x5C42E0	FUN_005c42e0	2	0x5C2880 FUN_5c2880	new
+0x5C9D7E	2	call	0x5C9D50	FUN_005c9d50	0	0x5C9D50 FUN_5c9d50	new
+0x5D2AA4	2	call	0x5D2A30	FUN_005d2a30	4	0x63CB90 W4 LotGraph_Build	pass1
+0x5D2ABC	2	call	0x5D2A30	FUN_005d2a30	4	0x63CB90 W4 LotGraph_Build	pass1
+0x5EC87E	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC8B1	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC8D1	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC8FF	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC917	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC92A	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC93B	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC989	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x5EC99C	2	call	0x5EC820	FUN_005ec820	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x61AE45	2	call	0x61AE10	FUN_0061ae10	7	0x82C6E0 Route_PlanLocked	pass1
+0x61B06D	2	call	0x61B030	FUN_0061b030	4	0x82B590 R blocked bits	pass1
+0x61B0A1	2	call	0x61B080	FUN_0061b080	7	0x82C6E0 Route_PlanLocked	pass1
+0x61B0E5	2	call	0x61B0B0	FUN_0061b0b0	1	0x61B440 AStarNode_Detach	pass1
+0x61B1B4	2	call	0x61B170	FUN_0061b170	0	0x61B170 AStarNode_Reset	new
+0x61B21B	2	jmp	0x61B1E0	FUN_0061b1e0	4	0x82B590 R blocked bits	pass1
+0x61B25F	2	call	0x61B220	FUN_0061b220	2	0x61B740 AStarNode_AddNeighbor	pass1
+0x61B2F1	2	call	0x61B2A0	FUN_0061b2a0	6	0x829D50 writer 0x829D50	pass1
+0x61B369	2	call	0x61B310	FUN_0061b310	2	0x61B740 AStarNode_AddNeighbor	pass1
+0x61B41B	2	call	0x61B400	FUN_0061b400	1	0x61EC90 AStarTerminalNode_Detach	new
+0x61B48B	2	call	0x61B440	FUN_0061b440	0	0x61B440 AStarNode_Detach	new
+0x61B7AF	2	jmp	0x61B740	AStarNode_AddNeighbor	0	0x61B740 AStarNode_AddNeighbor	new
+0x61BA56	2	call	0x61BA30	FUN_0061ba30	4	0x82B590 R blocked bits	pass1
+0x61BAC8	2	call	0x61BAB0	FUN_0061bab0	5	0x82B590 R blocked bits	pass1
+0x61BB82	2	jmp	0x61BB40	FUN_0061bb40	7	0x82B590 R blocked bits	pass1
+0x61BBF5	2	call	0x61BB90	FUN_0061bb90	8	0x82B590 R blocked bits	pass1
+0x61BD11	2	call	0x61BCE0	FUN_0061bce0	5	0x82B590 R blocked bits	pass1
+0x61BDFB	2	call	0x61BDB0	FUN_0061bdb0	9	0x82C6E0 Route_PlanLocked	pass1
+0x61BE2C	2	call	0x61BDB0	FUN_0061bdb0	9	0x82C6E0 Route_PlanLocked	pass1
+0x61BE50	2	call	0x61BDB0	FUN_0061bdb0	9	0x82C6E0 Route_PlanLocked	pass1
+0x61BEB1	2	call	0x61BE60	FUN_0061be60	7	0x829D50 writer 0x829D50	pass1
+0x61BF15	2	call	0x61BEC0	FUN_0061bec0	7	0x82B590 R blocked bits	pass1
+0x61BF4B	2	call	0x61BEC0	FUN_0061bec0	7	0x82B590 R blocked bits	pass1
+0x61C070	2	call	0x61C020	FUN_0061c020	3	0x829D50 writer 0x829D50	pass1
+0x61C08F	2	call	0x61C020	FUN_0061c020	3	0x829D50 writer 0x829D50	pass1
+0x61C0AB	2	call	0x61C020	FUN_0061c020	3	0x829D50 writer 0x829D50	pass1
+0x61C31C	2	call	0x61C2C0	FUN_0061c2c0	6	0x82B590 R blocked bits	pass1
+0x61C3A8	2	call	0x61C360	FUN_0061c360	9	0x82C6E0 Route_PlanLocked	pass1
+0x61C403	2	call	0x61C3C0	FUN_0061c3c0	4	0x82B590 R blocked bits	pass1
+0x61C547	2	call	0x61C420	FUN_0061c420	6	0x829D50 writer 0x829D50	pass1
+0x61CA3F	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CA9A	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CAE3	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CB38	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CC36	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CC88	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CCC1	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CD3E	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CD99	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CDDE	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CEC0	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CF1B	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CF5D	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61CFCA	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D010	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D086	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D134	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D16E	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D200	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D235	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D25C	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D2B1	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D324	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D3F2	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D427	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D44E	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D46D	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D4BE	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D4FB	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D557	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D603	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D689	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D6DC	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D755	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D79C	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D84D	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D87C	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D94D	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D998	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D9BD	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61D9CF	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DA1F	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DA64	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DB34	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DB66	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DBA0	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DBCF	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DC04	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DC29	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DC4C	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DC89	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DCAC	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DD2E	2	call	0x61C9B0	FUN_0061c9b0	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DD67	2	call	0x61DD40	FUN_0061dd40	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DDCF	2	call	0x61DD40	FUN_0061dd40	8	0x82C6E0 Route_PlanLocked	pass1
+0x61DE4D	2	call	0x61DD40	FUN_0061dd40	8	0x82C6E0 Route_PlanLocked	pass1
+0x61E052	2	call	0x61E030	FUN_0061e030	6	0x82B590 R blocked bits	pass1
+0x61E0B0	2	call	0x61E030	FUN_0061e030	6	0x82B590 R blocked bits	pass1
+0x61E155	2	call	0x61E030	FUN_0061e030	6	0x82B590 R blocked bits	pass1
+0x61E1E9	2	call	0x61E030	FUN_0061e030	6	0x82B590 R blocked bits	pass1
+0x61E23E	2	call	0x61E030	FUN_0061e030	6	0x82B590 R blocked bits	pass1
+0x61E606	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E62D	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E685	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E6DE	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E6EF	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E734	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E77E	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E78B	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E7CA	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E7FA	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E86A	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E889	2	call	0x61E500	FUN_0061e500	7	0x82C6E0 Route_PlanLocked	pass1
+0x61E983	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61E9C6	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61E9DF	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61EA49	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61EA56	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61EA97	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61EB10	2	call	0x61E8A0	FUN_0061e8a0	4	0x82B590 R blocked bits	pass1
+0x61ECCA	2	call	0x61EC90	FUN_0061ec90	0	0x61EC90 AStarTerminalNode_Detach	new
+0x61ED25	2	call	0x61ED10	FUN_0061ed10	0	0x61ED10 FootprintMapEntry_DeletingDtor	new
+0x61ED36	2	call	0x61ED10	FUN_0061ed10	0	0x61ED10 FootprintMapEntry_DeletingDtor	new
+0x61F0DA	2	call	0x61F070	FUN_0061f070	6	0x834DC0 lot rebuild	pass1
+0x61F0ED	2	call	0x61F070	FUN_0061f070	6	0x834DC0 lot rebuild	pass1
+0x61F8A0	7	jmp	0x61F890	FUN_0061f890	7	0x82C6E0 Route_PlanLocked	pass1
+0x61FA6D	2	call	0x61FA10	FUN_0061fa10	6	0x82C6E0 Route_PlanLocked	pass1
+0x61FFE9	2	call	0x61FFA0	FUN_0061ffa0	6	0x82C6E0 Route_PlanLocked	pass1
+0x620008	2	call	0x61FFA0	FUN_0061ffa0	6	0x82C6E0 Route_PlanLocked	pass1
+0x620C5D	2	call	0x620C40	FUN_00620c40	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x620C6F	2	call	0x620C40	FUN_00620c40	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x620D30	2	call	0x620D20	FootprintIface_IsKind	0	0x620D20 FootprintIface_IsKind	new
+0x62206B	2	call	0x621FE0	FUN_00621fe0	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62209B	2	call	0x621FE0	FUN_00621fe0	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x6246D5	7	jmp	0x624680	FUN_00624680	1	0x82B590 R blocked bits	pass1
+0x625728	7	jmp	0x625650	FUN_00625650	2	0x63CB90 W4 LotGraph_Build	pass1
+0x62580F	2	call	0x6257F0	FUN_006257f0	2	0x82B3E0 FootprintLockKeyById	pass1
+0x625821	2	call	0x6257F0	FUN_006257f0	2	0x82B3E0 FootprintLockKeyById	pass1
+0x625867	2	call	0x625830	FUN_00625830	7	0x82C6E0 Route_PlanLocked	pass1
+0x625882	2	jmp	0x625870	FUN_00625870	2	0x80CB40 W6g	pass1
+0x625D26	2	call	0x625CF0	FUN_00625cf0	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x625DF3	2	call	0x625DD0	FUN_00625dd0	2	0x62F8A0 W3	pass1
+0x626010	2	call	0x625FE0	FUN_00625fe0	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x626022	2	call	0x625FE0	FUN_00625fe0	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x626217	2	jmp	0x626210	FootprintMember_FwdSlot0	0	0x626210 FootprintMember_FwdSlot0	new
+0x626288	2	jmp	0x626280	FootprintMember_FwdSlot64	0	0x626280 FootprintMember_FwdSlot64	new
+0x6262B8	2	call	0x6262B0	FootprintMember_GetOwnerIdInv	0	0x6262B0 FootprintMember_GetOwnerIdInv	new
+0x6262CB	2	jmp	0x6262C0	FUN_6262c0	0	0x6262C0 FUN_6262c0	new
+0x6262D8	2	jmp	0x6262D0	FootprintMember_GetOwnerIdAlias	0	0x6262D0 FootprintMember_GetOwnerIdAlias	new
+0x626672	2	call	0x626650	FUN_00626650	2	0x665C50 W1	pass1
+0x626BD5	2	call	0x626B70	FUN_00626b70	5	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x626F29	2	call	0x626EF0	FUN_00626ef0	3	0x665C50 W1	pass1
+0x626F50	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x626F71	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x626F90	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x626FED	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x627013	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x627022	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x627055	2	call	0x626F40	FUN_00626f40	1	0x63CB90 W4 LotGraph_Build	pass1
+0x627211	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627245	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x62728D	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627319	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627362	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x62736D	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627378	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x6273C5	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x6273F6	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627412	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x627437	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x62745A	2	call	0x6271A0	FUN_006271a0	6	0x82C6E0 Route_PlanLocked	pass1
+0x6274C1	2	jmp	0x627470	FUN_00627470	2	0x665C50 W1	pass1
+0x6274C7	2	jmp	0x627470	FUN_00627470	2	0x665C50 W1	pass1
+0x627CDF	2	call	0x627C40	FUN_00627c40	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x627D05	2	call	0x627C40	FUN_00627c40	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x627DE2	2	call	0x627D10	FUN_00627d10	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x6281C7	2	call	0x6281A0	FUN_006281a0	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62831C	2	call	0x6282F0	FUN_006282f0	3	0x7606E0 Route_PlanCommon	pass1
+0x628854	2	call	0x628840	FUN_00628840	2	0x666A40 LotQuadTree_FlushDeferred	pass1
+0x628BF2	2	jmp	0x628B70	FUN_00628b70	2	0x665C50 W1	pass1
+0x628BF8	2	jmp	0x628B70	FUN_00628b70	2	0x665C50 W1	pass1
+0x629110	2	call	0x6290E0	FUN_006290e0	2	0x62F8A0 W3	pass1
+0x629844	2	call	0x629830	FUN_00629830	2	0x666A40 LotQuadTree_FlushDeferred	pass1
+0x629855	2	call	0x629830	FUN_00629830	2	0x666A40 LotQuadTree_FlushDeferred	pass1
+0x629C09	2	call	0x629BD0	FUN_00629bd0	3	0x8321F0 UpdateObjectFootprintCore	pass1
+0x629C33	2	call	0x629BD0	FUN_00629bd0	3	0x8321F0 UpdateObjectFootprintCore	pass1
+0x629C46	2	call	0x629BD0	FUN_00629bd0	3	0x8321F0 UpdateObjectFootprintCore	pass1
+0x629CD2	2	call	0x629BD0	FUN_00629bd0	3	0x8321F0 UpdateObjectFootprintCore	pass1
+0x62A510	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A56B	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A59E	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A5F9	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A60C	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A64E	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A665	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A764	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62A788	2	call	0x62A470	FUN_0062a470	7	0x82C6E0 Route_PlanLocked	pass1
+0x62B9D8	2	call	0x62B930	FUN_0062b930	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62B9EC	2	call	0x62B930	FUN_0062b930	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62DF97	2	call	0x62DE40	FUN_0062de40	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62DFB1	2	call	0x62DE40	FUN_0062de40	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x62F4F2	2	call	0x62F470	FUN_0062f470	8	0x82C6E0 Route_PlanLocked	pass1
+0x62F533	2	call	0x62F470	FUN_0062f470	8	0x82C6E0 Route_PlanLocked	pass1
+0x62F5B5	2	call	0x62F470	FUN_0062f470	8	0x82C6E0 Route_PlanLocked	pass1
+0x62F5DE	2	call	0x62F470	FUN_0062f470	8	0x82C6E0 Route_PlanLocked	pass1
+0x62F65A	2	call	0x62F600	FUN_0062f600	2	0x82B3E0 FootprintLockKeyById	pass1
+0x62F680	2	call	0x62F600	FUN_0062f600	2	0x82B3E0 FootprintLockKeyById	pass1
+0x62F6C9	2	call	0x62F600	FUN_0062f600	2	0x82B3E0 FootprintLockKeyById	pass1
+0x62F7E5	2	call	0x62F760	FUN_0062f760	1	0x80CB40 W6g	pass1
+0x62F9C1	2	call	0x62F8A0	FUN_0062f8a0	0	0x62F8A0 W3	pass1
+0x62FFF3	2	call	0x62FBE0	FUN_0062fbe0	4	0x82C6E0 Route_PlanLocked	pass1
+0x63005B	2	call	0x62FBE0	FUN_0062fbe0	4	0x82C6E0 Route_PlanLocked	pass1
+0x6301C3	2	call	0x62FBE0	FUN_0062fbe0	4	0x82C6E0 Route_PlanLocked	pass1
+0x630C9B	2	call	0x62FBE0	FUN_0062fbe0	4	0x82C6E0 Route_PlanLocked	pass1
+0x630E13	2	call	0x630CF0	FUN_00630cf0	1	0x829D50 writer 0x829D50	pass1
+0x63123A	7	jmp	0x631050	FUN_00631050	2	0x63CB90 W4 LotGraph_Build	pass1
+0x6312B2	7	jmp	0x631050	FUN_00631050	2	0x63CB90 W4 LotGraph_Build	pass1
+0x631471	2	call	0x631050	FUN_00631050	2	0x63CB90 W4 LotGraph_Build	pass1
+0x631482	7	jmp	0x631050	FUN_00631050	2	0x63CB90 W4 LotGraph_Build	pass1
+0x631492	2	call	0x631050	FUN_00631050	2	0x63CB90 W4 LotGraph_Build	pass1
+0x631C77	2	call	0x631C20	FUN_00631c20	3	0x834DC0 lot rebuild	pass1
+0x631C8B	2	call	0x631C20	FUN_00631c20	3	0x834DC0 lot rebuild	pass1
+0x631CAD	2	call	0x631C20	FUN_00631c20	3	0x834DC0 lot rebuild	pass1
+0x631CEF	2	call	0x631C20	FUN_00631c20	3	0x834DC0 lot rebuild	pass1
+0x632548	2	call	0x632460	FUN_00632460	7	0x82C6E0 Route_PlanLocked	pass1
+0x632573	2	call	0x632460	FUN_00632460	7	0x82C6E0 Route_PlanLocked	pass1
+0x63258E	2	call	0x632460	FUN_00632460	7	0x82C6E0 Route_PlanLocked	pass1
+0x6325A4	2	call	0x632460	FUN_00632460	7	0x82C6E0 Route_PlanLocked	pass1
+0x632942	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632950	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x63295A	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x6329A9	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x6329CB	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632AF6	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632B00	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632B59	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632B7E	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632C67	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632C74	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632CDF	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632D0C	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632D32	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632D5A	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632D91	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632DCE	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632DEF	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x632E25	2	call	0x632630	FUN_00632630	6	0x82C6E0 Route_PlanLocked	pass1
+0x63317A	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x63325D	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x633267	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x633409	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x633413	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x6335E5	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x6335FA	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x633708	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x63373F	2	call	0x632E40	FUN_00632e40	6	0x82C6E0 Route_PlanLocked	pass1
+0x633827	2	call	0x633750	FUN_00633750	2	0x82B590 R blocked bits	pass1
+0x63397E	2	call	0x6338A0	FUN_006338a0	5	0x7606E0 Route_PlanCommon	pass1
+0x633AFD	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633B07	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633B6D	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633C6F	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633C79	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633D0A	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633D33	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633D51	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633D78	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633DFA	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633E0D	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633E4E	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x633E85	2	call	0x6339F0	FUN_006339f0	3	0x82B590 R blocked bits	pass1
+0x6340BF	2	call	0x633FA0	FUN_00633fa0	5	0x82C6E0 Route_PlanLocked	pass1
+0x6343DC	2	call	0x633FA0	FUN_00633fa0	5	0x82C6E0 Route_PlanLocked	pass1
+0x634478	2	call	0x633FA0	FUN_00633fa0	5	0x82C6E0 Route_PlanLocked	pass1
+0x634953	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634A16	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634A7B	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634B0A	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634B4C	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634B7A	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634BA9	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634C03	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x634C10	2	call	0x634930	FUN_00634930	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x63546E	2	call	0x635440	FUN_00635440	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x6354D7	2	call	0x635440	FUN_00635440	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x63556F	2	call	0x635440	FUN_00635440	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x63586A	2	call	0x635700	FUN_00635700	0	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x635FFD	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x63600D	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x636021	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x6360DF	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x6360EF	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x636103	2	call	0x635EE0	FUN_00635ee0	1	0x6399E0 LotRouting_RemovePortals	pass1
+0x636285	2	call	0x636130	FUN_00636130	1	0x80CB40 W6g	pass1
+0x636295	2	call	0x636130	FUN_00636130	1	0x80CB40 W6g	pass1
+0x6362A9	2	call	0x636130	FUN_00636130	1	0x80CB40 W6g	pass1
+0x6365F5	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63661A	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636640	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6367D0	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6367F5	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63681B	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6368F4	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636917	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636971	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6369C6	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6369ED	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636A19	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636A5B	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636BC0	2	call	0x636330	FUN_00636330	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636C2F	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636C40	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636C55	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636C76	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636CA1	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636D18	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636D3B	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x636D5A	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6370C2	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6370EC	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637101	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637192	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6371E8	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637295	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637348	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637381	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63747E	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6374B3	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x6374D6	2	call	0x636BF0	FUN_00636bf0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x637704	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x6377A5	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x6377BA	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x6377CC	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x63783C	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x63784E	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x63789E	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x6378B9	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x6378C2	2	call	0x6376D0	FUN_006376d0	1	0x8321F0 UpdateObjectFootprintCore	pass1
+0x637919	2	call	0x637900	FUN_00637900	3	0x834DC0 lot rebuild	pass1
+0x637945	2	call	0x637900	FUN_00637900	3	0x834DC0 lot rebuild	pass1
+0x637B5F	2	call	0x6379E0	FUN_006379e0	0	0x6379E0 LotRouting_AddPortal	pass1
+0x637C13	2	call	0x6379E0	FUN_006379e0	0	0x6379E0 LotRouting_AddPortal	pass1
+0x638B44	7	jmp	0x6387B0	FUN_006387b0	2	0x82F710 diving board portals	pass1
+0x63919C	2	call	0x639010	FUN_00639010	1	0x80CB40 W6g	pass1
+0x6392E9	2	call	0x639010	FUN_00639010	1	0x80CB40 W6g	pass1
+0x639438	2	call	0x639010	FUN_00639010	1	0x80CB40 W6g	pass1
+0x639587	2	call	0x639010	FUN_00639010	1	0x80CB40 W6g	pass1
+0x639ABE	2	call	0x639A80	FUN_00639a80	8	0x82C6E0 Route_PlanLocked	pass1
+0x639AEB	2	call	0x639A80	FUN_00639a80	8	0x82C6E0 Route_PlanLocked	pass1
+0x63A067	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A083	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A091	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A0A0	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A0B3	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A0BD	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A0C6	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A0EE	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A172	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A191	2	call	0x639DE0	FUN_00639de0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x63A2F7	7	jmp	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A488	7	jmp	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A984	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A99E	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A9AC	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A9BA	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A9CC	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A9D7	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63A9E0	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63AA10	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63AAAB	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63AACE	2	call	0x63A1C0	FUN_0063a1c0	1	0x832890 R blocked bits / lot rebuild	pass1
+0x63BF21	7	jmp	0x63B710	FUN_0063b710	2	0x63CB90 W4 LotGraph_Build	pass1
+0x63BFC2	7	jmp	0x63B710	FUN_0063b710	2	0x63CB90 W4 LotGraph_Build	pass1
+0x63C1DB	7	jmp	0x63B710	FUN_0063b710	2	0x63CB90 W4 LotGraph_Build	pass1
+0x63C487	7	jmp	0x63B710	FUN_0063b710	2	0x63CB90 W4 LotGraph_Build	pass1
+0x63CCC2	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CCF5	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CD14	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CD57	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CD8A	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CDAC	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CDF9	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CE2B	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63CE4B	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D071	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D07F	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D09F	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D0AD	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D0BB	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D0CE	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D0D9	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D0E2	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D10F	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D1AA	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63D1DA	2	call	0x63CB90	FUN_0063cb90	0	0x63CB90 W4 LotGraph_Build	pass1
+0x63FBB4	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x63FD1D	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x63FDB5	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x63FE13	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x6400D7	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640223	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640798	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640845	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640AE1	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640D0F	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x640D73	2	call	0x63F6E0	FUN_0063f6e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x642085	7	jmp	0x641FC0	FUN_00641fc0	6	0x82C6E0 Route_PlanLocked	pass1
+0x6430E2	2	call	0x643010	FUN_00643010	7	0x82C6E0 Route_PlanLocked	pass1
+0x643170	2	call	0x6430F0	FUN_006430f0	7	0x82C6E0 Route_PlanLocked	pass1
+0x643201	2	call	0x643180	FUN_00643180	7	0x82C6E0 Route_PlanLocked	pass1
+0x6432B8	7	jmp	0x643210	FUN_00643210	5	0x82C6E0 Route_PlanLocked	pass1
+0x64344A	2	call	0x643420	FUN_00643420	4	0x7596E0 RouteDest_SlotArray_Generate	pass1
+0x6434A2	2	call	0x643450	FUN_00643450	7	0x82C6E0 Route_PlanLocked	pass1
+0x643F79	2	call	0x643E60	FUN_00643e60	6	0x82C6E0 Route_PlanLocked	pass1
+0x643F82	2	call	0x643E60	FUN_00643e60	6	0x82C6E0 Route_PlanLocked	pass1
+0x643F93	7	jmp	0x643E60	FUN_00643e60	6	0x82C6E0 Route_PlanLocked	pass1
+0x643FCD	2	call	0x643E60	FUN_00643e60	6	0x82C6E0 Route_PlanLocked	pass1
+0x6486A6	7	jmp	0x647EB0	FUN_00647eb0	5	0x82C6E0 Route_PlanLocked	pass1
+0x64FD2B	7	jmp	0x64FD10	FUN_0064fd10	4	0x82C6E0 Route_PlanLocked	pass1
+0x65021C	3	call	0x6501E0	FUN_006501e0	5	0x82C6E0 Route_PlanLocked	pass1
+0x65028C	3	call	0x650260	FUN_00650260	5	0x82C6E0 Route_PlanLocked	pass1
+0x6502AC	3	call	0x650260	FUN_00650260	5	0x82C6E0 Route_PlanLocked	pass1
+0x650551	4	call	0x650530	FUN_00650530	8	0x82C6E0 Route_PlanLocked	pass1
+0x6512F0	4	call	0x6512D0	FUN_006512d0	7	0x82C6E0 Route_PlanLocked	pass1
+0x6527AB	2	call	0x652780	FUN_00652780	6	0x82C6E0 Route_PlanLocked	pass1
+0x6527C2	2	call	0x652780	FUN_00652780	6	0x82C6E0 Route_PlanLocked	pass1
+0x6527D9	2	call	0x652780	FUN_00652780	6	0x82C6E0 Route_PlanLocked	pass1
+0x652838	2	call	0x652810	FUN_00652810	6	0x82C6E0 Route_PlanLocked	pass1
+0x6537D5	2	call	0x653790	FUN_00653790	5	0x82C6E0 Route_PlanLocked	pass1
+0x6537E4	2	call	0x653790	FUN_00653790	5	0x82C6E0 Route_PlanLocked	pass1
+0x6537EF	2	call	0x653790	FUN_00653790	5	0x82C6E0 Route_PlanLocked	pass1
+0x6537FD	2	call	0x653790	FUN_00653790	5	0x82C6E0 Route_PlanLocked	pass1
+0x653810	2	call	0x653790	FUN_00653790	5	0x82C6E0 Route_PlanLocked	pass1
+0x655B41	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655B6F	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655BAA	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655BB8	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655BC9	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655C0C	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655C53	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655D8E	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655DA3	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655DC1	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655DFB	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655E09	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655E1A	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655E49	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x655EA0	2	call	0x655880	FUN_00655880	7	0x82C6E0 Route_PlanLocked	pass1
+0x656FAE	2	call	0x656A70	FUN_00656a70	4	0x82C6E0 Route_PlanLocked	pass1
+0x657136	2	call	0x656A70	FUN_00656a70	4	0x82C6E0 Route_PlanLocked	pass1
+0x657382	2	call	0x656A70	FUN_00656a70	4	0x82C6E0 Route_PlanLocked	pass1
+0x65E682	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65E7E9	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65EFEC	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F0E0	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F153	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F21A	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F389	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F3D3	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F543	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F87C	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F8A5	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F8CA	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F8D9	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F91D	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65F92C	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65FA38	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65FA47	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65FF37	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65FF46	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x65FFCF	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660107	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660152	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660161	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660207	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660218	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6603B4	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6603D4	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6603E3	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660D41	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x660EBA	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661334	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x66134D	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661371	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661399	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6613B9	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6613C8	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661423	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661443	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661452	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6614B1	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6614D1	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6614E0	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661550	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6615BE	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6615CD	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6615ED	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6615FC	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661654	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661674	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661683	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6616EA	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6617B5	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6617D1	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6617E0	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6619D7	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x6619F7	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661A06	2	call	0x65E0D0	FUN_0065e0d0	3	0x82C6E0 Route_PlanLocked	pass1
+0x661F82	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x661F8F	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662236	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x6623BB	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x6623DF	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662457	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x66246E	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x6624D0	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662517	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662522	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662547	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662588	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x66274C	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x66276C	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662777	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x66279C	2	call	0x661B50	RoutingJob_Init	2	0x82C6E0 Route_PlanLocked	pass1
+0x662E0F	2	call	0x662E00	FUN_662e00	0	0x662E00 FUN_662e00	new
+0x66303B	2	call	0x662FF0	FUN_00662ff0	2	0x665C50 W1	pass1
+0x663145	2	call	0x662FF0	FUN_00662ff0	2	0x665C50 W1	pass1
+0x66321C	2	call	0x662FF0	FUN_00662ff0	2	0x665C50 W1	pass1
+0x663C1A	2	call	0x663B20	FUN_00663b20	5	0x7606E0 Route_PlanCommon	pass1
+0x663C7A	7	call	0x663B20	FUN_00663b20	5	0x7606E0 Route_PlanCommon	pass1
+0x663D59	2	call	0x663B20	FUN_00663b20	5	0x7606E0 Route_PlanCommon	pass1
+0x663DB8	7	call	0x663B20	FUN_00663b20	5	0x7606E0 Route_PlanCommon	pass1
+0x663EDF	7	call	0x663E20	FUN_00663e20	5	0x7606E0 Route_PlanCommon	pass1
+0x663F85	7	call	0x663E20	FUN_00663e20	5	0x7606E0 Route_PlanCommon	pass1
+0x6640AA	7	call	0x663FE0	FUN_00663fe0	4	0x63CB90 W4 LotGraph_Build	pass1
+0x664152	7	call	0x663FE0	FUN_00663fe0	4	0x63CB90 W4 LotGraph_Build	pass1
+0x664251	7	call	0x6641B0	FUN_006641b0	5	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x6642D3	7	call	0x6641B0	FUN_006641b0	5	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x664367	2	call	0x664330	FUN_00664330	2	0x665C50 W1	pass1
+0x6644B4	2	call	0x664480	FUN_00664480	3	0x62F8A0 W3	pass1
+0x6644C5	2	call	0x664480	FUN_00664480	3	0x62F8A0 W3	pass1
+0x664641	2	call	0x6645D0	FUN_006645d0	5	0x82B590 R blocked bits	pass1
+0x66484C	2	call	0x6646F0	FUN_006646f0	1	0x62F8A0 W3	pass1
+0x6649B9	2	call	0x6646F0	FUN_006646f0	1	0x62F8A0 W3	pass1
+0x664AAA	2	call	0x6649C0	FUN_006649c0	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x664AF8	2	call	0x6649C0	FUN_006649c0	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x664B75	2	call	0x664B10	FUN_00664b10	4	0x82B590 R blocked bits	pass1
+0x664C18	2	call	0x664BA0	FUN_00664ba0	2	0x829D50 writer 0x829D50	pass1
+0x664C45	2	call	0x664BA0	FUN_00664ba0	2	0x829D50 writer 0x829D50	pass1
+0x664C57	4	call	0x664BA0	FUN_00664ba0	2	0x829D50 writer 0x829D50	pass1
+0x664D0B	2	call	0x664CE0	FUN_00664ce0	2	0x665C50 W1	pass1
+0x664E3A	2	call	0x664DD0	FUN_00664dd0	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x665424	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x665437	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6654A5	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x66555B	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x665576	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x66567E	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6656A8	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6656CD	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x665793	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6657C1	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6657D0	2	call	0x6653A0	FUN_006653a0	1	0x665C50 W1	pass1
+0x6658BF	2	call	0x6657E0	FUN_006657e0	2	0x666750 W2	pass1
+0x6658DC	2	call	0x6657E0	FUN_006657e0	2	0x666750 W2	pass1
+0x665919	2	call	0x6657E0	FUN_006657e0	2	0x666750 W2	pass1
+0x665936	2	call	0x6657E0	FUN_006657e0	2	0x666750 W2	pass1
+0x665A9D	2	call	0x665A50	FUN_00665a50	2	0x829D50 writer 0x829D50	pass1
+0x665C00	2	call	0x665A50	FUN_00665a50	2	0x829D50 writer 0x829D50	pass1
+0x665C7F	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665CEF	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665D36	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665D3E	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665D99	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665DAD	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665DC1	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665DD6	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665DEA	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665E02	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665E17	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665EA5	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665EB6	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665F0C	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665F23	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x665F61	2	call	0x665C50	FUN_00665c50	0	0x665C50 W1	pass1
+0x6660CD	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x66610B	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x6661AD	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x666298	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x6662CC	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x6662F9	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x66633B	2	call	0x666010	FUN_00666010	1	0x666750 W2	pass1
+0x666835	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x666854	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x6668BE	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x66694F	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x66696E	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x6669B0	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x6669E4	2	call	0x666750	FUN_00666750	0	0x666750 W2	pass1
+0x666C92	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666C9E	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666CA7	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666CBF	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666CCB	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666CF5	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666D07	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666D16	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666D61	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666D6D	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666D88	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666DD8	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666DF8	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666E04	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666E26	2	call	0x666C50	FUN_00666c50	1	0x62F8A0 W3	pass1
+0x666F06	2	call	0x666E30	FUN_00666e30	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x666F22	2	call	0x666E30	FUN_00666e30	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x666F4C	2	call	0x666E30	FUN_00666e30	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x666F55	2	call	0x666E30	FUN_00666e30	2	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x6675C0	2	call	0x6675B0	FUN_006675b0	1	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x667A04	2	call	0x6679F0	FUN_006679f0	6	0x82B590 R blocked bits	pass1
+0x667A24	2	call	0x667A10	FUN_00667a10	6	0x82B590 R blocked bits	pass1
+0x667EBF	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667EE6	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667F0D	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667F27	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667F39	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667FD1	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x667FE4	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x66800A	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x668020	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x668032	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x668118	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x66812E	2	call	0x667DB0	FUN_00667db0	5	0x82B590 R blocked bits	pass1
+0x6682C0	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x6682E8	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668302	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668314	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668329	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x66833D	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668361	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668375	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x6683BE	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x6683D4	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x6683ED	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668412	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x668421	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x66844B	2	call	0x6681E0	FUN_006681e0	5	0x82B590 R blocked bits	pass1
+0x6688BE	2	call	0x6688A0	FUN_006688a0	4	0x8321F0 UpdateObjectFootprintCore	pass1
+0x668C2C	2	call	0x668BC0	FUN_00668bc0	2	0x665C50 W1	pass1
+0x6690C9	2	call	0x669090	FUN_00669090	7	0x82B590 R blocked bits	pass1
+0x6690F3	2	call	0x669090	FUN_00669090	7	0x82B590 R blocked bits	pass1
+0x669106	2	call	0x669090	FUN_00669090	7	0x82B590 R blocked bits	pass1
+0x669192	2	call	0x669090	FUN_00669090	7	0x82B590 R blocked bits	pass1
+0x669216	2	call	0x6691F0	FUN_006691f0	6	0x82B590 R blocked bits	pass1
+0x669651	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x669678	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x66968D	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6696A4	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6696BA	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6696DE	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6696EC	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x669703	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x669735	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x66977D	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6697B7	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x6697EE	2	call	0x669530	FUN_00669530	5	0x82B590 R blocked bits	pass1
+0x66992E	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x669956	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x66996B	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x669982	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x669998	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x6699C6	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x6699D4	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x6699EB	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x669A20	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x669B05	2	call	0x669850	FUN_00669850	5	0x82B590 R blocked bits	pass1
+0x66ACC5	7	jmp	0x66AC60	FUN_0066ac60	7	0x82B590 R blocked bits	pass1
+0x66ADE3	2	call	0x66AD90	FUN_0066ad90	9	0x82B590 R blocked bits	pass1
+0x66AF08	2	call	0x66AE00	FUN_0066ae00	8	0x82B590 R blocked bits	pass1
+0x66AFBB	2	call	0x66AF40	FUN_0066af40	8	0x82B590 R blocked bits	pass1
+0x66B383	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B395	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B3B8	7	jmp	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B3C5	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B3E3	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B412	7	jmp	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B42A	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B501	2	call	0x66B090	FUN_0066b090	4	0x82B590 R blocked bits	pass1
+0x66B74E	2	call	0x66B6E0	FUN_0066b6e0	7	0x82B590 R blocked bits	pass1
+0x66B841	2	call	0x66B6E0	FUN_0066b6e0	7	0x82B590 R blocked bits	pass1
+0x66B8A1	2	call	0x66B6E0	FUN_0066b6e0	7	0x82B590 R blocked bits	pass1
+0x66BA19	2	call	0x66B9C0	FUN_0066b9c0	6	0x82B590 R blocked bits	pass1
+0x66C08E	2	call	0x66BFD0	FUN_0066bfd0	5	0x82B590 R blocked bits	pass1
+0x66C0AA	2	call	0x66BFD0	FUN_0066bfd0	5	0x82B590 R blocked bits	pass1
+0x66DCD1	2	call	0x66DCB0	FUN_0066dcb0	0	0x66DCB0 WaterPathGoal_BothNear	new
+0x67101A	2	call	0x671000	FUN_00671000	0	0x671000 WaterGrid_CutWorldObjects	new
+0x671109	2	call	0x671000	FUN_00671000	0	0x671000 WaterGrid_CutWorldObjects	new
+0x67127A	2	call	0x671000	FUN_00671000	0	0x671000 WaterGrid_CutWorldObjects	new
+0x671295	2	call	0x671000	FUN_00671000	0	0x671000 WaterGrid_CutWorldObjects	new
+0x674360	7	jmp	0x674250	FUN_00674250	0	0x674250 RouteCost_Mode3	new
+0x674F4F	7	jmp	0x674E40	FUN_00674e40	0	0x674E40 RouteCost_Mode1	new
+0x676388	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x676678	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x6766AD	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x67689B	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x6768D4	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x676B19	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x676B4A	7	call	0x676260	FUN_00676260	4	0x82C6E0 Route_PlanLocked	pass1
+0x68115A	2	call	0x680F80	FUN_00680f80	7	0x7596E0 RouteDest_SlotArray_Generate	pass1
+0x681BD9	2	call	0x681B40	FUN_00681b40	6	0x7606E0 Route_PlanCommon	pass1
+0x6826F0	2	call	0x682610	FUN_00682610	7	0x63CB90 W4 LotGraph_Build	pass1
+0x682B83	2	call	0x6829C0	FUN_006829c0	8	0x63CB90 W4 LotGraph_Build	pass1
+0x683E9B	2	call	0x683CD0	FUN_00683cd0	0	0x683CD0 FUN_683cd0	new
+0x692743	2	call	0x692720	FUN_00692720	0	0x692720 RefCounted_AtomicRelease	new
+0x6FDF34	2	call	0x6FDF20	FUN_006fdf20	4	0x82C6E0 Route_PlanLocked	pass1
+0x7276AC	2	call	0x727690	FUN_727690	0	0x727690 FUN_727690	new
+0x731D89	2	call	0x731D40	FUN_00731d40	0	0x731D40 FUN_731d40	new
+0x731DA1	2	call	0x731D40	FUN_00731d40	0	0x731D40 FUN_731d40	new
+0x739DB1	2	call	0x739DA0	FUN_739da0	0	0x739DA0 FUN_739da0	new
+0x739DE9	2	jmp	0x739DE0	FUN_739de0	0	0x739DE0 FUN_739de0	new
+0x739E38	2	jmp	0x739E30	FUN_739e30	0	0x739E30 FUN_739e30	new
+0x744A72	2	call	0x744A60	FUN_00744a60	1	0x80CB40 W6g	pass1
+0x746119	2	call	0x7460F0	FUN_007460f0	1	0x7596E0 RouteDest_SlotArray_Generate	pass1
+0x74B2F9	2	call	0x74B2C0	FUN_0074b2c0	1	0x765160 IC_Route_Plan	pass1
+0x74B57E	2	call	0x74B540	IC_RouteManager_FootprintSetLockKeys	0	0x74B540 IC_FootprintSetLockKeys	pass1
+0x74B961	2	call	0x74B950	FUN_0074b950	4	0x82C6E0 Route_PlanLocked	pass1
+0x74D185	2	call	0x74D160	IC_Route_SetLockKeys	0	0x74D160 IC_Route_SetLockKeys	pass1
+0x74D1B2	2	call	0x74D160	IC_Route_SetLockKeys	0	0x74D160 IC_Route_SetLockKeys	pass1
+0x74D1D4	2	jmp	0x74D160	IC_Route_SetLockKeys	0	0x74D160 IC_Route_SetLockKeys	pass1
+0x74D454	2	call	0x74D3F0	IC_RouteManager_AddPortalLocationVariation	0	0x74D3F0 IC_AddPortalLocationVariation	pass1
+0x74D46A	2	call	0x74D3F0	IC_RouteManager_AddPortalLocationVariation	0	0x74D3F0 IC_AddPortalLocationVariation	pass1
+0x74D6FE	2	call	0x74D6B0	IC_RouteManager_RemovePortals	0	0x74D6B0 IC_RemovePortals	pass1
+0x74FCF7	2	call	0x74FCC0	FUN_0074fcc0	1	0x7606E0 Route_PlanCommon	pass1
+0x74FD0A	2	call	0x74FCC0	FUN_0074fcc0	1	0x7606E0 Route_PlanCommon	pass1
+0x74FDD0	2	call	0x74FDB0	FUN_0074fdb0	1	0x7606E0 Route_PlanCommon	pass1
+0x74FF21	2	call	0x74FEF0	FUN_0074fef0	2	0x7606E0 Route_PlanCommon	pass1
+0x7502F7	2	call	0x750260	FUN_00750260	1	0x7606E0 Route_PlanCommon	pass1
+0x752042	2	call	0x751FF0	FUN_00751ff0	1	0x7606E0 Route_PlanCommon	pass1
+0x7520E1	2	call	0x751FF0	FUN_00751ff0	1	0x7606E0 Route_PlanCommon	pass1
+0x752583	2	call	0x752480	FUN_00752480	2	0x765240 IC_Route_PlanFromPoint	pass1
+0x75266C	2	call	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x752677	7	jmp	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x7526E3	2	call	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x7526F7	2	call	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x75275C	2	call	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x752976	2	call	0x752620	FUN_00752620	1	0x7606E0 Route_PlanCommon	pass1
+0x75708B	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x7570C9	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x7570F1	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x757182	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x7571A4	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x7571C5	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x7571F5	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x75721B	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x757240	2	call	0x756FF0	FUN_00756ff0	2	0x7606E0 Route_PlanCommon	pass1
+0x75728F	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x75729D	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x7572BD	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x75732D	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x75733A	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x757367	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x75738B	2	call	0x757250	FUN_00757250	1	0x7606E0 Route_PlanCommon	pass1
+0x7580C6	2	call	0x757E10	IC_RouteManager_AddPortal	0	0x757E10 IC_AddPortal	pass1
+0x7580DB	2	call	0x757E10	IC_RouteManager_AddPortal	0	0x757E10 IC_AddPortal	pass1
+0x7597FD	2	call	0x7596E0	FUN_007596e0	0	0x7596E0 RouteDest_SlotArray_Generate	new
+0x759AAB	2	call	0x7596E0	FUN_007596e0	0	0x7596E0 RouteDest_SlotArray_Generate	new
+0x759AE8	2	call	0x7596E0	FUN_007596e0	0	0x7596E0 RouteDest_SlotArray_Generate	new
+0x759B13	2	call	0x7596E0	FUN_007596e0	0	0x7596E0 RouteDest_SlotArray_Generate	new
+0x75CC83	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CC9A	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CCAF	7	jmp	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CCBF	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CCF9	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CD2D	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75CD6C	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75D021	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75D056	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75D073	2	call	0x75C2D0	FUN_0075c2d0	1	0x7606E0 Route_PlanCommon	pass1
+0x75DA2C	2	call	0x75D920	FUN_0075d920	2	0x765160 IC_Route_Plan	pass1
+0x760723	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760731	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76073F	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76074D	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76076A	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x7607CB	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760C64	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760CED	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760EB3	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760F0A	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760F2B	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760F7A	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760F83	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x760FB5	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x7614FF	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76152B	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76154E	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x76156B	2	call	0x7606E0	Route_PlanCommon	0	0x7606E0 Route_PlanCommon	pass1
+0x7651D3	2	call	0x765160	IC_Route_Plan	0	0x765160 IC_Route_Plan	pass1
+0x7651F5	2	call	0x765160	IC_Route_Plan	0	0x765160 IC_Route_Plan	pass1
+0x7652C2	2	call	0x765240	IC_Route_PlanFromPoint	0	0x765240 IC_Route_PlanFromPoint	pass1
+0x765445	2	call	0x765240	IC_Route_PlanFromPoint	0	0x765240 IC_Route_PlanFromPoint	pass1
+0x7654B8	2	call	0x765490	IC_Route_Replan	0	0x765490 IC_Route_Replan	pass1
+0x7654D4	2	call	0x765490	IC_Route_Replan	0	0x765490 IC_Route_Replan	pass1
+0x76557D	2	call	0x765550	IC_Route_ReplanFromPosition	0	0x765550 IC_Route_ReplanFromPosition	pass1
+0x7655CF	2	call	0x765550	IC_Route_ReplanFromPosition	0	0x765550 IC_Route_ReplanFromPosition	pass1
+0x76F2C3	2	call	0x76F0A0	FUN_0076f0a0	1	0x7596E0 RouteDest_SlotArray_Generate	new
+0x78F2FC	2	call	0x78F2B0	FUN_0078f2b0	8	0x7606E0 Route_PlanCommon	pass1
+0x78F363	2	call	0x78F2B0	FUN_0078f2b0	8	0x7606E0 Route_PlanCommon	pass1
+0x7CFCE7	2	call	0x7CFCC0	FUN_007cfcc0	7	0x8321F0 UpdateObjectFootprintCore	pass1
+0x7D3CAB	2	call	0x7D3C90	FUN_007d3c90	1	0x63CB90 W4 LotGraph_Build	pass1
+0x7D9322	2	call	0x7D92D0	FUN_007d92d0	6	0x8321F0 UpdateObjectFootprintCore	pass1
+0x7DBC55	2	call	0x7DBC30	FUN_007dbc30	0	0x7DBC30 FUN_7dbc30	new
+0x7DBC6C	2	call	0x7DBC30	FUN_007dbc30	0	0x7DBC30 FUN_7dbc30	new
+0x806AF9	2	call	0x806770	FUN_00806770	0	0x806770 W6g	pass1
+0x806B32	2	call	0x806770	FUN_00806770	0	0x806770 W6g	pass1
+0x806B52	2	call	0x806770	FUN_00806770	0	0x806770 W6g	pass1
+0x806B8D	2	call	0x806B70	FUN_00806b70	0	0x806B70 FootprintMember_AgentCost	new
+0x806BD9	2	call	0x806B70	FUN_00806b70	0	0x806B70 FootprintMember_AgentCost	new
+0x806BFE	2	jmp	0x806BF0	FUN_806bf0	0	0x806BF0 FUN_806bf0	new
+0x806C3C	2	call	0x806C30	FUN_806c30	0	0x806C30 FUN_806c30	new
+0x806C6C	2	call	0x806C50	FootprintMember_FwdSlot2C	0	0x806C50 FootprintMember_FwdSlot2C	new
+0x806CBE	2	call	0x806C80	FUN_806c80	0	0x806C80 FUN_806c80	new
+0x806D08	2	call	0x806CD0	FUN_00806cd0	0	0x806CD0 FUN_806cd0	new
+0x806D48	2	call	0x806D10	FUN_00806d10	0	0x806D10 FUN_806d10	new
+0x8070BB	2	call	0x807090	FUN_00807090	0	0x807090 FUN_807090	new
+0x80714A	2	jmp	0x807110	Footprint_SetLockKeyObject	0	0x807110 Footprint_SetLockKeyObject	new
+0x807383	2	call	0x807360	FUN_00807360	3	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807421	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807443	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807528	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80753B	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807555	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807576	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8075A9	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8075C5	2	call	0x807400	FUN_00807400	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x807CDA	2	call	0x807C90	FUN_00807c90	2	0x834DC0 lot rebuild	pass1
+0x807CEA	2	call	0x807C90	FUN_00807c90	2	0x834DC0 lot rebuild	pass1
+0x80B78A	2	call	0x80B740	FUN_0080b740	2	0x834DF0 lot walls	pass1
+0x80B79A	2	call	0x80B740	FUN_0080b740	2	0x834DF0 lot walls	pass1
+0x80C43F	2	call	0x80C430	FUN_80c430	0	0x80C430 FUN_80c430	new
+0x80CD6D	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80D00E	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80D1B8	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80D775	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80D7AE	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80D7CE	2	call	0x80CB40	FUN_0080cb40	0	0x80CB40 W6g	pass1
+0x80DFD6	2	call	0x80DFB0	FUN_0080dfb0	0	0x80DFB0 FUN_80dfb0	new
+0x80E071	2	call	0x80E060	FUN_0080e060	0	0x80E060 Matrix_CopyVirtual	new
+0x80E11D	2	jmp	0x80E0E0	FUN_80e0e0	0	0x80E0E0 FUN_80e0e0	new
+0x80E15D	2	jmp	0x80E130	FUN_80e130	0	0x80E130 FUN_80e130	new
+0x80E24F	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E27F	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E2AF	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E2E2	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E328	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E361	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E397	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E3CD	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E403	2	call	0x80E200	FUN_0080e200	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x80E5F6	2	call	0x80E5B0	FUN_0080e5b0	0	0x80E5B0 W6a	pass1
+0x80E668	2	call	0x80E610	W6b	0	0x80E610 W6b	pass1
+0x80E675	2	call	0x80E610	W6b	0	0x80E610 W6b	pass1
+0x80E6A1	2	call	0x80E690	FUN_0080e690	0	0x80E690 Footprint_SegmentHitsLevel	new
+0x80E99E	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EA06	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EA17	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EA38	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EA52	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EA6A	2	call	0x80E980	FUN_0080e980	0	0x80E980 W6c	pass1
+0x80EC8C	2	call	0x80EC30	FUN_0080ec30	0	0x80EC30 W6d	pass1
+0x80ECE2	2	call	0x80EC30	FUN_0080ec30	0	0x80EC30 W6d	pass1
+0x80ECEF	2	call	0x80EC30	FUN_0080ec30	0	0x80EC30 W6d	pass1
+0x80ED95	2	call	0x80EC30	FUN_0080ec30	0	0x80EC30 W6d	pass1
+0x80EFBB	2	call	0x80EF80	Footprint_LevelPolygonQuery	0	0x80EF80 Footprint_LevelPolygonQuery	new
+0x80F6F5	2	call	0x80F6A0	FUN_0080f6a0	0	0x80F6A0 W6f	pass1
+0x810E69	2	call	0x810DF0	FUN_00810df0	3	0x82C420 ApplyPendingUpdates	pass1
+0x810E82	2	call	0x810DF0	FUN_00810df0	3	0x82C420 ApplyPendingUpdates	pass1
+0x81A0C5	2	call	0x819E10	FUN_00819e10	2	0x82C6E0 Route_PlanLocked	pass1
+0x81B37B	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81B395	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81B3D1	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81BF31	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C2A7	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C3B7	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C433	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C440	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C460	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C480	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C4AF	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C4BD	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C4C6	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C4DA	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C4F1	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C574	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C583	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C5AF	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C5D3	7	jmp	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C723	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C778	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C787	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81C7AB	2	call	0x81B2A0	Route_SearchAStar	1	0x82C6E0 Route_PlanLocked	pass1
+0x81CD96	2	call	0x81CD10	FUN_0081cd10	4	0x82C6E0 Route_PlanLocked	pass1
+0x81CDA3	2	call	0x81CD10	FUN_0081cd10	4	0x82C6E0 Route_PlanLocked	pass1
+0x81CDE4	2	call	0x81CD10	FUN_0081cd10	4	0x82C6E0 Route_PlanLocked	pass1
+0x81CE0D	2	call	0x81CD10	FUN_0081cd10	4	0x82C6E0 Route_PlanLocked	pass1
+0x81DECA	2	call	0x81DD40	FUN_0081dd40	0	0x81DD40 FUN_81dd40	new
+0x81DEDE	2	call	0x81DD40	FUN_0081dd40	0	0x81DD40 FUN_81dd40	new
+0x81E42B	2	call	0x81E410	FUN_0081e410	0	0x81E410 FUN_81e410	new
+0x81E603	2	call	0x81E5B0	FUN_0081e5b0	0	0x81E5B0 FUN_81e5b0	new
+0x81E618	2	call	0x81E5B0	FUN_0081e5b0	0	0x81E5B0 FUN_81e5b0	new
+0x81E63C	2	call	0x81E5B0	FUN_0081e5b0	0	0x81E5B0 FUN_81e5b0	new
+0x81FE30	2	jmp	0x81FDE0	FUN_81fde0	0	0x81FDE0 FUN_81fde0	new
+0x81FE90	2	jmp	0x81FE40	FUN_81fe40	0	0x81FE40 FUN_81fe40	new
+0x81FEF0	2	jmp	0x81FEA0	FUN_81fea0	0	0x81FEA0 FUN_81fea0	new
+0x81FF50	2	jmp	0x81FF00	FUN_81ff00	0	0x81FF00 FUN_81ff00	new
+0x8295F5	2	call	0x8295E0	FUN_008295e0	1	0x831BA0 AddPrivateFootprint	pass1
+0x829BF7	2	call	0x829BC0	FUN_00829bc0	1	0x80CB40 W6g	pass1
+0x829C37	2	call	0x829C00	FUN_00829c00	1	0x674250 RouteCost_Mode3	pass1
+0x82A7D0	2	call	0x82A780	FUN_0082a780	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82A800	2	call	0x82A780	FUN_0082a780	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82B3AC	2	call	0x82B2B0	FUN_0082b2b0	1	0x82B3E0 FootprintLockKeyById	pass1
+0x82B3B8	2	call	0x82B2B0	FUN_0082b2b0	1	0x82B3E0 FootprintLockKeyById	pass1
+0x82B43D	2	call	0x82B3E0	FUN_0082b3e0	0	0x82B3E0 FootprintLockKeyById	pass1
+0x82C7CB	2	call	0x82C6E0	Route_PlanLocked	0	0x82C6E0 Route_PlanLocked	pass1
+0x82D009	2	call	0x82CFD0	FUN_0082cfd0	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x82D5B6	7	jmp	0x82D2E0	FUN_0082d2e0	1	0x82F710 diving board portals	pass1
+0x82D63D	7	jmp	0x82D2E0	FUN_0082d2e0	1	0x82F710 diving board portals	pass1
+0x82D73B	7	jmp	0x82D2E0	FUN_0082d2e0	1	0x82F710 diving board portals	pass1
+0x82D796	2	call	0x82D2E0	FUN_0082d2e0	1	0x82F710 diving board portals	pass1
+0x82D872	2	call	0x82D2E0	FUN_0082d2e0	1	0x82F710 diving board portals	pass1
+0x82E39B	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E89C	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E8DA	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E90B	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E928	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E939	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E98B	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E99C	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82E9D5	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EA49	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EA5C	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EA80	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAA4	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAB2	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAC8	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAD6	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAEA	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82EAF8	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82ED87	2	call	0x82E340	FUN_0082e340	3	0x7596E0 RouteDest_SlotArray_Generate	new
+0x82F00F	2	call	0x82EDB0	FUN_0082edb0	2	0x7606E0 Route_PlanCommon	pass1
+0x82F092	2	call	0x82EDB0	FUN_0082edb0	2	0x7606E0 Route_PlanCommon	pass1
+0x82F3C2	2	call	0x82F0B0	FUN_0082f0b0	2	0x7606E0 Route_PlanCommon	pass1
+0x82F456	2	call	0x82F0B0	FUN_0082f0b0	2	0x7606E0 Route_PlanCommon	pass1
+0x8303AD	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x830425	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x83043A	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x83044B	7	jmp	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x83046C	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x830585	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x830683	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x8306B3	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x8306C1	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x8306D8	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x8306FB	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x830744	2	call	0x830340	FUN_00830340	2	0x7596E0 RouteDest_SlotArray_Generate	new
+0x830AC0	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830AD7	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830AF2	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830B2E	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830B44	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830B5E	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830B9A	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x830BA7	2	call	0x830940	FUN_00830940	1	0x834DF0 lot walls	pass1
+0x8318A3	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831A15	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831A36	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831A53	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831A61	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831A80	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x831AB9	2	call	0x831710	FUN_00831710	2	0x834DC0 lot rebuild	pass1
+0x832009	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x83201F	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x83204D	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x83205B	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x832069	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x8320C4	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x8320CF	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x8320D8	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x832170	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x8321B5	2	call	0x831BA0	FUN_00831ba0	0	0x831BA0 AddPrivateFootprint	pass1
+0x83238B	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8323B5	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832405	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832428	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x83244C	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832479	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8326BD	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8326CF	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832716	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832724	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832732	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x83278D	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832798	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8327A1	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x832808	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x83282B	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x83285E	2	call	0x8321F0	FUN_008321f0	0	0x8321F0 UpdateObjectFootprintCore	pass1
+0x8338D4	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x8338EE	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833910	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833961	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x83397B	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x83399D	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833A01	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833A1B	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833A2D	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833A4F	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833CE8	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833D02	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833D24	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833D75	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833D8F	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833DA5	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833DC7	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833E18	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833E32	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833E54	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833EB0	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833ECA	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833EE0	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833F02	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833F53	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833F6D	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833F83	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833FA5	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x833FF6	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834010	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834026	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834048	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834099	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x8340B3	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x8340C5	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x8340E7	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x83414B	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834165	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834187	2	call	0x8336F0	FUN_008336f0	1	0x834DC0 lot rebuild	pass1
+0x834CB5	2	call	0x834B80	FUN_00834b80	5	0x834DC0 lot rebuild	pass1
+0x85F7E9	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F7FE	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F810	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F822	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F834	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F846	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F858	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F8EE	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F92D	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85F992	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FA43	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FA79	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FBAD	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FC0A	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FC9C	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FCEE	2	call	0x85F5A0	FUN_0085f5a0	2	0x7606E0 Route_PlanCommon	pass1
+0x85FF78	2	call	0x85FF30	FUN_0085ff30	1	0x7606E0 Route_PlanCommon	pass1
+0x85FF8F	2	call	0x85FF30	FUN_0085ff30	1	0x7606E0 Route_PlanCommon	pass1
+0x866ECB	2	call	0x866E90	FUN_00866e90	1	0x7606E0 Route_PlanCommon	pass1
+0x8733A2	2	call	0x873360	FUN_00873360	2	0x82C6E0 Route_PlanLocked	pass1
+0x8A65EB	2	call	0x8A65D0	FUN_008a65d0	2	0x62F8A0 W3	pass1
+0x8ABE85	2	call	0x8ABE60	FUN_008abe60	0	0x8ABE60 Route_Release	new
+0x8B7115	2	call	0x8B70E0	FUN_008b70e0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x8B713B	2	call	0x8B70E0	FUN_008b70e0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x8B714B	2	call	0x8B70E0	FUN_008b70e0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x8B71D3	2	call	0x8B70E0	FUN_008b70e0	1	0x63CB90 W4 LotGraph_Build	pass1
+0x8BC11B	2	call	0x8BC100	FUN_008bc100	0	0x8BC100 FUN_8bc100	new
+0x8CE565	2	call	0x8CE540	FUN_008ce540	2	0x80CB40 W6g	pass1
+0x8CE574	2	call	0x8CE540	FUN_008ce540	2	0x80CB40 W6g	pass1
+0x8D14F8	2	call	0x8D14C0	FUN_008d14c0	1	0x62F8A0 W3	pass1
+0x8D15B8	2	call	0x8D14C0	FUN_008d14c0	1	0x62F8A0 W3	pass1
+0x9158AB	2	call	0x915890	FUN_00915890	0	0x915890 RefCounted_ReleaseAt8	new
+0x92C605	2	call	0x92C5F0	FUN_0092c5f0	0	0x92C5F0 FUN_92c5f0	new
+0x931111	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x931133	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x93113C	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x93117F	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x9311A3	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x9311B9	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x9311C6	2	call	0x9310F0	FUN_009310f0	4	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x931292	2	call	0x931210	FUN_00931210	3	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0x931346	2	call	0x9312B0	FUN_009312b0	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9313D5	2	call	0x9312B0	FUN_009312b0	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932691	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9326D5	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932771	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9327C1	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932810	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932854	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9328A1	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9328F0	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932943	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932992	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9329E1	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932A34	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932A87	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932B00	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932B70	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932BB4	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x932BCE	2	call	0x932610	FUN_00932610	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x933679	2	call	0x933510	FUN_00933510	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x9336AC	2	call	0x933510	FUN_00933510	11	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x933838	2	call	0x9336F0	FUN_009336f0	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0x93B33F	2	call	0x93B2C0	FUN_0093b2c0	11	0x834DC0 lot rebuild	pass1
+0x93B3B3	2	call	0x93B2C0	FUN_0093b2c0	11	0x834DC0 lot rebuild	pass1
+0x958643	2	call	0x958560	FUN_00958560	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x95894E	2	call	0x958560	FUN_00958560	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x95895F	2	call	0x958560	FUN_00958560	2	0x8321F0 UpdateObjectFootprintCore	pass1
+0x9DC529	2	call	0x9DC510	FUN_009dc510	1	0x62F8A0 W3	pass1
+0x9DC538	2	call	0x9DC510	FUN_009dc510	1	0x62F8A0 W3	pass1
+0x9EC452	2	call	0x9EC420	FUN_009ec420	2	0x62F8A0 W3	pass1
+0xA8E064	2	call	0xA8DF80	FUN_00a8df80	3	0x765240 IC_Route_PlanFromPoint	pass1
+0xAABB07	2	call	0xAABAE0	FUN_00aabae0	3	0x82C6E0 Route_PlanLocked	pass1
+0xAAC0BE	2	call	0xAAC090	FUN_00aac090	2	0x7606E0 Route_PlanCommon	pass1
+0xAAE708	2	call	0xAAE690	FUN_00aae690	3	0x7606E0 Route_PlanCommon	pass1
+0xAB33B6	2	call	0xAB3380	FUN_00ab3380	3	0x834DC0 lot rebuild	pass1
+0xAB96ED	7	jmp	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB977B	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB97B7	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB980D	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9834	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB985B	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9874	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB989B	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB98C2	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB98E9	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9910	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9937	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB995E	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9985	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB99AC	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB99D3	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB99FA	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9A21	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAB9A48	2	call	0xAB9580	FUN_00ab9580	4	0x834DC0 lot rebuild	pass1
+0xAC3BB4	7	jmp	0xAC3BA0	FUN_00ac3ba0	5	0x63CB90 W4 LotGraph_Build	pass1
+0xAC5832	2	call	0xAC5610	FUN_00ac5610	5	0x63CB90 W4 LotGraph_Build	pass1
+0xAC9939	2	call	0xAC9460	FUN_00ac9460	5	0x63CB90 W4 LotGraph_Build	pass1
+0xAEB480	7	jmp	0xAEB440	FUN_00aeb440	6	0x834DC0 lot rebuild	pass1
+0xAEB4E0	7	jmp	0xAEB440	FUN_00aeb440	6	0x834DC0 lot rebuild	pass1
+0xAEB52B	4	call	0xAEB440	FUN_00aeb440	6	0x834DC0 lot rebuild	pass1
+0xAF90B6	7	jmp	0xAF9090	FUN_00af9090	9	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0xAFE3C0	7	jmp	0xAFE3B0	FUN_00afe3b0	3	0x82C6E0 Route_PlanLocked	pass1
+0xB0A358	2	call	0xB0A1E0	FUN_00b0a1e0	7	0x63CB90 W4 LotGraph_Build	pass1
+0xB2578C	2	call	0xB25760	FUN_00b25760	2	0x62F8A0 W3	pass1
+0xB2579B	2	call	0xB25760	FUN_00b25760	2	0x62F8A0 W3	pass1
+0xB48493	7	jmp	0xB48480	FUN_00b48480	8	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0xB4850C	7	jmp	0xB484F0	FUN_00b484f0	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0xB600C5	2	call	0xB5FCF0	FUN_00b5fcf0	8	0x82C6E0 Route_PlanLocked	pass1
+0xB73D34	2	call	0xB73C70	FUN_00b73c70	4	0x832890 R blocked bits / lot rebuild	pass1
+0xB74D05	2	call	0xB74A20	FUN_00b74a20	4	0x7606E0 Route_PlanCommon	pass1
+0xB7C0D6	2	call	0xB7BF20	FUN_00b7bf20	4	0x832890 R blocked bits / lot rebuild	pass1
+0xB7C28F	2	call	0xB7BF20	FUN_00b7bf20	4	0x832890 R blocked bits / lot rebuild	pass1
+0xB7C2AC	2	call	0xB7BF20	FUN_00b7bf20	4	0x832890 R blocked bits / lot rebuild	pass1
+0xB7C45D	2	call	0xB7BF20	FUN_00b7bf20	4	0x832890 R blocked bits / lot rebuild	pass1
+0xB7CC9E	2	call	0xB7CC50	FUN_00b7cc50	3	0x832890 R blocked bits / lot rebuild	pass1
+0xB96190	2	call	0xB96150	FUN_00b96150	2	0x82C6E0 Route_PlanLocked	pass1
+0xC2A69D	2	call	0xC2A570	FUN_00c2a570	2	0x674250 RouteCost_Mode3	pass1
+0xC41285	7	jmp	0xC41270	FUN_00c41270	6	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0xC469DC	7	jmp	0xC469C0	FUN_00c469c0	7	0x635700 LotRouting_RemoveObjectFootprints	pass1
+0xC4705A	7	jmp	0xC47040	FUN_00c47040	5	0x82F710 diving board portals	pass1
+0xC477B6	7	jmp	0xC47730	FUN_00c47730	4	0x82C6E0 Route_PlanLocked	pass1
+0xC5FA98	2	call	0xC5FA60	FUN_00c5fa60	3	0x831BA0 AddPrivateFootprint	pass1
+0xC5FAAE	2	call	0xC5FA60	FUN_00c5fa60	3	0x831BA0 AddPrivateFootprint	pass1
+0xC5FAC5	2	call	0xC5FA60	FUN_00c5fa60	3	0x831BA0 AddPrivateFootprint	pass1
+0xC5FAE0	2	call	0xC5FA60	FUN_00c5fa60	3	0x831BA0 AddPrivateFootprint	pass1
+0xC62D62	2	call	0xC62D40	FUN_00c62d40	1	0x831BA0 AddPrivateFootprint	pass1
+0xC66714	2	call	0xC66700	FUN_00c66700	3	0x82C420 ApplyPendingUpdates	pass1
+0xC66755	2	call	0xC66700	FUN_00c66700	3	0x82C420 ApplyPendingUpdates	pass1
+0xC6676F	2	call	0xC66700	FUN_00c66700	3	0x82C420 ApplyPendingUpdates	pass1
+0xC66786	2	call	0xC66700	FUN_00c66700	3	0x82C420 ApplyPendingUpdates	pass1
+0xC6CA2B	2	call	0xC6C810	FUN_00c6c810	7	0x82C6E0 Route_PlanLocked	pass1
+0xCF3CA2	2	call	0xCF3C70	FUN_00cf3c70	3	0x82C6E0 Route_PlanLocked	pass1
+0xD2F350	2	call	0xD2F300	FUN_00d2f300	4	0x7606E0 Route_PlanCommon	pass1
+0xD53DD2	2	call	0xD53DB0	FUN_00d53db0	1	0x6379E0 LotRouting_AddPortal	pass1
+0xD70882	7	jmp	0xD70870	FUN_00d70870	4	0xD7D2F0 FUN_d7d2f0	new
+0xD7603A	7	jmp	0xD75FA0	ScriptHost_InvokeDelegate	0	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xD7878B	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD787A8	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD787B6	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD787DD	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD787EC	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD78805	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD78825	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD78834	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD78849	2	call	0xD78760	FUN_00d78760	8	0xD7D2F0 FUN_d7d2f0	new
+0xD7D355	7	jmp	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xD7D43B	7	jmp	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xD7D50F	2	call	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xD7D51D	2	call	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xD7D64F	7	jmp	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xD7D6CA	7	jmp	0xD7D2F0	FUN_00d7d2f0	0	0xD7D2F0 FUN_d7d2f0	new
+0xE453B7	7	jmp	0xE453A0	FUN_00e453a0	9	0xD7D2F0 FUN_d7d2f0	new
+0xE4560C	2	call	0xE454D0	FUN_00e454d0	8	0xD7D2F0 FUN_d7d2f0	new
+0xE45845	2	call	0xE457F0	FUN_00e457f0	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE45930	2	call	0xE458E0	FUN_00e458e0	2	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4594A	4	call	0xE458E0	FUN_00e458e0	2	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE45993	2	call	0xE458E0	FUN_00e458e0	2	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE459A5	2	call	0xE458E0	FUN_00e458e0	2	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE45A26	2	call	0xE459F0	FUN_00e459f0	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE45A44	2	call	0xE459F0	FUN_00e459f0	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE45AE8	4	call	0xE45A80	FUN_00e45a80	7	0xD7D2F0 FUN_d7d2f0	new
+0xE45B49	2	call	0xE45B10	FUN_00e45b10	4	0xD7D2F0 FUN_d7d2f0	new
+0xE45B74	2	call	0xE45B10	FUN_00e45b10	4	0xD7D2F0 FUN_d7d2f0	new
+0xE45B9A	2	call	0xE45B10	FUN_00e45b10	4	0xD7D2F0 FUN_d7d2f0	new
+0xE45BAA	2	call	0xE45B10	FUN_00e45b10	4	0xD7D2F0 FUN_d7d2f0	new
+0xE45D6D	2	call	0xE45D10	FUN_00e45d10	5	0xD7D2F0 FUN_d7d2f0	new
+0xE45D7D	2	call	0xE45D10	FUN_00e45d10	5	0xD7D2F0 FUN_d7d2f0	new
+0xE46130	2	call	0xE46100	FUN_00e46100	9	0xD7D2F0 FUN_d7d2f0	new
+0xE4622A	2	call	0xE46210	FUN_00e46210	11	0xD7D2F0 FUN_d7d2f0	new
+0xE4629E	2	call	0xE46280	FUN_00e46280	10	0xD7D2F0 FUN_d7d2f0	new
+0xE4631A	2	call	0xE46280	FUN_00e46280	10	0xD7D2F0 FUN_d7d2f0	new
+0xE46346	2	call	0xE46280	FUN_00e46280	10	0xD7D2F0 FUN_d7d2f0	new
+0xE46534	7	jmp	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE46616	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE466DC	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE46727	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE467F1	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE4684A	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE46982	2	call	0xE46490	FUN_00e46490	9	0xD7D2F0 FUN_d7d2f0	new
+0xE46D32	2	call	0xE46C00	FUN_00e46c00	7	0xD7D2F0 FUN_d7d2f0	new
+0xE46D45	2	call	0xE46C00	FUN_00e46c00	7	0xD7D2F0 FUN_d7d2f0	new
+0xE46EB5	2	call	0xE46E70	FUN_00e46e70	8	0xD7D2F0 FUN_d7d2f0	new
+0xE46EE8	2	call	0xE46E70	FUN_00e46e70	8	0xD7D2F0 FUN_d7d2f0	new
+0xE46F9C	2	call	0xE46F80	FUN_00e46f80	7	0xD7D2F0 FUN_d7d2f0	new
+0xE47A34	2	call	0xE47A10	FUN_00e47a10	10	0xD7D2F0 FUN_d7d2f0	new
+0xE47AB4	2	call	0xE47A80	FUN_00e47a80	10	0xD7D2F0 FUN_d7d2f0	new
+0xE47D15	2	call	0xE47C70	FUN_00e47c70	7	0xD7D2F0 FUN_d7d2f0	new
+0xE47D23	2	call	0xE47C70	FUN_00e47c70	7	0xD7D2F0 FUN_d7d2f0	new
+0xE47EC8	2	call	0xE47E90	FUN_00e47e90	7	0xD7D2F0 FUN_d7d2f0	new
+0xE4885B	7	jmp	0xE486F0	FUN_00e486f0	7	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4999B	2	call	0xE49980	GC_stopped_mark	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE499C1	2	call	0xE49980	GC_stopped_mark	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE499E4	2	call	0xE49980	GC_stopped_mark	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49A0A	2	call	0xE49980	GC_stopped_mark	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49A2F	2	call	0xE49980	GC_stopped_mark	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49AFE	2	call	0xE49A50	FUN_00e49a50	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49D7B	2	call	0xE49C80	FUN_00e49c80	7	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49DE4	2	call	0xE49DA0	FUN_00e49da0	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49F40	2	call	0xE49F10	FUN_00e49f10	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49F5A	2	call	0xE49F10	FUN_00e49f10	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE49FD3	2	call	0xE49FB0	FUN_00e49fb0	7	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4AFB2	2	call	0xE4AE60	FUN_00e4ae60	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4B438	2	call	0xE4B3F0	FUN_00e4b3f0	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4B4B4	2	jmp	0xE4B480	FUN_00e4b480	5	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4B89A	2	call	0xE4B850	FUN_00e4b850	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4C45B	7	jmp	0xE4C3E0	FUN_00e4c3e0	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4C682	2	call	0xE4C3E0	FUN_00e4c3e0	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4D281	7	jmp	0xE4D270	FUN_00e4d270	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E18B	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E1A4	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E1B8	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E1CC	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E1E0	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E1F4	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E208	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E221	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E231	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E257	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E261	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E2F0	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E326	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E332	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E3E3	2	call	0xE4E160	FUN_00e4e160	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4E6B6	7	jmp	0xE4E6A0	FUN_00e4e6a0	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4EBDC	2	call	0xE4EBA0	FUN_00e4eba0	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4ECE9	2	call	0xE4EC40	FUN_00e4ec40	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4ED1D	2	call	0xE4EC40	FUN_00e4ec40	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE4ED4F	2	call	0xE4EC40	FUN_00e4ec40	10	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE503CE	2	call	0xE50380	FUN_00e50380	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE51081	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE510AC	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE510C7	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE51104	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE5110E	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE51183	2	call	0xE51070	FUN_00e51070	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE51242	2	call	0xE511A0	GC_stop_world	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE51250	2	call	0xE511A0	GC_stop_world	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE512D8	2	call	0xE51290	GC_start_world	9	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE67128	2	call	0xE67110	FUN_00e67110	7	0xD7D2F0 FUN_d7d2f0	new
+0xE671B2	2	call	0xE67190	FUN_00e67190	6	0xD7D2F0 FUN_d7d2f0	new
+0xE67369	2	call	0xE67350	FUN_00e67350	6	0xD7D2F0 FUN_d7d2f0	new
+0xE678E1	2	call	0xE67810	FUN_00e67810	10	0xD7D2F0 FUN_d7d2f0	new
+0xE6791D	2	call	0xE67810	FUN_00e67810	10	0xD7D2F0 FUN_d7d2f0	new
+0xE68421	2	call	0xE68290	FUN_00e68290	7	0xD7D2F0 FUN_d7d2f0	new
+0xE68438	2	call	0xE68290	FUN_00e68290	7	0xD7D2F0 FUN_d7d2f0	new
+0xE68449	2	call	0xE68290	FUN_00e68290	7	0xD7D2F0 FUN_d7d2f0	new
+0xE684EE	2	call	0xE68290	FUN_00e68290	7	0xD7D2F0 FUN_d7d2f0	new
+0xE68F69	2	call	0xE68EC0	FUN_00e68ec0	5	0xD7D2F0 FUN_d7d2f0	new
+0xE6928A	2	call	0xE691A0	FUN_00e691a0	4	0xD7D2F0 FUN_d7d2f0	new
+0xE692B7	2	call	0xE691A0	FUN_00e691a0	4	0xD7D2F0 FUN_d7d2f0	new
+0xE699A7	7	jmp	0xE69990	FUN_00e69990	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE6A56F	2	call	0xE6A4A0	FUN_00e6a4a0	3	0xD7D2F0 FUN_d7d2f0	new
+0xE6A590	2	call	0xE6A4A0	FUN_00e6a4a0	3	0xD7D2F0 FUN_d7d2f0	new
+0xE6A5B1	2	call	0xE6A4A0	FUN_00e6a4a0	3	0xD7D2F0 FUN_d7d2f0	new
+0xE6A7A0	7	jmp	0xE6A6A0	FUN_00e6a6a0	4	0xD7D2F0 FUN_d7d2f0	new
+0xE6B1BB	7	jmp	0xE6B130	FUN_00e6b130	5	0xD7D2F0 FUN_d7d2f0	new
+0xE6B8AE	7	jmp	0xE6B890	FUN_00e6b890	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE6EEBF	2	call	0xE6EE20	FUN_00e6ee20	2	0xD7D2F0 FUN_d7d2f0	new
+0xE6F0FB	2	call	0xE6EE20	FUN_00e6ee20	2	0xD7D2F0 FUN_d7d2f0	new
+0xE6F566	2	call	0xE6EE20	FUN_00e6ee20	2	0xD7D2F0 FUN_d7d2f0	new
+0xE6FB26	2	call	0xE6FA90	FUN_00e6fa90	3	0xD7D2F0 FUN_d7d2f0	new
+0xE6FEC7	7	jmp	0xE6FEA0	FUN_00e6fea0	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE70CF7	2	call	0xE70CD0	FUN_00e70cd0	5	0xD7D2F0 FUN_d7d2f0	new
+0xE70D64	7	jmp	0xE70D50	FUN_00e70d50	2	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE70FB1	7	jmp	0xE70F90	FUN_00e70f90	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE7163A	7	jmp	0xE71620	FUN_00e71620	5	0xD7D2F0 FUN_d7d2f0	new
+0xE718FD	2	call	0xE718E0	FUN_00e718e0	2	0xD7D2F0 FUN_d7d2f0	new
+0xE71911	2	call	0xE718E0	FUN_00e718e0	2	0xD7D2F0 FUN_d7d2f0	new
+0xE71937	2	call	0xE718E0	FUN_00e718e0	2	0xD7D2F0 FUN_d7d2f0	new
+0xE71966	2	call	0xE718E0	FUN_00e718e0	2	0xD7D2F0 FUN_d7d2f0	new
+0xE83023	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE8309B	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE830C2	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE830E9	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE83110	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE83137	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE8315B	2	call	0xE82FE0	FUN_00e82fe0	10	0xD7D2F0 FUN_d7d2f0	new
+0xE84914	7	jmp	0xE84900	FUN_00e84900	5	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE86304	7	jmp	0xE862B0	FUN_00e862b0	5	0xD7D2F0 FUN_d7d2f0	new
+0xE9A4BC	7	jmp	0xE9A470	FUN_00e9a470	12	0xD7D2F0 FUN_d7d2f0	new
+0xE9A53A	7	jmp	0xE9A470	FUN_00e9a470	12	0xD7D2F0 FUN_d7d2f0	new
+0xE9B3F5	7	jmp	0xE9B3D0	FUN_00e9b3d0	3	0xD7D2F0 FUN_d7d2f0	new
+0xE9BA75	7	jmp	0xE9BA50	FUN_00e9ba50	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE9C3D0	7	jmp	0xE9C3A0	FUN_00e9c3a0	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE9DF5A	7	jmp	0xE9DF20	FUN_00e9df20	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE9E017	7	jmp	0xE9DF20	FUN_00e9df20	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xE9EDD8	7	jmp	0xE9ED90	FUN_00e9ed90	6	0xD7D2F0 FUN_d7d2f0	new
+0xE9EFE0	2	call	0xE9EF70	FUN_00e9ef70	4	0xD7D2F0 FUN_d7d2f0	new
+0xE9F041	2	call	0xE9EF70	FUN_00e9ef70	4	0xD7D2F0 FUN_d7d2f0	new
+0xE9F4CC	7	jmp	0xE9F460	FUN_00e9f460	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEA0B32	7	jmp	0xEA0A50	FUN_00ea0a50	4	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEA10D7	7	jmp	0xEA10A0	FUN_00ea10a0	5	0xD7D2F0 FUN_d7d2f0	new
+0xEA22EE	2	call	0xEA1E30	FUN_00ea1e30	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEA23E1	7	jmp	0xEA23B0	FUN_00ea23b0	6	0xD7D2F0 FUN_d7d2f0	new
+0xEA39B5	7	jmp	0xEA3990	FUN_00ea3990	3	0xD7D2F0 FUN_d7d2f0	new
+0xEA4C53	2	call	0xEA4C30	FUN_00ea4c30	3	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEA82F2	2	call	0xEA82D0	FUN_00ea82d0	5	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEA835B	2	call	0xEA82D0	FUN_00ea82d0	5	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBBD56	2	call	0xEBBD10	FUN_00ebbd10	8	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBBE16	2	call	0xEBBDE0	FUN_00ebbde0	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBBE34	2	call	0xEBBDE0	FUN_00ebbde0	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBBED8	4	call	0xEBBE70	FUN_00ebbe70	5	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBC02D	2	call	0xEBBFE0	FUN_00ebbfe0	7	0xD7D2F0 FUN_d7d2f0	new
+0xEBC03D	2	call	0xEBBFE0	FUN_00ebbfe0	7	0xD7D2F0 FUN_d7d2f0	new
+0xEBC0B0	2	call	0xEBC060	FUN_00ebc060	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBC0CA	4	call	0xEBC060	FUN_00ebc060	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBC118	2	call	0xEBC060	FUN_00ebc060	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBC12A	2	call	0xEBC060	FUN_00ebc060	6	0xD75FA0 ScriptHost_InvokeDelegate	new
+0xEBC499	2	call	0xEBC3A0	FUN_00ebc3a0	6	0xD7D2F0 FUN_d7d2f0	new
+0xEBC51A	2	call	0xEBC3A0	FUN_00ebc3a0	6	0xD7D2F0 FUN_d7d2f0	new
+0xEC4FD0	2	call	0xEC4FC0	FUN_ec4fc0	0	0xEC4FC0 FUN_ec4fc0	new
+0xF7E914	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
+0xF7E93D	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
+0xF7E948	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
+0xF7E960	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
+0xF7E96F	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
+0xF7E979	2	call	0xF7E8FC	__onexit	3	0x5C2880 FUN_5c2880	pass1
