@@ -54,6 +54,25 @@ static __declspec(naked) void PortalReleaseThunk() {
     }
 }
 
+// Design SH (slotro.cpp, docs/90 §4): interlocked forms of the portal count pair, put in vtable 0xFED048 (or behind P1b's
+// counting thunks) because SH lets the sim AddRef/Release portals while the worker does the same outside QL (T-L3). Same
+// rules as 0x64E8E0 / 0x64E8F0: AddRef returns the new count; Release at a count <= 1 calls the deleting slot +8 with 1 and
+// returns 0 (no decrement first), else stores count - 1 and returns it.
+static LONG __fastcall PortalAddRefX(u8* p, void*) { return InterlockedIncrement((volatile LONG*)(p + 0x70)); }
+static LONG __fastcall PortalReleaseX(u8* p, void*) {
+    volatile LONG* c = (volatile LONG*)(p + 0x70);
+    for (;;) {
+        const LONG v = *c;
+        if (v <= 1) {
+            typedef void(__fastcall * DelFn)(u8*, void*, DWORD);
+            ((DelFn)(uintptr_t)(*(const DWORD* const*)p)[2])(p, NULL, 1);
+            return 0;
+        }
+        if (InterlockedCompareExchange(c, v - 1, v) == v) return v - 1;
+        InterlockedIncrement(&ts3native_counters.slRelRetry);
+    }
+}
+
 enum { LT_OK, LT_FB_STATE, LT_FB_NESTED, LT_FB_NOWM, LT_FB_TRY, LT_FB_SHAPE, LT_FB_BROKEN };
 
 // LotTable_Contains 0x628A90 (key 0, all-ones key, the active lot [[0x11ECBC4]+0xB0]: no), LotTable_Find 0x627E00 on P+0x48
@@ -102,8 +121,9 @@ static int LtFrontDoor(const u8* p, DWORD lo, DWORD hi, DWORD type, u64* res, co
     if (!pt) return LT_OK;
     const DWORD* vt = *(const DWORD* const*)pt;
     // the skipped AddRef/Release must be the plain count pair (0x64E8E0 / 0x64E8F0), and Release must not delete (count >= 1)
-    if (g_ltCheckVt && !(vt && (vt[0] == g_ltAddRef || vt[0] == (DWORD)(uintptr_t)PortalAddRefThunk) &&
-                         (vt[1] == g_ltRelease || vt[1] == (DWORD)(uintptr_t)PortalReleaseThunk)))  // P1b's T-L3 thunks may sit there
+    // P1b's T-L3 thunks or SH's interlocked pair may sit there
+    if (g_ltCheckVt && !(vt && (vt[0] == g_ltAddRef || vt[0] == (DWORD)(uintptr_t)PortalAddRefThunk || vt[0] == (DWORD)(uintptr_t)PortalAddRefX) &&
+                         (vt[1] == g_ltRelease || vt[1] == (DWORD)(uintptr_t)PortalReleaseThunk || vt[1] == (DWORD)(uintptr_t)PortalReleaseX)))
         return LT_FB_SHAPE;
     if (*(const LONG*)(pt + 0x70) < 1) return LT_FB_SHAPE;
     *res = (u64)*(const DWORD*)(pt + 0xC) << 32 | *(const DWORD*)(pt + 8);
@@ -186,23 +206,32 @@ static u64 __fastcall FdHook(const u8* p, void* edx, DWORD lo, DWORD hi, DWORD t
 // slot = the gate's return-address slot ([esp] at the leaf's entry, under the stub's pushad frame). For a gate-12 key the
 // caller's own return slot sits at a fixed offset (its pushes, locals and the two Contains arguments, read in the
 // prologues); 0x62EF30 aligns its stack (and esp, -16), so for the gate-0 key its ebp frame is used: ebp = slot[-6] (pushad),
-// return slot [ebp+4].
+// return slot [ebp+4]. Gate 10 (docs/87 §6): Route_PlanCommon keeps ebp, so for key 0x760BFF [ebp+4] is 0x76429D
+// (Plan/Replan) or 0x764400 (PlanFromPoint/ReplanFromPosition); with P10 on, the IC's own address replaces it (4-way split,
+// and also for G10-C, whose site-10 key is Route_PlanCommon's caller).
 struct P1bSite { DWORD key; int site; int off; };
-static const P1bSite kP1b[5] = {
+static const int kP1bRows = 6;
+static const DWORD kP10Ic[4] = {0x00765160, 0x00765490, 0x00765240, 0x00765550};  // IC_Route_Plan, Replan, PlanFromPoint, ReplanFromPosition
+static const P1bSite kP1b[kP1bRows] = {
     {0x0062F782, 12, 7},  // LotRouting_PortalsForObject 0x62F760: sub esp,8; push esi; push edi; 2 args
     {0x0062FB74, 12, 4},  // LotTable_GetIfPresent 0x62FB60: push esi; 2 args
     {0x00631814, 12, 4},  // LotRouting_FrontDoorPortal 0x631800: push esi; 2 args (with L1 on: our hook, 0xFFFFFF)
     {0x00631F40, 12, 9},  // LotRouting_FootprintsNearPoint 0x631F10: sub esp,0xC; push ebx/esi/edi; 2 args
     {0x0062EF7A, 0, 0},   // lot transform wrapper 0x62EF30 -> GetOrInsert (gate 0): push ebp; mov ebp,esp; and esp,-16
+    {0x00760BFF, 10, 0},  // Route_PlanCommon 0x7606E0 -> goal step 0x75C2D0 (gate 10): push ebp; mov ebp,esp; and esp,-16
 };
 
 static void P1bNote(int site, DWORD key, const DWORD* slot, LONG us) {
     Ts3nCounters& k = ts3native_counters;
     int i = 0;
-    while (i < 5 && !(kP1b[i].key == key && kP1b[i].site == site)) i++;
-    if (i == 5) return;
+    while (i < kP1bRows && !(kP1b[i].key == key && kP1b[i].site == site)) i++;
+    const DWORD ic = site == 10 && g_p10On ? t_p10 & 0xFF : 0;
+    if (ic) i = kP1bRows - 1;  // P10: every site-10 wait by its IC (G10-C keys included)
+    if (i == kP1bRows) return;
     DWORD ret = 0;
-    if (kP1b[i].off) {
+    if (ic) {
+        ret = kP10Ic[ic - 1];
+    } else if (kP1b[i].off) {
         ret = VfRealRet(slot + kP1b[i].off);
     } else {
         const DWORD s = (DWORD)(uintptr_t)slot, ebp = slot[-6];

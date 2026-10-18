@@ -25,7 +25,8 @@
 
 static const int RG_SITES = 15;
 struct RgSite { DWORD addr; u8 len; u8 pro[10]; const char* name; };
-static const RgSite kRgSites[RG_SITES] = {  // prologues verified on the Steam 1.67 exe (docs/18 S0 table, docs/60 §2.2)
+// prologues verified on the Steam 1.67 exe (docs/18 S0 table, docs/60 §2.2); site 10 moves to Route_PlanCommon with G10-C
+static RgSite kRgSites[RG_SITES] = {
     {0x0062EAB0, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, "lot table find-or-insert"},
     {0x0063F490, 7, {0x83, 0xEC, 0x54, 0x8B, 0x44, 0x24, 0x5C}, "goal-step lot planner"},
     {0x0063D2F0, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8}, "lazy room connectivity"},
@@ -56,11 +57,15 @@ static void __cdecl VfEnter(int id, DWORD* slot);  // verify.cpp
 static DWORD VfRealRet(const DWORD* slot);          // verify.cpp: the caller behind a Verify leave thunk in *slot
 static volatile LONG g_p1bOn;                                     // lotfd.cpp: probe P1b
 static void P1bNote(int site, DWORD key, const DWORD* slot, LONG us);  // lotfd.cpp
+static bool SlGate(int site, DWORD* slot);                             // slotro.cpp
 
 // rel: what the leave undoes (S3b): RG_REL_LOCK releases `lock`, RG_REL_QT leaves g_qtCs, RG_REL_BUSY drops rtBusy,
 // RG_REL_OFFSIM drops g_rgOffSimOpen
-// RG_REL_STEER puts back the previous t_steerRet (kept in `lock`); RG_REL_QL releases the worker's QL hold (steerro.cpp)
-enum { RG_REL_LOCK = 1, RG_REL_QT = 2, RG_REL_BUSY = 4, RG_REL_OFFSIM = 8, RG_REL_STEER = 16, RG_REL_QL = 32 };
+// RG_REL_STEER puts back the previous t_steerRet (kept in `lock`); RG_REL_QL releases the worker's QL hold (steerro.cpp);
+// RG_REL_TRIP ends a T4 / T-S7 tripwire call (steerro.cpp TwLeave); RG_REL_P10 ends a P10 IC frame (p10.cpp, previous t_p10
+// in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log)
+enum { RG_REL_LOCK = 1, RG_REL_QT = 2, RG_REL_BUSY = 4, RG_REL_OFFSIM = 8, RG_REL_STEER = 16, RG_REL_QL = 32, RG_REL_TRIP = 64,
+       RG_REL_P10 = 128, RG_REL_G10C = 256 };
 struct RgFrame { DWORD* slot; DWORD ret; LONG reader; LONG rel; void* lock; };
 struct RgThread { int n; LONG readers; RgFrame f[16]; };
 static __declspec(thread) RgThread t_rg;
@@ -68,8 +73,14 @@ static CRITICAL_SECTION g_qtCs;            // H6 S3b #1: physics quadtree, worke
 static volatile LONG g_qlOn;               // [SteerRO] (steerro.cpp): the LotGraph_Build gate stub (site 3) is W4
 static void QlReleaseEx();                                        // steerro.cpp
 static bool QlPushWorker(RgThread& t, DWORD* slot, LONG reader);  // steerro.cpp
+static void TwLeave();                                            // steerro.cpp
+static void P10Leave(DWORD prev);                                 // p10.cpp
+static void G10cLeave();
 
 static void RgUndo(const RgFrame& f) {
+    if (f.rel & RG_REL_TRIP) TwLeave();
+    if (f.rel & RG_REL_P10) P10Leave((DWORD)(uintptr_t)f.lock);
+    if (f.rel & RG_REL_G10C) G10cLeave();
     if (f.rel & RG_REL_QL) QlReleaseEx();
     if (f.rel & RG_REL_LOCK) LockReleaseHook(f.lock, NULL);
     if (f.rel & RG_REL_QT) LeaveCriticalSection(&g_qtCs);
@@ -136,6 +147,44 @@ static void RgNoteAs(int site, const char* name, DWORD at, const char* what, DWO
     LeaveCriticalSection(&g_rgCs);
 }
 
+// --- G10-C (docs/87 §5): [RouteGate] G10Common=1 moves gate site 10 from the goal step 0x75C2D0 to its only caller
+// Route_PlanCommon 0x7606E0 (same prologue 55 8B EC 83 E4 F0). An outermost non-worker entry then waits once for a running
+// job and holds +0x918 (or, with no job, keeps job starts off through g_rgOffSimOpen) for the whole sync plan: goal step,
+// Route_PlanLocked and the EditPath tails. The goal step is not hooked then (nested in the frame anyway).
+static const DWORD ROUTE_PLAN_COMMON = 0x007606E0;
+static volatile LONG g_g10c;
+static __declspec(thread) LARGE_INTEGER t_g10cT0;
+static volatile LONG g_g10cLongHolds;
+static const LONG kG10cLogMs = 100, kG10cLogLines = 20;
+
+// true: site 10 now names `at` (Route_PlanCommon, or a test buffer); false: bytes differ, site 10 stays on the goal step
+static bool RgUseG10Common(const u8* at) {
+    if (!Matches(at, kRgSites[10].pro, kRgSites[10].len)) {
+        char hex[64];
+        if (Readable(at, 10)) Hex(at, 10, hex, sizeof(hex)); else strcpy_s(hex, "<unreadable>");
+        Log("SKIP G10-C: Route_PlanCommon 0x%08X bytes %s differ, gate site 10 stays on the goal step", (DWORD)(uintptr_t)at, hex);
+        return false;
+    }
+    kRgSites[10].addr = (DWORD)(uintptr_t)at;
+    kRgSites[10].name = "Route_PlanCommon (coarse, G10-C)";
+    g_g10c = 1;
+    return true;
+}
+
+static LONG G10cEnter() {
+    if (t_g10cOpen++ == 0) QueryPerformanceCounter(&t_g10cT0);
+    return RG_REL_G10C;
+}
+
+// hold-time watchdog: log only (the frame guards real shared state, it cannot be cut short)
+// shortcut: no counter for the hold time (v38 has no room left); add one if a G10-C A/B is planned
+static void G10cLeave() {
+    if (--t_g10cOpen) return;
+    const LONG ms = UsSince(t_g10cT0) / 1000;
+    if (ms >= kG10cLogMs && InterlockedIncrement(&g_g10cLongHolds) <= kG10cLogLines)
+        Log("G10-C: a sync plan held job starts for %ld ms (thread %lu)", ms, GetCurrentThreadId());
+}
+
 // --- G11: per-thread plan state; only the sim thread opens windows ---
 struct G11State { int depth; LARGE_INTEGER t0, end; LONG planUs; };
 static __declspec(thread) G11State t_g11;
@@ -191,6 +240,7 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
     InterlockedIncrement(&k.rgEntries);
     RgThread& t = t_rg;
     RgDrop(t, slot);
+    if (site == 10 && t_p10) t_p10 |= P10_REACHED;  // P10: this IC reached the goal step (Route_PlanCommon with G10-C)
     const DWORD tid = GetCurrentThreadId();
     const LONG me = (LONG)tid;
     if (t.n == t.readers && k.rgOwnerTid != me) {  // no gate frame open on this thread
@@ -201,6 +251,13 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
         else if (!worker) InterlockedIncrement(&k.vfRtGateOffSim);
         RgNoteAs(site, kRgSites[site].name, kRgSites[site].addr, "unlocked entry", VfRealRet(slot), me);
         if (k.rgEnforce && !worker) {
+            // design SH (slotro.cpp): inside the hold a Contains or a GetOrInsert hit is a read QL shared covers, so it passes
+            // without +0x918; anything else drops the hold (QL released) and goes on below as today
+            if (t_slHold == 1 && SlGate(site, slot)) {
+                InterlockedIncrement(&g_rgOffSimOpen);
+                if (!RgPush(t, slot, 0, RG_REL_OFFSIM)) InterlockedDecrement(&g_rgOffSimOpen);
+                return;
+            }
             // every non-worker frame is published before the job state is read; the worker sets RUNNING before it reads
             // them (ServeAsync), so a leaf entry that saw no job and a job start never overlap
             InterlockedIncrement(&g_rgOffSimOpen);
@@ -217,12 +274,14 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
                 LockAcquireHook(lock, NULL, &kInfinite);  // the owner pumps the job's managed calls while it waits
                 t_waitKey = 0;
                 const LONG us = UsSince(t0);
-                if (g_p1bOn) P1bNote(site, key, slot, us);  // P1b: and by the caller's caller
+                if (g_p1bOn || (site == 10 && g_p10On)) P1bNote(site, key, slot, us);  // P1b: and by the caller's caller (P10: by IC)
                 InterlockedIncrement(&k.rgGateWaits);
                 InterlockedExchangeAdd(&k.rgGateWaitUs, us);
                 Max(&k.rgGateWaitMaxUs, us);
+                G0wGateWait(key, us);
                 rel |= RG_REL_LOCK;
             }
+            if (site == 10 && g_g10c) rel |= G10cEnter();  // G10-C: this frame spans the whole sync plan (after the wait)
             if (!RgPush(t, slot, 0, rel, lock)) RgUndo(RgFrame{NULL, 0, 0, rel, lock});
             return;
         }
@@ -266,6 +325,8 @@ static void (*const kRgStubs[RG_SITES])() = {RgStub0, RgStub1, RgStub2, RgStub3,
 // Route_PlanLocked prologue is checked by its own InstallDetour. One mismatch: nothing of the gate is installed.
 static bool ReadRouteGate(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"RouteGate", L"Enabled", 0, ini)) { Log("route gate disabled (Enabled=0)"); return false; }
+    if (GetPrivateProfileIntW(L"RouteGate", L"G10Common", 0, ini) && RgUseG10Common((const u8*)(uintptr_t)ROUTE_PLAN_COMMON))
+        Log("route gate: G10-C on, gate site 10 at Route_PlanCommon 0x%08X (one frame per sync plan)", ROUTE_PLAN_COMMON);
     char hex[64];
     for (int i = 0; i < RG_SITES; i++) {
         const u8* p = (const u8*)(uintptr_t)kRgSites[i].addr;
@@ -295,7 +356,8 @@ static bool InstallRouteGate(bool planHooked) {
     int n = 0;
     for (int i = 0; i < RG_SITES; i++)
         n += (g_rgTramp[i] = InstallDetour(kRgSites[i].name, kRgSites[i].addr, kRgSites[i].pro, kRgSites[i].len, (void*)kRgStubs[i])) != NULL;
-    k.rgReady = 3 | (n == RG_SITES ? 4 : 0);  // counting needs all three (7); a partial set stays pass-through
+    k.rgReady = 3 | (n == RG_SITES ? 4 : 0);
+    if (g_g10c && g_rgTramp[10]) k.p10Ready |= 2;  // counting needs all three (7); a partial set stays pass-through
     Log("%s route gate: %d of %d gate sites, owner tracking on Lock_Acquire/Lock_Release (measurement only)",
         n == RG_SITES ? "OK  " : "FAIL", n, RG_SITES);
     return n == RG_SITES;

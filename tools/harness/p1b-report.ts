@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 
 type Counters = Record<string, number>;
 const GATE12: Record<number, string> = { 0x62f782: 'PortalsForObject', 0x62fb74: 'GetIfPresent', 0x631814: 'FrontDoor', 0x631f40: 'FootprintsNearPoint' };
-const FIRST = [0x62f782, 0x62fb74, 0x631814, 0x631f40, 0x62ef7a];  // p1bKey >> 24 = index + 1
+const FIRST = [0x62f782, 0x62fb74, 0x631814, 0x631f40, 0x62ef7a, 0x760bff];  // p1bKey >> 24 = index + 1 (6: gate 10, 0.20.0)
 const FAMILY: Record<number, string> = {
   0x80cf36: 'F-A', 0x80d798: 'F-A', 0x806b1c: 'F-A', 0x80b163: 'F-A', 0x80c29a: 'F-A', 0x76f15d: 'F-B', 0x6317a3: 'F-E',
   0x757fae: 'F-D', 0x7581a6: 'F-D', 0x7582ad: 'F-D', 0x82d706: 'F-D', 0x74b4b5: 'F-D',
@@ -35,8 +35,8 @@ export function report(before: Counters, after: Counters) {
     if (!key) continue;
     const n = d(before, after, `p1bN_${i}`), us = d(before, after, `p1bUs_${i}`);
     const first = FIRST[(key >>> 24) - 1], second = key & 0xffffff;
-    const f = first === 0x62ef7a ? 'gate 0' : first === 0x631814 ? 'F-C' : first === 0x631f40 ? (FAMILY[second] ?? 'F-G') : (FAMILY[second] ?? 'other');
-    if (first !== 0x62ef7a) p1b += n;
+    const f = first === 0x760bff ? 'gate 10' : first === 0x62ef7a ? 'gate 0' : first === 0x631814 ? 'F-C' : first === 0x631f40 ? (FAMILY[second] ?? 'F-G') : (FAMILY[second] ?? 'other');
+    if (first !== 0x62ef7a && first !== 0x760bff) p1b += n;
     (fam[f] ??= { n: 0, us: 0 }).n += n;
     fam[f].us += us;
     rows.push(`  ${hex(first)} <- ${second === 0xffffff ? 'outside the exe' : hex(second)}  ${f}  waits ${n}  ${(us / 1000).toFixed(1)} ms`);
@@ -44,9 +44,9 @@ export function report(before: Counters, after: Counters) {
   const noFrame = d(before, after, 'p1bNoFrame'), p1bOther = d(before, after, 'p1bOther');
   const s = p1b + noFrame + p1bOther, p1bok = p1 <= s && s <= job;
   lines.push(`P1b: P1 ${p1} <= gate-12 waits keyed ${p1b} + no frame ${noFrame} + table full ${p1bOther} <= rgJob ${job}: ${p1bok ? 'PASS' : 'FAIL'}`);
-  const total = Object.entries(fam).filter(([f]) => f !== 'gate 0').reduce((s, [, v]) => s + v.us, 0) || 1;
+  const total = Object.entries(fam).filter(([f]) => f !== 'gate 0' && f !== 'gate 10').reduce((s, [, v]) => s + v.us, 0) || 1;
   for (const [f, v] of Object.entries(fam).sort((x, y) => y[1].us - x[1].us))
-    lines.push(`  ${f}: waits ${v.n}, ${(v.us / 1000).toFixed(1)} ms${f === 'gate 0' ? '' : `, ${((100 * v.us) / total).toFixed(0)}% of gate 12`}`);
+    lines.push(`  ${f}: waits ${v.n}, ${(v.us / 1000).toFixed(1)} ms${f === 'gate 0' || f === 'gate 10' ? '' : `, ${((100 * v.us) / total).toFixed(0)}% of gate 12`}`);
   lines.push(...rows);
   const ref = ['AddRef', 'Release'].map(o => ['Sim', 'WorkerInQl', 'WorkerNoQl', 'Other'].map(t => `${t} ${d(before, after, `portalRef${o}${t}`)}`).join(', '));
   lines.push(`T-L3 portal AddRef during jobs: ${ref[0]}; Release: ${ref[1]} (L2 needs WorkerNoQl = 0)`);

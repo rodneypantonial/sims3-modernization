@@ -413,6 +413,18 @@ if (values['self-check']) {
 
 const gameRunning = () => { try { return execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq TS3W.exe']).toString().includes('TS3W.exe'); } catch { return true; } };
 const fixesTool = join(ROOT, 'tools', 'setup', 'install-fixes.ts');
+// the Steam TS3W.exe exits on its own ("application-requested") when Steam is not running: start it silently, wait up to 180 s
+// for its web helper (2026-10-17: Steam had closed, so one job's game quit mid-run and the next two quit at launch)
+const steamUp = () => { try { return execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq steamwebhelper.exe']).toString().includes('steamwebhelper'); } catch { return false; } };
+async function ensureSteam() {
+  if (steamUp()) return;
+  const exe = join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Steam', 'steam.exe');
+  log(`Steam not running: starting ${exe} -silent`);
+  spawn(exe, ['-silent'], { detached: true, stdio: 'ignore' }).unref();
+  for (let i = 0; i < 180 && !steamUp(); i++) await sleep(1000);
+  if (!steamUp()) throw new Error('Steam is not running and did not start in 180 s (the Steam game quits without it)');
+  await sleep(15000); // login
+}
 
 if (values['restore-content']) {
   if (!existsSync(manifestOf(CONTENT_STASH))) { console.log(`no content stash manifest in ${CONTENT_STASH}: nothing to restore`); process.exit(0); }
@@ -557,6 +569,13 @@ appendFileSync(md, `\n## ${new Date().toISOString().slice(0, 16)} UTC, build ${b
 
 // keep what Bin had, to restore the ini and fall back for the asi at the end
 const BEFORE = join(OUT, 'bin-before');
+// one queue at a time (2026-10-17: a queue whose parent shell was stopped kept running, and a second one fought it for the
+// game: each restart killed the other's TS3W.exe)
+if (!values['dry-run']) {
+  const others = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.ProcessId -ne ${process.pid} -and $_.CommandLine -match 'harness[\\/]queue\.ts' -and $_.CommandLine -notmatch '--dry-run|--self-check' } | ForEach-Object { $_.ProcessId }`]).toString().trim();
+  if (others) { console.error(`another queue is running (node PID ${others.split(/\s+/).join(', ')}): stop it first (taskkill /PID <pid> /T /F)`); process.exit(3); }
+}
 if (!values['dry-run']) saveForeground(); // the window to give focus back to once the game takes it (focus-game.ts)
 mkdirSync(BEFORE, { recursive: true });
 for (const f of ['ts3native.asi', 'ts3native.ini', 'Default.ini', 'Sims3Performance.ini']) if (existsSync(join(BIN, f))) copyFileSync(join(BIN, f), join(BEFORE, f));
@@ -577,6 +596,7 @@ for (const [n, j] of jobs.entries()) {
   let probe: ReturnType<typeof spawn> | undefined, applied = { install: [] as string[], uninstall: [] as string[] }, launched = false, defaultIniOrig: string | null = null, s3ppIniOrig: string | null = null, s3ssTomlOrig: string | null = null, stashed = false;
   try {
     if (!existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
+    if (!values['dry-run']) await ensureSteam();
     if (CONTENT[row.content].length) {
       await closeGame(); // files must not be open when they move
       if (gameRunning()) throw new Error('content: TS3W.exe still running, nothing moved');

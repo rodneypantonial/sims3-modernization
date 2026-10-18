@@ -134,6 +134,10 @@ The two window actions neither focus nor move the window, but they touch it, so 
 
 Not verifiable offline: that Frida attaches at `0xD81B38` on the live exe, the clock field values, that the agent mailbox keeps answering while minimized (it did during the frozen runs, §1), and the H5 verdict itself.
 
+### 6.1 Result (2026-10-17 18:18 PHT, `clean-night` job `bp-clock-minimize-pause`, PASS, laptop locked)
+
+Mechanism confirmed live [verified]: before minimizing, `pause_bits` 0 and the clock moved ~51 game minutes in 5 s at Triple; after `window_minimize`, `pause_bits` 2 (`minimize_pause` true) and the clock froze (0 minutes in 10 s) while the speed still read Triple; after `window_restore`, bit 2 cleared and the clock moved again (~100 minutes in 10 s). So a minimized window stops game time exactly as the frozen runs showed. That the earlier frozen runs were minimized is still inferred (nothing logged the window then; the probe logs it now). The whole run had the Windows session locked: locking does not set any pause bit (bit 4 stayed clear), so unattended runs may run locked.
+
 ## 7. Fix design
 
 The cause is not ours if §6 confirms H5; no ts3native change. Harness side:

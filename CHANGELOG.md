@@ -2,6 +2,16 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## Unreleased
+
+### New in `ts3native` (experimental, off by default)
+
+- **Read-only steering (`[SteerRO]`).** While a background route job holds the routing lock, walking Sims can check their steering against a read-only copy instead of waiting for the job. Experimental: switched off in `ts3native.ini` (`Enabled=0`); no speed gain is claimed yet, and the first live test was correct but slower.
+- **Background replans (`[RouteAsync] Kinds`).** Sims' route replans (Replan, PlanFromPoint, ReplanFromPoint) can be planned on the background route thread like their first plans, while the game keeps running. Experimental: switched off in `ts3native.ini` (`Kinds=0`), needs the matching ts3fixes; not tested in a live game yet and no gain is claimed.
+- **Read-only lot front door (`[LotFrontDoorRO]`).** The lookup of a lot's front door can be answered without waiting for a background route job. Experimental: switched off in `ts3native.ini` (`Enabled=0`); not tested in a live game yet and no gain is claimed.
+- **Read-only "is a Sim standing here" check (`[ObstructedRO]`).** After a route, the check for Sims standing on the goal can be answered without waiting for a background route job. Experimental: switched off in `ts3native.ini` (`Enabled=0`); not tested in a live game yet and no gain is claimed.
+- **Read-only slot position (`[SlotEnabledRO]`).** When a Sim asks for a routing slot's position while a background route job runs, the lookup runs under a shared lock instead of waiting for the job. Experimental: switched off in `ts3native.ini` (`Enabled=0`); not tested in a live game yet and no gain is claimed.
+
 ## v0.1.3 (2026-10-16)
 
 Hotfix: the v0.1.2 speed-ups were shipped switched off.

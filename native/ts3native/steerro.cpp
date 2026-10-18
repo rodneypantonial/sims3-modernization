@@ -20,6 +20,11 @@
 // the worker thread for the whole call; the frame stack and leave thunk of routegate.cpp release it (RG_REL_QL).
 // Fix C-A ([FpRebuildLock], docs/84 §4.4) is the sim-thread branch of the W6a stub (CaEnter below); it installs that stub
 // alone when [SteerRO] is off.
+// Tripwires T4 and T-S7 (0.15.0, counters v33, docs/84 §3.6): 11 counting stubs, installed with the W stubs; a writer outside
+// the "job + W1-W6 only" assumption running beside a clone makes it give up (steerFbTrip).
+// 0.18.0 (counters v36, docs/84 §3.6): the tripwire sites jump through g_twGo, which points at the counting stub only while
+// the worker has a job armed (TwArm, ServeAsync) and at the trampoline otherwise; per-call timers (rdtsc) for the S2 entry,
+// the stubs, shadow compares and the QL try-lock.
 
 static const DWORD STEER_LOCO = 0x0085FD10;
 static const u8 kLocoPro[] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0};  // push ebp; mov ebp,esp; and esp,-16 (no relative operand)
@@ -76,7 +81,45 @@ static __declspec(thread) bool t_inRo;
 enum { SR_OK, SR_FB_STATE, SR_FB_TRY, SR_FB_DIRTY, SR_FB_LOTMISS, SR_FB_DEFERRED, SR_FB_CACHE, SR_FB_SHAPE, SR_FB_TRIP };
 static const char* const kSrFbName[] = {"", "state", "QL busy", "dirty lot index", "lot not in table", "deferred quadtree flag",
                                         "polygon cache", "unknown slot/overflow/null", "tripwire"};
-static const int kSrCap = 512, kSrLocal = 64, kSrNodes = 16, kSrIds = 256;
+// Buffer limits; a call that needs more gives up (SR_FB_SHAPE). 0.21.0 doubled the 0.13.0 sizes (512 / 64 / 16 / 256): the
+// live split (v39 s2Shape, s2Max*) was not known yet. All buffers are static (owner thread only) except SrCollect's local list
+// on the sim stack (kSrLocal * 4 = 512 bytes); depth 32 stays (a quadtree 32 levels deep is 2^32 cells across)
+static const int kSrCap = 1024;    // distinct footprints per gather (SrCtx.objs, SrOut.subs, the exclude list)
+static const int kSrLocal = 128;   // class-2 footprints per cell in a segment gather, kept only with a type 0x1F one
+static const int kSrNodes = 32;    // flagged path nodes after the first (nodes[] holds kSrNodes + 1)
+static const int kSrIds = 512;     // ids appended per call
+static const int kSrDepth = 32;    // CollectChildren recursion
+// v39: which SR_FB_SHAPE return gave up (s2Shape[] index, agent.js names in the same order)
+enum { SRS_OBJCAP, SRS_NULLFP, SRS_SLOT, SRS_LOCALCAP, SRS_DEPTH, SRS_NOACTLOT, SRS_LOTTBL, SRS_IDCAP, SRS_NOPLANNER, SRS_NODECAP,
+       SRS_NODECAP2, SRS_N };
+static __declspec(thread) int t_srShape;  // the last SrShape site on this thread; SrFallback counts it with SR_FB_SHAPE
+static int SrShape(int site) {
+    t_srShape = site;
+    return SR_FB_SHAPE;
+}
+
+// v36 per-call timers: rdtsc ticks summed in 64 bits, published as units of 1024 ticks (`*Kt`); maxima in ticks (`*MaxT`);
+// s2TscPerUs converts both (calibrated against QPC on each job arm)
+static volatile LONGLONG g_s2Acc[5];  // entry, tripwire stubs, QL stubs, shadow, try-lock
+enum { S2T_ENTRY, S2T_TW, S2T_QL, S2T_SHADOW, S2T_TRY };
+static void S2Time(int what, unsigned __int64 t0) {
+    Ts3nCounters& k = ts3native_counters;
+    static LONG* const kKt[5] = {&k.s2EntryKt, &k.s2TwKt, &k.s2QlKt, &k.s2ShadowKt, &k.s2TryKt};
+    static LONG* const kMax[5] = {&k.s2EntryMaxT, &k.s2TwMaxT, &k.s2QlMaxT, &k.s2ShadowMaxT, &k.s2TryMaxT};
+    const LONGLONG d = (LONGLONG)(__rdtsc() - t0);
+    *kKt[what] = (LONG)((InterlockedExchangeAdd64(&g_s2Acc[what], d) + d) >> 10);
+    Max(kMax[what], d > 0x7FFFFFFF ? 0x7FFFFFFF : (LONG)d);
+}
+static unsigned __int64 g_s2Tsc0;
+static LARGE_INTEGER g_s2Qpc0;
+static void S2Calibrate() {  // worker, once per job arm; the first call only takes the reference
+    LARGE_INTEGER q;
+    QueryPerformanceCounter(&q);
+    const unsigned __int64 t = __rdtsc();
+    if (!g_s2Tsc0) { g_s2Tsc0 = t, g_s2Qpc0 = q; return; }
+    const LONGLONG us = (q.QuadPart - g_s2Qpc0.QuadPart) * 1000000 / g_qpf.QuadPart;
+    if (us > 1000000) ts3native_counters.s2TscPerUs = (LONG)((t - g_s2Tsc0) / (unsigned __int64)us);
+}
 
 static void QlAcquireEx() {
     if (t_qlDepth++) return;
@@ -165,7 +208,16 @@ static void CaEnter(DWORD tid, DWORD* slot) {
     if (!RgPush(t, slot, 0, rel, lock)) RgUndo(RgFrame{NULL, 0, 0, rel, lock});
 }
 
+static volatile LONG g_twArmed;  // tripwire stubs armed (TwArm below); also gates the QL stub timer
+static void QlEnterBody(int i, DWORD* slot);
 static void __cdecl QlEnter(int i, DWORD* slot) {
+    if (!g_twArmed) { QlEnterBody(i, slot); return; }
+    const unsigned __int64 t0 = __rdtsc();
+    QlEnterBody(i, slot);
+    InterlockedIncrement(&ts3native_counters.s2QlCalls);
+    S2Time(S2T_QL, t0);
+}
+static void QlEnterBody(int i, DWORD* slot) {
     const DWORD tid = GetCurrentThreadId();
     if (RgIsWorker(tid)) {
         RgThread& t = t_rg;
@@ -189,10 +241,126 @@ QL_STUB(0) QL_STUB(1) QL_STUB(2) QL_STUB(3) QL_STUB(4) QL_STUB(5) QL_STUB(6) QL_
 static void (*const kQlStubs[QL_N])() = {QlStub0, QlStub1, QlStub2, QlStub3, QlStub4, QlStub5, QlStub6, QlStub7, QlStub8, QlStub9,
                                          QlStub10, QlStub11};
 
+// Tripwires T4 and T-S7 (docs/83 §7, docs/84 §3.6 and §7.3; 0.15.0, counters v33): counting stubs on the writers that the
+// clone's assumption says never run beside it. T4: the tree node and map entry helpers outside QL on any thread but the sim
+// (static: only inside W1/W2). T-S7: the writers of fp+0x20 (slot +0x8C, the footprint load slot +0xA0's base), of the lock-key
+// component vectors behind it, and LotGraph_Reset (static: sim thread only, docs/84 §7.3). While a job runs or a clone is open,
+// a hit on another thread is counted, keeps g_twActive up for the call (released by the routegate leave thunk, RG_REL_TRIP) and
+// moves g_twEpoch on the leave; a clone that sees either drops its answer and the game's call runs (steerFbTrip, steerTripDiscard).
+struct TwSite { DWORD addr; u8 len; u8 pro[9]; const char* name; };
+static const int TW_T4 = 4, TW_N = 11;
+static const TwSite kTwSites[TW_N] = {  // bytes read from the exe (2026-10-17): whole instructions, no relative operand
+    {0x006653A0, 5, {0x83, 0xEC, 0x68, 0x53, 0x55}, "LotQuadTree node insert helper (T4)"},                       // ret 0xC
+    {0x00666010, 6, {0x81, 0xEC, 0x8C, 0x00, 0x00, 0x00}, "LotQuadTree node remove helper (T4)"},              // ret 8
+    {0x0061ED80, 6, {0x56, 0x68, 0x6C, 0xAC, 0xFE, 0x00}, "FootprintMapEntry_Alloc (T4)"},                     // ret
+    {0x0061ED10, 9, {0x56, 0x8B, 0xF1, 0xC7, 0x06, 0x7C, 0xAC, 0xFE, 0x00}, "FootprintMapEntry_DeletingDtor (T4)"},  // ret 4
+    {0x00807110, 7, {0x8B, 0x41, 0x20, 0x8B, 0x54, 0x24, 0x04}, "Footprint_SetLockKeyObject (T-S7)"},          // ret 4
+    {0x008077A0, 5, {0x51, 0x53, 0x55, 0x8B, 0xE9}, "Footprint_Load (T-S7)"},                                  // ret 0x10
+    {0x0062E420, 5, {0x83, 0xEC, 0x0C, 0x53, 0x55}, "LotGraph_Reset (T-S7)"},                                  // ret 8
+    {0x00947FA0, 6, {0x8B, 0x44, 0x24, 0x0C, 0x85, 0xC0}, "LockKeys_Set (T-S7)"},                              // ret 0xC
+    {0x00948050, 7, {0x8B, 0x44, 0x24, 0x0C, 0x83, 0xEC, 0x08}, "LockKeys_Add (T-S7)"},                        // ret 0xC
+    {0x009479D0, 6, {0x8B, 0x44, 0x24, 0x0C, 0x85, 0xC0}, "LockKeys_Remove (T-S7)"},                           // ret 0xC
+    {0x00947620, 6, {0x8B, 0x41, 0x08, 0x89, 0x41, 0x0C}, "LockKeys_Clear (T-S7)"},                            // ret
+};
+static void* g_twTramp[TW_N];
+static volatile LONG g_twActive;   // tripwire calls running now on other threads
+static volatile LONG g_twEpoch;    // moves when one of them leaves
+static volatile LONG g_srInClone;  // the sim is between its QL acquire and release in SrRun
+static __declspec(thread) LONG t_twDepth;
+static volatile LONG g_twGen;      // moves at each disarm: a clone that sees it move dropped out of the armed window
+
+// Arming (0.18.0). Each site's detour jumps to TwGo<i>, a single `jmp [g_twGo + i*4]` (no flag, no register touched): to
+// the counting stub TwStub<i> while armed, to the trampoline otherwise. Only the route worker arms, around each async job
+// (ServeAsync: armed before A_RUNNING is published, disarmed after A_IDLE), one job at a time, so no count is needed.
+// Order: arm = stubs in place, then g_twArmed = 1; disarm = g_twArmed = 0, then g_twGen + 1, then the trampolines. A Mode 1
+// clone (SrRun) reads g_twGen, then g_twArmed, at its start and g_twGen again at its end: armed at the start and the same
+// generation at the end means the stubs counted every writer entry during the whole clone. A clone that straddles a disarm
+// gives up (s2JobEndDrop). Shadow clones (no job, starts held off) do not need the stubs: their answer is never used.
+static void* volatile g_twGo[TW_N];
+
+static void TwLeave() {  // RgUndo (RG_REL_TRIP); the epoch first, so a clone that sees g_twActive drop also sees it move
+    t_twDepth--;
+    InterlockedIncrement(&g_twEpoch);
+    InterlockedDecrement(&g_twActive);
+}
+
+static void TwEnterBody(int i, DWORD* slot);
+static void __cdecl TwEnter(int i, DWORD* slot) {
+    const unsigned __int64 t0 = __rdtsc();
+    TwEnterBody(i, slot);
+    InterlockedIncrement(&ts3native_counters.s2TwCalls);
+    S2Time(S2T_TW, t0);
+}
+static void TwEnterBody(int i, DWORD* slot) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD tid = GetCurrentThreadId();
+    if (RgIsSim(tid)) {  // the writers' own thread (T-S7 by design); the clone calls none of them
+        if (t_inRo) { InterlockedIncrement(&k.steerSimWriteInRo); t_srFail = SR_FB_TRIP; }
+        if (i >= TW_T4 && g_async.state == A_RUNNING) InterlockedIncrement(&k.steerS7Sim);
+        return;
+    }
+    if (i < TW_T4 && t_qlDepth) return;  // inside a W1-W6 frame: QL covers it
+    InterlockedIncrement(&g_twActive);   // before the window test (the clone sets g_srInClone, then reads g_twActive)
+    // window: armed (from before A_RUNNING), a job runs, or a clone is open (0.15.0 had only the last two)
+    if (!g_twArmed && g_async.state != A_RUNNING && !g_srInClone) { InterlockedDecrement(&g_twActive); return; }
+    InterlockedIncrement(i < TW_T4 ? &k.steerT4Bare : &k.steerS7Foreign);
+    InterlockedIncrement(&k.steerTwSite[i]);
+    RgThread& t = t_rg;
+    RgDrop(t, slot);
+    if (t_twDepth) { InterlockedIncrement(&g_twEpoch); InterlockedDecrement(&g_twActive); return; }  // the outer frame covers it
+    if (!RgPush(t, slot, 0, RG_REL_TRIP)) {  // no frame for the leave: the clone could miss this writer, so it stays off
+        InterlockedExchange(&g_steerBroken, 1);
+        InterlockedIncrement(&k.steerUntracked);
+        InterlockedIncrement(&g_twEpoch);
+        InterlockedDecrement(&g_twActive);
+        return;
+    }
+    t_twDepth++;
+}
+
+#define TW_STUB(i) static __declspec(naked) void TwStub##i() { __asm pushad __asm pushfd __asm lea eax, [esp + 36] \
+    __asm push eax __asm push i __asm call TwEnter __asm add esp, 8 __asm popfd __asm popad __asm jmp dword ptr [g_twTramp + i * 4] }
+TW_STUB(0) TW_STUB(1) TW_STUB(2) TW_STUB(3) TW_STUB(4) TW_STUB(5) TW_STUB(6) TW_STUB(7) TW_STUB(8) TW_STUB(9) TW_STUB(10)
+static void (*const kTwStubs[TW_N])() = {TwStub0, TwStub1, TwStub2, TwStub3, TwStub4, TwStub5, TwStub6, TwStub7, TwStub8, TwStub9,
+                                         TwStub10};
+#define TW_GO(i) static __declspec(naked) void TwGo##i() { __asm jmp dword ptr [g_twGo + i * 4] }
+TW_GO(0) TW_GO(1) TW_GO(2) TW_GO(3) TW_GO(4) TW_GO(5) TW_GO(6) TW_GO(7) TW_GO(8) TW_GO(9) TW_GO(10)
+static void (*const kTwGo[TW_N])() = {TwGo0, TwGo1, TwGo2, TwGo3, TwGo4, TwGo5, TwGo6, TwGo7, TwGo8, TwGo9, TwGo10};
+
+// Worker only (one job at a time; steerro-test and selftest call it from their "job"). Aligned pointer stores are atomic;
+// the interlocked operations after them order them before the flag (arm) and the flag before them (disarm).
+static void TwArm(bool on) {
+    if (on) {
+        S2Calibrate();
+        for (int i = 0; i < TW_N; i++) if (g_twTramp[i]) g_twGo[i] = (void*)kTwStubs[i];
+        InterlockedExchange(&g_twArmed, 1);
+        InterlockedIncrement(&ts3native_counters.s2ArmJobs);
+        return;
+    }
+    InterlockedExchange(&g_twArmed, 0);
+    InterlockedIncrement(&g_twGen);
+    for (int i = 0; i < TW_N; i++) if (g_twTramp[i]) g_twGo[i] = g_twTramp[i];
+}
+
+// all eleven or none (a missing one would leave the clone blind to that writer). The detour targets TwGo<i>; until the
+// trampoline exists g_twGo[i] is the counting stub (as 0.15.0, which jumps through g_twTramp), then the trampoline unless armed.
+static int InstallTripwires() {
+    for (int i = 0; i < TW_N; i++)
+        if (!Matches((const void*)(uintptr_t)kTwSites[i].addr, kTwSites[i].pro, kTwSites[i].len)) return 0;
+    int n = 0;
+    for (int i = 0; i < TW_N; i++) {
+        g_twGo[i] = (void*)kTwStubs[i];
+        n += (g_twTramp[i] = InstallDetour(kTwSites[i].name, kTwSites[i].addr, kTwSites[i].pro, kTwSites[i].len, (void*)kTwGo[i])) != NULL;
+        if (g_twTramp[i] && !g_twArmed) g_twGo[i] = g_twTramp[i];
+    }
+    ts3native_counters.steerTwStubs = n;
+    return n;
+}
+
 // --- the clone ---
 // 0x85AE60's output (0x34 bytes, 16-aligned, as Locomotion's and EditPath's stack copies): xyz w, a zero vector, 1.0, level
 struct alignas(16) SrPt { float v[4]; float zero[4]; float one; LONG level; DWORD tail[6]; };
-struct SrCtx { const u8* rec; DWORD flag; int n; int fail; const u8* objs[kSrCap]; };
+struct SrCtx { const u8* rec; DWORD flag; int n; int fail; int over; const u8* objs[kSrCap]; };  // over: adds past kSrCap
 
 static bool SrIn(DWORD v, const DWORD* s, int n) {
     for (int i = 0; i < n; i++) if (s[i] == v) return true;
@@ -215,7 +383,7 @@ static bool SrSlotsOk(const u8* obj) {
 
 static void SrAdd(SrCtx* c, const u8* obj) {
     for (int i = 0; i < c->n; i++) if (c->objs[i] == obj) return;
-    if (c->n == kSrCap) { c->fail = SR_FB_SHAPE; return; }
+    if (c->n == kSrCap) { c->over++; return; }  // counted on (not deduplicated: an upper bound); SrWalk gives up after the walk
     c->objs[c->n++] = obj;
 }
 
@@ -239,7 +407,8 @@ static void SrCollect(SrCtx* c, const u8* node, bool masked, DWORD bit) {
         if (masked && !(bit < 32 ? *(const DWORD*)(e + 4) & (1u << (bit & 31)) : *(const DWORD*)(e + 8) & (1u << ((bit - 32) & 31))))
             continue;
         const u8* obj = *(const u8* const*)(ent + 8);
-        if (!obj || !SrSlotsOk(obj)) { c->fail = SR_FB_SHAPE; return; }  // the original dereferences a NULL footprint
+        if (!obj) { c->fail = SrShape(SRS_NULLFP); return; }  // the original dereferences a NULL footprint
+        if (!SrSlotsOk(obj)) { c->fail = SrShape(SRS_SLOT); return; }
         const void* const* vt = *(const void* const* const*)obj;
         if (!((SlotBoolArgFn)vt[0x60 / 4])(obj, NULL, ow)) continue;
         if (((SlotBoolFn)vt[0x28 / 4])(obj, NULL)) continue;
@@ -250,20 +419,24 @@ static void SrCollect(SrCtx* c, const u8* node, bool masked, DWORD bit) {
         if (t == 0x14) cls = 1;
         if (c->flag) {
             if (cls == 2) {
-                if (nl == kSrLocal) { c->fail = SR_FB_SHAPE; return; }
-                local[nl++] = obj;
+                if (nl < kSrLocal) local[nl] = obj;
+                nl++;  // past kSrLocal: counted on, matters only with a type 0x1F entry (below)
                 continue;
             }
             if ((DWORD)cls < 2 || cls == 0xD) continue;
         }
         SrAdd(c, obj);
     }
-    if (c->flag && seen)
+    if (c->flag && seen) {
+        Max(&ts3native_counters.s2MaxLocal, nl);
+        if (nl > kSrLocal) { c->fail = SrShape(SRS_LOCALCAP); return; }
         for (int i = 0; i < nl; i++) SrAdd(c, local[i]);
+    }
 }
 
 static void SrChildren(SrCtx* c, const u8* node, int depth) {  // CollectChildren 0x669B90 / CollectSubtree 0x669B30
-    if (depth > 32) { c->fail = SR_FB_SHAPE; return; }
+    Max(&ts3native_counters.s2MaxDepth, depth);
+    if (depth > kSrDepth) { c->fail = SrShape(SRS_DEPTH); return; }
     for (int i = 0; i < 4 && !c->fail; i++) {
         const u8* ch = *(const u8* const*)(node + 0xC + i * 4);
         if (!ch) continue;
@@ -295,13 +468,13 @@ static int SrEntry(const u8* p, DWORD lo, DWORD hi, bool contains, const u8** en
     if (contains) {
         if (!(lo | hi) || (lo & hi) == 0xFFFFFFFF) return SR_OK;
         const u8* act = g_srActiveLot();
-        if (!act) return SR_FB_SHAPE;  // the original reads [0 + 0x48]
+        if (!act) return SrShape(SRS_NOACTLOT);  // the original reads [0 + 0x48]
         if (lo == *(const DWORD*)(act + 0x48) && hi == *(const DWORD*)(act + 0x4C)) return SR_OK;
     }
     const u8* tbl = p + 0x48;
     const DWORD cnt = *(const DWORD*)(tbl + 8);
     const DWORD* bk = *(const DWORD* const*)(tbl + 4);
-    if (!cnt || !bk) return SR_FB_SHAPE;
+    if (!cnt || !bk) return SrShape(SRS_LOTTBL);
     DWORD out[2];
     const DWORD key[2] = {lo, hi};
     g_srLotFind(tbl, NULL, out, key);
@@ -347,6 +520,8 @@ static int SrWalk(SrCtx* c, const u8* q, bool point, float x, float y, float r) 
         InterlockedIncrement(&ts3native_counters.steerPinMoved);
         return SR_FB_TRIP;
     }
+    Max(&ts3native_counters.s2MaxObjs, c->n + c->over);
+    if (!c->fail && c->over) return SrShape(SRS_OBJCAP);
     return c->fail;
 }
 
@@ -360,6 +535,7 @@ static int SrCmpPtr(const void* a, const void* b) {
 static int SrQuery(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt, bool point, float r, const u8* rec) {
     c->n = 0;
     c->fail = SR_OK;
+    c->over = 0;
     c->rec = point ? rec : NULL;
     c->flag = point ? 0 : 1;
     const u8* entry;
@@ -397,6 +573,7 @@ static int SrConsume(SrCtx* c, const u8* p, const SrNode& nd, const DWORD* ids0,
         a[1] = v;
         memcpy(b, a, sizeof(b));
     }
+    int over = 0;  // ids past kSrIds (counted on for s2MaxIds; not deduplicated among themselves)
     for (int i = 0; i < c->n; i++) {
         const u8* obj = c->objs[i];
         const u8* sub = obj + 4;
@@ -418,12 +595,13 @@ static int SrConsume(SrCtx* c, const u8* p, const SrNode& nd, const DWORD* ids0,
             if (memcmp(before, cache, sizeof(before)) != 0) return SR_FB_CACHE;  // T3: a writer outside W1-W6
             if (!hit) continue;
         }
-        if (out->nIds == kSrIds) return SR_FB_SHAPE;
+        if (out->nIds == kSrIds) { over++; continue; }
         out->ids[out->nIds][0] = lo;
         out->ids[out->nIds][1] = hi;
         out->nIds++;
     }
-    return SR_OK;
+    Max(&ts3native_counters.s2MaxIds, out->nIds + over);
+    return over ? SrShape(SRS_IDCAP) : SR_OK;
 }
 
 static u8* SrFirstFlagged(u8* agent) {
@@ -435,14 +613,16 @@ static u8* SrFirstFlagged(u8* agent) {
 
 // The clone: ids that Locomotion_ObstacleCheck would append, in order, into out (ids0/n0 = the caller's ids before the call).
 // Caller: owner thread, preconditions checked. QL is taken here (try only) for phase 2.
-static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n1, const void* ign2, DWORD n2, SrOut* out, SrCtx* c) {
+// job = the answer will be used (Mode 1): the tripwire stubs must be armed for the whole clone.
+static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n1, const void* ign2, DWORD n2, SrOut* out, SrCtx* c,
+                 bool job = false) {
     out->nIds = out->nSubs = 0;
     u8* world = g_srWorldGet();
     u8* wm = *g_srWmSlot;
     if (!world || !wm) return SR_FB_STATE;
     const u8* p = world[0x974] ? *(const u8* const*)(world + 0x95C) : NULL;  // RoutingWorld_GetLotPlanner 0x829BC0
     u8* wmw = *(u8* const*)(world + 0x964);
-    if (!p || !wmw) return SR_FB_SHAPE;
+    if (!p || !wmw) return SrShape(SRS_NOPLANNER);
     if (wmw[0x1CC] || wm[0x1CC]) return SR_FB_DIRTY;  // World_LotLookup would rebuild the lot index (wm+0x228)
     // phase 1, no lock: 0x85AE60 and the lot lookups, as the originals run them before their lock. nodes[0] = the first
     // flagged node (both 0x82EDB0 calls); nodes[1..] = the flagged nodes from the second node on (the EditPath loop starts
@@ -452,7 +632,11 @@ static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n
     u8* head = agent + 8;
     for (u8* n = *(u8**)head; n != head; n = *(u8**)n) {
         if (!n[0x30]) continue;
-        if (nn == kSrNodes + 1) return SR_FB_SHAPE;
+        if (nn == kSrNodes + 1) {  // the flagged nodes left, for s2MaxNodes
+            for (; n != head; n = *(u8**)n) nn += n[0x30] != 0;
+            Max(&ts3native_counters.s2MaxNodes, nn);
+            return SrShape(SRS_NODECAP);
+        }
         SrNode& nd = nodes[nn++];
         nd.raw = n + 0x10;
         memset(&nd.conv, 0, sizeof(nd.conv));
@@ -468,15 +652,24 @@ static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n
         nd.eLo = lot ? *(const DWORD*)(lot + 0x48) : 0;
         nd.eHi = lot ? *(const DWORD*)(lot + 0x4C) : 0;
         if (nn == 1 && n != *(u8**)head) {  // the first flagged node is also an EditPath node: second entry, same point
-            if (nn == kSrNodes + 1) return SR_FB_SHAPE;
+            if (nn == kSrNodes + 1) return SrShape(SRS_NODECAP2);
             nodes[nn++] = nd;
         }
     }
     if (!nn) return SR_FB_STATE;
+    Max(&ts3native_counters.s2MaxNodes, nn);
     // phase 2, QL shared
-    if (!TryAcquireSRWLockShared(&g_ql)) return SR_FB_TRY;
+    const unsigned __int64 tTry = __rdtsc();
+    const bool got = TryAcquireSRWLockShared(&g_ql) != 0;
+    InterlockedIncrement(&ts3native_counters.s2TryCalls);
+    S2Time(S2T_TRY, tTry);
+    if (!got) return SR_FB_TRY;
     if (g_steerBroken) { ReleaseSRWLockShared(&g_ql); return SR_FB_STATE; }
     const LONG seq = g_qlSeq;
+    InterlockedExchange(&g_srInClone, 1);  // T4 / T-S7 writers on other threads count from here (then g_twActive is read)
+    const LONG twEpoch = g_twEpoch;
+    const LONG twGen = g_twGen;  // then g_twArmed (TwArm's disarm order is the reverse)
+    bool jobEnd = job && !g_twArmed;
     t_inRo = true;
     t_qlShared = 1;  // T-L2
     t_srFail = SR_OK;
@@ -486,8 +679,9 @@ static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n
     rec[0x24] = 1;
     static DWORD excl[kSrCap][2];
     int nExcl = 0;
-    int why = SR_OK;
-    if (nodes[0].gLot) why = SrQuery(c, p, nodes[0].gLo, nodes[0].gHi, nodes[0].conv, true, *(const float*)(agent + 0x40), rec);
+    bool tw = g_twActive != 0;  // a tripwire writer is running: no answer from this clone
+    int why = jobEnd ? SR_FB_STATE : tw ? SR_FB_TRIP : SR_OK;
+    if (!why && nodes[0].gLot) why = SrQuery(c, p, nodes[0].gLo, nodes[0].gHi, nodes[0].conv, true, *(const float*)(agent + 0x40), rec);
     else c->n = 0;
     for (int i = 0; !why && i < c->n; i++) {
         const u8* sub = c->objs[i] + 4;
@@ -504,9 +698,14 @@ static int SrRun(u8* agent, const DWORD* ids0, int n0, const void* ign1, DWORD n
     }
     if (!why && t_srFail) why = t_srFail;
     if (!why && g_qlSeq != seq) { InterlockedIncrement(&ts3native_counters.steerSeqSkew); why = SR_FB_TRIP; }
+    if (!why && (g_twActive || g_twEpoch != twEpoch)) { tw = true; why = SR_FB_TRIP; }  // one ran (or runs) beside the clone
+    if (!why && job && g_twGen != twGen) { jobEnd = true; why = SR_FB_STATE; }  // disarmed during the clone: writers unseen
+    if (tw) InterlockedIncrement(&ts3native_counters.steerTripDiscard);
+    if (jobEnd) InterlockedIncrement(&ts3native_counters.s2JobEndDrop);
     t_inRo = false;
     t_qlShared = 0;
     ReleaseSRWLockShared(&g_ql);
+    InterlockedExchange(&g_srInClone, 0);
     return why;
 }
 
@@ -517,6 +716,7 @@ static void SrNote(const char* what, const u8* agent, int a, int b) {
 
 static void SrFallback(int why) {
     if (why > 0 && why <= 8) InterlockedIncrement(&ts3native_counters.steerFb[why - 1]);
+    if (why == SR_FB_SHAPE) InterlockedIncrement(&ts3native_counters.s2Shape[t_srShape]);
 }
 
 // Shadow (no job running, job starts held off): the game's call, then the clone on the same world; then the obstacle query
@@ -525,6 +725,7 @@ static void SrShadow(u8* agent, u8* ids, const void* ign1, DWORD n1, const void*
     Ts3nCounters& k = ts3native_counters;
     const int n0 = (int)((*(DWORD**)(ids + 4) - *(DWORD**)ids) / 2);
     g_locoOrig(agent, NULL, ids, ign1, n1, ign2, n2);
+    struct Timer { unsigned __int64 t0 = __rdtsc(); ~Timer() { S2Time(S2T_SHADOW, t0); S2Time(S2T_ENTRY, t0); } } timer;  // ours only
     const int why = SrRun(agent, *(const DWORD* const*)ids, n0, ign1, n1, ign2, n2, out, c);
     InterlockedIncrement(&k.steerShadowRuns);
     if (why) { SrFallback(why); return; }
@@ -579,20 +780,24 @@ static void __fastcall LocoHook(u8* agent, void* edx, u8* ids, const void* ign1,
     // the worker lost a QL frame
     int why = SR_FB_STATE;
     const RgThread& t = t_rg;
+    const unsigned __int64 tEntry = __rdtsc();
     if (k.steerMode && !g_inInvoke && k.rgOwnerTid != (LONG)tid && t.n == t.readers && !g_steerBroken) {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
-        why = SrRun(agent, *(const DWORD* const*)ids, (int)((*(DWORD**)(ids + 4) - *(DWORD**)ids) / 2), ign1, n1, ign2, n2, &out, &ctx);
+        why = SrRun(agent, *(const DWORD* const*)ids, (int)((*(DWORD**)(ids + 4) - *(DWORD**)ids) / 2), ign1, n1, ign2, n2, &out, &ctx,
+                    true);
         if (!why) {
             for (int i = 0; i < out.nIds; i++) g_srIdPush(ids, NULL, out.ids[i]);
             const LONG us = UsSince(t0);
             InterlockedIncrement(&k.steerTaken);
             InterlockedExchangeAdd(&k.steerUs, us);
             Max(&k.steerMaxUs, us);
+            S2Time(S2T_ENTRY, tEntry);
             return;
         }
     }
     SrFallback(why);
+    S2Time(S2T_ENTRY, tEntry);  // ours only: the game's call below is today's cost
     g_locoOrig(agent, edx, ids, ign1, n1, ign2, n2);
 }
 
@@ -610,6 +815,36 @@ static void InstallCa(const wchar_t* ini, bool needStub) {
     Log("OK   footprint rebuild lock C-A (Mode=%ld: %s)", k.caMode, k.caMode ? "take +0x918 first" : "count only");
 }
 
+// The S2 writer set: W1-W6 (12 stubs) with W4 (the LotGraph_Build gate stub) and the 11 tripwire stubs. Every prologue
+// not hooked yet is checked first (one differs: nothing installed). Shared by S2 and [ObstructedRO] (obstructro.cpp); the
+// second call returns the first one's result. True = all in place; false with g_qlOn set = some QL stubs only (they lock).
+static bool InstallSrWriters() {
+    static int done;  // 1 all in place, -1 not
+    if (done) return done > 0;
+    done = -1;
+    bool ok = g_rgTramp[3] != NULL;  // W4 = gate stub 3
+    for (int i = 0; ok && i < QL_N; i++) ok = g_qlTramp[i] || Matches((const void*)(uintptr_t)kQlSites[i].addr, kQlSites[i].pro, kQlSites[i].len);
+    for (int i = 0; ok && i < TW_N; i++) ok = Matches((const void*)(uintptr_t)kTwSites[i].addr, kTwSites[i].pro, kTwSites[i].len);
+    if (!ok) { Log("SKIP S2 writer set: a prologue differs (W1-W6, T4/T-S7) or the LotGraph_Build gate stub is missing"); return false; }
+    int n = 0;
+    for (int i = 0; i < QL_N; i++) {  // [LotFrontDoorRO] / [ProbeP1b] may have W5 and W6g in place already
+        if (!g_qlTramp[i]) g_qlTramp[i] = InstallDetour(kQlSites[i].name, kQlSites[i].addr, kQlSites[i].pro, kQlSites[i].len, (void*)kQlStubs[i]);
+        n += g_qlTramp[i] != NULL;
+    }
+    g_qlOn = 1;
+    if (n != QL_N) {  // a W site without QL: a clone could read under its writes; the clones stay off (the stubs that exist still lock)
+        Log("FAIL S2 writer set: %d of %d worker writer detours, read-only clones stay off", n, QL_N);
+        return false;
+    }
+    const int tws = InstallTripwires();
+    if (tws != TW_N) {  // the stubs that exist only count
+        Log("FAIL S2 writer set: %d of %d tripwire stubs (T4/T-S7), read-only clones stay off", tws, TW_N);
+        return false;
+    }
+    done = 1;
+    return true;
+}
+
 // [SteerRO] Enabled=1: every prologue is checked first; one differs and nothing is hooked
 static void InstallSteerRO(const wchar_t* ini) {
     const bool ca = GetPrivateProfileIntW(L"FpRebuildLock", L"Enabled", 0, ini) != 0;
@@ -622,22 +857,16 @@ static void InstallSteerRO(const wchar_t* ini) {
         return;
     }
     if (!k.rgEnforce || !k.asyncReady) { Log("SKIP steer RO: needs [RouteGate] Enforce=1 with the async path"); return; }
-    bool ok = Matches((const void*)(uintptr_t)STEER_LOCO, kLocoPro, sizeof(kLocoPro)) && g_rgTramp[3] != NULL;  // W4 = gate stub 3
-    for (int i = 0; ok && i < QL_N; i++) ok = Matches((const void*)(uintptr_t)kQlSites[i].addr, kQlSites[i].pro, kQlSites[i].len);
-    if (!ok) { Log("SKIP steer RO: a prologue differs (0x85FD10, W1-W6) or the LotGraph_Build gate stub is missing"); return; }
-    int n = 0;
-    for (int i = 0; i < QL_N; i++)
-        n += (g_qlTramp[i] = InstallDetour(kQlSites[i].name, kQlSites[i].addr, kQlSites[i].pro, kQlSites[i].len, (void*)kQlStubs[i])) != NULL;
-    g_qlOn = 1;
-    if (ca) InstallCa(ini, false);
-    if (n != QL_N) {  // a W site without QL: the clone could read under its writes; it stays off (the stubs that exist still lock)
-        Log("FAIL steer RO: %d of %d worker writer detours, read-only steering stays off", n, QL_N);
-        return;
-    }
+    if (!Matches((const void*)(uintptr_t)STEER_LOCO, kLocoPro, sizeof(kLocoPro))) { Log("SKIP steer RO: the 0x85FD10 prologue differs"); return; }
+    const bool writers = InstallSrWriters();
+    if (ca) InstallCa(ini, false);  // rides on the W6a stub when it exists
+    if (!writers) return;
+    const int n = QL_N, tws = k.steerTwStubs;
     g_locoOrig = (LocoFn)InstallDetour("Locomotion_ObstacleCheck", STEER_LOCO, kLocoPro, sizeof(kLocoPro), (void*)LocoHook);
     if (!g_locoOrig) return;
     k.steerMode = Clamp(GetPrivateProfileIntW(L"SteerRO", L"Mode", 1, ini), 0, 1);
     k.steerShadow = Clamp(GetPrivateProfileIntW(L"SteerRO", L"Shadow", 0, ini), 0, 1);
     k.steerReady = 1;
-    Log("OK   steer RO: 0x85FD10 + %d worker writer detours + LotGraph_Build gate (Mode=%ld Shadow=%ld)", n, k.steerMode, k.steerShadow);
+    Log("OK   steer RO: 0x85FD10 + %d worker writer detours + LotGraph_Build gate + %d tripwire stubs (Mode=%ld Shadow=%ld)", n, tws,
+        k.steerMode, k.steerShadow);
 }

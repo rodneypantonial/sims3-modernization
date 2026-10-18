@@ -68,6 +68,7 @@ License note: "none" means the repo has no license file. Then the default is all
 - **Issues worth reading before our next patches** [verified titles]: #43 "Experimental GC_try_to_collect() patch causes stuttering" (docs/13), #60 and #63 memory growth since 1.4.0, #65 "Game takes too long to save, super fast mode is very laggy", #57 random `ACCESS_VIOLATION`, #44 crash with CPU Thread Optimization, #46 SpecialK frame pacing, #33 WorldCache size cap, #72 headless patch-only mode for translated D3D9 (DXVK).
 - **How it helps:** field reports from many machines about the same patches we run. Triage our crash ledger against them. If #72 shipped, our DXVK setup can use the patch-only mode.
 - **Reuse:** reference only (no license); docs/03 already uses its anchors.
+- **Update 2026-10-18** [verified tree via GitHub API]: `crates/s3formats/src/lot.rs` parses the per-lot wall/room graphs (resource `0x312E7545`: vertices, edges with room ids on each side, levels) plus roofs and lot terrain/water; `crates/game/src/nav.rs` is its own grid pathfinder (obstacles, barriers, stairs/elevator links, locked doors), not the game's. Reference for the static half of a routing snapshot (docs/91 study, inputs rows 1-2); still no license.
 
 ## 4. TS3-64bit-Patch / TS3 Memory Server (cmedina-dev)
 
@@ -126,6 +127,7 @@ License note: "none" means the repo has no license file. Then the default is all
 
 | Project | URL | What | Activity / license | Use |
 |---|---|---|---|---|
+| OpenTS3 (JJ, JJ's Game Lab) | https://opents3.com/ | 64-bit .NET 8 engine replacement that runs EA's 9 managed gameplay DLLs on a new native layer; reports a decoded routing graph (34,471 vertices, 135,657 edges, Sunset Valley) | private pre-alpha, repo private, GPLv3 announced, no release date [verified site 2026-10-18] | Ask (Discord) how the routing graph was decoded; no code to reuse yet |
 | Gibbed.Sims3 (Rick "gibbed") | https://github.com/gibbed/Gibbed.Sims3 | 2009 tools: DBPF, scenegraph, rig, STBL readers; `ReadExecutable/ParseScriptFunctionTables.cs` walks the exe's native script function tables (`{native, name}` pairs, keyed by exe MD5) | Single push 2017-07; zlib-like license with a **non-commercial** clause [verified] | Confirms our internal-call map method; table addresses are for 2009 exes, not 1.67 |
 | sims3-rs (kitlith) | https://github.com/kitlith/sims3-rs | Rust DBPF tools: `find_merged_cc`, `geom_tri_count`, `dump_package_pngs` | MIT, push 2025-10 [verified] | `geom_tri_count` is a ready check for heavy CC meshes (docs/17) |
 | Tatsh/sims3-tools | https://github.com/Tatsh/sims3-tools | Python 3 utilities | MIT, 2013 [verified metadata] | Reference only |
