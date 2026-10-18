@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Sims3.Gameplay;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
+using Sims3.Gameplay.Interfaces;
+using Sims3.Gameplay.Objects;
+using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 
 namespace Ts3Fixes
@@ -30,6 +34,7 @@ namespace Ts3Fixes
             sDetailPrioReady = Patch(typeof(Lot), "CalculateDetailPriority", Type.EmptyTypes, typeof(DetailPriorityHook), "CalcHook", "CalcOrig");
             sCaneEarlyReady = Patch(typeof(Sims3.Gameplay.Objects.Cane), "SimRequiresCaneWalk", new Type[] { typeof(Sim), typeof(Sim.WalkStyle) }, typeof(CaneEarlyOutHook), "RequiresHook", "RequiresOrig");
             sHoursMemoReady = Patch(typeof(Lot), "GetHoursOfOperation", new Type[] { typeof(float).MakeByRefType(), typeof(float).MakeByRefType() }, typeof(HoursMemoHook), "HoursHook", "HoursOrig");
+            ApplyWildflower();
             // docs/74 I-74-7: was the tooltip task already running when the patches went in? Logged for the first load.
             try
             {
@@ -188,6 +193,152 @@ namespace Ts3Fixes
                 return p;
             }
             public LotDetailPriority CalcOrig() { return LotDetailPriority.None; } // receives Lot.CalculateDetailPriority's original header
+        }
+
+        // docs/110 W1, switches wildflowerprobe (tuning kWildflowerProbe) and wildflowertask (tuning kWildflowerTask).
+        // In spring (Seasons) a persisted hourly alarm takes one community lot per fire, makes one wildflower out of world
+        // and tries up to 20 random spots on the lot with the native placement search, all inside the alarm: 0.3-1 s per
+        // fire in the first minute of our spring saves. Both switches off: the game's method runs. Either on: the hook does
+        // the game's own steps (can-spawn check, list pop, flower, placement params with the terrain check, the empty-list
+        // alarm removal) and the game's placement loop (random facing, then per try a random lot spot and one search, stop at
+        // the first hit; placed = add to world and fade in, else destroy). wildflowerprobe: the loop runs in the alarm as
+        // before, timed per try. wildflowertask: the loop runs in our own one-shot task, one try per sim tick (the game's
+        // Yield rule); a fire while the previous task still runs takes the in-alarm path, so fires never overlap and keep
+        // their lot order. A save while a try is pending destroys the out-of-world flower and ends the fire as failed.
+        // One log line per fire (ts3fixes.wildflower). Counters: [93] fires that took a lot, [94] tries, [95] placed,
+        // [96] failed (flower destroyed), [97] longest fire (in alarm) or longest try slice (task), ms, [98] save aborts.
+        static bool sWildflowerReady;
+        static FieldInfo sWfLots;   // Wildflower.sLotsToGetWildflowers: the drain list (private static)
+        static MethodInfo sWfClear; // Wildflower.ClearSpringSpawnAlarm (private static)
+        static ObjectGuid sWfTask = ObjectGuid.InvalidObjectGuid;
+        static StopWatch sWfWatch;
+
+        static void ApplyWildflower()
+        {
+            const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic;
+            sWfLots = typeof(Wildflower).GetField("sLotsToGetWildflowers", st);
+            sWfClear = typeof(Wildflower).GetMethod("ClearSpringSpawnAlarm", st);
+            if (sWfLots == null || sWfClear == null) { AppliedLog().Add("Wildflower.OnGrowWildflowersOnLot: drain members not found"); return; }
+            sWildflowerReady = Patch(typeof(Wildflower), "OnGrowWildflowersOnLot", Type.EmptyTypes, typeof(WildflowerTaskHook), "GrowHook", "GrowOrig");
+        }
+
+        static bool SaveInProgress()
+        {
+            Sims3.Gameplay.UI.OptionsModel o = Sims3.Gameplay.UI.Responder.Instance != null ? Sims3.Gameplay.UI.Responder.Instance.OptionsModel as Sims3.Gameplay.UI.OptionsModel : null;
+            return o != null && o.SaveGameInProgress;
+        }
+
+        static int WfElapsedUs()
+        {
+            if (sWfWatch == null) return 0;
+            uint us = sWfWatch.GetElapsedTime();
+            return us > int.MaxValue ? int.MaxValue : (int)us;
+        }
+
+        // One try of the game's placement loop (GlobalFunctions.PlaceObjectOnLot): same draw and calls; true when placed.
+        static bool WfTry(IGameObject flower, Lot lot, ref RandomObjectPlacementParams p, ref Vector3 start)
+        {
+            if (sWfWatch != null) sWfWatch.Restart();
+            Vector3 pos = lot.GetRandomPosition(p.InsideValid, p.OutsideValid, p.ValidTypes, p.ValidFloors);
+            if (pos == Vector3.Invalid) return false;
+            start = pos;
+            p.FglParams.StartPosition = pos;
+            return GlobalFunctions.PlaceAtGoodLocation(flower, p.FglParams, false);
+        }
+
+        // Result of a fire: the game's success/failure handling, counters and the log line.
+        static void WfFinish(IGameObject flower, Lot lot, WildflowerFire f, Vector3 start, bool inAlarm, string why)
+        {
+            string where = "";
+            if (f.Placed)
+            {
+                where = " dist " + (flower.Position - start).Length().ToString("0.0") + " m, " + (LotManager.GetLotAtPoint(flower.Position) == lot ? "on lot" : "off lot");
+                flower.AddToWorld();
+                flower.FadeIn();
+            }
+            else if (!flower.HasBeenDestroyed) flower.Destroy();
+            int[] c = PatchCounters();
+            f.Count(c, inAlarm);
+            if (why == "save") c[98]++;
+            List<object> log = AppDomain.CurrentDomain.GetData("ts3fixes.wildflower") as List<object>;
+            if (log == null) { log = new List<object>(); AppDomain.CurrentDomain.SetData("ts3fixes.wildflower", log); }
+            if (log.Count >= 200) log.RemoveAt(0);
+            log.Add("simmin " + SimClock.ElapsedTime(TimeUnit.Minutes).ToString("0") + " lot " + lot.LotId + (inAlarm ? " alarm" : " task")
+                + " tries " + f.Tries + " maxms " + (f.MaxTryUs / 1000) + " summs " + (f.SumUs / 1000)
+                + (f.Placed ? " placed" + where : " destroyed") + (why != null ? " (" + why + ")" : ""));
+        }
+
+        // wildflowerprobe, or a fire while the task still runs: the whole loop in the alarm, as the game does it.
+        static void WfPlaceNow(IGameObject flower, Lot lot, RandomObjectPlacementParams p)
+        {
+            WildflowerFire f = new WildflowerFire(p.MaxTries);
+            Vector3 start = Vector3.Invalid;
+            flower.SetForward(RandomUtil.GetRandomDirXZ());
+            for (bool done = f.MaxTries <= 0; !done; )
+            {
+                bool ok = WfTry(flower, lot, ref p, ref start);
+                done = f.Try(ok, WfElapsedUs());
+            }
+            WfFinish(flower, lot, f, start, true, null);
+        }
+
+        // wildflowertask: the same loop in our one-shot task, one try per sim tick.
+        static void WfPlaceSliced(IGameObject flower, Lot lot, RandomObjectPlacementParams p)
+        {
+            WildflowerFire f = new WildflowerFire(p.MaxTries);
+            Vector3 start = Vector3.Invalid;
+            flower.SetForward(RandomUtil.GetRandomDirXZ());
+            for (bool done = f.MaxTries <= 0; !done; )
+            {
+                if (f.Tries > 0)
+                {
+                    // checked before and after the yield (shortcut: a save that starts and ends inside one yield still stores
+                    // the out-of-world flower, which then counts toward the 20 cap until its lifespan alarm removes it,
+                    // docs/110 7.3; upgrade if the save-abort repro ever shows one)
+                    if (SaveInProgress()) { WfFinish(flower, lot, f, start, false, "save"); return; }
+                    Simulator.Sleep(0);
+                    if (SaveInProgress()) { WfFinish(flower, lot, f, start, false, "save"); return; }
+                    if (flower.HasBeenDestroyed || lot.HasBeenDestroyed || GameStates.IsWorldShuttingDown || !GameStates.IsInWorld())
+                    { WfFinish(flower, lot, f, start, false, "world gone"); return; }
+                }
+                bool ok = WfTry(flower, lot, ref p, ref start);
+                done = f.Try(ok, WfElapsedUs());
+            }
+            WfFinish(flower, lot, f, start, false, null);
+        }
+
+        public static class WildflowerTaskHook
+        {
+            public static void GrowHook()
+            {
+                bool task = sWildflowerReady && ShortcutOn("wildflowertask");
+                if (!task && !(sWildflowerReady && ShortcutOn("wildflowerprobe"))) { GrowOrig(); return; }
+                if (sWfWatch == null) sWfWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds); // null when the engine has none
+                List<ulong> lots = sWfLots.GetValue(null) as List<ulong>;
+                if (!Wildflower.CanSpawnWildflowers() || lots == null) return;
+                Lot lot = LotManager.GetLot(lots[0]);
+                lots.RemoveAt(0);
+                if (lot != null)
+                {
+                    IGameObject flower = Wildflower.CreateRandomWildflowerForSpawner();
+                    if (flower != null)
+                    {
+                        RandomObjectPlacementParams p = new RandomObjectPlacementParams(false, true);
+                        p.FglParams.PlacementCheckFunc = Wildflower.IsValidWildflowerLocation;
+                        if (task && !(sWfTask.IsValid && Simulator.GetTask(sWfTask) != null))
+                        {
+                            sWfTask = Simulator.AddObject(new OneShotFunctionTask(delegate
+                            {
+                                try { WfPlaceSliced(flower, lot, p); }
+                                finally { sWfTask = ObjectGuid.InvalidObjectGuid; }
+                            }));
+                        }
+                        else WfPlaceNow(flower, lot, p);
+                    }
+                }
+                if (lots.Count == 0) sWfClear.Invoke(null, null);
+            }
+            public static void GrowOrig() { } // receives Wildflower.OnGrowWildflowersOnLot's original header
         }
     }
 }

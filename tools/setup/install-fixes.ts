@@ -211,6 +211,12 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3-overwatch-nostuckcheck.package'), p));
       return true;
     }
+    case 'overwatch-no-invcleanup': {
+      execFileSync(process.execPath, [join(ROOT, 'tools', 'setup', 'build-overwatch-tuning.ts'), 'inventory'], { stdio: 'ignore' });
+      const p = join(USER, 'Mods', 'Packages', 'ts3-overwatch-noinvcleanup.package');
+      place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3-overwatch-noinvcleanup.package'), p));
+      return true;
+    }
     case 'native-patches': {
       execFileSync('cmd', ['/c', join(ROOT, 'native', 'ts3native', 'build.cmd')], { stdio: 'ignore' });
       for (const name of ['ts3native.asi', 'ts3native.ini']) {

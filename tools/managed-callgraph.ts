@@ -505,6 +505,226 @@ function printClosure(ix: Index, roots: number[], label: string): string {
   return lines.join('\n');
 }
 
+// ---------- 12d: virtual dispatch by class hierarchy analysis (docs/103) ----------
+// Every override (class virtual) or implementation (interface) of a declared call target, across all loaded assemblies.
+// Generic bases: a subclass of Base<X> overrides with concrete params, so a declared signature that mentions a type
+// variable matches by name and parameter count. shortcut: no generic argument substitution, upgrade if a false match shows up.
+const NEWSLOT = 0x100;
+let kids: Map<TypeDef, TypeDef[]> | undefined;
+let explicitImpls: Map<TypeDef, [Method, Method][]> | undefined; // class -> [declared, body] from the MethodImpl table
+function hierarchy(): void {
+  kids = new Map(); explicitImpls = new Map();
+  for (const t of asms.flatMap((a) => a.types)) { const b = baseOf(t); if (b) kids.set(b, [...(kids.get(b) ?? []), t]); }
+  for (const a of asms) for (const r of tbl(a, 0x19)) {
+    const tok = (ci: number) => { const [k, i] = decodeCi('MethodDefOrRef', ci); return resolveMethodToken(a, ((k === 6 ? 0x06 : 0x0a) << 24) | i).m; };
+    const body = tok(r[1]), decl = tok(r[2]); const t = a.types[r[0] - 1];
+    if (body && decl) explicitImpls.set(t, [...(explicitImpls.get(t) ?? []), [decl, body]]);
+  }
+}
+const sigEq = (d: Method, x: Method) => d.name === x.name && d.arity === x.arity &&
+  ((d.params === x.params && d.ret === x.ret) || (/!/.test(d.params + d.ret) && d.params.split(',').length === x.params.split(',').length));
+const ifaceClosure = (t: TypeDef, out = new Set<TypeDef>()): Set<TypeDef> => {
+  for (const ci of t.ifaces) { const [k, i] = decodeCi('TypeDefOrRef', ci); const j = resolveTdor(t.asm, k, i); if (j && !out.has(j)) { out.add(j); ifaceClosure(j, out); } }
+  return out;
+};
+export function overridesOf(m: Method): Method[] {
+  if (!kids) hierarchy();
+  if (isIface(m.type)) {
+    const out = new Set<Method>();
+    for (const c of asms.flatMap((a) => a.types)) {
+      if (isIface(c) || !ifaceClosure(c).has(m.type)) continue;
+      let impl: Method | undefined;
+      for (let b: TypeDef | undefined = c; b && !impl; b = baseOf(b)) impl = explicitImpls!.get(b)?.find(([d]) => d === m)?.[1];
+      for (let b: TypeDef | undefined = c; b && !impl; b = baseOf(b)) impl = b.methods.find((x) => x.flags & VIRT && sigEq(m, x));
+      if (impl && !out.has(impl)) { out.add(impl); for (const o of overridesOf(impl)) out.add(o); }
+    }
+    return [...out];
+  }
+  if (!(m.flags & VIRT) || m.flags & FINAL || isSealed(m.type)) return [];
+  const out: Method[] = [];
+  const walk = (t: TypeDef) => {
+    for (const c of kids!.get(t) ?? []) {
+      const x = c.methods.find((y) => y.flags & VIRT && sigEq(m, y));
+      if (x && x.flags & NEWSLOT) continue; // hides the slot: its subtree overrides x, not m
+      if (x) out.push(x);
+      walk(c);
+    }
+  };
+  walk(m.type);
+  return out;
+}
+const derivedTypes = (t: TypeDef): TypeDef[] => { if (!kids) hierarchy(); return [t, ...(kids!.get(t) ?? []).flatMap(derivedTypes)]; };
+
+// Root groups for the routing study. Specs: method id prefix; type:<T> (its methods); derived:<T> (T and subclasses);
+// name:<Method>/<param prefix> (any method of that name); callers:<method prefix> (methods calling it).
+type Group = { name: string; depth: number; follow: boolean; roots: string[] };
+export const ROUTING_GROUPS: Group[] = [
+  { name: 'portal', depth: 12, follow: true, roots: ['Sims3.Gameplay.Core.LotManager::PortalLockedCallback', 'Sims3.Gameplay.Core.Lot::OnPortalPathPlan', 'Sims3.Gameplay.Actors.Sim::OnPortalPathPlan', 'Sims3.Gameplay.Situations.PrivacySituation::OnPortalPathPlan'] },
+  { name: 'event68', depth: 2, follow: true, roots: ['Sims3.Gameplay.Core.Lot::OnLevelChanged', 'Sims3.Gameplay.Core.LotManager::OnLotLevelInfoChanged', 'Sims3.Gameplay.UI.HudModel::OnLotLevelInfoChange'] },
+  { name: 'setup', depth: 4, follow: true, roots: ['name:AboutToPlanRouteCallback/Sims3.SimIFace.Route,string', 'name:AboutToPlanCallback/Sims3.SimIFace.Route,string', 'name:PostPlanRouteCallback/Sims3.SimIFace.Route,string', 'name:PostPlanDelegate/Sims3.SimIFace.Route,string', 'name:UpdateFollowersOnReplan/Sims3.SimIFace.Route,string', 'type:ScriptCore.Route', 'type:Sims3.SimIFace.Route'] },
+  { name: 'component', depth: 0, follow: false, roots: ['derived:Sims3.Gameplay.ObjectComponents.RoutingComponent'] },
+  { name: 'consumer', depth: 0, follow: false, roots: ['callers:ScriptCore.Route::Plan(', 'callers:ScriptCore.Route::PlanFromPoint(', 'callers:ScriptCore.Route::Replan(', 'callers:ScriptCore.Route::ReplanFromPoint(', 'callers:Sims3.SimIFace.Route::Plan(', 'callers:Sims3.SimIFace.Route::PlanFromPoint(', 'callers:Sims3.SimIFace.Route::Replan(', 'callers:Sims3.SimIFace.Route::ReplanFromPoint('] },
+  { name: 'routeaction', depth: 0, follow: false, roots: ['derived:Sims3.Gameplay.Routing.RouteAction'] },
+  { name: 'destination', depth: 0, follow: false, roots: ['derived:Sims3.SimIFace.RouteDestination'] },
+];
+const BCL = new Set(['mscorlib', 'System', 'System.Xml']);
+type Site = { caller: number; decl: number; kind: string; groups: Set<string> };
+export function dispatchSites(ix: Index, groups: Group[]): { sites: Site[]; reached: Map<string, number> } {
+  const byPrefix = (p: string) => ix.methods.flatMap((r, i) => (r.k.startsWith(p) && r.a >= 0 ? [i] : []));
+  const rootsOf = (s: string): number[] => {
+    const [kind, rest] = /^(type|derived|name|callers):/.test(s) ? [s.slice(0, s.indexOf(':')), s.slice(s.indexOf(':') + 1)] : ['id', s];
+    if (kind === 'id') return lookup(ix, s).length ? lookup(ix, s) : byPrefix(s);
+    if (kind === 'type' || kind === 'derived') {
+      const t = typeByFull.get(rest); if (!t) throw new Error(`no type ${rest}`);
+      return (kind === 'type' ? [t] : derivedTypes(t)).flatMap((x) => x.methods.map((m) => m.gi));
+    }
+    if (kind === 'name') { const [n, pp] = rest.split('/'); return methods.filter((m) => m.name === n && m.params.startsWith(pp)).map((m) => m.gi); }
+    if (kind === 'callers') { const ts = new Set(byPrefix(rest)); return ix.methods.flatMap((r, i) => { for (let k = 0; k < r.c.length; k += 2) if (ts.has(r.c[k])) return [i]; return []; }); }
+    throw new Error(`bad root ${s}`);
+  };
+  const sites = new Map<string, Site>(); const reached = new Map<string, number>();
+  for (const g of groups) {
+    const seen = new Set<number>(); let q = [...new Set(g.roots.flatMap(rootsOf))];
+    if (!q.length) throw new Error(`group ${g.name}: no roots`);
+    for (let d = 0; q.length && d <= g.depth; d++) {
+      const next: number[] = [];
+      const push = (t: number) => { if (d < g.depth && !seen.has(t)) { seen.add(t); next.push(t); } };
+      for (const n of q) {
+        seen.add(n);
+        const c = ix.methods[n].c;
+        for (let k = 0; k < c.length; k += 2) {
+          const t = c[k], kind = ix.kinds[c[k + 1]];
+          if (kind === 'dlg' || kind === 'dinv') continue;
+          if (kind === 'virt' || kind === 'iface' || kind === 'cons') {
+            const key = `${n}>${t}`;
+            const s = sites.get(key) ?? { caller: n, decl: t, kind, groups: new Set() }; s.groups.add(g.name); sites.set(key, s);
+            if (g.follow && t < methods.length && !BCL.has(methods[t].asm.name)) for (const o of overridesOf(methods[t])) push(o.gi);
+          }
+          push(t);
+        }
+      }
+      q = next;
+    }
+    reached.set(g.name, seen.size);
+  }
+  return { sites: [...sites.values()], reached };
+}
+// Routing-decision heuristic on the declared method; docs/103 §3 reviews every flagged row by hand.
+const ROUTING_DECL = /::(IsAllowedThrough|PortalCost|get_PortalCost|DiscourageSimFromUsing|OtherSimCanIgnorePrivacy|OtherSimCanJoinSituation|SimIsInPrivacySituation|\w*Route\w*|\w*Routing\w*|\w*Portal\w*|\w*Destination\w*|\w*Goal\w*|\w*Path\w*|\w*Slot\w*|\w*Footprint\w*|\w*Obstacle\w*|\w*Lane\w*|\w*Door\w*|\w*Lock\w*|\w*Plan\w*|\w*Jig\w*|\w*Walkstyle\w*|\w*Posture\w*|\w*Avoid\w*|\w*Ignore\w*|CanSee\w*|\w*Allowed\w*)\(/;
+// Hand review (docs/103 §3): [declared or override id prefix, y/n, note]. First match wins; overrides before declared.
+// Categories: P portal allow/deny, C cost/options/forbidden list/footprints (search input), G goal/destination, R result handling.
+const G = 'Sims3.Gameplay.';
+const REVIEW: [string, 'y' | 'n', string][] = [
+  // P: portal allow/deny (event 59 handlers, docs/92 §5)
+  [`${G}Abstracts.NonAnimatedDoor::IsAllowedThrough(`, 'n', 'P: unreachable from Sim.OnPortalPathPlan (receiver tested is Door; NonAnimatedDoor derives from CommonDoor)'],
+  [`${G}Objects.Door.SecretDoor::IsAllowedThrough(`, 'n', 'P: unreachable from Sim.OnPortalPathPlan (SecretDoor derives from NonAnimatedDoor, not Door)'],
+  [`${G}Abstracts.CommonDoor::IsAllowedThrough(int,int,`, 'y', 'P: door lock rules; DoorSingleGender adds the gender rule, Turnstile tickets'],
+  [`${G}Interfaces.IBoxStall::IsAllowedThrough(`, 'y', 'P: box stall gate'],
+  [`${G}Interfaces.IHorseJump::IsAllowedThrough(`, 'y', 'P: horse jump'],
+  [`${G}Interactions.InteractionInstance::get_LinkedInteractionInstance(`, 'y', 'P: HorseJump.IsAllowedThrough reads the linked interaction'],
+  [`${G}Situations.PrivacySituation::OtherSimCanIgnorePrivacy(`, 'y', 'P: privacy lock (PrivacySituation.OnPortalPathPlan)'],
+  [`${G}ActorSystems.Posture::Satisfaction(`, 'y', 'P: privacy overrides test Posture.Satisfies (BeingCarried, Standing, WalkingToddler)'],
+  [`${G}ActorSystems.Posture::get_Container(`, 'y', 'P: WooHoo privacy reads the carrying Sim from Posture.Container'],
+  [`${G}Services.Service::get_ServiceType(`, 'y', 'P: CommonDoor.IsAllowedThrough service rule (constant per service class)'],
+  // C: search inputs set before the plan
+  [`${G}Core.Lot::get_IsInPublicResidentialRoom(`, 'n', 'C: not a door; the forbidden-list site reads doors only'],
+  [`${G}Abstracts.GameObject::get_IsInPublicResidentialRoom(`, 'y', 'C: SimRoutingComponent.AboutToPlanRouteCallback adds non-public doors to the forbidden-portal list'],
+  [`${G}ObjectComponents.RoutingComponent::CreateRoute(`, 'y', 'C: route options and AGS per component class'],
+  [`${G}Core.Terrain+GoHere::SetSpecialRouteOptions(`, 'y', 'C: swim/boat route options'],
+  [`${G}Core.SocialJigTwoPerson::AddRouteOptionsToJig`, 'y', 'C: jig route options'],
+  [`${G}ActorSystems.Posture::HasSlaveRouteObjects(`, 'y', 'C: horse rider/leader slave objects (ignore list, follower)'],
+  [`${G}Interfaces.IBoat::IsSlaveRoute(`, 'y', 'C: boat slave route objects'],
+  [`${G}Interfaces.IBoat::UsesTurnHelperFootprint(`, 'y', 'C: boat turn helper footprint'],
+  [`${G}Core.DynamicRegionBase::UpdateFootprint(`, 'y', 'C: discourage/impassable region footprints in the routing world'],
+  [`${G}Abstracts.ObjectWithFlexibleBuyModePlacement::UpdateGeoStateAndFootprint(`, 'y', 'C: object footprint state in the routing world'],
+  // G: goal and destination choice
+  [`${G}Abstracts.MarineLifeState::WanderRoutePrePlanning(`, 'y', 'G: fish/shark wander destination'],
+  [`${G}InteractionsShared.IViewableBase::GetViewRouteTarget(`, 'y', 'G: view-object route target'],
+  [`${G}Core.SocialJig::GetSlotForActor(`, 'y', 'G: jig slot per actor'],
+  [`${G}Core.SocialJig::RouteToJigA(`, 'y', 'G: jig routing (destination and options)'],
+  [`${G}Abstracts.Shell::GetRouteToShell(`, 'y', 'G: shell/rabbit hole entry route'],
+  [`${G}Abstracts.CommonDoor::GetRoutingSlotsOnSide(`, 'y', 'G: door routing slots'],
+  [`${G}ActorSystems.SimQueueBehindSlotLine::AlterRadialRangeDestination(`, 'y', 'G: queue line destination'],
+  [`${G}Interfaces.IGameObject::get_SimLine(`, 'y', 'G: SimRoutingComponent.PreRouteCheckForLine picks the line spot'],
+  [`${G}Objects.Counters.BarAdvanced::get_RoutingSlotBartender(`, 'y', 'G: bartender slot'],
+  [`${G}Objects.Electronics.Stereo::get_RouteDistanceForUse(`, 'y', 'G: radius around the stereo'],
+  [`${G}ObjectComponents.PartData::get_RouteTarget(`, 'y', 'G: part route target (bunk bed upper)'],
+  [`${G}ObjectComponents.PartData::GetContainmentSlot(`, 'y', 'G: part slot'],
+  [`${G}Objects.Vehicles.Vehicle::RouteToAndGetIn(`, 'y', 'G: vehicle entry route'],
+  [`${G}Objects.HobbiesSkills.HorseJump::get_StartSlots(`, 'y', 'G: horse jump start slots'],
+  [`${G}Objects.HobbiesSkills.HorseJump::get_EndSlots(`, 'y', 'G: horse jump end slots'],
+  [`${G}ObjectComponents.PortalComponent::GetStartSlotsForApproachingSim(`, 'y', 'G: portal approach slots (route to the portal start)'],
+  // R: result handling after the plan
+  [`${G}ObjectComponents.RoutingComponent::DoRoute(`, 'y', 'R: follows or rejects the planned route'],
+  [`${G}Abstracts.GameObject::DoRoute(`, 'y', 'R: car and marine life route handling'],
+  [`${G}ObjectComponents.RoutingComponent::OnAboutToStartFollowingRoute(`, 'y', 'R: pre-follow edits (followers, vehicles)'],
+  [`${G}Routing.RouteAction::PerformAction(`, 'y', 'R: route action per subpath; interrupt actions replan or fail'],
+  [`${G}Routing.FollowRouteAction::ForceReplan(`, 'y', 'R: replan from the route action'],
+  [`${G}ObjectComponents.PortalComponent::LockRoutingLane(`, 'y', 'R: lane lock failure stops or replans at the portal'],
+  [`${G}ObjectComponents.PortalComponent::IsFullyBlocked(`, 'y', 'R: blocked portal at traversal'],
+  [`${G}Objects.Vehicles.GoHereWithSituation+GoHereWithChildSituation::OnRouteReplan(`, 'y', 'R: follower replan (PostPlanCallback)'],
+  // Single implementation: no dispatch to resolve
+  ['Sims3.SimIFace.Route::', 'n', 'single implementation ScriptCore.Route'],
+  ['Sims3.SimIFace.RouteDestination::', 'n', 'abstract API, ScriptCore bodies'],
+];
+const COLLAPSE = 40; // a declared method reviewed 'n' with more overrides than this gets one summary row
+function reviewed(decl: string, ov: string, flagged: boolean): ['y' | 'n', string] {
+  const hit = (ov && REVIEW.find(([p]) => ov.startsWith(p))) || REVIEW.find(([p]) => decl.startsWith(p));
+  return hit ? [hit[1], hit[2]] : ['n', flagged ? 'routing-named, reviewed: no routing effect' : ''];
+}
+// Pack of an override: the install's OBJK script class names (--packs json: class -> pack dirs) of the override's
+// outermost type and its subclasses. GameData = base game. Empty when no object class instantiates it (components, postures).
+let packMap: Record<string, string[]> | undefined;
+function packsOf(m: Method): string {
+  if (!packMap) { const f = arg('--packs', ''); packMap = f ? JSON.parse(readFileSync(f, 'utf8')) : {}; }
+  let t = m.type; while (t.enclosing) t = t.enclosing;
+  const ps = new Set(derivedTypes(t).flatMap((x) => packMap![x.full] ?? []));
+  if (ps.has('GameData')) return 'base';
+  if (!ps.size && m.asm.name === 'Sims3StoreObjects') return 'store';
+  return [...ps].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).join('/');
+}
+function runDispatch(): void {
+  const ix = build();
+  const { sites, reached } = dispatchSites(ix, ROUTING_GROUPS);
+  const q = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  // One csv row per (declared method, override); the call site column names up to 3 callers and the count.
+  const rows = ['call site,declared method,override,assembly,affects routing decision,note'];
+  const st = { sites: sites.length, virt: 0, iface: 0, cons: 0, bclSites: 0, gameSites: 0, gameDeclared: 0, noOverride: 0, overrides: 0, flaggedDeclared: 0, yRows: 0 };
+  const byDecl = new Map<number, Site[]>();
+  for (const s of sites) { st[s.kind as 'virt' | 'iface' | 'cons']++; byDecl.set(s.decl, [...(byDecl.get(s.decl) ?? []), s]); }
+  const flaggedOut: string[] = [], yOut: string[] = [];
+  for (const [d, ss] of [...byDecl].sort((a, b) => ix.methods[a[0]].k.localeCompare(ix.methods[b[0]].k))) {
+    const callers = [...new Set(ss.map((s) => ix.methods[s.caller].k))].sort();
+    const site = `${callers.length}: ${callers.slice(0, 3).join('; ')}${callers.length > 3 ? '; ...' : ''}`;
+    const g = [...new Set(ss.flatMap((s) => [...s.groups]))].join('+'), kinds = [...new Set(ss.map((s) => s.kind))].join('/');
+    const decl = ix.methods[d].k, dm = d < methods.length ? methods[d] : undefined;
+    if (!dm || BCL.has(dm.asm.name) || kinds === 'cons') {
+      st.bclSites += ss.length; rows.push([site, decl, '(BCL or constrained: not listed)', dm?.asm.name ?? '?', 'n', `${kinds}; ${g}`].map(q).join(',')); continue;
+    }
+    st.gameSites += ss.length; st.gameDeclared++;
+    const ovs = overridesOf(dm); const flagged = ROUTING_DECL.test(decl);
+    if (!ovs.length) st.noOverride++;
+    st.overrides += ovs.length;
+    if (flagged) { st.flaggedDeclared++; flaggedOut.push(`flagged ${decl} sites=${callers.length} overrides=${ovs.length} groups=${g}`); }
+    const [dyn, dnote] = reviewed(decl, '', flagged);
+    if (ovs.length > COLLAPSE && dyn === 'n' && !REVIEW.some(([p, v]) => v === 'y' && ovs.some((o) => o.id.startsWith(p)))) {
+      const asmN = [...new Set(ovs.map((o) => o.asm.name))].sort().join('/');
+      rows.push([site, decl, `(${ovs.length} overrides, not listed)`, asmN, 'n', `${kinds}; ${g}${dnote ? '; ' + dnote : ''}`].map(q).join(','));
+      continue;
+    }
+    for (const o of [...(dm.flags & ABSTRACT ? [] : [dm]), ...ovs]) {
+      const [yn, note] = reviewed(decl, o === dm ? '' : o.id, flagged);
+      if (yn === 'y') { st.yRows++; yOut.push(`y ${o.id} [${o.asm.name}] packs=${packsOf(o) || '-'} :: ${note}`); }
+      const pk = packsOf(o);
+      rows.push([site, decl, o === dm ? '(declared body)' : o.id, o.asm.name, yn, `${kinds}; ${g}${note ? '; ' + note : ''}${pk ? '; packs ' + pk : ''}`].map(q).join(','));
+    }
+  }
+  const out = arg('--csv', '');
+  if (out) writeFileSync(out, rows.join('\n') + '\n');
+  console.log(JSON.stringify({ reached: Object.fromEntries(reached), ...st, rows: rows.length - 1 }));
+  for (const l of [...flaggedOut, ...yOut]) console.log(l);
+}
+
 // ---------- self-check ----------
 function selfCheck(): void {
   // Synthetic: compressed ints and an IL stream (ldarg.0; call tok; ldc.i4.s 5; switch(2); ldfld tok; ret).
@@ -535,12 +755,23 @@ function selfCheck(): void {
   const sc = closure(ix, sleep, 4, ics);
   if (![...sc.reached.keys()].some((i) => ix.methods[i].ic === 'ScriptCore.Simulator::Simulator_SleepImpl')) fail('Simulator.Sleep does not reach Simulator_SleepImpl (interface resolution)');
   if (!ids.size) fail('no ids');
+  // 12d: class hierarchy analysis across assemblies (docs/103).
+  const ov = (id: string) => { const m = methods.find((x) => x.id === id); if (!m) fail(`no method ${id}`); return overridesOf(m!).map((o) => o.id); };
+  const priv = ov('Sims3.Gameplay.Situations.PrivacySituation::OtherSimCanIgnorePrivacy(Sims3.Gameplay.Actors.Sim)');
+  if (!priv.some((x) => x.startsWith('Sims3.Store.Objects.RoutineMachine+')) || !priv.some((x) => x.startsWith('Sims3.Gameplay.Situations.GenericPrivacySituation::'))) fail(`privacy overrides miss the store or generic one: ${priv.length}`);
+  const door = ov('Sims3.Gameplay.Abstracts.CommonDoor::IsAllowedThrough(int,int,Sims3.Gameplay.Actors.Sim)');
+  if (!door.some((x) => x.startsWith('Sims3.Store.Objects.Turnstile::')) || !door.some((x) => x.startsWith('Sims3.Gameplay.Abstracts.DoorSingleGender::'))) fail(`door overrides: ${door}`);
+  const plan = ov('Sims3.SimIFace.Route::Plan()');
+  if (plan.length !== 1 || plan[0] !== 'ScriptCore.Route::Plan()') fail(`Route.Plan implementations: ${plan}`);
+  const box = ov('Sims3.Gameplay.Interfaces.IBoxStall::IsAllowedThrough(Sims3.Gameplay.Actors.Sim)');
+  if (box.length !== 1 || !box[0].startsWith('Sims3.Gameplay.Objects.Pets.BoxStall::')) fail(`IBoxStall implementations: ${box}`);
+  console.log(`  12d: privacy overrides ${priv.length}, door overrides ${door.length}, Route.Plan -> ScriptCore.Route, IBoxStall -> BoxStall`);
   console.log(`self-check ok: ${ix.stats.methods} methods, ${ix.stats.ics} ICs (${rows.length - missing.length}/${rows.length} csv rows bound), CalculateScore callers ${callers.length}, SendEvent overloads ${sends.length}, Sleep reaches SleepImpl`);
   for (const i of callers.slice(0, 8)) console.log('  caller:', ix.methods[i].k);
 }
 
 // ---------- main ----------
-const VALUE_FLAGS = new Set(['--asm', '--out', '--index', '--ic', '--depth', '--cut']);
+const VALUE_FLAGS = new Set(['--asm', '--out', '--index', '--ic', '--depth', '--cut', '--csv', '--packs']);
 function positional(): string[] {
   const out: string[] = []; const a = process.argv.slice(3);
   for (let i = 0; i < a.length; i++) { if (VALUE_FLAGS.has(a[i])) i++; else if (!a[i].startsWith('--')) out.push(a[i]); }
@@ -570,4 +801,12 @@ else if (cmd === 'build') {
 } else if (cmd === 'callers') {
   const ix = loadIndex(); const ts = new Set(lookup(ix, process.argv[3]));
   ix.methods.forEach((r, i) => { for (let k = 0; k < r.c.length; k += 2) if (ts.has(r.c[k])) { console.log(`${ix.kinds[r.c[k + 1]]}\t${r.k}`); break; } });
-} else console.log('usage: build | query <method>... | def <type>... | callers <method> | --self-check');
+} else if (cmd === 'overrides') {
+  build();
+  for (const a of positional()) for (const m of methods.filter((x) => x.id === a || x.id.startsWith(a + '(') || x.id.startsWith(a + '`'))) {
+    const os = overridesOf(m);
+    console.log(`${m.id} [${m.asm.name}] ${os.length} overrides`);
+    for (const o of os) console.log(`  ${o.id} [${o.asm.name}]`);
+  }
+} else if (cmd === 'dispatch') runDispatch();
+else console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | dispatch [--csv out] | --self-check');

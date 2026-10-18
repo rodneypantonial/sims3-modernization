@@ -44,6 +44,7 @@ The build scripts need these 10 files in `game-copy/assemblies/`: `mscorlib`, `S
 | `ts3agent` test agent | `node tools/harness/build-agent.ts` (full, needs a game restart) or `--hot` (plugin only) | `build/ts3agent.package` | `node tools/harness/cycle.ts --restart` installs it; `node tools/harness/reload-agent.ts` hot-reloads the plugin into a running game. Test-only: never ship it to players. |
 | No-intro package | `node tools/harness/nointro.ts` | `build/ts3-nointro.package` | installer entry `nointro` |
 | Overwatch Stuck Check off | `node tools/setup/build-overwatch-tuning.ts` | `build/ts3-overwatch-nostuckcheck.package` | installer entry `overwatch-no-stuckcheck` (opt-in, new saves only) |
+| Overwatch inventory cleanup off | `node tools/setup/build-overwatch-tuning.ts inventory` | `build/ts3-overwatch-noinvcleanup.package` | installer entry `overwatch-no-invcleanup` (opt-in, new saves only; conflicts with the Stuck Check one) |
 
 Changing a setting of `ts3fixes`: edit the tuning XML in `tools/setup/build-fixes.ts` (`TUNING_XML`) and rebuild, or edit the tuning resource `Ts3Fixes.Instantiator` in the installed package with s3pe. During tests the agent switches fixes at runtime (`patches {name:false}`, see docs/TESTING.md).
 

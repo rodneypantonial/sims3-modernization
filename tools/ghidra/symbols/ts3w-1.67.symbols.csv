@@ -3432,3 +3432,343 @@ address,name,type,comment
 0x0082CBF0,RoutingWorld_UpdateLotLockedForObject,function,"[verified: decompiled] thiscall(world, obj): RoutingWorld_UpdateLotLocked(id, Object_GetRoutingLotId(obj)) when world +0x974 <docs/89>"
 0x00624620,LotPlanner_SwapFlag10D,function,"[verified: disassembly] thiscall(P, v): returns P+0x10D and stores v <docs/89>"
 0x00949040,FootprintComp_RegisterEvents,function,"[verified: disassembly; not in functions.csv] ObjectEvents_Register for events 0/7 (0x948F90), 1/2 (0x948FC0), 9 (0x946F40), 0x0A (0x946F70), 0x21 (0x947630), 0x0E (0x947660) <docs/89>"
+0x00834DC0,RoutingSystem_LotLoadFloorUpdate,function,"[verified: only caller Lot_FinishLoad 0xACF170 (raw E8 index); role inferred] calls RoutingWorld_UpdateLotFloorFootprints <docs/94>"
+0x00834DF0,RoutingSystem_SaveLotWalls,function,"[verified: callers RoutingWorld_Save 0x834FC0, RoutingSystem_SaveLot 0x8361B0; role inferred] lot walls and floor footprints at save <docs/94>"
+0x00834F00,RoutingSystem_ExitBuildBuyLotUpdate,function,"[verified: only caller RoutingSystem_OnExitBuildBuy 0x835240 (2 sites); role inferred] walls, floors, terrain footprints <docs/94>"
+0x008350C0,RoutingSystem_RebuildLotWalls,function,"[verified: callers RoutingSystem_RebuildLotRouting 0x835110, 0xAC79E0; role inferred] <docs/94>"
+0x0082D2E0,RoutingWorld_AddObjectPortals,function,"[verified: callers 0x82F710/0x82F730/0x82F750/0x82F770 (diving board, water slide, platform/pool, stair portal ICs) and 0x830250; calls LotRouting_AddPortal; role inferred] <docs/94>"
+0x00832890,RoutingWorld_AddLotObjectPortals,function,"[verified: callers RoutingSystem_RebuildLotRouting 0x835110, 0xAC79E0; calls LotRouting_AddPortal; role inferred] <docs/94>"
+0x00637C30,LotRouting_AddPortalVariation,function,"[verified: callers IC_RouteManager_AddPortalLocationVariation 0x74D3F0 and 5 lot routing functions; role inferred] <docs/94>"
+0x00A48CC0,World_RemoveLotCommon,function,"[verified: callers IC_World_BulldozeLotImpl 0x7868E0, IC_World_DeleteHouseboatLotImpl 0x788800; reaches RoutingWorld_RemoveLot and RoutingSystem_RebuildLotRouting; role inferred] <docs/94>"
+0x0081A340,RoutingJob_SplitSubPaths,function,"[verified: decompiled] Splits the search node array (64-byte nodes, type +0x1C, flags +0x0E, hash +0x2C) into 64-byte subpath records and types them (the only PathType writer for planned routes) <docs/93>"
+0x00819E10,RoutingPath_CopyNodes,function,"[verified: decompiled] Copies a search node range into RoutingPathImp+0x98 as 48-byte nodes (pos, dir, seg len, cumulative len, flags) and sets the path length (vtable +0x130) <docs/93>"
+0x008204B0,RoutingPathImp_ctor,function,"[verified: disassembly] 0x190-byte RoutingPathImp, vtable 0x10214D8; status +0x94 = 0, nodes +0x98, PathType +0xB0 = SimPath, object id +0xB8, portal start +0xC0, blockers +0xD0 <docs/93>"
+0x0064E5C0,RoutingSearchPath_ctor,function,"[verified: disassembly] 0x18-byte ""Routing/Path"" search output, vtable 0xFEC058, node array +0x08..+0x0C <docs/93>"
+0x00750260,Route_UpdateLengths,function,"[verified: disassembly] thiscall(route): route+0xA4 = total length (0x74FEF0), route+0xA8 = length minus follower progress <docs/93>"
+0x0074FEF0,Route_SumPathLengths,function,"[verified: disassembly] thiscall(route): sum of path vtable +0x12C over route+0xE0 (x87 result) <docs/93>"
+0x00757250,Route_UnlinkPaths,function,"[verified: disassembly] thiscall(route): calls path vtable +0x78/+0x80/+0x88/+0x90 with 0 on every path of route+0xE0 before PlanCommon frees the list <docs/93>"
+0x00866E90,RoutePathList_Free,function,"[verified: disassembly] thiscall(list): releases each node's path RefPtr and frees the node <docs/93>"
+0x00752C20,Route_HandPathsToSteering,function,"[verified: decompiled] fastcall(route): follower's steering component takes the path list when route+0x141; sets route+0x60 (docs/87 I-87-11) <docs/93>"
+0x00751FF0,Route_GenerateDestinationCandidates,function,"[verified: decompiled] Calls each destination object's vtable +0x10 (candidate / non-candidate lists, result codes); an obstructing object id -> mType 16, blocker type 3 <docs/93>"
+0x0075D4B0,Route_ctor,function,"[verified: disassembly] native route object ctor (vtables 0xFD7AF4/0x1053988/0xFF39F8); writes the replan counter +0x1F4 <docs/93>"
+0x00657C50,PathPlannerWorld_ctor,function,"[verified: decompile] 0x198-byte world planner at [world+0x960], vtable 0xFED364; embedded PathContainer at +0x18 <docs/91>"
+0x00654060,PathPlannerWorld_Init,function,"[verified: call args at 0x829FC4..0x829FE3] thiscall(W)([world+0x964], P, R=world+0x54, G=world+0x8C); field roles [unverified] <docs/91>"
+0x00829C00,RoutingWorld_GetWorldPlanner,function,[verified: disassembly] Returns [world+0x960] when world+0x974 is set <docs/91>
+0x0066CD30,RTData_ctor,function,[verified: called with ecx = world+0x54 from 0x82F9FA] Packed waypoint grid R <docs/91>
+0x0066CD70,RTData_Clear,function,[verified: decompile] Frees chunk offsets and records <docs/91>
+0x0066D110,RTData_Load,function,"[verified: decompile] Reads resource type 0x05CD4BB3 (w, h, chunk offsets, records) under world+0x918 <docs/91>"
+0x0066CC30,RTData_Save,function,[unverified: role inferred] References type 0x05CD4BB3; called from RoutingWorld_LockedOp_Save <docs/91>
+0x0066CB90,RTData_WaypointSurfaceClass,function,[verified: decompile] Byte 2 of a waypoint record from its type or the terrain type at the point (0xC6C0C0) <docs/91>
+0x0066CE10,RTData_BuildComponents,function,"[verified: decompile] ""Routing/seeds"" flood fill, one component byte per waypoint <docs/91>"
+0x008349C0,RoutingWorld_BuildWorldRoutingData,function,[unverified: role inferred] Street/footpath chunks to R (0x810720) and water grid build (0x6734A0); save and BuildRoutingData <docs/91>
+0x00671E30,WaterGrid_ctor,function,[verified: called with ecx = world+0x8C from 0x82FA05] Water/cell grid G <docs/91>
+0x006734A0,WaterGrid_Build,function,[unverified: role inferred from callees] Builds G from heightmap, lots and roads; from 0x8349C0 and OnExitBuildBuy <docs/91>
+0x006729D0,WaterGrid_BuildCells,function,"[unverified: role inferred] ""Routing/lowBridges"", PassabilityMap, heightmap reads <docs/91>"
+0x0066D850,WaterGrid_CellIndex,function,[verified: decompile] Cell index from world origin WM+0xB4/+0xB8 with 4-unit cells <docs/91>
+0x0066DA10,WaterGrid_IsWaterCell,function,[verified: decompile] Cell byte non-zero and not 0x7F <docs/91>
+0x00670510,WaterGrid_MarkA,function,[unverified: role inferred] Writes the G+0x7C0 mark grids; from 0x62D9F0 <docs/91>
+0x00670750,WaterGrid_MarkB,function,[unverified: role inferred] Writes the G+0x7B0/+0x7C0 grids; from 0x6729D0 and 0x6733C0 <docs/91>
+0x0062D9F0,LotRouting_FootprintWaterMarks,function,[unverified: role inferred] Called by LotRouting_RemoveObjectFootprints; calls WaterGrid_MarkA twice <docs/91>
+0x0061AF40,AStarNode_Expand,function,[verified: vtable slot +0x2C of 0xFE9AD0/0xFEA080/0xFEABD0] Touches only AStarSearch_NodeState <docs/91>
+0x0061AC40,AStarGoalNode_ctor,function,[verified: vtable 0xFE9AD0 = "Routing/AStarGoalNode"; corrected from the docs/91 name] Builds goal nodes <docs/98 §1>
+0x0061B380,AStarGraphNode_ctor,function,"[verified: ""Routing/cAStarGraphNode/mNeighborNodes"" tag] Stores vtable 0xFEA080 <docs/91>"
+0x0061EB40,AStarStartNode_ctor,function,[verified: vtable 0xFEABD0 = "Routing/AStarStartNode"; corrected from the docs/91 name] Builds start nodes <docs/98 §1>
+0x00651DA0,LotRouting_LotEdgeWaypoints,function,[unverified: role inferred from use in ApplyLotUpdate] thiscall(W)(lot) edge waypoint list <docs/91>
+0x00FED048,vt_Portal,data,"[verified: stored by both portal constructors] Four slots: AddRef 0x64E8E0, Release 0x64E8F0, deleting dtor 0x64F1A0, type query 0x64E8B0; the only portal class <docs/92>"
+0x0064EEF0,Portal_ctor,function,"[verified: disassembly] Default portal: type 0xB828 at +0x34/+0x40, rooms 0xFFFF, AGS mask all ones; from lot load 0x62C920 <docs/92>"
+0x0064EF70,Portal_ctorAdd,function,[verified: disassembly] Portal constructor used by LotRouting_AddPortal <docs/92>
+0x0064E910,Portal_EndpointForAgent,function,"[verified: call shape] (portal, agentAGS, side, dir): endpoint from the variation matching the Sim's AGS <docs/92>"
+0x00632460,InRoom_ApplyPortalLockFootprints,function,"[verified: decompiled] Per room portal: footprint bit 8 = Portal_IsLocked for this Sim, quadtree remove/reinsert on change; shared write during plans <docs/92>"
+0x006338A0,LotPlan_PortalPointCheck,function,"[verified: decompiled] ""Routing/PortalCheckCache"" point test on portal endpoints from PortalEdgeCost [role inferred] <docs/92>"
+0x0062C920,LotRouting_LoadPortal,function,"[verified: decompiled] ""Routing/Portal"": deserializes portals at lot load (Portal_ctor) <docs/92>"
+0x0080CB40,DoorRouting_AddDoorPortals,function,"[verified: strings] RoutingSlot_Door%i_Front/Rear; vtable 0xFEB948 slot [owner class inferred] <docs/92>"
+0x00829520,RoutingWorld_SetOceanPortalOwner,function,[verified: disassembly] Stores the ocean portal owner id at world+0x988/+0x98C <docs/92>
+0x008294E0,RoutingAgent_GetOptions,function,[verified: disassembly] Returns agent+0x28 (the route options object) or 0 <docs/92>
+0x0081C810,RoutingOptions_Set,function,"[verified: disassembly] Sets/clears RouteOption (O+0x28) or RouteOption2 (O+0x30) bits <docs/92>"
+0x0081C8D0,RoutingOptions_IgnoreList,function,[verified: disassembly] Returns O+0x38 (ignore-for-route ids; route+0x190) <docs/92>
+0x0081C8F0,RoutingOptions_ForbiddenPortalList,function,[verified: disassembly] Returns O+0x68 (forbidden portal owner ids; route+0x1C0) <docs/92>
+0x0081C900,RoutingOptions_SetPreferredPortal,function,[verified: disassembly] Stores O+0x78/+0x7C <docs/92>
+0x0081C970,RoutingOptions_IgnoreListHas,function,[verified: disassembly] Id in O+0x38..+0x3C <docs/92>
+0x0081C9B0,RoutingOptions_ForbiddenPortalHas,function,[verified: disassembly] Id in O+0x68..+0x6C; used by Portal_LockState <docs/92>
+0x00752130,Route_GetDestinationSet,function,"[verified: disassembly] Returns route+0x144, creating it (0x50 bytes, vtable 0x1004448) when absent <docs/92>"
+0x0100423C,vt_RadialRangeDestination,data,[verified: stored by 0x74F220 from IC_Route_AddRadialRangeDestination] Slot +0x10 = 0x75BE60 <docs/92>
+0x0075BE60,RadialRangeDest_GenerateGoals,function,"[verified: disassembly] Target FindById, goal points; reaches World_CanSeeObject through 0x75AFA0/0x759B20 <docs/92>"
+0x00759B20,GoalPoint_Validate,function,"[verified: disassembly] Lot/level tests, ignore list; World_CanSeeObject at 0x75AC22 behind ForcePhysicsBasedRaycast <docs/92>"
+0x00789DD0,World_CanSeeObject,function,"[verified: callers] Line-of-sight test; sets the lot display level (Lot_SetDisplayLevel, forced) at 0x789EB5 and 0x78A218 <docs/92>"
+0x00AC0570,Lot_SetDisplayLevel,function,"[verified: disassembly] Lot +0x39C display level; fires World event 68 through 0x7920A0 <docs/92>"
+0x007920A0,World_FireLotLevelInfoChange,function,[verified: disassembly] World_FireEvent(0x44) = OnLotLevelInfoChange <docs/92>
+0x00676130,WorldAStar_BuildPath,function,"[verified: decompile] Parent chain to a vector of u32 waypoint refs, ""Routing/WorldPath"" <docs/99>"
+0x006760D0,WorldAStar_NewNode,function,[verified: decompile] Pool node g/f/ref/parent/refcount 1 <docs/99>
+0x00673600,WorldAStar_CirclePrepass,function,[verified: decompile] Midpoint circle radius 0.5*d+48 if < 600; stores centre opts+0x90 and r^2 opts+0xA0 <docs/99>
+0x005EB920,WorldAStar_HeapSiftUp,function,[verified: decompile] EASTL promote_heap on f (+4); stops when parent.f <= value.f <docs/99>
+0x00673BF0,WorldAStar_MakeHeap,function,[verified: decompile] EASTL make_heap over the open vector <docs/99>
+0x006735D0,WorldAStar_ReleaseChain,function,[verified: decompile] Refcount release up the parent chain into the free list <docs/99>
+0x0066F890,WaterLink_SlotFree,function,[verified: decompile] Water-link slot test against a hash in G (+0x360/+0x364) <docs/99>
+0x00673500,WorldAStar_ClosedListInit,function,"[verified: decompile] ""Routing/ClosedList"" per-chunk bit offsets, 256 bytes for virtual nodes <docs/99>"
+0x00673C70,WorldAStarContainer_ctor,function,[verified: decompile] PathHeap container; World Routing Tuning defaults and registration <docs/99>
+0x00656550,WorldPath_ToRecords,function,[verified: decompile] u32 refs to 20-byte records (chunk; wp; x; y=-100; z; type); lot-edge positions snapped <docs/99>
+0x006412F0,PathNode_Init,function,[verified: decompile] 64-byte search node defaults (y -100; +0x14 -999; +0x18 1.0; +0x2C 0xB828) <docs/99>
+0x0062A300,PathNodes_Append,function,[verified: decompile] Push one 64-byte node into the Routing/Path node vector <docs/99>
+0x00629140,PathNodes_Insert,function,[verified: decompile] EASTL vector insert/grow for 64-byte nodes <docs/99>
+0x0064FD10,WorldRecord_NodeType,function,[verified: decompile] Waypoint type to node type (+0x1C) and kind hash (+0x2C) <docs/99>
+0x00650950,Plan_ChooseStartGoalIndex,function,[verified: decompile] Writes start index and goal index (goal kept if its x/z match the reached goal) <docs/99>
+0x006542E0,GoalOrder_Sort,function,[verified: decompile] EASTL sort of (index; score) pairs; insertion sort for <= 28 <docs/99>
+0x0064FE80,GoalOrder_Greater,function,[verified: decompile] a.score > b.score <docs/99>
+0x0064FEA0,PlannerWorld_LotExitMasks,function,[verified: decompile] W+0x11C/+0x120 from RoutingWorld +0x4A..+0x4F; W+0x124 <docs/99>
+0x0064FCE0,WaypointRef_Equal,function,[verified: decompile] Compares two u16 pairs <docs/99>
+0x00653200,PlannerWorld_LotEdgeGroup,function,[verified: decompile] W+0xA4 hash lookup: waypoint ref to lot-edge connectivity group or -1 <docs/99>
+0x0066D8D0,WaterGrid_BodyValue,function,[verified: decompile] G+0x3A0 + 8*id for ids < 0x80 <docs/99>
+0x00653020,LotEdge_WaypointPosition,function,[verified: decompile] Lot-edge waypoint or outside-room portal to a lot position <docs/99>
+0x00654CC0,LotEdgePortals_Gather,function,[verified: decompile] Outside-room portals of a lot into a BestLotEdgePortals set <docs/99>
+0x0065BC20,LotEdgePortals_Choose,function,[verified: decompile] Scores and sorts lot exit/entry candidates; returns the first's R ref <docs/99>
+0x006564D0,LotEdgePortals_Sort,function,[verified: decompile] EASTL sort of 28-byte candidates by +0x14 ascending <docs/99>
+0x00650FD0,LotEdgePortals_InsertionSort,function,[verified: decompile] Stable insertion sort on +0x14 <docs/99>
+0x006595B0,ClosestWaypoints_Try,function,[verified: decompile] One closest-waypoint attempt (cached area; sort; up to 6 rescored; routability test) <docs/99>
+0x0065BB90,ClosestWaypoints_Find,function,"[verified: decompile] Up to 3 ClosestWaypoints_Try calls, ""Routing/closestWps"" <docs/99>"
+0x00652D80,ClosestWaypoints_Params,function,[verified: decompile] FindClosestParams cache lookup/insert <docs/99>
+0x00631BB0,LotTable_HubRef,function,[verified: decompile] Lot table entry +8 (lot hub waypoint ref) or -1 <docs/99>
+0x00650D40,PlannerWorld_LotHubRef,function,[verified: decompile] Lot hub ref as a u16 pair <docs/99>
+0x00650870,RTData_Colour,function,[verified: decompile] Component colour of a waypoint or -2 <docs/99>
+0x0066F540,WaterLink_Body,function,[verified: decompile] G+0x30 map: waypoint ref to water body byte <docs/99>
+0x007CD1A0,Geom_PointSegmentDist2,function,[verified: decompile] Squared 2D distance from a point to a segment <docs/99>
+0x004FA800,JobRng_Seed,function,[verified: disassembly] LCG seed; -1 or 0 = RDTSC <docs/99>
+0x004FA840,JobRng_Next,function,[verified: disassembly] s = s*0x41C64E6D + 0x3039; returns high part scaled to n <docs/99>
+0x00829500,RoutingWorld_SetWorldManager,function,[unverified: name inferred] Writes world+0x964 from 0xB04BDA and 0xD41AF3 <docs/99>
+0x0066F8D0,WaterLink_Find,function,[verified: decompile] G+0x30 multimap search by waypoint ref and body <docs/99>
+0x0062FBE0,LotPath_AddPortalNodes,function,[verified: decompile] Adds portal entry/exit node pairs (type 2/3; object id; kind hash) <docs/99>
+0x00632630,InRoomPlanToPoint,function,"[verified: decompile] In-room leg to one point: one goal node (index 0, score 1.0), threshold 1.0, same-room-only nudge; calls QuadTreeCellAStar at 0x632C1A <docs/98>"
+0x0062A470,InRoom_EmitSearchNodes,function,"[verified: disassembly] thiscall(P)(X, path): one 64-byte search node per A* path node (type 6/0/7, y -100, +0x2C 0xB828) <docs/98>"
+0x006298F0,LotPlanCtx_Init,function,"[verified: disassembly] Initialises the lot search context X on LotPlan_Inner's stack <docs/98>"
+0x0062F140,LotPath_ToWorldAndEdgeFlags,function,"[verified: decompile] Lot-local to world for every node, y = -100; flags 0x10/8/4 by distance to the lot rectangle on the lot level <docs/98>"
+0x00624780,Lot_RoomIdAtPoint,function,"[verified: decompile] Room id + 16, level + 4 outside rooms, -1 when the lot has no room data <docs/98>"
+0x0061ECD0,InRoomHeuristic_Euclid,function,"[verified: disassembly] Slot 0 of vtable 0xFEBF48: 2D distance from (x, z) to the target <docs/98>"
+0x0061AD90,AStarGoalNode_Cost,function,"[verified: disassembly] Goal node slot +0x30: distance times the goal cell's multiplier; FLT_MAX when disabled <docs/98>"
+0x0061AF80,AStarGraphNode_Cost,function,"[verified: decompile] Graph/start node slot +0x30: QuadCell_EdgeCost on the node's cell, else plain distance <docs/98>"
+0x0061ACD0,AStarGoalNode_Reset,function,"[verified: disassembly] Slot +0x3C: base reset; a second generation disables the goal (+0x4D) <docs/98>"
+0x0061B170,AStarNode_Reset,function,"[verified: disassembly] Slot +0x3C: state, g, f, parent, bucket links cleared; sets 0x400 on the cell <docs/98>"
+0x0061B440,AStarNode_Detach,function,"[verified: decompile] Graph node slot +4: reset, unlink from neighbours, release cell <docs/98>"
+0x0061EC90,AStarTerminalNode_Detach,function,"[verified: decompile] Start/goal node slot +4: reset, unlink from neighbours, release cell <docs/98>"
+0x0061B740,AStarNode_AddNeighbor,function,"[verified: disassembly] Slot +8: append to the explicit neighbour vector +0x08 <docs/98>"
+0x0061B6D0,AStarNode_RemoveNeighbor,function,"[verified: decompile] Slot +0xC: erase from the neighbour vector, order kept <docs/98>"
+0x0061DF50,AStarOpen_Insert,function,"[verified: disassembly] Bucket trunc(f) clamped to 0..49999, sorted insert before equal f <docs/98>"
+0x0061DFB0,AStarOpen_Update,function,"[verified: disassembly] Same bucket: move up behind equal f; else remove and insert <docs/98>"
+0x0061B880,AStarBucket_InsertSorted,function,"[verified: disassembly] Insert before the first node with f >= new f <docs/98>"
+0x0061B910,AStarBucket_MoveUp,function,"[verified: disassembly] Move a node toward the head while prev.f > its f <docs/98>"
+0x0061BC90,AStarOpen_Remove,function,"[verified: disassembly] Unlink from its bucket, fix min/max <docs/98>"
+0x0061BAF0,AStarOpen_AdvanceMin,function,"[verified: decompile] Next non-empty bucket, else min = max = -1 <docs/98>"
+0x0062BD60,AStarOpen_Grow,function,"[verified: disassembly] Grow the bucket vector to index + 1 with empty buckets <docs/98>"
+0x0061DD40,AStarSearch_ExtractPath,function,"[verified: decompile] Goal to first start via +0x18 parents, then reversed into Q+0x14 <docs/98>"
+0x0066C0C0,QuadCell_EdgeCost,function,"[verified: disassembly] Entry point on the shared edge (0.01 inside, line to target, clamped) and cost; type 0x18/0x13 gate <docs/98>"
+0x0066BCE0,QuadCell_SegmentCost,function,"[verified: disassembly] Segment cost split by the two cells' multipliers; +50 into a class-13 cell under flag 0x20 <docs/98>"
+0x0066B670,QuadCell_Multiplier,function,"[verified: decompile] Cached multiplier, recomputed when ctx+0x50 differs from the 24-bit key <docs/98>"
+0x0066B600,QuadCell_Class,function,"[verified: decompile] Cached class byte, same cache as QuadCell_Multiplier <docs/98>"
+0x0066B9C0,QuadCell_Neighbours,function,"[verified: disassembly] Sides -z, +x, +z, -x: climb, mirror, collect <docs/98>"
+0x0066B8D0,QuadCell_ClimbToSideAncestor,function,"[verified: disassembly] Push quadrants while they lie on the side, stop at the root <docs/98>"
+0x0066AC60,QuadCell_MirrorDescend,function,"[verified: disassembly] Descend the mirrored quadrant path until final <docs/98>"
+0x0066B6E0,QuadCell_CollectSideCells,function,"[verified: disassembly] Depth-first final cells along the side, second child first; find-or-create <docs/98>"
+0x0066BFD0,QuadCell_ExpandNeighbours,function,"[verified: disassembly] Once per generation (cell bit 0x400): NodeState for each neighbour cell node <docs/98>"
+0x0066BC30,QuadCell_InitNodeAtCentre,function,"[verified: decompile] New cell's node at the cell centre with the cell's level <docs/98>"
+0x00669FF0,QuadCell_Key,function,"[verified: decompile] Two-dword cell key: ix/iz/depth and shape/level/tree id <docs/98>"
+0x00664370,AStarCellTable_Find,function,"[verified: decompile] Bucket (k0 xor k1) mod 10007 <docs/98>"
+0x0066A220,QuadCellPos_Parent,function,"[verified: decompile] Up one level: parent shape inside a leaf, else parent node <docs/98>"
+0x00669C30,QuadCellPos_Set,function,"[verified: decompile] Sets tree, parent, quadrant, ix/iz/level/depth, scale, node, shape <docs/98>"
+0x00669BE0,QuadCellPos_ctor,function,"[verified: decompile] Empty 0x24-byte cell position, vtable 0x107396C <docs/98>"
+0x00663900,LotQuadTree_CellAtPoint,function,"[verified: decompile] Descend from the root to the final cell holding a point; half-open bounds <docs/98>"
+0x006681E0,QuadLeaf_ClassFromEntries,function,"[verified: disassembly] Class and multiplier of a whole leaf from its footprint entries <docs/98>"
+0x00668C40,QuadNode_ClassFromChildren,function,"[verified: decompile] Max class and multiplier over the children <docs/98>"
+0x00667DB0,QuadLeaf_ClassFromMaskedEntries,function,"[verified: decompile] As QuadLeaf_ClassFromEntries for one sub-cell (entry mask bit from 0xFEDE48) <docs/98>"
+0x00669530,QuadLeaf_CountBlockingTypes,function,"[verified: decompile] Bit count of distinct blocking footprint types in a sub-cell <docs/98>"
+0x00836200,RoutingWorld_GetImpl,function,[verified: disassembly] Body of RoutingWorld_Get (thunk 0x8292D0): loads the routing world global 0x11D9128; the one root load of the search <docs/101>
+0x0066AB70,QuadTreeCell_ClipScratch,function,[verified: disassembly] Passes the global scratch object 0x1158580 (two vectors) as this to 0x67C6A0/0x67C070 <docs/101>
+0x00664650,LotQuadTree_ctor,function,[unverified: role from vtable 0xFED994 store and the live count 0x11CF168 increment] <docs/101>
+0x00666350,LotQuadTree_dtor,function,[unverified: role from vtable 0xFED994 store and the live count 0x11CF168 decrement] <docs/101>
+0x00759560,RouteDest_Point_Generate,function,"[verified: decompiled] Point destination vtable 0x10041C8 slot +0x10; one candidate, returns true <docs/101>"
+0x007596E0,RouteDest_SlotArray_Generate,function,"[verified: decompiled] Slot-array destination vtable 0x100421C slot +0x10; per slot RouteToObjectCheck, records blocker id in the result <docs/101>"
+0x0074FB00,RouteDest_Lot_Generate,function,[verified: decompiled] Lot destination vtable 0x100425C slot +0x10; lot points through the world planner <docs/101>
+0x0081FCD0,RoutingPathImp_InterestPoints,function,[verified: disassembly] Path vtable +0x15C: returns path+0x170 (interest point list head) <docs/101>
+0x00821940,RoutingPathImp_AppendFrom,function,[unverified: role from callers IC_Route_Append and SmoothenSubPathConnections] Path vtable +0xF8; only allocation site of RoutingInterestPoint records (copies) <docs/101>
+0x0081FA20,RoutingPathImp_CopyFrom,function,[unverified: role from callers IC_Route_Clone and 0x764420] Copies a path including the interest point list <docs/101>
+0x00AB78B0,Lot_LevelAtPoint,function,[verified: decompiled] Walks levels top-down with the floor-height sampler 0xA8DF80 and returns the level under a point <docs/101>
+0x0074BC60,Route_RoomAtPoint,function,"[verified: decompiled] World to lot-local (0xAB88A0), then PartitionManager_RoomAtPoint; 0xFFFF when no lot <docs/101>"
+0x00B499D0,PartitionManager_RoomAtPoint,function,"[verified: disassembly] this = Lot+0x298; partition = this+0x44+kind*4; tile, level and quarter from the point, then 0xC05430 <docs/101>"
+0x00C05430,Partition_RoomIdAtTile,function,"[verified: decompiled] Grid at +0x14 (dims +4/+8/+0xC), base level +0x10; picks one of four 16-bit room ids by quarter mask <docs/101>"
+0x00AA2160,PartitionGrid_Cell,function,"[verified: disassembly] Block index +0x48 (0x8000 = uniform block in +0x38), else per-tile cells in +0x28; 8 bytes per tile <docs/101>"
+0x00B50B10,PartitionManager_ctor,function,"[verified: allocation tag Lot/PartitionManager, 0x290 bytes, stored at Lot+0x298 by 0xAC9B10 and 0xACA060] <docs/101>"
+0x00635440,LotRouting_FootprintRoomIds,function,"[verified: decompiled] Room ids of an object footprint from the room partition (0xC08510, Routing/roomIDs), invalidates those room records, marks the lot dirty <docs/101>"
+0x00630F70,LotRouting_InvalidateRoom,function,[verified: decompiled] Clears a room record's built byte and the lot graph's +0x8C flag <docs/101>
+0x00C08510,Partition_RoomIdsOnLevel,function,[unverified: role from the decompile] Iterates the partition room table (+0x38) and collects room ids on a level <docs/101>
+0x00947700,FootprintComponent_LockKeySet,function,"[verified: disassembly] Gets or creates (arg 1) the lock-key set of an object footprint component (vtables 0x1043918, 0x1043950) <docs/101>"
+0x00948050,LockKeySet_Add,function,[unverified: role from IC_RouteManager_FootprintAddLockKey] Sorted insert of a 64-bit key (0x62C010) <docs/101>
+0x009479D0,LockKeySet_Remove,function,[unverified: role from IC_RouteManager_FootprintRemoveLockKey] Erase (0x81CF40) <docs/101>
+0x00947FA0,LockKeySet_Assign,function,[unverified: role from IC_RouteManager_FootprintSetLockKeys] Replaces the key array <docs/101>
+0x00835300,RoutingWorld_OnMessage,function,"[verified: raw disassembly; not a function in the Ghidra database] Routing world EAMessage handler (vtable 0x102267C slot +4): 0x38E3C0E world init (flag +0x983), 0x38E3C1E load done (G build), 0x4E11976/0x4E119BB build/buy enter/exit (+0x97B), 0x6EF1610 (G build), 0x7FDA974 (0x8349C0), 0xCB484F51 (+0x983 = 1), 0x38E3C6C RoutingWorld_Clear <docs/100>"
+0x0082A030,WaterGrid_BuildFromWorld,function,"[verified: decompile] Builds G (0x6734A0) always (0x624F70 returns 0) with P when planners are ready, then shorelines (0x672440); from RoutingWorld_OnMessage and OnExitBuildBuy while world+0x983 <docs/100>"
+0x006714A0,WaterGrid_Clear,function,[verified: decompile] Resets G header and frees shoreline trees and houseboat offset sets <docs/100>
+0x00671FF0,WaterGrid_dtor,function,[verified: decompile; caller RoutingWorld_ctor cleanup] Frees all G members <docs/100>
+0x00671580,WaterGrid_LabelBodies,function,"[verified: decompile] Flood fill of 0x80 cells into body ids 1-0x7E (overflow 0x7F), seed/count table G+0x39C; sets G+0 = 1 <docs/100>"
+0x00672480,WaterGrid_InitNeighbourOffsets,function,[verified: decompile] 8 neighbour deltas G+0x37C..+0x398 and the houseboat offset sets <docs/100>
+0x0066E040,WaterGrid_UpdateCellPassability,function,"[verified: decompile] Cell class from flags (0x02/0x04/0x08/0x10) to the 5 passability maps via 0x66D920 <docs/100>"
+0x0066D920,PassMaps_SetCellClass,function,[verified: decompile] map k cell = (k < class) for every passability map <docs/100>
+0x0061F5C0,PassMaps_Resize,function,"[verified: decompile] Sizes w, h, 5 passability and 10 high-cost byte maps; keeps contents when the size is unchanged <docs/100>"
+0x006733C0,WaterGrid_MarkFootprintPolygon,function,[verified: decompile] Rasterises a footprint polygon's edges into the high-cost maps of its agent classes and records new water cells (from 0x636BF0) <docs/100>
+0x00672920,WaterGrid_GetFootprintRecord,function,"[verified: decompile] Find or add the highCostFootprints record (G+0x7D0) for (owner id, footprint id) <docs/100>"
+0x0066D5E0,WaterGrid_FootprintMarkClasses,function,[verified: decompile] 64-bit agent mask to a 10-bit high-cost map set (table 0x1158610) <docs/100>
+0x0066D6E0,WaterGrid_RouteMarkClass,function,[verified: decompile] Route option word to the high-cost map index read by the water JPS <docs/100>
+0x0066FB40,WaterGrid_BlockedNodesAdd,function,[verified: decompile] blockedNodeMap (G+0x35C) +1 over a footprint bounding box (from 0x636BF0) <docs/100>
+0x0066F6D0,WaterGrid_BlockedNodesRemove,function,[verified: decompile] blockedNodeMap -1 over a bounding box (from 0x62D9F0) <docs/100>
+0x00672440,WaterGrid_BuildShorelines,function,[verified: decompile] 0x66FD00 then 0x672110 <docs/100>
+0x0066FD00,WaterGrid_BuildShorelineMap,function,"[verified: decompile] shorelineMap/reverseShorelineMap from R waypoints; rewrites R surface bytes 0x10->0x13, 0x02->0x15 <docs/100>"
+0x00672110,WaterGrid_BuildLotInternalShorelines,function,[verified: decompile] lotInternalShorelineMaps (lot land cell next to lot water) <docs/100>
+0x00671000,WaterGrid_CutWorldObjects,function,[verified: decompile] Cuts small non-lot world object footprints out of unlabelled water (WM+0x9C list) <docs/100>
+0x00670F50,WaterGrid_CutHardcodedPatches,function,[verified: decompile] Three hard-coded quads (table 0x1158740) in world id 0x859DB48 (Egypt) <docs/100>
+0x00670C70,WaterGrid_CutPolygon,function,[verified: decompile] Unlabelled water cells inside a polygon become land <docs/100>
+0x00C61FE0,WorldManager_PostWaterGridDirty,function,"[verified: disassembly] If WM+0x1B4 != 0 and latch WM+0x110 clear: posts 0xCB484F51 to the script message server <docs/100>"
+0x00769950,ScriptHost_PostWorldReady,function,"[unverified: name inferred] From ScriptHost_ScriptTick when ScriptHost+0xA2C runs out: World event 7, posts 0x6EF1610 <docs/100>"
+0x00C6ACB0,WorldManager_FindHouseboatLotSlot,function,"[verified: decompile] First free 72 m slot past the world's max Z edge, at sea height + 3 <docs/100>"
+0x00AB9C40,Lot_SetHouseboatParent,function,[verified: decompile] Writes Lot+0x444 flag, +0x460/+0x464 boat id and display offsets +0x470..+0x4AC only <docs/100>
+0x00AB33F0,Lot_GetHouseboatDisplayTransform,function,[verified: decompile] Display transform from the boat object's transform and Lot+0x470.. <docs/100>
+0x005A2110,World_GetWorldNameId,function,[verified: decompile] WorldName enum value of the current world (SV/Riverview/Starlight/Moonlight by file name else WM+0x60) <docs/100>
+0x00C60E70,WorldManager_FindPondAtPoint,function,[verified: decompile] Pond (WM+0x100 list) containing a point <docs/100>
+0x00C61670,WorldManager_GetSeaHeight,function,"[verified: decompile] WM+0x60 sea object +0x14, else -100 <docs/100>"
+0x00C6BBC0,WorldManager_IsRoutableTerrainPoint,function,"[unverified: name inferred] In world bounds and (terrain query 0xC22050 < 1 or a lot at the point) <docs/100>"
+0x00624F70,Stub_ReturnFalse,function,[verified: decompile] Shared return-0 body (290 references) <docs/100>
+0x006543B0,ClosestWaypoints_Sort,function,[verified: capstone] EASTL sort of 32-byte closest-waypoint candidates ascending by float +0x08; insertion sort for 28 or fewer <docs/99 §10.2>
+0x00653B70,ClosestWaypoints_IntroLoop,function,[verified: capstone] Introsort loop (median of three on +0x08; heap sort when the depth budget runs out) <docs/99 §10.2>
+0x006502E0,ClosestWaypoints_InsertionSort,function,[verified: capstone] Guarded insertion sort on +0x08 with strict > (stable) <docs/99 §10.2>
+0x00650360,ClosestWaypoints_UnguardedInsertion,function,[inferred: call position after the first 28 in 0x6543B0] Unguarded insertion sort for the tail <docs/99 §10.2>
+0x00652890,ClosestWaypoints_Partition,function,[inferred: call position in 0x653B70] Introsort partition around the pivot <docs/99 §10.2>
+0x00652900,ClosestWaypoints_HeapSort,function,[inferred: call position in 0x653B70] Introsort fallback heap sort <docs/99 §10.2>
+0x00650F90,Vec2_Normalize,function,[verified: capstone] out = in / |in| for an (x z) pair via x87 1/sqrt <docs/99 §10.2>
+0x00654790,ClosestWaypoints_GatherChunk,function,[verified: capstone] Candidate gather; skips blocked and type 0x11 always; mode filters for types 5 8 0xB 0xD 0xE 0x13 <docs/99 §10.2>
+0x006580F0,WorldObstacleRings_ChunkCache,function,[verified: capstone] Per-chunk cache (W+0xC0) of type-0xE waypoint rings (edge byte 6) used as obstacle outlines <docs/99 §10.4>
+0x00658A00,Routing_SegmentClearOfRings,function,[inferred: calls 0x6580F0 and segment crossing 0x7CDAA0; called by 0x659390] Segment test against world obstacle rings and lot polygons <docs/99 §10.4>
+0x00681F20,PhysShape_SetLevelEnableBit,function,"[verified: decompiled] Sets or clears bit 0x10000 of shape +0x2C; called per level shape by Lot_SetDisplayLevel through 0x686B30 <docs/105>"
+0x00686B30,PhysicsWorld_SetShapeLevelEnable,function,[verified: decompiled] Thunk to 0x681F20 (shape enable bit 0x10000) <docs/105>
+0x00789A80,LineOfSight_SeeThroughTest,function,"[verified: decompiled] For hit shapes with flag 2 and type 0x65BAD16: lot wall data lot+0x290, Lot_WorldToLocal2D, 0x788F20 twice; purpose inferred <docs/105>"
+0x00C62D40,WorldManager_FindLotByIdTyped,function,[verified: decompiled] WorldManager_FindLotById then vtable +0x40 == 1 <docs/105>
+0x0074CB80,GoalPoint_LevelLotConstraint,function,"[verified: decompiled] Level range -4..12 and lot/valid-rooms constraint before the line-of-sight test in GoalPoint_Validate <docs/105>"
+0x00AC068B,Lot_SetDisplayLevel_QuietTest,label,"[verified: disassembly] 4th argument (quiet) set: skip scene refresh, message 0x41F76BB and event 68 (0x7920A0); World_CanSeeObject always passes quiet, so it never fires event 68 (corrects the 0xAC0570 row) <docs/105>"
+0x00FED994,vt_LotQuadTree,data,"[verified: stored by 0x664650] +0 AddRef and +4 Release on a count at +0x34, +8 deleting destructor; quadtree role inferred from the only constructor caller <docs/102>"
+0x00FEC058,vt_RoutingSearchPath,data,"[verified: stored by RoutingSearchPath_ctor 0x64E5C0] +0 AddRef 0x7D9FA0, +4 Release 0xEC4FC0 <docs/102>"
+0x00F7E8AC,purecall_thunk,function,[verified: jmp to MSVCR80!_purecall] Slot value of 155 abstract vtables <docs/102>
+0x00662D00,LotQuadTree_QueryCbA,function,[verified: callback passed by 0x6672E0 to QuadTreeCellPos_A 0x663B20] <docs/102>
+0x00662D30,LotQuadTree_QueryCbB,function,[verified: callback passed by 0x667350 to QuadTreeCellPos_A 0x663B20] <docs/102>
+0x00662DB0,LotQuadTree_QueryCbC,function,"[verified: callback passed by 0x667400, 0x667480, 0x6674F0, 0x667560 to the quadtree walkers; calls LotQuadTree_FootprintVisitor 0x669CD0] <docs/102>"
+0x00662DD0,LotQuadTree_QueryCbD,function,"[verified: callback passed by 0x667400, 0x667480, 0x6674F0, 0x667560 to the quadtree walkers] <docs/102>"
+0x00E51FC0,Interp_GetVirtualMethod,function,"[verified: disassembly] callvirt resolver on an inline-cache miss: receiver ecx, declared RuntimeMethod ebx; class slot MonoClass+0xBC[MonoMethod+0x1C >> 12], interface through 0xD70870 <docs/104>"
+0x00E51F20,Interp_GetRuntimeMethod,function,"[verified: disassembly] Returns MonoMethod+0x14, creating the 0x48-byte RuntimeMethod (+0x08 = MonoMethod) on first use <docs/104>"
+0x00E54AF4,Interp_CallvirtInlineCache,label,"[verified: disassembly] Per-site cache {MonoClass*, RuntimeMethod*}; hit skips 0xE51FC0, miss stores the new pair at 0xE54B1A <docs/104>"
+0x00E53370,Delegate_CreateDelegate_internal,icall,"[verified: registered in 0xE5A680] Delegate +0x08 target, +0x10 RuntimeMethod, +0x18 MethodInfo; object header 4 bytes <docs/104>"
+0x00E9D8B0,mono_guid_to_string,function,[verified: format string 0x10ECE30] <docs/104>
+0x00E82FE0,mono_image_load_metadata_ptrs,function,"[unverified: inferred name] Stores the image GUID string at image+0x28 from the #GUID heap (image+0x50/+0x54) at 0xE83221 <docs/104>"
+0x00E6DB40,mono_class_setup_parent,function,[verified: stores MonoClass+0x24] <docs/104>
+0x00E6AA00,mono_class_setup_supertypes,function,"[verified: disassembly] MonoClass+0x3C supertypes, +0x40 depth (u16) <docs/104>"
+0x00E6EBA0,Class_EnsureVtable,function,[unverified: inferred role] Sets up MonoClass+0xBC (virtual slot table) when NULL <docs/104>
+0x00E6F720,mono_class_get_field_from_name,function,[unverified: inferred from the sSimTickCnt lookup at 0xD7E91F] <docs/104>
+0x00E9DD40,mono_vtable_get_static_field_data,function,[unverified: inferred from use at 0xD7E932] <docs/104>
+0x00D70870,Class_GetInterfaceOffset,function,"[unverified: inferred from callers (class, interface id at MonoClass+0x44)] <docs/104>"
+0x011D72C4,g_WorldEventDelegate59,data,[verified: 0x11D6A78 + 59 * 0x24] OnPortalLocked delegate object <docs/104>
+0x011D7408,g_WorldEventDelegate68,data,[verified: 0x11D6A78 + 68 * 0x24] OnLotLevelInfoChange delegate object <docs/104>
+0x00806FE0,Footprint_GetOwnerId,function,[verified: returns the 64-bit owner id at +0x14/+0x18; slot +0x7C of every primary footprint vtable; live at 0x6371E8 0x665C7F 0x6675C0] <docs/106>
+0x00620CC0,Footprint_GetOwnerIdAlias,function,[verified: jumps to the object's own slot +0x7C; slot +0x84 of 0xFEAE08; live at 0x637101] <docs/106>
+0x006262B0,FootprintMember_GetOwnerIdInv,function,"[verified: owner [this+0xC] slot +0x7C, result bitwise inverted; slot +0x7C of the member vtable 0xFEBF90] <docs/106>"
+0x006262D0,FootprintMember_GetOwnerIdAlias,function,[verified: owner [this+0xC] slot +0x7C; member slot +0x84] <docs/106>
+0x00626280,FootprintMember_FwdSlot64,function,[verified: owner [this+0xC] slot +0x64; member slot +0x64] <docs/106>
+0x00626220,FootprintMember_FwdSlotC,function,[verified: owner [this+0xC] slot +0xC; member slot +0xC] <docs/106>
+0x00626210,FootprintMember_FwdSlot0,function,[verified: owner [this+0xC] slot +0x0; member slot +0x0 (type query of the owner)] <docs/106>
+0x00620DB0,Footprint_HasTypeBits,function,[verified: tests +0x34 against 0x7C000000; footprint slot +0x64; live at 0x636C76] <docs/106>
+0x00806C50,FootprintMember_FwdSlot2C,function,[verified: owner [this+0xC] slot +0x2C with the member float +0x10; member slot +0x2C] <docs/106>
+0x0080EF80,Footprint_LevelPolygonQuery,function,"[verified: calls Footprint_EnsureLevelPolygons 0x80E5B0 (lazy polygon cache, docs/83 W6a) then 0x807310; footprint slot +0x2C; live at 0x636D18] [role inferred] <docs/106>"
+0x008075F0,Footprint_HasMembers,function,[verified: member list +0x24 non-empty; footprint slot +0x58; live at 0x6374B3] <docs/106>
+0x00964230,FootprintMember_GetFloat10,function,[verified: returns float +0x10; member slot +0x40; live at 0x636D5A] <docs/106>
+0x00807400,Footprint_GetOrCreateMember,function,"[verified: finds the member with key +0x18/+0x1C in list +0x24, else allocates one under lock 0x11D8F90 (pool 0x1165B80); footprint slot +0x50; live at 0x80E24F..0x80E403] <docs/106>"
+0x00624450,Footprint_GetTypeByte,function,[verified: returns signed byte +0x35; footprint slot +0xC] <docs/106>
+0x0070AE20,Stub_Return10,function,[verified: returns 10; slot +0xC of 0xFEAE08] <docs/106>
+0x00620DC0,Footprint_GetFloat1C,function,[verified: returns float +0x1C; slot +0x4 of 0xFEAE08 and 0xFEBA98 (not a Release)] <docs/106>
+0x00806F70,Footprint_AgentCostScale,function,"[verified: 1.0 when the agent id matches +0x14/+0x18, else float +0x1C; slot +0x4 of 0xFEB720 (not a Release)] <docs/106>"
+0x00807C20,Footprint_AgentCostScaleOpt,function,[verified: RoutingOptions_Test on the agent then Footprint_AgentCostScale; footprint slot +0x4 (not a Release)] <docs/106>
+0x0080C3D0,Footprint_AgentCostScaleOptB,function,[verified: reads RoutingAgent_GetOptions/RoutingOptions_Test; slot +0x4 of 0xFEB848 and 0xFEB970 (not a Release)] <docs/106>
+0x0080F7D0,Footprint_AgentCostScaleOptC,function,[verified: option 0x1000000 test and id match at +0x40/+0x44; footprint slot +0x4 (not a Release)] <docs/106>
+0x00806B70,FootprintMember_AgentCost,function,[verified: member slot +0x4 (cost through the owner's slots +0x8/+0x4); not a Release] <docs/106>
+0x00620E60,FootprintIface_GetOwnerId,function,[verified: this-4 then Footprint_GetOwnerId; slot +0x4 of every footprint interface vtable (not a Release); live at 0x75CC83] <docs/106>
+0x006262E0,FootprintMemberIface_GetOwnerIdInv,function,[verified: this-4 then FootprintMember_GetOwnerIdInv; slot +0x4 of 0xFEBF6C] <docs/106>
+0x00620E50,FootprintIface_GetTypeConst,function,[verified: this-4 then Stub_Return10; slot +0x8 of 0xFEADE0] <docs/106>
+0x00624ED0,FootprintIface_GetTypeByte,function,[verified: this-4 then Footprint_GetTypeByte; slot +0x8 of the footprint interface vtables] <docs/106>
+0x00626300,FootprintMemberIface_FwdSlotC,function,[verified: this-4 then FootprintMember_FwdSlotC; slot +0x8 of 0xFEBF6C] <docs/106>
+0x00620D20,FootprintIface_IsKind,function,"[verified: primary slot +0x8 with (0, arg), true unless the answer is 2..12 or 13; slot +0x1C of the footprint interface vtables; live at 0x75CCBF] [meaning inferred] <docs/106>"
+0x00FEADE0,vt_FootprintIface_FEAE08,data,"[verified: 9 slots; the second vtable of the 0xFEAE08 footprint (subobject at +4, thunks subtract 4)] <docs/106>"
+0x00FEB5D4,vt_FootprintIface_FEB5F8,data,[verified: second vtable of 0xFEB5F8 (subobject at +4)] <docs/106>
+0x00FEB6F8,vt_FootprintIface_FEB720,data,[verified: second vtable of 0xFEB720 (subobject at +4)] <docs/106>
+0x00FEB820,vt_FootprintIface_FEB848,data,[verified: second vtable of 0xFEB848 (subobject at +4)] <docs/106>
+0x00FEB94C,vt_FootprintIface_FEB970,data,[verified: second vtable of 0xFEB970 (subobject at +4)] <docs/106>
+0x00FEBA74,vt_FootprintIface_FEBA98,data,[verified: second vtable of 0xFEBA98 (subobject at +4)] <docs/106>
+0x01020AC4,vt_FootprintIface_1020AE8,data,[verified: second vtable of the middle class 0x1020AE8 (subobject at +4)] <docs/106>
+0x00FEBF6C,vt_FootprintMemberIface,data,[verified: second vtable of the member class 0xFEBF90 (subobject at +4)] <docs/106>
+0x00FEBF48,vt_AStarHeuristicEuclid,data,[verified: slot 0 = InRoomHeuristic_Euclid 0x61ECD0; receiver at AStarSearch_NodeState 0x61E155/0x61E23E (not a node class); ctor 0x633750] <docs/106>
+0x00FEBCC0,vt_AStarHeuristicZero,data,[verified: slot 0 = AStarHeuristic_Zero 0x624870; built in RoomGraph_FirstUse 0x63D2F0] <docs/106>
+0x00624870,AStarHeuristic_Zero,function,[verified: returns 0.0 (Dijkstra heuristic); live at 0x61E155/0x61E23E] <docs/106>
+0x00FEF3A8,vt_WaterPathGoal,data,"[verified: slots +0 WaterPathGoal_BothNear, +4 WaterRoute_NearStartOrGoal, +8 WaterPathGoal_Heuristic; built by WaterPath_Plan 0x671930 via 0x66DBE0] <docs/106>"
+0x0066DBE0,WaterPathGoal_ctor,function,[verified: stores vt_WaterPathGoal; only caller WaterPath_Plan 0x671930] <docs/106>
+0x0066DCB0,WaterPathGoal_BothNear,function,[verified: own slot +4 on both arguments; slot +0 (not a destructor); live at 0x61FFE9] <docs/106>
+0x0066F430,WaterPathGoal_Heuristic,function,[verified: float distance from the cell to the goal fields +0x10..+0x24; slot +8; live at 0x620008] [role inferred] <docs/106>
+0x00AB18D0,Lot_GetVec190,function,[verified: copies the vector at Lot +0x190; Lot vtable 0x1065268 slot +0x64; live at 0xA8E064 0xAB33B6] <docs/106>
+0x00AB18F0,Lot_GetFloat1A0,function,[verified: returns float Lot +0x1A0; Lot vtable slot +0x68; live at 0xB0A358] <docs/106>
+0x0108B690,vt_MonoScriptHost,data,[verified: stored by MonoScriptHost_ctor 0xD7E010; slot +0x68 = 0xD71E10 live at IC_Route_SetLockKeys 0x74D1B2] <docs/106>
+0x00D71E10,MonoScriptHost_ArrayData,function,"[verified: no calls; out-params = managed array data (+0x10) and count (+8), zero for null] <docs/106>"
+0x0061AD00,AStarNode_DeletingDtor,function,[verified: 0x61B490 then pushes the node on the free list at [0x11CEF50]+0x10 (no lock) when flag 1; vt 0xFE9AD0 slot 0] <docs/106>
+0x0061EBD0,AStarGoalNode_DeletingDtor,function,[verified: 0x61B490 then pushes the node on the free list at [0x11CEF90]+0x10 (no lock) when flag 1; vt 0xFEABD0 slot 0] <docs/106>
+0x00668920,LotQuadNodeList_DeletingDtor,function,"[verified: frees the buffer, pushes the object on the free list at [0x11CF42C]+0x10 (no lock) when flag 1; vt 0xFEE0B4 slot 0] [class name inferred] <docs/106>"
+0x00820630,RoutingPathImp_DeletingDtor,function,[verified: 0x81FF60 then EA_Free when flag 1; vt 0x10214D8 slot 0] <docs/106>
+0x00820070,RoutingPathImp_Reset,function,"[verified: clears the path's own fields +0x8C..+0x170; vt 0x10214D8 slot +4 (not a Release)] <docs/106>"
+0x0074EFE0,RouteDestPoint_TypeId,function,[verified: returns 0x7216AB6; slot 0 of 0x10041C8 (not a destructor)] <docs/106>
+0x0074F0E0,RouteDestSlotArray_TypeId,function,[verified: returns 0x7216AAD; slot 0 of 0x100421C (not a destructor)] <docs/106>
+0x0074F3C0,RouteDestRadial_TypeId,function,[verified: returns 0x7216A82; slot 0 of vt_RadialRangeDestination 0x100423C (not a destructor)] <docs/106>
+0x00619EF0,Stub_Return1,function,[verified: returns 1; slot 0 of the footprint vtables (type query) and slot +0x40 of the Lot-type check in WorldManager_FindLotByIdTyped] <docs/106>
+0x0083F5F0,Stub_Return3,function,[verified: returns 3; slot 0 of 0xFEB848/0xFEB970 (type query)] <docs/106>
+0x006646F0,LotQuadTree_SetBounds,function,"[verified: offline run, inroom-test] thiscall(tree)(owner, minX, minZ, maxX, maxZ, cell, ...); bounds rounded outward, levels +0x40, root side +0x38 = cell*2^(levels-1), default class +0x2C = 12 <docs/98>"
+0x006653A0,LotQuadTree_InsertEntryAt,function,"[verified: disassembly] Recursive insert of one FootprintMapEntry into a quadtree node; deepest level: eighth mask via 0x662FF0; above: slot +0x38 contains -> mask all ones, else split <docs/98>"
+0x00662FF0,QuadLeaf_EighthMask,function,"[verified: offline run, inroom-test] cdecl(cell, entry, mask*): bit i = footprint slot +0x34 on eighth i (8*row(z) + col(x)), part = entry byte +0x10 <docs/98>"
+0x00667BA0,QuadLeaf_AddEntry,function,"[verified: offline run, inroom-test] thiscall(leaf)(entry, mask*): appends {entry, mask}; clears final bit s when the mask covers shape s partly <docs/98>"
+0x00667B10,QuadLeaf_ctor,function,"[verified: disassembly] vtable 0xFEE0B4, final bits 0xFFFFF8, empty entry list <docs/98>"
+0x00667740,QuadShapeMasks_Init,function,"[verified: offline run, inroom-test] Builds the 21 shape masks at 0x11CF180 once (guard byte 0x11CF428) <docs/98>"
+0x011CF180,g_QuadShapeMasks,data,"[verified: offline run, inroom-test] 21 x 64-bit: eighths covered by shapes 0..20 <docs/98>"
+0x00946E70,FootprintGate_HasLists,function,"[verified: offline run, inroom-test] Gate object (footprint +0x20): true if list A (+0x08) or list B (+0x1C) is non-empty <docs/98>"
+0x00946E90,FootprintGate_Excludes,function,"[verified: offline run, inroom-test] thiscall(gate)(agent): 1 when an A id is not held (or no options) or a B id is held <docs/98>"
+0x0081CEF0,RoutingOptions_HoldsId,function,"[verified: offline run, inroom-test] thiscall(options)(lo, hi): id != 0 and (own id +0x20/+0x24 or in the sorted id vector +0x08) <docs/98>"
+0x00626AA0,IdVector_LowerBound,function,"[verified: disassembly] cdecl(begin, end, key*, unused): lower bound over 8-byte ids by high then low word <docs/98>"
+0x0080F0D0,Footprint_PolyOverlapsRect,function,"[verified: offline run, inroom-test] Slot +0x34 of the polygon footprint classes: positive-area overlap of the rectangle with a polygon of the part; grow only with flag 0x2000000 <docs/98>"
+0x0080F200,Footprint_PolyContainsRect,function,"[verified: offline run, inroom-test] Slot +0x38: one polygon of the part contains the rectangle <docs/98>"
+0x0080B4F0,BoxFootprint_OverlapsRect,function,"[verified: offline run, inroom-test] Slot +0x34 of 0xFEAE08: per axis min(max) - max(min) + grow > 0 <docs/98>"
+0x0080B1C0,BoxFootprint_ContainsRect,function,"[verified: offline run, inroom-test] Slot +0x38 of 0xFEAE08: rectangle inside the box grown by grow <docs/98>"
+0x008072F0,Footprint_GrowRadius,function,"[verified: disassembly] Slot +0x40: +0x30 when flag 0x2000000 is set and the list at +0x24 is empty, else 0 <docs/98>"
+0x0081C920,RoutingOptions_GetPreferredPortal,function,"[verified: disassembly] Returns O+0x78/+0x7C; callers LotPortalAStar 0x63E58D and LotPortalSearch 0x63EED9 only <docs/107>"
+0x0081C8E0,RoutingOptions_EndTurnList,function,"[verified: disassembly] Returns &O+0x48 (ignore-for-route-end-turn ids); end-turn ICs and route follow 0x84C590/0x851710 <docs/107>"
+0x0081C930,RoutingOptions_List58Has,function,"[verified: disassembly] Id in O+0x58..+0x5C; RouteFollow_A and Locomotion_ObstacleList; no IC writes the list <docs/107>"
+0x0081D090,RoutingOptions_Assign,function,"[verified: disassembly] Copies the four id vectors and O+0x78/+0x7C <docs/107>"
+0x007967D0,World_FireIsOkToTurnFaceToDestination,function,"[verified: disassembly] Packs ids, pos, orient, ignore and end-turn lists into variants; World_FireEvent(0x3C) at 0x796DE6 <docs/107>"
+0x0084C590,RouteFollow_TurnInPlaceJigCheck,function,"[verified: disassembly; role inferred] Large-animal AGS gate, DisableRouteLeadIns off; event 60 with jig flag 0; false sets follower+0x185 <docs/107>"
+0x00851710,RouteFollow_EndFacingJigCheck,function,"[verified: disassembly; role inferred] Same gate as 0x84C590; event 60 with full-Sim jig flag 1 <docs/107>"
+0x008538B0,RouteFollow_Update,function,"[verified: vtable 0x102727C slot +0x0C; role inferred] Route-follow behaviour update, calls 0x852700 <docs/107>"
+0x0102727C,vt_RouteFollowBehaviour,data,"[verified: slot +0x0C = 0x8538B0 at 0x1027288; class name inferred] <docs/107>"
+0x0081FBE0,RoutingPathImp_SetOptions,function,"[verified: path vtable +0x10] Copies options into path+0x08 via 0x81D440; PlanCommon tail 0x760F7A <docs/107>"
+0x00624180,AGS_ToFootprintClassMask,function,"[verified: decompile] AGS word (species & 0xCF00, age & 0x7F, size bits 12/20) to a 64-bit footprint class bit <docs/107>"
+0x00627540,PathPlanner_FootprintPointHit,function,"[verified: decompile] Point in a blocking footprint of P+0xDC grid; from goal validation 0x759B20 <docs/107>"
+0x00C6BAB0,World_IsPointRoutableTerrain,function,"[verified: decompile] WM bounds; blend layer 0 weight >= 0.5 off lot = not routable <docs/107>"
+0x00C22050,TerrainBlendMap_GetLayerWeight,function,"[verified: disassembly] (x, z, layer, &w): 16x16 blocks of bytes, w = byte/255 (0xC21AE0) <docs/107>"
+0x0066E2A0,WaterGrid_EdgeCostFootprint,function,"[verified: decompile; role inferred] Calls RouteCost_Dispatch with flag 1; a hit multiplies the cost by 40 <docs/107>"
+0x0096B390,CameraManager_Get,function,"[verified: disassembly] Returns [0x11E9400] <docs/107>"
+0x0096B6D0,CameraGlue_GetActiveController,function,"[verified: disassembly] Returns glue+0x8C <docs/107>"
+0x009742A0,CameraControllerMain_ResetAnchor,function,"[verified: disassembly; name ours] Main camera slot +0x54: zeroes controller+0x7B0 <docs/107>"
+0x01045CF8,vt_CameraControllerMain,data,"[verified: ctor 0x973B40] Main and edit-in-game camera; slot +0x54 = 0x9742A0, other controllers ret <docs/107>"
+0x00AC2190,Lot_RoofUp,function,"[verified: callers IC_World_LotRoofUpImpl] Display level = top (+0x180, +1 when allowed); camera slot +0x54 when lowering <docs/107>"
+0x00E8F720,mono_marshal_get_delegate_invoke,function,"[verified: assert strings] Emits ldflda 0x1C (prev), 8 (target), 0x10 (method ptr) <docs/107>"
+0x00E8E820,mono_mb_emit_ldflda,function,"[verified: disassembly] Emits 0xF0 prefix and an offset <docs/107>"
+0x01220E94,g_mono_multicastdelegate_class,data,"[verified: store 0xE7622C, parent tests in marshal/icall] <docs/107>"
+0x00FEBB98,vt_FootprintIface_FEBBC0,data,[verified: second vtable of the private footprint 0xFEBBC0 (subobject at +4); stored next to it at 0x831FFB and 0x8326AF; 9 slots: +0/+4/+8/+0xC/+0x20 this-4 thunks, +0x10/+0x14 shared 0x80E410/0x807220, +0x18 empty ret, +0x1C FootprintIface_IsKind] <docs/109>
+0x00FEBCE8,vt_FootprintIface_FEBD10,data,[verified: second vtable of the lot floor footprint 0xFEBD10 (subobject at +4); stored at 0x807CB4; same slot layout as 0xFEBB98] <docs/109>
+0x00FEBE10,vt_FootprintIface_FEBE38,data,[verified: second vtable of the lot wall footprint 0xFEBE38 (subobject at +4); stored at 0x80B763; same slot layout as 0xFEBB98] <docs/109>
+0x00FEBBC0,vt_PrivateFootprint,data,"[verified: stored by RoutingWorld_AddPrivateFootprint 0x831FF4 and UpdateObjectFootprintCore 0x8326A8 (""Routing/PrivateFootprint"", docs/84)] <docs/109>"
+0x00FEBD10,vt_LotFloorFootprint,data,"[verified: stored by LotFloorFootprint_ctor 0x807C90, whose 11 callers are all in RoutingWorld_UpdateLotFloorFootprints with tag ""Routing/LotFloorFootprint""] <docs/109>"
+0x00FEBE38,vt_LotWallFootprint,data,"[verified: stored by LotWallFootprint_ctor 0x80B740, called twice from RoutingWorld_UpdateLotWalls with tags ""Routing/LotWallFootprintImpassable"" / ""...Passable""] <docs/109>"
+0x00807C90,LotFloorFootprint_ctor,function,[verified: stores vt_LotFloorFootprint at +0 and vt_FootprintIface_FEBD10 at +4; callers only RoutingWorld_UpdateLotFloorFootprints] <docs/109>
+0x0080B740,LotWallFootprint_ctor,function,[verified: stores vt_LotWallFootprint at +0 and vt_FootprintIface_FEBE38 at +4; callers only RoutingWorld_UpdateLotWalls 0x830AAA/0x830B19] <docs/109>

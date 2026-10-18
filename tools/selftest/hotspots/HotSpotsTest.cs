@@ -1,7 +1,7 @@
 // Usage: node tools/selftest/hotspots/run.ts  (compiles this with mods/ts3fixes/src/TickMemo.cs)
 // Offline self-check of TickMemo.cs: the per-tick stamp rules shared by the docs/74 memos, the reference set behind
 // the detail-priority lot set, the hours-of-operation memo (outputs written only on a true answer) and the tooltip
-// poll gate, each checked against fixed cases or a plain model on random call sequences. Exit code 1 on failure.
+// poll gate, and the docs/110 wildflower fire bookkeeping (WildflowerFire), each checked against fixed cases or a plain model on random call sequences. Exit code 1 on failure.
 using System;
 using System.Collections.Generic;
 using Ts3Fixes;
@@ -122,12 +122,46 @@ static class HotSpotsTest
         Check(walks >= 99 && walks <= 101, "resting cursor walks " + walks + " in 10 s");
     }
 
+    // docs/110 §7.4: the hook's loop over WildflowerFire against the game's placement loop (stop at the first placed try,
+    // give up after MaxTries) on stub placements: same tries run, same result, same counter deltas.
+    static void WildflowerModel()
+    {
+        Random r = new Random(110);
+        int[] c = new int[99];
+        int fires = 0, tries = 0, placed = 0, failed = 0;
+        for (int fire = 0; fire < 5000 && sFails < 10; fire++)
+        {
+            int max = r.Next(6) == 0 ? r.Next(3) : 20; // 0 and 1 tries too
+            bool[] stub = new bool[max];
+            int hitAt = r.Next(3) == 0 ? -1 : r.Next(25); // -1 or >= max: every try fails
+            for (int i = 0; i < max; i++) stub[i] = i == hitAt;
+            // the game's loop
+            int gameTries = 0; bool gamePlaced = false;
+            for (int i = 0; i < max; i++) { gameTries++; if (stub[i]) { gamePlaced = true; break; } }
+            // the hook's loop
+            WildflowerFire f = new WildflowerFire(max);
+            int n = 0;
+            for (bool done = f.MaxTries <= 0; !done; ) { done = f.Try(stub[n], 1000 * (n + 1)); n++; }
+            Check(n == gameTries && f.Tries == gameTries, "wildflower tries, fire " + fire);
+            Check(f.Placed == gamePlaced, "wildflower result, fire " + fire);
+            f.Count(c, true);
+            fires++; tries += gameTries; if (gamePlaced) placed++; else failed++;
+            Check(c[93] == fires && c[94] == tries && c[95] == placed && c[96] == failed, "wildflower counters, fire " + fire);
+        }
+        WildflowerFire g = new WildflowerFire(20);
+        g.Try(false, 30000); g.Try(false, 45000); g.Try(true, 5000);
+        int[] d = new int[99];
+        g.Count(d, true); Check(d[97] == 80, "wildflower [97] whole fire = 80 ms");
+        d[97] = 0; g.Count(d, false); Check(d[97] == 45, "wildflower [97] task = longest try 45 ms");
+    }
+
     static int Main()
     {
         StampRules();
         RefSetModel();
         HoursModel();
         GateRules();
+        WildflowerModel();
         Console.WriteLine(sFails == 0 ? "hotspots selftest: PASS" : "hotspots selftest: FAIL (" + sFails + ")");
         return sFails == 0 ? 0 : 1;
     }

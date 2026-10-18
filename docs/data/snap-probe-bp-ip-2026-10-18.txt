@@ -1,0 +1,1633 @@
+probe-out/queue/snap-probe-2026-10-18-bp-snap-probe-0947-ts3native.log: 821 pairs; last vcall window 23: hits 164321, pairs 821, outside 10, overflow 8, faults 0, skipped 0, armed 753
+probe-out/queue/snap-probe-2026-10-18-ip-snap-probe-0932-ts3native.log: 861 pairs; last vcall window 23: hits 183058, pairs 861, outside 10, overflow 0, faults 0, skipped 0, armed 697
+
+0x0045594F in FUN_00455930+0x1f: 2 targets
+  0x716ED25F n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA8D25F n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x004AEDDF in FUN_004aece0+0xff: 2 targets
+  0x716ECB93 n=86     (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA8CB93 n=63     (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x004AEE4A in FUN_004aece0+0x16a: 2 targets
+  0x6EA8CB93 n=21     (outside TS3W.exe) OUT=MSVCR80.dll
+  0x716ECB93 n=5      (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x004B3F24 in FUN_004b3ee0+0x44 (jmp): 3 targets
+  0x004B3F2B n=721    FUN_004b3ee0+0x4b                        NEW
+  0x004B3F7A n=419    FUN_004b3ee0+0x9a                        NEW
+  0x004B3F73 n=25     FUN_004b3ee0+0x93                        NEW
+
+0x004B3F4D in FUN_004b3ee0+0x6d: 2 targets
+  0x005C2880 n=1011   FUN_005c2880                             NEW
+  0x005BB280 n=16     FUN_005bb220+0x60                        NEW
+
+0x004B3F6F in FUN_004b3ee0+0x8f: 2 targets
+  0x005BFC50 n=989    FUN_005bfbc0+0x90                        NEW
+  0x009C1B00 n=14     FUN_009c1b00                             NEW
+
+0x004B3F87 in FUN_004b3ee0+0xa7: 1 targets
+  0x0093DDF0 n=835    FUN_0093ddf0                             NEW
+
+0x004B3FB6 in FUN_004b3ee0+0xd6: 2 targets
+  0x005BFC50 n=734    FUN_005bfbc0+0x90                        NEW
+  0x009C1B00 n=5      FUN_009c1b00                             NEW
+
+0x004B5A9B in FUN_004b5a80+0x1b: 2 targets
+  0x004DEFA0 n=235    FUN_004defa0                             NEW
+  0x00739E30 n=2      FUN_00739cd0+0x160                       NEW
+
+0x004B5E32 in FUN_004b5e10+0x22: 2 targets
+  0x004B5CF0 n=803    FUN_004b5cf0                             NEW
+  0x004B5AB0 n=32     FUN_004b5a80+0x30                        NEW
+
+0x004B61CA in FUN_004b6190+0x3a: 2 targets
+  0x00455A00 n=235    FUN_004559f0+0x10                        NEW
+  0x0078E8E0 n=2      FUN_0078e800+0xe0                        NEW
+
+0x004B6204 in FUN_004b61e0+0x24 (jmp): 1 targets
+  0x004B620B n=736    FUN_004b61e0+0x2b                        NEW
+
+0x004B6A10 in FUN_004b69c0+0x50: 2 targets
+  0x004559F0 n=235    FUN_004559f0                             NEW
+  0x0078E8D0 n=2      FUN_0078e800+0xd0                        NEW
+
+0x004B80E8 in FUN_004b7fe0+0x108 (jmp): 3 targets
+  0x004B8155 n=958    FUN_004b7fe0+0x175                       NEW
+  0x004B80EF n=551    FUN_004b7fe0+0x10f                       NEW
+  0x004B8278 n=507    FUN_004b7fe0+0x298                       NEW
+
+0x004CF583 in FUN_004cf560+0x23: 3 targets
+  0x005C89E0 n=3295   FUN_005c89e0                             NEW
+  0x005A8CD0 n=1710   FUN_005a8cd0                             NEW
+  0x005C9D50 n=774    FUN_005c9d50                             NEW
+
+0x004DEAB1 in FUN_004dea80+0x31: 1 targets
+  0x006D8F20 n=848    FUN_006d8ea0+0x80                        NEW
+
+0x004DEAD3 in FUN_004deac0+0x13 (jmp): 1 targets
+  0x004DEADA n=793    FUN_004deac0+0x1a                        NEW
+
+0x004DEF11 in FUN_004dee40+0xd1: 1 targets
+  0x006D8F20 n=736    FUN_006d8ea0+0x80                        NEW
+
+0x004E1283 in FUN_004e1270+0x13: 1 targets
+  0x758D3650 n=748    (outside TS3W.exe) OUT=KERNEL32.DLL
+
+0x004E431F in FUN_004e42f0+0x2f: 2 targets
+  0x00624590 n=111    FUN_00624580+0x10                        NEW
+  0x005C32D0 n=19     FUN_005c32d0                             NEW
+
+0x004E626C in GeneralAllocator_MallocCore+0x42c: 1 targets
+  0x00D71510 n=54     FUN_00d714c0+0x50                        NEW
+
+0x004F4071 in FUN_004f3cc0+0x3b1 (jmp): 1 targets
+  0x004F40D2 n=1635   FUN_004f3cc0+0x412                       NEW
+
+0x004F5966 in FUN_004f5800+0x166: 1 targets
+  0x004F65B0 n=991    FUN_004f65b0                             NEW
+
+0x004FABF7 in FUN_004fab90+0x67 (jmp): 2 targets
+  0x004FAC1E n=751    FUN_004fab90+0x8e                        NEW
+  0x004FAC48 n=33     FUN_004fab90+0xb8                        NEW
+
+0x004FAD32 in FUN_004fab90+0x1a2 (jmp): 3 targets
+  0x004FAE38 n=730    FUN_004fab90+0x2a8                       NEW
+  0x004FADAF n=110    FUN_004fab90+0x21f                       NEW
+  0x004FAD5C n=13     FUN_004fab90+0x1cc                       NEW
+
+0x004FAE52 in FUN_004fab90+0x2c2 (jmp): 3 targets
+  0x004FAEA4 n=455    FUN_004fab90+0x314                       NEW
+  0x004FAE59 n=362    FUN_004fab90+0x2c9                       NEW
+  0x004FAE80 n=35     FUN_004fab90+0x2f0                       NEW
+
+0x004FB01C in FUN_004fafd0+0x4c (jmp): 2 targets
+  0x004FB050 n=739    FUN_004fafd0+0x80                        NEW
+  0x004FB062 n=4      FUN_004fafd0+0x92                        NEW
+
+0x004FB255 in FUN_004fb1f0+0x65 (jmp): 1 targets
+  0x004FB28E n=736    FUN_004fb1f0+0x9e                        NEW
+
+0x004FB5A0 in FUN_004fb460+0x140 (jmp): 1 targets
+  0x004FB655 n=640    FUN_004fb460+0x1f5                       NEW
+
+0x004FB93E in FUN_004fb8d0+0x6e: 1 targets
+  0x004FAAD0 n=761    FUN_004faad0                             NEW
+
+0x004FB996 in FUN_004fb8d0+0xc6 (jmp): 5 targets
+  0x004FBB61 n=450    FUN_004fb8d0+0x291                       NEW
+  0x004FBA96 n=355    FUN_004fb8d0+0x1c6                       NEW
+  0x004FBB2E n=35     FUN_004fb8d0+0x25e                       NEW
+  0x004FB99D n=4      FUN_004fb8d0+0xcd                        NEW
+  0x004FBC79 n=3      FUN_004fb8d0+0x3a9                       NEW
+
+0x004FBCF0 in FUN_004fb8d0+0x420: 1 targets
+  0x004FAAD0 n=266    FUN_004faad0                             NEW
+
+0x004FBD4B in FUN_004fb8d0+0x47b: 1 targets
+  0x004FAAD0 n=831    FUN_004faad0                             NEW
+
+0x0055CFBE in FUN_0055cfa0+0x1e: 2 targets
+  0x00574F10 n=750    FUN_00574f10                             NEW
+  0x0056FFD0 n=1      FUN_0056ffd0                             NEW
+
+0x0059974F in JobManager_ExecuteJob+0x2f: 9 targets, 8 hits past 8 targets
+  0x00728070 n=189    FUN_00727f60+0x110                       NEW
+  0x007297C0 n=131    AsyncLoader_Complete+0x2d0               NEW
+  0x006F3C30 n=124    RenderJob_MainCullFn                     
+  0x006EEB30 n=114    RenderJob_ShadowCullFn                   
+  0x006F3C50 n=112    RenderJob_SortMainFn                     
+  0x006EEB50 n=19     RenderJob_Shadow2CullFn                  
+  0x007D9840 n=16     RemoteCall_JobFn                         
+  0x006CF1E0 n=14     FUN_006cf170+0x70                        NEW
+  0x0072A4F0 n=10     AsyncLoader_JobDecompress+0x3a0          NEW
+
+0x0059A688 in FUN_0059a650+0x38: 2 targets
+  0x00727690 n=703    FUN_00727540+0x150                       NEW
+  0x00692720 n=35     RefCounted_AtomicRelease                 
+
+0x005AF17B in FUN_005af160+0x1b: 4 targets
+  0x00731D00 n=723    FUN_00731d00                             NEW
+  0x008ABE50 n=23     Route_AddRef                             
+  0x005044C0 n=13     FUN_005044c0                             NEW
+  0x00723130 n=1      thunk_FUN_00731d00                       NEW
+
+0x005AF18A in FUN_005af160+0x2a: 1 targets
+  0x00731D40 n=608    FUN_00731d40                             NEW
+
+0x005B6E48 in FUN_005b6e30+0x18: 1 targets
+  0x005B7FA0 n=640    FUN_005b7fa0                             NEW
+
+0x005B8693 in FUN_005b8680+0x13: 1 targets
+  0x005B7240 n=640    FUN_005b7240                             NEW
+
+0x005BB010 in FUN_005bb000+0x10: 1 targets
+  0x005B7240 n=640    FUN_005b7240                             NEW
+
+0x005BB086 in FUN_005bb000+0x86: 1 targets
+  0x007345D0 n=237    FUN_00734520+0xb0                        NEW
+
+0x005BB0AD in FUN_005bb000+0xad: 1 targets
+  0x00739D90 n=237    FUN_00739cd0+0xc0                        NEW
+
+0x005BB0BC in FUN_005bb000+0xbc: 1 targets
+  0x0078E8D0 n=237    FUN_0078e800+0xd0                        NEW
+
+0x005BB0C6 in FUN_005bb000+0xc6: 1 targets
+  0x00739DE0 n=237    FUN_00739cd0+0x110                       NEW
+
+0x005BB148 in FUN_005bb000+0x148: 1 targets
+  0x00739E30 n=237    FUN_00739cd0+0x160                       NEW
+
+0x005BB15C in FUN_005bb000+0x15c: 1 targets
+  0x00739DA0 n=237    FUN_00739cd0+0xd0                        NEW
+
+0x005BB1C2 in FUN_005bb000+0x1c2: 1 targets
+  0x0078E8E0 n=237    FUN_0078e800+0xe0                        NEW
+
+0x005BB1D1 in FUN_005bb000+0x1d1: 1 targets
+  0x00EC17A0 n=237    FUN_00ec17a0                             NEW
+
+0x005BE7C2 in FUN_005be7b0+0x12: 1 targets
+  0x005BE670 n=736    FUN_005be610+0x60                        NEW
+
+0x005BF1FB in FUN_005bf1e0+0x1b: 2 targets
+  0x0064E8F0 n=719    FUN_0064e890+0x60                        NEW
+  0x007DBC30 n=17     FUN_007dbc30                             NEW
+
+0x0061B0E5 in FUN_0061b0b0+0x35: 1 targets
+  0x0061AD00 n=893    FUN_0061ad00                             NEW
+
+0x0061BA56 in FUN_0061ba30+0x26: 1 targets
+  0x0061AD00 n=736    FUN_0061ad00                             NEW
+
+0x0061C0AB in AStarNodeTable_Clear+0x8b: 1 targets
+  0x0066BF20 n=2580   FUN_0066bee0+0x40                        NEW
+
+0x0061E155 in AStarSearch_NodeState+0x125: 2 targets
+  0x0061ECD0 n=870    InRoomHeuristic_Euclid                   
+  0x00624870 n=32     FUN_00624850+0x20                        NEW
+
+0x0061E23E in AStarSearch_NodeState+0x20e: 2 targets
+  0x0061ECD0 n=820    InRoomHeuristic_Euclid                   
+  0x00624870 n=45     FUN_00624850+0x20                        NEW
+
+0x0061E6EF in QuadTreeCellAStar+0x1ef: 1 targets
+  0x00F626F0 n=736    FUN_00f626f0                             NEW
+
+0x0061E7FA in QuadTreeCellAStar+0x2fa: 1 targets
+  0x00F626F0 n=736    FUN_00f626f0                             NEW
+
+0x0061E9DF in AStarSearch_Run+0x13f: 1 targets
+  0x00F626F0 n=624    FUN_00f626f0                             NEW
+
+0x0061F8A0 in WaterJps_NeighbourCoord+0x10 (jmp): 8 targets
+  0x0061F905 n=204    WaterJps_NeighbourCoord+0x75             NEW
+  0x0061F94A n=203    WaterJps_NeighbourCoord+0xba             NEW
+  0x0061F8BD n=199    WaterJps_NeighbourCoord+0x2d             NEW
+  0x0061F91B n=193    WaterJps_NeighbourCoord+0x8b             NEW
+  0x0061F934 n=193    WaterJps_NeighbourCoord+0xa4             NEW
+  0x0061F8EC n=190    WaterJps_NeighbourCoord+0x5c             NEW
+  0x0061F8D6 n=190    WaterJps_NeighbourCoord+0x46             NEW
+  0x0061F8A7 n=187    WaterJps_NeighbourCoord+0x17             NEW
+
+0x0061FFE9 in WaterJps_EdgeCost+0x49: 1 targets
+  0x0066DCB0 n=697    FUN_0066dcb0                             NEW
+
+0x00620008 in WaterJps_EdgeCost+0x68: 1 targets
+  0x0066F430 n=416    FUN_0066f390+0xa0                        NEW
+
+0x006246D5 in FUN_00624680+0x55 (jmp): 4 targets
+  0x006246DC n=631    FUN_00624680+0x5c                        NEW
+  0x00624714 n=25     FUN_00624680+0x94                        NEW
+  0x006246EB n=15     FUN_00624680+0x6b                        NEW
+  0x006246FA n=1      FUN_00624680+0x7a                        NEW
+
+0x00625728 in FUN_00625650+0xd8 (jmp): 2 targets
+  0x0062572F n=447    FUN_00625650+0xdf                        NEW
+  0x00625775 n=81     FUN_00625650+0x125                       NEW
+
+0x00625882 in FUN_00625870+0x12 (jmp): 1 targets
+  0x0064E8F0 n=8      FUN_0064e890+0x60                        NEW
+
+0x00626F50 in FUN_00626f40+0x10: 1 targets
+  0x00620DB0 n=736    FUN_00620d90+0x20                        NEW
+
+0x00626F71 in FUN_00626f40+0x31: 3 targets
+  0x0080C300 n=593    FUN_0080c300                             NEW
+  0x00807090 n=120    FUN_00807090                             NEW
+  0x0080F840 n=23     FUN_0080f840                             NEW
+
+0x00626F90 in FUN_00626f40+0x50: 1 targets
+  0x0080EF80 n=736    Footprint_MidCtor+0xb0                   NEW
+
+0x00626FED in FUN_00626f40+0xad: 1 targets
+  0x008075F0 n=736    FUN_008075d0+0x20                        NEW
+
+0x00627013 in FUN_00626f40+0xd3: 1 targets
+  0x00806BF0 n=736    FUN_00806b70+0x80                        NEW
+
+0x00627022 in FUN_00626f40+0xe2: 1 targets
+  0x00964230 n=336    FUN_00964200+0x30                        NEW
+
+0x00627055 in FUN_00626f40+0x115: 1 targets
+  0x00806C50 n=208    FUN_00806b70+0xe0                        NEW
+
+0x00627319 in FUN_006271a0+0x179: 6 targets
+  0x00806BF0 n=179    FUN_00806b70+0x80                        NEW
+  0x00807090 n=109    FUN_00807090                             NEW
+  0x0080C300 n=74     FUN_0080c300                             NEW
+  0x00807B70 n=56     FUN_00807b70                             NEW
+  0x006119F0 n=35     FUN_006119e0+0x10                        NEW
+  0x0080F840 n=9      FUN_0080f840                             NEW
+
+0x00627362 in FUN_006271a0+0x1c2: 2 targets
+  0x00620D00 n=178    FUN_00620cf0+0x10                        NEW
+  0x006262C0 n=32     FUN_00626270+0x50                        NEW
+
+0x0062736D in FUN_006271a0+0x1cd: 2 targets
+  0x00806FE0 n=178    FUN_00806fe0                             NEW
+  0x006262B0 n=32     FUN_00626270+0x40                        NEW
+
+0x00627378 in FUN_006271a0+0x1d8: 2 targets
+  0x00624450 n=178    FUN_00624450                             NEW
+  0x00626220 n=32     FUN_00626220                             NEW
+
+0x00628854 in FUN_00628840+0x14: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x00629110 in FUN_006290e0+0x30: 1 targets
+  0x0092C5F0 n=737    FUN_0092c5f0                             NEW
+
+0x00629844 in FUN_00629830+0x14: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x0062A60C in InRoom_EmitSearchNodes+0x19c: 1 targets
+  0x00F626F0 n=736    FUN_00f626f0                             NEW
+
+0x0062F4F2 in FUN_0062f470+0x82: 1 targets
+  0x00806FE0 n=33     FUN_00806fe0                             NEW
+
+0x0062F7E5 in LotRouting_PortalsForObject+0x85: 1 targets
+  0x0064E8E0 n=736    FUN_0064e890+0x50                        NEW
+
+0x0062FFF3 in LotPath_AddPortalNodes+0x413: 1 targets
+  0x0064E8F0 n=568    FUN_0064e890+0x60                        NEW
+
+0x0063005B in LotPath_AddPortalNodes+0x47b: 1 targets
+  0x0064E8F0 n=8      FUN_0064e890+0x60                        NEW
+
+0x00630C9B in LotPath_AddPortalNodes+0x10bb: 1 targets
+  0x0064E8F0 n=568    FUN_0064e890+0x60                        NEW
+
+0x0063123A in FUN_00631050+0x1ea (jmp): 4 targets
+  0x00631260 n=88     FUN_00631050+0x210                       NEW
+  0x0063124B n=88     FUN_00631050+0x1fb                       NEW
+  0x00631266 n=88     FUN_00631050+0x216                       NEW
+  0x00631241 n=88     FUN_00631050+0x1f1                       NEW
+
+0x006312B2 in FUN_00631050+0x262 (jmp): 2 targets
+  0x006312FA n=549    FUN_00631050+0x2aa                       NEW
+  0x006312E6 n=11     FUN_00631050+0x296                       NEW
+
+0x00631471 in FUN_00631050+0x421: 3 targets
+  0x00624ED0 n=304    FUN_00624e80+0x50                        NEW
+  0x00620E50 n=211    FUN_00620e20+0x30                        NEW
+  0x00626300 n=29     FUN_00626270+0x90                        NEW
+
+0x00631482 in FUN_00631050+0x432 (jmp): 3 targets
+  0x0063149A n=506    FUN_00631050+0x44a                       NEW
+  0x00631489 n=30     FUN_00631050+0x439                       NEW
+  0x00631498 n=8      FUN_00631050+0x448                       NEW
+
+0x00631492 in FUN_00631050+0x442: 2 targets
+  0x00624F70 n=123    Stub_ReturnFalse                         
+  0x00620D20 n=101    FUN_00620d10+0x10                        NEW
+
+0x00632573 in InRoom_ApplyPortalLockFootprints+0x113: 1 targets
+  0x00807090 n=736    FUN_00807090                             NEW
+
+0x0063258E in InRoom_ApplyPortalLockFootprints+0x12e: 1 targets
+  0x00620CE0 n=40     FUN_00620ce0                             NEW
+
+0x00632DCE in InRoomPlanToPoint+0x79e: 1 targets
+  0x0061AD00 n=2      FUN_0061ad00                             NEW
+
+0x0063373F in InRoomPlan+0x8ff: 1 targets
+  0x0061EBD0 n=130    FUN_0061ebd0                             NEW
+
+0x00633E85 in RoomToRoomAStar+0x495: 1 targets
+  0x0061EBD0 n=367    FUN_0061ebd0                             NEW
+
+0x006340BF in FUN_00633fa0+0x11f: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x006343DC in FUN_00633fa0+0x43c: 1 targets
+  0x00EC4FC0 n=736    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00634478 in FUN_00633fa0+0x4d8: 1 targets
+  0x00EC4FC0 n=144    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00634A16 in FUN_00634930+0xe6: 1 targets
+  0x0080F790 n=736    FUN_0080f710+0x80                        NEW
+
+0x00634A7B in FUN_00634930+0x14b: 1 targets
+  0x00806FD0 n=739    FUN_00806fd0                             NEW
+
+0x00634B0A in FUN_00634930+0x1da: 1 targets
+  0x00806FD0 n=739    FUN_00806fd0                             NEW
+
+0x00634C10 in FUN_00634930+0x2e0: 1 targets
+  0x00624450 n=736    FUN_00624450                             NEW
+
+0x0063546E in LotRouting_FootprintRoomIds+0x2e: 1 targets
+  0x00624450 n=736    FUN_00624450                             NEW
+
+0x0063556F in LotRouting_FootprintRoomIds+0x12f: 1 targets
+  0x00624450 n=736    FUN_00624450                             NEW
+
+0x00635FFD in FUN_00635ee0+0x11d: 1 targets
+  0x0064E8E0 n=18     FUN_0064e890+0x50                        NEW
+
+0x0063600D in FUN_00635ee0+0x12d: 1 targets
+  0x0064E8F0 n=18     FUN_0064e890+0x60                        NEW
+
+0x00636021 in FUN_00635ee0+0x141: 1 targets
+  0x0064E8F0 n=20     FUN_0064e890+0x60                        NEW
+
+0x006365F5 in FUN_00636330+0x2c5: 1 targets
+  0x0064E8E0 n=773    FUN_0064e890+0x50                        NEW
+
+0x0063661A in FUN_00636330+0x2ea: 1 targets
+  0x0064E8E0 n=765    FUN_0064e890+0x50                        NEW
+
+0x00636640 in FUN_00636330+0x310: 1 targets
+  0x0064E8F0 n=773    FUN_0064e890+0x60                        NEW
+
+0x006367D0 in FUN_00636330+0x4a0: 1 targets
+  0x0064E8E0 n=646    FUN_0064e890+0x50                        NEW
+
+0x006367F5 in FUN_00636330+0x4c5: 1 targets
+  0x0064E8E0 n=645    FUN_0064e890+0x50                        NEW
+
+0x0063681B in FUN_00636330+0x4eb: 1 targets
+  0x0064E8F0 n=646    FUN_0064e890+0x60                        NEW
+
+0x00636BC0 in FUN_00636330+0x890: 1 targets
+  0x0064E8F0 n=826    FUN_0064e890+0x60                        NEW
+
+0x00636C76 in FUN_00636bf0+0x86: 2 targets
+  0x00620DB0 n=562    FUN_00620d90+0x20                        NEW
+  0x00626280 n=174    FUN_00626270+0x10                        NEW
+
+0x00636CA1 in FUN_00636bf0+0xb1: 1 targets
+  0x0080EC30 n=576    FUN_0080ec30                             NEW
+
+0x00636D18 in FUN_00636bf0+0x128: 2 targets
+  0x0080EF80 n=562    Footprint_MidCtor+0xb0                   NEW
+  0x00806C50 n=174    FUN_00806b70+0xe0                        NEW
+
+0x00636D5A in FUN_00636bf0+0x16a: 1 targets
+  0x00964230 n=400    FUN_00964200+0x30                        NEW
+
+0x006370C2 in FUN_00636bf0+0x4d2: 2 targets
+  0x006244D0 n=706    FUN_006244d0                             NEW
+  0x00624580 n=14     FUN_00624580                             NEW
+
+0x006370EC in FUN_00636bf0+0x4fc: 1 targets
+  0x006244D0 n=720    FUN_006244d0                             NEW
+
+0x00637101 in FUN_00636bf0+0x511: 2 targets
+  0x00620CC0 n=467    FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=253    FUN_00626270+0x60                        NEW
+
+0x00637192 in FUN_00636bf0+0x5a2: 1 targets
+  0x0080F790 n=720    FUN_0080f710+0x80                        NEW
+
+0x006371E8 in FUN_00636bf0+0x5f8: 2 targets
+  0x00806FE0 n=475    FUN_00806fe0                             NEW
+  0x006262B0 n=245    FUN_00626270+0x40                        NEW
+
+0x00637295 in FUN_00636bf0+0x6a5: 2 targets
+  0x00806FE0 n=475    FUN_00806fe0                             NEW
+  0x006262B0 n=245    FUN_00626270+0x40                        NEW
+
+0x00637348 in FUN_00636bf0+0x758: 2 targets
+  0x00806FE0 n=475    FUN_00806fe0                             NEW
+  0x006262B0 n=245    FUN_00626270+0x40                        NEW
+
+0x00637381 in FUN_00636bf0+0x791: 2 targets
+  0x00806FE0 n=640    FUN_00806fe0                             NEW
+  0x006262B0 n=80     FUN_00626270+0x40                        NEW
+
+0x0063747E in FUN_00636bf0+0x88e: 1 targets
+  0x0080EC30 n=362    FUN_0080ec30                             NEW
+
+0x006374B3 in FUN_00636bf0+0x8c3: 2 targets
+  0x008075F0 n=479    FUN_008075d0+0x20                        NEW
+  0x00624F70 n=241    Stub_ReturnFalse                         
+
+0x006374D6 in FUN_00636bf0+0x8e6: 1 targets
+  0x00806BF0 n=720    FUN_00806b70+0x80                        NEW
+
+0x00637704 in FUN_006376d0+0x34: 1 targets
+  0x00806FD0 n=736    FUN_00806fd0                             NEW
+
+0x006377A5 in FUN_006376d0+0xd5: 1 targets
+  0x00620DB0 n=704    FUN_00620d90+0x20                        NEW
+
+0x006377BA in FUN_006376d0+0xea: 2 targets
+  0x0080C300 n=590    FUN_0080c300                             NEW
+  0x0080F840 n=114    FUN_0080f840                             NEW
+
+0x006377CC in FUN_006376d0+0xfc: 1 targets
+  0x00624450 n=336    FUN_00624450                             NEW
+
+0x0063784E in FUN_006376d0+0x17e: 1 targets
+  0x00806FE0 n=704    FUN_00806fe0                             NEW
+
+0x00637B5F in LotRouting_AddPortal+0x17f: 1 targets
+  0x0064E8E0 n=20     FUN_0064e890+0x50                        NEW
+
+0x00637C13 in LotRouting_AddPortal+0x233: 1 targets
+  0x0064E8F0 n=20     FUN_0064e890+0x60                        NEW
+
+0x0063A067 in FUN_00639de0+0x287: 1 targets
+  0x00F1D800 n=32     FUN_00f1d800                             NEW
+
+0x0063A083 in FUN_00639de0+0x2a3: 1 targets
+  0x00620CF0 n=32     FUN_00620cf0                             NEW
+
+0x0063A091 in FUN_00639de0+0x2b1: 1 targets
+  0x00620D10 n=32     FUN_00620d10                             NEW
+
+0x0063A0A0 in FUN_00639de0+0x2c0: 1 targets
+  0x00620CE0 n=32     FUN_00620ce0                             NEW
+
+0x0063A0B3 in FUN_00639de0+0x2d3: 1 targets
+  0x00620CD0 n=32     FUN_00620cd0                             NEW
+
+0x0063A0BD in FUN_00639de0+0x2dd: 1 targets
+  0x00620D90 n=32     FUN_00620d90                             NEW
+
+0x0063A0C6 in FUN_00639de0+0x2e6: 1 targets
+  0x008075D0 n=32     FUN_008075d0                             NEW
+
+0x0063A0EE in FUN_00639de0+0x30e: 1 targets
+  0x00806FD0 n=32     FUN_00806fd0                             NEW
+
+0x0063A2F7 in FUN_0063a1c0+0x137 (jmp): 2 targets
+  0x0063A2FE n=468    FUN_0063a1c0+0x13e                       NEW
+  0x0063A392 n=76     FUN_0063a1c0+0x1d2                       NEW
+
+0x0063A488 in FUN_0063a1c0+0x2c8 (jmp): 1 targets
+  0x0063A48F n=544    FUN_0063a1c0+0x2cf                       NEW
+
+0x0063A984 in FUN_0063a1c0+0x7c4: 1 targets
+  0x00F1D800 n=544    FUN_00f1d800                             NEW
+
+0x0063A99E in FUN_0063a1c0+0x7de: 1 targets
+  0x00620CF0 n=544    FUN_00620cf0                             NEW
+
+0x0063A9AC in FUN_0063a1c0+0x7ec: 1 targets
+  0x00620D10 n=544    FUN_00620d10                             NEW
+
+0x0063A9BA in FUN_0063a1c0+0x7fa: 1 targets
+  0x00620CE0 n=544    FUN_00620ce0                             NEW
+
+0x0063A9CC in FUN_0063a1c0+0x80c: 1 targets
+  0x00620CD0 n=544    FUN_00620cd0                             NEW
+
+0x0063A9D7 in FUN_0063a1c0+0x817: 1 targets
+  0x00620D90 n=544    FUN_00620d90                             NEW
+
+0x0063A9E0 in FUN_0063a1c0+0x820: 1 targets
+  0x008075D0 n=544    FUN_008075d0                             NEW
+
+0x0063AA10 in FUN_0063a1c0+0x850: 1 targets
+  0x00806FD0 n=544    FUN_00806fd0                             NEW
+
+0x0063BF21 in FUN_0063b710+0x811 (jmp): 4 targets
+  0x0063BF28 n=88     FUN_0063b710+0x818                       NEW
+  0x0063BF2D n=88     FUN_0063b710+0x81d                       NEW
+  0x0063BF44 n=88     FUN_0063b710+0x834                       NEW
+  0x0063BF32 n=88     FUN_0063b710+0x822                       NEW
+
+0x0063BFC2 in FUN_0063b710+0x8b2 (jmp): 2 targets
+  0x0063BFC9 n=368    FUN_0063b710+0x8b9                       NEW
+  0x0063C009 n=176    FUN_0063b710+0x8f9                       NEW
+
+0x0063C1DB in FUN_0063b710+0xacb (jmp): 2 targets
+  0x0063C1EC n=126    FUN_0063b710+0xadc                       NEW
+  0x0063C1E2 n=125    FUN_0063b710+0xad2                       NEW
+
+0x0063C487 in FUN_0063b710+0xd77 (jmp): 2 targets
+  0x0063C48E n=80     FUN_0063b710+0xd7e                       NEW
+  0x0063C4AC n=42     FUN_0063b710+0xd9c                       NEW
+
+0x0063CCC2 in LotGraph_Build+0x132: 1 targets
+  0x0064E8E0 n=608    FUN_0064e890+0x50                        NEW
+
+0x0063CCF5 in LotGraph_Build+0x165: 1 targets
+  0x0064E8E0 n=608    FUN_0064e890+0x50                        NEW
+
+0x0063CD14 in LotGraph_Build+0x184: 1 targets
+  0x0064E8F0 n=608    FUN_0064e890+0x60                        NEW
+
+0x0063CD57 in LotGraph_Build+0x1c7: 1 targets
+  0x0064E8E0 n=440    FUN_0064e890+0x50                        NEW
+
+0x0063CD8A in LotGraph_Build+0x1fa: 1 targets
+  0x0064E8E0 n=440    FUN_0064e890+0x50                        NEW
+
+0x0063CDAC in LotGraph_Build+0x21c: 1 targets
+  0x0064E8F0 n=440    FUN_0064e890+0x60                        NEW
+
+0x0063CDF9 in LotGraph_Build+0x269: 1 targets
+  0x0064E8E0 n=448    FUN_0064e890+0x50                        NEW
+
+0x0063CE2B in LotGraph_Build+0x29b: 1 targets
+  0x0064E8E0 n=448    FUN_0064e890+0x50                        NEW
+
+0x0063CE4B in LotGraph_Build+0x2bb: 1 targets
+  0x0064E8F0 n=448    FUN_0064e890+0x60                        NEW
+
+0x0063D07F in LotGraph_Build+0x4ef: 1 targets
+  0x00F1D800 n=448    FUN_00f1d800                             NEW
+
+0x0063D09F in LotGraph_Build+0x50f: 1 targets
+  0x00620CF0 n=448    FUN_00620cf0                             NEW
+
+0x0063D0AD in LotGraph_Build+0x51d: 1 targets
+  0x00620D10 n=448    FUN_00620d10                             NEW
+
+0x0063D0BB in LotGraph_Build+0x52b: 1 targets
+  0x00620CE0 n=448    FUN_00620ce0                             NEW
+
+0x0063D0CE in LotGraph_Build+0x53e: 1 targets
+  0x00620CD0 n=448    FUN_00620cd0                             NEW
+
+0x0063D0D9 in LotGraph_Build+0x549: 1 targets
+  0x00620D90 n=448    FUN_00620d90                             NEW
+
+0x0063D0E2 in LotGraph_Build+0x552: 1 targets
+  0x008075D0 n=448    FUN_008075d0                             NEW
+
+0x0063D10F in LotGraph_Build+0x57f: 1 targets
+  0x00806FD0 n=448    FUN_00806fd0                             NEW
+
+0x0063FBB4 in LotPlan_Inner+0x4d4: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x0063FD1D in LotPlan_Inner+0x63d: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x0063FDB5 in LotPlan_Inner+0x6d5: 1 targets
+  0x00EC4FC0 n=736    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0063FE13 in LotPlan_Inner+0x733: 1 targets
+  0x00EC4FC0 n=48     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x006400D7 in LotPlan_Inner+0x9f7: 1 targets
+  0x00EC4FC0 n=105    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00640223 in LotPlan_Inner+0xb43: 1 targets
+  0x00EC4FC0 n=2      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00640798 in LotPlan_Inner+0x10b8: 1 targets
+  0x00EC4FC0 n=128    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00640AE1 in LotPlan_Inner+0x1401: 1 targets
+  0x00EC4FC0 n=12     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00640D0F in LotPlan_Inner+0x162f: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x00640D73 in LotPlan_Inner+0x1693: 1 targets
+  0x00EC4FC0 n=736    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00642085 in FUN_00641fc0+0xc5 (jmp): 3 targets
+  0x0064217F n=705    FUN_00641fc0+0x1bf                       NEW
+  0x00642197 n=29     FUN_00641fc0+0x1d7                       NEW
+  0x0064208C n=2      FUN_00641fc0+0xcc                        NEW
+
+0x00643F82 in FUN_00643e60+0x122: 3 targets
+  0x00624450 n=197    FUN_00624450                             NEW
+  0x00626220 n=149    FUN_00626220                             NEW
+  0x0070AE20 n=86     FUN_0070ae20                             NEW
+
+0x00643F93 in FUN_00643e60+0x133 (jmp): 3 targets
+  0x00643FC3 n=399    FUN_00643e60+0x163                       NEW
+  0x00643F9A n=31     FUN_00643e60+0x13a                       NEW
+  0x00643FC1 n=2      FUN_00643e60+0x161                       NEW
+
+0x006486A6 in FUN_00647eb0+0x7f6 (jmp): 2 targets
+  0x006486AD n=471    FUN_00647eb0+0x7fd                       NEW
+  0x00648B2E n=271    FUN_00647eb0+0xc7e                       NEW
+
+0x0064FD2B in WorldRecord_NodeType+0x1b (jmp): 2 targets
+  0x0064FD32 n=644    WorldRecord_NodeType+0x22                NEW
+  0x0064FD64 n=92     WorldRecord_NodeType+0x54                NEW
+
+0x00655B41 in RouteObstructionAtPoint+0x2c1: 4 targets
+  0x00806BF0 n=212    FUN_00806b70+0x80                        NEW
+  0x006119F0 n=84     FUN_006119e0+0x10                        NEW
+  0x00807090 n=17     FUN_00807090                             NEW
+  0x00807B70 n=7      FUN_00807b70                             NEW
+
+0x00655BAA in RouteObstructionAtPoint+0x32a: 2 targets
+  0x0070AE20 n=73     FUN_0070ae20                             NEW
+  0x00624450 n=33     FUN_00624450                             NEW
+
+0x00655BB8 in RouteObstructionAtPoint+0x338: 2 targets
+  0x0070AE20 n=73     FUN_0070ae20                             NEW
+  0x00624450 n=33     FUN_00624450                             NEW
+
+0x00655DA3 in RouteObstructionAtPoint+0x523: 2 targets
+  0x0080C300 n=26     FUN_0080c300                             NEW
+  0x00807090 n=6      FUN_00807090                             NEW
+
+0x00655DFB in RouteObstructionAtPoint+0x57b: 1 targets
+  0x00624450 n=6      FUN_00624450                             NEW
+
+0x00655E09 in RouteObstructionAtPoint+0x589: 1 targets
+  0x00624450 n=6      FUN_00624450                             NEW
+
+0x00655E1A in RouteObstructionAtPoint+0x59a: 1 targets
+  0x00620CC0 n=6      FUN_00620ca0+0x20                        NEW
+
+0x00657136 in WaterPath_Plan2+0x6c6: 1 targets
+  0x00EC4FC0 n=23     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0065E682 in PathPlanner_PlanHierarchical+0x5b2: 1 targets
+  0x007D9FA0 n=13     FUN_007d9f90+0x10                        NEW
+
+0x0065E7E9 in PathPlanner_PlanHierarchical+0x719: 1 targets
+  0x00EC4FC0 n=13     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0065F8D9 in PathPlanner_PlanHierarchical+0x1809: 1 targets
+  0x00EC4FC0 n=50     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0065FF46 in PathPlanner_PlanHierarchical+0x1e76: 1 targets
+  0x00EC4FC0 n=28     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0065FFCF in PathPlanner_PlanHierarchical+0x1eff: 1 targets
+  0x007D9FA0 n=6      FUN_007d9f90+0x10                        NEW
+
+0x00660107 in PathPlanner_PlanHierarchical+0x2037: 1 targets
+  0x00EC4FC0 n=6      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00660161 in PathPlanner_PlanHierarchical+0x2091: 1 targets
+  0x00EC4FC0 n=1      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00660207 in PathPlanner_PlanHierarchical+0x2137: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x00660218 in PathPlanner_PlanHierarchical+0x2148: 1 targets
+  0x007D9FA0 n=736    FUN_007d9f90+0x10                        NEW
+
+0x006603B4 in PathPlanner_PlanHierarchical+0x22e4: 1 targets
+  0x00EC4FC0 n=736    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x006603D4 in PathPlanner_PlanHierarchical+0x2304: 1 targets
+  0x00EC4FC0 n=704    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x006603E3 in PathPlanner_PlanHierarchical+0x2313: 1 targets
+  0x00EC4FC0 n=704    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00660EBA in PathPlanner_PlanHierarchical+0x2dea: 1 targets
+  0x00EC4FC0 n=34     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00661F82 in PathPlan_WithRetries+0x432: 1 targets
+  0x007D9FA0 n=4      FUN_007d9f90+0x10                        NEW
+
+0x00661F8F in PathPlan_WithRetries+0x43f: 1 targets
+  0x007D9FA0 n=4      FUN_007d9f90+0x10                        NEW
+
+0x006623BB in PathPlan_WithRetries+0x86b: 1 targets
+  0x0064E600 n=2      FUN_0064e600                             NEW
+
+0x00662457 in PathPlan_WithRetries+0x907: 1 targets
+  0x0064E600 n=6      FUN_0064e600                             NEW
+
+0x0066246E in PathPlan_WithRetries+0x91e: 1 targets
+  0x00EC4FC0 n=1      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00662588 in PathPlan_WithRetries+0xa38: 1 targets
+  0x007D9FA0 n=4      FUN_007d9f90+0x10                        NEW
+
+0x0066274C in PathPlan_WithRetries+0xbfc: 1 targets
+  0x00EC4FC0 n=4      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00662777 in PathPlan_WithRetries+0xc27: 1 targets
+  0x00EC4FC0 n=4      IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0066279C in PathPlan_WithRetries+0xc4c: 1 targets
+  0x0064E600 n=2      FUN_0064e600                             NEW
+
+0x00663145 in FUN_00662ff0+0x155: 2 targets
+  0x00806FA0 n=393    FUN_00806f70+0x30                        NEW
+  0x00806C80 n=343    FUN_00806b70+0x110                       NEW
+
+0x0066321C in FUN_00662ff0+0x22c: 2 targets
+  0x0080F0D0 n=1376   Footprint_MidCtor+0x200                  NEW
+  0x00806CD0 n=846    FUN_00806cd0                             NEW
+
+0x00663DB8 in QuadTreeCellPos_A+0x298: 3 targets
+  0x00662DD0 n=1143   FUN_00662d30+0xa0                        NEW
+  0x00662D30 n=657    FUN_00662d30                             NEW
+  0x00662D00 n=10     FUN_00662cf0+0x10                        NEW
+
+0x00663EDF in LotQuadTree_WalkPoint+0xbf: 1 targets
+  0x00662DB0 n=1      FUN_00662d30+0x80                        NEW
+
+0x00663F85 in LotQuadTree_WalkPoint+0x165: 2 targets
+  0x00662DB0 n=1462   FUN_00662d30+0x80                        NEW
+  0x00662DD0 n=124    FUN_00662d30+0xa0                        NEW
+
+0x00664152 in FUN_00663fe0+0x172: 1 targets
+  0x00662DB0 n=560    FUN_00662d30+0x80                        NEW
+
+0x006642D3 in FUN_006641b0+0x123: 2 targets
+  0x00662DD0 n=645    FUN_00662d30+0xa0                        NEW
+  0x00662DB0 n=284    FUN_00662d30+0x80                        NEW
+
+0x006644C5 in FUN_00664480+0x45: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00664E3A in FUN_00664dd0+0x6a: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00665424 in FUN_006653a0+0x84: 3 targets
+  0x0080F0D0 n=817    Footprint_MidCtor+0x200                  NEW
+  0x00806CD0 n=174    FUN_00806cd0                             NEW
+  0x0080B4F0 n=3      FUN_0080b490+0x60                        NEW
+
+0x006654A5 in FUN_006653a0+0x105: 2 targets
+  0x0080F200 n=580    Footprint_MidCtor+0x330                  NEW
+  0x00806D10 n=156    FUN_00806d10                             NEW
+
+0x0066567E in FUN_006653a0+0x2de: 1 targets
+  0x00668920 n=736    FUN_00668920                             NEW
+
+0x006658DC in FUN_006657e0+0xfc: 1 targets
+  0x00668920 n=736    FUN_00668920                             NEW
+
+0x00665936 in FUN_006657e0+0x156: 1 targets
+  0x00628A40 n=736    FUN_00628a40                             NEW
+
+0x00665C7F in LotQuadTree_ApplyInsert+0x2f: 2 targets
+  0x00806FE0 n=416    FUN_00806fe0                             NEW
+  0x006262B0 n=320    FUN_00626270+0x40                        NEW
+
+0x00665D3E in LotQuadTree_ApplyInsert+0xee: 3 targets
+  0x0083F5F0 n=346    FUN_0083f5f0                             NEW
+  0x00626210 n=321    FUN_006261f0+0x20                        NEW
+  0x00619EF0 n=69     FUN_00619ef0                             NEW
+
+0x00665DC1 in LotQuadTree_ApplyInsert+0x171: 2 targets
+  0x00624F70 n=726    Stub_ReturnFalse                         
+  0x009C1B00 n=10     FUN_009c1b00                             NEW
+
+0x00665DD6 in LotQuadTree_ApplyInsert+0x186: 2 targets
+  0x00624F70 n=433    Stub_ReturnFalse                         
+  0x00806C30 n=303    FUN_00806b70+0xc0                        NEW
+
+0x00665E02 in LotQuadTree_ApplyInsert+0x1b2: 1 targets
+  0x0080E0E0 n=736    Footprint_InvalidatePolygons+0x30        NEW
+
+0x00665E17 in LotQuadTree_ApplyInsert+0x1c7: 2 targets
+  0x0080EF80 n=433    Footprint_MidCtor+0xb0                   NEW
+  0x00806C50 n=303    FUN_00806b70+0xe0                        NEW
+
+0x00665EA5 in LotQuadTree_ApplyInsert+0x255: 1 targets
+  0x00662DF0 n=736    FUN_00662d30+0xc0                        NEW
+
+0x00665F61 in LotQuadTree_ApplyInsert+0x311: 2 targets
+  0x008075F0 n=415    FUN_008075d0+0x20                        NEW
+  0x00624F70 n=321    Stub_ReturnFalse                         
+
+0x006660CD in FUN_00666010+0xbd: 2 targets
+  0x00806C50 n=741    FUN_00806b70+0xe0                        NEW
+  0x0080EF80 n=101    Footprint_MidCtor+0xb0                   NEW
+
+0x006661AD in FUN_00666010+0x19d: 1 targets
+  0x00668920 n=353    FUN_00668920                             NEW
+
+0x006662CC in FUN_00666010+0x2bc: 1 targets
+  0x00628A40 n=208    FUN_00628a40                             NEW
+
+0x00666854 in LotQuadTree_ApplyRemove+0x104: 1 targets
+  0x00806C50 n=736    FUN_00806b70+0xe0                        NEW
+
+0x0066696E in LotQuadTree_ApplyRemove+0x21e: 1 targets
+  0x0080EF80 n=736    Footprint_MidCtor+0xb0                   NEW
+
+0x006669B0 in LotQuadTree_ApplyRemove+0x260: 1 targets
+  0x0080E130 n=736    Footprint_InvalidatePolygons+0x80        NEW
+
+0x00666C92 in LotQuadTree_Insert+0x42: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00666CA7 in LotQuadTree_Insert+0x57: 1 targets
+  0x00806FE0 n=24     FUN_00806fe0                             NEW
+
+0x00666CCB in LotQuadTree_Insert+0x7b: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00666CF5 in LotQuadTree_Insert+0xa5: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x00666D16 in LotQuadTree_Insert+0xc6: 1 targets
+  0x00806FE0 n=24     FUN_00806fe0                             NEW
+
+0x00666D61 in LotQuadTree_Insert+0x111: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x00666F06 in LotQuadTree_Remove+0xd6: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00666F22 in LotQuadTree_Remove+0xf2: 1 targets
+  0x00662DF0 n=24     FUN_00662d30+0xc0                        NEW
+
+0x00666F4C in LotQuadTree_Remove+0x11c: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x00666F55 in LotQuadTree_Remove+0x125: 1 targets
+  0x00662E00 n=24     FUN_00662d30+0xd0                        NEW
+
+0x006675C0 in FUN_006675b0+0x10: 1 targets
+  0x00806FE0 n=736    FUN_00806fe0                             NEW
+
+0x00667A04 in FUN_006679f0+0x14: 1 targets
+  0x00620DC0 n=994    FUN_00620d90+0x30                        NEW
+
+0x00667A24 in FUN_00667a10+0x14: 2 targets
+  0x00807090 n=555    FUN_00807090                             NEW
+  0x006119F0 n=428    FUN_006119e0+0x10                        NEW
+
+0x00667EBF in QuadLeaf_ClassFromMaskedEntries+0x10f: 2 targets
+  0x00620CC0 n=896    FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=345    FUN_00626270+0x60                        NEW
+
+0x00667EE6 in QuadLeaf_ClassFromMaskedEntries+0x136: 2 targets
+  0x00620CC0 n=907    FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=329    FUN_00626270+0x60                        NEW
+
+0x00667F0D in QuadLeaf_ClassFromMaskedEntries+0x15d: 2 targets
+  0x009C1B00 n=915    FUN_009c1b00                             NEW
+  0x00806F00 n=313    FUN_00806f00                             NEW
+
+0x00667F27 in QuadLeaf_ClassFromMaskedEntries+0x177: 2 targets
+  0x00620D60 n=743    IC_EATrace_ShouldLogImpl                 
+  0x00620DD0 n=362    FUN_00620d90+0x40                        NEW
+
+0x00667F39 in QuadLeaf_ClassFromMaskedEntries+0x189: 3 targets
+  0x00624450 n=561    FUN_00624450                             NEW
+  0x0070AE20 n=356    FUN_0070ae20                             NEW
+  0x00626220 n=186    FUN_00626220                             NEW
+
+0x00667FD1 in QuadLeaf_ClassFromMaskedEntries+0x221: 2 targets
+  0x00626220 n=114    FUN_00626220                             NEW
+  0x00624450 n=109    FUN_00624450                             NEW
+
+0x00667FE4 in QuadLeaf_ClassFromMaskedEntries+0x234: 2 targets
+  0x00626220 n=114    FUN_00626220                             NEW
+  0x00624450 n=109    FUN_00624450                             NEW
+
+0x0066800A in QuadLeaf_ClassFromMaskedEntries+0x25a: 5 targets
+  0x00806BF0 n=344    FUN_00806b70+0x80                        NEW
+  0x00807B70 n=263    FUN_00807b70                             NEW
+  0x00807090 n=162    FUN_00807090                             NEW
+  0x0080F840 n=16     FUN_0080f840                             NEW
+  0x0080C300 n=6      FUN_0080c300                             NEW
+
+0x00668020 in QuadLeaf_ClassFromMaskedEntries+0x270: 5 targets
+  0x00806B70 n=344    FUN_00806b70                             NEW
+  0x00807C20 n=263    FUN_00807c20                             NEW
+  0x00806F70 n=162    FUN_00806f70                             NEW
+  0x0080F7D0 n=16     FUN_0080f7d0                             NEW
+  0x0080C3D0 n=6      FUN_0080c3d0                             NEW
+
+0x00668032 in QuadLeaf_ClassFromMaskedEntries+0x282: 2 targets
+  0x00624450 n=447    FUN_00624450                             NEW
+  0x00626220 n=341    FUN_00626220                             NEW
+
+0x00668118 in QuadLeaf_ClassFromMaskedEntries+0x368: 1 targets
+  0x00807090 n=736    FUN_00807090                             NEW
+
+0x0066812E in QuadLeaf_ClassFromMaskedEntries+0x37e: 1 targets
+  0x00806F70 n=736    FUN_00806f70                             NEW
+
+0x006682C0 in QuadLeaf_ClassFromEntries+0xe0: 2 targets
+  0x00620CC0 n=612    FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=124    FUN_00626270+0x60                        NEW
+
+0x006682E8 in QuadLeaf_ClassFromEntries+0x108: 2 targets
+  0x009C1B00 n=615    FUN_009c1b00                             NEW
+  0x00806F00 n=121    FUN_00806f00                             NEW
+
+0x00668302 in QuadLeaf_ClassFromEntries+0x122: 2 targets
+  0x00620D60 n=446    IC_EATrace_ShouldLogImpl                 
+  0x00620DD0 n=290    FUN_00620d90+0x40                        NEW
+
+0x00668314 in QuadLeaf_ClassFromEntries+0x134: 3 targets
+  0x00624450 n=334    FUN_00624450                             NEW
+  0x0070AE20 n=284    FUN_0070ae20                             NEW
+  0x00626220 n=118    FUN_00626220                             NEW
+
+0x00668329 in QuadLeaf_ClassFromEntries+0x149: 1 targets
+  0x00807090 n=736    FUN_00807090                             NEW
+
+0x0066833D in QuadLeaf_ClassFromEntries+0x15d: 1 targets
+  0x00620DC0 n=736    FUN_00620d90+0x30                        NEW
+
+0x00668361 in QuadLeaf_ClassFromEntries+0x181: 1 targets
+  0x006119F0 n=736    FUN_006119e0+0x10                        NEW
+
+0x00668375 in QuadLeaf_ClassFromEntries+0x195: 1 targets
+  0x00620DC0 n=736    FUN_00620d90+0x30                        NEW
+
+0x006683BE in QuadLeaf_ClassFromEntries+0x1de: 3 targets
+  0x00806BF0 n=370    FUN_00806b70+0x80                        NEW
+  0x00807B70 n=314    FUN_00807b70                             NEW
+  0x0080C300 n=52     FUN_0080c300                             NEW
+
+0x006683D4 in QuadLeaf_ClassFromEntries+0x1f4: 3 targets
+  0x00806B70 n=370    FUN_00806b70                             NEW
+  0x00807C20 n=314    FUN_00807c20                             NEW
+  0x0080C3D0 n=52     FUN_0080c3d0                             NEW
+
+0x006683ED in QuadLeaf_ClassFromEntries+0x20d: 2 targets
+  0x006262D0 n=370    FUN_00626270+0x60                        NEW
+  0x00620CC0 n=366    FUN_00620ca0+0x20                        NEW
+
+0x00668412 in QuadLeaf_ClassFromEntries+0x232: 2 targets
+  0x00624450 n=11     FUN_00624450                             NEW
+  0x00626220 n=11     FUN_00626220                             NEW
+
+0x00668421 in QuadLeaf_ClassFromEntries+0x241: 2 targets
+  0x00624450 n=11     FUN_00624450                             NEW
+  0x00626220 n=11     FUN_00626220                             NEW
+
+0x0066844B in QuadLeaf_ClassFromEntries+0x26b: 2 targets
+  0x00624450 n=368    FUN_00624450                             NEW
+  0x00626220 n=368    FUN_00626220                             NEW
+
+0x00669956 in LotQuadTree_CollectLeaf+0x106: 2 targets
+  0x009C1B00 n=122    FUN_009c1b00                             NEW
+  0x00806F00 n=54     FUN_00806f00                             NEW
+
+0x0066996B in LotQuadTree_CollectLeaf+0x11b: 2 targets
+  0x00620D60 n=152    IC_EATrace_ShouldLogImpl                 
+  0x00620DD0 n=24     FUN_00620d90+0x40                        NEW
+
+0x00669982 in LotQuadTree_CollectLeaf+0x132: 5 targets
+  0x00806BF0 n=54     FUN_00806b70+0x80                        NEW
+  0x00807090 n=51     FUN_00807090                             NEW
+  0x0080C300 n=46     FUN_0080c300                             NEW
+  0x006119F0 n=24     FUN_006119e0+0x10                        NEW
+  0x0080F840 n=1      FUN_0080f840                             NEW
+
+0x00669998 in LotQuadTree_CollectLeaf+0x148: 2 targets
+  0x00620CC0 n=99     FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=45     FUN_00626270+0x60                        NEW
+
+0x006699EB in LotQuadTree_CollectLeaf+0x19b: 3 targets
+  0x00624450 n=98     FUN_00624450                             NEW
+  0x00626220 n=54     FUN_00626220                             NEW
+  0x0070AE20 n=24     FUN_0070ae20                             NEW
+
+0x00669A20 in LotQuadTree_CollectLeaf+0x1d0: 3 targets
+  0x00624450 n=98     FUN_00624450                             NEW
+  0x00626220 n=54     FUN_00626220                             NEW
+  0x0070AE20 n=24     FUN_0070ae20                             NEW
+
+0x0066ACC5 in QuadCell_MirrorDescend+0x65 (jmp): 4 targets
+  0x0066ACCC n=223    QuadCell_MirrorDescend+0x6c              NEW
+  0x0066ACDC n=207    QuadCell_MirrorDescend+0x7c              NEW
+  0x0066ACE0 n=200    QuadCell_MirrorDescend+0x80              NEW
+  0x0066ACD4 n=164    QuadCell_MirrorDescend+0x74              NEW
+
+0x0066AF08 in FUN_0066ae00+0x108: 1 targets
+  0x00624F80 n=736    FUN_00624f80                             NEW
+
+0x0066B383 in QuadTreeCellPos_C+0x2f3: 3 targets
+  0x00624450 n=22     FUN_00624450                             NEW
+  0x00626220 n=6      FUN_00626220                             NEW
+  0x0070AE20 n=4      FUN_0070ae20                             NEW
+
+0x0066B395 in QuadTreeCellPos_C+0x305: 2 targets
+  0x00620CC0 n=26     FUN_00620ca0+0x20                        NEW
+  0x006262D0 n=6      FUN_00626270+0x60                        NEW
+
+0x0066B3B8 in QuadTreeCellPos_C+0x328 (jmp): 2 targets
+  0x0066B3BF n=31     QuadTreeCellPos_C+0x32f                  NEW
+  0x0066B540 n=1      QuadTreeCellPos_C+0x4b0                  NEW
+
+0x0066B3C5 in QuadTreeCellPos_C+0x335: 3 targets
+  0x00619EF0 n=16     FUN_00619ef0                             NEW
+  0x00626210 n=10     FUN_006261f0+0x20                        NEW
+  0x0083F5F0 n=6      FUN_0083f5f0                             NEW
+
+0x0066B3E3 in QuadTreeCellPos_C+0x353: 4 targets
+  0x00806BF0 n=14     FUN_00806b70+0x80                        NEW
+  0x00807090 n=7      FUN_00807090                             NEW
+  0x0080C300 n=6      FUN_0080c300                             NEW
+  0x006119F0 n=5      FUN_006119e0+0x10                        NEW
+
+0x0066B412 in QuadTreeCellPos_C+0x382 (jmp): 1 targets
+  0x0066B419 n=25     QuadTreeCellPos_C+0x389                  NEW
+
+0x0066B42A in QuadTreeCellPos_C+0x39a: 1 targets
+  0x00620CC0 n=25     FUN_00620ca0+0x20                        NEW
+
+0x0066B501 in QuadTreeCellPos_C+0x471: 1 targets
+  0x0080F0D0 n=23     Footprint_MidCtor+0x200                  NEW
+
+0x0066B74E in QuadCell_CollectSideCells+0x6e: 1 targets
+  0x00624F80 n=770    FUN_00624f80                             NEW
+
+0x0068115A in LooseQuadTree_RayNodeShapes+0x1da: 6 targets
+  0x00684E20 n=308    FUN_00684e20                             NEW
+  0x00682BE0 n=190    FUN_00682be0                             NEW
+  0x00683CD0 n=184    FUN_00683cd0                             NEW
+  0x0067EDE0 n=165    TerrainRay_A                             
+  0x00682F70 n=41     FUN_00682f70                             NEW
+  0x00683310 n=14     FUN_00683310                             NEW
+
+0x00681BD9 in FootprintQuadtree_Leaf+0x99: 2 targets
+  0x0067DEE0 n=2379   IC_RouteManager_GetSteeringObjectRadius  
+  0x006827D0 n=76     FUN_006827a0+0x30                        NEW
+
+0x00682B83 in FUN_006829c0+0x1c3: 3 targets
+  0x00682C40 n=475    BoxShape_RayCast                         
+  0x00682DD0 n=68     FUN_00682dd0                             NEW
+  0x00682FD0 n=65     FUN_00682fd0                             NEW
+
+0x006FDF34 in FUN_006fdf20+0x14: 1 targets
+  0x00EC4FC0 n=16     IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x00744A72 in FUN_00744a60+0x12: 2 targets
+  0x00C6DD50 n=597    FUN_00c6dd50                             NEW
+  0x00AB1CD0 n=139    FUN_00ab1ca0+0x30                        NEW
+
+0x0074B961 in FUN_0074b950+0x11: 4 targets
+  0x00731D00 n=609    FUN_00731d00                             NEW
+  0x005044C0 n=117    FUN_005044c0                             NEW
+  0x007DBC20 n=6      FUN_007dbc20                             NEW
+  0x0064E8E0 n=5      FUN_0064e890+0x50                        NEW
+
+0x0074D1B2 in IC_Route_SetLockKeys+0x52: 1 targets
+  0x00D71E10 n=226    FUN_00d71d50+0xc0                        NEW
+
+0x0074D46A in IC_RouteManager_AddPortalLocationVariation+0x7a: 1 targets
+  0x0064E8B0 n=4      FUN_0064e890+0x20                        NEW
+
+0x0074D6FE in IC_RouteManager_RemovePortals+0x4e: 1 targets
+  0x00AB1CD0 n=22     FUN_00ab1ca0+0x30                        NEW
+
+0x0074FCF7 in FUN_0074fcc0+0x37: 3 targets
+  0x0074F3C0 n=482    FUN_0074f2e0+0xe0                        NEW
+  0x0074F0E0 n=157    FUN_0074f080+0x60                        NEW
+  0x0074EFE0 n=97     FUN_0074ef80+0x60                        NEW
+
+0x0074FD0A in FUN_0074fcc0+0x4a: 2 targets
+  0x0074F3C0 n=602    FUN_0074f2e0+0xe0                        NEW
+  0x0074EFE0 n=134    FUN_0074ef80+0x60                        NEW
+
+0x0074FDD0 in FUN_0074fdb0+0x20: 3 targets
+  0x0074F640 n=488    FUN_0074f520+0x120                       NEW
+  0x005FE570 n=153    FUN_005fe570                             NEW
+  0x00624F60 n=95     FUN_00624f30+0x30                        NEW
+
+0x0074FF21 in Route_SumPathLengths+0x31: 1 targets
+  0x00641360 n=844    PathNode_Init+0x70                       NEW
+
+0x007502F7 in Route_UpdateLengths+0x97: 1 targets
+  0x00821850 n=736    FUN_00821850                             NEW
+
+0x0075266C in Route_MapStatusToResult+0x4c: 1 targets
+  0x0060EE40 n=528    FUN_0060ee40                             NEW
+
+0x00752677 in Route_MapStatusToResult+0x57 (jmp): 1 targets
+  0x007526C9 n=528    Route_MapStatusToResult+0xa9             NEW
+
+0x007526E3 in Route_MapStatusToResult+0xc3: 1 targets
+  0x0081FCE0 n=528    RoutingPathImp_InterestPoints+0x10       NEW
+
+0x007526F7 in Route_MapStatusToResult+0xd7: 1 targets
+  0x0081FCE0 n=100    RoutingPathImp_InterestPoints+0x10       NEW
+
+0x0075275C in Route_MapStatusToResult+0x13c: 1 targets
+  0x0081D990 n=150    FUN_0081d8d0+0xc0                        NEW
+
+0x0075728F in Route_UnlinkPaths+0x3f: 1 targets
+  0x0081FEA0 n=736    FUN_0081fda0+0x100                       NEW
+
+0x0075729D in Route_UnlinkPaths+0x4d: 1 targets
+  0x0081FF00 n=736    FUN_0081fda0+0x160                       NEW
+
+0x007580C6 in IC_RouteManager_AddPortal+0x2b6: 1 targets
+  0x0064E8E0 n=20     FUN_0064e890+0x50                        NEW
+
+0x0075CC83 in Route_GoalStep+0x9b3: 2 targets
+  0x00620E60 n=609    FUN_00620e20+0x40                        NEW
+  0x006262E0 n=127    FUN_00626270+0x70                        NEW
+
+0x0075CC9A in Route_GoalStep+0x9ca: 3 targets
+  0x00624ED0 n=327    FUN_00624e80+0x50                        NEW
+  0x00620E50 n=281    FUN_00620e20+0x30                        NEW
+  0x00626300 n=128    FUN_00626270+0x90                        NEW
+
+0x0075CCAF in Route_GoalStep+0x9df (jmp): 4 targets
+  0x0075CD52 n=704    Route_GoalStep+0xa82                     NEW
+  0x0075CD31 n=27     Route_GoalStep+0xa61                     NEW
+  0x0075CCB6 n=3      Route_GoalStep+0x9e6                     NEW
+  0x0075CCC6 n=2      Route_GoalStep+0x9f6                     NEW
+
+0x0075CCBF in Route_GoalStep+0x9ef: 2 targets
+  0x00624F70 n=555    Stub_ReturnFalse                         
+  0x00620D20 n=181    FUN_00620d10+0x10                        NEW
+
+0x0075CCF9 in Route_GoalStep+0xa29: 2 targets
+  0x00620D20 n=331    FUN_00620d10+0x10                        NEW
+  0x00624F70 n=229    Stub_ReturnFalse                         
+
+0x0075CD2D in Route_GoalStep+0xa5d: 2 targets
+  0x0080E8A0 n=327    FUN_0080e8a0                             NEW
+  0x00BFB320 n=233    FUN_00bfb320                             NEW
+
+0x0075D021 in Route_GoalStep+0xd51: 1 targets
+  0x00620D20 n=736    FUN_00620d10+0x10                        NEW
+
+0x0075D056 in Route_GoalStep+0xd86: 2 targets
+  0x0083F5F0 n=579    FUN_0083f5f0                             NEW
+  0x00619EF0 n=157    FUN_00619ef0                             NEW
+
+0x0075D073 in Route_GoalStep+0xda3: 1 targets
+  0x0080E8A0 n=736    FUN_0080e8a0                             NEW
+
+0x00760723 in Route_PlanCommon+0x43: 1 targets
+  0x0081FDE0 n=736    FUN_0081fda0+0x40                        NEW
+
+0x00760731 in Route_PlanCommon+0x51: 1 targets
+  0x0081FE40 n=736    FUN_0081fda0+0xa0                        NEW
+
+0x0076073F in Route_PlanCommon+0x5f: 1 targets
+  0x0081FEA0 n=736    FUN_0081fda0+0x100                       NEW
+
+0x0076074D in Route_PlanCommon+0x6d: 1 targets
+  0x0081FF00 n=736    FUN_0081fda0+0x160                       NEW
+
+0x007607CB in Route_PlanCommon+0xeb: 1 targets
+  0x00820630 n=640    FUN_00820630                             NEW
+
+0x00760F7A in Route_PlanCommon+0x89a: 1 targets
+  0x0081FBE0 n=736    RoutingPathImp_CopyFrom+0x1c0            NEW
+
+0x00760F83 in Route_PlanCommon+0x8a3: 1 targets
+  0x00949D30 n=736    FUN_00949d30                             NEW
+
+0x007614FF in Route_PlanCommon+0xe1f: 1 targets
+  0x0081D5D0 n=736    FUN_0081d5d0                             NEW
+
+0x0076152B in Route_PlanCommon+0xe4b: 1 targets
+  0x0081DD40 n=736    FUN_0081dd40                             NEW
+
+0x0076154E in Route_PlanCommon+0xe6e: 1 targets
+  0x0081D5F0 n=736    FUN_0081d5d0+0x20                        NEW
+
+0x0078F363 in World_FireEvent+0xb3: 1 targets
+  0x00D7D2F0 n=748    FUN_00d7d2f0                             NEW
+
+0x007CFCE7 in FUN_007cfcc0+0x27: 2 targets
+  0x716ED132 n=417    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA8D132 n=377    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x007D3CAB in FUN_007d3c90+0x1b: 4 targets
+  0x0064E8F0 n=410    FUN_0064e890+0x60                        NEW
+  0x005B07A0 n=273    thunk_FUN_00731d40                       NEW
+  0x0092C5F0 n=13     FUN_0092c5f0                             NEW
+  0x00731D40 n=1      FUN_00731d40                             NEW
+
+0x00807555 in FUN_00807400+0x155: 1 targets
+  0x00626270 n=736    FUN_00626270                             NEW
+
+0x0080CD6D in DoorRouting_AddDoorPortals+0x22d: 1 targets
+  0x0080C450 n=736    FUN_0080c3d0+0x80                        NEW
+
+0x0080E24F in FUN_0080e200+0x4f: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E27F in FUN_0080e200+0x7f: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E2AF in FUN_0080e200+0xaf: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E2E2 in FUN_0080e200+0xe2: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E328 in FUN_0080e200+0x128: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E361 in FUN_0080e200+0x161: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E397 in FUN_0080e200+0x197: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E3CD in FUN_0080e200+0x1cd: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E403 in FUN_0080e200+0x203: 1 targets
+  0x00807400 n=560    FUN_00807400                             NEW
+
+0x0080E668 in Footprint_EnsureAllPolygons+0x58: 1 targets
+  0x0080C430 n=736    FUN_0080c3d0+0x60                        NEW
+
+0x0080E675 in Footprint_EnsureAllPolygons+0x65: 1 targets
+  0x0080E570 n=736    FUN_0080e200+0x370                       NEW
+
+0x0080EC8C in FUN_0080ec30+0x5c: 2 targets
+  0x0083F5F0 n=688    FUN_0083f5f0                             NEW
+  0x00619EF0 n=48     FUN_00619ef0                             NEW
+
+0x0080ED95 in FUN_0080ec30+0x165: 1 targets
+  0x0080E570 n=736    FUN_0080e200+0x370                       NEW
+
+0x0080F6F5 in Footprint_SetLevelPolygons+0x55: 1 targets
+  0x0080E570 n=720    FUN_0080e200+0x370                       NEW
+
+0x00810E69 in FUN_00810df0+0x79: 2 targets
+  0x716E5320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA85320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x00810E82 in FUN_00810df0+0x92: 2 targets
+  0x716E5320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA85320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x0081A0C5 in RoutingPath_CopyNodes+0x2b5: 1 targets
+  0x00641370 n=736    PathNode_Init+0x80                       NEW
+
+0x0081B395 in RoutingJob_Execute+0xf5: 1 targets
+  0x00820070 n=736    FUN_00820070                             NEW
+
+0x0081C2A7 in RoutingJob_Execute+0x1007: 1 targets
+  0x0081DD40 n=736    FUN_0081dd40                             NEW
+
+0x0081C3B7 in RoutingJob_Execute+0x1117: 1 targets
+  0x0081D5D0 n=736    FUN_0081d5d0                             NEW
+
+0x0081C433 in RoutingJob_Execute+0x1193: 1 targets
+  0x0081FDE0 n=736    FUN_0081fda0+0x40                        NEW
+
+0x0081C440 in RoutingJob_Execute+0x11a0: 1 targets
+  0x0081FE40 n=736    FUN_0081fda0+0xa0                        NEW
+
+0x0081C4AF in RoutingJob_Execute+0x120f: 1 targets
+  0x00641870 n=736    FUN_00641810+0x60                        NEW
+
+0x0081C4BD in RoutingJob_Execute+0x121d: 1 targets
+  0x0081E5B0 n=736    FUN_0081e5b0                             NEW
+
+0x0081C4C6 in RoutingJob_Execute+0x1226: 1 targets
+  0x0081DF30 n=736    FUN_0081def0+0x40                        NEW
+
+0x0081C4DA in RoutingJob_Execute+0x123a: 1 targets
+  0x0081E410 n=736    FUN_0081e410                             NEW
+
+0x0081C4F1 in RoutingJob_Execute+0x1251: 1 targets
+  0x0081E410 n=736    FUN_0081e410                             NEW
+
+0x0081C583 in RoutingJob_Execute+0x12e3: 1 targets
+  0x00EC4FC0 n=736    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0081C5D3 in RoutingJob_Execute+0x1333 (jmp): 2 targets
+  0x0081C5EF n=403    RoutingJob_Execute+0x134f                NEW
+  0x0081C5E8 n=125    RoutingJob_Execute+0x1348                NEW
+
+0x0081C723 in RoutingJob_Execute+0x1483: 1 targets
+  0x0064E600 n=112    FUN_0064e600                             NEW
+
+0x0081C787 in RoutingJob_Execute+0x14e7: 1 targets
+  0x00EC4FC0 n=150    IC_GameUtils_CreateCSVFile_ListImpl+0x270 NEW
+
+0x0081CDE4 in FUN_0081cd10+0xd4: 2 targets
+  0x6EA85320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x716E5320 n=320    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x0081CE0D in FUN_0081cd10+0xfd: 2 targets
+  0x6EA85320 n=368    (outside TS3W.exe) OUT=MSVCR80.dll
+  0x716E5320 n=320    (outside TS3W.exe) OUT=MSVCR80.dll
+
+0x0082C7CB in Route_PlanLocked+0xeb: 1 targets
+  0x0060EE40 n=736    FUN_0060ee40                             NEW
+
+0x0082D5B6 in RoutingWorld_AddObjectPortals+0x2d6 (jmp): 1 targets
+  0x0082D5D1 n=32     RoutingWorld_AddObjectPortals+0x2f1      NEW
+
+0x0082D73B in RoutingWorld_AddObjectPortals+0x45b (jmp): 1 targets
+  0x0082D754 n=32     RoutingWorld_AddObjectPortals+0x474      NEW
+
+0x0083201F in RoutingWorld_AddPrivateFootprint+0x47f: 1 targets
+  0x00F1D800 n=720    FUN_00f1d800                             NEW
+
+0x0083204D in RoutingWorld_AddPrivateFootprint+0x4ad: 1 targets
+  0x00620CF0 n=720    FUN_00620cf0                             NEW
+
+0x0083205B in RoutingWorld_AddPrivateFootprint+0x4bb: 1 targets
+  0x00620D10 n=720    FUN_00620d10                             NEW
+
+0x00832069 in RoutingWorld_AddPrivateFootprint+0x4c9: 1 targets
+  0x00620CE0 n=720    FUN_00620ce0                             NEW
+
+0x008320C4 in RoutingWorld_AddPrivateFootprint+0x524: 1 targets
+  0x00620CD0 n=720    FUN_00620cd0                             NEW
+
+0x008320CF in RoutingWorld_AddPrivateFootprint+0x52f: 1 targets
+  0x00620D90 n=720    FUN_00620d90                             NEW
+
+0x008320D8 in RoutingWorld_AddPrivateFootprint+0x538: 1 targets
+  0x008075D0 n=720    FUN_008075d0                             NEW
+
+0x008323B5 in RoutingWorld_UpdateObjectFootprintCore+0x1c5: 1 targets
+  0x00620D10 n=736    FUN_00620d10                             NEW
+
+0x008326CF in RoutingWorld_UpdateObjectFootprintCore+0x4df: 1 targets
+  0x00F1D800 n=366    FUN_00f1d800                             NEW
+
+0x00832716 in RoutingWorld_UpdateObjectFootprintCore+0x526: 1 targets
+  0x00620CF0 n=366    FUN_00620cf0                             NEW
+
+0x00832724 in RoutingWorld_UpdateObjectFootprintCore+0x534: 1 targets
+  0x00620D10 n=366    FUN_00620d10                             NEW
+
+0x00832732 in RoutingWorld_UpdateObjectFootprintCore+0x542: 1 targets
+  0x00620CE0 n=366    FUN_00620ce0                             NEW
+
+0x0083278D in RoutingWorld_UpdateObjectFootprintCore+0x59d: 1 targets
+  0x00620CD0 n=366    FUN_00620cd0                             NEW
+
+0x00832798 in RoutingWorld_UpdateObjectFootprintCore+0x5a8: 1 targets
+  0x00620D90 n=366    FUN_00620d90                             NEW
+
+0x008327A1 in RoutingWorld_UpdateObjectFootprintCore+0x5b1: 1 targets
+  0x008075D0 n=366    FUN_008075d0                             NEW
+
+0x00834CB5 in RoutingWorld_SurfaceAtPoint+0x135: 3 targets
+  0x00624ED0 n=334    FUN_00624e80+0x50                        NEW
+  0x00620E50 n=178    FUN_00620e20+0x30                        NEW
+  0x00626300 n=160    FUN_00626270+0x90                        NEW
+
+0x0085F7E9 in RouteFollow_EditPath+0x249: 1 targets
+  0x00620E60 n=736    FUN_00620e20+0x40                        NEW
+
+0x0085F7FE in RouteFollow_EditPath+0x25e: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F810 in RouteFollow_EditPath+0x270: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F822 in RouteFollow_EditPath+0x282: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F834 in RouteFollow_EditPath+0x294: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F846 in RouteFollow_EditPath+0x2a6: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F858 in RouteFollow_EditPath+0x2b8: 1 targets
+  0x00624ED0 n=736    FUN_00624e80+0x50                        NEW
+
+0x0085F8EE in RouteFollow_EditPath+0x34e: 2 targets
+  0x00620E60 n=413    FUN_00620e20+0x40                        NEW
+  0x006262E0 n=195    FUN_00626270+0x70                        NEW
+
+0x0085FA79 in RouteFollow_EditPath+0x4d9: 1 targets
+  0x0080F790 n=736    FUN_0080f710+0x80                        NEW
+
+0x0085FBAD in RouteFollow_EditPath+0x60d: 1 targets
+  0x0080E8A0 n=608    FUN_0080e8a0                             NEW
+
+0x0085FC0A in RouteFollow_EditPath+0x66a: 1 targets
+  0x0080E8A0 n=560    FUN_0080e8a0                             NEW
+
+0x0085FC9C in RouteFollow_EditPath+0x6fc: 1 targets
+  0x0080E8A0 n=736    FUN_0080e8a0                             NEW
+
+0x0085FCEE in RouteFollow_EditPath+0x74e: 1 targets
+  0x0080E8A0 n=624    FUN_0080e8a0                             NEW
+
+0x0085FF78 in RouteFollow_EditPathForRoute+0x48: 1 targets
+  0x00641870 n=736    FUN_00641810+0x60                        NEW
+
+0x0085FF8F in RouteFollow_EditPathForRoute+0x5f: 1 targets
+  0x00641890 n=736    FUN_00641890                             NEW
+
+0x00866ECB in RoutePathList_Free+0x3b: 1 targets
+  0x00820630 n=736    FUN_00820630                             NEW
+
+0x008A65EB in FUN_008a65d0+0x1b: 3 targets
+  0x0064E8F0 n=717    FUN_0064e890+0x60                        NEW
+  0x0092C5F0 n=10     FUN_0092c5f0                             NEW
+  0x007DBC30 n=9      FUN_007dbc30                             NEW
+
+0x008B71D3 in FUN_008b70e0+0xf3: 4 targets
+  0x0064E8E0 n=534    FUN_0064e890+0x50                        NEW
+  0x005044C0 n=113    FUN_005044c0                             NEW
+  0x0092C5E0 n=84     FUN_0092c5e0                             NEW
+  0x007DBC20 n=5      FUN_007dbc20                             NEW
+
+0x008CE565 in FUN_008ce540+0x25: 3 targets
+  0x008A6E50 n=595    FUN_008a6e10+0x40                        NEW
+  0x00915880 n=93     RefCounted_AddRefAt8                     
+  0x0064E8E0 n=32     FUN_0064e890+0x50                        NEW
+
+0x008CE574 in FUN_008ce540+0x34: 3 targets
+  0x008BC100 n=630    FUN_008bc100                             NEW
+  0x00915890 n=58     RefCounted_ReleaseAt8                    
+  0x0064E8F0 n=32     FUN_0064e890+0x60                        NEW
+
+0x00958643 in FUN_00958560+0xe3: 2 targets
+  0x0080D8C0 n=427    FUN_0080d8c0                             NEW
+  0x007F1620 n=309    FUN_007f1620                             NEW
+
+0x0095895F in FUN_00958560+0x3ff: 2 targets
+  0x0080DFB0 n=571    FUN_0080dfb0                             NEW
+  0x008C4110 n=167    FUN_008c4110                             NEW
+
+0x009DC529 in FUN_009dc510+0x19: 6 targets
+  0x00727670 n=416    FUN_00727540+0x130                       NEW
+  0x00731D00 n=173    FUN_00731d00                             NEW
+  0x00723130 n=74     thunk_FUN_00731d00                       NEW
+  0x005044C0 n=67     FUN_005044c0                             NEW
+  0x006D9160 n=5      FUN_006d9130+0x30                        NEW
+  0x00915880 n=2      RefCounted_AddRefAt8                     
+
+0x009DC538 in FUN_009dc510+0x28: 4 targets
+  0x005B07A0 n=359    thunk_FUN_00731d40                       NEW
+  0x008A6E60 n=264    FUN_008a6e10+0x50                        NEW
+  0x00731D40 n=68     FUN_00731d40                             NEW
+  0x0092C5F0 n=18     FUN_0092c5f0                             NEW
+
+0x009EC452 in FUN_009ec420+0x32: 3 targets
+  0x0064E8E0 n=552    FUN_0064e890+0x50                        NEW
+  0x00723130 n=187    thunk_FUN_00731d00                       NEW
+  0x007DBC20 n=14     FUN_007dbc20                             NEW
+
+0x00A8E064 in Lot_RoomLookup+0xe4: 1 targets
+  0x00AB18D0 n=736    FUN_00ab18d0                             NEW
+
+0x00AB33B6 in FUN_00ab3380+0x36: 1 targets
+  0x00AB18D0 n=736    FUN_00ab18d0                             NEW
+
+0x00AC3BB4 in FUN_00ac3ba0+0x14 (jmp): 4 targets
+  0x00AC3BBB n=184    FUN_00ac3ba0+0x1b                        NEW
+  0x00AC3C39 n=184    FUN_00ac3ba0+0x99                        NEW
+  0x00AC3C91 n=184    FUN_00ac3ba0+0xf1                        NEW
+  0x00AC3CE9 n=184    FUN_00ac3ba0+0x149                       NEW
+
+0x00AC9939 in FUN_00ac9460+0x4d9: 2 targets
+  0x00686A50 n=600    FUN_00686850+0x200                       NEW
+  0x006867D0 n=136    CapsuleShape_CreateFromData+0x730        NEW
+
+0x00AEB480 in FUN_00aeb440+0x40 (jmp): 3 targets
+  0x00AEB48F n=318    FUN_00aeb440+0x4f                        NEW
+  0x00AEB487 n=31     FUN_00aeb440+0x47                        NEW
+  0x00AEB497 n=19     FUN_00aeb440+0x57                        NEW
+
+0x00AEB4E0 in FUN_00aeb440+0xa0 (jmp): 4 targets
+  0x00AEB4F6 n=323    FUN_00aeb440+0xb6                        NEW
+  0x00AEB513 n=39     FUN_00aeb440+0xd3                        NEW
+  0x00AEB4FD n=20     FUN_00aeb440+0xbd                        NEW
+  0x00AEB4E7 n=18     FUN_00aeb440+0xa7                        NEW
+
+0x00AEB52B in FUN_00aeb440+0xeb: 1 targets
+  0x00AEDE70 n=416    FUN_00aede70                             NEW
+
+0x00AF90B6 in FUN_00af9090+0x26 (jmp): 4 targets
+  0x00AF90C8 n=248    FUN_00af9090+0x38                        NEW
+  0x00AF90C4 n=198    FUN_00af9090+0x34                        NEW
+  0x00AF90BD n=195    FUN_00af9090+0x2d                        NEW
+  0x00AF90C1 n=95     FUN_00af9090+0x31                        NEW
+
+0x00AFE3C0 in FUN_00afe3b0+0x10 (jmp): 1 targets
+  0x00AFE492 n=736    FUN_00afe3b0+0xe2                        NEW
+
+0x00B0A358 in FUN_00b0a1e0+0x178: 1 targets
+  0x00AB18F0 n=736    FUN_00ab18d0+0x20                        NEW
+
+0x00B48493 in FUN_00b48480+0x13 (jmp): 3 targets
+  0x00B484A6 n=388    FUN_00b48480+0x26                        NEW
+  0x00B484AC n=319    FUN_00b48480+0x2c                        NEW
+  0x00B484A0 n=29     FUN_00b48480+0x20                        NEW
+
+0x00B4850C in FUN_00b484f0+0x1c (jmp): 3 targets
+  0x00B48540 n=388    FUN_00b484f0+0x50                        NEW
+  0x00B48556 n=319    FUN_00b484f0+0x66                        NEW
+  0x00B48529 n=29     FUN_00b484f0+0x39                        NEW
+
+0x00B7C28F in FUN_00b7bf20+0x36f: 1 targets
+  0x00B71940 n=736    FUN_00b718e0+0x60                        NEW
+
+0x00B7C2AC in FUN_00b7bf20+0x38c: 1 targets
+  0x00B71940 n=736    FUN_00b718e0+0x60                        NEW
+
+0x00B7C45D in FUN_00b7bf20+0x53d: 1 targets
+  0x00B71940 n=736    FUN_00b718e0+0x60                        NEW
+
+0x00B7CC9E in FUN_00b7cc50+0x4e: 1 targets
+  0x008AB4F0 n=736    FUN_008ab4f0                             NEW
+
+0x00C41285 in FUN_00c41270+0x15 (jmp): 4 targets
+  0x00C4128C n=351    FUN_00c41270+0x1c                        NEW
+  0x00C412D2 n=309    FUN_00c41270+0x62                        NEW
+  0x00C41394 n=56     FUN_00c41270+0x124                       NEW
+  0x00C41333 n=20     FUN_00c41270+0xc3                        NEW
+
+0x00C469DC in FUN_00c469c0+0x1c (jmp): 4 targets
+  0x00C46A20 n=218    FUN_00c469c0+0x60                        NEW
+  0x00C469E3 n=183    FUN_00c469c0+0x23                        NEW
+  0x00C46A08 n=179    FUN_00c469c0+0x48                        NEW
+  0x00C469ED n=156    FUN_00c469c0+0x2d                        NEW
+
+0x00C4705A in FUN_00c47040+0x1a (jmp): 6 targets
+  0x00C47076 n=191    FUN_00c47040+0x36                        NEW
+  0x00C4708B n=182    FUN_00c47040+0x4b                        NEW
+  0x00C470A0 n=152    FUN_00c47040+0x60                        NEW
+  0x00C47061 n=149    FUN_00c47040+0x21                        NEW
+  0x00C470D5 n=46     FUN_00c47040+0x95                        NEW
+  0x00C470B5 n=16     FUN_00c47040+0x75                        NEW
+
+0x00C5FA98 in SceneNode_FindRecursive+0x38: 2 targets
+  0x00619EF0 n=595    FUN_00619ef0                             NEW
+  0x00B742C0 n=142    FUN_00b742c0                             NEW
+
+0x00C5FAAE in SceneNode_FindRecursive+0x4e: 1 targets
+  0x00AA93C0 n=736    FUN_00aa9370+0x50                        NEW
+
+0x00C5FAC5 in SceneNode_FindRecursive+0x65: 1 targets
+  0x00AA9190 n=738    FUN_00aa9050+0x140                       NEW
+
+0x00C5FAE0 in SceneNode_FindRecursive+0x80: 1 targets
+  0x00AA93C0 n=738    FUN_00aa9370+0x50                        NEW
+
+0x00C62D62 in WorldManager_FindLotByIdTyped+0x22: 1 targets
+  0x00619EF0 n=737    FUN_00619ef0                             NEW
+
+0x00CF3CA2 in FUN_00cf3c70+0x32: 2 targets
+  0x0056A730 n=273    FUN_0056a730                             NEW
+  0x005688E0 n=207    FUN_005688e0                             NEW
+
+0x00D53DD2 in FUN_00d53db0+0x22: 2 targets
+  0x0092C5E0 n=715    FUN_0092c5e0                             NEW
+  0x0064E8E0 n=21     FUN_0064e890+0x50                        NEW
+
+0x00F7E914 in __onexit+0x18: 2 targets
+  0x716D2BD9 n=15     (outside TS3W.exe) OUT=MSVCR80.dll
+  0x6EA72BD9 n=6      (outside TS3W.exe) OUT=MSVCR80.dll
+
+607 sites hit, 906 pairs, 677 targets not in the symbols CSV, 19 outside TS3W.exe, 1 sites past 8 targets; 454 sites listed (NEW/OUT/overflow only; --all for every site)

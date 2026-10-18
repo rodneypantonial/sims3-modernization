@@ -1,0 +1,45 @@
+[
+  {
+    "id": "bp-snap-probe2",
+    "note": "DRAFT, not run (docs/109 §5): [ProbeSnap] pass 2, site table native/ts3native/vcallsites2.h (pass 1 + 70 extra roots, 1534 sites); same settings as snap-probe.json bp-snap-probe; asi built by the docs/109 §4 steps; after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1 },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-snap2-objects",
+    "note": "DRAFT (docs/109 §6 group B): object churn + buy mode (repro rt-s2b-sweep: place/remove 10 objects twice, buy_open/close) for LotQuadTree_Insert/ApplyInsert, LotRouting_FootprintRoomIds, Footprint_EnsureLevelPolygons sites",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1, "ProbeSnap.DelaySec": 60 },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rt-s2b-sweep" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-snap2-cancel",
+    "note": "DRAFT (docs/109 §6 group C): cancels landing during route jobs (repro pet-guard-cancel, 8 guard/cancel cycles at ultra speed) for Job_Cancel 0x59A603",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1, "ProbeSnap.DelaySec": 60 },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "pet-guard-cancel" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-snap2-travel",
+    "note": "DRAFT (docs/109 §6 group A): travel save case to France and back (save-matrix travel case, as travel-all.json) for the lot-table miss path, LotGraph_dtor, the lot-index rebuild 0xC66700 and lot unload; arming starts DelaySec after start-up, so the arrival load is covered",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP",
+    "minCounters": 43,
+    "ini": { "ProbeSnap.Enabled": 1 },
+    "run": { "matrix": ["--travel", "--cases", "travel", "--to", "france"] },
+    "timeoutMin": 45
+  }
+]

@@ -2,6 +2,7 @@
 //   node tools/harness/stall-split.ts [--long 100] [--norm 50] [--pad 0] [--top 20] [tags...]   managed samples by task, long vs normal
 //   node tools/harness/stall-split.ts --slices                            ThreadedObjects time per iteration (hitches) and per call (native counters)
 //   node tools/harness/stall-split.ts --stalls                            /taskstall records (probe-out/*-taskstall.jsonl) by task
+//   node tools/harness/stall-split.ts --owners [--top 15] [--pad 100] [tags...]   non-route script owners per world: all samples vs slices >= 50 / >= 100 ms (docs/95)
 //   node tools/harness/stall-split.ts --self-check
 // Managed samples (`<tag>-managed.jsonl`, tools/probe/managed-sample.mjs) carry no time stamp: one line per sample, ~5 Hz, in order,
 // starting 60 s into the run for min(180, secs/2 - 60) s (profile-world.ts). The script places sample j at off + j * window / n seconds
@@ -57,7 +58,7 @@ const jsonl = (f: string) => readFileSync(f, 'utf8').split('\n').filter(Boolean)
 // row k covers (t[k-1], t[k]] in ms on the profiler clock; returns the row index for a time in ms, -1 if outside
 export const rowAt = (ts: number[], t: number) => { for (let k = 1; k < ts.length; k++) if (t > ts[k - 1] && t <= ts[k]) return k; return -1; };
 
-type Run = { tag: string; samples: string[][]; rowOf: number[]; times: number[]; hits: { t: number; wall: number; ms: number }[]; peak: Map<number, number>; off: number; r: number; proxy: boolean };
+type Run = { tag: string; samples: string[][]; rowOf: number[]; times: number[]; hits: { t: number; wall: number; ms: number; route: number }[]; peak: Map<number, number>; off: number; r: number; proxy: boolean };
 export function alignRun(tag: string, samples: string[][], rows: Record<string, number>[], hitches: any[], secs: number): Run {
   const ts = rows.map(r => r.t), t0 = ts[0], n = samples.length;
   const window = Math.min(180, Math.floor(secs / 2) - 60);
@@ -74,14 +75,14 @@ export function alignRun(tag: string, samples: string[][], rows: Record<string, 
   }
   const peak = new Map<number, number>(); // row -> longest hitch iteration in it (ThreadedObjects ms, or wall ms as proxy)
   for (const h of hitches) { const k = rowAt(ts, h.t); if (k >= 0) peak.set(k, Math.max(peak.get(k) ?? 0, proxy ? h.wallMs : h.threaded)); }
-  const hits = hitches.map(h => ({ t: h.t, wall: h.wallMs, ms: proxy ? h.wallMs : h.threaded }));
+  const hits = hitches.map(h => ({ t: h.t, wall: h.wallMs, ms: proxy ? h.wallMs : h.threaded, route: h.route ?? 0 }));
   return { tag, samples, rowOf: samples.map((_, j) => rowAt(ts, tOf(j, best.off))), times: samples.map((_, j) => tOf(j, best.off)), hits, peak, off: best.off, r: best.r, proxy };
 }
 
 const pct = (n: number, d: number) => d ? `${(100 * n / d).toFixed(1)}%` : '-';
 const interactionOf = (s: string[]) => { const i = s.findIndex(m => /RunInteractionWithoutCleanup$/.test(m)); return i > 0 ? s[i - 1] : '(not in an interaction)'; };
 const planCaller = (s: string[]) => s.find(m => !/^ScriptCore\.Route\.|^Sims3\.SimIFace\.Route\.|^RouteBackoffHook\./.test(m)) ?? '?';
-function tasks(tags: string[], longMs: number, normMs: number, topN: number, pad: number) {
+export function loadRuns(tags: string[]) {
   const files = readdirSync(PROFILE);
   const all = tags.length ? tags : files.filter(f => /-managed\.jsonl$/.test(f)).map(f => f.replace(/-managed\.jsonl$/, ''));
   const runs: Run[] = [];
@@ -93,6 +94,47 @@ function tasks(tags: string[], longMs: number, normMs: number, topN: number, pad
     if (rows.length < 30 || !existsSync(hf)) continue;
     runs.push(alignRun(tag, jsonl(join(PROFILE, `${tag}-managed.jsonl`)), rows, jsonl(hf), secs));
   }
+  return runs;
+}
+
+// --owners (docs/95): script work in ThreadedObjects that is not route search, per world. Buckets: every aligned sample ("avg") and
+// samples inside an iteration (+-pad ms) whose ThreadedObjects ms minus route ms is >= 50 / >= 100. Route-IC leaves and empty stacks
+// are left out of the denominator (route is handled separately); ICs other than Route_* stay in, as part of the script work that calls them.
+const FRAMEWORK = /^(ScriptCore|Sims3\.SimIFace)\.|^System\.|^(Enumerator|DefaultComparer|Definition|BroadcastCallback|KeyCollection|ValueCollection)\./;
+export const ownFrame = (s: string[]) => s.find(m => !FRAMEWORK.test(m)) ?? s[0];
+export const worldOf = (tag: string) => /(?:^|-)(bp|ip|sv)(?:-|$)/.exec(tag)?.[1] ?? '?';
+export const isRouteLeaf = (s: string[]) => /^ScriptCore\.Route\./.test(s[0] ?? '');
+export const inSlice = (r: Pick<Run, 'hits' | 'times'>, j: number, lo: number, pad: number) =>
+  r.hits.some(h => h.ms - h.route >= lo && r.times[j] >= h.t - h.wall - pad && r.times[j] <= h.t + pad);
+function owners(tags: string[], topN: number, pad: number) {
+  const runs = loadRuns(tags).filter(r => r.r >= 0.2);
+  const buckets: [string, (r: Run, j: number) => boolean][] = [['avg', () => true], ['>=50', (r, j) => inSlice(r, j, 50, pad)], ['>=100', (r, j) => inSlice(r, j, 100, pad)]];
+  const keys: [string, (s: string[]) => string[]][] = [
+    ['Category', s => [category(s)]], ['Task (object whose Simulate runs)', s => [rootOf(s)]], ['Interaction (Sim interaction step only)', s => category(s) === 'Sim interaction step' ? [interactionOf(s)] : []],
+    ['Own frame (first game/mod method above the leaf ICs and BCL)', s => [ownFrame(s)]], ['Self (innermost frame)', s => [s[0]]],
+    ['Inclusive (anywhere on the stack)', s => [...new Set(s)].filter(m => m !== 'ScriptCore.ScriptProxy.Simulate')],
+  ];
+  for (const w of [...new Set(runs.map(r => worldOf(r.tag)))]) {
+    const rs = runs.filter(r => worldOf(r.tag) === w);
+    console.log(`\n## World ${w}: ${rs.map(r => `${r.tag} (r ${r.r.toFixed(2)}${r.proxy ? ', proxy' : ''})`).join(', ')}`);
+    const sets = buckets.map(([name, f]) => {
+      const all = rs.flatMap(r => r.samples.filter((_, j) => r.rowOf[j] > 0 && f(r, j)));
+      const S = all.filter(s => s.length && !isRouteLeaf(s));
+      console.log(`${name}: ${all.length} samples, no script ${pct(all.filter(s => !s.length).length, all.length)}, route-IC leaf ${pct(all.filter(isRouteLeaf).length, all.length)}, counted ${S.length}`);
+      return S;
+    });
+    for (const [title, key] of keys) {
+      const counts = sets.map(S => { const c = new Map<string, number>(); for (const s of S) for (const k of key(s)) c.set(k, (c.get(k) ?? 0) + 1); return c; });
+      const top = new Set(counts.flatMap(c => [...c].sort((a, b) => b[1] - a[1]).slice(0, topN).map(([k]) => k)));
+      console.log(`\n### ${w} ${title}\n| Key | ${buckets.map(([n]) => n).join(' | ')} | n (>=50) |\n|---|${buckets.map(() => '---|').join('')}---|`);
+      for (const k of [...top].sort((a, b) => (counts[1].get(b) ?? 0) - (counts[1].get(a) ?? 0)))
+        console.log(`| ${k} | ${counts.map((c, i) => pct(c.get(k) ?? 0, sets[i].length)).join(' | ')} | ${counts[1].get(k) ?? 0} |`);
+    }
+  }
+}
+
+function tasks(tags: string[], longMs: number, normMs: number, topN: number, pad: number) {
+  const runs = loadRuns(tags);
   const isLong = (r: Run, k: number) => (r.peak.get(k) ?? 0) >= longMs, isNormal = (r: Run, k: number) => (r.peak.get(k) ?? 0) < normMs;
   // --pad: per sample instead of per second: long = inside a long iteration (+-pad ms), normal = no hitch iteration within 1.5 s
   const longAt = (r: Run, j: number) => pad ? r.hits.some(h => h.ms >= longMs && r.times[j] >= h.t - h.wall - pad && r.times[j] <= h.t + pad) : isLong(r, r.rowOf[j]);
@@ -174,6 +216,11 @@ function selfCheck() {
   const samples = Array.from({ length: 450 }, (_, j) => { const s = 60 + j / 5; return s > 64 && s <= 74 ? ['ScriptCore.Route.Route_Plan'] : ['X']; });
   const run = alignRun('t', samples, rows, [{ t: 75500, threaded: 300, wallMs: 320 }, { t: 75900, threaded: 40, wallMs: 60 }, { t: 90500, threaded: 20, wallMs: 60 }], 300);
   assert(run.off === 65 && run.peak.get(76) === 300 && run.peak.get(91) === 20 && !run.proxy, `alignRun ${run.off} ${[...run.peak]}`);
+  // owners: a 300 ms slice that is 280 ms route is not a >= 50 ms non-route slice; a 120 ms slice with 10 ms route is
+  const r2 = { times: [1000, 2000], hits: [{ t: 1100, wall: 300, ms: 300, route: 280 }, { t: 2050, wall: 120, ms: 120, route: 10 }] };
+  assert(!inSlice(r2, 0, 50, 0) && inSlice(r2, 1, 100, 0) && !inSlice(r2, 1, 120, 0), 'inSlice minus route');
+  assert(worldOf('clean-night-2-2026-10-18-ip-p10') === 'ip' && worldOf('sv') === 'sv' && worldOf('bp-all') === 'bp', 'worldOf');
+  assert(ownFrame(['ScriptCore.Queries.Query_GetObjects', 'System.Array.IndexOf', 'Sims3.Gameplay.Core.Lot.GetObjects']) === 'Sims3.Gameplay.Core.Lot.GetObjects' && isRouteLeaf(['ScriptCore.Route.Route_Plan']), 'ownFrame');
   console.log('self-check ok');
 }
 
@@ -185,4 +232,5 @@ if (!isMain) { /* imported */ }
 else if (flag('--self-check')) selfCheck();
 else if (flag('--slices')) slices();
 else if (flag('--stalls')) stalls();
+else if (flag('--owners')) { const topN = opt('--top', 15), pad = opt('--pad', 100); owners(args, topN, pad); }
 else { const longMs = opt('--long', 100), normMs = opt('--norm', 50), topN = opt('--top', 20), pad = opt('--pad', 0); tasks(args, longMs, normMs, topN, pad); }

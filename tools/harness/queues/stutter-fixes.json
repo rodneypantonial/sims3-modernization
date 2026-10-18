@@ -1,0 +1,53 @@
+[
+  {
+    "id": "bp-overwatch-cleanup-ab",
+    "note": "DRAFT, docs/96 cause B: Overwatch daily CleanupInventory (~500 ms TaskObjects, 3-4 per 10 min run). Run A = save Baseline-BP (Clean up Inventory on, default). Run B = save Baseline-BP-noinv: a copy of Baseline-BP saved once after City Hall > NRaas > Overwatch > Settings > Clean up Inventory = off (the kCleanupInventory tuning only seeds new saves, the value lives in the save). Both runs: same build, seed 12345, story progression off. Pass = TaskObjects iterations >= 300 ms (node tools/harness/worst-hitches.ts) 3-4 in A, 0-1 in B, no NRaas.OverwatchSpace.Alarms.CleanupInventory sample in B, 0 watchdog lines, clock guard ok. External-load rule: rerun if other CPU >= 10%. Clean night only.",
+    "asi": "tested",
+    "save": "Baseline-BP-Spring",
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-overwatch-cleanup-off",
+    "note": "DRAFT, run B of bp-overwatch-cleanup-ab (see there): same as A, save with Overwatch Clean up Inventory off",
+    "asi": "tested",
+    "save": "Baseline-BP-Spring-noinv",
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-safespot-ab",
+    "note": "docs/95 5.1: SafeSpot reuses the FindGoodLocation result stored with a verified spot (switch safespotreuse, off by default); 10 min seeded Isla Paradiso, A/B in one load (2-min slices), verify on (1 in 8 also searches); pass = safespotreuse_hits > 0, searches lower on the on halves, mismatches small, no script errors, 0 stuck Sims",
+    "asi": "tested",
+    "save": "Baseline-IP-Spring",
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "safespotreuse",
+        "slice": 2,
+        "repro": "safespotreuse-verify"
+      }
+    },
+    "timeoutMin": 30
+  }
+]

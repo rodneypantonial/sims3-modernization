@@ -14,6 +14,9 @@
 // with --mainstack too, only the main-thread stacks run, for the whole window (they never suspend the sim thread).
 // --mainstack main|all|TID: in the native sampler window also sample the main thread (or every non-sim game thread, or one id)
 // through /threadstack right after each sim sample, into <tag>-mainstack.jsonl (docs/20 §7); never suspends the sim thread.
+// --inroom: also run tools/frida/inroom-reads.js (docs/111: lot tree root-border dumps, SetBounds / QuadTreeBuild reads, in-room
+// context flags) from the window start for the whole run, into <tag>-inroom.json (inroom-report.ts) and <tag>-inroom.log; the
+// stack samplers are skipped (they suspend the sim thread, where its tree dumps run).
 // Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,mainstack.jsonl,stuck.json,houseboats.json,
 // rng.json (seed reply, sim minutes at window start and end), activity.jsonl (every Sim's interaction per 30 s check; rng-compare.ts)}.
 import { spawn } from 'node:child_process';
@@ -26,7 +29,7 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, 'no-env': { type: 'boolean' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, 'no-env': { type: 'boolean' } } });
 if (!values.tag) throw new Error('--tag required');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -105,6 +108,16 @@ setTimeout(() => { if (prof.exitCode === null && prof.signalCode === null) { con
 
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true }); // window start: unpause to x3
 const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
+// --inroom: its own Frida session like the stutter profiler; the script writes <tag>-inroom.json itself and prints a line every 30 s
+const inroomDone = values.inroom ? new Promise(r => {
+  const p = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'inroom-reads.js'),
+    '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const log = createWriteStream(`${pre}-inroom.log`);
+  p.stdout.on('data', (d: Buffer) => { log.write(d); for (const l of String(d).split(/\r?\n/)) if (l.includes('[inroom]')) console.log(`${stamp()} ${l.trim()}`); });
+  p.stderr.pipe(log);
+  p.on('exit', r);
+  setTimeout(() => { if (p.exitCode === null && p.signalCode === null) { console.log(`${stamp()} FAIL: inroom-reads still running 90 s past -t ${secs}; killed (fail-fast guard)`); p.kill(); } }, (secs + 90) * 1000).unref();
+}) : Promise.resolve();
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 const toggler = (async () => {
@@ -173,7 +186,7 @@ const run = (args: string[], file: string) => new Promise(r => {
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
 // none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
-const window = abNames.length || values.taskstall || values.repro ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const window = abNames.length || values.taskstall || values.repro || values.inroom ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
 const mainSample = async (t: number) => {
   try {
     const r = await get(`threadstack?which=${values.mainstack}&frames=24`, 5000);
@@ -208,7 +221,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
-await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun]);
+await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone]);
 stopLoad();
 console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
 rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
