@@ -1,0 +1,60 @@
+[
+  {
+    "id": "bp-snap-p5",
+    "note": "docs/94 §22 P5 (0.33.0, counters v61): [RouteSnap] Mode=2, the game TAKES the clone run's answer for async ReplanFromPosition jobs (RouteAsync.Kinds 4, RouteSnap.Kinds 8); every other plan as A10. Clean night only (the first build where our search answers the game: correctness first, timings are G5's A/B later). Copy the 0.33.0 build to the asi name below first. 1 job in 10 also runs the game's plan and keeps it (VerifyEvery=10, records \"m2\":1). After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 lines; P5 first run PASS = Mode=2 still on, answers taken > 0, verify M2/M3 0, snShadowFault 0) and node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line). Also pass: no crash, no watchdog, 0 stuck Sims (log only), rpMis 0, no 'RouteSnap: Mode=2 off' line, Sims route through doors as with Mode=1",
+    "asi": "game-copy/ts3native.asi.snap0330",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 61,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "BP"
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p5",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30); ShadowWorld IP",
+    "asi": "game-copy/ts3native.asi.snap0330",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 61,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "IP"
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

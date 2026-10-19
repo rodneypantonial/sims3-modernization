@@ -601,9 +601,32 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             if (GameUtils.IsUniversityWorld())
             {
-                List<Sim> all = new List<Sim>(Household.ActiveHousehold.AllActors);
-                TravelUtil.TriggerTravelHomeFromUniversity(all, new List<Sim>());
-                r["via"] = "TriggerTravelHomeFromUniversity";
+                // The phone/computer "Leave University" call (Phone.CallLeaveUniversity.OnPhoneFinished), minus its yes/no
+                // dialog: drop every student out, then travellers = the household minus NPC dorm roommates, who stay and see
+                // them off. Without the drop-out the moving van takes the early-single-departure path (a student still in
+                // an academic career leaves alone: removed from the household, no world switch) and the game sits with no
+                // active household (docs/77 §2.3, 2026-10-18 run).
+                Household hh = Household.ActiveHousehold;
+                if (hh == null) throw new McpException("no active household");
+                List<Sim> travellers = new List<Sim>(), stay = new List<Sim>();
+                foreach (Sim m in hh.AllActors)
+                    if (Household.RoommateManager.IsNPCRoommate(m)) stay.Add(m); else travellers.Add(m);
+                if (travellers.Count == 0) throw new McpException("only NPC roommates in the active household");
+                RunAsync("travel_home university", delegate
+                {
+                    HudModel hud = Sims3.UI.Responder.Instance.HudModel as HudModel;
+                    foreach (Sim m in travellers)
+                    {
+                        if (m.OccupationAsAcademicCareer == null) continue;
+                        AcademicDegreeManager.DropOut(m);
+                        if (hud != null) hud.OnSimCurrentWorldChanged(false, m.SimDescription);
+                    }
+                    foreach (Sim m in travellers) if (m.OccupationAsAcademicCareer != null) throw new Exception(m.FullName + " still enrolled after DropOut");
+                    TravelUtil.TriggerTravelHomeFromUniversity(travellers, stay);
+                });
+                r["via"] = "LeaveUniversity (DropOut + TriggerTravelHomeFromUniversity)";
+                r["travellers"] = travellers.ConvertAll(m => (object)m.FullName);
+                r["staying"] = stay.ConvertAll(m => (object)m.FullName);
             }
             else if (GameUtils.IsOnVacation())
             {

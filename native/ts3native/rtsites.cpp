@@ -138,11 +138,27 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
     if (!k.rtReady) return 0;
     const bool enforce = k.rgEnforce != 0, running = g_async.state == A_RUNNING;
     const RtSite& s = kRtSites[i];
+    // P4 clone run (docs/94 §12.4.3 with §17.4 D1): pass through, except the #1 quadtree readers (g_qtCs) and the #5 lot
+    // lookups / pending updates, which keep acting; they also note the plan's reader bits (D5)
+    if (t_snapRun && s.kind != RT_QREAD && s.kind != RT_QLEAF && s.kind != RT_LOTGRID && s.kind != RT_PENDING) return 0;
+    if (t_p4Read) t_p4Read |= s.kind == RT_QREAD || s.kind == RT_QLEAF ? P4R_PHYS : s.kind == RT_LOTGRID ? P4R_LOTIDX : 0;
+    if (t_p4Read && s.addr == 0x006583E0) t_p4Read |= P4R_VRAY;  // D5 display level family (docs/94 §17.9 N15)
     const DWORD tid = GetCurrentThreadId();
     const bool worker = RgIsWorker(tid), job = RgJobLive();
     RgThread& t = t_rg;
     RgDrop(t, slot);
     const char* note = NULL;
+    if (g_p4On && !worker) {
+        // D5: writer families counted for the shadow's window (physics, destroys, lot index rebuilds)
+        if (s.kind == RT_QWRITE) InterlockedIncrement(&g_nrN[0]);
+        else if (s.kind == RT_DESTROY) InterlockedIncrement(&g_nrN[2]);
+        else if (s.kind == RT_IDXREBUILD) InterlockedIncrement(&g_nrN[3]);
+        // D2: destroys, saves, BuildRoutingData, lot saves and the travel / quit drain wait for a running clone run
+        if (s.kind == RT_DESTROY || s.kind == RT_SAVE || s.kind == RT_BRD || s.kind == RT_LOTSAVE || s.kind == RT_CLOSING) {
+            P4NrEnter();
+            if (!RgPush(t, slot, 1, RG_REL_NR)) InterlockedDecrement(&g_snNrIn);
+        }
+    }
     switch (s.kind) {
         case RT_QREAD:
             if (!worker) break;
@@ -168,7 +184,8 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
             if (enforce && !worker) {
                 InterlockedIncrement(&g_rgOffSimOpen);
                 LONG rel = RG_REL_OFFSIM;
-                if (g_async.state == A_RUNNING) { RtQtEnter(); rel |= RG_REL_QT; }
+                // D3 (docs/94 §17.4): with P4 installed the mutators lock always (a clone run reads the tree after J_DONE)
+                if (g_async.state == A_RUNNING || g_p4On) { RtQtEnter(); rel |= RG_REL_QT; }
                 if (!RgPush(t, slot, 1, rel)) RgUndo(RgFrame{NULL, 0, 0, rel, NULL});
             }
             break;

@@ -285,11 +285,13 @@ namespace Ts3Agent
             }
             string q = a.Str("query", "").ToLowerInvariant();
             bool includeSims = a.Bool("include_sims", true);
+            int minLevel = (int)a.Long("min_level", int.MinValue);  // 1: objects on upper floors only
             List<KeyValuePair<float, object>> found = new List<KeyValuePair<float, object>>();
             foreach (GameObject o in objs)
             {
                 if (o == null || !o.InWorld || o is Lot) continue;
                 if (!includeSims && o is Sim) continue;
+                if (o.Level < minLevel) continue;
                 string name = Util.ObjectName(o);
                 if (string.IsNullOrEmpty(name) || name.StartsWith("***")) continue;  // internal objects
                 name = name.Trim();
@@ -298,6 +300,7 @@ namespace Ts3Agent
                 d["id"] = Util.Id(o.ObjectId);
                 d["name"] = name;
                 d["type"] = o.GetType().Name;
+                d["level"] = o.Level;
                 float dist = me != null ? (o.Position - me.Position).Length() : 0f;
                 if (me != null) d["distance"] = Util.Round(dist);
                 if (o.InUse) d["in_use"] = true;
@@ -379,6 +382,12 @@ namespace Ts3Agent
             }
             if (lq == "terrain") return Terrain.Singleton;
             if (lq == "self" || lq == "me") return Util.ActiveSim();
+            if (q.StartsWith("@"))  // a reflect root or path, e.g. "@door", "@upstairs" (ReproHandlers)
+            {
+                GameObject g = Resolve(q) as GameObject;
+                if (g == null) throw new McpException(q + " is not a game object");
+                return g;
+            }
             return Util.FindObject(a, key);
         }
 
@@ -638,6 +647,7 @@ namespace Ts3Agent
                 GameObject t = FindTarget(a, "target");
                 pos = t is Lot ? ((Lot)t).GetCenterPosition() : t.Position;
             }
+            else if (a.Has("to")) pos = RequireRarePoint(s, a.Str("to"));  // "pond", "ocean", "far" (RareHandlers)
             else pos = new Vector3((float)a.Double("x"), (float)a.Double("y", 0), (float)a.Double("z"));
             InteractionInstance ii = Terrain.GoHere.GetSingleton(s, pos).CreateInstance(Terrain.Singleton, s,
                 new InteractionPriority(InteractionPriorityLevel.UserDirected), false, true);

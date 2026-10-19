@@ -58,6 +58,7 @@ namespace Ts3Fixes
             ApplyUiCaches();
             ApplyNameCache();
             ApplyScriptHotSpots();
+            ApplyDoorMirror();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -80,13 +81,15 @@ namespace Ts3Fixes
         // [83-84] cane-walk checks answered early / passed to the game, [85-87] hours-of-operation memo hits / misses / verify mismatches,
         // [90-92] SafeSpot placements answered by a stored FindGoodLocation result / searches run / verify differences (switch safespotreuse),
         // [88-89] tooltip window walks skipped / run (ScriptHotSpots.cs),
-        // [93-98] spring wildflower fires / tries / placed / failed / longest ms / save aborts (wildflowerprobe, wildflowertask; ScriptHotSpots.cs, docs/110).
+        // [93-98] spring wildflower fires / tries / placed / failed / longest ms / save aborts (wildflowerprobe, wildflowertask; ScriptHotSpots.cs, docs/110),
+        // [99-101] reserved for invcache (docs/115), [102-105] door mirror: door imports seen / lot invalidations / lot tables built /
+        // builds refused (doormirror; DoorMirror.cs, docs/105 §10.5).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[99];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[106];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -132,6 +135,7 @@ namespace Ts3Fixes
                 case "safespotreuseverify": return false; // verify switch: test runs only
                 case "wildflowerprobe": return Instantiator.kWildflowerProbe;
                 case "wildflowertask": return Instantiator.kWildflowerTask;
+                case "doormirror": return Instantiator.kDoorMirror;
                 case "spotspread": return true;
                 default: return true;
             }

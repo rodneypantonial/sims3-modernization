@@ -40,6 +40,7 @@ namespace Ts3Fixes
         [Tunable] public static bool kSafeSpotReuse = false;       // opt-in until measured: SafeSpot reuses the FindGoodLocation result stored with a verified spot instead of searching again (docs/95 5.1)
         [Tunable] public static bool kWildflowerProbe = false;     // test only: the spring wildflower drain logs tries and times per fire, same behaviour (ScriptHotSpots.cs, docs/110)
         [Tunable] public static bool kWildflowerTask = false;      // opt-in until measured: spring wildflower placement runs one try per sim tick in its own task instead of all tries inside the alarm (docs/110 W1)
+        [Tunable] public static bool kDoorMirror = false;          // opt-in: per-lot managed door records, pushed to the ts3native door mirror at each plan (DoorMirror.cs, docs/105 §10.5)
         [Tunable] public static bool kHoursMemo = false;           // opt-in until measured: a lot's opening hours are worked out once per sim tick (ScriptHotSpots.cs, docs/74)
 
         public const string Version = "0.1.0";

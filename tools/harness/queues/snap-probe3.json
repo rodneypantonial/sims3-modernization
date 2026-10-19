@@ -1,0 +1,29 @@
+[
+  {
+    "id": "bp-snap-probe3-worker",
+    "note": "DRAFT, not run (docs/109 §8.8, G2 gap 2): [ProbeSnap] pass 3, the 4 shared-helper sites 0x8A65EB, 0x5BF1FB, 0x8CE574, 0x9158AB (vcallsites3.h, build with /DTS3N_VCSITES3) with Threads=1: hits split job/worker/sim/other; settings as snap-probe2.json bp-snap-probe2; after: node tools/harness/snap-report.ts <row.nativeLog> --all",
+    "asi": "game-copy/ts3native.asi.snapprobe3",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 53,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.Threads": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

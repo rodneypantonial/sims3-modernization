@@ -66,7 +66,15 @@ The report prints, per caller, the flag words with counts, the bits seen, and th
 
 ## 5. Results
 
-Not run yet.
+Runs 2026-10-18 (`queues/live-reads.json`, both PASS, 5 min each, RouteWorker and RouteAsync off). Report: `node tools/harness/inroom-report.ts probe-out/profile/live-reads-2026-10-18-<bp|ip>-inroom-reads-inroom.json`.
+
+| Item | BP (19:35 PHT) | IP (19:44 PHT) | Verdict |
+|---|---|---|---|
+| I-98-15 wrap pairs | 0 walkable pairs in 330 trees (82 lots); 12,701 border cells, none walkable | 0 in 380 trees (119 lots) | **verified** for the plain context: the replacement need not copy the wrap edge |
+| I-98-21 SetBounds rect, c | no SetBounds call in the window; dumped bounds min -2,-2; P+0xB8 = 1 | same; bounds min -2,-2 and -1,-1 | closed statically instead (docs/98 §15.7: lot-local from (-0.5,-0.5), dive lots from 0, c = 1, bounds from -2; trees are sized only on a level's first tree). The probe reads SetBounds args one slot early (owner P is args[0]): fix before any live SetBounds read |
+| I-101-4 | ecx = P in all 200 QuadTreeBuild calls; +0xB8 1 = static 1 | same | **verified** |
+| U6 option words | 12,062 in-room entries, one thread; per-caller flag words logged | 6,443 entries | recorded (docs/109 §3 bits) |
+| U7 X+0x4C | 0 at every entry, never changed by a search | same | **verified**: the §5.3 else-branch is not reached |
 
 | Job | Run | I-98-15 | I-98-21 | I-101-4 | U6 | U7 |
 |---|---|---|---|---|---|---|

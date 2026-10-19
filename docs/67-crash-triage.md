@@ -1,4 +1,4 @@
-# 67. Crash triage: the 2026-10-14 Swarm wild call and the 2026-10-15 ModelBuilder teardown
+# 67. Crash triage: the 2026-10-14 Swarm wild call, the 2026-10-15 ModelBuilder teardown, the 2026-10-18 lighting room hash (§5), the 2026-10-19 lot-0 footprint remove (§6), the 2026-10-19 Frida handler call to NULL beside the int3 sampler (§7) the 2026-10-19 A\* node on a free list (§8), the 2026-10-19 shared empty hash bucket (§9) and the 2026-10-19 room list free and orphaned EA heap lock (§10)
 
 Static only: Ghidra headless on a private copy of the UI4 project (`game-copy/ghidra-crash`, symbols CSV imported first), the two EA crash reports (`<Documents>/Electronic Arts/The Sims 3/xcpt <machine> 26-10-14 11.58.36.txt` and `... 26-10-15 15.38.26.txt`; no `.mdmp` exists for either, only for 2026-10-11), `crash-ledger.ts triage`, a byte scan of the installed ASI files, and a read of `native/ts3native/alloc.cpp` and the agent's `TravelHandlers.cs`. The game was not run. Times are UTC; the report file names keep the local clock.
 
@@ -107,3 +107,147 @@ The ModelBuilder is refcounted with an atomic release and is shared: `RefCounted
 - No `.mdmp` for either crash, so the garbage bytes at `0x0804695B` and the exact Swarm object type stay unknown. Keep EA's minidump for the next crash (copy it out of `<Documents>` before the next run) [inferred: the game writes one only sometimes].
 - Name the Swarm object types: the entry vector at `+0x21C` (0x58-byte entries) and the class with Release at vtable `+0x3C`.
 - Confirm whether EA's `GeneralAllocator_Free 0x4E5920` detects a double free on its own (decides how bad the stock behaviour is without the cache).
+
+## 5. Crash C (2026-10-18 16:11:26 UTC): lighting room hash use after free, 9 s after a direct future-world arrival
+
+Static only (2026-10-19): capstone on the Steam 1.67 exe copy, EA's report `<Documents>/Electronic Arts/The Sims 3/xcpt <machine> 26-10-19 00.11.26.txt` (no `.mdmp`), the job log `probe-out/queue/travel-all-2026-10-18-bp-travel-future-direct.log`, the ts3native and probe logs of the same job, `S3SS.toml`, the change ledger (`5c328696e19f`) and our source. The game was not run.
+
+### 5.1 Facts
+
+| | |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x44973010`, State `MEM_FREE`, EIP `0x006A81D6`, main thread (stack `0x1AF9C4`, the same range as crash A's main-thread stack) [verified] |
+| Job | `bp-travel-future-direct` (queue `travel-all.json`): agent `travel_future {prepare, direct}`, left NewDowntownWorld 16:10:56, arrived in FutureWorld 16:11:17, autonomy back on 16:11:17, crash 16:11:26, process gone 16:11:31 [verified job log] |
+| Change set | `5c328696e19f`: `ts3fixes.package` `dae594e7da39 -> 2b3834b912c1` (door adapter build, `doormirror` off), new `ts3agent.package`, ts3native pinned `tested` 0.10.1 (save compress, footprint index, decompress, flush only) [verified ledger + ts3native log] |
+| Modules | S3SS 1.6.3 (`Mimalloc` on, `LotStreamingOptimizations` on), S3PP, MonoPatcher, ts3native, DXVK, the Frida agent of `ts3probe serve` (no opt-in watch started) [verified report, `S3SS.toml`, probe log] |
+| Same EIP elsewhere | none: the other nine `xcpt` files, `probe-out` and docs/67 §1-4 have no fault at `0x6A81xx` or `0x6C5Cxx` [verified grep] |
+| Script errors | one NRaas ErrorTrap report at 16:11:05 (during the load): "Destroyed Object Found" corrections only, no exception [verified] |
+
+### 5.2 Where it faulted [verified: disassembly + report registers and stack]
+
+EA's printed call stack (`0x1AFAA0`, `0x608BDD`, `0x608BEE`) is stale stack data. The real frame: `0x6A8190` pushes 0x20 bytes, and `[esp+0x20]` = `0x6C5CCD`, the return address after the only call to `0x6A8190` (at `0x6C5CC8`).
+
+| Frame | Function | Role |
+|---|---|---|
+| `Renderer_PreRenderUpdate 0x6EBB70` | (docs/44 §1) | main-thread frame entry |
+| `LightManager_FrameUpdate 0x6B0500` | (docs/44 §2) | calls `0x6C5E20` on the light update tree at `+0xD4` |
+| `0x6C5E20` | LightUpdateTree update | two passes over the lots, then a tail jump to `0x6C5C20` |
+| `0x6C5C20` | LightUpdateTree pick-next-room (tag `Lighting/LightUpdateTree/RankArray`) | only when no room is in progress (`+0x74` = 0); for each entry of the tree's lot hash `+0x58` (tag `Lighting/LightUpdateTree/mLots`, constructor at `0x6C5340`) and each level -4..7, takes the level's LightingSolver from the lot object (`+0x10 + (level+4)*0x1A4`) and calls `0x6A8190`; then sorts the pairs (`0x6C58B0`) and starts the best room above a threshold (`0x69E860`: room state 2 -> 3) |
+| `0x6A8190` | LightingSolver collect-ranked-rooms | walks the solver's room hash at `+0x234` (buckets) / `+0x238` (bucket count) (tag `Lighting/LightingSolver/Rooms`, constructor `0x6A8489`); per node: room = node `+0x10`, rank = `0x69E770(room)` (non-zero only in state 2), push (room, rank); next node = node `+0x80` |
+| EIP `0x6A81D6` | read of node `+0x10` | node `esi = 0x44973000` lies in released memory |
+
+Registers: `esi = 0x44973000` (the node), `ebx = 0x77A3057C` (current bucket slot, holds `0x40A0FF90`), `ebp = 0x1AF9FC` (the caller's inline pair vector: begin `0x1AFA10`, end `0x1AFAA0`, so 18 rooms were already collected). The bucket slot's head is not `esi`, so `esi` came from the `+0x80` link of a node that is still mapped: a node was freed without being unlinked from its chain, or its predecessor is stale too [verified registers; reading inferred].
+
+### 5.3 Whose code is on the path
+
+- **ts3native 0.10.1:** no hook in `0x69E000-0x6CA000` or on `0x6B0500` / `0x6EBB70`; its hooks are the save compress commit `0x4A850F` and codec slot, the footprint index `0x666488` / `0x82C940` / `0xAAC320`, the decompress and the save flush [verified ts3native log + source grep]. The decompress reported 0 mismatches [verified log].
+- **ts3fixes door adapter (`DoorMirror.cs`):** a managed postfix on `CommonDoor.ImportContent` that runs the game's body first, then only marks its own table invalid and sends `GetOption2` messages on a handle-0 route; the game answers false for handle 0 (docs/18) and 0.10.1 has no door channel. It touches no native lighting or room data [verified source]. `doormirror` was off, so no table was built.
+- **Agent:** `FutureDirect` (our copy of `TimePortal.TravelToFuture`'s boarding plus `GameStates.TravelToVacationWorld`, docs/77 §4.2) ran 50 s before the crash, in the old world; after arrival the harness only turned autonomy back on [verified job log + `TravelHandlers.cs`]. The boarding calls match the game's interaction; the order differs only in `SetDepartureTimePortal` (ours before the switch call, the game's after it) and in skipping the walk and animations [verified source compare].
+- **Frida probe:** only opt-in watches hook game code; none was started in this job [verified probe log + `agent.js`].
+- **S3SS:** `Mimalloc` replaces the game heap; mimalloc returns a segment to the OS once its last block is freed, which is what turns a stale read into `MEM_FREE` [inferred: mimalloc design; the stock EA heap would usually keep the page mapped and the stale read would pass]. `LotStreamingOptimizations` (throttled lot LoD transitions, map view blocker in `WorldManager::Update 0xC6D570`) changes when lots and their lighting load right after arrival [inferred: not read].
+
+### 5.4 Verdict
+
+- Freed object: a node of one lot level's LightingSolver room hash (key = room id, LightSolverRoom pointer at `+0x10`), read by the main-thread light update [verified].
+- Who freed it: not found statically. Candidates: a room erase that left the chain linked, or the solver of a lot unloaded or rebuilt right after arrival while the light update tree still lists it [inferred].
+- Owner: **game (EA lighting); none of our code runs on the faulting path or writes its data** [verified for ts3native, ts3fixes and the probe; inferred for the agent as trigger]. The rule "our build crashed = our bug until proven" is not closed: the direct trip is our own sequence and the only difference from the portal run of the same queue (16:04 job: arrived 16:07:50, ran 20 s and saved). One run per mode is not enough.
+- No fix written: nothing of ours is on the path. A guard (SEH around `0x6A8190`) would protect one reader only; the same hash is walked by `0x6A7CF0`, `0x6A7FF0`, `0x6A80E0`, `0x6A86F0` and `0x6A88B0` [verified `+0x234` readers], so it is not worth building before a repro.
+
+### 5.5 Repro and next steps
+
+- Queue `tools/harness/queues/future-lighting-uaf.json`: three direct trips, two portal trips, one direct trip with S3SS `LotStreamingOptimizations` off; same `tested` asi and ini as `bp-travel-future-direct`. Repro entry `future-direct-lighting-uaf` (`repros.json`) is the short manual version.
+- Reading: a crash at `0x6A81D6` (or in another `+0x234` reader) in direct jobs only = our direct sequence leaves lighting state behind (fix in `FutureDirect`, start with the `SetDepartureTimePortal` order); in both modes = game bug, and the S3SS-off job says whether lot streaming triggers it; no crash in 6 runs = rare game race, log it and move on.
+- If it repeats: a Frida watch on frees of room hash nodes (allocator tag `Lighting/LightingSolver/Rooms`) per solver names the eraser.
+- Effort: 6 game runs of ~4-5 min (~30 min with restarts), then 1-2 hours of analysis if it repeats; a guard, if still wanted, ~2 hours.
+
+## 6. Crash D (2026-10-19 00:21:02 UTC): lot-0 footprint remove runs past its range, `bp-snap-p4` on ts3native 0.31.2
+
+Static only (2026-10-19): EA's report `<Documents>/Electronic Arts/The Sims 3/xcpt <machine> 26-10-19 08.21.02.txt` (no `.mdmp`), the job's ts3native log (`probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0016-ts3native.log`), capstone on the Steam 1.67 exe copy and a map file of an identical 0.31.2 rebuild. Full write-up: docs/94 §21.11; ledger docs/51 §104.
+
+| | Crash D |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x00000007` at `0x0063576A` (`LotRouting_RemoveObjectFootprints 0x635700`), sim thread, 5.1 min into a 10-min shadow run |
+| Change set | `617090506a92`: ts3native 0.31.2 (`a3260bd7…`) and its ini (`[RouteSnap] Enabled=1 Lots=replay Mode=1`, async routing, discourage deferral) [verified ledger] |
+| Stack | managed `RemoveDiscourageFootprint` IC (`SnIc19`) → `DiscRemoveHook` → `0x834860` → `0x635700` (lot 0) [verified] |
+| Where | the lot-0 walk over map M stepped twice over an FME whose remove was pending in `P+0x3C` and ran from the range end to the bucket sentinel (`esi = 0xFFFFFFFF`) [verified disassembly; reproduced on the game's code in `steerro-test` G2] |
+| Whose code | the game's loop; our `0x635700` stub only counts (contract checked) [verified]. Why the remove was pending: inferred (deferral while the Q was iterated; a clone-run deferral into the live maps is one candidate) |
+| Verdict | our build's run, so treated as ours: 0.31.4 flushes the id's pending removes before a lot-0 remove (`lrPendFlush`, `lrPendBusy`) and stops clone-run deferrals (`pcDeferStop`). Also fixed: 11 first-chance AVs per load in `SnCloneProbe` that hid later exceptions from the crash log |
+| Next | `snap-p4` BP and IP on 0.31.4; two clean runs to call it fixed |
+| Other builds (0.31.5) | the 0.31.4 guard sat in the `[RouteSnap]` stub only. The deferral that sets up the walk is the game's own, and no stock, shipped-ini, design-D or async path was shown to create it [inferred, docs/94 §21.12]. All the same, 0.31.5 adds `[LotRemoveGuard]` (default on): the same flush before every lot-0 `0x635700` on every build. Tested offline on D's own lot-0 call (`steerro-test` G2/D) |
+
+## 7. Crash E (2026-10-19 01:04:33 UTC): a second Frida agent's exception handler calls NULL while the int3 sampler runs, `bp-rare-winter-pond`
+
+Static only (2026-10-19): EA's report `<Documents>/Electronic Arts/The Sims 3/xcpt <machine> 26-10-19 09.04.33.txt` (no `.mdmp`), the job's logs (`probe-out/queue/rare-scenarios-2026-10-19-bp-rare-winter-pond*.log`, `-0102-ts3native.log`, `probe-out/profile/...-360.log`), capstone on the Steam 1.67 exe copy and on this machine's `SysWOW64\ntdll.dll` (same base `0x770B0000` as in the report). Ledger docs/51 §107.
+
+| | Crash E |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x00000000` with EIP 0; stack top `0x4445958A` in the **second** `frida-agent.dll` (base `0x443F0000`, RVA `0x6958A`), then `0x7712289F` in ntdll [verified] |
+| Build | `game-copy/ts3native.asi.snapprobe2` (`ed59c43e15c0`, the `[ProbeSnap]` pass-2 indirect-call sampler, `DelaySec=60`), not the tested 0.24.0 asi; same asi and ini as the PASS of 2026-10-18 16:59 UTC [verified queue rows] |
+| Thread | sim thread 31192 (ts3native's route gate lines name it) [verified] |
+| What was being handled | ESI points at an EXCEPTION_RECORD: code `0x80000003` (breakpoint) at `0x00634B4C`; EBX points at its CONTEXT (flags `0x1007F`) [verified report register memory]. `0x634B4C` is a `call edx` site in `vcallsites2.h`: the sampler's own int3 [verified] |
+| Path | ntdll's vectored handler loop (decode, CFG check, `call eax` right before `0x7712289F`) called the second agent's handler, and that handler called a NULL pointer [verified disassembly of the local ntdll; the NULL inside Frida is not analysed] |
+| Timing | the second agent is the stutter profiler (`frida_tools.repl`, spawned at the profile start 01:04:31); its log ends "hooks installed", then "Process terminated". Crash 2 s after the spawn, while the sampler was in its second window (window 1 logged 17,640 int3 hits) [verified logs] |
+| Not the cause | `test_env` (same second, but its reply came back OK; the second `fetch failed` is the dead process); the ts3agent and harness merges (no code of theirs on the stack); agent.js (first agent, base `0x67FC0000`, not on the stack) [verified] |
+| Verdict | ours (our harness combination): a Frida agent attaching while our int3 sampler raises thousands of breakpoints a minute on the sim thread can run its exception handler before it is ready [inferred: race inside Frida's agent start; one crash in about 40 ProbeSnap profile jobs with the same attach] |
+| Fix | `queue.ts` passes `--no-prof` to `profile-world.ts` for every job with `ProbeSnap.Enabled=1`: no stutter profiler session (no second agent attach or unload) beside the sampler. ProbeSnap jobs only need the native log; they lose the `<tag>-<secs>-*` hitch files |
+| Verify | rerun `rare-scenarios.json --only bp-rare-winter-pond` 2x (and the rest of the queue as usual): no crash, the job log shows no stutter profiler files. A crash with no second agent loaded = refuted |
+| Effort | ~1 h analysis + 10 min fix; live: 2 runs of ~8 min |
+
+## 8. Crash F (2026-10-19 01:07:10 UTC): an A\* graph node on a pool free list while the sim thread's search holds it, `bp-snap-p4` on ts3native 0.31.4
+
+Static only (2026-10-19): EA's report `xcpt <machine> 26-10-19 09.07.10.txt`, `probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0105-ts3native.log` and `-0105-shadow.jsonl`, capstone on the Steam 1.67 exe copy. Ledger docs/51 §107.
+
+| | Crash F |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x00000000` with EIP 0; return address `0x0061E6E0`, then `0x633599`, `0x640759` (stack refs also `0x664B50`, `0x632DFF`, `0x64E926`, `0x6265FE`, `0x4E3F84`) [verified] |
+| Thread | sim thread 24572 (main 29240, worker 28288 per the route gate lines) [verified] |
+| Where | in-room A\* `0x61E500` (called from `0x633594`): the node it takes from the open list (`esi = 0x49193A08`) gets flag `0x200000` at `+0x30`, then a virtual call through slot `+0x10`. The node's first dword is `0x9C5C3F18`, a heap address, and `[0x9C5C3F18+0x10] = 0`: call to NULL [verified disassembly + registers] |
+| What the node is | `+4` reference count word 2, `+8..+0x10` an empty vector whose allocator name at `+0x14` is `0xFEA058` = "Routing/cAStarGraphNode/mNeighborNodes"; the constructor `0x61B380` writes exactly that layout with vtable `0xFEA080`. `0x9C5C3F18` holds the same layout. A node whose vtable word points at another node of its kind is a node on a pool free list (the deleting destructors `0x61B520` / `0x61AD00` push with node `+0` = old free head) [verified] |
+| Our code on the path | the A\* family pools (`0x11CEF50`, `0x11CEF68`, `0x11CEF90`, `0x11CF448`) have their pop and push sites redirected by `pools.cpp` in this build (`plReady 7`); P4 clone runs ran on the worker during the 12 s before the crash (89 shadow records, copies filled) [verified log, counters at start] |
+| Cause | the node was pushed to a free list while the sim thread's search still held it: an unlocked free list written by two threads [inferred]. In 0.31.4 two pushes do that by design and are only counted: a P4 clone run (worker, no `+0x918`) freeing a game node pushes it into the game's pool (`rpLivePool`), and a thread that owns no clone work freeing a private A\* node pushes it into the private pool the clone run pops (`plForeign`). The counters at the crash are lost (no end dump), so which one fired is not known |
+| Verdict | ours (0.31.4 RouteSnap P4 + private pools; crash D of §6 was the same job on 0.31.2 at a different site) |
+| Fix (0.31.5, counters v57 unchanged) | those two pushes go to a sink pool object nobody pops: the node leaks instead of entering a free list another thread uses; the first 8 are logged (`private pools: pool N node ... leaked to the sink`), the counters still count them. Tree pools keep their old foreign path. Selftest updated (`TestPools`), `selftest ok` |
+| Verify | build 0.31.5, copy to `game-copy/ts3native.asi.snap0315` (the queue points there), run `snap-p4.json` (BP then IP) 2x each. Pass = no crash; read `rpLivePool` / `plForeign` and any sink lines. Sink lines + no crash = cause confirmed. No sink line and a crash at the same place = refuted: next suspect is a non-clone worker job and a sim-thread search on the game's A\* pools at once (check the `+0x918` hold on the `0x633594` path) |
+| Effort | ~1.5 h analysis + 30 min fix; live: 4 runs of ~13 min |
+| Second cause (2026-10-19, ts3native 0.32.0) | I-94-220: before 0.32.0 a P4 clone run's planner took P from the live W (`[W+8]` = live P), so the worker ran `LotPlan_Inner` -> `InRoomPlan` -> the in-room A\* `0x61E500` on the live P's `cAStarSearch` (`P+0xBC`) without `+0x918`: crash F's own frames (`0x65F0EA` -> `0x65F11C` -> `0x6410FF` -> `0x640754` -> `0x633594` [verified]). Two threads on one open list fit "a node on a free list while a search holds it" better than the pool pushes [inferred]. 0.32.0 gives the copy its own planner W' (docs/94 §21.13); ledger I-67-11 (docs/51 §108). Verify: `snap-p4` BP and IP on 0.32.0, 2x each |
+
+## 9. Crash G (2026-10-19 02:10:03 UTC): a W' cache node in the game's shared empty bucket array, `bp-snap-p4` on ts3native 0.32.0
+
+Static only (2026-10-19): EA's report `xcpt <machine> 26-10-19 10.10.03.txt` (no `.mdmp`), `probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0208-ts3native.log` and `-0208-shadow.jsonl`, `chain43.log`, capstone on the Steam 1.67 exe copy, and a map file of a 0.32.0 rebuild (`.text` byte-equal to `game-copy/ts3native.asi.snap0320`, sha256 `874706ad…`). Write-up: docs/94 §21.13 (crash G note); ledger docs/51 §110.
+
+| | Crash G |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0xBF5D9B01` at `0x009A32C0`, main thread 38212, 2 min after load (`ebp = 0x0114C900`, `ebx = 1`) [verified] |
+| Before it | the second P4 clone run (plan 3, the first one that was not start == goal) faulted on the worker 40660 writing `0x64B413C8` at `0x004E5220`, inside EA's heap free; `P4 FAULT` turned P4 off. Both faults are in the same log second [verified] |
+| Where (main) | `0x5E5E20`, a hash find: bucket array `[ecx+4]` = `0x114C900`, count 1, i.e. an **empty** EASTL hash on the game's shared empty bucket array. It found a non-zero bucket 0 and followed it into a node that was no longer one [verified disassembly + registers] |
+| Where (worker) | `0x650B70` (planner on W, `this` = W') ends by freeing its local hash's nodes (`0x643580` → `0xD2BC10` → `0x4E3F70`). That hash was empty too, so it walked the shared bucket 0 and freed a node with a bad chunk header [verified call chain; the node's origin inferred] |
+| Cause | `PcWp` (0.32.0) made W' from the live W's bytes and reset the `+0xC0` / `+0xFC` caches to the shared empty array (count 1, size 0), but kept the live **next-resize** words `+0xD8` / `+0x114`. The insert `0x657800` rehashes only when the new size passes that word (`0x4E09B0`, `jbe` at `0x4E09C3`). With the live threshold it did not rehash and linked its node into `0x114C900` bucket 0. From then on every empty hash in the game held that node: lookups on the main thread read it, and the next empty hash destroyed on any thread freed it [mechanism verified on the game's code offline; the W' cache insert in this run inferred from the frames] |
+| Sink lines (pools 2, 3, 5, thread 40660) | the worker after the fault: `PcRelease` (DISCARD) → `PcAstarDrop` ran the private A\* object's deleting dtor `0x61EB20` (the route gate line `Q reset (clear path) ... from 0x61EB28 thread 40660`) after the run had left the pool job, so each private node was a "foreign" push and leaked to the sink. Same on every WRAP. A leak, not the crash [verified code path + log line] |
+| Consumer AVs (thread 36616) | the replay consumer (`RpThread` → `RpDrainBody` → `RpApply` → `RpQKey`, map file): the "Q the clone does not have" diagnostic read `+0x1C` of a freed Q. The records were the consumer's own replays (self-records, fixed in 0.32.1) on a clone Q freed by the second load-time build. Caught, but they used 8 of the 16 first-chance log slots [verified frames; Q origin inferred] |
+| EIP 0 on the main thread | logged after the fatal fault, deeper on the same stack (`esp 0x1AECBC` < `0x1AFB0C`), game frames `0x4D7001`, `0x58D945`: inside the game's own exception handling, not startup and not ours [inferred] |
+| Verdict | ours (0.32.0 W') |
+| Fix (0.32.2, counters v57 unchanged; includes 0.32.1) | W' starts with `+0xD8` and `+0x114` at 0, as the W ctor `0x657C50` leaves them; `PcAstarDrop` runs the dtor as P4 pool job work (`g_p4PoolsEnterJob` / `LeaveJob`); `RpQKey` checks the Q is readable first |
+| Tests (offline) | `steerro-test` K6: live W with grown caches (`+0xD8` / `+0x114` = 0x61), then the game's insert `0x657BC0` into W'+0xC0 after every acquire; on 0.32.0 code: `K6 FAIL (crash G): ... linked node ... into the shared empty bucket array 0x114C900`; on 0.32.2: 26 inserts per seed pair, array untouched, and W' dropped on another thread with its filled cache. selftest `PcCheckWp` (W' thresholds 0; failed on 0.32.0) and `TestPools` (the A\* teardown's private node goes back to the private pool; on 0.32.0 it went to the sink, `plForeign` +1). Seeds 1 and 2 x 3000 `steerro-test ok`, no K3/K6 WARNING; `hook-sites --check` 446 addresses, 0 missing |
+| Verify | park 0.32.2 as `game-copy/ts3native.asi.snap0322`, `snap-p4.json` BP then IP, 2x each. Pass: no crash, no `P4 FAULT`, no sink lines, `snPcAcquired` > 0 with shadow records past plan 3 |
+| Effort | ~2 h analysis (logs, map rebuild, disassembly), ~0.75 h fix and tests, ~0.5 h docs: ~3.25 h; live: 4 runs of ~13 min |
+
+## 10. Crash H (2026-10-19, `bp-snap-p4` on ts3native 0.32.4): a clone run's room build frees our heap block through EA's free, then the game hangs on the EA heap lock
+
+Static only (2026-10-19): `probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0252-ts3native.log`, the job log `snap-p4-2026-10-19-bp-snap-p4.log`, the probe log, capstone on the Steam 1.67 exe copy. No EA report and no `.mdmp` (the process did not crash). Write-up: docs/94 §21.13.2; ledger docs/51 §114.
+
+| | Crash H |
+|---|---|
+| Run | BP, world loaded 10:53:53 PHT; the first real P4 compares (3 shadow records, all M0, job 21.0 ms vs game 20.9 ms) [verified logs] |
+| Fault | `P4 FAULT` on the worker 37208, plan 5 kind 0: C0000005 reading `0xAE286F64` at `0x004E5200` [verified log] |
+| Where | `0x4E5200` is in EA's chunk free `0x4E51B0`, called from the general free `0x4E5920` (frame `0x4E5945`) through `0x4E3F70` (`0x4E3F84`). `eax` = chunk `0xA2258B60`, so the freed pointer is `0xA2258B70` (`ebx`); `edx` = its size word at `ptr-0xC` = `0x8C02E400`, `esi` = size `0x0C02E400` (192 MB): not an EA chunk header. The large-chunk path reads the next chunk's header at chunk + size + 4 and faults [verified disassembly + registers] |
+| Who freed it | `0x5D1E4A`: the end of a `vector<u16>` grow (`0x5D1D60`): new buffer from `0x4E3F90`, then the old `begin` to EA's free. Caller `0x63D516` in `RoomGraph_FirstUse 0x63D2F0`: the push of a portal index into the room record's `+0x24` list (room record = a 0x44-byte entry of lot graph `+0x90`). Up the stack `0x63F488` (`LotPortalSearch 0x63EC40`) and `0x63FB5B` (`LotPlan_Inner 0x63F6E0`) [verified disassembly; the deeper refs from `0xA8E1F0` on are stale stack] |
+| Why it is not an EA block | `replay.cpp` `RpVecCopy` copied the clone's room lists into our private heap (`RpAlloc`: `HeapAlloc`, 16-byte aligned, size at `ptr-8`, raw pointer at `ptr-4`) with capacity = size, so the first push past the copied size grows and hands our block to EA's free. `ptr-0xC` is the NT heap entry header when the raw block is 8 mod 16 (this run: garbage size, fault), or our zeroed padding when it is 0 mod 16: size 0, EA's small-bin path then writes into our block and links it into its bin 0 without a fault [verified `RpAlloc` layout + `0x4E51D3..0x4E51F2`] |
+| Why a clone run builds a room | `RoomGraph_FirstUse` builds a room whose built byte `+0` is 0: never built, or reset by `0x630F70` (a footprint change clears only that byte and the lot's `+0x8C`; the room's lists stay) [verified]. The cut (`PcPrepare`) builds only each lot's outside room, so other unbuilt rooms reach the clone run. The build empties `+0x24`, frees every `+0x34` element's buffer (`0x61EE20`), resizes `+0x34` (`0x622A30`) and pushes into both [verified] |
+| Second defect on the same path | room `+0x34` is a vector of 16-byte vectors (8-byte entries), not flat data (I-94-133 refuted): the flat copy kept the inner buffers **live**, so on a room reset by `0x630F70` the clone run's `0x61EE20` EA-freed blocks the live room still holds (the sim's next rebuild of that room frees them again). In this run that free came before the fault if the room had been built before [mechanism verified; occurrence not known] |
+| Why the game died | EA's alloc and free hold the heap's lock object `[[0x11CB864]+0x4E4]` (a `CRITICAL_SECTION`, depth word `+0x18`) around the call (`0x4E5924..0x4E594E`, `0x4E69D4..0x4E6A05`). `P4Guarded`'s `__except` unwound past `LeaveCriticalSection`, so the worker kept the lock and the next allocation on any other thread waited for ever. The log ends after the fault lines (the A\* drop on the worker, which owns the lock, still ran); the harness saw the heartbeat frozen for 60 s and stopped the job ("game died at 02:55:30 UTC"), no xcpt file [lock path verified; deadlock inferred from the frozen heartbeat] |
+| Same in crash G | crash G's worker fault at `0x4E5220` was inside the same free and left the same lock held [verified site]; there the main thread's AV came first |
+| Verdict | ours (0.29.0 room copy `RpVecCopy` for `+0x24` / `+0x34`; the P4 fault path since 0.29.0) |
+| Fix (0.32.7, counters v57 unchanged) | `replay.cpp` `RpRoomListsCopy`: `+0x24`, `+0x34` and every `+0x34` element's buffer copied as EA blocks (`0x4E3F90` with the vector's own `+0xC` word, as the game's grow does), empty lists as NULL; `RpLotFree` frees them with EA's free. `p4.cpp` `P4EaHeapUnlock`: after a fault or lazy stop in a clone run, every hold of the EA heap lock the worker still owns is released (logged `P4 FAULT: EA heap lock released`). A fault inside EA's free can still leave a half-done free; this one wrote nothing before its read |
+| Tests (offline) | `steerro-test` K7: the game's `RoomGraph_FirstUse` on each clone lot's unbuilt room (built byte 0, one portal, empty `+0x24`, one `+0x34` list whose buffer sits on a `PAGE_NOACCESS` page during the call); the fake EA free refuses and counts a non-EA block. With the 0.32.6 copy: `K7 FAIL (crash H): ... touched a live room buffer`; 0.32.7: 10 rooms built per seed pair, no foreign free, live rooms untouched. Selftest: the fault variant takes a fake EA heap lock before faulting; after the run the lock is free. Seeds 1 and 2 x 3000 `steerro-test ok`, no K3/K6 WARNING; `hook-sites --check` 446 addresses, 0 missing |
+| Verify | park 0.32.7, `snap-p4.json` BP then IP, 2x each. Pass: no `P4 FAULT`, no hang, shadow records past plan 5. A `P4 FAULT` line followed by `EA heap lock released` and a game that keeps running = the fault path works; then triage the new fault |
+| Effort | ~1.5 h analysis (logs, disassembly), ~1 h fix and tests, ~0.5 h docs: ~3 h; live: 4 runs of ~13 min |

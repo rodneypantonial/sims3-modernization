@@ -285,6 +285,7 @@ class Emu:
             a = work.pop()
             if a in seen:
                 continue
+            bound = None  # imm of the last 'cmp reg, imm' on this walk: the size of a following jump table
             while True:
                 if a in seen:
                     break
@@ -306,9 +307,18 @@ class Emu:
                 if ins.mnemonic in ('ret', 'retf', 'int3', 'hlt', 'ud2'):
                     ends.add(nxt)
                     break
+                if ins.mnemonic == 'cmp' and len(ins.operands) == 2 and ins.operands[1].type == cx.X86_OP_IMM:
+                    bound = ins.operands[1].imm
                 if cx.X86_GRP_JUMP in grp:
                     tail = imm is not None and imm != entry and imm in self.names and ins.mnemonic == 'jmp'
-                    if imm is None:
+                    m = op.mem if op is not None and op.type == cx.X86_OP_MEM else None
+                    if (imm is None and m is not None and ins.mnemonic == 'jmp' and m.base == 0 and m.scale == 4
+                            and bound is not None and 0 <= bound < 256 and self.text[0] <= m.disp < self.rdata[1]):
+                        # MSVC switch: 'cmp idx, n; ja default; jmp [idx*4 + table]' -> table has n + 1 entries
+                        for t in struct.unpack(f'<{bound + 1}I', self.read(m.disp, 4 * (bound + 1))):
+                            leaders.add(t)
+                            work.append(t)
+                    elif imm is None:
                         indirect.append(a)
                     elif tail:
                         callees.add(imm)  # tail call into another named function

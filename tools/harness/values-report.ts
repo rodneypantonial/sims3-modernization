@@ -1,7 +1,7 @@
 // Report of a [ProbeValues] run (docs/108): one line per docs item id with the measured value and the answer rule's verdict.
 //   node tools/harness/values-report.ts probe-out/queue/<queue>-<date>-<job>-native.json [--log <...-ts3native.log>] [--world <file.world>]
 //   node tools/harness/values-report.ts --self-check
-// Reads the queue's native counter dump ({before, after}, ts3native counters v44). Counts are after - before (the profile
+// Reads the queue's native counter dump ({before, after}, ts3native counters v44, or v45 from 0.24.1 with the docs/112 fixes). Counts are after - before (the profile
 // window) unless the line says "since start" (load-time work happens before the first read). Load values (tuning, origin,
 // R, guards, sea) are the latest world's, from `after`. --log adds the per-world "values ..." lines (several worlds, G
 // builds with caller and thread); --world checksums the world file's R with tools/rtdata-decode.ts for docs/99 F-2.
@@ -56,7 +56,12 @@ export function report(before: Counters, after: Counters, opts: { world?: { a: n
   if (opts.world) v2 = opts.world.a === ra ? 'memory R = decoder records (blocked bit and surface byte masked)'
     : opts.world.b === rb ? 'type bits differ only (shoreline rewrite, docs/100 §3.2 step 8); rest equal' : `DIFFERS from the file (${hex(opts.world.a)} / ${hex(opts.world.b)}, ${opts.world.wps} waypoints)`;
   add('F-2', `R sum ${hex(ra)} / ${hex(rb)}, ${a('pvR_2')} waypoints, ${a('pvR_3')} blocked now`, v2);
-  add('91 §6.6', `R checksum changes after the snapshot: ${a('pvR_4')} (since start)`, a('pvR_4') === 0 ? 'R fixed apart from bit 7' : 'R CHANGED (log "values R changed")');
+  const v45 = a('version') >= 45;
+  const base = v45 ? `the baseline (retaken after the G build ${a('pvRRebase')}x)` : 'the snapshot (0.24.0: before the load G build, docs/112 §3.1)';
+  add('91 §6.6', `R checksum changes after ${base}: ${a('pvR_4')} (since start)`, a('pvR_4') === 0 ? 'R fixed apart from bit 7'
+    : v45 ? 'R CHANGED after the G build (log "values R changed")' : 'changed, but 0.24.0 counts the load G build type rewrite too');
+  if (v45) add('R blocked', `blocked-bit hash ${hex(a('pvRBlk_0'))} at the baseline, ${hex(a('pvRBlk_1'))} now, ${a('pvRBlk_2')} checks saw it change; RestoreLotBlockedBits ${d('pvRestore_0')} (in plan ${d('pvRestore_1')}, off sim ${d('pvRestore_2')}), ApplyLotUpdate ${d('pvLazy_3_0')}`,
+    a('pvRBlk_2') ? 'blocked bits change in play (log "values R writer" names the lots)' : 'blocked bits unchanged after the baseline');
 
   // docs/99 F-7
   const jobs = d('pvJobs'), ties = d('pvTies');
@@ -85,7 +90,7 @@ export function report(before: Counters, after: Counters, opts: { world?: { a: n
   const gThr = [0, 1, 2].map(i => a(`pvGBuildThr_${i}`)), gb = a('pvGBuild_0') + a('pvGBuild_1');
   add('L1', `G builds since start ${gb} (message path ${a('pvGBuild_0')}, rebuild ${a('pvGBuild_1')}); thread main/sim/other ${gThr.join('/')}; ` +
     `${gb ? (a('pvGBuildUs') / gb / 1000).toFixed(1) : 0} ms avg, ${(a('pvGBuildMaxUs') / 1000).toFixed(1)} ms max; G built ${a('pvG_0')} cells ${a('pvG_1')} water ${a('pvG_2')} bodies ${a('pvG_3')}`,
-    gb >= 1 && gThr[0] >= 1 ? 'built at load on the main thread' : gb ? 'built, but not on the main thread' : 'NO BUILD seen');
+    gb >= 1 && gThr[1] >= 1 ? 'built at load on the sim thread (docs/112 §5.4)' : gb ? 'built, but not on the sim thread' : 'NO BUILD seen');
   add('L2', `WM+0x1B4 ${a('pvWmDirty')}, world+0x983 ${a('pvWorld983')}, PostWaterGridDirty ${d('pvDirtyPosts')} (since start ${a('pvDirtyPosts')})`, 'print');
   add('L3', `G builds in the window ${d('pvGBuild_0') + d('pvGBuild_1')}; 0x82A030 from 0x8352F1/0x835390/0x8358B5 ${[0, 1, 2].map(i => d(`pvGMsg_${i}`)).join('/')}`,
     d('pvGBuild_0') + d('pvGBuild_1') === 0 ? 'no rebuild in play' : 'rebuilds in play');
@@ -105,7 +110,7 @@ export function report(before: Counters, after: Counters, opts: { world?: { a: n
     st.push(`${['Plan/Replan', 'point'][fam]} ${s === 19 ? '19+' : s}: ${n}`);
     if (!NATIVE_STATUS.has(s)) bad += n;
   }
-  add('101 U5', st.join(', ') || 'no plan', bad ? `${bad} plans with a status outside {1,2,3,4,10,16,18}` : 'statuses stay in {1,2,3,4,10,16,18}');
+  add('101 U5', st.join(', ') || 'no plan', !v45 ? 'no answer: 0.24.0 read the status from argument 2 (docs/112 §2), rerun with 0.24.1' : bad ? `${bad} plans with a status outside {1,2,3,4,10,16,18}` : 'statuses stay in {1,2,3,4,10,16,18}');
   const ps: string[] = [];
   for (let p = 0; p < 5; p++) {
     const row = [0, 1, 2, 3, 4].map(s => d(`pvPortal_${p}_${s}`));
@@ -116,11 +121,15 @@ export function report(before: Counters, after: Counters, opts: { world?: { a: n
   add('101 U7', `H9 rewrites remove ${d('pvH9_0')} insert ${d('pvH9_1')}, inside plans ${d('pvH9InPlan')}; plans with a rewrite ${jobsH9} of ${jobs}, max ${a('pvH9Max')} in one plan`, 'print');
   add('101 U8', `partition grid 0xC08C30 ${d('pvPart_0')} (off sim ${d('pvPartOffSim_0')}), 0xC094E0 ${d('pvPart_1')} (off sim ${d('pvPartOffSim_1')})`,
     d('pvPartOffSim_0') + d('pvPartOffSim_1') ? 'writes OFF the sim thread' : d('pvPart_0') + d('pvPart_1') ? 'sim thread only' : 'no write in live play');
+  if (v45) add('91 §6.2b', `builds by thread sim/worker/other: RoomGraph_FirstUse ${[0, 1, 2].map(i => d(`pvRoomBuild_${i}`)).join('/')} of ${d('pvLazy_2_0')} entries; EnsureLevelPolygons ${[0, 1, 2].map(i => d(`pvLevelBuild_${i}`)).join('/')} of ${d('pvLazy_5_0')} entries`, 'print');
   add('91 §6.2', LAZY.map((n, i) => `${n} ${d(`pvLazy_${i}_0`)} (in plan ${d(`pvLazy_${i}_1`)}, off sim ${d(`pvLazy_${i}_2`)})`).join('; '), 'print');
 
   // docs/105
   add('I-105-1', `event 68 from Lot_SetDisplayLevel ${d('pvEv68')}, inside CanSee ${d('pvEv68InCanSee')}`, d('pvEv68InCanSee') === 0 ? 'no event 68 from goal building (quiet flag holds)' : 'event 68 INSIDE CanSee: quiet flag misread');
-  add('I-105-3', `World_CanSeeObject from 0x75AC22 ${d('pvCanSee')}, display-level calls inside ${d('pvCanSeeRaise')}`, 'print (option bit not read)');
+  const raiseIn = [0, 1, 2].map(i => d(`pvRaiseIn_${i}`));
+  add('I-105-3', v45 ? `World_CanSeeObject from 0x75AC22 ${d('pvCanSee')}; display-level calls inside it by thread sim/worker/other ${raiseIn.join('/')} (all callers ${d('pvCanSeeRaise')})`
+    : `World_CanSeeObject from 0x75AC22 ${d('pvCanSee')}, display-level calls from any CanSee caller ${d('pvCanSeeRaise')} (0.24.0 label, docs/112 §5.1)`,
+    v45 ? (raiseIn[1] + raiseIn[2] ? 'raises OFF the sim thread inside goal building' : raiseIn[0] ? 'raises on the sim thread only' : 'no raise inside goal building') : 'print (option bit not read)');
   const q = [0, 1].map(il => [0, 1, 2, 3, 4].map(s => d(`pvQuery_${il}_${s}`)));
   add('I-105-4', `portal queries initialLocked 0 [0..3,other] ${q[0].join('/')}; initialLocked 1 ${q[1].join('/')}`,
     q[1].some(Boolean) ? (q[1][2] ? 'script asked with initialLocked 1 and answered 2 (unlock) at least once' : 'script asked with initialLocked 1') : 'no call with initialLocked 1 in this window');
@@ -133,9 +142,10 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
   if (args[0] === '--self-check') {
     const tune = [80, 1.3, 1.3, 1.5, 2, 3, 2, 1.3, 1.3, 1.7, 10, 6, 10];
     const bits = (x: number) => { const b = Buffer.alloc(4); b.writeFloatLE(x); return b.readInt32LE(0); };
-    const after: Counters = { pvReady: 3, pvHooks: 42, pvWorlds: 1, pvJobs: 100, pvTies: 3, pvAStar_1: 50, pvAStarBit_1_4: 20, pvWm_0: 0, pvWm_1: 0,
+    const after: Counters = { version: 45, pvReady: 3, pvHooks: 43, pvWorlds: 1, pvJobs: 100, pvTies: 3, pvAStar_1: 50, pvAStarBit_1_4: 20, pvWm_0: 0, pvWm_1: 0,
       pvR_0: 0x8f578136 | 0, pvR_1: 0xf11fc59f | 0, pvR_2: 39265, pvStatus_0_1: 90, pvStatus_0_7: 1, pvGBuild_0: 1, pvGBuildThr_0: 1, pvGBuildUs: 120000,
-      pvQuery_1_2: 4, pvQueryInPlan: 300 };
+      pvQuery_1_2: 4, pvQueryInPlan: 300, pvRaiseIn_0: 5, pvRaiseIn_1: 2, pvRoomBuild_1: 7, pvLazy_2_0: 900, pvRBlk_0: 1, pvRBlk_1: 2, pvRBlk_2: 1,
+      pvRRebase: 1, pvRestore_0: 3 };
     tune.forEach((x, i) => { after[`pvTune_${i}`] = bits(x); });
     const L = report({ pvJobs: 0 }, after, { world: { a: 0x8f578136, b: 0xf11fc59f, wps: 39265 } });
     const v = (id: string) => L.find(l => l.id === id)!.verdict;
@@ -145,9 +155,17 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
     assert.match(v('F-7'), /ties happen/);
     assert.match(v('F-11'), /never set/);
     assert.match(v('F-12'), /origin 0/);
-    assert.match(v('L1'), /main thread/);
+    assert.match(v('L1'), /sim thread/);
     assert.match(v('101 U5'), /1 plans with a status outside/);
     assert.match(v('I-105-4'), /answered 2/);
+    assert.match(v('I-105-3'), /OFF the sim thread/);
+    assert.match(L.find(l => l.id === 'I-105-3')!.text, /sim\/worker\/other 5\/2\/0/);
+    assert.match(L.find(l => l.id === '91 §6.2b')!.text, /RoomGraph_FirstUse 0\/7\/0 of 900/);
+    assert.match(v('R blocked'), /change in play/);
+    assert.match(L.find(l => l.id === '91 §6.6')!.text, /retaken after the G build 1x/);
+    const old = report({}, { ...after, version: 44 });
+    assert.match(old.find(l => l.id === '101 U5')!.verdict, /argument 2/);
+    assert.ok(!old.some(l => l.id === 'R blocked' || l.id === '91 §6.2b'));
     tune.forEach((_, i) => { after[`pvTune_${i}`] = bits([50, 1.3, 2, 2, 2, 2, 2, 1.3, 2, 4, 10, 10, 10][i]); });
     after.pvAStarBit_0_1 = 2;
     after.pvAStar_0 = 2;

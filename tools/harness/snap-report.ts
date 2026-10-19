@@ -7,6 +7,7 @@
 // tools/ghidra/symbols/ts3w-1.67.symbols.csv has no row at that address (inside TS3W.exe); OUT when it lies outside TS3W.exe (module named,
 // "anon" = heap code: Mono, Frida, a hook trampoline). Function names come from the symbols CSV and, when present,
 // game-copy/analysis/functions.csv (Ghidra entries; local only). Prints only sites with a NEW or OUT target unless --all.
+// [ProbeSnap] Threads=1 lines end in " thr=job:N,worker:N,sim:N,other:N" (docs/109 §8.8); the split is printed per pair.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,17 +15,17 @@ import { parseArgs } from 'node:util';
 import assert from 'node:assert/strict';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-type Pair = { site: number; target: number; n: number; jmp: boolean; out: string };
+type Pair = { site: number; target: number; n: number; jmp: boolean; out: string; thr?: number[] };  // thr: job, worker, sim, other
 type Log = { pairs: Map<string, Pair>; overflow: Map<number, number>; window: string };
 
 export function parseLog(text: string): Log {
   const pairs = new Map<string, Pair>(), overflow = new Map<number, number>();
   let window = '';
   for (const l of text.split(/\r?\n/)) {
-    let m = l.match(/vcall 0x([0-9A-F]+) -> 0x([0-9A-F]+) n=(\d+)( jmp)?(?: out=(\S+))?/i);
+    let m = l.match(/vcall 0x([0-9A-F]+) -> 0x([0-9A-F]+) n=(\d+)( jmp)?(?: out=(\S+))?(?: thr=job:(\d+),worker:(\d+),sim:(\d+),other:(\d+))?/i);
     if (m) {
       const site = parseInt(m[1], 16), target = parseInt(m[2], 16);
-      pairs.set(`${site}:${target}`, { site, target, n: Number(m[3]), jmp: !!m[4], out: m[5] ?? '' });
+      pairs.set(`${site}:${target}`, { site, target, n: Number(m[3]), jmp: !!m[4], out: m[5] ?? '', ...(m[6] ? { thr: m.slice(6, 10).map(Number) } : {}) });
       continue;
     }
     if ((m = l.match(/vcall 0x([0-9A-F]+) overflow n=(\d+)/i))) overflow.set(parseInt(m[1], 16), Number(m[2]));
@@ -36,7 +37,11 @@ export function parseLog(text: string): Log {
 export function merge(logs: Log[]): { pairs: Pair[]; overflow: Map<number, number> } {
   const all = new Map<string, Pair>(), overflow = new Map<number, number>();
   for (const g of logs) {
-    for (const [k, p] of g.pairs) { const q = all.get(k); all.set(k, q ? { ...q, n: q.n + p.n } : { ...p }); }
+    for (const [k, p] of g.pairs) {
+      const q = all.get(k);
+      const thr = q?.thr && p.thr ? q.thr.map((v, i) => v + p.thr![i]) : q ? q.thr ?? p.thr : p.thr;
+      all.set(k, q ? { ...q, n: q.n + p.n, thr } : { ...p });
+    }
     for (const [s, n] of g.overflow) overflow.set(s, (overflow.get(s) ?? 0) + n);
   }
   return { pairs: [...all.values()].sort((a, b) => a.site - b.site || b.n - a.n), overflow };
@@ -88,7 +93,8 @@ function report(files: string[], all: boolean, functionsCsv: string) {
     if (!all && !flags.some(Boolean) && !overflow.has(site)) continue;
     shown++;
     console.log(`\n${hex(site)} in ${fn(site)}${ps[0].jmp ? ' (jmp)' : ''}: ${ps.length} targets${overflow.has(site) ? `, ${overflow.get(site)} hits past 8 targets` : ''}`);
-    ps.forEach((p, i) => console.log(`  ${hex(p.target)} n=${String(p.n).padEnd(6)} ${p.out ? '(outside TS3W.exe)' : fn(p.target).padEnd(40)} ${flags[i]}`));
+    const thr = (p: Pair) => (p.thr ? ` job ${p.thr[0]}, worker ${p.thr[1]}, sim ${p.thr[2]}, other ${p.thr[3]}` : '');
+    ps.forEach((p, i) => console.log(`  ${hex(p.target)} n=${String(p.n).padEnd(6)} ${p.out ? '(outside TS3W.exe)' : fn(p.target).padEnd(40)} ${flags[i]}${thr(p)}`));
   }
   console.log(`\n${sites.size} sites hit, ${pairs.length} pairs, ${newT} targets not in the symbols CSV, ${outT} outside TS3W.exe, ` +
     `${overflow.size} sites past 8 targets; ${shown} sites listed${all ? '' : ' (NEW/OUT/overflow only; --all for every site)'}`);
@@ -105,6 +111,9 @@ function selfCheck() {
   assert.match(a.window, /^vcall window 3/);
   const m = merge([a, parseLog('vcall 0x0082C800 -> 0x0082D000 n=1')]);
   assert.equal(m.pairs.find(p => p.site === 0x82c800)!.n, 8);
+  const t = merge([parseLog('vcall 0x009158AB -> 0x00626320 n=5 thr=job:3,worker:0,sim:2,other:0'),
+    parseLog('vcall 0x009158AB -> 0x00626320 n=1 out=x.dll thr=job:1,worker:0,sim:0,other:0')]).pairs[0];
+  assert.deepEqual([t.n, t.thr], [6, [4, 0, 2, 0]]);
   const f = namer(new Map([[0x82c6e0, 'Route_PlanLocked']]), [[0x82c6e0, 'FUN_0082c6e0'], [0x82d000, 'FUN_0082d000']]);
   assert.equal(f(0x82c6e0), 'Route_PlanLocked');
   assert.equal(f(0x82c800), 'Route_PlanLocked+0x120');

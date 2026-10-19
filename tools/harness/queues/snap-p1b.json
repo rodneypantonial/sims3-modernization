@@ -1,0 +1,40 @@
+[
+  {
+    "id": "bp-snap-p1b",
+    "note": "docs/94 §15 P1b: [RouteSnap] Count=1 change counters with the P1b frames and design B records (0.27.0, counters v48), counts only, daytime OK; env-on settings (async + gate + D), BP Spring, seeded; after: node tools/harness/snap-counters-report.ts <row.nativeDump>; pass = no crash, snReady 15, snSkipped 0, 39 IC slots, then the §11.5 G1 verdict",
+    "asi": "game-copy/ts3native.asi.snapp1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 48,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p1b",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals)",
+    "asi": "game-copy/ts3native.asi.snapp1b",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 48,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

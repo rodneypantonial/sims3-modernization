@@ -17,6 +17,22 @@
 // --inroom: also run tools/frida/inroom-reads.js (docs/111: lot tree root-border dumps, SetBounds / QuadTreeBuild reads, in-room
 // context flags) from the window start for the whole run, into <tag>-inroom.json (inroom-report.ts) and <tag>-inroom.log; the
 // stack samplers are skipped (they suspend the sim thread, where its tree dumps run).
+// --watchstalk: run tools/frida/watch-stalk.js instead of the stutter profiler (docs/113: route +0x1F4 watchpoints, then Stalker
+// on sampled sim-thread Route_PlanLocked calls) into <tag>-watchstalk.json (watch-stalk-report.ts) and <tag>-watchstalk.log; no
+// <tag>-<secs>-* profiler files (it hooks Route_PlanLocked too, and Stalker would follow into its listeners); samplers skipped.
+// --watchstalk-worker: with --watchstalk, the stalk phase follows the route worker instead of the sim thread (docs/113 §8).
+// --livereads2: also run tools/frida/live-reads2.js (docs/114: O+0x58, footprint grid, grid writer threads, 0xC6BAB0 points,
+// follow slot +0x38 callers, houseboat start frame) from the window start, into <tag>-livereads2.json (live-reads2-report.ts) and
+// <tag>-livereads2.log; the stack samplers are skipped (its grid dumps and point calls run on the sim thread).
+// --f4b: also run tools/frida/f4b-reads.js (docs/99 §12.6: CopyNodes node y / +0x20 / path length, path slot +0x100 prepends, agent
+// y vs terrain) from the window start, into <tag>-f4b.json (f4b-report.ts) and <tag>-f4b.log; the stack samplers are skipped
+// (its terrain call runs on the sim thread).
+// --no-prof: no stutter profiler session (no <tag>-<secs>-* files). queue.ts sets it for [ProbeSnap] jobs: a second Frida
+// agent injecting while the int3 sampler storms the sim thread with breakpoints crashed the game in that agent's exception
+// path (docs/67 §7, bp-rare-winter-pond 2026-10-19).
+// --travel WORLD: before anything else, travel there with save-matrix.ts --cases travel --to WORLD --stay (university, future,
+// or a vacation world: france | china | egypt; the trip code and its fail-fast checks are save-matrix's; it saves the loaded
+// save as a Matrix-* copy first) and run the window in the destination world (docs/117 §2.11). A failed trip fails the run.
 // Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,mainstack.jsonl,stuck.json,houseboats.json,
 // rng.json (seed reply, sim minutes at window start and end), activity.jsonl (every Sim's interaction per 30 s check; rng-compare.ts)}.
 import { spawn } from 'node:child_process';
@@ -29,13 +45,14 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, 'no-env': { type: 'boolean' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'profile');
 mkdirSync(OUT, { recursive: true });
-const reproSteps: any[] | undefined = values.repro ? (JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[]).find(r => r.id === values.repro)?.steps : [];
+const reproEntry: any = values.repro ? (JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[]).find(r => r.id === values.repro) : { steps: [] };
+const reproSteps: any[] | undefined = reproEntry?.steps;
 if (!reproSteps) throw new Error(`--repro: no entry ${values.repro} in tools/harness/repros.json`);
 const mins = Number(values.minutes), secs = mins * 60, pre = join(OUT, `${values.tag}`);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -47,6 +64,12 @@ const ag = async (cmd: string, args?: object): Promise<any> => {
   try { return await get(`agent?${q}`); } catch (e) { return { ok: false, error: String(e) }; }
 };
 
+if (values.travel) {
+  if (!/^[a-z]+$/i.test(values.travel)) throw new Error('--travel must be a world name (university, future, france, china, egypt)');
+  console.log(`${stamp()} travel to ${values.travel} (save-matrix.ts --stay)`);
+  const code = await new Promise<number | null>(res => spawn(process.execPath, [join(ROOT, 'tools', 'harness', 'save-matrix.ts'), '--cases', 'travel', '--to', values.travel!, '--stay'], { stdio: 'inherit' }).on('exit', res));
+  if (code !== 0) throw new Error(`travel to ${values.travel} failed: save-matrix.ts exit ${code}`);
+}
 const st = await ag('game_state');
 if (st.result?.sub_state !== 'LiveModeState') throw new Error(`not in live mode: ${JSON.stringify(st)}`);
 console.log(`${stamp()} ${values.tag}: ${JSON.stringify(st.result)}`);
@@ -91,33 +114,37 @@ const clockGuard = (async () => {
     // pause bits, game dt, speed and window state at the trip (docs/85 §6: minimize pause = bit 2, device pause = bit 4)
     const cs = await ag('clock_state');
     console.log(`${stamp()} clock_state at the trip: ${JSON.stringify(cs.ok ? cs.result : cs.error)}`);
-    prof.kill();
+    prof?.kill();
     process.exit(1);
   }
 })();
 const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Paradiso
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
-const prof = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
+const prof = values.watchstalk || values['no-prof'] ? null : spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
   '-P', JSON.stringify({ out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50 }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
-const plog = createWriteStream(`${pre}-${secs}.log`);
-prof.stdout.pipe(plog); prof.stderr.pipe(plog);
-const profDone = new Promise(r => prof.on('exit', r));
+if (prof) { const plog = createWriteStream(`${pre}-${secs}.log`); prof.stdout.pipe(plog); prof.stderr.pipe(plog); }
+const profDone = prof ? new Promise(r => prof.on('exit', r)) : Promise.resolve();
 // fail fast: the profiler stops itself after -t; one still running 90 s past that is hung, and the run would wait on it forever
-setTimeout(() => { if (prof.exitCode === null && prof.signalCode === null) { console.log(`${stamp()} FAIL: stutter profiler still running 90 s past -t ${secs}; killed (fail-fast guard)`); prof.kill(); } }, (secs + 90) * 1000).unref();
+setTimeout(() => { if (prof && prof.exitCode === null && prof.signalCode === null) { console.log(`${stamp()} FAIL: stutter profiler still running 90 s past -t ${secs}; killed (fail-fast guard)`); prof.kill(); } }, (secs + 90) * 1000).unref();
 
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true }); // window start: unpause to x3
 const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
-// --inroom: its own Frida session like the stutter profiler; the script writes <tag>-inroom.json itself and prints a line every 30 s
-const inroomDone = values.inroom ? new Promise(r => {
-  const p = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'inroom-reads.js'),
-    '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
-  const log = createWriteStream(`${pre}-inroom.log`);
-  p.stdout.on('data', (d: Buffer) => { log.write(d); for (const l of String(d).split(/\r?\n/)) if (l.includes('[inroom]')) console.log(`${stamp()} ${l.trim()}`); });
+// --inroom / --watchstalk: own Frida session like the stutter profiler; the script writes <tag>-<name>.json itself and prints a line every 30 s
+const side = (on: boolean | undefined, file: string, name: string, extra = {}) => on ? new Promise(r => {
+  const p = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', file),
+    // +5 s: unload apart from the stutter profiler's session (two agents unloading together, docs/99 §12.7 / I-99-62)
+    '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins, ...extra }), '-q', '-t', String(secs + 5)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const log = createWriteStream(`${pre}-${name}.log`);
+  p.stdout.on('data', (d: Buffer) => { log.write(d); for (const l of String(d).split(/\r?\n/)) if (l.includes(`[${name}]`)) console.log(`${stamp()} ${l.trim()}`); });
   p.stderr.pipe(log);
   p.on('exit', r);
-  setTimeout(() => { if (p.exitCode === null && p.signalCode === null) { console.log(`${stamp()} FAIL: inroom-reads still running 90 s past -t ${secs}; killed (fail-fast guard)`); p.kill(); } }, (secs + 90) * 1000).unref();
+  setTimeout(() => { if (p.exitCode === null && p.signalCode === null) { console.log(`${stamp()} FAIL: ${file} still running 90 s past -t ${secs}; killed (fail-fast guard)`); p.kill(); } }, (secs + 90) * 1000).unref();
 }) : Promise.resolve();
+const inroomDone = side(values.inroom, 'inroom-reads.js', 'inroom');
+const watchDone = side(values.watchstalk, 'watch-stalk.js', 'watchstalk', values['watchstalk-worker'] ? { worker: true } : {});
+const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
+const f4bDone = side(values.f4b, 'f4b-reads.js', 'f4b');
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 const toggler = (async () => {
@@ -130,7 +157,7 @@ const toggler = (async () => {
     await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
     // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C };
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74 };
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
@@ -144,6 +171,14 @@ const reproRun = (async () => {
   for (const s of reproSteps) {
     const r = await ag(s.cmd, s.args);
     console.log(`${stamp()} repro ${values.repro} step ${s.cmd}: ${JSON.stringify(r).slice(0, 200)}`);
+    appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, r }) + '\n'); // full result: the log line is cut
+    // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
+    // ended PASS after wildflower_drain failed); "optional": true steps may fail. The queue closes the game after the job.
+    if (!r.ok && !s.optional) {
+      console.log(`${stamp()} FAIL: repro step ${s.cmd} failed: ${String(r.error).split('\n')[0].slice(0, 300)}`);
+      for (const c of reproEntry.cleanup ?? []) { const cr = await ag(c.cmd, c.args); console.log(`${stamp()} cleanup ${c.cmd}: ${cr.ok ? 'ok' : 'ERROR ' + cr.error}`); }
+      process.exit(1);
+    }
     if (s.waitS) await sleep(s.waitS * 1000);
   }
 })();
@@ -186,7 +221,7 @@ const run = (args: string[], file: string) => new Promise(r => {
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
 // none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
-const window = abNames.length || values.taskstall || values.repro || values.inroom ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const window = abNames.length || values.taskstall || values.repro || values.inroom || values.watchstalk || values.livereads2 || values.f4b ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
 const mainSample = async (t: number) => {
   try {
     const r = await get(`threadstack?which=${values.mainstack}&frames=24`, 5000);
@@ -221,7 +256,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
-await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone]);
+await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone]);
 stopLoad();
 console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
 rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;

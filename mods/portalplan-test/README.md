@@ -1,0 +1,3 @@
+# portalplan-test (test only)
+
+For testing only, never for players: a MonoPatcher `[TypePatch]` on `Lot.OnPortalPathPlan` that behaves like the game's method and counts calls, for the snapshot mod-guard job `bp-snap-mod-monopatcher` (docs/94 §20, docs/107 §2). Built by `node tools/setup/build-fixes.ts` into `build/ts3-portalplan-test.package` when MonoPatcher's package is in the installer cache (`install-fixes.ts install --only monopatcher`); installed only by the queue job (`fixes.json` id `portalplan-typepatch-test`). Counts: `reflect_call Ts3PortalPlanTest.PortalPlanCounts.Read` (repro `bp-door-lock-typepatch`).

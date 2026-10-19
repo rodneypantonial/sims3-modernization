@@ -577,6 +577,30 @@
     "notes": "Recommended for travel packs (WA, UL, ITF). Optional. Manual download; keep all NRaas files from the same period."
   },
   {
+    "id": "nraas-gohere",
+    "name": "NRaas GoHere",
+    "author": "NRaas",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "manual",
+      "url": null,
+      "asset": null,
+      "page": "https://www.nraas.net/community/GoHere"
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaasGoHere*.package"
+      ]
+    },
+    "conflictsWith": [],
+    "requires": [],
+    "default": false,
+    "notes": "Door filters and routing options; adds its own lot portal handler. Listed for the snapshot mod run (docs/94 §20 job 16, save Snap-GoHere-BP from queues/snap-gohere-save.json), not part of the default stack. Manual download; keep all NRaas files from the same period."
+  },
+  {
     "id": "nraas-storyprogression",
     "name": "NRaas StoryProgression",
     "author": "NRaas",
@@ -994,6 +1018,33 @@
     "requires": [],
     "default": true,
     "notes": "Built from source. Off-screen trip shortcuts, walk-style comparer, broadcaster throttle, route-failure fixes, stuck-Sim watchdog (docs/04 F8-F13). Replaces game methods at startup; a mod that replaces the same methods (GoHome.Run, VisitCommunityLot.Run, RabbitHole.RouteNearEntranceAndEnterRabbitHole, SimRoutingComponent route options, ScriptCore.Route.Plan, ReactionBroadcaster.PulseSims) would conflict. Settings: tuning values in the package (mods/ts3fixes/README.md)."
+  },
+  {
+    "id": "portalplan-typepatch-test",
+    "name": "MonoPatcher TypePatch test mod (test only, mods/portalplan-test)",
+    "author": "sims-3-modernization",
+    "category": "script",
+    "version": "0.1.0",
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "Packages/ts3-portalplan-test.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/setup/build-fixes.ts"
+    },
+    "conflictsWith": [],
+    "requires": [
+      "monopatcher"
+    ],
+    "default": false,
+    "notes": "Test-only, never for players: a [TypePatch] on Lot.OnPortalPathPlan that behaves like the game's method and counts calls (docs/94 §20 job 17, docs/107 §2). Built from source against MonoPatcher's DLL out of the monopatcher download; counts via reflect_call Ts3PortalPlanTest.PortalPlanCounts.Read."
   },
   {
     "id": "options-ini",

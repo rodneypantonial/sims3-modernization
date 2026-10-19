@@ -13,23 +13,34 @@
 // hook has rewritten is dropped for good (vcSkipped). A target that cannot be read (bad pointer, the game's own crash
 // path) disarms the site for good and lets the original instruction run (vcFaults). Up to 8 targets per site; more are
 // counted in vcOverflow and logged per site.
+// Threads=1 (docs/109 §8.8): each pair also counts its hits by thread class (job = route worker inside a plan, worker =
+// route worker between plans, sim, other; logged as " thr=job:N,worker:N,sim:N,other:N"), and only job hits spend the
+// PerWindow budget; other hits disarm the site after VC_OTHER_MUL x PerWindow. Build with /DTS3N_VCSITES3 for the
+// four-site table of probe pass 3 (vcallsites3.h).
 struct VcSiteDef { DWORD addr; u8 len; u8 bytes[7]; };
+#ifdef TS3N_VCSITES3
+#include "vcallsites3.h"
+#else
 #include "vcallsites.h"
+#endif
 
 static const int VC_PAIRS = 8;
-struct VcPair { volatile LONG tgt, n; LONG logged; };
+enum { VC_JOB, VC_WORKER, VC_SIM, VC_OTHER, VC_CLS };
+struct VcPair { volatile LONG tgt, n; LONG logged; volatile LONG cls[VC_CLS]; };
 struct VcSite {
     DWORD addr;
     u8 len, call, mod, base, index, scale, orig, dead;  // base/index 8 = none
     LONG disp;
     const u8* bytes;
-    volatile LONG hits, armed, over;
+    volatile LONG hits, armed, over, other;
     LONG overLogged;
     VcPair p[VC_PAIRS];
 };
 static VcSite* g_vc;
 static int g_vcN;
 static LONG g_vcPer = 16;
+static int g_vcThreads;
+static const LONG VC_OTHER_MUL = 16;  // shortcut: fixed share for non-job hits, make it an ini key if a pass needs another
 static DWORD g_vcImgLo, g_vcImgHi;
 static SRWLOCK g_vcPoke = SRWLOCK_INIT;
 static PVOID g_vcVeh;
@@ -104,7 +115,14 @@ static void VcPokeLocked(VcSite& s, bool arm) {
     InterlockedExchangeAdd(&ts3native_counters.vcArmed, arm ? 1 : -1);
 }
 
-static void VcRecord(VcSite& s, DWORD t) {
+static int VcClass() {
+    const DWORD me = GetCurrentThreadId();
+    if (ForCaller()) return VC_JOB;
+    if (me == g_workerTid) return VC_WORKER;
+    return RgIsSim(me) ? VC_SIM : VC_OTHER;
+}
+
+static void VcRecord(VcSite& s, DWORD t, int cls) {
     Ts3nCounters& k = ts3native_counters;
     for (int i = 0; i < VC_PAIRS; i++) {
         LONG v = s.p[i].tgt;
@@ -116,7 +134,11 @@ static void VcRecord(VcSite& s, DWORD t) {
                 if (t < g_vcImgLo || t >= g_vcImgHi) InterlockedIncrement(&k.vcOutside);
             }
         }
-        if ((DWORD)v == t) { InterlockedIncrement(&s.p[i].n); return; }
+        if ((DWORD)v == t) {
+            if (cls >= 0) InterlockedIncrement(&s.p[i].cls[cls]);
+            InterlockedIncrement(&s.p[i].n);
+            return;
+        }
     }
     InterlockedIncrement(&s.over);
     InterlockedIncrement(&k.vcOverflow);
@@ -141,8 +163,11 @@ static LONG CALLBACK VcVeh(EXCEPTION_POINTERS* e) {
         c->Eip = at;
         return EXCEPTION_CONTINUE_EXECUTION;
     }
-    VcRecord(*s, t);
-    if (InterlockedIncrement(&s->hits) >= g_vcPer && s->armed && TryAcquireSRWLockExclusive(&g_vcPoke)) {
+    const int cls = g_vcThreads ? VcClass() : -1;
+    VcRecord(*s, t, cls);
+    const bool spent = cls < 0 || cls == VC_JOB ? InterlockedIncrement(&s->hits) >= g_vcPer
+                                                : InterlockedIncrement(&s->other) >= g_vcPer * VC_OTHER_MUL;
+    if (spent && s->armed && TryAcquireSRWLockExclusive(&g_vcPoke)) {
         VcPokeLocked(*s, false);  // busy lock: the next hit tries again (never block in here)
         ReleaseSRWLockExclusive(&g_vcPoke);
     }
@@ -193,7 +218,7 @@ static void VcArmAll() {
             Log("vcall skip 0x%08lX: bytes differ from the table", s.addr);
             continue;
         }
-        s.hits = 0;
+        s.hits = s.other = 0;
         VcPokeLocked(s, true);
     }
     ReleaseSRWLockExclusive(&g_vcPoke);
@@ -222,7 +247,10 @@ static int VcLogPairs() {
                 }
                 sprintf_s(mod, " out=%s", b);
             }
-            Log("vcall 0x%08lX -> 0x%08lX n=%ld%s%s", s.addr, t, n, s.call ? "" : " jmp", mod);
+            char thr[80] = "";
+            if (g_vcThreads) sprintf_s(thr, " thr=job:%ld,worker:%ld,sim:%ld,other:%ld", s.p[j].cls[VC_JOB],
+                                       s.p[j].cls[VC_WORKER], s.p[j].cls[VC_SIM], s.p[j].cls[VC_OTHER]);
+            Log("vcall 0x%08lX -> 0x%08lX n=%ld%s%s%s", s.addr, t, n, s.call ? "" : " jmp", mod, thr);
             lines++;
         }
         if (s.over != s.overLogged) {
@@ -255,11 +283,12 @@ static bool ApplyProbeSnap(const wchar_t* ini) {
     g_vcPer = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"PerWindow", 16, ini), 1, 100000);
     g_vcWindowMs = (DWORD)Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"WindowSec", 30, ini), 5, 3600) * 1000;
     g_vcDelayMs = (DWORD)Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"DelaySec", 90, ini), 0, 3600) * 1000;
+    g_vcThreads = GetPrivateProfileIntW(L"ProbeSnap", L"Threads", 0, ini) != 0;
     if (!VcSetup(kVcSites, (int)(sizeof(kVcSites) / sizeof(kVcSites[0])))) { Log("FAIL probe snap: no site table"); return false; }
     HANDLE th = CreateThread(NULL, 64 * 1024, VcMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (!th) { Log("FAIL probe snap: thread start (err %lu)", GetLastError()); return false; }
     CloseHandle(th);
-    Log("OK   probe snap: %d indirect call/jmp sites of the routing closure (%ld rejected), armed in %lu s", g_vcN,
-        ts3native_counters.vcSkipped, g_vcDelayMs / 1000);
+    Log("OK   probe snap: %d indirect call/jmp sites of the routing closure (%ld rejected), armed in %lu s%s", g_vcN,
+        ts3native_counters.vcSkipped, g_vcDelayMs / 1000, g_vcThreads ? ", hits by thread class" : "");
     return true;
 }

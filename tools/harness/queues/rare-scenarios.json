@@ -1,0 +1,472 @@
+[
+  {
+    "id": "bp-rare-winter-pond",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-winter-pond on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-winter-pond",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-thunderstorm",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-thunderstorm on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-thunderstorm",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-fullmoon-werewolf",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-fullmoon-werewolf on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-fullmoon-werewolf",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23
+  },
+  {
+    "id": "bp-rare-route-bits",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-route-bits on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-ghost-walk",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-ghost-walk on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-ghost-walk"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-occult-walks",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-occult-walks on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-occult-walks"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23
+  },
+  {
+    "id": "bp-rare-death-walk",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-death-walk on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-death-walk"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-big-crowd",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-big-crowd on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23
+  },
+  {
+    "id": "ip-rare-ip-water",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-ip-water on Baseline-IP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-ip-water"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "sv-rare-route-bits",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-route-bits on Baseline-SV-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "sv-rare-winter-pond",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-winter-pond on Baseline-SV-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-winter-pond",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "sv-rare-death-walk",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-death-walk on Baseline-SV-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-death-walk"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "sv-rare-big-crowd",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-big-crowd on Baseline-SV-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23
+  },
+  {
+    "id": "bp-rare-winter-pond-p1b",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-winter-pond on Baseline-BP-Spring, [RouteSnap] Count=1 writer counters; after: node tools/harness/snap-counters-report.ts <row.nativeDump>",
+    "asi": "game-copy/ts3native.asi.snapp1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 48,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-winter-pond",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-death-walk-p1b",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-death-walk on Baseline-BP-Spring, [RouteSnap] Count=1 writer counters; after: node tools/harness/snap-counters-report.ts <row.nativeDump>",
+    "asi": "game-copy/ts3native.asi.snapp1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 48,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-death-walk"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-big-crowd-p1b",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-big-crowd on Baseline-BP-Spring, [RouteSnap] Count=1 writer counters; after: node tools/harness/snap-counters-report.ts <row.nativeDump>",
+    "asi": "game-copy/ts3native.asi.snapp1b",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 48,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23
+  },
+  {
+    "id": "bp-rare-travel-university",
+    "note": "UNVERIFIED (docs/117 §2.10): travel save case to University (moving van) with [ProbeSnap] pass 2 armed, as snap-probe2 bp-snap2-travel; covers the campus load and the first minutes there; walking round campus after arrival is not driven (save-matrix runs only its own case steps); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP",
+    "minCounters": 43,
+    "ini": {
+      "ProbeSnap.Enabled": 1
+    },
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "university"
+      ]
+    },
+    "timeoutMin": 45
+  }
+]

@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.24.0"
+#define TS3NATIVE_VERSION "0.33.0"
 
 typedef unsigned char u8;
 
@@ -135,24 +135,30 @@ static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 // report and no WER event (2026-10-17 bp-d-async). C++ exceptions (0xE06D7363) count for 2 lines at most.
 static volatile LONG g_xcptN, g_xcptCpp;
 static DWORD g_selfLo, g_selfHi;
+// up to `max` code addresses (game .text or this module) in the first 512 stack words, as " %08lX" each
+static void XcptRefs(const CONTEXT* c, char* refs, int cap, int max) {
+    int len = 0, k = 0;
+    refs[0] = 0;
+    const DWORD* sp = (const DWORD*)(uintptr_t)c->Esp;
+    for (int i = 0; i < 512 && k < max && Readable(sp + i, 4); i++) {
+        const DWORD v = sp[i];
+        if ((v >= 0x00401000 && v < 0x00F00000) || (v >= g_selfLo && v < g_selfHi)) {
+            len += sprintf_s(refs + len, cap - len, " %08lX", v);
+            k++;
+        }
+    }
+}
 static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const EXCEPTION_RECORD* r = e->ExceptionRecord;
     const DWORD code = r->ExceptionCode;
-    if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == DBG_CONTROL_C) return EXCEPTION_CONTINUE_SEARCH;
+    // 0xE0503401: P4's lazy stop (p4.cpp kP4LazyCode), caught by P4Guarded; not a crash (docs/94 §21.8.1)
+    if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == DBG_CONTROL_C || code == 0xE0503401)
+        return EXCEPTION_CONTINUE_SEARCH;
     if (code == 0xE06D7363 && InterlockedIncrement(&g_xcptCpp) > 2) return EXCEPTION_CONTINUE_SEARCH;
     if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     const CONTEXT* c = e->ContextRecord;
     char refs[128];
-    int len = 0, k = 0;
-    refs[0] = 0;
-    const DWORD* sp = (const DWORD*)(uintptr_t)c->Esp;
-    for (int i = 0; i < 512 && k < 8 && Readable(sp + i, 4); i++) {
-        const DWORD v = sp[i];
-        if ((v >= 0x00401000 && v < 0x00F00000) || (v >= g_selfLo && v < g_selfHi)) {
-            len += sprintf_s(refs + len, sizeof(refs) - len, " %08lX", v);
-            k++;
-        }
-    }
+    XcptRefs(c, refs, sizeof(refs), 8);
     Log("exception %08lX at 0x%08lX (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
         (DWORD)(uintptr_t)r->ExceptionAddress, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
         r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0, GetCurrentThreadId(), c->Eip, c->Esp, refs);
@@ -195,7 +201,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 1655 int32 (v44).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 3082 int32 (v61; no v58 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -813,8 +819,296 @@ struct Ts3nCounters {
     LONG pvEv68;                     // +0x19D0, World event 68 fires from Lot_SetDisplayLevel (0xAC0763)
     LONG pvEv68InCanSee;             // +0x19D4, of those, inside World_CanSeeObject from 0x75AC22
     LONG pvFrameFull;                // +0x19D8, leave frames not taken (16 open on the thread)
+    // v45 (0.24.1): [ProbeValues] fixes (docs/112, docs/108 §8). Thread classes here: sim, route worker (g_workerTid), other
+    LONG pvRaiseIn[3];               // +0x19DC, Lot_SetDisplayLevel (0x789EB5, 0x78A218) inside an open CanSee frame from 0x75AC22
+    LONG pvRoomBuild[3];             // +0x19E8, RoomGraph_FirstUse entries that build (lot graph +0x8C byte 0 or room record byte 0)
+    LONG pvLevelBuild[3];            // +0x19F4, Footprint_EnsureLevelPolygons entries that rebuild (level valid byte 0)
+    LONG pvRestore[3];               // +0x1A00, RoutingWorld_RestoreLotBlockedBits 0x82A190: calls / inside a plan / off the sim thread
+    LONG pvRBlk[3];                  // +0x1A0C, R blocked-bit hash at the baseline, now; 60 s checks that saw it change
+    LONG pvRRebase;                  // +0x1A18, R baselines retaken after the first G build of a world (docs/112 §3.1)
+    // v46 (0.25.0): [RouteSnap] Count=1, snapshot change counters P1 (routesnap.cpp, docs/94 §5, §10). Thread classes: sim,
+    // route worker, other. Leaf rows (SL_*): W1, W2, W3, W4, W5, W6 (8 sites), 0x8321F0, 0x831BA0, 0x82A0C0, 0x635700,
+    // 0x829D50, 0x82B590, 0x82A190, 0x636BF0, 0x62D9F0, 0x6733C0, 0x670510, G build (5 call sites), blend reload 0xC62AC0.
+    // Sources (SRC_*): none, IC frame, World_FireEvent frame, object event (head/tail nodes), Footprint_SetEnabled frame.
+    LONG snReady;                    // +0x1A1C, bit 0 leaf sites, bit 1 World_FireEvent, bit 2 IC slots, bit 3 object nodes
+    LONG snHooks;                    // +0x1A20, sites with our own stub
+    LONG snShared;                   // +0x1A24, sites counted inside another stub of ours ([SteerRO], [RouteGate], [ProbeValues])
+    LONG snSkipped;                  // +0x1A28, sites whose bytes differ (log: SKIP routesnap)
+    LONG snIcSlots;                  // +0x1A2C, IC binding slots swapped (of 39)
+    LONG snLeaf[19][3];              // +0x1A30, leaf hits by thread class (blend: reload pass only)
+    LONG snSrc[19][5];               // +0x1B14, sim-thread leaf hits by source (G build and blend rows stay 0)
+    LONG snUnattributed;             // +0x1C90, sim-thread leaf hits with no source open (docs/94 §4.2; G1)
+    LONG snUaKey[16];                // +0x1C94, their callers (return address of the leaf)
+    LONG snUaN[16];                  // +0x1CD4
+    LONG snUaOther;                  // +0x1D14, callers past the 16 keys
+    LONG snWev[96];                  // +0x1D18, World_FireEvent calls by event id (95 = 95 and above), any thread
+    LONG snWevOffSim;                // +0x1E98, of those, off the sim thread
+    LONG snObj[8][3];                // +0x1E9C, object events 4, 6, 9, 0x0A, 0x0B, 0x0E, 0x18, 0x21 by thread class (head node)
+    LONG snObjNodes;                 // +0x1EFC, nodes registered (16 per object service)
+    LONG snObjRegFails;              // +0x1F00, ObjectEvents_Register returned 0
+    LONG snObjOpenAtIc;              // +0x1F04, IC entries that found an object chain still open (a handler stopped it)
+    LONG snIc[39];                   // +0x1F08, IC calls per slot (kSnIcDef order; 35-38 = route STARTs)
+    LONG snIcWrites[39];             // +0x1FA4, sim leaf hits attributed to that IC frame
+    LONG snIcOffSim;                 // +0x2040, IC calls off the sim thread (not framed)
+    LONG snGSite[5];                 // +0x2044, G builds per call site 0x82A098, 0x834A82, 0x8352F1, 0x835390, 0x8358B5
+    LONG snStarts;                   // +0x2058, route STARTs (sim entries of the four route ICs)
+    LONG snStartLots[8];             // +0x205C, distinct known lots marked since the previous START: 0, 1, 2, 3, 4, 5, 6-10, >10
+    LONG snStartWrites[8];           // +0x207C, leaf hits since the previous START: 0, 1-2, 3-5, 6-10, 11-20, 21-50, 51-100, >100
+    LONG snStartUnknown;             // +0x209C, STARTs whose window had a leaf hit with no lot argument
+    LONG snSetFull;                  // +0x20A0, STARTs whose lot set overflowed (16)
+    LONG snFpEn[3];                  // +0x20A4, Footprint_SetEnabled 0x947590 calls by thread class
+    LONG snSeq;                      // +0x20B0, sequence of G builds and world events 7 (I-94-18)
+    LONG snSeqGBuild;                // +0x20B4, sequence number of the last G build
+    LONG snSeqEv7;                   // +0x20B8, sequence number of the last world event 7
+    LONG snFrameFull;                // +0x20BC, source frames not taken (16 open on the thread)
+    // v47 (0.26.0): [RouteSnap] Enabled=1 Mode=0, snapshot H images and audit, no search (snap.cpp, docs/94 P3). Inputs
+    // (SP_*): R, Gcore, Gtiles, bnm, grid, blend, tune, lots.
+    LONG spReady;                    // +0x20C0, bit 0 images on, bit 1 some P1 sites shared with another stub, bit 2 door channel
+    volatile LONG spMode;            // +0x20C4, switch: 0 = audit only (P3)
+    LONG spCuts;                     // +0x20C8, versions published (cuts at a route START under +0x918)
+    LONG spCutSkip[3];               // +0x20CC, cuts not taken: async job running or queued, no world / planner, Lock_Acquire failed
+    LONG spCutUs;                    // +0x20D8, sim time in cuts (microseconds, summed)
+    LONG spCutMaxUs;                 // +0x20DC
+    LONG spEpochs;                   // +0x20E0, world epochs (world events 5, 7, 9, 0x0A, or a new routing world)
+    LONG spFullBuilds;               // +0x20E4, cuts that rebuilt every image
+    LONG spVersionsLive;             // +0x20E8
+    LONG spImgLive;                  // +0x20EC, images alive (shared between versions)
+    LONG spKB;                       // +0x20F0, image memory now (KB)
+    LONG spKBMax;                    // +0x20F4
+    LONG spCopies[8];                // +0x20F8, images rebuilt per input (Gtiles: tiles, lots: lot images)
+    LONG spAudits[8];                // +0x2118, images audited per input
+    LONG spMis[8];                   // +0x2138, audit mismatches per input (gate G3: all 0)
+    LONG spAuditUs;                  // +0x2158, sim time in audits (microseconds, summed)
+    LONG spAuditMaxUs;               // +0x215C
+    LONG spLots;                     // +0x2160, lot images in the current version
+    LONG spTiles;                    // +0x2164, high-cost tiles in the current version
+    LONG spDirtyOver;                // +0x2168, dirty-set overflows (that input then rebuilt whole)
+    LONG spKeyMapFull;               // +0x216C, high-cost polygon keys not recorded (their remove marks every tile)
+    LONG spPendingAtCut;             // +0x2170, cuts with pending lot updates P+0x10E set (applied at the cut from P4 on)
+    LONG spDeferredAtCut;            // +0x2174, cuts with a deferred quadtree flush queued on some lot (E17)
+    LONG spFaults;                   // +0x2178, image builds stopped by a fault or a shape cap (old image kept)
+    LONG spCapOff;                   // +0x217C, 1 = switched off at CapMB
+    LONG spDoor[6];                  // +0x2180, door channel: messages, lots filled, doors, invalidations, protocol errors, spare
+    // v48 (0.27.0): [RouteSnap] Count=1 P1b (routesnap.cpp, docs/94 §11.6-§11.7, §15): attribution frames, design B records.
+    // P1b sources (SRC_* 5..11): platform refresh 0xB57F20, user tool TryDrop 0xD442B0, tree init 0x948F30 (call 0x95EFF2),
+    // lazy terrain 0x834B80, off-screen road plan 0xC7BF70, deferred flush 0x666A40, design D drain (discourage.cpp).
+    // From v48 the v46 caller table snUaKey/snUaN/snUaOther stays 0 (replaced by snUa2*), and snUnattributed leaves out
+    // the P1b sources and W6 cache fills. Records (design B, one per logical change, route worker excluded): W1, W2, W3,
+    // W5, grid add, grid remove, high-cost add, high-cost remove, R bit 7, lock-key ICs 0-3, portal field ICs 12-15,
+    // suppressed inside a rebase IC frame (portal 4-11, build/buy exit 22, world 29-33).
+    LONG snSrc2[19][7];              // +0x2198, sim leaf hits by P1b source (row SL_*, column source - 5)
+    LONG snCacheFill;                // +0x23AC, W6 sim hits with no source open (lazy polygon cache fills, not input changes)
+    LONG snFrameCalls[6];            // +0x23B0, sim entries of the six P1b frame sites (shared sites count, frame only when ours)
+    LONG snRec[12];                  // +0x23C8, design B records by kind (11 = suppressed inside a rebase IC frame)
+    LONG snRecSec[8];                // +0x23F8, 1-s buckets by records: 0, 1-250, 251-500, 501-1000, 1001-2000, 2001-5000, 5001-10000, >10000
+    LONG snRecMaxSec;                // +0x2418, most records in one second since start (loads included)
+    LONG snRecUs;                    // +0x241C, time in the record bookkeeping (lock, bucket), microseconds summed
+    LONG snCloneUs;                  // +0x2420, sim W1: footprint clone-equivalent copy (0x44 + level 0 cache + polygons), us summed
+    LONG snCloneN;                   // +0x2424
+    LONG snCloneBytesK;              // +0x2428, bytes copied / 1024
+    LONG snCloneMaxBytes;            // +0x242C
+    LONG snCloneFault;               // +0x2430
+    LONG snLotCopyN;                 // +0x2434, timed canonical lot copies (lot of a sim LotGraph_Build, copied at the next START)
+    LONG snLotCopyUs[8];             // +0x2438, by time: <=100, <=250, <=500, <=1000, <=2000, <=5000, <=10000, >10000 us
+    LONG snLotCopyMaxUs;             // +0x2458
+    LONG snLotCopyMaxKB;             // +0x245C
+    LONG snLotCopyFault;             // +0x2460, faults or lot gone from the table
+    LONG snUa2Key[64];               // +0x2464, unattributed callers: leaf << 24 | return address (0xFFFFFF outside the exe)
+    LONG snUa2Next[64];              // +0x2564, next frame: first call-preceded exe address above the return slot (heuristic)
+    LONG snUa2N[64];                 // +0x2664
+    LONG snUa2Other;                 // +0x2764, keys past 64
+    // v49 (0.28.0): [RouteSnap] Lots=replay, per-lot footprints and quadtrees by ordered leaf replay into a clone, audit
+    // only (replay.cpp, docs/94 §11 design B, §16)
+    LONG rpReady;                    // +0x2768, bit 0 replay on, bit 1 the consumer holds a clone, bit 2 consumer thread
+    LONG rpEpochs;                   // +0x276C, clones built (world event 7, epoch, overflow, divergence, fault)
+    LONG rpEpochFails;               // +0x2770, clone builds that failed (fault, unknown footprint class, shape)
+    LONG rpEpochUs;                  // +0x2774, sim time in clone builds (microseconds, summed)
+    LONG rpEpochMaxUs;               // +0x2778
+    LONG rpLots;                     // +0x277C, lots in the consumer's clone
+    LONG rpFps;                      // +0x2780, clone footprint blocks alive (records in flight included)
+    LONG rpKB;                       // +0x2784, our replay memory now (clone, footprint copies, payloads; KB)
+    LONG rpKBMax;                    // +0x2788
+    LONG rpRec[8];                   // +0x278C, records appended by type (RP_*: 1 INS, 2 REM, 3 STALE, 4 LOTS, 5 EPOCH, 6 AUDIT, 7 SYNC)
+    LONG rpDrop;                     // +0x27AC, records dropped on a full ring (clone rebuilt)
+    LONG rpRingMax;                  // +0x27B0, ring depth at a cut, max
+    LONG rpCopyUs;                   // +0x27B4, time in footprint copies (INS records and builds, all threads, summed)
+    LONG rpCopyFail;                 // +0x27B8, footprint copies refused (unknown class, invalid level after the forced build, shape caps, fault)
+    LONG rpUnknownVt;                // +0x27BC, last footprint vtable with no class row
+    LONG rpApplied[8];               // +0x27C0, records applied by type
+    LONG rpSkip[4];                  // +0x27E0, INS/REM not applied: Q not in the clone, lot stale (rebase pending), no footprint copy, no clone
+    LONG rpApplyUs;                  // +0x27F0, consumer time applying under +0x918 (summed)
+    LONG rpApplyMaxUs;               // +0x27F4, longest hold
+    LONG rpLockWaitUs;               // +0x27F8, consumer time waiting for +0x918
+    LONG rpLag;                      // +0x27FC, records behind the head after a drain, max
+    LONG rpRebaseLots;               // +0x2800, lots rebased or removed at cuts
+    LONG rpRebaseUs;                 // +0x2804, sim time in rebase copies (summed)
+    LONG rpRebaseMaxUs;              // +0x2808
+    LONG rpSyncs;                    // +0x280C, SYNC checks (map buckets, entries, lot count)
+    LONG rpDiverge;                  // +0x2810, SYNC differences (clone rebuilt at the next cut)
+    LONG rpFaults;                   // +0x2814, faults while building, applying or freeing
+    LONG rpAudits;                   // +0x2818, lot audits (clone lot hash vs the live lot at the same record)
+    LONG rpMis;                      // +0x281C, lot audit mismatches (gate: 0)
+    LONG rpAuditUs;                  // +0x2820, sim time hashing live lots (summed)
+    LONG rpAuditMaxUs;               // +0x2824
+    LONG rpAuditWorkerUs;            // +0x2828, consumer time hashing clone lots (summed)
+    LONG rpGcFreed;                  // +0x282C, clone footprint blocks freed when no clone FME held them
+    LONG rpOrphanFme;                // +0x2830, clone FMEs met only in a tree leaf (not in the map; kept until the next epoch)
+    LONG rpCapOff;                   // +0x2834, 1 = switched off at ReplayCapMB
+    LONG rpPrebuilt;                 // +0x2838, Prebuild=1: lot graphs built at world event 7 (RoomGraph_FirstUse on each unbuilt lot)
+    LONG rpPrebuildFail;             // +0x283C, lots whose forced first use returned 0 or faulted
+    LONG rpPrebuildUs;               // +0x2840, sim time in the prebuild (summed over loads)
+    LONG rpPrebuildKB;               // +0x2844, process private bytes added by the last prebuild (KB; the game's lot graphs)
+    LONG rpExclLots;                 // +0x2848, lots the last clone build left out (a footprint the copy refuses; 0.29.0)
+    LONG rpUnkClsVt[4];              // +0x284C, unknown footprint vtables met by a copy (first 4)
+    LONG rpUnkClsN[4];               // +0x285C, copies refused per vtable above
+    LONG rpSpare[63];                // +0x286C, v49 is 128 int32 (0x2768..0x2967, the size P4 reserved); v50 starts at 0x2968
+    // v50 (0.28.0, [RouteSnap] Mode=1, P4 part A, p4.cpp; docs/94 §12, §17, §18)
+    LONG snP4Ready;                  // +0x2968, bit 0 thunks T1-T4, 1 T1 in the [RouteGate] trampoline, 2 door stub chained behind
+                                     //   [ProbeValues], 3 door stub on its own call site, 4 clone provider registered; 0 = off
+    LONG snP4Mode;                   // +0x296C, [RouteSnap] Mode (1 = shadow)
+    LONG snShadowArmed;              // +0x2970, async STARTs armed for a shadow (1 in ShadowEvery)
+    LONG snShadowBusy;               // +0x2974, armed but skipped at the worker: another job was queued
+    LONG snShadow;                   // +0x2978, shadows finished (one record each)
+    LONG snM[6];                     // +0x297C, native class M0-M5 (docs/94 §13 rules)
+    LONG snM1Tie;                    // +0x2994, M1 goal-tie (P4TieN, docs/94 §13.1; 0.30.3)
+    LONG snAbort[16];                // +0x2998, refusal / abort reason (p4.cpp kP4Ab: clone, nover, epoch, cold, unsupported,
+                                     //   capture, nrbusy, mat, door-miss, door-over, managed, event, livelock, lazy, fault, other)
+    LONG snShadowUs;                 // +0x29D8, clone-run time summed
+    LONG snShadowMaxUs;              // +0x29DC
+    LONG snLiveUs;                   // +0x29E0, live Route_PlanLocked time of the shadowed jobs summed
+    LONG snMatUs;                    // +0x29E4, clone acquire (materialise) time summed
+    LONG snShadowFault;              // +0x29E8, exceptions in a clone run (P4 off for the session)
+    LONG snDeadStamp;                // +0x29EC, T2' 0x61CC73 hits (dead code: must stay 0)
+    LONG snStampWrap;                // +0x29F0, per-copy stamp wraps
+    LONG snCloneManaged;             // +0x29F4, managed calls from a clone run (tripwire)
+    LONG snCloneEvent;               // +0x29F8, World_FireEvent from a clone run (tripwire)
+    LONG snCloneLazy;                // +0x29FC, lazy lot build / lot table insert in a clone run (D4)
+    LONG snCloneLiveLock;            // +0x2A00, live +0x918 acquire from a clone run (tripwire)
+    LONG snDoorRec;                  // +0x2A04, door answers recorded at 0x64F4D3 in live runs
+    LONG snDoorReplay;               // +0x2A08, replayed in clone runs
+    LONG snDoorMiss;                 // +0x2A0C, clone asked a door the live run did not
+    LONG snDoorUnused;               // +0x2A10, recorded answers the clone did not use
+    LONG snDoorOver;                 // +0x2A14, door table full in a live run
+    LONG snWorkerDirty;              // +0x2A18, [RouteSnap] writer leaves hit inside a clone run
+    LONG snDirtyOver;                // +0x2A1C, workerDirty lot set overflow (= every lot)
+    LONG snNrWaits;                  // +0x2A20, D2: sim-side writers that waited for a clone run
+    LONG snNrWaitUs;                 // +0x2A24
+    LONG snNrArmWaitUs;              // +0x2A28, worker wait for g_snNrIn == 0 at arm
+    LONG snNrBits[7];                // +0x2A2C, D5 families changed in a window the plan read: physics, terrain swap, destroy,
+                                     //   lot index rebuild, world events 0x0D-0x10, blend reload, lock-key ICs
+    LONG snJsonl;                    // +0x2A48, shadow records written
+    LONG snJsonlFail;                // +0x2A4C
+    LONG snPathsFreed;               // +0x2A50, private clone-run paths released
+    // v51 (0.29.0, P4 part B: the replay clone provider, p4clone.cpp; docs/94 §21)
+    LONG snPcReady;                  // +0x2A54, 1 = provider registered (Mode=1 with Lots=replay)
+    LONG snPcCuts;                   // +0x2A58, armed cuts that gave a version
+    LONG snPcCutUs;                  // +0x2A5C, sim time in those cuts (prepare + P3 cut + snapshot, summed)
+    LONG snPcCutMaxUs;               // +0x2A60
+    LONG snPcRefused[8];             // +0x2A64, 0 cut: busy / no world / lock; 1 cut: no version; 2 acquire: no clone; 3 an older
+                                     //   cut or the consumer passed it; 4 wait timeout; 5 epoch or active lot moved; 6 copy failed
+    LONG snPcAcquired;               // +0x2A84, working copies handed out
+    LONG snPcMatUs;                  // +0x2A88, worker time building them (summed)
+    LONG snPcPending;                // +0x2A8C, ApplyPendingUpdates run at a START (§8.5 step 3)
+    LONG snPcFlushed;                // +0x2A90, deferred quadtree flushes run at a START (step 4)
+    LONG snPcFirstUse;               // +0x2A94, unbuilt lots first-used at a START (step 2)
+    LONG snPcFaults;                 // +0x2A98, faults in the START steps or the working copy build
+    LONG snPcOddQ;                   // +0x2A9C, clone Qs whose +0x28 is neither the live nor our A* object
+    LONG snPcDirtyLots;              // +0x2AA0, lots a clone run wrote (rebased at the next cut; -1 counts 1)
+    LONG snPcDiscard;                // +0x2AA4, faulted clone runs (clone rebuilt, A* object dropped)
+    LONG snNrBitDl;                  // +0x2AA8, D5 family 8 "display level" changed in a window whose plan ran 0x6583E0 (M5)
+    LONG snDlOnClone;                // +0x2AAC, display level writer called from a clone run (tripwire, expected 0)
+    LONG arLosRefused;               // +0x2AB0, async STARTs refused "Los": ForcePhysicsBasedRaycast routes stay sync (§17.9)
+    // v53 (private pools for the replay clone and P4 clone runs, pools.cpp; docs/94 §16.7). v52 is design G's (unmerged): when
+    // it lands first, this block moves after it (docs/registry.md)
+    LONG plReady;                    // +0x2AB4, bit 0 tree pool sites, 1 A*/goal/cell/quadtree cell sites, 2 region reserved
+    LONG rpLivePool;                 // +0x2AB8, a clone thread (replay op or P4 job) popped / pushed a game pool (must stay 0)
+    LONG plForeign;                  // +0x2ABC, a private node pushed by a thread that owns no clone work (must stay 0)
+    LONG plOverlap;                  // +0x2AC0, PoolsEnterJob while another thread held a switch (must stay 0)
+    LONG plEpochs;                   // +0x2AC4, game pool objects changed at a cut (PathPlanner_Reset): clone rebuilt
+    LONG plKB;                       // +0x2AC8, private region committed (KB)
+    LONG plFull;                     // +0x2ACC, private block requests refused (region full or commit failed)
+    LONG plJobs;                     // +0x2AD0, PoolsEnterJob calls (P4 clone runs on private pools)
+    // v54 (0.30.0, P4 portal references H20, docs/109 §8.9 P4-H20a-d, docs/94 §21.8)
+    LONG snNrBitPortal;              // +0x2AD4, D5 family 9 "portal ICs" changed in a clone window (M5; snIc[4..14])
+    LONG rpPortalRefs;               // +0x2AD8, portal references the replay clone holds now (H20b; gauge, 0 with no clone)
+    LONG snPcPortalPend[2];          // +0x2ADC, H20c: 0 armed cuts refused for a live lot with pending portal adds +0x54 /
+                                     //   removes +0x64; 1 acquires refused for a clone lot with them
+    // v55 (0.31.0, lazy Gtiles, snap.cpp; docs/94 §21.9): dirty tiles are built only for a reader
+    LONG spTileFill[2];              // +0x2AE4, tiles built after the cut left them out: 0 for a reader (armed P4 cut), 1 the audit
+    LONG spTileFillUs[2];            // +0x2AEC, time in those builds (µs; [0] is inside spCutUs, [1] inside neither spCutUs
+                                     //   nor spAuditUs)
+    LONG spTileOut;                  // +0x2AF4, tiles the current version does not carry (gauge; 0 after a reader or audit)
+    // v56 (0.31.3, H20 tripwire, p4.cpp; docs/94 §21.8.1 risk 1)
+    LONG p4VarTrip;                  // +0x2AF8, AddPortalLocationVariation on a portal the clone holds, during a clone run
+                                     //   (count only; expected 0, non-zero = put D2 on that IC slot)
+    // v57 (0.31.4, bp-snap-p4 crash at 0x63576A; docs/94 §21.11)
+    LONG lrPendFlush;                // +0x2AFC, lot-0 LotRouting_RemoveObjectFootprints 0x635700: Qs with a pending remove of the
+                                     //   id flushed first (0x666A40), so the game's walk cannot skip past its range end
+                                     //   ([RouteSnap] stub, or since 0.31.5 the [LotRemoveGuard] detour on every build)
+    LONG lrPendBusy;                 // +0x2B00, such a Q left unflushed because it is being iterated (+0x48 > 0): the crash
+                                     //   precondition stays (expected 0)
+    LONG pcDeferStop;                // +0x2B04, a quadtree insert / remove deferral (0x666C50 / 0x666E30 with Q+0x48 > 0) in a
+                                     //   P4 clone run, stopped before it wrote the live pending maps P+0x30 / P+0x3C
+    // v59 (0.32.0, [LoadProf] world-load routing build share, loadprof.cpp; docs/39 §10). v58 is reserved by a parallel
+    // branch: these fields move after its fields when it merges first (agent.js reads them in version order)
+    LONG lpReady;                    // +0x2B08, 1 = the window has both ends hooked (LoadWorld call, world event 7 call)
+    LONG lpHooks;                    // +0x2B0C, sites hooked
+    LONG lpSkipped;                  // +0x2B10, sites skipped (bytes differ: another section owns them)
+    LONG lpLoads;                    // +0x2B14, LoadWorld calls (each zeroes the fields from lpWindowMs on)
+    LONG lpEv7;                      // +0x2B18, windows closed by world event 7
+    LONG lpFrameFull;                // +0x2B1C, entries not timed (32 frames open on the thread)
+    LONG lpWindowMs;                 // +0x2B20, LoadWorld entry -> world event 7 (ms)
+    LONG lpRtUs[2];                  // +0x2B24, routing time, outermost routing frames only: [0] in the window, [1] after
+    LONG lpRtThrUs[3];               // +0x2B2C, lpRtUs[0] by thread: main, sim, other
+    LONG lpSite[28][2][3];           // +0x2B38, per site (kLp order) and row (0 window, 1 after): calls, us (inclusive), max us
+    // v60 (0.32.10): [PlanRepeat] plan cache probe (planrepeat.cpp, docs/23 §18). Offsets without v58 (+v58's size when it
+    // merges first). Class index: 0 Plan, 1 Replan, 2 PlanFromPoint, 3 ReplanFromPosition, 4 sim outside a route IC, 5 other
+    // thread. Windows: 0 <= 1 s, 1 <= 5 s, 2 <= 30 s (cumulative).
+    LONG prReady;                    // +0x2DD8, bit 0 counting, bit 1 world version from the [RouteSnap] counters
+    LONG prRing;                     // +0x2DDC, ring entries (gauge, max 4096)
+    LONG prEvictYoung;               // +0x2DE0, entries younger than 30 s overwritten (30 s column is a lower bound)
+    LONG prFault;                    // +0x2DE4, plans whose key or result could not be read (timed, not keyed)
+    LONG prUnwound;                  // +0x2DE8, an outer plan left without its end (managed exception)
+    LONG prVersion;                  // +0x2DEC, world version after the last plan (gauge)
+    LONG prPlans[6];                 // +0x2DF0, plans by class
+    LONG prUs[6];                    // +0x2E08, their time (us)
+    LONG prExact[6][3];              // +0x2E20, exact repeats (same key, same world version) by window
+    LONG prExactUs[6][3];            // +0x2E68, time of those plans (the cache's savings bound)
+    LONG prFpOnly[6];                // +0x2EB0, same key <= 30 s, only per-object footprint writers changed
+    LONG prFpOnlyUs[6];              // +0x2EC8
+    LONG prFpOnlyMatch[6];           // +0x2EE0, of those, the same result
+    LONG prChanged[6];               // +0x2EF8, same key <= 30 s, other routing writers changed
+    LONG prMatch[6];                 // +0x2F10, exact repeats <= 30 s with the same result
+    LONG prMismatch[6];              // +0x2F28, exact repeats <= 30 s with another result (nondeterminism or unseen input)
+    LONG prLoose[6];                 // +0x2F40, loose-key (0.5 m cells) repeats <= 30 s, same world version
+    LONG prLooseUs[6];               // +0x2F58
+    // v61 (0.33.0): [RouteSnap] Mode=2, P5: the game takes the clone run's answer for ReplanFromPosition jobs (p5.cpp, docs/94
+    // §19, §22). Offsets without v58 (+v58's size when it merges first). Fallback reasons in P4_AB_* order (as snAbort).
+    LONG m2Ready;                    // +0x2F70, bit 0 Mode=2 on (cleared when it turns off), 1 M2-1 sites snapshotted, 2 L2 read
+    volatile LONG m2Take;            // +0x2F74, switch (`--ab routesnap`): 1 = Mode=2 jobs take the clone answer, 0 = plain A10 jobs
+    LONG m2Off;                      // +0x2F78, why Mode=2 turned off for the session: 0 on, 1 M2-1 site, 2 M2-2 trips, 3 P4 fault
+    LONG m2Sites;                    // +0x2F7C, code sites in the M2-1 snapshot
+    LONG m2SiteAt;                   // +0x2F80, the first snapshotted site whose bytes changed (M2-1), 0 = none
+    LONG m2Armed;                    // +0x2F84, Mode=2 STARTs armed (ReplanFromPosition, Kinds bit 8, m2Take on)
+    LONG m2Plans;                    // +0x2F88, armed jobs that reached Route_PlanLocked
+    LONG m2Taken;                    // +0x2F8C, the clone run's answer moved into the route (no game plan)
+    LONG m2Fb[16];                   // +0x2F90, the game's own plan instead, by reason (P4_AB_* order)
+    LONG m2FbList;                   // +0x2FD0, of m2Fb capture: the route's out list was not empty at entry
+    LONG m2FbNr;                     // +0x2FD4, clean run, but a non-routing family the plan read changed (nr != 0: M5 skew)
+    LONG m2Verify;                   // +0x2FD8, verify jobs (VerifyEvery): clone run and game plan, the game's kept, one record
+    LONG m2VerM[6];                  // +0x2FDC, their class M0-M5 (native, as snM)
+    LONG m2VerBad;                   // +0x2FF4, verify M2 / M3 (would have been taken wrong; logged)
+    LONG m2Trips;                    // +0x2FF8, M2-2: managed call or world event in a clone run outside a door ask
+    LONG m2DoorAsk;                  // +0x2FFC, door asks of Mode=2 clone runs (the game's chain, proxied to the sim thread)
+    LONG m2DoorHist[5];              // +0x3000, clone runs by asks: 0, 1-2, 3-5, 6-10, 11+
+    LONG m2DoorWaitUs;               // +0x3014, time inside those asks (us)
+    LONG m2JobUs;                    // +0x3018, Mode=2 clone run time including the asks (us)
+    LONG m2Stale;                    // +0x301C, runs whose cut had replay records after it (the world moved since START)
+    LONG m2StaleRecs;                // +0x3020, sum of those records
+    LONG m2Guard;                    // +0x3024, M2-3 log-only findings: bit 0 0xD7E560 detour, 1 0xE5CA90, 2 0xE59218, 3 0xE5637D,
+                                     //   4 0xE648DC (MonoPatcher.asi, docs/107 §2.2)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {44,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {61,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -896,10 +1190,13 @@ static PlanLockedFn g_planOrig;
 typedef int(__fastcall* PathStatusFn)(void* path, void* edx);  // path vtable +0x20, thiscall, no args
 static volatile LONG64 g_nextLog;
 
+static void PrLog();  // planrepeat.cpp
+
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
     if ((LONG64)now < next || InterlockedCompareExchange64(&g_nextLog, (LONG64)now + 60000, next) != next) return;
     const Ts3nCounters& c = ts3native_counters;
+    if (c.prReady) PrLog();
     if (c.windowMs) Log("route cache: calls %ld hits %ld misses %ld stored %ld otherFails %ld", c.calls, c.hits, c.misses, c.stored, c.otherFails);
     if (c.workerReady)
         Log("route worker: mode %ld calls %ld worker %ld ms max %ld us wait %ld ms fallbacks %ld watchdogs %ld invokeHook %ld invokes %ld",
@@ -932,6 +1229,27 @@ static __declspec(thread) LONG t_qlShared;
 // Design SH (slotro.cpp): 1 while this thread holds QL shared over the game's 0x76F0A0, 2 once that hold was dropped. A lock,
 // host or managed call inside the hold drops it (QL released first, then the call as today), so it never counts in T-L2.
 static __declspec(thread) LONG t_slHold;
+// [RouteSnap] Mode=1, P4 (p4.cpp, docs/94 §12, §17). A clone run = the route worker running the game's Route_PlanLocked on
+// the working copy. g_snapRunTid (TEB thread id) and g_snapCtx select the copy in the T1-T4 thunks; written by the worker only.
+// t_snapRun: the same test for C++ stubs (§12.4.3 pass-through rule). g_snNrIn: D2 sim-side non-routing writers in flight.
+// t_p4Read: reader bits of the plan in the live run and the clone run (D5), bit 31 = collecting on this thread.
+static volatile LONG g_snapRunTid;
+static void* volatile g_snapCtx;
+static __declspec(thread) LONG t_snapRun;
+static __declspec(thread) LONG t_rpReplay;  // replay.cpp consumer applying records (its game calls are not writer records)
+static volatile LONG g_snNrIn;
+static volatile LONG g_p4On;  // P4 installed: D2 handshakes, D3 physics lock, D5 counts
+static volatile LONG g_nrN[8];  // D5 writer families counted in our stubs: [0] physics, [2] destroys, [3] lot index rebuilds, [7] display level
+static __declspec(thread) LONG t_p4Read;
+static __declspec(thread) LONG t_p4Cap;  // the worker captures the live job's Route_PlanLocked (args, answer, doors)
+enum { P4R_PHYS = 1, P4R_TERRAIN = 2, P4R_LOTIDX = 4, P4R_VRAY = 8, P4R_ON = (LONG)0x80000000 };  // VRAY: Routing_PhysicsRayVertical 0x6583E0
+static inline bool SnLive() { return g_snapRunTid != 0; }
+static void P4Abort(int why);                                // p4.cpp
+static void P4WorkerDirty(bool known, unsigned __int64 key);
+static void P4Lazy();
+static void P4NrEnter();                                     // D2: returns with g_snNrIn held and no clone run live
+enum { P4_AB_CLONE, P4_AB_NOVER, P4_AB_EPOCH, P4_AB_COLD, P4_AB_UNSUP, P4_AB_CAPTURE, P4_AB_NRBUSY, P4_AB_MAT, P4_AB_DOORMISS,
+       P4_AB_DOOROVER, P4_AB_MANAGED, P4_AB_EVENT, P4_AB_LIVELOCK, P4_AB_LAZY, P4_AB_FAULT, P4_AB_OTHER, P4_AB_N };
 enum { SLD_GATE, SLD_MISS, SLD_PORTAL, SLD_LOCK, SLD_MANAGED, SLD_TABLE };
 static void SlDrop(int why);
 static inline void QlSharedTrip(int slWhy) {
@@ -1080,6 +1398,8 @@ struct AsyncJob {
     int kind;          // A10 (a10.cpp): 0 IC_Route_Plan, 1 Replan, 2 PlanFromPoint, 3 ReplanFromPosition
     float pt[3];       // kinds 2-3: the start point, copied at START (the IC's x, y, z by value)
     LONG us;           // worker time of the IC call
+    LONG p4;           // P4 (p4.cpp): 1 = armed for a shadow at START; P5 (p5.cpp): 2 = take the clone answer, 3 = also verify
+    DWORD p4Ver;       // P4: the clone version cut at START (0 = none)
 };
 static const int kJobs = 8;
 static const DWORD kDoneKeepMs = 5000;  // a Sim collects within a tick or two; older results lost their caller (reset)
@@ -1132,6 +1452,10 @@ static u8* CallIc(int kind, u8* out, DWORD handle, const float* pt) {
     return ((IcPointFn)g_arOrig[kind])(out, handle, pt[0], pt[1], pt[2]);
 }
 static void WaitAsyncDone();
+static void P4LiveBegin(AsyncJob* j);  // p4.cpp: the worker captures this job's Route_PlanLocked
+static void P4LiveEnd(AsyncJob* j);    // copies what the shadow needs before J_DONE
+static void P4Shadow();                // after J_DONE: the clone run, compare, record
+static void P4OnStart(AsyncJob* j);    // sim, START: sampling and the clone cut
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline);
 static LONG __fastcall LockReleaseHook(void* lock, void* edx);  // routegate.cpp
 static int g_inInvoke;  // > 0 while the caller/owner thread runs a managed call for the worker (ServeInvoke)
@@ -1234,6 +1558,7 @@ static void* Proxy(InvokeJob& v) {
 // In the runtime_invoke slot: every thread but the worker goes straight to the original.
 static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** exc) {
     QlSharedTrip(SLD_MANAGED);
+    if (t_snapRun) P4Abort(P4_AB_MANAGED);  // P4 tripwire (§12.4.3): served as without us so the game does not hang
     if (!ForCaller()) return g_invokeOrig(method, obj, params, exc);
     InvokeJob v = {{method, obj, params, exc}, NULL, NULL};
     return Proxy(v);
@@ -1242,6 +1567,7 @@ static void* __cdecl InvokeHook(void* method, void* obj, void** params, void** e
 // Detour of 0xD75FA0: the same for the whole host delegate call (boxing and EA's task-id guard included).
 static void* __fastcall HostCallHook(void* self, void* edx, void* out, void* a2, void* a3, void* a4) {
     QlSharedTrip(SLD_MANAGED);
+    if (t_snapRun) P4Abort(P4_AB_MANAGED);
     if (!ForCaller()) return g_hostCallOrig(self, edx, out, a2, a3, a4);
     InvokeJob v = {{out, a2, a3, a4}, self, NULL};
     return Proxy(v);
@@ -1347,9 +1673,11 @@ static void ServeAsync() {
         _mm_setcsr(j->mxcsr);
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
+        P4LiveBegin(j);
         CallIc(j->kind, j->result, j->handle, j->pt);
         const LONG us = UsSince(t0);
         j->us = us;
+        P4LiveEnd(j);
         SetX87(cw);
         _mm_setcsr(csr);
         LockReleaseHook(j->lock, NULL);
@@ -1360,6 +1688,7 @@ static void ServeAsync() {
         j->doneTick = GetTickCount();
         InterlockedExchange(&j->state, J_DONE);
         SetEvent(g_asyncDone);
+        P4Shadow();  // works on its own copies only: collect and slot reuse never wait for it (docs/94 §12.4.2)
     }
 }
 
@@ -1481,11 +1810,18 @@ static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int*
 static DWORD P10PlanBegin(const DWORD* slot, LARGE_INTEGER* t0);  // p10.cpp
 static void P10PlanEnd(DWORD tag, LARGE_INTEGER t0);
 static void __cdecl P10Enter(int ic, DWORD* slot);
+static u8 P4LivePlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
+                     int* out1, int* out2, DWORD guidLo, DWORD guidHi);  // p4.cpp: calls PlanLockedBody between its captures
+struct PrTok { u64 key, loose; LARGE_INTEGER t0; DWORD ver, sver; int cls; bool keyed; };  // planrepeat.cpp
+static bool PrBegin(PrTok& t, const void* world, const int* starts, const int* goals, DWORD agent, DWORD doPlan, const u8* opts,
+                    DWORD guidLo, DWORD guidHi);
+static void PrEnd(bool on, const PrTok& t, const int* outList, u8 r);
 
 // noinline: P10 reads this frame's own return slot (selftest calls it directly)
 static __declspec(noinline) u8 __fastcall PlanLockedHook(void* world, void* edx, int* outList, int* starts, int* goals,
                                                          DWORD agent, DWORD doPlan, u8* opts, int* out1, int* out2,
                                                          DWORD guidLo, DWORD guidHi) {
+    if (t_p4Cap) return P4LivePlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     if (!t_p10) return PlanLockedBody(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     LARGE_INTEGER t0;  // P10: a sim-thread plan inside one of the four route ICs
     const DWORD tag = P10PlanBegin((const DWORD*)_AddressOfReturnAddress(), &t0);
@@ -1512,7 +1848,10 @@ static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int*
     const bool on = (c.workerMode == 1 && c.workerReady) || (c.asyncMode == 1 && c.asyncReady);
     InterlockedIncrement(on ? &ts3native_counters.planOnCalls : &ts3native_counters.planOffCalls);
     const bool g11 = G11PlanBegin();
+    PrTok pr;
+    const bool prOn = PrBegin(pr, world, starts, goals, agent, doPlan, opts, guidLo, guidHi);
     const u8 r = PlanCached(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi, now);
+    PrEnd(prOn, pr, outList, r);
     G11PlanEnd(g11);
     if (!r) InterlockedIncrement(on ? &ts3native_counters.planOnFails : &ts3native_counters.planOffFails);
     return r;
@@ -1616,10 +1955,25 @@ static void DropAllJobs() {
 // route; its IC_Route_Plan right after takes it. Codes 1-7 = group 0 (refused), 8-11 = group 1 (queue), else group 2.
 // A10 (0.22.0) adds Shadow (Mode 0 refusal), KindMismatch (the job was another IC's) and Active (route being followed).
 enum { RFB_NOSTART, RFB_NOYIELD, RFB_M1, RFB_RUNNING = RFB_M1 + 6, RFB_QFULL, RFB_INVOKE, RFB_UNSTARTED, RFB_SKIPPED, RFB_UNCOLLECTED,
-       RFB_SHADOW, RFB_KIND, RFB_ACTIVE };
+       RFB_SHADOW, RFB_KIND, RFB_ACTIVE, RFB_LOS };
 static const char* const kRfbName[] = {"NoStart", "NoYield", "M1NoLock", "M1Busy", "M1Closing", "M1Pending", "M1DirtyIndex",
                                        "M1FrameOpen", "Running", "QueueFull", "InvokeHook", "Unstarted", "Skipped", "Uncollected",
-                                       "Shadow", "KindMismatch", "Active"};
+                                       "Shadow", "KindMismatch", "Active", "Los"};
+
+// docs/94 §17.9 (I-105-3, 0.29.0): a route with ForcePhysicsBasedRaycast (RouteOption bit 0x2000000, route+0x158+0x28: the
+// test RoutingOptions_Test 0x81C880 makes at 0x75AB9C before World_CanSeeObject 0x75AC22) raises the lot display level
+// (lot +0x39C, level group bit 0x10000) from inside the plan; on the worker that races the sim's level writers. Those plans
+// stay on the sim thread (refusal "Los"). Route lookup as the route ICs: RouteHandle_Lookup 0x74B2C0 on [0x11D40C4].
+typedef const u8*(__fastcall* AsRouteFn)(const void* rm, void* edx, DWORD handle);
+static AsRouteFn g_asRoute = (AsRouteFn)(uintptr_t)0x0074B2C0;
+static const u8* const* g_asRmSlot = (const u8* const*)(uintptr_t)0x011D40C4;
+static bool AsyncLosRoute(DWORD handle) {
+    __try {
+        const u8* rm = *g_asRmSlot;
+        const u8* route = rm ? g_asRoute(rm, NULL, handle) : NULL;
+        return route && (*(const DWORD*)(route + 0x158 + 0x28) & 0x2000000) != 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 static const char* const kArIcName[4] = {"Plan", "Replan", "PlanFromPoint", "ReplanFromPosition"};
 static DWORD g_rfbHandle;  // sim thread only, like g_collect
 static int g_rfbWhy;
@@ -1743,6 +2097,7 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
     Ts3nCounters& k = ts3native_counters;
     if (k.asyncMode != 1 || !k.asyncReady) return 0;  // asyncMode is writable at runtime
     if (kind && !(k.arReady & (1 << (kind - 1)))) return AsyncRefuse(handle, RFB_NOSTART, kind, false);  // that IC not hooked
+    if (AsyncLosRoute(handle)) { InterlockedIncrement(&k.arLosRefused); return AsyncRefuse(handle, RFB_LOS, kind); }
     // the caller could not sleep (nested native->managed call: its yield would abort the game)
     if (!CanYield()) return AsyncRefuse(handle, RFB_NOYIELD, kind);
     // H6 M1 (docs/60 §2.4): only a quiet world, and only with the gate enforced (rtsites.cpp); the job's lock comes from there
@@ -1780,6 +2135,7 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
     j->lock = lock;
     j->kind = kind;
     if (pt) memcpy(j->pt, pt, sizeof(j->pt));
+    P4OnStart(j);
     InterlockedExchange(&j->state, J_QUEUED);
     LONG queued = 0;
     for (int i = 0; i < kJobs; i++) queued += g_jobs[i].state == J_QUEUED || g_jobs[i].state == J_RUNNING;
@@ -1796,7 +2152,9 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
 static const DWORD kArHi = 0x08000000, kArPtHi = 0x10000000, kArKindHi = 0x03000000;
 static DWORD g_arPt[3], g_arPtSet;  // sim thread only
 
+static u8 SpDoorMsg(DWORD lo, DWORD hi);  // snap.cpp: door mirror channel (RouteOption bits 63 + 58)
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
+    if ((u8)options2 && (optHi & 0xFF000000) == 0x84000000) return SpDoorMsg(optLo, optHi);
     if ((u8)options2 && (optHi & ~(kArKindHi | kArPtHi)) == (kAsyncOptHi | kArHi)) {
         const int idx = (int)(optHi >> 24) & 3;
         if (optHi & kArPtHi) {
@@ -1845,6 +2203,10 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
 static __declspec(thread) LONG t_borrow;  // routegate.cpp releases these without the lock
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline) {
     QlSharedTrip(SLD_LOCK);
+    if (t_snapRun) {  // P4 clone run: the copy's own +0x918 passes straight through; the live lock is a design breach (§12.6)
+        if (lock == g_rgLock) P4Abort(P4_AB_LIVELOCK);
+        return g_lockOrig(lock, edx, deadline);
+    }
     // H6 borrow rule: the owner runs a callback for the job while the worker, holding the job's lock, waits in it; an acquire
     // of that lock here is nested in the job, as it was when the plan ran on this thread. Waiting would deadlock.
     if (lock == g_async.lock && g_inInvoke && g_async.state == A_RUNNING && GetCurrentThreadId() == g_async.owner) {
@@ -2011,6 +2373,15 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "verify.cpp"
 #include "vcall.cpp"
 #include "values.cpp"
+#include "routesnap.cpp"
+#include "snap.cpp"
+#include "pools.cpp"
+#include "replay.cpp"
+#include "p4.cpp"
+#include "p4clone.cpp"
+#include "p5.cpp"
+#include "loadprof.cpp"
+#include "planrepeat.cpp"
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -2060,7 +2431,8 @@ static void Run(HMODULE self) {
         const int asyncMode = ReadRouteAsync(ini);
         if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
         const bool gate = ReadRouteGate(ini);  // checks every prologue first: nothing is hooked if one differs
-        keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini), gate);
+        // [PlanRepeat] (planrepeat.cpp) counts inside this detour
+        keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini), gate || GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini));
         if (asyncMode >= 0 && worker && keepLog && InstallAsync(asyncMode)) InstallA10(ini);
         InstallRtSites(ini, gate && InstallRouteGate(g_planOrig != NULL));
         InstallDiscourage(ini);
@@ -2090,8 +2462,16 @@ static void Run(HMODULE self) {
         keepLog = ApplyLotSinCos(ini) || keepLog;
         keepLog = ApplyIdCache(ini) || keepLog;
         keepLog = ApplyProbeValues(ini) || keepLog;  // after every behaviour section: it counts inside their stubs or skips
+        keepLog = ApplyRouteSnap(ini) || keepLog;  // after [ProbeValues]: counts inside its, [SteerRO]'s and [RouteGate]'s stubs
+        InstallLotRemoveGuard(ini);                 // after [RouteSnap]: its stub at 0x635700 runs the same guard
+        keepLog = ApplySnapImages(ini) || keepLog;  // P3 images on P1's sites
+        keepLog = ApplyP4(ini) || keepLog;          // P4 part A: thunks, door stub, shadow (after [ProbeValues] and P3)
+        PcRegister();                               // P4 part B: the replay clone as P4's clone provider
         keepLog = ApplyProbeSnap(ini) || keepLog;
+        keepLog = ApplyLoadProf(ini) || keepLog;  // measurement: skips every site another section already hooked
+        keepLog = ApplyPlanRepeat(ini) || keepLog;  // after [RouteSnap] (its world version) and the plan detour
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
+        P5Snapshot();                           // P5 M2-1: the code bytes of every site the clone run passes, after every install
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

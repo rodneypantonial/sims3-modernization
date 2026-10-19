@@ -227,14 +227,14 @@ static bool DiscDefer(bool add, void* obj, const u8* begin, int n, int high, int
 static u8 __fastcall DiscAddHook(void* world, void* edx, void* obj, void* points, int high, int allow, int placement) {
     const u8* const* v = (const u8* const*)points;
     const int n = v && v[0] ? (int)((v[1] - v[0]) / 16) : 0;
-    if (!DiscWorldOk(world) || !obj || n < 3) return g_discAddOrig(world, edx, obj, points, high, allow, placement);  // early outs
+    if (t_snapRun || !DiscWorldOk(world) || !obj || n < 3) return g_discAddOrig(world, edx, obj, points, high, allow, placement);  // early outs
     if (DiscDefer(true, obj, v[0], n, high, allow, placement)) return 1;
     DiscDrain(true);  // older records first (no job runs, or the queue is full)
     return g_discAddOrig(world, edx, obj, points, high, allow, placement);
 }
 
 static u8 __fastcall DiscRemoveHook(void* world, void* edx, void* obj) {
-    if (!DiscWorldOk(world) || !obj) return g_discRemoveOrig(world, edx, obj);  // early outs
+    if (t_snapRun || !DiscWorldOk(world) || !obj) return g_discRemoveOrig(world, edx, obj);  // early outs, P4 clone run
     if (DiscDefer(false, obj, NULL, 0, 0, 0, 0)) return 1;
     DiscDrain(true);
     return g_discRemoveOrig(world, edx, obj);

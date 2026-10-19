@@ -30,6 +30,14 @@
 // profile.mainstack: main | all | <thread id> -> profile-world.ts --mainstack (main-thread stacks beside the sim sampler, docs/20 §7).
 // profile.taskstall: MS -> profile-world.ts --taskstall (stage stalls over MS ms with their managed stack; S3PP SimulatorStageProfiler must be off).
 // profile.inroom: true -> profile-world.ts --inroom (tools/frida/inroom-reads.js, in-room routing live reads, docs/111; inroom-report.ts reads <tag>-inroom.json).
+// profile.watchstalk: true -> profile-world.ts --watchstalk (tools/frida/watch-stalk.js instead of the stutter profiler, docs/113; watch-stalk-report.ts reads <tag>-watchstalk.json);
+//   "worker" -> also --watchstalk-worker (the stalk phase follows the route worker's Route_PlanLocked, docs/113 §8; needs RouteAsync on).
+// profile.livereads2: true -> profile-world.ts --livereads2 (tools/frida/live-reads2.js, routing live reads pass 2, docs/114; live-reads2-report.ts reads <tag>-livereads2.json).
+// profile.f4b: true -> profile-world.ts --f4b (tools/frida/f4b-reads.js, F-4b live read, docs/99 §12.6; f4b-report.ts reads <tag>-f4b.json).
+// profile.noEnv: true -> profile-world.ts --no-env (no test_env guard: the repro sets winter, weather or a full moon itself, docs/117).
+// ini ProbeSnap.Enabled=1 -> profile-world.ts --no-prof (no second Frida agent beside the int3 sampler: docs/67 §7).
+// profile.travel: "university" | "future" | "france" | "china" | "egypt" -> profile-world.ts --travel (save-matrix.ts travel case with
+//   --stay first, then the window and repro in that world, docs/117 §2.11); the job's timeoutMin must cover the trip (~30 min).
 // Per job: cycle.ts --restart; copy the job's asi to Bin; write Bin/ts3native.ini = repo native/ts3native/ts3native.ini + job.ini
 // (fresh each job, so settings never leak); install-fixes.ts changes; start `ts3probe.py serve --launch` as a child; cycle.ts --save
 // (or wait for the menu); run; read /memory and /native before and after; close the game; undo the installer changes.
@@ -43,7 +51,8 @@
 // crashed twice (today's rows of this queue count, so a resume remembers) or two jobs crash in a row.
 // After each job: `ai-usage.ts G <job id>`; at >= 80% in either window the queue pauses and prints the --from line to resume.
 // Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT).
-// After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog).
+// After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog),
+// and Bin/ts3native-shadow.jsonl (P4 shadow records) to ...-<HHMM>-shadow.jsonl (row.shadowLog) when the job wrote one.
 // At the end the tested build (native/ts3native/out/ts3native.asi) and the Bin ts3native.ini found at the start are put back
 // (copies of what was in Bin at the start: probe-out/queue/bin-before/). Windows-only by nature (TS3W.exe, taskkill).
 import { execFileSync, spawn } from 'node:child_process';
@@ -78,7 +87,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; run: { repro?: string; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; slice?: number; taskstall?: number; inroom?: boolean }; routelock?: { minutes: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number };
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number };
 
 export function parseQueue(json: unknown): Job[] {
   const jobs = Array.isArray(json) ? json : (json as any)?.jobs;
@@ -117,6 +126,11 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.profile?.ab !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.ab))) throw new Error(`${at}: run.profile.ab must be comma-separated switch names`);
     if (j.run.profile?.slice !== undefined && !(Number(j.run.profile.slice) > 0)) throw new Error(`${at}: run.profile.slice must be > 0 minutes`);
     if (j.run.profile?.inroom !== undefined && typeof j.run.profile.inroom !== 'boolean') throw new Error(`${at}: run.profile.inroom must be true or false`);
+    if (j.run.profile?.watchstalk !== undefined && typeof j.run.profile.watchstalk !== 'boolean' && j.run.profile.watchstalk !== 'worker') throw new Error(`${at}: run.profile.watchstalk must be true, false or "worker"`);
+    if (j.run.profile?.livereads2 !== undefined && typeof j.run.profile.livereads2 !== 'boolean') throw new Error(`${at}: run.profile.livereads2 must be true or false`);
+    if (j.run.profile?.f4b !== undefined && typeof j.run.profile.f4b !== 'boolean') throw new Error(`${at}: run.profile.f4b must be true or false`);
+    if (j.run.profile?.noEnv !== undefined && typeof j.run.profile.noEnv !== 'boolean') throw new Error(`${at}: run.profile.noEnv must be true or false`);
+    if (j.run.profile?.travel !== undefined && !['university', 'future', 'france', 'china', 'egypt'].includes(j.run.profile.travel)) throw new Error(`${at}: run.profile.travel must be university, future, france, china or egypt`);
     if (j.run.profile?.mainstack !== undefined &&!/^(main|all|\d+)$/.test(String(j.run.profile.mainstack))) throw new Error(`${at}: run.profile.mainstack must be main, all or a thread id`);
     if (j.run.menuMemory?.draws !== undefined && !(Number.isInteger(j.run.menuMemory.draws) && j.run.menuMemory.draws > 0)) throw new Error(`${at}: run.menuMemory.draws must be a positive integer`);
     if (j.run.soak?.speed && !['normal', 'fast', 'ultra'].includes(j.run.soak.speed)) throw new Error(`${at}: run.soak.speed must be normal, fast or ultra`);
@@ -245,6 +259,30 @@ export function verdicts(out: string): string[] {
   return out.split(/\r?\n/).map(l => l.replace(/^\d\d:\d\d:\d\d /, '').trim())
     .filter(l => /(^|[\s:])(PASS|FAIL|PENDING)\b|^summary:/.test(l) && !/^(fix under test|step )/.test(l)).slice(-8);
 }
+// a child that failed with no verdict line gets one naming that (2026-10-16 bp-travel-future: stopped from outside, the md said "-")
+export function silentFail(code: number | null, out: string, timedOut: boolean): string[] {
+  const v = verdicts(out);
+  if (code === 0 || v.length) return v;
+  const last = out.trim().split(/\r?\n/).at(-1)?.trim() || '(no output)';
+  return [`FAIL: exit ${code} with no verdict line (${timedOut ? 'job timeout' : 'child stopped from outside or died before its summary'}); last output: ${last}`];
+}
+
+// a job's child that died from outside (2026-10-19: Claude Code's low-memory reaper killed profile-world.ts twice; the job said
+// "FAIL in 2.6 min" with no reason and the game stayed open): name it, close the game now, before Bin is restored
+export async function childLost(name: string, r: { code: number | null; signal?: string | null; out: string }, close: () => Promise<void>, logFn: (s: string) => void): Promise<string> {
+  if (r.code === 0 && !r.signal) return '';
+  if (!r.signal && verdicts(r.out).length) return ''; // the child wrote its own FAIL/PASS
+  const why = `child ${name} exited (${r.signal ? `signal ${r.signal}` : `code ${r.code}`}) without a result`;
+  logFn(`${why}; closing the game`);
+  await close();
+  return why;
+}
+// copy into Bin; EBUSY means the game still holds the file: close it, retry once, else log and go on
+export async function copyRetry(copy: () => void, what: string, close: () => Promise<void>, logFn: (s: string) => void): Promise<boolean> {
+  try { copy(); return true; } catch (e) { logFn(`${what}: ${String(e).split('\n')[0]}; closing the game, retrying`); }
+  await close();
+  try { copy(); return true; } catch (e) { logFn(`${what} failed again: ${String(e).split('\n')[0]}; continuing`); return false; }
+}
 
 // first line of ai-usage.ts: "5h 45% (reset 12:00 PHT) | 7d 62% (...) | read 3 min ago"
 export function parseUsage(line: string): { h5: number | null; d7: number | null } {
@@ -296,6 +334,7 @@ if (values['self-check']) {
     [[{ id: 'a', asi: 'tested', save: 'menu', s3ssToml: { enabled: false }, run: { menuMemory: {} } }], /s3ssToml/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, repro: 7 } } }], /profile.repro/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, mainstack: 'render' } } }], /profile.mainstack/],
+    [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, f4b: 'yes' } } }], /profile.f4b/],
     [[{ id: 'a', asi: 'tested', save: 'menu', run: { menuMemory: { draws: 0 } } }], /draws/],
   ];
   assert.equal(parseQueue([{ id: 'a', asi: 'tested', save: 'menu', content: 'no-cc', run: { menuMemory: {} } }])[0].content, 'no-cc');
@@ -331,6 +370,8 @@ if (values['self-check']) {
   assert.equal(mergeIni(toml, tomlSet({ 'patches.LotStreamingOptimizations.enabled': false })), '[patches.Mimalloc]\nenabled = true\n\n[patches.LotStreamingOptimizations]\nenabled=false\n');
   assert.equal(parseQueue([{ id: 'l', asi: 'x', save: 'S', s3ssToml: { 'patches.LotStreamingOptimizations.enabled': false }, run: { profile: { minutes: 6, repro: 'lotstream-pan' } } }])[0].run.profile!.repro, 'lotstream-pan');
   assert.equal(parseQueue([{ id: 'm', asi: 'x', save: 'S', run: { profile: { minutes: 6, mainstack: 'main' } } }])[0].run.profile!.mainstack, 'main');
+  assert.equal(parseQueue([{ id: 't', asi: 'x', save: 'S', run: { profile: { minutes: 6, travel: 'university' } } }])[0].run.profile!.travel, 'university');
+  assert.throws(() => parseQueue([{ id: 't', asi: 'x', save: 'S', run: { profile: { minutes: 6, travel: 'Moon' } } }]), /travel/);
 
   const c = { version: 14, enabled: 0, calls: 5, allocHitsK: 10, allocMode: 1, heightHits: 3, flushJobs: 2, workerCalls: 9, lotAdds: 4, pumpMaxUs: 9, lsMode: 1, lotsX: 1 };
   assert.deepEqual(pickCounters(c, ['LotStream']), { version: 14, lotAdds: 4, pumpMaxUs: 9, lsMode: 1 });
@@ -353,6 +394,8 @@ if (values['self-check']) {
   const rids = new Set((JSON.parse(readFileSync(H('repros.json'), 'utf8')) as { id: string }[]).map(r => r.id));
   assert.ok(vq.every(j => j.minCounters === 22 && j.ini?.['Verify.Enabled'] === 1 && j.run.profile?.mainstack === 'main' && rids.has(j.run.profile!.repro!) && (j.timeoutMin ?? 60) <= 25));
   assert.deepEqual(vq.map(j => j.save), ['Baseline-BP', 'Baseline-IP']);
+  // the rare-scenario queues (docs/117) parse and point at existing repros
+  for (const q of ['rare-scenarios', 'rare-scenarios-2']) assert.ok(parseQueue(JSON.parse(readFileSync(H(`queues/${q}.json`), 'utf8'))).every(j => !j.run.profile?.repro || rids.has(j.run.profile.repro)), q);
   assert.deepEqual(delta({ a: 1, b: 2, s: 'x' }, { a: 4, b: 2, s: 'y' }), { a: 3 });
 
   const repro = '12:00:01 bp-route-async: route\n  fix under test: async plan\n12:00:02 step patches {}: ok\n12:10:00 stuck: none\n12:10:01 bp-route-async: PASS (expected: no stuck)';
@@ -360,6 +403,32 @@ if (values['self-check']) {
   assert.deepEqual(verdicts('12:00:00 FAIL: game died at 11:59:00 (TS3W.exe process gone)\nlast crash report'), ['FAIL: game died at 11:59:00 (TS3W.exe process gone)']);
   const matrix = '12:00:00 == control: x\n12:01:00 control: PASS\n12:02:00 identical: FAIL\n    type 0x1: differs\n12:03:00 summary: 2 cases, 1 passed, 1 failed (identical)\n12:03:00 results: a, b';
   assert.deepEqual(verdicts(matrix), ['control: PASS', 'identical: FAIL', 'summary: 2 cases, 1 passed, 1 failed (identical)']);
+  assert.deepEqual(silentFail(1, matrix, false), verdicts(matrix));
+  assert.deepEqual(silentFail(0, 'ok', false), []);
+  assert.deepEqual(silentFail(1, '12:00:00 trip status: loaded true\n', false), ['FAIL: exit 1 with no verdict line (child stopped from outside or died before its summary); last output: 12:00:00 trip status: loaded true']);
+  // profile-world.ts failed repro step: the reason reaches the job verdict (2026-10-19 bp-ab-wildflowertask)
+  const reproFail = '12:00:00 repro wildflower-drain step wildflower_drain: {"id":29,"error":"Wildflower drain members not found","ok":false}\n12:00:00 FAIL: repro step wildflower_drain failed: Wildflower drain members not found\n12:00:01 cleanup wildflower_drain: ok\n';
+  assert.deepEqual(silentFail(1, reproFail, false), ['FAIL: repro step wildflower_drain failed: Wildflower drain members not found']);
+
+  // child killed from outside (signal, or non-zero with no verdict line): reason logged, game closed; own FAIL line: left alone
+  {
+    let closes = 0; const logged: string[] = [];
+    const close = async () => { closes++; }, lg = (s: string) => logged.push(s);
+    assert.equal(await childLost('profile-world', { code: null, signal: 'SIGTERM', out: '12:00:00 profiler attached\n' }, close, lg), 'child profile-world exited (signal SIGTERM) without a result');
+    assert.equal(await childLost('profile-world', { code: 1, signal: null, out: '' }, close, lg), 'child profile-world exited (code 1) without a result');
+    assert.equal(closes, 2);
+    assert.match(logged[0], /^child profile-world exited \(signal SIGTERM\) without a result; closing the game$/);
+    assert.equal(await childLost('profile-world', { code: 1, signal: null, out: reproFail }, close, lg), '');
+    assert.equal(await childLost('profile-world', { code: 0, signal: null, out: '' }, close, lg), '');
+    assert.equal(closes, 2);
+    // restore EBUSY: close, retry; still busy: log and go on
+    let tries = 0;
+    const busyOnce = () => { if (tries++ === 0) throw Object.assign(new Error("EBUSY: resource busy or locked, copyfile 'a' -> 'ts3native.asi'"), { code: 'EBUSY' }); };
+    assert.equal(await copyRetry(busyOnce, 'restore ts3native.asi', close, lg), true);
+    assert.equal(closes, 3);
+    assert.equal(await copyRetry(() => { throw new Error('EBUSY'); }, 'restore ts3native.asi', close, lg), false);
+    assert.match(logged.at(-1)!, /failed again: Error: EBUSY; continuing$/);
+  }
 
   assert.deepEqual(parseUsage('5h 45% (reset 12:00 PHT) | 7d 81% (reset 09:00 PHT) | read 3 min ago'), { h5: 45, d7: 81 });
   assert.deepEqual(parseUsage('5h - | 7d 12% | read 1 min ago'), { h5: null, d7: 12 });
@@ -462,6 +531,14 @@ if (values.only) {
 }
 const REPROS = JSON.parse(readFileSync(H('repros.json'), 'utf8')) as { id: string; save: string }[];
 const asiPath = (j: Job) => (j.asi === 'tested' ? TESTED_ASI : resolve(ROOT, j.asi));
+// "tested" must be the source's version: a stale out/ build (0.10.1, async without the route gate) ran as "tested" for 3 days
+// and crashed bp-watch-stalk-worker (docs/113 §8.6). The DLL holds the log line format "ts3native <version> %04d".
+const SRC_VERSION = /#define TS3NATIVE_VERSION "([^"]+)"/.exec(readFileSync(join(ROOT, 'native', 'ts3native', 'ts3native.cpp'), 'utf8'))?.[1];
+const staleAsi = (j: Job) => {
+  if (j.asi !== 'tested' || !existsSync(TESTED_ASI)) return '';
+  const v = /ts3native (\d+\.\d+\.\d+) %04d/.exec(readFileSync(TESTED_ASI).toString('latin1'))?.[1];
+  return v === SRC_VERSION ? '' : `tested build is ts3native ${v ?? '?'}, source is ${SRC_VERSION}: rebuild with native/ts3native/build.cmd`;
+};
 const saveOf = (j: Job) => j.save ?? (j.run.menuMemory ? 'menu' : REPROS.find(r => r.id === j.run.repro)?.save);
 const saveFile = (s: string) => (/\.sims3$/i.test(s) ? s : `${s}.sims3`);
 const ageName = (j: Job) => j.run.age?.save ?? `${j.id}-${new Date().toISOString().slice(0, 10)}`;
@@ -471,7 +548,7 @@ const runArgs = (j: Job): string[] | null =>
     : j.run.profile ? [H('profile-world.ts'), '--tag', profileTag(j), '--minutes', String(j.run.profile.minutes), ...(j.run.profile.seed !== undefined ? ['--seed', String(j.run.profile.seed)] : []),
       ...(j.run.profile.repro ? ['--repro', j.run.profile.repro] : []), ...(j.run.profile.mainstack ? ['--mainstack', String(j.run.profile.mainstack)] : []),
       ...(j.run.profile.ab ? ['--ab', j.run.profile.ab, '--slice', String(j.run.profile.slice ?? 2)] : []), ...(j.run.profile.taskstall ? ['--taskstall', String(j.run.profile.taskstall)] : []),
-      ...(j.run.profile.inroom ? ['--inroom'] : [])]
+      ...(j.run.profile.inroom ? ['--inroom'] : []), ...(j.run.profile.watchstalk ? ['--watchstalk'] : []), ...(j.run.profile.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(j.run.profile.livereads2 ? ['--livereads2'] : []), ...(j.run.profile.f4b ? ['--f4b'] : []), ...(j.run.profile.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) ? ['--no-prof'] : []), ...(j.run.profile.travel ? ['--travel', j.run.profile.travel] : [])]
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
 const SAVES = join(USER, 'Saves');
@@ -485,6 +562,15 @@ for (const j of jobs) {
   if (!saveOf(j)) { console.error(`${j.id}: no save`); process.exit(2); }
 }
 
+// Keyboard/chassis RGB off while the queue runs (night runs in a dark room): Alienware Command Center turns the lights back
+// on, so alienfx-cli (AlienFX Tools, if installed) sets them to black every minute. TS3_LIGHTS=on skips it.
+const AFX = join(process.env.LOCALAPPDATA ?? '', 'AlienFX Tools', 'alienfx-cli.exe');
+if (!values['dry-run'] && process.env.TS3_LIGHTS !== 'on' && existsSync(AFX)) {
+  const lightsOff = () => { try { execFileSync(AFX, ['setall=0,0,0'], { stdio: 'ignore', timeout: 15000, windowsHide: true }); } catch { /* next tick retries */ } };
+  lightsOff();
+  setInterval(lightsOff, 60000).unref();
+}
+
 if (values['dry-run']) {
   console.log(`queue ${queueName}: ${jobs.length} of ${all.length} jobs (dry run, nothing touched)`);
   if (stale) console.log(`** a real run would refuse to start: ${stale}`);
@@ -496,7 +582,7 @@ if (values['dry-run']) {
       console.log(`  0 content ${j.content}: game closed, manifest, move ${n} packages now in Mods (${CONTENT[j.content!].join(' + ')} sets) to ${CONTENT_STASH}; cache-clear; back + cache-clear after the job`);
     }
     console.log(`  1 node tools/harness/cycle.ts --restart`);
-    console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'} -> Bin/ts3native.asi`);
+    console.log(`  2 asi ${j.asi === 'tested' ? 'tested build' : j.asi}${existsSync(a) ? '' : '  ** MISSING: the job refuses before touching the game **'}${staleAsi(j) ? `  ** STALE: ${staleAsi(j)}; the job refuses **` : ''} -> Bin/ts3native.asi`);
     console.log(`  3 Bin/ts3native.ini = repo ini${Object.keys(j.ini ?? {}).length ? ` + ${Object.entries(j.ini!).map(([k, v]) => `${k}=${v}`).join(', ')}` : ' (unchanged)'}`);
     if (j.defaultIni) console.log(`  3 Bin/Default.ini + ${Object.entries(j.defaultIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
     if (j.s3ppIni) console.log(`  3 Bin/Sims3Performance.ini + ${Object.entries(j.s3ppIni).map(([k, v]) => `${k}=${v}`).join(', ')}   (put back after the job)`);
@@ -524,7 +610,7 @@ const killTree = (pid?: number) => { if (pid) try { execFileSync('taskkill', ['/
 // set while a job's game runs: '' when the game and the probe server are up, else why not; stall = the guard's verdict
 let jobGuard: (() => string) | null = null, stall = '';
 // child process with output to the console and the job log; killed (whole tree) at the deadline
-function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; out: string; timedOut: boolean }> {
+function run(cmd: string, args: string[], logFile: string, deadline: number, onLine?: (l: string) => void): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean }> {
   return new Promise(res => {
     const p = spawn(cmd, args, { cwd: ROOT }), f = createWriteStream(logFile, { flags: 'a' });
     let out = '', timedOut = false, part = '';
@@ -544,7 +630,7 @@ function run(cmd: string, args: string[], logFile: string, deadline: number, onL
       if (misses >= 2) { stall ||= `${why} for ~${2 * GUARD_MS / 1000} s (fail-fast guard)`; on(Buffer.from(`FAIL: ${stall}; child stopped\n`)); killTree(p.pid); }
     }, GUARD_MS);
     p.on('error', e => on(Buffer.from(`spawn failed: ${e}\n`)));
-    p.on('close', code => { clearTimeout(t); if (g) clearInterval(g); f.end(); res({ code, out, timedOut }); });
+    p.on('close', (code, signal) => { clearTimeout(t); if (g) clearInterval(g); f.end(); res({ code, signal, out, timedOut }); });
   });
 }
 const node = (args: string[], logFile: string, deadline: number, onLine?: (l: string) => void) => run(process.execPath, args, logFile, deadline, onLine);
@@ -554,6 +640,7 @@ async function closeGame(probePid?: number) {
   killTree(probePid);
   if (gameRunning()) try { execFileSync('taskkill', ['/F', '/IM', 'TS3W.exe'], { stdio: 'ignore' }); } catch { /* gone */ }
   for (let i = 0; i < 60 && gameRunning(); i++) await sleep(1000);
+  if (gameRunning()) log('closeGame: TS3W.exe still running after 60 s');
 }
 const triage = () => {
   try { return execFileSync(process.execPath, [H('crash-ledger.ts'), 'triage']).toString().trim().split(/\n\s*\n/).at(-1) ?? ''; }
@@ -600,6 +687,7 @@ for (const [n, j] of jobs.entries()) {
   let probe: ReturnType<typeof spawn> | undefined, applied = { install: [] as string[], uninstall: [] as string[] }, launched = false, defaultIniOrig: string | null = null, s3ppIniOrig: string | null = null, s3ssTomlOrig: string | null = null, stashed = false;
   try {
     if (!existsSync(asiPath(j))) throw new Error(`asi missing: ${j.asi} (refused before touching the game)`);
+    if (staleAsi(j)) console.log(`${stamp()} queue: WARN ${staleAsi(j)} (the tested build is pinned on purpose; rebuild out/ to move it)`);
     if (!values['dry-run']) await ensureSteam();
     if (CONTENT[row.content].length) {
       await closeGame(); // files must not be open when they move
@@ -696,8 +784,10 @@ for (const [n, j] of jobs.entries()) {
       row.verdict = [`${r.code === 0 && final ? 'PASS' : 'FAIL'}: age ${j.run.age.days} days${final ? '' : ', no final save'}: ${summarize(row.checkpoints)}`];
     } else if (args) {
       const r = await node(args, logFile, deadline);
-      Object.assign(row, { exitCode: r.code, verdict: verdicts(r.out), timedOut: r.timedOut });
-      if (j.run.profile) row.verdict = [`${r.code === 0 ? 'PASS' : 'FAIL'}: profile ${j.run.profile.minutes} min, ${j.run.profile.seed !== undefined ? `seed ${j.run.profile.seed}` : 'unseeded'} (rng-compare.ts)`];
+      Object.assign(row, { exitCode: r.code, verdict: silentFail(r.code, r.out, r.timedOut), timedOut: r.timedOut });
+      const lost = r.timedOut || stall ? '' : await childLost(basename(args[0], '.ts'), r, () => closeGame(probe?.pid), s => log(`${j.id}: ${s}`));
+      if (lost) row.error = lost;
+      if (j.run.profile) row.verdict = [`${r.code === 0 ? 'PASS' : 'FAIL'}: profile ${j.run.profile.minutes} min, ${j.run.profile.seed !== undefined ? `seed ${j.run.profile.seed}` : 'unseeded'} (rng-compare.ts)`, ...(r.code === 0 ? [] : silentFail(r.code, r.out, r.timedOut))]; // keeps the child's FAIL reason, e.g. a failed repro step
     } else if (j.run.soak) {
       await agent('autopilot', { enabled: true, speed: j.run.soak.speed ?? 'ultra', dialogs: true });
       const wd = await node([H('watchdog.ts'), '--every', '1', '--port', values.port!], logFile, Math.min(deadline, Date.now() + j.run.soak.minutes * 60000));
@@ -738,6 +828,9 @@ for (const [n, j] of jobs.entries()) {
   await closeGame(probe?.pid);
   // the game rewrites Bin/ts3native.log at every start: keep this job's copy (travel save lines, hook OK lines)
   if (launched && existsSync(LOG)) try { copyFileSync(LOG, row.nativeLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-ts3native.log`)); } catch (e) { log(`${j.id}: copy ts3native.log: ${e}`); }
+  // P4 shadow records (RouteSnap Mode=1, docs/94 §13): rewritten at every start too (row.shadowLog; shadow-compare-report.ts)
+  const SHADOW = join(BIN, 'ts3native-shadow.jsonl');
+  if (launched && existsSync(SHADOW)) try { copyFileSync(SHADOW, row.shadowLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-shadow.jsonl`)); } catch (e) { log(`${j.id}: copy ts3native-shadow.jsonl: ${e}`); }
   if (defaultIniOrig !== null) try { writeFileSync(DEFAULT_INI, defaultIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Default.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ppIniOrig !== null) try { writeFileSync(S3PP_INI, s3ppIniOrig); } catch (e) { stopWhy ||= `could not put back Bin/Sims3Performance.ini (${e}; copy in probe-out/queue/bin-before)`; }
   if (s3ssTomlOrig !== null) try { writeFileSync(S3SS_TOML, s3ssTomlOrig); } catch (e) { stopWhy ||= `could not put back S3SS/S3SS.toml (${e}; copy in probe-out/queue/bin-before)`; }
@@ -787,11 +880,12 @@ for (const [n, j] of jobs.entries()) {
 }
 
 // put back the tested build and the ini found at the start (game is closed after every job)
-try {
-  copyFileSync(existsSync(TESTED_ASI) ? TESTED_ASI : join(BEFORE, 'ts3native.asi'), join(BIN, 'ts3native.asi'));
-  if (existsSync(join(BEFORE, 'ts3native.ini'))) copyFileSync(join(BEFORE, 'ts3native.ini'), join(BIN, 'ts3native.ini'));
-  log(`restored: Bin/ts3native.asi = ${existsSync(TESTED_ASI) ? 'tested build' : 'copy from the start'}, ini from the start`);
-} catch (e) { log(`restore failed: ${e} (copies in ${BEFORE})`); exitCode = 1; }
+{
+  const asiOk = await copyRetry(() => copyFileSync(existsSync(TESTED_ASI) ? TESTED_ASI : join(BEFORE, 'ts3native.asi'), join(BIN, 'ts3native.asi')), 'restore Bin/ts3native.asi', () => closeGame(), log);
+  const iniOk = !existsSync(join(BEFORE, 'ts3native.ini')) || await copyRetry(() => copyFileSync(join(BEFORE, 'ts3native.ini'), join(BIN, 'ts3native.ini')), 'restore Bin/ts3native.ini', () => closeGame(), log);
+  if (asiOk && iniOk) log(`restored: Bin/ts3native.asi = ${existsSync(TESTED_ASI) ? 'tested build' : 'copy from the start'}, ini from the start`);
+  else { log(`restore failed (copies in ${BEFORE})`); exitCode = 1; }
+}
 if (stopWhy) appendFileSync(md, `\nStopped: ${stopWhy}.\n`);
 log(`results: ${jsonl}, ${md}`);
 process.exit(exitCode);

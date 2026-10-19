@@ -161,3 +161,17 @@ Rows I-110-1 to I-110-6 in docs/51 §46.
 - **Offline checks [verified]:** `tools/selftest/hotspots` (`WildflowerModel`: on 5,000 stub fires the hook's loop runs the same tries, gives the same result and the same counter deltas as the game's loop; [97] rules); managed call graph closure of `OnGrowWildflowersOnLot` and `PlaceObjectOnLot` (depth 3): the only yield site is `Simulator.Sleep` in the `Yield` branch; the only static writes are the drain statics in `ClearSpringSpawnAlarm` and `Lot.sRandomLevels`, a lazily built constant list inside `GetRandomPosition` (no write between tries); no event raise.
 - **Repro and jobs (§7.5):** agent `wildflower_drain {lots, every_min, clear, stop}` (in `ReproHandlers.cs`) refills the drain list with community lots (own seed, the game's RNG untouched) and fires the game's handler from a `NeverPersisted` alarm; `clear` removes uncollected wildflowers lying in the world before each fire so the 20-flower cap does not stop the drain. Repros `wildflower-probe` (probe on for the whole load), `wildflower-drain` (A/B) and `wildflower-save-abort` in `tools/harness/repros.json`; queue `tools/harness/queues/wildflower.json` (probe first-minute BP and IP with `--taskstall 250`, then `bp-ab-wildflowertask`).
 - **Open:** every live check of §7.5; whether `wildflower-probe`'s switch is set before the save's first fire (it is set right after the window start; docs/96 put the first BP fire 6-8 s after the first profiler row, so it should be [inferred]; `wildflower_fires` below the stall count in the probe job means a fire came earlier).
+
+## 12. Measure-mode result 2026-10-18 (`bp-firstmin-wildflowerprobe` rerun, 20:03 PHT, PASS)
+
+`wildflowerprobe` on for the whole window, BP Spring save, seed 12345, 5 min (counts only; machine load not checked for timing). Full per-fire log from `probe-out/profile/<tag>-repro.jsonl` (the first run lost it to the 200-character log cut, fixed in `profile-world.ts`).
+
+| Counter | Value |
+|---|---|
+| fires | 12 |
+| tries | 70 |
+| placed | 9 |
+| failed (all 20 tries, flower destroyed) | 3 |
+| longest fire | 1,025 ms |
+
+Per fire: the 9 placed fires took 1-2 tries and 0-36 ms. **The 3 slow fires are exactly the 20-failing-tries case**: 20 tries each, 551, 565 and 1,025 ms in total, longest single try 32, 35 and 65 ms [verified live]. So the docs/110 §5 reading holds and **W1 applies**: as a yielding task each slow fire becomes 20 slices of at most ~65 ms instead of one 0.55-1 s stall. W3 (bounded radius) is not needed. Next: the clean-night `bp-ab-wildflowertask` A/B on the `wildflower-drain` repro (docs/110 §7.5).

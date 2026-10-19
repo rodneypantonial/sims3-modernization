@@ -1,7 +1,10 @@
 // Read-only decoder for the world waypoint graph R ("RTData", DBPF resource type 0x05CD4BB3) in a .world package.
 // Layout and rules: docs/99. Prints stats; the game copy is never written.
-// Usage: node tools/rtdata-decode.ts <file.world> [--survey] [--checksum] [--chunk N]   |   node tools/rtdata-decode.ts --self-check
-import { readFileSync } from 'node:fs';
+// --blend0 also decodes world-builder blend layer 0 (type 0x05DA8AF6), the layer World_IsPointRoutableTerrain 0xC6BAB0
+// tests (docs/107 §10).
+// Usage: node tools/rtdata-decode.ts <file.world> [--survey] [--checksum] [--chunk N] [--blend0] [--dump nodes|edges] [--mem-image <out>]
+//        node tools/rtdata-decode.ts --self-check
+import { readFileSync, writeFileSync } from 'node:fs';
 import { readIndex, refpack } from './extract-assemblies.ts';
 
 export const TYPE_RTDATA = 0x05cd4bb3;
@@ -168,12 +171,97 @@ export function rtChecksum(d: RTData, keep = 0x7f): { sum: number; wps: number; 
   return { sum: h >>> 0, wps, blocked };
 }
 
-export function loadFromPackage(path: string): Buffer {
+// The loader's in-memory form (= a version-2 resource body after the 12-byte header): u32 offset per chunk relative to the
+// record area, then per chunk u16 count + u16 record offsets + 5-byte-head records. Surface byte: the stored one, else the
+// 0x66CB90 rule for the fixed types and 0 for the rest (shortcut: the loader samples terrain there; no cost mode reads it).
+export function memoryImage(d: RTData): { offsets: Buffer; raw: Buffer } {
+  const offsets = Buffer.alloc(4 * d.chunks.length), parts: Buffer[] = [];
+  let at = 0;
+  d.chunks.forEach((ch, c) => {
+    const recs = ch.map(wp => Buffer.from([wp.edges, wp.flags, wp.surface ?? FIXED_SURFACE[wp.type] ?? 0, wp.bx, wp.bz,
+      ...wp.refs.flatMap(r => [r & 0xff, r >> 8]), ...(wp.edgeBytes ? wp.edgeByte : [])]));
+    const head = Buffer.alloc(2 + 2 * ch.length); head.writeUInt16LE(ch.length, 0);
+    let o = head.length; recs.forEach((r, i) => { head.writeUInt16LE(o, 2 + 2 * i); o += r.length; });
+    offsets.writeUInt32LE(at, 4 * c); at += o;
+    parts.push(head, ...recs);
+  });
+  return { offsets, raw: Buffer.concat(parts) };
+}
+
+// World position of a waypoint in the cost functions' frame (docs/99 §10.1: no world origin, chunk x = c mod w, z = c div w).
+export const wpPos = (d: RTData, c: number, wp: Waypoint) => [(c % d.w) * CHUNK + wp.bx * POS, Math.floor(c / d.w) * CHUNK + wp.bz * POS];
+
+// CSV dumps of R for offline work (docs/99 §11): one row per waypoint or per directed edge, record order kept.
+export function dumpRows(d: RTData, what: 'nodes' | 'edges'): string[] {
+  const rows = [what === 'nodes' ? 'chunk,wp,type,flags,blocked,x,z,edges,firstRef'
+    : 'chunk,wp,k,toChunk,toWp,edgeByte,fromType,toType,length'];
+  d.chunks.forEach((ch, c) => ch.forEach((wp, i) => {
+    const [x, z] = wpPos(d, c, wp);
+    if (what === 'nodes') { rows.push(`${c},${i},${wp.type},${wp.flags},${wp.blocked ? 1 : 0},${x},${z},${wp.edges},${wp.refs[0] ?? ''}`); return; }
+    wp.refs.forEach((r, k) => {
+      const t = decodeRef(r, c, d.w), q = d.chunks[t.chunk]?.[t.wp];
+      const [qx, qz] = q ? wpPos(d, t.chunk, q) : [NaN, NaN];
+      rows.push(`${c},${i},${k},${t.chunk},${t.wp},${wp.edgeByte[k]},${wp.type},${q?.type ?? ''},${Math.hypot(qx - x, qz - z).toFixed(4)}`);
+    });
+  }));
+  return rows;
+}
+
+export function loadFromPackage(path: string, type = TYPE_RTDATA): Buffer {
   const pkg = readFileSync(path);
-  const e = readIndex(pkg).find(x => x.type === TYPE_RTDATA);
-  if (!e) throw new Error('no resource 0x05CD4BB3 in ' + path);
+  const e = readIndex(pkg).find(x => x.type === type);
+  if (!e) throw new Error(`no resource 0x${type.toString(16).toUpperCase().padStart(8, '0')} in ${path}`);
   const body = pkg.subarray(e.offset, e.offset + e.fileSize);
   return e.compressed === 0xffff ? refpack(body) : Buffer.from(body);
+}
+
+// World-builder blend layer 0 (type 0x05DA8AF6, instance 1), as the loader 0xC29CE0 -> 0xC23CB0 -> 0xC21C70 reads it:
+// u32 magic (low half = version, high half 0xA5FF), u32 w, u32 h (1 m cells), version >= 0x300: u32 record w, u32 record h,
+// u32 present, u32 data size, u32 record count, u8 layer index, then records {u8 block hi, u8 block lo, u8 kind,
+// kind 1: u8 value for the whole 16x16 block | kind 0: 256 bytes row by row}. Blocks not listed stay 0. Weight = byte / 255.
+export const TYPE_BLEND0 = 0x05da8af6;
+export type BlendLayer = { version: number; w: number; h: number; bx: number; bz: number; layer: number; blocks: (number | Buffer)[]; uniform: number; raw: number };
+export function parseBlendLayer(b: Buffer): BlendLayer {
+  const magic = b.readUInt32LE(0);
+  if (magic >>> 16 !== 0xa5ff) throw new Error('bad blend map magic 0x' + magic.toString(16));
+  const version = magic & 0xffff, w = b.readUInt32LE(4), h = b.readUInt32LE(8);
+  const bx = ((w - 1) >>> 4) + 1, bz = ((h - 1) >>> 4) + 1;
+  const blocks: (number | Buffer)[] = new Array(bx * bz).fill(0);
+  const out = { version, w, h, bx, bz, layer: 0, blocks, uniform: 0, raw: 0 };
+  if (version < 0x200) return out; // the loader returns an empty layer
+  // shortcut: only 16x16 records (all shipped data seen so far); the game also takes larger square records, decode them when a world has one
+  if (version < 0x300 || b.readUInt32LE(12) !== 16 || b.readUInt32LE(16) !== 16) throw new Error('blend layer records other than 16x16 are not decoded');
+  if (b.readUInt32LE(20) === 0) return out;
+  const count = b.readUInt32LE(28);
+  out.layer = b[32];
+  let p = 33;
+  for (let i = 0; i < count; i++) {
+    const idx = (b[p] << 8) | b[p + 1], kind = b[p + 2]; p += 3;
+    if (idx >= blocks.length || kind > 1) break; // the loader stops reading here too
+    if (kind === 1) { blocks[idx] = b[p++]; out.uniform++; } else { blocks[idx] = b.subarray(p, p + 256); p += 256; out.raw++; }
+  }
+  return out;
+}
+// Byte at a 1 m cell, as TerrainBlendMap_GetLayerWeight 0xC22050 -> 0xC21AE0 reads it; -1 outside the map.
+export function blendByte(m: BlendLayer, x: number, z: number): number {
+  if (x < 0 || z < 0 || x >= m.w || z >= m.h) return -1;
+  const v = m.blocks[(z >>> 4) * m.bx + (x >>> 4)];
+  return typeof v === 'number' ? v : v[(x & 15) + (z & 15) * 16];
+}
+// Cells with weight >= 0.5 (byte >= 128): the off-lot cells 0xC6BAB0 rejects. Also counts R waypoints that stand on one.
+export function blendStats(m: BlendLayer, r?: RTData) {
+  let hi = 0, any = 0, x0 = Infinity, z0 = Infinity, x1 = -1, z1 = -1;
+  for (let z = 0; z < m.h; z++) for (let x = 0; x < m.w; x++) {
+    const v = blendByte(m, x, z);
+    if (v > 0) any++;
+    if (v >= 128) { hi++; x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z); }
+  }
+  let wps = 0, onHi = 0;
+  if (r) r.chunks.forEach((ch, c) => ch.forEach(wp => {
+    wps++;
+    if (blendByte(m, Math.floor((c % r.w) * CHUNK + wp.bx * POS), Math.floor(Math.floor(c / r.w) * CHUNK + wp.bz * POS)) >= 128) onHi++;
+  }));
+  return { cells: m.w * m.h, any, hi, box: hi ? [x0, z0, x1, z1] : null, wps, onHi };
 }
 
 function hist(m: Map<number, number>) {
@@ -209,6 +297,10 @@ function selfCheck() {
     console.assert(pairs(d).get('4:1-2') === 1 && pairs(d).get('3:2-1') === 1, 'pair cross-tab');
     const cs = rtChecksum(d); // the same constants are asserted for PvRSum in native/ts3native/selftest.cpp
     console.assert(cs.sum === 0xe6f9d31a && rtChecksum(d, 0x60).sum === 0x1750a4d1 && cs.wps === 3 && cs.blocked === 1, 'checksum v' + v);
+    const im = memoryImage(d), h2 = Buffer.alloc(12); h2.writeUInt32LE(2, 0); h2.writeUInt32LE(d.w, 4); h2.writeUInt32LE(d.h, 8);
+    const d2 = parse(Buffer.concat([h2, im.offsets, im.raw])), strip = (x: RTData) => JSON.stringify(x.chunks.map(ch => ch.map(w => ({ ...w, surface: 0 }))));
+    console.assert(strip(d2) === strip(d) && im.raw.length === s.memory && d2.chunks[0][0].surface === 0x28, 'memory image round trip v' + v);
+    console.assert(dumpRows(d, 'nodes').length === 4 && dumpRows(d, 'edges').length === 3 && dumpRows(d, 'edges')[1] === `0,0,0,1,0,4,1,2,${Math.hypot(56, 29.875).toFixed(4)}`, 'dumps v' + v);
   }
   // A 4-waypoint type-0xE ring (edge byte 6) in one version-2 chunk: one closed loop.
   const ring = [0, 1, 2, 3].map(k => {
@@ -222,6 +314,13 @@ function selfCheck() {
   const lp = typeLoops(rd, 0xe);
   console.assert(lp.groups === 1 && lp.closed === 1 && lp.sizes[0] === 4, 'type 0xE ring');
   console.assert(surfaceCheck(rd)?.other.get(0) === 4, 'surface check');
+  // Blend layer: 32x16 m map = 2 blocks; block 0 uniform 0xFF, block 1 raw with one byte 0x80 at (17, 3).
+  const bh = Buffer.alloc(33); bh.writeUInt32LE(0xa5ff0300, 0); bh.writeUInt32LE(32, 4); bh.writeUInt32LE(16, 8);
+  bh.writeUInt32LE(16, 12); bh.writeUInt32LE(16, 16); bh.writeUInt32LE(1, 20); bh.writeUInt32LE(2, 28);
+  const rawBlock = Buffer.alloc(256); rawBlock[1 + 3 * 16] = 0x80;
+  const bl = parseBlendLayer(Buffer.concat([bh, Buffer.from([0, 0, 1, 0xff, 0, 1, 0]), rawBlock]));
+  console.assert(bl.uniform === 1 && bl.raw === 1 && blendByte(bl, 5, 5) === 255 && blendByte(bl, 17, 3) === 0x80 && blendByte(bl, 18, 3) === 0 && blendByte(bl, 32, 0) === -1, 'blend layer decode');
+  console.assert(blendStats(bl).hi === 257, 'blend layer >= 0.5 count');
   console.log('rtdata-decode self-check done');
 }
 
@@ -231,11 +330,12 @@ if (process.argv[1]?.endsWith('rtdata-decode.ts')) {
   else {
     const d = parse(loadFromPackage(args[0]));
     const s = stats(d);
-    console.log(`version ${d.version}, ${d.w}x${d.h} chunks of ${CHUNK} m (${d.w * CHUNK} x ${d.h * CHUNK} m)`);
-    console.log(`waypoints ${s.wps}, directed edges ${s.edges}, max per chunk ${s.maxPerChunk}, blocked ${s.blocked}, flag 0x20 set ${s.unknownBit}, without edge bytes ${s.noEdgeBytes}`);
-    console.log(`refs out of range ${s.bad}, one-way edges ${s.oneWay}, components ${s.components}, in-memory size ${s.memory} bytes`);
-    console.log('waypoint types', hist(s.types));
-    console.log('edge bytes', hist(s.bytes));
+    const say = args.includes('--dump') ? console.error : console.log; // keep stdout pure CSV for --dump
+    say(`version ${d.version}, ${d.w}x${d.h} chunks of ${CHUNK} m (${d.w * CHUNK} x ${d.h * CHUNK} m)`);
+    say(`waypoints ${s.wps}, directed edges ${s.edges}, max per chunk ${s.maxPerChunk}, blocked ${s.blocked}, flag 0x20 set ${s.unknownBit}, without edge bytes ${s.noEdgeBytes}`);
+    say(`refs out of range ${s.bad}, one-way edges ${s.oneWay}, components ${s.components}, in-memory size ${s.memory} bytes`);
+    say('waypoint types', hist(s.types));
+    say('edge bytes', hist(s.bytes));
     if (args.includes('--survey')) {
       console.log('pairs', [...pairs(d)].sort().map(([k, v]) => `${k}=${v}`).join(' '));
       for (const t of [0xe, 0x11]) {
@@ -248,6 +348,19 @@ if (process.argv[1]?.endsWith('rtdata-decode.ts')) {
     if (args.includes('--checksum')) { // compare with pvR / the "values world ... R sum A / B" log line of [ProbeValues]
       const a = rtChecksum(d), b = rtChecksum(d, 0x60);
       console.log(`R sum 0x${a.sum.toString(16).toUpperCase().padStart(8, '0')} / 0x${b.sum.toString(16).toUpperCase().padStart(8, '0')}, ${a.wps} waypoints, ${a.blocked} blocked`);
+    }
+    if (args.includes('--blend0')) {
+      const m = parseBlendLayer(loadFromPackage(args[0], TYPE_BLEND0)), bs = blendStats(m, d);
+      console.log(`blend layer ${m.layer}: version 0x${m.version.toString(16)}, ${m.w}x${m.h} m, ${m.uniform} uniform and ${m.raw} raw blocks of ${m.bx * m.bz}`);
+      console.log(`cells > 0: ${bs.any} (${(100 * bs.any / bs.cells).toFixed(2)} %), weight >= 0.5: ${bs.hi} (${(100 * bs.hi / bs.cells).toFixed(2)} %), box ${bs.box?.join(',') ?? 'none'}`);
+      console.log(`R waypoints on weight >= 0.5 cells: ${bs.onHi} of ${bs.wps} (lots not excluded: 0xC6BAB0 accepts those points when a lot is found)`);
+    }
+    const di = args.indexOf('--dump'); // CSV to stdout; redirect it outside the repo (game data)
+    if (di >= 0) for (const r of dumpRows(d, args[di + 1] === 'edges' ? 'edges' : 'nodes')) console.log(r);
+    const mi = args.indexOf('--mem-image'); // u32 w, u32 h, offset table, record area: input of tools/emu/specs/world_cost_mode1.py
+    if (mi >= 0) {
+      const im = memoryImage(d), h = Buffer.alloc(8); h.writeUInt32LE(d.w, 0); h.writeUInt32LE(d.h, 4);
+      writeFileSync(args[mi + 1], Buffer.concat([h, im.offsets, im.raw]));
     }
     const ci = args.indexOf('--chunk');
     if (ci >= 0) {

@@ -165,6 +165,7 @@ static const QlSite kQlSites[QL_N] = {
     {0x00806770, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, 1, "footprint +0x100 class 0xFEB970 (W6g)"},  // ret 8
 };
 static void* g_qlTramp[QL_N];
+static volatile LONG g_snQl[QL_N];  // [RouteSnap] site index + 1 counted from inside the W stub, 0 = none (routesnap.cpp)
 
 // Fix C-A (docs/84 §4.4, §7 #6): Footprint_EnsureLevelPolygons 0x80E5B0 (W6a, thiscall(fp)(level), ret 4) marks an invalid
 // level valid and frees its polygons before it rebuilds them through slots +0xF8/+0xFC; for these four classes the rebuild
@@ -218,6 +219,8 @@ static void __cdecl QlEnter(int i, DWORD* slot) {
     S2Time(S2T_QL, t0);
 }
 static void QlEnterBody(int i, DWORD* slot) {
+    if (g_snQl[i]) SnEnter(g_snQl[i] - 1, slot);  // P1 counters (docs/94 §5): count only, every thread
+    if (t_snapRun) return;  // P4 clone run: no QL hold, no tripwire (the copy is not game data, docs/94 §12.4.3)
     const DWORD tid = GetCurrentThreadId();
     if (RgIsWorker(tid)) {
         RgThread& t = t_rg;
@@ -292,6 +295,7 @@ static void __cdecl TwEnter(int i, DWORD* slot) {
     S2Time(S2T_TW, t0);
 }
 static void TwEnterBody(int i, DWORD* slot) {
+    if (t_snapRun) return;  // P4 clone run: pass through
     Ts3nCounters& k = ts3native_counters;
     const DWORD tid = GetCurrentThreadId();
     if (RgIsSim(tid)) {  // the writers' own thread (T-S7 by design); the clone calls none of them

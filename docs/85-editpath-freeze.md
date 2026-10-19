@@ -104,7 +104,7 @@ The counters agree with a stopped clock rather than a stuck call: the frozen job
 
 **P-clock (observe only, in the profiler and the agent):**
 
-- `stutter-profile.js`: hook `0x8A6D10` on the sim thread (called with `ecx = host+0xA64`, at `0xD81B38` and `0xD81E03`); per second record the returned paused byte and `host+0xC14` (`ecx+0x1B0`). New CSV columns `simPaused`, `stepAcc`.
+- `stutter-profile.js`: the paused byte `0x8A6D10` returns (called with `ecx = host+0xA64`, at `0xD81B38` and `0xD81E03`) is `host+0xA74`; per second record it and `host+0xC14` (`ecx+0x1B0`). New CSV columns `simPaused`, `stepAcc`. Since 2026-10-18 both are read at the existing `GC_try_to_collect` hook (called from Simulate at `0xD819AA`, `esi` = host), once per iteration: the first version hooked the call site `0xD81B38` inside Simulate, which never returns, and Frida could then never unload the profiler (every profile run 2026-10-17 21:31 to 2026-10-18 hit the 90 s fail-fast kill; `tools/probe/frida-unload-test.py`).
 - Agent command `clock_state` (read-only): `[0x11CDD48+0x40]` pause bits, `+0x64` game dt, `+0x68` speed, `+0x74` scale, `IsIconic` and foreground state of the game window, managed `GameSpeed`.
 - `ts3probe.py` window watcher: log "game window minimized" / "restored" with UTC when `IsIconic` changes (today it skips iconic windows silently).
 - `profile-world.ts` clock guard: on a trip, call `clock_state` once and write it to the run log before failing.

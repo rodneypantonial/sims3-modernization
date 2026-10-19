@@ -27,6 +27,8 @@ namespace Ts3Agent
             Dispatcher.Register("world_households", WorldHouseholds);
             Dispatcher.Register("houseboats", Houseboats);
             RegisterRepro();
+            RegisterRare();
+            RegisterRareVehicles();
             RegisterCas();
             RegisterContent();
             RegisterLabels();
@@ -524,7 +526,11 @@ namespace Ts3Agent
             string mode = a.Str("mode", "realistic").ToLowerInvariant();
             bool fixedMode = mode == "fixed", readOnly = mode == "read"; // read: report only (polling)
             List<object> changed = new List<object>();
-            if (GameUtils.IsInstalled(ProductVersion.EP8))
+            // vacation worlds (France, University...) have no SeasonsManager instance: CurrentSeason throws there
+            bool seasonsLive = GameUtils.IsInstalled(ProductVersion.EP8) && typeof(Sims3.Gameplay.Seasons.SeasonsManager)
+                .GetField("sInstance", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) != null;
+            if (GameUtils.IsInstalled(ProductVersion.EP8) && !seasonsLive) r["seasons"] = "none in this world";
+            if (seasonsLive)
             {
                 if (readOnly) { }
                 else if (fixedMode)
@@ -532,8 +538,39 @@ namespace Ts3Agent
                     string s = a.Str("season", "summer").ToLowerInvariant();
                     Season season = s == "fall" ? Season.Fall : s == "winter" ? Season.Winter : s == "spring" ? Season.Spring : Season.Summer;
                     Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestSeason(season);
-                    Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestWeather(Weather.Sunny, (float)a.Double("weather_hours", 48));
+                    // weather (Weather enum name, default sunny) with intensity (Light/Moderate/Heavy) for rain or snow:
+                    // heavy rain = thunderstorm (lightning strikes need Heavy). docs/117 rare-scenario repros.
+                    float hours = (float)a.Double("weather_hours", 48);
+                    Weather w = (Weather)Enum.Parse(typeof(Weather), a.Str("weather", "sunny"), true);
+                    PrecipitationIntensity pi = (PrecipitationIntensity)Enum.Parse(typeof(PrecipitationIntensity), a.Str("intensity", "Moderate"), true);
+                    if (w == Weather.Rain && a.Has("intensity")) Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestRainWithIntensity(pi, hours);
+                    else if (w == Weather.Snow && a.Has("intensity")) Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestSnowWithIntensity(pi, hours);
+                    else Sims3.Gameplay.Seasons.SeasonsManager.ForceRequestWeather(w, hours);
                     changed.Add("season and weather fixed");
+                    if (a.Has("temperature"))
+                    {
+                        Sims3.Gameplay.Seasons.SeasonsManager.Debug_AddFlags(Sims3.Gameplay.Seasons.SeasonsDebugFlag.TemperatureOverride);
+                        Sims3.Gameplay.Seasons.SeasonsManager.Debug_SetTemperatureOverride((float)a.Double("temperature"));
+                        changed.Add("temperature override");
+                    }
+                    else Sims3.Gameplay.Seasons.SeasonsManager.Debug_RemoveFlags(Sims3.Gameplay.Seasons.SeasonsDebugFlag.TemperatureOverride);
+                    if (a.Has("snow_level"))
+                    {
+                        Sims3.Gameplay.Seasons.SeasonsManager.Debug_SetSnowLevel((Sims3.Gameplay.Seasons.SnowLevel)Enum.Parse(typeof(Sims3.Gameplay.Seasons.SnowLevel), a.Str("snow_level"), true));
+                        changed.Add("snow level");
+                    }
+                    if (a.Bool("freeze_ponds", false))
+                    {
+                        // freeze level 100 and the end state of the game's own Liquid -> FreezingMelting -> FrozenSolid
+                        // steps (TerrainCoverManager.UpdatePondFreezing; that last step fires no event either). Routing then
+                        // sets EnablePondPlanning for human child+ Sims (SimRoutingComponent, docs/100 §1 item 6)
+                        Sims3.Gameplay.Seasons.SeasonsManager.Debug_SetPondFreezeLevel(100f);
+                        const BindingFlags kPriv = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+                        object sm = typeof(Sims3.Gameplay.Seasons.SeasonsManager).GetField("sInstance", kPriv).GetValue(null);
+                        object tcm = sm.GetType().GetField("mTerrainCoverManager", kPriv).GetValue(sm);
+                        tcm.GetType().GetField("mPondState", kPriv).SetValue(tcm, Sims3.Gameplay.Seasons.PondState.FrozenSolid);
+                        changed.Add("ponds frozen");
+                    }
                 }
                 else if (Sims3.Gameplay.Seasons.SeasonsManager.CurrentSeason == Season.Winter || Sims3.Gameplay.Seasons.SeasonsManager.IsExtremeCold())
                 {
@@ -554,6 +591,7 @@ namespace Ts3Agent
                 r["weather"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentWeather.ToString();
                 r["temperature"] = Sims3.Gameplay.Seasons.SeasonsManager.Temperature;
                 r["snow_level"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentSnowLevel.ToString();
+                r["pond_state"] = Sims3.Gameplay.Seasons.SeasonsManager.CurrentPondState.ToString();
             }
             else r["season"] = "Seasons (EP8) not installed";
             if (GameUtils.IsInstalled(ProductVersion.EP7))
@@ -576,6 +614,14 @@ namespace Ts3Agent
                 r["days_to_full_moon"] = World.GetNumDaysUntilFullMoon();
             }
             else r["moon_phase"] = "Supernatural (EP7) not installed";
+            if (!readOnly && a.Has("hour"))
+            {
+                // jump the clock forward to the hour (Sims3.Gameplay.Utilities.SimClock.AddOneHour, as the debug clock cheat); at most a day
+                int hour = (int)a.Long("hour");
+                for (int i = 0; i < 24 && Sims3.Gameplay.Utilities.SimClock.Hours24 != hour; i++) Sims3.Gameplay.Utilities.SimClock.AddOneHour();
+                changed.Add("clock -> " + hour + ":00");
+            }
+            r["hour"] = Sims3.Gameplay.Utilities.SimClock.Hours24;
             r["changed"] = changed;
             return r;
         }

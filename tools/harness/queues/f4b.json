@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    {
+      "id": "bp-f4b-inlot",
+      "note": "docs/99 §12.6 / §12.7, docs/51 §60 and §64: F-4b live read, read-only Frida (tools/frida/f4b-reads.js), no native change. CopyNodes 0x819E10 node y / +0x20 / path+0x8C vs the 2D sum (item 1), path slot +0x100 0x821E90 prepends (item 2), agent y vs World_GetTerrainHeightImpl 0x786200 at the follower's prepend (item 3). Repro f4b-inlot-route at the window start: household autonomy off, the active Sim walks door / lot centre twice, one plan-only sim_route_to, autonomy back on. RouteWorker and RouteAsync off so plans run the game's own flow on the sim thread (as the live-reads jobs). Stack samplers skipped. 3 min window, ~6 min with load and teardown. After: node tools/harness/f4b-report.ts probe-out/profile/<tag>-f4b.json; pass = reason complete, no refused hook, an outcome row.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 3, "seed": 12345, "f4b": true, "repro": "f4b-inlot-route" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 15
+    },
+    {
+      "id": "bp-f4b-street",
+      "note": "bp-f4b-inlot with repro f4b-street-route: the active Sim walks off the home lot to (312.4, 1496.7) and back home (searched world-graph routes). Queue total ~12 min.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 3, "seed": 12345, "f4b": true, "repro": "f4b-street-route" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 15
+    }
+  ]
+}

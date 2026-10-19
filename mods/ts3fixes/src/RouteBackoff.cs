@@ -31,6 +31,7 @@ namespace Ts3Fixes
         {
             public RoutePlanResult PlanHook()
             {
+                DoorMirror.SyncRoute(this, Vector3.Invalid); // doormirror: push the start/goal lots' doors to ts3native (DoorMirror.cs)
                 RoutePlanResult r = PlanBackoff();
                 NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded); // the stuck watchdog's route-fail count (RouteFixes.cs)
                 return r;
@@ -124,6 +125,7 @@ namespace Ts3Fixes
             // answer is ignored). ts3native refuses a route that is being followed. Switch "asyncreplan" (default on).
             public RoutePlanResult ReplanHook()
             {
+                DoorMirror.SyncRoute(this, Vector3.Invalid);
                 if (!AsyncKindStart(1, Vector3.Origin)) return ReplanOrig();
                 try { AsyncWait(); return ReplanOrig(); }
                 finally { GetOption2(kAsyncCancel); }
@@ -132,6 +134,7 @@ namespace Ts3Fixes
 
             public RoutePlanResult PlanFromPointHook(Vector3 startPosition)
             {
+                DoorMirror.SyncRoute(this, startPosition);
                 if (!AsyncKindStart(2, startPosition)) return PlanFromPointOrig(startPosition);
                 try { AsyncWait(); return PlanFromPointOrig(startPosition); }
                 finally { GetOption2(kAsyncCancel); }
@@ -140,6 +143,7 @@ namespace Ts3Fixes
 
             public RoutePlanResult ReplanFromPointHook(Vector3 fromPt)
             {
+                DoorMirror.SyncRoute(this, fromPt);
                 if (!AsyncKindStart(3, fromPt)) return ReplanFromPointOrig(fromPt);
                 try { AsyncWait(); return ReplanFromPointOrig(fromPt); }
                 finally { GetOption2(kAsyncCancel); }

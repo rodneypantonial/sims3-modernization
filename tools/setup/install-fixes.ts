@@ -231,6 +231,15 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => copyFileSync(join(ROOT, 'build', 'ts3fixes.package'), p));
       return true;
     }
+    case 'portalplan-typepatch-test': {
+      // test only (docs/94 §20 job 17); build-fixes.ts builds it once monopatcher (a requires, installed first) is unpacked
+      execFileSync(process.execPath, [join(ROOT, 'tools', 'setup', 'build-fixes.ts')], { stdio: 'ignore' });
+      const built = join(ROOT, 'build', 'ts3-portalplan-test.package');
+      if (!existsSync(built)) throw new Error('portalplan-typepatch-test: build/ts3-portalplan-test.package not built (needs the monopatcher download)');
+      const p = join(USER, 'Mods', 'Packages', 'ts3-portalplan-test.package');
+      place(f, rec, p, () => copyFileSync(built, p));
+      return true;
+    }
     case 'cache-budget': {
       // the generic ResourceCache budget (bytes) comes from GraphicsRules.sgr `setProp $ResourceGroup CacheBudget`
       // (the ctor 0x732910 reads the wide "CacheBudget" property); Default.ini's CacheBudget is ignored [verified 2026-10-12].

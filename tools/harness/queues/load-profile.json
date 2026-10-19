@@ -1,0 +1,68 @@
+[
+  {
+    "id": "bp-load-1",
+    "note": "docs/39 §10: [LoadProf] alone (0.32.0, counters v59), fresh launch, load Baseline-BP-Spring, 1 min at normal speed, quit. First of two: the second shows the warm file cache. After the queue: node tools/harness/load-profile-report.ts probe-out/queue/load-profile-<date>.jsonl",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  },
+  {
+    "id": "bp-load-2",
+    "note": "repeat of bp-load-1 (warm cache)",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  },
+  {
+    "id": "ip-load-1",
+    "note": "Isla Paradiso (water, houseboats: the largest G / water grid)",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  },
+  {
+    "id": "ip-load-2",
+    "note": "repeat of ip-load-1 (warm cache)",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  },
+  {
+    "id": "sv-load-1",
+    "note": "Sunset Valley",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  },
+  {
+    "id": "sv-load-2",
+    "note": "repeat of sv-load-1 (warm cache)",
+    "asi": "game-copy/ts3native.asi.loadprof",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 59,
+    "ini": { "LoadProf.Enabled": 1 },
+    "run": { "soak": { "minutes": 1, "speed": "normal" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 15
+  }
+]

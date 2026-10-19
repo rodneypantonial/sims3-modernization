@@ -17,12 +17,15 @@
 // header, R checksum, static guards) once per world and the drifting ones on every poll; R is re-checksummed every 60 s.
 // Not measured (need a debugger watchpoint, Stalker or script-side code): docs/101 U1, U3, U9, U10, docs/98 U7, docs/105
 // I-105-2/6/7/8, docs/91 §6.1 and §6.5, docs/99 F-3/F-4/F-10/F-13, docs/100 L5/L7/L9; docs/108 §4 lists why.
+// 0.24.1 (counters v45, docs/112, docs/108 §8): Route_PlanCommon status from argument 1 (was 2: U5 read a caller-local
+// vector), display-level raises counted inside the CanSee frame, RoomGraph/EnsureLevelPolygons builds (not entries), both
+// R blocked-bit writers logged with the lot, R re-baselined after the first G build, a hash over the blocked bits.
 // shortcut: pvGBuildUs is LONG microseconds (wraps after ~35 min of summed build time; builds take ms).
 
 enum {
     // E: entries
     PV_ASTAR, PV_LOTPLAN, PV_IPNUM, PV_PART_A, PV_PART_B, PV_DIRTY, PV_BLK_A, PV_BLK_B, PV_HIGHCOST,
-    PV_LAZY0, PV_LAZY1, PV_LAZY2, PV_LAZY3, PV_LAZY4, PV_LAZY5, PV_LAZY6, PV_LAZY7,
+    PV_LAZY0, PV_LAZY1, PV_LAZY2, PV_LAZY3, PV_LAZY4, PV_LAZY5, PV_LAZY6, PV_LAZY7, PV_RESTORE,
     // C: call sites
     PV_GB_MSG, PV_GB_REB, PV_GMSG0, PV_GMSG1, PV_GMSG2, PV_REB0, PV_REB1, PV_REB2, PV_JOB, PV_TIE, PV_IPALLOC, PV_H9REM,
     PV_H9INS, PV_PC_PLAN, PV_PC_POINT, PV_PATH_GOAL, PV_PATH_LOT, PV_PATH_ASTAR, PV_LS_LOCKED, PV_LS_DISC, PV_QUERY,
@@ -51,6 +54,7 @@ static const PvSite kPv[PV_N] = {
     {0x0080E5B0, 5, {0x53, 0x8B, 0x5C, 0x24, 0x08}, 0, "Footprint_EnsureLevelPolygons"},
     {0x00670510, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, 0, "water grid mark 0x670510"},
     {0x00670750, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, 0, "WaterGrid_MarkB"},
+    {0x0082A190, 7, {0x8B, 0x44, 0x24, 0x04, 0x85, 0xC0, 0x56}, 0, "RoutingWorld_RestoreLotBlockedBits"},
     {0x0082A098, 5, {}, 0x006734A0, "G build (message path)"},
     {0x00834A82, 5, {}, 0x006734A0, "G build (BuildWorldRoutingData)"},
     {0x008352F1, 5, {}, 0x0082A030, "WaterGrid_BuildFromWorld from 0x8352F1"},
@@ -81,7 +85,9 @@ static const DWORD PV_INROOM_RET = 0x00632559;  // return of the in-room Portal_
 
 static void* g_pvJmp[PV_N];         // trampoline (E) or original callee (C)
 static volatile LONG g_pvOn;        // 1 once ApplyProbeValues installed the hooks
+static volatile LONG g_pvGDone;     // G builds finished (PV_GB_* leaves): the poll thread re-baselines R after the first
 static DWORD g_pvPollMs = 2000;
+static volatile LONG g_snPv[PV_N];  // [RouteSnap] site index + 1 counted from inside this stub, 0 = none (routesnap.cpp)
 
 // the expected bytes of a site: the prologue (E, target 0) or E8 rel32 to the target (C)
 static void PvExpect(const PvSite& s, DWORD at, DWORD target, u8* out) {
@@ -128,14 +134,25 @@ static bool PvRead(const void* p, DWORD* v) {
     return true;
 }
 
-static void PvLazy(int i, DWORD tid, PvThread& t) {
-    Ts3nCounters& k = ts3native_counters;
-    InterlockedIncrement(&k.pvLazy[i][0]);
-    if (PvOpen(t, PV_JOB, PV_JOB)) InterlockedIncrement(&k.pvLazy[i][1]);
-    if (!RgIsSim(tid)) InterlockedIncrement(&k.pvLazy[i][2]);
+// one row: calls / inside a plan / off the sim thread
+static void PvLazy(volatile LONG* row, DWORD tid, PvThread& t) {
+    InterlockedIncrement(&row[0]);
+    if (PvOpen(t, PV_JOB, PV_JOB)) InterlockedIncrement(&row[1]);
+    if (!RgIsSim(tid)) InterlockedIncrement(&row[2]);
 }
 
 static int PvThreadClass(DWORD tid) { return tid == g_mainTid ? 0 : RgIsSim(tid) ? 1 : 2; }
+static int PvSwClass(DWORD tid) { return RgIsSim(tid) ? 0 : RgIsWorker(tid) ? 1 : 2; }  // v45 fields: sim, route worker, other
+
+// R blocked-bit writers (docs/112 §3.2): the lot (argument 1) and its id (lot +0x48/+0x4C, as both writers pass it on)
+static void PvLogWriter(const char* name, const DWORD* slot, DWORD tid) {
+    static volatile LONG logged;
+    if (InterlockedIncrement(&logged) > 1024) return;  // ~256 per 10 min in the BP run; the cap only bounds the log
+    const u8* lot = (const u8*)(uintptr_t)slot[1];
+    DWORD lo = 0, hi = 0;
+    if (lot) { PvRead(lot + 0x48, &lo); PvRead(lot + 0x4C, &hi); }
+    Log("values R writer %s: lot %p id 0x%08lX%08lX (thread %lu, sim/worker/other %d)", name, lot, hi, lo, tid, PvSwClass(tid));
+}
 
 static const DWORD kPvAStarBits[10] = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200};
 static const DWORD kPvLotBits[11] = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x100, 0x80000, 0x100000, 0x200000, 0x2000000};
@@ -143,6 +160,11 @@ static const DWORD kPvLotBits[11] = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x100, 0x80
 // slot = the return-address slot at the hooked instruction ([esp] at a function entry or at the call); pushad below it:
 // slot[-1] eax, slot[-2] ecx, slot[-3] edx, slot[-4] ebx
 static void __cdecl PvEnter(int id, DWORD* slot) {
+    if (g_snPv[id]) SnEnter(g_snPv[id] - 1, slot);  // [RouteSnap] shares this stub (one owner, docs/68 rule 3); first, before a frame swaps *slot
+    if (t_snapRun) {  // P4 clone run (docs/94 §12.4.3): pass through; 0x64F4D3 replays behind this stub (p4.cpp P4DoorStub)
+        if (id == PV_LAZY0) P4Lazy();  // D4: LotTable_Insert in a clone run: P4Lazy stops the run before it (0.30.0, H20c)
+        return;
+    }
     Ts3nCounters& k = ts3native_counters;
     PvThread& t = t_pv;
     while (t.n && t.f[t.n - 1].slot <= slot) t.n--;  // frames whose return slot is gone (unwound)
@@ -185,11 +207,34 @@ static void __cdecl PvEnter(int id, DWORD* slot) {
         case PV_HIGHCOST: InterlockedIncrement(&k.pvHighCost); break;
         case PV_LAZY4: {  // thiscall(Q): only a flush with queued work (byte Q+0x4C, 0x666A4D)
             DWORD w = 0;
-            if (PvRead((const u8*)(uintptr_t)slot[-2] + 0x4C, &w) && (w & 0xFF)) PvLazy(4, tid, t);
+            if (PvRead((const u8*)(uintptr_t)slot[-2] + 0x4C, &w) && (w & 0xFF)) PvLazy(k.pvLazy[4], tid, t);
             break;
         }
-        case PV_LAZY0: case PV_LAZY1: case PV_LAZY2: case PV_LAZY3: case PV_LAZY5: case PV_LAZY6: case PV_LAZY7:
-            PvLazy(id - PV_LAZY0, tid, t);
+        case PV_LAZY2: {  // thiscall, args lot graph G, room (u16): builds when G+0x8C is 0 (0x63D300) or the room record
+            PvLazy(k.pvLazy[2], tid, t);  // (0x44 bytes at G+0x90) has byte 0 (0x63D359); else it returns the built byte
+            const u8* g = (const u8*)(uintptr_t)slot[1];
+            DWORD built = 0, b = 0, e = 0, rec = 1;
+            if (!PvRead(g + 0x8C, &built)) break;
+            bool build = !(built & 0xFF);
+            const DWORD room = slot[2] & 0xFFFF;
+            if (!build && PvRead(g + 0x90, &b) && PvRead(g + 0x94, &e) && e > b && room < (e - b) / 0x44 &&
+                PvRead((const u8*)(uintptr_t)(b + room * 0x44), &rec))
+                build = !(rec & 0xFF);
+            if (build) InterlockedIncrement(&k.pvRoomBuild[PvSwClass(tid)]);
+            break;
+        }
+        case PV_LAZY5: {  // thiscall(fp), arg level: rebuilds when byte [fp+0x38] + level*0x24 + 0x20 is 0 (0x80E5BF)
+            PvLazy(k.pvLazy[5], tid, t);
+            DWORD lv = 0, valid = 1;
+            if (PvRead((const u8*)(uintptr_t)slot[-2] + 0x38, &lv) && PvRead((const u8*)(uintptr_t)(lv + slot[1] * 0x24 + 0x20), &valid) &&
+                !(valid & 0xFF))
+                InterlockedIncrement(&k.pvLevelBuild[PvSwClass(tid)]);
+            break;
+        }
+        case PV_LAZY3: PvLazy(k.pvLazy[3], tid, t); PvLogWriter("ApplyLotUpdate 0x82B590", slot, tid); break;
+        case PV_RESTORE: PvLazy(k.pvRestore, tid, t); PvLogWriter("RestoreLotBlockedBits 0x82A190", slot, tid); break;
+        case PV_LAZY0: case PV_LAZY1: case PV_LAZY6: case PV_LAZY7:
+            PvLazy(k.pvLazy[id - PV_LAZY0], tid, t);
             break;
         case PV_GB_MSG: case PV_GB_REB:  // thiscall(G); timed, logged at the leave
             InterlockedIncrement(&k.pvGBuild[id - PV_GB_MSG]);
@@ -213,7 +258,8 @@ static void __cdecl PvEnter(int id, DWORD* slot) {
             if (j) { InterlockedIncrement(&k.pvH9InPlan); j->arg++; }
             break;
         }
-        case PV_PC_PLAN: case PV_PC_POINT: PvPush(t, id, slot, 0, (LONG)slot[2], false); break;  // arg 2 = the result struct
+        // arg 1 = the 18-dword result (mType at +0), copied there at every exit; arg 2 is a caller-local vector (docs/112 §2)
+        case PV_PC_PLAN: case PV_PC_POINT: PvPush(t, id, slot, 0, (LONG)slot[1], false); break;
         case PV_PATH_GOAL: case PV_PATH_LOT: case PV_PATH_ASTAR: PvPush(t, id, slot, (u8)(id - PV_PATH_GOAL + 1), 0, false); break;
         case PV_LS_LOCKED: case PV_LS_DISC: {  // inside Portal_IsLocked / IsDiscouraged: slot[3] = the wrapper's return address
             const PvFrame* p = PvOpen(t, PV_PATH_GOAL, PV_PATH_ASTAR);
@@ -226,7 +272,10 @@ static void __cdecl PvEnter(int id, DWORD* slot) {
             PvPush(t, id, slot, (u8)(slot[9] & 1), 0, false);
             break;
         case PV_CANSEE: InterlockedIncrement(&k.pvCanSee); PvPush(t, id, slot, 0, 0, false); break;
-        case PV_RAISE0: case PV_RAISE1: InterlockedIncrement(&k.pvCanSeeRaise); break;
+        case PV_RAISE0: case PV_RAISE1:  // pvCanSeeRaise: every caller of World_CanSeeObject (script IC too, docs/112 §5.1)
+            InterlockedIncrement(&k.pvCanSeeRaise);
+            if (PvOpen(t, PV_CANSEE, PV_CANSEE)) InterlockedIncrement(&k.pvRaiseIn[PvSwClass(tid)]);
+            break;
         case PV_EV68:
             InterlockedIncrement(&k.pvEv68);
             if (PvOpen(t, PV_CANSEE, PV_CANSEE)) InterlockedIncrement(&k.pvEv68InCanSee);
@@ -256,6 +305,7 @@ static DWORD __cdecl PvLeave(DWORD* at) {
             const LONG us = (LONG)((q.QuadPart - f.t0) * 1000000 / g_qpf.QuadPart);
             InterlockedExchangeAdd(&k.pvGBuildUs, us);
             Max(&k.pvGBuildMaxUs, us);
+            InterlockedIncrement(&g_pvGDone);
             const u8* g = (const u8*)(uintptr_t)f.arg;
             DWORD built = 0, cells = 0, water = 0, bodies = 0;
             PvRead(g, &built);
@@ -303,12 +353,12 @@ PV_STUB(0) PV_STUB(1) PV_STUB(2) PV_STUB(3) PV_STUB(4) PV_STUB(5) PV_STUB(6) PV_
 PV_STUB(11) PV_STUB(12) PV_STUB(13) PV_STUB(14) PV_STUB(15) PV_STUB(16) PV_STUB(17) PV_STUB(18) PV_STUB(19) PV_STUB(20)
 PV_STUB(21) PV_STUB(22) PV_STUB(23) PV_STUB(24) PV_STUB(25) PV_STUB(26) PV_STUB(27) PV_STUB(28) PV_STUB(29) PV_STUB(30)
 PV_STUB(31) PV_STUB(32) PV_STUB(33) PV_STUB(34) PV_STUB(35) PV_STUB(36) PV_STUB(37) PV_STUB(38) PV_STUB(39) PV_STUB(40)
-PV_STUB(41)
+PV_STUB(41) PV_STUB(42)
 static void (*const kPvStubs[PV_N])() = {
     PvStub0, PvStub1, PvStub2, PvStub3, PvStub4, PvStub5, PvStub6, PvStub7, PvStub8, PvStub9, PvStub10, PvStub11, PvStub12,
     PvStub13, PvStub14, PvStub15, PvStub16, PvStub17, PvStub18, PvStub19, PvStub20, PvStub21, PvStub22, PvStub23, PvStub24,
     PvStub25, PvStub26, PvStub27, PvStub28, PvStub29, PvStub30, PvStub31, PvStub32, PvStub33, PvStub34, PvStub35, PvStub36,
-    PvStub37, PvStub38, PvStub39, PvStub40, PvStub41};
+    PvStub37, PvStub38, PvStub39, PvStub40, PvStub41, PvStub42};
 
 // one site at `at` calling `target` (0 = an entry): the game's, or a selftest dummy of the same shape. 1 hooked, 2 counted
 // inside an owner stub, 0 skipped
@@ -350,7 +400,8 @@ static inline void PvFnv(DWORD& h, const u8* p, DWORD n) { for (DWORD i = 0; i <
 // R (docs/99 §1.2, §1.4): per chunk the u16 count, per record n, flags & keep, bx, bz, the n refs and (flag 0x40) n edge
 // bytes; the surface byte (+2) and record offsets are left out, so a version-1 file and its converted memory form agree.
 // keep 0x7F masks only the blocked bit; 0x60 also masks the type bits (shoreline rewrites, docs/100 §3.2 step 8).
-// out: [0] sum (keep 0x7F), [1] sum (keep 0x60), [2] waypoints, [3] blocked. False when R is empty or out of bounds.
+// out: [0] sum (keep 0x7F), [1] sum (keep 0x60), [2] waypoints, [3] blocked, [4] hash of (chunk, record) of every blocked
+// waypoint (sees flips that keep the count, docs/112 §3.1). False when R is empty or out of bounds.
 static bool PvRSum(const u8* r, DWORD* out) {
     __try {
         const DWORD w = *(const DWORD*)r, h = *(const DWORD*)(r + 4);
@@ -358,7 +409,7 @@ static bool PvRSum(const u8* r, DWORD* out) {
         const u8* raw = *(const u8* const*)(r + 0x0C);
         const DWORD size = *(const DWORD*)(r + 0x10);
         if (!tbl || !raw || !w || !h || w > 256 || h > 256) return false;
-        DWORD a = 2166136261u, b = 2166136261u, wps = 0, blocked = 0;
+        DWORD a = 2166136261u, b = 2166136261u, blk = 2166136261u, wps = 0, blocked = 0;
         for (DWORD c = 0; c < w * h; c++) {
             const DWORD off = tbl[c];
             if (off > size || size - off < 2) return false;
@@ -379,13 +430,18 @@ static bool PvRSum(const u8* r, DWORD* out) {
                 PvFnv(b, hb, 4);
                 PvFnv(b, p + 5, len);
                 wps++;
-                if (p[1] & 0x80) blocked++;
+                if (p[1] & 0x80) {
+                    blocked++;
+                    const DWORD key[2] = {c, i};
+                    PvFnv(blk, (const u8*)key, 8);
+                }
             }
         }
         out[0] = a;
         out[1] = b;
         out[2] = wps;
         out[3] = blocked;
+        out[4] = blk;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
@@ -424,9 +480,10 @@ static void PvSnapshot(const u8* world, const u8* wm, const u8* W) {
     for (int i = 0; i < 13; i++) k.pvTune[i] = (LONG)PvF(W + 0x18 + kTuneOff[i]);
     for (int i = 0; i < 4; i++) k.pvWm[i] = wm ? (LONG)PvF(wm + 0xB4 + 4 * i) : (LONG)PV_NO_VALUE;
     for (int i = 0; i < 3; i++) k.pvGuard[i] = (LONG)PvF((const void*)(uintptr_t)kPvGuards[i]);
-    DWORD r[4] = {0, 0, 0, 0};
+    DWORD r[5] = {0, 0, 0, 0, 0};
     PvRSum(world + 0x54, r);
     for (int i = 0; i < 4; i++) k.pvR[i] = (LONG)r[i];
+    k.pvRBlk[0] = k.pvRBlk[1] = (LONG)r[4];
     k.pvWorlds++;
     Log("values world %p W %p: tune 0x%08lX | 0x%08lX 0x%08lX 0x%08lX 0x%08lX 0x%08lX 0x%08lX | 0x%08lX 0x%08lX 0x%08lX 0x%08lX 0x%08lX 0x%08lX",
         world, W, k.pvTune[0], k.pvTune[1], k.pvTune[2], k.pvTune[3], k.pvTune[4], k.pvTune[5], k.pvTune[6], k.pvTune[7],
@@ -437,7 +494,8 @@ static void PvSnapshot(const u8* world, const u8* wm, const u8* W) {
 
 static DWORD WINAPI PvPoll(void*) {
     Ts3nCounters& k = ts3native_counters;
-    DWORD last = 0, lastRaw = 0, seen = 0, rTick = 0, rPrev = 0;
+    DWORD last = 0, lastRaw = 0, seen = 0, rTick = 0, rPrev = 0, blkPrev = 0;
+    LONG gSnap = 0;  // g_pvGDone at this world's snapshot; -1 once R was re-baselined after a later G build
     for (;;) {
         Sleep(g_pvPollMs);
         DWORD world = 0, wm = 0, W = 0, raw = 0;
@@ -453,18 +511,38 @@ static DWORD WINAPI PvPoll(void*) {
             PvSnapshot(wp, (const u8*)(uintptr_t)wm, (const u8*)(uintptr_t)W);
             rTick = GetTickCount();
             rPrev = (DWORD)k.pvR[0];
+            blkPrev = (DWORD)k.pvRBlk[0];
+            gSnap = g_pvGDone;
         }
         PvPollDrift(wp, (const u8*)(uintptr_t)wm, seen == 2);
+        DWORD r[5];
+        // the load's G build rewrites R's type bits (docs/112 §3.1); when it finished after the snapshot, the R baseline for
+        // the change checks is retaken once (pvR[0..1] keep the snapshot for the docs/99 F-2 compare with the world file)
+        if (gSnap >= 0 && g_pvGDone != gSnap && PvRSum(wp + 0x54, r)) {
+            gSnap = -1;
+            rPrev = r[0];
+            blkPrev = r[4];
+            k.pvRBlk[0] = k.pvRBlk[1] = (LONG)r[4];
+            k.pvR[3] = (LONG)r[3];
+            k.pvRRebase++;
+            rTick = GetTickCount();
+            Log("values R baseline after the G build: sum 0x%08lX / 0x%08lX, %lu waypoints, %lu blocked, blocked hash 0x%08lX", r[0], r[1], r[2], r[3], r[4]);
+        }
         if (GetTickCount() - rTick >= 60000) {  // R stays fixed (docs/91 §6.6): only bit 7 may change
             rTick = GetTickCount();
-            DWORD r[4];
             if (PvRSum(wp + 0x54, r)) {
                 if (r[0] != rPrev) {
                     k.pvR[4]++;
                     Log("values R changed: sum 0x%08lX / 0x%08lX, %lu waypoints, %lu blocked (snapshot 0x%08lX)", r[0], r[1], r[2], r[3], (DWORD)k.pvR[0]);
                     rPrev = r[0];
                 }
+                if (r[4] != blkPrev) {
+                    k.pvRBlk[2]++;
+                    Log("values R blocked bits changed: hash 0x%08lX -> 0x%08lX, %lu blocked", blkPrev, r[4], r[3]);
+                    blkPrev = r[4];
+                }
                 k.pvR[3] = (LONG)r[3];  // blocked waypoints now (bit 7 is the one field that may change)
+                k.pvRBlk[1] = (LONG)r[4];
             }
         }
     }

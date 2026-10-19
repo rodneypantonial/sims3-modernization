@@ -1,0 +1,21 @@
+[
+  { "id": "bp-future-direct-1", "note": "docs/67 §5 crash C repro: direct future trip (same as bp-travel-future-direct); crash at 0x6A81D6 or another LightingSolver +0x234 reader = repeat",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] }, "timeoutMin": 45 },
+  { "id": "bp-future-direct-2", "note": "docs/67 §5: second direct trip",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] }, "timeoutMin": 45 },
+  { "id": "bp-future-direct-3", "note": "docs/67 §5: third direct trip",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] }, "timeoutMin": 45 },
+  { "id": "bp-future-portal-1", "note": "docs/67 §5 control: queued portal Travel (game's own sequence); a crash here too = game bug, not our direct order",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future"] }, "timeoutMin": 45 },
+  { "id": "bp-future-portal-2", "note": "docs/67 §5 control: second portal trip",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future"] }, "timeoutMin": 45 },
+  { "id": "bp-future-direct-nolotstream", "note": "docs/67 §5: direct trip with S3SS LotStreamingOptimizations off (does the throttled lot LoD after arrival trigger it?)",
+    "asi": "tested", "ini": { "SaveFlush.Enabled": 1, "SaveCompress.Enabled": 1, "FootprintIndex.Enabled": 1, "FootprintIndex.Verify": 1 },
+    "s3ssToml": { "patches.LotStreamingOptimizations.enabled": false },
+    "save": "Baseline-BP", "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] }, "timeoutMin": 45 }
+]

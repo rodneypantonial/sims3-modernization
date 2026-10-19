@@ -65,8 +65,11 @@ No `fs:` (TLS) store anywhere in D+V [verified]. 1,168 register-indirect sites r
 | 24 | `0x11D8FC0..0x11D8FC8` | `0x8082F0` (footprint `+0xF8` class `0xFEBD10`) | I | D+V | tangent constants | warm-up |
 | 25 | `0x11D8FCC..0x11D8FD4` | `0x808480` | I | D+V | as #24 | warm-up |
 | 26 | `0x11D8FD8`, `0x11D8FDC` | `0x808620` | I | D+V | as #24 | warm-up |
+| 27 | `0x11D9020..0x11D905F`, guard dword `0x11D9060` (bit 0) | `0x80D8C0` (slot `+0x18` of component vtable `0x10440A8`; guard `test` at `0x80D8CE`, `or` at `0x80D8E5`, then four constant 16-byte stores) | I | live-extended (docs/109 §8.2): `Matrix_CopyVirtual 0x80E060`, component lookup `0x958643` (N7), `DoorRouting_AddDoorPortals` (lazy) | function-local identity matrix the slot returns by address. Added 2026-10-19 (docs/109 §8.5, I-109-21); docs/102 and closure D missed it because it is reached only through a vtable slot | warm-up: the bytes are always the same, so no redirect and no copy; but the first call on a worker would race the sim's first call (guard set before the stores), so the P4 cold check (`P4Cold`, docs/94 §12.3.2) also needs bit 0 of `0x11D9060` set |
 
 Data addresses the closure passes to callees but does not write [verified callee bodies]: `0x11582B0` and `0x1165D28` (constant polygon sets, only `PolySet_*` readers; written only by static initialisers), `0x11CDDE0` (config bit test `0x523860`), `0x11EB8E0` (default record copied from), `0x114C900`, `0x11ED220` (keys pushed to lookups), and the three pool locks.
+
+> **Note 2026-10-18 (docs/113 §7.2, U1 live in BP):** `0x114C900` is written after all, through a computed address: it is the shared empty hash-table bucket array (`0` then `FFFFFFFF`), and the generic node-free helper `0xD2BC10` stores 0 into bucket 0 at `0xD2BC42` (`[ebx+edi*4]`) when a lot search context's still-empty table is cleared (`0x628A60`, inferred). The value is always 0, so it needs no redirect and no atomic; §2.2 gains no item. It is the only computed-address global write seen in 24 sim-thread plans.
 
 Pointer roots the closure reads (all live state, none written by the search except through locked or atomic paths) [verified loads]:
 
@@ -103,6 +106,7 @@ Pointer roots the closure reads (all live state, none written by the search exce
 | H17 | `RoutingJob` on the stack; its destructor `Job_Release 0x59A990 -> Job_Cancel -> JobManager_*` | job manager under its own locks | per request; shared locked | unchanged | unchanged |
 | H18 | object reference counts from `ObjectService_FindById` | `lock xadd` | shared atomic | unchanged | ours if objects are copied |
 | H19 | managed `SimRoutingComponent.LockedDoorsDuringPlan` | event 59 callback | managed | proxied to the sim (docs/94 E12) | proxied |
+| H20 | **portal reference counts** `portal+0x70` (vtable `0xFED048`: AddRef `0x64E8E0`, Release `0x64E8F0`, plain read-modify-write; delete at <= 1) | room record copy in `0x633FA0` (`0x6223C0` / `0x621D20`), `LotPath_AddPortalNodes 0x62FBE0` local vector, unpin `0x639A80` (pending adds `+0x54` into `+0x44`); live on the route worker in probe pass 3 (added 2026-10-19, docs/109 §8.9) [verified paths and live targets] | shared world state (live portals; the sim AddRefs and Releases the same portals, portal ICs unlocked) | **built 0.30.0, offline checks only** (docs/94 §21.8): the interlocked count pair while P4 is armed (H20a), one clone reference per portal element of `+0x44`, `+0x54` and room `+4`/`+0x14` with the room vectors copied (H20b), cut and acquire refuse a lot with pending `+0x54` (pointers) or `+0x64` (8-byte ids) and D4 stops a clone run before a lazy build (H20c), portal IC family in D5 (H20d). Left live: portal cost, flags and the variation vector `+0x5C` (M5 by H20d). **Open risks settled 2026-10-19 (docs/94 §21.8.1, static):** no inline `+0x70` write on portals outside the constructors [verified]; the only `+0x5C` grow of an existing portal (`OnExitBuildBuy`, gate 14) is behind D2, the other grows hit portals made after the cut, cost/flag stores cannot fault [verified paths]; no game frame catches the lazy stop, which leaks a few portal counts and KB per stop [frames verified, leaks inferred]. Left: an `AddPortalLocationVariation` tripwire and an `XcptLog` skip (~0.6 h) | ours |
 
 ## 3. G or R
 
@@ -209,16 +213,16 @@ Data source and writers:
 
 | # | Unknown | Live check (all observe-only, existing probe or harness) |
 |---|---|---|
-| U1 | The global write set on the worker matches §2.2 (no global missed by static scanning, e.g. through register-computed addresses) | P2 L2 (docs/94 §4.1): Stalker memory-operand callouts on the route worker, sampled jobs; diff the written `.data` addresses against §2.2 |
+| U1 | The global write set on the worker matches §2.2 (no global missed by static scanning, e.g. through register-computed addresses) | P2 L2 (docs/94 §4.1): Stalker memory-operand callouts on the route worker, sampled jobs; diff the written `.data` addresses against §2.2 **BP 2026-10-18, sim thread (docs/113 §7.2): one extra address, `0x114C900`, zero stored over zero, benign; worker and IP still open.** |
 | U2 | Static inits #12-#26 are all set before the first worker job, and #14's cached value is the same for every lot | read the guard words and `0x11CF02C` after load and after 10 min; compare `0x11CF02C` with `+0xB8` of several lot graphs |
-| U3 | `0x1158580` is used inside jobs at all (only through H13) | P2 L1 block coverage of `0x66AB70` on the worker |
+| U3 | `0x1158580` is used inside jobs at all (only through H13) | P2 L1 block coverage of `0x66AB70` on the worker **BP 2026-10-18 (docs/113 §7.3): `0x66AB70` never ran in 24 plans; #2 low priority.** |
 | U4 | Interest point lists are always empty | counter on `0x821B3D` (allocation) and on non-zero returns of `IC_Route_GetNumInterestPoints` |
 | U5 | Status codes stay in {1, 2, 3, 4, 10, 16, 18} | histogram of `mType` at the four plan ICs' return |
 | U6 | Goal-step and search door asks per plan (same portals asked twice, or different sets) | `Portal_LockState` caller histogram by return address (`0x63F65E` vs `0x641026`, `0x63E708`, `0x632554`) with portal id and plan id |
 | U7 | How often H9 rewrites the quadtree inside a plan | counter on `0x63257E`/`0x632595` per plan |
 | U8 | Partition grid writes happen only on build edits and lot events, on the sim thread | counter and thread id on `0xC08C30` and `0xC094E0` in a build-edit repro and in 10 min of live play |
 | U9 | The unlocked portal IC writes reach `0x635700` in live play (rate, thread) | P1 leaf counters bucketed by return address into `0x635920`/`0x635EE0`/`0x636130` |
-| U10 | route `+0x1F4` has no hidden reader | one session with a hardware read watchpoint on a live route's `+0x1F4` (x32dbg), expect only the two IC writers |
+| U10 | route `+0x1F4` has no hidden reader | one session with a hardware read watchpoint on a live route's `+0x1F4` (x32dbg), expect only the two IC writers **BP 2026-10-18 (docs/113 §7.1): not refuted; the two flagged sites are freed-and-reused route memory, §5 stands.** |
 
 ## 9. Symbols added (CSV, append only)
 

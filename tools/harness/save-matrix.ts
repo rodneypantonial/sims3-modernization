@@ -1,6 +1,8 @@
 // Save-safety test matrix: proves the save-path fixes write the same save as the game, in one load, before a release.
 //   node tools/harness/save-matrix.ts [--cases control,identical,...] [--travel] [--to france|university|future] [--direct] [--case-timeout 900]
 //   --direct: university / future skip the queued trip interaction (agent `direct: true`); default the real queued trip
+//   --stay: travel case only goes out and stays (no save away, no trip back) and leaves the save fixes as they are; for
+//     profile-world.ts --travel, which runs a repro in the destination world after this exits (docs/117 §2.11)
 //   node tools/harness/save-matrix.ts --list            cases and what each checks
 //   node tools/harness/save-matrix.ts --reload-check    second half of case `reload`, after loading its ON save (printed commands)
 //   node tools/harness/save-matrix.ts --reload-check --off   same for its OFF save in a second load; the later check compares both
@@ -22,7 +24,7 @@ import { GUARD_MS, stallGuard } from './game-alive.ts';
 
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
-  to: { type: 'string', default: 'france' }, direct: { type: 'boolean' }, 'reload-check': { type: 'boolean' }, off: { type: 'boolean' }, 'case-timeout': { type: 'string', default: '900' },
+  to: { type: 'string', default: 'france' }, direct: { type: 'boolean' }, stay: { type: 'boolean' }, 'reload-check': { type: 'boolean' }, off: { type: 'boolean' }, 'case-timeout': { type: 'string', default: '900' },
   port: { type: 'string', default: '47891' },
 } });
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -49,12 +51,25 @@ function sameWorld(a: unknown, b: unknown): boolean {
 
 // No-progress rule for a trip (Rodney 2026-10-16): world loaded, in_travel, no save running, and still in the start world
 // or in another world with no active household. Lasting over STALL_S = the switch hangs (2026-10-16 University: arrived,
-// no household for 20 min; future: in_travel, never left Bridgeport). '' = progress or a load in between.
+// no household for 20 min; future: in_travel, never left Bridgeport). Also world loaded, no switch running and no active
+// household in any world (2026-10-18 University: the trip home removed the student, nothing switched for 8 min).
+// '' = progress or a load in between.
 export const STALL_S = 90;
 export function tripStall(s: { loaded: boolean; inTravel: boolean; saving: boolean; world: unknown; household: unknown }, from: string): string {
-  if (!s.loaded || !s.inTravel || s.saving) return '';
+  if (!s.loaded || s.saving) return '';
+  if (!s.inTravel) return s.household ? '' : `in ${s.world}, no world switch running and no active household`;
   if (sameWorld(s.world, from)) return `in_travel but still in ${from}`;
   return s.household ? '' : `in_travel in ${s.world} with no active household`;
+}
+// Second no-progress rule: the trip status line (travel_state + queue, see statusLine) unchanged for STALE_S while the
+// world is loaded. Feed it a line every ~10 s; '' resets (loading screen, travel save, University arrival grace).
+export const STALE_S = 120;
+export function staleClock(limitS = STALE_S) {
+  let line = '', since = 0;
+  return (l: string, now: number): string => {
+    if (!l || l !== line) { line = l; since = now; return ''; }
+    return now - since > limitS * 1000 ? `no progress: trip status unchanged for ${Math.round((now - since) / 1000)} s: ${l}` : '';
+  };
 }
 
 type Check = { name: string; status: 'pass' | 'fail' | 'info' | 'skip'; why: string };
@@ -164,7 +179,14 @@ if (values['self-check']) {
   assert.equal(tripStall(ts({ loaded: false }), 'NewDowntownWorld'), ''); // loading screen
   assert.match(tripStall(ts({ world: 'University', household: null }), 'NewDowntownWorld'), /no active household/); // University 2026-10-16
   assert.equal(tripStall(ts({ world: 'University' }), 'NewDowntownWorld'), '');
-  assert.equal(tripStall(ts({ inTravel: false, household: null, world: 'University' }), 'NewDowntownWorld'), '');
+  assert.match(tripStall(ts({ inTravel: false, household: null, world: 'University' }), 'University'), /no active household/); // trip home 2026-10-18
+  assert.equal(tripStall(ts({ inTravel: false, household: null, loaded: false }), 'NewDowntownWorld'), '');
+  assert.equal(tripStall(ts({ inTravel: false, world: 'University' }), 'University'), ''); // walking to the van
+  const clk = staleClock(120), line = 'loaded true in_travel false world University dest University away true; queue no active household';
+  assert.equal(clk(line, 0), ''); assert.equal(clk(line, 60000), ''); assert.equal(clk(line, 120000), '');
+  assert.match(clk(line, 130000), /unchanged for 130 s: .*no active household/);
+  assert.equal(clk('', 131000), ''); assert.equal(clk(line, 140000), ''); // reset (load, travel save, grace)
+  assert.equal(clk(line.replace('false', 'true'), 300000), ''); // a changed line restarts the clock
   const old = '1:00 travel_future direct -> error: Exception: old';
   assert.deepEqual(tripErrors([old], [old, '1:01 auto_dialog #3 -> error: x', '1:02 travel_university -> ok',
     '1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']), ['1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']);
@@ -367,14 +389,25 @@ type Case = { id: string; desc: string; optIn?: boolean; timeoutS?: number; run:
 // one line a minute while a trip is pending, so a stalled trip shows where it stopped (2026-10-16 bp-future-travel-2:
 // 20 min with no arrival and nothing in the log to tell "never left" from "never arrived")
 let lastTrip = 0;
+async function queueNow(): Promise<string> {
+  const q = await ag('queues').catch(() => null);
+  return q?.ok ? q.result.map((i: any) => `${i.sim}:${i.name ?? i.type}`).join(', ') || 'empty' : q?.error ?? '?';
+}
+// what the game shows when a trip leg fails: the interaction that replaced the trip, the destination it still holds
+async function tripContext(): Promise<string> {
+  const ts = await ag('travel_state').catch(() => null), t = ts?.ok ? ts.result : {};
+  const gs = await ag('game_state').catch(() => null);
+  return `world ${t.world} dest ${t.destination} in_travel ${t.in_travel} household ${t.household ?? '-'} state ${gs?.result?.sub_state ?? '?'}; queue ${await queueNow()}; travel_state ${ts?.ok ? JSON.stringify(t) : ts?.error ?? '?'}`;
+}
+async function statusLine(): Promise<string> {
+  const st = await get('agentstatus', 5000).catch(() => null);
+  const ts = await ag('travel_state').catch(() => null), t = ts?.ok ? ts.result : {};
+  return `loaded ${st?.worldLoaded} in_travel ${t.in_travel} world ${t.world} dest ${t.destination} away ${t.away}; queue ${await queueNow()}`;
+}
 async function tripStatus(): Promise<void> {
   if (Date.now() - lastTrip < 60000) return;
   lastTrip = Date.now();
-  const st = await get('agentstatus', 5000).catch(() => null);
-  const ts = await ag('travel_state').catch(() => null), t = ts?.ok ? ts.result : {};
-  const q = await ag('queues').catch(() => null);
-  const queue = q?.ok ? q.result.map((i: any) => `${i.sim}:${i.name ?? i.type}`).join(', ') || 'empty' : q?.error ?? '?';
-  log(`trip status: loaded ${st?.worldLoaded} in_travel ${t.in_travel} world ${t.world} dest ${t.destination} away ${t.away}; queue ${queue}`);
+  log(`trip status: ${await statusLine()}`);
 }
 
 // every shown need of every household Sim to max, then check the six core needs (occult/pet motives have other ranges)
@@ -457,8 +490,10 @@ async function enterWorld(cmd: string, args: object, from: string, who: string):
   catch (e) {
     // the game-task exception is the cause; the wait that noticed it only says "dropped" or "no progress"
     const errs = tripErrors(before, await asyncLog());
-    if (errs.length && !String(e).includes(errs[0])) throw new Error(`${String(e).replace(/^Error: /, '')}; async_log: ${errs.join(' || ')}`);
-    throw e;
+    const msg = String(e).replace(/^Error: /, '');
+    const why = errs.length && !msg.includes(errs[0]) ? `${msg}; async_log: ${errs.join(' || ')}` : msg;
+    // the game's own state at the failure, so a verdict names what replaced the trip (2026-10-16 runs: "trip aborted" alone)
+    throw new Error(`${why}; at failure: ${await tripContext()}`);
   }
   finally { await restoreAutonomy(); } // after arrival, and on every failure (no-op when nothing is tracked)
 }
@@ -485,6 +520,9 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   if (!from) throw new Error(`${cmd}: start world unknown (travel_state failed before the trip)`);
   // no-progress clock (tripStall), shared by both waits: in_travel without a world switch or an arrival for STALL_S fails
   let stallSince = 0, inTravelSeen = false;
+  const stale = staleClock();
+  // second rule (staleClock): every ~10 s compare the status line; reset wherever stallSince is reset for progress
+  const staleNow = async (): Promise<string> => n % 10 === 0 ? stale(Date.now() < uniGrace ? '' : await statusLine(), Date.now()) : '';
   const gameTaskError = (now: string[]): string => {
     const errs = tripErrors(before, now);
     return errs.length ? `${cmd} failed on its game task: ${errs.join(' || ')}` : '';
@@ -525,12 +563,13 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
     if (n % 5 === 0 && (dead = gameTaskError(await asyncLog()))) return true;
     if (n % 60 === 0) await maxNeeds().catch(e => log(String(e))); // keep needs full while the Sim walks to the trip
     await tripStatus();
-    if (watchTravelSaves(off)) stallSince = 0;
+    if (watchTravelSaves(off)) { stallSince = 0; stale('', Date.now()); }
     if ((await get('agentstatus', 5000)).worldLoaded === false) { leftBy = 'world unloaded'; return true; }
     const ts = await ag('travel_state');
     if (ts.ok && !sameWorld(ts.result.world, from)) { leftBy = `world ${ts.result.world}`; return true; }
     if (ts.ok && ts.result.in_travel === true && !inTravelSeen) { inTravelSeen = true; log(`in_travel set, still in ${from}`); }
     if ((dead = await stalled(true, ts.ok ? ts.result : null))) return true;
+    if ((dead = await staleNow())) return true;
     if (n % 30 === 0 && !(ts.ok && ts.result.in_travel)) { // a trip in progress has left the queue
       misses = (await tripQueued()) === false ? misses + 1 : 0;
       if (misses >= 2) { dead = `trip dropped: no travel interaction in the household queue and no world switch for ~1 min (still in ${from}; direct trips: see async_log)`; return true; }
@@ -542,13 +581,14 @@ async function enterWorldInner(cmd: string, args: object, from: string, who: str
   misses = 0;
   await until('arrived in live mode', 1200, async () => {
     await tripStatus();
-    if (watchTravelSaves(off)) stallSince = 0;
-    if ((await get('agentstatus', 5000)).worldLoaded !== true) { misses = 0; stallSince = 0; return false; }
+    if (watchTravelSaves(off)) { stallSince = 0; stale('', Date.now()); }
+    if ((await get('agentstatus', 5000)).worldLoaded !== true) { misses = 0; stallSince = 0; stale('', Date.now()); return false; }
     if (++n % 10 === 0) await dialogs();
     if (n % 5 === 0 && (dead = gameTaskError(await asyncLog()))) return true;
     const ts = await ag('travel_state');
     if (uni && ts.ok && ts.result.in_travel && sameWorld(ts.result.world, 'University') && (dead = await uniMoveIn(ts.result))) return true;
     if ((dead = await stalled(true, ts.ok ? ts.result : null))) return true;
+    if ((dead = await staleNow())) return true;
     if (!ts.ok || ts.result.in_travel) { misses = 0; return false; }
     if (sameWorld(ts.result.world, from)) { // loaded, not travelling, still the start world: the switch was called off
       if (n % 30 === 0 && ++misses >= 2) { dead = `trip aborted: back in live mode in ${from} for ~1 min without travelling`; return true; }
@@ -691,14 +731,14 @@ const CASES: Case[] = [
     return { fixes, saves: [a, s], checks: [...missingCheck(fixes, [...FIXES]), ...saveChecks(a), ...saveChecks(s)], pending: true };
   } },
   { id: 'travel', optIn: true, timeoutS: 3600, desc: 'fixes on: vacation (travel save), save in the vacation world, travel home (travel save), save at home', run: async () => {
-    const fixes = await setFixes(allOn);
+    const fixes = values.stay ? {} : await setFixes(allOn); // --stay: the trip is a means, fixes as the job's ini set them
     // the travel saves go to the game's current file; the loaded save may still be it, so never travel from a Baseline-*
     const start = String(st.result.save_name ?? '');
     if (/^baseline-/i.test(start)) return { fixes, saves: [], checks: [{ name: 'start save', status: 'fail', why: `${start} is a Baseline-* save: the travel saves could overwrite it; load a copy (e.g. a Matrix-* save) first` }] };
     const startDir = join(SAVES, `${start.replace(/.sims3$/, '')}.sims3`), startM = existsSync(startDir) ? statSync(startDir).mtimeMs : 0;
     const s0 = await save('travel-start'); // save-as: makes a Matrix-* save the current one
     // only fixes this game has: a fix its startup probe refused (cachedreflection, 2026-10-16) is listed, not failed
-    const checks = [...availableCheck(fixes), ...saveChecks(s0)];
+    const checks = [...(values.stay ? [] : availableCheck(fixes)), ...saveChecks(s0)];
     if (!s0.ok) return { fixes, saves: [s0], checks };
     const home = (await ag('travel_state')).result?.world;
     await ag('autopilot', { enabled: true, speed: 'none', dialogs: true });
@@ -716,6 +756,7 @@ const CASES: Case[] = [
       // autonomy off for the travellers only: University / future take the active Sim alone, a vacation the household
       const out = await enterWorld(trip[0], trip[1], home, uni || fut ? 'active' : 'household');
       checks.push(...travelSaveChecks('trip out', out.travelEvs));
+      if (values.stay) { checks.push({ name: 'stay', status: 'info', why: `staying in ${out.world} (--stay)` }); return { fixes, saves, checks }; }
       const s1 = await save('travel-away'); saves.push(s1); checks.push(...saveChecks(s1));
       leg = 'trip back';
       const back = await enterWorld('travel_home', {}, out.world, 'household'); // away, the household is the travellers
