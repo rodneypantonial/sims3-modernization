@@ -71,6 +71,12 @@ namespace Ts3Agent
             ResolveOwner(path.Substring(0, dot), out owner, out ownerType);
             string name = path.Substring(dot + 1);
             List<object> args = a.List("args") ?? new List<object>();
+            // ts3fixes swaps Route.Replan (RouteBackoff A10). Mono's InternalInvoke checks the target against the swapped
+            // method's class (RouteBackoffHook) and throws "Unable to invoke an invalid target" (same as RefTable.cs), so call
+            // it compiled: the virtual call runs the hook like the game's own callers do.
+            Sims3.SimIFace.Route route = owner as Sims3.SimIFace.Route;
+            if (route != null && name == "Replan" && args.Count == 0)
+                return Describe(route.Replan(), (int)a.Long("depth", 1));
             BindingFlags flags = kAny & ~(owner == null ? BindingFlags.Instance : 0);
             Exception last = null;
             foreach (MethodInfo mi in ownerType.GetMethods(flags))
@@ -87,6 +93,12 @@ namespace Ts3Agent
                 object result;
                 try { result = mi.Invoke(mi.IsStatic ? null : owner, conv); }
                 catch (TargetInvocationException tie) { throw tie.InnerException ?? tie; }
+                catch (TargetException)
+                {
+                    if (owner == null || !mi.DeclaringType.IsInstanceOfType(owner)) throw;
+                    throw new McpException(mi.DeclaringType.FullName + "." + name + " cannot be invoked by reflection (likely "
+                                           + "swapped by ts3fixes); add a compiled call in ReflectCall like Route.Replan");
+                }
                 return Describe(result, (int)a.Long("depth", 1));
             }
             throw new McpException("no overload of " + ownerType.FullName + "." + name + " takes "

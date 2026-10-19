@@ -1,0 +1,52 @@
+[
+  {
+    "id": "bp-snap-p3b",
+    "note": "docs/94 §16 P3-B: [RouteSnap] Enabled=1 Lots=replay, design B replay clone of the lot footprints / quadtrees + lot audit only, no search (0.28.0, counters v49), Prebuild=1 (every lot graph built at load, Rodney 2026-10-18); env-on settings (async + gate + D), BP Spring, seeded; after: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row ts3native.log>; pass = no crash, rpReady bits 0-2, P3-B PASS (clone built, rpMis 0 in >= 200 lot audits, no divergence / fault / drop, copies + rebases <= 1 ms/s, clone <= 128 MB) and G3 as in snap-p3",
+    "asi": "game-copy/ts3native.asi.snap0328",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 57,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 0,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p3b",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn)",
+    "asi": "game-copy/ts3native.asi.snap0328",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 57,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 0,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

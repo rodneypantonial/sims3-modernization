@@ -54,6 +54,8 @@ static void* g_rgTramp[RG_SITES];
 static volatile LONG g_rgVf[RG_SITES];  // Verify probe index + 1 counted from inside the stub, 0 = none
 static volatile LONG g_pvRg[RG_SITES];  // [ProbeValues] site index + 1 counted from inside the stub, 0 = none (values.cpp)
 static void __cdecl PvEnter(int id, DWORD* slot);  // values.cpp
+static volatile LONG g_snRg[RG_SITES];  // [RouteSnap] site index + 1 counted from inside the stub, 0 = none (routesnap.cpp)
+static void __cdecl SnEnter(int id, DWORD* slot);  // routesnap.cpp
 
 static void __cdecl VfEnter(int id, DWORD* slot);  // verify.cpp
 static DWORD VfRealRet(const DWORD* slot);          // verify.cpp: the caller behind a Verify leave thunk in *slot
@@ -65,9 +67,9 @@ static bool SlGate(int site, DWORD* slot);                             // slotro
 // RG_REL_OFFSIM drops g_rgOffSimOpen
 // RG_REL_STEER puts back the previous t_steerRet (kept in `lock`); RG_REL_QL releases the worker's QL hold (steerro.cpp);
 // RG_REL_TRIP ends a T4 / T-S7 tripwire call (steerro.cpp TwLeave); RG_REL_P10 ends a P10 IC frame (p10.cpp, previous t_p10
-// in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log)
+// in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log); RG_REL_NR ends a P4 D2 writer window (g_snNrIn)
 enum { RG_REL_LOCK = 1, RG_REL_QT = 2, RG_REL_BUSY = 4, RG_REL_OFFSIM = 8, RG_REL_STEER = 16, RG_REL_QL = 32, RG_REL_TRIP = 64,
-       RG_REL_P10 = 128, RG_REL_G10C = 256 };
+       RG_REL_P10 = 128, RG_REL_G10C = 256, RG_REL_NR = 512 };
 struct RgFrame { DWORD* slot; DWORD ret; LONG reader; LONG rel; void* lock; };
 struct RgThread { int n; LONG readers; RgFrame f[16]; };
 static __declspec(thread) RgThread t_rg;
@@ -80,6 +82,7 @@ static void P10Leave(DWORD prev);                                 // p10.cpp
 static void G10cLeave();
 
 static void RgUndo(const RgFrame& f) {
+    if (f.rel & RG_REL_NR) InterlockedDecrement(&g_snNrIn);
     if (f.rel & RG_REL_TRIP) TwLeave();
     if (f.rel & RG_REL_P10) P10Leave((DWORD)(uintptr_t)f.lock);
     if (f.rel & RG_REL_G10C) G10cLeave();
@@ -128,6 +131,7 @@ static volatile LONG g_rgNoted;
 static DWORD g_rgCallers[48];    // distinct (site << 24 | return address & 0xFFFFFF) of counted entries, logged once each
 
 static LONG __fastcall LockReleaseHook(void* lock, void* edx) {
+    if (t_snapRun) return g_rgRelOrig(lock, edx);  // P4 clone run: pass through (§12.4.3)
     if (t_borrow && lock == g_async.lock) { t_borrow--; return 1; }  // a borrowed acquire (LockAcquireHook)
     if (lock == g_rgLock && *(const LONG*)((const u8*)lock + 0x20) == 1)
         InterlockedCompareExchange(&ts3native_counters.rgOwnerTid, 0, (LONG)GetCurrentThreadId());
@@ -236,13 +240,24 @@ static void G11Touch(int kind, DWORD key) {
 
 // Stub side: slot = the caller's return-address slot ([esp] at the site's entry).
 static void __cdecl RgEnter(int site, DWORD* slot) {
+    if (g_snRg[site]) SnEnter(g_snRg[site] - 1, slot);  // first: reads the caller's return address before a probe swaps it
     if (g_rgVf[site]) VfEnter(g_rgVf[site] - 1, slot);
     if (g_pvRg[site]) PvEnter(g_pvRg[site] - 1, slot);  // count only: no frame, *slot unchanged
+    if (t_snapRun) {  // P4 clone run (docs/94 §12.4.3): pass through; site 8's trampoline still runs the T1 thunk
+        if (site == 3) P4Lazy();  // D4: a lazy LotGraph_Build in a clone run: P4Lazy stops the run before it (0.30.0, H20c)
+        return;
+    }
     Ts3nCounters& k = ts3native_counters;
     if (k.rgReady != 7 || !g_rgLock) return;  // before the lock is known nobody's hold can be told apart
     InterlockedIncrement(&k.rgEntries);
     RgThread& t = t_rg;
     RgDrop(t, slot);
+    // P4 D2 (§17.4): the two coarse rebuild gates wait for a running clone run and keep the next one out until they return;
+    // a reader-marked frame, so the outermost-gate test below is unchanged
+    if (g_p4On && site >= 13 && !RgIsWorker(GetCurrentThreadId())) {
+        P4NrEnter();
+        if (!RgPush(t, slot, 1, RG_REL_NR)) InterlockedDecrement(&g_snNrIn);
+    }
     if (site == 10 && t_p10) t_p10 |= P10_REACHED;  // P10: this IC reached the goal step (Route_PlanCommon with G10-C)
     const DWORD tid = GetCurrentThreadId();
     const LONG me = (LONG)tid;

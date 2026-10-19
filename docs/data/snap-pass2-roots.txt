@@ -76,3 +76,10 @@
 0xEC4FC0 FUN_ec4fc0
 # Not one of the 71: the docs/106 §7 not-armed water grid cell builder (4 sites, docs/102 §4.1), added so pass 2 arms it.
 0x671000 WaterGrid_CutWorldObjects
+# docs/107 §15 (I-107-25): route-following roots whose RoutingPathImp slot calls the sampler does not arm yet.
+0x8538B0 RouteFollow_Update
+0x853820 RouteFollow_Slot38
+0x847390 Steering_PathStep
+0x85FFE0 FUN_85ffe0
+0x84C590 FUN_84c590
+0x851710 FUN_851710

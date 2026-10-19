@@ -337,6 +337,7 @@ static inline bool VfIsLotAdd(const DWORD* slot) {
 }
 
 static void __cdecl VfEnter(int id, DWORD* slot) {
+    if (t_snapRun) return;  // P4 clone run: pass through (docs/94 §12.4.3)
     Ts3nCounters& k = ts3native_counters;
     if (k.vfMode != 1) return;
     const VfProbe& p = kVf[id];

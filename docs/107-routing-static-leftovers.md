@@ -207,3 +207,140 @@ Appended to `tools/ghidra/symbols/ts3w-1.67.symbols.csv` (append only): `Routing
 - The blend map layer 0 per world and how often it is painted off lots (I-107-11).
 - The writer that sizes P's footprint grid `P+0xDC` and fills records (insert through `0x62D9F0`'s callees is the likely path) (I-107-10).
 - Per-field reads inside `0x847390`/`0x85D980` (docs/86) and the reference to `0x853500`.
+
+## 8. Follow-up 2026-10-18: the open items of §7
+
+Static only, as above (capstone 5 on `game-copy/bin/TS3W.exe`, Ghidra headless decompiles on `game-copy/ghidra-io-h`, read-only; the Sunset Valley `.world` in `game-copy/worlds` read by `tools/rtdata-decode.ts`). Ledger rows: docs/51 §49 (I-107-15 to I-107-27).
+
+| # | Item (§7) | Closed | Still needs a live read |
+|---|---|---|---|
+| 1 | Writer of `O+0x58` | `RouteFollow_EditPath 0x85F5A0` appends to it at plan time, through the path's options copy (§9) | how often it is non-empty (I-107-15) |
+| 2 | P's footprint grid `P+0xDC` | sized, filled, updated and cleared: all writers, callers and events (§10) | the cell count and record count per world (I-107-19) |
+| 3 | Blend layer 0 | It is the world-builder layer map 0, its own resource (type `0x05DA8AF6`), decoded offline: a binary 0/255 mask over 84 % of Sunset Valley (§11) | none for the data; per-world coverage needs the other `.world` files |
+| 4 | Steering path reads; `0x853500` | `0x847390` and `0x85D980` path slots listed; `0x853500` is called from a vtable slot Ghidra never made a function (§12) | who calls behaviour slot `+0x38` (I-107-24) |
+| 5 | I-107-12 sites for the sampler | 107 sites added to `docs/data/routing-indirect-sites.csv` (§13) | the sampler does not arm them yet: `vcallsites.h` needs new roots (§13.2) |
+
+Corrections (earlier text not edited; ledger rows record them): §1.4 and I-107-4 say `O+0x58` has no writer and is empty in vanilla; it is filled by every plan whose path nodes stand in a footprint (I-107-15). §3.1 says `0x62D9F0` "re-files a footprint by its complemented key"; it removes an object's records of one lot from the grid and re-marks the water grid (I-107-18). §4.2 lists `0x853500` as unreferenced; it is called from `0x853820` (I-107-23). The symbol `RouteCost_Dispatch 0x627780` (docs/20, inferred) is the segment test of §3.1, not a dispatcher; the CSV row is kept (append only) and a new name added (§14).
+
+## 9. The third id list `O+0x58`: footprints the planned path stands in [verified writer, meaning inferred]
+
+### 9.1 Writer
+
+- `RouteFollow_EditPathForRoute 0x85FF30(path, ids, x)`: for every node of the path (slot `+0x48` count, slot `+0xD4` node by index) it calls `RouteFollow_EditPath 0x85F5A0` with `ids` as its fourth argument (`[ebp+0x14]`) [verified, `0x85FF71..0x85FFD1`].
+- `RouteFollow_EditPath` is the consumer docs/83 §5 describes (footprint gather, types `0x14, 9, 0x11, 0xC, 0xD, 0x17` skipped, the two ignore lists through `IdList_Contains 0x85AAA0`, ids already in `ids`, the `exclude` footprints, then footprint slot `+0xC0` and the level polygon test `+0xE8`). Its only write to `ids` is `IdVec_PushBack 0x572400` at `0x85FC42`; `0x85F897..0x85F8BD` first tests whether the id is already in the list [verified].
+- The four callers of `0x85FF30` pass **the path's own options list `+0x58`**: each calls path slot `+0x0C` (returns `path+0x08`, the options copy) and then `0x545170`, a shared one-instruction getter `lea eax, [ecx+0x58]` [verified]:
+
+| Caller | Site | When |
+|---|---|---|
+| `Route_PlanCommon 0x7606E0` | `0x760F8B` (then `0x85FF30` at `0x760F92`) | every plan, right after the options copy into the path (`0x760F7A`, slot `+0x10`) |
+| `IC_Route_SetAGS 0x755600` | `0x755666` | script changes the route's AGS on a planned route |
+| `IC_Route_InsertRouteSubPathsAtIndex 0x758BA0` | `0x758D43` | script inserts subpaths |
+| `IC_Route_InsertCustomPathAtIndex 0x7623A0` | `0x7627ED` | script inserts a custom path |
+
+Why the §1.4 scan missed it: the field address comes out of the shared getter and the push happens two calls deeper, in a cdecl callee that only sees a vector pointer.
+
+Nothing writes the route's list (`route+0x158+0x58`) or the job copy (`job+0x40+0x58`): the options code only constructs (`0x81CB60`, `0x81CC40`: empty), clears (`0x81D3C0`), destroys (`0x81CBE0`) and assigns (`0x81D090`, callers `RoutingJob_ctor` via `0x81D440`, route copy `0x760370`, `0x81D3C0`) [verified, every function in `0x81C800..0x81D460` that touches `+0x58..+0x60`, and the options vtable `0x10213E4` has one slot, the destructor]. So the list on the route and in the job is always empty, and the path's list starts empty at each plan (assigned from the route at `0x760F7A`) and then holds what `EditPath` collected [verified writes; "empty at each plan" follows from the assignment order].
+
+### 9.2 Meaning and threads
+
+The ids are the footprints that block a node of the planned path (the start or goal stands inside them, or a portal node sits in one) and that `EditPath` did not edit the path around [inferred from docs/83 §5's consumer, which is the same function]. Steering then skips them (`RouteFollow_A 0x846B70` at `0x846DB3`/`0x846FDB`, `Locomotion_ObstacleList 0x85FFE0` at `0x8602A6`, both via `0x81C930`), so a Sim does not try to steer out of the object its own route starts or ends in [inferred]. All four writers run on the sim thread (the PlanCommon tail and three ICs); the gather inside `EditPath` takes the steering lock `+0x918` (docs/81, docs/83) [verified call chain; thread from docs/60].
+
+For a route search replacement: `O+0x58` is not a search input. It is a plan **output** that the PlanCommon tail builds after the search; as long as our search hands its path to the game's PlanCommon tail (docs/93 §4.3), the list is built as today. A builder that bypasses the tail must call `0x85FF30(path, &path.options+0x58, ...)` itself, on the sim thread.
+
+## 10. P's footprint grid `P+0xDC` [verified unless marked]
+
+P is the path planner `[[opts+0x88]+8]` (docs/99 §5; constructor/init `PathPlanner_Init 0x62E860`, which zeroes `+0xDC..+0xE4`; destructor `0x637520`, vtable `0xFEC680`).
+
+### 10.1 Layout
+
+Vector of 32-byte cells, `begin = P+0xDC`, `end = P+0xE0`, `cap = P+0xE4`. Cell index = `row * cols + col`, `cols = trunc((WM+0xBC - WM+0xB4 + 256 - 1) / 256)` and `rows = trunc((WM+0xC0 - WM+0xB8 + 256 - 1) / 256)` (constants `256.0` at `0xFCC24C`, `1.0` at `0x107A538`, `1/256` at `0x108AF84`). Records as §3.1 step 2, plus the **lot id** at `+0x40/+0x44` (0 for footprints with no lot; copied from `lot+0x48/+0x4C`) [verified in the `0x636BF0` decompile, read back by `0x62D9F0`].
+
+### 10.2 Who sizes, fills, updates and clears it
+
+| Action | Function | How | Reached from | Thread |
+|---|---|---|---|---|
+| Size (full) | `PathPlanner_Reset 0x635B70(full)` | frees every cell's records (`0x62E5A0`), `end = begin`; when `full` and the world manager exists, resizes to `rows * cols` (`0x635620`) | `PathPlanner_Setup 0x637650` (full; from `RoutingWorld_LockedSaveStep 0x829F10`), `0x6376C0` (full; `RoutingWorld_Clear 0x82D140`), `0x6376B0` (not full; `RoutingWorld_DestroyPlanners 0x8299E0`, `0x829C40`), destructor `0x637520` (not full) | sim (world load, clear, destroy) [inferred: the RoutingWorld callers are world lifecycle code] |
+| Size (lazy) | `PathPlanner_AddHangingFootprint 0x636BF0` | when the grid is empty, `0x635620(rows * cols)` from the world bounds (`0x624F30`) | first insert after a non-full reset | as the insert |
+| Fill | `0x636BF0(fp, lot, flag)` ("Routing/HangingFootprints") | footprint bounds (slot `+0x2C`, widened by 0.25 or 0.75 m for some classes), every cell the bounds overlap: builds a record (bounds, owner id when the footprint's kind slot `+0x98` is `0xB`, Sim flag `+0x30`, class mask from `fp+0x18/+0x1C`, lot id) and files it in the cell and in a key-to-cells index unless that index already lists the cell (`0x6643E0` lookup; inserts `0x62D530`, `0x626910`, which one is the cell is not checked) [inferred split]; also marks the water grid (`0x6733C0`) and recurses into child footprints | `PathPlanner_AddFootprint 0x6376D0` (lot quadtree insert `0x666C50`, then the grid when `0x626F40` says the footprint reaches outside its lot, or when it has no lot), `LotGraph_Build 0x63CB90`, `0x639DE0`, `0x63A1C0` (from `RoutingWorld_AddLotObjectPortals 0x832890`, `0x63B710`) | sim through the writer layer; `LotGraph_Build` also inside jobs (docs/83 W4) |
+| Update | remove then re-add: the writers call `LotRouting_RemoveObjectFootprints 0x635700` (which calls `0x62D9F0`) and then `0x6376D0` | object footprint moves, enable/disable, walls, floors, terrain | `RoutingWorld_UpdateObjectFootprintCore 0x8321F0`, `AddPrivateFootprint 0x831BA0`, `UpdateLotWalls 0x830940`, `UpdateTerrainFootprints 0x831710`, `UpdateLotFloorFootprints 0x8336F0`, `Lot_FinishLoad 0xACF170`, `RemoveFootprintLocked 0x82A0C0`, `LockedLotUpdate 0x82B450`, `RemoveDiscourageFootprint 0x834860` | sim (docs/60 §1.1, docs/94 §2.2) |
+| Remove | `0x62D9F0(lotId, key)` | for both the key and its complement: every cell listed for it, records of that lot: re-mark the water grid without them (`0x670510`, `0x66F6D0` for plain world records), then erase (`0x62D4E0`, `0x62C1C0`) | `0x635700`, `0x637900` (`Lot_FinishLoad`, `UpdateTerrainFootprints`, `0x639B40`), `0x62E3E0` (no direct caller) | sim, and the job when `LotGraph_Build` runs there |
+| Read | `0x627780`, `PathPlanner_FootprintPointHit 0x627540`, `0x62D0D0` (`RouteObstructionAtPoint 0x655880`, `RoutingDebug_DisplayFootprints 0x818CB0`) | §3.1 | cost modes 1-4, waypoint segment test, goal validation | job (cost modes), sim (obstruction ICs) |
+
+The "reaches outside its lot" rule of `0x626F40` (footprint slot `+0x64`, more than one level part, bounds compares) is read only in outline [inferred]. The record insert `0x626910` and the erase pair `0x62D4E0`/`0x62C1C0` were not decompiled; their roles come from the call shape [inferred].
+
+### 10.3 Search input list and snapshot
+
+- **docs/91 input list:** yes. The grid is an input of every world-search edge with cost bytes 2 and 7 (§3.1) and of goal validation; docs/91 §2 does not list it (I-107-8 already said so). It belongs next to the per-lot quadtrees as "world-level hanging footprints".
+- **docs/94 snapshot (design H):** every sim-side writer above is under a writer-layer leaf docs/94 §3.2 already marks (`0x8321F0`, `0x831BA0`, `0x82A0C0`, `0x635700`, and the lot rebuild leaves), and each record carries its lot id, so a dirty-lot copy can take the grid records of the dirty lots plus the no-lot records [inferred: no grid writer found outside those leaves, the reset paths and `LotGraph_Build`]. The grid is not inside any lot image: H needs one more world-level table (records by cell, keyed by lot id) rebuilt from the dirty lots at START. The lazy fill from `LotGraph_Build` inside a job writes the worker's own copy under H, as docs/94 §3.1 expects for lazy builds. Size: records exist only for footprints that reach outside their lot or have none, so the table is small compared with the lot quadtrees [inferred; I-107-19 counts it].
+
+## 11. Terrain blend layer 0 of `0xC6BAB0` [verified]
+
+### 11.1 Which map it is
+
+`WM+0x54` is the terrain data object; its `+0x0C` (read by the shared getter `0x89F6C0`) is the terrain blend map (`TerrainBlendMap_ctor 0xC226E0`, 0x88 bytes, "Terrain/TerrainData/BlendMap"). The blend map has three vectors of layer maps: `+0x1C` "LayerMaps" (the paint layers), **`+0x2C` "mWorldBuilderLayerMaps"** and `+0x3C` "mBrushLayerMaps". `TerrainBlendMap_GetLayerWeight 0xC22050` indexes **`+0x2C`**, so `0xC6BAB0` reads world-builder layer map 0, not the first terrain paint.
+
+Loading at world load (both from `0xC2ECA0` and `0xC62AC0`): `TerrainData_LoadBlendMap 0xC29DB0` creates the blend map and reads resource type `0x3D8632D0` (instance 1) into the paint layers (`0xC238E0`); `TerrainData_LoadWorldBuilderLayer0 0xC29CE0` then reads resource type **`0x05DA8AF6`** (instance 1) with `0xC23CB0`, which (re)creates world-builder layer 0 (`0xC22DD0(+0x2C, 0)`) and fills it record by record (`0xC21C70`). Without that resource, layer 0 does not exist and `0xC6BAB0` accepts every point inside the world bounds.
+
+Format (`0xC21A20`: the magic's high half is `0xA5FF`, the `0xFFA5` form is byte-swapped; the low half is the version, accepted `0x100..0x3FF`; `0xC23CB0` leaves the layer empty below `0x200`): u32 magic, u32 width, u32 height (1 m cells), from version 0x300 u32 record width and height (else 32), u32 present flag, u32 data size, u32 record count, u8 layer index, then records of u8 block high, u8 block low, u8 kind; kind 1 = one byte for the whole 16 x 16 block, kind 0 = 256 bytes row by row. Blocks not listed are 0; weight = byte / 255 (`0x1071AE0`).
+
+### 11.2 Offline decode
+
+`node tools/rtdata-decode.ts <file.world> --blend0` decodes it (16 x 16 records only, the only size seen; other sizes stop with a message). Sunset Valley (the only world in `game-copy/worlds`):
+
+| Value | Sunset Valley |
+|---|---|
+| Header | version 0x300, 2048 x 2048 m, 16 x 16 records, 14,244 records (12,946 uniform, 1,298 raw) of 16,384 blocks |
+| Cells > 0 | 3,513,359 (83.77 %) |
+| Cells with weight >= 0.5 | 3,513,359 (83.77 %): every non-zero cell is 255, so the layer is a binary mask |
+| R waypoints (docs/99) on such cells | 665 of 39,265 |
+
+So layer 0 marks the **unplayable part of the map** (the borders, sea and terrain outside the playable area) as not routable; off-lot points there fail `0xC6BAB0`, on-lot points pass. The few R waypoints on it are where a lot covers the mask or near its edge [inferred; I-107-21]. It is world data written by the world builder (no game code writes `+0x2C` after load besides the brush/undo paths of the edit tools) [inferred from the vector names; edit-tool writers not traced]. Our search can read the same resource offline per world and must apply the same rule: weight >= 0.5 at `floor(x), floor(z)` and no lot at the point.
+
+Other worlds: run the same command on each `.world` file; no live read is needed for the data. A live check is still useful once: `0xC6BAB0` against the decoded mask for a few points (I-107-21).
+
+## 12. Steering path reads and `0x853500`
+
+### 12.1 `ObstacleAvoidance 0x847390` [verified]
+
+Takes the current path (`agent+0x08` via `0xC93970`, `0x8473A1`), holds a reference, and uses it in four ways: path slot `+0x9C` (`0x81FD60`: "has a next or second link", reads `+0x17C`/`+0x184`) at `0x847510`; `0x83A280(agent, path)` at `0x8473D5`; as the path argument of `ObstacleAvoidance_B 0x85D980` (`0x8474FE`) and of `RouteFollow_A 0x846B70` (`0x847697`). No direct field read of the path in its own body.
+
+### 12.2 `ObstacleAvoidance_B 0x85D980` [verified slot calls on its path argument `[ebp+0xC]`, register trace; six more inferred]
+
+| Slot | Reads | Sites |
+|---|---|---|
+| `+0x0C` | options copy (`0x81C970` ignore list at `0x85DC62`) | `0x85DB78` |
+| `+0x30` | `+0xB0` PathType block | `0x85DCA9`, `0x85DCBB`, `0x85DCCD`, `0x85E168`, `0x85E28C`, `0x85E7A4`, `0x85ED64` |
+| `+0x7C`, `+0x84`, `+0x8C` | links `+0x17C`, `+0x180`, `+0x184` | `0x85E574`; `0x85DE8A`, `0x85DE9E`; `0x85E108`, `0x85E736` |
+| `+0x11C` | project onto the path; **writes the cursor block** (§4.2) | `0x85E003`, `0x85E874`, `0x85EF2D`, `0x85EFCB` |
+| `+0x120` | `0x821850`: point query on nodes `+0x98` and `+0x90` | `0x85E0FC`, `0x85E1A7` |
+| `+0x12C` | path length `+0x8C` | `0x85E12E`, `0x85E5E9`, `0x85EE1D` |
+| `+0x134`, `+0x138` | last and first node positions | `0x85E336`, `0x85E402`, `0x85E4E3`, `0x85E527`, `0x85ED8F`, `0x85EEA5`; `0x85E511` |
+| `+0x48`, `+0x118`, `+0x12C`, `+0x134`, `+0x13C`, `+0x140` | node count, point at distance, length, end point, end orientation | `0x85EAB8`, `0x85EC64`, `0x85EC4C`, `0x85EAF8`, `0x85EB0C`, `0x85EB24` (receiver `esi`, a copy of the path at `0x85E716` by a linear trace; control flow not followed) [inferred] |
+
+New slots against I-107-12: `+0x84`, `+0x9C`, `+0x120`, `+0x138` (and `+0x16C` in the debug draw). Like the follow behaviour, steering B writes the path's cursor block (slot `+0x11C`), so the path is follow state shared by follow and steering on the sim thread [verified write slot; "shared" inferred from both callers being per-tick sim code].
+
+### 12.3 `0x853500` [verified]
+
+Not dead code: `0x853820` calls it (`0x853886`), and `0x853820` is **slot `+0x38` of the route-follow behaviour vtable** (pointer at `0x10272B4`). Ghidra never created a function at `0x853820` (not in `game-copy/analysis/functions.csv`), and the 16 bytes before it are `0x853500`'s own jump table (referenced at `0x853755`), which is why no reference showed. `0x853820` gets the current path (`[this+0x14]` agent, `0xC93970`), holds a reference, may call its own slot `+0x18` when `+0x17C` is set and its list `+0x1C` is empty, then `0x84AF20`, then (unless `+0x17C`) `0x852700` and on failure `0x84B0C0(0)`, then `0x853500`. `0x853500` walks the behaviour's list at `+0x1C` (element `+0x24` byte, `+0x1C` object slot `+0x10`), then reads the path (slots `+0x0C`, `+0x7C`, `+0x12C`, `+0x13C`) and calls `0x84B0C0`, `0x84C590`, `0x851710`, `0x8484D0`, `0x850B90`. Its role (a second per-tick entry of the follow behaviour, for the route end) is inferred. Who calls slot `+0x38`: not found in the locomotion closure (open, I-107-24).
+
+## 13. I-107-12 as sampler sites
+
+### 13.1 Rows added [verified sites; receivers verified by register trace unless marked]
+
+107 rows appended to `docs/data/routing-indirect-sites.csv` (none of these sites was in it; the docs/102 closure stopped before the follow code): kind `vcall`, target = the `RoutingPathImp` slot function (vtable `0x10214D8`; the path constructors `0x81FA45`, `0x81FF66`, `0x8204CE` store only this vtable, and the slot targets checked appear in no other vtable), status `resolved`; six `0x85D980` sites whose receiver is inferred are `partly resolved`. Functions: `0x84B0C0`, `0x84C590`, `0x84D7E0`, `0x84EA00`, `0x84F560`, `0x84FB20`, `0x851710`, `0x852700`, `0x853500`, `0x8538B0`, `0x9564A0` (current path or a link), `0x85FFE0`, `RouteFollow_A 0x846B70`, `0x849600`, `0x847390`, `0x85D980` (path argument), and `0x839F70` (debug draw only). Slots: `+0x0C`, `+0x30`, `+0x48`, `+0x4C`, `+0x58`, `+0x7C`, `+0x84`, `+0x8C`, `+0x9C`, `+0xA0`, `+0xD0`, `+0x100`, `+0x118`, `+0x11C`, `+0x120`, `+0x12C`, `+0x134`, `+0x138`, `+0x13C`, `+0x140`, `+0x144`, `+0x150`, `+0x16C`. A live pair at one of these sites with another target is classed `new` by `tools/indirect-live-vs-static.ts` (checked with two synthetic log lines: `match` and `family`).
+
+### 13.2 What the sampler still needs
+
+The `[ProbeSnap]` sampler arms only the sites in `native/ts3native/vcallsites.h`, generated by `tools/snap-vcall-sites.py` from the routing roots; none of the 107 sites is in it. To confirm I-107-12 live, add `RouteFollow_Update 0x8538B0`, `0x853820`, `ObstacleAvoidance 0x847390`, `Locomotion_ObstacleList 0x85FFE0`, `0x84C590` and `0x851710` to its `ROOTS` (depth 2-3 is enough), regenerate the header and rebuild ts3native; then run `node tools/indirect-live-vs-static.ts <log> --class new,resolves` on a short walk-across-a-lot sample. Not done here (native build change). Prologue and hook-site exclusions: none of the 107 sites is within 16 bytes of a function start or of any address named in docs/68, `tools/probe/*.js` or `tools/frida/*.js` (465 addresses) [verified, the generator's own rule].
+
+## 14. Names added (second batch)
+
+Appended to `tools/ghidra/symbols/ts3w-1.67.symbols.csv`: `RouteFollow_Update38 0x853820`, `RouteFollow_EndStep 0x853500`, `Get_Plus58 0x545170`, `PathPlanner_Reset 0x635B70`, `PathPlanner_SizeFootprintGrid 0x635620`, `PathPlanner_Setup 0x637650`, `PathPlanner_dtor 0x637520`, `PathPlanner_AddFootprint 0x6376D0`, `PathPlanner_AddHangingFootprint 0x636BF0`, `PathPlanner_RemoveHangingFootprint 0x62D9F0` (second name; the old row stays), `PathPlanner_SegmentHitsFootprint 0x627780` (second name), `PathPlanner_FootprintReachesOutsideLot 0x626F40`, `TerrainBlendMap_ctor 0xC226E0`, `TerrainData_LoadBlendMap 0xC29DB0`, `TerrainData_LoadWorldBuilderLayer0 0xC29CE0`, `TerrainBlendMap_ReadWorldBuilderLayer 0xC23CB0`, `TerrainBlendMap_ReadLayers 0xC238E0`, `TerrainBlendMap_ReadRecord 0xC21C70`, `TerrainLayerMap_GetWeight 0xC21AE0`, `Get_Plus0C 0x89F6C0`.
+
+## 15. What is still open
+
+- How often `O+0x58` is non-empty, and which object kinds land in it (I-107-15, live read of `path+0x60..+0x64`).
+- Grid size per world: cells (`(P+0xE0 - P+0xDC) / 32`) and records (I-107-19, live read).
+- Blend layer 0 for the other worlds (offline, needs their `.world` files) and one live point check (I-107-21).
+- Caller of the follow behaviour's slot `+0x38` (I-107-24).
+- Arming the 107 sites in the sampler (§13.2).

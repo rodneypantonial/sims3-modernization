@@ -1,0 +1,24 @@
+[
+  {
+    "id": "bp-plan-repeat",
+    "note": "docs/23 §18: [PlanRepeat] plan cache probe (0.32.10, counters v60), counts only, daytime OK; only [PlanRepeat] on (it turns on the Route_PlanLocked detour and the [RouteSnap] Count=1 change counters as its world version; no async, gate, P4). After: node tools/harness/plan-repeat-report.ts <row.nativeDump>; pass = no crash, prReady 3; verdict = build the cache only if sim exact repeats save >= 5 ms/s",
+    "asi": "game-copy/ts3native.asi.planrepeat",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 60,
+    "ini": { "PlanRepeat.Enabled": 1 },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-plan-repeat",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals)",
+    "asi": "game-copy/ts3native.asi.planrepeat",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 60,
+    "ini": { "PlanRepeat.Enabled": 1 },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "make-snap-gohere-bp",
+    "note": "Make Snap-GoHere-BP for snap-release.json bp-snap-mod-gohere (docs/94 §20 job 16): Baseline-BP-Spring loaded with NRaas GoHere installed (manual download, fixes.json nraas-gohere; uninstalled after the job), saved under the new name. GoHere door filters are a manual step afterwards (docs/94 §20.4)",
+    "asi": "tested",
+    "fixes": {
+      "install": [
+        "nraas-gohere"
+      ]
+    },
+    "run": {
+      "repro": "make-snap-gohere-bp"
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  }
+]

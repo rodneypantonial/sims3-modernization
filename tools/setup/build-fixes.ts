@@ -1,8 +1,11 @@
 // Compiles mods/ts3fixes (the player mod with the stutter fixes, docs/04 F8-F12) against the game's own DLLs and packs
 // it into build/ts3fixes.package. Windows-only by nature: it needs the .NET Framework C# compiler (csc.exe, C# 5).
 //   node tools/setup/build-fixes.ts
+// Also builds the TEST-ONLY mod mods/portalplan-test (MonoPatcher [TypePatch] on Lot.OnPortalPathPlan, docs/94 §20 job 17)
+// into build/ts3-portalplan-test.package when MonoPatcher's package is in the installer cache; skipped otherwise.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { TYPE_S3SA, fnv64, s3saEncode, writePackage } from '../dbpf.ts';
 
@@ -48,6 +51,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kWildflowerTask value="False" />
     <kCaneEarlyOut value="False" />
     <kTooltipThrottle value="False" />
+    <kDoorMirror value="False" />
   </Current_Tuning>
 </base>
 `;
@@ -61,9 +65,11 @@ const outDir = join(ROOT, 'build');
 mkdirSync(outDir, { recursive: true });
 const src = join(ROOT, 'mods', 'ts3fixes', 'src');
 const dll = join(outDir, `${ASSEMBLY}.dll`);
-execFileSync(CSC, ['/nologo', '/nostdlib+', '/noconfig', '/target:library', '/optimize+', '/langversion:5', '/warn:4',
-  '/nowarn:414,169,649', `/out:${dll}`, ...REFS.map(r => `/reference:${join(REF_DIR, `${r}.dll`)}`),
-  ...readdirSync(src).filter(f => f.endsWith('.cs')).map(f => join(src, f))], { stdio: 'inherit' });
+const compile = (srcDir: string, out: string, extraRefs: string[] = []) =>
+  execFileSync(CSC, ['/nologo', '/nostdlib+', '/noconfig', '/target:library', '/optimize+', '/langversion:5', '/warn:4',
+    '/nowarn:414,169,649', `/out:${out}`, ...REFS.map(r => `/reference:${join(REF_DIR, `${r}.dll`)}`), ...extraRefs.map(r => `/reference:${r}`),
+    ...readdirSync(srcDir).filter(f => f.endsWith('.cs')).map(f => join(srcDir, f))], { stdio: 'inherit' });
+compile(src, dll);
 const pkg = writePackage([
   { type: TYPE_S3SA, group: 0, instance: fnv64(ASSEMBLY), data: s3saEncode(readFileSync(dll)) },
   { type: TYPE_XML, group: 0, instance: fnv64(`${ASSEMBLY}.Instantiator`), data: Buffer.from(TUNING_XML, 'utf8') },
@@ -71,3 +77,20 @@ const pkg = writePackage([
 const out = join(outDir, 'ts3fixes.package');
 writeFileSync(out, pkg);
 console.log(`built ${out} (${pkg.length} bytes)`);
+
+// Test-only mod. MonoPatcher has no license, so its DLL never goes in the repo: take it from install-fixes.ts's unpacked download.
+const MP_PKG = join(process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'), 'ts3-fixes', 'unpacked', 'monopatcher', 'Packages', 'ld_MonoPatcher.package');
+if (!existsSync(MP_PKG)) {
+  console.log(`skipped portalplan-test (test only): no ${MP_PKG}; run node tools/setup/install-fixes.ts install --only monopatcher first`);
+} else {
+  const refDir = join(outDir, 'refs');
+  mkdirSync(refDir, { recursive: true });
+  execFileSync(process.execPath, [join(ROOT, 'tools', 'extract-assemblies.ts'), refDir, MP_PKG], { stdio: 'ignore' });
+  const TEST = 'Ts3PortalPlanTest';
+  const testDll = join(outDir, `${TEST}.dll`);
+  compile(join(ROOT, 'mods', 'portalplan-test', 'src'), testDll, [join(refDir, 'MonoPatcher.dll')]);
+  const testPkg = writePackage([{ type: TYPE_S3SA, group: 0, instance: fnv64(TEST), data: s3saEncode(readFileSync(testDll)) }]);
+  const testOut = join(outDir, 'ts3-portalplan-test.package');
+  writeFileSync(testOut, testPkg);
+  console.log(`built ${testOut} (${testPkg.length} bytes, TEST ONLY)`);
+}

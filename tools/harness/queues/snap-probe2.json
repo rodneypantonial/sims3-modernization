@@ -5,9 +5,50 @@
     "asi": "game-copy/ts3native.asi.snapprobe2",
     "save": "Baseline-BP-Spring",
     "minCounters": 43,
-    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1 },
-    "run": { "profile": { "minutes": 10, "seed": 12345 } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-probe2",
+    "note": "IP copy of bp-snap-probe2 (G2 gap 3, docs/109 §8: pass 2 had only the houseboat job in IP). DRAFT, not run (docs/109 §5): [ProbeSnap] pass 2, site table native/ts3native/vcallsites2.h (pass 1 + 70 extra roots, 1534 sites); same settings as snap-probe.json bp-snap-probe; asi built by the docs",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   },
   {
@@ -16,9 +57,26 @@
     "asi": "game-copy/ts3native.asi.snapprobe2",
     "save": "Baseline-BP-Spring",
     "minCounters": 43,
-    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1, "ProbeSnap.DelaySec": 60 },
-    "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rt-s2b-sweep" } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "rt-s2b-sweep"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   },
   {
@@ -27,9 +85,26 @@
     "asi": "game-copy/ts3native.asi.snapprobe2",
     "save": "Baseline-BP-Spring",
     "minCounters": 43,
-    "ini": { "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "ProbeSnap.Enabled": 1, "ProbeSnap.DelaySec": 60 },
-    "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "pet-guard-cancel" } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "pet-guard-cancel"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   },
   {
@@ -38,8 +113,130 @@
     "asi": "game-copy/ts3native.asi.snapprobe2",
     "save": "Baseline-BP",
     "minCounters": 43,
-    "ini": { "ProbeSnap.Enabled": 1 },
-    "run": { "matrix": ["--travel", "--cases", "travel", "--to", "france"] },
+    "ini": {
+      "ProbeSnap.Enabled": 1
+    },
+    "run": {
+      "matrix": [
+        "--travel",
+        "--cases",
+        "travel",
+        "--to",
+        "france"
+      ]
+    },
     "timeoutMin": 45
+  },
+  {
+    "id": "bp-snap2-build",
+    "note": "DRAFT (docs/109 §6 group B): build mode, floor up/down, a wall run and floor tiles on levels 0 and 1, a stair try, build exit (repro bp-build-levels) for LotRouting_QuadTreeBuild, LotRouting_FootprintRoomIds, Footprint_EnsureLevelPolygons",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "repro": "bp-build-levels"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-snap2-upstairs",
+    "note": "DRAFT (docs/109 §6): plans and a walk to an upstairs object, then Route.Replan on the used route (repro bp-upstairs-route) for the stair/level sites and Route_UnlinkPaths, Route_PlanCommon 0x760F0A",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "repro": "bp-upstairs-route"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-snap2-door",
+    "note": "DRAFT (docs/109 §6 group B): home door locked for non-household, household Sim and visitors plan through it (repro bp-door-lock) for the deferred LotQuadTree_Insert 0x666D88/0x666E04",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "repro": "bp-door-lock"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "ip-snap2-houseboat",
+    "note": "DRAFT (docs/109 §6 groups A, D): houseboat lot created and deleted twice at a port gangway (repro ip-houseboat-create) for the lot-table miss, LotGraph_dtor and the lot index rebuild 0xC66700",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "repro": "ip-houseboat-create"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
   }
 ]

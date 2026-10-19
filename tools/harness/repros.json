@@ -48,7 +48,7 @@
     "expect": "both leave the diner and get home (no Sim stuck)",
     "area": [
       312.4,
-      1497.0
+      1497
     ]
   },
   {
@@ -62,7 +62,7 @@
         "args": {
           "sim": "Paul Hogue",
           "x": 411.9,
-          "z": 1344.0
+          "z": 1344
         }
       },
       {
@@ -82,7 +82,7 @@
     "expect": "the Sim walks home or is shortcut home (not stuck)",
     "area": [
       411.9,
-      1344.0
+      1344
     ]
   },
   {
@@ -250,7 +250,7 @@
     "expect": "all six leave (no Sim stuck)",
     "area": [
       312.4,
-      1497.0
+      1497
     ]
   },
   {
@@ -444,16 +444,16 @@
     "fix": "ts3native route negative cache ([RouteCache] Enabled=1) + C# backoff",
     "save": "Baseline-BP",
     "area": [
-      5.0,
-      5.0
+      5,
+      5
     ],
     "steps": [
       {
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       },
@@ -461,8 +461,8 @@
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       },
@@ -470,8 +470,8 @@
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       },
@@ -479,8 +479,8 @@
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       },
@@ -488,8 +488,8 @@
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       },
@@ -497,8 +497,8 @@
         "cmd": "sim_route_to",
         "args": {
           "sim": "Wogan Hemlock",
-          "x": 5.0,
-          "z": 5.0
+          "x": 5,
+          "z": 5
         },
         "waitS": 1
       }
@@ -720,7 +720,7 @@
         "args": {
           "sim": "Wogan Hemlock",
           "x": 411.9,
-          "z": 1344.0
+          "z": 1344
         }
       },
       {
@@ -735,7 +735,7 @@
         "args": {
           "sim": "Wayne Bumble",
           "x": 412.9,
-          "z": 1345.0
+          "z": 1345
         }
       },
       {
@@ -756,7 +756,7 @@
     "expect": "both reach their home lot (The Tidewater, The Simerset) or are reset onto it by the watchdog (recent/moved show 'watchdog reset [shell apartment ...]', watchdog_home_shell > 0); none stuck on Waylon's Haunt or in an elevator line. Run with --set watchdog=false for the vanilla baseline.",
     "area": [
       411.9,
-      1344.0
+      1344
     ]
   },
   {
@@ -1034,7 +1034,7 @@
     "expect": "within ~70 sim-minutes recent/moved show 'Wogan Hemlock -> watchdog reset (idle on unroutable spot)' and he stands on a routable spot of the lot (or at its front door); watchdog_idle_verdicts >= 1, safespot_checks rises by at most one per pass for him; with --set watchdogidle=false he stays put (counter flat)",
     "area": [
       312.4,
-      1497.0
+      1497
     ]
   },
   {
@@ -1058,7 +1058,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true,
@@ -1068,7 +1068,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1077,7 +1077,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1086,7 +1086,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1095,7 +1095,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1104,7 +1104,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1113,7 +1113,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1122,7 +1122,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1131,7 +1131,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1140,7 +1140,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1149,7 +1149,7 @@
         "cmd": "sim_route_to",
         "args": {
           "x": 312.4,
-          "z": 1497.0
+          "z": 1497
         },
         "waitS": 4,
         "optional": true
@@ -1164,7 +1164,7 @@
     "expect": "watchdog_route_fail_sims >= 1, then watchdog_route_fails +1 once 30 sim-minutes have passed since the first failure: recent shows '<active Sim> -> watchdog reset (route plans failing)' and the Sim stands on a routable spot; with --set watchdogidle=false it stays stranded",
     "area": [
       312.4,
-      1497.0
+      1497
     ]
   },
   {
@@ -1323,7 +1323,7 @@
     "expect": "Wogan leaves the diner and gets home as with routeasync=0; /native asyncStarted and asyncCollected rise (collected ~= started), watchdogs 0, no route async lines in ts3native.log other than the 60 s counters; ts3fixes counters [56] > 0, [58] = 0 (agent asyncroute_started, asyncroute_pollcap); no hang (the probe and agent keep answering)",
     "area": [
       312.4,
-      1497.0
+      1497
     ]
   },
   {
@@ -5268,5 +5268,2638 @@
       "minutes": 3
     },
     "expect": "save succeeds; a task pending at the save shows a '(save)' line in wildflower_log and wildflower_saveaborts +1 (none pending = inconclusive, rerun; it only hits when fires fail tries); reload Wildflower-Scratch: no uncollected wildflower lying out of world (list_objects), no script errors"
+  },
+  {
+    "id": "bp-build-levels",
+    "bug": "none (probe coverage): docs/109 §6 group B, the build-side routing sites probe pass 1 never saw fire (lot rebuilds at build exit with new walls, level polygons, quadtree inserts) and walls on a second floor",
+    "fix": "measurement only: [ProbeSnap] pass 2 (snap-probe2.json bp-snap2-build)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. World-agnostic: tile coordinates on the active home lot (tool_drag tiles), camera aimed by build_level. Tool ids from Sims3.UI.ToolMessageID (0 wall, 2 floor, 16 stairs); product \"first\" = first catalog entry. Tiles 1..5 near the lot corner may be blocked by the house or objects: the tool then refuses, which is harmless; the stair click is a try (needs a valid upstairs spot). Every tool step is optional so a refusal never stops the run",
+    "steps": [
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 15,
+        "note": "build mode on the home lot"
+      },
+      {
+        "cmd": "build_level",
+        "args": {
+          "level": 0,
+          "aim": [
+            3,
+            3
+          ]
+        },
+        "waitS": 3,
+        "note": "ground floor, camera on tile 3,3"
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 0,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "wall tool"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              1
+            ],
+            [
+              5,
+              1
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "one wall run, 4 tiles"
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 2,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "floor tool, first floor pattern preset"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "floor rectangle"
+      },
+      {
+        "cmd": "build_level",
+        "args": {
+          "up": true,
+          "aim": [
+            3,
+            3
+          ]
+        },
+        "waitS": 3,
+        "note": "floor up (the build UI floor-up button)"
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 0,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              1
+            ],
+            [
+              5,
+              1
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "wall on level 1 over the ground wall"
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 2,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              3
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "floor tiles on level 1 against the new wall"
+      },
+      {
+        "cmd": "tool_select",
+        "args": {
+          "tool": 16,
+          "product": "first"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "stairs tool, first stair product"
+      },
+      {
+        "cmd": "tool_drag",
+        "args": {
+          "tiles": true,
+          "points": [
+            [
+              3,
+              2
+            ]
+          ]
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "one click: stairs if the spot is valid"
+      },
+      {
+        "cmd": "build_level",
+        "args": {
+          "level": 0
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20,
+        "note": "build exit: RoutingWorld_UpdateLotWalls -> LotRouting_QuadTreeBuild, LotGraph_Build"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 40,
+        "note": "a plan across the rebuilt lot (level polygons on the next segment test)"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        }
+      }
+    ],
+    "expect": "no crash; build_level reports level 1 after \"up\" (it stays 0 on a lot with nothing above the ground floor: then the level-1 steps are refused); snap-report shows new hits at LotRouting_QuadTreeBuild 0x62F9C1, LotRouting_FootprintRoomIds 0x6354D7 or Footprint_EnsureLevelPolygons 0x80E5F6"
+  },
+  {
+    "id": "bp-upstairs-route",
+    "bug": "none (probe coverage): docs/109 §6, routing over stairs (multi-level footprints, stair portals) and route reuse (Route_UnlinkPaths 0x75732D/0x75733A, Route_PlanCommon 0x760F0A) on a replan of a used route object",
+    "fix": "measurement only: [ProbeSnap] pass 2 (snap-probe2.json bp-snap2-upstairs)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. \"@upstairs\" = the in-world object with Level >= 1 nearest the active Sim on any lot (fails if the world has none). sim_route_to plans only; go_here walks. \"@route\" = the last sim_route_to route, so reflect_call \"@route.Replan\" replans a route that already holds paths",
+    "steps": [
+      {
+        "cmd": "list_objects",
+        "args": {
+          "min_level": 1,
+          "include_sims": false,
+          "limit": 5
+        },
+        "waitS": 1,
+        "note": "log: upstairs candidates on the current lot"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "@upstairs"
+        },
+        "waitS": 5,
+        "note": "plan across levels"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 3,
+        "note": "replan of a used route: Route_UnlinkPaths sites",
+        "optional": true
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 3,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@upstairs"
+        },
+        "waitS": 60,
+        "note": "walk up the stairs"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45,
+        "note": "and back down"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "@upstairs"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 3,
+        "optional": true
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 3,
+        "optional": true
+      }
+    ],
+    "expect": "no crash; sim_route_to plan Success (not Failure); snap-report shows hits at 0x75732D/0x75733A and 0x760F0A after the Replan steps"
+  },
+  {
+    "id": "bp-door-lock",
+    "bug": "none (probe coverage): docs/109 §6 group B, the deferred quadtree insert LotQuadTree_Insert 0x666D88/0x666E04 (door-lock refresh InRoom_ApplyPortalLockFootprints 0x632460 during in-room planning, docs/101 §4.4)",
+    "fix": "measurement only: [ProbeSnap] pass 2 (snap-probe2.json bp-snap2-door)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. \"@door\" = the home-lot door nearest the active Sim; tLock.SelectedHousehold = locked for all but the household [inferred from the enum and the lock menu]. Visitor townies (Wogan Hemlock, Johnny Jones, as steer-crowd) are optional. The lock is restored to Anybody (unlocked, the default) at the end and in cleanup",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "SelectedHousehold"
+          ]
+        },
+        "waitS": 2,
+        "note": "lock for non-household"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 40,
+        "note": "household Sim routes to/through the door"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "home"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "visitor plans into the home"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "home"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "target": "@door"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "visitor plan to the locked door"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Johnny Jones",
+          "target": "@door"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "Anybody"
+          ]
+        },
+        "waitS": 2,
+        "note": "unlock"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "Anybody"
+          ]
+        }
+      }
+    ],
+    "expect": "no crash; snap-report shows hits at 0x666D88 or 0x666E04 (if not: the visitors never planned into the locked room; check their queues)"
+  },
+  {
+    "id": "make-snap-gohere-bp",
+    "bug": "none (test save): docs/94 §20 job 16 bp-snap-mod-gohere needs a Bridgeport save that was loaded and saved with NRaas GoHere installed (GoHere keeps its settings in the save)",
+    "fix": "New save Snap-GoHere-BP from Baseline-BP-Spring (queues/snap-gohere-save.json installs nraas-gohere for the job)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Makes a save, changes no existing file. GoHere door filters are not set by this repro (no agent command for them): set them by hand afterwards if the test needs them (docs/94 §20.4)",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 10,
+        "note": "let GoHere finish its world-load setup"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Snap-GoHere-BP"
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 2,
+          "maxS": 180
+        },
+        "note": "until the save is written"
+      }
+    ],
+    "expect": "no crash; Snap-GoHere-BP.sims3 exists in Saves"
+  },
+  {
+    "id": "bp-door-lock-typepatch",
+    "bug": "none (probe coverage): docs/109 §6 group B, the deferred quadtree insert LotQuadTree_Insert 0x666D88/0x666E04 (door-lock refresh InRoom_ApplyPortalLockFootprints 0x632460 during in-room planning, docs/101 §4.4)",
+    "fix": "measurement only: docs/94 §20 job 17 bp-snap-mod-monopatcher, the steps of bp-door-lock with the TypePatch test mod (mods/portalplan-test) counts read before and after",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Copy of bp-door-lock (keep the two in step) plus reflect_call Ts3PortalPlanTest.PortalPlanCounts.Read first and last; needs fixes monopatcher + portalplan-typepatch-test installed. UNVERIFIED (static only, 2026-10-18): never run. \"@door\" = the home-lot door nearest the active Sim; tLock.SelectedHousehold = locked for all but the household [inferred from the enum and the lock menu]. Visitor townies (Wogan Hemlock, Johnny Jones, as steer-crowd) are optional. The lock is restored to Anybody (unlocked, the default) at the end and in cleanup",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3PortalPlanTest.PortalPlanCounts.Read"
+        },
+        "waitS": 1,
+        "note": "counts before (calls > 0 already: the patch is live)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "SelectedHousehold"
+          ]
+        },
+        "waitS": 2,
+        "note": "lock for non-household"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 40,
+        "note": "household Sim routes to/through the door"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "home"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "visitor plans into the home"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "home"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "target": "@door"
+        },
+        "waitS": 5,
+        "optional": true,
+        "note": "visitor plan to the locked door"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "Johnny Jones",
+          "target": "@door"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "Anybody"
+          ]
+        },
+        "waitS": 2,
+        "note": "unlock"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3PortalPlanTest.PortalPlanCounts.Read"
+        },
+        "waitS": 1,
+        "note": "counts after: calls and locked went up = the patched handler ran for the door plans"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@door.SetLockType",
+          "args": [
+            "Anybody"
+          ]
+        }
+      }
+    ],
+    "expect": "no crash; counts after > counts before, locked > 0; no crash; snap-report shows hits at 0x666D88 or 0x666E04 (if not: the visitors never planned into the locked room; check their queues)"
+  },
+  {
+    "id": "ip-houseboat-create",
+    "bug": "none (probe coverage): docs/109 §6 groups A and D, a lot added and removed in a running world: lot-table miss (LotTable_GetOrInsert 0x62EAB0 miss branch, 0x62DE40), LotGraph_dtor, lot index rebuild 0xC66700 (WorldManager_MarkLotIndexDirty from houseboat create, World_RemoveLotCommon)",
+    "fix": "measurement only: [ProbeSnap] pass 2 (snap-probe2.json ip-snap2-houseboat)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. \"@gangway\" = a port gangway without a houseboat (kept for the remove call). Gangway.ChangeHouseboatSize is what the new-houseboat flow calls (PlayFlowModel.CreateHouseboatLot): a size creates and docks a houseboat with its own lot (World.CreateHouseboatLot), None deletes it (World.DeleteHouseboatLot)",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.ChangeHouseboatSize",
+          "args": [
+            "Small"
+          ]
+        },
+        "waitS": 30,
+        "note": "houseboat lot create"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.GetHouseboat"
+        },
+        "waitS": 1,
+        "optional": true,
+        "note": "log"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.ChangeHouseboatSize",
+          "args": [
+            "None"
+          ]
+        },
+        "waitS": 30,
+        "note": "houseboat lot delete"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.ChangeHouseboatSize",
+          "args": [
+            "Medium"
+          ]
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.ChangeHouseboatSize",
+          "args": [
+            "None"
+          ]
+        },
+        "waitS": 30
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@gangway.ChangeHouseboatSize",
+          "args": [
+            "None"
+          ]
+        }
+      }
+    ],
+    "expect": "no crash; the first call returns a lot id (not 0); snap-report shows hits at 0x62DF97/0x62DFB1, 0x62B9D8/0x62B9EC or 0xC66714..0xC66786"
+  },
+  {
+    "id": "f4b-inlot-route",
+    "bug": "none (probe coverage): docs/99 §12.6 F-4b, in-lot routes: node y / +0x20 / path length after CopyNodes 0x819E10, follower prepends through path slot +0x100 0x821E90, agent y vs terrain",
+    "fix": "measurement only: queues/f4b.json bp-f4b-inlot",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Measurement only, docs/99 §12.6 / §12.7: profile job with --f4b (tools/frida/f4b-reads.js). Household autonomy off first (agent autonomy command, the game's own counter) so the active Sim's routes are the ones we order; townies still plan (their CopyNodes calls are logged too). The last step gives autonomy back (profile-world ignores cleanup). go_here walks (the follower runs, so slot +0x100 can fire); sim_route_to only plans",
+    "steps": [
+      {
+        "cmd": "autonomy",
+        "args": {
+          "sim": "household",
+          "enabled": false
+        },
+        "waitS": 1,
+        "note": "household autonomy off"
+      },
+      {
+        "cmd": "cancel_interactions",
+        "args": {},
+        "waitS": 2,
+        "note": "active Sim idle"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 25,
+        "note": "walk to the home-lot door nearest the active Sim (in-lot route)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 25,
+        "note": "walk to the home lot centre"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@door"
+        },
+        "waitS": 25
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 25
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "sim": "active",
+          "target": "@door"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan only (CopyNodes without a follow)"
+      },
+      {
+        "cmd": "autonomy",
+        "args": {
+          "enabled": true
+        },
+        "waitS": 1,
+        "note": "give back what this repro turned off"
+      }
+    ],
+    "expect": "no crash; f4b-report: reason complete, CopyNodes calls > 0, prepend calls logged with the follower return addresses; the outcome line names one docs/99 §12.6 row"
+  },
+  {
+    "id": "f4b-street-route",
+    "bug": "none (probe coverage): docs/99 §12.6 F-4b, a route off the home lot across the street and back (world legs: searched world-graph routes)",
+    "fix": "measurement only: queues/f4b.json bp-f4b-street",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Measurement only, docs/99 §12.6 / §12.7: profile job with --f4b (tools/frida/f4b-reads.js). Household autonomy off first (agent autonomy command, the game's own counter) so the active Sim's routes are the ones we order; townies still plan (their CopyNodes calls are logged too). The last step gives autonomy back (profile-world ignores cleanup). go_here walks (the follower runs, so slot +0x100 can fire); sim_route_to only plans. The point (312.4, 1496.7) is the off-lot walk target of detail-priority-cache / cane-early-out on the Bridgeport saves; that it lies across a street is inferred",
+    "steps": [
+      {
+        "cmd": "autonomy",
+        "args": {
+          "sim": "household",
+          "enabled": false
+        },
+        "waitS": 1,
+        "note": "household autonomy off"
+      },
+      {
+        "cmd": "cancel_interactions",
+        "args": {},
+        "waitS": 2,
+        "note": "active Sim idle"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 70,
+        "note": "walk off the home lot"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 70,
+        "note": "and back"
+      },
+      {
+        "cmd": "autonomy",
+        "args": {
+          "enabled": true
+        },
+        "waitS": 1,
+        "note": "give back what this repro turned off"
+      }
+    ],
+    "expect": "no crash; f4b-report: reason complete, searched paths (n > 2) logged; the outcome line names one docs/99 §12.6 row"
+  },
+  {
+    "id": "rare-winter-pond",
+    "bug": "none (probe coverage): docs/117 §2.1, snow on the ground and frozen ponds: FrozenPondPath subpaths (EnablePondPlanning, docs/100 §1.6, docs/99 §11 flag 0x200), snow routing",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Needs profile.noEnv (the test_env guard turns winter into spring). freeze_ponds sets freeze level 100 and the FrozenSolid pond state by reflection (the end state of the game's own freezing steps); temperature -15 keeps it frozen (override flag). \"to: pond\" = RepresentativePondPosition of the nearest world pond: fails in a world with no world pond (then only the snow part runs). Lot ponds are not searched",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "winter",
+          "weather": "snow",
+          "intensity": "Heavy",
+          "weather_hours": 24,
+          "temperature": -15,
+          "snow_level": "Deep",
+          "freeze_ponds": true,
+          "moon_phase": 4
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "pond"
+        },
+        "waitS": 60,
+        "optional": true,
+        "note": "walk onto the frozen pond (Sim route options get EnablePondPlanning from SimRoutingComponent)"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "pond"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan to the pond with the Sim's own options"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "pond",
+          "options": [
+            "EnablePondPlanning"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan with the pond bit set explicitly"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "pond"
+        },
+        "waitS": 60,
+        "optional": true,
+        "note": "six Sims cross the ice to one point"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45,
+        "note": "back across the snow"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45,
+        "optional": true
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; test_env read shows Winter, snow_level Deep, pond_state FrozenSolid; sim_route_to to the pond plans Success; snap-report/indirect-live-vs-static list the sites hit (compare with bp-snap-probe2 for new ones)"
+  },
+  {
+    "id": "rare-thunderstorm",
+    "bug": "none (probe coverage): docs/117 §2.2, heavy rain (thunderstorm: lightning strikes need Heavy, SeasonsManager rain tuning): Sims run in rain and reroute to shelter",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Needs profile.noEnv. Lightning may strike a Sim or object (fire, scorch): routing round reactions is wanted. The weather is forced for 12 h",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "weather": "rain",
+          "intensity": "Heavy",
+          "weather_hours": 12,
+          "moon_phase": 4
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 8
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60,
+        "note": "eight Sims walk across town in the storm"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "active Sim walks to the farthest community lot in the rain"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; test_env read shows Rain; Sims reach the crowd point or the far lot (no stuck Sim)"
+  },
+  {
+    "id": "rare-fullmoon-werewolf",
+    "bug": "none (probe coverage): docs/117 §2.3, full moon night: werewolf change and run, full-moon zombies (if the world spawns them), night routing",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Needs profile.noEnv (the guard moves a full moon to first quarter). moon_phase 0 = full (test_env guard reads 0 as full). hour 22 jumps the clock with SimClock.AddOneHour (alarms in between fire at once). Zombies are not spawned by us: the game spawns them on full-moon nights when the lunar cycle settings allow [inferred]",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "fall",
+          "weather": "fog",
+          "weather_hours": 12,
+          "moon_phase": 0,
+          "hour": 22
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Werewolf",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes Werewolf (OccultManager.AddOccultType(type, addOutfit, isReward, fromRestore), on a game task)"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "werewolf runs across town"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "list_sims",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: zombies or werewolf townies out tonight"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state, moon, hour"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; moon_phase 0 and hour 22..23 in the read; the active Sim is a werewolf (sim_details occult) and walks to the far lot and back"
+  },
+  {
+    "id": "rare-route-bits",
+    "bug": "none (probe coverage): docs/117 §2.4, planner bits no save in our set exercises (docs/109 §3, docs/11 table): ghost pass-through, flier, horse/dog followers, stroller, large animal, car-only, UFO; plans only, each replanned",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. World-neutral. sim_route_to plans for the active Sim with extra RouteOption bits by name on top of the Sim's own; no walk (a plan with a follower type it is not may fail: the plan result is logged, the probe still sees the job). \"far\" = farthest community lot, \"@upstairs\" = nearest upper-floor object",
+    "steps": [
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "@upstairs",
+          "options": [
+            "RouteAsGhost",
+            "PassThroughWalls",
+            "PassThroughObjects"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "ghost: through walls and objects (as repoman/ghost routing)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "RouteAsGhost",
+            "PassThroughWalls",
+            "PassThroughObjects"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "ghost across town"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "RouteAsFlier"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "flier follower (fairy/bird agent class)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "RouteAsSimLeadingHorse"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "Sim leading a horse"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "RouteAsLargeAnimal",
+            "RouteWhileMounted"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "mounted / large animal"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "RouteAsSimWalkingDog"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "walking a dog"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "PlanUsingStroller",
+            "BeginAsStroller",
+            "EndAsStroller"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "stroller"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnablePlanningAsCar"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "pedestrian + car (mode 3)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnablePlanningAsCar",
+            "DisablePlanningAsPedestrian",
+            "BeginAsCar",
+            "EndAsCar"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "car only (mode 2, docs/51 I-99-9)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnableUFOPlanning"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "UFO planning"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnableSubwayPlanning"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "subway (EP3) planning"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "UseMostDirectPath",
+            "DisableAvoidance",
+            "BlockedByPeople"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "direct path / no avoidance / people block"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "home",
+          "options": [
+            "RouteAsGhost",
+            "PassThroughWalls",
+            "PassThroughObjects"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "ghost home"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "a real long walk (car or taxi if the household has one)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; every sim_route_to step logs a plan result and the options it set; snap-report shows sites the plain profile run never hits (agent class 0x800/0x900/0xb00/0x4400 paths, car-only edges)"
+  },
+  {
+    "id": "rare-ghost-walk",
+    "bug": "none (probe coverage): docs/117 §2.5, a playable ghost walking: RouteAsGhost from HasGhostBuff (SimRoutingComponent), through walls on its own lot",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. Urnstone.SimToPlayableGhost on a living Sim makes a grave and runs GhostSetup (the CAS-ghost path; not tried on a living Sim before). Session only: the profile run does not save. If the step fails, the plan-level ghost bits are in rare-route-bits",
+    "steps": [
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.Objects.Urnstone.SimToPlayableGhost",
+          "args": [
+            "@sim"
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes a playable ghost"
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: ghost state"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "@upstairs"
+        },
+        "waitS": 45,
+        "optional": true
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "@upstairs"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan with the ghost's own options"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; the active Sim shows as a ghost; walks complete"
+  },
+  {
+    "id": "rare-occult-walks",
+    "bug": "none (probe coverage): docs/117 §2.6, occult Sims routing: vampire (runs), fairy, witch",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. One Sim, three occult types added in turn (a Sim can hold several; AddOccultType may refuse a mix, logged). Fairy flight and witch broom riding are interactions we do not drive; the walk uses whatever the game picks. RouteAsFlier is never set by the game scripts (only rare-route-bits sets it)",
+    "steps": [
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Vampire",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes Vampire (OccultManager.AddOccultType(type, addOutfit, isReward, fromRestore), on a game task)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "vampire run"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Fairy",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes Fairy (OccultManager.AddOccultType(type, addOutfit, isReward, fromRestore), on a game task)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "fairy"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "target": "home",
+          "options": [
+            "RouteAsFlier"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "flier plan home"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Witch",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes Witch (OccultManager.AddOccultType(type, addOutfit, isReward, fromRestore), on a game task)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "witch"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: occult types held"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; sim_details lists the occult types; walks complete"
+  },
+  {
+    "id": "rare-ip-water",
+    "bug": "none (probe coverage): docs/117 §2.7, water routing on Isla Paradiso: mermaid in the ocean (RouteAsMermaid), boat planning bits, shark/lifeguard followers",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. IP only. \"to: ocean\" = 10 m into the sea found on rings round the active Sim (as sim_portal_trip). Boat and shark plans are bits on the active Sim's route; no boat object is used (sailing a boat needs one; not driven)",
+    "steps": [
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Mermaid",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15,
+        "note": "active Sim becomes Mermaid (OccultManager.AddOccultType(type, addOutfit, isReward, fromRestore), on a game task)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 60,
+        "note": "mermaid swims out (RouteAsMermaid set when the group is teen+ mermaids)"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "ocean",
+          "options2": [
+            "RouteAsMermaid"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "mermaid plan"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "ocean",
+          "options2": [
+            "EnablePlanningAsBoat"
+          ],
+          "options": [
+            "EnableWaterPlanning"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "boat + water planning"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "ocean",
+          "options2": [
+            "EnablePlanningAsBoat",
+            "BeginAsBoat",
+            "EndAsBoat",
+            "DestinationMustBeInDeepWater"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "boat to deep water"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "ocean",
+          "options2": [
+            "RouteAsShark",
+            "DisablePlanningOnLand"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "shark follower"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "ocean",
+          "options2": [
+            "RouteAsLifeguard"
+          ]
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "lifeguard"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 60,
+        "note": "back to land"
+      },
+      {
+        "cmd": "sim_portal_trip",
+        "args": {
+          "via": "houseboat"
+        },
+        "waitS": 60,
+        "optional": true,
+        "note": "onto a houseboat (water portal)"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; plans log Success or Failure per bit set; the mermaid reaches the sea and comes back"
+  },
+  {
+    "id": "rare-death-walk",
+    "bug": "none (probe coverage): docs/117 §2.8, a Sim killed while it walks (Sim.Kill -> Urnstone.KillSim at MaxDeath cancels the route; the Sim object is destroyed or becomes a ghost while route jobs run)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. World-neutral. kill_sim picks a spawn_sims Sim that is routing at that moment (falls back to any spawned Sim; result field routing says which). Death type Electrocution (no fire). Ultra speed keeps route jobs running round the deaths",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 8
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 6,
+        "note": "everyone walks to the active home lot"
+      },
+      {
+        "cmd": "kill_sim",
+        "args": {
+          "pick": "routing"
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "kill_sim",
+        "args": {
+          "pick": "routing"
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 6
+      },
+      {
+        "cmd": "kill_sim",
+        "args": {
+          "pick": "routing"
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "kill_sim",
+        "args": {
+          "pick": "routing",
+          "death": "Drown"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20,
+        "note": "disposal of the dead and the living spawned Sims"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; at least two kill_sim results with routing true; the dead Sims leave the world (urns or ghosts) without a stuck route"
+  },
+  {
+    "id": "rare-big-crowd",
+    "bug": "none (probe coverage): docs/117 §2.9, a big crowd routing to one spot (extends steer-crowd: 30 spawned Sims plus the household, several waves)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-18): never run. World-neutral. 30 Sims cost address space (docs/66: tens of MB): watch commitMB. Waves: home lot, the farthest community lot, home again",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90,
+        "note": "wave 1: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 120,
+        "note": "wave 2: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90,
+        "note": "wave 3"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; crowd_go sends 30+ Sims each wave; no Sim stuck at the end (profile stuck list)"
+  },
+  {
+    "id": "rare-world-walk",
+    "bug": "none (probe coverage): docs/117 §2.11, walking and routing in another world (University campus, a vacation world) after a real trip",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. Run by profile.travel (profile-world.ts --travel: save-matrix travel case with --stay first), so it runs in the destination world. World-neutral: no home lot used (on a vacation or at University the household's home may be in the other world). 'far' = the community lot farthest from the active Sim, so the second walk crosses back. spawn_sims needs a non-active household with a home lot in this world (optional)",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "optional": true,
+        "note": "log: season, weather, moon, hour"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "walk to the farthest community lot"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "and to the lot farthest from there"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far"
+        },
+        "waitS": 60,
+        "optional": true,
+        "note": "the game's own visit (car, bike or walk, the game picks)"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan only"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20,
+        "optional": true
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "optional": true
+      },
+      {
+        "cmd": "list_sims",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: who is in this world"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10,
+        "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; the walks finish in the destination world (the probe log covers campus or vacation-world routing)"
+  },
+  {
+    "id": "rare-owned-vehicles",
+    "bug": "none (probe coverage): docs/117 §2.12, driving an owned car and riding an owned bike to the farthest lot and home (vehicle legs, parking, get in / out)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. own_vehicle makes the cheapest car from the parking space purchase list (ParkingSpace.sPurchasableVehicleInfo), owner lot = home, into the Sim's inventory (else placed), preferred vehicle; sim_visit_lot {vehicle: true} reserves it before the game's visit interaction, as CarOwnable.VisitCommunityLot does. The game still decides walk vs drive by the planner's path type; the result's can_drive says if the Sim may drive (teens need a licence with Generations). Bikes are not allowed in worlds with special car rules (Vehicle.WorldHasSpecialCarRules)",
+    "steps": [
+      {
+        "cmd": "own_vehicle",
+        "args": {
+          "kind": "car"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far",
+          "vehicle": true
+        },
+        "waitS": 90,
+        "note": "drive to the farthest community lot"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan with the car owned"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "home",
+          "vehicle": true
+        },
+        "waitS": 75,
+        "note": "drive home"
+      },
+      {
+        "cmd": "own_vehicle",
+        "args": {
+          "kind": "bike"
+        },
+        "waitS": 3,
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far",
+          "vehicle": true
+        },
+        "waitS": 90,
+        "optional": true,
+        "note": "ride the bike there"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "home",
+          "vehicle": true
+        },
+        "waitS": 75,
+        "optional": true,
+        "note": "and home"
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: occult, vehicle, household"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; own_vehicle returns a CarOwnable subtype with where inventory or placed; the Sim drives (car leg in the probe log) to the far lot and back"
+  },
+  {
+    "id": "rare-stroller",
+    "bug": "none (probe coverage): docs/117 §2.13, a stroller walk with a toddler (stroller path type, follower routing)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. make_sim adds a random toddler to the household of the lot the active Sim stands on (the active home at save load; household cap 8). The stroller is the first catalog product named *stroller* (Generations), owner lot home, in the Sim's inventory or placed. stroll queues Stroller.GoOnStrollSocial with that stroller (the public variant, no Sim picker): a walk to a lot 0..360 m away for about 2 Sim hours. A baby instead of a toddler lies on the floor when made (Pregnancy has the mother hold it), so toddler",
+    "steps": [
+      {
+        "cmd": "make_sim",
+        "args": {
+          "age": "Toddler"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "own_vehicle",
+        "args": {
+          "kind": "stroller"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "stroll",
+        "args": {},
+        "waitS": 150,
+        "note": "stroll with the toddler"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45,
+        "optional": true
+      },
+      {
+        "cmd": "make_sim",
+        "args": {
+          "age": "Baby"
+        },
+        "waitS": 10,
+        "optional": true,
+        "note": "second child, for a second stroll"
+      },
+      {
+        "cmd": "stroll",
+        "args": {},
+        "waitS": 90,
+        "optional": true
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: occult, vehicle, household"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; stroll queued true; the Sim pushes the stroller off the home lot and back (stroller path in the probe log)"
+  },
+  {
+    "id": "rare-horse-ride",
+    "bug": "none (probe coverage): docs/117 §2.14, riding a horse across a world that is not Appaloosa Plains (mounted routing, car planning off)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. No world check found for horses in the scripts (only EP5 installed; apartments refuse pet adoption) [verified in the scripts, not live]. make_sim {species: Horse} = Sim.MakePet at the active Sim's position: joins the household of that lot (cap 6 pets), liking 50 with the active Sim (Mount needs 5 / 10). ride queues Mount, then Terrain.RideHere (tests-skipping definition) to the goal",
+    "steps": [
+      {
+        "cmd": "make_sim",
+        "args": {
+          "species": "Horse",
+          "age": "Adult"
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "ride",
+        "args": {},
+        "waitS": 30,
+        "note": "mount"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "ride",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "ride to the farthest community lot"
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 3,
+        "optional": true,
+        "note": "plan while mounted"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "@route.Replan"
+        },
+        "waitS": 2,
+        "optional": true,
+        "note": "replan of the used route object"
+      },
+      {
+        "cmd": "ride",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 75,
+        "note": "ride home"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 45,
+        "optional": true,
+        "note": "refused while mounted (logged)"
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: occult, vehicle, household"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; the second ride call answers ride: true (mounted); the horse and rider reach the far lot and home"
+  },
+  {
+    "id": "rare-zombies",
+    "bug": "none (probe coverage): docs/117 §2.15, full-moon zombies walking (zombie walk style, grave rise near the active Sim, slow crowd)",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. Needs profile.noEnv (the guard moves a full moon). The game's own wave is LunarCycleManager.TriggerLunarEvents (private static, sunset alarm): on moon phase 0 it gives 2 townies the Zombie buff and starts the hourly 20% spawn alarm. zombies {spawn} does what PossiblySpawnZombie does without the roll (townies that pass IsZombifiable, instantiated on the active lot, BeReanimatedSolo); zombies {spawned: true} buffs the spawn_sims Sims. Our zombies are not in the sunrise list: they stay zombies until the game closes",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "fall",
+          "weather": "fog",
+          "weather_hours": 12,
+          "moon_phase": 0,
+          "hour": 22
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "optional": true,
+        "note": "log: season, weather, moon, hour"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.Controllers.LunarCycleManager.TriggerLunarEvents"
+        },
+        "waitS": 10,
+        "optional": true,
+        "note": "the game's own full-moon picks and spawn alarm"
+      },
+      {
+        "cmd": "zombies",
+        "args": {
+          "spawn": 4,
+          "target": "home"
+        },
+        "waitS": 45,
+        "note": "4 townies rise near the active Sim and walk to the home lot"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "zombies",
+        "args": {
+          "spawned": true,
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "the spawned Sims turn zombie and shamble to the far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 75
+      },
+      {
+        "cmd": "list_sims",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: zombies out tonight"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; zombies lists risen townies and buffed spawned Sims with walking > 0"
+  },
+  {
+    "id": "rare-flight-broom",
+    "bug": "none (probe coverage): docs/117 §2.16, fairy flight (FairyRun walk style) and a witch flying her broom to the farthest lot",
+    "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. Fairy flight is no route mode: SimWalkStyleRules picks the FairyRun walk style for a fairy's run [verified in the scripts]; the ICanFly interaction is an animation in place (FairyMagic 4). The broom: OccultWitch setup grants the hidden inventory broom; own_vehicle {kind: broom} calls GrantWitchTraitBroom(true) again (no-op when there is one) and reserves it; brooms count as bikes for Sim.GetVehicle. Fairy plus witch on one Sim as in rare-occult-walks (AddOccultType may refuse the mix, logged)",
+    "steps": [
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Fairy",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_skill",
+        "args": {
+          "skill": "FairyMagic",
+          "level": 4
+        },
+        "waitS": 2,
+        "optional": true
+      },
+      {
+        "cmd": "do_interaction",
+        "args": {
+          "target": "me",
+          "interaction": "fly"
+        },
+        "waitS": 15,
+        "optional": true,
+        "note": "ICanFly (pie menu label match 'fly'; in place)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 60,
+        "note": "fairy run"
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 45
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "@sim.OccultManager.AddOccultType",
+          "args": [
+            "Witch",
+            true,
+            false,
+            false
+          ]
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "own_vehicle",
+        "args": {
+          "kind": "broom"
+        },
+        "waitS": 3
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far",
+          "vehicle": true
+        },
+        "waitS": 90,
+        "note": "broom flight to the farthest lot"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "home",
+          "vehicle": true
+        },
+        "waitS": 75,
+        "note": "and home"
+      },
+      {
+        "cmd": "sim_details",
+        "args": {},
+        "waitS": 1,
+        "optional": true,
+        "note": "log: occult, vehicle, household"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; own_vehicle answers a MagicBroom subtype; the Sim flies the broom (vehicle leg in the probe log)"
+  },
+  {
+    "id": "uni-trip-home",
+    "bug": "University trip home hung with no active household and no world switch (2026-10-18 chain21): travel_home sent the NPC dorm roommates along and never dropped the student out, so the van took the early-single-departure path (docs/77 §2.3)",
+    "fix": "agent travel_home in University = phone 'Leave University' (DropOut, roommates stay); save-matrix stall rules (no household without a switch 90 s, unchanged trip status 120 s)",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-19). Load a Matrix-* copy, not the Baseline (travel saves go to the current file). The full check is the queue job bp-travel-university (save-matrix travel case); these steps are the short direct version",
+    "steps": [
+      {
+        "cmd": "travel_university",
+        "args": {
+          "days": 2,
+          "direct": true
+        },
+        "waitS": 120,
+        "note": "world switch and fly-through"
+      },
+      {
+        "cmd": "uni_move_in",
+        "args": {},
+        "waitS": 60,
+        "note": "repeat until started, then done"
+      },
+      {
+        "cmd": "travel_state",
+        "args": {},
+        "waitS": 2,
+        "note": "household set, in_travel false"
+      },
+      {
+        "cmd": "travel_home",
+        "args": {},
+        "waitS": 180,
+        "note": "travellers = the student, staying = the dorm roommates"
+      },
+      {
+        "cmd": "travel_state",
+        "args": {},
+        "waitS": 2
+      }
+    ],
+    "expect": "travel_home lists the student as traveller and the roommates as staying; the student drops out, walks to the van, the 'term over' message shows, the game loads Bridgeport with the household active; async_log has no travel_home error; never 'no active household' in University"
+  },
+  {
+    "id": "future-direct-lighting-uaf",
+    "bug": "Main thread read a freed LightingSolver room hash node at 0x6A81D6 (LightUpdateTree pick 0x6C5C20 -> 0x6A8190) 9 s after a direct future-world arrival (2026-10-18 16:11 UTC, bp-travel-future-direct; docs/67 §5)",
+    "fix": "none yet: game lighting bug unless it repeats only with the agent's direct trip (then FutureDirect order, docs/77 §4.2)",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-19). Load a Matrix-* copy, not the Baseline. The full A/B is queue future-lighting-uaf.json (3 direct, 2 portal, 1 direct with S3SS LotStreamingOptimizations off)",
+    "steps": [
+      {
+        "cmd": "travel_future",
+        "args": {
+          "prepare": true,
+          "direct": true
+        },
+        "waitS": 90,
+        "note": "world switch; the crash came 9 s after arrival"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 120,
+        "note": "stay in FutureWorld 2 min with the camera on the lot"
+      },
+      {
+        "cmd": "travel_state",
+        "args": {},
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash in FutureWorld; a crash at 0x6A81D6 (or 0x6A7CF0 / 0x6A7FF0 / 0x6A80E0 / 0x6A86F0 / 0x6A88B0) = repeat; compare with the portal trip"
   }
 ]

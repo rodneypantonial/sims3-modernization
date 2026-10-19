@@ -1,0 +1,46 @@
+[
+  {
+    "id": "bp-snap-p3",
+    "note": "docs/94 §5 P3: [RouteSnap] Enabled=1 Mode=0 snapshot images + audit only, no search (0.26.0, counters v47); env-on settings (async + gate + D), BP Spring, seeded; after: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row ts3native.log>; pass = no crash, spReady bit 0, every input audited, spMis all 0 (G3), cut cost <= 2 ms/s, image memory <= 64 MB",
+    "asi": "game-copy/ts3native.asi.snapp3",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 47,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 0,
+      "RouteSnap.AuditEvery": 4
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p3",
+    "note": "the same on Isla Paradiso (houseboats, water, high-cost maps, EP portals)",
+    "asi": "game-copy/ts3native.asi.snapp3",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 47,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 0,
+      "RouteSnap.AuditEvery": 4
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

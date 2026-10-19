@@ -127,6 +127,16 @@ So the blocker is an ordered-list property of the obstacle replan's search: a di
 
 Node fields still undecoded: `+0x10..+0x1B`, `+0x20..+0x28`, `+0x30..+0x3C` (lot, room, level and portal ids are the likely content [inferred]). A replacement that emits O2 must fill them as the game does, or the splitter will mis-type subpaths (§10 Q1).
 
+### 4.4 Path options copy: the third id list `O+0x58` (added 2026-10-18)
+
+> **Changes 2026-10-18:** new section from docs/107 §9 (writer verified, meaning inferred); F-4b caveat from docs/99 §11.2.
+
+- **What it is** [verified writer, docs/107 §9.1]: each `RoutingPathImp` holds a copy of the route options (path slot `+0x0C` returns `path+0x08`); its id vector at options `+0x58` (getter `0x545170`) is the **EditPath footprint skip list**. The route's and the job's copies of that list are always empty (the options code only constructs, clears, destroys and assigns it); the path's copy is assigned empty from the route at `0x760F7A` and then filled by `RouteFollow_EditPathForRoute 0x85FF30` -> `RouteFollow_EditPath 0x85F5A0` -> `IdVec_PushBack 0x572400` (at `0x85FC42`, after a duplicate test).
+- **Writers, all on the sim thread** [verified sites]: `Route_PlanCommon 0x7606E0` tail at `0x760F8B`/`0x760F92` (every plan), `IC_Route_SetAGS 0x755600`, `IC_Route_InsertRouteSubPathsAtIndex 0x758BA0`, `IC_Route_InsertCustomPathAtIndex 0x7623A0`. The gather inside `EditPath` takes `+0x918` (docs/81, 83).
+- **Meaning and readers**: the ids of the footprints a node of the planned path stands in (start, goal, or a portal node inside a footprint) that EditPath did not cut the path around [inferred]; steering skips them (`RouteFollow_A 0x846B70` at `0x846DB3`/`0x846FDB`, `Locomotion_ObstacleList 0x85FFE0` at `0x8602A6`, via `0x81C930`) so a Sim does not steer away from the object its own route starts or ends in [verified reads, meaning inferred].
+- **Contract**: this is an O1 output built after the search. A replacement that hands O2 nodes to the game's builder and PlanCommon tail (§4.3) gets it for free and must not fill it itself. A replacement that bypasses the tail must call `0x85FF30(path, &options+0x58, ...)` on the sim thread for each path, or steering will push Sims out of their own start and goal footprints. The shadow compare (§9) needs no field for it as long as both sides run the tail; how often it is non-empty is open (I-107-15).
+- **F-4b caveat (geometry and lengths)** [verified build side, consumer use open; docs/99 §11.2]: every planner node carries y = -100; only the start and goal nodes get a terrain height, and nothing between the planner and the 48-byte route node resolves y. CopyNodes (`0x819E10`) computes direction and segment length `+0x20` in **3D**, so a world route's first and last segments are at least `100 + h` m long and point steeply down, and the path length (vtable `+0x130`) includes them. Until F-4b is read live (first two route nodes and the path length against the 2D sum), a replacement that emits O2 must keep y = -100 on inner nodes and let the game's CopyNodes compute lengths; it must not emit real heights, and the §8 metric and §9 `L` check compare lengths computed the same way on both sides.
+
 ## 5. Side effects of planning on game state
 
 "Plan" here is everything `Route_PlanLocked` runs. The goal step (`0x75C2D0`, docs/87) and start-point builders run before it and stay the game's in this design, so their effects (they write the same lot planner state) are not in this table.
@@ -233,14 +243,18 @@ Report per IC (Plan, Replan, PlanFromPoint, ReplanFromPosition) and per caller g
 
 ## 10. Open questions
 
+> **Changes 2026-10-18:** Q4 partly answered (docs/108 §7 F-7); Q9 and Q10 added (docs/107 §9, docs/99 §11.2).
+
 1. The 64-byte search node fields not decoded (§4.3): needed before a replacement can emit O2 that the splitter types correctly.
 2. Which `PathPlan_WithRetries` codes occur and how often (2/3/4/5/8), and how often P1/P2/P4 fire: a count-only probe at `0x81C5C9` and in PlanCommon's P1 branch.
 3. Meaning of search-node flag bits 0/1 (path node flags 0x10/0x20) and of `world+0x97D` (E2).
-4. The game's tie order for equal-cost goals and starts (heap order in `0x676260`, goal list order from the goal step).
+4. The game's tie order for equal-cost goals and starts (heap order in `0x676260`, goal list order from the goal step). (2026-10-18, docs/108 §7 F-7: goal ties occur, 0 in 21,063 BP plans and 2 in 8,257 IP plans [measured]; the order is docs/99 §2.5. Until a replacement copies that order exactly, the §9 compare classes such cases `G-tie`, not `G`.)
 5. Whether skipping E9/E10 in the search moves noticeable build cost onto sim-thread readers (gates 0/12, docs/86/90).
 6. Which doors the search asks about (E3) versus the goal step: the replacement must ask the same set, or `LockedDoorsDuringPlan` and ladder discouragement differ.
 7. The destination candidate generators' status codes (5-9, 11-15, 17).
 8. Producer of the interest point list (path vtable `+0x15C`) and any reader of `route+0x1F4` outside the scanned ranges.
+9. How often the path's `O+0x58` list is non-empty and which object kinds land in it (§4.4, I-107-15; live read of `path+0x60..+0x64`).
+10. F-4b: does any consumer use the 3D segment length or direction of the first and last route segments (§4.4, docs/99 §11.2)?
 
 ## 11. Ledger
 

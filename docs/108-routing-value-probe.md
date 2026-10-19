@@ -89,3 +89,57 @@ Per hit: one `pushad`/`pushfd` and a C call (about 30-60 ns), plus a TLS frame f
 ## 6. Pass rule for the run
 
 `pvReady` 3, `pvSkipped` 0 (any `SKIP values` line names the site), `pvWorlds` at least 1, `pvFrameFull` 0, no crash, and the S3SS / S3PP install lines present (docs/68 §6 rule 7). A crash with this build is our bug until proven otherwise (capture, disassemble, ledger).
+
+## 7. Results 2026-10-18 (`queues/value-probe.json`, ts3native 0.24.0, counters v44)
+
+Both jobs PASS (pvReady 3, 42 sites, 0 skipped, 1 world snapshot, 0 frames not taken). BP 19:06 PHT, IP 19:20 PHT, 10 min seeded, env-on (async + gate + D). Daytime counts only. In both jobs the stutter profiler overran its window and the fail-fast guard killed it; that does not touch the value counters. Reports: `node tools/harness/values-report.ts probe-out/queue/value-probe-2026-10-18-<bp|ip>-value-probe-native.json --log <ts3native.log>`.
+
+| Item | BP | IP | Verdict |
+|---|---|---|---|
+| F-1 tuning | threshold 50; keep 1.3; SHORT trespass/sidewalk/riding/street/water-lot 2; LONG 2/4/10/10/10 | same | the defaults of `0x673C70`; Sims3.ini does not replace them [verified live] |
+| F-2 R checksum | `0x1CCBD509 / 0xFB9E8561`, 35,313 waypoints | `0x2E522F2F / 0xBC04C598`, 43,942 waypoints | **match**: `rtdata-decode.ts --checksum` on Bridgeport.world and IslaParadiso.world gives the same sums and waypoint counts (0 blocked in the file) [verified]: R at load is the `.world` data, nothing computed at load |
+| 91 §6.6 R after load | 1 change: first sum moved, second sum and waypoint count kept, blocked 0 -> 284 | no change apart from the blocked bit (98 blocked) | **R is static except the per-waypoint blocked bit (bit 7)**: the snapshot must copy blocked bits on change (writer: docs/112) |
+| F-7 goal ties | 0 in 21,063 plans | 2 in 8,257 (0.02%) | ties happen: a shadow compare must accept any member of the tie set |
+| F-11 world A* context bits 1/2/4/8 | 0 of 16,325 | 0 of 3,292 | substitution and factor-30 bypass paths dead in play [verified live] |
+| F-12 world origin | 0,0, max 2048 | same | cost frame agrees |
+| 98 U6 `LotPlan_Inner` option bits | 0x4 on 744 of 13,857 Plan/Replan; 0x1/0x2/0x8/0x10 9 each; obstacle mode 10 | 0x4 642 of 6,665; 0x1/0x2/0x8/0x10 68; **0x200000 6** | bits match docs/109 §3; 0x200000 seen in IP only (retry bit family) |
+| L1/L3 water grid G | built once at load on the sim thread, 688 ms; no rebuild in play | 505 ms; no rebuild | G is load-time state |
+| L10 sea height | 13.63, no change | 27.38, no change | fixed after load |
+| 101 U4 interest points | 0 allocs, 717 queries all empty | 0, 554 empty | I-101-6 holds |
+| 101 U5 status | 19,188 plans in bucket 19+ | 9,036 in 19+ | **suspect read** (probe field/time or real codes): docs/112 decides |
+| 101 U6 portal-lock answers | values 1 and 2 only | value 3 seen (goal step 916, lot A* 320) | lock answer 3 occurs in IP |
+| 101 U7 H9 rewrites | 48 inside plans, 8 of 21,063 plans | 0 | rare |
+| 101 U8 partition grid | 0 writes | 0 | no write in live play |
+| 91 §6.2 lazy work | `RoomGraph_FirstUse` 961,649 (444k off sim); `LotGraph_Build` 257 (192 off sim); `EnsureLevelPolygons` 5,651 | 727,071; 236 (134 off sim) | lazy builds run on the worker with async on: race check in docs/112 |
+| I-105-1 event 68 | 19, none inside CanSee | 47, none | quiet flag holds |
+| I-105-3 display-level calls inside CanSee | 1,278 | 3,616 | a state call inside the goal search: docs/112 |
+| I-105-4 portal queries with initialLocked 1 | 11,835 | 5,206 | script asks with initialLocked 1 |
+| I-105-5 event 59 per plan | 4.30 | 8.78 | inside the 2-30 estimate |
+
+Blend layer 0 (`rtdata-decode.ts --blend0`, docs/107 §10): Bridgeport 79.79 % of the map at weight >= 0.5, 482 of 35,313 R waypoints on it; Isla Paradiso 18.32 %, 1,332 of 43,942 (Sunset Valley 83.77 %, 665 of 39,265). `.world` files copied from the Steam install into the ignored `game-copy/worlds/`.
+
+## 8. 0.24.1 fixes (counters v45, docs/112)
+
+Built 2026-10-18, offline checks only; not run in game yet. Parked as `game-copy/ts3native.asi.values`; `queues/value-probe.json` now requires counters v45. Fields in docs/registry.md (v45, `+0x19DC..0x1A1B`); thread classes of the new fields are sim / route worker (`g_workerTid`) / other.
+
+| Item | 0.24.0 | 0.24.1 |
+|---|---|---|
+| 101 U5 status (I-112-1) | read argument 2 of `Route_PlanCommon` (a caller-local vector): every plan in bucket 19 | reads argument 1 (`slot[1]`, the 18-dword result, `mType` at +0). Selftest: a live call site to a two-argument `ret 8` dummy that writes `mType` 16 into argument 1, with a heap pointer as the first dword of argument 2; reading argument 2 fails it (bucket 19) |
+| I-105-3 raises (I-112-9) | `pvCanSeeRaise` = every `Lot_SetDisplayLevel` call at `0x789EB5`/`0x78A218`, any `World_CanSeeObject` caller | kept; new `pvRaiseIn[3]` counts only calls with an open `PV_CANSEE` frame (goal building, `0x75AC22`) |
+| `RoomGraph_FirstUse` (I-112-10) | entries | `pvLazy[2]` still entries; new `pvRoomBuild[3]` counts entries that build: byte `G+0x8C` 0 (`0x63D300`) or the room's record byte 0 (record `0x44` bytes from `G+0x90`, room index = u16 argument 2, `0x63D359`) [verified disassembly]. Also counted when the route gate stub owns the entry |
+| `EnsureLevelPolygons` (I-112-11) | entries | `pvLazy[5]` still entries; new `pvLevelBuild[3]` counts entries with byte `[fp+0x38] + level*0x24 + 0x20` 0 (`0x80E5BF`) [verified disassembly] |
+| R baseline (I-112-2) | snapshot at the second poll with R present; the load G build after it counted as an R change | `pvR[0..1]` keep the snapshot (F-2 compare with the `.world` file); when a G build finishes after the snapshot, the poll thread retakes the baseline once (`pvRRebase`, log "values R baseline after the G build"); `pvR[4]` then counts changes against that baseline |
+| R blocked bits (I-112-12) | count only (`pvR[3]`) | `PvRSum` adds an FNV-1a hash over (chunk, record) of every waypoint with bit 7; `pvRBlk` = hash at the baseline, now, and 60 s checks that saw it change (log "values R blocked bits changed") |
+| R writers (I-112-3, -4) | `ApplyLotUpdate 0x82B590` counted (`pvLazy[3]`) | both writers log the lot pointer and id (lot `+0x48`/`+0x4C`) and thread class (log "values R writer", first 1,024 lines); new entry detour on `RoutingWorld_RestoreLotBlockedBits 0x82A190` (7 bytes `8B 44 24 04 85 C0 56`, no relative operand, docs/68 row updated) with `pvRestore[3]` = calls / inside a plan / off sim. 43 sites |
+
+Checks: `build.cmd` selftest, `steerro-test` seeds 1-2 x 3000 (43 value sites match the image), `node tools/hook-sites.ts --check`, `node tools/check-docs-code.ts`, `values-report.ts --self-check`, `queue.ts tools/harness/queues/value-probe.json --dry-run`. `values-report.ts` prints the new lines (`R blocked`, `91 §6.2b`, I-105-3 by thread) for v45 dumps and says "no answer" for U5 on v44 dumps. Ledger: docs/51 §57.
+
+## 9. Results 0.24.1 (2026-10-18 23:19-23:44 PHT, `queues/value-probe.json`, both PASS)
+
+| Item | BP | IP | Verdict |
+|---|---|---|---|
+| 101 U5 status (fixed read, slot[1]) | Plan/Replan 1: 15,654, 10: 980, 16: 184, 18: 90; point 1: 1,975, 10: 24, 16: 123, 18: 61 | Plan/Replan 1: 5,049, 10: 860, 16: 635, 18: 19; point 1: 2,011, 10: 28, 16: 198, 18: 8 | **closed**: statuses stay in {1,2,3,4,10,16,18} (docs/101 §4.2 holds; the 19+ reading was the probe bug) |
+| R blocked bits after the post-G-build re-baseline | hash unchanged (165 restores, 252 applies wrote the same values) | **changed in 2 checks** (104 restores, 248 applies); `values R writer` lines name the lots | blocked bits do change in play in IP: the snapshot's copy-on-change for R bit 7 (docs/94 §8) is needed, not optional |
+| Lazy room-graph builds (`RoomGraph_FirstUse`, builds only) | 171 sim / 319 worker of 1,080,370 entries | 157 sim / 248 worker of 786,715 | most real builds run on the async worker; `Prebuild=1` (docs/94 §16) should remove them |
+| `EnsureLevelPolygons` rebuilds | 0 of 5,925 entries | 0 of 2,888 | entries are all cache hits in play |
+| I-105-3 display-level raises inside CanSee (goal building) | **146 sim / 400 worker** (7,022 CanSee calls) | 0 / 0 (2,889 calls) | in BP the async worker writes lot display state (lot `+0x39C`, level-shape bit) during goal building: a cross-thread write in today's async build; design in docs/94 §17.9 (pending) |

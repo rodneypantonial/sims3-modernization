@@ -1,0 +1,96 @@
+{
+  "jobs": [
+    {
+      "id": "bp-watch-stalk",
+      "note": "docs/113 / docs/51 §53: docs/101 U10, U1, U3 by read-only Frida (tools/frida/watch-stalk.js), no native change. 3 min watch: up to 4 live routes at a time with a 4-byte rw hardware watchpoint on route+0x1F4 on every game thread (routes taken after the IC_Route_Replan / ReplanFromPosition increments; 40 routes max, 30 s each). Then 3 min stalk: Route_PlanLocked on the sim thread followed by Stalker in 5 s windows every 20 s, 3 plans per window, 24 max; .data/.tls writes, 0x66AB70 coverage, 0x66AC37 counter. RouteWorker and RouteAsync off so every plan runs on the sim thread. Stutter profiler and stack samplers skipped (profile-world --watchstalk). ~9 min with load and teardown. After: node tools/harness/watch-stalk-report.ts probe-out/profile/<tag>-watchstalk.json; pass = reason complete, nothing refused, routes > 0, plans > 0.",
+      "asi": "tested",
+      "ini": {
+        "RouteWorker.Enabled": 0,
+        "RouteAsync.Enabled": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "watchstalk": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-watch-stalk",
+      "note": "bp-watch-stalk on Isla Paradiso (water routes, houseboats, boats: more route kinds for U10 and more plan paths for U1/U3). Queue total ~18 min.",
+      "asi": "tested",
+      "ini": {
+        "RouteWorker.Enabled": 0,
+        "RouteAsync.Enabled": 0
+      },
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "watchstalk": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-watch-stalk-worker",
+      "note": "docs/113 §8: U1 on the route worker (docs/101 names it for P4). Env-on async settings (snap-p1.json without RouteSnap): RouteAsync Mode 1 + RouteGate Enforce + Discourage, so plans run as worker jobs. Watch phase as bp-watch-stalk (now ended at the Route dtor 0x75D640, clean U10 liveness). Stalk phase follows Route_PlanLocked on the worker (first non-sim caller; plan prologue = ts3native detour jump, accepted only into ts3native*), looser caps: 6 plans per window, 48 max, stop above 5 s per plan (Stalker stalls only the worker; the sim waits on it only at gates/destroy drain). After: node tools/harness/watch-stalk-report.ts --worker probe-out/profile/<tag>-watchstalk.json; pass = reason complete, nothing refused, routes > 0, worker plans > 0, no WARN line. (asi snapp1b = ts3native 0.27.0 with the route gate; the tested build is the pinned 0.10.1 without it, docs/113 §8.6)",
+      "asi": "game-copy/ts3native.asi.snapp1b",
+      "ini": {
+        "RouteAsync.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "RouteAsync.Mode": 1,
+        "Discourage.Enabled": 1
+      },
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "watchstalk": "worker"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-watch-stalk-worker",
+      "note": "bp-watch-stalk-worker on Isla Paradiso (water routes, houseboats). Queue total with the two sim-thread jobs ~36 min; --only bp-watch-stalk-worker,ip-watch-stalk-worker for these two. (asi snapp1b = ts3native 0.27.0 with the route gate; the tested build is the pinned 0.10.1 without it, docs/113 §8.6)",
+      "asi": "game-copy/ts3native.asi.snapp1b",
+      "ini": {
+        "RouteAsync.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "RouteAsync.Mode": 1,
+        "Discourage.Enabled": 1
+      },
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "watchstalk": "worker"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

@@ -100,7 +100,10 @@ Other types the code tests: 5, 6, 8, 9, `0xB` (node type mapping, §3) [verified
 
 ### 1.7 Blocked flag
 
-- Never set in the package (0 of 39,265 in Sunset Valley) [verified]. Set and cleared in play only by `RoutingWorld_ApplyLotUpdate 0x82B590` and `0x832890` on lot-edge waypoints (docs/91 §3.1) [verified there].
+> **Changes 2026-10-18** (docs/112 §3): the second writer is `0x82A190`, not `0x832890`; when the bit appears after load added.
+
+- Never set in the package (0 of 39,265 in Sunset Valley) [verified]. Set and cleared in play only by `RoutingWorld_ApplyLotUpdate 0x82B590` and `0x832890` on lot-edge waypoints (docs/91 §3.1) [verified there]. (corrected 2026-10-18, docs/112 §3.2: the two writers are `0x82B590` and `RoutingWorld_RestoreLotBlockedBits 0x82A190`, which copies portal word bit 29 back into bit 7 when a lot's routing is (re)built (`LotRouting_FinishBuild 0x63CAF0` from `LotGraph_Build`, `World.LotSetEntranceByTargetPoint`, lot-load message `0xF252DC33`); `0x832890` only reads bit 7 and copies it into the portal word [verified]. The bit appears lazily as lots get their first plan after load (BP: 0 at load, 284 after 10 min; IP: 98) [measured, docs/108 §7].)
+- Type bits of the same flag byte are not static either: every G build rewrites `0x10`->`0x13` and `0x02`->`0x15` on shoreline waypoints (`0x66FD00`, docs/112 §3.1, docs/100 §3.2 step 8) [verified]; so §1.5's type counts are the package values, before the load's G build.
 - Effect in modes 1, 3 and 4 [verified]: an edge **into** a blocked waypoint is a wall unless both ends are lot-edge types (`0x02` or `0x15`) **and** both records' first neighbour reference is the same u16 (the same lot hub). So a blocked lot edge cannot be entered from the street, but movement between edge waypoints of the same lot stays possible. Mode 2 ignores the flag. The start waypoint's own flag is never tested.
 - The gather of lot exits (`0x654CC0`) skips portals whose R waypoint is blocked (§4.4) [verified].
 
@@ -121,7 +124,7 @@ Other types the code tests: 5, 6, 8, 9, `0xB` (node type mapping, §3) [verified
 ### 2.1 Objects
 
 - **W** = `[world+0x960]`, "PathPlannerWorld" (ctor `0x657C50`, init `0x654060`) [verified]: `+0x08` P (lot planner, ref-counted), `+0x0C` `[world+0x964]`, `+0x10` R, `+0x14` G, `+0x18` the A\* container (embedded), `+0x88` "R usable" byte (copied from `world+0x97D` each plan), `+0x94/+0x98` stroller tuning, `+0xA4` "LotEdgeConnectivityGroup" hash (waypoint ref → group id, read by `0x653200`), `+0x100` "GoalPtSet" hash, `+0x11C/+0x120` lot-exit option masks built per plan by `0x64FEA0` from `RoutingWorld+0x4A..+0x4F`, `+0x124` = `t*t + t` from `RoutingWorld+0x24`, `+0x128` and `+0x160` the two "BestLotEdgePortals" candidate sets (start lot, goal lot; layout §4.4).
-- **A\* container** (`W+0x18`, ctor `0x673C70`) [verified]: `+0x00` R, `+0x08` closed-set byte size, `+0x0C` per-chunk bit-offset table (index 0 = virtual nodes, 256 bytes = 2,048 bits; chunk c at index `c+1`, `ceil(count/8)` bytes each; built by `0x673500`, "Routing/ClosedList"), `+0x10` closed bits, `+0x14..+0x20` node pool (blocks of 1,000 x 20 bytes, free list at `+0x20`, link at node `+0x0C`), `+0x24` "WR Long Distance Threshold", `+0x28..+0x48` SHORT cost set (9 floats), `+0x4C..+0x6C` LONG cost set.
+- **A\* container** (`W+0x18`, ctor `0x673C70`) [verified]: `+0x00` R (corrected 2026-10-19, docs/94 §13.3 K6: `+0x00` is the vtable `0xFEF990`, R is at `+0x04`; the closed-list init entry `0x6735C0` is `add ecx,4; jmp 0x673500` [verified], ran in steerro-test K6), `+0x08` closed-set byte size, `+0x0C` per-chunk bit-offset table (index 0 = virtual nodes, 256 bytes = 2,048 bits; chunk c at index `c+1`, `ceil(count/8)` bytes each; built by `0x673500`, "Routing/ClosedList"), `+0x10` closed bits, `+0x14..+0x20` node pool (blocks of 1,000 x 20 bytes, free list at `+0x20`, link at node `+0x0C`), `+0x24` "WR Long Distance Threshold", `+0x28..+0x48` SHORT cost set (9 floats), `+0x4C..+0x6C` LONG cost set.
 - **Cost sets** [verified defaults in `0x673C70`, ini values from `game-copy/bin/Sims3.ini`]: order keep-type, trespassing, sidewalk, riding, street, water-lot, then 3 slots overwritten per search. Defaults: threshold 50; SHORT 1.3, 2, 2, 2, 2, 2; LONG 1.3, 2, 4, 10, 10, 10. Sims3.ini `[Routing: World Routing Tuning]` sets threshold 80, keep 1.3, trespass 1.3, LONG sidewalk 1.7, LONG street 6.0, SHORT sidewalk 1.5, SHORT street 3.0 [values verified in the ini; that the ini overrides the defaults is inferred from the registration calls, docs/03].
 
 ### 2.2 World search node (20 bytes)
@@ -494,3 +497,238 @@ Before planning, Execute stores the goal index from the priority/distance/RNG ch
 Closed statically: F-5 (types `0x0E`, `0x11`, edge byte 6), F-6 (no non-square world), F-8 (lot-hub rules), F-9 (closest-waypoint order), the cost rules of modes 2-4, the node-reader question for the 64-byte node (I-99-10, corrected for `+0x38`), the `+0x38`/`+0x3C` disagreement.
 
 Still live (values, not logic): F-1 (ini tuning replaces the defaults), F-2 (memory R equals the decoder's records), F-3 (meaning of the `+0x0E` bits), F-4 (now a route-side question: where world-node y = -100 is resolved), F-7 (RNG tie frequency), F-10 (polygon-set content), and three new ones from §10.1: F-11 the values of `opts+0x14`/`+0x44` at A\* entry and whether context bits 1, 2, 4 or 8 are ever set (a probe at `0x676260` entry), F-12 the world origin (`WM+0xB4/+0xB8`) per world (non-zero means the cost functions mix frames), F-13 a probe of edge-byte-1 and byte-2 costs against §10.1.
+
+## 11. F-3, F-4 and F-13 closed offline (2026-10-18)
+
+The value probe (docs/108 §4) skipped these three because they need node or edge dumps or route-side reads. This pass runs the game's own functions offline under the emulator harness (docs/63) on decoded world data and on built node arrays; no game run, no ts3native change. Tags as in the rest of this doc; **[verified, emu]** = the exe's own bytes produced the stated output in `tools/emu` for every listed case.
+
+Tools added:
+
+- `tools/rtdata-decode.ts`: `--dump nodes|edges` (CSV to stdout: per waypoint chunk, index, type, flags, blocked, x, z, edge count, first ref; per directed edge both ends, edge byte, both types, length in metres, record order kept) and `--mem-image <file>` (the loader's in-memory form: offset table + version-2 records, the input of the cost spec). Both are read-only on the package; write their output outside the repo. `--self-check` now also round-trips the memory image and checks the dumps.
+- `tools/emu/emu.py`: the CFG follows MSVC jump tables (`cmp idx, n` ... `jmp [idx*4 + table]`, n + 1 entries), so functions with a `switch` (mode 1's edge-byte table `0x6757EC`) can run under the strict policy. The 8 self-check specs still pass.
+- Three specs (not in `--self-check`, they need world data or are characterisations): `world_cost_mode1.py` (F-13), `route_copy_nodes.py` (F-4), `subpath_split.py` (F-3).
+
+<!-- docs-code: ok -->
+```sh
+node tools/rtdata-decode.ts --self-check
+node tools/rtdata-decode.ts "<world>.world" --dump edges > <scratch>/edges.csv      # or --dump nodes, --mem-image <scratch>/r.bin
+TS3W_EXE=<main checkout>/game-copy/bin/TS3W.exe python tools/emu/run.py --cases 3000 tools/emu/specs/world_cost_mode1.py
+TS3_WORLD="<Steam>/The Sims 3/EP10/GameData/Shared/NonPackaged/Worlds/IslaParadiso.world" python tools/emu/run.py --cases 3000 tools/emu/specs/world_cost_mode1.py
+python tools/emu/run.py tools/emu/specs/route_copy_nodes.py
+python tools/emu/run.py --cases 1000 tools/emu/specs/subpath_split.py
+```
+
+### 11.1 F-3: what the node flags `+0x0E` and node class `+0x38` mean to the splitter (closed)
+
+`RoutingJob_SplitSubPaths 0x81A340` ran on 8-node pedestrian routes (start type 6, inner type 0, goal type 7) with one inner run (nodes 3-4) changed by a flag bit, a node type, a kind hash or a route option; route options sit at `job+0x40` (`RouteOption` at `+0x28`, `RouteOption2` at `+0x30`, both 64-bit, read through `RoutingOptions_Test 0x81C880`; names from SimIFace `Route.cs`). Sweeps: every flag bit alone under each of the 14 option bits the splitter tests at entry (and none), on node types 0, 1, 3, 10, 11 and kinds `0xB828`, `0x3B83`, `0x347C`, `0xA582`, `0xB0C2`, then 6,000 random combinations of options, flag masks, types and kinds [verified, emu]. The pinned result is the table in `subpath_split.py` (31 routes) plus 1,000 random routes that add the inert bits below and any `+0x38` value: 1,031 of 1,031 pass, 182/240 splitter blocks (the rest: portal object lookups, stubbed to "not found", vector growth, real portal pairs).
+
+| node run | route option needed | subpath type of the run |
+|---|---|---|
+| flag `0x80` | `EnableWaterPlanning` (bit 60) or `RouteOption2.EnablePlanningAsBoat` (`0x2`) | WadePath |
+| flag `0x100` | `EnableWaterPlanning` only (not the boat option) | OceanPath |
+| flag `0x200` | `EnablePondPlanning` (bit 61) | FrozenPondPath |
+| flag `0x800` and kind `0xA582` | `EnablePlanningAsBoat` (not water planning); `BeginAsBoat` (`0x8`) starts the route with it | BoatPath |
+| flag `0x1000` or `0x2000` on type-1 car nodes (kind `0x3B83`) | `EnablePlanningAsCar` (`0x10`) and `EnableUFOPlanning` (bit 59); without the UFO option the run stays VehiclePath | UFOPath |
+| flag `0x40` | `PlanUsingStroller` (bit 39) | SimPath inside a stroller route: the run is walked without the stroller |
+| type 1, kind `0x3B83` or `0x347C` | `EnablePlanningAsCar`; `DisablePlanningAsPedestrian` (`0x20`) or `BeginAsCar` (`0x40`) start the route as a car | VehiclePath |
+| type 11 | `RouteWhileMounted` (bit 46) | HorseLanePath |
+| type 2 (kind `0xB828` or `0xB0C2`) | none | portal records: here PortalPath, PortalPath, PortalTraversalPath (two lone entry nodes, portal object lookup stubbed to "not found"; real entry/exit pairs were not built) |
+| types 1, 5, 8, 9, 11 (not 10) | `PlanUsingStroller` | SimPath run inside the stroller route |
+
+- **No option, no split**: with no route option set, no flag bit and no type except 2 changes the plain route's single SimPath [verified, emu].
+- **Inert for the splitter**: flag bits `0x01`, `0x02`, `0x04`, `0x08`, `0x10`, `0x20`, `0x400`, `0x4000`, `0x8000` and every value of `+0x38` (0, `0xD`, `0x10`, `0x13`, `0x14`, `0x15`, 9, 13, 16, 20 tested) never changed a split [verified, emu, within the tested space]. Their users are the post passes and CopyNodes (§10.3; bits 0 and 1 below).
+- `BeginAsCar` / `BeginAsBoat` erase the walking nodes before the first car/boat node (`PathNodes_Erase 0x7AA5C0`), so the route starts in the vehicle [verified, emu].
+- The subpath record's `+0x00` points at the subpath's **last** node; neighbouring subpaths share the joint node [verified, emu].
+- Meanings [inferred from option names and the post-pass writers in §10.3]: `0x80` wade (shallow water on foot), `0x100` ocean swim, `0x200` frozen pond (pass 15 `0x64A950` reads it and turns it into `0x400` under its option gate), `0x800` boat leg (read by pass 11 `0x64BBD0`), `0x1000`/`0x2000` the UFO leg of a car route, `0x40` "no stroller here" (written by pass 8 `0x643210` on world nodes and pass 17 on portals). `+0x38` (leg class) steers only the post passes (§10.3).
+- CopyNodes reads bit 0 and bit 1 of the **same** node (route node flags `0x10` / `0x20`), not the previous node as §10.3 says [verified, emu: `route_copy_nodes.py`].
+
+This also answers the offline half of ledger I-93-6 for these inputs: the splitter's `PathType` choice is fully determined by node type, kind, the bits above and the options.
+
+### 11.2 F-4: where world-node y = -100 is resolved (closed for the route build; consumer use is F-4b)
+
+- **Every planner node carries y = -100, not only world nodes** [verified, disassembly]: the world records (`0x656550`), the lot-path writer `LotPath_ToWorldAndEdgeFlags 0x62F140` (stores x, -100, z per node) and the node builder at `0x62A662` (x, -100, z, level = low nibble - 4) all use the constant. Only the start and goal nodes get a terrain height (§3).
+- **Nothing between the planner and the route node resolves it**: no post pass, the splitter or CopyNodes writes y (§10.3, re-checked: pass 16 `0x64C7C0` samples terrain height `0xC6A250` per node into its own temporary list "TempPathListTH" and its body writes no node field) [verified, disassembly; pass 16's callees were not re-read].
+- **CopyNodes copies y as it is and uses it** [verified, emu: 303 node arrays, 16/19 blocks, the 3 missed are the null-world exit, the same-point helper `0x819680` and vector growth]: each 48-byte route node is `{x, y, z, x}`, the unit direction to the next node and the segment length are computed over **x, y and z**, `+0x24` is the running length, and the path total goes to vtable slot `+0x130`. A segment from a start node at terrain height h to the first planner node at -100 therefore gets a length of at least `100 + h` metres and a direction pointing steeply down.
+- So y = -100 is never resolved on the build side; route nodes keep it. Whether a consumer uses the 3D length or direction (follow progress, `Route_UpdateLengths 0x750260`, walk-or-run thresholds, docs/93 §6) is the remaining question, now **F-4b**: read a planned route's first two 48-byte nodes (y, `+0x20`) and the path length against the 2D sum. Two outcomes: lengths include about 2 x (100 + h) m (a real inflation every consumer sees) or the start/goal heights are also -100 at that point (then §3's "terrain height for start/goal" is wrong) [inferred; the static reading of §3 favours the first].
+
+### 11.3 F-13: edge-byte-1 and byte-2 costs against §10.1 (closed)
+
+`RouteCost_Mode1 0x674E40` ran on real edges of three worlds, R built in emulator memory exactly as the loader keeps it (`--mem-image`), against a model written from §10.1 as text (`world_cost_mode1.py`). Each world: 3,010 cases, about 40% byte-1 and 30% byte-2 edges, the rest bytes 3, 5, 6, 7 and heuristic calls; random context flags (bits 1, 2, 4, 8, `0x10`, `0x20`, `0x80`, `0x100`, `0x200`), hubs, lot-edge groups and group sets, parents, blocked targets, type-`0x15` targets, circle, tuning values and point/polygon test answers.
+
+| world | waypoints | byte-1 / byte-2 edges | cases | result |
+|---|---|---|---|---|
+| Sunset Valley (`game-copy/worlds`) | 39,265 | 13,296 / 13,296 | 3,010 | 3,010 pass |
+| Bridgeport (read in place) | 35,313 | 12,970 / 12,970 | 3,010 | 3,010 pass |
+| Isla Paradiso (read in place) | 43,942 | 15,658 / 15,658 | 3,010 | 3,010 pass |
+
+[verified, emu] Every real-end block of the function ran (74/110; not reached: the 32 blocks of the virtual water branch from `0x675417`, which need G, and four unreachable unsigned fix-ups after `fild` of a chunk coordinate). Bit-exact float32 results once the tuning values are float32. This confirms §10.1 steps 1-12 for real ends, including: the hub-out group test against the **parent**, the parent's in-chunk offsets with the current chunk, the 5,000,000 return before any distance or circle step, the factor 30 and its flag 4/8 and `+0x14`/`+0x44` bypasses, `k <= 0` returning 0, the type-2/`0x15` point test only with a world manager, and the circle skipped for byte 3 only. What stays live is values, not logic: the real lot-edge groups (`W+0xA0`), the tuning (F-1) and the bits 1, 2, 4, 8 (F-11).
+
+### 11.4 World files
+
+The main checkout's `game-copy/worlds/` now holds only `Sunset Valley.world` (the 13 others of §10.4 are no longer there). The specs read any world in place through `TS3_WORLD`, so nothing has to be copied for this pass. For the default path and the `--survey` rerun of §10.4, Rodney can copy these (never into git; `game-copy/` is ignored), all under `<Steam library>\steamapps\common\The Sims 3\`:
+
+- `EP3\GameData\Shared\NonPackaged\Worlds\Bridgeport.world`
+- `EP10\GameData\Shared\NonPackaged\Worlds\IslaParadiso.world`
+- the rest of §10.4: `EP1\...\Worlds\China.world`, `Egypt.world`, `France.world`; `EP2\...\Twinbrook.world`; `EP5\...\AppaloosaPlains.world`; `EP6\...\Starlight Shores.world`; `EP7\...\Moonlight Falls.world`; `EP9\...\Sims University.world`; `EP11\...\Oasis Landing.world`; `GameData\Shared\NonPackaged\Worlds\GPE8_Future.world` and `SWE7UniversityTest.world`.
+
+### 11.5 Status of §7 after this pass
+
+Closed: F-3 (splitter meaning of `+0x0E` and `+0x38`), F-13 (edge-byte-1/2 costs), F-4 as asked (no pass resolves y; the route keeps -100). New: F-4b (does a consumer use the 3D length or direction; live read in §11.2). Still live: F-1, F-2, F-7, F-11, F-12; F-10 is answered in docs/107 §3. Ledger: docs/51 §51 (I-99-28 to I-99-33). Names: `PathNodes_Erase 0x7AA5C0`, `SubPaths_PushBack 0x81A0E0`, `IntSet_Find 0x526490`, `RoutePathNodes_Reserve 0x819B60`, appended to the symbols CSV.
+
+## 12. F-4b: who reads the 3D lengths and directions CopyNodes writes (2026-10-18, static + emulator)
+
+Question (§11.2): CopyNodes builds route-node direction `+0x10`, segment length `+0x20`, running length `+0x24` and the path total (`+0x8C`, via vtable `+0x130`) over x, y and z, while planner nodes carry y = -100. Who reads these, is the read 3D, and could about 100 m extra on a segment change a decision? Static reading of the 1.67 image (capstone) plus a new emulator spec; no game run, no native change. Tags as in the rest of this doc.
+
+### 12.1 Verdict
+
+**F-4b is not closed offline; it is narrowed to one live read (§12.6).** Every reader found uses the stored 3D lengths or recomputes in 3D, and none rewrites node y except one last-node case (§12.2) [verified]. What that means depends on the y values a followed path really carries, and the static chain gives a contradiction (§12.4):
+
+- **All nodes at one height** (every node -100, or every node at its real height): lengths, projections and look-ahead points equal the 2D answers; F-4b is harmless [verified, emu].
+- **A real-height node next to -100 nodes** (start/goal with terrain height as §3 says, or the Sim position the follower prepends at route start, §12.3): the segment is at least `100 + h` m long, the follower's projected progress on it is about 6% of the real progress, its look-ahead point lies behind the Sim, and the path length is several times the 2D length [verified, emu, for the path functions; the follower's use of them is inferred].
+- The second case would make every route start misbehave and every path look long to the walk-style rules, which the game does not visibly do [inferred]. So one static link does not hold live; which one needs the read in §12.6.
+
+### 12.2 Readers [verified unless marked]
+
+`RoutingPathImp` vtable `0x10214D8`; nodes 48 bytes at `path+0x98..+0x9C` as in §11.2.
+
+| # | Reader | Reads | 3D? | Decision it feeds |
+|---|---|---|---|---|
+| 1 | Path slot `+0x44` `0x81EEB0` (running lengths) | sums stored `+0x20` into each `+0x24` and `path+0x8C`; resets the cursor block | inherits CopyNodes' 3D lengths (no recompute) | every distance-along-path below |
+| 2 | Path slot `+0x40` `0x820830` (recompute segments) | recomputes `+0x10`/`+0x20` from node positions over x, y, z (`sqrtps` of the 3-lane sum), then `+0x24`, `+0x8C` | 3D | same; for PathType hash `0xE99B65D5` only (`path+0xB0`), the last segment's end is moved to terrain height (`0xC6A250` with the world manager): the **only y write on the route side** found, last node only |
+| 3 | Path slot `+0x100` `0x821E90` (prepend a point) | squared 3D distance of the point to node 0 and to every segment (`0x81D800`), guard 0.00145 m² (`0x1021704`); builds a new first node {point, 3D unit direction, 3D length}, copies the rest (`0x81F820`), slot `+0x44`, node flags (`0x81D680`) | 3D | called by the follower (§12.3) |
+| 4 | Path slot `+0x118` `0x821820` -> `0x821120` (project a point) | closest segment by **3D** distance (`0x81D800`: clamped projection over x, y, z), local search from cursor `+0x108`, then a global split search when the local best is more than 1 cm away (`1e-4` m² at `0xF988E8`); result = running length `+0x24` + t | 3D [verified, emu] | follower progress (`0x852700` at `0x852B5B`, `0x852BEE`), steering B (docs/107 §12.2) |
+| 5 | Path slot `+0x120` `0x821850` -> `0x821120` | same projection | 3D | `Route_UpdateLengths 0x750260`: route `+0xA8` (distance remaining) = route length (`0x74FEF0`) minus the projection of the Sim's transform position (`0x935770` + `0x959000`) |
+| 6 | Path slot `+0x11C` `0x81D9F0` (point at distance) | running lengths `+0x24`/`+0x20`; point = node + (d - run) x direction | 3D [verified, emu] | follower and steering look-ahead (docs/107 §4.2) |
+| 7 | Path slot `+0x12C` `0x641360` | `path+0x8C` | inherits 3D | follower: path shorter than 0.15 m (`0x106B4B4`, at `0x852A51`) takes the short-path branch; steering B; `IC_Route_GetPathLength 0x751A20` |
+| 8 | `RouteFollow_A 0x846B70` | its point argument | **y replaced** by ground height (`0x829470` -> `0xC6A540` or `0xC6A250`, at `0x846C0D`) before use | steering is y-insensitive for that point |
+| 9 | End facing in `RoutingJob_Execute` (`0x81C2A9..0x81C3B7`) | last node minus the job's end point, **y zeroed** before normalising, then path slot `+0x144` | 2D | end orientation |
+| 10 | Script ICs: `Route_GetPathLength 0x751A20` (path `+0x12C`), `Route_GetRouteLength 0x751AE0` (`0x74FEF0`), `Route_GetDistanceRemaining 0x74CF70` (route `+0xA8`), `Route_GetPathDistanceRemaining 0x751830`, `Route_GetPointAtDistanceOnRoute/Pathway 0x751CC0/0x751BE0`, segment start/end point and direction ICs, `RouteEvent_GetRouteEventDistanceRemaining/Travelled 0x74DE00/0x74DDC0`, `Route_GetEstimatedTravelTime 0x7656D0` (`docs/data/ic-safety.csv`) | the values of rows 1-7 | inherit 3D [verified slot reads for `0x751A20` and `0x750260`; the others inferred from the CSV reads] | managed decisions below |
+
+Managed users that turn these lengths into a decision (`node tools/managed-callgraph.ts callers ...`) [verified callers; thresholds not read]:
+
+- Walk style (walk, jog or run): `SimWalkStyleRules.GetAdjustedWalkStyleForRoute`, `BoatWalkStyleRules.GetAdjustedWalkStyleForRoute`, `SimScriptAdaptor.OnAboutToStartFollowingRoute` (all `GetPathLength`).
+- Route action per subpath and replans: `RoutingComponent.GetRouteActionForSubPath`, `SimRoutingComponent.DoSingleRoute` / `CheckAndUpdateRouteForStations`, `Lot.TryTeleportAndReplan`, `Sim.PushCanePostureIfNecessary` / `PushBackpackPostureIfNecessary`, `CommonDoor.GetRouteThroughDoor`, `Stairs.RouteUpOrDownStairs`, `ToddlerWander.Run` (all `GetDistanceRemaining`).
+- Placement and vehicles: `GlobalFunctions.FindGoodLocationAlongRoute`, `Vehicle.OnRouteFinished`, `Terrain.ModifyRouteForSpecies`, `SocialTest.GetClosestAvailableBoxStallForWooHoo` (`GetRouteLength`); chases (`GetEstimatedTravelTime`).
+
+Not found [verified negative within the scan]: no route-side function stores a height getter's result into a node (every call of `0xC6A250`, `0xC6A540` and `0x829470` in `0x740000..0x770000`, `0x81D000..0x830000`, `0x840000..0x870000` and `0x930000..0x960000` stores to the stack); no code in those ranges loads the -100 constant (the only users are the planner builders `0x62A470`, `0x62F140`, `0x6412F0`, `0x644FD0`, `0x647EB0`, `0x64DC70`, `0x6552D0`, `0x656550`, `0x656A70`, and three unrelated sites). So nothing treats -100 as "height unknown" on the route side.
+
+### 12.3 The follower prepends the Sim's position at route start [verified call sites; condition meaning inferred]
+
+`0x852700` reads the agent position through agent slot `+0x1C` (`0x954380`: component lookup `0x935770`, then the transform `0x959000`, so the object's world position) at `0x85289C`. When path slot `+0xA4` returns 0 for it (`|x| <= 1.19e-7`, at `0x852AD5..0x852B05`; also per group member in the loop at `0x852977`), it calls path slot `+0x100` with that position (`0x852B1F`, `0x8529F3`). Row 3's guard is 3D: a position 100 m or more above every node is never "on the path", so on a path whose nodes are all -100 the prepend always runs and creates a first segment from the Sim's real height down to -100 [verified guard; that it fires at every route start is inferred from the slot `+0xA4` value at start].
+
+### 12.4 Emulator result
+
+`tools/emu/specs/route_follow_geometry.py` runs path slots `+0x118` (with `0x821120`, `0x81D800` and the global search `0x81D8D0`/`0x8210C0`) and `+0x11C` on nodes built as CopyNodes builds them, with a Sim on the path's xz track at height h (0-40 m), q metres along the first segment, and a look-ahead of 0.5 m. The model is the 3D rule of rows 4 and 6, written as text. 300 cases pass (100 per layout, `--cases 300`); stubbed only the allocator pair `0x4E3F70`/`0x4E3FB0`.
+
+| Layout | Projected progress / real progress q | Path total / 2D length | Look-ahead point | Search taken |
+|---|---|---|---|---|
+| real: every node at h | 1.000 | 1.00 | 0.5 m ahead | local |
+| flat: every node at -100 | 1.000 | 1.00 | 0.5 m ahead (at y = -100) | global split search, every call (the local best is never within 1 cm) |
+| prepended: first node at h, the rest -100 | median 0.058, min 0.009 | median 6.4, max 72.8 | **behind the Sim in 100 of 100 cases** (median 2.9 m from it) | global split search |
+
+[verified, emu] The flat layout gives exact 2D answers because a constant y offset changes neither the closest horizontal segment nor t. Its only cost is the fallback search on every projection call (a few segments of extra work per Sim per tick on long paths) [cost size inferred].
+
+The contradiction: the build side (§11.2) plus row 3 predict the "prepended" layout at the start of every searched route, with a look-ahead behind the Sim and a path length that is many times the walk distance (so the walk-style rules would see long routes everywhere). Normal play does not show Sims turning back at route starts [inferred, not measured]. Candidates, none settled statically: (a) the agent position fed to rows 3 and 4 is not at ground height; (b) a y writer outside every scope scanned; (c) slot `+0xA4` is not 0 at follow start, so the prepend is rare; (d) the lot planner's paths are flat and start/goal keep -100 too (`LotPath_ToWorldAndEdgeFlags 0x62F140` writes -100 to every node of the lot path vector, the first and last included, `0x62F1E0..0x62F331`), and only the direct start-to-goal branches of `0x65E0D0` (`0x65E669..0x65E71F`, `0x65FFB6..0x6600A0`, `0x660222..0x660319`) store real start/goal heights (from `0xC6A250`/`0xC6A540`) [verified writes; which branch a typical route takes is inferred], which would make §3's "terrain height for start/goal" a property of 2-node routes only. Even (d) leaves the prepend of (c).
+
+### 12.5 What it means for the replacement contract
+
+- **Copy y exactly as the game builds it; never "fix" it.** Every consumer (follow progress, look-ahead, steering B, distance remaining, the managed walk-style, route-action and placement rules) reads 3D values. Inner nodes stay at -100 and start/goal keep whatever the branch sets, and the game's CopyNodes computes `+0x10`/`+0x20`/`+0x24`/`+0x8C`. Snapping inner nodes to terrain would turn today's 2D-equivalent behaviour into real slopes (other lengths, other walk styles, other look-ahead) and is a separate, A/B-tested change, not part of a like-for-like replacement. This confirms docs/93 §4.4's caveat with a reader list.
+- **The shadow compare (docs/93 §8, §9) must compare node y and `+0x20`,** not only xz and node count, because a y difference changes every reader in §12.2.
+- If the live read shows the prepended layout on real routes, that is an existing game defect (route-start look-ahead and inflated lengths), worth its own item; it is not ours to reproduce differently.
+- The flat-path fallback search (§12.4) is sim-thread work per follow tick that exists today; a replacement neither adds nor removes it as long as y is copied.
+
+### 12.6 Live read still needed (exact)
+
+Frida, no native build; neither address is a hook site in `native/`, `tools/probe/` or `tools/frida/`. Clean load of a lot with autonomy off, then one in-lot route and one route across the street about 2 minutes.
+
+1. `RoutingPath_CopyNodes 0x819E10`, thiscall, `ret 0x20`: on enter keep stack argument 7 (the path); on leave log the node count, then for nodes 0, 1, n-2 and n-1: y (`+0x04`) and `+0x20`; `path+0x8C`; and the 2D sum of segment lengths.
+2. Path slot `+0x100` `0x821E90`, thiscall(path)(point*), `ret 4`: on enter log the point's y, node 0's y and `path+0x8C`; on leave the node count change (+1 = prepended; the return value is not a flag), node 0 and node 1 y and `+0x20`, and `path+0x8C`.
+3. The same agent's transform y (the point of item 2) against terrain height at its xz, once per route.
+
+| Outcome | Meaning |
+|---|---|
+| Item 1: every y -100 on searched routes; item 2 never adds a node | flat paths, F-4b harmless; §3 corrected (start/goal heights only on direct routes) |
+| Item 1 flat; item 2 prepends with a real y and `+0x20` >= 100 m | the prepended layout is live: route-start look-ahead and length inflation are real game behaviour; measure walk-style effects next |
+| Item 1: start/goal at real height next to -100 nodes | §3 holds; the inflation starts at build time |
+| Item 1: inner nodes at real heights | a y writer exists outside the scan (§12.2 negative wrong) |
+
+Ledger: docs/51 §60 (I-99-34 to I-99-39). I-99-33 stays open; its live read is item 1 here.
+
+### 12.7 F-4b live read: probe and plan (2026-10-18, built, not run)
+
+Built for §12.6; nothing here has run in the game. Ledger: docs/51 §64 (I-99-40 to I-99-43).
+
+**Probe** `tools/frida/f4b-reads.js` (read-only; writes no game memory; prologue bytes checked, an existing `jmp rel32` is chained and listed, anything else refused; every list bounded; fail-fast when neither hook fires for 2 checks of 30 s; it detaches its hooks itself 3 s before the window ends):
+
+- Item 1: `0x819E10` (`55 8B EC 83 E4 F0 81 EC`; stack argument 7 = `[ebp+0x20]` = the path [verified, disassembly: `mov edi,[ebp+0x20]` at `0x819E45`, `ret 0x20` at `0x819E38`]). On leave, when `al` is 1: node count, y and `+0x20` (and `+0x24`) of nodes 0, 1, n-2, n-1, `path+0x8C`, and over all nodes the 2D sum, the 3D sum and the sum of `+0x20`. Each path gets a layout: `flat` (every y -100), `real` (no y -100), `ends` (real y only at the first or last node) or `inner` (an inner node at a real height); "searched" = more than 2 nodes, "direct" = 2 nodes.
+- Item 2: `0x821E90` (`55 8B EC 83 E4 F0 83 EC`; `ecx` = path, stack argument 1 = the point, `ret 4`). On enter: the point, node count, node 0 y, `path+0x8C`, return address; on leave: node count change, node 0 and node 1 y and `+0x20`, `path+0x8C`.
+- Item 3: the point of item 2 is the agent's transform position (stored by agent slot `+0x1C` at `0x85289F`, passed as `[esp+0x30]` at `0x852B1C`; the group loop passes a member's position at `0x8529EC`) [verified, disassembly]. Its terrain height comes from **`World_GetTerrainHeightImpl 0x786200`**, the script `World.GetTerrainHeight` IC: cdecl(x, z, flag), plain `ret`, result in st0; it loads the world manager from `0x11ECBC4` and calls `World_GetHeightAt 0xC6A250` (9 stack arguments, `ret 0x24`; the flag lands in its byte argument at `[ebp+0x18]`) [verified, disassembly]. The probe passes flag 0 [meaning inferred] and calls it only inside item 2's hook when the return address is one of the follower's two call sites (`0x8529F5`, `0x852B21`), so on the sim thread inside `RouteFollow 0x852700`, the same thread scripts call it from; the lot-manager lock it reaches (`+0x228`, docs/18) is taken after `+0x918` as in the game's own lock order. At most 200 calls. Why this read and not another: a direct heightmap read would need the cell shapes and lot floors (`0xC2A570`, `0xAB8EE0`), and the steering ground read (`0x829470`) is for a look-ahead point, not the agent. Frida 17 returns garbage for an x87 `float` return on ia32 (checked on the dummy), so the call goes through a 3-instruction thunk of ours that moves st0 to eax.
+
+**Dummy test** `tools/probe/f4b-reads-test.py` (32-bit ping.exe, never the game): CopyNodes (8 arguments, `ret 0x20`) and slot `+0x100` (`ret 4`, grows the node vector by one node) stubs on two threads with flat, direct and "ends" paths; checks refusal, chaining, every read, the terrain call only from the follower return address (thunk result = the stub's st0), fail-fast at 60 s, clean unhook and the report's outcome line. **PASS** 2026-10-18.
+
+**Report** `node tools/harness/f4b-report.ts probe-out/profile/<tag>-f4b.json` prints the §12.6 outcome row and the I-99-33 / I-99-37 / I-99-39 / item-3 verdicts; `--self-check` (the probe's path reader on fake memory plus every outcome) passes. Rules, checked in this order over searched paths:
+
+| Row | Rule |
+|---|---|
+| D | any searched path `inner` or `real` |
+| C | else any searched path `ends` |
+| B | else (every searched path `flat`) a prepend (node count +1) with a point y other than -100 and node 0 `+0x20` >= 100 m |
+| A | else no prepend at all (prepends without that layout print "no table row, read the prepend rows") |
+| item 3 | every reading within 0.5 m of the terrain = §12.4 candidate (a) refuted; readings further off support it |
+
+**Jobs** `tools/harness/queues/f4b.json` (Baseline-BP-Spring, asi `tested`, `RouteWorker`/`RouteAsync` off as in the live-reads jobs, seed 12345, 3-minute profile window with `--f4b`, about 6 minutes per job with load and teardown, about 12 minutes for the queue):
+
+- `bp-f4b-inlot`: repro `f4b-inlot-route`: household autonomy off (agent `autonomy`), `cancel_interactions`, `go_here` to `@door` / `home` twice (25 s each), one plan-only `sim_route_to @door`, autonomy back on.
+- `bp-f4b-street`: repro `f4b-street-route`: same start, `go_here` to (312.4, 1496.7) and back home (70 s each). That this point is across a street is inferred (it is the off-lot target of `detail-priority-cache`).
+
+Run (main checkout): `node tools/harness/queue.ts tools/harness/queues/f4b.json`, then `node tools/harness/f4b-report.ts probe-out/profile/f4b-<date>-bp-f4b-inlot-f4b.json probe-out/profile/f4b-<date>-bp-f4b-street-f4b.json`.
+
+**Results** (fill after the run):
+
+| Job | Reason | CopyNodes calls (searched / direct) | Searched layouts | Prepends (+1 / calls) | Item 3 \|agent y - terrain\| | Outcome row |
+|---|---|---|---|---|---|---|
+| bp-f4b-inlot | complete, 177 s | 17,172 (9,962 / 7,210), one thread | real 9,962 | 5 / 54 | median 3.32 m, max 10.52 m (45 of 54 > 0.5 m) | D |
+| bp-f4b-street | complete, 177 s | 17,927 (10,382 / 7,545), one thread | real 10,382 | 4 / 290 | median 0.00 m, max 6.92 m (6 of 200 > 0.5 m) | D |
+
+Both runs 2026-10-18, files `probe-out/profile/f4b-2026-10-18-bp-f4b-{inlot,street}-f4b.json` (main checkout). The writer is in §12.8.
+
+### 12.8 F-4b outcome D: the y writer (2026-10-18, static, against the live result)
+
+**The writer is pass 16's rebuild helper `PathNodes_ApplyHeights 0x64C580`** (our name), called by post pass 16 `0x64C7C0` [verified, capstone on the Steam 1.67 exe]. §11.2 read pass 16's body and found no node store, and it noted that the callees were not re-read; the store is in this callee. §12.2's negative stays true for its scanned ranges (`0x740000..`, `0x81D000..`, `0x840000..`, `0x930000..`); the writer is in the planner range `0x64xxxx`, outside them.
+
+How it works [verified, disassembly unless marked]:
+
+1. **Pass 16 samples a height per planner node** (64-byte search nodes, x `+0x00`, y `+0x04`, z `+0x08`, level `+0x0C`, flags `+0x0E`) and keeps it in its "Routing/TempPathListTH" list. Each list entry holds the node pointer (`+0x08`), the node's `+0x1C` (`+0x0C`), x, the height and z (`+0x10..+0x18`), and two bytes (`+0x1C` keep, `+0x1D` original node; both 1 for a node of the path). Which height, by node flag:
+   - flags `& 0x1080` (wade `0x80`, UFO leg `0x1000`, meanings from §11.1): `World_GetHeightAt 0xC6A250(x, z, level, ...)`, then clamped against the sea height `WorldManager_GetSeaHeight 0xC61670` minus an offset (tuning object `[this+0x50]+0x10`, default 1.5 at `0xFECDA8`) with a sign-mask select (`0x64C88B..0x64C8E5`): y = max(ground, sea height - 1.5) [verified, disassembly], so a wading or boat node never sits deeper than 1.5 m below the surface.
+   - flags `& 0x600` (frozen pond `0x200`/`0x400`): `Terrain_GetHeight 0xC6A540` with a byte argument from flag `0x100` (`0x64C8F0..0x64C941`).
+   - all other nodes: for a negative level with pass argument 2 set, a basement check first (`World_LotLookup 0xC68990`, `Lot_WorldToLocal2D 0xAB8540`, `0xB015B0`, `0xB01060`), then `0xC6A540` or, in the common case, **`World_GetHeightAt 0xC6A250(x, z, level, 1, ...)`** (`0x64CA26..0x64CA80`).
+   So the height is level-aware: `0xC6A250` tries the lot floor first (`0xAB8EE0` -> `Lot+0x290` through `0xA8DF80`, the docs/94 §17 N5 data), then foundations (`0xB06A10` -> `0xB066E0`), then water (`0xB793F0`, `0xB745A0`), then terrain (`WorldCellGrid_Raycast 0xC2A570`, N9) (docs/20, docs/38 W row; the call order re-read at `0xC6A337..0xC6A50A`).
+2. The rest of pass 16 (`0x64CB2B..0x64D4CA`) walks the list and inserts extra entries (`0x59B120`) with `+0x1D` = 0 between nodes, at most `0x800` entries; the insert condition was not read in detail [inferred: points where the sampled ground leaves the straight segment].
+3. **`0x64C580(nodeVector, list, count, onlyOriginal)` rebuilds the node vector from the list.** For an entry of an existing node it stores the sampled height into the node: `movss [edx+4], xmm0` at **`0x64C620`** (`edx` = the entry's node pointer, `xmm0` = lane 1 of {x, height, z}), sets node flag bit `0x01` unless gate byte `0x115824C` is set (`0x64C625..0x64C631`), and copies the node. For an inserted entry it builds a new 64-byte node {x, height, z}, level and `+0x1C` from the neighbour, flags = (neighbour flags `& 0x1F80`) `| 0x02` (and `| 0x01` unless the gate) (`0x64C668..0x64C757`). Then it swaps the new vector into `nodeVector+0x08..+0x10` and frees the old one (`0x64C76B..0x64C7A1`).
+4. Pass 16 calls it on every exit: success with `onlyOriginal` = 0 (`0x64D541`, inserted points kept), and both failure exits (more than `0x800` entries at `0x64D4E3`, `0x64D589`) with `onlyOriginal` = 1 (heights written, inserts dropped; the pass then returns false and the plan fails, §10.3).
+
+Pass 16 runs on every plan (it is not behind gate G, §10.3), so **every** node the planner emits, start, goal, lot and world nodes alike, leaves `0x64E380` with a real height, and the -100 that `0x62F140`, `0x62A662` and `0x656550` store is a placeholder that never reaches CopyNodes. That matches both live runs: real y on 20,344 of 20,344 searched paths and 14,755 of 14,755 direct ones, `path+0x8C` = the 2D sum (median ratio 1.00, so the paths are near-flat, not inflated), and prepends with point y within 0.01 m of node 1 and node 0 `+0x20` around 0.5 m [verified live]. CopyNodes reads the bits 0x01 and 0x02 that `0x64C580` sets (route flags `0x10` = "height sampled by pass 16", `0x20` = "inserted by pass 16") [bits verified; meanings ours, inferred].
+
+**Thread and call chain.** `Route_PlanLocked 0x82C6E0` -> `RoutingJob_Execute 0x81B2A0` (`0x82C7AD`) -> `PathPlan_WithRetries 0x661B50` (`0x81BF79`, and `0x81C67A` for the obstacle replan) -> `PathPlanner_PlanHierarchical 0x65E0D0` -> `0x64E380` (six call sites, four of them in `0x65E0D0`) -> pass 16 `0x64C7C0` (`0x64E4ED`) -> `0x64C580` [verified call sites]. So it runs **inside the `+0x918` hold, on whichever thread runs `Route_PlanLocked`**: the sim thread in vanilla play and in the f4b runs (`RouteWorker`/`RouteAsync` off; CopyNodes, also inside `Route_PlanLocked`, ran on the same thread id as the follower's slot `+0x100` calls from `RouteFollow 0x852700` in both runs [verified live]), our worker under `[RouteAsync]`.
+
+**Item 3 note.** The in-lot run's agent y is 3.32 m (median) above `World_GetTerrainHeightImpl 0x786200` with flag 0, the street run's 0.00 m. Pass 16 asks `0xC6A250` with the node's level, which returns the lot floor; the probe's call returned bare terrain on a lot raised on a foundation [inferred: flag 0 / level 0 skips the floor]. So §12.4 candidate (a) is not a defect: the agent stands on the floor, and the path nodes are on the same floor.
+
+**What this changes**
+
+- §12.1 and §12.4: the contradiction is resolved by candidate (b). Followed paths have the "real" layout, where the emulator gives exact 2D answers (§12.4 row 1). F-4b is harmless in the game as it is; no route-start look-ahead defect, no length inflation.
+- §11.2 bullet 2 ("no post pass writes y") and §3's "only start and goal get a terrain height" are wrong: pass 16 sets every node's y.
+- §12.5, replacement contract: the replacement must reproduce pass 16 (or run the game's `0x64E380` on its output): level-aware heights from `0xC6A250`/`0xC6A540`/sea height by node flag, the inserted points with flag `0x02`, and flag `0x01` on sampled nodes. "Inner nodes stay at -100" in §12.5 is replaced by this. The shadow compare must still compare y and `+0x20`.
+- P4 option G (docs/94 §12): pass 16 is in `Route_PlanLocked`'s closure, so the clone run executes it on the worker. It writes only the plan's own node vector (allocated per plan, no pointer into the routing world, as docs/94 §17.5). It reads non-routing data live: N1 (sea height), N2 (lot lookup, lot grid `0xC688A0` inside the height query), N4 (`Lot_WorldToLocal2D`), N5 (floor heights through `0xAB8EE0`, a second reader next to `Lot_LevelAtPoint`), N9 (terrain), and two reads the §17.2 table did not list: foundations `0xB06A10` and water heights `0xB793F0`/`0xB745A0`, both inside `0xC6A250` (docs/94 §17.8). A terrain LOD swap in the window can change a node's y between the live plan and the clone run; D5's terrain swap counter already marks that as M5.
+
+Ledger: docs/51 §80 (I-99-50 to I-99-55). Not done: an emulator run of `0x64C580` (the store is one instruction, read in the disassembly, and the live data show its effect), and the insert condition of step 2.
+
+| bp-f4b-inlot | | | | | | |
+| bp-f4b-street | complete, 177 s | 17927 (10382 / 7545) | real 10382 | 4 / 290 | median 0.00 m, max 6.92 m (6 of 200 readings > 0.5 m) | D |
+
+**bp-f4b-street (2026-10-18 22:31 PHT): data complete, game crashed at the probe's unload.** The probe wrote its JSON as `complete` at 22:31:53.8 (177 s); TS3W.exe died at 22:31:56.779 (empty xcpt file, no fault address), at the end of the `-t 180` window. The in-lot run with the same script survived. Cause evidence (docs/51 §81):
+
+- The suspected race (a terrain call through our thunk, or a hooked call, in flight while the script is freed) did not happen in this run: the terrain call cap (200) was reached before the 90 s line (log: `terrain 200` at 90, 120 and 150 s), and `finish()` had already detached both hooks and run `Interceptor.flush()` 3 s before the crash [verified, log and file times] (I-99-60).
+- On the dummy the old script does not crash when it is unloaded mid-call through its own `frida_tools.repl -t 1` host (agent unload, as in the job): 5 of 5 unloads with a thread inside a slow terrain stub, dummy alive each time; the fixed script measured 13-15 ms of call still in flight at every unload, so the race was hit [verified, dummy]. Frida 17 already waits for a JS callback that is inside a `NativeFunction` call before it frees the script (I-99-61).
+- What did coincide: the stutter profiler's own unload (its `dispose()` closed `-180-seconds.csv` at 22:31:56.769), 10 ms before the crash and within tens of ms of the f4b host's unload (due at about 22:31:56.79). Two Frida agents unloading together is a known hazard (docs/TESTING.md §6, the end-of-B crashes of 2026-10-13). The in-lot run had the same overlap (csv closed 22:26:15.928, f4b unload due about 22:26:15.94) and survived, and a dummy recheck on 2026-10-18 with two no-op hosts unloading FIFO, near-together and LIFO survived 6 of 6, so this cause is inferred, not reproduced (I-99-62).
+
+**Fix (2026-10-18):** unload guard in `f4b-reads.js` and `live-reads2.js`. `finish()` (timer or dispose) sets `closing` first (no new game call; the check sits right before each call), waits up to 2 s (`Thread.sleep`, which lets go of the JS lock) until no thread is inside a game call, then detaches and flushes; the file records `unloadWait` (`ms`, calls still in flight). The terrain thunk page now comes from `VirtualAlloc` and is never freed (one page per load), so a call that outlives the wait still returns into valid code. The dummy tests gained section 4 (5 unloads mid-call through a `-t 1` host; `--race` runs it alone). This closes the in-flight hazard. It does not address the two-agent overlap, the open lead for this crash: stagger the side session's unload against the profiler's in `profile-world.ts` next.

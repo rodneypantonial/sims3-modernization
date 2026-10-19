@@ -130,15 +130,15 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[99];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[106];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask", "doormirror" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy" && n != "fastreftable" && n != "cachedreflection" && n != "motivebar" && n != "buffgrid" && n != "namecache" && n != "detailprio" && n != "detailprioverify" && n != "hoursmemo" && n != "hoursmemoverify" && n != "caneearly" && n != "tooltipthrottle" && n != "safespotreuse" && n != "safespotreuseverify" && n != "wildflowerprobe" && n != "wildflowertask"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy" && n != "fastreftable" && n != "cachedreflection" && n != "motivebar" && n != "buffgrid" && n != "namecache" && n != "detailprio" && n != "detailprioverify" && n != "hoursmemo" && n != "hoursmemoverify" && n != "caneearly" && n != "tooltipthrottle" && n != "safespotreuse" && n != "safespotreuseverify" && n != "wildflowerprobe" && n != "wildflowertask" && n != "doormirror"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -178,6 +178,7 @@ namespace Ts3Agent
             if (c.Length > 92) { r["safespotreuse_hits"] = c[90]; r["safespotreuse_searches"] = c[91]; r["safespotreuse_mismatches"] = c[92]; } // SafeSpot placements from a stored FindGoodLocation result / native searches run / verify: a fresh search found another spot
             if (c.Length > 89) { r["tooltipthrottle_skipped"] = c[88]; r["tooltipthrottle_walks"] = c[89]; } // tooltip window walks skipped while the cursor rests / run (ScriptHotSpots.cs, docs/74)
             if (c.Length > 98) { r["wildflower_fires"] = c[93]; r["wildflower_tries"] = c[94]; r["wildflower_placed"] = c[95]; r["wildflower_failed"] = c[96]; r["wildflower_maxms"] = c[97]; r["wildflower_saveaborts"] = c[98]; } // spring wildflower drain (docs/110): fires that took a lot, tries, placed, failed, longest fire/slice ms, save aborts
+            if (c.Length > 105) { r["doormirror_imports"] = c[102]; r["doormirror_invalidations"] = c[103]; r["doormirror_builds"] = c[104]; r["doormirror_refused"] = c[105]; } // P3 door mirror (DoorMirror.cs, docs/105 §10.5): CommonDoor.ImportContent postfixes, lot invalidations, lot tables built, builds refused (a door not readable)
             r["wildflower_log"] = d.GetData("ts3fixes.wildflower"); // one line per fire with wildflowerprobe or wildflowertask on
             r["recent"] = d.GetData("ts3fixes.recent");
             r["moved"] = d.GetData("ts3fixes.moved");

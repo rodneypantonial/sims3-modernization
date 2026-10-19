@@ -162,6 +162,7 @@ static inline double HcOrig(void* gridp, void* edx, float x, float z) {
 
 static double __fastcall HcHook(void* gridp, void* edx, float x, float z) {
     Ts3nCounters& s = ts3native_counters;
+    if (t_p4Read) t_p4Read |= P4R_TERRAIN;  // P4 D5: the plan read terrain heights (this stub stays on in a clone run, D1)
     if (s.heightMode != 1 || !g_hc) return HcOrig(gridp, edx, x, z);
     s.heightCalls++;  // shortcut: plain ++, a lost count from the route worker only skews the stats
     const u8* g = (const u8*)gridp;

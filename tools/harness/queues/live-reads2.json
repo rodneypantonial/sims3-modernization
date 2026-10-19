@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    {
+      "id": "bp-live-reads2",
+      "note": "docs/114 / docs/51 §54: routing live reads pass 2, read-only Frida (tools/frida/live-reads2.js), no native change. O+0x58 after 0x85FF30 (I-107-15/17), route list at PlanCommon return (I-107-16), footprint grid P+0xDC cells and records at the window start and ~25 s before the end (I-107-19), thread per call of 0x636BF0 / 0x62D9F0 (I-107-20), 0xC6BAB0 on 20 points (I-107-21), 0x853820 return addresses (I-107-24), PlanCommon start points vs WM+0xC0 (I-100-13, no houseboats in Bridgeport: control). RouteWorker and RouteAsync off so plans, and so the dumps and point calls, run on the sim thread. Stack samplers skipped. ~8 min with load and teardown. After: node tools/harness/live-reads2-report.ts probe-out/profile/<tag>-livereads2.json --game-copy <main checkout>/game-copy; pass = reason complete, two dumps, no refused hooks.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "livereads2": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-live-reads2",
+      "note": "bp-live-reads2 on Isla Paradiso, with repro ip-houseboat-gohome at the window start (the Scott and Arias houseboat households go home, so Sims plan on board: I-100-13). Queue total ~16 min.",
+      "asi": "tested",
+      "ini": { "RouteWorker.Enabled": 0, "RouteAsync.Enabled": 0 },
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "livereads2": true, "repro": "ip-houseboat-gohome" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

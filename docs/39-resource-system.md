@@ -195,5 +195,61 @@ Not candidates: lock contention (0.05%, §7); zlib (not used by packages); index
 
 1. Which thread runs `AsyncLoader_Complete 0x7294F0` (the factory stage of async loads): main thread through `Timeslices/ResourceSystem`, or the job thread? Decides whether R3 needs thread-safe factories.
 2. Who calls the manager's `LockUnlock` (slot `0x50`), and what the separate `AsyncLoader_CreateLoad` path for databases of kind `0x3C4B9A4` (database slot `0x50`) does.
-3. Load-window cost split (startup, world load, travel): needs a sampler on the main and job threads during loads, before R1/R3/R5 can claim load-time gains.
+3. Load-window cost split (startup, world load, travel): needs a sampler on the main and job threads during loads, before R1/R3/R5 can claim load-time gains. The routing part of a world load is measured by `[LoadProf]` (§10).
 4. Per-package probe count per miss with the maintainer's CC set at runtime (one counter on `GetPackageSource`), to size R1.
+
+## 10. World-load routing share: `[LoadProf]` (2026-10-19, built, not run)
+
+**Question (Rodney, 2026-10-19):** how much of a world load is the game building routing data, versus everything else (resources, Mono/script work, layout, terrain)? If routing is a small share, caching routing data on disk next to the save is not worth it.
+
+**Already known** [verified live, docs/112 §5.4]: the load's G build (water grid, `0x82A030` from `0x835390`) took 688 ms in BP and 505 ms in IP, once per load, on the sim thread. Nothing else of the routing load path has a time yet. Lot graphs are not built at load by default: `LotGraph_Build 0x63CB90` runs lazily at a lot's first route (`RoomGraph_FirstUse 0x63D2F0`), unless `[RouteSnap] Prebuild=1` builds all of them at world event 7 (docs/94 §16) [verified].
+
+### 10.1 Where the routing data is built during a load [verified static, 2026-10-19]
+
+Load order is docs/94 §9.1 (steps 1-10 of `WorldManager_LoadWorld 0xC6CF80`, sim thread; steps 4 and 6 run on the main thread while the sim waits). The routing builds on that path, with the thread from docs/38, docs/94 §9.1 and docs/100 §3:
+
+| Step | Routing work | Entry timed | Thread |
+|---|---|---|---|
+| 4. World init (`World_LotStreaming 0xC622D0`) | routing world setup under `world+0x918`, including the R load | call `0xC626F8` -> `RoutingWorld_LockedOp_WorldInit 0x829410`; inside it `RTData_Load 0x66D110` (only caller `0x82942F`) | main (sim waits) |
+| 5. Lots (`CreateLotsFromLayer 0xC65E00`, `LoadLots 0xC678D0` / `0xC64630`) | per lot: lot table insert and lot quadtrees, object footprints into the quadtrees and the footprint grid, polygon caches, the lot's R update | `LotTable_Insert 0x62E680`, `LotRouting_QuadTreeBuild 0x62F8A0`, `RoutingWorld_UpdateObjectFootprintCore 0x8321F0`, `LotQuadTree_ApplyInsert 0x665C50`, `LotQuadTree_FlushDeferred 0x666A40`, `Footprint_EnsureLevelPolygons 0x80E5B0`, `Footprint_EnsureAllPolygons 0x80E610`, `RoutingWorld_ApplyLotUpdate 0x82B590`, `RoutingWorld_RestoreLotBlockedBits 0x82A190`; `Lot_FinishLoad`'s call `0xACF3CF` -> `RoutingSystem_LotLoadFloorUpdate 0x834DC0` | sim |
+| 7. G build | water grid, shorelines, R type bits | calls `0x8352F1`, `0x835390`, `0x8358B5` -> `WaterGrid_BuildFromWorld 0x82A030` | sim |
+| (rare) world routing rebuild | `RoutingWorld_BuildWorldRoutingData 0x8349C0` | calls `0xC6BE53`, `0xC6CD02`, `0x835A27` | sim |
+| 10 or later (lazy, or `Prebuild=1` at event 7) | lot graphs and room connectivity | `RoomGraph_FirstUse 0x63D2F0`, `LotGraph_Build 0x63CB90` | sim (route worker with `[RouteAsync]`) |
+
+The other routing calls in `Lot_FinishLoad 0xACF170` (`0xACF3F9`-`0xACF471`: `0x631C20`, `0x637900`, `0x80B490`, `PathPlanner_AddFootprint 0x6376D0`) run only for lot files older than version `0x45` with `+0x408 == 1` and `+0x40C == 0x50` (the branch at `0xACF3D4`) [verified]; their footprint inserts still reach the timed leaves. `Lot_Load 0xACF520` itself calls no routing code directly [verified: no call into `0x600000-0x690000` or `0x800000-0x840000`].
+
+Prologues and call edges: capstone and a raw branch scan on the Steam 1.67 exe (whole instructions, no relative operand, nothing jumps into the stolen bytes, every call site is `E8` to its target); `steerro-test` re-checks all 28 rows on the image ("loadprof: 28 sites match").
+
+### 10.2 What `[LoadProf]` measures (ts3native 0.32.0, counters v59, `loadprof.cpp`)
+
+- **Window:** a `WorldManager_LoadWorld` call (`0xAABE33` save load, `0xC6D9E8`) opens it and zeroes the rows; world event 7 (`ScriptHost_PostWorldReady`, its `World_FireEvent` call `0x769993`) closes it. `lpWindowMs` = LoadWorld entry to event 7. Event 7 waits for the script host's pending tasks (docs/94 §9.1), so the window ends after the managed post-load work.
+- **Per site** (`lpSite_<site>_<row*3+k>`): calls, inclusive microseconds and the longest call; row 0 = calls started in the window, row 1 = after it (lazy builds in the first minute of play).
+- **Routing total** `lpRtUs[0]`: only the outermost routing frame of each thread adds, so nested routing calls (FirstUse -> LotGraph_Build -> QuadTreeBuild -> ApplyInsert) count once; `lpRtThrUs` splits it by main / sim / other thread. Main-thread routing in steps 4 and 6 runs while the sim waits, so it is on the load's critical path too.
+- **Phases** (not routing): `World_LotStreaming` and `World_PostLoadInit` (main), `CreateLotsFromLayer`, the two `LoadLots`, `LoadWorld` itself. Window minus `LoadWorld` = the script side after the native load (managed post-load, until event 7).
+- At event 7 the log gets `loadprof window ...` and one `loadprof   routing|phase <name>: calls, ms, max` line per site.
+- Measurement only: each stub times the call and runs the game's code unchanged. A site another section already hooked is skipped (`SKIP loadprof ...`): run `[LoadProf]` alone, as the queue does. Not timed: the harness part before `LoadWorld` (save file read, managed `LoadGame` setup); the report shows it as harness load minus window.
+
+### 10.3 Run and read
+
+1. Build: `native\ts3native\build.cmd` (selftest ok), then park `native\ts3native\out\ts3native.asi` as `game-copy/ts3native.asi.loadprof` (the tested `out/` build stays as it is).
+2. Queue (6 jobs, fresh launch each, about 5-7 min per job, ~40 min in all): `node tools/harness/queue.ts tools/harness/queues/load-profile.json`. BP, IP and SV `-Spring` saves, two runs each so the second shows the warm file cache; each loads, plays 1 min at normal speed, quits.
+3. Report: `node tools/harness/load-profile-report.ts probe-out/queue/load-profile-<date>.jsonl`. Per job: window seconds, harness load seconds (`world loaded after N s` from the job log), routing ms and its share of both, the thread split, the phases, routing by function (window | after), and the lazy routing in the first minute.
+
+**How to decide:** a disk cache next to the save could save at most the routing total of the window (and the lazy lot graph builds of row 1, which happen in play, not in the load). Below ~10% of the harness load it is not worth a save-format change; the G build alone (~0.5-0.7 s) is already known. A first-run vs second-run gap much larger than the routing total means the load is I/O bound, and resource work (§8 R1/R3) is the lever instead.
+
+Effort: build and docs ~2 h (done); the queue ~40 min of game time (Rodney); reading the report ~15 min.
+
+### 10.1 Results 2026-10-19 (`load-profile.json`, `[LoadProf]` build, 2 fresh loads per world)
+
+| Job | Harness load | Window (LoadWorld to event 7) | Routing in window | Share of harness load | Water grid build | Lazy routing, first minute |
+|---|---|---|---|---|---|---|
+| bp-load-1 | 26 s | 17.5 s | 1,086 ms | 4.2% | 1,070 ms | 129 ms |
+| bp-load-2 | 25 s | 16.8 s | 1,081 ms | 4.3% | 1,066 ms | 86 ms |
+| ip-load-1 | 24 s | 15.8 s | 1,109 ms | 4.6% | 921 ms | 26 ms |
+| ip-load-2 | 24 s | 16.7 s | 1,134 ms | 4.7% | 945 ms | 27 ms |
+| sv-load-1 | 24 s | 15.8 s | 989 ms | 4.1% | 972 ms | 16 ms |
+| sv-load-2 | 25 s | 17.2 s | 990 ms | 4.0% | 971 ms | 110 ms |
+
+**Verdict [measured]:** routing is 4.0-4.7% of the load, under the 10% rule, so a disk cache of routing data is not worth it. Nearly all of it (85-99%) is one call: `WaterGrid_BuildFromWorld` (G / water grid, from `0x835390`), 0.92-1.07 s on the sim thread per load. Everything else is small: lot quadtrees ~11-14 ms, R load ~4 ms, footprints 3 ms (IP 170 ms, max 23 ms per call). The rest of the load is LoadWorld itself (~11.6 s) and script-side work.
+
+**If load time matters later:** the one routing target is the water grid build (~1 s per load). Options: cache only the water grid per world (static unless terrain or water changes), or build it on another core while the rest of the load runs. Neither is planned.

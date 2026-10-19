@@ -25,6 +25,7 @@ namespace Ts3Agent
             Dispatcher.Register("tile_info", TileInfo);
             Dispatcher.Register("tool_select", ToolSelect);
             Dispatcher.Register("tool_drag", ToolDrag);
+            Dispatcher.Register("build_level", BuildLevel);
             Dispatcher.Register("build_presets", BuildPresets);
             Dispatcher.Register("auto_roof", AutoRoof);
         }
@@ -62,8 +63,10 @@ namespace Ts3Agent
 
         // ------------------------------------------------------------ world <-> window pixels
 
-        // h maps world (x,z,1) -> window (u,v,w); pixel = (u/w, v/w).
+        // Homography for one world plane (ScreenFit), fitted from floor picks on that plane.
         static double[] sHomography;
+        static double sCalibPlane = double.NaN; // height the fit is for; NaN = all picks
+        static Dictionary<string, object> sCalibInfo;
         static Vector3 sCalibCamPos, sCalibCamTarget;
 
         static bool CameraMoved()
@@ -72,81 +75,56 @@ namespace Ts3Agent
             return (p - sCalibCamPos).Length() > 0.01f || (t - sCalibCamTarget).Length() > 0.01f;
         }
 
+        // calibrate {y?}: y keeps only the picks within 1.25 m of that height (less than half a floor).
         static object Calibrate(Args a)
         {
-            Rect area = UIManager.GetMainWindow().Area;
-            int w = (int)area.Width, h = (int)area.Height;
-            List<double[]> pts = new List<double[]>(); // wx, wz, px, py
-            for (int i = 1; i < 10; i++)
-                for (int j = 1; j < 8; j++)
-                {
-                    int px = w * i / 10, py = h * j / 8;
-                    Vector3 hit = Vector3.Zero;
-                    if (World.PickFloorAtWindowPoint(px, py, ref hit)) pts.Add(new double[] { hit.x, hit.z, px, py });
-                }
-            if (pts.Count < 6) throw new McpException("only " + pts.Count + " floor picks hit; point the camera at the lot");
-            sHomography = FitHomography(pts);
+            return CalibrateAt(a.Double("y", double.NaN));
+        }
+
+        static Dictionary<string, object> CalibrateAt(double plane)
+        {
+            sHomography = null;
             sCalibCamPos = CameraController.GetPosition();
             sCalibCamTarget = CameraController.GetTarget();
-            double err = 0;
-            foreach (double[] p in pts)
-            {
-                double[] s = Project(p[0], p[1]);
-                err = Math.Max(err, Math.Abs(s[0] - p[2]) + Math.Abs(s[1] - p[3]));
-            }
+            Rect area = UIManager.GetMainWindow().Area;
+            int w = (int)area.Width, h = (int)area.Height;
+            List<double[]> picks = new List<double[]>(); // wx, wy, wz, px, py
+            double ymin = double.MaxValue, ymax = double.MinValue;
+            for (int i = 1; i < 20; i++)
+                for (int j = 1; j < 16; j++)
+                {
+                    int px = w * i / 20, py = h * j / 16;
+                    Vector3 hit = Vector3.Zero;
+                    if (!World.PickFloorAtWindowPoint(px, py, ref hit)) continue;
+                    picks.Add(new double[] { hit.x, hit.y, hit.z, px, py });
+                    ymin = Math.Min(ymin, hit.y);
+                    ymax = Math.Max(ymax, hit.y);
+                }
+            if (CameraMoved()) throw new McpException("camera moved while calibrating; wait for it to settle");
+            List<double[]> pts = ScreenFit.OnPlane(picks, plane, 1.25);
+            if (pts.Count < 6)
+                throw new McpException("only " + pts.Count + " of " + picks.Count + " floor picks hit"
+                    + (double.IsNaN(plane) ? "" : " the plane at y=" + Math.Round(plane, 2))
+                    + (picks.Count > 0 ? " (pick heights " + Math.Round(ymin, 2) + ".." + Math.Round(ymax, 2) + ")" : "")
+                    + "; point the camera at the lot");
+            double[] H = ScreenFit.FitHomography(pts);
             Dictionary<string, object> r = Util.Obj();
             r["samples"] = pts.Count;
-            r["max_error_px"] = Math.Round(err, 2);
+            r["picks"] = picks.Count;
+            if (!double.IsNaN(plane)) r["plane_y"] = Math.Round(plane, 2);
+            r["max_error_px"] = Math.Round(ScreenFit.MaxError(H, pts), 2);
             r["window"] = w + "x" + h;
+            sHomography = H;
+            sCalibPlane = plane;
+            sCalibInfo = r;
             return r;
         }
 
-        static double[] Project(double x, double z)
+        static double[] ToPixels(double x, double z, double plane)
         {
-            double[] H = sHomography;
-            double u = H[0] * x + H[1] * z + H[2], v = H[3] * x + H[4] * z + H[5], q = H[6] * x + H[7] * z + 1.0;
-            return new double[] { u / q, v / q };
-        }
-
-        static double[] ToPixels(double x, double z)
-        {
-            if (sHomography == null || CameraMoved()) Calibrate(null);
-            return Project(x, z);
-        }
-
-        // Least-squares DLT with h8 = 1: 2 equations per point, normal equations, Gaussian elimination.
-        static double[] FitHomography(List<double[]> pts)
-        {
-            double[,] A = new double[8, 8];
-            double[] b = new double[8];
-            foreach (double[] p in pts)
-            {
-                double x = p[0], z = p[1], u = p[2], v = p[3];
-                double[] r1 = { x, z, 1, 0, 0, 0, -u * x, -u * z };
-                double[] r2 = { 0, 0, 0, x, z, 1, -v * x, -v * z };
-                for (int i = 0; i < 8; i++)
-                {
-                    for (int j = 0; j < 8; j++) A[i, j] += r1[i] * r1[j] + r2[i] * r2[j];
-                    b[i] += r1[i] * u + r2[i] * v;
-                }
-            }
-            for (int c = 0; c < 8; c++)
-            {
-                int piv = c;
-                for (int r = c + 1; r < 8; r++) if (Math.Abs(A[r, c]) > Math.Abs(A[piv, c])) piv = r;
-                for (int k = 0; k < 8; k++) { double t = A[c, k]; A[c, k] = A[piv, k]; A[piv, k] = t; }
-                double tb = b[c]; b[c] = b[piv]; b[piv] = tb;
-                for (int r = 0; r < 8; r++)
-                {
-                    if (r == c) continue;
-                    double f = A[r, c] / A[c, c];
-                    for (int k = c; k < 8; k++) A[r, k] -= f * A[c, k];
-                    b[r] -= f * b[c];
-                }
-            }
-            double[] h = new double[8];
-            for (int i = 0; i < 8; i++) h[i] = b[i] / A[i, i];
-            return h;
+            bool samePlane = double.IsNaN(plane) ? double.IsNaN(sCalibPlane) : Math.Abs(plane - sCalibPlane) < 0.01;
+            if (sHomography == null || !samePlane || CameraMoved()) CalibrateAt(plane);
+            return ScreenFit.Project(sHomography, x, z);
         }
 
         // ------------------------------------------------------------ tiles
@@ -193,34 +171,127 @@ namespace Ts3Agent
                                    uint.Parse(k[1], NumberStyles.HexNumber));
         }
 
-        // tool: 0 wall, 1 wallpaper, 2 floor, 3 foundation, 4 object, ... (Sims3.UI.ToolMessageID)
+        // tool: 0 wall, 1 wallpaper, 2 floor, 3 foundation, 4 object, 8 fence, 12 sledgehammer, 16 stairs, 17 railings,
+        // 20 column, 25 wall drag (room), 30 half wall (Sims3.UI.ToolMessageID in UI.dll). product "first": the first
+        // catalog entry for that tool, as the build catalog fills it: the first wall/floor pattern preset for 1/2, else the
+        // first UserToolUtils.GetProductList entry of the same number (the BuildBuyProductType values equal the tool ids for
+        // 0, 2, 3, 8, 16, 17, 20); no entry leaves the empty key.
         static object ToolSelect(Args a)
         {
             uint tool = (uint)a.Long("tool");
-            ResourceKey key = ParseKey(a.Has("product") ? a.Str("product") : null);
-            if (a.Has("preset")) UserToolUtils.UserToolGeneric(tool, key, (uint)a.Long("preset"));
+            string prod = a.Has("product") ? a.Str("product") : null;
+            bool hasPreset = a.Has("preset");
+            uint preset = hasPreset ? (uint)a.Long("preset") : 0u;
+            ResourceKey key = ParseKey(prod == "first" ? null : prod);
+            if (prod == "first" && (tool == 1 || tool == 2))
+            {
+                List<object> ps = tool == 1 ? UserToolUtils.GetWallPatternPresetListByType(0xFFFFFFFF)
+                                            : UserToolUtils.GetFloorPatternPresetListByType(0xFFFFFFFF);
+                BuildBuyPreset first = null;
+                if (ps != null)
+                    foreach (object o in ps)
+                    {
+                        first = o as BuildBuyPreset;
+                        if (first != null && first.Product != null) break;
+                        first = null;
+                    }
+                if (first == null) throw new McpException("no pattern preset for tool " + tool);
+                key = first.Product.ProductResourceKey;
+                preset = (uint)first.ID;
+                hasPreset = true;
+            }
+            else if (prod == "first")
+            {
+                List<object> list = UserToolUtils.GetProductList((UserToolUtils.BuildBuyProductType)tool);
+                BuildBuyProduct first = list != null && list.Count > 0 ? list[0] as BuildBuyProduct : null;
+                if (first != null) key = first.ProductResourceKey;
+            }
+            if (hasPreset) UserToolUtils.UserToolGeneric(tool, key, preset);
             else UserToolUtils.UserToolGeneric(tool, key);
             UIManager.GetSceneWindow().StartForwardingEventsToUserTools();
             Dictionary<string, object> r = Util.Obj();
             r["tool"] = tool;
             r["product"] = KeyString(key);
+            if (hasPreset) r["preset"] = preset;
+            return r;
+        }
+
+        // build_level {up?: true} or {level: n}: the build UI's floor up/down buttons (ZoomPuck -> Lot.ChangeDisplayLevel) on
+        // the home lot. Walls, floors and stairs are drawn on the displayed level. aim: [lx, lz] also points the camera at
+        // that home-lot tile (from 15 m up and 12 m back), so a later tool_drag with "tiles" can calibrate on screen.
+        // Returns the level after the change.
+        static object BuildLevel(Args a)
+        {
+            Lot lot = HomeLot();
+            bool changed = a.Has("level") ? lot.SetDisplayLevel((int)a.Long("level"))
+                                          : lot.ChangeDisplayLevel(a.Bool("up", true) ? 1 : -1);
+            sHomography = null;  // floor picks move with the displayed level
+            List<object> aim = a.List("aim");
+            if (aim != null && aim.Count == 2)
+            {
+                Vector3 t = Vector3.Zero;
+                World.GetWorldPosition(lot.LotId, new LotLocation(Convert.ToInt32(aim[0], CultureInfo.InvariantCulture),
+                    Convert.ToInt32(aim[1], CultureInfo.InvariantCulture), (sbyte)lot.CurrentLotDisplayLevel, 0), ref t);
+                CameraController.SetPositionAndTarget(new Vector3(t.x, t.y + 15f, t.z - 12f), t);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["changed"] = changed;
+            r["level"] = lot.CurrentLotDisplayLevel;
+            r["top"] = lot.RoofLevel;
             return r;
         }
 
         // Press at the first point, move through the rest, release at the last (world x,z pairs, or pixels with
-        // "pixels": true). One drag draws a wall run, paints a floor rectangle, or clicks (single point).
+        // "pixels": true, or home-lot tile coordinates [lx,lz] on the displayed level with "tiles": true, so a repro needs
+        // no world coordinates). One drag draws a wall run, paints a floor rectangle, or clicks (single point).
+        // Fails before any mouse event when points at least 0.5 m apart project closer than min_px (default 8), and
+        // for tiles when a floor pick at a projected pixel lands more than 1 m from its tile. Returns pixels, calib
+        // (the fit used) and, for tiles, check_m (largest pick-back distance).
         static object ToolDrag(Args a)
         {
             List<object> raw = a.List("points");
             if (raw == null || raw.Count == 0) throw new McpException("points: [[x,z], ...] required");
             bool pixels = a.Bool("pixels", false);
+            bool tiles = a.Bool("tiles", false);
+            Lot tileLot = tiles ? HomeLot() : null;
             int frames = (int)a.Long("frames", 3);
-            List<double[]> px = new List<double[]>();
+            List<double[]> world = new List<double[]>();
+            double plane = double.NaN; // tiles: the displayed level's floor height, so the fit ignores other planes
             foreach (object o in raw)
             {
                 IList p = (IList)o;
                 double x = Convert.ToDouble(p[0], CultureInfo.InvariantCulture), z = Convert.ToDouble(p[1], CultureInfo.InvariantCulture);
-                px.Add(pixels ? new double[] { x, z } : ToPixels(x, z));
+                if (tiles)
+                {
+                    Vector3 wp = Vector3.Zero;
+                    World.GetWorldPosition(tileLot.LotId, new LotLocation((int)x, (int)z, (sbyte)tileLot.CurrentLotDisplayLevel, 0), ref wp);
+                    x = wp.x;
+                    z = wp.z;
+                    if (double.IsNaN(plane)) plane = wp.y;
+                }
+                world.Add(new double[] { x, z });
+            }
+            List<double[]> px = new List<double[]>();
+            foreach (double[] p in world) px.Add(pixels ? p : ToPixels(p[0], p[1], plane));
+            double checkM = 0;
+            if (!pixels)
+            {
+                string bad = ScreenFit.Degenerate(world, px, a.Double("min_px", 8));
+                if (bad != null) throw new McpException("degenerate drag: " + bad);
+                if (tiles)
+                    // Pick back through each pixel: the floor there must be the tile asked for (tiles are 1 m).
+                    for (int i = 0; i < px.Count; i++)
+                    {
+                        Vector3 hit = Vector3.Zero;
+                        double d = World.PickFloorAtWindowPoint((int)px[i][0], (int)px[i][1], ref hit)
+                            ? Math.Sqrt((hit.x - world[i][0]) * (hit.x - world[i][0]) + (hit.z - world[i][1]) * (hit.z - world[i][1]))
+                            : double.PositiveInfinity;
+                        checkM = Math.Max(checkM, d);
+                        if (d > 1.0)
+                            throw new McpException("tile point " + i + " projects to a pixel whose floor pick is "
+                                + (double.IsInfinity(d) ? "empty" : Math.Round(d, 2) + " m away") + "; calibration "
+                                + Json.Write(sCalibInfo));
+                    }
             }
             uint button = (uint)a.Long("button", 1000);
             uint mods = (uint)a.Long("modifiers", 0);
@@ -251,6 +322,8 @@ namespace Ts3Agent
             foreach (double[] p in px) outPx.Add(new double[] { Math.Round(p[0], 1), Math.Round(p[1], 1) });
             Dictionary<string, object> r = Util.Obj();
             r["pixels"] = outPx;
+            if (!pixels) r["calib"] = sCalibInfo;
+            if (tiles) r["check_m"] = Math.Round(checkM, 2);
             return r;
         }
 

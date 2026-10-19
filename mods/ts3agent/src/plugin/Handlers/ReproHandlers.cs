@@ -28,6 +28,74 @@ namespace Ts3Agent
             Dispatcher.Register("outfit_change", OutfitChange);
             Dispatcher.Register("pet_guard", PetGuard);
             Dispatcher.Register("wildflower_drain", WildflowerDrain);
+            // Reflect roots for the docs/109 §6 repros (reflect_call "@door.SetLockType", go_here {target: "@upstairs"}).
+            AddRoot("route", LastLiveRoute);
+            AddRoot("door", NearestHomeDoor);
+            AddRoot("upstairs", NearestUpstairsObject);
+            AddRoot("gangway", RepoGangway);
+        }
+
+        // The last route sim_route_to planned: reflect_call "@route.Replan" replans a route object that already holds paths.
+        static Route sLastRoute;
+
+        // "@route": sLastRoute while its native handle and follower Sim still exist (a disposed route has handle 0).
+        static object LastLiveRoute()
+        {
+            if (sLastRoute == null) throw new McpException("no live route: run sim_route_to first");
+            if (sLastRoute.RouteHandle == 0 || sLastRoute.Follower == null)
+                throw new McpException("no live route: the last sim_route_to route was disposed or its Sim is gone");
+            return sLastRoute;
+        }
+        static Sims3.Gameplay.Objects.Island.Gangway sGangway;
+
+        // "@door": the door (CommonDoor) on the home lot nearest the active Sim.
+        static object NearestHomeDoor()
+        {
+            Sim me = Util.ActiveSim();
+            GameObject best = null;
+            float bestD = float.MaxValue;
+            foreach (GameObject o in Sims3.Gameplay.Queries.GetObjects<GameObject>(HomeLot()))
+            {
+                if (!(o is CommonDoor) || !o.InWorld) continue;
+                float d = (o.Position - me.Position).LengthSqr();
+                if (d < bestD) { bestD = d; best = o; }
+            }
+            if (best == null) throw new McpException("no door on the home lot");
+            return best;
+        }
+
+        // "@upstairs": the in-world object (not a Sim) on an upper floor (Level >= 1) nearest the active Sim, on any lot.
+        static object NearestUpstairsObject()
+        {
+            Sim me = Util.ActiveSim();
+            GameObject best = null;
+            float bestD = float.MaxValue;
+            foreach (Lot l in LotManager.AllLots)
+            {
+                if (l == null) continue;
+                foreach (GameObject o in Sims3.Gameplay.Queries.GetObjects<GameObject>(l))
+                {
+                    if (o == null || !o.InWorld || o is Sim || o is Lot || o.Level < 1) continue;
+                    float d = (o.Position - me.Position).LengthSqr();
+                    if (d < bestD) { bestD = d; best = o; }
+                }
+            }
+            if (best == null) throw new McpException("no object on an upper floor");
+            return best;
+        }
+
+        // "@gangway": a port gangway without a houseboat, kept so the create call (ChangeHouseboatSize "Small") and the
+        // remove call ("None") use the same one. Only worlds with ports (Isla Paradiso).
+        static object RepoGangway()
+        {
+            if (sGangway != null && sGangway.InWorld) return sGangway;
+            foreach (Lot l in LotManager.AllLots)
+            {
+                if (l == null || !l.IsPortLot()) continue;
+                Sims3.Gameplay.Objects.Island.Gangway g = l.GetGangway();
+                if (g != null && g.GetHouseboat() == null) return sGangway = g;
+            }
+            throw new McpException("no port gangway without a houseboat");
         }
 
         static Sims3.Gameplay.Utilities.AlarmHandle sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle;
@@ -48,7 +116,7 @@ namespace Ts3Agent
             FieldInfo lotsF = wt.GetField("sLotsToGetWildflowers", st), alarmF = wt.GetField("sGrowWildflowerInSpringAlarm", st);
             FieldInfo collected = wt.GetField("mCollected", BindingFlags.Instance | BindingFlags.NonPublic);
             MethodInfo grow = wt.GetMethod("OnGrowWildflowersOnLot", st);
-            if (lotsF == null || alarmF == null || collected == null || grow == null) throw new McpException("Wildflower drain members not found (no Seasons/wildflower content?)");
+            if (lotsF == null || alarmF == null || collected == null || grow == null) throw new McpException("Wildflower drain members not found:" + (lotsF == null ? " sLotsToGetWildflowers" : "") + (alarmF == null ? " sGrowWildflowerInSpringAlarm" : "") + (collected == null ? " mCollected" : "") + (grow == null ? " OnGrowWildflowersOnLot" : ""));
             Sims3.Gameplay.Utilities.AlarmManager.Global.RemoveAlarm(sWfDrainAlarm);
             sWfDrainAlarm = Sims3.Gameplay.Utilities.AlarmHandle.kInvalidHandle;
             Dictionary<string, object> r = Util.Obj();
@@ -363,6 +431,13 @@ namespace Ts3Agent
         // Lot by name (case-insensitive, exact first, then "contains").
         static Lot FindLotByName(string name)
         {
+            if (string.Equals(name, "home", StringComparison.OrdinalIgnoreCase)) return HomeLot();
+            if (string.Equals(name, "far", StringComparison.OrdinalIgnoreCase))  // farthest community lot from the active Sim (docs/117)
+            {
+                Lot far = FarLot(Util.ActiveSim());
+                if (far == null) throw new McpException("no community lot in this world");
+                return far;
+            }
             Lot partial = null;
             foreach (Lot l in LotManager.AllLots)
             {
@@ -374,7 +449,7 @@ namespace Ts3Agent
             return partial;
         }
 
-        // sim_visit_lot {sim, lot}: the game's own visit interaction (VisitCommunityLot for community lots, VisitLot for
+        // sim_visit_lot {sim, lot} (lot "home", "far" or a name): the game's own visit interaction (VisitCommunityLot for community lots, VisitLot for
         // homes), autonomous priority like a townie's own choice; triggers the lot-visit shortcuts on demand.
         static object SimVisitLot(Args a)
         {
@@ -383,24 +458,57 @@ namespace Ts3Agent
             InteractionDefinition def = lot.IsCommunityLot ? VisitCommunityLot.Singleton : VisitLot.Singleton;
             InteractionInstance i = def.CreateInstance(lot, s, new InteractionPriority(InteractionPriorityLevel.Autonomous), true, true);
             Dictionary<string, object> r = Util.Obj();
+            // vehicle: true reserves the own_vehicle object ("@vehicle"), as CarOwnable.VisitCommunityLot does before its visit
+            if (a.Bool("vehicle", false))
+            {
+                Sims3.Gameplay.Objects.Vehicles.Vehicle v = sVehicle as Sims3.Gameplay.Objects.Vehicles.Vehicle;
+                if (v == null) throw new McpException("no vehicle: own_vehicle first");
+                s.SetReservedVehicle(v);
+                r["vehicle"] = Util.ObjectName(v);
+            }
             r["queued"] = s.InteractionQueue.Add(i);
             r["lot"] = lot.Name;
             r["interaction"] = def.GetType().DeclaringType != null ? def.GetType().DeclaringType.Name : def.GetType().Name;
             return r;
         }
 
-        // sim_route_to {sim, x, z}: plan a route for any Sim to a point (go_here only drives the active Sim); a route-failure
+        // sim_route_to {sim, x, z} or {sim, target, radius?: 1}: plan a route for any Sim to a point or to an object (any
+        // FindTarget form, e.g. "@upstairs" for a plan across levels) or {sim, to: pond|ocean|far}, options?, options2? (go_here only drives the active Sim); a route-failure
         // trigger for the backoff / route-fail repros (the plan goes through the patched planner). Plans only: walking must
-        // run in the Sim's own task, not the agent's.
+        // run in the Sim's own task, not the agent's. The route is kept as "@route" for reflect_call "@route.Replan".
         static object SimRouteTo(Args a)
         {
             Sim s = Util.FindSim(a, "sim");
-            Vector3 p = new Vector3((float)a.Double("x"), 0f, (float)a.Double("z"));
-            p.y = World.GetTerrainHeight(p.x, p.z);
             Route route = s.CreateRoute();
-            route.PlanToPoint(p);
+            // options / options2: extra Route.RouteOption / RouteOption2 bits by name on top of the Sim's own
+            // (SetRouteOptions), e.g. ["RouteAsGhost", "PassThroughWalls"], ["EnablePlanningAsBoat"] (docs/117)
+            List<string> set = new List<string>();
+            foreach (object o in a.List("options") ?? new List<object>())
+            {
+                route.SetOption((Route.RouteOption)Enum.Parse(typeof(Route.RouteOption), (string)o, true), true);
+                set.Add((string)o);
+            }
+            foreach (object o in a.List("options2") ?? new List<object>())
+            {
+                route.SetOption2((Route.RouteOption2)Enum.Parse(typeof(Route.RouteOption2), (string)o, true), true);
+                set.Add((string)o);
+            }
+            if (a.Has("target"))
+            {
+                GameObject t = FindTarget(a, "target");
+                route.PlanToPointRadius(t, t.Position, (float)a.Double("radius", 1.0));
+            }
+            else if (a.Has("to")) route.PlanToPoint(RequireRarePoint(s, a.Str("to")));  // "pond", "ocean", "far"
+            else
+            {
+                Vector3 p = new Vector3((float)a.Double("x"), 0f, (float)a.Double("z"));
+                p.y = World.GetTerrainHeight(p.x, p.z);
+                route.PlanToPoint(p);
+            }
+            sLastRoute = route;
             Dictionary<string, object> r = Util.Obj();
             r["plan"] = route.PlanResult.mType.ToString();
+            if (set.Count > 0) r["options"] = set;
             return r;
         }
 
@@ -428,15 +536,8 @@ namespace Ts3Agent
             }
             else
             {
-                for (float rad = 10f; rad <= 400f && what == null; rad += 10f)
-                    for (int i = 0; i < 24 && what == null; i++)
-                    {
-                        double ang = i * Math.PI / 12;
-                        Vector3 dir = new Vector3((float)Math.Cos(ang), 0f, (float)Math.Sin(ang));
-                        Vector3 p = s.Position + dir * rad, far = s.Position + dir * (rad + 10f);
-                        if ((TerrainType)World.GetTerrainType(p.x, p.z, 0) == TerrainType.WorldSea
-                            && (TerrainType)World.GetTerrainType(far.x, far.z, 0) == TerrainType.WorldSea) { pos = far; what = "sea"; }
-                    }
+                pos = SeaPoint(s);
+                if (pos != Vector3.Invalid) what = "sea";
             }
             if (what == null) throw new McpException(via == "houseboat" ? "no houseboat in this world" : "no sea within 400 m of " + s.FullName);
             InteractionInstance ii = Terrain.GoHere.GetSingleton(s, pos).CreateInstance(Terrain.Singleton, s,

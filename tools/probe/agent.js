@@ -991,6 +991,71 @@ rpc.exports = {
         ...n('pvQuery', 10, 5), 'pvQueryInPlan', ...n('pvH9', 2), 'pvH9InPlan', 'pvH9Plans', 'pvH9Max', ...n('pvPart', 2),
         ...n('pvPartOffSim', 2), ...n('pvLazy', 24, 3), ...n('pvBlk', 2), 'pvHighCost', 'pvCanSee', 'pvCanSeeRaise', 'pvEv68',
         'pvEv68InCanSee', 'pvFrameFull');
+      if (c.readS32() >= 45) f.push(...n('pvRaiseIn', 3), ...n('pvRoomBuild', 3), ...n('pvLevelBuild', 3), ...n('pvRestore', 3),
+        ...n('pvRBlk', 3), 'pvRRebase'); // 0.24.1: value probe fixes (+0x19DC..0x1A1B; docs/112, docs/108 §8)
+      // 0.25.0: [RouteSnap] snapshot change counters P1 (+0x1A1C..0x20BF, 425 fields; docs/94 §10, snap-counters-report.ts).
+      // snLeaf_<row>_<class> (rows: routesnap.cpp SL_*, classes sim/worker/other), snSrc_<row>_<source> (none/ic/wev/obj/fpen)
+      if (c.readS32() >= 46) f.push('snReady', 'snHooks', 'snShared', 'snSkipped', 'snIcSlots', ...n('snLeaf', 57, 3), ...n('snSrc', 95, 5),
+        'snUnattributed', ...n('snUaKey', 16), ...n('snUaN', 16), 'snUaOther', ...n('snWev', 96), 'snWevOffSim', ...n('snObj', 24, 3),
+        'snObjNodes', 'snObjRegFails', 'snObjOpenAtIc', ...n('snIc', 39), ...n('snIcWrites', 39), 'snIcOffSim', ...n('snGSite', 5),
+        'snStarts', ...n('snStartLots', 8), ...n('snStartWrites', 8), 'snStartUnknown', 'snSetFull', ...n('snFpEn', 3), 'snSeq',
+        'snSeqGBuild', 'snSeqEv7', 'snFrameFull');
+      // 0.26.0: [RouteSnap] Enabled=1 P3 images and audit (+0x20C0..0x2197, 54 fields; docs/94 P3, snap-audit-report.ts).
+      // spCopies_/spAudits_/spMis_<input>: 0 R, 1 Gcore, 2 Gtiles, 3 bnm, 4 grid, 5 blend, 6 tune, 7 lots
+      if (c.readS32() >= 47) f.push('spReady', 'spMode', 'spCuts', ...n('spCutSkip', 3), 'spCutUs', 'spCutMaxUs', 'spEpochs',
+        'spFullBuilds', 'spVersionsLive', 'spImgLive', 'spKB', 'spKBMax', ...n('spCopies', 8), ...n('spAudits', 8), ...n('spMis', 8),
+        'spAuditUs', 'spAuditMaxUs', 'spLots', 'spTiles', 'spDirtyOver', 'spKeyMapFull', 'spPendingAtCut', 'spDeferredAtCut',
+        'spFaults', 'spCapOff', ...n('spDoor', 6));
+      // 0.27.0: [RouteSnap] P1b frames and design B records (+0x2198..0x2767, 372 fields; docs/94 §15, snap-counters-report.ts).
+      // snSrc2_<row>_<source - 5> (platform, user tool, tree init, terrain, road plan, flush, drain); snRec_<kind> (routesnap.cpp RK_*)
+      if (c.readS32() >= 48) f.push(...n('snSrc2', 133, 7), 'snCacheFill', ...n('snFrameCalls', 6), ...n('snRec', 12),
+        ...n('snRecSec', 8), 'snRecMaxSec', 'snRecUs', 'snCloneUs', 'snCloneN', 'snCloneBytesK', 'snCloneMaxBytes', 'snCloneFault',
+        'snLotCopyN', ...n('snLotCopyUs', 8), 'snLotCopyMaxUs', 'snLotCopyMaxKB', 'snLotCopyFault', ...n('snUa2Key', 64),
+        ...n('snUa2Next', 64), ...n('snUa2N', 64), 'snUa2Other');
+      // 0.28.0: [RouteSnap] Lots=replay P3-B, replay clone and lot audit (+0x2768..0x2967, 128 fields; docs/94 §16,
+      // snap-audit-report.ts). rpRec_/rpApplied_<type>: 1 INS, 2 REM, 3 STALE, 4 LOTS, 5 EPOCH, 6 AUDIT, 7 SYNC; rpSkip_: Q not
+      // in the clone, applied to a stale lot, no footprint copy, no clone
+      if (c.readS32() >= 49) f.push('rpReady', 'rpEpochs', 'rpEpochFails', 'rpEpochUs', 'rpEpochMaxUs', 'rpLots', 'rpFps', 'rpKB',
+        'rpKBMax', ...n('rpRec', 8), 'rpDrop', 'rpRingMax', 'rpCopyUs', 'rpCopyFail', 'rpUnknownVt', ...n('rpApplied', 8), ...n('rpSkip', 4),
+        'rpApplyUs', 'rpApplyMaxUs', 'rpLockWaitUs', 'rpLag', 'rpRebaseLots', 'rpRebaseUs', 'rpRebaseMaxUs', 'rpSyncs', 'rpDiverge',
+        'rpFaults', 'rpAudits', 'rpMis', 'rpAuditUs', 'rpAuditMaxUs', 'rpAuditWorkerUs', 'rpGcFreed', 'rpOrphanFme', 'rpCapOff',
+        'rpPrebuilt', 'rpPrebuildFail', 'rpPrebuildUs', 'rpPrebuildKB', 'rpExclLots', ...n('rpUnkClsVt', 4), ...n('rpUnkClsN', 4), ...n('rpSpare', 63));
+      // 0.29.0: [RouteSnap] Mode=1 P4 part A (+0x2968..0x2A53, 59 fields; docs/94 §18). snAbort_<i>: p4.cpp kP4Ab order
+      if (c.readS32() >= 50) f.push('snP4Ready', 'snP4Mode', 'snShadowArmed', 'snShadowBusy', 'snShadow', ...n('snM', 6), 'snM1Tie',
+        ...n('snAbort', 16), 'snShadowUs', 'snShadowMaxUs', 'snLiveUs', 'snMatUs', 'snShadowFault', 'snDeadStamp', 'snStampWrap',
+        'snCloneManaged', 'snCloneEvent', 'snCloneLazy', 'snCloneLiveLock', 'snDoorRec', 'snDoorReplay', 'snDoorMiss', 'snDoorUnused',
+        'snDoorOver', 'snWorkerDirty', 'snDirtyOver', 'snNrWaits', 'snNrWaitUs', 'snNrArmWaitUs', ...n('snNrBits', 7), 'snJsonl',
+        'snJsonlFail', 'snPathsFreed');
+      // 0.29.0: P4 part B clone provider (+0x2A54..0x2AB3, 24 fields; docs/94 §21, p4clone.cpp; §17.9 N15 and Los). snPcRefused_<i>: 0 cut busy,
+      // 1 cut no version, 2 no clone, 3 older cut / passed, 4 wait timeout, 5 epoch or active lot moved, 6 copy failed
+      if (c.readS32() >= 51) f.push('snPcReady', 'snPcCuts', 'snPcCutUs', 'snPcCutMaxUs', ...n('snPcRefused', 8), 'snPcAcquired',
+        'snPcMatUs', 'snPcPending', 'snPcFlushed', 'snPcFirstUse', 'snPcFaults', 'snPcOddQ', 'snPcDirtyLots', 'snPcDiscard',
+        'snNrBitDl', 'snDlOnClone', 'arLosRefused');
+      // private pools (+0x2AB4..0x2AD3, 8 fields; docs/94 §16.7, pools.cpp). v52 (design G) goes before this line when it merges
+      if (c.readS32() >= 53) f.push('plReady', 'rpLivePool', 'plForeign', 'plOverlap', 'plEpochs', 'plKB', 'plFull', 'plJobs');
+      // P4 portal references H20 (+0x2AD4..0x2AE3; docs/94 §21.8): D5 portal family bit, clone portal references, H20c refusals
+      if (c.readS32() >= 54) f.push('snNrBitPortal', 'rpPortalRefs', ...n('snPcPortalPend', 2));
+      // lazy Gtiles (+0x2AE4..0x2AF7; docs/94 §21.9): tiles built after the cut left them out, [0] reader [1] audit
+      if (c.readS32() >= 55) f.push(...n('spTileFill', 2), ...n('spTileFillUs', 2), 'spTileOut');
+      // H20 tripwire (+0x2AF8; docs/94 §21.8.1): AddPortalLocationVariation on a clone-held portal in a clone run (expected 0)
+      if (c.readS32() >= 56) f.push('p4VarTrip');
+      // lot-0 remove guard and P4 deferral stop (+0x2AFC..0x2B07; docs/94 §21.11): flushes, iterated-Q leftovers, clone-run stops
+      if (c.readS32() >= 57) f.push('lrPendFlush', 'lrPendBusy', 'pcDeferStop');
+      // v58 (reserved by a parallel branch) goes before this line when it merges.
+      // [LoadProf] world-load routing share (+0x2B08..0x2DD7 without v58; docs/39 §10, loadprof.cpp): lpSite_<site>_<row*3+k>,
+      // site in kLpSites order, row 0 = load window / 1 = after, k 0 calls / 1 us / 2 max us
+      if (c.readS32() >= 59) f.push('lpReady', 'lpHooks', 'lpSkipped', 'lpLoads', 'lpEv7', 'lpFrameFull', 'lpWindowMs', ...n('lpRtUs', 2),
+        ...n('lpRtThrUs', 3), ...n('lpSite', 168, 6));
+      // [PlanRepeat] plan cache probe (+0x2DD8..0x2F6F without v58; docs/23 §18, planrepeat.cpp): class index 0 Plan,
+      // 1 Replan, 2 PlanFromPoint, 3 ReplanFromPosition, 4 sim outside a route IC, 5 other thread; prExact_<cls>_<window>
+      if (c.readS32() >= 60) f.push('prReady', 'prRing', 'prEvictYoung', 'prFault', 'prUnwound', 'prVersion', ...n('prPlans', 6),
+        ...n('prUs', 6), ...n('prExact', 18, 3), ...n('prExactUs', 18, 3), ...n('prFpOnly', 6), ...n('prFpOnlyUs', 6),
+        ...n('prFpOnlyMatch', 6), ...n('prChanged', 6), ...n('prMatch', 6), ...n('prMismatch', 6), ...n('prLoose', 6), ...n('prLooseUs', 6));
+      // [RouteSnap] Mode=2, P5 (+0x2F70..0x3027 without v58; docs/94 §22, p5.cpp): m2Fb_<P4_AB_* index> (as snAbort),
+      // m2VerM_<class>, m2DoorHist_<0 / 1-2 / 3-5 / 6-10 / 11+ asks>; m2Take is the `--ab routesnap` switch
+      if (c.readS32() >= 61) f.push('m2Ready', 'm2Take', 'm2Off', 'm2Sites', 'm2SiteAt', 'm2Armed', 'm2Plans', 'm2Taken', ...n('m2Fb', 16),
+        'm2FbList', 'm2FbNr', 'm2Verify', ...n('m2VerM', 6), 'm2VerBad', 'm2Trips', 'm2DoorAsk', ...n('m2DoorHist', 5), 'm2DoorWaitUs',
+        'm2JobUs', 'm2Stale', 'm2StaleRecs', 'm2Guard');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

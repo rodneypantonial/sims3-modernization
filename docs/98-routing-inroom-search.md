@@ -563,6 +563,52 @@ The entry byte `+0x10` that §3.1 calls the sub-index is the polygon part index:
 ### 15.6 Still open
 
 - U1 residual: do real level trees have walkable cells on two opposite root borders (I-98-15)? One read of each level tree after load; until then a replacement copies the wrap rule.
-- c (planner `+0xB8`) and the exact lot rectangle passed to `0x6646F0` (lot `+0x84` slot `+0x2C`) were not read; the table in §15.1 assumes lot-local rectangles from 0 and c = 0.5 or 1.
+- c (planner `+0xB8`) and the exact lot rectangle passed to `0x6646F0` (lot `+0x84` slot `+0x2C`) were not read; the table in §15.1 assumes lot-local rectangles from 0 and c = 0.5 or 1. **Closed in §15.7:** c = 1, rectangle from (−0.5, −0.5) (dive lots from 0), bounds from (−2, −2); the §15.1 size table is replaced there.
 - U6 and U7 are unchanged (live counts).
 - All four have a read-only live probe and a queue since 2026-10-18: docs/111 (`tools/harness/queues/live-reads.json`, ledger docs/51 §47).
+
+### 15.7 I-98-21 closed: rectangle and c at `LotQuadTree_SetBounds 0x6646F0`
+
+Added 2026-10-18. Static reading of the Steam 1.67 exe (capstone), the bounds chain run on the game's own bytes under `tools/emu`, and a cross-check against the tree bounds dumped by the 2026-10-18 `live-reads` queue (docs/111; BP and IP both had 0 SetBounds calls in their 5-minute windows; dumps of 280 BP and 480 IP trees). No game run for this section. Ledger: docs/51 §61.
+
+**One caller** [verified]. `0x6646F0` has one direct call (`0x62FA88` in `LotRouting_QuadTreeBuild 0x62F8A0`) and no address reference. The tree constructor `0x664650` also has one call (`0x62F98E`, same function). Every tree is created and sized there.
+
+**What is passed** [verified, disassembly `0x62F9A1..0x62FA88`, `0x6646F0..0x6649BD`, `0x80B3C0`, `0x620E90`]:
+
+| Step | Detail |
+|---|---|
+| Rectangle source | lot graph (`0x62EAB0` result) `+0x84` = the lot footprint, stored by `0x630CF0` (callers `RoutingSystem_RebuildLotRouting 0x835110`, `RoutingWorld_RemoveLot 0x829D50`, and `0x83575D` in the `RoutingWorld_OnMessage` range). It is a `0x4C`-byte box footprint, vtable `0xFEAE08`, built by `0x80B3C0(lot)`. Slot `+0x2C` = `0x620E90(rect*, 0, 0.0)` copies the box `+0x38..+0x44` |
+| Box | min x, z = −0.0 − m; max x = m + lot `+0x174` (x tiles), max z = m + lot `+0x178` (z tiles): **lot-local, origin at the lot corner**. m = 0.5 (`.rdata 0x1020800`), except m = 0 when lot `+0x408` = 1 and `+0x40C` = `0x50`: `LotType` Commercial, subtype 80 = `kEP10_Diving` (enum index in `CommercialLotSubType`; field meanings docs/100) |
+| Grow | each side by the static `0x11CF02C` (cached from P `+0xB8` on the first call, docs/101 #14): min − c, max + c |
+| c passed | `fld [P+0xB8]`, read directly, as the 6th argument |
+| P `+0xB8` | two writers: the planner constructor (0.125, `0x62E93D`) and `0x637650`, which stores its 4th argument × 8 (`0x637666`). Its one caller, `0x829F10` (routing world setup), passes the constant 0.125 (`0xFE8278`). So **c = 1.0** in 1.67, never 0.5. The static would cache 0.125 if a tree were built before `0x829F10` runs; live it reads 1.0 (docs/111 dumps) |
+| Call shape | thiscall(tree)(owner P, minX, minZ, maxX, maxZ, c, level, P `+0xBC`, P `+0xC8`), `ret 0x24`. Inside: owner to `+0x20`; min floored, max ceiled to whole units (`+0x04..+0x10`); class 12 to `+0x2C`; FLT_MAX to `+0x30`; c to `+0x3C`; levels = max over the two axes of ceil(log2(ceil(extent / c))) + 1 to `+0x40`; root side c·2^(levels−1) to `+0x38` |
+
+So the lot rectangle is lot-local from (−0.5, −0.5) for ordinary lots and from (0, 0) for dive lots, and the tree bounds are (−2, −2)..(w + 2, d + 2) for ordinary lots and (−1, −1)..(w + 1, d + 1) for dive lots. The −2 is **two cells at c = 1**: the lot footprint's own 0.5 m skirt, plus the grow by c, rounded outward [verified].
+
+**Emulated and matched to the live dumps** [verified]. The chain `0x80B3C0` -> `0x620E90` -> grow -> `0x6646F0` on fake lots under `tools/emu` (scratch script, not committed) reproduces all 89 distinct (bounds, root side, levels) triples of the BP and IP dumps with 0 mismatches. The four IP trees at (−1, −1, 65, 65) are the dive case (64 × 64, levels 0 and 1); every other tree starts at (−2, −2). Corrected size table (c = 1; replaces the §15.1 table):
+
+| Lot (tiles) | Kind | Bounds x, z | Root side | Levels `+0x40` | +x / +z root border on the bounds edge |
+|---|---|---|---|---|---|
+| 20 × 20 | ordinary | −2..22 | 32 | 6 | no / no |
+| 20 × 30 | ordinary | −2..22, −2..32 | 64 | 7 | no / no |
+| 28 × 28 | ordinary | −2..30 | 32 | 6 | yes / yes |
+| 30 × 30, 40 × 40, 50 × 50 | ordinary | −2..w+2 | 64 | 7 | no / no |
+| 60 × 60 | ordinary | −2..62 | 64 | 7 | yes / yes (16 BP trees) |
+| 60 × 30, 50 × 60 | ordinary | −2..62 on the 60 side | 64 | 7 | yes on the 60 side only |
+| 62 × 62, 64 × 64 | ordinary | −2..64, −2..66 | 128 | 8 | no / no |
+| 30 × 30, 62 × 62 | dive | −1..31, −1..63 | 32, 64 | 6, 7 | yes / yes |
+| 64 × 64 | dive | −1..65 | 128 | 8 | no / no (IP, 4 trees) |
+
+Rule: the +x (+z) root border lies on the bounds edge when w + 4 (dive: w + 2) is a power of two; otherwise it is in the empty class-12 space beyond the bounds. The −x/−z borders are always the outer edge of the two-cell margin (1.5 m outside the lot footprint box, 2 m outside the lot tiles). §15.1's wrap reasoning stands; only the sizes move: ordinary lots with both opposite borders on the bounds edge are 28 and 60 wide (dive lots 30 and 62), not 30 and 62. docs/111 §3.1 ("30 × 30, 62 × 62") should be read that way.
+
+**When trees are built, and why the window saw none** [verified call graph; the event order at load inferred]:
+
+- `0x62F8A0` is get-or-create: an existing tree at the level is returned at `0x62F901` with no SetBounds; a new one needs the create byte (5th argument) and a lot footprint at `+0x84`. The live `qtb` rows (200 per job, BP and IP) all had create = 1 and found a tree.
+- Creators (create = 1): `PathPlanner_AddFootprint 0x6376D0` (20 call sites: floor, wall and object footprint inserts, including `RoutingSystem_RebuildLotRouting`'s), `LotGraph_Build 0x63CB90` (lot first use, and `LotGraph_RebuildRooms 0x63D7B0`), the lot-load path `0x63C8E0` (from `RoutingWorld_LoadLotData 0x82CA10`; it also calls `LotGraph_Reset`), and two sites `0x63A0FD`, `0x63AA23` (functions not named). `RoutingWorld_UpdateLotWalls 0x830940` passes create = 0; `RoutingDebug_DisplayQuadtree` passes a variable.
+- Destroyers (`0x665A50`): `LotGraph_Reset 0x62E420` (drops the lot entry and every level tree; from `RoutingWorld_RemoveLot`, the lot-load path, and branches of `LotRouting_SaveLevels 0x63C690` / `0x63C620` not read in full), `PathPlanner_Reset 0x635B70` (all lots), and the tree destructor `0x666350`. `RoutingWorld_RebuildLot 0x82B810` (build/buy and save rebuilds) destroys none; it can create only through `LotGraph_RebuildRooms` -> `LotGraph_Build`, for a level that has no tree.
+- So a level tree is sized when its lot is loaded (all lots at world load, before the harness attaches) or when a level gets its first footprint, and lives until the lot is removed or reloaded. Build/buy exit rebuilds rooms and footprints into the existing trees and calls SetBounds only for a level that had none. Lot size does not change in live mode, so stale bounds are not a case [inferred].
+
+**Probe defect** [verified against the probe source]: `tools/frida/inroom-reads.js` reads SetBounds' arguments as `args[0..4]` = minX, minZ, maxX, maxZ, c and `args[5..7]` as words, as docs/111 §2 describes; the owner P comes first, so the floats are `args[1..5]` and the words `args[6..8]`. The tree fields it reads on return (`+0x04..+0x10`, `+0x38`, `+0x40`) are right. Its `lotRect` and the `inroom-report.ts` I-98-21 verdict would be wrong on the first live call, and the dummy stub in `tools/probe/inroom-reads-test.py` has the same wrong shape. Fix both before the confirmation run.
+
+**Live confirmation route** (after that fix): `ip-houseboat-create` in `tools/harness/repros.json`: `IC_World_CreateHouseboatLotImpl` -> `RoutingSystem_RebuildLotRouting` -> new lot entry -> first footprint per level = SetBounds calls for a new lot. Expected per call: owner = P, rectangle min (−1.5, −1.5), c = 1, bounds min (−2, −2) [inferred: a houseboat lot is not a dive lot]. `bp-build-levels` calls SetBounds only if its second-floor walls land on a level with no tree yet, so it is the weaker route. A third route is attaching the probe before the save loads, so every lot passes through `0x63C8E0`.

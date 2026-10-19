@@ -1,0 +1,229 @@
+[
+  {
+    "id": "uni-rare-world-walk",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-world-walk on Baseline-BP after a moving-van trip to University (profile.travel), [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-world-walk",
+        "travel": "university"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 60
+  },
+  {
+    "id": "fr-rare-world-walk",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-world-walk on Baseline-BP after a vacation trip to France (profile.travel), [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-world-walk",
+        "travel": "france"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 60
+  },
+  {
+    "id": "bp-rare-owned-vehicles",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-owned-vehicles on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 7,
+        "seed": 12345,
+        "repro": "rare-owned-vehicles"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 22
+  },
+  {
+    "id": "bp-rare-stroller",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-stroller on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-stroller"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-horse-ride",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-horse-ride on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-horse-ride"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  },
+  {
+    "id": "bp-rare-zombies",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-zombies on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 7,
+        "seed": 12345,
+        "repro": "rare-zombies",
+        "noEnv": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 22
+  },
+  {
+    "id": "bp-rare-flight-broom",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-flight-broom on Baseline-BP-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 7,
+        "seed": 12345,
+        "repro": "rare-flight-broom"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 22
+  },
+  {
+    "id": "sv-rare-horse-ride",
+    "note": "UNVERIFIED repro, never run (docs/117): rare-horse-ride on Baseline-SV-Spring, [ProbeSnap] pass 2 indirect-call sampler (2,110 sites); after: node tools/harness/snap-report.ts <row.nativeLog> and node tools/indirect-live-vs-static.ts <log> --unfired --sites native/ts3native/vcallsites2.h",
+    "asi": "game-copy/ts3native.asi.snapprobe2",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 43,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "ProbeSnap.Enabled": 1,
+      "ProbeSnap.DelaySec": 60
+    },
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-horse-ride"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21
+  }
+]

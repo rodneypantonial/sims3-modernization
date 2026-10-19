@@ -62,6 +62,39 @@ If step 4 throws, the flag stays set and `SwitchWorlds` is never queued. That is
 
 The ErrorTrap log written 36 s after the 2026-10-16 command (docs/19) fits a caught script exception, but we did not read it.
 
+Read 2026-10-18 for the `travel-all` future job (build be4267a): its ErrorTrap file (`ScriptError_..._10-16-2026__20-54-54`, 46 s after `travel_future`, kept in the probe's `events.jsonl`) holds only ErrorTrap's correction log (`Destroyed Object Found` for dishes, mirrors, a bathtub and a `UniversityWelcomeKit`) and no exception [verified]. So that run gives no evidence for the §2.2 throw; the trip stayed in Bridgeport with `in_travel` set while the Sims went on with autonomy (the harness since turns autonomy off for the traveller and fails after 90 s without progress).
+
+### 2.3 University: how a real trip runs, and why our trip home hung (2026-10-19)
+
+**What the game expects (player view).** Sources: the reviews and player reports listed at the end of this section [community-reported]; the code points below are [verified, EA code] in `game-copy/decompiled/`.
+
+1. **Enrolment.** From the phone or a computer ("Enroll for University Term"), a young adult or adult picks one of six degrees (Business, Technology, Science, Communications, Fine Arts, Physical Education), the course load (credit hours) and the term length: 1 term = one Sim week, 2 terms = two Sim weeks. Tuition is per credit; scholarships and a need-based grant come off it. A degree needs 48 credits. More than one household Sim can enrol; the others stay home and see the students off.
+2. **The trip.** The students walk to a moving van and the world switches to University (our `travel_university` does the enrolment's accept path and queues that same van, see `TravelHandlers.cs`).
+3. **Arrival and housing.** The game opens the "choose a lot" map (§2.1): dorms, empty student houses and the Greek houses. Dorm and apartment Sims move in with NPC roommates, who join the active household as roommates (`RoommateManager`); a house is rented. Our `uni_move_in` confirms the first dorm the way the map's confirm does (`PlayFlowModel.PlayWithTravelHousehold`). The 2026-10-18 run shows it works: `uni_move_in: Angelista -> Henry Hall`, live mode with the household, a clean save in University.
+4. **Staying.** Students attend classes (the academic career); grades come from attendance, homework and class performance. On the last day of the term the report card arrives (Saturday morning), the household gets "one day / half a day / one hour left" notices, and each student's term is completed.
+5. **Leaving.** Two legitimate ways home:
+   - **Term end:** the household's term-end alarm starts the return flow: every non-roommate household Sim travels; the NPC roommates stay and see them off. The students' academic careers already ended with the term.
+   - **Early:** the phone or computer "Leave University" call (a yes/no "drop out" dialog). For each chosen student it **drops out first** (scholarship money paid back, the term completed with grade 0, the academic career ends), then sends the non-roommates home and makes the roommates (and any student who stays enrolled) see them off. Dropping out loses the term; earlier credits stay [inferred, not checked].
+
+**Why our trip home hung (2026-10-18 `bp-travel-university`, 23:56-00:04 PHT).** The move-in had worked. `travel_home` then called the game's "travel home from University" step with **every** household actor as a traveller and nobody staying: Tiara plus the five NPC dorm roommates (the log's `Holly:Meet Up, Kaz:Meet Up, ...`), and **without dropping Tiara out**. The moving van's run checks whether any non-roommate household Sim still has an academic career. Tiara still had hers, so the van took the **early single departure** path, which exists for one student going home while housemates keep studying: the student is removed from the household, faded out and parked as an early departure, with **no world switch**. The roommates did the same. Result: University loaded, `in_travel` false, no active household, nothing else ever happens: the 8 min of `queue no active household` and the `set_motive household: no active household` errors. The NullReferenceException ErrorTrap logged at 23:56:23 PHT (`SimDescription.IncrementLifetimeHappiness` from the mood update) fits Sims ticking after they left their household [inferred]. The 2026-10-16 hang was the other step: the arrival map, before `uni_move_in` existed (§2.1).
+
+**Fix (agent, `travel_home` in University).** Do what "Leave University" does after its dialog, on a game task: `AcademicDegreeManager.DropOut` for each household Sim still in an academic career, the HUD world-change note, then the travel-home step with travellers = the household minus NPC roommates, staying = the NPC roommates. The game then shows its "term over" message (the harness's dialog handling answers it) and returns home. It fails on its game task (in `async_log`) if a Sim is still enrolled after the drop-out. A term-end return (waiting out the term) is the other legitimate route; it needs a full term of game time, so the test uses the early one.
+
+**Harness.** Two no-progress rules now cover this state (`tools/harness/save-matrix.ts`): `tripStall` also fires for "world loaded, no switch running, no active household" (90 s), and `staleClock` fires when the trip status line (travel_state plus queues) stays the same for 120 s while the world is loaded (reset by loads, travel saves and the University arrival grace). A failure ends with the full `travel_state`; the queue then closes the game and moves on.
+
+Common player reports of "arrived with no Sim / no household" or "student came home alone" [community-reported]: travel with a broken or overloaded save, mods interfering with travel, and a missing housing pick. NRaas suggests Traveler plus Overwatch and ErrorTrap, which does not automate the housing pick (§2.1).
+
+Sources:
+- State Hornet review (2013): degrees, 48 credits, housing choices: https://statehornet.com/2013/03/the-sims-finally-bring-the-college-experience-with-new-expansion-university-life/
+- GameChronicles review (enrolment: major, units, term length 1 or 2 weeks): https://gamechronicles.com/the-sims-3-university-life-limited-edition-review-pc
+- Steam discussion (report card Saturday morning, term = one or two Sim weeks, graduation at 48 credits): https://steamcommunity.com/app/47890/discussions/0/2269194081611956196
+- EA forums, Sims missing on University arrival / UI with no Sim on return: https://forums.ea.com/discussions/the-sims-3-technical-issues-en/sims-3-university--sims-wont-load/8295423 and https://forums.ea.com/discussions/the-sims-3-en/sim-disappearing-upon-returning-from-university/11945131
+- EA forums, cannot leave University / term never ends: https://forums.ea.com/discussions/the-sims-3-technical-issues-en/cannot-leave-university/8320136 and https://forums.ea.com/discussions/the-sims-3-technical-issues-en/re-sims-3-uni-term-never-ends-sims-stuck-for-weeks-in-college/8290677/replies/8290687
+- EA product sheet (University Life press release, housing and roommates): https://s204.q4cdn.com/701424631/files/doc_news/2013/03/1/744808.pdf
+
+
+**Fix verified live (2026-10-19 03:16 PHT, `bp-rare-travel-university`, PASS in 4.9 min):** move-in to Henry Hall after the fly-through wait, away save OK (8.0 s), then `travel_home` via `LeaveUniversity` (DropOut + TriggerTravelHomeFromUniversity) queued Travel Home for the student and See Student Off for a roommate, the travel save ran (7.1 s) and the home save loaded back in NewDowntownWorld (10.0 s). No stall. Second clean run 2026-10-19 04:38 PHT (`bp-travel-university`, travel-all queue, PASS in 5.0 min): **fixed** (2 clean runs).
+
 ## 3. Traveler's call sequences
 
 ### 3.1 Shared pattern [verified]

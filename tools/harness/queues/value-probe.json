@@ -1,10 +1,10 @@
 [
   {
     "id": "bp-value-probe",
-    "note": "docs/108: [ProbeValues] routing value probe (0.24.0, counters v44), env-on settings as bp-snap-probe (async + gate + D) plus ProbeValues, BP Spring, seeded; after: node tools/harness/values-report.ts <row.nativeDump> --log <row.nativeLog>; pass = pvReady 3, pvSkipped 0, pvWorlds >= 1, pvFrameFull 0, no crash",
+    "note": "docs/108: [ProbeValues] routing value probe (0.24.1, counters v45: docs/112 fixes, docs/108 §8), env-on settings as bp-snap-probe (async + gate + D) plus ProbeValues, BP Spring, seeded; after: node tools/harness/values-report.ts <row.nativeDump> --log <row.nativeLog>; pass = pvReady 3, pvSkipped 0, pvWorlds >= 1, pvFrameFull 0, no crash",
     "asi": "game-copy/ts3native.asi.values",
     "save": "Baseline-BP-Spring",
-    "minCounters": 44,
+    "minCounters": 45,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,
@@ -23,7 +23,7 @@
     "note": "the same on Isla Paradiso (water grid, houseboats, sea height, water waypoints)",
     "asi": "game-copy/ts3native.asi.values",
     "save": "Baseline-IP-Spring",
-    "minCounters": 44,
+    "minCounters": 45,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,
