@@ -11,8 +11,9 @@
 // hierarchy: their overrides are counted per definition (cha run), not followed.
 // Usage: node tools/autonomy-virtual-closure.ts --asm <repo>/game-copy/assemblies [--index ...] [--mods <dir>] [--hops 5] [--what-if <cuts>] > docs/data/autonomy-virtual-closure.csv
 //        (summary to stderr). Static only.
-import { ix, closure, classify, cands, inV0, IMPL, starts, icClass, pilot, CUT, snap, type Cand } from './autonomy-tier2.ts';
-import { defRoots, instanceTypeOf, isA, type Recv } from './managed-callgraph.ts';
+import { writeFileSync } from 'node:fs';
+import { ix, closure, classify, cands, inV0, IMPL, starts, icClass, pilot, CUT, snap, type Cand, type Edges } from './autonomy-tier2.ts';
+import { defRoots, instanceTypeOf, isA, virtualTargets, type Recv } from './managed-callgraph.ts';
 
 const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
 const HOPS = Number(arg('--hops', '5'));
@@ -52,8 +53,36 @@ const v0: Cand[] = [
   ...[...inV0].map((t) => ({ group: 'v0', rank: '', samples: '', share: '', ctx: '', name: t, asm: '', roots: defRoots(ix as never, t), own: t })),
   ...IMPL.map((t) => ({ group: 'v0-implementor', rank: '', samples: '', share: '', ctx: '', name: `${t}::HowMuchItWantsSimToCome`, asm: '', roots: starts(`${t}::HowMuchItWantsSimToCome`) })),
 ];
+// --edges FILE (docs/133): also write the typed run's callvirt edges and closure methods as JSON for tools/virtual-resolution-report.ts.
+const EDGES = arg('--edges', ''); const edges: Edges = new Map(); const members = new Map<number, Set<string>>();
 const esc = (s: string) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-const out = ['group,definition_type,target_type,instance_type,closure_methods,typed_closure_methods,cha_closure_methods,new_ics,new_ic_classes,new_sim_thread_or_blocking_ics,new_yield_event,new_static_writes,mod_overrides,verdict,typed_verdict,cha_verdict,verdict_changed,first_new_reason,first_new_path'];
+// docs/127 §7.2 (I-127-2): what each route-building Test does with the route in autonomy (Hit is always NoHit there),
+// read in the decompiled class library [verified]; H12 = worker stub for SimRoutingComponent.CreateRoute*.
+const RG = 'never reaches CreateRoute in autonomy: ', RQ = 'reaches IsPointRoutable(origin) in autonomy: H12 aborts';
+const ROUTE_NOTE: Record<string, string> = Object.fromEntries([
+  ...['Objects.Decorations.DanceFloor+Dance'].map((d) => [d, RG + 'fails when Autonomous']),
+  ...['Actors.Sim+HorseGraze', 'Actors.Sim+HorseDig', 'ActorSystems.PetSurfacePosture+LayDownHere', 'ObjectComponents.CatHuntingComponent+LocatePrey', 'Objects.Island.BeachTowelPosture+EnterBeachTowel'].map((d) => [d, RG + 'route only on the non-autonomous branch']),
+  ...['Core.Terrain+SneakHere', 'Core.Terrain+DogPeeHere', 'Core.Terrain+CatPeeHere', 'Objects.Fishing.SkipStone', 'Objects.Environment.LeafPile+Rake', 'Objects.Vehicles.BoatHere', 'Objects.Cane+HarassEveryone'].map((d) => [d, RG + 'hit-type gate fails for NoHit']),
+  ...['Core.Terrain+WerewolfHuntTerrain', 'Core.Terrain+HuntFor', 'Objects.EasterEgg+SearchForEggs'].map((d) => [d, RG + 'route only when Hit.mType != None']),
+  ['Core.Terrain+JogHere', RG + 'SharedGoHereTests false for NoHit'],
+  ...['Objects.Environment.Snowman+MakeSnowman', 'Objects.Environment.Snowman+MakeSnowmanWith'].map((d) => [d, RG + 'SharedTerrainTests None case skips it']),
+  ...['ObjectComponents.CatHuntingComponent+StalkForPrey', 'ActiveCareer.ActiveCareers.GhostHunter+ScanForSpirits', 'ActorSystems.OccultVampire+VampireHunt'].map((d) => [d, RQ]),
+  ['ActorSystems.Children.PutDownChildHere', RQ + ' (while carrying a child)'],
+  ...['Core.Terrain+MakeIgloo', 'Objects.Environment.SnowAngel+MakeSnowAngel'].map((d) => [d, RQ + ' (if the origin is outside)']),
+  ['ActiveCareer.ActiveCareers.GhostHunter+ScanForGhosts', RQ + ' (ghost-hunter job set up)'],
+  ['ActorSystems.AlienUtils+SummonMeteor', RQ + ' (if the origin has a ground lot location)'],
+  ...['Objects.Alchemy.MagicWand+CastFireBlastTerrain', 'Objects.Alchemy.MagicWand+CastRestoration'].map((d) => [d, RQ + ' (only if the lot at the origin is not the world lot; inferred never)']),
+  ['Objects.DanceFloorStore+DanceStore', 'creates the route only (IsPointRoutable skipped on NoHit): H12 stub, no abort'],
+  ['Objects.Jetpack+FlyHere', RG + 'hit-type gate; stays blocked (Simulator.Sleep via GetActiveJetpack)'],
+  ['Skills.MartialArts+TeleportDuringMeditation', RG + 'CanSimTeleport hit gate; stays blocked (docs/126 World_TestObjectPlacementP)'],
+  ['Objects.MagicCauldronRegency+TeleportPotion', RG + 'CanSimTeleport hit gate (PlanToPoint behind it); stays blocked'],
+  ['Objects.SnowWaterFight+PlayWith', RG + 'SharedGoHereTests false for NoHit; stays blocked (docs/126 static write, mHitPosition)'],
+].map(([d, n]) => [`Sims3.${d.startsWith('Objects.MagicCauldron') || d.startsWith('Objects.DanceFloorStore') ? 'Store' : 'Gameplay'}.${d}+Definition`, n]));
+const noteOf = (name: string, ics: readonly (readonly [string, string, number])[]) => [
+  ROUTE_NOTE[name] ? `I-127-2: ${ROUTE_NOTE[name]}` : '',
+  ics.some(([n]) => n.endsWith('::Query_GetGlobalObjects')) ? 'I-127-3: needs the Query_GetGlobalObjects row (docs/127 §7.1)' : '',
+].filter(Boolean).join(' | ');
+const out = ['group,definition_type,target_type,instance_type,closure_methods,typed_closure_methods,cha_closure_methods,new_ics,new_ic_classes,new_sim_thread_or_blocking_ics,new_yield_event,new_static_writes,mod_overrides,verdict,typed_verdict,cha_verdict,verdict_changed,first_new_reason,first_new_path,notes'];
 const icDefs = new Map<string, Set<string>>(); const tally = new Map<string, number>(); const modDecl = new Map<string, number>();
 const short = (n: string) => n.replace(/^.*::/, '');
 const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
@@ -65,7 +94,8 @@ for (const c of [...v0, ...cands]) {
     if (!hit) return undefined;
     return hit[3] === 'def' ? c.own : hit[3] === 'target' ? tgt : hit[3] === 'actor' ? act : hit[3] === 'instance' ? inst : fam && isA(fam, 'Sims3.Gameplay.Actors.Sim') ? 'Sims3.Gameplay.Actors.SimRoutingComponent' : undefined;
   };
-  const b = closure(c.roots, c.own), h = closure(c.roots, c.own, HOPS), v = closure(c.roots, c.own, HOPS, self, recv);
+  const b = closure(c.roots, c.own), h = closure(c.roots, c.own, HOPS), v = closure(c.roots, c.own, HOPS, self, recv, EDGES ? edges : undefined);
+  if (EDGES) for (const i of v.ids) (members.get(i) ?? members.set(i, new Set()).get(i)!).add(c.group);
   const cb = classify(c, b), ch = classify(c, h), cv = classify(c, v);
   // Class from docs/126 icClass; '*' = already in the pilot snapshot set (autonomy-proxy-ics.csv), so not new for the verdict.
   const newIcs = [...v.ics].filter(([n]) => !b.ics.has(n)).map(([n, d]) => [n, icClass(n) + (snap.has(n.slice(n.indexOf('::'))) ? '*' : ''), d] as const);
@@ -82,7 +112,7 @@ for (const c of [...v0, ...cands]) {
   out.push([c.group, c.name, tgt ?? '', inst ?? '', String(b.size), String(v.size), String(h.size), String(newIcs.length), newIcs.map(([n, cl, d]) => `${short(n)}:${cl}@${d}`).join(';'),
     blocking.map(([n, cl]) => `${short(n)}:${cl}`).join(';'), ye.join(';'), sw.slice(0, 8).join(';') + (sw.length > 8 ? `;+${sw.length - 8}` : ''),
     h.mod.size ? `${h.mod.size}: ${[...h.mod].slice(0, 3).join('; ')}` : '', cb.verdict, cv.verdict, ch.verdict, changed ? 'yes' : '',
-    changed ? cv.reason : firstKey ? short(firstKey) : '', firstKey ? v.path(firstKey) : ''].map(esc).join(','));
+    changed ? cv.reason : firstKey ? short(firstKey) : '', firstKey ? v.path(firstKey) : '', noteOf(c.name, newIcs)].map(esc).join(','));
 }
 console.error(`hops ${HOPS}; verdicts (group: before -> typed (cha)):`);
 for (const [k, n] of [...tally].sort()) console.error(`  ${n}\t${k}`);
@@ -90,3 +120,15 @@ console.error('ICs reached only through overrides, typed run (definitions reachi
 for (const [k, s] of [...icDefs].sort((a, b) => b[1].size - a[1].size)) console.error(`  ${s.size}\t${k}`);
 console.error(`mod overrides seen (cha run): ${modDecl.size}`); for (const [k, n] of [...modDecl].sort((a, b) => b[1] - a[1]).slice(0, 30)) console.error(`  ${n}\t${k}`);
 console.log(out.join('\n'));
+if (EDGES) {
+  const k = (i: number) => ix.methods[i].k;
+  writeFileSync(EDGES, JSON.stringify({
+    version: 1, hops: HOPS,
+    methods: [...members].map(([i, g]) => ({ k: k(i), groups: [...g].sort() })),
+    edges: [...edges].map(([key, e]) => {
+      const [n, t] = key.split('|').map(Number);
+      return { caller: k(n), decl: k(t), kind: e.kind, d: e.d, typed: [...e.ts].map(k), cha: virtualTargets(t).ea.map(k) };
+    }),
+  }));
+  console.error(`edges: ${edges.size} callvirt edges, ${members.size} closure methods -> ${EDGES}`);
+}

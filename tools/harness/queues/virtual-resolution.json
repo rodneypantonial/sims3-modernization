@@ -1,0 +1,26 @@
+{
+  "note": "docs/133: one probe job that checks the static virtual-call resolution live (Mono confidence after the release). Before running: build ts3native with the docs/131 glue site table (set CL=/DTS3N_VCSITES4, native\\ts3native\\build.cmd out\\vres, clear CL) and copy out\\vres\\ts3native.asi to game-copy/ts3native.asi.vres in the main checkout; release ini defaults from the repo ini, only [ProbeSnap] on. After: generate the static edges once (node tools/autonomy-virtual-closure.ts --asm game-copy/assemblies --edges probe-out/vres-edges.json > probe-out/vres-closure.csv), then node tools/virtual-resolution-report.ts --vres probe-out/profile/<tag>-vres.json --edges probe-out/vres-edges.json --log <row.nativeLog>.",
+  "jobs": [
+    {
+      "id": "bp-vres",
+      "note": "docs/133 / docs/51 §186. Release defaults (repo ts3native.ini, no experiment switched on) plus two read-only probes for one 10 min seeded profile: (1) managed: the probe agent snapshots every mint callvirt inline cache it can reach (/vcache, profile.vres) every 60 s and once at the end into <tag>-vres.json, no hook; (2) native: [ProbeSnap] int3 sampler (16 hits per site per 30 s window, armed after 90 s) on the 514 docs/131 glue sites that are unresolved, partial or caller-typed (vcallsites4.h, asi built with /DTS3N_VCSITES4). Stutter profiler and stack samplers off (--no-prof for ProbeSnap, --vres skips the samplers). ~15 min with load. Pass: no crash, 0 watchdog lines; /native counters after the run vcReady 1, vcSites 514, vcFaults 0, vcSkipped 0 (and 'vcall window' lines in ts3native.log); profile log shows 9 [vres] snapshots and the last one wrote <tag>-vres.json, no FAIL line, no 'budget hit' snapshot; the report prints > 0 live sites in closure methods and > 0 armed glue sites fired. Verdicts (not pass/fail of the run): managed soundness gaps = typed-miss + cha-miss pairs (expected 0; each one is a closure miss to fix in managed-callgraph.ts); I-131-12 = 0 new pairs at fired caller-typed sites.",
+      "asi": "game-copy/ts3native.asi.vres",
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "ProbeSnap.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "vres": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

@@ -14,7 +14,19 @@ Target: The Sims 3 **Steam** edition, patch 1.67, all expansion and stuff packs,
 
 Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play at speed 3, on aged 14-day test saves. **Baseline** = the community fixes layer (DXVK, S3SS, NRaas, Smooth Patch, routing fixes, ...; see `tools/setup/fixes.json`) without our mods. The unmodified game cannot reliably load a save on this machine at all: it runs out of address space while loading (docs/05).
 
-**Our C# mod `ts3fixes`, all fixes on, 3 runs per world (2026-10-12, build 62c39f6, docs/04 F13):**
+**Release v0.1.4 (`ts3native` 0.36.0 + `ts3fixes`, as shipped) vs no fixes of ours, 2026-10-20/21:** same machine and saves, seeded (12345), ABBA order, 4 runs per side on Bridgeport and Sunset Valley, 2 on Isla Paradiso. "No fixes" = the same `ts3native.asi` with every section we ship switched off and every `ts3fixes` switch off (only the walk-style comparer stays, it has no switch). Queues `release-vs-baseline*.json`, report `node tools/release-vs-baseline-report.ts`.
+
+| | Bridgeport | Sunset Valley | Isla Paradiso |
+|---|---|---|---|
+| stutters per minute (sim iterations >= 50 ms) | 177 -> **152** (-14%) | 76 -> **70** (-7%) | 146 -> **117** (-20%) |
+| p99 iteration | 93 -> **84 ms** (-10%) | 56 -> 57 ms (+2%) | 194 -> **107 ms** (-45%) |
+| worst iteration | 1,482 -> 1,985 ms (+34%) | 1,062 -> 2,518 ms (+137%) | 7,258 -> **636 ms** (-91%) |
+| route planning on the sim thread | 129 -> **53 ms/s** (-59%) | 79 -> **24 ms/s** (-70%) | 282 -> **92 ms/s** (-67%) |
+| game time per real second | 10.2 -> 10.2 min (0%) | 13.1 -> 13.1 min (0%) | 11.0 -> **12.4 min** (+13%) |
+
+Read it as: smoother everywhere, faster only where the game was falling behind. Bridgeport and Sunset Valley already run at the speed-3 cap without our fixes, so game time per second cannot rise there; Isla Paradiso was lagging and gains 13%. The worse worst frames on Bridgeport and Sunset Valley are single route plans of about 1 s that the background planner refuses and runs on the main thread (`NoStart`); that is the next fix. Several runs had other programs at 10-18% of the game's CPU cores, so treat differences under ~5% as noise.
+
+**Earlier result, `ts3fixes` only (2026-10-12, build 62c39f6, docs/04 F13), 3 runs per world:**
 
 | | Bridgeport | Sunset Valley | Isla Paradiso |
 |---|---|---|---|

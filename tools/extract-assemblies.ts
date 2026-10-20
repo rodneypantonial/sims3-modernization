@@ -95,7 +95,7 @@ export function decryptS3SA(body: Buffer): Buffer {
 }
 
 // Pulls the PE image out of a decrypted S3SA body.
-function peImage(body: Buffer): Buffer | null {
+export function peImage(body: Buffer): Buffer | null {
   for (let i = body.indexOf('MZ'); i >= 0; i = body.indexOf('MZ', i + 1)) {
     if (i + 0x40 > body.length) break;
     const pe = body.readUInt32LE(i + 0x3c);

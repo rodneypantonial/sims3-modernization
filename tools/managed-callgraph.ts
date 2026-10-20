@@ -30,13 +30,13 @@ const DEPTH = Number(arg('--depth', '12'));
 const CUT = arg('--cut', '').split(',').filter(Boolean);
 
 // ---------- PE + metadata reader ----------
-type Asm = {
+export type Asm = {
   name: string; buf: Buffer; mvid: string; sections: { va: number; size: number; raw: number }[];
   strOff: number; blobOff: number; guidOff: number; rows: number[]; tables: number[][][];
   types: TypeDef[]; methods: Method[]; fields: Field[];
 };
-type TypeDef = { asm: Asm; row: number; ns: string; name: string; full: string; flags: number; extendsCi: number; methods: Method[]; fields: Field[]; enclosing?: TypeDef; ifaces: number[]; base?: TypeDef | null };
-type Method = { gi: number; asm: Asm; row: number; type: TypeDef; name: string; flags: number; impl: number; rva: number; sigBlob: number; params: string; ret: string; arity: number; id: string };
+export type TypeDef = { asm: Asm; row: number; ns: string; name: string; full: string; flags: number; extendsCi: number; methods: Method[]; fields: Field[]; enclosing?: TypeDef; ifaces: number[]; base?: TypeDef | null };
+export type Method = { gi: number; asm: Asm; row: number; type: TypeDef; name: string; flags: number; impl: number; rva: number; sigBlob: number; params: string; ret: string; arity: number; id: string };
 type Field = { asm: Asm; row: number; type: TypeDef; name: string; flags: number; sigBlob: number; id: string };
 
 // Column specs: number = fixed bytes; 's' string, 'g' guid, 'b' blob; 't<n>' simple index into table n; 'c<name>' coded index.
@@ -203,8 +203,10 @@ function fieldSigType(a: Asm, blobIdx: number): string { const [p] = blob(a, blo
 // Used for the class hierarchy only (overridesOf); they are not in index.json. A mod's own copy of an EA assembly is skipped.
 const MOD_DIR = arg('--mods', '');
 export const modAsms = new Set<string>();
-function loadAll(dir: string): void {
-  for (const f of readdirSync(dir).filter((n) => n.endsWith('.dll')).sort()) asms.push(loadAsm(join(dir, f), f.replace(/\.dll$/, '')));
+function loadAll(dir: string, skipped?: string[]): void {
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.dll')).sort()) {
+    try { asms.push(loadAsm(join(dir, f), f.replace(/\.dll$/, ''))); } catch (e) { if (!skipped) throw e; skipped.push(`${f}: ${(e as Error).message}`); }
+  }
   const ea = new Set(asms.map((a) => a.name));
   if (MOD_DIR) for (const f of readdirSync(MOD_DIR).filter((n) => n.endsWith('.dll') && !ea.has(n.replace(/\.dll$/, ''))).sort()) {
     const a = loadAsm(join(MOD_DIR, f), f.replace(/\.dll$/, '')); asms.push(a); modAsms.add(a.name);
@@ -450,7 +452,7 @@ export function receiverTypes(caller: number): Map<number, Recv> {
 const KINDS = ['call', 'cv', 'virt', 'iface', 'ifaceN', 'newobj', 'dlg', 'dinv', 'cons'] as const;
 const MUTATORS = /^(Add|AddRange|Remove|RemoveAt|RemoveAll|Clear|Insert|set_Item|Push|Pop|Enqueue|Dequeue|Sort|Reverse)$/;
 type Rec = { k: string; a: number; f: number; ic?: string; c: number[]; fr: number[]; fw: number[]; sr: number[]; sw: number[]; sc?: number[] };
-type Index = { version: 1; asms: { name: string; mvid: string }[]; kinds: string[]; methods: Rec[]; fields: string[]; stats: Record<string, number> };
+export type Index = { version: 1; asms: { name: string; mvid: string }[]; kinds: string[]; methods: Rec[]; fields: string[]; stats: Record<string, number> };
 
 function build(): Index {
   loadAll(ASM_DIR);
@@ -743,6 +745,14 @@ export function subtypes(type: string): { full: string; asm: string; abstract: b
   if (!asms.length) loadAll(ASM_DIR);
   const t = typeByFull.get(type);
   return t ? derivedTypes(t).map((x) => ({ full: x.full, asm: x.asm.name, abstract: (x.flags & 0x80) !== 0 })) : null;
+}
+
+// tools/offload-override-scan.ts: type model over one directory (game + mod assemblies; files sort game first, and the
+// first type of a full name wins resolution). Unreadable assemblies are listed in `skipped`, not fatal.
+export function typeModel(dir: string, skipped: string[]) {
+  if (!asms.length) loadAll(dir, skipped);
+  if (!kids) hierarchy();
+  return { asms, typeByFull, baseOf, ifaceClosure, isIface, sigEq, VIRT, NEWSLOT };
 }
 
 // Root groups for the routing study. Specs: method id prefix; type:<T> (its methods); derived:<T> (T and subclasses);

@@ -87,6 +87,7 @@ All are reached from `VisitCommunityLot.SharedVisitVenueTests` and `Localization
 
 - `Random_NextDoubleImpl`: advances the host Mersenne Twister at host `+0xC30` (624 words + index; docs/27 §1.1) [verified, docs/27]. See §4.1.
 - `Slots_GetPositionOfSlotImpl`: object lookup, then the slot position helper `0x76F0A0`, the same helper docs/90 found waiting on the steering `+0x918` state (gate-12 family F-B), with 48 unresolved virtual calls and the lot-table lock `0x10786C8` [verified for the call; inferred for the rest]. Slot positions follow animation; the domain is object x slot, unbounded. Reached only from `CommonTests` (one branch). Answer: abort the worker search, sim thread scores the pair (or a per-row "slot positions" extension for the few object classes the live part names).
+- **Update 2026-10-20 (docs/125):** both now have worker answers: the RNG by per-unit Mersenne Twister streams (same values in the reference and on the worker, no abort), slot positions as learned keys answered by the game body at every cut. `Query_GetObjects` (§2.3) the same way, kept up to 256 objects.
 
 ### 2.8 Never bound (class c): 1 IC
 
@@ -111,7 +112,7 @@ This is the meta-search share; docs/59 §2.5 gives 30-100 KB for a local search 
 
 - `RandomGen.gRandomGen` (the docs/118 STATIC_WRITE) is a lazy fill of an `IRandom` reference from `AppDomain.GetData("RandomGen")`; after the first call it is a read of a fixed reference [verified]. Harmless on its own; warm it on the sim thread.
 - The real shared state is the native MT behind `Random_NextDoubleImpl` (§2.7). Paths in the closure: (1) the pet branch of the base meta score (`Relationship.GetBFFOrSimWithHighestLikingForPet` -> `RandomUtil.GetRandomObjectFromList`), only for pet actors; (2) `Localization.FillInTokens` in tooltip text (§2.6) [verified: tool paths].
-- Options: (a) **abort on draw** (pilot): pets and any draw send the search back to the sim thread; tooltip draws disappear with the `LocalizeString` stub; (b) per-worker MT seeded from the sim MT at snapshot time: keeps the worker going but changes which numbers both threads draw, so outcomes differ from vanilla (acceptable for the offload goal only after a determinism discussion, docs/27); (c) draw-ahead buffer: the sim thread pre-draws N values for the worker; still reorders the sim's own stream. Recommendation: (a) for the pilot, measure how often it fires.
+- Options: (a) **abort on draw** (pilot): pets and any draw send the search back to the sim thread; tooltip draws disappear with the `LocalizeString` stub; (b) per-worker MT seeded from the sim MT at snapshot time: keeps the worker going but changes which numbers both threads draw, so outcomes differ from vanilla (acceptable for the offload goal only after a determinism discussion, docs/27); (c) draw-ahead buffer: the sim thread pre-draws N values for the worker; still reorders the sim's own stream. Recommendation: (a) for the pilot, measure how often it fires. **Superseded (docs/125 §2):** per-unit streams seeded from (cut seed, unit), a variant of (b) that keeps Mode R bit-equal and leaves the live stream untouched.
 - Determinism note: even with (a), skipping tooltip draws on the worker removes draws the vanilla sim thread made, so the sim RNG stream shifts. Seeded A/B runs (docs/27) must use the same worker setting on both sides.
 
 ### 4.2 Static collections
@@ -223,10 +224,24 @@ Nothing else: no global written directly, and the remaining parameter stores go 
 
 ### 8.6 What changes for the pilot
 
-- Meta closure with all seven implementors: **38 PROXY + 1 SAFE**. Without the sim thread: **35 of 38** (28 snapshot or cache, 6 stub, 1 never bound), 36 if `Query_GetObjects` resolves (I-121-7). Still class b: the RNG and slot positions (side branches, abort).
+- Meta closure with all seven implementors: **38 PROXY + 1 SAFE**. Without the sim thread: **35 of 38** (28 snapshot or cache, 6 stub, 1 never bound), 36 if `Query_GetObjects` resolves (I-121-7). Still class b: the RNG and slot positions (side branches, abort). Since docs/125 both have worker answers (per-unit RNG streams, slot positions and `Query_GetObjects` as learned cut keys); only `Slots_CanAttachToSlotImpl` still aborts.
 - If tuning names a scoring function (I-121-10): +3 class a, +1 class b (`CanAttachToSlot`, eating only). The shipped tuning names none (§4.4), so this applies only to mod tuning: abort when one is set.
 - Every object and geometry IC must be answered from the snapshot, never called live (§8.4); the lot grid live-read fallback needs lock `0x10786C8` (§8.3).
 - Effort (§5): +2 IC shims and one managed shim (`NumSimsDoingGardening`), about +0.5-1 h on the shim layer; shortest path stays **~19-35 h**.
+
+## 9. Live probe for the open items: `mono-ledger-probe.json` (built 2026-10-20, not run yet)
+
+One 10-minute Bridgeport load closes I-121-5, I-121-7, I-121-9 and I-121-12 (with docs/120 I-120-4 and docs/119 I-119-44) without a second managed thread. It reuses the `[AutShadow]` guard thunks (docs/122 §3.1) and the ts3fixes B13 hook; nothing new is hooked in the game.
+
+| Piece | What it does |
+|---|---|
+| `[AutShadow] Ledger=1` (`native/ts3native/autledger.cpp`, default 0) | the guard thunks of `Random_NextDoubleImpl`, `Slots_GetPositionOfSlotImpl`, `Query_GetObjects` and `Query_GetObjectsInRange` count each call, then pass through to the game's body unchanged |
+| Scope | ts3fixes' `MetaHook` around the game's `Autonomy.ScoreInteractionsForMetaAutonomy` (B13) calls `AutShadowNative.Config(5)` / `Config(6)` (switch `autledger`, default off). B13 may yield, so a scope belongs to the running script task (id at `MonoScriptHost +0xBD0`, docs/119 §11.2); calls from other tasks during a yielded B13 count as outside |
+| I-121-5 | `lgIn[0]` / `lgOut[0]`: RNG draws inside and outside meta scoring, plus up to 32 in-scope caller chains (8 interpreter frames each, the frame walk of `tools/probe/agent.js` `interpFrames`, named by the agent). The report flags chains that pass neither `Relationship.GetBFFOrSimWithHighestLikingForPet` nor `Localization.FillInTokens` |
+| I-121-7, I-121-12 | `lgCls`: the Mono class of the `System.Type` argument of each in-scope query call (MonoReflectionType `+8` -> MonoType, first word = MonoClass [inferred Mono 1.x layout]), with call counts |
+| I-121-9 | `lgIn[1]` per minute and per scope (the IC's body calls the slot helper `0x76F0A0`, §2.7), distinct object ids (`lgSlotIds`, up to 64) and the caller chains, which name the scoring classes that ask |
+
+Reader: `node tools/harness/mono-ledger-report.ts <queue>-<date>-bp-mono-ledger-native.json`; `queue.ts` prints the same lines under the result table. Limits: the scope is the whole B13 (meta `Test`, `CalculateScore` and the implementors' `HowMuchItWantsSimToCome`), not each `CalculateScore` frame; Bridgeport may have no bake sale table, so I-121-12 can come back with no in-scope calls (then rerun on a save with one). Counters: `ts3native_autshadow` v3 (docs/registry.md).
 
 ## Reproduce
 

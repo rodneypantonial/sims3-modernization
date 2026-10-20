@@ -34,7 +34,68 @@ static AsAddIcFn g_asAddIc = (AsAddIcFn)(uintptr_t)0x00E82550;          // mono_
 static AsAddRootsFn g_asAddRoots = (AsAddRootsFn)(uintptr_t)0x00E4D9F0;  // GC_add_roots (P3 site 17)
 static AsGcMallocFn g_asGcMalloc = (AsGcMallocFn)(uintptr_t)0x00E4BE30;  // GC_malloc (P3-locked)
 static u8** g_asHostPtr = (u8**)(uintptr_t)0x011EE514;                  // MonoScriptHost; script RNG at +0xC30 (docs/27 §1.1)
-static const DWORD AS_RNG_OFF = 0xC30, AS_RNG_LEN = 0x9C8;  // MT state (624 words + index) up to the LCG at +0x15F8 [inferred end]
+// MT object: 624 words, read pointer +0x9C0 (absolute, into the words), words left +0x9C4; the LCG follows at +0x15F8
+// [verified: 0x4FA9F0 / 0x4FA8B0 in the disassembly, docs/125 §2.1]
+static const DWORD AS_RNG_OFF = 0xC30, AS_RNG_LEN = 0x9C8;
+
+// ---- script RNG for the worker (docs/125 §2): per-unit streams ----
+// The driver marks units (RngUnit: each meta object's meta score, each pair). A unit's draws come from a Mersenne Twister
+// seeded with AsRngSeed(cut seed, unit), on the worker in its own MT object, in the sim-thread reference in the host's
+// (saved and restored around the reference), both through the game's own init and draw code. So the k-th draw of a unit
+// is the same value on both threads whatever happened in other units (aborts, tooltip draws), and Mode R stays bit-equal.
+typedef void(__fastcall* AsMtInitFn)(void* mt, void* edx, DWORD seed);  // 0x4FA990 thiscall, ret 4 (seed -1 = RDTSC)
+typedef double(__fastcall* AsMtNextFn)(void* mt, void* edx);             // 0x4FAA70 thiscall: [0,1) on x87
+static AsMtInitFn g_asMtInit = (AsMtInitFn)(uintptr_t)0x004FA990;
+static AsMtNextFn g_asMtNext = (AsMtNextFn)(uintptr_t)0x004FAA70;
+static const volatile u8* g_asDetFlag = (const volatile u8*)(uintptr_t)0x011CDBC5;  // `Deterministic`: draws are 0.5 (docs/27 §1.3)
+static volatile DWORD g_asRngSeedV[2];  // per published version: the cut seed, 0 = none
+static LONG g_asRngUnitW = -1;          // worker: current unit (-1 = none yet in this run)
+static bool g_asRngLiveW;               // worker: g_asRngMtW is seeded for that unit
+static u8 g_asRngMtW[AS_RNG_LEN];
+static bool g_asInRef;                  // sim: inside the reference run
+static volatile LONG g_asRngPendS = -1; // sim: unit whose stream the next reference draw starts
+static DWORD g_asRngSeedS;
+static void* g_asRngOrig;
+// docs/125 addendum §4.1: a hooked call (LocalizeString, IsAllowedInRoom) inside the reference draws from a scratch stream,
+// so its one-sided draws never shift the unit's stream; the host MT state is put back when the outermost bracket closes
+static int g_asRngPause;
+static u8 g_asRngPaused[AS_RNG_LEN];
+
+// even, so the init's `seed |= 1` keeps distinct values apart and never makes -1 (RDTSC)
+static DWORD AsRngSeed(DWORD cut, LONG unit) {
+    DWORD h = cut ^ (DWORD)unit * 0x9E3779B1u;
+    h ^= h >> 16, h *= 0x85EBCA6Bu, h ^= h >> 13, h *= 0xC2B2AE35u, h ^= h >> 16;
+    return h << 1;
+}
+// the cut seed: the live MT words and count (not the read pointer: an address), so seeded runs (docs/27) repeat it
+static DWORD AsRngCutSeed() {
+    const u8* host = g_asHostPtr ? *g_asHostPtr : NULL;
+    if (!host) return 0;
+    const DWORD* w = (const DWORD*)(host + AS_RNG_OFF);
+    DWORD h = 0x811C9DC5u ^ w[0x271];
+    for (int i = 0; i < 0x270; i++) { h ^= w[i]; h *= 0x1000193u; }
+    return h | 1;
+}
+static int AsRngWorker(DWORD idx, AsRet* r) {
+    const LONG v = g_asHeld;
+    const DWORD seed = v >= 0 ? g_asRngSeedV[v] : 0;
+    if (g_asRngUnitW < 0 || !seed) { AsAbort(AS_AB_RNG, idx); return 1; }  // a draw outside any unit: no defined stream
+    if (*g_asDetFlag) { r->f = 0.5; return 1; }  // as 0xD70EE0
+    if (!g_asRngLiveW) { g_asMtInit(g_asRngMtW, NULL, AsRngSeed(seed, g_asRngUnitW)); g_asRngLiveW = true; }
+    r->f = g_asMtNext(g_asRngMtW, NULL);
+    return 1;
+}
+// the guard's sim-thread target for the RNG IC while the reference runs: start the pending unit's stream, then the game's draw
+static double __cdecl AsRngSimDraw() {
+    const LONG u = g_asRngPendS;
+    if (g_asRngPause) ts3native_autshadow.rngPauseDraws++;  // scratch stream: the pending unit waits for its first real draw
+    else if (u >= 0) {
+        g_asRngPendS = -1;
+        u8* host = *g_asHostPtr;
+        if (host) g_asMtInit(host + AS_RNG_OFF, NULL, AsRngSeed(g_asRngSeedS, u));
+    }
+    return ((double(__cdecl*)())g_asRngOrig)();
+}
 
 static LONG AsUs(const LARGE_INTEGER& t0) {
     LARGE_INTEGER t1;
@@ -96,8 +157,16 @@ static void AsReference() {
     u8* host = g_asHostPtr ? *g_asHostPtr : NULL;
     u8* rng = host ? host + AS_RNG_OFF : NULL;
     if (rng) memcpy(saved, rng, AS_RNG_LEN);
+    const int ri = g_asIcRng;
+    const DWORD seed = g_asPub >= 0 ? g_asRngSeedV[g_asPub] : 0;
+    if (rng && ri >= 0 && seed) {  // RngUnit marks start per-unit streams in the host MT (docs/125 §2)
+        g_asRngOrig = g_asOrig[ri], g_asRngSeedS = seed, g_asRngPendS = -1, g_asInRef = true;
+        g_asOrig[ri] = (void*)AsRngSimDraw;
+    }
     LONG us = 0;
     if (!AsInvoke(g_asMRef, &us)) k.refExc++;
+    if (g_asInRef) g_asOrig[ri] = g_asRngOrig, g_asInRef = false, g_asRngPendS = -1;
+    g_asRngPause = 0;  // an exception inside a bracket: the whole MT state is restored just below
     if (rng && memcmp(saved, rng, AS_RNG_LEN)) { k.rngDraws++; memcpy(rng, saved, AS_RNG_LEN); }
     k.refRuns++, k.refUs += us;
     AsMax(k.refMaxUs, us);
@@ -110,6 +179,7 @@ static void __cdecl AsJobHook(int phase, void* method) {
     if (phase == 0) {
         InterlockedExchange(&g_asHeld, g_asPub);  // AsWorkerBegin without clearing stop: the sim may have set it already
         if (g_asRunEpoch != g_asEpoch) InterlockedExchange(&g_asStop, 1);  // the world moved between cut and start
+        g_asRngUnitW = -1, g_asRngLiveW = false;
         QueryPerformanceCounter(&g_asJob0);
         return;
     }
@@ -136,6 +206,7 @@ static void __cdecl AsSimLeave() {
     if (g_asRun != AS_RUN_IDLE || !g_asReqId) return;
     AsRootOnce();
     AsCut();
+    g_asRngSeedV[g_asPub] = AsRngCutSeed();
     k.cutReq++;
     g_asRunEpoch = g_asEpoch;
     if (g_asMode == 0 || !g_asMRef || !g_asMWork) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
@@ -154,9 +225,11 @@ static void __cdecl AsSimLeave() {
 
 // top of MonoScriptHost_Simulate (sim thread): the window closes; a worker still inside is told to stop (no wait)
 static void AsRegisterIcs();
+static void AsLgTick();
 static void __cdecl AsSimEnter() {
     Ts3nAutShadow& k = ts3native_autshadow;
     if (!k.icRegistered) AsRegisterIcs();
+    AsLgTick();
     if (g_asRun != AS_RUN_IDLE && g_asRunEpoch != g_asEpoch && g_asLast == AS_LAST_OK) {
         InterlockedExchange(&g_asStop, 1);
         k.epochDrops++;
@@ -176,7 +249,8 @@ static void __cdecl AsSimEnter() {
 }
 
 // ---- AutShadowNative internal calls (ts3fixes, docs/122 §3.5; registered at the first Simulate tick) ----
-static int __cdecl AsIcVersion() { return 2; }
+static int AsLgConfig(int key);
+static int __cdecl AsIcVersion() { return 4; }  // 3: RngUnit (docs/125); 4: RngPause, abort reasons rain/posture
 static int __cdecl AsIcConfig(int key) {
     switch (key) {
         case 0: return g_asMode;
@@ -184,7 +258,7 @@ static int __cdecl AsIcConfig(int key) {
         case 2: return g_asWarmIn;
         case 3: return g_asDump;
         case 4: return AsWorkerIdle() ? 1 : 0;
-        default: return 0;
+        default: return AsLgConfig(key);  // 5-10: ledger probe (autledger.cpp)
     }
 }
 static int __cdecl AsIcIsWorker() { return g_asWorkerTid && GetCurrentThreadId() == g_asWorkerTid; }
@@ -208,6 +282,26 @@ static void __cdecl AsIcPost(int id) {
     ts3native_autshadow.req++;
 }
 static int __cdecl AsIcLastRun() { return g_asLast; }
+// a new RNG unit (unit >= 0): on the worker its own stream, in the reference the host MT's; elsewhere nothing (the live
+// RNG is never touched outside the reference, whose MT state is put back afterwards)
+static void __cdecl AsIcRngUnit(int unit) {
+    if (unit < 0) return;
+    if (AsIcIsWorker()) g_asRngUnitW = unit, g_asRngLiveW = false;
+    else if (g_asInRef) g_asRngPendS = unit;
+}
+// on != 0 opens, 0 closes a scratch-stream bracket; only inside the reference run (sim thread), elsewhere nothing
+static void __cdecl AsIcRngPause(int on) {
+    u8* host = g_asHostPtr ? *g_asHostPtr : NULL;
+    if (!g_asInRef || !host || AsIcIsWorker()) return;
+    if (on) {
+        if (g_asRngPause++) return;
+        memcpy(g_asRngPaused, host + AS_RNG_OFF, AS_RNG_LEN);
+        g_asMtInit(host + AS_RNG_OFF, NULL, AsRngSeed(g_asRngSeedS, 0x7FFFFFFF));  // no unit id ((o << 16) | k) is this large
+        ts3native_autshadow.rngPause++;
+    } else if (g_asRngPause > 0 && !--g_asRngPause) {
+        memcpy(host + AS_RNG_OFF, g_asRngPaused, AS_RNG_LEN);
+    }
+}
 static void __cdecl AsIcSetMethods(void* finish, void* reference, void* work) {
     if (AsIcIsWorker() || g_asRun != AS_RUN_IDLE) return;
     g_asMFinish = finish, g_asMRef = reference, g_asMWork = work;
@@ -254,6 +348,8 @@ static void AsRegisterIcs() {
         {"Ts3Fixes.AutShadowNative::SetMethods", (const void*)AsIcSetMethods},
         {"Ts3Fixes.AutShadowNative::SetRefs", (const void*)AsIcSetRefs},
         {"Ts3Fixes.AutShadowNative::Log", (const void*)AsIcLog},
+        {"Ts3Fixes.AutShadowNative::RngUnit", (const void*)AsIcRngUnit},
+        {"Ts3Fixes.AutShadowNative::RngPause", (const void*)AsIcRngPause},
     };
     if (!g_asAddIc) return;
     for (const auto& ic : kIcs) g_asAddIc(ic.name, ic.fn);

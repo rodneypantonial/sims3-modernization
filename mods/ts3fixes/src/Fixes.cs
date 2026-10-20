@@ -86,13 +86,14 @@ namespace Ts3Fixes
         // [99-101] reserved for invcache (docs/115), [102-105] door mirror: door imports seen / lot invalidations / lot tables built /
         // builds refused (doormirror; DoorMirror.cs, docs/105 §10.5), [106-121] [AutShadow] pilot (AutShadow.cs, docs/122): A0..A5,
         // L pairs / equal / Test agree / top-1 agree, skips, warm-in reference runs, requests posted, Begin busy, mod-guard
-        // skips, managed exceptions in the driver.
+        // skips, managed exceptions in the driver, [122-126] [AutShadow] mod guards (docs/128 §5): sf skips, G-M4 methods /
+        // us / foreign swaps, G-M5 overriding mod types.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[122]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[127]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -141,6 +142,7 @@ namespace Ts3Fixes
                 case "doormirror": return Instantiator.kDoorMirror;
                 case "autshadow": return Instantiator.kAutShadow;
                 case "autshadowverify": return false; // verify switch: test runs only
+                case "autledger": return false; // ledger probe switch (docs/51 mono ledger): test runs only
                 case "spotspread": return true;
                 default: return true;
             }
@@ -162,6 +164,7 @@ namespace Ts3Fixes
                     throw new InvalidOperationException("already compiled");
                 if (stub != null) SwapMethod(hook.GetMethod(stub, all), t);
                 SwapMethod(t, r);
+                sPatched[t] = hook;  // docs/128 G-M4: our own swap, accepted by the closure sweep
                 AppliedLog().Add(target.Name + "." + method + ": ok");
                 return true;
             }

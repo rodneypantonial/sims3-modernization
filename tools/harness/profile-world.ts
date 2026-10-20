@@ -30,6 +30,8 @@
 // --f4b: also run tools/frida/f4b-reads.js (docs/99 §12.6: CopyNodes node y / +0x20 / path length, path slot +0x100 prepends, agent
 // y vs terrain) from the window start, into <tag>-f4b.json (f4b-report.ts) and <tag>-f4b.log; the stack samplers are skipped
 // (its terrain call runs on the sim thread).
+// --vres: callvirt inline-cache snapshots through the probe agent's /vcache every 60 s, union in <tag>-vres.json (docs/133,
+// tools/virtual-resolution-report.ts); the stack samplers are skipped (a snapshot holds the agent's script thread for seconds).
 // --no-prof: no stutter profiler session (no <tag>-<secs>-* files). queue.ts sets it for [ProbeSnap] jobs: a second Frida
 // agent injecting while the int3 sampler storms the sim thread with breakpoints crashed the game in that agent's exception
 // path (docs/67 §7, bp-rare-winter-pond 2026-10-19).
@@ -49,7 +51,7 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -198,6 +200,25 @@ const inroomDone = side(values.inroom, 'inroom-reads.js', 'inroom');
 const watchDone = side(values.watchstalk, 'watch-stalk.js', 'watchstalk', values['watchstalk-worker'] ? { worker: true } : {});
 const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
 const f4bDone = side(values.f4b, 'f4b-reads.js', 'f4b');
+// --vres (docs/133): a callvirt inline-cache snapshot through the probe agent every 60 s from the window start, then a last one
+// that writes the union to <tag>-vres.json; nothing is hooked, so the cost is the agent's reads on its own thread
+const vresDone = values.vres ? (async () => {
+  let fails = 0;
+  for (let s = 60; s < secs - 20 && !stopped; s += 60) {
+    await sleep(Math.max(0, at(s) - Date.now()));
+    try {
+      const r = await get('vcache?snap=1&budget=30', 90000);
+      fails = 0;
+      console.log(`${stamp()} [vres] snapshot ${r.snap}: ${r.ms} ms, ${r.images} images, ${r.decoded} methods decoded, ${r.filled} filled caches, ${r.sites} sites, +${r.newPairs} pairs${r.partial ? ' (budget hit: partial)' : ''}; ${Math.ceil((secs - s) / 60)} min left`);
+    } catch (e: any) {
+      console.log(`${stamp()} [vres] snapshot failed: ${e.message}`);
+      if (++fails >= 2) { console.log(`${stamp()} FAIL: [vres] two snapshots in a row failed (fail-fast guard)`); break; }
+    }
+  }
+  const out = `${pre}-vres.json`.replace(/\\/g, '/');
+  try { const r = await get(`vcache?snap=1&budget=30&out=${encodeURIComponent(out)}`, 120000); console.log(`${stamp()} [vres] last snapshot ${r.snap} (${r.ms} ms), wrote ${r.wrote}`); }
+  catch (e: any) { console.log(`${stamp()} FAIL: [vres] last snapshot / dump: ${e.message}`); }
+})() : Promise.resolve();
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 // a rerun with the same tag must not append to the last run's snapshots (wait-ab read run 1 twice, 2026-10-20)
@@ -278,7 +299,7 @@ const run = (args: string[], file: string) => new Promise(r => {
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
 // none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
-const window = abNames.length || values.taskstall || values.repro || values.inroom || values.watchstalk || values.livereads2 || values.f4b ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const window = abNames.length || values.taskstall || values.repro || values.inroom || values.watchstalk || values.livereads2 || values.f4b || values.vres ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
 const mainSample = async (t: number) => {
   try {
     const r = await get(`threadstack?which=${values.mainstack}&frames=24`, 5000);
@@ -313,7 +334,7 @@ for (const end = Date.now() + window * 1000; !stopped && Date.now() < end;) {
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
 if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
-await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone]);
+await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone, vresDone]);
 stopLoad();
 await restoreFixes();
 console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);

@@ -407,6 +407,8 @@ How a yield works in this build (all from bytes, then confirmed by the driver):
 | `Simulator.CurrentTask` in the task | `0xABCD00000011` each time (both halves) |
 | Yield inside a `.cctor` frame (as a task) | refused: the task ends after one run with `TypeInitializationException` (inner `NotSupportedException`), no sleep recorded |
 
+Game check of the `Sleep(0)` contract (I-119-44): queue `mono-ledger-probe.json` runs one ts3fixes task per load (switch `autledger`) that marks the native Simulate tick count (`AutShadowNative.Config(9)` / `Config(10)`, `[AutShadow] Ledger=1`) around 64 `Simulator.Sleep(0)` and 64 `Sleep(1)` calls; `lgSleep` holds the resume distance in ticks (0, 1, 2, 3+) per series and `mono-ledger-report.ts` gives the verdict (all 1 = 0 is treated as 1, all 0 = same-tick resume). Built 2026-10-20, not run yet.
+
 Not exercised: two tasks interleaved, `Simulator.Wake`, `AddObject` task creation, the first-run `0xD7DB80` path of `0xD7F000` (record byte `+0xD`), yielding-disabled `[0x11F414C]`, and the game's sleep map (`host+0x1728`, `+0x1748`).
 
 ### 11.3 M1.6: selftest

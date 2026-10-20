@@ -1137,7 +1137,11 @@ static void* __cdecl HAsOnLot(void*, DWORD lotLo, DWORD, DWORD) { return lotLo ?
 static float __cdecl HAsSunrise() { return 6.5f; }
 static void* __cdecl HAsNameKey() { return (void*)(uintptr_t)(g_hostKeyMask ^ 0x5A5A5A5A); }
 static void* __cdecl HAsMoney(DWORD, DWORD) { return mt::g_asEmptyStr; }  // the tooltip stub's answer, so scores can match
-static double __cdecl HAsRand() { return 0.25; }
+// stands for MonoScriptHost: its script MT at +0xC30, initialised and drawn by the game's own code (0x4FA990 / 0x4FAA70,
+// docs/125 §2), so the per-unit streams of the reference and the worker run the real generator
+static u8 g_hostRngHost[0x1800];
+static u8* g_hostRngHostPtr = g_hostRngHost;
+static double __cdecl HAsRand() { return ((double(__fastcall*)(void*, void*))0x4FAA70)(g_hostRngHost + 0xC30, NULL); }
 static void* g_asHostTab[] = {
     (void*)HAsPos, (void*)"ScriptCore.Objects::Objects_GetPosition",
     (void*)HAsLotLoc, (void*)"ScriptCore.World::World_GetLotLocationImpl",
@@ -1178,11 +1182,13 @@ static int AsG2() {
     ((AddInternalCall)0xE82550)("MonoHostTest.AsIc::HostSetLotObjects", (const void*)HostSetLotObjects);
     ((AddInternalCall)0xE82550)("MonoHostTest.AsIc::HostSetNameKey", (const void*)HostSetNameKey);
     mt::g_asAudit = 5;
+    ((void(__fastcall*)(void*, void*, DWORD))0x4FA990)(g_hostRngHost + 0xC30, NULL, 12345);
+    mt::g_asHostPtr = &g_hostRngHostPtr;
     mt::AsInstallRun(NULL, true);
     mt::g_asMode = 1;  // R: reference on this thread, then the worker
     mt::MtTick();      // first Simulate entry: the AutShadowNative ICs register
     const int ver = I32(TA("Setup", 0, NULL));
-    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 14 && ver == 2 && p.workerState == 2,
+    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 16 && ver == 4 && p.workerState == 2,
                "guards %d (%ld descriptor ICs), AutShadowNative ICs %ld, Setup -> Version %d, worker state %ld", guards, k.descIcs,
                k.icRegistered, ver, p.workerState))
         return 160;
@@ -1224,13 +1230,14 @@ static int AsG2() {
         "overrun %ld, worker hits %ld misses %ld, learned %ld, audits %ld (S1 %ld), aborts %ld; %s\n", requests, rounds, ms, runs, a0, a1, a2,
         a3, a4, rng, other, a5, abandoned, mainPasses, mainBad, gcs, pushed, k.cutReq, k.cutMaxUs, k.refRuns, k.rngDraws, k.workRuns,
         k.workMaxUs, k.workExc, k.overrun, k.workerHits, k.workerMisses, k.learned, k.auditN, k.auditMis[0], k.abortTotal, err);
-    const int perRun = 50, rngPerRun = 8;  // objects 0, 7, ..., 49
+    const int perRun = 50, rngPerRun = 0;  // objects 0, 7, ..., 49 draw inside their RngUnit: no rng aborts (docs/125)
     Check("AS-G-A2", requests == warm + rounds && runs == rounds && a0 == rounds * (perRun - rngPerRun) && a1 + a2 + a3 == 0 &&
                          rng == rounds * rngPerRun && other == 0 && a5 == 0 && abandoned == 0 && errLen == 0 && mainBad == 0 &&
-                         mainPasses >= rounds && gcs >= rounds && k.workExc == 0 && k.auditMis[0] == 0 && overruns == 0,
+                         mainPasses >= rounds && gcs >= rounds && k.workExc == 0 && k.auditMis[0] == 0 && overruns == 0 &&
+                         k.rngPause >= rounds * 8 && k.rngPauseDraws == k.rngPause,
           "%d shadow searches x %d objects with the main thread interpreting, allocating and collecting: A0 %d of %d, A1-A3 %d, rng aborts %d, "
-          "other aborts %d, A5 %d; %d main passes wrong %d; %ld collections", rounds, perRun, a0, rounds * (perRun - rngPerRun), a1 + a2 + a3, rng,
-          other, a5, mainPasses, mainBad, gcs);
+          "other aborts %d, A5 %d; %d main passes wrong %d; %ld collections; reference RNG pause brackets %ld (draws %ld)", rounds, perRun, a0, rounds * (perRun - rngPerRun), a1 + a2 + a3, rng,
+          other, a5, mainPasses, mainBad, gcs, k.rngPause, k.rngPauseDraws);
     (void)waits;
 
     // overrun: the next Simulate entry comes while the worker is still inside -> stop flag, A5, and the worker leaves
@@ -1408,11 +1415,33 @@ static int M5() {
     return 0;
 }
 
+// docs/128 G-M4 / G-M5 one-time cost under the game's Mono 1.2.3 (mint): ts3fixes' closure list resolved by reflection in
+// the loaded script assemblies, an L3 klass read per method, then the override census over the non-game assemblies.
+static int GuardSweepTest() {
+    LARGE_INTEGER f, t0, t1;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&t0);
+    const int found = I32(T("GuardSweep", 0, NULL));
+    QueryPerformanceCounter(&t1);
+    const double ms = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+    int w[5];
+    for (int i = 0; i < 5; i++) { void* a[1] = {&i}; w[i] = I32(T("GetSweep", 1, a)); }
+    QueryPerformanceCounter(&t0);
+    T("GuardSweep", 0, NULL);  // again: the cost per load after the first (types and reflection data cached)
+    QueryPerformanceCounter(&t1);
+    const double ms2 = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+    Check("GM4-sweep", found == w[4] && w[1] == 0 && w[3] == 0,
+          "G-M4: %d of %d closure methods resolved in %d game assemblies, %d swapped; G-M5: %d overriding types; first sweep %.1f ms, second %.1f ms",
+          found, w[4], w[2], w[1], w[3], ms, ms2);
+    return 0;
+}
+
 static int SelfTest(void* domain) {
     int rc = M13(domain);
     if (!rc) rc = M14();
     if (!rc) rc = M15();
     if (!rc) rc = M5();
+    if (!rc) rc = GuardSweepTest();  // after M5: M5-arena-dedupe expects M1.5's arena state
     Log("SELFTEST %s: %d passed, %d failed%s\n", g_fail || rc ? "FAILED" : "OK", g_pass, g_fail, rc ? " (stopped early)" : "");
     return rc ? rc : g_fail;
 }

@@ -13,7 +13,7 @@
 // Inputs: tools/harness/snap-report.ts output (as docs/data/snap-probe-*.txt; it lists only sites with NEW/OUT targets
 // unless run with --all) or the raw "vcall SITE -> TARGET n=N" log lines (complete; several logs are merged).
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import assert from 'node:assert/strict';
@@ -136,10 +136,12 @@ function selfCheck() {
   console.log('indirect-live-vs-static self-check ok');
 }
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-  'self-check': { type: 'boolean' }, pairs: { type: 'boolean' }, unfired: { type: 'boolean' }, class: { type: 'string' },
-  csv: { type: 'string', default: join(ROOT, 'docs', 'data', 'routing-indirect-sites.csv') },
-  sites: { type: 'string', default: join(ROOT, 'native', 'ts3native', 'vcallsites.h') } } });
-if (values['self-check']) selfCheck();
-else if (!positionals.length) { console.error('usage: node tools/indirect-live-vs-static.ts <report.txt|ts3native.log> [...] [--csv f] [--sites f] [--pairs] [--unfired] [--class new,resolves]'); process.exitCode = 2; }
-else run(positionals, values.csv!, values.sites, !!values.pairs, !!values.unfired, values.class ? new Set(values.class.split(',')) : null);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) { // not when imported (virtual-resolution-report.ts)
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: {
+    'self-check': { type: 'boolean' }, pairs: { type: 'boolean' }, unfired: { type: 'boolean' }, class: { type: 'string' },
+    csv: { type: 'string', default: join(ROOT, 'docs', 'data', 'routing-indirect-sites.csv') },
+    sites: { type: 'string', default: join(ROOT, 'native', 'ts3native', 'vcallsites.h') } } });
+  if (values['self-check']) selfCheck();
+  else if (!positionals.length) { console.error('usage: node tools/indirect-live-vs-static.ts <report.txt|ts3native.log> [...] [--csv f] [--sites f] [--pairs] [--unfired] [--class new,resolves]'); process.exitCode = 2; }
+  else run(positionals, values.csv!, values.sites, !!values.pairs, !!values.unfired, values.class ? new Set(values.class.split(',')) : null);
+}

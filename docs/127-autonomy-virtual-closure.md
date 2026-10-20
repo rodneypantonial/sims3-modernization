@@ -24,6 +24,7 @@ Tags: **[verified]** = tool output, IL or the decompiled class library read for 
 - **Local phase:** the main new row is `World_IsOnRoofImpl` (reached by 152 closures, the first new reason of 61 verdict changes: `InteractionDefinitionUtilities.SpecialCaseTests` reads `IGameObject.IsOnRoof`, whose only implementation is `GameObject`'s). The main new blocker is route creation in `Test`: 31 `Test` bodies call `actor.CreateRoute()`, and `SimRoutingComponent.CreateRoute` sets route options, followers and valid rooms on the new native route (`Route_Set*`, class w by the docs/126 name rule).
 - **Yields and event sends:** 15 closures newly reach one (§3.3), all through override bodies of objects or instances, none in v0.
 - **Mods:** NRaas ErrorTrap and Overwatch add 27 overriding methods, all on NRaas's own interaction and definition classes; none on an object, posture, service or component class (§5).
+- **Update §7 (both open items closed, static):** the world lot **is** a visit target (I-127-3 refuted): a Sim standing off-lot scores its current lot, the world lot, and `VisitLot`'s test asks it for a `Callbox` through `Query_GetGlobalObjects`. The row is a learned type key per cut answered by the game's own IC body (§7.1). With H11, the new worker hook H12 (§7.2) and that row, **all 12 v0 definitions and all 7 implementors are ready**, 35 of 37 tier-2 meta; totals 94 ready / 141 new rows / 33 blocked / 2 hooked [verified: tool output, what-if]. Route creation in `Test` (I-127-2): the route is the `Test`'s own and is only asked `IsPointRoutable`; H12 hands the worker a route with no native object and aborts on the first query. That opens 30 of the 31 (`Jetpack+FlyHere` stays blocked by `Simulator.Sleep`), worth at most ~1% of scoring.
 
 ## 1. Method
 
@@ -73,7 +74,7 @@ The target class is the root `Test`'s second parameter, so it holds once `Test` 
 
 [verified: tool output] The other new v0 ICs (`World_IsPositionOutsideImpl`, `World_GetMoonPhaseImpl`, `World_GetDoorRoomsImpl`, product price and resource key, `GameUtils_GetWorldName`, `Query_GetObjectsOnLot`) are already in the snapshot set; they now show up per definition because the venue score enters the target's own `HowMuchItWantsSimToCome`, which the pilot union already covers through the implementor roots.
 
-`Query_GetGlobalObjects` path: `Lot.CommonVisitTest` -> `Lot.FindCallbox` -> `GetObjects<T>` dispatched to `WorldLot` -> global object query [verified: tool path]. The docs/62 scan reads it as class a; it is a world-wide query like `Query_GetObjects` (class d, I-121-7), so its row is a per-type global list [inferred]. Whether the target `Lot` of a visit can be the world lot at all is open (I-127-3).
+`Query_GetGlobalObjects` path: `Lot.CommonVisitTest` -> `Lot.FindCallbox` -> `GetObjects<T>` dispatched to `WorldLot` -> global object query [verified: tool path]. The docs/62 scan reads it as class a; it is a world-wide query like `Query_GetObjects` (class d, I-121-7), so its row is a per-type global list [inferred]. Whether the target `Lot` of a visit can be the world lot at all is open (I-127-3). **Closed in §7.1:** it can; the row is a learned type key.
 
 ### 3.2 Tier 2
 
@@ -101,9 +102,11 @@ The b and w ICs reached most often: object create/add/destroy (`Simulator_Create
 
 **H11, rain/hail shelter branch** (new worker hook, design only): in `CalculateScoreForObjectInteraction` the shelter test runs only with Seasons on, weather rain or hail, an autonomy search and an outdoor target [verified]. On the worker, answer the branch without creating an instance: abort the pair to the sim thread when the three conditions hold (weather is constant within a search), or later serve `IsShelteredFromPrecipitation` from a per-target snapshot bit. Abort is enough for the pilot: it costs only rainy outdoor pairs. Effort: ~30-60 min (one ts3fixes hook + abort reason `rain`, counter slot per docs/registry.md) plus a Mode R check in a rain save.
 
+**H11 built 2026-10-20 (offline, ts3native 0.36.5, docs/122 §14.10):** abort variant, in ts3fixes `AutShadow.ScorePair` on the worker before the score (`AutShadowCore.RainShelter`, conditions in the game's order, `IsOutside` read last); new abort reason `rain` (20, counters `ts3native_autshadow` v4 `abort2[0]`). The per-target shelter-bit variant stays a later option. Not run in a rain save yet.
+
 **New rows:** `Query_GetGlobalObjects` (all v0 definitions, 2 implementors, most tier-2 closures; per-type global list, ~0.5-1 h after I-127-3) and `World_IsOnRoofImpl` (152 closures; one bit per row, ~0.25 h).
 
-**Route creation in `Test`** (31 local definitions): a Sim's `CreateRoute` builds a native route and sets options on it. Writes go to an object the closure itself creates, so the w class may be too strict [inferred, I-127-2]; until checked these stay on the sim thread.
+**Route creation in `Test`** (31 local definitions): a Sim's `CreateRoute` builds a native route and sets options on it. Writes go to an object the closure itself creates, so the w class may be too strict [inferred, I-127-2]; until checked these stay on the sim thread. **Closed in §7.2:** worker hook H12 (route stub, abort on query) opens 30 of the 31.
 
 **The managed-write gap.** The docs/122 guard thunk aborts on unexpected ICs only. A static write in an override body (the `sNextId` case) runs silently on the worker. Mode R (docs/122 §4.3) compares results, not static fields, so it would not show a lost increment either. The allow-list therefore needs the typed closure of this note (or an equivalent check) before a definition goes in, not only the IC guard [inferred].
 
@@ -125,7 +128,71 @@ NRaas ErrorTrap and Overwatch were extracted from the user's Mods folder (read-o
 
 ## 6. Ledger
 
-docs/51 §171: I-127-1 (H11 branch conditions are the only way to the instance create on the scoring path), I-127-2 (route `Set*` ICs write only the new route), I-127-3 (a visit target `Lot` is never the world lot), I-127-4 (the `this` carry-over between chain methods).
+docs/51 §171: I-127-1 (H11 branch conditions are the only way to the instance create on the scoring path), I-127-2 (route `Set*` ICs write only the new route), I-127-3 (a visit target `Lot` is never the world lot), I-127-4 (the `this` carry-over between chain methods). docs/51 §185: I-185-1 to I-185-10 (§7: the `Query_GetGlobalObjects` body, the world lot as visit target, row size and v0 answer, `GetObjectsOnLot` appending global objects, the route-building `Test`s, NoHit in autonomy, the `SetRouteOptions` UI path, H12 soundness). I-127-2 is now verified for `SetOption`/`SetAGS` and moot under H12; I-127-3 is refuted.
+
+## 7. Closing I-127-2 and I-127-3
+
+Static: capstone over the game copy of `TS3W.exe`, the decompiled class library (session scratchpad, not in git), what-if runs of `tools/autonomy-virtual-closure.ts`. No build, no game run.
+
+### 7.1 `Query_GetGlobalObjects` (I-127-3)
+
+**Native body** [verified: disassembly; callees named below not expanded]:
+
+| Step | Where | What |
+|---|---|---|
+| Arguments | `IC_Query_GetGlobalObjects` `0x749DD0` | one: the `System.Type` (managed `Queries.Query_GetGlobalObjects(Type)`) |
+| Collect | `0x749B40` | WorldManager `[0x11ECBC4]` -> container at `+0xB0` (shaped like a lot: object vector at `+0x14`, `0x532C50`); copies each object's 64-bit id (`+8`/`+0xC`) into a stack vector with room for 512 ids, growing on the EA heap (`0xD53FA0`, allocator `0x1003D90`, freed by `0x4E3F70`). No type filter, no lock |
+| Filter and build | host interface `[0x11D4BBC]` slot `+0xC0` = `0xD798F0` (the same function `Query_GetObjects` uses, here with an id list) | class from the `Type` (`0xE70D50`); per id: host object maps `+0x1658`, then `+0x1678` (`0xD726F0`); keep it if the object is an instance of the class (`0xEA3820`) and the id is not in the host set `+0xBFC` (`0xD71F40`); result array from `0xEA30F0` (with host `+0xAC4`) |
+| Not found | both | NULL (not an empty array) when there is no WorldManager or container, the class does not resolve, or no object matches |
+| Locks | all three bodies | none: the container vector and the host maps are read while the sim thread may add, remove or move objects |
+| Writes on read | all three bodies | none to game state; stack buffers, the EA heap above 512 global objects, the GC heap for the result |
+
+**Managed side** [verified: IL]: `Sims3.Gameplay.Queries.GetGlobalObjects<T>()` turns NULL into `new T[0]`; `WorldLot.GetObjects<T>()` drops every `Sim` whose `LotCurrent` is not the world lot and copies the rest into a new array (`CountObjects<T>` counts the same set).
+
+**The world lot is a visit target** (I-127-3 refuted) [verified: IL, unless marked]. `LotManager.AddLot` creates a `WorldLot` for lot id `0xFFFFFFFFFFFFFFFF`, and `Lot.OnCreation` adds `VisitLot` and `VisitCommunityLot` to `MetaAds` for every lot, the world lot included. The local part of `Autonomy.ScoreInteractionsForMetaAutonomy` scores `mActor.LotCurrent`, which is the world lot for a Sim on the street. `VisitLot+Definition.Test` -> `Lot.CommonVisitTest`: after the selectable-Sim, last-visit, community-lot and ownership exits, a residential target runs `FindCallbox` -> `WorldLot.GetObjects<Callbox>` -> `Query_GetGlobalObjects(typeof(Callbox))`. The world lot reads as residential because nothing sets its lot type (`mLotType` stays enum 0, `Residential`; the setters are lot-type change and edit-town paths) [inferred].
+
+**Row design: learned type key per cut**, in the docs/122 §13 generic answer table with its learned-key mechanism:
+
+- Entry: (IC `0x749DD0`, the `Type` pointer) -> the array contents or NULL, filled at the cut by calling the game's own body on the sim thread, so the answer is the game's answer, NULL included. References go in the rooted column; the worker builds the result with the docs/122 §14.3 array allocator.
+- Keys: learned. A worker miss aborts the unit (`query`, type name logged) and adds the key at the next cut; unused keys drop after 100 cuts. v0 needs one key, `Callbox` [verified: IL]. The other paths (`GetObjectsInRoom<T>`, `GetClosestObject<T>`, `GetFrontDoor`, the tomb-room check, door rooms) bring their own types; the abort log lists them.
+- Refresh: rerun a key's body only when the global container changed (object add/remove and world event `0x11`, the triggers the per-lot lists already use) [inferred: these cover every change of the container]; otherwise reuse.
+- Size and cost: 16 B per key plus 4 B per matching object. The v0 answer is NULL (callboxes sit on lots) [inferred, I-185-4]. One body call walks the whole container: 2 map lookups and a type test per object, ~25-100 us at 500-1,000 objects [inferred, I-185-3; EA sized the inline buffer for 512].
+- Fallback if more than ~8 keys show up: one world list of (id, reference) for the whole container (8 B per object, ~4-8 KB) with the `+0xBFC` exclusion applied at capture, filtered by class on the worker. No first-miss aborts, but a second answer path to keep bit-equal.
+- Effort: ~0.5-1 h on top of the docs/122 builder (one descriptor entry, the generation trigger, the abort reason).
+
+**Side finding** [verified: disassembly `0x749A94`-`0x749B28`]: `Query_GetObjectsOnLot`'s walker `0x7499B0` appends to the lot's own objects every object in the global container whose world component (`0x935770`, bit `[0x11ECF08]`) names that lot (Sims at least [inferred]). The docs/122 per-lot list must count them and bump its generation when such an object changes lot (world event `0x11` is already a trigger). With a room id other than -1 the room test for these objects compares a 0/1 flag against the room id (an EA quirk; `Lot.GetObjects<T>` passes -1).
+
+**What the row unblocks** (with H11 and H12, what-if) [verified: tool output]:
+
+| | Ready / new rows / blocked / hooked |
+|---|---|
+| H11 + H12 | 51 / 184 / 33 / 2 |
+| H11 + H12 + `Query_GetGlobalObjects` row | **94 / 141 / 33 / 2** |
+
+The row alone moves 43 closures to ready: **all 12 v0 definitions, both implementors that needed it (`Lot`, `BakeSaleTable`)**, 7 tier-2 meta (`CityHall+Protest`, the daycare and welcome-wagon visits, `VisitLotWith`, `VisitDiveLot`, `VisitCommunityLotWith`, `GoToImprovedProtest`; 35 of 37 meta then ready), 4 sampled local (`TV`/`VideoGameSystemBase` play definitions) and 18 row-5 candidates (mostly `Terrain` system and debug definitions, `SetFrontOfLot`). By scoring time: the pilot itself (v0 plus the meta base path, **640 samples, 62.0%**, docs/126) depends on this row and H11; the tier-2 meta part adds the 29 samples (2.8%) docs/126 counts for it.
+
+### 7.2 Route creation in `Test` (I-127-2)
+
+**What the `Test`s do with the route** [verified: decompiled class library, all 34 blocked by a `Route_*` IC, the 31 of §3.2 plus `MartialArts+TeleportDuringMeditation`, `SnowWaterFight+PlayWith` and `MagicCauldronRegency+TeleportPotion`]: each calls `CreateRoute()` itself, keeps the route in a local and calls `IsPointRoutable(point)` on it; `TeleportPotion` calls `PlanToPoint`. None reads an option back or stores the route. The route is fresh per call: `SimRoutingComponent.CreateRoute` -> `Route.Create` (cached `ConstructorInfo`, the static `sCtorInfo`, set once per session) -> `ScriptCore.Route(sim, flags)` -> `Route_CreateRoute` `0x75DA40` (new native route, registered in the route handle table under its lock, `0x74E390`) -> `SetRouteOptions`. It dies in the finalizer (`Route_DestroyRoute`).
+
+**Native `Set*`** [verified: disassembly]: `Route_SetOption` `0x7543C0` and `Route_SetAGS` `0x755600` look the handle up (`0x74B2C0`: type tag `0x25`, script handle table lock, host slot `+0xCC`; NULL for any other handle), lock the route (vtable `+0x10`/`+0x14`), store into it (option block `+0x158` via `0x81C810`; `+0x3C`) and apply the same to the route's own sub-route list `+0xE0` (empty before a plan [inferred]). `SetFollower`, `SetValidRooms` and `AddObjectToIgnoreForRoute` start with the same lookup; their callees were not expanded. So the `Set*` writes stay in the route; `Route_CreateRoute` itself is not route-local (shared handle table, locked), and `Route_IsPointRoutable` `0x7538C0` runs the routing query `0x7525A0`, which reads the physics and lot quadtrees without a lock and flushes deferred inserts (docs/94 U4).
+
+**Behind the route there is a second blocker** [verified: tool path]: `SetRouteOptions` reads Sim state and sets options only, but reaches the UI wrapper cache (`Stroller.GetStroller` -> `GameObject.IsOnHandTool` -> `UIManager.GetSceneWindow` -> `WrapperFromHandle` -> `DestroyWindow`, `UIManager` static dictionaries). A what-if that cuts only the native route (`Route.Create` and all `ScriptCore.Route` members) leaves all 34 blocked by that path. The stub must skip `SetRouteOptions`.
+
+**Autonomy always tests with no hit** [verified: IL]: `InteractionObjectPair.TestAndCalculateScore` builds the parameters with `GameObjectHit.NoHit` (type None, point (0,0,0)); `Autonomy.OverrideInteractionParameters` carries flags only. Most of these `Test`s gate on the hit before they build a route:
+
+| In autonomy | Definitions |
+|---|---|
+| never reach `CreateRoute` (19) | `DanceFloor+Dance` (fails when autonomous); `Sim+HorseGraze`, `Sim+HorseDig`, `PetSurfacePosture+LayDownHere`, `CatHuntingComponent+LocatePrey`, `BeachTowelPosture+EnterBeachTowel` (route only on the non-autonomous branch); `Terrain+SneakHere`, `+DogPeeHere`, `+CatPeeHere`, `SkipStone`, `LeafPile+Rake`, `BoatHere`, `Cane+HarassEveryone` (hit-type gate); `Terrain+WerewolfHuntTerrain`, `+HuntFor`, `EasterEgg+SearchForEggs` (route only when the hit type is not None); `Terrain+JogHere` (`SharedGoHereTests` false); `Snowman+MakeSnowman`, `+MakeSnowmanWith` (`SharedTerrainTests` skips the None case) |
+| reach `IsPointRoutable((0,0,0))` (10) | `CatHuntingComponent+StalkForPrey`, `GhostHunter+ScanForSpirits`, `OccultVampire+VampireHunt`; `PutDownChildHere` (carrying a child); `Terrain+MakeIgloo`, `SnowAngel+MakeSnowAngel` (origin outside); `GhostHunter+ScanForGhosts` (job set up); `AlienUtils+SummonMeteor` (origin has a ground lot location); `MagicWand+CastFireBlastTerrain`, `+CastRestoration` (only if the lot at the origin is not the world lot, never in practice [inferred]) |
+| create the route only (1) | `DanceFloorStore+DanceStore` (`IsPointRoutable` only for a real hit) |
+| stay blocked (4) | `Jetpack+FlyHere` (`Simulator.Sleep` via `GetActiveJetpack`), `MartialArts+TeleportDuringMeditation` and `SnowWaterFight+PlayWith` (their docs/126 blockers), `MagicCauldronRegency+TeleportPotion` (plans with `PlanToPoint`; object creation behind it). None of the four builds a route under NoHit either |
+
+Per-definition notes: `notes` column of `docs/data/autonomy-virtual-closure.csv`.
+
+**H12, worker route stub** (new worker hook, design only): a ts3fixes hook on `SimRoutingComponent.CreateRoute()`, `CreateRoute(CASAgeGenderFlags)` and `CreateRouteAsAdult()`. Sim thread: pass-through. Worker: return a `ScriptCore.Route` built with its parameterless constructor (handle 0, no `Route_CreateRoute`; its finalizer skips `Route_DestroyRoute` for handle 0 [verified: IL]) and skip `SetRouteOptions`. Any route IC the `Test` then calls aborts the unit with reason `route` (the docs/122 guard already aborts every IC not on its list; it must not fall through to the body, which would answer `false` for handle 0, a wrong answer). Sound because the route never leaves the `Test`, no `Test` reads an option back, and its only consumer, the query, is never answered on the worker [inferred, I-185-10]. Effort ~30-60 min (one hook, reason `route`, counter slot per docs/registry.md) plus a Mode R check with `route` aborts by definition. A later row could answer `IsPointRoutable((0,0,0))` per actor (one query per Sim at the cut) if the aborts matter.
+
+**Result** (what-if `--what-if "Sims3.Gameplay.Actors.SimRoutingComponent::CreateRoute,ScriptCore.Route::IsPointRoutable("`) [verified: tool output]: 30 row-5 candidates go from blocked to new rows (typed totals 23 / 161 / 84 / 2); the first remaining reason is `World_IsOnRoofImpl` (29) or `Query_GetGlobalObjects` (1), both rows already proposed. All 30 sit in docs/75 row 5 (61 samples, 5.9%, not splittable per type), so the share they open is at most 30/169 of it, **~11 samples, ~1.0% of scoring** [inferred: count split, as docs/126]. For 19 of them the route branch is dead in autonomy, so after H12 their time runs on the worker once the rows exist; the 10 that reach the query abort to the sim thread.
 
 ## Reproduce
 
@@ -134,6 +201,12 @@ node tools/managed-callgraph.ts --self-check --asm <repo>/game-copy/assemblies
 node tools/extract-assemblies.ts <scratch>/mods "<Documents>/Electronic Arts/The Sims 3/Mods/Packages/NRaas_ErrorTrap.package" ".../NRaas_Overwatch.package"
 node tools/autonomy-virtual-closure.ts --asm <repo>/game-copy/assemblies --index <repo>/game-copy/analysis/callgraph/index.json --mods <scratch>/mods > docs/data/autonomy-virtual-closure.csv
 node tools/autonomy-virtual-closure.ts --asm ... --index ... --what-if "Sims3.Gameplay.Interactions.InteractionDefinition\`3::CreateInstance(,Sims3.Gameplay.Interactions.InteractionDefinition::CreateInstance(,Sims3.Gameplay.Interactions.IInteractionDefinition::CreateInstance(,Sims3.Gameplay.Seasons.SeasonsManager::IsShelteredFromPrecipitation(" > /dev/null   # H11 counts (stderr)
+# §7: H12 alone; H11 + H12; H11 + H12 + the Query_GetGlobalObjects row (an IC cut stands in for the row)
+node tools/autonomy-virtual-closure.ts --asm ... --index ... --what-if "Sims3.Gameplay.Actors.SimRoutingComponent::CreateRoute,ScriptCore.Route::IsPointRoutable(" > h12.csv
+node tools/autonomy-virtual-closure.ts --asm ... --index ... --what-if "<H11 cuts above>,Sims3.Gameplay.Actors.SimRoutingComponent::CreateRoute,ScriptCore.Route::IsPointRoutable(" > h11h12.csv
+node tools/autonomy-virtual-closure.ts --asm ... --index ... --what-if "<H11 cuts>,<H12 cuts>,ScriptCore.Queries::Query_GetGlobalObjects(" > h11h12g.csv
 ```
+
+The committed csv was generated before `autonomy-tier2.ts` started labelling the docs/126 rows `a-row`; a rerun differs in 166 `new_ic_classes` cells by that label only (and in `mod_overrides` without `--mods`). The `notes` column was appended to the committed rows from a rerun.
 
 Csv columns: `target_type`/`instance_type` (from the root `Test` and the generic base), closure sizes per run, `new_ics` and `new_ic_classes` (`name:class@depth`, `*` = in the snapshot set), blocking ICs, new yields/events, new static writes (`(pilot)` = the pilot union already reaches it), NRaas overrides seen in the CHA run, the old / typed / CHA verdicts and the first new reason with its path (`=>` marks a step into an override).

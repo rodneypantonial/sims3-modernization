@@ -42,7 +42,10 @@ const icRow = new Map(csv('docs/data/ic-safety.csv').map((r) => [r.ic, r]));
 export const snap = new Map(csv('docs/data/autonomy-proxy-ics.csv').map((r) => [r.ic.slice(r.ic.indexOf('::')), r.class]));
 export const starts = (pat: string) => ix.methods.flatMap((m, i) => (m.k === pat || m.k.startsWith(pat + '(') || m.k.startsWith(pat + '`') ? [i] : []));
 
-export type Clo = { size: number; ics: Map<string, number>; tags: Map<string, string>; own: Set<string>; path: (key: string) => string; mod: Set<string> };
+export type Clo = { size: number; ids: number[]; ics: Map<string, number>; tags: Map<string, string>; own: Set<string>; path: (key: string) => string; mod: Set<string> };
+// docs/133: static targets per callvirt edge (`caller|declared` method ids): the targets the closure enters (declared + overrides
+// within ovHops) and the smallest visit depth of the caller.
+export type Edges = Map<string, { d: number; kind: string; ts: Set<number> }>;
 // ovHops (docs/127): virt/iface calls in methods fewer than ovHops calls from a root also enter every game override (CHA);
 // mod overrides (managed-callgraph --mods) are collected in mod, not followed. Path steps into an override are marked "=>".
 // ovHops (docs/127): virt/iface calls in visits fewer than ovHops calls from a root also enter overrides. Without a receiver
@@ -51,7 +54,7 @@ export type Clo = { size: number; ics: Map<string, number>; tags: Map<string, st
 // family, IL receiver -> family), else the receiver's static type from the IL (managed-callgraph receiverTypes; the caller's own family for
 // ldarg.0), else the caller's family for a call between two methods on its base chain [inferred]; a virtual call with a
 // family enters only that family's overrides (familyTargets), one without every override.
-export function closure(roots: number[], ownType?: string, ovHops = 0, self = ownType, receiver?: (caller: number, decl: number, fam: string | undefined, rt: Recv | undefined) => string | undefined): Clo {
+export function closure(roots: number[], ownType?: string, ovHops = 0, self = ownType, receiver?: (caller: number, decl: number, fam: string | undefined, rt: Recv | undefined) => string | undefined, edges?: Edges): Clo {
   const dist = new Map<number, number>(); const icsHit = new Map<string, number>(); const tags = new Map<string, string>(); const own = new Set<string>();
   const parent = new Map<number, number>(); const at = new Map<string, number>(); const ovEdge = new Set<number>(); const mod = new Set<string>();
   const seen = new Set<string>(); const fam0 = ovHops && receiver ? self : undefined;
@@ -79,6 +82,10 @@ export function closure(roots: number[], ownType?: string, ovHops = 0, self = ow
           const ft = tf ? familyTargets(t, tf) : undefined;
           const v = ft ? { ea: ft, mod: [] } : virtualTargets(t); ts.push(...v.ea); v.mod.forEach((x) => mod.add(x));
         }
+        if (edges && (kind === 'virt' || kind === 'iface' || kind === 'cv')) {
+          const e = edges.get(`${n}|${t}`) ?? { d, kind, ts: new Set<number>() };
+          e.d = Math.min(e.d, d); ts.forEach((u) => e.ts.add(u)); edges.set(`${n}|${t}`, e);
+        }
         for (const u of ts) {
           if (CUT.some((c) => ix.methods[u].k.startsWith(c)) || d >= DEPTH) continue;
           const key = `${u}|${tf}`;
@@ -92,7 +99,7 @@ export function closure(roots: number[], ownType?: string, ovHops = 0, self = ow
   }
   const short = (i: number) => ix.methods[i].k.replace(/\(.*$/s, '').replace(/^.*[.+]([^.+]+::)/, '$1');
   const path = (key: string) => { let n = at.get(key); let p = ''; while (n !== undefined) { const pn = parent.get(n); p = (pn === undefined ? '' : ovEdge.has(n) ? ' => ' : ' > ') + short(n) + p; n = pn; } return p; };
-  return { size: dist.size, ics: icsHit, tags, own, path, mod };
+  return { size: dist.size, ids: [...dist.keys()], ics: icsHit, tags, own, path, mod };
 }
 
 // docs/121 classes for an IC outside the snapshot set, from its docs/62 row [inferred: scan verdicts, not hand-read].

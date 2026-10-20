@@ -20,12 +20,14 @@ namespace Ts3Agent
             Marshal.Copy(r, repl, 0, kMethodHeader);
             Marshal.Copy(repl, 0, o, kNameOffset);
             Marshal.Copy(repl, kNameOffset + 4, new IntPtr(o.ToInt32() + kNameOffset + 4), kMethodHeader - kNameOffset - 4);
+            AppDomain.CurrentDomain.SetData("ts3fixes.autshadow.resweep", true);  // docs/128 G-M4: ts3fixes re-runs its L3 sweep
             return saved;
         }
 
         static void RestoreMethod(MethodBase original, byte[] saved)
         {
             Marshal.Copy(saved, 0, original.MethodHandle.Value, kMethodHeader);
+            AppDomain.CurrentDomain.SetData("ts3fixes.autshadow.resweep", true);
         }
 
         public class PtVirt
@@ -133,12 +135,12 @@ namespace Ts3Agent
             int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[122];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask", "doormirror", "autshadow", "autshadowverify" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask", "doormirror", "autshadow", "autshadowverify", "autledger" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
                 bool on;
-                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy" && n != "fastreftable" && n != "cachedreflection" && n != "motivebar" && n != "buffgrid" && n != "namecache" && n != "detailprio" && n != "detailprioverify" && n != "hoursmemo" && n != "hoursmemoverify" && n != "caneearly" && n != "tooltipthrottle" && n != "safespotreuse" && n != "safespotreuseverify" && n != "wildflowerprobe" && n != "wildflowertask" && n != "doormirror" && n != "autshadow" && n != "autshadowverify"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
+                r[n] = sw.TryGetValue(n, out on) ? on : n != "savecleanup" && n != "casgrid" && n != "casmemo" && n != "spatialcache" && n != "routablecache" && n != "stuckcheckbusy" && n != "fastreftable" && n != "cachedreflection" && n != "motivebar" && n != "buffgrid" && n != "namecache" && n != "detailprio" && n != "detailprioverify" && n != "hoursmemo" && n != "hoursmemoverify" && n != "caneearly" && n != "tooltipthrottle" && n != "safespotreuse" && n != "safespotreuseverify" && n != "wildflowerprobe" && n != "wildflowertask" && n != "doormirror" && n != "autshadow" && n != "autshadowverify" && n != "autledger"; // unset = the mod's tuning (all on by default except savecleanup, the CAS grid and the spatial cache)
             }
             r["gohome_runs"] = c[0]; r["gohome_shortcuts"] = c[1]; r["gohome_no_spot"] = c[2]; r["gohome_loop_guard"] = c[3];
             r["rabbithole_calls"] = c[4]; r["rabbithole_shortcuts"] = c[5]; r["rabbithole_no_spot"] = c[6];
@@ -180,6 +182,7 @@ namespace Ts3Agent
             if (c.Length > 98) { r["wildflower_fires"] = c[93]; r["wildflower_tries"] = c[94]; r["wildflower_placed"] = c[95]; r["wildflower_failed"] = c[96]; r["wildflower_maxms"] = c[97]; r["wildflower_saveaborts"] = c[98]; } // spring wildflower drain (docs/110): fires that took a lot, tries, placed, failed, longest fire/slice ms, save aborts
             if (c.Length > 105) { r["doormirror_imports"] = c[102]; r["doormirror_invalidations"] = c[103]; r["doormirror_builds"] = c[104]; r["doormirror_refused"] = c[105]; } // P3 door mirror (DoorMirror.cs, docs/105 §10.5): CommonDoor.ImportContent postfixes, lot invalidations, lot tables built, builds refused (a door not readable)
             if (c.Length > 121) { r["autshadow_a0"] = c[106]; r["autshadow_a1"] = c[107]; r["autshadow_a2"] = c[108]; r["autshadow_a3"] = c[109]; r["autshadow_a4"] = c[110]; r["autshadow_a5"] = c[111]; r["autshadow_l_pairs"] = c[112]; r["autshadow_l_equal"] = c[113]; r["autshadow_l_testagree"] = c[114]; r["autshadow_l_top1agree"] = c[115]; r["autshadow_skips"] = c[116]; r["autshadow_warmin"] = c[117]; r["autshadow_requests"] = c[118]; r["autshadow_busy"] = c[119]; r["autshadow_guardskips"] = c[120]; r["autshadow_exceptions"] = c[121]; } // [AutShadow] pilot (AutShadow.cs, docs/122 §5): Mode R classes, Mode W L report, request and skip counts
+            if (c.Length > 126) { r["autshadow_sf_skips"] = c[122]; r["autshadow_gm4_methods"] = c[123]; r["autshadow_gm4_us"] = c[124]; r["autshadow_gm4_foreign"] = c[125]; r["autshadow_gm5_types"] = c[126]; }
             r["autshadow_reasons"] = d.GetData("ts3fixes.autshadow.reasons"); // A4 aborts per native reason index (row, pos, memo, rng, ... other)
             r["wildflower_log"] = d.GetData("ts3fixes.wildflower"); // one line per fire with wildflowerprobe or wildflowertask on
             r["recent"] = d.GetData("ts3fixes.recent");

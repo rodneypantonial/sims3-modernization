@@ -42,7 +42,37 @@ static AsU64 __cdecl AfLotLoc(float x, float, float z, DWORD* out, DWORD room) {
 struct AsFakeStr { DWORD vt, sync; LONG len; wchar_t c[16]; };
 // like 0x741230: the out is written only when the option exists (odd length here)
 static char __cdecl AfOption(const AsFakeStr* s, DWORD* out) { if (s->len & 1) *out = (DWORD)s->len * 3 + s->c[0]; return (char)(s->len & 1); }
-static double __cdecl AfRand() { return 0.25; }
+// fake MT (stands for 0x4FA990 / 0x4FAA70: same this-relative thiscall contract, a simpler generator)
+static void __fastcall AfMtInit(void* mt, void*, DWORD seed) {
+    DWORD* w = (DWORD*)mt;
+    w[0] = seed | 1, w[0x270] = (DWORD)(uintptr_t)mt, w[0x271] = 0x270;
+}
+static double __fastcall AfMtNext(void* mt, void*) {
+    DWORD* w = (DWORD*)mt;
+    w[0] = w[0] * 1664525u + 1013904223u;
+    return (w[0] >> 8) / 16777216.0;
+}
+static u8 g_afDet;
+static int g_afRandMt;  // T5: the fake body draws from the host MT as the game's does
+static double __cdecl AfRand() { return g_afRandMt ? AfMtNext(*g_asHostPtr + 0xC30, NULL) : 0.25; }
+// docs/125: slot position (handle, slot hash, age/gender/species, exit) and Query_GetObjects(Type), no change events
+static float g_afSlotBias;
+static float* __cdecl AfSlotPos(float* ret, DWORD lo, DWORD hi, DWORD slot, DWORD ags, DWORD exitSlot) {
+    AfWorld(AfFind(lo, hi), ret);
+    ret[1] += (float)(slot & 15) + (float)ags * 0.5f + g_afSlotBias + (exitSlot ? 100.0f : 0.0f);
+    return ret;
+}
+static DWORD* __cdecl AfQuery(DWORD type) {  // type 9: a world-wide type, 300 objects (over the keep cap)
+    const DWORD n = type == 9 ? 300 : 0;
+    if (g_afArenaAt + 4 + 64 + n > (1 << 16)) g_afArenaAt = 0;
+    DWORD* a = g_afArena + g_afArenaAt;
+    DWORD m = 0;
+    if (n) for (; m < n; m++) a[4 + m] = 0x900 + m;
+    else for (int i = 1; i <= 64; i++) if (g_afo[i].hidden == (type & 1)) a[4 + m++] = i;
+    a[0] = 0xB0000 + type, a[1] = 0, a[2] = m, a[3] = 0;
+    g_afArenaAt += 4 + m;
+    return a;
+}
 static float __cdecl AfTerrain(float x, float) { return x + 0.5f; }  // unlisted 'f'
 static float* __cdecl AfCamPos(float* ret) { ret[0] = ret[1] = ret[2] = 9; return ret; }  // unlisted 's'
 static DWORD __cdecl AfUnlisted(DWORD a) { return a + 1; }  // unlisted int
@@ -65,9 +95,13 @@ static void* g_asFakeTab[] = {
     (void*)AfUnlisted, (void*)"ScriptCore.Fake::Fake_UnlistedImpl",
     (void*)AfMoney, (void*)"ScriptCore.EAText::EAText_GetMoneyString",
     (void*)0x12345678, (void*)"ScriptCore.Fake::Fake_NotCode",  // fn outside .text: not a table entry
+    (void*)AfSlotPos, (void*)"ScriptCore.Slots::Slots_GetPositionOfSlotImpl",
+    (void*)AfQuery, (void*)"ScriptCore.Queries::Query_GetObjects",
     NULL, NULL};
 enum { AF_POS, AF_PARENT, AF_HIDDEN, AF_TOMB, AF_SUNRISE, AF_SEA, AF_COUNT, AF_ONLOT, AF_LOTLOC, AF_OPTION, AF_RAND,
-       AF_TERRAIN, AF_CAMPOS, AF_UNLISTED, AF_MONEY };
+       AF_TERRAIN, AF_CAMPOS, AF_UNLISTED, AF_MONEY, AF_NOTCODE, AF_SLOTPOS, AF_QUERY };
+typedef float*(__cdecl* AfSlotPosFn)(float*, DWORD, DWORD, DWORD, DWORD, DWORD);
+typedef DWORD*(__cdecl* AfQueryFn)(DWORD);
 static void* AfSlot(int i) { return g_asFakeTab[i * 2]; }
 
 static DWORD g_afNewArena[1 << 14];
@@ -185,6 +219,14 @@ static DWORD WINAPI AfWorker(void*) {
     AsResetAbort();
     // a-stub: the shared empty string
     assert(((void*(__cdecl*)(DWORD, DWORD))AfSlot(AF_MONEY))(1, 0) == g_asEmptyStr);
+    // docs/125: slot position and Query_GetObjects are learned keys: the first call misses (struct untouched, null array)
+    float sp[3] = {3, 3, 3};
+    assert(((AfSlotPosFn)AfSlot(AF_SLOTPOS))(sp, 3, 5, 2, 1, 0) == sp && sp[0] == 3 && AsAborted() == AS_AB_SLOTPOS);
+    AsResetAbort();
+    assert(!((AfQueryFn)AfSlot(AF_QUERY))(1) && AsAborted() == AS_AB_QUERY);
+    AsResetAbort();
+    assert(!((AfQueryFn)AfSlot(AF_QUERY))(9) && AsAborted() == AS_AB_QUERY);
+    AsResetAbort();
     // T4: F2 at the fake ParseFormatSpecifier: abort fmt, exception out, body not run
     void* exc = NULL;
     ((void(__cdecl*)(DWORD, void**))g_afFmtFn)(0, &exc);
@@ -199,6 +241,22 @@ static DWORD WINAPI AfWorker(void*) {
     return 0;
 }
 
+// docs/125: learned slot and query keys answer as the body does at the cut; a world-wide type over the cap aborts
+static DWORD WINAPI AfWorker2(void*) {
+    g_asWorkerTid = GetCurrentThreadId();
+    AsWorkerBegin();
+    float sp[3] = {0, 0, 0}, want[3];
+    assert(((AfSlotPosFn)AfSlot(AF_SLOTPOS))(sp, 3, 5, 2, 1, 0) == sp && !memcmp(sp, AfSlotPos(want, 3, 5, 2, 1, 0), 12));
+    const DWORD* q = ((AfQueryFn)AfSlot(AF_QUERY))(1);
+    const DWORD* f = AfQuery(1);
+    assert(q && q != f && q[0] == f[0] && q[2] == f[2] && f[2] > 0 && !memcmp(q + 4, f + 4, f[2] * 4));
+    assert(AsAborted() == -1);
+    assert(!((AfQueryFn)AfSlot(AF_QUERY))(9) && AsAborted() == AS_AB_QUERY);
+    AsResetAbort();
+    AsWorkerEnd();
+    return 0;
+}
+
 // ---- T5 (part 2, docs/122 §14): request -> cut -> reference (RNG restored) -> worker -> finish on the M5 worker of
 // TestMonoThreadM5 (its fakes: GC thread table, domain, tracking flag), plus overrun/stop, epoch drop, Mode 0, simstale,
 // the rooted ranges, the IC registration and the JSONL log. Methods are fake ids handled by AfT5Invoke.
@@ -207,6 +265,9 @@ static volatile LONG g_t5Block, g_t5WorkRuns, g_t5WorkStale, g_t5Finish, g_t5Las
 static int g_t5Ics, g_t5Roots;
 static u8 g_t5Host[0x1800];
 static u8* g_t5HostPtr = g_t5Host;
+static double g_t5R[4], g_t5W[3];  // docs/125: draws per unit in the reference and on the worker
+static volatile LONG g_t5WNoUnit;
+static double AfT5Draw() { return ((double(__cdecl*)())AfSlot(AF_RAND))(); }
 static void __cdecl AfT5AddIc(const char* name, const void*) { g_t5Ics += !strncmp(name, "Ts3Fixes.AutShadowNative::", 26); }
 static void __cdecl AfT5AddRoots(void* lo, void* hi) { g_t5Roots++; assert((u8*)hi - (u8*)lo >= (int)sizeof(DWORD) * AS_POOL); }
 static void* __cdecl AfT5Malloc(size_t n) { return calloc(1, n); }
@@ -226,6 +287,25 @@ static void* __cdecl AfT5Invoke(void* method, void*, void**, void** exc) {
                 assert(!AsIcIsWorker());
             }
             ((float*(__cdecl*)(float*, DWORD, DWORD))AfSlot(AF_POS))(pos, 5, 5);
+            if (g_afRandMt && (uintptr_t)method == 2) {  // units 3 then 1; unit 1 draws once more (a tooltip-only draw)
+                AsIcRngUnit(3);
+                AsIcRngPause(1), AfT5Draw(), AsIcRngPause(0);  // addendum §4.1: a hooked call's draw before the unit's first
+                g_t5R[0] = AfT5Draw(), g_t5R[1] = AfT5Draw();
+                AsIcRngUnit(1);
+                g_t5R[2] = AfT5Draw();
+                AsIcRngPause(1), AsIcRngPause(1), AfT5Draw(), AsIcRngPause(0), AfT5Draw(), AsIcRngPause(0);  // nested, mid-unit
+                g_t5R[3] = AfT5Draw();
+            } else if (g_afRandMt) {  // worker: a draw outside any unit aborts; then units in the other order
+                AsIcResetAbort();
+                AfT5Draw();
+                if (AsIcAborted() == AS_AB_RNG) InterlockedIncrement(&g_t5WNoUnit);
+                AsIcResetAbort();
+                AsIcRngUnit(1);
+                g_t5W[2] = AfT5Draw();
+                AsIcRngUnit(3);
+                g_t5W[0] = AfT5Draw(), g_t5W[1] = AfT5Draw();
+                assert(AsIcAborted() == -1);
+            }
             if ((uintptr_t)method == 3) {
                 AsIcResetAbort();
                 float p7[3];
@@ -249,11 +329,12 @@ static void TestAutShadowRun() {
     Ts3nAutShadow& k = ts3native_autshadow;
     Ts3nMtProbe& m = ts3native_mtprobe;
     g_asAddIc = AfT5AddIc, g_asAddRoots = AfT5AddRoots, g_asGcMalloc = AfT5Malloc, g_asHostPtr = &g_t5HostPtr;
+    g_asMtInit = AfMtInit, g_asMtNext = AfMtNext, g_asDetFlag = &g_afDet;
     AsInstallRun(NULL, true);
     assert(g_mtOnEnter == AsSimEnter && g_mtOnLeave == AsSimLeave && g_mtJobHook == AsJobHook && g_asMode == 0);
     // ICs register at the first Simulate entry; Begin refuses until the methods are set
     AsSimEnter();
-    assert(g_t5Ics == 14 && k.icRegistered == 14 && AsIcVersion() == 2 && AsIcConfig(1) == 4 && AsIcConfig(2) == 20);
+    assert(g_t5Ics == 16 && k.icRegistered == 16 && AsIcVersion() == 4 && AsIcConfig(1) == 4 && AsIcConfig(2) == 20);
     assert(!AsIcBegin());
     AsIcSetMethods((void*)1, (void*)2, (void*)3);
     const DWORD emptyStr[4] = {0x51, 0, 0, 0};
@@ -265,7 +346,7 @@ static void TestAutShadowRun() {
     g_mtInvoke = AfT5Invoke;
     AfT5Request(40);
     AsSimLeave();
-    assert(g_t5Ics == 14 && g_t5Roots == 4 && (k.rooted & 3) == 3 && g_asRefsRooted);
+    assert(g_t5Ics == 16 && g_t5Roots == 4 && (k.rooted & 3) == 3 && g_asRefsRooted);
     assert(k.cutReq == 1 && k.refRuns == 0 && k.noWorker == 1 && g_t5Finish == 1 && g_t5Last == AS_LAST_NOWORKER && g_asRun == AS_RUN_IDLE);
 
     // Mode 1 on the M5 worker
@@ -275,12 +356,35 @@ static void TestAutShadowRun() {
     MtWaitFor(&m.workerState, 2);
     g_asMode = 1;
     assert(AsIcConfig(4) == 1);
+    g_afRandMt = 1;
     AfT5Request(41);
     const u8 rng7 = g_t5Host[0xC30 + 7];
     AsSimLeave();  // cut, reference (sim thread), worker submitted
     assert(k.refRuns == 1 && k.rngDraws == 1 && g_t5Host[0xC30 + 7] == rng7 && k.workRuns == 1 && g_asRun == AS_RUN_WINDOW);
+    assert(g_asOrig[AF_RAND] == (void*)AfRand && !g_asInRef && g_asRngSeedV[g_asPub]);
     MtWaitFor(&g_mtBusy, 0);
     assert(g_t5WorkRuns == 1 && g_t5WorkStale == 1 && !memcmp(g_t5RefPos, g_t5WorkPos, 12) && g_asHeld == -1);
+    // docs/125: per-unit draws equal in the reference and on the worker, in any unit order, with an extra draw in one unit
+    assert(g_t5WNoUnit == 1 && !memcmp(g_t5R, g_t5W, sizeof(g_t5W)) && g_t5R[0] != g_t5R[1] && g_t5R[0] != g_t5R[2]);
+    assert(k.rngPause == 2 && k.rngPauseDraws == 3 && g_asRngPause == 0);
+    AsIcRngPause(1);  // outside the reference: nothing
+    assert(k.rngPause == 2 && g_asRngPause == 0);
+    {  // v4 abort reasons from the managed hooks: H11 rain, null posture list; past the end = other
+        const LONG other = k.abort[AS_AB_OTHER];
+        AsManagedAbort(AS_AB_RAIN);
+        assert(AsAborted() == AS_AB_RAIN && k.abort2[0] == 1);
+        AsResetAbort();
+        AsManagedAbort(AS_AB_POSTURE);
+        AsManagedAbort(AS_AB_N);
+        assert(AsAborted() == AS_AB_POSTURE && k.abort2[1] == 1 && k.abort[AS_AB_OTHER] == other + 1);
+        AsResetAbort();
+    }
+    {
+        AsRet rr = {0, 0, 0};
+        g_asHeld = g_asPub, g_asRngUnitW = 0, g_asRngLiveW = false, g_afDet = 1;  // `Deterministic` on: 0.5, no MT use
+        assert(AsRngWorker(AF_RAND, &rr) == 1 && rr.f == 0.5 && !g_asRngLiveW);
+        g_asHeld = -1, g_afDet = 0;
+    }
     AsSimEnter();  // window closes, the job had ended: no overrun
     assert(k.overrun == 0 && g_asRun == AS_RUN_WAIT && k.windowUs >= 0);
     AsSimLeave();  // finish
@@ -352,14 +456,124 @@ static void TestAutShadowRun() {
     DWORD* arr = (DWORD*)AsNewArrayGc(0xA0001, 3);
     assert(arr && arr[0] == 0xA0001 && arr[2] == 3 && arr[4] == 0 && arr[6] == 0);
     free(arr);
-    g_mtOnEnter = NULL, g_mtOnLeave = NULL, g_mtJobHook = NULL, g_asMode = -1, g_asWorkerTid = 0;
+    g_mtOnEnter = NULL, g_mtOnLeave = NULL, g_mtJobHook = NULL, g_asMode = -1, g_asWorkerTid = 0, g_afRandMt = 0;
     printf("autshadow run: %ld requests, %ld cuts for them, %ld reference runs (%ld RNG restores), %ld worker runs, %ld overrun, %ld epoch drop\n",
            k.req, k.cutReq, k.refRuns, k.rngDraws, k.workRuns, k.overrun, k.epochDrops);
 }
 
+// Ledger probe (autledger.cpp, docs/51 mono ledger): the four watched ICs on their own fake table, scope by task id,
+// class and frame records, the Simulate tick read, the Sleep probe marks; every answer passes through unchanged.
+static double __cdecl AfLgRand() { return 0.5; }
+static float* __cdecl AfLgSlot(float* ret, DWORD, DWORD, DWORD, DWORD, DWORD) { ret[0] = 1, ret[1] = 2, ret[2] = 3; return ret; }
+static DWORD __cdecl AfLgObjs(DWORD type) { return type + 1; }
+static DWORD __cdecl AfLgRange(DWORD type, float, float, float, float r) { return type + (DWORD)r; }
+static void* g_lgFakeTab[] = {
+    (void*)AfLgRand, (void*)"ScriptCore.Random::Random_NextDoubleImpl",
+    (void*)AfLgSlot, (void*)"ScriptCore.Slots::Slots_GetPositionOfSlotImpl",
+    (void*)AfLgObjs, (void*)"ScriptCore.Queries::Query_GetObjects",
+    (void*)AfLgRange, (void*)"ScriptCore.Queries::Query_GetObjectsInRange",
+    NULL, NULL};
+static DWORD g_lgInfo0[3] = {0, 0, 0x111}, g_lgInfo1[3] = {0, 0, 0x222};
+static DWORD g_lgFrame1[2] = {0, (DWORD)(uintptr_t)g_lgInfo1};
+static DWORD g_lgFrame0[2] = {(DWORD)(uintptr_t)g_lgFrame1, (DWORD)(uintptr_t)g_lgInfo0};
+static DWORD g_lgCtxOk[3] = {0, 0, (DWORD)(uintptr_t)g_lgFrame0}, g_lgCtxBad[3] = {0, 0, 0x10};
+static const DWORD* g_lgCtxNow = g_lgCtxOk;
+static const u8* __cdecl AfLgCtx() { return (const u8*)g_lgCtxNow; }
+
+static void TestAutLedger() {
+    Ts3nAutShadow& k = ts3native_autshadow;
+    assert(offsetof(Ts3nAutShadow, lgOn) == 0x13C && offsetof(Ts3nAutShadow, lgIn) == 0x158 && offsetof(Ts3nAutShadow, lgSleep) == 0x17C &&
+           offsetof(Ts3nAutShadow, lgCls) == 0x1A0 && offsetof(Ts3nAutShadow, lgCall) == 0x260 && offsetof(Ts3nAutShadow, abort2) == 0x760 && offsetof(Ts3nAutShadow, rngPauseDraws) == 0x76C && sizeof(Ts3nAutShadow) == 0x770);  // registry v3, v4
+    assert(AsIcConfig(5) == 0 && AsIcConfig(7) == 0 && AsLgWatchOf("ScriptCore.Queries::Query_GetObjects") < 0);  // Ledger=0: inert
+    g_asLedger = true;
+    const u8* base = (const u8*)GetModuleHandleW(NULL);
+    const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    DWORD textLo = 0, textHi = 0;
+    for (int i = 0; i < nt->FileHeader.NumberOfSections && !textLo; i++)
+        if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) textLo = (DWORD)(uintptr_t)base + sec[i].VirtualAddress, textHi = textLo + sec[i].Misc.VirtualSize;
+    const DWORD imgLo = (DWORD)(uintptr_t)base, imgHi = imgLo + nt->OptionalHeader.SizeOfImage;
+    const int n0 = g_asIcN, nTab = (int)(sizeof(g_lgFakeTab) / sizeof(g_lgFakeTab[0]));
+    AsInstallGuards((DWORD*)g_lgFakeTab, (DWORD*)g_lgFakeTab + nTab, imgLo, imgHi, textLo, textHi, false);
+    assert(g_asIcN == n0 + 4);
+    for (int i = 0; i < 4; i++) {
+        const u8* t = g_asThunks + (n0 + i) * 10;
+        assert(g_asLgWatch[n0 + i] == i + 1 && g_lgFakeTab[i * 2] == (void*)t);
+        assert((DWORD)(uintptr_t)t + 10 + *(const LONG*)(t + 6) == (DWORD)(uintptr_t)AsLedgerEntry);
+    }
+    double(__cdecl* rnd)() = (double(__cdecl*)())g_lgFakeTab[0];
+    float*(__cdecl* slot)(float*, DWORD, DWORD, DWORD, DWORD, DWORD) = (float*(__cdecl*)(float*, DWORD, DWORD, DWORD, DWORD, DWORD))g_lgFakeTab[2];
+    DWORD(__cdecl* objs)(DWORD) = (DWORD(__cdecl*)(DWORD))g_lgFakeTab[4];
+    DWORD(__cdecl* range)(DWORD, float, float, float, float) = (DWORD(__cdecl*)(DWORD, float, float, float, float))g_lgFakeTab[6];
+    const u8*(__cdecl* ctx0)() = g_lgCtx;
+    g_lgCtx = AfLgCtx;
+    AsU64& task = *(AsU64*)(g_t5Host + 0xBD0);
+    task = 7;
+    const int top = AsFpTop();
+    // outside every scope: counted, answered by the body
+    assert(rnd() == 0.5 && k.lgOut[0] == 1 && k.lgIn[0] == 0 && AsFpTop() == top);
+    assert(AsIcConfig(7) == 1 && AsIcConfig(5) == 1 && k.lgScopes == 1 && (k.lgOn & 4));
+    assert(rnd() == 0.5 && k.lgIn[0] == 1 && k.lgCall[0][0] == 0 && k.lgCall[0][1] == 1 && k.lgCall[0][2] == 0x111 &&
+           k.lgCall[0][3] == 0x222 && k.lgCall[0][4] == 0 && (k.lgOn & 8) && (k.lgOn & 16));
+    float out[3] = {0, 0, 0};
+    assert(slot(out, 9, 5, 1, 2, 0) == out && out[0] == 1 && out[2] == 3);
+    slot(out, 10, 5, 1, 2, 0);
+    slot(out, 9, 5, 1, 2, 0);
+    assert(k.lgIn[1] == 3 && k.lgSlotIds == 2);
+    static DWORD klass[16];
+    static DWORD type[2] = {(DWORD)(uintptr_t)klass, 0x12};
+    static DWORD refl[3] = {0x51, 0, (DWORD)(uintptr_t)type};
+    const DWORD r = (DWORD)(uintptr_t)refl;
+    assert(objs(r) == r + 1 && objs(r) == r + 1 && range(r, 1, 2, 3, 4) == r + 4);
+    assert(k.lgCls[0][0] == 2 && (DWORD)k.lgCls[0][1] == (DWORD)(uintptr_t)klass && k.lgCls[0][2] == 2);
+    assert(k.lgCls[1][0] == 3 && k.lgCls[1][2] == 1 && k.lgIn[2] == 2 && k.lgIn[3] == 1);
+    assert(k.lgCall[1][0] == 1 && k.lgCall[1][1] == 3 && k.lgCall[2][0] == 2 && k.lgCall[3][0] == 3);
+    // another task runs while B13 sleeps: outside
+    task = 8;
+    rnd();
+    assert(k.lgOut[0] == 2 && k.lgIn[0] == 1);
+    // nested open and close on the scope's task
+    task = 7;
+    assert(AsIcConfig(5) == 1 && k.lgScopes == 1);
+    AsIcConfig(6);
+    rnd();
+    assert(k.lgIn[0] == 2 && k.lgCall[0][1] == 2);
+    // a bad frame chain drops the record, never the call
+    g_lgCtxNow = g_lgCtxBad;
+    assert(rnd() == 0.5 && k.lgIn[0] == 3 && k.lgDropped == 1);
+    g_lgCtxNow = g_lgCtxOk;
+    AsIcConfig(6);
+    rnd();
+    assert(k.lgOut[0] == 3 && k.lgScopeUs >= 0 && k.lgScopeFull == 0);
+    AsIcConfig(6);
+    assert(k.lgScopeFull == 1);
+    // Simulate ticks: the EA memory tracking word
+    volatile LONG track = 0;
+    volatile LONG* track0 = g_lgTrack;
+    g_lgTrack = &track;
+    AsSimEnter();
+    track = 3;
+    AsLgTick();
+    track = 0;
+    AsLgTick();
+    assert(k.lgTicks == 3 && k.lgTrackTicks == 1 && k.lgTrackLast == 3 && (k.lgOn & 2) && AsIcConfig(8) == 3);
+    // Sleep probe: ticks between two marks of a series
+    assert(AsIcConfig(9) == -1);
+    AsLgTick();
+    assert(AsIcConfig(9) == 1 && AsIcConfig(9) == 0);
+    assert(AsIcConfig(10) == -1);
+    AsLgTick(), AsLgTick(), AsLgTick(), AsLgTick();
+    assert(AsIcConfig(10) == 4);
+    assert(k.lgSleep[0] == 1 && k.lgSleep[1] == 1 && k.lgSleep[2] == 0 && k.lgSleep[7] == 1);
+    g_lgTrack = track0, g_lgCtx = ctx0, g_asLedger = false;
+    task = 0;
+    printf("autshadow ledger: in %ld/%ld/%ld/%ld, out %ld, dropped %ld, ticks %ld, sleep(0) %ld/%ld, sleep(1) 3+ %ld\n", k.lgIn[0],
+           k.lgIn[1], k.lgIn[2], k.lgIn[3], k.lgOut[0], k.lgDropped, k.lgTicks, k.lgSleep[0], k.lgSleep[1], k.lgSleep[7]);
+}
+
 static void TestAutShadow() {
     Ts3nAutShadow& k = ts3native_autshadow;
-    assert(offsetof(Ts3nAutShadow, abort) == 0x7C && offsetof(Ts3nAutShadow, mode) == 0xCC && sizeof(Ts3nAutShadow) == 0x13C);  // registry v1, v2
+    assert(offsetof(Ts3nAutShadow, abort) == 0x7C && offsetof(Ts3nAutShadow, mode) == 0xCC && offsetof(Ts3nAutShadow, lgOn) == 0x13C);  // registry v1, v2 (v3: TestAutLedger)
     assert(AsKindOfName("ScriptCore.World::World_GetSunriseTime") == 'f' && AsKindOfName("ScriptCore.Random::Random_NextDoubleImpl") == 'd' &&
            AsKindOfName("ScriptCore.Objects::Objects_GetPosition") == 's' && AsKindOfName("ScriptCore.Fake::Fake_UnlistedImpl") == 0);
     for (int i = 1; i < (int)(sizeof(kAsKindNames) / sizeof(kAsKindNames[0])); i++) assert(strcmp(kAsKindNames[i - 1], kAsKindNames[i]) < 0);
@@ -373,8 +587,8 @@ static void TestAutShadow() {
         if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) textLo = (DWORD)(uintptr_t)base + sec[i].VirtualAddress, textHi = textLo + sec[i].Misc.VirtualSize;
     const DWORD imgLo = (DWORD)(uintptr_t)base, imgHi = imgLo + nt->OptionalHeader.SizeOfImage;
     const int nTab = (int)(sizeof(g_asFakeTab) / sizeof(g_asFakeTab[0]));
-    assert(AsInstallGuards((DWORD*)g_asFakeTab, (DWORD*)g_asFakeTab + nTab, imgLo, imgHi, textLo, textHi, true) == 15);
-    assert(k.descIcs == 12 && g_asIcParent == 1 && (k.ready & 1) && g_asFakeTab[30] == (void*)0x12345678);
+    assert(AsInstallGuards((DWORD*)g_asFakeTab, (DWORD*)g_asFakeTab + nTab, imgLo, imgHi, textLo, textHi, true) == 17);
+    assert(k.descIcs == 14 && g_asIcParent == 1 && g_asIcRng == AF_RAND && (k.ready & 1) && g_asFakeTab[30] == (void*)0x12345678);
     assert(g_asOrig[AF_POS] == (void*)AfPos && g_asKind[AF_SUNRISE] == 'f' && g_asKind[AF_CAMPOS] == 's');
     g_afFmtFn = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     memcpy(g_afFmtFn, g_afFmt, 16);
@@ -432,9 +646,21 @@ static void TestAutShadow() {
     // the worker's misses come back as learned keys at the next cut, then answer
     const LONG learned0 = k.learned;
     AsCut();
-    assert(k.learned == learned0 + 2);  // row 5:40 (Objects_GetPosition) and list (3, lot 2, flags 1)
+    assert(k.learned == learned0 + 5);  // row 5:40 (Objects_GetPosition), list (3, lot 2, flags 1), slot, query 1 and 9
     const DWORD rk[2] = {40, 5};
     assert(AsFind(g_as->v[g_asPub], AF_POS, rk, 2) >= 0 && AsFind(g_as->v[g_asPub], AF_PARENT, rk, 2) >= 0);  // + its parent entry
+    // docs/125: the slot and query keys answer from this cut on and follow changes that fire no event (AO_CUT)
+    for (int round = 0; round < 2; round++) {
+        th = CreateThread(NULL, 0, AfWorker2, NULL, 0, NULL);
+        assert(th && WaitForSingleObject(th, 10000) == WAIT_OBJECT_0);
+        CloseHandle(th);
+        g_asWorkerTid = 0;
+        g_afSlotBias += 2.0f;  // no event
+        g_afo[2].hidden ^= 1;
+        AsObjEvDirty(&g_afo[2], NULL);
+        AsCut();
+        assert(k.auditMis[0] == 0);
+    }
 
     // T2: incremental snapshot vs full rebuild on random event sequences (invariant S-A), seeds 1-4 x 3,000 steps
     for (DWORD seed = 1; seed <= 4; seed++) {
@@ -504,4 +730,5 @@ static void TestAutShadow() {
     printf("autshadow: %ld IC slots, %ld cuts (max %ld us), %ld entries, %ld audits, %ld aborts\n", k.guardSlots, k.cuts,
            k.cutMaxUs, k.entries, k.auditN, k.abortTotal);
     TestAutShadowRun();
+    TestAutLedger();
 }

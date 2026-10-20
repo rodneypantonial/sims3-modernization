@@ -9,7 +9,7 @@ Shared numbers that two PRs must never both take. Test tools, logs and results f
 3. Two PRs that reserved the same number: the first merged keeps it, the other rebases onto the next free one.
 4. Gaps stay gaps (slots 19-20): old logs and results already read them as zero.
 
-## ts3fixes counters (`AppDomain` data `ts3fixes.counters`, `int[122]`; `int[106]` before [AutShadow], `int[99]` before the door mirror, `int[80]` before the docs/74 hot-spot fixes)
+## ts3fixes counters (`AppDomain` data `ts3fixes.counters`, `int[127]`; `int[122]` before the [AutShadow] mod guards, `int[106]` before [AutShadow], `int[99]` before the door mirror, `int[80]` before the docs/74 hot-spot fixes)
 
 Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src/Fixes.cs` (an older note in PLAN.md "Resume here" puts the async route counters at 52-54; they are 56-58). The test agent reads them in `mods/ts3agent/src/plugin/Handlers/PatchHandlers.cs` (`patches` command).
 
@@ -56,7 +56,8 @@ Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src
 | 99-101 | `ScriptHotSpots.cs`, `invcache` (+ `invcacheverify`) | reserved (docs/115): event 59 dispatches served from the cached handler list, list rebuilds (new handler reference), verify mismatches |
 | 102-105 | `DoorMirror.cs`, `doormirror` | built 2026-10-18 (docs/105 §10.5): `CommonDoor.ImportContent` postfixes run, lot invalidations, lot door tables built, builds refused (agent `doormirror_imports` .. `doormirror_refused`) |
 | 106-121 | `AutShadow.cs`, `autshadow` (+ `autshadowverify`) | built 2026-10-20 (docs/122 §14, offline only): 106-111 Mode R classes A0-A5, 112-115 Mode W report (pairs both scored, equal score, Test agree, top-1 agree), 116 skipped pairs (not allow-listed or mod guard), 117 warm-in reference runs, 118 requests posted, 119 Begin busy, 120 mod-guard skips, 121 managed exceptions in the driver; A4 by reason in AppDomain data `ts3fixes.autshadow.reasons` (`int[20]`, native reason order) |
-| **122+** | next free | reserve here |
+| 122-126 | `AutShadow.cs`, `autshadow` | built 2026-10-20 (docs/128 §5.1 mod guards, offline only): 122 scoring-function skips (G-M2, pair code `sf`), 123 closure methods L3-checked by the last G-M4 sweep, 124 that sweep's time (us), 125 foreign swaps it found, 126 mod types overriding a closure virtual (G-M5); agent `autshadow_sf_skips`, `autshadow_gm4_methods`, `autshadow_gm4_us`, `autshadow_gm4_foreign`, `autshadow_gm5_types` |
+| **127+** | next free | reserve here |
 
 Adding slots: raise the array size in **both** `Fixes.cs` (`PatchCounters`, `new int[122]`) and `PatchHandlers.cs` (`?? new int[122]`), extend the `Fixes.cs` comment block, and read the new slots in `PatchHandlers.cs` behind `if (c.Length > N)` so an older mod build still answers.
 
@@ -152,7 +153,9 @@ Separate append-only struct of `LONG` for the second Mono thread (M5 build, docs
 |---|---|---|---|
 | v1 | M5 branch (version set at merge) | 0x00-0x68 | `version`, `p3Ready` (bit 0 lock detours, 1 `0xE4B3F0` replaced, 2 `0xE4EC40` ret, 3 `GC_add_roots` left out), `p3Sites`, `locking` (gate, +0x0C), `lockedCalls`, `lockedWorker`, `lockWaits`, `lockWaitUs`, `lockMaxWaitUs`, `lockMaxDepth`, `lockOverflow` (tripwire), `finRuns`, `p4Ready` (+0x30; bits entry, exit A, exit B, `0xE534E0`), `p4Slots` (frame \| array << 8), `workerState` (+0x38), `workerTid`, `workerStarts`, `workerJobs`, `workerRunUs`, `workerMaxRunUs`, `workerExceptions`, `workerTrackSkips`, `workerStopFails`, `workerCollects`, `workerCtxSet` (tripwire), `seq` (+0x64), `result` |
 | v2 | M5 G-A2 branch (version set at merge) | 0x6C-0x80 | `arenaRelNonEmpty`, `arenaDropped` (arena pool fix, `ArenaFix=1`), `n2mReady`, `n2mWorker`, `n2mMaxDepth`, `n2mOverflow` (tripwire) (F1 private call records, `N2mPrivate=1`; docs/120 §9) |
-| **v3** | next | 0x84- | reserve here (the MtProbe job and Verify fields of docs/30 §7: `mtMismatches`, stress list) |
+| v3 | 0.36.6 (P3 OOM branch, built as 0.36.4) | 0x84 | `lockStale` (locked P3 hook frames left by `longjmp`/unwind, dropped at the thread's next hooked enter/exit and their lock entry released; docs/120 §10, I-120-8) |
+| v4 | 0.36.6 (P3 OOM branch, built as 0.36.5) | 0x88 | `lockOomReleased` (P3 shadow entries and lock recursions the out-of-memory thread released in the `GC_oom_fn` wrapper before calling `0xE78610`; taken back if it returns without `longjmp`; `p3Ready` bit 5 = slot wrapped; docs/120 §10.5) |
+| **v5** | next | 0x8C- | reserve here (the MtProbe job and Verify fields of docs/30 §7: `mtMismatches`, stress list) |
 
 ## ts3native `ts3native_autshadow` export (`Ts3nAutShadow` in `native/ts3native/autshadow.cpp`)
 
@@ -162,4 +165,6 @@ Separate append-only struct of `LONG` for the autonomy shadow pilot (docs/122 §
 |---|---|---|---|
 | v1 | `[AutShadow]` part 1 branch (version set at merge) | 0x00-0xC8 | `version`, `ready` (bit 0 guards written, 1 F2 detour, 2 change tracking from routesnap's `World_FireEvent` detour, 3 object-event nodes), `guardSlots`, `guardChained` (slots that held routesnap's stub), `guardSkipped`, `descIcs`, `guardSim` (+0x18, copied at each cut), `guardWorker`, `workerHits`, `workerMisses`, `cuts` (+0x28), `cutUs`, `cutMaxUs`, `entries`, `refreshed`, `learned`, `learnDropped`, `epochs` (+0x44), `objEvents`, `dirtyOverflow`, `listGen`, `memoRecords`, `auditN` (+0x58), `auditMis[4]` (S1-S4), `auditSkipped` (+0x6C), `snapBytes`, `full`, `abortTotal` (+0x78), `abort[20]` (+0x7C) |
 | v2 | `[AutShadow]` part 2 branch (version set at merge) | 0xCC-0x138 | `mode` (+0xCC, -1 = no cut: `[MonoThread]` slot stub missing), `req`, `busy`, `cutReq`, `refRuns` (+0xDC), `refUs`, `refMaxUs`, `refExc`, `rngDraws` (+0xEC, reference runs that moved the script RNG; restored), `workRuns`, `workUs`, `workMaxUs`, `workExc` (+0xFC), `workRefused`, `noWorker`, `windowUs` (+0x108), `windowMaxUs`, `overrun`, `epochDrops` (+0x114), `finishRuns`, `finishExc`, `stale` (+0x120, entries published stale at the last cut), `rooted` (bit 0 ref column + pools rooted, 1 array allocator, 2 empty string, 3 F2 exception), `icRegistered` (+0x128), `logLines`, `waitTicks`, `unguarded` (+0x134, reserved, not wired), `workerClassInit` (+0x138, reserved, not wired) |
-| **v3** | next | 0x13C- | reserve here |
+| v3 | mono ledger probe branch (version set at merge; `autledger.cpp`, `[AutShadow] Ledger=1`, docs/51 I-121-5/7/9/12, I-120-4, I-119-44) | 0x13C-0x75F | `lgOn` (+0x13C; bit 0 Ledger=1, 1 Simulate tick counted, 2 scope opened, 3 frame chain read, 4 task id read), `lgTicks`, `lgTrackTicks` ([0x11DC18C] != 0), `lgTrackLast`, `lgScopes` (+0x14C), `lgScopeUs`, `lgScopeFull`, `lgIn[4]` (+0x158; RNG, slot position, `Query_GetObjects`, `Query_GetObjectsInRange`), `lgOut[4]` (+0x168), `lgSlotIds` (+0x178), `lgSleep[8]` (+0x17C; Sleep(0) then Sleep(1) resumes 0/1/2/3+ ticks later), `lgDropped` (+0x19C), `lgCls[16][3]` (+0x1A0; watch, MonoClass*, calls), `lgCall[32][10]` (+0x260; watch, calls, 8 MonoMethod*); agent.js `>= 3` as `autshadow.ledger` with names; `mono-ledger-report.ts` |
+| v4 | 0.36.6 (mod guards + docs/125 addendum + H11 branch, built as 0.36.5; docs/128 §5.1; read by agent.js into `abort.rain`, `abort.posture`, `rngPause`, `rngPauseDraws`) | 0x760-0x76F | `abort2[2]` (+0x760; abort reasons 20 `rain` (H11, docs/127 §4), 21 `posture` (unfilled posture list on the worker)), `rngPause` (+0x768, RngPause brackets opened in the reference), `rngPauseDraws` (+0x76C, reference draws inside a bracket) |
+| **v5** | next | 0x770- | reserve here |
