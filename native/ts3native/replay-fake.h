@@ -33,7 +33,22 @@ static DWORD RfRnd(DWORD n) { g_rfSeed = g_rfSeed * 1103515245 + 12345; return (
 static LONG g_rfLive;  // allocations alive
 static const DWORD kRfMagic = 0x4B465246;  // "FRFK" at a[-2]: RfAlloc's block (RpAlloc keeps its size there)
 static DWORD g_rfPad = 1;  // 0: no pad and no draw, so the step stream does not depend on how often the clone allocates
+// steerro-test K8: while set, blocks come from this arena (the live world on pages a check can make no-access); freeing one
+// only clears its magic (the arena goes as a whole)
+static u8* g_rfArena;
+static DWORD g_rfArenaUsed, g_rfArenaSz;
 static void* __cdecl RfAlloc(DWORD n) {
+    if (g_rfArena) {
+        const DWORD at = (g_rfArenaUsed + 16 + (g_rfPad ? RfRnd(16) * 16 : 0) + 15) & ~15u;
+        if (at + n > g_rfArenaSz) { printf("RfAlloc: arena full\n"); abort(); }
+        g_rfArenaUsed = at + n;
+        u8* a = g_rfArena + at;
+        ((void**)a)[-1] = NULL;
+        ((DWORD*)a)[-2] = kRfMagic;
+        memset(a, 0xCD, n);
+        g_rfLive++;
+        return a;
+    }
     u8* raw = (u8*)malloc(n + 16 + 256 + 16);
     const DWORD pad = g_rfPad ? RfRnd(16) * 16 : 0;  // random addresses: the clone's objects never mirror the live ones' spacing
     u8* a = (u8*)(((uintptr_t)raw + 16 + pad + 15) & ~(uintptr_t)15);
@@ -49,7 +64,7 @@ static void __cdecl RfFreeP(void* a) {
     if (!a) return;
     if (((DWORD*)a)[-2] != kRfMagic) { if (!g_rfBadFree++) printf("RfFreeP: %p is not a fake EA block (not freed), from %p\n", a, _ReturnAddress()); return; }
     ((DWORD*)a)[-2] = 0;
-    free(((void**)a)[-1]);
+    if (((void**)a)[-1]) free(((void**)a)[-1]);  // NULL: an arena block
     g_rfLive--;
 }
 
@@ -82,6 +97,20 @@ static DWORD __fastcall RfEnsure(const u8* fp, void*) {  // as 0x80E610: every l
 }
 static RpCls g_rfCls[4];  // [3]: the child class (0x28 bytes, no list, +0xC parent)
 static DWORD __fastcall RfNoop(const u8*, void*) { return 0; }
+static volatile DWORD g_rfFlatId;  // as the bounds slot +0x2C: a unit box, or flat bounds for this id (selftest, 0.35.14)
+static const u8* volatile g_rfFarFp;  // this one footprint object answers bounds outside the unit rect (selftest, 0.35.18)
+static float* __fastcall RfBounds(const u8* fp, void*, float* out, DWORD, float) {
+    const bool flat = g_rfFlatId && *(const DWORD*)(fp + 0x14) == g_rfFlatId;
+    const float o = fp == g_rfFarFp ? 5.f : 0.f;
+    out[0] = o, out[1] = o, out[2] = o + (flat ? 0.f : 1.f), out[3] = o + 1.f;
+    return out;
+}
+// as 0x666010's rect test (0x6660CF..0x6660FC): bounds that miss the Q's rect (the unit rect here) remove no leaf entry
+static bool RfReaches(const u8* f) {
+    const u8* fp = RpP(f + 8);
+    float b[4];
+    return !fp || ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))((void*)fp, NULL, b, f[0x10], 0.f)[0] < 1.5f;
+}
 
 static void RfVtInit() {
     g_rfFmeVt[0] = (DWORD)(uintptr_t)RfFmeDtor;
@@ -96,6 +125,7 @@ static void RfVtInit() {
     g_rfFpVt[3][0] = (DWORD)(uintptr_t)RfLevels1, g_rfFpVt[3][0x70 / 4] = (DWORD)(uintptr_t)RfNoop;  // child class
     g_rfFpVt[3][0x7C / 4] = 0x006262B0;
     g_rfCls[3] = {(DWORD)(uintptr_t)g_rfFpVt[3], 0x28, 0, 1};
+    for (int c = 0; c < 4; c++) g_rfFpVt[c][0x2C / 4] = (DWORD)(uintptr_t)RfBounds;
     memcpy(g_rfFpVt[4], g_rfFpVt[0], sizeof(g_rfFpVt[0]));  // a class the copy does not know
 }
 
@@ -320,7 +350,8 @@ static char __fastcall RfApplyInsert(u8* q, void*, u8* fp, DWORD flag) {
         *(LONG*)(f + 4) = 1;
         *(u8**)(f + 8) = fp, (*(LONG*)(fp + 8))++;
         *(u8**)(f + 0xC) = q;
-        *(DWORD*)(f + 0x10) = l | (flag ? 0x400 : 0);
+        // as W1 0x665E7B: bit 0x200 = leaves inserted (flat bounds insert none in the game; the stand-in keeps its leaf)
+        *(DWORD*)(f + 0x10) = l | (flag ? 0x400 : 0) | (g_rfFlatId && *(DWORD*)(fp + 0x14) == g_rfFlatId ? 0 : 0x200);
         if (!RpIsChild(fp)) *(DWORD*)(fp + 0x34) += 1u << 26;  // the 0x28-byte child class has no +0x34
         RfMapIns(m, lo, hi, f);
         u8 e[12];
@@ -346,7 +377,8 @@ static char __fastcall RfApplyRemove(u8* q, void*, DWORD lo0, DWORD hi0) {
             u8* x = (u8*)(uintptr_t)*at;
             u8* f = RpP(x + 8);
             if (RpD(x) == lo && RpD(x + 4) == hi && RpD(f + 0xC) == (DWORD)(uintptr_t)q) {
-                RfTreeDrop((u8**)(q + 0x24), f);
+                if (RfReaches(f)) RfTreeDrop((u8**)(q + 0x24), f);
+                else (*(LONG*)(f + 4))++;  // shortcut: the kept entries pin their FME (leaked; only the 0.35.18 test reaches it)
                 if (!RpIsChild(RpP(f + 8))) *(DWORD*)(RpP(f + 8) + 0x34) -= 1u << 26;
                 *at = *(DWORD*)(x + 0x10);
                 RfMapNodeFree(m, NULL, x);
@@ -461,10 +493,24 @@ static void RfRemAll(u8* q) {
         RfRem(q, fp, true);
     }
 }
+// LotGraph_Build 0x63CB90 (W4, arg 1 = the lot graph) on a lot a footprint change unbuilt (0x630F70 clears +0x8C): node
+// bytes change (portal list here; rooms in the game), its footprint adds go through W1. 0.35.17: a shell refresh at the cut
+static void RfW4(int lot) {
+    u8* g = g_rf.lots[lot] + 0x10;
+    g[0x8C] = 0;
+    DWORD* s = RfSlot();
+    s[1] = (DWORD)(uintptr_t)g;
+    SnEnter(12, s);
+    DWORD* pv = *(DWORD**)(g + 0x44);
+    if (g_rfMakePortal) { const DWORD t = pv[0]; pv[0] = pv[2], pv[2] = t; }  // real portals: reordered, counts unchanged
+    else pv[2] ^= 0x20;
+    g[0x8C] = 1;
+    for (int i = 0; i < 2; i++) RfIns(RfQOf(lot, RfRnd(4)), g_rf.fps[RfRnd(g_rf.nFps)], 0, true);
+}
 static void RfStep() {
     const int lot = (int)RfRnd(g_rf.nLots);
     u8* q = RfQOf(lot, RfRnd(4));
-    switch (g_rfOp = RfRnd(14), g_rfOpLot = lot, g_rfOp) {
+    switch (g_rfOp = RfRnd(15), g_rfOpLot = lot, g_rfOp) {
         case 0: case 1: case 2: case 3: case 4: RfIns(q, g_rf.fps[RfRnd(g_rf.nFps)], RfRnd(5) == 0, true); break;
         case 5: case 6: case 7: case 8: RfRem(q, g_rf.fps[RfRnd(g_rf.nFps)], true); break;
         case 9: {  // a footprint object replaced: a new footprint with the same id (address reuse is the allocator's)
@@ -511,6 +557,7 @@ static void RfStep() {
             RfRelink();
             break;
         }
+        case 13: RfW4(lot); break;
         default: {  // lazy state no audit reads: a polygon cache invalidated (W6, not recorded)
             u8* fp = g_rf.fps[RfRnd(g_rf.nFps)];
             if (!g_rfGame) (*(u8**)(fp + 0x38))[0x20] = 0;  // game classes would rebuild from live world objects there
@@ -537,7 +584,7 @@ static void RfSetup(DWORD seed, bool game = false) {
     g_spAcq = RfAcq, g_spRel = (SpRelFn)RfRel;
     g_spLot = &kSpLotReplay;
     g_spOn = 1;
-    g_rpOn = 1, g_rpThreaded = false, g_rpAuditEvery = 1, g_rpAuditLots = 0, g_rpLogMis = 4, g_rpHave = false, g_rpNeedEpoch = 0;
+    g_rpOn = 1, g_rpThreaded = false, g_rpAuditEvery = 1, g_rpAuditLots = 0, g_rpLogMis = 4, g_rpHave = false, g_rpNeedEpoch = 0, g_rpBad = 0;
     if (!g_rpRing) g_rpRing = (RpRec*)VirtualAlloc(NULL, kRpRing * sizeof(RpRec), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_rpHead = g_rpTail = g_rpPub = 0;
 }

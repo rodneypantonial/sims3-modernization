@@ -8,6 +8,9 @@
 // --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) switch every --slice minutes: a warm-up slice
 // (on, not counted), then off,on,on,off repeating (ABBA); use minutes = slice x (1 + multiple of 4). Slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
+// --fixes-off a,b,c: switch those ts3fixes patches (--ab names, e.g. gohome,rabbithole,visit) OFF for the whole run while paused, log `fixes off: ... (verified)` after reading them back; previous state restored at the end and on a crash.
+// --fixes-on a,b,c: the same, switched ON (e.g. autshadow: tuning kAutShadow is off, so pilot jobs turn it on here and every other job keeps it off).
+// --until-compares N: P4 shadow runs: every 30 s count the compares in Bin/ts3native-shadow.jsonl (classify() of shadow-compare-report.ts: not M4, not M5) and end the window early at >= N; N reached before 5 min -> target 2N; --minutes is the cap.
 // --seed N: seed_rng {seed: N} while paused, just before the unpause that starts the window (docs/27 §B); game RNG put back at the end.
 // --repro ID: run the steps of that tools/harness/repros.json entry (agent commands, waitS after each) from the window start,
 // e.g. the lot streaming pan (lotstream-pan, docs/28 §5.5). The stack samplers are skipped (they suspend the sim thread);
@@ -38,6 +41,7 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { classify } from './shadow-compare-report.ts';
 import { parseArgs } from 'node:util';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
@@ -45,7 +49,7 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -89,6 +93,54 @@ if (!paused.ok) throw new Error(`pause before setup failed: ${paused.error}`);
 const env = values['no-env'] ? null : await ag('test_env', {});
 if (env && !env.ok) throw new Error(`test_env failed: ${env.error}`); // an agent without test_env would silently test another season
 if (env) console.log(`${stamp()} test_env: ${JSON.stringify(env.result)}`);
+// --fixes-off / --fixes-on: patches switches (same agent command as --ab) off / on for the whole run; read back, restored in restoreFixes
+const fixesOff = values['fixes-off'] ? values['fixes-off'].split(',') : [];
+const fixesOn = values['fixes-on'] ? values['fixes-on'].split(',') : [];
+if ([...fixesOff, ...fixesOn].some(n => !/^[a-z0-9]+$/.test(n))) throw new Error('--fixes-off / --fixes-on must be comma-separated switch names');
+const fixesSet: Record<string, boolean> = { ...Object.fromEntries(fixesOff.map(n => [n, false])), ...Object.fromEntries(fixesOn.map(n => [n, true])) };
+const fixesNames = Object.keys(fixesSet);
+const fixesPrev: Record<string, boolean> = {};
+let fixesRestored = !fixesNames.length;
+const restoreFixes = async () => { if (fixesRestored) return; fixesRestored = true; await ag('patches', fixesPrev); };
+if (fixesNames.length) {
+  const both = fixesNames.filter(n => values.ab?.split(',').includes(n) || (fixesOff.includes(n) && fixesOn.includes(n)));
+  if (both.length) throw new Error(`--fixes-off / --fixes-on / --ab name ${both.join(',')} twice`);
+  const before = await ag('patches');
+  const unknown = fixesNames.filter(n => typeof before.result?.[n] !== 'boolean'); // native / counter switches and typos are not patches switches
+  if (!before.ok || unknown.length) throw new Error(`--fixes-off / --fixes-on: not a patches switch: ${unknown.join(',') || before.error}`);
+  for (const n of fixesNames) fixesPrev[n] = before.result[n];
+  const after = await ag('patches', fixesSet);
+  if (fixesNames.some(n => after.result?.[n] !== fixesSet[n])) { await restoreFixes(); throw new Error(`--fixes-off / --fixes-on: switches not set: ${JSON.stringify(after.result && Object.fromEntries(fixesNames.map(n => [n, after.result[n]])))}`); }
+  if (fixesOff.length) console.log(`${stamp()} fixes off: ${fixesOff.join(',')} (verified)`);
+  if (fixesOn.length) console.log(`${stamp()} fixes on: ${fixesOn.join(',')} (verified)`);
+  for (const ev of ['uncaughtException', 'unhandledRejection'] as const) process.on(ev, e => { console.error(e); restoreFixes().finally(() => process.exit(1)); });
+}
+// --until-compares: counted from the game's shadow log (incremental read); the window then ends early through the normal end path
+let stopped = false;
+const untilN = values['until-compares'] ? Number(values['until-compares']) : 0;
+if (values['until-compares'] && !(Number.isInteger(untilN) && untilN > 0)) throw new Error('--until-compares must be a positive integer');
+const shadowFile = join(process.env.TS3_BIN ?? 'C:/Program Files (x86)/Steam/steamapps/common/The Sims 3/Game/Bin', 'ts3native-shadow.jsonl');
+let shadowOff = 0, shadowCarry = '', compares = 0, target = untilN;
+function countCompares() {
+  try {
+    const b = readFileSync(shadowFile);
+    if (b.length < shadowOff) { shadowOff = 0; shadowCarry = ''; compares = 0; } // the game restarted the log
+    const lines = (shadowCarry + b.subarray(shadowOff).toString('utf8')).split('\n');
+    shadowOff = b.length; shadowCarry = lines.pop()!;
+    for (const l of lines) if (l.trim() && classify(JSON.parse(l)).cls < 'M4') compares++;
+  } catch { /* no log yet or a half-written line: counted next time */ }
+}
+function untilCheck() {
+  if (!untilN) return;
+  countCompares();
+  const el = (Date.now() - t0) / 60000;
+  console.log(`${stamp()} compares ${compares} (target ${target}), ${Math.max(0, mins - el).toFixed(1)} min left`);
+  if (compares < target) return;
+  if (el < 5) { target = 2 * compares; console.log(`${stamp()} ${compares} compares before 5 min: target raised to ${target}`); return; }
+  console.log(`${stamp()} stopped at ${compares} compares after ${el.toFixed(1)} min (target ${untilN})`);
+  stopped = true; prof?.kill();
+}
+const waitUntil = async (t: number) => { while (!stopped && Date.now() < t) await sleep(Math.min(1000, t - Date.now())); };
 const rng: any = { seed: values.seed === undefined ? null : Number(values.seed), reply: null, simMinutes: {} };
 if (rng.seed !== null) {
   const r = await ag('seed_rng', { seed: rng.seed });
@@ -101,7 +153,7 @@ rng.simMinutes.start = (await ag('time')).result?.minutes_total ?? null;
 // save step twice and still "passed" with 39-47 stuck Sims. 2 checks 30 s apart without movement = FAIL.
 const clockGuard = (async () => {
   let last = rng.simMinutes.start, misses = 0;
-  for (const end = Date.now() + secs * 1000; Date.now() < end;) {
+  for (const end = Date.now() + secs * 1000; !stopped && Date.now() < end;) {
     await sleep(30000);
     if (env) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
       const g = (await ag('test_env', { min_days_to_full: 1 }).catch(() => null))?.result;
@@ -115,6 +167,7 @@ const clockGuard = (async () => {
     const cs = await ag('clock_state');
     console.log(`${stamp()} clock_state at the trip: ${JSON.stringify(cs.ok ? cs.result : cs.error)}`);
     prof?.kill();
+    await restoreFixes();
     process.exit(1);
   }
 })();
@@ -147,6 +200,8 @@ const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
 const f4bDone = side(values.f4b, 'f4b-reads.js', 'f4b');
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
+// a rerun with the same tag must not append to the last run's snapshots (wait-ab read run 1 twice, 2026-10-20)
+if (abNames.length) writeFileSync(`${pre}-ab-native.jsonl`, '');
 const toggler = (async () => {
   if (!abNames.length) return;
   for (let i = 0; i * Number(values.slice) * 60 < secs; i++) {
@@ -157,7 +212,7 @@ const toggler = (async () => {
     await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
     // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74 };
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74, routesnaprel: 0x302C, routesnapgate: 0x3068, routesnapfree: 0x307C };
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
@@ -207,11 +262,13 @@ writeFileSync(`${pre}-machine.jsonl`, '');
 const stopLoad = startMachineLoad(`${pre}-machine.jsonl`); // other processes and CPU clock (machine-load.ts)
 writeFileSync(`${pre}-activity.jsonl`, '');
 const upkeep = (async () => {
-  while (Date.now() - t0 < secs * 1000) {
+  while (!stopped && Date.now() - t0 < secs * 1000) {
     const k = await ag('keep_alive', { threshold: -50 }); await ag('decline_requests');
     const ap = await ag('autopilot');
     await checkStuck();
     appendFileSync(`${pre}-upkeep.log`, `${stamp()} ${k.ok ? `topped ${k.result.topped_up.length} repaired ${k.result.repaired?.length ?? 0}` : k.error} ${ap.ok ? `speedfix ${ap.result.speed_fixes} dialogs ${ap.result.cleared.length}` : ''}\n`);
+    untilCheck();
+    if (stopped) break;
     await sleep(30000);
   }
 })();
@@ -236,15 +293,15 @@ const mainOnlyRun = mainOnly ? (async () => {
   console.log(`${stamp()} mainstack only (repro mode): ${secs - 15} s`);
   for (const end = at(secs - 15); Date.now() < end;) { const t = Date.now(); await mainSample(t); await sleep(Math.max(0, 200 - (Date.now() - t))); }
 })() : Promise.resolve();
-await sleep(Math.max(0, at(60) - Date.now()));
+await waitUntil(at(60));
 console.log(`${stamp()} managed sampler ${window} s`);
 if (window) await run([join(ROOT, 'tools', 'probe', 'managed-sample.mjs'), String(window), '5', `${pre}-managed.jsonl`], `${pre}-managed.txt`);
-await sleep(Math.max(0, at(secs / 2) - Date.now()));
+await waitUntil(at(secs / 2));
 console.log(`${stamp()} native sampler ${window} s`);
 writeFileSync(`${pre}-simstack.jsonl`, '');
 if (values.mainstack && !window && !mainOnly) console.log(`${stamp()} mainstack skipped: no sampler window in this mode`);
 let simLost = 0; // an empty simstack.jsonl went unnoticed for 3 days (2026-10-16-sampler-hang.md): print the loss
-for (const end = Date.now() + window * 1000; Date.now() < end;) {
+for (const end = Date.now() + window * 1000; !stopped && Date.now() < end;) {
   const t = Date.now();
   try {
     const r = await get('simstack?frames=24', 5000);
@@ -258,6 +315,7 @@ for (const end = Date.now() + window * 1000; Date.now() < end;) {
 if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
 await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone]);
 stopLoad();
+await restoreFixes();
 console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
 rng.simMinutes.end = (await ag('time')).result?.minutes_total ?? null;
 if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ?? false;

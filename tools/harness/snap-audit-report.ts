@@ -45,6 +45,25 @@ export function replayReport(before: Counters, after: Counters, minutes: number,
     `lag max ${a('rpLag')}, footprints freed ${d('rpGcFreed')}, orphan FMEs ${d('rpOrphanFme')}`);
   const audits = d('rpAudits'), mis = d('rpMis');
   out(`  lot audits ${audits}, mismatches ${mis}; syncs ${d('rpSyncs')}, divergences ${d('rpDiverge')}; faults ${d('rpFaults')}`);
+  // v67 (0.35.2, docs/94 §21.17): why a map resync miss rebuilt the clone instead of forcing lots (each rebuild is in a sim cut)
+  if (a('version') >= 67)
+    out(`  resync rebuilds: no clone lot for the Q ${d('rpHard_0')}, soft tries used up ${d('rpHard_1')}, counts differ / > 16 lots ` +
+      `${d('rpHard_2')}, other ${d('rpHard_3')}; P4 cuts behind a queued job ${d('p4QCut')} (missed ${d('p4QCutMiss')}), shadow ` +
+      `waits past 250 ms ${d('p4WaitExt')}; [OptsInit] clone-run zeroings ${d('oiClone')}`);
+  // v68 (0.35.3, docs/94 §21.18): misses on a clone a queued EPOCH already replaces (no second rebuild), acquires refused on it
+  if (a('version') >= 68)
+    out(`  rebuild asks skipped (newer EPOCH queued) ${d('rpOldAsk')}; P4 acquires refused on a bad clone ${d('p4AcqBad')}`);
+  // v70 (0.35.5, docs/94 §21.20): soft resync misses by kind, why lots were rebased
+  if (a('version') >= 70)
+    out(`  soft resync misses: on a lot the batch rebased ${d('rpSoftReal')}, fresh ${d('rpSoftFresh')}, forced already (in flight) ` +
+      `${d('rpSoftInFlight')}; rebased lots by reason: forced by a write ${d('rpRebaseWhy_0')}, soft resync ${d('rpRebaseWhy_1')}, ` +
+      `signature ${d('rpRebaseWhy_2')} (Q list unchanged ${d('rpRebaseQSame')}), new or gone ${d('rpRebaseWhy_3')}`);
+  // v71 (0.35.6, docs/94 §21.21): STARTs during a running job that shared the pending cut
+  if (a('version') >= 71)
+    out(`  P4 shared cuts (START during a running job) ${d('p4Borrow')}, none to share ${d('p4BorrowMiss')}, second shadow ` +
+      `refused (clone lots written) ${d('p4BorrowDirty')}`);
+  // v72 (0.35.8, docs/94 §21.23): child table entries kept for a reused live child address (the fix of the "clone copy: none" misses)
+  if (a('version') >= 72) out(`  replay child entries kept (reused live child address) ${d('rpKidsKept')}`);
   for (const l of replayLines(log).slice(0, 8)) out(`      ${l}`);
   const gates: Gate[] = [];
   gates.push({ name: 'clone', value: ready & 2 ? `built ${d('rpEpochs')}x` : a('rpCapOff') ? 'switched off at ReplayCapMB' : 'none',
@@ -87,7 +106,28 @@ export function p5Report(before: Counters, after: Counters, out: (s: string) => 
     `${(wait / 1000).toFixed(1)} ms of ${(job / 1000).toFixed(1)} ms clone run time (${job ? (wait / job).toFixed(2) : '0.00'}; > 0.50 = build the ` +
     `evaluator (a), docs/94 §19.1)`);
   out(`  cuts with replay records after them ${d('m2Stale')} (${d('m2StaleRecs')} records); tripwires ${d('m2Trips')}; ModGuard L2 bits ${a('m2Guard')}`);
+  // P5b (docs/94 §22.9, counters v62): +0x918 lent to the sim's steering during clone runs
+  const p5b = a('p5bReady') & 1, lent = d('p5bWinUs');
+  if (p5b) out(`  P5b: switch ${a('p5bRelease')}, windows ${d('p5bWins')} (refused: switch/verify ${d('p5bRefused_0')}, owner ` +
+    `${d('p5bRefused_1')}, waiter ${d('p5bRefused_2')}, other ${d('p5bRefused_3')}); lent ${(lent / 1000).toFixed(1)} ms = ` +
+    `${job ? (100 * lent / job).toFixed(1) : '0.0'}% of clone run time; retake ${(d('p5bRetakeUs') / 1000).toFixed(1)} ms (max ` +
+    `${a('p5bRetakeMaxUs')} us; asks ${d('p5bRetakeAsk')}, tripwires ${d('p5bRetakeTrip')}); steering acquires granted ` +
+    `${d('p5bSimAcq')}, others held out ${d('p5bHeldOut')}; watchdog ${d('p5bWatchdog')}`);
+  // v63 (0.34.2, docs/94 §22.10): read-only gate leaves admitted too
+  if (p5b && a('version') >= 63) out(`  P5b gates: switch ${a('p5bGates')}, granted while lent: gate 12 ${d('p5bGateAcq_0')}, ` +
+    `gate-0 hits ${d('p5bGateAcq_1')}; gate-0 misses given back ${d('p5bGateMiss')}`);
+  // v65 (0.35.0, docs/94 §22.11): P5c, every plain sim acquire admitted, destroys parked, stale answers refused
+  const p5c = a('version') >= 65 && a('p5cReady') & 1;
+  if (p5c) out(`  P5c: switch ${a('p5cFree')}, windows ${d('p5cJobs')}, plain acquires granted ${d('p5cAcq')}; refused stale ` +
+    `${d('p5cStale_0') + d('p5cStale_1')} (writes only before the window ${d('p5cStale_0')}, inside ${d('p5cStale_1')}); destroys ` +
+    `parked ${d('p5cParked')} (kept waits: D-X ${d('p5cKeptWait_0')}, full ${d('p5cKeptWait_1')}, off sim ${d('p5cKeptWait_2')}, ` +
+    `not found ${d('p5cKeptWait_3')}), released ${d('p5cFlushed')} (refused in a job ${d('p5cFlushRefused')}, most parked ` +
+    `${a('p5cPendMax')}, oldest ${(a('p5cAgeMaxUs') / 1000).toFixed(1)} ms); sync plans on the sim ${d('p5cPlanHere')}; ` +
+    `hand-overs ${d('p5cHandOver')}${a('p5cOff') ? ' (FreeLock off)' : ''}`);
   const gates: Gate[] = [];
+  if (p5b) gates.push({ name: 'P5b retake watchdog', value: `${d('p5bWatchdog')}`, verdict: d('p5bWatchdog') ? 'FAIL' : 'PASS' });
+  if (p5c) gates.push({ name: 'P5c T-G1 / hand-over', value: `${d('p5cCountLow')} / ${d('p5cHandOver')}`,
+    verdict: d('p5cCountLow') ? 'FAIL' : d('p5cHandOver') ? 'OPEN' : 'PASS' });
   gates.push({ name: 'Mode=2 on at the end', value: off ? M2_OFF[off] ?? String(off) : 'on', verdict: !off && ready & 1 ? 'PASS' : 'FAIL' });
   gates.push({ name: 'answers taken', value: `${taken} of ${plans}`, verdict: taken ? 'PASS' : 'OPEN' });
   gates.push({ name: 'verify M2 / M3', value: `${d('m2VerBad')} in ${d('m2Verify')} verify jobs`, verdict: d('m2VerBad') ? 'FAIL' : d('m2Verify') ? 'PASS' : 'OPEN' });

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "bp-snap-p5c",
+    "note": "0.35.25 rerun (docs/94 §22.29): the 0.35.19 run (BP 87.5 / IP 98.8 ms/s +0x918 sim waits vs 68.0 / 73.1 without a snapshot) lost to the replay consumer's own +0x918 holds (BP 66.6, IP 64.8 ms/s, INS records ~1.1-1.6 ms each), so this runs master 0.35.25 with [RouteSnap] InsFreeInPlace=1 LotsUnlocked=1 ReplaySigMs=250 LazyKeep=1. Build: native\\ts3native\\build.cmd out-03525, copy out-03525\\ts3native.asi to game-copy\\ts3native.asi.snapp5-03525. Read first: the 'old footprint copies at an insert' log line (freed in place >> retired) and snap-audit-report's 'consumer: applying N ms/s under +0x918' (expected < 15, was 66.6). Pass as before plus hitch-attr-report +0x918 below the 0.35.19 run (expected near or under BP 68 / IP 73). docs/94 §22.11 / §22.22 P5c step 4 (0.35.19, counters v72): snap-p5b.json plus [RouteSnap] FreeLock=1: during a taken job's clone search every plain sim +0x918 acquire (writers too) gets the lent lock, destroys park one reference and run, an answer with a recorded routing write after the cut is refused (the game's plan answers). Run only after snap-p5b.json passed. Same env as hitch-attr.json (no fixes off) so the ms/s compare with its BP 68 / IP 73. HitchAttr on (observe only). After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block and its gates), node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line) and node tools/harness/hitch-attr-report.ts <row tag> (sim waits for the job, ms/s; BP 68 / IP 73 on 0.34.10 env-on). Pass = snap-p5b's pass plus the P5c line: windows > 0, plain acquires granted > 0, destroys parked = released, 'P5c T-G1 / hand-over' 0 / 0, no 'FreeLock off' or 'P5c:' line. Read p5cStale (refused stale, before vs inside the window) for cut- vs window-based staleness",
+    "asi": "game-copy/ts3native.asi.snapp5-03525",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteSnap.ReleaseLock": 1,
+      "RouteSnap.ReleaseGates": 1,
+      "RouteSnap.FreeLock": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1,
+      "RouteSnap.InsFreeInPlace": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p5c",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30, so more retakes and a smaller lent share); ShadowWorld IP",
+    "asi": "game-copy/ts3native.asi.snapp5-03525",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteSnap.ReleaseLock": 1,
+      "RouteSnap.ReleaseGates": 1,
+      "RouteSnap.FreeLock": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1,
+      "RouteSnap.InsFreeInPlace": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

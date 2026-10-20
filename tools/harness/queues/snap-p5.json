@@ -1,10 +1,10 @@
 [
   {
     "id": "bp-snap-p5",
-    "note": "docs/94 §22 P5 (0.33.0, counters v61): [RouteSnap] Mode=2, the game TAKES the clone run's answer for async ReplanFromPosition jobs (RouteAsync.Kinds 4, RouteSnap.Kinds 8); every other plan as A10. Clean night only (the first build where our search answers the game: correctness first, timings are G5's A/B later). Copy the 0.33.0 build to the asi name below first. 1 job in 10 also runs the game's plan and keeps it (VerifyEvery=10, records \"m2\":1). After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 lines; P5 first run PASS = Mode=2 still on, answers taken > 0, verify M2/M3 0, snShadowFault 0) and node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line). Also pass: no crash, no watchdog, 0 stuck Sims (log only), rpMis 0, no 'RouteSnap: Mode=2 off' line, Sims route through doors as with Mode=1",
-    "asi": "game-copy/ts3native.asi.snap0330",
+    "note": "docs/94 §22 / §22.22 P5 step 2 (0.35.19, counters v72): [RouteSnap] Mode=2, the game TAKES the clone run's answer for async ReplanFromPosition jobs (RouteAsync.Kinds 4, RouteSnap.Kinds 8); 1 job in 10 runs the game's plan too and keeps it (VerifyEvery=10, \"m2\":1 records). No lock lending (ReleaseLock=0): the job keeps +0x918, so the sim waits as in A10. Run only after snap-p5-shadow.json passed. Park the 0.35.19 build as game-copy/ts3native.asi.snapp5 first (all snap-p5* queues use it). HitchAttr on (observe only). trip shortcuts off for more plans. After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block and its gates), node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line) and node tools/harness/hitch-attr-report.ts <row tag> (sim waits for the job, ms/s; BP 68 / IP 73 on 0.34.10 env-on). Pass = no crash (any fault in 0x939xxx, 0x935xxx or 0x64xxxx stops the queue: crash-cause rule), no hang / watchdog, Mode=2 on at the end, answers taken > 0, verify M2 / M3 = 0, snShadowFault 0, m2Trips 0, rpMis 0, no 'RouteSnap: Mode=2 off' line, fallback mat <= 5% of plans, 0 stuck Sims (log only), Sims route through doors as with Mode=1",
+    "asi": "game-copy/ts3native.asi.snapp5",
     "save": "Baseline-BP-Spring",
-    "minCounters": 61,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteAsync.Mode": 1,
@@ -22,18 +22,28 @@
       "RouteSnap.Prebuild": 1,
       "RouteSnap.Kinds": 8,
       "RouteSnap.VerifyEvery": 10,
-      "RouteSnap.ShadowWorld": "BP"
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1
     },
-    "run": { "profile": { "minutes": 10, "seed": 12345 } },
-    "gameArgs": ["-disablestoryprogression"],
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   },
   {
     "id": "ip-snap-p5",
-    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30); ShadowWorld IP",
-    "asi": "game-copy/ts3native.asi.snap0330",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30, so more retakes and a smaller lent share); ShadowWorld IP",
+    "asi": "game-copy/ts3native.asi.snapp5",
     "save": "Baseline-IP-Spring",
-    "minCounters": 61,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteAsync.Mode": 1,
@@ -51,10 +61,20 @@
       "RouteSnap.Prebuild": 1,
       "RouteSnap.Kinds": 8,
       "RouteSnap.VerifyEvery": 10,
-      "RouteSnap.ShadowWorld": "IP"
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1
     },
-    "run": { "profile": { "minutes": 10, "seed": 12345 } },
-    "gameArgs": ["-disablestoryprogression"],
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   }
 ]

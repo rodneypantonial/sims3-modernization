@@ -61,7 +61,9 @@ function now() { qpc(qbuf); return Number(qbuf.readS64()) / ticksPerMs; }
 function blankIter() {
   return { script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0, gcForcedMs: 0, fin: 0, finRun: 0,
            steps: 0, route: 0, routeSearch: 0, routes: 0, routeFails: 0, byEntry: {},
-           taskObjects: 0, oneShot: 0, threaded: 0, animSacs: 0, animPose: 0, locomotion: 0, publish: 0 };
+           taskObjects: 0, oneShot: 0, threaded: 0, animSacs: 0, animPose: 0, locomotion: 0, publish: 0,
+           // ts3native [HitchAttr] (docs/96 §9): sim waits for the route job, ms by class, count, longest and its key
+           rtLock: 0, rtOtherLock: 0, rtJob: 0, rtPlanWait: 0, rtWaits: 0, rtMaxMs: 0, rtMaxKey: '' };
 }
 function blankSecond() {
   return { iters: 0, maxIterMs: 0, hitches: 0, script: 0, gcMark: 0, gcMarks: 0, gcAborted: 0, gcForced: 0,
@@ -75,7 +77,9 @@ function blankSecond() {
            // P-clock (docs/85 §6): 1 when Simulate's paused copy was set at the start of any iteration of this second; the
            // step accumulator host+0xC14 at the start of the last iteration (left over from the previous one's steps;
            // -1 = P-clock off or no iteration this second; NaN/Infinity = docs/85 H6)
-           simPaused: 0, stepAcc: -1 }; // new columns go last: readers use the header
+           simPaused: 0, stepAcc: -1,
+           // ts3native [HitchAttr] (docs/96 §9), ms per second; 0 when the plugin or the section is off
+           rtLock: 0, rtOtherLock: 0, rtJob: 0, rtPlanWait: 0, rtWaits: 0 }; // new columns go last: readers use the header
 }
 
 // P-clock: Simulate's step branch reads its paused copy through `mov ecx, edi; call 0x8A6D10` at 0xD81B38
@@ -113,6 +117,25 @@ function lotStreamSecond() {
   } // the first read only sets the baseline (its maxima date from the game start)
   lsPrev = cur;
 }
+// ts3native [HitchAttr] frame block `ts3native_hitchattr` (hitchattr.cpp HaFrame): version, enabled, us[4], n, maxUs, maxKey.
+// Read and zeroed at each iteration boundary on the sim thread, the only thread that writes it, so no clock fit is needed.
+let haBlock = null; // undefined once known absent
+const HA_ZERO = new ArrayBuffer(28);
+function hitchAttrFrame() {
+  if (haBlock === undefined) return;
+  if (haBlock === null) {
+    const m = Process.findModuleByName('ts3native.asi');
+    const e = m === null ? null : m.findExportByName('ts3native_hitchattr');
+    haBlock = e !== null && e.readS32() >= 1 && e.add(4).readS32() === 1 ? e : undefined;
+    console.log(`[ts3prof] ts3native hitch attribution ${haBlock ? 'read every iteration' : 'not active (rt* fields stay 0)'}`);
+    if (haBlock === undefined) return;
+  }
+  const v = new Int32Array(haBlock.add(8).readByteArray(28));
+  haBlock.add(8).writeByteArray(HA_ZERO);
+  iter.rtLock += v[0] / 1000; iter.rtOtherLock += v[1] / 1000; iter.rtJob += v[2] / 1000; iter.rtPlanWait += v[3] / 1000;
+  iter.rtWaits += v[4];
+  if (v[5] / 1000 > iter.rtMaxMs) { iter.rtMaxMs = v[5] / 1000; iter.rtMaxKey = '0x' + (v[6] >>> 0).toString(16).padStart(8, '0'); }
+}
 let simThread = null;
 let iter = blankIter();
 let iterStart = 0;
@@ -135,12 +158,14 @@ function openOutputs() {
 function round(x) { return Math.round(x * 100) / 100; }
 
 function endIteration(t) {
-  if (iterStart === 0) { iterStart = t; secStart = t; return; }
+  hitchAttrFrame();
+  if (iterStart === 0) { iterStart = t; secStart = t; iter = blankIter(); return; }
   const wall = t - iterStart;
   sec.iters++;
   sec.maxIterMs = Math.max(sec.maxIterMs, wall);
   for (const k of ['script', 'gcMark', 'gcMarks', 'gcAborted', 'gcForced', 'gcForcedMs', 'fin', 'finRun',
-                   'route', 'routeSearch', 'routes', 'routeFails', 'taskObjects', 'oneShot', 'threaded', ...EXTRA_STAGES]) sec[k] += iter[k];
+                   'route', 'routeSearch', 'routes', 'routeFails', 'taskObjects', 'oneShot', 'threaded', ...EXTRA_STAGES,
+                   'rtLock', 'rtOtherLock', 'rtJob', 'rtPlanWait', 'rtWaits']) sec[k] += iter[k];
   sec.maxSteps = Math.max(sec.maxSteps, iter.steps);
   if (wall >= cfg.hitchMs) {
     sec.hitches++;

@@ -2,9 +2,9 @@
   {
     "id": "bp-snap-p4",
     "note": "docs/94 §21 P4 part B, shadow only (0.29.0, counters v51). DO NOT RUN before the private pools build (docs/94 §16.6, pools.cpp by a separate agent) is merged and this asi rebuilt with it: without it the replay consumer and the clone run share the game's unlocked pools. Then: env-on async + [RouteSnap] Enabled=1 Lots=replay Prebuild=1 Mode=1 (every async plan is planned again on the replay clone through the provider and compared; the game's answer is always kept). BP Spring, seeded. After: node tools/harness/shadow-compare-report.ts <row.shadowLog> and node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog>. Pass = no crash, snShadowFault 0, snCloneManaged / snCloneEvent / live-lock aborts 0, snDeadStamp 0, snDlOnClone 0, rpMis 0, M3 = 0 and M2 = 0 in the report (first run: a nonzero M2/M3/M4 is a finding to triage, not a regression), snPcAcquired > 0",
-    "asi": "game-copy/ts3native.asi.snap0328",
+    "asi": "game-copy/ts3native.asi.snap0359",
     "save": "Baseline-BP-Spring",
-    "minCounters": 57,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,
@@ -21,7 +21,8 @@
       "RouteSnap.Prebuild": 1,
       "RouteSnap.ShadowEvery": 1,
       "RouteSnap.Kinds": 15,
-      "RouteSnap.ShadowWorld": "BP"
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1
     },
     "run": { "profile": { "minutes": 10, "seed": 12345 } },
     "gameArgs": ["-disablestoryprogression"],
@@ -30,9 +31,9 @@
   {
     "id": "ip-snap-p4",
     "note": "the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn); ShadowWorld IP",
-    "asi": "game-copy/ts3native.asi.snap0328",
+    "asi": "game-copy/ts3native.asi.snap0359",
     "save": "Baseline-IP-Spring",
-    "minCounters": 57,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,
@@ -49,7 +50,8 @@
       "RouteSnap.Prebuild": 1,
       "RouteSnap.ShadowEvery": 1,
       "RouteSnap.Kinds": 15,
-      "RouteSnap.ShadowWorld": "IP"
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1
     },
     "run": { "profile": { "minutes": 10, "seed": 12345 } },
     "gameArgs": ["-disablestoryprogression"],

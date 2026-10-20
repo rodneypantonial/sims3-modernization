@@ -1,0 +1,92 @@
+[
+  {
+    "id": "bp-autshadow-count",
+    "note": "[AutShadow] part 2 (docs/122 §14.7), gate G-A3, Mode 0 = cut and count only, no worker. Correctness/smoke only, timing noisy (5 min profile, no perf verdict). asi autshadow2 = master 0.35.22 (counters v72) with the part-2 merge c882417; ts3fixes from the same checkout (kAutShadow stays False): run.profile.fixesOn 'autshadow' switches the driver on through the agent for this job only (profile-world logs 'fixes on: autshadow (verified)', restored at the end). Pass = 0 crashes, 0 watchdog lines; -native.json autshadow (ts3native_autshadow v2): mode 0, icRegistered 14, req > 0 and cutReq == req, noWorker == cutReq, refRuns 0, auditMis[0] 0 (report auditN: Audit=50 gives ~1 audit per 50 cuts), cutMaxUs and cutUs/cutReq (target p95 0.3 ms), guardSim per s for the guard cost (<= 1 ms/s); patches autshadow true, autshadow_requests > 0, autshadow_busy small, autshadow_guardskips 0 on the reference install, autshadow_exceptions 0; ts3native.log 'autonomy shadow: ... Mode=0 (count only)' line and no 'autshadow abort' lines (no worker exists). If autshadow_requests stays 0 with req 0: check ts3fixes.applied for 'AutShadow: off' lines (MVID, L3, warm-up) before anything else.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 0,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 0,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "ip-autshadow-count",
+    "note": "Same as bp-autshadow-count on Isla Paradiso (more lots and Sims: the largest snapshot). Same asi, switch and pass rule.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 0,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 0,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-autshadow-r",
+    "note": "Run only after both count jobs passed (crash rule: stop the queue on any crash and triage it against this change first). [AutShadow] Mode 1 = R, gate G-A4: the sim thread re-scores each sampled request at the cut (script RNG saved and restored), the M5 worker scores the same request from the snapshot, ts3fixes compares bit for bit. Needs the M5 worker: [MonoThread] Mode=1 GcLock=1 FrameTls=1 ArenaFix=1 N2mPrivate=1 (the last two are the defaults, set here so the job states them). Correctness only, timing noisy. Same asi and switch as bp-autshadow-count. Pass = 0 crashes, no freeze; patches autshadow_a2 == 0 and autshadow_a3 == 0, autshadow_a1 0 or each record in autshadow.jsonl explained; autshadow_a4 < 20% of compared pairs (autshadow_reasons sized); autshadow_a5 and native overrun/epochDrops counted, not failures; -native.json autshadow v2: workRuns > 0, workExc 0, refExc 0, finishExc 0, waitTicks small, unguarded 0 (reserved, not wired); mtprobe v2: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0, n2mReady 1, n2mWorker > 0. G-A4 needs >= 2,000 compared searches per world over the R runs: at Sample=4 one 10-min job may not reach it, so this job reports the count; repeat or raise the length when the first run is clean.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.N2mPrivate": 1,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 1,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50,
+      "AutShadow.DumpOnMismatch": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-autshadow-r",
+    "note": "Same as bp-autshadow-r on Isla Paradiso; run after bp-autshadow-r passed. Same asi, switch and pass rule.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.N2mPrivate": 1,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 1,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50,
+      "AutShadow.DumpOnMismatch": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

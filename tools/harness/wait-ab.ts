@@ -36,9 +36,18 @@ export function split(slices: { from: number; on: boolean }[], snaps: Snap[]) {
   return side;
 }
 
+// a rerun with the same tag before profile-world truncated the file (2026-10-20) appended a second run: <tag>-ab.json holds
+// only the last run's slices, so keep the snapshots from the last i = 0 on
+export function lastRun(snaps: Snap[]) {
+  const from = snaps.map(x => x.i).lastIndexOf(0);
+  return from > 0 ? snaps.slice(from) : snaps;
+}
+
 function report(tag: string) {
   const { slices } = JSON.parse(readFileSync(join(DIR, `${tag}-ab.json`), 'utf8'));
-  const snaps: Snap[] = readFileSync(join(DIR, `${tag}-ab-native.jsonl`), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const all: Snap[] = readFileSync(join(DIR, `${tag}-ab-native.jsonl`), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const snaps = lastRun(all);
+  if (snaps.length < all.length) console.log(`${tag}: ${all.length - snaps.length} snapshots of an earlier run with the same tag skipped`);
   const s = split(slices, snaps);
   const msps = (us: number, secs: number) => (us / 1000 / (secs || 1)).toFixed(1);
   console.log(`${tag}: on ${s.on.secs.toFixed(0)} s, off ${s.off.secs.toFixed(0)} s (sim-thread wait ms/s, on vs off)`);
@@ -62,5 +71,8 @@ if (process.argv[2] === '--self-check') {
   const s = split(slices, snaps);
   assert.equal(s.off.keys.get(0x62EF7A), 2000); assert.equal(s.on.keys.get(0x62EF7A), 6000);
   assert.equal(s.off.tot.asyncPumpUs, 500); assert.equal(s.on.secs, 10);
+  const old = [{ i: 0, s: 0, c: c(0, 0) }, { i: 1, s: 10, c: c(5, 0) }];
+  assert.deepEqual(lastRun([...old, { i: 0, s: 0, c: c(0, 0) }, ...snaps]), [{ i: 0, s: 0, c: c(0, 0) }, ...snaps]);
+  assert.deepEqual(lastRun(snaps), snaps);
   console.log('wait-ab self-check ok');
 } else for (const t of process.argv.slice(2)) report(t);

@@ -3,7 +3,8 @@
 //   node tools/managed-callgraph.ts build [--asm game-copy/assemblies] [--out game-copy/analysis/callgraph]
 //   node tools/managed-callgraph.ts query <root>... [--depth 12] [--delegates] [--index <out>/index.json] [--ic docs/data/ic-safety.csv]
 //   node tools/managed-callgraph.ts def <DefinitionType> [--depth 12] ...   (roots: the type's Test overloads + nearest CalculateScore)
-//   query/def: --cut <prefix,prefix> skips calls into hand-verified guarded methods; --delegates follows delegate creation
+//   query/def: --cut <prefix,prefix> skips calls into hand-verified guarded methods; --delegates follows delegate creation;
+//              --ics lists every native binding reached (verdict, binding, depth)
 //   node tools/managed-callgraph.ts callers <method> [--index ...]
 //   node tools/managed-callgraph.ts --self-check [--asm ...]
 // A root or method is a method id ("Ns.Type+Nested::Name(params)") or a prefix of one ("Ns.Type::Name" = all overloads).
@@ -484,7 +485,7 @@ function lookup(ix: Index, pat: string): number[] {
   return out;
 }
 // Roots for an interaction definition: own Test overloads (else nearest base's) + nearest CalculateScore up the base chain.
-function defRoots(ix: Index, type: string): number[] {
+export function defRoots(ix: Index, type: string): number[] {
   if (!asms.length) loadAll(ASM_DIR);
   const t = typeByFull.get(type);
   if (!t) throw new Error(`no type ${type}`);
@@ -499,9 +500,12 @@ function defRoots(ix: Index, type: string): number[] {
   return roots;
 }
 function printClosure(ix: Index, roots: number[], label: string): string {
-  const r = closure(ix, roots, DEPTH, icVerdicts(), process.argv.includes('--delegates'), CUT);
+  const ics = icVerdicts();
+  const r = closure(ix, roots, DEPTH, ics, process.argv.includes('--delegates'), CUT);
   const lines = [`${label}: worst ${r.worst}; closure ${r.size} methods (depth ${DEPTH}); roots ${roots.map((i) => ix.methods[i].k).join(' | ')}`];
   for (const h of r.tags) lines.push(`  ${h.tag} x${r.counts.get(h.tag)}: ${h.detail}\n    path: ${h.path.map((i) => ix.methods[i].k.replace(/\(.*$/s, '')).join(' > ')}${h.edge ? ` > [${h.edge}]` : ''}`);
+  // --ics: every native binding in the closure with its docs/62 verdict and depth (closure step of docs/118).
+  if (process.argv.includes('--ics')) for (const [n, d] of [...r.reached].filter(([n]) => ix.methods[n].ic)) lines.push(`  IC\t${icTag(ix, ix.methods[n], ics)}\t${ix.methods[n].ic}\tdepth ${d}`);
   return lines.join('\n');
 }
 
@@ -777,8 +781,9 @@ function positional(): string[] {
   for (let i = 0; i < a.length; i++) { if (VALUE_FLAGS.has(a[i])) i++; else if (!a[i].startsWith('--')) out.push(a[i]); }
   return out;
 }
-const cmd = process.argv[2];
-if (cmd === '--self-check' || process.argv.includes('--self-check')) selfCheck();
+// Imported as a library (mono-host-ics.ts): no CLI.
+const cmd = /managed-callgraph\.ts$/.test(process.argv[1] ?? '') ? process.argv[2] : 'lib';
+if (cmd === '--self-check' || (cmd !== 'lib' && process.argv.includes('--self-check'))) selfCheck();
 else if (cmd === 'build') {
   const t0 = Date.now(); const ix = build();
   mkdirSync(OUT, { recursive: true });
@@ -809,4 +814,41 @@ else if (cmd === 'build') {
     for (const o of os) console.log(`  ${o.id} [${o.asm.name}]`);
   }
 } else if (cmd === 'dispatch') runDispatch();
-else console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | dispatch [--csv out] | --self-check');
+else if (cmd === 'hostdata') {
+  // native/monohost input (docs/119 §10): "R <kind> <ret> <ic>" per extern (kind: v void, i 32-bit int/ref, l 64-bit int,
+  // f float, d double, s struct) and "C <asm> <typedef row> <type>" per type with a .cctor in the game assemblies.
+  loadAll(ASM_DIR);
+  const PK: Record<string, string> = { void: 'v', long: 'l', ulong: 'l', float: 'f', double: 'd' };
+  const kind = (ret: string): string => {
+    if (PK[ret]) return PK[ret];
+    const t = typeByFull.get(ret); const b = t && baseOf(t)?.full;
+    if (b === 'System.Enum') return kind(fieldSigType(t!.asm, t!.fields.find((f) => f.name === 'value__')!.sigBlob));
+    return b === 'System.ValueType' ? 's' : 'i';
+  };
+  const out: string[] = [];
+  for (const m of methods) if (m.impl & IC_FLAG || m.flags & PINVOKE) out.push(`R ${kind(m.ret)} ${m.ret} ${m.type.full}::${m.name}`);
+  for (const a of asms) if (!['mscorlib', 'System', 'System.Xml'].includes(a.name))
+    for (const t of a.types) if (t.methods.some((m) => m.name === '.cctor')) out.push(`C ${a.name}.dll ${t.row} ${t.full}`);
+  writeFileSync(arg('--out', 'game-copy/monohost/hostdata.txt'), out.join('\n') + '\n');
+  console.log(`${out.filter((l) => l[0] === 'R').length} externs, ${out.filter((l) => l[0] === 'C').length} .cctor types`);
+} else if (cmd === 'bindkeys') {
+  // docs/122 S0: EA's native-method binder 0xD9A7B0 keys each method by the FNV-1 hash (lowercased bytes, 0x811C9DC5,
+  // prime 0x1000193, multiply then xor) of "<ret> <Class>:<Method>(<arg>,...)" with Mono reflection type names
+  // (0xD9A530). Prints "<hash> <method id>" per method; join with the 1,085 hashes 0xE3E570 registers.
+  loadAll(ASM_DIR);
+  const FULL: Record<string, string> = { void: 'Void', bool: 'Boolean', char: 'Char', sbyte: 'SByte', byte: 'Byte', short: 'Int16', ushort: 'UInt16', int: 'Int32', uint: 'UInt32', long: 'Int64', ulong: 'UInt64', float: 'Single', double: 'Double', string: 'String', object: 'Object', IntPtr: 'IntPtr', UIntPtr: 'UIntPtr', typedref: 'TypedReference' };
+  const split = (s: string): string[] => { const o: string[] = []; let d = 0, st = 0; for (let i = 0; i < s.length; i++) { const c = s[i]; if (c === '<') d++; else if (c === '>') d--; else if (c === ',' && !d) { o.push(s.slice(st, i)); st = i + 1; } } if (s) o.push(s.slice(st)); return o; };
+  const rname = (t: string): string => {
+    const m = /^([^<\[&*]+)(?:<(.*)>)?((?:\[,*\]|\*)*)(&?)$/.exec(t);
+    if (!m) return t;
+    const base = FULL[m[1]] ? `System.${FULL[m[1]]}` : m[1];
+    const gen = m[2] ? `[${split(m[2]).map(rname).join(',')}]` : '';
+    return base + gen + m[3] + m[4];
+  };
+  const fnv = (s: string): string => { let h = 0x811c9dc5; for (const c of s.toLowerCase()) h = (Math.imul(h, 0x1000193) ^ c.charCodeAt(0)) >>> 0; return h.toString(16); };
+  for (const m of methods) {
+    if (m.flags & ABSTRACT) continue;
+    const key = `${rname(m.ret)} ${m.type.full}:${m.name}(${split(m.params).map(rname).join(',')})`;
+    console.log(`${fnv(key)}\t${m.id}\t${key}`);
+  }
+} else if (cmd !== 'lib') console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | dispatch [--csv out] | hostdata [--out f] | bindkeys | --self-check');

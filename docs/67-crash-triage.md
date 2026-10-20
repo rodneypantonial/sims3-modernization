@@ -160,6 +160,9 @@ Registers: `esi = 0x44973000` (the node), `ebx = 0x77A3057C` (current bucket slo
 - If it repeats: a Frida watch on frees of room hash nodes (allocator tag `Lighting/LightingSolver/Rooms`) per solver names the eraser.
 - Effort: 6 game runs of ~4-5 min (~30 min with restarts), then 1-2 hours of analysis if it repeats; a guard, if still wanted, ~2 hours.
 
+
+**Repro 2026-10-19 13:23-13:43 PHT (`future-lighting-uaf.json`, pinned build, 6 jobs):** 3 direct trips, 2 portal trips, 1 direct trip with S3SS LotStreamingOptimizations off: **0 lighting crashes in 6**. Every job FAILed the same non-crash way: the trip home was not queued (time portal state Inactive, the known future travel_home failure). Verdict per the plan above: a rare game race, logged; no guard. If it shows up again, use the Frida free-watch on `Lighting/LightingSolver/Rooms` nodes.
+
 ## 6. Crash D (2026-10-19 00:21:02 UTC): lot-0 footprint remove runs past its range, `bp-snap-p4` on ts3native 0.31.2
 
 Static only (2026-10-19): EA's report `<Documents>/Electronic Arts/The Sims 3/xcpt <machine> 26-10-19 08.21.02.txt` (no `.mdmp`), the job's ts3native log (`probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0016-ts3native.log`), capstone on the Steam 1.67 exe copy and a map file of an identical 0.31.2 rebuild. Full write-up: docs/94 §21.11; ledger docs/51 §104.

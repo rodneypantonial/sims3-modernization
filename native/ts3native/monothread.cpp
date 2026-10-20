@@ -1,4 +1,4 @@
-// Second managed thread, step 1 (docs/30 §1 P1, §2 P2). Included by ts3native.cpp (one translation unit).
+// Second managed thread, step 1 (docs/30 §1 P1, §2 P2) plus the M5 build (§14). Included by ts3native.cpp (one translation unit).
 //
 // Boehm's thread table 0x1221000 (256 entries of 0x14: +0 in use, +4 thread id, +8 handle, +0xC stack base,
 // +0x10 suspended; highest index [0x11F4124]) gets entries only from GC_new_thread 0xE51070, which registers the
@@ -10,7 +10,7 @@
 // suspended entry's registers (GC_push_one 0xE4D520) and stack [ESP, base) (GC_push_all_stack 0xE4CEE0, hi exclusive).
 // With only the collector registered, the loop finds nothing and the scan is the game's.
 // P1: at the first MonoScriptHost_Simulate tick (vtable slot 0x108B6B0) the sim thread logs the table and registers
-// itself with 0xE51070 if it is missing. No worker exists yet (Mode 0 only).
+// itself with 0xE51070 if it is missing. P3, P4 and the worker (M5 build) are in monothread-m5.cpp.
 
 static const DWORD MT_PUSH_HOOK = 0x011949CC, MT_PUSH_THUNK = 0x00E4EF90, MT_PUSH_THUNK2 = 0x00E51350, MT_PUSH_EA = 0x00D71820;
 static const DWORD MT_NEW_THREAD = 0x00E51070, MT_PUSH_ONE = 0x00E4D520, MT_PUSH_STACK = 0x00E4CEE0;
@@ -39,6 +39,11 @@ static __declspec(align(16)) CONTEXT g_mtCtx;  // only used with the world stopp
 static void* g_mtSimOrig;
 static volatile LONG g_mtTicked;
 static DWORD g_mtSimTid;
+// [AutShadow] part 2 (docs/122 §14) rides this slot stub (one owner, docs/122 §12.4): top of Simulate and its return
+static void(__cdecl* g_mtOnEnter)();
+static void(__cdecl* g_mtOnLeave)();
+static DWORD g_mtSimRet;     // the caller's return address while a hooked Simulate runs (sim thread only)
+static DWORD g_mtSimRetThunk;
 
 // GC root hook. Runs inside the mark with other threads suspended (one may hold the CRT heap or a game lock):
 // no allocation, no Log, no lock, no CRT call.
@@ -92,20 +97,35 @@ static void MtLogTable(const char* when) {
     ts3native_counters.mtThreads = used;
 }
 
+#include "monothread-m5.cpp"  // P3, P4, worker entry (M5 build, docs/30 §14)
+
 // P1: register the calling thread in Boehm's table (GC_new_thread 0xE51070 registers its caller).
-// shortcut: no GC lock yet (P3, step 2), so only the sim thread may register, and only at a Simulate tick boundary (it
-// is then outside every GC function and no other thread collects). Worker threads need P3 before they call this.
+// The sim thread may register at a Simulate tick boundary (outside every GC function, no other thread collects); any
+// other thread only while the P3 gate is on, and then under the GC lock (the worker, docs/30 §5 step 1).
 static bool MtRegisterCurrentThread() {
     const DWORD tid = GetCurrentThreadId();
-    if (tid != g_mtSimTid) return false;
-    if (MtFind(tid) >= 0) return true;
-    g_mtNewThread();
-    return MtFind(tid) >= 0;
+    if (tid != g_mtSimTid && !ts3native_mtprobe.locking) return false;
+    const bool held = MtLockC();
+    bool ok = MtFind(tid) >= 0;
+    if (!ok) g_mtNewThread(), ok = MtFind(tid) >= 0;
+    MtUnlockC(held);
+    return ok;
 }
 
-// Top of every MonoScriptHost_Simulate call, on the sim thread. Only the first one does work.
+// Top of every MonoScriptHost_Simulate call, on the sim thread. The first one logs and registers; every one runs the
+// M5 worker switch (one compare when nothing is installed).
+static void MtFirstTick();
 static void __cdecl MtTick() {
-    if (g_mtTicked) return;
+    if (!g_mtTicked) MtFirstTick();
+    MtM5Tick();
+    if (g_mtOnEnter) g_mtOnEnter();
+}
+// return of MonoScriptHost_Simulate 0xD81840 (sim thread; monohost calls it directly as its tick end)
+static void __cdecl MtSimLeave() {
+    if (g_mtOnLeave) g_mtOnLeave();
+}
+
+static void MtFirstTick() {
     g_mtTicked = 1;
     Ts3nCounters& k = ts3native_counters;
     g_mtSimTid = GetCurrentThreadId();
@@ -120,6 +140,22 @@ static void __cdecl MtTick() {
         Log("mono thread: sim thread %lu already registered (main %lu)", g_mtSimTid, g_mainTid);
     }
     k.mtReady |= 4;
+    MtM5FirstTick();
+}
+
+// The original returns here when g_mtOnLeave is set: run MtSimLeave, then back to the caller (EAX/EDX/flags kept;
+// `ret N` of the original already dropped its arguments).
+static __declspec(naked) void MtSimReturn() {
+    __asm {
+        push dword ptr [g_mtSimRet]
+        mov dword ptr [g_mtSimRet], 0
+        pushad
+        pushfd
+        call MtSimLeave
+        popfd
+        popad
+        ret
+    }
 }
 
 static __declspec(naked) void MtSimulateStub() {
@@ -129,16 +165,31 @@ static __declspec(naked) void MtSimulateStub() {
         call MtTick
         popfd
         popad
+        cmp dword ptr [g_mtOnLeave], 0
+        je plain
+        cmp dword ptr [g_mtSimRet], 0
+        jne plain  // nested Simulate: only the outer call gets the return hook
+        pop dword ptr [g_mtSimRet]
+        push dword ptr [g_mtSimRetThunk]
+    plain:
         jmp dword ptr [g_mtSimOrig]
     }
 }
 
-// [MonoThread] Enabled=1: P2 at load (data write before any GC runs), P1 at the first Simulate tick. Mode 0 only.
+// [MonoThread] Enabled=1: P2 at load (data write before any GC runs), P1 at the first Simulate tick; GcLock=1 (P3) and
+// FrameTls=1 (P4) install at that tick too; Mode=1 then runs the registered worker (needs both).
 static bool ApplyMonoThread(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"MonoThread", L"Enabled", 0, ini)) { Log("mono thread disabled (Enabled=0)"); return false; }
     Ts3nCounters& k = ts3native_counters;
     k.mtMode = GetPrivateProfileIntW(L"MonoThread", L"Mode", 0, ini);
-    if (k.mtMode != 0) { Log("mono thread: Mode=%ld not built yet (step 1), running Mode 0", k.mtMode); k.mtMode = 0; }
+    g_mtWantP3 = GetPrivateProfileIntW(L"MonoThread", L"GcLock", 0, ini) != 0;
+    g_mtWantP4 = GetPrivateProfileIntW(L"MonoThread", L"FrameTls", 0, ini) != 0;
+    g_mtAddRoots = GetPrivateProfileIntW(L"MonoThread", L"LockAddRoots", 1, ini) != 0;
+    g_mtArenaFix = GetPrivateProfileIntW(L"MonoThread", L"ArenaFix", 1, ini) != 0;  // with GcLock=1: frame arena pool fix (docs/120 §9)
+    g_mtN2mPrivate = GetPrivateProfileIntW(L"MonoThread", L"N2mPrivate", 1, ini) != 0;  // with GcLock=1: F1 detour at 0xD8A8E0 (docs/120 §9.4)
+    if (k.mtMode >= 2) { Log("mono thread: Mode=%ld (GC stress) not built yet, running Mode 1", k.mtMode); k.mtMode = 1; }
+    if (k.mtMode == 1 && !(g_mtWantP3 && g_mtWantP4)) { Log("mono thread: Mode=1 needs GcLock=1 and FrameTls=1, running Mode 0"); k.mtMode = 0; }
+    if (k.mtMode < 0) k.mtMode = 0;
     DWORD* hook = (DWORD*)(uintptr_t)MT_PUSH_HOOK;
     DWORD* slot = (DWORD*)(uintptr_t)MT_SIM_SLOT;
     if (!Readable(hook, 4) || !Readable(slot, 4) || !Readable(g_mtTable, 256 * 0x14)) { Log("SKIP mono thread: GC globals unreadable"); return false; }
@@ -155,12 +206,13 @@ static bool ApplyMonoThread(const wchar_t* ini) {
     }
     g_mtOrigPush = (MtVoidFn)(uintptr_t)*hook;
     g_mtSimOrig = (void*)(uintptr_t)*slot;
+    g_mtSimRetThunk = (DWORD)(uintptr_t)MtSimReturn;
     const DWORD push = (DWORD)(uintptr_t)MtPushOtherRoots, stub = (DWORD)(uintptr_t)MtSimulateStub;
     if (!Write(hook, &push, 4)) { Log("FAIL mono thread: write [0x%08X] (err %lu)", MT_PUSH_HOOK, GetLastError()); return false; }
     k.mtReady = 1;
     if (Write(slot, &stub, 4)) k.mtReady |= 2;
     else Log("FAIL mono thread: Simulate vtable slot (err %lu); P2 stays, no sim registration", GetLastError());
-    Log("OK   mono thread: [0x%08X] 0x%08X -> MtPushOtherRoots, Simulate slot 0x%08X %s (Mode=0, no worker)", MT_PUSH_HOOK,
-        (DWORD)(uintptr_t)g_mtOrigPush, MT_SIM_SLOT, (k.mtReady & 2) ? "hooked" : "not hooked");
+    Log("OK   mono thread: [0x%08X] 0x%08X -> MtPushOtherRoots, Simulate slot 0x%08X %s (Mode=%ld, GcLock=%d, FrameTls=%d)", MT_PUSH_HOOK,
+        (DWORD)(uintptr_t)g_mtOrigPush, MT_SIM_SLOT, (k.mtReady & 2) ? "hooked" : "not hooked", k.mtMode, g_mtWantP3, g_mtWantP4);
     return true;
 }

@@ -1,0 +1,82 @@
+[
+  {
+    "id": "bp-snap-p5b",
+    "note": "docs/94 §22.9-§22.10 / §22.22 P5b step 3 (0.35.19, counters v72): snap-p5.json plus [RouteSnap] ReleaseLock=1 ReleaseGates=1: while a taken job's clone run runs, +0x918 is lent to the sim's steering and its read-only gate leaves (gate-12 F-B/F-C/F-G, gate-0 hits); taken back before the answer, each door ask and any tripwire. Run only after snap-p5.json passed. Park the 0.35.19 build as game-copy/ts3native.asi.snapp5 first (all snap-p5* queues use it). HitchAttr on (observe only). After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block and its gates), node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line) and node tools/harness/hitch-attr-report.ts <row tag> (sim waits for the job, ms/s; BP 68 / IP 73 on 0.34.10 env-on). Pass = snap-p5's pass plus the P5b line: windows > 0, refused owner 0, 'P5b retake watchdog' 0, steering and gate acquires granted > 0; no 'P5b: worker waited' or 'lock ... busy' line",
+    "asi": "game-copy/ts3native.asi.snapp5",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteSnap.ReleaseLock": 1,
+      "RouteSnap.ReleaseGates": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p5b",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30, so more retakes and a smaller lent share); ShadowWorld IP",
+    "asi": "game-copy/ts3native.asi.snapp5",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 10,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteSnap.ReleaseLock": 1,
+      "RouteSnap.ReleaseGates": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

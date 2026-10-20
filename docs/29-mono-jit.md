@@ -105,8 +105,8 @@ So all OS threads funnel through indirect dispatch before any allocator is reach
 
 ### 4.3 GC_init thread
 
-- `GC_init` `0xE4E160` is called explicitly during Mono start-up, not only lazily from the first allocation (so this is most likely the first call [inferred]): `mono_interp_init` `0xE5A680` -> `0xE66240` -> `0xE4E4C0` (the GC base-init wrapper; second path `0xE76910` -> `0xE75BF0` -> `0xE4E4C0`) -> `GC_init` -> `GC_thr_init` -> `GC_new_thread`. `mono_interp_init` is called at `0xD7E60C` inside the host method `0xD7E540` (vtable `0x108B818`, slot 0) [verified].
-- Which OS thread calls `0xD7E540` (main or sim thread) is **not resolvable statically** (vtable call). If it is the main thread while the sim runs on its own thread (`[Script] Multithreaded=1`), the sim thread is not in Boehm's table: every collection on the sim thread would then suspend the main/render thread in `GC_stop_world` (it is the one registered thread that is not the caller) and still scan only the sim stack (`0xD71820`) [inferred]. That would not corrupt the heap, but it would stall rendering during each collection and could deadlock if the main thread is suspended while holding a lock the collector needs [inferred, unconfirmed].
+- `GC_init` `0xE4E160` is called explicitly during Mono start-up, not only lazily from the first allocation (so this is most likely the first call [inferred]): `mono_interp_init` `0xE5A680` -> `0xE66240` -> `0xE4E4C0` (the GC base-init wrapper; second path `0xE76910` -> `0xE75BF0` -> `0xE4E4C0`) -> `GC_init` -> `GC_thr_init` -> `GC_new_thread`. `mono_interp_init` is called at `0xD7E60C` inside `MonoScriptHost_Init` `0xD7E560` (vtable `vt_MonoScriptHost` `0x108B690`, slot 4 at `0x108B6A0`) [verified]. (Corrected 2026-10-20, docs/119 §1: this line said `0xD7E540`, vtable `0x108B818` slot 0; `0xD7E540` is a scalar deleting destructor that `0xD7E60C` does not lie in.)
+- Which OS thread calls `0xD7E560` (main or sim thread) is **not resolvable statically** (vtable call). If it is the main thread while the sim runs on its own thread (`[Script] Multithreaded=1`), the sim thread is not in Boehm's table: every collection on the sim thread would then suspend the main/render thread in `GC_stop_world` (it is the one registered thread that is not the caller) and still scan only the sim stack (`0xD71820`) [inferred]. That would not corrupt the heap, but it would stall rendering during each collection and could deadlock if the main thread is suspended while holding a lock the collector needs [inferred, unconfirmed].
 
 ### 4.4 Our native workers (ts3native source) [verified]
 
@@ -178,5 +178,5 @@ Ghidra on a copy of the h1 project (`game-copy/ghidra-ic`), plus the existing si
 ## Open points
 
 - ~~Which runtime helpers make up N2's 14.8%~~: §5 (G9). `0x11F43A8` = `loader_mutex`, callback = an icall bound at run time (5.1). Still open: which icall (name it from the `[IcLockCheck]` log) and contended vs call rate (counters v15); names of `0xE51FC0`, `0xE6FD00`, `0xE53620`, `0xD89CD0`.
-- Which OS thread calls `GC_init` (via `0xD7E540`), main or sim thread: open, see 4.3 and the runtime check in 4.5.
+- Which OS thread calls `GC_init` (via `0xD7E560`), main or sim thread: open, see 4.3 and the runtime check in 4.5.
 - Whether any EA code allocates from other threads today: no direct-call path found (section 4); indirect dispatch unresolved, runtime check in 4.5.

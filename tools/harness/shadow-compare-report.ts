@@ -9,7 +9,10 @@
 //     "start": [x, y, z], "goal": [x, y, z],        request: first start record, game's chosen goal record
 //     "tie": [0, 3],                                 goal indices of the job's tie set (docs/99 §4.1), [] or absent = no tie
 //     "refused": null | "option" | "kind" | "lot" | "epoch" | "<reason>",   set = M4, no copy answer
-//     "stale": false,                                a dirty mark for a lot on the path arrived after the cut = M5
+//     "sub": "busy",                                 ts3native 0.33.1, nover / mat / epoch only: the check that refused (busy, off,
+//                                                    portal, noclone, p3, copy, timeout, stale, passed, replaced, moved, shadow; 0.33.2: queued, lock, held)
+//     "stale": false,                                routing writes landed between the cut and the live plan (ts3native
+//                                                    0.33.2): a mismatch (M1-M3) is then M5, equal answers stay M0
 //     "nr": 0,                                       v2 (docs/94 §17.4 D5): bits of the non-routing writer families that
 //                                                    changed in the window and the plan read (1 physics, 2 terrain swap,
 //                                                    4 destroy, 8 lot index, 16 world events 0x0D-0x10, 32 blend, 64 lock
@@ -23,6 +26,12 @@
 //                  "o58": ["0x5A1F00000001"],                             path options +0x58 id list (docs/93 §4.4)
 //                  "nodes": [[x, y, z, seg, flags, type], ...] } ] }      48-byte node xyz, +0x20, +0x2C; O2 node +0x1C (-1 unknown)
 //   Ids are hex strings (u64). Route cost = sum of path len (route +0xA4 is that sum).
+//   "obst" (optional, ts3native 0.35.4, docs/94 §21.19; only on a final M2/M3, [RouteSnap] ShadowObst=1): the footprints
+//   whose polygon points reach the box round both answers (+1 m), from the clone and from the live map read after the shadow:
+//     { "box": [x0, z0, x1, z1], "liveState": "ok" | "busy" | "noworld", "liveW": n (recorded writes since the live plan
+//       began: > 0 = the live set may be newer than what the live plan saw), "us": n, "cloneMore" / "liveMore": entries past
+//       48 (-1 no map, -2 fault), "clone": [Ob], "live": [Ob] }
+//     Ob = ["0xID", "0xVT", f34, fmeFlags, levels, invalidLevelMask, "0xHASH", x0, z0, x1, z1]   hash of every valid level's points
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,9 +41,35 @@ type Path = { type: string; obj: string; len: number; o58?: string[]; nodes: Nod
 type Answer = { mType: number; status: number; startIdx: number; goalIdx: number; paths: Path[] };
 export type Rec = {
   v: number; plan: number; ic: string; world: string; search: 'G' | 'R'; epoch?: number; ver?: number;
-  start?: number[] | null; goal?: number[] | null; tie?: number[]; refused?: string | null; stale?: boolean; nr?: number; m2?: number;
-  gameUs: number; jobUs: number; game: Answer; copy: Answer | null;
+  start?: number[] | null; goal?: number[] | null; tie?: number[]; refused?: string | null; sub?: string; stale?: boolean; nr?: number; m2?: number;
+  gameUs: number; jobUs: number; game: Answer; copy: Answer | null; obst?: Obst;
 };
+type Ob = [string, string, number, number, number, number, string, number, number, number, number];
+export type Obst = { box: number[]; liveState: string; liveW: number; us: number; cloneMore: number; liveMore: number; clone: Ob[]; live: Ob[] };
+
+// the obstacle diff of an M2/M3 record (docs/94 §21.19): footprints only one side has, and footprints whose points differ
+export function obstDiff(o: Obst, max = 8): string[] {
+  const key = (b: Ob) => `${b[0]}/${b[1]}`;
+  const fmt = (b: Ob) => `${b[0]} vt ${b[1]} xz [${b.slice(7).map(v => +(+v).toFixed(3)).join(',')}]` +
+    `${b[5] ? ` invalid levels 0x${b[5].toString(16)}` : ''}`;
+  const live = new Map(o.live.map(b => [key(b), b])), clone = new Map(o.clone.map(b => [key(b), b]));
+  const lines = [`obstacles in box [${o.box.join(',')}]: clone ${o.clone.length}${o.cloneMore ? ` (more ${o.cloneMore})` : ''}, ` +
+    `live ${o.liveState === 'ok' ? o.live.length : o.liveState}${o.liveMore ? ` (more ${o.liveMore})` : ''}, ` +
+    `writes since the live plan ${o.liveW}${o.liveW ? ' (live set may be newer)' : ''}`];
+  if (o.liveState !== 'ok') return lines;
+  const diff: string[] = [];
+  let same = 0;
+  for (const [k, c] of clone) {
+    const l = live.get(k);
+    if (!l) diff.push(`only clone: ${fmt(c)}`);
+    else if (l[6] !== c[6] || l[5] !== c[5]) diff.push(`differs: ${fmt(c)} (clone) vs ${fmt(l)} (live)`);
+    else same++;
+  }
+  for (const [k, l] of live) if (!clone.has(k)) diff.push(`only live: ${fmt(l)}`);
+  lines.push(`  ${same} equal, ${diff.length} differ${diff.length > max ? ` (first ${max})` : ''}`);
+  for (const d of diff.slice(0, max)) lines.push(`  ${d}`);
+  return lines;
+}
 export type Cls = 'M0' | 'M1' | 'M2' | 'M3' | 'M4' | 'M5';
 // M1 sub-kinds (docs/94 §13.1): 'goal' = the job's RNG goal draw picked another member of the tie set; 'path' = an equal-cost
 // alternative route (same result, start, goal, subpaths, end point and route cost within float rounding; other node count or
@@ -53,12 +88,13 @@ export function classify(r: Rec): K {
   const k = classifyCopy(r);
   if (r.nr && (k.cls === 'M1' || k.cls === 'M2' || k.cls === 'M3'))
     return { cls: 'M5', why: [`nr 0x${r.nr.toString(16)} (non-routing writes in the window), would be ${k.cls}`, ...k.why] };
+  if (r.stale && (k.cls === 'M1' || k.cls === 'M2' || k.cls === 'M3'))
+    return { cls: 'M5', why: [`stale (routing writes between the cut and the live plan), would be ${k.cls}`, ...k.why] };
   return k;
 }
 
 function classifyCopy(r: Rec): K {
   if (r.refused || !r.copy) return { cls: 'M4', why: [`refused: ${r.refused ?? 'no copy answer'}`] };
-  if (r.stale) return { cls: 'M5', why: ['stale version'] };
   const g = r.game, c = r.copy;
   if (g.mType !== c.mType || g.status !== c.status) return { cls: 'M3', why: [`mType/status game ${g.mType}/${g.status} copy ${c.mType}/${c.status}`] };
   if (g.mType !== 1) return { cls: 'M0', why: [] };  // same failure code: status only (docs/93 §8)
@@ -156,6 +192,10 @@ export function report(recs: Rec[], first = 10, minCompares = 10000) {
       `${ms(v.gameUs)} (p50 ${v.p.job50}/${v.p.game50} us, p95 ${v.p.job95}/${v.p.game95} us)`);
     out(`  G4 ${v.verdict}${v.reasons.length ? ': ' + v.reasons.join('; ') : ''}`);
   }
+  // M4 by refusal (and its 0.33.1 sub-check), most first: what to raise next for G4's M4 < 5%
+  const m4 = new Map<string, number>();
+  for (const r of recs) if (r.refused || !r.copy) { const key = (r.refused ?? 'no copy') + (r.sub ? '/' + r.sub : ''); m4.set(key, (m4.get(key) ?? 0) + 1); }
+  if (m4.size) out(`M4 by refusal: ${[...m4].sort((a, b) => b[1] - a[1]).map(([k2, v]) => `${k2} ${v}`).join(', ')}`);
   // v3 m2 (docs/94 §22): P5 verify jobs; their copy answer is what Mode=2 takes on the jobs it does not verify
   const m2 = recs.filter(r => r.m2);
   if (m2.length) {
@@ -180,6 +220,7 @@ export function report(recs: Rec[], first = 10, minCompares = 10000) {
   for (const { r, cls, why } of bad.slice(0, first)) {
     out(`  ${cls} plan ${r.plan} ${r.ic} ${r.world} epoch ${r.epoch ?? '?'} ver ${r.ver ?? '?'} start ${r.start ?? '?'} goal ${r.goal ?? '?'}`);
     for (const w of why) out(`    ${w}`);
+    if (r.obst) for (const w of obstDiff(r.obst)) out(`    ${w}`);
   }
   return { lines, verdicts };
 }
@@ -197,6 +238,7 @@ function selfCheck() {
   assert.equal(cls(rec({ game: ans({ mType: 16, status: 8 }), copy: ans({ mType: 16, status: 8, goalIdx: 4 }) })), 'M0');  // failure: status only
   assert.equal(cls(rec({ refused: 'lot', copy: null })), 'M4');
   assert.equal(cls(rec({ stale: true, copy: ans({ mType: 2 }) })), 'M5');
+  assert.equal(cls(rec({ stale: true })), 'M0');  // stale with equal answers: still a compare
   assert.equal(cls(rec({ copy: ans({ mType: 16, status: 8 }) })), 'M3');
   assert.equal(cls(rec({ copy: ans({ status: 1 }) })), 'M3');
   // goal ties: any member of the tie set is M1 goal-tie; outside the set M2
@@ -262,7 +304,7 @@ function selfCheck() {
   assert.equal(gate('BP', [...many(19), rec({ refused: 'kind', copy: null })], 10).verdict, 'FAIL');   // 1/20 = 5%
   assert.equal(gate('BP', [...many(20), rec({ refused: 'kind', copy: null })], 10).verdict, 'PASS');   // 1/21 < 5%
   assert.equal(gate('BP', many(10, { jobUs: 200 }), 10).verdict, 'FAIL');
-  assert.equal(gate('BP', [...many(10), rec({ stale: true, jobUs: 1e6 })], 10).verdict, 'PASS');      // M5 not a compare
+  assert.equal(gate('BP', [...many(10), rec({ stale: true, jobUs: 1e6, copy: ans({ mType: 2 }) })], 10).verdict, 'PASS');      // M5 not a compare
   // ties counted apart: a goal tie passes; tie sets above 0.5% of compares are OPEN (rule suspect)
   v = gate('BP', [...many(300), rec({ tie: [0, 1], copy: ans({ goalIdx: 1 }) })], 10);
   assert.equal(v.verdict, 'PASS'); assert.equal(v.n.M1, 1); assert.equal(v.goalTie, 1); assert.equal(v.m1NonTie, 0); assert.equal(v.tieSets, 1);
@@ -288,6 +330,16 @@ function selfCheck() {
   assert.match(txt, /G4 PASS/);
   assert.match(txt, /IP \(G\).*M1 = goal-tie 0 \+ path-tie 0 \+ real 1.*\n  G4 FAIL: 2 compares < 10; M3 = 1; M1 \(not a tie\) = 1/);
   assert.match(txt, /M3 plan 8 Replan IP[^\n]*\n    mType\/status game 1\/2 copy 16\/8\n  M1 plan 7[^\n]*\n    path 0 node 1: y -100 vs 0/);
+  // obstacle sets (ts3native 0.35.4): the diff names footprints one side lacks and footprints whose points differ
+  const ob = (id: string, h: string, x = 1): Ob => [id, '0x00FEBBC0', 3, 0, 1, 0, h, x, 2, x + 0.4, 2.4];
+  const obst: Obst = { box: [0, 1, 5, 6], liveState: 'ok', liveW: 0, us: 40, cloneMore: 0, liveMore: 0,
+    clone: [ob('0x1', '0xA'), ob('0x2', '0xB'), ob('0x3', '0xC')], live: [ob('0x1', '0xA'), ob('0x2', '0xD', 1.5), ob('0x4', '0xE')] };
+  const od = obstDiff(obst).join('\n');
+  assert.match(od, /clone 3, live 3, writes since the live plan 0\n  1 equal, 3 differ/);
+  assert.match(od, /differs: 0x2 vt 0x00FEBBC0 xz \[1,2,1.4,2.4\] \(clone\) vs 0x2 vt 0x00FEBBC0 xz \[1.5,2,1.9,2.4\] \(live\)/);
+  assert.match(od, /only clone: 0x3 /); assert.match(od, /only live: 0x4 /);
+  assert.deepEqual(obstDiff({ ...obst, liveState: 'busy', liveW: 2 }), ['obstacles in box [0,1,5,6]: clone 3, live busy, writes since the live plan 2 (live set may be newer)']);
+  assert.match(report([rec({ copy: ans({ goalIdx: 1 }), obst })], 5, 1).lines.join('\n'), /M2 plan 1[^\n]*\n    goal[^\n]*\n    obstacles in box/);
   console.log('shadow-compare-report self-check ok');
 }
 

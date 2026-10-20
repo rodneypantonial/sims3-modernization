@@ -1,0 +1,80 @@
+[
+  {
+    "id": "bp-snap-p5-shadow",
+    "note": "docs/94 §22.22 P5 step 1 (0.35.19, counters v72): [RouteSnap] Mode=2 with VerifyEvery=1, so EVERY armed ReplanFromPosition job runs the P5 path (clone run with door asks proxied to the sim, then the game's own plan) and KEEPS THE GAME'S ANSWER: nothing is taken, P5b/P5c windows never open (verify jobs keep the hold). First live run of Mode=2 code; run before snap-p5.json. Park the 0.35.19 build as game-copy/ts3native.asi.snapp5 first. HitchAttr on (observe only). Reports also: node tools/harness/hitch-attr-report.ts <row tag>. trip shortcuts off for more plans. After: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block) and node tools/harness/shadow-compare-report.ts <row.shadowLog> (P5 verify line, records \"m2\":1). Pass = no crash, no hang / watchdog, 'Mode=2 on at the end' PASS, verify M2 / M3 = 0 (verify jobs = taken-path plans: every armed job), snShadowFault 0, m2Trips 0, rpMis 0, no 'RouteSnap: Mode=2 off' line, fallback 'mat' (timeout) <= 5% of plans (0.35.19 pre-lock: the consumer is at the cut before the job takes +0x918), 0 stuck Sims (log only)",
+    "asi": "game-copy/ts3native.asi.snapp5",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 1,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-snap-p5-shadow",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals, more door asks per plan: docs/108 8.78 vs 4.30); ShadowWorld IP",
+    "asi": "game-copy/ts3native.asi.snapp5",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 4,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 2,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.Kinds": 8,
+      "RouteSnap.VerifyEvery": 1,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

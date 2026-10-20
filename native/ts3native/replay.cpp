@@ -116,8 +116,19 @@ struct RpTab { DWORD* k; DWORD* v; DWORD cap, used; };
 static DWORD RpTabH(DWORD key, DWORD cap) { return (key * 0x9E3779B1u >> 4) & (cap - 1); }
 static void RpTabFree(RpTab& t) { RpFree(t.k); RpFree(t.v); t.k = t.v = NULL; t.cap = t.used = 0; }
 static bool RpTabPut(RpTab& t, DWORD key, DWORD v);
-static bool RpTabGrow(RpTab& t) {
-    RpTab n = {NULL, NULL, t.cap ? t.cap * 2 : 1024, 0};
+// 0.35.12 (docs/94 §22.15, I-94-458): `used` counts erased slots too (a put reuses one only on its own probe path), so a
+// table with churning keys (live footprint addresses: BP 0.35.9 freed 233k blocks) reached the grow limit with few live
+// entries and doubled anyway: caps grew for the whole session and every scan (GC, repin, unify, map resync) with them.
+// Now the rehash drops the erased slots and sizes the table to its live entries (4x, at least 1024 slots): it may shrink.
+static DWORD RpTabLive(const RpTab& t) {
+    DWORD n = 0;
+    for (DWORD i = 0; i < t.cap; i++) n += t.k[i] > 1;
+    return n;
+}
+static bool RpTabGrow(RpTab& t, DWORD more = 0) {  // more: entries about to be put (an empty table sized once)
+    DWORD cap = 1024;
+    for (const DWORD want = (RpTabLive(t) + more + 1) * 4; cap < want;) cap *= 2;
+    RpTab n = {NULL, NULL, cap, 0};
     n.k = (DWORD*)RpAlloc(n.cap * 4), n.v = (DWORD*)RpAlloc(n.cap * 4);
     if (!n.k || !n.v) { RpFree(n.k); RpFree(n.v); return false; }
     for (DWORD i = 0; i < t.cap; i++) if (t.k[i] > 1) RpTabPut(n, t.k[i], t.v[i]);
@@ -146,10 +157,6 @@ static DWORD* RpTabFind(const RpTab& t, DWORD key) {
         if (t.k[h] == key) return &t.v[h];
         if (!t.k[h]) return NULL;
     }
-}
-static void RpTabDel(RpTab& t, DWORD key) {
-    DWORD* v = RpTabFind(t, key);
-    if (v) t.k[v - t.v] = 1;
 }
 
 // --- footprint copies: one block per footprint and its children, header 16 bytes before the footprint ---
@@ -326,6 +333,7 @@ static u8* RpFpCopy(u8* live) {
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    const LONG64 cy0 = CycNow();
     u8* fp = NULL;
     RpCopyRefused(RW_FAULT, live);  // replaced by RpFpMeasure's reason, or kept when the copy faults
     __try {
@@ -342,6 +350,7 @@ static u8* RpFpCopy(u8* live) {
     } __except (EXCEPTION_EXECUTE_HANDLER) { fp = NULL; }  // shortcut: a fault inside the copy leaks that block (counted as a refused copy)
     if (!fp) InterlockedIncrement(&k.rpCopyFail); else InterlockedIncrement(&k.rpFps);
     InterlockedExchangeAdd(&k.rpCopyUs, UsSince(t0));
+    InterlockedExchangeAdd64(&g_cyCopy, CycNow() - cy0);
     return fp;
 }
 // A child footprint (0xFEBF90) that its parent's list does not hold gets a block of its own, +0xC = the parent's copy, which
@@ -368,12 +377,19 @@ static u8* RpFpCopyChild(const u8* live, u8* parCopy) {
     InterlockedIncrement(&ts3native_counters.rpFps);
     return g;
 }
-// children of a copy (list node +12 holds the live child) in or out of a live -> clone table
+// children of a copy (list node +12 holds the live child) in or out of a live -> clone table. Out only when the entry is this
+// copy's child (0.35.8, I-94-440): a live child freed after the copy was made and its address reused by a new child of
+// another parent (the 0x28-byte pool 0x1165B80) maps to that parent's copy now; retiring or freeing the old block deleted
+// that entry, and the new child's FMEs lost their clone partner ("clone copy: none", BP 0.35.6: 692 fresh soft misses)
 static void RpKids(RpTab& kids, const u8* fp, bool put) {
     if (!RpHasList(fp)) return;
     for (const u8* l = *(u8* const*)(fp + 0x24); l != fp + 0x24; l = *(u8* const*)l) {
         u8* ch = *(u8* const*)(l + 8);
-        if (put) RpTabPut(kids, *(const DWORD*)(l + 12), (DWORD)(uintptr_t)ch); else RpTabDel(kids, *(const DWORD*)(l + 12));
+        if (put) RpTabPut(kids, *(const DWORD*)(l + 12), (DWORD)(uintptr_t)ch);
+        else if (DWORD* v = RpTabFind(kids, *(const DWORD*)(l + 12))) {
+            if (*v == (DWORD)(uintptr_t)ch) kids.k[v - kids.v] = 1;
+            else ts3native_counters.rpKidsKept++;
+        }
         RpKids(kids, ch, put);
     }
 }
@@ -388,7 +404,7 @@ static LONG RpFpRefs(const u8* fp) {
 // --- the clone ---
 // prefs: the portal references this lot copy holds (H20b, 0.30.0): one per non-null element of the lot graph's portal list +0x44,
 // its pending adds +0x54 and every room record's portal vectors +4 / +0x14, taken at the copy and released at RpLotFree
-struct RpLot { u64 key; u8* node; int nQ; u8* q[16]; DWORD liveQ[16]; bool stale, rooms; u8** prefs; int nPrefs; };
+struct RpLot { u64 key; u8* node; int nQ; u8* q[16]; DWORD liveQ[16]; bool stale, rooms; u8** prefs; int nPrefs; u8 hashes; };
 struct RpClone {
     u8* p; u8* m; u8* dummyQ;
     DWORD* lotBk; DWORD lotN;
@@ -476,6 +492,43 @@ static bool RpRoomListsCopy(u8* r) {
 static void RpRoomListsFree(u8* r) {
     for (u8* e = RpP(r + 0x34); e && e < RpP(r + 0x38); e += 16) g_rpDel(RpP(e));
     g_rpDel(RpP(r + 0x34)), g_rpDel(RpP(r + 0x24));
+}
+// I-94-321 (0.33.4, steerro-test K8, docs/94 §13.3): the lot graph's two hashes g+0x120 (lot-edge waypoint key -> exit portal
+// index: LotEdge_WaypointPosition 0x653020, the closest-waypoint gather 0x654C04) and g+0x140 (0x63C326) are 0x20-byte EASTL
+// hashes (+4 buckets, +8 count, +0xC size, +0x1C allocator tag; 12-byte nodes key, value, next +8) that the game's own lot graph
+// copy 0x62DE40 deep-copies through 0x6267E0. The shell's byte copy kept the live bucket array, so a clone run read live nodes,
+// which the sim thread clears and refills (0x656250 at a lot build, LoadLotData, a build/buy exit) [verified disassembly]. Our
+// copy: EA blocks as 0x6267E0 makes them (buckets with flag 0x400000, the end marker kept, chain order kept). A NULL bucket
+// array (the tests' fake lots) is left as it is
+static bool RpHashCopyEA(u8* h) {
+    const DWORD* bk = (const DWORD*)RpP(h + 4);
+    const DWORD n = RpD(h + 8);
+    if (!bk) return true;
+    if (!n || n > (1u << 20)) return false;
+    DWORD* c = (DWORD*)g_rpNew((n + 1) * 4, RpD(h + 0x1C), 0x400000, 0, 0xF98980, 0xE7);
+    if (!c) return false;
+    memset(c, 0, n * 4);
+    c[n] = bk[n];
+    *(DWORD**)(h + 4) = c;
+    for (DWORD i = 0; i < n; i++) {
+        DWORD* link = &c[i];
+        for (const u8* nd = (const u8*)(uintptr_t)bk[i]; nd; nd = RpP(nd + 8)) {
+            u8* m = (u8*)g_rpNew(12, RpD(h + 0x1C), 0, 0, 0xF98980, 0xE7);
+            if (!m) return false;  // the chain ends here: private, short (the caller fails the build)
+            memcpy(m, nd, 8);
+            *(DWORD*)(m + 8) = 0;
+            *link = (DWORD)(uintptr_t)m;
+            link = (DWORD*)(m + 8);
+        }
+    }
+    return true;
+}
+static void RpHashFreeEA(u8* h) {
+    DWORD* bk = (DWORD*)RpP(h + 4);
+    if (!bk) return;
+    for (DWORD i = 0; i < RpD(h + 8); i++)
+        for (u8* nd = (u8*)(uintptr_t)bk[i]; nd;) { u8* nx = RpP(nd + 8); g_rpDel(nd); nd = nx; }
+    g_rpDel(bk);
 }
 
 // build context: an epoch build (whole clone) or a rebase batch (some lots against the clone's P)
@@ -637,7 +690,9 @@ static void RpTreeRel(u8* q) {
     if (r && --r[7] == 0) { r[7] = 1; ((RpDtorFn)(uintptr_t)RpD(RpP(r)))(r, NULL, 1); }
 }
 // lot node copy with Q shells (trees filled after the map, so FMEs found in the map get their map reference first)
-static u8* RpLotShell(RpCtx& x, const u8* live, RpLot* l) {
+// qs = false (a shell refresh, 0.35.17): no Q copies; l->q stays empty and the node's Q vector keeps the live Qs until the
+// consumer puts the clone's own Qs of that lot in it (RpApplyBatch)
+static u8* RpLotShell(RpCtx& x, const u8* live, RpLot* l, bool qs = true) {
     x.lot = ((u64)RpD(live + 4) << 32) | RpD(live);
     u8* node = (u8*)RpAlloc(kRpNodeSz);
     if (!node) { RpFailW(x, RW_ALLOC, x.lot, 4); return NULL; }
@@ -657,6 +712,13 @@ static u8* RpLotShell(RpCtx& x, const u8* live, RpLot* l) {
         rooms = rooms && RpVecCopy(r, 4, 4) && RpVecCopy(r, 0x14, 4) && RpRoomListsCopy(r);  // 0.32.6: +0x24 / +0x34 EA, deep
     l->rooms = rooms;  // false: some room vectors stay live (leaked copies, never a free of a live pointer)
     if (!rooms) RpFailW(x, RW_ROOMS, x.lot, (DWORD)((RpP(g + 0x94) - RpP(g + 0x90)) / 0x44));
+    // I-94-321: the two lot hashes (bit set = ours to free)
+    l->hashes = 0;
+    for (int h = 0; h < 2; h++) {
+        const DWORD liveBk = RpD(g + 0x124 + 0x20 * h);
+        if (!RpHashCopyEA(g + 0x120 + 0x20 * h)) RpFailW(x, RW_ALLOC, x.lot, 8);
+        if (RpD(g + 0x124 + 0x20 * h) != liveBk) l->hashes |= (u8)(1 << h);  // our bucket array (even a short one)
+    }
     l->key = ((u64)RpD(live + 4) << 32) | RpD(live);
     l->node = node, l->stale = false;
     l->prefs = NULL, l->nPrefs = 0;
@@ -668,7 +730,7 @@ static u8* RpLotShell(RpCtx& x, const u8* live, RpLot* l) {
         const u8* lq = qv[i];
         l->liveQ[i] = (DWORD)(uintptr_t)lq;
         l->q[i] = NULL;
-        if (!lq) continue;
+        if (!lq || !qs) continue;
         u8* q = (u8*)RpAlloc(kRpQSz);
         if (!q) { RpFailW(x, RW_ALLOC, x.lot, 6); continue; }
         memcpy(q, lq, kRpQSz);
@@ -699,6 +761,7 @@ static void RpLotFree(RpLot* l) {  // trees released first; the caller has dropp
                 RpFree(RpP(r + 4)), RpFree(RpP(r + 0x14)), RpRoomListsFree(r);
             RpFree(RpP(g + 0x90));
         }
+        for (int h = 0; h < 2; h++) if (l->hashes & (1 << h)) RpHashFreeEA(g + 0x120 + 0x20 * h);
         RpFree(l->node);
     }
     l->node = NULL, l->nQ = 0;
@@ -809,6 +872,96 @@ static void RpFreeClone(RpClone* c) {  // caller holds +0x918 (the clone's write
     RpTabFree(c->kids);
     RpTabFree(c->old), RpTabFree(c->oldLive);
     RpFree(c->lots), RpFree(c->lotBk), RpFree(c->dummyQ), RpFree(c->m), RpFree(c->p), RpFree(c);
+}
+// 0.35.13 (docs/94 §22.16, I-94-466): replaced clone memory is freed in slices. 0.35.12's consumer freed the old clone at an
+// EPOCH (115-130 ms) and a batch's replaced lots (a 119-lot batch: 180-206 ms) inside one +0x918 hold. Now the EPOCH and the
+// batch move them to the grave (portal references dropped at once: live objects); each consumer hold frees about 1 ms of it,
+// with +0x918 and the pool set held as before, in RpFreeClone's order (trees, map nodes, lots, blocks, tables)
+struct RpGrave { RpLot* lots; int n, cap, at; RpClone* c; int phase; DWORD i; };
+static RpGrave g_rpGrave;
+static bool RpGraveBusy() { return g_rpGrave.at < g_rpGrave.n || g_rpGrave.c; }
+static void RpGraveLot(RpLot* l) {  // a lot the clone dropped (its map nodes already gone)
+    RpGrave& g = g_rpGrave;
+    if (l->prefs) RpPortalRefsDrop(l);
+    if (g.n == g.cap) {
+        const int cap = g.cap ? g.cap * 2 : 256;
+        RpLot* nl = (RpLot*)RpAlloc(cap * sizeof(RpLot));
+        if (!nl) { RpLotFree(l); return; }
+        if (g.n) memcpy(nl, g.lots, g.n * sizeof(RpLot));
+        RpFree(g.lots);
+        g.lots = nl, g.cap = cap;
+    }
+    g.lots[g.n++] = *l;
+}
+static void RpGraveStep(LONG budgetUs);
+static void RpGraveClone(RpClone* c) {  // a whole clone (an EPOCH replaced it)
+    if (!c) return;
+    if (g_rpGrave.c) RpGraveStep(-1);
+    for (int i = 0; i < c->nLots; i++) if (c->lots[i].prefs) RpPortalRefsDrop(&c->lots[i]);
+    g_rpGrave.c = c, g_rpGrave.phase = 0, g_rpGrave.i = 0;
+}
+static void RpGraveCloneStep(RpGrave& g) {  // one slice of RpFreeClone
+    RpClone* c = g.c;
+    switch (g.phase) {
+        case 0:  // trees
+            if (g.i < (DWORD)c->nLots) {
+                RpLot& l = c->lots[g.i++];
+                __try { for (int j = 0; j < l.nQ; j++) if (l.q[j]) RpTreeRel(l.q[j]); } __except (EXCEPTION_EXECUTE_HANDLER) { ts3native_counters.rpFaults++; }
+                return;
+            }
+            break;
+        case 1:  // map nodes, 512 buckets a slice, then the bucket array
+            if (u8* m = c->m) {
+                const DWORD nb = RpD(m + 8);
+                DWORD* bk = (DWORD*)RpP(m + 4);
+                __try {
+                    if (nb > 1 && g.i < nb) {
+                        for (const DWORD e = min(nb, g.i + 512); g.i < e; g.i++)
+                            for (u8* nd = (u8*)(uintptr_t)bk[g.i]; nd;) { u8* nx = RpP(nd + 0x10); g_rpMapNodeFree(m, NULL, nd); nd = nx; }
+                        return;
+                    }
+                    if (nb > 1) g_rpMapFree(m + 0x1C, NULL, bk, nb * 4 + 4);
+                } __except (EXCEPTION_EXECUTE_HANDLER) { ts3native_counters.rpFaults++; }
+            }
+            break;
+        case 2:  // lots
+            if (g.i < (DWORD)c->nLots) { RpLotFree(&c->lots[g.i++]); return; }
+            break;
+        case 3: case 4: {  // footprint blocks, then replaced blocks; 1024 slots a slice
+            const RpTab& t = g.phase == 3 ? c->fps : c->old;
+            if (g.i < t.cap) {
+                g_rpMassFree = true;  // every block goes: no unpin into a parent freed before its child
+                for (const DWORD e = min(t.cap, g.i + 1024); g.i < e; g.i++)
+                    if (t.k[g.i] > 1) RpFpFree((u8*)(uintptr_t)(g.phase == 3 ? t.v[g.i] : t.k[g.i]));
+                g_rpMassFree = false;
+                return;
+            }
+            break;
+        }
+        default:
+            RpTabFree(c->fps), RpTabFree(c->kids), RpTabFree(c->old), RpTabFree(c->oldLive);
+            RpFree(c->lots), RpFree(c->lotBk), RpFree(c->dummyQ), RpFree(c->m), RpFree(c->p), RpFree(c);
+            g.c = NULL, g.phase = 0, g.i = 0;
+            return;
+    }
+    g.phase++, g.i = 0;
+}
+static void RpGraveStep(LONG budgetUs) {  // consumer: +0x918 and the pool set held; budgetUs < 0 = all of it
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    RpGrave& g = g_rpGrave;
+    __try {
+        while (RpGraveBusy() && (budgetUs < 0 || UsSince(t0) < budgetUs)) {
+            if (g.at < g.n) {
+                RpLotFree(&g.lots[g.at++]);
+                if (g.at == g.n) g.at = g.n = 0;
+            } else RpGraveCloneStep(g);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {  // shortcut: what is left is leaked, as the drain's own fault path does
+        ts3native_counters.rpFaults++;
+        g.at = g.n = 0, g.c = NULL, g.phase = 0, g.i = 0, g_rpMassFree = false;
+    }
+    if (!RpGraveBusy() && g.lots) RpFree(g.lots), g.lots = NULL, g.cap = 0;
 }
 static void RpCtxDone(RpCtx& x) { RpTabFree(x.qMap); RpTabFree(x.fmeMap); RpTabFree(x.fps); RpTabFree(x.kids); RpTabFree(x.exQ); RpTabFree(x.bad); }
 
@@ -927,11 +1080,45 @@ static const DWORD kRpRing = 1 << 16;
 static RpRec* g_rpRing;
 static volatile LONG g_rpRingLock;
 static volatile DWORD g_rpEpochAt;  // ring position after the last EPOCH (sim)
+static DWORD g_rpLotsAt;             // ring position after the last LOTS with map work since that EPOCH (sim; g_rpLotsPend: there is one)
+static bool g_rpLotsPend;
+static LONG g_rpLotsWait;            // cuts whose rebase waited for that batch (logged)
 static volatile DWORD g_rpHead, g_rpTail, g_rpPub;  // head: next position written; tail: next read; pub: published
 static volatile LONG g_rpOn, g_rpNeedEpoch;
+// 0.33.1 (docs/94 §21.14): a map resync that fails only on live nodes of lots the clone holds forces those lots' rebase at
+// the next cut instead of a whole rebuild (BP 0.32.8: 60 rebuilds of ~170 ms on the sim, each followed by ~25 refused
+// shadows). Until a later batch resyncs, the clone is stale: P4 refuses every acquire ("mat", sub "stale"). After
+// kRpSoftMax soft tries in a row, or a miss on a node of no clone lot, the rebuild as before.
+static volatile LONG g_rpStale;
+static int g_rpSoftRun;  // consumer
+static const int kRpSoftMax = 3;
+// 0.35.5 (docs/94 §21.20): kRpSoftMax counted every failed batch, but a force only reaches the batch of the NEXT cut. With
+// the consumer behind (BP lag up to 756 records), the batches already cut before the force miss the same lot again and used
+// the tries up (BP 76, IP 21 rebuilds of ~170 ms in a sim cut, "soft tries used up"); so did a new unrecorded change on a lot
+// rebased since. Now only a miss on a lot this very batch rebased counts as a try (kRpSoftMax); a miss on a lot whose force
+// is still pending (g_rpSoftPend) is in flight (not forced again), any other one is fresh (forced); a failed batch without
+// such a lot counts in g_rpSoftFresh (kRpSoftFreshMax in a row, then the rebuild as before). The clone stays stale (P4 refuses) until the whole map matches.
+static u64 g_rpSoftPend[64];  // lots forced by a soft resync, not yet in an applied batch (consumer; the sim reads them under the ring lock)
+static int g_rpNSoftPend;
+static int g_rpSoftFresh;  // consumer
+static const int kRpSoftFreshMax = 32;
 // what asked for the next clone rebuild (0.31.4, log only): the source line in replay.cpp, negative for p4clone.cpp
 static volatile LONG g_rpEpochWhy;
-#define RP_NEED_EPOCH() (g_rpEpochWhy = __LINE__, g_rpNeedEpoch = 1)
+// 0.35.3 (docs/94 §21.18): the clone the consumer applies to missed a record; P4 refuses acquires until an EPOCH replaces it
+// (consumer and P4 discard set it, the consumer's EPOCH clears it). Before, a later cut's rebuild cleared g_rpNeedEpoch and a
+// shadow of an older cut ran on the missed clone
+static volatile LONG g_rpBad;
+// a consumer miss on a clone that a newer EPOCH already replaces (the sim built it after these records) asks no rebuild: it
+// only marks that clone bad. Before, each such miss (consumer lag behind a rebuild) asked a second rebuild and the cuts until
+// the consumer applied the first EPOCH were refused "nover"/"noclone" (BP 0.34.4: rebuilds in pairs, bursts of up to 25)
+static void RpAskEpoch(LONG line) {
+    if (t_rpReplay) {
+        g_rpBad = 1;
+        if ((LONG)(g_rpEpochAt - 1 - g_rpTail) > 0) { InterlockedIncrement(&ts3native_counters.rpOldAsk); return; }
+    }
+    g_rpEpochWhy = line, g_rpNeedEpoch = 1;
+}
+#define RP_NEED_EPOCH() RpAskEpoch(__LINE__)
 #define RP_REBUILD(w) (g_rpEpochWhy = __LINE__, RpEpoch(w))
 static HANDLE g_rpEvent, g_rpThread;
 static bool g_rpThreaded = true;  // selftest drains on its own thread
@@ -957,7 +1144,9 @@ static void RpPush(DWORD type, DWORD a, DWORD b, DWORD c, void* p) {
 }
 
 // --- payloads ---
-struct RpBatchLot { u64 key; bool removed; RpLot lot; };
+// shell (0.35.17, docs/94 §22.20): only the lot node, portals, rooms and hashes were copied; the consumer keeps the clone's
+// Qs, trees and map nodes of that lot (the records kept them in step) and swaps the shell in
+struct RpBatchLot { u64 key; bool removed, shell; RpLot lot; };
 struct RpBatch {
     int n; RpBatchLot* lots;
     DWORD* map; int nMap;  // (lo, hi, FME) triples in the live chain order
@@ -1007,7 +1196,7 @@ static void RpPayloadFree(const RpRec& r) {
         case RP_LOTS: RpBatchFree((RpBatch*)r.p, true); break;  // dropped before the clone took it (the sim's cut, +0x918 held)
         case RP_EPOCH: RpFreeClone((RpClone*)r.p); break;
         case RP_AUDIT: RpAuditFree((RpAuditRec*)r.p); break;
-        case RP_SYNC: RpFree(r.p); break;
+        case RP_SYNC: case RP_REM: RpFree(r.p); break;
         default: break;
     }
 }
@@ -1071,25 +1260,47 @@ static u64 RpLotHash(const u8* node, DWORD* ents, DWORD* perQ = NULL) {  // perQ
     } __except (EXCEPTION_EXECUTE_HANDLER) { h = 0; }
     return h;
 }
-// lot signature (sim mirror): what forces a rebase. Node, built byte, level base, Q pointers, transforms, portals, lists.
+// signature mix (0.35.20, docs/94 §22.23): two 32-bit lanes, one multiply each per DWORD. RpMix's byte-wise 64-bit FNV cost
+// ~13 ns per DWORD on x86 (4 64-bit multiplies): 82 BP lots x ~70 DWORDs = 72-325 us per cut by portal count (bench), the
+// largest steady share of the cut. Each lane step is a bijection of the lane for a fixed input, so a change of one input
+// DWORD always changes both lanes; only the sim's mirror compares these values (no stored or cross-thread hash)
+static inline u64 RpSigMix(u64 h, DWORD v) {
+    DWORD a = (DWORD)h, b = (DWORD)(h >> 32);
+    a = (a ^ v) * 0x01000193u;
+    b = _rotl(b + v * 0x85EBCA6Bu, 13) * 5u + 0xE6546B64u;
+    return ((u64)b << 32) | a;
+}
+// lot signature (sim mirror): what forces a rebase. Node, built byte, door-ask byte, level base, Q pointers, transforms,
+// portals, lists. 0.35.24 (docs/94 §22.28, I-94-499): +0x8F (Portal_LockState 0x64F2C0 asks the script only while it is set;
+// SetPortalLockStatus 0x74B490 sets it, a 0 / > 3 answer clears it at 0x64F4EE) is in the signature, so a flip alone
+// refreshes the lot's shell (RpLotShell copies the whole node) instead of leaving the clone on the old byte
 static u64 RpSig(const u8* node) {
-    u64 h = RpMix(0xCBF29CE484222325ull, (DWORD)(uintptr_t)node);
+    u64 h = RpSigMix(0xCBF29CE484222325ull, (DWORD)(uintptr_t)node);
     __try {
         const u8* g = node + 0x10;
-        h = RpMix(RpMix(h, g[0x8C]), RpD(g + 0x40));
-        for (DWORD o = 0xA0; o < 0x120; o += 4) h = RpMix(h, RpD(g + o));
+        h = RpSigMix(RpSigMix(h, g[0x8C] | (DWORD)g[0x8F] << 8), RpD(g + 0x40));
+        for (DWORD o = 0xA0; o < 0x120; o += 4) h = RpSigMix(h, RpD(g + o));
         for (DWORD v = 0x44; v <= 0x74; v += 0x10) {
             const u8* b = RpP(g + v);
             const u8* e = RpP(g + v + 4);
-            h = RpMix(h, (DWORD)(e - b));
-            if (v == 0x44 || v == 0x74) for (const u8* p = b; p && p < e && p < b + 4 * 4096; p += 4) h = RpMix(h, RpD(p));
+            h = RpSigMix(h, (DWORD)(e - b));
+            if (v == 0x44 || v == 0x74) for (const u8* p = b; p && p < e && p < b + 4 * 4096; p += 4) h = RpSigMix(h, RpD(p));
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { h = 0; }
     return h;
 }
 
+static u64 RpQSig(const u8* node) {  // 0.35.5: the Q vector +0x74 alone (what a shell-only rebase would keep)
+    u64 h = 0xCBF29CE484222325ull;
+    __try {
+        const u8* b = RpP(node + 0x10 + 0x74);
+        const u8* e = RpP(node + 0x10 + 0x78);
+        for (const u8* p = b; p && p < e && p < b + 64; p += 4) h = RpSigMix(h, RpD(p));
+    } __except (EXCEPTION_EXECUTE_HANDLER) { h = 0; }
+    return h;
+}
 // --- the sim's mirror of what the clone was built from (sim thread only) ---
-struct RpMirror { u64 key, sig; };
+struct RpMirror { u64 key, sig, qsig; };  // qsig: the lot's Q pointer list only (rpRebaseQSame)
 static RpMirror g_rpMir[kRpMaxLots];
 static int g_rpNMir;
 static u8* g_rpSimP;                 // the clone's P (stable until the next epoch); rebase shells point their Qs at it
@@ -1098,7 +1309,13 @@ static bool g_rpHave;                // an epoch clone was pushed
 static u64 g_rpForce[64];            // W3 / W4 lots: rebase at the next cut (any thread, under the ring lock)
 static int g_rpNForce;
 static LONG g_rpForceAll;
-static DWORD g_rpBadQ[16];           // Qs that got an insert whose footprint copy was refused (under the ring lock)
+// 0.35.17 (docs/94 §22.20, I-94-476): W4 lots (LotGraph_Build). The build rewrites the lot node, rooms and portals; its
+// quadtree changes go through W1 / W2 (0x635700 removes, 0x666C50 queues inserts) and are replayed, and a new Q is a W3
+// build (a full force). So the cut refreshes only the shell while the lot's Q list is unchanged (BP 0.35.16: 389 of 446
+// rebased lots were W4 forces from PcPrepare's first use, IP 573 of 638). Same lock and overflow rule as g_rpForce
+static u64 g_rpShellF[64];
+static int g_rpNShellF;
+static DWORD g_rpBadQ[16];          // Qs that got an insert whose footprint copy was refused (under the ring lock)
 static int g_rpNBadQ;
 static DWORD g_rpAuditEvery = 4, g_rpLogMis = 32;
 // lots hashed per audit cut, rotating (0 = all). 0.30.1 hashed all 82 BP lots on the sim at every 4th cut: ~97 ms each, 38 ms/s
@@ -1131,11 +1348,27 @@ static void RpExQs(const RpLiveLot* live, int n, RpTab& out) {
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 }
-static void RpMirrorSet(const RpLiveLot* live, int n) {
+// keep (0.35.23, ReplaySigMs): a cut that did not scan signatures; every lot not in keepA / keepB (the lots this batch
+// rebases) keeps its old signatures, so a node change no hook saw is still a difference at the next scan
+static void RpMirrorSet(const RpLiveLot* live, int n, const RpLiveLot* keepA = NULL, int nA = 0, const RpLiveLot* keepB = NULL, int nB = 0,
+                        bool keep = false) {
+    static RpMirror old[kRpMaxLots];
+    const int nOld = keep ? g_rpNMir : 0;
+    if (nOld) memcpy(old, g_rpMir, nOld * sizeof(RpMirror));
     g_rpNMir = 0;
     RpTabFree(g_rpKnownQ);
     for (int i = 0; i < n && g_rpNMir < kRpMaxLots; i++) {
-        g_rpMir[g_rpNMir++] = {live[i].key, RpSig(live[i].node)};
+        const RpMirror* o = NULL;
+        if (nOld) {
+            bool reb = false;
+            for (int j = 0; j < nA && !reb; j++) reb = keepA[j].key == live[i].key;
+            for (int j = 0; j < nB && !reb; j++) reb = keepB[j].key == live[i].key;
+            if (!reb) {
+                if (i < nOld && old[i].key == live[i].key) o = &old[i];
+                for (int j = 0; !o && j < nOld; j++) if (old[j].key == live[i].key) o = &old[j];
+            }
+        }
+        g_rpMir[g_rpNMir++] = o ? *o : RpMirror{live[i].key, RpSig(live[i].node), RpQSig(live[i].node)};
         if (RpIsEx(live[i].key)) continue;
         __try {
             const u8* g = live[i].node + 0x10;
@@ -1219,7 +1452,8 @@ static const DWORD kRpRetryMs = 10000;
 static PlSeen g_rpSimSeen;  // the game's pool objects at the last clone build (sim)
 static void RpEpochBody(const u8* world);
 static void RpEpoch(const u8* world) {  // sim, +0x918 held; clone work on private pools (pools.cpp)
-    const LONG op = RpOpEnter();
+    LONG op;
+    if (!RpOpTry(&op)) { RP_NEED_EPOCH(); return; }  // a P4 run owns the pool set: the next cut builds (0.35.12)
     RpEpochBody(world);
     RpOpLeave(op);
 }
@@ -1259,10 +1493,11 @@ static void RpEpochBody(const u8* world) {
     const int n = RpLiveLots(RpP(world + 0x95C), g_rpLive, kRpMaxLots);
     RpMirrorSet(g_rpLive, n < 0 ? 0 : n);
     while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
-    g_rpNForce = 0, g_rpForceAll = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNNoQ = 0, g_rpNoQAll = 0;
+    g_rpNForce = 0, g_rpForceAll = 0, g_rpNShellF = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNNoQ = 0, g_rpNoQAll = 0;
     InterlockedExchange(&g_rpRingLock, 0);
     RpPush(RP_EPOCH, 0, 0, 0, c);
     g_rpEpochAt = g_rpHead;
+    g_rpLotsPend = false;  // older batches go to the old clone
     const LONG why = g_rpEpochWhy;
     g_rpEpochWhy = 0;
     Log("snap replay: clone built (%d lots, %lu map entries; %d child footprints outside their parent's list, %d FMEs without a Q) in %ld us; "
@@ -1319,42 +1554,66 @@ static bool RpNoQCut(const u8* P) {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     return true;
 }
+// shells (0.35.17, docs/94 §22.20, I-94-476): lots whose Q list is unchanged and that only a lot graph build (W4) or a node
+// change (signature) touched get a shell refresh; a batch of shells only walks no map and carries no map order
 static RpBatch* RpRebase(const u8* world, const RpLiveLot* set, int n, const u64* gone, int nGone, const u64* unk, int nUnk,
-                         const RpTab& exQ) {
+                         const RpTab& exQ, const RpLiveLot* shells = NULL, int nShell = 0) {
     RpBatch* b = (RpBatch*)RpAlloc(sizeof(RpBatch));
     if (!b) return NULL;
-    b->lots = (RpBatchLot*)RpAlloc((n + nGone) * sizeof(RpBatchLot) + 4);
+    b->lots = (RpBatchLot*)RpAlloc((n + nGone + nShell) * sizeof(RpBatchLot) + 4);
     if (!b->lots) { RpFree(b); return NULL; }
     RpCtx x;
     memset(&x, 0, sizeof(x));
     x.cp = g_rpSimP;
     x.dummyQ = NULL;  // FMEs of other lots are not copied (the map walk below takes only these lots' Qs)
+    const bool mapWork = n || nGone || nUnk;
     __try {
-        for (int i = 0; i < nGone; i++) { b->lots[b->n].key = gone[i]; b->lots[b->n].removed = true; b->n++; }
+        for (int i = 0; i < nGone; i++) { b->lots[b->n].key = gone[i]; b->lots[b->n].removed = true; b->lots[b->n].shell = false; b->n++; }
         for (int i = 0; i < n && !x.fail; i++) {
             RpBatchLot& bl = b->lots[b->n++];
-            bl.key = set[i].key, bl.removed = false;
+            bl.key = set[i].key, bl.removed = false, bl.shell = false;
             if (!RpLotShell(x, set[i].node, &bl.lot)) x.fail = true;
         }
+        for (int i = 0; i < nShell && !x.fail; i++) {
+            RpBatchLot& bl = b->lots[b->n++];
+            bl.key = shells[i].key, bl.removed = false, bl.shell = true;
+            if (!RpLotShell(x, shells[i].node, &bl.lot, false)) x.fail = true;
+        }
+        if (mapWork) {
         const u8* M = RpP(RpP(world + 0x95C) + 0x24);
         const DWORD mb = RpD(M + 8);
         const DWORD* lb = (const DWORD*)RpP(M + 4);
         int cap = 0;
+        // 0.35.12 (I-94-459): the nodes on these lots' Qs are kept from this walk in chain order (the live map does not change
+        // under the sim's +0x918), so the FME pass below walks them, not the whole map again (BP: 126k nodes per batch)
+        DWORD* mine = NULL;
+        DWORD nMine = 0, capMine = 0;
         for (DWORD i = 0; mb > 1 && i < mb && !x.fail; i++)
-            for (const u8* nd = (const u8*)(uintptr_t)lb[i]; nd && !x.fail; nd = RpP(nd + 0x10))
-                if (RpP(nd + 8) && (RpTabFind(x.qMap, RpD(RpP(nd + 8) + 0xC)) || RpUnkHas(unk, nUnk, ((u64)RpD(nd + 4) << 32) | RpD(nd))))
-                    RpPreParent(x, RpP(nd + 8));
+            for (const u8* nd = (const u8*)(uintptr_t)lb[i]; nd && !x.fail; nd = RpP(nd + 0x10)) {
+                if (!RpP(nd + 8)) continue;
+                const bool on = RpTabFind(x.qMap, RpD(RpP(nd + 8) + 0xC)) != NULL;
+                if (on || RpUnkHas(unk, nUnk, ((u64)RpD(nd + 4) << 32) | RpD(nd))) RpPreParent(x, RpP(nd + 8));
+                if (!on) continue;
+                if (nMine == capMine) {
+                    capMine = capMine ? capMine * 2 : 1024;
+                    DWORD* m = (DWORD*)RpAlloc(capMine * 4);
+                    if (!m) { x.fail = true; break; }
+                    if (mine) { memcpy(m, mine, nMine * 4); RpFree(mine); }
+                    mine = m;
+                }
+                mine[nMine++] = (DWORD)(uintptr_t)nd;
+            }
         x.excl = true;  // a refused refresh (a left-out lot's footprint) is skipped, not a failed batch
         for (DWORD i = 0; mb > 1 && i < mb && !x.fail; i++)  // footprints touched on unknown Qs: fresh copies (swapped in on apply)
             for (const u8* nd = (const u8*)(uintptr_t)lb[i]; nd && !x.fail && nUnk; nd = RpP(nd + 0x10))
                 if (RpP(nd + 8) && RpUnkHas(unk, nUnk, ((u64)RpD(nd + 4) << 32) | RpD(nd))) RpFpFor(x, RpP(RpP(nd + 8) + 8), RpD(RpP(nd + 8) + 0xC));
         x.excl = false;
-        for (DWORD i = 0; mb > 1 && i < mb && !x.fail; i++)
-            for (const u8* nd = (const u8*)(uintptr_t)lb[i]; nd && !x.fail; nd = RpP(nd + 0x10)) {
+        for (DWORD mi = 0; mi < nMine && !x.fail; mi++) {
+            {
+                const u8* nd = (const u8*)(uintptr_t)mine[mi];
                 const u8* f = RpP(nd + 8);
-                if (!f || !RpTabFind(x.qMap, RpD(f + 0xC))) continue;
                 u8* cf = RpFme(x, f);
-                if (!cf) break;
+                if (!cf) continue;  // (before 0.35.12 the rest of that bucket's chain was skipped too)
                 if (b->nMap == cap) {
                     cap = cap ? cap * 2 : 1024;
                     DWORD* m = (DWORD*)RpAlloc(cap * 12);
@@ -1366,12 +1625,15 @@ static RpBatch* RpRebase(const u8* world, const RpLiveLot* set, int n, const u64
                 b->nMap++;
                 (*(LONG*)(cf + 4))++;  // the batch holds it for its map node (taken over on apply); before the trees, so no orphan
             }
-        for (int i = 0; i < b->n && !x.fail; i++) if (!b->lots[i].removed) RpLotFill(x, &b->lots[i].lot);
+        }
+        RpFree(mine);  // shortcut: a fault above leaks it (counted in rpFaults; the batch is dropped and the clone rebuilt)
+        for (int i = 0; i < b->n && !x.fail; i++) if (!b->lots[i].removed && !b->lots[i].shell) RpLotFill(x, &b->lots[i].lot);
+        }
     } __except (EXCEPTION_EXECUTE_HANDLER) { x.fail = true; ts3native_counters.rpFaults++; }
     b->fps = x.fps, b->kids = x.kids;
     x.fps.k = x.fps.v = NULL, x.kids.k = x.kids.v = NULL;
     RpCtxDone(x);
-    if (!x.fail) {
+    if (!x.fail && mapWork) {  // a shells-only batch leaves the map as it is: no order, no resync (RpApplyBatch)
         __try {
             const u8* M = RpP(RpP(world + 0x95C) + 0x24);
             const DWORD mb = RpD(M + 8), cnt = RpD(M + 0xC);
@@ -1437,6 +1699,74 @@ static void RpPrebuild(const u8* world) {
     Log("snap replay: prebuilt %d lot graphs (%d already built, %d failed, %d lots in the table) in %ld ms; process private +%ld KB",
         built, already, failed, n, us / 1000, kb);
 }
+// 0.35.18 (docs/94 §22.21, I-94-478): the leaf remove 0x666010 skips an FME's leaves when the footprint's bounds (vtable
+// +0x2C) miss the Q's rect (0x6660CF..0x6660FC) [verified disassembly]. The REM record carries the live answers of the
+// removed id's / ~id's 0x200 FMEs on that Q, asked here just before the game asks them itself; the replay compares them
+// with the clone copy's (RpRemDiff). shortcut: kRpRemLiveMax FMEs per remove (a lot box + floor + child is 9), the rest unchecked
+typedef float* (__fastcall* RpBoundsFn)(void* fp, void* edx, float* out, DWORD level, float z);
+static const int kRpRemLiveMax = 16;
+// 0.35.21 (docs/94 §22.24.5): the inputs of the level-box answer 0x80EF80 (classes 0xFEB848 / 0xFEBD10 / ..., and the child
+// 0x806C50 through its parent with z = the child's +0x10) [verified disassembly]: the level entry's box +0x10..+0x1C, the
+// widening (+0x34 bit 0x2000000: an empty child list widens by +0x30 (0x8072F0), else by z). IP 0.35.18: 256 REM differences,
+// child copies widened by 0.2-2.0 more than live, 0xFEB848 copies off by ~0.001: inputs that change in live without a record
+// (W6 transforms and the child's +0x10 are not records). The consumer copies them into the clone copy before the remove
+struct RpRemPatch { float box[4]; float w30, z; DWORD f34; u8 has, empty, child, pad; };
+static DWORD g_rpLevelBox = 0x0080EF80;  // the selftest points it at its stand-in
+struct RpRemLiveE { DWORD cls, lo, hi, lvl; float b[4]; RpRemPatch p; };
+struct RpRemLive { int n; RpRemLiveE e[kRpRemLiveMax]; };
+// the footprint that answers through 0x80EF80 (fp, or a child's parent), NULL = another answer (left as before)
+static const u8* RpBoxFp(const u8* fp) {
+    const u8* a = RpIsChild(fp) ? RpP(fp + 0xC) : fp;
+    return a && RpD(RpP(a) + 0x2C) == g_rpLevelBox ? a : NULL;
+}
+static void RpRemPatchTake(RpRemPatch& p, const u8* fp, DWORD lvl) {  // after the live +0x2C: the level entry is valid
+    memset(&p, 0, sizeof(p));
+    const u8* a = RpBoxFp(fp);
+    if (!a || lvl >= RpLevels(a) || !RpP(a + 0x38)) return;
+    memcpy(p.box, RpP(a + 0x38) + lvl * 0x24 + 0x10, 16);
+    p.w30 = *(const float*)(a + 0x30), p.f34 = RpD(a + 0x34), p.empty = RpP(a + 0x24) == a + 0x24;
+    p.child = a != fp, p.z = p.child ? *(const float*)(fp + 0x10) : 0.f;
+    p.has = 1;
+}
+// the copy takes the live inputs (same shape: class, level count, child list empty or not); false = not patchable
+static bool RpRemPatchIn(const RpRemPatch& p, u8* fp, DWORD lvl) {
+    u8* a = p.has ? (u8*)RpBoxFp(fp) : NULL;
+    if (!a || (a != fp) != (p.child != 0) || lvl >= RpLevels(a) || !RpP(a + 0x38) || (RpP(a + 0x24) == a + 0x24) != (p.empty != 0)) return false;
+    memcpy(RpP(a + 0x38) + lvl * 0x24 + 0x10, p.box, 16);
+    *(float*)(a + 0x30) = p.w30;
+    *(DWORD*)(a + 0x34) = (RpD(a + 0x34) & ~0x2000000u) | (p.f34 & 0x2000000u);
+    if (p.child) *(float*)(fp + 0x10) = p.z;
+    return true;
+}
+static RpRemLive* RpRemLiveTake(u8* q, DWORD lo, DWORD hi) {
+    RpRemLive t;
+    t.n = 0;
+    __try {
+        const u8* m = RpP(RpP(q + 0x20) + 0x24);
+        const DWORD nb = m ? RpD(m + 8) : 0;
+        const DWORD* bk = nb > 1 ? (const DWORD*)RpP(m + 4) : NULL;  // 1 bucket = the empty map's shared one
+        for (int pass = 0; bk && pass < 2; pass++) {
+            const DWORD klo = pass ? ~lo : lo, khi = pass ? ~hi : hi;
+            for (const u8* nd = (const u8*)(uintptr_t)bk[klo % nb]; nd && t.n < kRpRemLiveMax; nd = RpP(nd + 0x10)) {
+                if (RpD(nd) != klo || RpD(nd + 4) != khi) continue;
+                const u8* f = RpP(nd + 8);
+                u8* fp = f && RpP(f + 0xC) == q && (RpD(f + 0x10) & 0x200) ? RpP(f + 8) : NULL;
+                if (!fp) continue;
+                RpRemLiveE& e = t.e[t.n];
+                memset(e.b, 0, sizeof(e.b));
+                const float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))(fp, NULL, e.b, f[0x10], 0.0f);
+                if (r != e.b) { if (!r) continue; memcpy(e.b, r, sizeof(e.b)); }
+                e.cls = RpD(fp), e.lo = RpD(fp + 0x14), e.hi = RpD(fp + 0x18), e.lvl = f[0x10];
+                RpRemPatchTake(e.p, fp, e.lvl);
+                t.n++;
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return NULL; }  // no live answers: the replay checks only flat copies
+    if (!t.n) return NULL;
+    RpRemLive* p = (RpRemLive*)RpAlloc(sizeof(RpRemLive));
+    if (p) memcpy(p, &t, sizeof(t));
+    return p;
+}
 static void RpPreBody(int site, const DWORD* slot);
 static void RpPre(int site, const DWORD* slot) {
     if (!g_rpOn) return;
@@ -1483,7 +1813,7 @@ static void RpPreBody(int site, const DWORD* slot) {
                 }
                 RpPush(RP_INS, slot[-2], slot[1], slot[2], cp);
             }
-            else RpPush(RP_REM, slot[-2], slot[1], slot[2], NULL);
+            else RpPush(RP_REM, slot[-2], slot[1], slot[2], RpRemLiveTake((u8*)(uintptr_t)slot[-2], slot[1], slot[2]));
             break;
         }
         case SL_GRIDADD: case SL_LOTREMOVEFP: {  // Q-less map nodes may change for this key (lot 0 only)
@@ -1495,10 +1825,12 @@ static void RpPreBody(int site, const DWORD* slot) {
         case SL_W3: case SL_W4: {  // a tree rebuilt or a lot graph built: rebase at the next cut, skip its records till then
             if (s.leaf == SL_W3 && !RpW3Builds(slot)) break;  // a get of an existing Q (0.30.2)
             const u64 key = s.leaf == SL_W3 ? ((u64)slot[2] << 32) | slot[1] : ((u64)RpD((const u8*)(uintptr_t)slot[1] + 4) << 32) | RpD((const u8*)(uintptr_t)slot[1]);
+            u64* list = s.leaf == SL_W3 ? g_rpForce : g_rpShellF;  // W4: a shell refresh unless the cut finds more (0.35.17)
+            int& nl = s.leaf == SL_W3 ? g_rpNForce : g_rpNShellF;
             while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
             int i = 0;
-            while (i < g_rpNForce && g_rpForce[i] != key) i++;
-            if (i == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = key; else g_rpForceAll = 1; }
+            while (i < nl && list[i] != key) i++;
+            if (i == nl) { if (nl < 64) list[nl++] = key; else g_rpForceAll = 1; }
             InterlockedExchange(&g_rpRingLock, 0);
             RpPush(RP_STALE, (DWORD)key, (DWORD)(key >> 32), 0, NULL);
             break;
@@ -1507,10 +1839,125 @@ static void RpPreBody(int site, const DWORD* slot) {
     }
 }
 
+// rebase split by kind (sim; no counters, docs/94 §22.20): batches with map work (full lots, gone lots, unknown keys) and
+// shells-only batches, logged every 5 min; the totals stay in rpRebaseLots / rpRebaseUs
+static LONG g_rpSplit[2][3];  // [full, shells only][batches, lots, us]; full batches count their shells as lots too
+static LONG g_rpShellLots, g_rpMapBatches;  // all shell refreshes, all batches with map work (selftest)
+static ULONGLONG g_rpSplitAt;
+static void RpRebaseSplit(int full, int shells, bool mapWork, LONG us) {
+    LONG* s = g_rpSplit[mapWork ? 0 : 1];
+    s[0]++, s[1] += full + shells, s[2] += us;
+    g_rpShellLots += shells, g_rpMapBatches += mapWork;
+    const ULONGLONG now = GetTickCount64();
+    if (!g_rpSplitAt) g_rpSplitAt = now;
+    if (now - g_rpSplitAt < 300000) return;
+    Log("snap replay rebases, last %llu s: with map work %ld batches, %ld lots, %.2f ms/s; shells only %ld batches, %ld lots, "
+        "%.2f ms/s", (now - g_rpSplitAt) / 1000, g_rpSplit[0][0], g_rpSplit[0][1], g_rpSplit[0][2] / (double)(now - g_rpSplitAt),
+        g_rpSplit[1][0], g_rpSplit[1][1], g_rpSplit[1][2] / (double)(now - g_rpSplitAt));
+    memset(g_rpSplit, 0, sizeof(g_rpSplit));
+    g_rpSplitAt = now;
+}
+
 // --- cut (sim, +0x918 held; from SpBuildVersion through the strategy's begin) ---
+// 0.35.12 (docs/94 §22.15, I-94-460): the whole cut owns the private pool set (rebase, clone build, a full ring's batch
+// free); while a P4 run owns it the cut is deferred: nothing taken, nothing published (P4's cut is refused "noclone"), the
+// forces and records wait for the next cut
+static volatile bool g_rpCutDeferred;  // the last cut was deferred (sim; PcCutFn reads it right after)
+static LONG g_rpCutDeferN;
+// 0.35.20 (docs/94 §22.23): the cut's own split, logged every 5 min (the "lots (replay)" share of the snap cut split). Each
+// step's time runs from the previous mark; log only, no counters (sim thread)
+enum { RC_PRE, RC_LIVE, RC_NOQ, RC_SIG, RC_EPOCH, RC_REBASE, RC_DEFER, RC_EXN, RC_SYNC, RC_AUDIT, RC_QUIET, RC_N };
+static const char* const kRcName[RC_N] = {"pre", "live lots", "records/noq", "signatures", "epoch builds", "rebases", "deferred",
+                                          "ex nodes", "sync", "audit", "quiet reused"};
+static LONGLONG g_rcTicks[RC_N], g_rcT;
+static LONG g_rcN[RC_N], g_rcCuts, g_rcQuiet, g_rcLots, g_rcLateScans, g_rcLateLots;
+static LONG64 g_rcCy, g_rcCyReb;  // thread CPU cycles of the replay cut and of its rebases in this window (0.35.21)
+static ULONGLONG g_rcAt;
+
+// 0.35.21 (docs/94 §22.24.3, I-94-485): quiet-cut reuse, [RouteSnap] ReplayQuietMs (0 = off, the default). A cut with no ring
+// record, no recorded routing write (g_spWrites) and no routing IC (g_spIcN) since the last full cut, no force / shell /
+// unknown / Q-less / bad-Q note pending and no audit due skips the live lot walk and the signature scan: the clone at the
+// previous position is the live state as far as every hook knows. The signature scan is the only catch for node changes no
+// hook sees (BP 0303: 58 signature rebases in ~12 min), so a full cut still runs once ReplayQuietMs passed since the last one;
+// a change no hook saw waits at most that long. The split line counts the full scans after reuses and the lots they rebased
+// by signature (the exposure)
+static DWORD g_rpQuietMs;
+static DWORD g_rpSigMs;           // [RouteSnap] ReplaySigMs (0.35.23, docs/94 §22.26.4), 0 = a signature scan every cut
+static ULONGLONG g_rpSigAt;       // the last scan (sim)
+static bool g_rpSigSkipped;       // a cut skipped the scan since then
+static LONG g_rcSigScans, g_rcSigLate;  // this window: scans; lots a scan after skipped cuts rebased by signature (exposure)
+static LONG g_rpLazyKeep;  // [RouteSnap] LazyKeep (p4.cpp P4LazyKeep; docs/94 §22.24.1, §22.25), 0 = every lazy stop rebuilds
+static LONG g_rpQW, g_rpQIc, g_rpQSkipped;
+static bool g_rpQOk;  // the last cut was a full one that published SYNC (not deferred, no rebuild)
+static ULONGLONG g_rpQFullAt;
+static DWORD g_rpQLots, g_rpQExN;  // that cut's live lot count (minus left-out lots) and left-out map entries
+static void RcMark(int step, bool count = true) {
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    g_rcTicks[step] += t.QuadPart - g_rcT, g_rcN[step] += count;
+    g_rcT = t.QuadPart;
+}
+static void RcLog() {
+    const ULONGLONG now = GetTickCount64();
+    if (!g_rcAt) g_rcAt = now;
+    if (now - g_rcAt < 300000) return;
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    const double ms = (double)(now - g_rcAt);
+    char line[1536];
+    int at = _snprintf_s(line, sizeof(line), _TRUNCATE, "snap replay cut split, last %.0f s, %ld cuts (%ld quiet: no record since the last cut), %.1f lots/cut:",
+                         ms / 1000, g_rcCuts, g_rcQuiet, g_rcCuts ? (double)g_rcLots / g_rcCuts : 0.0);
+    for (int i = 0; i < RC_N && at > 0; i++) {
+        const int w = _snprintf_s(line + at, sizeof(line) - at, _TRUNCATE, "%s %s %ld %.2f ms/s", i ? "," : "", kRcName[i], g_rcN[i],
+                                  g_rcTicks[i] * 1000.0 / f.QuadPart / ms * 1000.0);
+        at = w < 0 ? -1 : at + w;
+    }
+    Log("%s", line);  // 0.35.23: the rest on its own line (Log cuts at ~510 characters: the 0.35.21 tail never reached the log)
+    Log("snap replay cut split (2): thread CPU (2.3 GHz nominal) replay cut %.2f, rebases %.2f cyc-ms/s; ReplayQuietMs %lu: full "
+        "scans after a reuse %ld, lots they rebased by signature %ld; ReplaySigMs %lu: signature scans %ld, lots rebased late by "
+        "signature %ld", CycMsPerS(g_rcCy, ms / 1000), CycMsPerS(g_rcCyReb, ms / 1000), g_rpQuietMs, g_rcLateScans, g_rcLateLots,
+        g_rpSigMs, g_rcSigScans, g_rcSigLate);
+    memset(g_rcTicks, 0, sizeof(g_rcTicks)), memset(g_rcN, 0, sizeof(g_rcN));
+    g_rcCuts = g_rcQuiet = g_rcLots = g_rcLateScans = g_rcLateLots = g_rcSigScans = g_rcSigLate = 0, g_rcCy = g_rcCyReb = 0;
+    g_rcAt = now;
+}
+static void RpCutBody(const u8* world);
+// 0.35.13 (docs/94 §22.16, I-94-465): the set is taken only where pool work happens (RpEpoch tries it, the rebase tries it);
+// a cut with nothing to rebase (most cuts) publishes its records, SYNC and AUDIT while a P4 run owns the set, so P4's cut is
+// no longer refused "noclone" for that (0.35.12 deferred every such cut)
 static void RpCut(const u8* world) {
-    Ts3nCounters& k = ts3native_counters;
+    g_rpCutDeferred = false;
     if (!g_rpOn) return;
+    const LONG me = (LONG)GetCurrentThreadId();
+    const bool nested = g_rpOpTid == me;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    g_rcT = t0.QuadPart;
+    const LONG64 cy0 = CycNow();
+    g_rcCuts++, g_rcQuiet += g_rpHead == g_rpPub;
+    __try { RpCutBody(world); } __finally { if (!nested && g_rpOpTid == me) RpOpLeave(0); }  // a fault unwinding through here must not keep the set
+    g_rcCy += CycNow() - cy0;
+    RcLog();
+}
+static bool RpQuietCut(const u8* world, bool qok, LONG w, LONG ic) {
+    if (!g_rpQuietMs || !qok || w != g_rpQW || ic != g_rpQIc || g_rpHead != g_rpPub) return false;
+    if (GetTickCount64() - g_rpQFullAt >= g_rpQuietMs) return false;
+    if (g_rpAuditEvery && (ts3native_counters.spCuts + 1) % (LONG)g_rpAuditEvery == 0) return false;  // an audit hashes live lots
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    const bool q = !g_rpNForce && !g_rpForceAll && !g_rpNShellF && !g_rpNUnk && !g_rpUnkAll && !g_rpNNoQ && !g_rpNoQAll && !g_rpNBadQ;
+    InterlockedExchange(&g_rpRingLock, 0);
+    if (!q) return false;
+    const u8* M = RpP(RpP(world + 0x95C) + 0x24);
+    RpSyncRec* sy = (RpSyncRec*)RpAlloc(sizeof(RpSyncRec));  // a SYNC per cut as before: each P4 cut keeps its own position
+    if (sy) { sy->mapN = RpD(M + 8), sy->mapCount = RpD(M + 0xC) - g_rpQExN, sy->lots = g_rpQLots; RpPush(RP_SYNC, 0, 0, 0, sy); }
+    g_rpQOk = true, g_rpQSkipped++;
+    RcMark(RC_QUIET);
+    return true;
+}
+static void RpCutBody(const u8* world) {
+    Ts3nCounters& k = ts3native_counters;
+    const bool qok = g_rpQOk;
+    g_rpQOk = false;  // set again only by a full cut that published its SYNC, or a reuse
     if (g_rpBytes > g_rpCapBytes) {
         g_rpOn = 0;
         k.rpCapOff = 1;
@@ -1527,11 +1974,25 @@ static void RpCut(const u8* world) {
     // a rebuild waits while the last EPOCH is not applied yet: each clone is ~40 MB on BP, and 0.32.4 had up to three
     // alive (126 MB of 128) when the consumer lagged behind rebuilds (0.32.8)
     if (g_rpNeedEpoch && g_rpHave && world == g_rpWorld && (LONG)(g_rpEpochAt - g_rpTail) > 0) goto publish;
-    if (!g_rpHave || g_rpNeedEpoch || world != g_rpWorld) { if (!g_rpNeedEpoch) g_rpEpochWhy = __LINE__; RpEpoch(world); goto publish; }
+    if (!g_rpHave || g_rpNeedEpoch || world != g_rpWorld) {
+        if (!g_rpNeedEpoch) g_rpEpochWhy = __LINE__;
+        RcMark(RC_PRE);
+        RpEpoch(world);
+        RcMark(RC_EPOCH);
+        goto publish;
+    }
+// a rebuild in the cut: the time so far goes to `step`, the build to RC_EPOCH
+#define RC_REBUILD(step) { RcMark(step); RP_REBUILD(world); RcMark(RC_EPOCH); goto publish; }
     {
+        const LONG qw = g_spWrites, qic = g_spIcN;  // +0x918 held: no recorded write lands during this cut
+        if (RpQuietCut(world, qok, qw, qic)) goto publish;
+        g_rpQW = qw, g_rpQIc = qic;
+        RcMark(RC_PRE);
         const u8* P = RpP(world + 0x95C);
         const int n = RpLiveLots(P, g_rpLive, kRpMaxLots);
+        RcMark(RC_LIVE);
         if (n < 0) { RP_NEED_EPOCH(); return; }
+        g_rcLots += n;
         u64 force[64];
         static u64 unk[256];
         int nForce, nUnk;
@@ -1539,14 +2000,20 @@ static void RpCut(const u8* world) {
         while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
         nForce = g_rpNForce, all = g_rpForceAll != 0, nUnk = g_rpNUnk, unkAll = g_rpUnkAll != 0;
         memcpy(force, g_rpForce, nForce * 8);
+        u64 shellF[64];
+        const int nShellF = g_rpNShellF;
+        memcpy(shellF, g_rpShellF, nShellF * 8);
+        u64 softP[64];  // the soft resync's share of the forces (counted only)
+        const int nSoftP = g_rpNSoftPend;
+        memcpy(softP, g_rpSoftPend, nSoftP * 8);
         memcpy(unk, g_rpUnk, nUnk * 8);
         DWORD badQ[16];
         const int nBad = g_rpNBadQ;
         memcpy(badQ, g_rpBadQ, nBad * 4);
-        g_rpNForce = 0, g_rpForceAll = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNBadQ = 0;
+        g_rpNForce = 0, g_rpForceAll = 0, g_rpNShellF = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNBadQ = 0;
         InterlockedExchange(&g_rpRingLock, 0);
-        if (unkAll) { RP_REBUILD(world); goto publish; }  // too many keys touched on unknown Qs: rebuild
-        if (!RpNoQCut(P)) { RP_REBUILD(world); goto publish; }  // Q-less nodes first: a batch below re-chains the map to live order
+        if (unkAll) RC_REBUILD(RC_NOQ)  // too many keys touched on unknown Qs: rebuild
+        if (!RpNoQCut(P)) RC_REBUILD(RC_NOQ)  // Q-less nodes first: a batch below re-chains the map to live order
         // an insert the copy refused on a lot the clone holds: rebuild now (that lot is left out), before this cut's SYNC/audit
         bool badIn = false;
         for (int i = 0; i < n && nBad && !badIn; i++) {
@@ -1557,42 +2024,127 @@ static void RpCut(const u8* world) {
                     for (int b = 0; b < nBad; b++) badIn |= RpD(qp) == badQ[b];
             } __except (EXCEPTION_EXECUTE_HANDLER) { badIn = true; }
         }
-        if (badIn) { RP_REBUILD(world); goto publish; }
-        static RpLiveLot set[kRpMaxLots];
+        if (badIn) RC_REBUILD(RC_NOQ)
+        RcMark(RC_NOQ);
+        static RpLiveLot set[kRpMaxLots], shl[kRpMaxLots];
         static u64 gone[kRpMaxLots];
-        int ns = 0, ng = 0;
+        int ns = 0, ng = 0, nsh = 0;
         RpTab exLive = {};  // live Qs of the left-out lots (they stay out until the next epoch build)
         RpExQs(g_rpLive, n, exLive);
         int nExLive = 0;
+        LONG why0[sizeof(k.rpRebaseWhy) / sizeof(LONG)];
+        memcpy(why0, k.rpRebaseWhy, sizeof(why0));
+        const LONG qsame0 = k.rpRebaseQSame;
+        // 0.35.20 (docs/94 §22.23): the mirror is the live table in its last order; while that order holds (the usual cut) each
+        // lot finds its mirror by index and no lot is gone (both were linear searches per lot)
+        bool inPlace = n == g_rpNMir;
+        // 0.35.23 (docs/94 §22.26.4): [RouteSnap] ReplaySigMs (0 = every cut, the default): the signature scan, the one catch
+        // for node changes no hook sees, at most every N ms; forces, shells, new and gone lots stay per cut. The mirror keeps
+        // the unscanned lots' old signatures (RpMirrorSet below), so a change found late is still found
+        const ULONGLONG sigT = GetTickCount64();
+        const bool sigNow = !g_rpSigMs || sigT - g_rpSigAt >= g_rpSigMs;
+        const bool sigLate = sigNow && g_rpSigSkipped;  // the first scan after skipped cuts: its signature lots count as late
+        if (sigNow) g_rpSigAt = sigT, g_rcSigScans++, g_rpSigSkipped = false;
+        else g_rpSigSkipped = true;
+        int nSigLots = 0;
         for (int i = 0; i < n; i++) {
+            const bool at = i < g_rpNMir && g_rpMir[i].key == g_rpLive[i].key;
+            inPlace &= at;
             if (g_rpNEx && RpIsEx(g_rpLive[i].key)) { nExLive++; continue; }
-            const RpMirror* m = RpMirrorFind(g_rpLive[i].key);
-            bool f = all || !m || m->sig != RpSig(g_rpLive[i].node);
+            const RpMirror* m = at ? &g_rpMir[i] : RpMirrorFind(g_rpLive[i].key);
+            bool f = all;
             for (int j = 0; !f && j < nForce; j++) f = force[j] == g_rpLive[i].key;
-            if (f) set[ns++] = g_rpLive[i];
+            int why = 0;  // rpRebaseWhy (0.35.5): forced (by a write or a soft resync), signature, new
+            bool sh = false;  // 0.35.17: a shell refresh (W4 or a node change, the Q list as the clone holds it)
+            if (f) {
+                for (int j = 0; j < nSoftP; j++) if (softP[j] == g_rpLive[i].key) why = 1;
+            } else if (!m) f = true, why = 3;
+            else {
+                for (int j = 0; !f && j < nShellF; j++) f = shellF[j] == g_rpLive[i].key;
+                const bool sig = !f && sigNow && m->sig != RpSig(g_rpLive[i].node);
+                if (sig) f = true, why = 2, nSigLots++;
+                const bool qsame = f && m->qsig == RpQSig(g_rpLive[i].node);  // only a rebase reads it (0.35.20)
+                if (sig && qsame) k.rpRebaseQSame++;
+                sh = qsame;
+            }
+            if (f && sh) shl[nsh++] = g_rpLive[i], k.rpRebaseWhy[why]++;
+            else if (f) set[ns++] = g_rpLive[i], k.rpRebaseWhy[why]++;
         }
-        for (int i = 0; i < g_rpNMir; i++) {
+        for (int i = 0; i < g_rpNMir && !inPlace; i++) {
             int j = 0;
             while (j < n && g_rpLive[j].key != g_rpMir[i].key) j++;
-            if (j == n) gone[ng++] = g_rpMir[i].key;
+            if (j == n) gone[ng++] = g_rpMir[i].key, k.rpRebaseWhy[3]++;
         }
-        if (ns || ng || nUnk) {
+        RcMark(RC_SIG);
+        // 0.35.12 (docs/94 §22.15, I-94-459): one LOTS batch in flight. Each batch carries the whole live map order (BP: 126k
+        // nodes, 2.5 MB) and costs the consumer a whole-map resync under +0x918; with the consumer behind (BP 0.35.9: lag 7131
+        // records, 179 batches) the queued batches held the replay memory to ReplayCapMB. While the last batch is not applied
+        // this cut's lots wait (forces and unknown keys put back, signature changes found again) and go in one later batch;
+        // the cut publishes the records but no SYNC / AUDIT, and P4 refuses it (g_rpCutDeferred). Only with the consumer
+        // thread: without it (tests) the callers drain when they choose
+        // 0.35.23 (docs/94 §22.26.3): a shells-only rebase (W4 / signature lots, Q list unchanged) neither waits for the batch
+        // in flight nor needs the pool set: it carries no map order (the consumer does no map work for it) and RpLotShell(qs
+        // = false) copies no Q or tree (RpAlloc and EA blocks only). BP 0444: 173 deferred cuts, each a P4 "noclone"
+        const bool mapNeed = ns || ng || nUnk;
+        const bool need = mapNeed || nsh;
+        const bool inFlight = mapNeed && g_rpThreaded && g_rpLotsPend && (LONG)(g_rpLotsAt - g_rpTail) > 0;
+        LONG op = 0;
+        const bool poolsBusy = mapNeed && !inFlight && !RpOpTry(&op);  // a P4 run owns the private pools: the rebase waits too
+        if (inFlight || poolsBusy) {
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            if (all) g_rpForceAll = 1;
+            for (int j = 0; j < nForce; j++) {
+                int i = 0;
+                while (i < g_rpNForce && g_rpForce[i] != force[j]) i++;
+                if (i == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = force[j]; else g_rpForceAll = 1; }
+            }
+            for (int j = 0; j < nShellF; j++) {
+                int i = 0;
+                while (i < g_rpNShellF && g_rpShellF[i] != shellF[j]) i++;
+                if (i == g_rpNShellF) { if (g_rpNShellF < 64) g_rpShellF[g_rpNShellF++] = shellF[j]; else g_rpForceAll = 1; }
+            }
+            for (int j = 0; j < nUnk; j++) RpUnkAdd(unk[j]);
+            InterlockedExchange(&g_rpRingLock, 0);
+            memcpy(k.rpRebaseWhy, why0, sizeof(why0));
+            k.rpRebaseQSame = qsame0;
+            RpTabFree(exLive);
+            if (sigNow) g_rpSigAt = 0, g_rpSigSkipped = sigLate;  // the signature changes found here are found again by the next cut's scan
+            g_rpCutDeferred = true;
+            if (poolsBusy) {
+                if (++g_rpCutDeferN <= 8 || (g_rpCutDeferN & 1023) == 0)
+                    Log("snap replay: rebase of %d lot(s) waits, a P4 run owns the private pools (%ld cuts so far)", ns + ng + nsh, g_rpCutDeferN);
+            } else if (++g_rpLotsWait <= 8 || (g_rpLotsWait & 1023) == 0)
+                Log("snap replay: rebase of %d lot(s) waits for the batch in flight (%ld cuts so far; consumer lag %lu records)", ns + ng + nsh,
+                    g_rpLotsWait, g_rpHead - g_rpTail);
+            RcMark(RC_DEFER);
+            goto publish;
+        }
+        if (need) {
             LARGE_INTEGER t0;
             QueryPerformanceCounter(&t0);
-            RpMirrorSet(g_rpLive, n);  // first: the batch's map order names Qs of the lots as they are now
-            const LONG op = RpOpEnter();  // private pools; the push too (a full ring frees the batch here)
-            RpBatch* b = RpRebase(world, set, ns, gone, ng, unk, nUnk, exLive);
+            const LONG64 cy0 = CycNow();
+            RpMirrorSet(g_rpLive, n, set, ns, shl, nsh, !sigNow);  // first: the batch's map order names Qs of the lots as they are now
+            // op: private pools, taken above; the push too (a full ring frees the batch here)
+            RpBatch* b = RpRebase(world, set, ns, gone, ng, unk, nUnk, exLive, shl, nsh);
             const LONG us = UsSince(t0);
+            const LONG64 cy = CycNow() - cy0;
+            g_cyRebase += cy, g_rcCyReb += cy;
             k.rpRebaseUs += us;
             Max(&k.rpRebaseMaxUs, us);
+            RpRebaseSplit(ns + ng, nsh, ns || ng || nUnk, us);
             if (b && (b->lotKeys = (u64*)RpAlloc(n * 8 + 8)) != NULL) {
                 for (int i = 0; i < n; i++) b->lotKeys[i] = g_rpLive[i].key;
                 b->nLotKeys = n;
             }
-            if (b) RpPush(RP_LOTS, 0, 0, 0, b);
-            RpOpLeave(op);
-            if (!b) { RpTabFree(exLive); RP_REBUILD(world); goto publish; }
-            k.rpRebaseLots += ns + ng;
+            if (b) {  // the in-flight rule follows map batches only (0.35.23): a shells batch never makes a later map batch wait
+                RpPush(RP_LOTS, 0, 0, 0, b);
+                if (mapNeed) g_rpLotsAt = g_rpHead, g_rpLotsPend = true;
+            }
+            if (mapNeed) RpOpLeave(op);  // taken only for map work (a shells-only cut never took the set)
+            if (!b) { RpTabFree(exLive); RC_REBUILD(RC_REBASE) }
+            k.rpRebaseLots += ns + ng + nsh;
+            if (sigLate) g_rcSigLate += nSigLots;
+            RcMark(RC_REBASE);
         }
         const u8* M = RpP(P + 0x24);
         DWORD exNodes = 0;  // map entries of the left-out lots (the clone does not hold them)
@@ -1605,12 +2157,17 @@ static void RpCut(const u8* world) {
                         if (RpP(nd + 8) && RpTabFind(exLive, RpD(RpP(nd + 8) + 0xC))) exNodes++;
             } __except (EXCEPTION_EXECUTE_HANDLER) { RP_NEED_EPOCH(); }
         }
+        RcMark(RC_EXN, exLive.used != 0);
         RpTabFree(exLive);
         RpSyncRec* sy = (RpSyncRec*)RpAlloc(sizeof(RpSyncRec));
         if (sy) { sy->mapN = RpD(M + 8), sy->mapCount = RpD(M + 0xC) - exNodes, sy->lots = (DWORD)(n - nExLive); RpPush(RP_SYNC, 0, 0, 0, sy); }
+        g_rpQOk = true, g_rpQFullAt = GetTickCount64(), g_rpQLots = (DWORD)(n - nExLive), g_rpQExN = exNodes;
+        if (g_rpQSkipped) g_rcLateScans++, g_rcLateLots += k.rpRebaseWhy[2] - why0[2], g_rpQSkipped = 0;
+        RcMark(RC_SYNC);
         if (g_rpAuditEvery && (k.spCuts + 1) % (LONG)g_rpAuditEvery == 0 && n > 0) {
             LARGE_INTEGER t0;
             QueryPerformanceCounter(&t0);
+            const LONG64 cy0 = CycNow();
             RpAuditRec* a = (RpAuditRec*)RpAlloc(sizeof(RpAuditRec));
             if (a && (a->keys = (u64*)RpAlloc(n * 8)) && (a->hash = (u64*)RpAlloc(n * 8)) && (a->ents = (DWORD*)RpAlloc(n * 4))) {
                 a->n = 0, a->nAll = n - nExLive;
@@ -1629,11 +2186,15 @@ static void RpCut(const u8* world) {
                 RpPush(RP_AUDIT, 0, 0, 0, a);
             } else RpAuditFree(a);
             const LONG us = UsSince(t0);
+            g_cyRpAudit += CycNow() - cy0;
             k.rpAuditUs += us;
             Max(&k.rpAuditMaxUs, us);
+            RcMark(RC_AUDIT);
         }
     }
+#undef RC_REBUILD
 publish:
+    RcMark(RC_SYNC, false);  // the publish itself
     {
         const DWORD depth = g_rpHead - g_rpTail;
         Max(&k.rpRingMax, (LONG)depth);
@@ -1654,6 +2215,38 @@ static RpLot* RpFindQ(RpClone* c, DWORD liveQ, u8** q) {
 static RpLot* RpFindLot(RpClone* c, u64 key) {
     for (int i = 0; i < c->nLots; i++) if (c->lots[i].key == key) return &c->lots[i];
     return NULL;
+}
+// 0.35.21 (docs/94 §22.24.2): the lots of a clone footprint, for a W6b (Footprint_EnsureAllPolygons, ecx = the footprint) in a
+// clone run, which made every release rebase all lots (BP 0303: 2 force-all batches, ~180 ms each). The clone map's nodes with
+// the footprint's key whose FME holds it name its Qs (lot id Q+0x18/+0x1C). Worker, g_rpUse held (the clone is stable).
+// 0 = not found (an FME without a Q, too many lots): the caller keeps the all-lot rebase.
+// 0.35.23 (docs/94 §22.26.2): -1 = fp is a live footprint (refcount +8 far below RP_BIAS: every clone copy, children
+// included, starts at RP_BIAS, RpFpCopyInto / RpFpCopyChild), so the write changed no clone memory and no lot needs a
+// rebase (BP 0444: the one W6b "no lot" made an 82-lot batch, a 181 ms consumer hold and most of the 450 noclone refusals).
+// A clone copy the map does not hold under that pointer (an older copy) names the lots of every FME with its key
+static int RpCloneFpLots(const u8* fp, u64* out, int cap) {
+    const RpClone* c = g_rpClone;
+    int n = 0;
+    __try {
+        u64 key;
+        if (fp && RpD(fp + 8) < (DWORD)(RP_BIAS / 2)) return -1;
+        if (!c || !c->m || !fp || !RpFpKey(fp, &key)) return 0;
+        const DWORD nb = RpD(c->m + 8);
+        const DWORD* bk = (const DWORD*)RpP(c->m + 4);
+        if (nb <= 1 || !bk) return 0;
+        for (int pass = 0; pass < 2 && !n; pass++)  // pass 1: same key, any copy
+            for (const u8* nd = (const u8*)(uintptr_t)bk[(DWORD)key % nb]; nd; nd = RpP(nd + 0x10)) {
+                const u8* f = RpP(nd + 8);
+                if (RpD(nd) != (DWORD)key || RpD(nd + 4) != (DWORD)(key >> 32) || !f || (!pass && RpP(f + 8) != fp)) continue;
+                const u8* q = RpP(f + 0xC);
+                if (!q) return 0;
+                const u64 lot = ((u64)RpD(q + 0x1C) << 32) | RpD(q + 0x18);
+                int i = 0;
+                while (i < n && out[i] != lot) i++;
+                if (i == n) { if (n == cap) return 0; out[n++] = lot; }
+            }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    return n;
 }
 // the clone footprint for a live one: the one FMEs still hold, else the record's copy (registered)
 static void RpRepin(RpClone* c, u8* old, u8* fresh);
@@ -1685,9 +2278,13 @@ static void RpOldGc(RpClone* c) {
     for (DWORD i = 0; i < c->old.cap; i++)
         if (c->old.k[i] > 1) RpOldLiveAdd(c->oldLive, (const u8*)(uintptr_t)c->old.k[i], (DWORD)(uintptr_t)((const RpFpHdr*)(uintptr_t)(c->old.k[i] - 16))->live);
 }
-// old leaves the tables (its own-block children move to fresh) and waits in c->old until no FME holds it
-static void RpRetire(RpClone* c, u8* old, u8* fresh) {
-    RpRepin(c, old, fresh);
+// old leaves the tables (its own-block children move to fresh) and waits in c->old until no FME holds it. repin false: the
+// caller re-pointed the own-block children already in one pass (RpApplyBatch). 0.34.1 (docs/94 §21.16): RpRepin walks every
+// clone footprint, so a batch with F replaced footprints walked F x ~130k slots on the consumer, holding +0x918: the 8-28 s
+// holds of the 0.33.1 / 0.33.3 runs (replay phase 0x402 = an RP_LOTS apply) after soft resyncs forced whole lots
+static volatile LONG g_rpRepinScans;  // tests
+static void RpRetire(RpClone* c, u8* old, u8* fresh, bool repin = true) {
+    if (repin) RpRepin(c, old, fresh);
     RpKids(c->kids, old, false);
     RpTabPut(c->old, (DWORD)(uintptr_t)old, 1);
     RpOldLiveAdd(c->oldLive, old, (DWORD)(uintptr_t)((const RpFpHdr*)(old - 16))->live);
@@ -1695,25 +2292,45 @@ static void RpRetire(RpClone* c, u8* old, u8* fresh) {
 // every clone FME on another copy of a live footprint in want moves to want's copy: one clone object per live footprint,
 // as the game has one (0.32.4; 0.32.1 kept the old block for FMEs of other lots, so a later insert with a changed child list,
 // or a child seen again on its own, gave the clone two copies whose insert counters then differed)
-static void RpUnify(RpClone* c, const RpTab& want) {
+// 0.35.12 (I-94-459): rev holds only the copies of want's live footprints (it held every clone copy: ~130k puts per call
+// on BP, under +0x918); the map walk looks up only those
+static void RpRevOldIf(RpTab& rev, const RpTab& want, const u8* blk, const u8* live) {
+    if (RpTabFind(want, (DWORD)(uintptr_t)live)) RpTabPut(rev, (DWORD)(uintptr_t)blk, (DWORD)(uintptr_t)live);
+    if (!RpHasList(blk)) return;
+    for (const u8* l = RpP(blk + 0x24); l != blk + 0x24; l = RpP(l)) RpRevOldIf(rev, want, RpP(l + 8), RpP(l + 12));
+}
+// 0.35.14 (docs/94 §22.17, I-94-473): fresh != NULL (one insert's copy) walks only the two map buckets its FMEs can be in:
+// the map is keyed by footprint vtable +0x7C, which is +0x14/+0x18 for all 10 parent classes and ~parent's for the child
+// class 0xFEBF90 (0x6262B0) [verified on the Steam 1.67 vtables], bucket = key lo % bucket count (0x6643E0) [verified]. Each
+// such call walked the whole map (~122k nodes) under +0x918: IP 0.35.13 spent 18-41 s per 5 min on INS records, ~2-3 ms each
+static void RpUnifyNode(u8* nd, const RpTab& rev, const RpTab& want) {
+    u8* f = RpP(nd + 8);
+    u8* x = f ? RpP(f + 8) : NULL;
+    const DWORD* lv = x ? RpTabFind(rev, (DWORD)(uintptr_t)x) : NULL;
+    const DWORD* to = lv ? RpTabFind(want, *lv) : NULL;
+    if (!to || (u8*)(uintptr_t)*to == x) return;
+    (*(LONG*)(x + 8))--, (*(LONG*)((u8*)(uintptr_t)*to + 8))++;
+    *(u8**)(f + 8) = (u8*)(uintptr_t)*to;
+}
+static void RpUnify(RpClone* c, const RpTab& want, const u8* fresh = NULL) {
     RpTab rev = {};
-    for (DWORD i = 0; i < c->fps.cap; i++) if (c->fps.k[i] > 1) RpTabPut(rev, c->fps.v[i], c->fps.k[i]);
-    for (DWORD i = 0; i < c->kids.cap; i++) if (c->kids.k[i] > 1) RpTabPut(rev, c->kids.v[i], c->kids.k[i]);
+    for (DWORD i = 0; i < c->fps.cap; i++) if (c->fps.k[i] > 1 && RpTabFind(want, c->fps.k[i])) RpTabPut(rev, c->fps.v[i], c->fps.k[i]);
+    for (DWORD i = 0; i < c->kids.cap; i++) if (c->kids.k[i] > 1 && RpTabFind(want, c->kids.k[i])) RpTabPut(rev, c->kids.v[i], c->kids.k[i]);
     for (DWORD i = 0; i < c->old.cap; i++)
-        if (c->old.k[i] > 1) RpRevOld(rev, (const u8*)(uintptr_t)c->old.k[i], ((const RpFpHdr*)(uintptr_t)(c->old.k[i] - 16))->live);
+        if (c->old.k[i] > 1) RpRevOldIf(rev, want, (const u8*)(uintptr_t)c->old.k[i], ((const RpFpHdr*)(uintptr_t)(c->old.k[i] - 16))->live);
+    if (!rev.used) return;
     u8* m = c->m;
     DWORD* bk = (DWORD*)RpP(m + 4);
     const DWORD nb = RpD(m + 8);
-    for (DWORD i = 0; nb > 1 && i < nb; i++)
-        for (u8* nd = (u8*)(uintptr_t)bk[i]; nd; nd = RpP(nd + 0x10)) {
-            u8* f = RpP(nd + 8);
-            u8* x = f ? RpP(f + 8) : NULL;
-            const DWORD* lv = x ? RpTabFind(rev, (DWORD)(uintptr_t)x) : NULL;
-            const DWORD* to = lv ? RpTabFind(want, *lv) : NULL;
-            if (!to || (u8*)(uintptr_t)*to == x) continue;
-            (*(LONG*)(x + 8))--, (*(LONG*)((u8*)(uintptr_t)*to + 8))++;
-            *(u8**)(f + 8) = (u8*)(uintptr_t)*to;
-        }
+    const RpCls* fc = fresh ? RpClass(RpD(fresh)) : NULL;
+    const u8* kf = fc && fc->child ? RpP(fresh + 0xC) : fresh;  // the child class keys by ~parent's id
+    if (fc && kf && nb > 1) {
+        const DWORD lo = RpD(kf + 0x14), b0 = lo % nb, b1 = ~lo % nb;
+        for (u8* nd = (u8*)(uintptr_t)bk[b0]; nd; nd = RpP(nd + 0x10)) RpUnifyNode(nd, rev, want);
+        if (b1 != b0) for (u8* nd = (u8*)(uintptr_t)bk[b1]; nd; nd = RpP(nd + 0x10)) RpUnifyNode(nd, rev, want);
+    } else
+        for (DWORD i = 0; nb > 1 && i < nb; i++)
+            for (u8* nd = (u8*)(uintptr_t)bk[i]; nd; nd = RpP(nd + 0x10)) RpUnifyNode(nd, rev, want);
     RpTabFree(rev);
 }
 // old takes fresh's state in place (same class, same live children, same level counts): every field but its reference
@@ -1757,6 +2374,8 @@ static void RpFpRefreshIn(u8* o, u8* f) {
     if (!list) return;
     for (u8 *lo = *(u8**)(o + 0x24), *lf = *(u8**)(f + 0x24); lo != o + 0x24; lo = *(u8**)lo, lf = *(u8**)lf) RpFpRefreshIn(*(u8**)(lo + 8), *(u8**)(lf + 8));
 }
+static LONG g_rpInsFreeInPlace;              // [RouteSnap] InsFreeInPlace (0.35.25, default 0)
+static volatile LONG g_rpInsFreed, g_rpInsRetired;  // consumer / tests: old copies freed in place vs retired (log)
 static u8* RpFpUse(RpClone* c, u8* live, u8* fresh) {
     DWORD* v = RpTabFind(c->fps, (DWORD)(uintptr_t)live);
     u8* old = v ? (u8*)(uintptr_t)*v : NULL;
@@ -1769,19 +2388,30 @@ static u8* RpFpUse(RpClone* c, u8* live, u8* fresh) {
     }
     if (!fresh) return NULL;
     bool unify = old && RpFpRefs(old) > 0;
-    if (old) RpRetire(c, old, fresh);
+    // 0.35.25 (docs/94 §22.29, I-94-501): [RouteSnap] InsFreeInPlace=1 frees an old copy that nothing holds (no FME, no child
+    // pin: a moved footprint's REM then INS) here, as RpOldGc below would. Retiring it ran RpRepin (every clone footprint's
+    // header) and, through its own oldLive entry, RpUnify's table walks, for nothing: ~1.1-1.6 ms per INS under +0x918
+    if (old && !unify && g_rpInsFreeInPlace) {
+        RpKids(c->kids, old, false);
+        RpFpFree(old);
+        ts3native_counters.rpGcFreed++;
+        g_rpInsFreed++;
+        old = NULL;
+    }
+    if (old) RpRetire(c, old, fresh), g_rpInsRetired++;
     if (!RpTabPut(c->fps, (DWORD)(uintptr_t)live, (DWORD)(uintptr_t)fresh)) { RpFpFree(fresh); return NULL; }
     RpKids(c->kids, fresh, true);
     RpTab want = {};
     RpWant(want, fresh, (DWORD)(uintptr_t)live);
     for (DWORD i = 0; !unify && c->oldLive.used && i < want.cap; i++) unify = want.k[i] > 1 && RpTabFind(c->oldLive, want.k[i]);
-    if (unify) RpUnify(c, want);
+    if (unify) RpUnify(c, want, fresh);
     RpTabFree(want);
     RpOldGc(c);
     return fresh;
 }
 // own-block children (RpFpCopyChild) whose parent is old: re-pointed to fresh, the pin moved with them
 static void RpRepin(RpClone* c, u8* old, u8* fresh) {
+    g_rpRepinScans++;
     for (DWORD i = 0; i < c->fps.cap; i++) {
         u8* ch = c->fps.k[i] > 1 ? (u8*)(uintptr_t)c->fps.v[i] : NULL;
         if (!ch || ((RpFpHdr*)(ch - 16))->pad != 1 || *(u8**)(ch + 0xC) != old) continue;
@@ -1808,7 +2438,8 @@ static void RpRevOld(RpTab& rev, const u8* blk, const u8* live) {
     for (const u8* l = RpP(blk + 0x24); l != blk + 0x24; l = RpP(l)) RpRevOld(rev, RpP(l + 8), RpP(l + 12));
 }
 static LONG g_rpResyncLog;  // first 8 resync failures logged (0.32.1)
-static bool RpMapResync(RpClone* c, const RpBatch* b) {
+// soft / nSoft (0.33.1): the clone lots of the unmatched live nodes (up to 16); *nSoft -1 = a miss no forced lot can fix
+static bool RpMapResync(RpClone* c, const RpBatch* b, u64* soft = NULL, int* nSoft = NULL) {
     u8* m = c->m;
     const DWORD nb = RpD(m + 8), cnt = RpD(m + 0xC);
     const bool same = cnt == b->nOrder;  // else matched dry, to name the first node without a partner (0.32.1)
@@ -1818,6 +2449,7 @@ static bool RpMapResync(RpClone* c, const RpBatch* b) {
         return same && cnt == 0;
     }
     RpTab rev = {}, lq = {}, heads = {};
+    RpTabGrow(rev, c->fps.used + c->kids.used + c->old.used * 2), RpTabGrow(heads, cnt);  // sized once (0.35.12): no rehash chain under +0x918
     for (DWORD i = 0; i < c->fps.cap; i++) if (c->fps.k[i] > 1) RpTabPut(rev, c->fps.v[i], c->fps.k[i]);
     for (DWORD i = 0; i < c->kids.cap; i++) if (c->kids.k[i] > 1) RpTabPut(rev, c->kids.v[i], c->kids.k[i]);
     for (DWORD i = 0; i < c->old.cap; i++) if (c->old.k[i] > 1) RpRevOld(rev, (const u8*)(uintptr_t)c->old.k[i], ((const RpFpHdr*)(uintptr_t)(c->old.k[i] - 16))->live);
@@ -1844,6 +2476,8 @@ static bool RpMapResync(RpClone* c, const RpBatch* b) {
     ok = ok && n == cnt;
     DWORD* nbk = ok && same ? (DWORD*)g_rpMapAlloc(m + 0x1C, NULL, b->mapN * 4 + 4, 0x400000) : NULL;
     if (ok && same && !nbk) ok = false;
+    if (nSoft) *nSoft = same ? 0 : -1;
+    bool miss = false;
     if (ok) {
         if (nbk) memset(nbk, 0, b->mapN * 4), nbk[b->mapN] = 0xFFFFFFFF;
         DWORD tailBucket = 0xFFFFFFFF;
@@ -1867,7 +2501,19 @@ static bool RpMapResync(RpClone* c, const RpBatch* b) {
                         cf ? (((const RpFpHdr*)(uintptr_t)(*cf - 16))->pad == 1 ? "own block" : "top level") : "", ck ? " in a parent's block" : "",
                         RpTabFind(c->oldLive, t[4]) ? " retired" : (!cf && !ck ? "none" : ""));
                 }
-                break;
+                miss = true;
+                u64 lot = 0;  // the clone lot that holds the node's live Q (0: none)
+                for (int li = 0; t[2] && !lot && li < c->nLots; li++)
+                    for (int j = 0; j < c->lots[li].nQ; j++) if (c->lots[li].liveQ[j] == t[2]) { lot = c->lots[li].key; break; }
+                if (nSoft && *nSoft >= 0) {
+                    int s = 0;
+                    while (s < *nSoft && soft[s] != lot) s++;
+                    if (!lot || (s == *nSoft && *nSoft == 16)) *nSoft = lot ? -1 : -2;  // -2: no clone lot holds the Q (rpHard[0])
+                    else if (s == *nSoft) soft[(*nSoft)++] = lot;
+                }
+                if (!nSoft || *nSoft < 0) break;
+                ok = true;  // collect the other misses' lots; the old chains are put back below
+                continue;
             }
             o[k].used = true;
             if (!same) continue;
@@ -1877,6 +2523,7 @@ static bool RpMapResync(RpClone* c, const RpBatch* b) {
             if (bi == tailBucket) *(DWORD*)(tail + 0x10) = (DWORD)(uintptr_t)nd; else nbk[bi] = (DWORD)(uintptr_t)nd;
             tailBucket = bi, tail = nd;
         }
+        if (miss) ok = false;
         if (ok && !same) {  // every live node matched: the clone has extra ones
             ok = false;
             for (DWORD j = 0; j < n; j++)
@@ -1900,24 +2547,54 @@ static bool RpMapResync(RpClone* c, const RpBatch* b) {
     RpTabFree(rev), RpTabFree(lq), RpTabFree(heads);
     return ok;
 }
+static LONG g_rpShellMiss;  // shells the clone could not take (its lot's Qs differ): forced to a full rebase
+static void RpApplyShells(RpClone* c, RpBatch* b) {
+    for (int i = 0; i < b->n; i++) {
+        RpBatchLot& bl = b->lots[i];
+        if (!bl.shell) continue;
+        RpLot* old = RpFindLot(c, bl.key);
+        bool same = old && old->nQ == bl.lot.nQ;
+        for (int j = 0; same && j < old->nQ; j++) same = old->liveQ[j] == bl.lot.liveQ[j] && (!old->liveQ[j] || old->q[j]);
+        if (!same) {  // a full rebase at the next cut instead; the shell is freed with the batch
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            int j = 0;
+            while (j < g_rpNForce && g_rpForce[j] != bl.key) j++;
+            if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = bl.key; else g_rpForceAll = 1; }
+            InterlockedExchange(&g_rpRingLock, 0);
+            if (InterlockedIncrement(&g_rpShellMiss) <= 8)
+                Log("snap replay: shell of lot 0x%08lX%08lX not taken (clone lot %s, %d Qs vs %d): full rebase at the next cut",
+                    (DWORD)(bl.key >> 32), (DWORD)bl.key, old ? "differs" : "missing", old ? old->nQ : -1, bl.lot.nQ);
+            continue;
+        }
+        u8** qv = *(u8***)(RpGraph(bl.lot.node) + 0x74);  // the shell's own copy of the Q vector (live Qs until now)
+        for (int j = 0; j < old->nQ; j++) bl.lot.q[j] = old->q[j], qv[j] = old->q[j];
+        old->nQ = 0;  // its Qs and trees stay in the clone: the grave frees only the old shell
+        RpTableUnlink(c, old);
+        RpGraveLot(old);
+        *old = bl.lot;
+        RpTableLink(c, old);
+        bl.removed = true;  // taken
+    }
+}
 static void RpApplyBatch(RpClone* c, RpBatch* b) {
+    RpApplyShells(c, b);
     // every clone node on the rebased lots' old Qs goes; the batch brings the lots' nodes at the cut. 0.32.1 kept nodes on a
     // replaced Q (dummy Q): on BP the game had dropped them, so the clone held 6 more entries than live at each SYNC (0.32.4)
     RpTab qs = {};
     for (int i = 0; i < b->n; i++)
-        if (RpLot* old = RpFindLot(c, b->lots[i].key))
+        if (RpLot* old = b->lots[i].shell ? NULL : RpFindLot(c, b->lots[i].key))
             for (int j = 0; j < old->nQ; j++) if (old->q[j]) RpTabPut(qs, (DWORD)(uintptr_t)old->q[j], 1);
-    RpMapDrop(c, qs);
+    if (qs.used) RpMapDrop(c, qs);
     RpTabFree(qs);
     for (int i = 0; i < b->n; i++) {
-        if (RpLot* old = RpFindLot(c, b->lots[i].key)) {
+        if (RpLot* old = b->lots[i].shell ? NULL : RpFindLot(c, b->lots[i].key)) {
             RpTableUnlink(c, old);
-            RpLotFree(old);
+            RpGraveLot(old);  // freed in slices by the next holds (0.35.13)
             *old = c->lots[--c->nLots];
         }
     }
     for (int i = 0; i < b->n; i++) {
-        if (b->lots[i].removed) continue;
+        if (b->lots[i].removed || b->lots[i].shell) continue;  // a shell not taken is freed with the batch
         RpLot* l = RpLotAdd(c);
         if (!l) { RP_NEED_EPOCH(); continue; }
         *l = b->lots[i].lot;
@@ -1944,7 +2621,7 @@ static void RpApplyBatch(RpClone* c, RpBatch* b) {
     b->nMap = 0;
     // children in a block of their own (RpFpCopyChild) whose parent the batch replaces: re-pointed to the fresh parent and the
     // pin moved with them, so the old parent can go below
-    for (DWORD i = 0; i < c->fps.cap; i++) {
+    for (DWORD i = 0; b->fps.used && i < c->fps.cap; i++) {  // (no copies in the batch: nothing to re-point)
         u8* ch = c->fps.k[i] > 1 ? (u8*)(uintptr_t)c->fps.v[i] : NULL;
         u8* par = ch && ((RpFpHdr*)(ch - 16))->pad == 1 ? *(u8**)(ch + 0xC) : NULL;
         const DWORD* nv = par ? RpTabFind(b->fps, (DWORD)(uintptr_t)((RpFpHdr*)(par - 16))->live) : NULL;
@@ -1960,7 +2637,7 @@ static void RpApplyBatch(RpClone* c, RpBatch* b) {
         u8* fresh = (u8*)(uintptr_t)b->fps.v[i];
         b->fps.k[i] = 1;
         DWORD* v = RpTabFind(c->fps, live);
-        if (u8* old = v ? (u8*)(uintptr_t)*v : NULL) RpRetire(c, old, fresh);
+        if (u8* old = v ? (u8*)(uintptr_t)*v : NULL) RpRetire(c, old, fresh, false);  // children re-pointed above
         if (!RpTabPut(c->fps, live, (DWORD)(uintptr_t)fresh)) { RP_NEED_EPOCH(); continue; }
         RpKids(c->kids, fresh, true);
         RpWant(want, fresh, live);
@@ -1968,7 +2645,207 @@ static void RpApplyBatch(RpClone* c, RpBatch* b) {
     if (want.used) RpUnify(c, want);  // FMEs of other lots move to the batch's copies (children matched by their live object)
     RpTabFree(want);
     RpOldGc(c);
-    if (!RpMapResync(c, b)) { RP_NEED_EPOCH(); ts3native_counters.rpDiverge++; }  // the SYNC after it then reports it too
+    u64 soft[16];
+    int nSoft = 0;
+    Ts3nCounters& k = ts3native_counters;
+    // this batch's lots leave the pending soft forces (it carries them as they were at its cut)
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    for (int i = 0; i < b->n; i++)
+        for (int j = 0; j < g_rpNSoftPend; j++)
+            if (g_rpSoftPend[j] == b->lots[i].key) { g_rpSoftPend[j--] = g_rpSoftPend[--g_rpNSoftPend]; }
+    InterlockedExchange(&g_rpRingLock, 0);
+    if (!b->order) {  // a shells-only batch (0.35.17): the map was not touched, nothing to re-chain or compare
+    } else if (!RpMapResync(c, b, soft, &nSoft)) {  // the SYNC after it then reports a count difference too
+        k.rpDiverge++;
+        int real = 0, fresh = 0, flight = 0;
+        for (int i = 0; i < nSoft; i++) {
+            int j = 0;
+            while (j < b->n && b->lots[j].key != soft[i]) j++;
+            if (j < b->n) { real++; continue; }
+            j = 0;
+            while (j < g_rpNSoftPend && g_rpSoftPend[j] != soft[i]) j++;
+            if (j < g_rpNSoftPend) flight++; else fresh++;
+        }
+        const bool tries = real ? g_rpSoftRun < kRpSoftMax : g_rpSoftFresh < kRpSoftFreshMax;  // in-flight-only batches count as fresh: a lost force ends too
+        if (nSoft > 0 && tries) {
+            k.rpSoftReal += real, k.rpSoftFresh += fresh, k.rpSoftInFlight += flight;
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            for (int i = 0; i < nSoft; i++) {
+                int j = 0;
+                while (j < g_rpNSoftPend && g_rpSoftPend[j] != soft[i]) j++;
+                if (j < g_rpNSoftPend) continue;  // in flight: its force is already waiting for the next cut
+                if (g_rpNSoftPend < 64) g_rpSoftPend[g_rpNSoftPend++] = soft[i];
+                j = 0;
+                while (j < g_rpNForce && g_rpForce[j] != soft[i]) j++;
+                if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = soft[i]; else g_rpForceAll = 1; }
+            }
+            InterlockedExchange(&g_rpRingLock, 0);
+            g_rpStale = 1;
+            if (real) g_rpSoftRun++;
+            else g_rpSoftFresh++;
+            if (InterlockedIncrement(&g_rpResyncLog) <= 16)
+                Log("snap replay: map resync: %d lot(s) missed (%d rebased in this batch, %d fresh, %d forced already), forced to "
+                    "rebase at the next cut (first 0x%08lX%08lX; tries %d, fresh %d), no rebuild",
+                    nSoft, real, fresh, flight, (DWORD)(soft[0] >> 32), (DWORD)soft[0], g_rpSoftRun, g_rpSoftFresh);
+        } else {
+            // 0.35.2 (docs/94 §21.17): why the soft path was not taken; each of these is a whole rebuild in the next cut (sim)
+            ts3native_counters.rpHard[nSoft == -2 ? 0 : nSoft > 0 ? 1 : nSoft == -1 ? 2 : 3]++;
+            RP_NEED_EPOCH();
+        }
+    } else if (g_rpStale) g_rpStale = 0, g_rpSoftRun = 0, g_rpSoftFresh = 0;  // the whole map matched live again
+}
+// 0.35.13 (docs/94 §22.16, I-94-463): an audited mismatch was only counted and logged, so the wrong clone lot stayed wrong
+// (and fed P4 shadows) until the next whole rebuild: IP 0.35.12 audited lot 0x08F300536B484DF0 wrong three times in a row
+// (live 13590, clone 13599 entries on Q 1), 0.35.9 the same lot and counts. Now the lot is forced to rebase at the next cut
+// (the gate still counts the mismatch), and the first 4 mismatches per session name their entries: the next hold (+0x918
+// held: the live trees are stable) lists that Q's leaf entries on both sides and logs those only one side has
+static LONG g_rpAuditForced;
+static void RpAuditForce(u64 key) {
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    int j = 0;
+    while (j < g_rpNForce && g_rpForce[j] != key) j++;
+    if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = key; else g_rpForceAll = 1; }
+    InterlockedExchange(&g_rpRingLock, 0);
+    if (InterlockedIncrement(&g_rpAuditForced) <= 16)
+        Log("snap replay audit: lot 0x%08lX%08lX forced to rebase at the next cut (%ld so far)", (DWORD)(key >> 32), (DWORD)key, g_rpAuditForced);
+}
+// 0.35.14 (docs/94 §22.17, I-94-470): LotQuadTree_ApplyRemove 0x666750 erases every map node of the id (and of ~id, the
+// children) on its Q, but removes an FME's leaf entries (0x666010) only when the footprint's bounds for the FME's level
+// (vtable +0x2C, level = FME +0x10 byte) are not flat: min x == max x or min z == max z skips the leaves and keeps the erase
+// [verified disassembly 0x66683C..0x66687F, 0x666956..0x666999]. So when the clone's copy answers flat bounds where the live
+// footprint did not, the clone keeps leaf entries the live Q lost while the maps agree: the IP lot 0x08F300536B484DF0 Q 1
+// shape (9 entries, 3 footprints, map totals equal). The game's own +0x2C is asked once more here (the replayed remove asks
+// it next anyway); a flat answer forces the lot to rebase at the next cut and is logged with the copy's bounds.
+static LONG g_rpRemFlat;  // replayed removes that kept leaves (selftest)
+// 0.35.18 (I-94-478): a non-flat copy answer that differs from the live one the REM record carries may miss the Q's rect
+// where live's reached it (the IP lot 0x08F300536B484DF0 Q 1 shape with no "keeps leaves" line): the lot is forced as well
+static LONG g_rpRemDiff;  // replayed removes whose copy bounds differ from live's (selftest)
+static LONG g_rpRemPatched;  // of those, copies patched to live's answer (no rebase; 0.35.21)
+static LONG g_rpRemPatchLog;
+static bool RpRemDiff(const RpRemLive* lv, u8* fp, const u8* f, const float* r, const u8* q) {
+    for (int i = 0; lv && i < lv->n; i++) {
+        const RpRemLiveE& e = lv->e[i];
+        if (e.cls != RpD(fp) || e.lo != RpD(fp + 0x14) || e.hi != RpD(fp + 0x18) || e.lvl != f[0x10]) continue;
+        if (!memcmp(e.b, r, sizeof(e.b))) return false;
+        float c0[4];
+        memcpy(c0, r, sizeof(c0));
+        if (RpRemPatchIn(e.p, fp, e.lvl)) {  // 0.35.21: the live inputs into the copy, asked again
+            float b[4] = {};
+            const float* r2 = ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))(fp, NULL, b, f[0x10], 0.0f);
+            if (r2 && !memcmp(e.b, r2, sizeof(e.b))) {
+                const LONG n = InterlockedIncrement(&g_rpRemPatched);
+                if (n <= 8 || !(n & (n - 1)))
+                    Log("snap replay: replayed remove on Q 0x%08lX: footprint 0x%08lX%08lX class 0x%08lX level %lu: copy bounds %.3f %.3f "
+                        "%.3f %.3f patched to live %.3f %.3f %.3f %.3f (%s inputs; %ld so far)", (DWORD)(uintptr_t)q, e.hi, e.lo, e.cls,
+                        e.lvl, c0[0], c0[1], c0[2], c0[3], e.b[0], e.b[1], e.b[2], e.b[3], e.p.child ? "child z + parent box" : "box", n);
+                return false;
+            }
+        } else if (e.p.has && InterlockedIncrement(&g_rpRemPatchLog) <= 8)
+            Log("snap replay: copy bounds not patchable (child list %s in live, other shape in the copy): footprint 0x%08lX%08lX class 0x%08lX",
+                e.p.empty ? "empty" : "not empty", e.hi, e.lo, e.cls);
+        const LONG n = InterlockedIncrement(&g_rpRemDiff);
+        if (n <= 8 || !(n & (n - 1)))  // first 8, then at powers of two (a high rate stays visible)
+            Log("snap replay: replayed remove on Q 0x%08lX: footprint 0x%08lX%08lX class 0x%08lX level %lu, FME +0x10 0x%08lX: "
+                "copy bounds %.3f %.3f %.3f %.3f, live %.3f %.3f %.3f %.3f (%ld so far)", (DWORD)(uintptr_t)q, e.hi, e.lo, e.cls,
+                e.lvl, RpD(f + 0x10), c0[0], c0[1], c0[2], c0[3], e.b[0], e.b[1], e.b[2], e.b[3], n);
+        return true;
+    }
+    return false;
+}
+static bool RpRemFlat(RpClone* c, const u8* q, DWORD lo, DWORD hi, const RpRemLive* lv) {
+    const u8* m = c->m;
+    const DWORD nb = m ? RpD(m + 8) : 0;
+    const DWORD* bk = nb ? (const DWORD*)RpP(m + 4) : NULL;
+    if (!bk) return false;
+    for (int pass = 0; pass < 2; pass++) {
+        const DWORD klo = pass ? ~lo : lo, khi = pass ? ~hi : hi;
+        for (const u8* nd = (const u8*)(uintptr_t)bk[klo % nb]; nd; nd = RpP(nd + 0x10)) {
+            if (RpD(nd) != klo || RpD(nd + 4) != khi) continue;
+            const u8* f = RpP(nd + 8);
+            // 0.35.16 (docs/94 §22.18, I-94-474): only an FME that holds leaves can keep them. W1 sets FME +0x10 bit 0x200
+            // only when its leaf insert 0x6653A0 succeeded (0x665E7B), which needs the same non-flat bounds [verified
+            // disassembly]; 0.35.14 also tested FMEs inserted flat (no leaves on either side): BP forced 15k lot rebases
+            u8* fp = f && RpP(f + 0xC) == q && (RpD(f + 0x10) & 0x200) ? RpP(f + 8) : NULL;
+            if (!fp) continue;
+            float b[4] = {};
+            const float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))(fp, NULL, b, f[0x10], 0.0f);
+            if (r && r[0] != r[2] && r[1] != r[3]) {
+                if (RpRemDiff(lv, fp, f, r, q)) return true;
+                continue;
+            }
+            if (InterlockedIncrement(&g_rpRemFlat) <= 8)
+                Log("snap replay: replayed remove of id 0x%08lX%08lX keeps leaves on Q 0x%08lX: footprint class 0x%08lX level %u, "
+                    "FME +0x10 0x%08lX, copy bounds %.3f %.3f %.3f %.3f (flat)", khi, klo, (DWORD)(uintptr_t)q, RpD(fp), f[0x10],
+                    RpD(f + 0x10), r ? r[0] : 0.f, r ? r[1] : 0.f, r ? r[2] : 0.f, r ? r[3] : 0.f);
+            return true;
+        }
+    }
+    return false;
+}
+static void RpRemForce(u64 key, const u8* q, DWORD lo, DWORD hi) {
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    int j = 0;
+    while (j < g_rpNForce && g_rpForce[j] != key) j++;
+    if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = key; else g_rpForceAll = 1; }
+    InterlockedExchange(&g_rpRingLock, 0);
+    if (g_rpRemFlat + g_rpRemDiff <= 16)
+        Log("snap replay: lot 0x%08lX%08lX forced to rebase at the next cut (remove of 0x%08lX%08lX on Q 0x%08lX kept leaves or copy bounds not live's)",
+            (DWORD)(key >> 32), (DWORD)key, hi, lo, (DWORD)(uintptr_t)q);
+}
+struct RpDiffEnt { DWORD lo, hi, fl, w4, w8, cls; };
+static void RpTreeList(const u8* n, int depth, RpDiffEnt* v, DWORD cap, DWORD* nv) {  // RpTreeHash's walk
+    if (!n || depth > 40) return;
+    if (n[4] & 1) { for (int i = 0; i < 4; i++) RpTreeList(RpP(n + 0xC + 4 * i), depth + 1, v, cap, nv); return; }
+    const u8* a = n + 8;
+    DWORD cnt = 1;
+    if (n[8] & 1) cnt = RpD(n + 0xC), a = (const u8*)(uintptr_t)(RpD(n + 8) & ~1u);
+    for (DWORD j = 0; j < cnt && j < 65536 && *nv < cap; j++) {
+        const u8* e = a + j * 12;
+        RpDiffEnt& d = v[(*nv)++];
+        memset(&d, 0, sizeof(d));
+        d.w4 = RpD(e + 4), d.w8 = RpD(e + 8);
+        const u8* f = RpP(e);
+        const u8* fp = f ? RpP(f + 8) : NULL;
+        if (f) d.fl = RpD(f + 0x10);
+        if (fp) d.lo = RpD(fp + 0x14), d.hi = RpD(fp + 0x18), d.cls = RpD(fp);
+    }
+}
+static int __cdecl RpDiffCmp(const void* x, const void* y) { return memcmp(x, y, 5 * 4); }  // cls is not compared (the hash's class word is)
+static u64 g_rpDiffLot;
+static volatile int g_rpDiffQ = -1;
+static LONG g_rpDiffN, g_rpDiffOnly[2];  // done; entries only live / only in the clone (selftest)
+static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
+    const int qd = g_rpDiffQ;
+    g_rpDiffQ = -1;
+    g_rpDiffN++;
+    const RpLot* l = RpFindLot(c, g_rpDiffLot);
+    if (!l || qd >= l->nQ || !l->q[qd] || !l->liveQ[qd]) return;
+    const DWORD cap = 1 << 16;
+    RpDiffEnt* v[2] = {(RpDiffEnt*)RpAlloc(cap * sizeof(RpDiffEnt)), (RpDiffEnt*)RpAlloc(cap * sizeof(RpDiffEnt))};
+    DWORD n[2] = {0, 0};
+    if (v[0] && v[1]) {
+        __try {
+            RpTreeList(RpP((const u8*)(uintptr_t)l->liveQ[qd] + 0x24), 0, v[0], cap, &n[0]);
+            RpTreeList(RpP(l->q[qd] + 0x24), 0, v[1], cap, &n[1]);
+        } __except (EXCEPTION_EXECUTE_HANDLER) { n[0] = n[1] = 0; }
+        qsort(v[0], n[0], sizeof(RpDiffEnt), RpDiffCmp), qsort(v[1], n[1], sizeof(RpDiffEnt), RpDiffCmp);
+        DWORD i = 0, j = 0;
+        int logged = 0;
+        LONG only[2] = {0, 0};
+        while (i < n[0] || j < n[1]) {
+            const int s = i == n[0] ? 1 : j == n[1] ? -1 : RpDiffCmp(&v[0][i], &v[1][j]);
+            if (!s) { i++, j++; continue; }
+            const RpDiffEnt& d = s < 0 ? v[0][i++] : v[1][j++];
+            only[s < 0 ? 0 : 1]++;
+            if (logged++ < 12)
+                Log("snap replay audit diff lot 0x%08lX%08lX Q %d: only %s: footprint 0x%08lX%08lX class 0x%08lX, FME +0x10 0x%08lX, entry +4 0x%08lX +8 0x%08lX",
+                    (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, s < 0 ? "live" : "in the clone", d.hi, d.lo, d.cls, d.fl, d.w4, d.w8);
+        }
+        g_rpDiffOnly[0] += only[0], g_rpDiffOnly[1] += only[1];
+        Log("snap replay audit diff lot 0x%08lX%08lX Q %d: live %lu entries, clone %lu; only live %ld, only in the clone %ld",
+            (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, n[0], n[1], only[0], only[1]);
+    }
+    RpFree(v[0]), RpFree(v[1]);
 }
 static void RpAudit(RpClone* c, const RpAuditRec* a) {
     Ts3nCounters& k = ts3native_counters;
@@ -1984,9 +2861,11 @@ static void RpAudit(RpClone* c, const RpAuditRec* a) {
         k.rpAudits++;
         if (l && h == a->hash[i]) continue;
         k.rpMis++;
+        RpAuditForce(a->keys[i]);
         {
             int qd = -1;  // first Q whose tree entry count differs (0.32.8)
             for (int j = 0; l && a->perQ && j < 16 && qd < 0; j++) if (perQ[j] != a->perQ[i * 16 + j]) qd = j;
+            if (qd >= 0 && g_rpDiffQ < 0 && g_rpDiffN < 4) g_rpDiffLot = a->keys[i], g_rpDiffQ = qd;  // named at the next hold
             if (InterlockedIncrement(&g_rpLogged) <= (LONG)g_rpLogMis && l && qd >= 0)
                 Log("snap replay audit MISMATCH lot 0x%08lX%08lX: Q %d (level index) entries live %lu clone %lu", (DWORD)(a->keys[i] >> 32), (DWORD)a->keys[i],
                     qd, a->perQ[i * 16 + qd], perQ[qd]);
@@ -2056,8 +2935,12 @@ static bool RpApply(const RpRec& r) {
             RpNoQFree((RpNoQRec*)r.p);
             break;
         case RP_EPOCH:
-            RpFreeClone(g_rpClone);
+            RpGraveClone(g_rpClone);  // freed in slices by the next holds (0.35.13)
             g_rpClone = (RpClone*)r.p;
+            g_rpStale = 0, g_rpSoftRun = 0, g_rpBad = 0, g_rpSoftFresh = 0;
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            g_rpNSoftPend = 0;  // the new clone was built after those forces' misses
+            InterlockedExchange(&g_rpRingLock, 0);
             k.rpLots = g_rpClone->nLots;
             k.rpReady |= 2;
             break;
@@ -2072,7 +2955,7 @@ static bool RpApply(const RpRec& r) {
                     Log("snap replay: %s on a Q the clone does not have: Q 0x%08lX, lot 0x%08lX%08lX (clone has that lot: %s)",
                         r.type == RP_INS ? "insert" : "remove", r.a, (DWORD)(key >> 32), (DWORD)key, RpFindLot(c, key) ? "yes" : "no");
                 }
-                if (r.type == RP_INS) RpFpFree((u8*)r.p);
+                if (r.type == RP_INS) RpFpFree((u8*)r.p); else RpFree(r.p);
                 return true;
             }
             if (l->stale) k.rpSkip[RPS_STALE]++;  // applied anyway: its footprints are shared with other lots (the rebase replaces the lot)
@@ -2089,7 +2972,11 @@ static bool RpApply(const RpRec& r) {
                     return true;
                 }
                 g_rpIns(q, NULL, fp, r.c);
-            } else g_rpRem(q, NULL, r.b, r.c);
+            } else {
+                if (RpRemFlat(c, q, r.b, r.c, (const RpRemLive*)r.p)) RpRemForce(l->key, q, r.b, r.c);
+                g_rpRem(q, NULL, r.b, r.c);
+                RpFree(r.p);
+            }
             break;
         }
         case RP_STALE:
@@ -2121,38 +3008,168 @@ static DWORD RpLimit() {
     if (h && GetTickCount64() < g_rpHoldUntil && (DWORD)(h - g_rpTail) <= (DWORD)(pub - g_rpTail)) return h;
     return pub;
 }
-static void RpDrainBody(bool lock);
-static void RpDrain(bool lock) {  // exclusive with a P4 clone run (g_rpUse)
-    AcquireSRWLockExclusive(&g_rpUse);
-    // the replay's own ApplyInsert / ApplyRemove on clone Qs enter P1's W1/W2 stubs too: not records (0.32.1; before, each
-    // applied record came back as one on an unknown Q: BP 34,086 skips, a refresh batch at nearly every cut, resync failures)
-    t_rpReplay++;
-    RpDrainBody(lock);
-    t_rpReplay--;
-    ReleaseSRWLockExclusive(&g_rpUse);
+static bool RpDrainBody(bool lock);
+// 0.35.13 (docs/94 §22.16): the consumer's time under +0x918 by record type (and the grave), logged every 5 min: which work
+// fills the 206 ms/s of 0.35.12 (only single records over 100 ms were logged)
+static LONGLONG g_rpTypeUs[RP_NTYPES + 2];  // + the grave, + RP_LOTS applied outside the lock (0.35.23)
+static LONG g_rpTypeN[RP_NTYPES + 2], g_rpTypeMax[RP_NTYPES + 2];
+static ULONGLONG g_rpTypeAt;
+static void RpTypeTime(DWORD type, LONG us) {
+    if (type > RP_NTYPES + 1) return;
+    g_rpTypeUs[type] += us, g_rpTypeN[type]++;
+    if (us > g_rpTypeMax[type]) g_rpTypeMax[type] = us;
+    const ULONGLONG now = GetTickCount64();
+    static LONG s_apUs0;
+    static LONG64 s_apCy0;
+    if (!g_rpTypeAt) g_rpTypeAt = now, s_apUs0 = ts3native_counters.rpApplyUs, s_apCy0 = g_cyApply;
+    if (now - g_rpTypeAt < 300000) return;
+    static const char* const kName[RP_NTYPES + 2] = {"noq", "ins", "rem", "stale", "lots", "epoch", "audit", "sync", "grave", "lots outside the lock"};
+    char buf[640];
+    int o = 0;
+    for (int i = 0; i <= RP_NTYPES + 1 && o < 560; i++)
+        if (g_rpTypeN[i]) o += sprintf_s(buf + o, sizeof(buf) - o, " %s %lld ms (%ld, max %ld us);", kName[i], g_rpTypeUs[i] / 1000, g_rpTypeN[i], g_rpTypeMax[i]);
+    buf[o] = 0;
+    const double s = (now - g_rpTypeAt) / 1000.0;  // 0.35.21: the holds (closed before this record's) in wall ms/s and thread CPU
+    Log("snap replay: consumer time under the routing lock by record, last %lu s:%s holds: wall %.2f ms/s, thread CPU (2.3 GHz nominal) "
+        "%.2f cyc-ms/s", (DWORD)s, buf, (ts3native_counters.rpApplyUs - s_apUs0) / 1000.0 / s, CycMsPerS(g_cyApply - s_apCy0, s));
+    s_apUs0 = ts3native_counters.rpApplyUs, s_apCy0 = g_cyApply;
+    static LONG s_fr0, s_rt0, s_rs0;  // 0.35.25: which INS / NOQ footprint path the time went to
+    Log("snap replay: old footprint copies at an insert, last %lu s: freed in place %ld, retired %ld (whole-clone repin scans %ld); "
+        "InsFreeInPlace=%ld", (DWORD)s, g_rpInsFreed - s_fr0, g_rpInsRetired - s_rt0, g_rpRepinScans - s_rs0, g_rpInsFreeInPlace);
+    s_fr0 = g_rpInsFreed, s_rt0 = g_rpInsRetired, s_rs0 = g_rpRepinScans;
+    memset(g_rpTypeUs, 0, sizeof(g_rpTypeUs)), memset(g_rpTypeN, 0, sizeof(g_rpTypeN)), memset(g_rpTypeMax, 0, sizeof(g_rpTypeMax));
+    g_rpTypeAt = now;
 }
-static void RpDrainBody(bool lock) {
+static volatile LONG g_rpStop;  // tests only
+static volatile LONG g_rpLongLog;
+static void RpDrain(bool lock) {  // exclusive with a P4 clone run (g_rpUse)
+    for (;;) {
+        AcquireSRWLockExclusive(&g_rpUse);
+        g_rpPhase = 1;
+        // the replay's own ApplyInsert / ApplyRemove on clone Qs enter P1's W1/W2 stubs too: not records (0.32.1; before, each
+        // applied record came back as one on an unknown Q: BP 34,086 skips, a refresh batch at nearly every cut, resync failures)
+        t_rpReplay++;
+        const bool busy = RpDrainBody(lock);
+        t_rpReplay--;
+        g_rpPhase = 0;
+        ReleaseSRWLockExclusive(&g_rpUse);
+        if (!busy || g_rpStop) return;
+        Sleep(1);  // the routing lock is busy: wait for it without g_rpUse (0.33.2)
+    }
+}
+// true: stopped because the routing lock was busy (the caller retries without g_rpUse). Never a wait for +0x918 while
+// holding g_rpUse: 0.33.1 waited there (a thread holding +0x918 and waiting for g_rpUse, as P5's acquire inside its job,
+// would never get either); 0.33.2 only tried it, so with the sim and the jobs holding +0x918 most of the time the consumer
+// fell behind (0.33.3: "mat"/"timeout", and parked shadows never reached their cut). 0.34.1 (docs/94 §21.16): lets go of
+// g_rpUse, waits for +0x918 holding nothing of ours, then tries g_rpUse; a clone run that took it meanwhile is waited out
+// with +0x918 released again
+// 0.35.23 (docs/94 §22.26.1): [RouteSnap] LotsUnlocked (0 = off, the default). A rebase batch (RP_LOTS) touches only the
+// clone (lots, map M with its private node pool at M+0x1C, footprint tables), the private pool set and EA heap blocks
+// [verified source: RpApplyBatch and its callees read live addresses only as table keys]; the clone is guarded by g_rpUse,
+// not by +0x918 (RpAudit and RpGc already run outside the lock). So with LotsUnlocked=1 it is applied holding g_rpUse and the
+// pool set but not +0x918: a whole-map resync (BP 0444: 45 ms, a force-all 181 ms) no longer stalls the sim. The batch's
+// leftovers (untaken shells: portal releases, FME destructors) are freed at the start of the next locked hold, as before
+static LONG g_rpLotsUnlocked;
+static RpBatch* g_rpLotsFreePend;  // consumer only: an unlocked batch waiting for its free under +0x918
+static LONG g_rpLotsUnlockedN, g_rpLotsUnlockedMaxUs;  // selftest / log
+static bool RpLotsUnlocked() {  // false = the pool set is busy (the caller retries); the ring tail is an RP_LOTS record
     Ts3nCounters& k = ts3native_counters;
-    static const DWORD kInf = 0xFFFFFFFF;
-    while (g_rpTail != RpLimit()) {
+    LONG op;
+    if (!RpOpTry(&op)) return false;
+    const RpRec& r = g_rpRing[g_rpTail & (kRpRing - 1)];
+    RpBatch* b = (RpBatch*)r.p;
+    g_rpPhase = 2 | RP_LOTS << 8 | 0x10000;  // bit 16: outside +0x918
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    __try {
+        if (g_rpClone) RpApplyBatch(g_rpClone, b), k.rpLots = g_rpClone->nLots;
+        k.rpApplied[RP_LOTS]++;
+        g_rpLotsFreePend = b;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        k.rpFaults++;
+        RP_NEED_EPOCH();
+        Log("snap replay: fault applying record %lu (unlocked batch): clone dropped, rebuilt at the next cut", g_rpTail);
+        g_rpClone = NULL;  // shortcut: as the locked path, the batch and the clone are dropped, not freed
+        k.rpReady &= ~2;
+    }
+    const LONG us = UsSince(t0);
+    g_rpLotsUnlockedN++;
+    if (us > g_rpLotsUnlockedMaxUs) g_rpLotsUnlockedMaxUs = us;
+    RpTypeTime(RP_NTYPES + 1, us);
+    g_rpTail++;
+    RpOpLeave(op);
+    g_rpPhase = 1;
+    return true;
+}
+static void RpLotsFreePend() {  // inside a hold (+0x918 and the pool set held)
+    if (RpBatch* b = g_rpLotsFreePend) g_rpLotsFreePend = NULL, RpBatchFree(b, true);
+}
+static bool RpDrainBody(bool lock) {
+    Ts3nCounters& k = ts3native_counters;
+    static const DWORD kTry = 0, kInf = 0xFFFFFFFF;
+    // the grave is freed in holds of its own too, except while a P4 hold is armed (its clone run waits for g_rpUse)
+    while (g_rpTail != RpLimit() || (RpGraveBusy() && !g_rpHoldAt) || g_rpLotsFreePend) {
+        if (g_rpLotsUnlocked && !g_rpLotsFreePend && g_rpTail != RpLimit() && g_rpRing[g_rpTail & (kRpRing - 1)].type == RP_LOTS) {
+            if (!RpLotsUnlocked()) return true;  // the pool set is busy: retry without our locks
+            continue;
+        }
         const u8* world = *g_spWorldSlot;
         LARGE_INTEGER tw, t0;
         QueryPerformanceCounter(&tw);
         void* lk = world ? (void*)(world + 0x918) : NULL;
-        if (lock && (!lk || g_spAcq(lk, NULL, &kInf) <= 0)) return;
-        const LONG op = RpOpEnter();  // inside the hold: this thread's tree pool pops are private (pools.cpp)
+        if (lock && !lk) return false;
+        if (lock && g_spAcq(lk, NULL, &kTry) <= 0) {
+            g_rpPhase = 4;  // waiting for +0x918, g_rpUse released
+            ReleaseSRWLockExclusive(&g_rpUse);
+            const LONG r = g_spAcq(lk, NULL, &kInf);
+            if (r <= 0 || !TryAcquireSRWLockExclusive(&g_rpUse)) {
+                if (r > 0) g_spRel(lk, NULL);
+                AcquireSRWLockExclusive(&g_rpUse);  // holding nothing else: a clone run's end
+                g_rpPhase = 1;
+                k.rpLockWaitUs += UsSince(tw);
+                continue;  // the limit again: that run may have moved the hold
+            }
+            g_rpPhase = 1;
+        }
+        LONG op;  // inside the hold: this thread's tree pool pops are private (pools.cpp)
+        if (!RpOpTry(&op)) {  // the pool set is a P4 run's (0.35.12; not expected: runs hold g_rpUse): retry without our locks
+            if (lock) g_spRel(lk, NULL);
+            return true;
+        }
         k.rpLockWaitUs += UsSince(tw);
         QueryPerformanceCounter(&t0);
+        const LONG64 cy0 = CycNow();
         const RpRec* audit = NULL;
         __try {
             if (g_rpClone && world && PlMoved(g_rpClone->seen, RpP(world + 0x95C))) {  // the game's pools were recreated (§16.6)
+                RpGraveStep(-1);
                 RpFreeClone(g_rpClone);  // private memory only: safe after PathPlanner_Reset; records skip until the next EPOCH
                 g_rpClone = NULL;        // (the sim's next cut sees the change itself and builds that EPOCH)
                 k.rpReady &= ~2;
             }
+            RpLotsFreePend();
+            if (g_rpDiffQ >= 0 && g_rpClone) RpAuditDiff(g_rpClone);
+            if (RpGraveBusy()) {
+                LARGE_INTEGER tg;
+                QueryPerformanceCounter(&tg);
+                RpGraveStep(1000);
+                RpTypeTime(RP_NTYPES, UsSince(tg));
+            }
             while (g_rpTail != RpLimit()) {
                 const RpRec& r = g_rpRing[g_rpTail & (kRpRing - 1)];
+                if (g_rpLotsUnlocked && r.type == RP_LOTS) break;  // applied outside the lock by the next round (0.35.23)
+                g_rpPhase = 2 | (r.type & 0xFF) << 8;
+                LARGE_INTEGER ta;
+                QueryPerformanceCounter(&ta);
+                const DWORD type = r.type;
+                const RpBatch* rb = type == RP_LOTS ? (const RpBatch*)r.p : NULL;
+                const int bn = rb ? rb->n : 0, bm = rb ? rb->nMap : 0, bf = rb ? (int)rb->fps.used : 0;
                 if (!RpApply(r)) { audit = &r; break; }
+                const LONG ua = UsSince(ta);  // 0.34.1: one record's apply under +0x918, logged when long (the hold's cause)
+                RpTypeTime(type, ua);
+                if (ua > 100000 && InterlockedIncrement(&g_rpLongLog) <= 16)
+                    Log("snap replay: record type %lu applied in %ld ms under the routing lock (batch: %d lots, %d map nodes, %d footprints)",
+                        type, ua / 1000, bn, bm, bf);
                 g_rpTail++;
                 if (UsSince(t0) > 1000) break;
             }
@@ -2165,34 +3182,41 @@ static void RpDrainBody(bool lock) {
             k.rpReady &= ~2;
         }
         const LONG us = UsSince(t0);
+        g_cyApply += CycNow() - cy0;  // consumer thread only
         k.rpApplyUs += us;
         Max(&k.rpApplyMaxUs, us);
         RpOpLeave(op);
         if (lock) g_spRel(lk, NULL);
+        g_rpPhase = 1;
         if (audit) {
             if (g_rpClone) RpAudit(g_rpClone, (const RpAuditRec*)audit->p);
             RpAuditFree((RpAuditRec*)audit->p);
             k.rpApplied[RP_AUDIT]++;
             g_rpTail++;
         }
-        if (g_rpClone) RpGc(g_rpClone);  // our heap only: no lock
+        static DWORD s_gcHolds;  // 0.35.12: the GC scans every footprint slot; once per 16 holds or when caught up, not per hold
+        if (g_rpClone && (++s_gcHolds % 16 == 0 || g_rpTail == RpLimit())) RpGc(g_rpClone);  // our heap only: no lock
         Max(&k.rpLag, (LONG)(g_rpHead - g_rpTail));
         if (!g_rpOn) break;
     }
     if (!g_rpOn && g_rpClone) {  // switched off: drop the clone under the lock
         const u8* world = *g_spWorldSlot;
-        if (!lock || (world && g_spAcq((void*)(world + 0x918), NULL, &kInf) > 0)) {
-            const LONG op = RpOpEnter();
+        LONG op;
+        if (!lock || (world && g_spAcq((void*)(world + 0x918), NULL, &kTry) > 0)) {
+            if (!RpOpTry(&op)) { if (lock) g_spRel((void*)(world + 0x918), NULL); return true; }
+            RpLotsFreePend();
+            RpGraveStep(-1);
             RpFreeClone(g_rpClone);
             RpOpLeave(op);
             g_rpClone = NULL;
             k.rpReady &= ~2;
             if (lock) g_spRel((void*)(world + 0x918), NULL);
-        }
+        } else if (world) return true;
     }
+    return false;
 }
-static volatile LONG g_rpStop;  // tests only
 static DWORD WINAPI RpThread(void*) {
+    g_rpTid = GetCurrentThreadId();
     while (!g_rpStop) {
         WaitForSingleObject(g_rpEvent, 1000);
         RpDrain(true);
@@ -2217,6 +3241,11 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_rpCapBytes = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"ReplayCapMB", 128, ini), 16, 512) << 20;
     g_rpLogMis = g_spLogMis;
     g_rpPrebuild = GetPrivateProfileIntW(L"RouteSnap", L"Prebuild", 0, ini) != 0;
+    g_rpQuietMs = (DWORD)Clamp(GetPrivateProfileIntW(L"RouteSnap", L"ReplayQuietMs", 0, ini), 0, 2000);
+    g_rpSigMs = (DWORD)Clamp(GetPrivateProfileIntW(L"RouteSnap", L"ReplaySigMs", 0, ini), 0, 2000);
+    g_rpLotsUnlocked = GetPrivateProfileIntW(L"RouteSnap", L"LotsUnlocked", 0, ini) != 0;
+    g_rpLazyKeep = GetPrivateProfileIntW(L"RouteSnap", L"LazyKeep", 0, ini) != 0;
+    g_rpInsFreeInPlace = GetPrivateProfileIntW(L"RouteSnap", L"InsFreeInPlace", 0, ini) != 0;
     g_rpRing = (RpRec*)VirtualAlloc(NULL, kRpRing * sizeof(RpRec), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_rpEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (!g_rpRing || !g_rpEvent) { Log("SKIP route snapshot replay: no ring"); return false; }
@@ -2228,7 +3257,8 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_spLot = &kSpLotReplay;
     g_rpOn = 1;
     k.rpReady = 1 | 4;
-    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d",
-        kRpRing, g_rpAuditEvery, g_rpAuditLots, g_rpCapBytes >> 20, g_rpPrebuild ? 1 : 0);
+    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d, ReplayQuietMs=%lu, LazyKeep=%ld, ReplaySigMs=%lu, LotsUnlocked=%ld, InsFreeInPlace=%ld",
+        kRpRing, g_rpAuditEvery, g_rpAuditLots, g_rpCapBytes >> 20, g_rpPrebuild ? 1 : 0, g_rpQuietMs, g_rpLazyKeep, g_rpSigMs, g_rpLotsUnlocked,
+        g_rpInsFreeInPlace);
     return true;
 }

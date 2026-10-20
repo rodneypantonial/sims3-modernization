@@ -2,9 +2,9 @@
   {
     "id": "bp-snap-p3b",
     "note": "docs/94 §16 P3-B: [RouteSnap] Enabled=1 Lots=replay, design B replay clone of the lot footprints / quadtrees + lot audit only, no search (0.28.0, counters v49), Prebuild=1 (every lot graph built at load, Rodney 2026-10-18); env-on settings (async + gate + D), BP Spring, seeded; after: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row ts3native.log>; pass = no crash, rpReady bits 0-2, P3-B PASS (clone built, rpMis 0 in >= 200 lot audits, no divergence / fault / drop, copies + rebases <= 1 ms/s, clone <= 128 MB) and G3 as in snap-p3",
-    "asi": "game-copy/ts3native.asi.snap0328",
+    "asi": "game-copy/ts3native.asi.snap03517",
     "save": "Baseline-BP-Spring",
-    "minCounters": 57,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,
@@ -27,9 +27,9 @@
   {
     "id": "ip-snap-p3b",
     "note": "the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn)",
-    "asi": "game-copy/ts3native.asi.snap0328",
+    "asi": "game-copy/ts3native.asi.snap03517",
     "save": "Baseline-IP-Spring",
-    "minCounters": 57,
+    "minCounters": 72,
     "ini": {
       "RouteAsync.Enabled": 1,
       "RouteGate.Enabled": 1,

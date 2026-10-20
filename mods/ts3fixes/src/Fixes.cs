@@ -59,6 +59,7 @@ namespace Ts3Fixes
             ApplyNameCache();
             ApplyScriptHotSpots();
             ApplyDoorMirror();
+            ApplyAutShadow();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -83,13 +84,15 @@ namespace Ts3Fixes
         // [88-89] tooltip window walks skipped / run (ScriptHotSpots.cs),
         // [93-98] spring wildflower fires / tries / placed / failed / longest ms / save aborts (wildflowerprobe, wildflowertask; ScriptHotSpots.cs, docs/110),
         // [99-101] reserved for invcache (docs/115), [102-105] door mirror: door imports seen / lot invalidations / lot tables built /
-        // builds refused (doormirror; DoorMirror.cs, docs/105 §10.5).
+        // builds refused (doormirror; DoorMirror.cs, docs/105 §10.5), [106-121] [AutShadow] pilot (AutShadow.cs, docs/122): A0..A5,
+        // L pairs / equal / Test agree / top-1 agree, skips, warm-in reference runs, requests posted, Begin busy, mod-guard
+        // skips, managed exceptions in the driver.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[106];AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[122]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -136,6 +139,8 @@ namespace Ts3Fixes
                 case "wildflowerprobe": return Instantiator.kWildflowerProbe;
                 case "wildflowertask": return Instantiator.kWildflowerTask;
                 case "doormirror": return Instantiator.kDoorMirror;
+                case "autshadow": return Instantiator.kAutShadow;
+                case "autshadowverify": return false; // verify switch: test runs only
                 case "spotspread": return true;
                 default: return true;
             }

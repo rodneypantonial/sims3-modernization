@@ -105,6 +105,47 @@ Ranked by expected MB times confidence. Candidates 1 and 2 are the only ones wit
 ## 5. Open measurements
 
 - Module list (`/modules`) to split the 285 MB image remainder and size the Frida agent's own cost.
-- Boehm `GC_heapsize` readout (candidate 1) and per-thread stack reserve (candidate 2).
+- Boehm `GC_heapsize` readout (candidate 1) and per-thread stack reserve (candidate 2): both built 2026-10-20, not run yet (§6).
 - Menu-side owners: ResourceCache held and the CAS part cache at the menu (the menu job has no native counters).
 - Largest free block during a save (M3 open item).
+
+## 6. Quick-win A/B prep (2026-10-20, no game run)
+
+Candidates 1, 2 and 4 made testable with memory metrics, which CPU noise does not move. Queue: `tools/harness/queues/addr-quickwins.json`, four BP jobs of 15 min at speed 3 (watchdog for correctness, `/memory` before and after) plus a 3 h filler-night soak. Run the four with `node tools/harness/queue.ts tools/harness/queues/addr-quickwins.json --only addr-base,addr-heap256,addr-stack512,addr-tex64` (~2 h with loads and restarts); the soak alone with `--only filler-night-soak3h`. One run per arm is enough for MB deltas; rerun an arm only if its `largestFreeMB` at start differs from the baseline's by more than the arm's expected saving for no visible reason.
+
+### 6.1 New readouts
+
+- `/memory` (probe `agent.js` `addressSpace()`) now also returns `gcHeapMB` (`GC_heapsize` `[0x12225A0]`), `gcFreeMB` (`GC_large_free_bytes` `[0x12225B4]`) and `gcCount` (`GC_gc_no` `[0x11F2F90]`); `memory.csv` (every ~10 s) gets `gcHeapMB`/`gcFreeMB` columns. [verified: `mono_gc_get_used_size` `0xE69670` = `call 0xE4DD30` (`mov eax,[0x12225A0]`) minus `call 0xE4DD40` (`mov eax,[0x12225B4]`), Steam 1.67 disassembly; `GC_gc_no` from docs/119.] Used heap = `gcHeapMB - gcFreeMB` (upper bound: free objects inside partly used blocks count as used).
+- `[ThreadStack]` logs every exe thread start with its real reservation read from the new thread's TEB (`StackBase` - `DeallocationStack`).
+
+### 6.2 Candidate 1: `[GC] InitialHeapMB`
+
+How it works today [verified, `ts3native.cpp` `ApplyGc`]: ts3native patches the immediate of `GC_init`'s first expansion to `InitialHeapMB` (repo ini 352, code default 256, clamp 40-1024) in `DllMain`, before `GC_init` runs; the env var `GC_INITIAL_HEAP_SIZE` still overrides it. `GrowthStepMB` (32, clamp 8-256) patches the growth step; the heap never shrinks. Fixed at start, so every arm is a restart.
+
+Data: no `/memory` row has a heap readout yet. The only peak is F15 (docs/04): BP after 6 min, 360 MB heap with 151 MB free = **~209 MB used**; with the 40 MB default the heap sat at 120 MB with 6 MB free (live set after a collection ~114 MB) and paid 128 forced collections in 6 min [measured]. The 352 heap reached ~360 in BP, so it grew once [measured, §3.3].
+
+**Proposal: 256 MB** (47 MB over the 6-min peak, ~140 MB over the live set), fallback **288**. Saving up to 96 MB committed and largest free block [inferred]. Decision rule after `addr-heap256`: keep 256 if `gcHeapMB` after is still 256 (no growth) and `gcCount` after-before is within ~1.5x of `addr-base`; growth or many more collections = forced GCs are back (stutter is the priority): try 288, else keep 352. A 10-min BP profile pair (forced GC count, hitches/s) confirms before it ships.
+
+### 6.3 Candidate 2: thread stacks, ts3native `[ThreadStack]` vs S3PP `ThreadStackDiet`
+
+All 7 thread starts in TS3W.exe go through two IAT slots [verified, disassembly 2026-10-20]:
+
+| IAT slot | Call sites | Stack size passed |
+|---|---|---|
+| `KERNEL32!CreateThread` `0xF95244` | `0xF49820`, `0xF6F207`, `0xF6F6C7`, `0xF6F969` (third-party block; starts `0xF49730`, `0xF6F070`, `0xF6DC50`, `0xF6F720`) | 0 |
+| `MSVCR80!_beginthreadex` `0xF955D0` | `0x4DB355` (file watchers; S3SS rewrites this call) | 0 |
+| same | `0x4E2FCE` `EAThread_Begin`, `0x4E323E` `EAThread_BeginRunnable` (sim thread, JobManager, audio, pool, ...) | params `+4`, 0 without params; never with `STACK_SIZE_PARAM_IS_A_RESERVATION` |
+
+A size without the reservation flag is a commit size, so Windows reserves the PE default (1 MB) for every one of them [verified: PE `SizeOfStackReserve` 0x100000; Windows API semantics]. S3PP `ThreadStackDiet` (size 0 only, kernel32 detour) therefore misses EA starts that pass a commit size, and it also changes every DLL's threads (DXVK, driver, Frida) [inferred from docs/69 row 8].
+
+Built: `native/ts3native/threadstack.cpp` (selftest `threadstack-test.h`), off by default, log only (no counters, no `TS3NATIVE_VERSION` change). It swaps the exe's two IAT slots only while they still hold the real exports (another hook first = skip with a log line). Rule: reservation = max(asked, `ReserveKB`) with the flag set, only when that is below the PE default and the caller did not set the flag. `Skip` (hex, default `0x76B470` `SimulatorThread_Proc`, where the Mono interpreter recurses natively) keeps the game's stack; for the EAThread entries `0x4E2E30`/`0x4E30A0` the user function at arglist `+0x10` (runnable: its vtable `+4`) is matched. A capped start that fails is retried with the game's own arguments. `ReserveKB=0` = observe only. It composes with S3PP (their detour sees our explicit size and leaves it alone) and with S3SS's watcher fix. Selftest: real threads through both wrappers read 1024 KB uncapped and 256 KB capped [verified, selftest under WOW64]; MSVCR80 passing `initflag` on to `CreateThread` is inferred from the VC8 CRT source, the in-game log line checks it.
+
+Expected: only the exe's own threads of the ~140 (the rest belong to DLLs); saving 512 KB per capped thread, summed in the log (`saved N KB`). Risk: a capped thread with deep recursion overflows its stack (crash); watchdog and crash triage catch it, then that thread's `fn` goes into `Skip`.
+
+### 6.4 Candidate 4: DXVK `textureMemory`
+
+`queue.ts` now takes `"dxvkConf": { "d3d9.textureMemory": 64 }` per job: merged into `Bin/dxvk.conf` (plain `key = value` lines, no sections) for the job and put back after it; `bin-before/` keeps a copy. DXVK reads it at start.
+
+### 6.5 Filler-night soak
+
+`filler-night-soak3h` (PLAN "Filler night job"): 3 h BP at speed 3 with the baseline config; `memory.csv` gives commit/private/largest free and now the GC heap every ~10 s. Switch its `ini`/`dxvkConf` to the winners of 6.2-6.4 once they pass. Levels off = memory solved for this setup; keeps growing = candidate 5.
