@@ -62,6 +62,18 @@ static bool P5cStale(DWORD seq) {
     return true;
 }
 
+// 0.35.26 (docs/94 §22.30), P5Plan before the acquire: a recorded routing write since the START cut already means P5cStale
+// refuses the answer at the retake whatever the run finds, so the job skips the acquire and the clone run and the game's plan
+// answers at once (counted as stale before the window). A window P5bOpen would refuse could have taken it: conservative
+static bool P5cStaleEarly(DWORD seq, bool verify) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!g_p5cOn || !k.p5cFree || k.p5cOff || verify) return false;
+    const P5cCut& e = g_p5cCut[seq & 15];
+    if (e.seq != (LONG)seq || g_spWrites == e.w) return false;
+    InterlockedIncrement(&k.p5cStale[0]);
+    return true;
+}
+
 // --- lifetime: the destroy graveyard (docs/88 §5.1) ---
 struct P5cGrave { void* obj; LARGE_INTEGER t; };
 static const int kP5cGrave = 512;

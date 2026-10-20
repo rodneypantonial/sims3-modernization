@@ -305,6 +305,32 @@ static bool RfTreeDrop(u8** slot, const u8* f) {  // removes f's entries; true =
     if (!o && !(n[4] & 2)) { *slot = NULL; RfNodeRel(n); return true; }
     return !o;
 }
+// 0.36.2 (I-94-508): leaf entries of Q q whose FME no node of map m holds (orphans: the game freed that FME; never read),
+// and, when fp is given, the held entries whose FME's footprint is fp
+static void RfLeafScan(const u8* n, int depth, const RpTab& held, const u8* fp, int* orphans, int* ofFp) {
+    if (!n || depth > 40) return;
+    if (n[4] & 1) { for (int i = 0; i < 4; i++) RfLeafScan(RpP(n + 0xC + 4 * i), depth + 1, held, fp, orphans, ofFp); return; }
+    const u8* a = n + 8;
+    DWORD cnt = 1;
+    if (n[8] & 1) cnt = RpD(n + 0xC), a = (const u8*)(uintptr_t)(RpD(n + 8) & ~1u);
+    for (DWORD j = 0; j < cnt; j++) {
+        const DWORD f = RpD(a + j * 12);
+        if (!f) continue;
+        if (!RpTabFind(held, f)) (*orphans)++;
+        else if (fp && RpP((const u8*)(uintptr_t)f + 8) == fp) (*ofFp)++;
+    }
+}
+static int RfOrphans(const u8* m, const u8* q, const u8* fp = NULL, int* ofFp = NULL) {
+    RpTab held = {};
+    const DWORD nb = RpD(m + 8);
+    const DWORD* bk = (const DWORD*)RpP(m + 4);
+    for (DWORD i = 0; nb > 1 && i < nb; i++)
+        for (const u8* nd = (const u8*)(uintptr_t)bk[i]; nd; nd = RpP(nd + 0x10)) RpTabPut(held, RpD(nd + 8), 1);
+    int orphans = 0, dummy = 0;
+    RfLeafScan(RpP(q + 0x24), 0, held, fp, &orphans, ofFp ? ofFp : &dummy);
+    RpTabFree(held);
+    return orphans;
+}
 static void RfRehash(u8* m) {  // as 0x6644E0: nodes moved bucket head first
     const DWORD nb = *(DWORD*)(m + 8), nn = nb * 2 + 1;
     DWORD* ob = *(DWORD**)(m + 4);

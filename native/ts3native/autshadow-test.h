@@ -40,7 +40,8 @@ static AsU64 __cdecl AfLotLoc(float x, float, float z, DWORD* out, DWORD room) {
     return 0x700000000ull + (DWORD)(int)x / 10;
 }
 struct AsFakeStr { DWORD vt, sync; LONG len; wchar_t c[16]; };
-static char __cdecl AfOption(const AsFakeStr* s, DWORD* out) { *out = (DWORD)s->len * 3 + s->c[0]; return (char)(s->len & 1); }
+// like 0x741230: the out is written only when the option exists (odd length here)
+static char __cdecl AfOption(const AsFakeStr* s, DWORD* out) { if (s->len & 1) *out = (DWORD)s->len * 3 + s->c[0]; return (char)(s->len & 1); }
 static double __cdecl AfRand() { return 0.25; }
 static float __cdecl AfTerrain(float x, float) { return x + 0.5f; }  // unlisted 'f'
 static float* __cdecl AfCamPos(float* ret) { ret[0] = ret[1] = ret[2] = 9; return ret; }  // unlisted 's'
@@ -171,6 +172,15 @@ static DWORD WINAPI AfWorker(void*) {
     assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s2, &out) == 1 && out == 7 * 3 + L'S');
     out = 99;
     assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s3, &out) == 0 && out == 99);
+    assert(AsAborted() == AS_AB_MEMO);
+    AsResetAbort();
+    // memo with an unwritten out: same in-value -> the caller's own value stays; other in-value -> abort memo, untouched
+    AsFakeStr s4 = AfStr(L"Glow");
+    out = 42;
+    assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s4, &out) == 0 && out == 42);
+    assert(AsAborted() == -1);
+    out = 5;
+    assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s4, &out) == 0 && out == 5);
     assert(AsAborted() == AS_AB_MEMO);
     AsResetAbort();
     // a-stub: the shared empty string
@@ -400,6 +410,9 @@ static void TestAutShadow() {
     AsFakeStr s1 = AfStr(L"Shadows");
     DWORD out = 0;
     assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s1, &out) == 1 && out == 7 * 3 + L'S' && k.memoRecords == 1);
+    AsFakeStr s5 = AfStr(L"Glow");  // missing option: out left at the caller's 42, keyed on it
+    out = 42;
+    assert(((char(__cdecl*)(const AsFakeStr*, DWORD*))AfSlot(AF_OPTION))(&s5, &out) == 0 && out == 42 && k.memoRecords == 2);
     const LONG sim0 = g_asSimCalls;
     assert(((AsU64(__cdecl*)(DWORD, DWORD))AfSlot(AF_PARENT))(9, 5) == AfId(3) && g_asSimCalls == sim0 + 1);  // pass-through
     assert(((float(__cdecl*)())AfSlot(AF_SUNRISE))() == 6.0f && ((double(__cdecl*)())AfSlot(AF_RAND))() == 0.25);

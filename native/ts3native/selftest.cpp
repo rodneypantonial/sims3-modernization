@@ -6507,9 +6507,15 @@ static void TestSnapReplay() {
             assert(g_rpRemFlat == flat1 && k.rpRebaseLots == reb0 && k.rpMis == mis0);
             assert(g_rpRemDiff == rd0);  // equal live and copy bounds over every remove so far: no force from the 0.35.18 check
         }
-        {  // 0.35.18 (I-94-478): the IP lot 0x08F300536B484DF0 Q 1 shape. The clone copy of a 3-level footprint answers bounds
-           // outside the Q's rect while live's reach it: the stand-in remove (as 0x666010) keeps the copy's 3 leaf entries,
-           // the map erase agrees. The REM record's live bounds differ from the copy's: logged, the lot forced, equal again
+        // 0.35.18 (I-94-478): the IP lot 0x08F300536B484DF0 Q 1 shape. The clone copy of a 3-level footprint answers bounds
+        // outside the Q's rect while live's reach it: the stand-in remove (as 0x666010) keeps the copy's 3 leaf entries,
+        // the map erase agrees. The REM record's live bounds differ from the copy's: logged, the lot forced, equal again.
+        // 0.36.2 (I-94-508, the IP 0.35.24 / 0.35.25 clone-run faults): those kept entries name FMEs no map node holds (the
+        // game frees them; the stand-in pins them). Pass 0 = negative control (cover off): 3 orphans; pass 1: the remove runs
+        // with the cover answer and leaves none
+        for (int pass = 0; pass < 2; pass++) {
+            g_rpRemCoverOff = pass == 0;
+            const LONG misP = k.rpMis;
             u8* q = RfQOf(0, 0);
             u8* fp = NULL;
             for (int j = 3; j < g_rf.nFps && !fp; j++)
@@ -6525,17 +6531,20 @@ static void TestSnapReplay() {
             assert(RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq) && cq);
             DWORD e0 = 0, c0 = 0;
             RpTreeHash(0, RpP(q + 0x24), 0, &e0), RpTreeHash(0, RpP(cq + 0x24), 0, &c0);
-            assert(e0 == c0);
-            const LONG d0 = g_rpRemDiff, reb0 = k.rpRebaseLots;
+            assert(e0 == c0 && RfOrphans(g_rpClone->m, cq) == 0);
+            const LONG d0 = g_rpRemDiff, reb0 = k.rpRebaseLots, cov0 = g_rpRemCover;
             g_rfFarFp = (const u8*)(uintptr_t)*cp;
             RfRem(q, fp, true);
-            RfCut();  // the remove replayed: the clone keeps the copy's entries until the forced rebase
+            RfCut();  // the remove replayed (cover off: the clone keeps the copy's entries until the forced rebase)
             g_rfFarFp = NULL;
             DWORD e1 = 0, c1 = 0;
             RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq);
             RpTreeHash(0, RpP(q + 0x24), 0, &e1), RpTreeHash(0, RpP(cq + 0x24), 0, &c1);
-            if (c1 != e1 + 3 || g_rpRemDiff != d0 + 1) printf("replay seed %lu: far copy: live %lu clone %lu entries, diffs +%ld\n", seed, e1, c1, g_rpRemDiff - d0);
-            assert(c1 == e1 + 3 && g_rpRemDiff == d0 + 1);  // 3 levels: 3 clone-only entries; the first difference forces the lot
+            const int orph = RfOrphans(g_rpClone->m, cq), want = pass ? 0 : 3;
+            if (c1 != e1 + want || orph != want || g_rpRemDiff != d0 + 1 || g_rpRemCover != cov0 + pass)
+                printf("replay seed %lu pass %d: far copy: live %lu clone %lu entries, orphans %d, diffs +%ld, covered +%ld\n", seed, pass, e1, c1,
+                       orph, g_rpRemDiff - d0, g_rpRemCover - cov0);
+            assert(c1 == e1 + want && orph == want && g_rpRemDiff == d0 + 1 && g_rpRemCover == cov0 + pass);  // one difference forces the lot
             RfCut();  // a lot audit in this window may still see the 3 entries (counted once); the force lands here
             RfCut();
             const LONG misW = k.rpMis;
@@ -6544,14 +6553,16 @@ static void TestSnapReplay() {
             DWORD e2 = 0, c2 = 0;
             RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq);
             RpTreeHash(0, RpP(q + 0x24), 0, &e2), RpTreeHash(0, RpP(cq + 0x24), 0, &c2);
-            if (c2 != e2 || k.rpRebaseLots <= reb0 || k.rpMis != misW || misW > mis0 + 1 || k.rpFaults)
-                printf("replay seed %lu: after the forced rebase live %lu clone %lu entries, rebased +%ld, mis +%ld (+%ld after), faults %ld\n",
-                       seed, e2, c2, k.rpRebaseLots - reb0, misW - mis0, k.rpMis - misW, k.rpFaults);
-            assert(c2 == e2 && k.rpRebaseLots > reb0 && k.rpMis == misW && misW <= mis0 + 1 && k.rpFaults == 0);
+            const int orph2 = RfOrphans(g_rpClone->m, cq);
+            if (c2 != e2 || k.rpRebaseLots <= reb0 || k.rpMis != misW || misW > misP + 1 || k.rpFaults || orph2)
+                printf("replay seed %lu pass %d: after the forced rebase live %lu clone %lu entries, orphans %d, rebased +%ld, mis +%ld (+%ld after), faults %ld\n",
+                       seed, pass, e2, c2, orph2, k.rpRebaseLots - reb0, misW - misP, k.rpMis - misW, k.rpFaults);
+            assert(c2 == e2 && k.rpRebaseLots > reb0 && k.rpMis == misW && misW <= misP + (pass ? 0 : 1) && k.rpFaults == 0 && !orph2);
         }
+        g_rpRemCoverOff = false;
         g_rpDiffN = 0;
         const LONG only0 = g_rpDiffOnly[0], forced0 = g_rpAuditForced;
-        const LONG misN = k.rpMis;  // the 0.35.18 block may have counted one window mismatch
+        const LONG misN = k.rpMis;  // the 0.35.18 block may have counted one window mismatch (its negative-control pass)
         RfIns(RfQOf(0, 0), g_rf.fps[0], 1, false);  // negative control: an insert with no record
         RfCut();
         assert(k.rpMis > misN && g_rpAuditForced > forced0);
@@ -9260,7 +9271,7 @@ static void TestP5() {
 // (c) a START while a job runs, with another cut pending: no shared cut in Mode=2 (lane D is Mode=1 only)
 // (d) a clone footprint whose lock-key origin no table has: kPcKeyFailMax refusals, then one rebuild, then taken again
 // (0.35.8 refused it for the rest of the session)
-static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts) {
+static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts, bool writeAfterCut = false) {
     void* const lock = g_rf.world + 0x918;
     static const DWORD kInf = 0xFFFFFFFF;
     AsyncJob j = {};
@@ -9270,6 +9281,7 @@ static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts) {
     j.mxcsr = _mm_getcsr();
     P4OnStart(&j);
     assert(j.p4 == 2 && j.p4Ver);
+    if (writeAfterCut) InterlockedIncrement(&g_spWrites);  // a recorded routing write between the START cut and the job
     P5bAcq(lock, NULL, &kInf);  // ServeAsync's hold for the job
     g_async.state = A_RUNNING;
     P4LiveBegin(&j);
@@ -9316,10 +9328,10 @@ static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
     }
     assert(g_rpClone == cl0 && g_pcWork.nKeys == 1 && k.m2Taken == taken0 + 70 && k.p5bWins == wins0 + 70 && k.p5cJobs == jobs0 + 70);
     // (b)
-    LONG mat = k.m2Fb[P4_AB_MAT], wins = k.p5bWins, taken = k.m2Taken;
+    LONG mat = k.m2Fb[P4_AB_MAT], wins = k.p5bWins, taken = k.m2Taken, early = g_p5EarlyLend;
     g_rpBad = 1;
-    PcRunM2(seq++, list, s, g, opts);
-    assert(k.m2Fb[P4_AB_MAT] == mat + 1 && k.m2Taken == taken && k.p5bWins == wins);
+    PcRunM2(seq++, list, s, g, opts);  // 0.35.26: a window opened for the copy is closed again before the game's plan
+    assert(k.m2Fb[P4_AB_MAT] == mat + 1 && k.m2Taken == taken && k.p5bWins == wins + (g_p5EarlyLend - early));
     g_rpBad = 0;
     PcRunM2(seq++, list, s, g, opts);
     assert(k.m2Taken == taken + 1);
@@ -9357,6 +9369,22 @@ static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
     *(u8**)(fp + 0x20) = set0;  // the old clone is freed with its own pointer
     PcRunM2(seq++, list, s, g, opts);  // the START cut rebuilds; the new clone's footprints hold live sets
     assert(g_rpClone != cl1 && !g_rpNeedEpoch && k.m2Taken == taken + 1 && g_pcWork.nKeys == 1 && !g_pcWork.keyFails);
+    // (e) 0.35.26 (docs/94 §22.30): with the A* object and W' made by the jobs above, the copy runs inside the lent window (one
+    // window per job, taken); a routing write after the START cut skips the acquire and the run, drops the cut's hold, and the
+    // game's plan answers with no window
+    {
+        PcRunM2(seq++, list, s, g, opts);  // the same R image as the last acquire from here on
+        early = g_p5EarlyLend, taken = k.m2Taken, wins = k.p5bWins;
+        PcRunM2(seq++, list, s, g, opts);
+        assert(g_p5EarlyLend == early + 1 && k.m2Taken == taken + 1 && k.p5bWins == wins + 1);
+        const LONG st0 = k.p5cStale[0], acq0 = k.snPcAcquired, ep0 = k.m2Fb[P4_AB_EPOCH], es0 = g_p5EarlyStale, dr0 = g_p5Drops;
+        wins = k.p5bWins, taken = k.m2Taken;
+        PcRunM2(seq++, list, s, g, opts, true);
+        assert(k.p5cStale[0] == st0 + 1 && k.snPcAcquired == acq0 && k.m2Fb[P4_AB_EPOCH] == ep0 + 1 && k.m2Taken == taken &&
+               k.p5bWins == wins && g_p5EarlyStale == es0 + 1 && g_p5Drops == dr0 + 1 && !g_rpHoldAt);
+        PcRunM2(seq++, list, s, g, opts);  // the next job takes its answer again
+        assert(k.m2Taken == taken + 1);
+    }
     g_p5On = 0, k.m2Take = 0, g_p5bOn = 0, k.p5bRelease = 0, g_p5cOn = 0, k.p5cFree = 0;
     g_p5Verify = verify, g_p5NSites = nSites, g_p5GuardLock = guardLock;
     k.snP4Mode = mode, g_p4Kinds = kinds;
@@ -9365,7 +9393,8 @@ static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
     memcpy(lock, w918, sizeof(w918));
     printf("P5 / P5b / P5c on the replay clone, one clone life (0.35.9): 70 taken jobs with a new lock-key table each (window lent "
            "each time, one table kept); bad clone refused (game plan); no shared cut in Mode=2; a key origin no table has: %d "
-           "refusals, then one rebuild, then taken\n", kPcKeyFailMax);
+           "refusals, then one rebuild, then taken; 0.35.26: copy inside the lent window, a stale job skips acquire and run, its "
+           "cut hold dropped\n", kPcKeyFailMax);
 }
 
 // 0.35.19 (docs/94 §22.22): a Mode=2 job waits for the replay consumer before it takes +0x918 (the consumer applies only under
@@ -9781,7 +9810,7 @@ static void TestRemPatch() {
         float b[4];
         const float* rc = ((RpBoundsFn)(uintptr_t)RpD(RpP(copyFp) + 0x2C))(copyFp, NULL, b, 0, 0.f);
         const bool differ = memcmp(e.b, rc, 16) != 0;
-        const bool force = differ && RpRemDiff(&lv, copyFp, fme, rc, NULL);
+        const bool force = differ && RpRemDiff(&lv, copyFp, fme, rc, NULL) == 2;
         return differ ? (force ? 2 : 1) : 0;
     };
     mk(lp, lk, true, 0.f, 2.1f), mk(cp, ck, true, 2.f, 2.1f);  // (1) the child's +0x10: copy 2.0, live 0.0

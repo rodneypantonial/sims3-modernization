@@ -1,6 +1,6 @@
 # Release checklist
 
-How a release goes out. Current: **v0.1.4** (background routing on by default), draft in `CHANGELOG.md`.
+How a release goes out. Current: **v0.1.4** (background routing on by default), published 2026-10-20 (PR #55, tag v0.1.4).
 
 ## v0.1.4 release build
 

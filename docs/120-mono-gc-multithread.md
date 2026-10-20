@@ -11,7 +11,7 @@ Tags: **[verified]** = read in the disassembly, the reference manager, the PE fi
 - **Stop-the-world is real** (`SuspendThread`/`ResumeThread` on every registered thread except the caller, under `GC_write_cs` `0x1222580`), and the duplicated thread handle has full access (`DUPLICATE_SAME_ACCESS`), so P2's `GetThreadContext` on it works [verified]. **The allocation lock is a no-op** (`GC_allocate_ml` `0x1234320` initialised, never entered) [verified, docs/57].
 - **Interpreter per-thread state:** the two frame globals `[0x11F4170]`/`[0x11F416C]` are still the only interpreter globals (5 references each, the docs/30 P4 table) [re-verified]. Everything else is already per thread: six Mono TLS keys, the managed exception path (`setjmp3` in `0xE5A3CE`, `longjmp` from `0xE537B2` and `0xE5A52C` through the thread's `ThreadContext` in TLS `[0x11F4160]`), and no `__declspec(thread)` data in use (`.tls` holds 8 zero bytes; its index variable `[0x1220AD0]` has no code reference) [verified].
 - **Two new findings that change the design:**
-  1. **`GC_add_current_malloc_heap` `0xE4EC40` calls CRT `malloc`/`free` from inside the root push**, once per GC number, and the root push runs with the world stopped (docs/30 §12.6). With a second registered thread suspended while it holds the CRT heap lock, the collector deadlocks. Its only caller is `GC_is_heap_base` `0xE4EDA0`, whose answer cannot change the outcome here (only `MEM_IMAGE` regions pass the filter, and a malloc heap is never an image) [verified filter order; dead-filter claim inferred]. **Fix: patch `0xE4EC40` to `ret`** (one byte, P3 install).
+  1. **`GC_add_current_malloc_heap` `0xE4EC40` calls CRT `malloc`/`free` from inside the root push**, once per GC number, and the root push runs with the world stopped (docs/30 §12.6). With a second registered thread suspended while it holds the CRT heap lock, the collector deadlocks. Its only caller is `GC_is_heap_base` `0xE4EDA0`, whose answer cannot change the outcome here (only `MEM_IMAGE` regions pass the filter, and a malloc heap is never an image) [verified filter order; dead-filter claim inferred]. **Fix: patch `0xE4EC40` to `ret`** (one byte, P3 install). **Update 2026-10-20 (§2.2.1):** the function never runs on Windows NT in this build (both `GC_is_heap_base` callers are switched off), so the hazard is not real and the patch is a no-op guard [verified static; I-120-2 refuted, I-120-3 verified].
   2. **`Monitor` is a no-op in this build** [verified]: the `System.Threading.Monitor` internal calls point at three EA stubs (`ret`, `mov eax,1; ret`, `xor eax,eax; ret`), and EA's `mscorlib` `Monitor.Enter`/`Exit` only check for null. So C# `lock` gives **no** exclusion on any thread, and `Thread.Start`'s `Thread_internal` is a `return 0` stub. Managed code cannot synchronise the worker with the sim thread; the hand-off must be native (docs/30 §7 already is) or `Interlocked.*`, which is real.
 - **Open point resolved (docs/57):** the EA memory tracker `0x9336F0` that heap growth may call takes an EA lock (`Lock_Acquire` `0x4E16F0`). It is called only when the tracking mode `[0x11DC18C]` (set by the script IC `GameUtils.SetMemoryTrackingMode` `0xEC1520`) is non-zero, so the rule is: worker off unless the mode is 0.
 - **docs/30 verdicts:** P1 holds; P2 holds; P3 needs change (17 lock detours confirmed, plus the `0xE4B3F0` replacement, **plus the `0xE4EC40` patch**: 19 sites); P4 holds; worker entry §5 holds with two new rules (no managed locking, tracking mode 0). **No blocker found.** Still open and needed before a live run: which thread is in Boehm's table today (docs/29 §4.3; one load with the built v18 counters answers it).
@@ -67,9 +67,22 @@ A stopped mark runs root pushes (docs/30 §12.6) and may grow the mark stack. Wh
 | Warn proc `[0x11949C0]` (set by Mono init via `GC_set_warn_proc` `0xE4DFC0`) | `GC_finalize` `0xE4B021` ("Finalization cycle"), `GC_collect_or_expand` (out of memory), large-block warnings | Mono logging, may allocate through the EA arena `0x4E69D0` [inferred] | rare error paths | accept; count in Verify |
 | `GC_write_cs` | `GC_stop_world`, `GC_write` `0xE4DD50` | Boehm's own | log output with `GC_PRINT_STATS` only | none |
 
-`0xE4EC40` is the one that matters: it runs every collection, and the CRT heap lock is the lock a suspended game thread is most likely to hold. Why `ret` is safe: `GC_is_heap_base` exists to keep malloc heaps out of the root set, but EA's dynamic-library filter only accepts `MEM_IMAGE` regions, and `GC_register_root_section` only walks the exe image, so a "yes, malloc heap" answer can never change which region is registered [inferred from the filter order at `0xE4A926`-`0xE4A95E`; check: I-120-3]. The list it maintains, `[0x11F40E8]`, is used by `0xE4EC10`, `0xE4EC40` and `0xE4EDA0` (raw byte scan of `.text` for the address; one more match at `0xA241AB` is outside the GC block and was not decoded).
+`0xE4EC40` is the one that matters: it runs every collection, and the CRT heap lock is the lock a suspended game thread is most likely to hold. Why `ret` is safe: `GC_is_heap_base` exists to keep malloc heaps out of the root set, but EA's dynamic-library filter only accepts `MEM_IMAGE` regions, and `GC_register_root_section` only walks the exe image, so a "yes, malloc heap" answer can never change which region is registered [verified 2026-10-20, §2.2.1; was inferred, I-120-3]. The list it maintains, `[0x11F40E8]`, is used by `0xE4EC10`, `0xE4EC40` and `0xE4EDA0` (raw byte scan of `.text` for the address; one more match at `0xA241AB` is outside the GC block and was not decoded).
 
 Today's game has the same hazard if the main thread is the registered `GC_init` thread (docs/29 §4.3): every sim-thread stopped mark would then suspend the main thread and may `malloc` while it holds the heap lock. That this does not visibly freeze the game hints that only one thread is registered today, or that the timing is rare [inferred; I-120-1 settles which thread is registered].
+
+#### 2.2.1 Re-read of the filter and of the callers (2026-10-20, static)
+
+Source: raw disassembly of the Steam 1.67 exe (capstone over the PE file), no Ghidra project needed.
+
+| Step | Site | What it does | Tag |
+|---|---|---|---|
+| Filter order in `GC_register_dynamic_libraries` `0xE4A8E0` | `0xE4A926` state = `MEM_COMMIT`; `0xE4A93B`/`0xE4A940` protect = `PAGE_EXECUTE_READWRITE` or `PAGE_READWRITE`; `0xE4A94A` `GC_is_heap_base(AllocationBase)` != 0 rejects; `0xE4A956` type = `MEM_IMAGE` | the heap-base test sits before the image test, and a CRT heap is `MEM_PRIVATE`, so a region it would reject is rejected by the type test anyway | verified |
+| What `GC_is_heap_base` `0xE4EDA0` answers without the malloc list | `0xE4EDEB`-`0xE4EE05`: the collector's own heap sections (`0x122EF14`, count `[0x11F40EC]`) | the `ret` only empties the malloc list `[0x11F40E8]`; collector sections still answer yes | verified |
+| Caller 1 `0xE4A8E0` | called only from `GC_push_roots` `0xE4D91E`, skipped while `GC_no_dls` `[0x11949A8]` != 0 (`0xE4D915`); `mono_gc_base_init` sets it to 1 at `0xE69598` (I-119-37) | does not run | verified |
+| Caller 2 `0xE4EE10` (registers every committed RW region that is not a heap base, no type test) | called only from `0xE4EEE0` (`GC_init`, `0xE4E2D7`); returns at once unless `GC_no_win32_dlls` `[0x11F40E4]` != 0. Its one writer, `0xE4EB70`, sets it only when `GetVersion` has the high bit set and major version <= 3 (Win32s) | does not run on NT | verified |
+
+So on Windows 10/11 `GC_add_current_malloc_heap` is never called: the stopped-world `malloc` hazard of this section does not exist, and the P3 `ret` is a guard against a future `GC_no_dls = 0`, not a fix. The `ret` stays (one byte, already built). I-120-2 refuted, I-120-3 verified.
 
 ## 3. Interpreter and runtime state for a second thread
 
@@ -99,6 +112,18 @@ Only P4's two globals. References re-read: `[0x11F4170]` at `0xE53EBD` (read), `
 | Managed threads | `Thread_internal` (thread start) -> `0x5BFB90` (`return 0`); `CurrentThread_internal` -> `0xEB9F40` (`TlsGetValue([0x1195B7C])`, NULL) [verified] | managed code cannot start a thread; the worker is a native thread (docs/30 §5) |
 | `mscorlib` lazy statics guarded by `lock` (comparers, encodings, culture data) | the `lock` does nothing (row above), so a first use on two threads at once races [inferred from the Monitor finding] | warm-up must touch every `mscorlib` type the worker uses (`EqualityComparer<T>.Default`, `Dictionary`, `List`, string concat) on the sim thread first |
 | `mono_stats` counters | unlocked `add` [verified, docs/56] | accept (lost counts only) |
+
+#### 3.3.1 Who uses `Monitor` (2026-10-20, static, I-120-6)
+
+Source: the call index (`game-copy/analysis/callgraph/index.json`, all edge kinds) and the `MethodDef` impl flags of the ten extracted assemblies. Nothing was run.
+
+| Assembly group | Callers of `System.Threading.Monitor` | `Wait`/`Pulse`/`PulseAll`/`TryEnter` | `Synchronized` methods |
+|---|---|---|---|
+| Game scripts (ScriptCore, SimIFace, Sims3GameplayObjects, Sims3GameplaySystems, Sims3Metadata, Sims3StoreObjects, UI) | **0** | 0 | 1,174, all event `add_`/`remove_` accessors (UI 584, Sims3GameplaySystems 448, SimIFace 92, ScriptCore 28, Sims3GameplayObjects 20, Sims3Metadata 2) |
+| `mscorlib` | 182 (`lock` = `Enter`/`Exit`) | only `Monitor`'s own overloads calling each other | 36, all event accessors |
+| `System`, `System.Xml` | 3, 4 | 0 | 0, 24 (event accessors) |
+
+Verdict [verified for the shipped scripts]: no game script calls `Monitor` or uses `lock`, and nothing anywhere waits or pulses. The only implicit locking is the compiler-made `Synchronized` flag on field-like event accessors, which guards a delegate field during subscribe/unsubscribe; with `Monitor` a no-op it already gives no exclusion today, and the worker subscribes to nothing (docs/30 §5 rules). The `mscorlib` `lock` users are the lazy statics of the row above: warm-up, as already planned. Mods were not scanned; a mod that relies on `lock` across threads is already broken in this build, and the docs/122 allow-list (by assembly MVID) keeps mod code off the worker.
 
 ## 4. docs/30 design elements: verdicts and site list
 
@@ -140,7 +165,7 @@ Steps a), b) and the worker part of c) are built behind `[MonoThread] GcLock=1`,
 
 ## 7. Ledger
 
-Open claims are in docs/51 §141 (I-120-1 to I-120-6).
+Open claims are in docs/51 §141 (I-120-1 to I-120-6). Closed statically 2026-10-20: I-120-2 (refuted) and I-120-3 (§2.2.1), I-120-6 (§3.3.1).
 
 ## 8. M5 offline proof in monohost (2026-10-20, G-A2 groundwork)
 
@@ -218,3 +243,55 @@ Runs: 6 before the F1 job was added (32/32) and 4 of the final build (33/33), ex
 3. **I-120-1 answered live** (job `bp-mt-p1`, ts3native 0.35.20, `[MonoThread] Enabled=1 Mode=0`): first-tick log "sim thread 32704 already registered (main 18852)", counters `mtReady` 7, `mtSimTid` 32704, `mtThreads` 1, `mtSimRegistered` 0. Boehm's table holds the **sim thread** (`GC_init` ran there), not the main thread, and it is the only registered thread: P1 has nothing to add for the sim thread, and P2/stop-the-world see exactly the sim thread plus the worker in Mode=1 [verified live]. This matches the host setup, where the host's main thread plays the sim thread and is table index 0.
 4. **I-120-17 live:** the F1 hazard crashes in the host; `N2mPrivate=1` fixes it for the worker.
 5. **Next (M5 -> M6):** the ts3fixes `MtProbe` job + Verify mode in game; F1 chained with `[Verify]`; measure how often game tasks end with a non-empty chain (`arenaRelNonEmpty` per hour, I-120-22) — if often, `ArenaFix` is worth having without the worker too (a separate single-thread switch).
+
+## 10. I-120-8 static audit: does the P3 return-address swap fit all 17 entries? (2026-10-20)
+
+Static only (no game run, no build). P3 (docs/30 §14.1, `monothread-m5.cpp` `MtLockEnter` / `MtLockExitThunk`) replaces each hooked call's return address with a thunk and keeps the real one on a global shadow stack (`g_mtRet[g_mtDepth]`) that the recursive `g_mtLock` guards. That is correct only if the hooked function (1) never reads its own return slot, (2) leaves only through a return that reaches the thunk (a tail jump is fine: the target returns to the thunk), and (3) is never left by `longjmp` or an SEH unwind while the lock is held. `tools/p3-entry-audit.py` disassembles each entry (capstone 5, Steam 1.67 `TS3W.exe`, Ghidra function bounds), tracks the stack offset of the return slot, lists exits, tail jumps, `fs:[0]` frames and indirect calls, and walks the direct-call closure to depth 6. The callback slots it finds were then followed by hand.
+
+### 10.1 Per entry
+
+| Entry | Function | Exits | Tail jump (target exit) | Own SEH | Return-slot reads | Reaches `GC_oom_fn` (longjmp) | Verdict |
+|---|---|---|---|---|---|---|---|
+| `0xE4BE30` | `GC_malloc` | 1 `ret` | `0xE4DBE0` x2 (plain `ret`, no slot read) | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xE4BDC0` | `GC_malloc_atomic` | 1 `ret` | `0xE4DBE0` x2 (as above) | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xE4BF90` | `GC_malloc_uncollectable` | 3 `ret` | - | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xE50DE0` | `GC_malloc_explicitly_typed` | 4 `ret` | - | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xE4BCE0` | `GC_generic_malloc` | 2 `ret` | - | no | none | **yes, own call** `[0x11949BC]` at `0xE4BDAD` | fits **except OOM** |
+| `0xE4A050` | `GC_try_to_collect` | 1 `ret` | - | no | none | no | **fits** |
+| `0xE4A0B0` | `GC_gcollect` | none of its own | `0xE4F2E0` (plain `ret`, no slot read) | no | none | no | **fits** |
+| `0xE4E450` | `GC_enable_incremental` | 1 `ret` | - | no | none | no | **fits** |
+| `0xE4AAC0` | register disappearing link | 3 `ret` | - | no | none | **yes, own call** at `0xE4AB81` | fits **except OOM** |
+| `0xE4ABE0` | unregister disappearing link | 2 `ret` | - | no | none | no (20 functions, no indirect call) | **fits** |
+| `0xE4AE30` | register finalizer | 1 `ret` | - | no | none | yes, via `0xE4AC60` (call at `0xE4AD67`) | fits **except OOM** |
+| `0xE4A3F0` | `GC_apply_to_each_object` | 1 `ret` | - | no | none | no; its one callback (from `0xD7047A`) is `0xD70280` -> `0xD70110`: 48 functions, no hooked entry, no unwind import | **fits** |
+| `0xE4BEB0` | `GC_free` | 2 `ret` | - | no | none | no | **fits** |
+| `0xD71900` | EA frame arena grow | 1 `ret` | - | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xD71A20` | EA frame arena pop | 4 `ret` | - | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xD71B70` | EA frame arena release all | 1 `ret` | - | no | none | yes, via `GC_generic_malloc` | fits **except OOM** |
+| `0xE4D9F0` | `GC_add_roots` | 1 `ret` | - | no | none | no (5 functions) | **fits** |
+
+All [verified: tool output + hand reads of the named sites]. No entry has an `fs:[0]` frame, none reads its return slot (no `[esp+off]` at the slot offset, no `[ebp+4]`, no copy of `esp` used as a pointer), and the three tail jumps land in functions that end in a plain `ret` and do not read the slot either.
+
+### 10.2 The one unwind out of a locked entry: `GC_oom_fn` -> managed `OutOfMemoryException` -> `longjmp`
+
+- `mono_gc_base_init` (`0xE69570`) stores `0xE78610` into `GC_oom_fn` `[0x11949BC]` at `0xE695A2` (the static value `0x5BFB90` is a `return 0`) [verified].
+- `0xE78610` reads the domain's preallocated out-of-memory exception (domain `+0x2C`) and calls `mono_raise_exception` `0xEA18F0`, which calls the handler in `[0x1195B64]` [verified].
+- The interpreter sets that handler to `0xE53740` at `0xE5A70F` (the static default `0xEA18A0` prints "Exception %s.%s raised in C code" and exits) [verified].
+- `0xE53740` takes the thread's interpreter context from TLS `[0x11F4160]`; with a context and a saved `jmp_buf` it calls MSVCR80 **`longjmp`** (`0xE537B2`, import `0xF95704`) to the interpreter frame's `setjmp3` (docs/120 summary) [verified]. Without a context it returns, `0xE78610` returns 0 and the allocation returns NULL.
+- `GC_generic_malloc` calls `GC_oom_fn` only after the inner allocation and the collection/expansion retries failed, so this is the **heap-exhausted path** [verified for the call site; the retry order is stock Boehm, community-reported].
+
+Effect with the gate on: the `longjmp` skips every thunk between the interpreter frame and the GC frame (two when `GC_malloc` reached `GC_generic_malloc` through its own hook). `g_mtLock` stays entered once per skipped thunk and `g_mtRet` keeps those entries. The next locked exit on that thread pops a stale return address and jumps into a dead frame (crash), and the other thread blocks on the lock for good (hang). This is the address-space-exhaustion case the project exists to make rarer (Error 12), so it is not a theoretical path; without P3 the same OOM is an ordinary managed exception that script code may survive.
+
+Other unwind sources, all ruled out [verified]:
+
+- The only SEH frame in any closure is `GC_mark_some` `0xE4D460` (`__try`/`__except` on `0xC0000005`, string "Caught ACCESS_VIOLATION in marker"): its handler at `0xE4D4AF` restores `esp` inside the same function and carries on, so an unwind stops below every hooked frame, and its marker closure (`0xE4D270`, 4 functions by direct call) reaches no hooked entry.
+- No closure imports `RtlUnwind`, `RaiseException`, `_CxxThrowException`, `longjmp` or `setjmp`; the CRT `exit` import (GC abort paths) ends the process, which no lock state survives anyway.
+- The other callback slots: warn proc `[0x11949C0]` (Mono sets `0xE69550`, a log call, at `0xE695AC`); `[0x11F309C]` and `[0x11F3098]` are only called when `[0x11F3094]` is non-zero, and no instruction in `.text` writes any of the three; `[0x1194830]` is `0xE4A410`, a heap-object print used by leak/smash reports. None unwinds.
+
+### 10.3 Verdict and fix
+
+- **I-120-8: refuted for one path, holds otherwise.** 7 of 17 entries fit outright; the other 10 fit on every path except the heap-exhausted `GC_oom_fn` path, which `longjmp`s out of the locked frame.
+- **Fix [design, not built]:** store the return-slot address with each shadow entry (`g_mtSlot[d] = retSlot`). Stack frames nest, so a live outer hooked frame always has a higher slot address than any inner one. In `MtLockEnter`, drop (and `LeaveCriticalSection` once for) every top entry whose slot address is at or below the new `retSlot`; in `MtLockLeave`, drop every top entry whose slot is below the returning frame's slot (`esp - 4` at thunk entry) before popping. A frame abandoned by any unwind is then cleaned up at the thread's next hooked entry or exit. Add a `lockStale` counter. Cheaper alternative: wrap `GC_oom_fn` (write our function into `[0x11949BC]` while the gate is on) to release this thread's lock depth and clear its shadow entries before calling `0xE78610`. That covers only the known path; the slot rule covers any unwind. Selftest: a fake hooked entry that `longjmp`s to its caller twice, then a normal locked call; expect `lockStale` 2, depth 0, the right return address.
+- Until the fix is in, `lockOverflow`/`lockMaxDepth` (the I-120-8 live test) would not show this leak, because no OOM happens in a normal 10-minute load. The live check should add an OOM case or wait for the fix.
+
+Reproduce: `python tools/p3-entry-audit.py <repo>/game-copy/bin/TS3W.exe <repo>/game-copy/analysis/functions.csv` (17 blocks; the `GC_oom_fn` line names the function that calls the slot), then capstone at `0xE695A2`, `0xE78610`, `0xEA18F0`, `0xE5A70A`, `0xE53740`, `0xE4D460`. Ledger: docs/51 §173.

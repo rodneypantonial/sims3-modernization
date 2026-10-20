@@ -184,6 +184,13 @@ static bool ApplyMonoThread(const wchar_t* ini) {
     k.mtMode = GetPrivateProfileIntW(L"MonoThread", L"Mode", 0, ini);
     g_mtWantP3 = GetPrivateProfileIntW(L"MonoThread", L"GcLock", 0, ini) != 0;
     g_mtWantP4 = GetPrivateProfileIntW(L"MonoThread", L"FrameTls", 0, ini) != 0;
+    if (g_mtWantP4) {
+        // Reserve P4's pair now (DLL load, before the exe entry): by the first Simulate tick the game holds slots 0-101,
+        // and P4's fs:[0xE10 + 4*index] operands only reach indexes < 64. MtBuildP4 still skips if these are >= 64.
+        g_mtSlotF = TlsAlloc();
+        g_mtSlotA = TlsAlloc();
+        Log("mono thread P4: TLS pair reserved at load: %lu/%lu", g_mtSlotF, g_mtSlotA);
+    }
     g_mtAddRoots = GetPrivateProfileIntW(L"MonoThread", L"LockAddRoots", 1, ini) != 0;
     g_mtArenaFix = GetPrivateProfileIntW(L"MonoThread", L"ArenaFix", 1, ini) != 0;  // with GcLock=1: frame arena pool fix (docs/120 §9)
     g_mtN2mPrivate = GetPrivateProfileIntW(L"MonoThread", L"N2mPrivate", 1, ini) != 0;  // with GcLock=1: F1 detour at 0xD8A8E0 (docs/120 §9.4)

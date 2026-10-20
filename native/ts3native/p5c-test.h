@@ -153,7 +153,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
     g_rfSeed = 6161;
     const LONG simPlans0 = g_p5cSimPlans, hand0 = k.p5cHandOver, jobsP5c0 = k.p5cJobs, acq0 = k.p5cAcq, park0 = k.p5cParked;
     const LONG st0 = k.p5cStale[0], st1 = k.p5cStale[1], fbNr0 = k.m2FbNr, here0 = k.p5cPlanHere;
-    const LONG low0 = k.p5cCountLow, live0 = g_p5bLivePlans;
+    const LONG low0 = k.p5cCountLow, live0 = g_p5bLivePlans, early0 = g_p5EarlyStale;
     LONG jobsAfterHand = -1;
     int handAt = -1;
     for (int i = 0; i < kMax && (i < kN || handAt < 0 || i <= handAt + 1); i++) {
@@ -265,7 +265,9 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                 }
                 if (c == C_WR) {
                     g_p5bLive++;
-                    if (RfRnd(16) == 0) InterlockedIncrement(&g_spWrites), recW[ph]++;  // a recorded routing write
+                    // a recorded routing write; 0.35.26: one before the window now skips the job's window (P5cStaleEarly), so
+                    // those are 4x rarer, to keep enough P5c windows for the in-window checks below
+                    if (RfRnd(16) == 0 && (got || RfRnd(4) == 0)) InterlockedIncrement(&g_spWrites), recW[ph]++;
                 }
                 if (c == C_PLAN && got) {  // RunPlan on the owner, job running, lent lock held: plans here, no job wait
                     int l2[4] = {0, 0, 0, 0}, o1 = -1, o2 = -1;
@@ -354,10 +356,12 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
         printf("  %-30s %ld/%ld (%.2f)  %ld/%ld (%.2f)  %ld/%ld (%.2f)\n", kCls[c], inJ[0][c], all[0][c], mean(0, c), inJ[1][c],
                all[1][c], mean(1, c), inJ[2][c], all[2][c], mean(2, c));
     printf("  acquires that no longer wait for the job: held %.0f%%, P5b %.0f%%, P5c %.0f%%; sim wait per job during job bodies "
-           "%.2f / %.2f / %.2f ms; P5c: %ld windows, %ld taken, refused stale %ld (writes only before the window %ld, inside %ld; "
+           "%.2f / %.2f / %.2f ms; P5c: %ld windows, %ld taken, refused stale %ld (before the window %ld, of them %ld skipped the "
+           "acquire and run (0.35.26), inside %ld; "
            "%ld recorded writes in the phase), nr fallbacks %ld (destroys), live plans %ld; P5 skew (answer older than the tail) "
            "held %ld, P5b %ld, P5c %ld; %ld destroys parked, %ld sync plans on the sim, 1 hand-over then P5c off; no use after "
            "free, no hang\n",
-           share(0), share(1), share(2), perJob(0), perJob(1), perJob(2), p5cJobs, taken[2], stale0 + stale1, stale0, stale1, recW[2],
+           share(0), share(1), share(2), perJob(0), perJob(1), perJob(2), p5cJobs, taken[2], stale0 + stale1, stale0,
+           g_p5EarlyStale - early0, stale1, recW[2],
            k.m2FbNr - fbNr0, g_p5bLivePlans - live0, skew[0], skew[1], skew[2], k.p5cParked - park0, g_p5cSimPlans - simPlans0);
 }

@@ -2722,11 +2722,12 @@ static LONG g_rpRemFlat;  // replayed removes that kept leaves (selftest)
 static LONG g_rpRemDiff;  // replayed removes whose copy bounds differ from live's (selftest)
 static LONG g_rpRemPatched;  // of those, copies patched to live's answer (no rebase; 0.35.21)
 static LONG g_rpRemPatchLog;
-static bool RpRemDiff(const RpRemLive* lv, u8* fp, const u8* f, const float* r, const u8* q) {
+// 0 = no live answer or equal, 1 = differed and patched to live (no force), 2 = differs (force the lot)
+static int RpRemDiff(const RpRemLive* lv, u8* fp, const u8* f, const float* r, const u8* q) {
     for (int i = 0; lv && i < lv->n; i++) {
         const RpRemLiveE& e = lv->e[i];
         if (e.cls != RpD(fp) || e.lo != RpD(fp + 0x14) || e.hi != RpD(fp + 0x18) || e.lvl != f[0x10]) continue;
-        if (!memcmp(e.b, r, sizeof(e.b))) return false;
+        if (!memcmp(e.b, r, sizeof(e.b))) return 0;
         float c0[4];
         memcpy(c0, r, sizeof(c0));
         if (RpRemPatchIn(e.p, fp, e.lvl)) {  // 0.35.21: the live inputs into the copy, asked again
@@ -2738,7 +2739,7 @@ static bool RpRemDiff(const RpRemLive* lv, u8* fp, const u8* f, const float* r, 
                     Log("snap replay: replayed remove on Q 0x%08lX: footprint 0x%08lX%08lX class 0x%08lX level %lu: copy bounds %.3f %.3f "
                         "%.3f %.3f patched to live %.3f %.3f %.3f %.3f (%s inputs; %ld so far)", (DWORD)(uintptr_t)q, e.hi, e.lo, e.cls,
                         e.lvl, c0[0], c0[1], c0[2], c0[3], e.b[0], e.b[1], e.b[2], e.b[3], e.p.child ? "child z + parent box" : "box", n);
-                return false;
+                return 1;
             }
         } else if (e.p.has && InterlockedIncrement(&g_rpRemPatchLog) <= 8)
             Log("snap replay: copy bounds not patchable (child list %s in live, other shape in the copy): footprint 0x%08lX%08lX class 0x%08lX",
@@ -2748,14 +2749,54 @@ static bool RpRemDiff(const RpRemLive* lv, u8* fp, const u8* f, const float* r, 
             Log("snap replay: replayed remove on Q 0x%08lX: footprint 0x%08lX%08lX class 0x%08lX level %lu, FME +0x10 0x%08lX: "
                 "copy bounds %.3f %.3f %.3f %.3f, live %.3f %.3f %.3f %.3f (%ld so far)", (DWORD)(uintptr_t)q, e.hi, e.lo, e.cls,
                 e.lvl, RpD(f + 0x10), c0[0], c0[1], c0[2], c0[3], e.b[0], e.b[1], e.b[2], e.b[3], n);
-        return true;
+        return 2;
     }
-    return false;
+    return 0;
 }
-static bool RpRemFlat(RpClone* c, const u8* q, DWORD lo, DWORD hi, const RpRemLive* lv) {
+// 0.36.2 (docs/94 §22.31, I-94-508): the leaf entries hold no FME reference (leaf insert 0x6653A0 takes none) and the map
+// erase 0x628F00 in ApplyRemove drops the FME's last one (0x6668A4..0x6668BE: deleting destructor at 0) [verified
+// disassembly]. A replayed remove whose copy answers other bounds than the clone's insert used (flat, a drift, or patched to
+// live's since 0.35.21) erases only part of the clone's leaves: the rest name a freed FME, and its +8 copy is freed by the
+// GC. The next walk of that Q (0x667DB0 / 0x6685B0 in a P4 clone run, a later apply) called +0x60 / +0x84 through the
+// freed copy: the IP 0.35.24 / 0.35.25 faults (eip in heap). Such a remove runs with the copy's +0x2C answering a rect that
+// covers every node, so 0x666010 erases every leaf entry of the id's FMEs on that Q, as the map erase does with the nodes.
+static float* __fastcall RpCoverBounds(const u8*, void*, float* out, DWORD, float) {
+    out[0] = out[1] = -1e9f, out[2] = out[3] = 1e9f;
+    return out;
+}
+static const int kRpCoverSlots = 0x80;  // 0x200 bytes of the class's table (footprint slots used reach +0x94)
+struct RpCoverVt { DWORD vt; DWORD slot[kRpCoverSlots]; };
+static RpCoverVt g_rpCoverVt[16];  // one per class seen; consumer only (one apply at a time)
+static int g_rpNCoverVt;
+static bool g_rpRemCoverOff;  // selftest negative control
+static LONG g_rpRemCover;     // removes erased with the cover (selftest, log)
+static DWORD RpCoverVtFor(DWORD vt) {  // 0 = table full (that copy keeps its own answer)
+    for (int i = 0; i < g_rpNCoverVt; i++) if (g_rpCoverVt[i].vt == vt) return (DWORD)(uintptr_t)g_rpCoverVt[i].slot;
+    if (g_rpNCoverVt == 16) return 0;
+    RpCoverVt& t = g_rpCoverVt[g_rpNCoverVt];
+    memcpy(t.slot, (const void*)(uintptr_t)vt, sizeof(t.slot));
+    t.slot[0x2C / 4] = (DWORD)(uintptr_t)RpCoverBounds;
+    t.vt = vt;
+    g_rpNCoverVt++;
+    return (DWORD)(uintptr_t)t.slot;
+}
+static void RpRemCovered(u8* q, DWORD lo, DWORD hi, u8* const* cov, int n) {
+    DWORD vt[kRpRemLiveMax];
+    for (int i = 0; i < n; i++) {
+        vt[i] = RpD(cov[i]);
+        if (const DWORD v = RpCoverVtFor(vt[i])) *(DWORD*)cov[i] = v;
+    }
+    __try { g_rpRem(q, NULL, lo, hi); } __finally { for (int i = 0; i < n; i++) *(DWORD*)cov[i] = vt[i]; }
+    const LONG k = InterlockedIncrement(&g_rpRemCover);
+    if (k == 1 || k == 10 || k == 100 || k == 1000 || k == 10000)
+        Log("snap replay: removes erased with a cover rect (copy bounds flat or not the live answer): %ld so far", k);
+}
+// true = force the lot; cov gets the copies (deduplicated) whose answer is flat or differed from live's
+static bool RpRemFlat(RpClone* c, const u8* q, DWORD lo, DWORD hi, const RpRemLive* lv, u8** cov, int* nCov) {
     const u8* m = c->m;
     const DWORD nb = m ? RpD(m + 8) : 0;
     const DWORD* bk = nb ? (const DWORD*)RpP(m + 4) : NULL;
+    bool force = false;
     if (!bk) return false;
     for (int pass = 0; pass < 2; pass++) {
         const DWORD klo = pass ? ~lo : lo, khi = pass ? ~hi : hi;
@@ -2767,20 +2808,25 @@ static bool RpRemFlat(RpClone* c, const u8* q, DWORD lo, DWORD hi, const RpRemLi
             // disassembly]; 0.35.14 also tested FMEs inserted flat (no leaves on either side): BP forced 15k lot rebases
             u8* fp = f && RpP(f + 0xC) == q && (RpD(f + 0x10) & 0x200) ? RpP(f + 8) : NULL;
             if (!fp) continue;
+            int j = 0;
+            while (j < *nCov && cov[j] != fp) j++;
+            if (j < *nCov) continue;  // that copy is covered already (its other levels)
             float b[4] = {};
             const float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))(fp, NULL, b, f[0x10], 0.0f);
+            int d = 3;  // flat
             if (r && r[0] != r[2] && r[1] != r[3]) {
-                if (RpRemDiff(lv, fp, f, r, q)) return true;
-                continue;
-            }
-            if (InterlockedIncrement(&g_rpRemFlat) <= 8)
+                d = RpRemDiff(lv, fp, f, r, q);
+                if (!d) continue;
+            } else if (InterlockedIncrement(&g_rpRemFlat) <= 8)
                 Log("snap replay: replayed remove of id 0x%08lX%08lX keeps leaves on Q 0x%08lX: footprint class 0x%08lX level %u, "
                     "FME +0x10 0x%08lX, copy bounds %.3f %.3f %.3f %.3f (flat)", khi, klo, (DWORD)(uintptr_t)q, RpD(fp), f[0x10],
                     RpD(f + 0x10), r ? r[0] : 0.f, r ? r[1] : 0.f, r ? r[2] : 0.f, r ? r[3] : 0.f);
-            return true;
+            if (d != 1) force = true;  // the flat / unpatched copy answers other bounds than live for later inserts: rebase
+            if (*nCov < kRpRemLiveMax) cov[(*nCov)++] = fp;
+            else force = true;  // shortcut: past 16 copies the rest keep their own answer (leaves may stay until the rebase)
         }
     }
-    return false;
+    return force;
 }
 static void RpRemForce(u64 key, const u8* q, DWORD lo, DWORD hi) {
     while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
@@ -2973,8 +3019,11 @@ static bool RpApply(const RpRec& r) {
                 }
                 g_rpIns(q, NULL, fp, r.c);
             } else {
-                if (RpRemFlat(c, q, r.b, r.c, (const RpRemLive*)r.p)) RpRemForce(l->key, q, r.b, r.c);
-                g_rpRem(q, NULL, r.b, r.c);
+                u8* cov[kRpRemLiveMax];
+                int nCov = 0;
+                if (RpRemFlat(c, q, r.b, r.c, (const RpRemLive*)r.p, cov, &nCov)) RpRemForce(l->key, q, r.b, r.c);
+                if (nCov && !g_rpRemCoverOff) RpRemCovered(q, r.b, r.c, cov, nCov);
+                else g_rpRem(q, NULL, r.b, r.c);
                 RpFree(r.p);
             }
             break;

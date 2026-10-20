@@ -6,7 +6,11 @@
 //   query/def: --cut <prefix,prefix> skips calls into hand-verified guarded methods; --delegates follows delegate creation;
 //              --ics lists every native binding reached (verdict, binding, depth)
 //   node tools/managed-callgraph.ts callers <method> [--index ...]
+//   node tools/managed-callgraph.ts subtypes <Type>... [--asm ...]   (every derived class, abstract flagged)
 //   node tools/managed-callgraph.ts --self-check [--asm ...]
+//   --mods <dir> (docs/127): mod assemblies loaded after the game ones for the class hierarchy only; not with build.
+// Library (docs/127): virtualTargets / familyTargets (overrides per receiver class), receiverTypes (receiver static type
+// per call site from the IL), instanceTypeOf, onChain, isA; closure(..., ovHops) follows overrides near the roots.
 // A root or method is a method id ("Ns.Type+Nested::Name(params)") or a prefix of one ("Ns.Type::Name" = all overloads).
 // Reads ECMA-335 metadata tables and IL bodies directly (no decompiler, no npm deps). Method ids carry the full
 // parameter list, so overloads are distinct; generic methods carry `n arity; a duplicate id (conversion operators) gets ":ret".
@@ -195,8 +199,16 @@ function methodSig(a: Asm, p: number): { params: string; ret: string; arity: num
 }
 function fieldSigType(a: Asm, blobIdx: number): string { const [p] = blob(a, blobIdx); return sigType(a, p + 1)[0]; }
 
+// --mods <dir>: mod assemblies (docs/127) loaded after the game ones, so game method ids keep the index's numbering.
+// Used for the class hierarchy only (overridesOf); they are not in index.json. A mod's own copy of an EA assembly is skipped.
+const MOD_DIR = arg('--mods', '');
+export const modAsms = new Set<string>();
 function loadAll(dir: string): void {
   for (const f of readdirSync(dir).filter((n) => n.endsWith('.dll')).sort()) asms.push(loadAsm(join(dir, f), f.replace(/\.dll$/, '')));
+  const ea = new Set(asms.map((a) => a.name));
+  if (MOD_DIR) for (const f of readdirSync(MOD_DIR).filter((n) => n.endsWith('.dll') && !ea.has(n.replace(/\.dll$/, ''))).sort()) {
+    const a = loadAsm(join(MOD_DIR, f), f.replace(/\.dll$/, '')); asms.push(a); modAsms.add(a.name);
+  }
   for (const a of asms) {
     const tds = tbl(a, 2), mds = tbl(a, 6), fds = tbl(a, 4);
     a.types = tds.map((r, i) => ({ asm: a, row: i + 1, ns: str(a, r[2]), name: str(a, r[1]), full: '', flags: r[0], extendsCi: r[3], methods: [], fields: [], ifaces: [] }));
@@ -346,6 +358,94 @@ function body(m: Method): Ins[] {
   return decodeIl(b, p + hdr, b.readUInt32LE(p + 4));
 }
 
+// ---------- receiver static type (docs/127) ----------
+// C# emits callvirt to the original declaration, so the IL target says nothing about the receiver. Its static type is the
+// type of the expression that pushed it: walk back from the callvirt over instructions with a known stack effect until the
+// producer of the receiver slot (ldarg, ldloc, ldfld, ldsfld, call, castclass, isinst, unbox.any, newobj). Gives up (no
+// type) at a branch target in between (stack merge), on any other opcode, or on a generic parameter type.
+const STATIC_M = 0x10;
+type FullIns = { op: number; at: number; next: number; v: number; tok: number };
+function decodeAll(b: Buffer, start: number, len: number): { ins: FullIns[]; targets: Set<number> } {
+  const ins: FullIns[] = []; const targets = new Set<number>(); let p = start; const end = start + len;
+  while (p < end) {
+    const at = p; let op = b[p++]; let sz: number | string | undefined; let v = 0, tok = 0;
+    if (op === 0xfe) { op = 0xfe00 | b[p++]; sz = OP2[op & 0xff]; } else sz = OP1[op];
+    if (sz === 'T') { tok = b.readUInt32LE(p); p += 4; }
+    else if (sz === 'S') { const n = b.readUInt32LE(p); const base = p + 4 + 4 * n; for (let k = 0; k < n; k++) targets.add(base + b.readInt32LE(p + 4 + 4 * k) - start); p = base; }
+    else if (sz === 1) { v = (op >= 0x2b && op <= 0x37) || op === 0xde ? b.readInt8(p) : b[p]; p += 1; }
+    else if (sz === 2) { v = b.readUInt16LE(p); p += 2; }
+    else if (sz === 4) { v = b.readInt32LE(p); p += 4; }
+    else if (sz) p += sz as number;
+    if ((op >= 0x2b && op <= 0x44) || op === 0xdd || op === 0xde) targets.add(p + v - start);
+    ins.push({ op, at: at - start, next: p - start, v, tok });
+  }
+  return { ins, targets };
+}
+// Split a rendered type list at top-level commas (generic arguments and fnptr params stay together).
+const splitTop = (s: string): string[] => { if (!s) return []; const o: string[] = []; let d = 0, st = 0; for (let i = 0; i <= s.length; i++) { const ch = s[i]; if (ch === '<' || ch === '(' || ch === '[') d++; else if (ch === '>' || ch === ')' || ch === ']') d--; else if ((ch === ',' && !d) || i === s.length) { o.push(s.slice(st, i)); st = i + 1; } } return o; };
+export type Recv = { type?: string; isThis: boolean; via?: string }; // via: producing method or field id
+const recvCache = new Map<number, Map<number, Recv>>();
+// Per caller method: declared target -> receiver static type (undefined if any site of that target is unknown).
+export function receiverTypes(caller: number): Map<number, Recv> {
+  if (!asms.length) loadAll(ASM_DIR);
+  let out = recvCache.get(caller); if (out) return out;
+  out = new Map(); recvCache.set(caller, out);
+  const m = methods[caller];
+  if (!m || !m.rva || m.impl & IC_FLAG || m.flags & (ABSTRACT | PINVOKE)) return out;
+  const a = m.asm, b = a.buf, p0 = rva(a, m.rva);
+  let start: number, len: number, locals: string[] = [];
+  if ((b[p0] & 3) === 2) { start = p0 + 1; len = b[p0] >> 2; }
+  else {
+    start = p0 + (b.readUInt16LE(p0) >> 12) * 4; len = b.readUInt32LE(p0 + 4);
+    const lt = b.readUInt32LE(p0 + 8);
+    if (lt) { const [lp] = blob(a, tbl(a, 0x11)[(lt & 0xffffff) - 1][0]); let q = lp + 1; const [n, k] = cuint(b, q); q += k; for (let i = 0; i < n; i++) { const [t, q2] = sigType(a, q); locals.push(t); q = q2; } }
+  }
+  let dec: ReturnType<typeof decodeAll>; try { dec = decodeAll(b, start, len); } catch { return out; }
+  const params = splitTop(m.params);
+  const inst = !(m.flags & STATIC_M);
+  const argType = (i: number): [string | undefined, boolean] => inst ? (i === 0 ? [m.type.full, true] : [params[i - 1], false]) : [params[i], false];
+  const nParams = (t: Method) => splitTop(t.params).length;
+  const effect = (x: FullIns): [number, number, string | undefined, boolean, string?] | undefined => { // [pop, push, pushed type, is this, via]
+    const op = x.op;
+    if (op >= 0x02 && op <= 0x05) return [0, 1, ...argType(op - 0x02)];
+    if (op === 0x0e || op === 0xfe09) return [0, 1, ...argType(x.v)];
+    if (op >= 0x06 && op <= 0x09) return [0, 1, locals[op - 0x06], false];
+    if (op === 0x11 || op === 0xfe0c) return [0, 1, locals[x.v], false];
+    if ((op >= 0x14 && op <= 0x23) || op === 0x72 || op === 0xd0 || op === 0x0f || op === 0x12 || op === 0xfe0a || op === 0xfe0d || op === 0xfe06) return [0, 1, undefined, false];
+    if (op === 0x7e || op === 0x7f) { const f = resolveFieldToken(a, x.tok); return [0, 1, op === 0x7e ? f.type : undefined, false, f.id]; }
+    if (op === 0x7b || op === 0x7c) { const f = resolveFieldToken(a, x.tok); return [1, 1, op === 0x7b ? f.type : undefined, false, f.id]; }
+    if (op === 0x74 || op === 0x75 || op === 0xa5) { const tt = x.tok >>> 24; return [1, 1, tdorName(a, tt === 0x02 ? 2 : tt === 0x01 ? 1 : 0x1b, x.tok & 0xffffff), false]; }
+    if (op === 0x8c || op === 0x8e || (op >= 0x46 && op <= 0x50) || (op >= 0x67 && op <= 0x6e) || (op >= 0xb3 && op <= 0xba) || (op >= 0xd1 && op <= 0xd5) || op === 0x65 || op === 0x66) return [1, 1, undefined, false];
+    if ((op >= 0x58 && op <= 0x64) || (op >= 0x90 && op <= 0x9a) || op === 0xa3 || op === 0x8f || (op >= 0xfe01 && op <= 0xfe05)) return [2, 1, undefined, false];
+    if (op === 0x28 || op === 0x6f || op === 0x73) {
+      const t = resolveMethodToken(a, x.tok).m; if (!t) return undefined;
+      const np = nParams(t);
+      if (op === 0x73) return [np, 1, t.type.full, false];
+      return [np + (t.flags & STATIC_M ? 0 : 1), t.ret === 'void' ? 0 : 1, t.ret, false, t.id];
+    }
+    return undefined;
+  };
+  for (let j = 0; j < dec.ins.length; j++) {
+    const x = dec.ins[j]; if (x.op !== 0x6f && x.op !== 0x28) continue;
+    const tm = resolveMethodToken(a, x.tok).m; if (!tm || tm.flags & STATIC_M) continue;
+    let res: Recv = { isThis: false };
+    let k = nParams(tm); // values above the receiver still to skip
+    for (let i = j - 1; i >= 0; i--) {
+      if (dec.targets.has(dec.ins[i + 1].at)) break; // something jumps into the sequence: stack merge
+      const e = effect(dec.ins[i]); if (!e) break;
+      const [po, pu, ty, isThis, via] = e;
+      if (k < pu) { if (pu === 1 && k === 0 && ty && !/^!|&$/.test(ty)) res = { type: ty.replace(/<.*$/s, ''), isThis, via }; break; }
+      k = k - pu + po;
+    }
+    // ifaceN edges point at the implementations, so key those too.
+    for (const g of [tm.gi, ...(isIface(tm.type) ? ifaceImpls(tm)?.map((x) => x.gi) ?? [] : [])]) {
+      const prev = out.get(g);
+      out.set(g, prev && (prev.type !== res.type || prev.isThis !== res.isThis || prev.via !== res.via) ? { isThis: false } : res); // sites disagree: unknown
+    }
+  }
+  return out;
+}
+
 // ---------- build ----------
 const KINDS = ['call', 'cv', 'virt', 'iface', 'ifaceN', 'newobj', 'dlg', 'dinv', 'cons'] as const;
 const MUTATORS = /^(Add|AddRange|Remove|RemoveAt|RemoveAll|Clear|Insert|set_Item|Push|Pop|Enqueue|Dequeue|Sort|Reverse)$/;
@@ -425,7 +525,7 @@ function parseCsv(text: string): string[][] {
   if (cur || row.length) { row.push(cur); rows.push(row); }
   return rows;
 }
-function icVerdicts(): Map<string, string> {
+export function icVerdicts(): Map<string, string> {
   const rows = parseCsv(readFileSync(IC_CSV, 'utf8'));
   const h = rows[0]; const ci = h.indexOf('ic'), vi = h.indexOf('verdict');
   const m = new Map(rows.slice(1).filter((r) => r[ci]).map((r) => [r[ci], r[vi]]));
@@ -439,7 +539,7 @@ function icTag(ix: Index, r: Rec, ics: Map<string, string>): string {
   return ics.get(r.ic!) ?? (ix.asms[r.a].name === 'mscorlib' ? 'MONO_IC' : ics.get('*::' + r.ic!.split('::')[1]) ?? 'IC?');
 }
 // Own tags of one method (not its callees): [tag, detail][].
-function ownTags(ix: Index, i: number, ics: Map<string, string>): [string, string][] {
+export function ownTags(ix: Index, i: number, ics: Map<string, string>): [string, string][] {
   const r = ix.methods[i]; const out: [string, string][] = [];
   if (r.ic) { out.push([icTag(ix, r, ics), r.ic]); if (YIELD_IC.test(r.ic)) out.push(['YIELD', r.ic]); }
   if (YIELD_M.test(r.k)) out.push(['YIELD', r.k]);
@@ -450,7 +550,8 @@ function ownTags(ix: Index, i: number, ics: Map<string, string>): [string, strin
   return out;
 }
 type Hit = { tag: string; detail: string; path: number[]; edge?: string };
-export function closure(ix: Index, roots: number[], depth: number, ics: Map<string, string>, delegates = false, cut: string[] = []) {
+// ovHops (docs/127): virt/iface edges in methods fewer than ovHops calls from a root also enter every game override (CHA).
+export function closure(ix: Index, roots: number[], depth: number, ics: Map<string, string>, delegates = false, cut: string[] = [], ovHops = 0) {
   const parent = new Map<number, number>(); const dist = new Map<number, number>();
   const hits = new Map<string, Hit>(); const counts = new Map<string, number>();
   const note = (h: Hit) => { counts.set(h.tag, (counts.get(h.tag) ?? 0) + 1); if (!hits.has(h.tag)) hits.set(h.tag, h); };
@@ -467,8 +568,11 @@ export function closure(ix: Index, roots: number[], depth: number, ics: Map<stri
         if (kind === 'virt' || kind === 'iface' || kind === 'cons') note({ tag: 'VIRTUAL', detail: `${kind} ${ix.methods[t].k}`, path: pathTo(n), edge: kind });
         if (kind === 'dinv') note({ tag: 'DELEGATE', detail: ix.methods[t].k, path: pathTo(n), edge: kind });
         if (kind === 'dlg' && !delegates) continue;
-        if (cut.some((c) => ix.methods[t].k.startsWith(c))) continue;
-        if (d < depth && !dist.has(t)) { dist.set(t, d + 1); parent.set(t, n); next.push(t); }
+        const ts = d < ovHops && (kind === 'virt' || kind === 'iface') ? [t, ...virtualTargets(t).ea] : [t];
+        for (const u of ts) {
+          if (cut.some((c) => ix.methods[u].k.startsWith(c))) continue;
+          if (d < depth && !dist.has(u)) { dist.set(u, d + 1); parent.set(u, n); next.push(u); }
+        }
       }
     }
     q = next;
@@ -557,7 +661,89 @@ export function overridesOf(m: Method): Method[] {
   walk(m.type);
   return out;
 }
+// Index-position form of overridesOf (docs/125 addendum: rng-unit-paths.ts); the index must come from the same --asm.
+export function overrideIds(gi: number): number[] {
+  if (!asms.length) loadAll(ASM_DIR);
+  const m = methods[gi];
+  return m ? overridesOf(m).map((o) => o.gi) : [];
+}
+
+// docs/127: dispatch targets of one virt/iface edge for a closure. Game overrides as index ids; mod overrides by id only
+// (no body in the index). BCL declared targets (object/collection members) are not expanded, as in docs/103.
+// self (docs/127 §2): the closure's root type (an interaction definition or meta object). A call from a method declared on
+// self's base chain to a virtual also declared there is taken as a call on `this` and resolves to self's family (familyTargets)
+// [inferred: receiver not tracked; verified for the generic base Test calling this.Test(actor, target)].
+const vtCache = new Map<number, { ea: number[]; mod: string[] }>();
+const chainOf = new Map<string, Set<TypeDef>>();
+// Interaction instance class of a definition: the first generic argument up its base chain that derives from
+// InteractionInstance (the TInteraction that CreateInstance news up). undefined if only generic parameters are found.
+export function instanceTypeOf(type: string): string | undefined {
+  if (!asms.length) loadAll(ASM_DIR);
+  const isInst = (n: string) => { for (let c = typeByFull.get(n); c; c = baseOf(c)) if (c.full === 'Sims3.Gameplay.Interactions.InteractionInstance') return true; return false; };
+  for (let c = typeByFull.get(type); c; c = baseOf(c)) {
+    const [k, i] = decodeCi('TypeDefOrRef', c.extendsCi); if (k !== 0x1b || !i) continue; // generic instance = TypeSpec
+    const n = tdorName(c.asm, k, i); const a = n.slice(n.indexOf('<') + 1, -1);
+    let d = 0, st = 0; const args: string[] = [];
+    for (let j = 0; j <= a.length; j++) { const ch = a[j]; if (ch === '<') d++; else if (ch === '>') d--; else if ((ch === ',' && !d) || j === a.length) { args.push(a.slice(st, j)); st = j + 1; } }
+    const hit = args.find((x) => !x.includes('!') && isInst(x));
+    if (hit) return hit;
+  }
+  return undefined;
+}
+// Is method gi declared on fam or one of fam's base classes?
+export function onChain(fam: string, gi: number): boolean {
+  if (!asms.length) loadAll(ASM_DIR);
+  let ch = chainOf.get(fam);
+  if (!ch) { ch = new Set(); for (let c = typeByFull.get(fam); c; c = baseOf(c)) ch.add(c); chainOf.set(fam, ch); }
+  return !!methods[gi] && ch.has(methods[gi].type);
+}
+export function isA(type: string, base: string): boolean {
+  if (!asms.length) loadAll(ASM_DIR);
+  for (let c = typeByFull.get(type); c; c = baseOf(c)) if (c.full === base) return true;
+  return false;
+}
+export function virtualTargets(decl: number, self?: string, caller?: number): { ea: number[]; mod: string[] } {
+  if (!asms.length) loadAll(ASM_DIR);
+  const m0 = methods[decl];
+  if (self && m0 && caller !== undefined && !isIface(m0.type) && onChain(self, decl) && onChain(self, caller)) return { ea: familyTargets(decl, self) ?? [], mod: [] };
+  let r = vtCache.get(decl);
+  if (!r) {
+    const m = methods[decl];
+    const os = !m || BCL.has(m.asm.name) || modAsms.has(m.asm.name) ? [] : overridesOf(m);
+    r = { ea: os.filter((o) => !modAsms.has(o.asm.name)).map((o) => o.gi), mod: os.filter((o) => modAsms.has(o.asm.name)).map((o) => `${o.asm.name}:${o.id}`) };
+    vtCache.set(decl, r);
+  }
+  return r;
+}
+// Overrides a receiver of static type fam can dispatch to. Class: overrides declared in fam's subtree plus the nearest one
+// on fam's base chain. Interface: overrides on classes that implement fam or have a base or subclass that does.
+// undefined when fam is unknown (caller falls back to CHA).
+const famCache = new Map<string, number[] | undefined>();
+const implementsI = (t: TypeDef, i: TypeDef) => { for (let c: TypeDef | undefined = t; c; c = baseOf(c)) if (c === i || ifaceClosure(c).has(i)) return true; return false; };
+export function familyTargets(decl: number, fam: string): number[] | undefined {
+  if (!asms.length) loadAll(ASM_DIR);
+  const key = `${decl}|${fam}`; if (famCache.has(key)) return famCache.get(key);
+  const m = methods[decl], f = typeByFull.get(fam);
+  let r: number[] | undefined;
+  if (m && f && !BCL.has(m.asm.name) && !modAsms.has(m.asm.name)) {
+    const all = overridesOf(m).filter((o) => !modAsms.has(o.asm.name));
+    let out: Method[];
+    if (isIface(f)) out = all.filter((o) => implementsI(o.type, f) || derivedTypes(o.type).some((d) => implementsI(d, f)));
+    else {
+      const sub = new Set(derivedTypes(f)); out = all.filter((o) => sub.has(o.type));
+      for (let c = baseOf(f); c && c !== m.type; c = baseOf(c)) { const x = all.find((o) => o.type === c); if (x) { out.push(x); break; } }
+    }
+    r = out.map((o) => o.gi);
+  }
+  famCache.set(key, r);
+  return r;
+}
 const derivedTypes = (t: TypeDef): TypeDef[] => { if (!kids) hierarchy(); return [t, ...(kids!.get(t) ?? []).flatMap(derivedTypes)]; };
+export function subtypes(type: string): { full: string; asm: string; abstract: boolean }[] | null {
+  if (!asms.length) loadAll(ASM_DIR);
+  const t = typeByFull.get(type);
+  return t ? derivedTypes(t).map((x) => ({ full: x.full, asm: x.asm.name, abstract: (x.flags & 0x80) !== 0 })) : null;
+}
 
 // Root groups for the routing study. Specs: method id prefix; type:<T> (its methods); derived:<T> (T and subclasses);
 // name:<Method>/<param prefix> (any method of that name); callers:<method prefix> (methods calling it).
@@ -770,12 +956,36 @@ function selfCheck(): void {
   const box = ov('Sims3.Gameplay.Interfaces.IBoxStall::IsAllowedThrough(Sims3.Gameplay.Actors.Sim)');
   if (box.length !== 1 || !box[0].startsWith('Sims3.Gameplay.Objects.Pets.BoxStall::')) fail(`IBoxStall implementations: ${box}`);
   console.log(`  12d: privacy overrides ${priv.length}, door overrides ${door.length}, Route.Plan -> ScriptCore.Route, IBoxStall -> BoxStall`);
+  // docs/127: a closure with ovHops enters override bodies the plain closure cannot see (door rule behind Sim.OnPortalPathPlan).
+  const opp = lookup(ix, 'Sims3.Gameplay.Actors.Sim::OnPortalPathPlan');
+  const has = (r: ReturnType<typeof closure>, p: string) => [...r.reached.keys()].some((i) => ix.methods[i].k.startsWith(p));
+  const turn = 'Sims3.Store.Objects.Turnstile::IsAllowedThrough(';
+  if (!opp.length || has(closure(ix, opp, 2, ics), turn) || !has(closure(ix, opp, 2, ics, false, [], 2), turn)) fail('ovHops closure does not add Turnstile.IsAllowedThrough to Sim.OnPortalPathPlan');
+  const ots = lookup(ix, 'System.Object::ToString()');
+  if (!ots.length || virtualTargets(ots[0]).ea.length) fail('System.Object::ToString missing or expanded (BCL targets stay closed)');
+  // `this` rule: the generic base Test(ref parameters) calls this.Test(actor, target, ...): one target for a known definition.
+  const gt = lookup(ix, 'Sims3.Gameplay.Interactions.InteractionDefinition`3::Test(!0,!1,bool,Sims3.SimIFace.GreyedOutTooltipCallback&)');
+  const gc = lookup(ix, 'Sims3.Gameplay.Interactions.InteractionDefinition`3::Test(Sims3.Gameplay.Interactions.InteractionInstanceParameters&,Sims3.SimIFace.GreyedOutTooltipCallback&)');
+  const self = virtualTargets(gt[0], 'Sims3.Gameplay.Core.VisitLot+Definition', gc[0]).ea.map((i) => ix.methods[i].k);
+  if (gt.length !== 1 || gc.length !== 1 || !self.length || self.length > 5 || !self.some((x) => x.startsWith('Sims3.Gameplay.Core.VisitLot+Definition::Test('))) fail(`this rule: ${self}`); // the definition and its subclasses
+  if (virtualTargets(gt[0]).ea.length < 1000) fail('generic Test overrides < 1000 without the this rule');
+  // Receiver static type from the IL: GameObject.GetInUseAutonomyMultiplier reads this.InUse (ldarg.0);
+  // CalculateScoreForObjectInteraction calls GetInUseAutonomyMultiplier on its IGameObject local (a stloc'd iop.Target).
+  const gm = lookup(ix, 'Sims3.Gameplay.Abstracts.GameObject::GetInUseAutonomyMultiplier'), inUse = lookup(ix, 'Sims3.Gameplay.Abstracts.GameObject::get_InUse');
+  const r1 = gm.length && inUse.length ? receiverTypes(gm[0]).get(inUse[0]) : undefined;
+  if (!r1?.isThis || r1.type !== 'Sims3.Gameplay.Abstracts.GameObject') fail(`receiver of InUse in GetInUseAutonomyMultiplier: ${JSON.stringify(r1)}`);
+  const csfo = lookup(ix, 'Sims3.Gameplay.Autonomy.Autonomy::CalculateScoreForObjectInteraction'); const igm = lookup(ix, 'Sims3.Gameplay.Interfaces.IGameObject::GetInUseAutonomyMultiplier');
+  const r2 = csfo.length && igm.length ? csfo.map((c) => receiverTypes(c).get(igm[0])).find(Boolean) : undefined;
+  if (r2?.type !== 'Sims3.Gameplay.Interfaces.IGameObject' || r2.isThis) fail(`receiver of GetInUseAutonomyMultiplier: ${JSON.stringify(r2)}`);
+  const lotOv = familyTargets(inUse[0], 'Sims3.Gameplay.Core.Lot') ?? [];
+  if (lotOv.length >= virtualTargets(inUse[0]).ea.length) fail('Lot family not narrower than all get_InUse overrides');
+  console.log(`  docs/127: Sim.OnPortalPathPlan + overrides reaches Turnstile.IsAllowedThrough; BCL targets not expanded; this rule: generic Test -> ${self.length} VisitLot+Definition family Tests (of ${virtualTargets(gt[0]).ea.length}); receiver types: this.InUse, IGameObject local`);
   console.log(`self-check ok: ${ix.stats.methods} methods, ${ix.stats.ics} ICs (${rows.length - missing.length}/${rows.length} csv rows bound), CalculateScore callers ${callers.length}, SendEvent overloads ${sends.length}, Sleep reaches SleepImpl`);
   for (const i of callers.slice(0, 8)) console.log('  caller:', ix.methods[i].k);
 }
 
 // ---------- main ----------
-const VALUE_FLAGS = new Set(['--asm', '--out', '--index', '--ic', '--depth', '--cut', '--csv', '--packs']);
+const VALUE_FLAGS = new Set(['--asm', '--out', '--index', '--ic', '--depth', '--cut', '--csv', '--packs', '--mods']);
 function positional(): string[] {
   const out: string[] = []; const a = process.argv.slice(3);
   for (let i = 0; i < a.length; i++) { if (VALUE_FLAGS.has(a[i])) i++; else if (!a[i].startsWith('--')) out.push(a[i]); }
@@ -812,6 +1022,13 @@ else if (cmd === 'build') {
     const os = overridesOf(m);
     console.log(`${m.id} [${m.asm.name}] ${os.length} overrides`);
     for (const o of os) console.log(`  ${o.id} [${o.asm.name}]`);
+  }
+} else if (cmd === 'subtypes') {
+  // docs/126: every class deriving from a type (itself included), one line each: full name, assembly, abstract flag.
+  for (const a of positional()) {
+    const ts = subtypes(a);
+    if (!ts) { console.log(`${a}: no type`); continue; }
+    for (const x of ts) console.log(`${x.full}\t${x.asm}\t${x.abstract ? 'abstract' : ''}`);
   }
 } else if (cmd === 'dispatch') runDispatch();
 else if (cmd === 'hostdata') {
@@ -851,4 +1068,4 @@ else if (cmd === 'hostdata') {
     const key = `${rname(m.ret)} ${m.type.full}:${m.name}(${split(m.params).map(rname).join(',')})`;
     console.log(`${fnv(key)}\t${m.id}\t${key}`);
   }
-} else if (cmd !== 'lib') console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | dispatch [--csv out] | hostdata [--out f] | bindkeys | --self-check');
+} else if (cmd !== 'lib') console.log('usage: build | query <method>... | def <type>... | callers <method> | overrides <method>... | subtypes <type>... | dispatch [--csv out] | hostdata [--out f] | bindkeys | --self-check');
