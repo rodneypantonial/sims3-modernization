@@ -28,11 +28,11 @@ Results: `docs/data/results/2026-10-20-queue-release-validate.md`. All jobs on t
 | Group | Jobs | Cases | Result |
 |---|---|---|---|
 | Play, crash-free (12 min seeded) | 3 | Bridgeport, Isla Paradiso, Sunset Valley | 3/3 PASS (BP 16,608 background plans, 0 watchdogs, 0 stuck Sims) |
-| Saves | 3 | Bridgeport, Sunset Valley, Isla Paradiso: 15 saves each with background routing on | 45/45 saves written (result 0). No save code changed since v0.1.3, so the full save matrix was not rerun; reloading those saves was not tested |
+| Saves | 3 | Bridgeport, Sunset Valley, Isla Paradiso: 15 saves each with background routing on | 45/45 saves written (result 0); 3/3 reloads PASS (one save per world made unpaused with background routing on, loaded and played 3 min: `docs/data/results/2026-10-20-queue-release-reload.md`). No save code changed since v0.1.3, so the full save matrix was not rerun |
 | Travel round trips + travel save | 6 | France, China, Egypt, University, Future (queued and direct start) | 4/6 PASS; Future: both trips arrived without a crash, the harness could not queue the trip home (known harness gap, not a game fault) |
-| Rare routing scenarios (docs/117) | 21 | winter pond, thunderstorm, full moon werewolf, route bits, ghost walk, occult walks, death walk, big crowd, IP water, world walk (University, France), owned vehicles, stroller, horse ride, zombies, broom flight | pending |
+| Rare routing scenarios (docs/117) | 21 | winter pond, thunderstorm, full moon werewolf, route bits, ghost walk, occult walks, death walk, big crowd, IP water, world walk (University, France), owned vehicles, stroller, horse ride, zombies, broom flight | 20/21 PASS, 0 crashes; stroller: the harness could not create a stroller object (setup step, not a game fault) |
 
-N cases run: pending.
+33 jobs run: 27 PASS, 0 crashes. Failures are harness-side only (Future trip home x2, stroller setup) plus the 3 earlier save-matrix jobs that could not switch experimental save fixes (replaced by the saves row).
 
 ### Recommended setting (optional)
 

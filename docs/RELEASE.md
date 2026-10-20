@@ -8,7 +8,7 @@ How a release goes out. Current: **v0.1.4** (background routing on by default), 
 |---|---|---|
 | `native/ts3native/out/ts3native.asi` | ts3native 0.36.0 | `fa25a2c8420e5fb6546c13474b2e0ccfc6b03ac3b5b6ca9e28fc2196f525f007` |
 | `native/ts3native/out/ts3native.ini` | release defaults | `68b2cfc27572b7679a1902c12c868efb6150f05c1e06a837ff068567114d1af0` |
-| `build/ts3fixes.package` | defaults as v0.1.3 (17 tunables True) | `eec32200463d4f5650c80145baa4d01d90e2eed5f16f63d02d08322f1efc90fb` |
+| `build/ts3fixes.package` | defaults as v0.1.3 (17 tunables True; shortcuts kGoHome, kBuildingTrip, kLotTrip, kVirtualHome True) | `c09fb14d283f6261cc780c42ab5207763d2b379a235e2b5669d40f60f17414ee` |
 
 Release `ts3native.ini` defaults: on = `[GC]`, `[WaterJps]`, `[Decompress]`, `[SaveWrite]`, `[LotRemoveGuard]`, `[OptsInit]`, and new in v0.1.4 `[RouteAsync]` (`Mode=1`, `Kinds=0`), `[RouteGate]` (`Sites=1`, `Enforce=1`, `G10Common=0`), `[Discourage]` (`Mode=1`, `DestroyApply=1`, `DeadSweep=1`). Everything else off, including `[RouteSnap]` (P3-P5c code ships, `Enabled=0`). The installer (`install-fixes.ts`) and CI (`.github/workflows/build.yml`) both ship `out/ts3native.ini`, which `build.cmd` copies from `native/ts3native/ts3native.ini`.
 
