@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.0"
+#define TS3NATIVE_VERSION "0.36.3"
 
 typedef unsigned char u8;
 

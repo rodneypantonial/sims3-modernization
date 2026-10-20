@@ -2137,6 +2137,44 @@ static void K8Negative() {
     g_k8Neg++;
 }
 
+// 0.36.2 (I-94-508, docs/94 §22.31): the game's ApplyRemove 0x666750 / leaf erase 0x666010 on a live Q of the REPLAY world, run
+// by replay.cpp's RpRemCovered: a footprint inserted by the game's ApplyInsert, its +0x2C then answering a rect far outside
+// every Q (the drifted-copy shape: a plain remove would keep its leaves), removed with the cover table: no entry of it and
+// no orphan left. Returns the footprints checked (the selftest has the negative control on the stand-ins)
+static float* __fastcall RkFarBounds(const u8*, void*, float* out, DWORD, float) {
+    out[0] = out[1] = 1.0e6f, out[2] = out[3] = 1.0e6f + 1.0f;
+    return out;
+}
+static long RkCoverRemove() {
+    long n = 0;
+    static DWORD farVt[8][0x80];
+    for (int j = 0; j < g_rf.nFps && n < 4; j++) {
+        u8* fp = g_rf.fps[j];
+        u8* q = RfQOf(j % g_rf.nLots, j);
+        const DWORD lo = *(DWORD*)(fp + 0x14), hi = *(DWORD*)(fp + 0x18);
+        g_rpRem(q, NULL, lo, hi);  // not in q before (live only; no record: the clone is not compared after this)
+        g_rpIns(q, NULL, fp, 0);
+        int had = 0;
+        RfOrphans(g_rf.m, q, fp, &had);
+        if (!had) { g_rpRem(q, NULL, lo, hi); continue; }  // no leaves in this Q's rect
+        const DWORD vt = *(DWORD*)fp;
+        DWORD* fv = farVt[n];
+        memcpy(fv, (const void*)(uintptr_t)vt, sizeof(farVt[0]));
+        fv[0x2C / 4] = (DWORD)(uintptr_t)RkFarBounds;
+        *(DWORD*)fp = (DWORD)(uintptr_t)fv;
+        u8* cov[1] = {fp};
+        RpRemCovered(q, lo, hi, cov, 1);
+        assert(*(DWORD*)fp == (DWORD)(uintptr_t)fv);  // the table put back
+        *(DWORD*)fp = vt;
+        int left = 0;
+        const int orph = RfOrphans(g_rf.m, q, fp, &left);
+        if (orph || left) printf("REPLAY cover remove: footprint %d class 0x%08lX: %d entries before, %d left, %d orphans\n", j, vt, had, left, orph);
+        assert(!orph && !left);
+        n++;
+    }
+    return n;
+}
+
 int main(int argc, char** argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     AddVectoredExceptionHandler(1, [](EXCEPTION_POINTERS* e) -> LONG {
@@ -3519,7 +3557,7 @@ int main(int argc, char** argv) {
     {
         long cuts = 0, steps = 0;
         DWORD ents = 0;  // live leaf entries at the end of each seed (the game's trees were filled)
-        long poolNodes = 0, midCopies = 0;
+        long poolNodes = 0, midCopies = 0, covered = 0;
         g_log = GetStdHandle(STD_OUTPUT_HANDLE);  // "snap replay ..." lines (a mismatch names its lot)
         char nopad[4] = "";
         if (GetEnvironmentVariableA("RF_NOPAD", nopad, sizeof(nopad))) g_rfPad = 0;
@@ -3553,6 +3591,7 @@ int main(int argc, char** argv) {
             RfIns(RfQOf(0, 0), g_rf.fps[0], 1, false);  // negative control: an insert with no record
             RfCut();
             assert(kr.rpMis > mis0);
+            covered += RkCoverRemove();
             RfTeardown();
             assert(g_rpBytes == 0 && kr.rpFps == 0);
         }
@@ -3719,7 +3758,9 @@ int main(int argc, char** argv) {
                    "0x61EE20) on private EA blocks: no free of a foreign block, live room buffers on no-access pages untouched\n", k7);
         }
         RkUnpatch();
-        assert(ents > 100 && midCopies > 0);
+        assert(ents > 100 && midCopies > 0 && covered > 0);
+        printf("REPLAY cover remove (0.36.2): %ld game footprints with leaves, +0x2C answering far outside every Q, removed by the "
+               "game's ApplyRemove with the cover table: no entry and no orphan left\n", covered);
         printf("REPLAY K1 (seeds %lu-%lu): %ld cuts over %ld writes through the game's ApplyInsert / ApplyRemove, random addresses: "
                "clone == live at every cut (%ld lot audits, %ld rebased lots, %lu leaf entries at the ends), unrecorded insert found; "
                "no copy refused, %ld middle-class 0x1020AE8 blocks in the final clones\n",

@@ -28,6 +28,7 @@ static void P5cOnStart(const AsyncJob* j);      // p5c.cpp: the cut's write coun
 static void P5cLend(void* lock, bool verify);   // p5c.cpp: P5bBegin, with every plain sim acquire admitted (FreeLock=1)
 static void P5cTake();                          // p5c.cpp: P5bEnd
 static bool P5cStale(DWORD seq);                // p5c.cpp: a recorded routing write since the cut: never take the answer
+static bool P5cStaleEarly(DWORD seq, bool verify);  // p5c.cpp: the same, known before the acquire (0.35.26)
 
 static volatile LONG g_p5On;   // Mode=2 installed and not turned off
 static LONG g_p5Verify = 10;   // VerifyEvery (0 = never)
@@ -153,6 +154,21 @@ static void P5Move(int* head, int* outList) {
     head[0] = head[1] = (int)(uintptr_t)head;
 }
 
+// 0.35.26 (docs/94 §22.30), log only (no counter change; worker only): acquires made inside the lent window, stale jobs that
+// skipped the acquire, cut holds dropped by a refusal before the acquire; logged every 5 min
+static LONG g_p5EarlyLend, g_p5EarlyStale, g_p5Drops;
+static void P5Log5() {
+    static ULONGLONG s_at;
+    static LONG s_l0, s_s0, s_d0;
+    const ULONGLONG now = GetTickCount64();
+    if (!s_at) s_at = now;
+    if (now - s_at < 300000) return;
+    Log("P5: last %lu s: acquires inside the lent window %ld (of %ld acquired since start), stale before the acquire %ld "
+        "(skipped acquire and run), cut holds dropped before the acquire %ld", (DWORD)((now - s_at) / 1000), g_p5EarlyLend - s_l0,
+        ts3native_counters.snPcAcquired, g_p5EarlyStale - s_s0, g_p5Drops - s_d0);
+    s_at = now, s_l0 = g_p5EarlyLend, s_s0 = g_p5EarlyStale, s_d0 = g_p5Drops;
+}
+
 static volatile LONG g_p5VerLog;
 // worker, the armed job's Route_PlanLocked (P4LivePlan after the argument capture; the job holds +0x918)
 static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts, int* out1,
@@ -169,23 +185,34 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     }
     if (why < 0 && (k.rtClosing || k.rtBusy)) why = P4_AB_EPOCH;
     if (why < 0 && P4Cold()) why = P4_AB_COLD;
+    // 0.35.26 (docs/94 §22.30): an answer P5c refuses anyway (a routing write since the START cut) skips the acquire and the run
+    if (why < 0 && P5cStaleEarly(c.seq, verify)) why = P4_AB_EPOCH, g_p5EarlyStale++;
     P4Clone cl = {};
-    bool have = false, ran = false;
+    bool have = false, ran = false, lent = false;
     if (why < 0) {
+        // 0.35.26: the copy (5-6 ms on BP) inside the lent window when it makes no game call; else under the hold as before
+        if (!verify && g_p4Clone == &kPcProvider && PcAcquireOwnOnly(c.ver)) {
+            P5cLend((u8*)world + 0x918, verify);
+            lent = true;
+            g_p5EarlyLend++;
+        }
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
         const int r = P4CloneAcquire(c.ver, &cl);
         InterlockedExchangeAdd(&k.snMatUs, UsSince(t0));
         if (r >= 0) why = r; else have = true;
+    } else if (c.ver) {
+        P4CloneDrop(c.ver);  // refused before the acquire: the consumer's hold moves on now, not at kPcPendMs (as P4's shadow)
+        g_p5Drops++;
     }
     int head[4];
     P4Head(head, c);
     LONG rel = 0;
     const LONG read0 = t_p4Read;  // the IC's own reader bits so far (P4RunClone resets the thread's)
+    if (have && !lent) P5cLend((u8*)world + 0x918, verify);
+    if (have) rel = P4RunClone(c, cl, head, true);
+    if (have || lent) P5cTake();  // also after a refused acquire in the window: +0x918 back before the game's plan
     if (have) {
-        P5cLend((u8*)world + 0x918, verify);
-        rel = P4RunClone(c, cl, head, true);
-        P5cTake();
         ran = true;
         t_p4Read = read0;
         if (c.abort >= 0) why = c.abort;
@@ -239,6 +266,7 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     if (rel & P4REL_WRAP) g_p4Work.wrap = 0;
     c.armed = 0;  // nothing left for P4Shadow after J_DONE
     P4JobFree(c);
+    P5Log5();
     return r;
 }
 

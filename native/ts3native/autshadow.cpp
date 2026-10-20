@@ -97,8 +97,8 @@ static const char* const kAsAbortName[AS_AB_N] = {"row", "pos", "memo", "rng", "
 // One row per IC of docs/122 §3.2. nArg = stack dwords after the hidden result pointer (struct kinds); sz = INT width in
 // bytes or struct size; at = the key dword where the owner id (u64) starts; strMask = input dwords that are MonoString*
 // (keyed by content); outs = (argument dword, bytes) of the out parameters. Signatures: managed externs (methods.csv);
-// the cdecl layout with a hidden struct pointer first is verified on Objects_GetPosition 0x744DB0,
-// ScriptProxy_GetResourceKeyImpl 0x7872E0, World_GetLotLocationImpl 0x784F90 and Simulator_GetTaskImpl 0x76CA60.
+// the cdecl layout (hidden struct pointer first) is verified in the disassembly for rows 0-24 and the 7 memo rows
+// (docs/122 §14.8, §14.9); stub and abort rows never call the body.
 struct AsDesc {
     const char* name;
     u8 owner, kind, nArg, sz, at, reason, strMask, lotClear, nOut;
@@ -119,7 +119,7 @@ static const AsDesc kAsDesc[] = {
     AS_D("ScriptCore.World::World_GetRoomIdAtPosImpl", AO_WORLD, AK_INT, 4, 2, 0, AS_AB_POS),
     AS_D("ScriptCore.World::World_IsPositionOutsideImpl", AO_WORLD, AK_INT, 3, 1, 0, AS_AB_POS),
     AS_D("ScriptCore.World::World_HasAnyRoofOrFloorAbovePosImpl", AO_WORLD, AK_INT, 3, 1, 0, AS_AB_POS),
-    {"ScriptCore.World::World_GetLotLocationImpl", AO_WORLD, AK_INT, 5, 8, 0, AS_AB_POS, 0, 0, 1, {3}, {12}},  // LotLocation (int,int,sbyte,short) = 12 B [inferred]
+    {"ScriptCore.World::World_GetLotLocationImpl", AO_WORLD, AK_INT, 5, 8, 0, AS_AB_POS, 0, 0, 1, {3}, {12}},  // LotLocation (int,int,sbyte,short) = 12 B [verified, §14.8]
     AS_D("ScriptCore.World::World_GetDoorRoomsImpl", AO_WORLD, AK_ARRAY, 3, 4, 0, AS_AB_POS),
     AS_D("ScriptCore.Queries::Query_CountObjectsOnLot", AO_LIST, AK_INT, 4, 4, 1, AS_AB_LIST),
     AS_D("ScriptCore.Queries::Query_GetObjectsOnLot", AO_LIST, AK_ARRAY, 4, 4, 1, AS_AB_LIST),
@@ -275,14 +275,19 @@ static DWORD AsStrKey(DWORD s) {
     return h | 1;
 }
 
-// input dwords of a call (args = first stack argument, the hidden result pointer included)
+// input dwords of a call (args = first stack argument, the hidden result pointer included). Memo rows also key on the
+// value an out/ref parameter holds before the call: their bodies leave some outs unwritten (DeviceConfig_GetOption
+// 0x741230 on a missing option, UserToolUtils_ProductGenericImpl 0xCE99E0 per funcID), and the game's call then leaves
+// the caller's own value there, so a replay is exact only for the same in-values (docs/122 §14.9). Keys fit AS_KEY.
 static int AsKeyOf(const AsDesc& d, const DWORD* args, DWORD* key) {
     const DWORD* a = args + (d.kind == AK_STRUCT);
     int n = 0;
     for (int i = 0; i < d.nArg && n < AS_KEY; i++) {
-        bool out = false;
-        for (int j = 0; j < d.nOut; j++) out |= d.outIdx[j] == i;
-        if (!out) key[n++] = (d.strMask >> i) & 1 ? AsStrKey(a[i]) : a[i];
+        int j = 0;
+        while (j < d.nOut && d.outIdx[j] != i) j++;
+        if (j == d.nOut) key[n++] = (d.strMask >> i) & 1 ? AsStrKey(a[i]) : a[i];
+        else if (d.owner == AO_MEMO)
+            for (int q = 0; q < d.outSz[j] / 4 && n < AS_KEY; q++) key[n++] = ((const DWORD*)(uintptr_t)a[i])[q];
     }
     return n;
 }
@@ -508,9 +513,9 @@ static int AsWorkerAnswer(DWORD idx, DWORD* args, AsRet* r) {
 static int AsSimMemo(DWORD idx, DWORD* args, AsRet* r) {
     const AsDesc& d = *g_asDescOf[idx];
     const int fp = d.kind == AK_FP;
-    AsCallRaw(g_asOrig[idx], args, d.nArg + (d.kind == AK_STRUCT), r, fp);
     DWORD key[AS_KEY];
-    const int n = AsKeyOf(d, args, key);
+    const int n = AsKeyOf(d, args, key);  // before the call: out in-values are part of the key
+    AsCallRaw(g_asOrig[idx], args, d.nArg + (d.kind == AK_STRUCT), r, fp);
     int i = AsFind(g_as->m, (int)idx, key, n);
     if (i < 0 && (i = AsInsert((int)idx, key, n, 0)) >= 0) ts3native_autshadow.memoRecords++;
     if (i >= 0) {

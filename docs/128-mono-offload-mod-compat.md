@@ -1,0 +1,129 @@
+# 128. Mono offload: mod compatibility of the reference install (static)
+
+Written 2026-10-20. Static only: installed mods read from `<Documents>\Electronic Arts\The Sims 3\Mods` (read-only), script assemblies extracted to a scratch folder with `tools/extract-assemblies.ts`, call-graph indexes built per mod with `tools/managed-callgraph.ts`, no game run, no build. Closes the mod half of three open checks: I-120-6 (`Monitor`/`lock` reliance), I-121-10 (scoring functions named by tuning) and the mod rows of docs/104, docs/122 §4.1 and docs/124 §6 (definition replacements, method swaps). Allow-list = docs/122 v0 (12 definitions, 7 implementors) plus docs/126 tier 2 (251 candidates; 172 ready, 61 new rows, 2 hooked, 16 blocked). Tags as AGENTS.md: **[verified]** (tool output, IL index, source we own, or a game log), **[community]**, **[inferred]**. Mods without a license (NRaas, simler90, MonoPatcher) were read for behaviour only: no code from them is quoted here.
+
+## Summary
+
+- **Scanned:** 171 `.package` files (163 in `Packages`, 8 in `Overrides`). 14 carry script assemblies (81 DLLs: 15 from mods, 3 of them our own ts3fixes/ts3agent, and 66 from the Sims 3 Store repack), 6 carry interaction tuning (ITUN, 419 resources), 23 carry XML tuning (`0x0333406C`); the other 145 are CAS, build/buy, slider, footprint or texture content with no Mono effect.
+- **Blocker on the reference install: simler90's core mod.** It replaces `Sims3GameplaySystems` and `Sims3GameplayObjects` whole (UPDATE242 MVIDs `bb8cb38b…`, `a95a143f…` against EA's `3681889397…`, `b2cc44b0…`). `[AutShadow]`'s session guard compares both MVIDs with EA's, so as built it switches itself **off for every session** on this install [verified: `AutShadow.MvidCheck` source + extracted MVIDs; that simler90's copy is the one loaded is verified indirectly: its companion `simler90Extras` is in ErrorTrap's loaded-assembly list of a 2026-10-20 run]. The content does not block: re-running the docs/126 tool on simler90's assemblies gives **the same verdict for all 251 candidates and for the pilot union** (950 methods, 30 EA ICs, 6 managed sites), and the IL diff shows 904 changed and 72 added methods of which only 3 sit in the pilot union, all read-only (§2.1). Fix = an MVID accept list per checked build (§5 G-M1).
+- **No mod relies on `lock` for correctness, and none uses `Monitor.Wait`/`Pulse`/`TryEnter`, `Synchronized` methods or its own threads.** The only mod `lock` user is our own `ts3agent` (15 `lock` blocks, all between script tasks on the sim thread) [verified: IL scan + source]. I-120-6 is closed for the installed mods.
+- **Tuning: no mod touches an allow-listed definition's scoring function or `AlwaysChooseBest`.** No mod has ITUN for the 12 v0 definitions; the Store repack's 16 ITUN rows for 13 tier-2 definitions all have an empty scoring-function name and `alwaysChooseBest="False"`. One mod row names a scoring function (LaserHarp `Watch`, not allow-listed), so the check is needed. In EA's own tuning the 12 v0 rows have no scoring function and no `AlwaysChooseBest` (I-124-4 verified), but **15 tier-2 rows name 8 scoring functions** that the docs/126 closures did not follow; all 8 closures are ready (§3).
+- **The scoring-function check belongs on the sim thread at request time**, in `AutShadow.AddObj` per (meta object, ad) pair, not in the worker (§4). The field is `InteractionTuning.ScoringFunction`; EA writes it only in `InteractionTuning.LoadTuning`.
+- **Needs guard (current install):** simler90 (MVID accept list), our own ts3fixes (`HoursMemoHook` and `SpatialCacheHook` are reached by the closures and write statics on the worker unless they pass through, §2.3), NRaas Overwatch and ErrorTrap (their interaction base class overrides two `InteractionInstance` virtuals that 13 tier-2 closures call on the actor's queued interactions, §2.4). **Compatible:** everything else; definition subclasses (LynMods' University library, NRaas definitions) and the Store's duplicate types are already caught by the exact-type + MVID rule.
+- **Guard additions (§5):** G-M1 MVID accept list, G-M2 scoring-function check per pair, G-M3 ts3fixes hooks pass through on the worker, G-M4 closure-wide L3 instead of direct callees only, G-M5 virtual-slot census for mod overrides. ~3-5 h of code, no game run needed before G-A3; each simler90 update needs the §7 re-run (~15 min) before its MVIDs go on the list.
+
+## 1. What is installed
+
+| Package | Script assemblies (module, MVID prefix) | Tuning | Loaded at run time [verified: ErrorTrap list, 2026-10-20] |
+|---|---|---|---|
+| simler90 Gameplay Core Mod UPDATE242 (Steam) | `Sims3GameplaySystems` `bb8cb38b`, `Sims3GameplayObjects` `a95a143f`, `simler90Extras` `316c837b` | XML (social/pregnancy tunables) | yes (`simler90Extras` listed; the two core names are the EA names) |
+| NRaas ErrorTrap | `NRaasErrorTrap` `c47ec740`, `ScriptCore` `99b5bd68` (EA `ee57f83a`) | XML instantiator | yes |
+| NRaas Overwatch | `NRaasOverwatch` `48410d3f` | XML instantiator | yes |
+| MonoPatcher (package half; `MonoPatcher.asi` is the native half) | `MonoPatcher` `74dd67a9` | XML initializer list | yes |
+| Smooth Patch | `LazyDuchess.SmoothPatch` `2e74ec2f` | XML switches | yes |
+| Houseboat fix | `fp.houseboatfix` `7a76fda2` (uses MonoPatcher) | XML | yes |
+| University More Shell Entries | `StudentUnionLibrary` `32d6d64c` | XML instantiator | yes |
+| University Replacement Shells | `StudentUnionAddDoor`, `LibraryAddDoors` | XML door tuning | yes |
+| Sims 3 Store Fixes + Store Updates 001-051 (repack) | 66 `StoreObjects*` DLLs | 415 ITUN, 178 XML | only `StoreObjectsPhoneTableMidCModsuite`, `StoreObjectsPriusPlugin`, `StoreObjectsZoe` |
+| ts3fixes, ts3agent (ours) | `Ts3Fixes`, `Ts3Agent`, `Ts3AgentPlugin` | XML switches | yes |
+| GoAndPlayInOcean fix, Bridgeport Workbench fix, LaserHarp fix, StopAutopilot Helm | none | 1 ITUN each (+ XML) | - |
+| DB Improved Protest, fast raking, Money Tree fix, TSS Toddler Routing fix, Shimrod camera, simbouquet balloons, celtysims mat, heaven fence | none | XML tunables or complates | - |
+| 145 others (CAS, sliders, build/buy, OhRudi footprints, overrides) | none | none | - |
+
+The Store repack's other 63 DLLs define types that EA's own `Sims3StoreObjects` already holds (32 top-level duplicates in the 041-051 package alone, e.g. `WalkerClassic`, `PlaypenClassic`, `ChangingTable`); their OBJK script names carry no assembly, the game resolves them to the EA types and never loads those DLLs [verified: duplicate-type scan + the loaded list]. So the tier-2 store rows (`docs/data/autonomy-tier2.csv`, assembly `Sims3StoreObjects`) are the types that run.
+
+## 2. Script mods
+
+### 2.1 simler90 core mod: replaced game assemblies
+
+- **IL diff** (method bodies with metadata tokens replaced by the member they name, per method id, EA vs UPDATE242): 904 methods changed, 72 added, 71 EA lambdas renamed [verified: tool output; limit: string literals and type tokens of `ldstr`/`box`-style operands are not compared, so a pure constant-string change is missed].
+- **In the pilot union** (v0 definitions + 7 implementors + meta base path): 3 changed methods, `MetaAutonomyTuning.GetIntensity`, `Autonomy.CheckAvailabilityOnLot` (same calls and fields, other constants or branches) and `Household.IsGreetedOnLot` (one added call to the static getter `Household.get_IsPetHousehold`, a single static read). No new IC, no new managed write [verified: index edges].
+- **Tier 2:** `tools/autonomy-tier2.ts` on simler90's assemblies gives the same verdict for all 251 rows; 15 closures grow by 1-13 methods, one gains the `RoommateManager` pre-warm (`GoOutToYard`). 116 of 172 ready and 58 of 61 new-rows closures contain a changed method, almost all through `CheckAvailabilityOnLot` and `IsGreetedOnLot` [verified: tool output].
+- **Scoring functions** changed by simler90 include `TV+WatchTVAutonomously.WatchTVScoringFunction`; its closure stays ready (§3).
+- **Verdict: blocks as built, needs guard G-M1.** Mode R stays valid with simler90 (worker and sim thread run the same simler90 code). Each simler90 update gets new MVIDs, so its pair goes on the list only after the §7 re-run.
+
+### 2.2 NRaas ErrorTrap's `ScriptCore`
+
+15 changed and 44 added methods (`ScriptCore.World`, `Simulator.CreateObject`/`DestroyObject`, the `ExceptionTrap` hooks). None is in the pilot union, a v0 closure or a ready/new-rows/hooked tier-2 closure; 4 blocked closures reach `Simulator.DestroyObject`/`CreateObject` [verified: tool output]. `[AutShadow]` does not check `ScriptCore`'s MVID today; docs/104 L1 (routing, not built) lists all 10 assemblies and would need ErrorTrap's `ScriptCore` on its accept list too. **Verdict: compatible** (G-M1 must accept `99b5bd68…` if `ScriptCore` is ever checked).
+
+### 2.3 Method swaps (MonoPatcher, ts3fixes, ts3agent)
+
+| Who | What it swaps | In an allow-listed closure? | Verdict |
+|---|---|---|---|
+| `fp.houseboatfix` via MonoPatcher `PatchAll` | 3 `ReplaceMethod` targets: `SimRoutingComponent` houseboat enter/exit methods [verified: custom-attribute scan] | no | compatible |
+| Smooth Patch | none (no MonoPatcher call, no swap API; 14 reflection `Invoke` sites, all CAS/UI) | no | compatible |
+| MonoPatcher itself | provides `ReplaceMethod`, `ReplaceIL`, `ForceJIT`; no installed mod uses `ReplaceIL` | - | compatible; G-A0 L2 logging stays |
+| ts3fixes `HoursMemoHook` on `Lot.GetHoursOfOperation` | pilot union, v0, 107 ready, 58 new-rows closures | yes | **needs guard G-M3**: the hook writes its memo stamp even with `kHoursMemo` off, and the memo plus counters when on |
+| ts3fixes `SpatialCacheHook` on `Queries.GetObjects(Type, ulong)` | pilot union, 2 v0, 120 ready, 60 new-rows, 1 hooked closures | yes | **needs guard G-M3**: always installed (switch `kSpatialCache` off by default, read inside the hook); when on it fills a static `Dictionary` and counters from the worker |
+| ts3fixes `Cane.SimRequiresCaneWalk`, `Route.Plan`, `Simulator.DestroyObject` hooks | 1 new-rows, 1 blocked, 4 blocked closures | not in ready ones | compatible for now; same rule once those rows open |
+| ts3fixes AutShadow hooks (H1-H6, `CalculateScore`, `ScoreInteractionsForMetaAutonomy`) | cut points of the closure | by design | compatible (they test `OnWorker()` first) |
+| ts3agent `SwapMethod` | only its own test types (`patch_test`, `patch_test_cold`) [verified: source] | no | compatible (harness only) |
+
+The current `GuardSweep` checks L3 only on each definition's `Test`/`MetaAdSatisfiesCommodity`/`CalculateScore`, the implementors' `HowMuchItWantsSimToCome`/`get_MetaAds` and 6 shared methods. A MonoPatcher `ReplaceMethod` on a deeper closure method (for example `CheckAvailabilityOnLot`) would not be seen; no installed mod does that today, so this is G-M4 for future mods, not a current hit.
+
+### 2.4 Types that derive from allow-listed classes or override closure virtuals
+
+- **Definitions:** LynMods' `StudentUnionLibrary` declares two subclasses of `VisitCommunityLot+Definition` (v0). The exact-type lookup in `AddObj` (`sDefIndex`) misses them, so those ads stay on the game's path [verified: subtype scan + source]. NRaas definitions (Overwatch's `AgeUpEx`, `GetMailEx`, `GetSmeltEx`, `HarvestEx`, `RobotScanEx`, ErrorTrap's) are not meta definitions and not on any list. **Compatible.**
+- **Implementors:** the Store repack's `ComboBookstoreBistroDOT07`, `ComboMilitaryPolice`, `Skydiving` and ts3fixes' `RabbitHoleHook` (a hook holder, never instantiated) derive from `RabbitHole`. `ImplVerdict` accepts `RabbitHole` subclasses only from the two MVID-checked assemblies, so store rabbit holes (in `Sims3StoreObjects`) are not scored on the worker [verified: source]. **Compatible**; coverage note only.
+- **Virtual dispatch into mod code:** NRaas' common interaction base (`BaseInteraction`1`, shipped in both Overwatch and ErrorTrap) overrides `InteractionInstance.GetTargetLot` and `InteractionInstance.GetInteractionName`. Two EA callers in tier-2 closures reach them on interactions in the actor's queue: `Occupation.IsSimGoingToWork` (12 closures: `CreateBabyWith`, `GoHome`, `InviteToJoinConversation`, `SocialInteractionA`, 2 online video game definitions, `NotAutonomousForSelectableSims`, `PickUpPet` and 4 more) and `InteriorDesigner.TestHelper` (`CompleteRenovation`). With an NRaas interaction queued (Overwatch's replacement harvest or mail interactions are ordinary queue entries), the worker runs NRaas code: `GetTargetLot` is a read that defers to EA's base; `GetInteractionName` goes through NRaas' localizer, whose error path writes a log [verified: index edges; that such an interaction is in a scored actor's queue during a search is inferred]. Pilot and v0 are not affected. **Needs guard G-M5** for those 13 tier-2 definitions.
+- **The three Store DLLs that load** override only `IViewableBase.IsViewable` (`PriusC`, `PriusPlugin`, `Zoe`), reached from `ViewObjects+Definition`, which is not ready. Compatible.
+
+### 2.5 Static writes reachable from scoring
+
+Mod code enters a worker closure only through §2.3 swaps and §2.4 overrides; the worker raises no events (docs/73 §5.3), so mod listeners never run there. Writes by mod code into EA fields that the closures read all happen on the sim thread outside a search: Overwatch's world-load cleanups (`Sim.mAutonomy`, `Autonomy.PreferredVenues`, `MetaAutonomyTuning.DesiredSimFunction` on combo rabbit holes, which the worker hook H5 answers with an abort anyway), NRaas `Tunings.CloneTuning` at pre-load for its own definition types (it copies `ScoringFunction` and `AlwaysChooseBest` into the new tuning objects), simler90's tuning loader, LynMods' `VisitCommunityLot.mFollowers` in its interaction's `Run`. The quiescent-window premise (docs/122 §1.2) covers them [verified: field-write scan; inferred: none of them runs inside the window].
+
+## 3. Tuning
+
+- **Mod ITUN:** 419 resources in 6 packages (4 single-row fixes, the 4 Store packages). None is for a v0 definition. 16 rows cover 13 tier-2 store definitions (baby swing, walker, playpen, changing table, spell book, tree of prosperity): each has one `ScoringFunction` element with an empty name and `alwaysChooseBest="False"`. One mod row names a scoring function (`WatchBandInstrumentScoringFunction` on `LaserHarp+Watch`, not on any list); one sets `alwaysChooseBest="True"` (Store `UberToilet+UseToilet`, not on any list) [verified: XML scan].
+- **Mod XML tuning:** `[Tunable]` statics applied by the tuning loader at start-up (social multipliers, protest timing, leaf piles, money tree, toddler routing distances, camera, our own switches). The worker reads them in place; none changes during play. Compatible.
+- **EA tuning (`GameplayData.package`, for completeness):** 4,128 ITUN, 61 with `AlwaysChooseBest`. All 12 v0 rows: empty scoring function, no `AlwaysChooseBest` (I-124-4 now verified). Tier 2: 197 rows for ready/new-rows/hooked definitions, of which **15 name 8 scoring functions** (`WatchTVScoringFunction` on 6 TVs and the Store `MovieScreen`, `ScoreTeenHangoutForRabbitHole` on 2 meta-rest rabbit-hole definitions, `PlayWithMultiplier`, `GetChildOutOfChairModifier`, `LookOutWindowFunScoring`, `CleaningScoringFunction` x2, `LayDownScoringFunction`) and 2 set `AlwaysChooseBest` (`Cane+HarassEveryone`, `Terrain+MopPuddle`). docs/126's roots are `Test` + `CalculateScore`; the delegate call in C8 is not followed, so these 8 closures were missing. Run with the same rules (cuts, hooks, pilot union) on EA's and on simler90's assemblies, **all 8 are ready**: no new IC, no new managed write; `PlayWithMultiplier` and `GetChildOutOfChairModifier` need the existing `sMaxHunger` pre-warm, `LayDownScoringFunction` has the RNG abort branch [verified: tool output]. They go into the scoring-function allow-list of G-M2; `docs/data/autonomy-tier2.csv` itself is unchanged.
+
+## 4. Where the scoring-function check goes (docs/121 §4.4 open point)
+
+- **Field:** `InteractionTuning.ScoringFunction` (a `ScoringFunctionDelegate`), with `ScoringFunctionOnlyAppliesToSpecificCommodity` next to it. Read only in `Autonomy.CalculateScoreForObjectInteraction` (C8) and `Autonomy.CalculateScoreForSocial`; written only by `InteractionTuning.LoadTuning` in EA code [verified: field index]. Mods write it only through NRaas' `CloneTuning`, at pre-load, into new tuning objects for their own types [verified: field index + callers]. `AlwaysChooseBest` sits on the same object, read only by `BestScores.Add` (D1).
+- **Place: the sim thread, at request time, in `AutShadow.AddObj`**, where each pair's `q.Def[p]` is set. Per pair: `InteractionObjectPair.Tuning` (a plain field read, `mTuning`); null = no tuning attached yet, leave it to the worker's H9 rule (a tuning-cache miss aborts); `ScoringFunction` null = pass; non-null = pass only if the delegate's target method is on the scoring-function allow-list (method id and declaring assembly MVID, accepted per G-M1) and passes L3, else `q.Def[p]` = a new skip code `sf` with a counter in the docs/122 skip family. Record `AlwaysChooseBest` for the pair in the same pass (docs/124 rule 3 side list).
+- **Why not in the worker:** the tuning object is shared, set at load and replaced only by sim-thread code (tuning generation, docs/124 §2.3); between `AddObj` and the worker run the sim thread runs no script (quiescent window), so a check on the worker would read the same value at extra cost on the hot path. A debug-only assert in Mode R (worker sees the same delegate the request saw) is enough to prove that premise.
+- **Go-live (docs/124):** the same check in the eligibility step before the request; a tuning-generation change already drops in-flight results.
+
+## 5. Guard additions (for docs/104 and the `[AutShadow]` mod guard)
+
+| Id | Check | Where, when | Current install effect |
+|---|---|---|---|
+| G-M1 | MVID **accept list per build set** instead of one EA pair: (SGS, SGO) pairs, each tied to a §7 re-run; optional `ScriptCore` entry (EA `ee57f83a…`, ErrorTrap `99b5bd68…`). Unknown pair = off for the session, as today | `MvidCheck`, once per session | adds simler90 UPDATE242 (`bb8cb38b…`, `a95a143f…`); without it `[AutShadow]` never runs on the reference install |
+| G-M2 | Scoring-function check per pair (§4); SF allow-list = docs/126's 3 sampled + the 8 of §3, method id + MVID | `AddObj`, sim thread, per request | no skip expected (no allow-listed definition names a scoring function except the tier-2 ones above) |
+| G-M3 | ts3fixes hooks that sit inside an allow-listed closure test `OnWorker()` first and tail to the original there (the AutShadow hooks' pattern): `HoursMemoHook`, `SpatialCacheHook`, and any later hook whose target the §7 re-run finds in a closure | ts3fixes code | removes the only static writes a worker would make today |
+| G-M4 | L3 over **every managed method of the allow-listed closures** (static list from the tool, ~1,000 ids for pilot + v0, more with tier 2), not only direct callees; accept list = ts3fixes' own (target, hook class) pairs after G-M3 | `GuardSweep`, per load and on `ForceJIT` byte change; also after ts3agent `patch_*` commands | none today (houseboat swaps are outside); catches a future `ReplaceMethod` deep in the closure |
+| G-M5 | Virtual-slot census: for each EA virtual or interface slot the closures call (static list), reflect once per load over types from assemblies not on the G-M1 list; an override marks every closure that dispatches through that slot `skip` | load, sim thread | NRaas `BaseInteraction`1` -> 13 tier-2 definitions skipped (v0 and pilot untouched); routing has the same census (docs/104 §5.5) and can share it |
+| (kept) | exact runtime type + MVID for definitions and implementors | as built | catches LynMods' `VisitCommunityLot` subclasses, NRaas definitions, Store duplicates, store rabbit holes |
+
+## 6. Verdict per mod
+
+| Mod | Verdict | Why |
+|---|---|---|
+| simler90 Gameplay Core Mod UPDATE242 | **blocks as built; needs guard G-M1** | replaced SGS/SGO fail the MVID check; content re-checked: no new IC or write, verdicts unchanged |
+| NRaas Overwatch | needs guard G-M5 (tier 2 only) | `InteractionInstance` virtual overrides reached by 13 tier-2 closures; tuning clones and world-load cleanups are sim-thread, outside the window |
+| NRaas ErrorTrap | needs guard G-M5 (tier 2 only); compatible for v0 | same NRaas base class; its `ScriptCore` changes are outside the non-blocked closures |
+| MonoPatcher | compatible | library; its only user here swaps routing methods outside the closures |
+| Smooth Patch | compatible | no swaps, no closure contact |
+| Houseboat fix | compatible | 3 swaps outside the closures |
+| University More Shell Entries (LynMods) | compatible | definition subclasses skipped by the exact-type rule |
+| University Replacement Shells | compatible | no closure contact |
+| Sims 3 Store repack (4 packages) | compatible | duplicate types not loaded; 3 loaded DLLs only override `IsViewable` outside ready closures; tier-2 store tuning has no scoring function |
+| ts3fixes (ours) | **needs guard G-M3** | `HoursMemoHook` and `SpatialCacheHook` sit in most closures and write statics |
+| ts3agent (ours) | compatible | `lock` between sim-thread tasks only; swaps only its own test types |
+| ITUN fixes (ocean, workbench, LaserHarp, helm) | compatible | no allow-listed definition; LaserHarp's scoring function is the case G-M2 exists for |
+| XML tuning packages | compatible | start-up tunables |
+| Other 145 packages | compatible | no script, no tuning |
+
+## 7. Reproduce
+
+1. Extract: `node tools/extract-assemblies.ts <scratch>/<mod> <package>` per package; for a replacement mod put its DLLs next to copies of the EA assemblies it does not replace, named by module (`Sims3GameplaySystems.dll`, ...), so the index resolves cross-assembly calls.
+2. Index: `node tools/managed-callgraph.ts build --asm <scratch>/<set> --out <scratch>/idx/<set>`.
+3. Allow-list verdicts on that build: `node tools/autonomy-tier2.ts --asm <scratch>/<set> --index <scratch>/idx/<set>/index.json > <scratch>/tier2-<set>.csv`, then compare columns `closure_methods`..`verdict` with the EA run (same command on `game-copy/assemblies`). Any verdict change or new pilot-union IC/site = do not accept the MVIDs.
+4. Scoring functions: names from the ITUN XML (`ScoringFunction name=`), closures with the same rules (scratch variant of step 3 that adds the named methods as roots).
+5. Per mod (scratch scripts on the same metadata reader, not in the repo): callers of `System.Threading.Monitor`, thread creation, `Synchronized` flags, swap APIs (`MethodBase.MethodHandle` + `Marshal.Copy`, MonoPatcher attributes), subtypes of allow-listed types, mod overrides of virtual methods in the closures, writes into EA fields the closures read; IL diff of replaced assemblies with tokens resolved to member names.
+6. Runtime check of what loads: ErrorTrap's "Loaded Assemblies" block in any harness `events.jsonl`.
+
+## 8. Ledger
+
+docs/51 §172, I-128-1..12; rows I-120-6, I-121-10 and I-124-4 updated.

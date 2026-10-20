@@ -1,0 +1,53 @@
+[
+  {
+    "id": "bp-reload-run-2",
+    "note": "Release v0.1.4 reload check (Rodney 2026-10-20): load Matrix-NewDowntownWorld-run-2, a save the release build (ts3native 0.36.0, release ini) wrote today with background routing on (saved unpaused), then 3 min seeded play. Pass: the save loads (world loaded, in live mode, households > 0), 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", asyncStarted > 0, stuck Sims within docs/TESTING.md.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "save": "Matrix-NewDowntownWorld-run-2",
+    "run": {
+      "profile": {
+        "minutes": 3,
+        "seed": 12345
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 15
+  },
+  {
+    "id": "sv-reload-run-4",
+    "note": "Release v0.1.4 reload check (Rodney 2026-10-20): load Matrix-SunsetValley-run-4, a save the release build (ts3native 0.36.0, release ini) wrote today with background routing on (saved unpaused), then 3 min seeded play. Pass: the save loads (world loaded, in live mode, households > 0), 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", asyncStarted > 0, stuck Sims within docs/TESTING.md.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "save": "Matrix-SunsetValley-run-4",
+    "run": {
+      "profile": {
+        "minutes": 3,
+        "seed": 12345
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 15
+  },
+  {
+    "id": "ip-reload-run-3",
+    "note": "Release v0.1.4 reload check (Rodney 2026-10-20): load Matrix-IslaParadiso-run-3, a save the release build (ts3native 0.36.0, release ini) wrote today with background routing on (saved unpaused), then 3 min seeded play. Pass: the save loads (world loaded, in live mode, households > 0), 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", asyncStarted > 0, stuck Sims within docs/TESTING.md.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "save": "Matrix-IslaParadiso-run-3",
+    "run": {
+      "profile": {
+        "minutes": 3,
+        "seed": 12345
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 15
+  }
+]

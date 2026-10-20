@@ -404,7 +404,7 @@ Only the pass-through layer: guard thunks in every provider-table slot, the F2 d
 - Cut at the return of `0xD81840` on `[MonoThread]`'s slot stub, request and worker dispatch, window and stop flags, `IsWorker` / `Abort` ICs (`mono_add_internal_call`); needs M5 F1 at `0xD8A8E0` first.
 - Rooted column for managed answers (`g_asRefsRooted`, `g_asEmptyStr`, F2's `g_asFmtExc`) and the array allocator (`g_asNewArray`: `mono_array_new_specific` under the P3 lock); until then reference and array answers abort `ref`.
 - Request rows: `AsAddRow` for actor, Sims (always refreshed), meta objects, doors. The `simstale` rule of §2.3 (refresh only reachable Sims) is not built: every Sim row is refreshed at each cut.
-- Check every snapshot body's not-found path for a raise (I-122-26) and the remaining argument layouts (I-122-20) before G-A3.
+- ~~Check every snapshot body's not-found path for a raise (I-122-26) and the remaining argument layouts (I-122-20) before G-A3.~~ Done: bodies §14.8, shim side and memo bodies §14.9 (one memo keying fix, ts3native 0.36.3).
 - ts3fixes: `AutShadow.ScoreMeta`, hooks H4-H6, Mode R/W compare, counters, switches; per-method mod guard (G).
 - Counter reader in `tools/probe/agent.js`; `asUnguarded` / `asWorkerClassInit` (export v2).
 
@@ -468,7 +468,7 @@ The ts3fixes half compiles clean against the game assemblies and its logic selft
 - **In game first (G-A3, then G-A4):** queue `tools/harness/queues/autshadow-first.json`, ready to run: §14.7.
 - `DumpOnMismatch` is only passed to ts3fixes; the native snapshot dump of §5.1 is not built.
 - `unguarded` and `workerClassInit` are reserved v2 fields, not wired (need an icall-resolution hook and a class-init hook).
-- ~~Still open from §13.4: every snapshot body's not-found path for a raise (I-122-26) and the remaining argument layouts (I-122-20)~~: closed statically in §14.8.
+- ~~Still open from §13.4: every snapshot body's not-found path for a raise (I-122-26) and the remaining argument layouts (I-122-20)~~: closed statically in §14.8; shim side and the 7 memo bodies in §14.9.
 - Once a run started, the M5 worker is the shadow worker for the session: a later non-AutShadow job on it would also get snapshot answers. No such job exists.
 - ts3fixes items only the game can show (I-122-34 to I-122-37): the `int` stand-in return of the B13 hook, `FieldInfo.GetValue` on the worker for private fields (a corlib IC), boxing in H4 under the P3 lock, the L3 layout assumption, static constructors of implementors and definitions run by the reference first.
 - Counter reader for `ts3native_autshadow` v2 in `tools/probe/agent.js`: added (§14.7).
@@ -535,3 +535,27 @@ Static only (capstone over `game-copy/bin/TS3W.exe`, `functions.csv` boundaries,
 | I-122-37 | **Finding:** the warm-in reference does not run the worker-only hook branches: on the sim thread every hook takes its `Orig` path. Code first executed on the worker is H4's `IDictionary.Contains(object)` and `this[object]` on `Dictionary<ulong, OnlineDatingRecord>` (the game uses `ContainsKey` and the typed indexer instead), plus our helpers `Accepted` and `Cached`; `Cached`'s dictionary calls (`TryGetValue`, `GetObjectCacheVersion<IPortalConnectionObject>`) are the game's own `IsAllowedInRoom` calls and are already warm. So the interpreter transforms those methods on the worker (docs/120 §3.3 risk). Fix (ts3fixes, small): at the warm-up, call `Accepted(recs, 0, 0)` (when online dating is active) and `Cached` once on the sim thread. Not built here |
 
 I-122-31 (the return hook in `[MonoThread]`'s slot stub) was not re-checked: native, and the first count job tests it directly.
+
+### 14.9 Shim side of I-122-20 / I-122-26 and the memo bodies (2026-10-20, ts3native 0.36.3)
+
+Static (capstone over `game-copy/bin/TS3W.exe`, managed externs from the decompiled `ScriptCore`) plus the offline selftest; no game run.
+
+**The shim never makes up a default.** `AsWorkerAnswer` returns only what the game's own body returned for the same key (stored at the cut by `AsRefresh`, or on the sim's own call for memo rows); a key that is not in the published version aborts the run (`row`, `pos`, `list`, `memo`, ...) and the struct result memory and outs stay untouched. So every not-found default in the §14.8 table reaches the worker unchanged (null array = `payN` 0 -> null; null ref; short -1 masked to 2 bytes by `AsMaskRet`; Vector3 zero; zeroed 16 B keys). No mismatch there [verified by reading the code; T1 covers hit, miss and unlisted paths].
+
+**The 7 memo rows (the remaining I-122-20 layouts).** They do call the body (on the sim thread, through `AsSimMemo` / `AsCallRaw` with `nArg` dwords), so their layouts matter. All match `kAsDesc` [verified in the disassembly]:
+
+| IC | Body | Stack dwords | Return | Not-found | Outs written |
+|---|---|---|---|---|---|
+| `DeviceConfig_GetOption(string, out uint)` | `0x741230` | string 0 (host `+0x58` to native), out 1 | bool `al` | option missing (`0x58ED70` loop ends) or null string -> 0 | **only when found** |
+| `GameUtils_IsWorldInstalled(uint)` | `0xEC1000` | id 0 | bool (0/1 in `eax`) | 0 | - |
+| `UserToolUtils_GetProductImpl(uint, ulong, uint, uint)` | `0xCE6320` | 0, 1-2, 3, 4 | uint handle | no host / manager -> 0 | - |
+| `UserToolUtils_ProductGenericImpl(uint, uint, ref uint, ref ulong, ref uint, ref uint, ref float)` | `0xCE99E0` | 0, 1, refs 2-6 (8 B at 3) | string | handle not type `0x45` / no object / funcID > 0x27 -> common exit `0xCEA25B`: the empty local text through host `+0x50` (a new managed string each call; the memo replays the recorded one) | **per funcID** (e.g. one writes only the float, one the ulong + two uints) |
+| `World_GetLotName(ulong)` | `0x7955C0` | 0-1 | string | no WorldManager -> null | - |
+| `World_GetLotNameKey(ulong)` | `0x7956C0` | 0-1 | string | no WorldManager -> null | - |
+| `DeviceConfig_GetProcessorLevel()` | `0x741130` | none | int | no config -> 0 | - |
+
+No direct raise call on these not-found paths (their call closures were not walked); even if one raised, it would be the sim thread's own managed call (the memo thunk holds no lock across the body).
+
+**Mismatch found and fixed.** The memo recorded every out after the call and keyed only on the non-out arguments. When a body leaves an out unwritten (`GetOption` on a missing option; `ProductGenericImpl` for most funcIDs, whose managed wrapper passes the caller's `ResourceKey` fields in by `ref`), the game leaves the caller's own value there, but the worker got the sim caller's value replayed. Fix in `AsKeyOf`: memo rows also key on the in-values of their out/ref parameters, computed before the body runs. A replay is then exact (same in-values -> same outs, written or not); a different in-value is a memo miss and aborts `memo`, never a wrong answer. Keys fit `AS_KEY` = 8 (ProductGeneric: 2 + 6 dwords). Cut rows are unchanged: the only cut row with an out (`World_GetLotLocationImpl`) always writes it (§14.8). Selftest: `AfOption` now writes its out only when found, like `0x741230`; new T1 cases (a missing option recorded with in-value 42 replays 42 to a worker caller holding 42; a worker caller holding 5 aborts `memo` and keeps 5) pass.
+
+**Other residuals.** `ScriptCore.UTFConnectorSimulator::Simulator_GetTaskImpl` (same signature as row 7) has no descriptor, so a worker call gets the guard thunk's unlisted path: abort `ic`, never a snapshot answer [verified in code; whether the closure reaches it stays unchecked, it only costs a run]. A null `Type` in a rows 15-17 key would fault natively at the next cut; managed callers always pass `typeof(T)`, so no guard was added.

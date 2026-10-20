@@ -768,6 +768,27 @@ static bool PcWp(PcWork& w, const PcCut& c, u8* cp) {
     return true;
 }
 
+// 0.35.26 (docs/94 §22.30): true = PcAcquire for cut `ver` makes no game call (no new cAStarSearch, no W' made or dropped, no
+// FindClosest or closed-list init, i.e. the same R image as the last acquire). It then reads only the cut's copies and the P3
+// images and writes only the worker's copy and the clone (under g_rpUse), so P5 runs it inside the lent +0x918 window instead
+// of under the job's hold (5-6 ms per acquire on BP). Worker only: g_pcWork is the worker's
+static bool PcAcquireOwnOnly(DWORD ver) {
+    const PcWork& w = g_pcWork;
+    if (!w.astar && g_pcAstarCtor) return false;
+    bool own = false;
+    AcquireSRWLockShared(&g_pcCutLock);
+    int ci = -1;
+    for (int i = 0; i < kPcSlots; i++) if (g_pcCuts[i].ver == ver && g_pcCuts[i].ok) ci = i;  // PcAcquire's pick
+    if (ci >= 0) {
+        const PcCut& c = g_pcCuts[ci];
+        const SpImg* r = c.v ? c.v->w[SP_R] : NULL;
+        const bool rNew = r && r->size >= 12 && *(const DWORD*)r->data && *(const DWORD*)(r->data + 4) && r != w.rImg;  // PcR copies it
+        own = !c.liveW || (w.wp && w.wpLive == c.liveW && w.wpClosed && !rNew && w.wpRImg == w.rImg);
+    }
+    ReleaseSRWLockShared(&g_pcCutLock);
+    return own;
+}
+
 static int PcAcquireBody(DWORD ver, P4Clone* out);
 static int PcAcquire(DWORD ver, P4Clone* out) {  // the worker's phase marker back to the caller's (P5 acquires inside its job)
     const LONG phase = g_p4Phase;
