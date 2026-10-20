@@ -590,7 +590,8 @@ address,name,type,comment
 0x00EA1080,runtime_invoke_not_supported,function,[verified: function entry in our Ghidra database] Stub in the slot before init <docs/15 Phase 3>
 0x00EA1290,mono_field_set_value,function,[verified: function entry in our Ghidra database] Embedding API (S3MM signature) <docs/06>
 0x00EA1350,mono_field_get_value,function,[verified: function entry in our Ghidra database] Embedding API (S3MM signature) <docs/06>
-0x00EA1400,mono_runtime_invoke,function,[verified: function entry in our Ghidra database] <docs/18>
+0x00EA1400,mono_runtime_delegate_invoke,function,"[verified: disassembly] Looks up the delegate class Invoke method (0xE70D30, -1 params, two object.c asserts) and calls the runtime-invoke slot [0x1195B60]; was misnamed mono_runtime_invoke <docs/118>"
+0x00EA1090,mono_runtime_invoke,function,[verified: disassembly] jmp [0x1195B60] (slot filled by mono_install_runtime_invoke) <docs/118>
 0x00EA1470,mono_install_runtime_invoke,function,[verified: function entry in our Ghidra database] <docs/15 Phase 3>
 0x00EA2AD0,mono_class_vtable,function,[verified: function entry in our Ghidra database] Faulted at 0xEA2B03 with domain NULL (route worker crash) <docs/15 Phase 3>
 0x00EA30F0,mono_array_new,function,[verified: function entry in our Ghidra database] Embedding API (S3MM signature) <docs/06>

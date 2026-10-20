@@ -28,6 +28,7 @@ static const u8 kPlPushReg[PL_N] = {0, 1, 0, 0, 0, 0};  // node register at the 
 static const DWORD kPlElem[PL_N + 1] = {0x14, 0x1C, 0, 0, 0, 0, 0x18};  // node size when the live pool object is not there yet
 static volatile LONG g_rpOpTid;    // replay clone work (build, rebase, drain); set inside the +0x918 hold
 static volatile LONG g_plJobTid;   // a P4 clone run (PoolsEnterJob)
+static bool g_plJobOwn;            // that run took g_plSet (job thread only)
 static __declspec(align(16)) u8 g_plPool[PL_N + 1][0x20];
 static volatile LONG g_plMade[PL_N + 1];
 static LONG g_plOn;                // tree sites patched and the region reserved (replay may run)
@@ -211,8 +212,31 @@ static bool PlMoved(const PlSeen& was, const u8* p) {
 
 // replay clone work: this thread's tree pool pops are private between RpOpEnter and RpOpLeave (the caller holds +0x918).
 // Functions, not a scope object: the callers use __try.
-static LONG RpOpEnter() { return InterlockedExchange(&g_rpOpTid, (LONG)GetCurrentThreadId()); }
-static void RpOpLeave(LONG prev) { InterlockedExchange(&g_rpOpTid, prev); }
+// 0.35.12 (docs/94 §22.15, I-94-460): the private pool set has one owner at a time (g_plSet). Before, the sim's cut
+// (rebase, clone build: tree and map pool pops under +0x918) ran while a Mode=1 shadow on the worker (no +0x918, private
+// pools by g_plJobTid) popped and pushed the same unlocked free lists; plOverlap saw only the job-enters-second order
+// (BP/IP 0.35.9: 2 / 4). Now the owner holds g_plSet: the sim only tries (RpOpTry: never a wait while it holds +0x918,
+// which a P5 ask takes inside a run), the consumer tries too (busy = retry), a P4 run waits for it (PoolsEnterJob).
+static SRWLOCK g_plSet = SRWLOCK_INIT;
+static bool RpOpTry(LONG* prev) {
+    const LONG me = (LONG)GetCurrentThreadId();
+    if (g_rpOpTid == me || g_plJobTid == me) { *prev = me; return true; }  // nested: this thread owns the set already
+    if (!TryAcquireSRWLockExclusive(&g_plSet)) return false;
+    *prev = InterlockedExchange(&g_rpOpTid, me);
+    return true;
+}
+static inline LONG RpOpEnter() {  // the tests (inline: the DLL no longer calls it, 0.35.13)
+    LONG prev;
+    while (!RpOpTry(&prev)) Sleep(0);
+    return prev;
+}
+static void RpOpLeave(LONG prev) {
+    const LONG me = (LONG)GetCurrentThreadId();
+    if (prev == me) return;  // nested
+    if (g_rpOpTid != me) return;  // not this thread's (a test's stray leave)
+    InterlockedExchange(&g_rpOpTid, prev);
+    ReleaseSRWLockExclusive(&g_plSet);
+}
 
 // P4 (p4.cpp, docs/94 §16.6 P4 note): around a clone run on the worker, every pool this thread pops is private (A*, goal,
 // cell, quadtree cell, tree). false = the sites are not in place: run no clone search. The run must not overlap replay clone
@@ -222,12 +246,21 @@ static bool PoolsEnterJob() {
     Ts3nCounters& k = ts3native_counters;
     if ((k.plReady & 3) != 3) return false;
     const LONG me = (LONG)GetCurrentThreadId();
+    if (g_plJobTid == me) { InterlockedIncrement(&k.plOverlap); return true; }  // nested enter: a pairing bug of ours
+    const bool own = g_rpOpTid != me;  // this thread's replay op owns the set already
+    if (own) AcquireSRWLockExclusive(&g_plSet);  // the sim's cut holds it for a few ms at most; no lock of ours inside
     const LONG op = g_rpOpTid;
     if (InterlockedExchange(&g_plJobTid, me) || (op && op != me)) InterlockedIncrement(&k.plOverlap);
+    g_plJobOwn = own;
     InterlockedIncrement(&k.plJobs);
     return true;
 }
-static void PoolsLeaveJob() { InterlockedExchange(&g_plJobTid, 0); }
+static void PoolsLeaveJob() {
+    if (g_plJobTid != (LONG)GetCurrentThreadId()) return;
+    const bool own = g_plJobOwn;
+    InterlockedExchange(&g_plJobTid, 0);
+    if (own) ReleaseSRWLockExclusive(&g_plSet);
+}
 static void PoolsEnterJobHook() { PoolsEnterJob(); }
 extern void (*g_p4PoolsEnterJob)();  // p4.cpp: called around each clone run (NULL = the run uses the game's pools)
 extern void (*g_p4PoolsLeaveJob)();

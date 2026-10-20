@@ -1,0 +1,14 @@
+# Queue future-lighting-uaf 2026-10-19
+
+Tool: `tools/harness/queue.ts` (docs/TESTING.md). Times UTC (PHT in brackets). Rows: `probe-out/queue/future-lighting-uaf-2026-10-19.jsonl`.
+
+## 2026-10-19T05:23 UTC, build ee6a27c, jobs bp-future-direct-1, bp-future-direct-2, bp-future-direct-3, bp-future-portal-1, bp-future-portal-2, bp-future-direct-nolotstream
+
+| job | start | min | result | verdict | exit | commit / private / largest free MB (before -> after) | counters changed | note |
+|---|---|---|---|---|---|---|---|---|
+| bp-future-direct-1 | 05:23 (13:23) | 3.1 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2231.5/1855.5/1484.9 -> 2255.5/1878.6/1468.9 | flushDeferred +5, flushJobs +3, flushLastMs +164, compressCommits +42, compressDirectCalls +21928, compressDirectMs +2856, compressDirectMB +404 | docs/67 §5 crash C repro: direct future trip (same as bp-travel-future-direct); crash at 0x6A81D6 or another LightingSolver +0x234 reader = repeat |
+| bp-future-direct-2 | 05:26 (13:26) | 3.1 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2219/1848.9/1484.9 -> 2257/1876.5/1468.9 | flushDeferred +5, flushJobs +3, flushLastMs +110, compressCommits +42, compressDirectCalls +21913, compressDirectMs +2783, compressDirectMB +400 | docs/67 §5: second direct trip |
+| bp-future-direct-3 | 05:29 (13:29) | 3.1 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2239.4/1850.6/1484.9 -> 2241.1/1874.6/1468.9 | flushDeferred +5, flushJobs +3, flushLastMs +46, compressCommits +42, compressDirectCalls +21888, compressDirectMs +2829, compressDirectMB +393 | docs/67 §5: third direct trip |
+| bp-future-portal-1 | 05:33 (13:33) | 3.3 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2233.5/1851.9/1484.9 -> 2254.8/1882.8/1484.9 | flushDeferred +5, flushJobs +3, flushLastMs +39, compressCommits +42, compressDirectCalls +21926, compressDirectMs +2758, compressDirectMB +395 | docs/67 §5 control: queued portal Travel (game's own sequence); a crash here too = game bug, not our direct order |
+| bp-future-portal-2 | 05:36 (13:36) | 3.4 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2229.7/1840/1500.9 -> 2251.6/1865.9/1500.9 | flushDeferred +5, flushJobs +3, flushLastMs +39, compressCommits +42, compressDirectCalls +21922, compressDirectMs +2836, compressDirectMB +393 | docs/67 §5 control: second portal trip |
+| bp-future-direct-nolotstream | 05:40 (13:40) | 3.1 | **FAIL** | travel: FAIL<br>summary: 1 cases, 0 passed, 1 failed (travel) | 1 | 2229.2/1849.4/1500.9 -> 2270.2/1895.4/1398.2 | flushDeferred +5, flushJobs +3, flushLastMs +42, compressCommits +42, compressDirectCalls +21895, compressDirectMs +2825, compressDirectMB +396 | docs/67 §5: direct trip with S3SS LotStreamingOptimizations off (does the throttled lot LoD after arrival trigger it?) |

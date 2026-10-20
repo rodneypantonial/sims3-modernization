@@ -52,6 +52,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kCaneEarlyOut value="False" />
     <kTooltipThrottle value="False" />
     <kDoorMirror value="False" />
+    <kAutShadow value="False" />
   </Current_Tuning>
 </base>
 `;

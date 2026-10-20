@@ -1,0 +1,45 @@
+[
+  {
+    "id": "addr-base",
+    "note": "docs/66 §6 baseline: BP 15 min at speed 3, repo ini (InitialHeapMB=352, no stack cap, DXVK default textureMemory). Correctness (watchdog) + /memory before/after: commitMB, privateMB, largestFreeMB, reserveOnlyMB, gcHeapMB/gcFreeMB (probe agent.js)",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": { "soak": { "minutes": 15, "speed": "ultra" } },
+    "timeoutMin": 35
+  },
+  {
+    "id": "addr-heap256",
+    "note": "docs/66 candidate 1: [GC] InitialHeapMB 352 -> 256 (BP peak used ~209 MB at 6 min, F15). Expect -96 MB private/commit at start; watch gcHeapMB after (growth past 256 = too small) and hitches in the watchdog log",
+    "asi": "tested",
+    "ini": { "GC.InitialHeapMB": 256 },
+    "save": "Baseline-BP",
+    "run": { "soak": { "minutes": 15, "speed": "ultra" } },
+    "timeoutMin": 35
+  },
+  {
+    "id": "addr-stack512",
+    "note": "docs/66 candidate 2: [ThreadStack] ReserveKB=512 on exe threads (sim thread 0x76B470 skipped). Needs a build with threadstack.cpp: ts3native.log must show 'thread stack: cap'. Expect reserveOnlyMB down and largestFreeMB up by the logged 'saved' KB",
+    "asi": "tested",
+    "ini": { "ThreadStack.Enabled": 1, "ThreadStack.ReserveKB": 512 },
+    "save": "Baseline-BP",
+    "run": { "soak": { "minutes": 15, "speed": "ultra" } },
+    "timeoutMin": 35
+  },
+  {
+    "id": "addr-tex64",
+    "note": "docs/66 candidate 4: DXVK d3d9.textureMemory 100 -> 64 (Bin/dxvk.conf for this job, put back after). Expect mappedMB down up to ~36 MB; stop if the watchdog shows hitches rising",
+    "asi": "tested",
+    "dxvkConf": { "d3d9.textureMemory": 64 },
+    "save": "Baseline-BP",
+    "run": { "soak": { "minutes": 15, "speed": "ultra" } },
+    "timeoutMin": 35
+  },
+  {
+    "id": "filler-night-soak3h",
+    "note": "filler-night (PLAN 'Filler night job'): 3 h BP memory soak at speed 3, run alone with --only when no other night job is left. Baseline config; switch to the winners of the four jobs above once they pass. Levels off = memory solved for this setup; keeps growing = docs/66 candidate 5",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": { "soak": { "minutes": 180, "speed": "ultra" } },
+    "timeoutMin": 210
+  }
+]

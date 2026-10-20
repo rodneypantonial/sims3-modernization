@@ -1,0 +1,54 @@
+[
+  {
+    "id": "bp-mt-gates-off",
+    "note": "Mono M5 probe (docs/30 §14, docs/120 §9). Correctness/smoke only, timing noisy: 5 min profile, no A/B, no perf verdict. asi autshadow2 = master 0.35.22 (mtprobe v2: ArenaFix + N2mPrivate). Patches installed, gates off: [MonoThread] Enabled=1 GcLock=1 FrameTls=1 Mode=0 ArenaFix=1 N2mPrivate=1 (P3 19 sites + arena fix + F1 detour + P4 frame TLS, no worker, so the lock gate stays 0). Pass = no crash; -native.json mtprobe: version 2, p3Ready bits 0-2 and 4 (arena fix) set (bit 3 only with LockAddRoots=0), p3Sites 19, p4Ready 15, locking 0, lockedCalls 0, lockOverflow 0, workerState 0, workerCtxSet 0, n2mReady 1, n2mWorker 0, n2mOverflow 0; finRuns > 0; arenaDropped and arenaRelNonEmpty reported (I-120-22 first sample). bp-mt-p1 (I-120-1) answered on 0.35.20 and is not repeated.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.N2mPrivate": 1,
+      "MonoThread.Mode": 0
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-mt-idle-worker",
+    "note": "Correctness/smoke only, timing noisy. Same as bp-mt-gates-off with Mode=1: one idle worker registered with GC_new_thread under the lock, gate on while it runs. No managed jobs: the only MtSubmit caller is [AutShadow] (Enabled=0 here, ts3fixes switch autshadow off), so the worker stays idle. Pass = no crash, no freeze; mtprobe v2: workerState 2 (idle) at the end, workerStarts 1, workerTid != 0, workerJobs 0, workerCtxSet 0, lockOverflow 0, workerStopFails 0, locking 1, lockedCalls > 0 (the sim thread now takes the lock), lockWaits/lockMaxWaitUs small, n2mReady 1, n2mWorker 0, n2mOverflow 0, arenaRelNonEmpty / arenaDropped reported; v18 mtThreads one more than bp-mt-p1's 1. Check ts3native.log for the worker start line.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.N2mPrivate": 1,
+      "MonoThread.Mode": 1
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "ip-mt-arena-rate",
+    "note": "I-120-22 (docs/120 §9.1, §9.5 item 5): how often game script tasks end with frames on their arena chain in normal single-thread play. Correctness only, noisy OK. [MonoThread] Enabled=1 GcLock=1 ArenaFix=1 Mode=0 (no worker, no FrameTls needed), Isla Paradiso for the most script tasks, 15 min. Read mtprobe v2 arenaRelNonEmpty (release-all calls that found a non-empty chain = tasks that ended with an exception mid-frame) and arenaDropped (duplicate pool nodes at install + in-use chunks healed), per hour of the profile window; with the per-hour number in docs/51 I-120-22 (> 0 = verified). If often, ArenaFix is worth a single-thread switch without the worker. Pass = no crash; locking 0, lockOverflow 0.",
+    "asi": "game-copy/ts3native.asi.master0352x",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.Mode": 0
+    },
+    "run": { "profile": { "minutes": 15, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 35
+  }
+]

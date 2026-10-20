@@ -25,6 +25,10 @@ Less stutter and more game time per second, mostly by skipping work nobody can s
 - **Faster boat and swimming routes.** Route searches over water use a faster version of the game's own search, with exactly the same results. (`[WaterJps]`)
 - **Faster unpacking of game files.** Textures, objects and other packed data unpack faster, with byte-identical results. (`[Decompress]`)
 - **Saving freezes a little less.** The backup copy of your old save is made in the background while the game writes the new one. (`[SaveWrite]`)
+- **Route planning in the background.** When a Sim plans a walk or drive, the plan now runs on a second CPU core while the game goes on, instead of freezing the simulation until it is done. In our tests the simulation spent 50 instead of 119 ms per second waiting on route plans, and the game ran 10-12% more simulation steps per second with 17% fewer hitches (Bridgeport). The game's own route planner still does the work; only where and when it runs changes. (`[RouteAsync]`, with the safety locks in `[RouteGate]` and `[Discourage]`, which must stay on together; needs `ts3fixes.package` from the same release)
+- **Two small crash and correctness guards for routing.** A removed object's leftover route data is cleaned up before the game walks over it (`[LotRemoveGuard]`), and the route planner starts every search with clean values instead of whatever an earlier call left behind (`[OptsInit]`).
+
+To switch background routing off, set `Enabled=0` under `[RouteAsync]` in `ts3native.ini`; the game then plans every route itself as before.
 
 Everything else in `ts3native.ini` is **off**: experiments and features still being tested. Only switch them on if you want to help test, and keep backups.
 

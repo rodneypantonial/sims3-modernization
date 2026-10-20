@@ -125,6 +125,7 @@ static void DiscDrain(bool force) {
     if (lock) LockAcquireHook(lock, NULL, &kInfinite);  // uncontended: no job runs and none can start
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&k.discDrainWaitUs, waited);
+    HaNote(0x06000000, waited, HA_JOB);
     if (jobRan) InterlockedIncrement(&k.discForced);
     const DWORD now = GetTickCount();
     while (g_discCount) {  // records added by an event handler meanwhile go to the tail and are applied too

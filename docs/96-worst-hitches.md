@@ -125,3 +125,44 @@ Known (docs/64: 80% of >= 200 ms ThreadedObjects slices). New numbers here: 434 
 - 16 runs of 2026-10-16 use the coarse offset (+-1 s); their queue-log matching is fine, their sample matching is not used.
 - One tag was reused for two lengths (`verify-2026-10-16-*` at 420 and 480 s); the tool keys those runs as `tag@secs` and matches each to its own `--minutes` line.
 - Activity snapshots (30 s) and the run-average sim rate are too coarse for per-hitch game-time or spawn attribution.
+
+## 9. Routing-lock share of the long frames (G5 input, 0.34.10)
+
+Question for G5: of the sim thread's long frames (>= 50 ms and >= 100 ms), how much is the sim waiting for the route job (the routing lock `+0x918`, the A10 job waits `RtWaitJob`, gate waits), and how much is everything else (script/Mono, saves, streaming, render)? docs/94 §22.10.1 gives the sim's keyed waits per second (BP env-on 95.5 ms/s), not per frame, so it cannot say whether those waits sit in the long frames or spread over short ones. Built 2026-10-19, offline; not run yet.
+
+### 9.1 Method [verified in our source]
+
+- **Native** `[HitchAttr] Enabled=1` (ts3native 0.34.10, `hitchattr.cpp`, default off, observe only, no game-code hook). The sim (the job owner) already times every wait for the job in four places; each now also calls `HaNote(key, us, class)`:
+  - class 0 `+0x918`: the lock pump in `LockAcquireAsync` for the routing lock. Gate waits (`RgEnter`) arrive here keyed by the leaf's caller, steering by `t_steerRet`, other acquirers by their return address: the docs/84 keys.
+  - class 1, other lock: the same pump for another game lock while a job runs or is queued.
+  - class 2, job wait: `RtWaitJob` (destroy `0x02000003`, drains `0x02xxxxxx`) and the discourage drain (key `0x06000000`).
+  - class 3, plan waited: `RunPlan` waiting for a running job before its own plan (key `0x05000000`).
+  `HaNote` adds to a frame block, the export `ts3native_hitchattr` (wait µs per class, count, the longest wait and its key), and to totals in counters v66 (`haWaits[4]`, `haUs[4]`, `haMaxUs`).
+- **Frames:** `tools/frida/stutter-profile.js` reads and zeroes the frame block at each iteration boundary (the `GC_try_to_collect` entry it already uses), on the sim thread, the only thread that writes the block. The split is therefore exact per iteration and needs no clock fit. Each hitch record gets `rtLock`, `rtOtherLock`, `rtJob`, `rtPlanWait` (ms), `rtWaits`, `rtMaxMs` and `rtMaxKey`; `-seconds.csv` gets the same sums per second as new last columns.
+- **Report:** `node tools/harness/hitch-attr-report.ts [tags]` (default: every `hitch-attr-*` run; `--self-check`; set `TS3_REPO` in a worktree). Per run, with the first 60 s left out (class C, §4.2), it prints:
+  - the sim's wait ms/s by class over all frames;
+  - for the >= 50 and >= 100 ms tiers: count and rate, wall ms and ms/h, route-job wait ms (share and ms/h, the `+0x918` part on its own), the rest, how many hitches the waits dominate (>= half the frame), and how many would fall below the tier without the waits (all classes, or `+0x918` only);
+  - the top keys by the longest wait per hitch;
+  - the P5c cap line.
+- **Queue:** `tools/harness/queues/hitch-attr.json`: BP and IP, 10 min, seed 12345, env-on settings (async + gate + D), no RouteSnap and no P5, plus `HitchAttr.Enabled=1`. Build: `native\ts3native\build.cmd <repo>\game-copy\hitchattr-build`, then copy that folder's `ts3native.asi` to `game-copy\ts3native.asi.hitchattr`.
+
+### 9.2 How to read it
+
+- A wait counts in the frame where it ends. A wait inside a pump that runs the worker's managed callbacks includes those callbacks' time. That is job-caused time the sim would not spend without the job, but it is not idle time. A wait nested inside another wait's pump would count twice; H6 makes this rare (the callbacks' own plans go to the worker, and their lock acquires borrow the lock) [inferred]. If `rtWaits` per hitch ever looks odd, split it.
+- Only the longest wait per frame keeps its key, so the key table ranks the frames' main waiter, not every key's total. The per-key totals stay in the P0 `blockKey/blockUs` counters (docs/84).
+- "Rest" = wall minus all four classes. It holds script/Mono, the route search the sim does itself (sync plans), saves, streaming and the main-thread handoff. Use `-seconds.csv` and docs/96 §2 classes to split it further.
+- Class 1 (another lock) is reported, but P5c does not touch it.
+
+### 9.3 Decision rule (Rodney, 2026-10-19)
+
+A stable P5c ships if it saves a measurable amount of sim time: **about 20 ms/s**, or **a measurable drop in the time or count of >= 50 ms hitches**. A small share of the hitch tail is not a reason to stop. The report therefore prints absolute numbers:
+- `+0x918` ms/s over all frames: the most P5c can save, since it only shortens `+0x918` waits;
+- the `+0x918` ms inside >= 50 ms hitches, and the hitches that would fall under 50 ms without them.
+
+docs/94 §22.10.1 puts the read-only part that 0.34.2 still left waiting at about 27 ms/s BP, and the writers at 18-27 ms/s. Those are the targets to compare with this run's class 0 ms/s. Then check the P5c A/B itself against both rule numbers (sim ms/s and the >= 50 ms hitch counts from `hitch-attr-report.ts` on its runs with `[HitchAttr]` on).
+
+### 9.4 Cost and limits
+
+- Per wait: a few adds on the sim thread. Per frame: one 28-byte read and write from the profiler (the profiler already runs per frame). Off: one flag test per wait.
+- Waits outside these four sites are not counted. These are: QL / C-A waits (`[SteerRO]`, off in env-on), the P5b lent-lock retakes (P5 off here), and a plain contended acquire with no job running or queued (no worker holds `+0x918` then). With RouteSnap or P5 on, the replay consumer and P4 can hold `+0x918` outside jobs; those waits fall through to the game's own acquire and are not counted [verified in `LockAcquireAsync`: no pump without `AsyncBusy`]. So this build is for env-on only, as queued.
+- Effort: build and offline checks ~2 h (done); two 10-minute game runs ~30 min with restarts; reading the report ~15 min.

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "bp",
+    "note": "docs/96 §9 (G5 decision): per-frame sim waits for the route job, [HitchAttr] Enabled=1 (0.34.10, counters v66, observe only); env-on settings (async + gate + D), no RouteSnap, no P5; BP Spring, seeded, 10 min. Build: native\\ts3native\\build.cmd <repo>\\game-copy\\hitchattr-build, then copy its ts3native.asi to game-copy\\ts3native.asi.hitchattr. After: node tools/harness/hitch-attr-report.ts; pass = no crash, haReady 1, the profiler log says 'hitch attribution read every iteration'",
+    "asi": "game-copy/ts3native.asi.hitchattr",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 66,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "HitchAttr.Enabled": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip",
+    "note": "the same on Isla Paradiso (houseboats, water, EP portals; most route-search hitches, docs/96 §4.5)",
+    "asi": "game-copy/ts3native.asi.hitchattr",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 66,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "HitchAttr.Enabled": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

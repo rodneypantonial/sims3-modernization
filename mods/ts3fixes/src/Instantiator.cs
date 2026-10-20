@@ -41,6 +41,7 @@ namespace Ts3Fixes
         [Tunable] public static bool kWildflowerProbe = false;     // test only: the spring wildflower drain logs tries and times per fire, same behaviour (ScriptHotSpots.cs, docs/110)
         [Tunable] public static bool kWildflowerTask = false;      // opt-in until measured: spring wildflower placement runs one try per sim tick in its own task instead of all tries inside the alarm (docs/110 W1)
         [Tunable] public static bool kDoorMirror = false;          // opt-in: per-lot managed door records, pushed to the ts3native door mirror at each plan (DoorMirror.cs, docs/105 §10.5)
+        [Tunable] public static bool kAutShadow = false;          // test only: [AutShadow] pilot, meta autonomy scored again in shadow on ts3native's worker and compared (AutShadow.cs, docs/122)
         [Tunable] public static bool kHoursMemo = false;           // opt-in until measured: a lot's opening hours are worked out once per sim tick (ScriptHotSpots.cs, docs/74)
 
         public const string Version = "0.1.0";
@@ -48,7 +49,7 @@ namespace Ts3Fixes
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } Fixes.ClearNameCache(); };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); };
         }
     }
 }

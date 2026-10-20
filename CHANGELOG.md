@@ -2,7 +2,37 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## Unreleased
+## v0.1.4 (2026-10-20)
+
+Background route planning: Sims plan their walks and drives on a second CPU core while the game keeps running.
+
+### Download
+
+- `ts3native-v0.1.4.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` (replace the v0.1.3 files; **use the new `ts3native.ini`**, the old one keeps background routing off). Needs an ASI loader, as before. Built as ts3native 0.36.0.
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` (replace the v0.1.3 file). Background routing needs this package: it is what hands a Sim's route plan to `ts3native`. Its settings are the same as v0.1.3 (no default changed).
+
+### New in `ts3native` (on by default)
+
+- **Route planning in the background (`[RouteAsync]`, with `[RouteGate]` `Sites=1` `Enforce=1` and `[Discourage]`).** When a Sim plans a route from its own task, the game's own planner now runs on a worker thread while the simulation goes on; the Sim waits tick by tick for its answer. Routing locks keep the main thread off the routing data while a plan runs (`[RouteGate]`), and discourage-area changes made during a plan are applied in order right after it (`[Discourage]`, design D with the D-X destroy and dead-object fixes). Measured on Bridgeport, same build, seeded 10-minute runs, async on vs off: simulation time spent on routing **119 -> 50 ms/s**, **+10-12% simulation iterations/s**, **-17% hitches**; the worst hitches (p99) unchanged within noise (PLAN.md "Async routing (H6) state"; runs: `docs/data/results/2026-10-16-queue-h6-m1.md`, `docs/data/results/2026-10-17-queue-h6-m1.md`; realistic test environment env-off/env-on pairs for Bridgeport and Isla Paradiso: `docs/data/results/2026-10-17-queue-clean-night.md`, build 50bb1d4, jobs `bp-env-off`, `bp-env-on`, `ip-env-on`, `ip-env-off`, all PASS). Replans (`[RouteAsync] Kinds`) stay on the main thread. To turn it off: `[RouteAsync] Enabled=0`.
+- **Already on since earlier builds, now listed:** `[LotRemoveGuard]` (flushes a lot's deferred footprint removals before the game walks them; prevents a crash at `0x63576A`) and `[OptsInit]` (the route planner's search options start at 0 instead of stale stack values; fixes an uninitialised read in the game).
+
+### Shipped but off (switches for testers)
+
+- **Routing snapshot (`[RouteSnap]`, P3/P4 copy, P5 / P5b / P5c answers).** The code is in the build; `ts3native.ini` keeps `Enabled=0`, `Mode=0`, `Lots=none`. It is not part of the measured gains above and has not passed the release checks; turn it on only to help test, with backups.
+- Every other experimental section stays off as in v0.1.3 and the list below: `[ThreadStack]`, `[AutShadow]`, `[MonoThread]`, `[WorldImage]`, `[SteerRO]`, `[SlotEnabledRO]`, `[LotFrontDoorRO]`, `[ObstructedRO]`, `[RouteCache]`, `[RouteWorker]`, `[RouteBudget]`, `[Alloc]` and the rest.
+
+### Tests (release validation, `tools/harness/queues/release-validate.json`)
+
+Results: `docs/data/results/2026-10-20-queue-release-validate.md`. All jobs on the release build (sha256 in `docs/RELEASE.md`) with the release `ts3native.ini`, no per-job overrides; the save matrix runs the fixes as shipped (`--fixes shipped`).
+
+| Group | Jobs | Cases | Result |
+|---|---|---|---|
+| Play, crash-free (12 min seeded) | 3 | Bridgeport, Isla Paradiso, Sunset Valley | 3/3 PASS (BP 16,608 background plans, 0 watchdogs, 0 stuck Sims) |
+| Saves | 3 | Bridgeport, Sunset Valley, Isla Paradiso: 15 saves each with background routing on | 45/45 saves written (result 0); 3/3 reloads PASS (one save per world made unpaused with background routing on, loaded and played 3 min: `docs/data/results/2026-10-20-queue-release-reload.md`). No save code changed since v0.1.3, so the full save matrix was not rerun |
+| Travel round trips + travel save | 6 | France, China, Egypt, University, Future (queued and direct start) | 4/6 PASS; Future: both trips arrived without a crash, the harness could not queue the trip home (known harness gap, not a game fault) |
+| Rare routing scenarios (docs/117) | 21 | winter pond, thunderstorm, full moon werewolf, route bits, ghost walk, occult walks, death walk, big crowd, IP water, world walk (University, France), owned vehicles, stroller, horse ride, zombies, broom flight | 20/21 PASS, 0 crashes; stroller: the harness could not create a stroller object (setup step, not a game fault) |
+
+33 jobs run: 27 PASS, 0 crashes. Failures are harness-side only (Future trip home x2, stroller setup) plus the 3 earlier save-matrix jobs that could not switch experimental save fixes (replaced by the saves row).
 
 ### Recommended setting (optional)
 

@@ -16,9 +16,18 @@
 //   - mod guard (docs/104 as §19.2 narrows it for (b)): M2-1 the code bytes of every site the clone run passes, snapshotted
 //     after the last install, compared at each armed START (a change = a foreign hook: Mode=2 off for the session); M2-2 three
 //     tripwires turn it off; M2-3 MonoPatcher's L2 bytes logged once per finding (no fallback).
-// shortcut: the live +0x918 stays held through the clone run (A10's job hold); releasing it is the P5b step with its own
-// blocker list (docs/94 §22.4). shortcut: L1 (EA image GUIDs) is not built: it is log only under (b) and needs a managed class
+// [RouteSnap] ReleaseLock=1 (P5b, p5b.cpp, docs/94 §22.9) lends the job's +0x918 to the sim's steering while the clone run
+// runs; without it the live +0x918 stays held through the clone run (A10's job hold). [RouteSnap] FreeLock=1 (P5c, p5c.cpp,
+// docs/94 §22.11) lends it to every plain sim acquire, parks destroys, and refuses an answer with a routing write after the cut. shortcut: L1 (EA image GUIDs) is not built: it is log only under (b) and needs a managed class
 // lookup; add it with docs/104's guard for option (a).
+
+static void P5bBegin(void* lock, bool verify);  // p5b.cpp: lend +0x918 out for the clone run
+static void P5bEnd();                           // p5b.cpp: +0x918 back before anything live
+static void ApplyP5b(const wchar_t* ini);
+static void P5cOnStart(const AsyncJob* j);      // p5c.cpp: the cut's write count for the stale check
+static void P5cLend(void* lock, bool verify);   // p5c.cpp: P5bBegin, with every plain sim acquire admitted (FreeLock=1)
+static void P5cTake();                          // p5c.cpp: P5bEnd
+static bool P5cStale(DWORD seq);                // p5c.cpp: a recorded routing write since the cut: never take the answer
 
 static volatile LONG g_p5On;   // Mode=2 installed and not turned off
 static LONG g_p5Verify = 10;   // VerifyEvery (0 = never)
@@ -113,8 +122,23 @@ static void P5OnStart(AsyncJob* j) {
     }
     j->p4 = g_p5Verify && ++g_p5N % (DWORD)g_p5Verify == 0 ? 3 : 2;
     j->p4Ver = P4CloneCut();
+    P5cOnStart(j);
     InterlockedIncrement(&k.m2Armed);
     InterlockedIncrement(&k.snShadowArmed);
+}
+
+// worker, ServeAsync before it takes the job's +0x918 (0.35.19, docs/94 §22.22): the replay consumer applies the records up
+// to the job's cut only under +0x918 (RpDrainBody), so once the job holds it PcAcquire can only wait out kPcWaitMs with the
+// lock the sim waits for held, then refuse (mat/timeout) and plan with the game. Wait for the consumer here instead, holding
+// nothing, bounded the same way; idle too (caught up, it runs RpGc holding g_rpUse, which the acquire needs)
+static void P5PreLock(const AsyncJob* j) {
+    if (j->p4 < 2 || !j->p4Ver || !g_rpThreaded || g_p4Clone != &kPcProvider) return;
+    const DWORD ver = j->p4Ver;
+    const ULONGLONG until = GetTickCount64() + kPcWaitMs;
+    while ((g_rpTail != ver || g_rpPhase) && (DWORD)(ver - g_rpTail) <= (DWORD)(g_rpHead - g_rpTail) && GetTickCount64() <= until) {
+        SetEvent(g_rpEvent);
+        Sleep(0);
+    }
 }
 
 // the clone run's nodes into the route's out list (empty: P5Plan checks it at entry). Same EASTL list, same allocator words
@@ -159,7 +183,9 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     LONG rel = 0;
     const LONG read0 = t_p4Read;  // the IC's own reader bits so far (P4RunClone resets the thread's)
     if (have) {
+        P5cLend((u8*)world + 0x918, verify);
         rel = P4RunClone(c, cl, head, true);
+        P5cTake();
         ran = true;
         t_p4Read = read0;
         if (c.abort >= 0) why = c.abort;
@@ -173,6 +199,7 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     P4NrSnap(nr1);
     const LONG nr = P4NrBits(c.nr0, nr1, read0 | c.cloneRead);
     if (why < 0 && (k.rtClosing || k.rtBusy || c.epoch != (DWORD)g_spEpoch)) why = P4_AB_EPOCH;  // the world moved during the run
+    if (why < 0 && P5cStale(c.seq)) why = P4_AB_EPOCH;  // P5c: the lock was free; a routing write after the cut refuses the answer
     if (why < 0 && !g_p4Copy.valid) why = P4_AB_CAPTURE;
     if ((why == P4_AB_MANAGED || why == P4_AB_EVENT) && InterlockedIncrement(&k.m2Trips) >= kP5Trips) P5Off(P5_OFF_TRIPS, 0);
     if (why == P4_AB_FAULT) P5Off(P5_OFF_FAULT, 0);
@@ -227,4 +254,5 @@ static void ApplyP5(const wchar_t* ini) {
     g_p5On = 1;
     Log("OK   route snapshot P5 (Mode=2): ReplanFromPosition jobs take the clone answer; VerifyEvery=%ld; door asks proxied to the "
         "sim thread; fallback = the game's own plan", g_p5Verify);
+    ApplyP5b(ini);
 }

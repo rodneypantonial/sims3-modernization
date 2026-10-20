@@ -1,0 +1,125 @@
+address,mono_function,match,evidence,ext_call_sites,ext_caller_functions,caller_buckets,example_callers
+0xE4A050,GC_try_to_collect,prior,per-frame collection step from Simulate,1,1,host-core:1,MonoScriptHost_Simulate
+0xE4A0B0,GC_gcollect,prior,full collection,1,1,host-mem:1,0xD702A0
+0xE4A320,GC_try_to_collect_inner_never_stop,prior,EA variant; reached from GC_collect_or_expand through EA thunk 0xD70800,1,1,host-mem:1,0xD70800
+0xE4A3F0,GC_apply_to_each_object,prior,symbols csv,1,1,host-mem:1,0xD702A0
+0xE4BE30,GC_malloc,prior,docs/57,14,10,host-core:10 host-mem:4,ScriptHost_FrameArena_ReleaseAll 0xD747C0 0xD75E80
+0xE4BEB0,GC_free,prior,docs/57,9,5,host-mem:5 host-core:4,thunk_GC_free ScriptHost_FrameArena_ReleaseAll ScriptHost_FrameArena_Pop
+0xE4BF90,GC_malloc_uncollectable,prior,docs/57,7,5,host-mem:4 host-glue:2 host-core:1,ScriptHost_AllocInterpCtxCell ScriptHost_FrameArena_Alloc 0xD714B0
+0xE4C230,GC header lookup (GC_base family),inferred,two-level HDR table at 0x1233318,1,1,host-mem:1,0xD70110
+0xE4CEE0,GC_push_all_stack,prior,called by EA root hook 0xD71820,1,1,host-mem:1,ScriptHost_GC_push_other_roots
+0xE4E450,GC_enable_incremental,prior,MonoScriptHost_Init,1,1,host-core:1,MonoScriptHost_Init
+0xE4EF50,heap section release loop,inferred,"walks [0x11F40EC] sections, frees via EA 0xD70990; host 0xD80750 (shutdown)",1,1,host-core:1,0xD80750
+0xE50DE0,GC_malloc_explicitly_typed,prior,docs/57,2,2,host-mem:2,ScriptHost_FrameArena_Alloc ScriptHost_FrameArena_Refill
+0xE51E60,EA: interpreter counter read,EA,docs/56 pair [0x11F4158],2,1,host-core:2,MonoScriptHost_Simulate
+0xE51E70,EA: interpreter counter clear,EA,docs/56,2,1,host-core:2,MonoScriptHost_Simulate
+0xE51F20,Interp_GetRuntimeMethod,prior,symbols csv; runtime-method lookup,3,3,host-glue:3,0xD89D40 0xD83680 0xD9A890
+0xE520E0,EA: ensure runtime method bound + deferred class init,EA,"interp.c area; calls 0xE51FC0, EA binder 0xD9A7B0, clears a +0x2C callback then mono_class_init; no upstream counterpart",1036,340,IC-bodies:885 host-glue:151,0xD9B7E0 0xD9BCB0 0xDB3460
+0xE521A0,stackval_from_data,verified,interp.c 'got type 0x%02x',1,1,host-glue:1,0xD89CD0
+0xE52350,stackval_to_data,verified,interp.c 'got type %x',1,1,host-glue:1,0xD89BF0
+0xE52630,interp invoke frame with setjmp,inferred,setjmp + interruption checkpoint + stackval_from_data; reached through EA thunk 0xD70AC0,1,1,host-mem:1,0xD70AC0
+0xE52B40,EA: interp_get_yieldReturn,EA,ThreadContext+0x149,1,1,host-core:1,ScriptHost_RunTask
+0xE52B50,EA: interp_set_yieldReturn,EA,ThreadContext+0x149,1,1,host-mem:1,ScriptHost_MarkYield
+0xE52B60,interp runtime-invoke entry (compile on demand),prior,docs/29 §1.2,1,1,host-glue:1,0xD83680
+0xE52C50,EA: frame local-slot store,EA,writes into a frame slot by offset +0x3E,1,1,host-core:1,ScriptHost_RunTask
+0xE52D70,interp_alloc_task_state,EA,docs/56; GC_malloc + memset of a task state,6,5,host-core:6,0xD75E80 ScriptHost_InvokeDirect_A ScriptHost_ThreadedObjects
+0xE534D0,EA: frame lookup wrapper,EA,"calls 0xE53470(x, 0)",1,1,host-core:1,0xD80750
+0xE534E0,EA: frame lookup by depth,EA,docs/56: reads [0x11F416C]/[0x11F4170],1,1,host-mem:1,0xD71CC0
+0xE53E80,EA: free task state + clear,EA,"interp_free_task_state, memset 0x150, GC_free",4,4,host-core:4,0xD72620 ScriptHost_RunTask 0xD7FE80
+0xE53EB0,ves_exec_method_with_context,prior,docs/29,1,1,host-glue:1,ScriptHost_NativeToManaged
+0xE59FD0,interp_mono_invoke_with_state,EA,docs/29 §1.3 task resume,3,3,host-core:3,ScriptHost_InvokeDirect_A ScriptHost_RunTask ScriptHost_InvokeDirect_B
+0xE5A680,mono_interp_init,verified,"mint init: TlsAlloc, install hooks, mono_icall_init, the 4 interpreter ICs + checkpoint jit icall (strings)",1,1,host-core:1,MonoScriptHost_Init
+0xE66E10,thin import wrapper,inferred,one caller 0xF4B970,1,1,other-f:1,0xF4B970
+0xE68140,accessor +0x44,inferred,read by EA 0xD702A0,1,1,host-mem:1,0xD702A0
+0xE68290,mono_assembly_load_from_full,verified,"assembly.c 'Image addref', 'image->assembly == NULL'",1,1,host-core:1,0xD7C5A0
+0xE69670,mono_gc_get_used_size,verified,GC_get_heap_size - GC_get_free_bytes,1,1,host-core:1,MonoScriptHost_Simulate
+0xE69690,mono_gc_get_heap_size,verified,"GC_get_heap_size, 64-bit return",1,1,host-core:1,MonoScriptHost_Simulate
+0xE697F0,mono_gc_invoke_finalizers,prior,docs/57,2,1,host-core:2,MonoScriptHost_Simulate
+0xE69820,"field store helper (obj, slot, value)",inferred,'*slot = value'; shape of a later-Mono wbarrier_set_field,2,2,host-core:2,0xD79AF0 ScriptHost_InvokeDelegate
+0xE69C10,"method accessor (flag 0x400 at +0x1C, returns +0x28)",inferred,unmatched,1,1,host-glue:1,0xD9A530
+0xE6A410,class helper (unmatched),inferred,called by EA class registration 0xD790A0,3,1,host-core:3,0xD790A0
+0xE6B690,mono_array_element_size,verified,class.c 'ac->rank' assert then +0x5C,38,15,IC-bodies:37 host-glue:1,0xDADA10 0xDCA870 0xDDA220
+0xE6B6F0,mono_class_is_valuetype,verified,"bit 3 of +0x14, the bit mono_object_unbox asserts",1,1,host-glue:1,0xD82A20
+0xE6B700,mono_class_is_enum,inferred,bit 4 of +0x14,1,1,host-glue:1,0xD82A20
+0xE6B710,mono_class_get_parent,verified,"+0x24, the parent link 0xE6F7B0 walks",3,3,host-core:3,0xD74100 0xD7D2F0 ScriptHost_RunTask
+0xE6B740,mono_class_get_type,inferred,returns klass+0xA0 (&byval_arg),4,3,host-core:3 host-glue:1,0xD7D2F0 ScriptHost_InvokeDelegate 0xD83C10
+0xE6B750,mono_class_num_fields,inferred,returns klass+0x68 (field.count per 0xE70180),8,8,host-core:8,0xD7A240 0xD7A4D0 0xD7AC70
+0xE6EE20,mono_class_init,prior,class.c strings,3,3,host-glue:2 host-core:1,0xD790A0 0xD89DE0 0xD9A890
+0xE6F720,mono_class_get_field_from_name,prior,symbols csv,3,2,host-core:3,0xD79F50 MonoScriptHost_Init
+0xE6F7B0,mono_class_get_field_token,verified,"parent walk +0x24, returns (first+idx+1)",8,8,host-core:8,0xD7A240 0xD7A4D0 0xD7AC70
+0xE6F840,mono_class_get_full,verified,class.c 'unknown token type %x',1,1,host-glue:1,0xD89DE0
+0xE6F910,mono_class_get,verified,forwards to 0xE6F840 with NULL context,1,1,host-mem:1,0xD702A0
+0xE6FA90,mono_class_from_name,prior,class.c strings,2,2,host-core:2,ScriptHost_FindClass 0xD7C5A0
+0xE6FD00,mono_class_is_assignable_from,inferred,caller IC_Reflection_IsTypeAssignableFrom; class init + interface offsets,1,1,host-glue:1,0xD82B10
+0xE6FF80,mono_ldtoken,verified,"'Unknown token 0x%08x in ldtoken', 'tmp_handle_class'",1,1,host-glue:1,0xD89E50
+0xE70180,mono_class_get_fields,verified,"iterator; loader lock + setup; field stride 0x1C, count +0x68, array +0x88",16,8,host-core:16,0xD7A240 0xD7A4D0 0xD7AC70
+0xE70330,mono_class_get_method_from_name_flags,prior,symbols csv,3,3,host-core:3,0xD74100 0xD7D2F0 ScriptHost_RunTask
+0xE70D50,mono_class_from_mono_type,prior,symbols csv,8,5,host-glue:6 host-core:1 host-mem:1,0xD74C00 0xD9A530 0xD70F90
+0xE71400,mono_type_get_name,inferred,GString build (0xE48300/0xE48500/0xE48390) around 0xE70F90,5,2,host-glue:4 host-core:1,0xD74690 0xD9A530
+0xE718E0,mono_method_desc_new,inferred,debug-helpers area; strchr/strrchr + g_strdup,1,1,host-core:1,0xD7C660
+0xE719E0,mono_method_desc_free,inferred,frees two strings then the struct,1,1,host-core:1,0xD7C660
+0xE71B60,mono_method_desc_search_in_class,inferred,"calls 0xE701F0, 0xE71A10",1,1,host-core:1,0xD7C660
+0xE72010,mono_method_full_name,verified,debug-helpers.c '(wrapper %s)',1,1,host-mem:1,0xD71CC0
+0xE75260,mono_domain_get,prior,TlsGetValue of key [0x11959DC],518,282,IC-bodies:328 host-glue:187 other-d:1 host-mem:1 host-core:1,0xD6FFA0 0xD702A0 0xD79AF0
+0xE75690,mono_get_corlib,verified,returns [0x1220E40]; used as image for the exception helpers (no outside caller),0,0,,
+0xE756A0,mono_get_object_class,inferred,returns [0x1220E44] (mono_defaults+0x04); 1.2.3 MonoDefaults order,1,1,host-core:1,ScriptHost_InvokeDelegate
+0xE756B0,mono_get_byte_class,inferred,[0x1220E48] (+0x08),2,2,host-mem:1 host-core:1,0xD71040 0xD7D2F0
+0xE756C0,mono_get_boolean_class,inferred,[0x1220E50] (+0x10); void accessor stripped,2,2,host-core:2,0xD7BD40 ScriptHost_InvokeDelegate
+0xE756D0,mono_get_sbyte_class,inferred,[0x1220E54] (+0x14),1,1,host-core:1,0xD7D2F0
+0xE756E0,mono_get_int16_class,inferred,[0x1220E58] (+0x18),1,1,host-core:1,0xD7D2F0
+0xE756F0,mono_get_uint16_class,inferred,[0x1220E5C] (+0x1C),1,1,host-core:1,0xD7D2F0
+0xE75700,mono_get_int32_class,inferred,[0x1220E60] (+0x20),5,4,host-core:4 host-mem:1,0xD710D0 0xD7D2F0 0xD7BD40
+0xE75710,mono_get_uint32_class,inferred,[0x1220E64] (+0x24),5,4,host-core:4 host-mem:1,0xD71070 0xD7D2F0 0xD7BD40
+0xE75720,mono_get_intptr_class,inferred,[0x1220E68] (+0x28),1,1,host-core:1,0xD7BD40
+0xE75730,mono_get_int64_class,inferred,[0x1220E70] (+0x30),4,3,host-core:4,0xD7D2F0 0xD7BD40 ScriptHost_InvokeDelegate
+0xE75740,mono_get_uint64_class,inferred,[0x1220E74] (+0x34),5,4,host-core:4 host-mem:1,0xD710A0 0xD7D2F0 0xD7BD40
+0xE75750,mono_get_single_class,inferred,[0x1220E78] (+0x38),4,3,host-core:3 host-mem:1,0xD71100 0xD7D2F0 0xD7BD40
+0xE75760,mono_get_double_class,inferred,[0x1220E7C] (+0x3C),1,1,host-core:1,ScriptHost_InvokeDelegate
+0xE76F00,mono_get_exception_divide_by_zero,verified,"same pattern, DivideByZeroException",8,7,IC-bodies:8,0xDCA870 0xDDAC00 0xE138D0
+0xE770E0,mono_get_exception_null_reference,verified,exception.c strings System/NullReferenceException + 'o != NULL' (mono_exception_from_name_domain inlined); corlib via 0xE75690,1493,896,IC-bodies:1152 host-glue:341,ScriptHost_GlueCaller 0xD9B410 0xDC6530
+0xE771C0,mono_get_exception_invalid_cast,verified,"same pattern, InvalidCastException",5,2,host-glue:5,0xD89B40 0xD89A50
+0xE772A0,mono_get_exception_index_out_of_range,verified,"same pattern, IndexOutOfRangeException",142,104,IC-bodies:115 host-glue:27,0xD9B5D0 0xD9BCB0 0xDB8240
+0xE82550,mono_add_internal_call,prior,loader lock + g_hash_table_insert on [0x11F436C],3,1,host-core:3,MonoScriptHost_Init
+0xE82680,mono_lookup_internal_call,prior,icall.c 'cant resolve internal call',1,1,host-glue:1,0xD89F00
+0xE83FC0,accessor +0x290,inferred,image or assembly field read by EA loader 0xD7C5A0,2,2,host-core:2,0xD79AF0 0xD7C5A0
+0xE84860,mono_image_open_from_data,verified,forwards to mono_image_open_from_data_full with refonly 0,1,1,host-core:1,ScriptHost_LoadImage
+0xE848B0,mono_loader_get_last_error,verified,TlsGetValue [0x1220F38],1,1,host-mem:1,0xD702A0
+0xE848C0,mono_loader_clear_error,verified,"same key, frees 2 strings + struct",1,1,host-mem:1,0xD702A0
+0xE84EE0,mono_method_get_wrapper_data,verified,loader.c 'method->wrapper_type != MONO_WRAPPER_NONE',1,1,host-glue:1,0xD9A890
+0xE85040,mono_method_signature,prior,loader.c asserts,6,5,host-glue:4 host-core:1 host-mem:1,0xD9A530 ScriptHost_NativeToManaged ScriptHost_InvokeDelegate
+0xE85370,method accessor +0x18,inferred,read by EA loader 0xD7C5A0,1,1,host-core:1,0xD7C5A0
+0xE85380,mono_method_get_class,verified,"MonoMethod+0x08 (flags, iflags, token, klass as in 1.2.3)",2,2,host-glue:1 host-core:1,0xD9A7B0 0xD7D2F0
+0xE85390,mono_method_get_header,prior,loader.c token-table assert,11,9,host-glue:11,0xD831D0 0xD833B0 0xD89D90
+0xE85810,mono_get_method_full,prior,loader lock,1,1,host-glue:1,0xD89EB0
+0xE85DF0,loader-locked cache insert,inferred,loader lock + 0xE869F0 + g_hash_table_insert,1,1,host-glue:1,0xD9A890
+0xE9A350,helper used by class registration (unmatched),inferred,EA 0xD790A0; EA allocator,1,1,host-core:1,0xD790A0
+0xE9B0E0,mono_metadata_blob_heap,verified,metadata.c 'index < meta->heap_blob.size',8,8,host-core:8,0xD7A240 0xD7A4D0 0xD7AC70
+0xE9B1F0,mono_metadata_decode_row_col,verified,metadata.c 'col < mono_metadata_table_count (bitfield)',16,8,host-core:16,0xD7A240 0xD7A4D0 0xD7AC70
+0xE9B2A0,metadata decode helper (likely mono_metadata_decode_blob_size),inferred,called next to blob_heap by the same EA readers,8,8,host-core:8,0xD7A240 0xD7A4D0 0xD7AC70
+0xE9B850,hash table size over [0x11F44E0],inferred,g_hash_table helper,1,1,host-mem:1,0xD702A0
+0xE9B870,hash table foreach over [0x11F44E0],inferred,g_hash_table_foreach with callback 0xE9B860,1,1,host-mem:1,0xD702A0
+0xE9BC50,metadata out-param helper (unmatched),inferred,copies fields of a row struct to optional out pointers,5,5,host-glue:5,0xD89D90 0xD89DE0 0xD89E50
+0xE9C7C0,mono_object_get_class,verified,obj->vtable(+0)->klass(+0),6,5,host-core:6,0xD74100 0xD74690 0xD7D2F0
+0xE9CA80,mono_metadata_get_constant_index,verified,"'Not a valid token for the constant table', bsearch",8,8,host-core:8,0xD7A240 0xD7A4D0 0xD7AC70
+0xE9DD20,mono_type_is_byref,verified,bit 30 of MonoType+4 (attrs:16 type:8 num_mods:6 byref:1),1,1,host-glue:1,0xD82A20
+0xE9DD30,mono_type_get_class,inferred,returns type->data,1,1,other-f:1,0xF6F0F0
+0xE9DD40,mono_vtable_get_static_field_data,prior,vtable+0x0C,4,3,host-core:3 host-glue:1,0xD9A530 0xD79F50 MonoScriptHost_Init
+0xEA0970,"(identity, ICF fold)",inferred,"'return arg1'; folded body, not an API; callers 0x6Cxxxx",49,1,other-6:49,0x6C35E0
+0xEA0FB0,mono_object_get_virtual_method,prior,symbols csv,12,11,host-core:12,ScriptHost_OneShotObjects 0xD74A10 0xD74B20
+0xEA1090,mono_runtime_invoke,verified,"jmp [0x1195B60], the slot mono_install_runtime_invoke fills",30,19,host-core:30,0xD74100 0xD74390 0xD74490
+0xEA13C0,mono_get_delegate_invoke,verified,"'Invoke', -1, object.c assert",2,2,host-core:1 host-mem:1,ScriptHost_InvokeDelegate 0xD70F90
+0xEA1400,mono_runtime_delegate_invoke,verified,"looks up 'Invoke' (-1 params) via 0xE70D30, asserts, calls the runtime-invoke slot; symbols csv calls it mono_runtime_invoke (wrong)",3,3,host-core:2 host-mem:1,0xD71280 0xD767E0 ScriptHost_InvokeDelegate
+0xEA1650,mono_object_unbox,verified,object.c 'obj->vtable->klass->valuetype',18,8,host-core:17 host-mem:1,0xD74390 0xD744E0 0xD74540
+0xEA2870,mono_ldstr,prior,docs/29,1,1,host-glue:1,0xD89D90
+0xEA2AD0,mono_class_vtable,prior,object.c 'class' assert,8,7,host-glue:5 host-core:3,0xD89BF0 0xD89C60 0xD89CD0
+0xEA30F0,mono_array_new,verified,"object.c 'ac != NULL', bounded array class + vtable",82,62,IC-bodies:58 host-glue:15 host-mem:5 host-core:4,0xD71040 0xD71070 0xD710A0
+0xEA3140,mono_value_box,verified,"object.c 'class->valuetype', memcpy",52,33,IC-bodies:36 host-glue:13 host-core:3,0xDBC350 0xDA82F0 0xD9F6E0
+0xEA3220,mono_object_isinst_mbyref,verified,"'CanCastTo' (remoting), interface slots assert",2,2,host-glue:2,0xD89AB0 0xD89B40
+0xEA3370,mono_runtime_class_init,prior,'TypeInitializationException',3,3,host-glue:3,0xD89BF0 0xD89C60 0xD89CD0
+0xEA36F0,mono_object_new,prior,mono_class_vtable + 0xEA2DA0,388,230,IC-bodies:234 host-glue:153 host-core:1,ScriptHost_CreateMonoClass ScriptHost_GlueCaller 0xDC6530
+0xEA3820,mono_object_isinst,prior,docs/29,85,20,IC-bodies:64 host-glue:16 host-core:5,0xD74C00 ScriptHost_RegisterManagedObject 0xD79800
+0xEA3FE0,mono_string_new_utf16,verified,"object.c 's != NULL', memcpy",3,2,host-core:3,0xD7D2F0 ScriptHost_InvokeDelegate
+0xEA40B0,mono_string_new,prior,UTF-8 to UTF-16 via eglib,4,4,host-core:3 host-mem:1,0xD73590 ScriptHost_InvokeDirect_A 0xD7FE80
+0xEA4160,mono_string_from_utf16,verified,mono_domain_get + UTF-16 length loop + 0xEA3FE0,3,2,host-core:3,0xD79730 0xD7BD40
+0xEA82D0,mono_type_get_object,inferred,lock + ehash lookup + object_new (docs/29 'most likely'),1,1,host-core:1,0xD79AF0
+0xEBAB30,special static data (thread-static) lookup,prior,docs/56: TLS thread object + threads lock,3,3,host-glue:3,0xD89BF0 0xD89C60 0xD89CD0

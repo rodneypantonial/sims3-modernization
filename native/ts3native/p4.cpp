@@ -25,12 +25,21 @@ static void ApplyP5(const wchar_t* ini);
 
 // --- the clone provider interface (P3-B) ---
 struct P4Clone { void* world; DWORD ver; DWORD epoch; LONG fresh; };  // fresh: every node stamp was reset to 0 (materialised)
-enum { P4REL_WRAP = 1, P4REL_DISCARD = 2 };
+enum { P4REL_WRAP = 1, P4REL_DISCARD = 2, P4REL_LAZY = 4 };  // LAZY (0.35.21): a lazy stop whose writes are all in the dirty list
 struct P4CloneProvider {
     DWORD (*cut)();                            // sim thread, async START: version of the cut (0 = none); §12.4.1 step 1
     int (*acquire)(DWORD ver, P4Clone* out);   // worker, before a clone run: -1 = ok, else a P4_AB_* reason (epoch, mat, ...)
     void (*release)(const P4Clone* c, LONG flags, const unsigned __int64* dirty, int nDirty);  // nDirty -1 = every lot
+    void (*drop)(DWORD ver);                   // worker: the job of cut `ver` ends its shadow without an acquire (0.33.1)
 };
+// refusal detail for the §13 record's "sub" (0.33.1, docs/94 §21.14): which check of the cut, the acquire or the shadow refused
+enum { PS_NONE, PS_BUSY, PS_OFF, PS_PORTAL, PS_NOCLONE, PS_P3, PS_COPY, PS_TIMEOUT, PS_STALE, PS_PASSED, PS_REPLACED, PS_MOVED,
+       PS_SHADOW, PS_QUEUED, PS_LOCK, PS_HELD, PS_N };
+static const char* const kPcSub[PS_N] = {"", "busy", "off", "portal", "noclone", "p3", "copy", "timeout", "stale", "passed",
+                                          "replaced", "moved", "shadow", "queued", "lock", "held"};
+static int g_pcCutWhy;  // sim: the last cut's PS_* (0 = cut made)
+static LONG g_pcCutW;    // sim: g_spWrites at the last cut, read under its +0x918 hold (0.35.6; a shared cut: that cut's)
+static int g_pcAcqWhy;  // worker: the last acquire's PS_*
 static const P4CloneProvider* g_p4Clone;  // NULL: unavailable (this build)
 // external linkage: unreferenced until P3-B calls it (no C4505)
 void P4SetCloneProvider(const P4CloneProvider* p) {
@@ -45,6 +54,9 @@ static int P4CloneAcquire(DWORD ver, P4Clone* out) {
 }
 static void P4CloneRelease(const P4Clone* c, LONG flags, const unsigned __int64* dirty, int nDirty) {
     if (g_p4Clone) g_p4Clone->release(c, flags, dirty, nDirty);
+}
+static void P4CloneDrop(DWORD ver) {
+    if (g_p4Clone && g_p4Clone->drop && ver) g_p4Clone->drop(ver);
 }
 
 // Hook for the private pools (docs/94 §16.6 P4 note; pools.cpp is a separate build): set these to switch the A*, goal and
@@ -184,14 +196,20 @@ static LONG P4PatchSites(const DWORD* at, u8* t1Tramp) {
 // --- per-job state (one route worker: one job in capture or shadow at a time) ---
 struct P4Path { DWORD type, status; unsigned __int64 obj; float len; int n0, nn; };
 struct P4Node { float x, y, z, seg; DWORD flags; };
-static const int kP4Paths = 16, kP4Nodes = 4096, kP4Doors = 128, kP4Dirty = 64;
+// 0.33.1: 16 paths / 128 doors refused 166 / 1 of 4,001 BP plans ("capture" / "door-over"): every capture refusal had 16 paths
+static const int kP4Paths = 64, kP4Nodes = 4096, kP4Doors = 512, kP4Dirty = 64;
 static const DWORD kP4OptSz = 0x80;  // the route options object (docs/94 §18.7)
 static const int kP4Fam = 9;  // D5 writer families: physics, terrain swap, destroy, lot index rebuild, events 0x0D-0x10, blend, lock keys, display level, portal ICs
 struct P4Ans { bool valid; u8 ok; int out1, out2, nPaths, nNodes; P4Path p[kP4Paths]; P4Node n[kP4Nodes]; };
 struct P4Door { DWORD a[9]; DWORD eax; LONG used; };
+struct P4DdF { unsigned __int64 key; u8 f8f, f8c; };  // [RouteSnap] DoorDump (p4door.h): one lot's +0x8F / +0x8C
+static const int kP4DdLots = 256;
 struct P4Job {
     LONG armed, seen;  // armed at START and claimed by the worker; seen = the live Route_PlanLocked was captured
     int kind, abort;   // abort: first P4_AB_* that voids the compare, -1 = none
+    int sub;           // PS_* detail of the refusal (0.33.1)
+    LONG w0; bool stale;  // g_spWrites at the cut; routing writes landed between the cut and the live plan (0.33.2)
+    LONG wPlan;           // g_spWrites when the live plan began (0.35.4: the obstacle record's liveW)
     int mode, nAsk;    // AsyncJob::p4 (1 shadow, 2 P5 take, 3 P5 take + verify); P5 door asks of this job's clone run
     DWORD seq, ver, epoch;
     unsigned short x87;
@@ -206,7 +224,10 @@ struct P4Job {
     int nDoors;
     unsigned __int64 dirty[kP4Dirty];
     int nDirty;  // -1 = every lot
+    P4DdF dd[kP4DdLots];  // DoorDump: every lot's +0x8F right after the live plan (p4door.h)
+    int ddN;
 };
+static void P4DdPlan(P4Job& c, const void* world);
 static P4Job g_p4Job;
 static P4Ans g_p4Live, g_p4Copy;
 static __declspec(thread) LONG t_p4DoorRec;  // the worker is inside the live Route_PlanLocked: record door answers
@@ -225,6 +246,7 @@ static DWORD g_p4Guards[4] = {kPvGuards[0], kPvGuards[1], kPvGuards[2], 0x011D90
 
 // tripwires and abort reasons from the stubs (worker only: a clone run, or the live capture for door-over)
 static void P4Abort(int why) {
+    P5bAbort();  // P5b (p5b.cpp): a lent-out +0x918 back before the tripwire's call goes on
     Ts3nCounters& k = ts3native_counters;
     if (why == P4_AB_MANAGED) InterlockedIncrement(&k.snCloneManaged);
     else if (why == P4_AB_EVENT) InterlockedIncrement(&k.snCloneEvent);
@@ -239,9 +261,17 @@ static void P4Abort(int why) {
 // stops before the call: this exception unwinds to P4Guarded, which ends the run as "lazy" and discards the clone. Only from
 // a clone run (callers test t_snapRun).
 static const DWORD kP4LazyCode = 0xE0503401;
+static LONG g_p4LazyKeep;  // worker: the stop was P4LazyKeep (one clone run at a time)
 static void P4Lazy() {
     P4Abort(P4_AB_LAZY);
     RaiseException(kP4LazyCode, 0, 0, NULL);
+}
+// 0.35.21 (docs/94 §22.24, I-94-484): a stop whose call path is audited: every clone write before it is in the run's dirty list
+// (the caller marked the stopped writer's lot first), so the release rebases those lots instead of rebuilding the clone. The
+// state the unwind leaves in other clone lots (quadtree pins +0x48) is found and forced by PcRelease
+static void P4LazyKeep() {
+    g_p4LazyKeep = g_rpLazyKeep;  // [RouteSnap] LazyKeep (0.35.22: off by default after the 0.35.21 crash, until a run proves it)
+    P4Lazy();
 }
 
 // H20 tripwire (docs/94 §21.8.1 risk 1, 0.31.3): IC_RouteManager_AddPortalLocationVariation 0x74D3F0 grows the portal's
@@ -386,6 +416,7 @@ static int __cdecl P4DoorEnter(DWORD* slot) {
         // nested in that call plans on the live world; the clone run re-arms after it
         SnapCtx* ctx = (SnapCtx*)g_snapCtx;
         const LONG read = t_p4Read;
+        P5bAsk(true);  // P5b (p5b.cpp): the ask runs under the job's +0x918, as in A10
         if (g_p4PoolsLeaveJob) g_p4PoolsLeaveJob();
         P4Disarm();
         t_p4Read = 0;
@@ -397,6 +428,7 @@ static int __cdecl P4DoorEnter(DWORD* slot) {
         c.nAsk++;
         P4Arm(ctx, false);
         if (g_p4PoolsEnterJob) g_p4PoolsEnterJob();
+        P5bAsk(false);
         t_p4Read = read;
         g_p4DoorAns = r;
         return 1;
@@ -605,6 +637,8 @@ static u8 P4LivePlan(void* world, void* edx, int* outList, int* starts, int* goa
     t_p4Cap = 0;  // one capture per job; a nested plan is not captured
     P4Job& c = g_p4Job;
     c.seen = 1;
+    c.wPlan = g_spWrites;
+    c.stale = c.wPlan != c.w0;  // the job holds the routing lock from here: no write lands after this
     c.epoch = (DWORD)g_spEpoch;
     P4NrSnap(c.nr0);
     if (!P4CaptureArgs(c, outList, starts, goals, agent, doPlan, opts, guidLo, guidHi) && c.abort < 0) c.abort = P4_AB_CAPTURE;
@@ -615,6 +649,7 @@ static u8 P4LivePlan(void* world, void* edx, int* outList, int* starts, int* goa
     const u8 r = PlanLockedBody(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     t_p4DoorRec = 0;
     c.gameUs = UsSince(t0);
+    P4DdPlan(c, world);  // DoorDump only: still under the job's +0x918
     if (!P4CaptureAnswerRaw(outList, r, out1 ? *out1 : -1, out2 ? *out2 : -1, &g_p4Live) && c.abort < 0) c.abort = P4_AB_CAPTURE;
     return r;
 }
@@ -623,11 +658,17 @@ static u8 P4LivePlan(void* world, void* edx, int* outList, int* starts, int* goa
 static void P4OnStart(AsyncJob* j) {
     j->p4 = 0;
     j->p4Ver = 0;
+    j->p4Why = PS_NONE;
     if (!(ts3native_counters.snP4Ready & 1)) return;
     if (ts3native_counters.snP4Mode == 2) { P5OnStart(j); return; }
     if (++g_p4StartN % (DWORD)g_p4Every) return;
     j->p4 = 1;
+    g_pcCutW = g_spWrites;
     j->p4Ver = P4CloneCut();
+    j->p4Why = j->p4Ver ? PS_NONE : g_pcCutWhy;
+    // the cut's own count (0.35.6): read after the cut released +0x918, a worker that started a queued job meanwhile could
+    // have written already, and its write would not mark the record stale
+    j->p4W = j->p4Ver ? g_pcCutW : g_spWrites;
     InterlockedIncrement(&ts3native_counters.snShadowArmed);
 }
 
@@ -642,11 +683,13 @@ static void P4LiveBegin(AsyncJob* j) {
     c.mode = j->p4;
     c.nAsk = 0;
     c.abort = -1;
+    c.sub = j->p4Why;
+    c.w0 = j->p4W, c.stale = false;
     c.seq = j->seq;
     c.ver = j->p4Ver;
     c.x87 = j->x87;
     c.mxcsr = j->mxcsr;
-    c.nDoors = c.nDirty = 0;
+    c.nDoors = c.nDirty = c.ddN = 0;
     c.gameUs = c.jobUs = c.cloneRead = 0;
     g_p4Live.valid = g_p4Copy.valid = false;
     t_p4Cap = 1;
@@ -778,6 +821,7 @@ static LONG P4RunClone(P4Job& c, const P4Clone& cl, int* head, bool keep) {
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     if (g_p4PoolsEnterJob) g_p4PoolsEnterJob();  // per-job A*, goal and cell pools (docs/94 §16.6 P4 note): hook for pools.cpp
+    g_p4LazyKeep = 0;
     const bool done = P4Guarded(&r);
     const int eaHeld = done ? 0 : P4EaHeapUnlock();
     if (g_p4PoolsLeaveJob) g_p4PoolsLeaveJob();
@@ -793,7 +837,7 @@ static LONG P4RunClone(P4Job& c, const P4Clone& cl, int* head, bool keep) {
         RgDrop(t_rg, (const DWORD*)_AddressOfReturnAddress());
         if (!P4FreeList(head)) Log("P4: private path list of plan %lu not released after a lazy stop", c.seq);
         c.abort = P4_AB_LAZY;
-        return P4REL_DISCARD;
+        return g_p4LazyKeep ? P4REL_LAZY : P4REL_DISCARD;
     }
     if (!done) {
         // crash-cause rule: our code is at fault until proven otherwise. P4 off for the session; the copy is thrown away.
@@ -847,14 +891,14 @@ static int P4TieN(const DWORD* starts, const DWORD* goals) {
 // --- compare (docs/94 §13 rules, exact under G) ---
 static bool P4Eq(float a, float b) { return *(const DWORD*)&a == *(const DWORD*)&b; }
 // tieN: P4TieN of the job; a goal index that differs inside the tie set is M1 goal-tie (nothing else compared, §13)
-static int P4Classify(const P4Ans& g, const P4Ans& c, LONG nr, int tieN) {
+static int P4Classify(const P4Ans& g, const P4Ans& c, LONG nr, int tieN, bool stale = false) {
     const int mg = P4MType(g), mc = P4MType(c);
     const DWORD sg = g.nPaths ? g.p[0].status : 0, sc = c.nPaths ? c.p[0].status : 0;
     int cls;
     if (mg != mc || sg != sc) cls = 3;
     else if (mg != 1) cls = 0;
     else if (g.out2 != c.out2 && tieN && g.out2 >= 0 && c.out2 >= 0 && g.out2 < tieN && c.out2 < tieN) {
-        if (!nr) InterlockedIncrement(&ts3native_counters.snM1Tie);  // with nr it is M5 below
+        if (!nr && !stale) InterlockedIncrement(&ts3native_counters.snM1Tie);  // with nr / stale it is M5 below
         cls = 1;
     } else {
         bool m2 = g.out1 != c.out1 || g.out2 != c.out2 || g.nPaths != c.nPaths, m1 = false;
@@ -877,7 +921,8 @@ static int P4Classify(const P4Ans& g, const P4Ans& c, LONG nr, int tieN) {
         }
         cls = m2 ? 2 : m1 ? 1 : 0;
     }
-    return cls && nr ? 5 : cls;  // D5: a mismatch with a non-routing write in the window is time skew (M5)
+    return cls && (nr || stale) ? 5 : cls;  // D5: a mismatch with a non-routing write in the window is time skew (M5); 0.33.2:
+                                             // so is one with routing writes between the cut and the live plan (stale)
 }
 
 // --- the §13 record (v 2: adds `nr`; v 3 (0.33.0): adds `m2`, 1 = a P5 verify job, whose copy answer Mode=2 would take) ---
@@ -930,6 +975,131 @@ static void P4PutAns(const P4Ans& a) {
     }
     P4Put("]}");
 }
+// --- obstacle sets of an M2 / M3 (0.35.4, docs/94 §21.19, I-94-390) ---
+// Every footprint in a planner's map M (P+0x24; nodes key +0, FME +8, next +0x10; FME +8 footprint, +0x10 level/flags) whose
+// polygon cache ([fp+0x38], 0x24-byte levels, valid +0x20, 16-byte polygon records of 8-byte xz points) has a point inside the
+// box round both answers: id (+0x14), class, +0x34 word, FME +0x10, levels, invalid-level mask, a hash of every valid level's
+// points and their xz bounds. Taken from the clone (still held) and from the live map under one +0x918 try, so the next live
+// M2 names the obstacle the two sides disagree on. Off the sim thread; only on a final M2/M3 (rare).
+static const int kP4ObMax = 48;
+struct P4Ob { unsigned __int64 id, h; DWORD vt, f34, fme, lv, inv; float b[4]; };
+struct P4ObSet { int n, more; P4Ob o[kP4ObMax]; };  // more: entries past kP4ObMax; -1 no map, -2 fault in the walk
+static P4ObSet g_p4ObC, g_p4ObL;
+static float g_p4ObBox[4];        // x0, z0, x1, z1
+static int g_p4ObLive;            // 1 read under +0x918, 2 lock busy (no live set), 3 no live world
+static LONG g_p4ObW, g_p4ObUs;    // recorded writes since the live plan began; capture time
+static bool g_p4ObOn;             // the next P4Record carries "obst"
+static bool g_p4ObsOn = true;     // [RouteSnap] ShadowObst (default 1)
+static void P4ObWalk(const u8* world, P4ObSet& s) {  // world: a routing world (planner P at +0x95C)
+    s.n = s.more = 0;
+    const float* bx = g_p4ObBox;
+    __try {
+        const u8* P = world ? RpP(world + 0x95C) : NULL;
+        const u8* M = P ? RpP(P + 0x24) : NULL;
+        const u8* const* lb = M ? (const u8* const*)(uintptr_t)RpD(M + 4) : NULL;
+        if (!lb) { s.more = -1; return; }
+        const DWORD mb = RpD(M + 8);
+        DWORD seen = 0;
+        for (DWORD i = 0; i < mb && i < (1u << 20); i++)
+            for (const u8* nd = lb[i]; nd && ++seen < 400000; nd = RpP(nd + 0x10)) {
+                const u8* f = RpP(nd + 8);
+                const u8* fp = f ? RpP(f + 8) : NULL;
+                const RpCls* c = fp ? RpClass(RpD(fp)) : NULL;
+                if (!c || !c->cache) continue;
+                const DWORD lv = RpLevels(fp);
+                const u8* lc = RpP(fp + 0x38);
+                if (!lc || !lv || lv > 8) continue;
+                P4Ob o = {RpD(fp + 0x14) | (unsigned __int64)RpD(fp + 0x18) << 32, 0xCBF29CE484222325ull, RpD(fp),
+                          c->size > 0x34 ? RpD(fp + 0x34) : 0, RpD(f + 0x10), lv, 0, {1e30f, 1e30f, -1e30f, -1e30f}};
+                for (DWORD l = 0; l < lv; l++) {
+                    const u8* e = lc + l * 0x24;
+                    if (!e[0x20]) { o.inv |= 1u << l; continue; }
+                    const u8* pe = RpP(e + 4);
+                    for (const u8* r = RpP(e); r && r < pe && r < RpP(e) + 16 * 4096; r += 16) {
+                        const float* v = (const float*)RpP(r);
+                        const float* ve = (const float*)RpP(r + 4);
+                        o.h = RpMix(RpMix(o.h, l), (DWORD)(ve - v));
+                        for (int j = 0; v && v + 2 <= ve && j < 4096; v += 2, j++) {
+                            o.h = RpMix(RpMix(o.h, *(const DWORD*)v), *(const DWORD*)(v + 1));
+                            if (v[0] < o.b[0]) o.b[0] = v[0];
+                            if (v[1] < o.b[1]) o.b[1] = v[1];
+                            if (v[0] > o.b[2]) o.b[2] = v[0];
+                            if (v[1] > o.b[3]) o.b[3] = v[1];
+                        }
+                    }
+                }
+                if (o.b[0] > bx[2] || o.b[2] < bx[0] || o.b[1] > bx[3] || o.b[3] < bx[1]) continue;  // no valid point near: skipped
+                bool dup = false;  // the same footprint through several FMEs (lots)
+                for (int j = 0; j < s.n && !dup; j++) dup = s.o[j].id == o.id && s.o[j].h == o.h && s.o[j].vt == o.vt;
+                if (dup) continue;
+                if (s.n == kP4ObMax) { s.more++; continue; }
+                s.o[s.n++] = o;
+            }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { s.more = -2; }
+}
+static void P4ObBoxOf(const P4Ans& a, bool* any) {
+    for (int i = 0; i < a.nNodes; i++) {
+        const P4Node& n = a.n[i];
+        if (!(n.x - n.x == 0) || !(n.z - n.z == 0)) continue;
+        if (!*any || n.x < g_p4ObBox[0]) g_p4ObBox[0] = n.x;
+        if (!*any || n.z < g_p4ObBox[1]) g_p4ObBox[1] = n.z;
+        if (!*any || n.x > g_p4ObBox[2]) g_p4ObBox[2] = n.x;
+        if (!*any || n.z > g_p4ObBox[3]) g_p4ObBox[3] = n.z;
+        *any = true;
+    }
+}
+// worker, P4ShadowRun on a final M2/M3 while the clone is still held; cloneWorld = the clone's routing world (P at +0x95C)
+static void P4ObCapture(const P4Job& c, const void* cloneWorld) {
+    bool any = false;
+    P4ObBoxOf(g_p4Live, &any);
+    P4ObBoxOf(g_p4Copy, &any);
+    if (!any) return;
+    g_p4ObBox[0] -= 1.0f, g_p4ObBox[1] -= 1.0f, g_p4ObBox[2] += 1.0f, g_p4ObBox[3] += 1.0f;  // a footprint's reach past the path
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    P4ObWalk((const u8*)cloneWorld, g_p4ObC);
+    g_p4ObL.n = g_p4ObL.more = 0;
+    g_p4ObLive = 3;
+    const u8* world = g_spWorldSlot ? *g_spWorldSlot : NULL;
+    if (world) {
+        static const DWORD kTry = 0;
+        void* lk = (void*)(world + 0x918);
+        g_p4ObLive = 2;
+        if (g_spAcq(lk, NULL, &kTry) > 0) {  // one try, no wait: a sim holder keeps its lock, the record says "busy"
+            P4ObWalk(world, g_p4ObL);
+            g_spRel(lk, NULL);
+            g_p4ObLive = 1;
+        } else InterlockedIncrement(&ts3native_counters.p4ObstBusy);
+    }
+    g_p4ObW = g_spWrites - c.wPlan;
+    g_p4ObUs = UsSince(t0);
+    g_p4ObOn = true;
+    InterlockedIncrement(&ts3native_counters.p4Obst);
+}
+static void P4PutObSet(const P4ObSet& s) {
+    P4Put("[");
+    for (int i = 0; i < s.n; i++) {
+        const P4Ob& o = s.o[i];
+        P4Put("%s[\"0x%llX\",\"0x%08lX\",%lu,%lu,%lu,%lu,\"0x%016llX\",", i ? "," : "", o.id, o.vt, o.f34, o.fme, o.lv, o.inv, o.h);
+        for (int j = 0; j < 4; j++) { if (j) P4Put(","); P4PutF(o.b[j]); }
+        P4Put("]");
+    }
+    P4Put("]");
+}
+static void P4PutOb() {
+    static const char* const kLive[4] = {"none", "ok", "busy", "noworld"};
+    P4Put(",\"obst\":{\"box\":[");
+    for (int j = 0; j < 4; j++) { if (j) P4Put(","); P4PutF(g_p4ObBox[j]); }
+    P4Put("],\"liveState\":\"%s\",\"liveW\":%ld,\"us\":%ld,\"cloneMore\":%d,\"liveMore\":%d,\"clone\":", kLive[g_p4ObLive & 3], g_p4ObW,
+          g_p4ObUs, g_p4ObC.more, g_p4ObL.more);
+    P4PutObSet(g_p4ObC);
+    P4Put(",\"live\":");
+    P4PutObSet(g_p4ObL);
+    P4Put("}");
+}
+
+#include "p4door.h"
+
 static void P4Record(const P4Job& c, const char* refused, LONG nr) {
     g_p4Len = 0;
     P4Put("{\"v\":3,\"plan\":%lu,\"ic\":\"%s\",\"world\":\"%s\",\"search\":\"G\",\"epoch\":%lu,\"ver\":%lu,\"start\":", c.seq,
@@ -941,10 +1111,17 @@ static void P4Record(const P4Job& c, const char* refused, LONG nr) {
     for (int i = 0, n = P4TieN(c.starts, c.goals); i < n; i++) P4Put(i ? ",%d" : "%d", i);
     P4Put("],\"refused\":");
     if (refused) P4Put("\"%s\"", refused); else P4Put("null");
-    P4Put(",\"stale\":false,\"nr\":%ld,\"m2\":%d,\"gameUs\":%ld,\"jobUs\":%ld,\"game\":", nr, c.mode >= 2, c.gameUs, c.jobUs);
+    if (refused && c.sub > PS_NONE && c.sub < PS_N && (!strcmp(refused, "nover") || !strcmp(refused, "mat") || !strcmp(refused, "epoch") || !strcmp(refused, "other")))
+        P4Put(",\"sub\":\"%s\"", kPcSub[c.sub]);
+    P4Put(",\"stale\":%s,\"nr\":%ld,\"m2\":%d,\"gameUs\":%ld,\"jobUs\":%ld,\"game\":", c.stale && c.ver ? "true" : "false", nr,
+          c.mode >= 2, c.gameUs, c.jobUs);
     P4PutAns(g_p4Live);
     P4Put(",\"copy\":");
     if (refused) P4Put("null"); else P4PutAns(g_p4Copy);
+    if (g_p4ObOn) P4PutOb();
+    g_p4ObOn = false;
+    if (g_p4DdRec) P4PutDd(c);
+    g_p4DdRec = false;
     P4Put("}\n");
     Ts3nCounters& k = ts3native_counters;
     DWORD w = 0;
@@ -954,27 +1131,109 @@ static void P4Record(const P4Job& c, const char* refused, LONG nr) {
     else InterlockedIncrement(&k.snJsonlFail);
 }
 
+static volatile LONG g_p4HeldLog;
+static bool P4HoldsRoutingLock() {
+    __try {
+        const u8* w = Readable(g_p4WorldSlot, 4) ? *(const u8* const*)g_p4WorldSlot : NULL;
+        return w && Readable(w + 0x918, sizeof(CRITICAL_SECTION)) &&
+               (DWORD)(uintptr_t)((const CRITICAL_SECTION*)(w + 0x918))->OwningThread == GetCurrentThreadId();
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+// --- parked shadows (0.34.1, docs/94 §21.16) ---
+// A shadow never delays a live job: when one is queued at J_DONE or queues while the acquire waits for the consumer, 0.33.x
+// dropped the shadow (689 of 4,091 BP records "mat"/"queued" on 0.33.3). Now one shadow can park: the job's captured state
+// (arguments, door answers, live answer, its private buffers) moves aside and its cut stays held (p4clone.cpp keeps the hold
+// on the oldest pending cut); it runs when the worker is next idle (after the queued job, before that job's own shadow, or
+// from ServeAsync with nothing queued). The compare is the same: the copy at the job's cut against the job's live answer. A
+// cut older than kPcPendMs is released by the next cut, so a parked shadow that waits too long is refused "passed".
+static P4Job g_p4Park, g_p4Stash;
+static P4Ans g_p4ParkLive, g_p4StashLive;
+static bool g_p4Parked;
+static volatile LONG g_p4ParkN, g_p4ParkRun;  // shadows parked / parked shadows run (log every 60 s with the async line)
+static bool P4LiveQueued() {
+    for (int i = 0; i < kJobs; i++) if (g_jobs[i].state == J_QUEUED) return true;
+    return false;
+}
+static bool P4ParkCur() {  // g_p4Job (its shadow not run) moves to the park slot; its buffers go with it
+    if (ts3native_counters.snP4Mode != 1) return false;
+    if (g_p4Parked) {  // one slot: the older parked shadow gives way (its held cut would keep the consumer behind this job's)
+        InterlockedIncrement(&ts3native_counters.snShadowBusy);
+        P4CloneDrop(g_p4Park.ver);
+        P4JobFree(g_p4Park);
+        g_p4Parked = false;
+    }
+    memcpy(&g_p4Park, &g_p4Job, sizeof(P4Job));
+    memcpy(&g_p4ParkLive, &g_p4Live, sizeof(P4Ans));
+    g_p4Job.nBufs = 0, g_p4Job.armed = 0;
+    g_p4Parked = true;
+    InterlockedIncrement(&g_p4ParkN);
+    return true;
+}
+static bool P4ShadowRun();
+// the parked shadow, if any and nothing is queued; the current job's state (armed, not run yet) is kept aside meanwhile
+static void P4ShadowParked() {
+    if (!g_p4Parked || P4LiveQueued()) return;
+    const bool cur = g_p4Job.armed != 0;
+    if (cur) {
+        memcpy(&g_p4Stash, &g_p4Job, sizeof(P4Job));
+        memcpy(&g_p4StashLive, &g_p4Live, sizeof(P4Ans));
+    }
+    memcpy(&g_p4Job, &g_p4Park, sizeof(P4Job));
+    memcpy(&g_p4Live, &g_p4ParkLive, sizeof(P4Ans));
+    g_p4Parked = false;
+    InterlockedIncrement(&g_p4ParkRun);
+    if (g_p4ParkRun % 500 == 1) Log("P4: %ld shadows parked behind a live job so far, %ld run later", g_p4ParkN, g_p4ParkRun);
+    if (P4ShadowRun()) P4JobFree(g_p4Job);  // false: parked again (a job queued during its wait), its buffers went along
+    if (cur) {
+        memcpy(&g_p4Job, &g_p4Stash, sizeof(P4Job));
+        memcpy(&g_p4Live, &g_p4StashLive, sizeof(P4Ans));
+    } else g_p4Job.nBufs = 0, g_p4Job.armed = 0;
+}
+// ServeAsync with nothing queued (worker idle)
+static void P4ShadowIdle() {
+    if (g_p4Parked) P4ShadowParked();
+}
+
 // worker, after J_DONE (§12.4.2 step 3)
 static void P4Shadow() {
     P4Job& c = g_p4Job;
-    if (!c.armed) return;
+    if (!c.armed) { P4ShadowIdle(); return; }
     c.armed = 0;
     Ts3nCounters& k = ts3native_counters;
-    for (int i = 0; i < kJobs; i++)
-        if (g_jobs[i].state == J_QUEUED) {  // the shadow never delays a live job's start
-            InterlockedIncrement(&k.snShadowBusy);
-            P4JobFree(c);
-            return;
-        }
     if (!c.seen) {  // the IC returned before Route_PlanLocked (no goal, early out): nothing to compare, no record
         InterlockedIncrement(&k.snAbort[P4_AB_CAPTURE]);
+        P4CloneDrop(c.ver);
+        P4JobFree(c);
+        P4ShadowIdle();
+        return;
+    }
+    if (P4LiveQueued()) {  // the shadow never delays a live job's start: park it (or drop it when the slot is taken)
+        if (!P4HoldsRoutingLock() && P4ParkCur()) return;
+        InterlockedIncrement(&k.snShadowBusy);
+        P4CloneDrop(c.ver);
         P4JobFree(c);
         return;
     }
+    c.armed = 1;  // P4ShadowParked keeps an armed current job aside
+    P4ShadowParked();  // an older parked shadow first: its cut is the held one
+    c.armed = 0;
+    if (P4ShadowRun()) P4JobFree(c);
+}
+
+// the shadow of g_p4Job (armed already cleared); false = parked (a live job queued while the acquire waited)
+static bool P4ShadowRun() {
+    P4Job& c = g_p4Job;
+    Ts3nCounters& k = ts3native_counters;
     int why = c.abort;
-    InterlockedExchangeAdd(&k.snLiveUs, c.gameUs);
     if (why < 0 && !(k.snP4Ready & 1)) why = P4_AB_OTHER;
-    if (why < 0 && (k.rtClosing || k.rtBusy || c.epoch != (DWORD)g_spEpoch)) why = P4_AB_EPOCH;
+    // 0.33.2 watchdog (docs/94 §21.15): a shadow never runs while this thread still owns the live routing lock (+0x918 is a
+    // CRITICAL_SECTION at +0): the job released its hold before J_DONE, so one left here is a leak, and a shadow that then
+    // waited on the clone would hold the game's lock meanwhile
+    if (why < 0 && P4HoldsRoutingLock()) {
+        why = P4_AB_OTHER, c.sub = PS_HELD;
+        if (InterlockedIncrement(&g_p4HeldLog) <= 8) Log("P4: the worker still holds the routing lock after job %lu: shadow refused", c.seq);
+    }
+    if (why < 0 && (k.rtClosing || k.rtBusy || c.epoch != (DWORD)g_spEpoch)) why = P4_AB_EPOCH, c.sub = PS_SHADOW;
     if (why < 0 && !((g_p4Kinds >> (c.kind & 3)) & 1)) why = P4_AB_UNSUP;
     if (why < 0 && P4Cold()) why = P4_AB_COLD;
     P4Clone cl = {};
@@ -982,15 +1241,22 @@ static void P4Shadow() {
     if (why < 0) {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
+        g_pcAcqWhy = PS_NONE;
         const int r = P4CloneAcquire(c.ver, &cl);
         InterlockedExchangeAdd(&k.snMatUs, UsSince(t0));
-        if (r >= 0) why = r; else have = true;
-    }
+        if (r == P4_AB_MAT && g_pcAcqWhy == PS_QUEUED) {
+            if (P4ParkCur()) return false;  // the cut stays held; the shadow runs after the queued job
+            P4CloneDrop(c.ver);
+        }
+        if (r >= 0) { why = r; if (g_pcAcqWhy) c.sub = g_pcAcqWhy; } else have = true;
+    } else P4CloneDrop(c.ver);  // refused before the acquire: the hold moves on to the next job's cut
     LONG rel = 0;
     if (have) {
         int head[4];
         P4Head(head, c);
+        g_p4Phase = 5;
         rel = P4RunClone(c, cl, head, false);
+        g_p4Phase = 6;
         if (c.abort >= 0) why = c.abort;
     }
     LONG nr1[kP4Fam];
@@ -998,14 +1264,17 @@ static void P4Shadow() {
     const LONG nr = P4NrBits(c.nr0, nr1, c.liveRead | c.cloneRead);
     for (int f = 0; f < kP4Fam; f++) if (nr & (1 << f)) InterlockedIncrement(f < 7 ? &k.snNrBits[f] : f == 7 ? &k.snNrBitDl : &k.snNrBitPortal);
     int cls = 4;
+    InterlockedExchangeAdd(&k.snLiveUs, c.gameUs);
     if (why >= 0) InterlockedIncrement(&k.snAbort[why]);
-    else if (g_p4Live.valid && g_p4Copy.valid) cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals));
+    else if (g_p4Live.valid && g_p4Copy.valid) cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals), c.stale);
     InterlockedIncrement(&k.snM[cls]);
     InterlockedIncrement(&k.snShadow);
+    if (have && (cls == 2 || cls == 3) && g_p4ObsOn) P4ObCapture(c, cl.world);  // before the clone goes back
+    if (have && cls < 4) P4DdCapture(c, cl.world, cls);
     P4Record(c, why >= 0 ? kP4Ab[why] : NULL, nr);
     if (have) P4CloneRelease(&cl, rel, c.dirty, c.nDirty);
     if (rel & P4REL_WRAP) g_p4Work.wrap = 0;
-    P4JobFree(c);
+    return true;
 }
 
 // H20a (docs/109 §8.9, 0.30.0): while P4 is armed the portal count pair of vtable 0xFED048 is design SH's interlocked one
@@ -1034,6 +1303,8 @@ static bool ApplyP4(const wchar_t* ini) {
     }
     g_p4Every = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"ShadowEvery", 1, ini), 1, 1000);
     g_p4Kinds = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"Kinds", 15, ini), 0, 15);
+    g_p4ObsOn = GetPrivateProfileIntW(L"RouteSnap", L"ShadowObst", 1, ini) != 0;
+    ApplyP4Dd(ini);
     wchar_t tag[16];
     GetPrivateProfileStringW(L"RouteSnap", L"ShadowWorld", L"?", tag, 16, ini);
     for (int i = 0; i < 15; i++) {

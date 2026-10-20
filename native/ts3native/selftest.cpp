@@ -2179,8 +2179,8 @@ static void TestLotStream() {
     g_lsLot2[0xC9] = 1;
     wchar_t tmp[MAX_PATH], path[MAX_PATH], ini[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
-    swprintf_s(path, L"%sts3n-selftest-lotstream.jsonl", tmp);
-    swprintf_s(ini, L"%sts3n-selftest-lotstream.ini", tmp);
+    swprintf_s(path, L"%sts3n-selftest-lotstream-%lu.jsonl", tmp, GetCurrentProcessId());  // per process: parallel runs
+    swprintf_s(ini, L"%sts3n-selftest-lotstream-%lu.ini", tmp, GetCurrentProcessId());
     assert(LsOpenLog(path));
 
     // mode 0: every hook passes straight through, nothing counted or logged
@@ -2478,8 +2478,8 @@ static void TestVerify() {
     }
     wchar_t tmp[MAX_PATH], path[MAX_PATH], ini[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
-    swprintf_s(path, L"%sts3n-selftest-verify.jsonl", tmp);
-    swprintf_s(ini, L"%sts3n-selftest-verify.ini", tmp);
+    swprintf_s(path, L"%sts3n-selftest-verify-%lu.jsonl", tmp, GetCurrentProcessId());
+    swprintf_s(ini, L"%sts3n-selftest-verify-%lu.ini", tmp, GetCurrentProcessId());
     g_vfLog = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     assert(g_vfLog != INVALID_HANDLE_VALUE);
     static DWORD buckets[0x40C], obj[3][5];
@@ -2797,7 +2797,7 @@ static void TestLotSinCos() {
     // install in this process: Enabled=0 does nothing; Enabled=1 finds no matching prologue in our own image
     wchar_t ini[MAX_PATH];
     GetTempPathW(MAX_PATH, ini);
-    wcscat_s(ini, L"ts3n-lsc-test.ini");
+    swprintf_s(ini + wcslen(ini), MAX_PATH - wcslen(ini), L"ts3n-lsc-test-%lu.ini", GetCurrentProcessId());
     WritePrivateProfileStringW(L"LotSinCos", L"Enabled", L"0", ini);
     assert(!ApplyLotSinCos(ini));
     DeleteFileW(ini);
@@ -2920,7 +2920,7 @@ static void TestIdCache() {
     assert(k.idcObjects == 2998 && k.idcLookupsK == (LONG)(g_idcLookups / 1000));
     wchar_t ini[MAX_PATH];
     GetTempPathW(MAX_PATH, ini);
-    wcscat_s(ini, L"ts3n-idc-test.ini");
+    swprintf_s(ini + wcslen(ini), MAX_PATH - wcslen(ini), L"ts3n-idc-test-%lu.ini", GetCurrentProcessId());
     WritePrivateProfileStringW(L"IdCache", L"Enabled", L"0", ini);
     assert(!ApplyIdCache(ini));
     DeleteFileW(ini);
@@ -5990,6 +5990,147 @@ static void TestRouteSnap() {
 }
 
 // [RouteSnap] Enabled=1 (snap.cpp, docs/94 P3): K1/K2/K5 on the fake world (C rasteriser), the tile rule, the door channel
+// 0.35.15 (docs/94 §22.18): the cut's image build cost. SpSortU64 == qsort order; grid merge == full sort is K1's
+// "incremental == full rebuild" (SnapK1). Micro-benchmark of the parts the cut dropped or replaced, at live sizes: a 40 KB
+// tile and a 1 MB R hashed (FNV-1a, gone) vs copied, bnm sort qsort vs radix, grid 800 rows full qsort vs merge
+static double BenchUs(LARGE_INTEGER a, LARGE_INTEGER b) { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return (b.QuadPart - a.QuadPart) * 1e6 / f.QuadPart; }
+static void TestSnapCost() {
+    DWORD seed = 7;
+    auto rnd = [&]() { seed = seed * 1103515245 + 12345; return seed >> 8; };
+    static u64 a[40000], b[40000];
+    const DWORD ns[] = {0, 1, 2, 3, 100, 4096, 40000};
+    for (DWORD n : ns) {
+        for (DWORD i = 0; i < n; i++) a[i] = b[i] = ((u64)(rnd() % 3000 * 7919) << 32) | (rnd() & 0xFF);
+        qsort(b, n, 8, SpCmpU64);
+        SpSortU64(a, n);
+        assert(!n || !memcmp(a, b, n * 8));
+    }
+    LARGE_INTEGER t0, t1;
+    static u8 src[1 << 20], dst[1 << 20];
+    for (DWORD i = 0; i < sizeof(src); i++) src[i] = (u8)rnd();
+    volatile DWORD sink = 0;
+    double hTile, cTile, hR, cR, qs, rs, gq, gm;
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 100; r++) sink += SpHash(src + r * 64, 40960); QueryPerformanceCounter(&t1); hTile = BenchUs(t0, t1) / 100;
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 100; r++) { memcpy(dst, src + r * 64, 40960); sink += dst[r]; } QueryPerformanceCounter(&t1); cTile = BenchUs(t0, t1) / 100;
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 10; r++) sink += SpHash(src, sizeof(src)); QueryPerformanceCounter(&t1); hR = BenchUs(t0, t1) / 10;
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 10; r++) { memcpy(dst, src, sizeof(src)); sink += dst[r]; } QueryPerformanceCounter(&t1); cR = BenchUs(t0, t1) / 10;
+    const DWORD nb = 4096;
+    for (DWORD i = 0; i < nb; i++) a[i] = ((u64)(rnd() % 100000) << 32) | (rnd() & 0xFF);
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 20; r++) { memcpy(b, a, nb * 8); qsort(b, nb, 8, SpCmpU64); } QueryPerformanceCounter(&t1); qs = BenchUs(t0, t1) / 20;
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 20; r++) { memcpy(b, a, nb * 8); SpSortU64(b, nb); } QueryPerformanceCounter(&t1); rs = BenchUs(t0, t1) / 20;
+    // grid: 800 rows over 40 lots (IP image 45 KB = 820 rows), 4 dirty lots re-read per cut; the merge path through SpBuildGrid
+    // needs a live grid, so the two sorts are timed on the rows directly
+    const DWORD nr = 800;
+    static SpRow rows[nr], work[nr];
+    for (DWORD i = 0; i < nr; i++) { memset(&rows[i], 0, sizeof(SpRow)); rows[i].lotLo = rnd() % 40; rows[i].cell = rnd() % 64; rows[i].keyLo = rnd(); }
+    qsort(rows, nr, sizeof(SpRow), SpCmpRow);
+    QueryPerformanceCounter(&t0); for (int r = 0; r < 20; r++) { memcpy(work, rows, sizeof(rows)); qsort(work, nr, sizeof(SpRow), SpCmpRow); } QueryPerformanceCounter(&t1); gq = BenchUs(t0, t1) / 20;
+    QueryPerformanceCounter(&t0);
+    for (int r = 0; r < 20; r++) {  // as SpBuildGrid: the ~10% fresh rows sorted, then merged with the kept rows
+        DWORD nf = 0, nk = 0;
+        static SpRow fresh[nr], kept[nr];
+        for (DWORD i = 0; i < nr; i++) (rows[i].lotLo < 4 ? fresh[nf++] : kept[nk++]) = rows[i];
+        qsort(fresh, nf, sizeof(SpRow), SpCmpRow);
+        DWORD j = 0, o = 0;
+        for (DWORD i = 0; i < nk; i++) { for (; j < nf && SpCmpRow(&fresh[j], &kept[i]) < 0; j++) work[o++] = fresh[j]; work[o++] = kept[i]; }
+        while (j < nf) work[o++] = fresh[j++];
+        assert(o == nr && !memcmp(work, rows, sizeof(rows)));
+    }
+    QueryPerformanceCounter(&t1);
+    gm = BenchUs(t0, t1) / 20;
+    printf("snap cut cost: tile 40 KB hash %.1f us (copy %.1f), R 1 MB hash %.0f us (copy %.0f), bnm 4096 sort qsort %.0f us radix %.0f, "
+           "grid 800 rows sort %.0f us merge %.0f (%lu)\n", hTile, cTile, hR, cR, qs, rs, gq, gm, (DWORD)sink & 1);
+}
+
+// 0.35.23 (docs/94 §22.26.5): a bnm mark with an unchanged blockedNodeMap shares the old image (no sort); any count change,
+// insert or erase builds a new one equal to a fresh SpBuildBnm; a re-chained but equal map rebuilds and still shares by
+// content. Bench: walk + compare vs walk + sort + image at 4,096 and 16,384 entries
+static void TestBnmShare() {
+    SfSetup(21);
+    g_spLot = &kSpLotNone;
+    u8* g = g_sf.world + 0x8C;
+    DWORD* bk = *(DWORD**)(g + 0x360);
+    u8* nodes[40];
+    for (int i = 0; i < 40; i++) {  // 40 cells, counts 1-3, chained in 5 buckets
+        u8* nd = nodes[i] = (u8*)SfA(0x10);
+        *(DWORD*)nd = 1000 + i * 37, nd[4] = (u8)(1 + i % 3);
+        const DWORD b = *(DWORD*)nd % 5;
+        *(DWORD*)(nd + 8) = bk[b], bk[b] = (DWORD)(uintptr_t)nd;
+    }
+    auto mark = [] { SpLockD(); g_spD.flags |= SPD_BNM; SpUnlockD(); };
+    auto fresh = [&] { SpImg* f = SpBuildBnm(g); const bool eq = SpImgEq(f, g_spCur->w[SP_BNM]); SpImgRel(f); return eq; };
+    assert(SpCut(g_sf.world) && fresh());
+    const SpImg* i0 = g_spCur->w[SP_BNM];
+    const LONG same0 = g_spSplit[SP_BNM].same;
+    mark();  // a grid mark that reached no bnm writer
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] == i0 && g_spSplit[SP_BNM].same == same0 + 1 && fresh());
+    nodes[7][4]++;  // +1 on an existing cell (0x66FB40)
+    mark();
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] != i0 && fresh());
+    const SpImg* i1 = g_spCur->w[SP_BNM];
+    mark();
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] == i1);
+    {  // erase (0x66F6D0 at 0): unlink nodes[11] from its chain
+        DWORD* at = &bk[*(DWORD*)nodes[11] % 5];
+        while (*at != (DWORD)(uintptr_t)nodes[11]) at = (DWORD*)(*at + 8);
+        *at = *(DWORD*)(nodes[11] + 8);
+    }
+    mark();
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] != i1 && fresh());
+    const SpImg* i2 = g_spCur->w[SP_BNM];
+    {  // same pairs, another chain order (a rehash): rebuilt, equal content, the old image shared by put()
+        const DWORD b = *(DWORD*)nodes[0] % 5;
+        u8* h = (u8*)(uintptr_t)bk[b];
+        u8* n2 = (u8*)(uintptr_t)*(DWORD*)(h + 8);
+        assert(n2);
+        *(DWORD*)(h + 8) = *(DWORD*)(n2 + 8), *(DWORD*)(n2 + 8) = (DWORD)(uintptr_t)h, bk[b] = (DWORD)(uintptr_t)n2;
+    }
+    const LONG same1 = g_spSplit[SP_BNM].same;
+    mark();
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] == i2 && g_spSplit[SP_BNM].same == same1 + 1 && fresh());
+    mark();  // and the new order is the kept walk now
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] == i2 && fresh());
+    // negative control: the share needs the kept walk to be the old image's; with it cleared every mark rebuilds
+    g_spBnmFor = NULL;
+    nodes[3][4]++;
+    mark();
+    assert(SpCut(g_sf.world) && g_spCur->w[SP_BNM] != i2 && fresh());
+    SpAudit(g_spCur, g_sf.world);
+    SfTeardown();
+    // bench (this machine): the same-case cost before (walk + sort + image + compare) and now (walk + compare)
+    static u8 pool[16384][16];
+    static DWORD bb[4096];
+    static const DWORD kBn[] = {4096, 16384};
+    for (DWORD n : kBn) {
+        u8 gg[0x400] = {};
+        memset(bb, 0, sizeof(bb));
+        for (DWORD i = 0; i < n; i++) {
+            u8* nd = pool[i];
+            *(DWORD*)nd = i * 2654435761u >> 8, nd[4] = (u8)(1 + i % 5);
+            const DWORD b = *(DWORD*)nd % 4096;
+            *(DWORD*)(nd + 8) = bb[b], bb[b] = (DWORD)(uintptr_t)nd;
+        }
+        *(DWORD**)(gg + 0x360) = bb, *(DWORD*)(gg + 0x364) = 4096;
+        LARGE_INTEGER t0, t1;
+        SpImg* ref = SpBuildBnm(gg);
+        QueryPerformanceCounter(&t0);
+        for (int r = 0; r < 50; r++) { SpImg* f = SpBuildBnm(gg); assert(SpImgEq(f, ref)); SpImgRel(f); }
+        QueryPerformanceCounter(&t1);
+        const double before = BenchUs(t0, t1) / 50;
+        g_spBnmFor = NULL;
+        bool same;
+        SpImg* f0 = SpBnmCut(gg, NULL, &same);
+        g_spBnmFor = f0;
+        QueryPerformanceCounter(&t0);
+        for (int r = 0; r < 50; r++) { assert(!SpBnmCut(gg, f0, &same) && same); }
+        QueryPerformanceCounter(&t1);
+        const double now = BenchUs(t0, t1) / 50;
+        printf("bnm share: %lu entries, unchanged build %.1f us before, %.1f us now\n", n, before, now);
+        SpImgRel(f0), SpImgRel(ref);
+        g_spBnmFor = NULL;
+    }
+}
+
 static void TestSnapImages() {
     Ts3nCounters& k = ts3native_counters;
     static DWORD simTid;
@@ -6291,7 +6432,7 @@ static void TestSnapReplay() {
         RfSetup(seed);
         RfCut();  // first cut: the clone
         assert(k.rpEpochs >= 1 && g_rpClone && g_rpClone->nLots == g_rf.nLots && k.rpEpochFails == 0);
-        const LONG mis0 = k.rpMis, dv0 = k.rpDiverge, ep0 = k.rpEpochs;
+        const LONG mis0 = k.rpMis, dv0 = k.rpDiverge, ep0 = k.rpEpochs, rd0 = g_rpRemDiff;
         for (int i = 0; i < 600; i++) {
             RfStep();
             steps++;
@@ -6307,9 +6448,131 @@ static void TestSnapReplay() {
         }
         RfCut();
         assert(k.rpMis == mis0 && g_rpTail == g_rpPub && k.rpDiverge == dv0 && k.rpEpochs == ep0);  // no rebuild needed either
+        {  // 0.35.17: a lot graph build (W4) is a shell refresh: no batch walks the map, every lot audit stays equal
+            const LONG sh0 = g_rpShellLots, mb0 = g_rpMapBatches, reb0 = k.rpRebaseLots, miss0 = g_rpShellMiss;
+            for (int j = 0; j < 40; j++) {
+                RfW4(j % g_rf.nLots);
+                if (j & 1) RfW4((j + 1) % g_rf.nLots);  // two lots in one cut
+                RfCut();
+            }
+            if (g_rpMapBatches != mb0 || k.rpMis != mis0 || g_rpShellMiss != miss0)
+                printf("replay seed %lu: W4 shells %ld, map batches +%ld, mismatches +%ld, shells not taken +%ld\n", seed,
+                       g_rpShellLots - sh0, g_rpMapBatches - mb0, k.rpMis - mis0, g_rpShellMiss - miss0);
+            assert(g_rpShellLots >= sh0 + 60 && g_rpMapBatches == mb0 && k.rpRebaseLots >= reb0 + 60 && k.rpMis == mis0 &&
+                   g_rpShellMiss == miss0 && k.rpDiverge == dv0 && k.rpEpochs == ep0);
+            // a W4 whose lot also got a new Q (W3 build) is a full rebase: the map is walked
+            RfW4(0);
+            u8* g = g_rf.lots[0] + 0x10;
+            u8** qv = *(u8***)(g + 0x74);
+            RfRemAll(qv[0]);
+            DWORD* s = RfSlot();
+            s[1] = *(DWORD*)g, s[2] = 0, s[3] = 0, s[4] = 1;
+            qv[0] = NULL;
+            SnEnter(2, s);
+            qv[0] = RfQ(*(DWORD*)g);
+            RfIns(qv[0], g_rf.fps[0], 0, true);
+            RfCut();
+            assert(g_rpMapBatches == mb0 + 1 && k.rpMis == mis0 && k.rpDiverge == dv0);
+        }
+        {  // 0.35.14: a replayed remove whose clone copy answers flat bounds (the game keeps the leaves) forces its lot
+            u8* q = RfQOf(0, 0);
+            u8* fp = g_rf.fps[1];
+            RfIns(q, fp, 0, true);
+            RfCut();
+            const LONG flat0 = g_rpRemFlat;
+            g_rfFlatId = *(DWORD*)(fp + 0x14);
+            RfRem(q, fp, true);
+            RfCut();
+            g_rfFlatId = 0;
+            assert(*(DWORD*)(fp + 0x14) == 0 || g_rpRemFlat > flat0);
+            RfCut();
+            assert(k.rpMis == mis0 && k.rpFaults == 0);
+            // 0.35.16: an FME inserted flat (no 0x200: no leaves on either side) is not a trigger. 0.35.14 forced its lot at
+            // every such remove (BP 15k rebased lots): 50 insert / remove pairs now rebase nothing
+            u8* q2 = RfQOf(0, 1);
+            u8* fp2 = g_rf.fps[2];
+            const LONG flat1 = g_rpRemFlat, reb0 = k.rpRebaseLots;
+            for (int j = 0; j < 50; j++) {
+                RfRem(q2, fp2, true);
+                RfCut();  // replayed before the bounds turn flat (the replay asks +0x2C when it applies)
+                g_rfFlatId = *(DWORD*)(fp2 + 0x14);
+                RfIns(q2, fp2, 0, true);
+                RfCut();
+                RfRem(q2, fp2, true);
+                g_rfFlatId = 0;
+                RfCut();
+            }
+            if (g_rpRemFlat != flat1 || k.rpRebaseLots != reb0)
+                printf("replay seed %lu: flat-inserted removes forced %ld, rebased lots +%ld\n", seed, g_rpRemFlat - flat1, k.rpRebaseLots - reb0);
+            assert(g_rpRemFlat == flat1 && k.rpRebaseLots == reb0 && k.rpMis == mis0);
+            assert(g_rpRemDiff == rd0);  // equal live and copy bounds over every remove so far: no force from the 0.35.18 check
+        }
+        {  // 0.35.18 (I-94-478): the IP lot 0x08F300536B484DF0 Q 1 shape. The clone copy of a 3-level footprint answers bounds
+           // outside the Q's rect while live's reach it: the stand-in remove (as 0x666010) keeps the copy's 3 leaf entries,
+           // the map erase agrees. The REM record's live bounds differ from the copy's: logged, the lot forced, equal again
+            u8* q = RfQOf(0, 0);
+            u8* fp = NULL;
+            for (int j = 3; j < g_rf.nFps && !fp; j++)
+                if (*(DWORD*)g_rf.fps[j] == g_rfCls[2].vt) fp = g_rf.fps[j];
+            assert(fp);
+            RfRem(q, fp, true);
+            RfCut();
+            RfIns(q, fp, 0, true);
+            RfCut();
+            const DWORD* cp = RpTabFind(g_rpClone->fps, (DWORD)(uintptr_t)fp);
+            assert(cp);
+            u8* cq = NULL;
+            assert(RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq) && cq);
+            DWORD e0 = 0, c0 = 0;
+            RpTreeHash(0, RpP(q + 0x24), 0, &e0), RpTreeHash(0, RpP(cq + 0x24), 0, &c0);
+            assert(e0 == c0);
+            const LONG d0 = g_rpRemDiff, reb0 = k.rpRebaseLots;
+            g_rfFarFp = (const u8*)(uintptr_t)*cp;
+            RfRem(q, fp, true);
+            RfCut();  // the remove replayed: the clone keeps the copy's entries until the forced rebase
+            g_rfFarFp = NULL;
+            DWORD e1 = 0, c1 = 0;
+            RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq);
+            RpTreeHash(0, RpP(q + 0x24), 0, &e1), RpTreeHash(0, RpP(cq + 0x24), 0, &c1);
+            if (c1 != e1 + 3 || g_rpRemDiff != d0 + 1) printf("replay seed %lu: far copy: live %lu clone %lu entries, diffs +%ld\n", seed, e1, c1, g_rpRemDiff - d0);
+            assert(c1 == e1 + 3 && g_rpRemDiff == d0 + 1);  // 3 levels: 3 clone-only entries; the first difference forces the lot
+            RfCut();  // a lot audit in this window may still see the 3 entries (counted once); the force lands here
+            RfCut();
+            const LONG misW = k.rpMis;
+            RfCut();
+            RfCut();
+            DWORD e2 = 0, c2 = 0;
+            RpFindQ(g_rpClone, (DWORD)(uintptr_t)q, &cq);
+            RpTreeHash(0, RpP(q + 0x24), 0, &e2), RpTreeHash(0, RpP(cq + 0x24), 0, &c2);
+            if (c2 != e2 || k.rpRebaseLots <= reb0 || k.rpMis != misW || misW > mis0 + 1 || k.rpFaults)
+                printf("replay seed %lu: after the forced rebase live %lu clone %lu entries, rebased +%ld, mis +%ld (+%ld after), faults %ld\n",
+                       seed, e2, c2, k.rpRebaseLots - reb0, misW - mis0, k.rpMis - misW, k.rpFaults);
+            assert(c2 == e2 && k.rpRebaseLots > reb0 && k.rpMis == misW && misW <= mis0 + 1 && k.rpFaults == 0);
+        }
+        g_rpDiffN = 0;
+        const LONG only0 = g_rpDiffOnly[0], forced0 = g_rpAuditForced;
+        const LONG misN = k.rpMis;  // the 0.35.18 block may have counted one window mismatch
         RfIns(RfQOf(0, 0), g_rf.fps[0], 1, false);  // negative control: an insert with no record
         RfCut();
-        assert(k.rpMis > mis0);
+        assert(k.rpMis > misN && g_rpAuditForced > forced0);
+        // 0.35.13: the mismatched lot is named (the next hold lists the live-only entry) and rebased at the next cut: equal again
+        const LONG mis1 = k.rpMis;
+        RfCut();
+        RfCut();
+        if (k.rpMis != mis1 || g_rpDiffOnly[0] <= only0) printf("replay seed %lu: after the forced rebase mis +%ld, live-only %ld\n", seed, k.rpMis - mis1, g_rpDiffOnly[0] - only0);
+        assert(k.rpMis == mis1 && g_rpDiffOnly[0] > only0);
+        if (seed == 1) {  // 0.35.13: an EPOCH's old clone goes to the grave, freed by later holds (none while a P4 hold is armed)
+            RP_NEED_EPOCH();
+            RpCut(g_rf.world);
+            g_rpHoldAt = g_rpHead, g_rpHoldUntil = GetTickCount64() + 60000;
+            RpDrain(false);
+            const bool busy = RpGraveBusy();
+            g_rpHoldAt = 0;
+            RpDrain(false);
+            assert(busy && !RpGraveBusy() && !g_rpGrave.lots);
+            RfCut();
+            assert(k.rpMis == mis1);
+        }
         RfTeardown();
         assert(g_rpBytes == 0 && k.rpFps == 0);
     }
@@ -6339,6 +6602,8 @@ static void TestSnapReplay() {
         SetEvent(g_rpEvent);
         WaitForSingleObject(th, 5000);
         CloseHandle(th), CloseHandle(g_rpEvent);
+        g_rpEvent = NULL;  // 0.33.3: a stale value here was recycled as TestPcThreaded's own event (flaky test)
+        g_rpStop = 0;
         g_rpThreaded = false;
         RfTeardown();
         assert(g_rpBytes == 0);
@@ -6674,6 +6939,47 @@ static void TestSnapReplay() {
             RfTeardown();
             assert(g_rpBytes == 0 && k.rpFps == 0);
         }
+        // (i2) 0.35.8 (I-94-440; BP 0.35.6: 692 fresh soft misses, every one a child FME with "clone copy: none"): a live
+        // child address reused by a new child of another parent. Parent 1 (in two lots, so its old block stays) drops child
+        // X; X becomes parent 2's child; parent 2 is inserted again (the child table maps X to its new copy), then parent 1
+        // (its old block is retired). 0.35.7 deleted X's entry with the old block: X's FMEs had no clone partner
+        {
+            RfSetup(23);
+            RfCut();
+            const LONG dv4 = k.rpDiverge, ep4 = k.rpEpochs, kept0 = k.rpKidsKept;
+            u8* p1 = g_rf.fps[0];
+            u8* p2 = g_rf.fps[1];
+            u8* qa = RfQOf(0, 0);
+            u8* qb = RfQOf(1, 0);
+            u8* qc = RfQOf(2, 0);
+            RfIns(qa, p1, 0, true), RfIns(qb, p1, 0, true), RfIns(qc, p2, 0, true);
+            RfCut();
+            RfRem(qa, p1, true), RfRem(qc, p2, true);
+            u8* l1 = *(u8**)(p1 + 0x24);
+            u8* l2 = *(u8**)(p2 + 0x24);
+            u8* x = *(u8**)(l1 + 8);
+            *(DWORD*)(x + 0x14) = ~*(DWORD*)(p2 + 0x14), *(DWORD*)(x + 0x18) = ~*(DWORD*)(p2 + 0x18);  // a new object at X
+            *(u8**)(l2 + 8) = x;
+            u8* nch = RfFootprint(~*(DWORD*)(p1 + 0x14) ^ 0x10);
+            *(DWORD*)(nch + 0x18) = ~*(DWORD*)(p1 + 0x18);
+            *(u8**)(l1 + 8) = nch;
+            RfIns(qc, p2, 0, true);
+            RfIns(qa, p1, 0, true);
+            RfCut();
+            const DWORD* xv = RpTabFind(g_rpClone->kids, (DWORD)(uintptr_t)x);
+            if (!xv || k.rpKidsKept == kept0) printf("reused child address: entry %s, kept %ld\n", xv ? "kept" : "deleted", k.rpKidsKept - kept0);
+            assert(xv && k.rpKidsKept > kept0);
+            for (int i = 0; i < 300; i++) {  // batches re-chain the map: every live node needs its partner
+                RfStep();
+                if (RfRnd(5) == 0) RfCut();
+            }
+            RfCut();
+            if (k.rpDiverge != dv4 || k.rpEpochs != ep4) printf("reused child address: %ld divergences, %ld rebuilds\n", k.rpDiverge - dv4, k.rpEpochs - ep4);
+            assert(k.rpDiverge == dv4 && k.rpEpochs == ep4);
+            RfTeardown();
+            assert(g_rpBytes == 0 && k.rpFps == 0);
+            printf("replay 0.35.8: a reused live child address keeps its child table entry (kept %ld)\n", k.rpKidsKept - kept0);
+        }
         // (j) 0.32.8 (BP on 0.32.4: 6 lot mismatches, clone trees with fewer entries): a footprint held by two lots changes
         // a field the search reads (+0x34) while it is out of one lot, then goes back in; the clone's copy, held by the other
         // lot's FMEs, must take the record's state (0.32.4 reused it unchanged)
@@ -6766,6 +7072,74 @@ static void TestSnapReplay() {
     g_spWorldSlot = (const u8* const*)(uintptr_t)0x011D9128;
     g_spAcq = (LockAcquireFn)(uintptr_t)0x004E16F0;
     g_spRel = (SpRelFn)(uintptr_t)0x004E17B0;
+    g_rtSimTidSlot = savedSim;
+}
+
+// 0.35.12 (docs/94 §22.15, I-94-458/459): replay memory over a long run. (a) The pointer tables stay sized to their live
+// entries under key churn (before, erased slots counted as used and every grow doubled: the fake's fps table went 1024 ->
+// 4096 in 50k steps with ~45 live blocks). (b) With the consumer behind (threaded mode, nobody draining) at most one LOTS
+// batch is in the ring: later cuts' rebases wait and go in one batch; after the drain the clone audits equal.
+static int RpRingCount(DWORD type, bool mapOnly = false) {  // mapOnly: RP_LOTS batches with map work (an order)
+    int n = 0;
+    for (DWORD i = g_rpTail; i != g_rpHead; i++) {
+        const RpRec& r = g_rpRing[i & (kRpRing - 1)];
+        n += r.type == type && (!mapOnly || ((const RpBatch*)r.p)->order);
+    }
+    return n;
+}
+static void TestReplayLongRun() {
+    Ts3nCounters& k = ts3native_counters;
+    static DWORD simTid;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    simTid = GetCurrentThreadId();
+    g_rtSimTidSlot = &simTid;
+    {  // (a0) the table alone: 1M distinct keys, at most 64 live
+        RpTab t = {};
+        for (DWORD i = 0; i < 1000000; i++) {
+            assert(RpTabPut(t, 0x1000 + i * 16, i));
+            if (i >= 64) { DWORD* v = RpTabFind(t, 0x1000 + (i - 64) * 16); assert(v); t.k[v - t.v] = 1; }
+        }
+        assert(t.cap <= 1024 && RpTabFind(t, 0x1000 + 999999 * 16) && !RpTabFind(t, 0x1000 + 999935 * 16));
+        RpTabFree(t);
+    }
+    RfSetup(21);
+    RfCut();
+    const LONG mis0 = k.rpMis, dv0 = k.rpDiverge;
+    LONG kb20 = 0, kbMax = 0;
+    DWORD capMax = 0;
+    for (int i = 1; i <= 60000; i++) {
+        RfStep();
+        if (i % 5 == 0) RfCut();
+        if (i == 20000) kb20 = g_rpBytes >> 10;
+        if (i > 20000) kbMax = max(kbMax, g_rpBytes >> 10);
+        if (g_rpClone) capMax = max(capMax, max(max(g_rpClone->fps.cap, g_rpClone->kids.cap), max(g_rpClone->old.cap, g_rpClone->oldLive.cap)));
+    }
+    printf("replay long run: 60k steps, 12k cuts: %ld KB at 20k steps, max %ld KB after; largest clone table %lu slots; fps %lu live / %lu\n",
+           kb20, kbMax, capMax, g_rpClone->fps.used, g_rpClone->fps.cap);
+    assert(capMax <= 2048 && kbMax <= kb20 * 2 + 64 && k.rpMis == mis0 && k.rpDiverge == dv0 && k.rpFaults == 0);
+    // (b) the consumer behind: threaded mode with nobody draining between cuts
+    g_rpThreaded = true;
+    const HANDLE ev = g_rpEvent;
+    g_rpEvent = NULL;
+    int lotsMax = 0, waits = 0;
+    const LONG lw0 = g_rpLotsWait, rb0 = k.rpRec[RP_LOTS];
+    for (int i = 1; i <= 6000; i++) {
+        RfStep();
+        if (i % 5) continue;
+        RpCut(g_rf.world);
+        waits += g_rpCutDeferred;
+        lotsMax = max(lotsMax, RpRingCount(RP_LOTS, true));  // 0.35.23: one batch with map work in flight (shells may queue)
+        if (i % 1000 == 0) RpDrain(false);  // the consumer catches up now and then
+    }
+    g_rpThreaded = false;
+    g_rpEvent = ev;
+    RfCut();  // the waiting rebases in one batch, then SYNC / AUDIT
+    RfCut();
+    printf("replay consumer behind: %d cuts deferred (%ld waits logged), at most %d LOTS batch in the ring, %ld batches; audits equal\n", waits,
+           g_rpLotsWait - lw0, lotsMax, k.rpRec[RP_LOTS] - rb0);
+    assert(lotsMax <= 1 && waits > 0 && g_rpLotsWait > lw0 && k.rpMis == mis0 && k.rpFaults == 0);
+    RfTeardown();
+    assert(g_rpBytes == 0 && k.rpFps == 0);
     g_rtSimTidSlot = savedSim;
 }
 
@@ -6893,14 +7267,31 @@ static void TestPools() {
         pw.astar = savedA;
         g_p4PoolsEnterJob = savedEnter, g_p4PoolsLeaveJob = savedLeave;
     }
-    // another thread while this one holds the switch: the game's pools; an overlapping job is counted
+    // another thread while this one holds the switch: the game's pools; a job waits for the set (0.35.12, I-94-460: before,
+    // it ran on the same private lists and only this order was counted as plOverlap); a cut on another thread is deferred
     op = RpOpEnter();
     struct T { static DWORD WINAPI Run(void* p) { *(u8**)p = ((PopFn)(uintptr_t)g_plPopAt[PL_LEAF])(); PoolsEnterJob(); PoolsLeaveJob(); return 0; } };
     u8* got = NULL;
     HANDLE th = CreateThread(NULL, 0, T::Run, &got, 0, NULL);
-    WaitForSingleObject(th, 5000), CloseHandle(th);
-    assert(got == livePool[PL_LEAF] && k.plOverlap == ov0 + 1);
+    assert(WaitForSingleObject(th, 200) == WAIT_TIMEOUT);  // the job waits while the op owns the pool set
+    struct T2 { static DWORD WINAPI Run(void* p) { LONG pv; *(int*)p = RpOpTry(&pv) ? 1 : 2; return 0; } };
+    int tried = 0;
+    HANDLE th2 = CreateThread(NULL, 0, T2::Run, &tried, 0, NULL);
+    WaitForSingleObject(th2, 5000), CloseHandle(th2);
+    assert(tried == 2);  // the sim only tries: refused, no wait
     RpOpLeave(op);
+    WaitForSingleObject(th, 5000), CloseHandle(th);
+    assert(got == livePool[PL_LEAF] && k.plOverlap == ov0 && !g_plJobTid && !g_rpOpTid);
+    {  // the other order: a job owns the set, the replay op tries and is refused (the sim's cut is deferred)
+        assert(PoolsEnterJob());
+        HANDLE th3 = CreateThread(NULL, 0, T2::Run, &tried, 0, NULL);
+        WaitForSingleObject(th3, 5000), CloseHandle(th3);
+        assert(tried == 2 && k.plOverlap == ov0);
+        PoolsLeaveJob();
+        LONG pv;
+        assert(RpOpTry(&pv));
+        RpOpLeave(pv);
+    }
     // the map: the clone's M+0x1C gets a private pool made from the live one; a live pool object change is an epoch
     g_plOn = 0;
     assert(!PlMapPool(livePool[PL_ASTAR]));  // off
@@ -7020,8 +7411,13 @@ static void TestP4DeferStop() {
     assert(DsTry(true, q) == 0 && DsTry(false, q) == 0 && g_dsCalls == 2);  // live (no clone run): passes, even iterated
     t_snapRun = 1;
     g_p4Job.abort = -1;
+    *(DWORD*)(q + 0x18) = 0x1234, *(DWORD*)(q + 0x1C) = 5;
+    g_p4Job.nDirty = 0, g_p4LazyKeep = 0, g_rpLazyKeep = 1;
     assert(DsTry(true, q) == kP4LazyCode && DsTry(false, q) == kP4LazyCode && g_dsCalls == 2);  // stopped before the original
     assert(k.pcDeferStop == stop0 + 2 && k.snCloneLazy == lazy0 + 2 && g_p4Job.abort == P4_AB_LAZY);
+    // 0.35.21: a keep-stop (P4REL_LAZY at the release), the Q's lot in the run's dirty list once
+    assert(g_p4LazyKeep == 1 && g_p4Job.nDirty == 1 && g_p4Job.dirty[0] == 0x500001234ull);
+    g_p4Job.nDirty = 0, g_p4LazyKeep = 0, g_rpLazyKeep = 0;
     *(LONG*)(q + 0x48) = 0;  // not iterated: the game writes only the clone Q (flush + apply), passes
     assert(DsTry(true, q) == 0 && DsTry(false, q) == 0 && g_dsCalls == 4 && k.pcDeferStop == stop0 + 2);
     t_snapRun = 0;
@@ -7332,6 +7728,830 @@ static void PcSetup(DWORD seed) {
     assert(g_rpClone && g_rpClone->nLots == g_rf.nLots);
 }
 
+// 0.33.1 (docs/94 §21.14), on PcSetup's world with the replay clone provider registered:
+// (a) two cut slots: with Mode=1 the next START's cut goes to the other slot and the hold stays on the older cut until its
+//     shadow ends (release or drop); an older hold past kPcPendMs is replaced as before ("epoch", sub "replaced" / "passed")
+// (b) soft resync: an unrecorded footprint swap on a lot-0 FME, then a lot-1 change: the batch's map resync misses the lot-0
+//     node, lot 0 is forced, the clone is stale (acquire refused "mat", sub "stale"), no rebuild; the next cut rebases lot 0
+static void TestPcMode2(int* list, int* s, int* g, u8* opts);  // after p5c-test.h (P5b's lock fakes)
+static void TestPcTwoSlots(int* list, int* s, int* g, u8* opts) {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG mode = k.snP4Mode;
+    k.snP4Mode = 1;
+    AsyncJob a = {}, b = {};
+    a.kind = b.kind = 1;
+    for (PcCut& h : g_pcCuts) h.pend = 0;  // the cut the test above left unacquired (its job is gone)
+    P4OnStart(&a);
+    P4OnStart(&b);  // every cut pushes SYNC / AUDIT records: b's version is newer
+    assert(a.p4Ver && b.p4Ver && a.p4Ver != b.p4Ver && g_rpHoldAt == a.p4Ver && g_pcHoldNext == b.p4Ver);
+    P4Clone ca = {}, cb = {};
+    assert(PcAcquire(a.p4Ver, &ca) < 0);  // the older cut: the consumer stopped at it
+    PcRelease(&ca, 0, NULL, 0);
+    assert(g_rpHoldAt == b.p4Ver && !g_pcHoldNext);
+    assert(PcAcquire(b.p4Ver, &cb) < 0);
+    PcRelease(&cb, 0, NULL, 0);
+    assert(!g_rpHoldAt && !g_pcHoldNext);
+    P4OnStart(&a);
+    P4OnStart(&b);
+    PcDrop(a.p4Ver);  // a shadow that ends without an acquire (busy, refused before it) moves the hold on
+    assert(g_rpHoldAt == b.p4Ver && !g_pcHoldNext);
+    PcDrop(b.p4Ver);
+    assert(!g_rpHoldAt);
+    P4OnStart(&a);
+    for (int i = 0; i < 2; i++) if (g_pcCuts[i].ver == a.p4Ver) g_pcCuts[i].tick -= kPcPendMs + 1;  // its job never got to the shadow
+    P4OnStart(&b);
+    assert(g_rpHoldAt == b.p4Ver && !g_pcHoldNext);
+    assert(PcAcquire(a.p4Ver, &ca) == P4_AB_EPOCH && g_pcAcqWhy == PS_PASSED);
+    assert(PcAcquire(b.p4Ver, &cb) < 0);
+    PcRelease(&cb, 0, NULL, 0);
+    // (a2) 0.35.6 (docs/94 §21.21): a START while a job runs shares the newest pending cut: same version, that cut's write
+    // count, the hold until both shadows end; a shadow that wrote clone lots refuses the other ("mat"/"stale")
+    {
+        const LONG js = g_jobs[0].state, bw0 = k.p4Borrow, bm0 = k.p4BorrowMiss, bd0 = k.p4BorrowDirty;
+        P4OnStart(&a);
+        assert(a.p4Ver && g_rpHoldAt == a.p4Ver);
+        InterlockedIncrement(&g_spWrites);  // a write after the cut (the running job's): the shared cut's count stays the cut's
+        g_jobs[0].state = J_RUNNING;
+        P4OnStart(&b);
+        assert(b.p4Ver == a.p4Ver && b.p4W == a.p4W && b.p4W != g_spWrites && k.p4Borrow == bw0 + 1);
+        assert(PcAcquire(a.p4Ver, &ca) < 0);
+        PcRelease(&ca, 0, NULL, 0);
+        assert(g_rpHoldAt == a.p4Ver);  // still held for b's shadow
+        assert(PcAcquire(b.p4Ver, &cb) < 0);
+        PcRelease(&cb, 0, NULL, 0);
+        assert(!g_rpHoldAt);
+        P4OnStart(&b);  // nothing pending to share: refused as before
+        assert(!b.p4Ver && b.p4Why == PS_BUSY && k.p4BorrowMiss == bm0 + 1);
+        g_jobs[0].state = J_FREE;
+        P4OnStart(&a);
+        g_jobs[0].state = J_RUNNING;
+        P4OnStart(&b);
+        g_jobs[0].state = js;
+        assert(b.p4Ver == a.p4Ver);
+        const unsigned __int64 lot = 0x5A5A5A5A5A5A5A5Aull;  // no such lot: the force list is cleared below
+        assert(PcAcquire(a.p4Ver, &ca) < 0);
+        PcRelease(&ca, 0, &lot, 1);
+        assert(PcAcquire(b.p4Ver, &cb) == P4_AB_MAT && g_pcAcqWhy == PS_STALE && k.p4BorrowDirty == bd0 + 1 && !g_rpHoldAt);
+        g_rpNForce = 0;
+        P4OnStart(&a);  // a new cut is clean again
+        assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0);
+        PcRelease(&ca, 0, NULL, 0);
+        printf("P4 0.35.6 shared cut: a START during a running job shares the pending cut (w0 the cut's), hold kept for both "
+               "shadows, a dirty release refuses the second\n");
+    }
+    // (b)
+    const LONG ep = k.rpEpochs, dv = k.rpDiverge, st = k.snPcRefused[7], m0 = k.snM[0];
+    u8* m = g_rf.m;
+    u8* f = NULL;
+    for (DWORD i = 0; !f && i < *(DWORD*)(m + 8); i++)
+        for (u8* nd = (u8*)(uintptr_t)(*(DWORD**)(m + 4))[i]; nd && !f; nd = RpP(nd + 0x10)) {
+            u8* fme = RpP(nd + 8);
+            const u8* fp = fme ? RpP(fme + 8) : NULL;
+            if (!fp || RpIsChild(fp)) continue;
+            for (u8** qp = *(u8***)(g_rf.lots[0] + 0x10 + 0x74); qp < *(u8***)(g_rf.lots[0] + 0x10 + 0x78); qp++)
+                if (*qp == RpP(fme + 0xC)) f = fme;
+        }
+    assert(f);
+    u8* old = RpP(f + 8);
+    u8* nf = RfFootprint(*(DWORD*)(old + 0x14));
+    *(DWORD*)(nf + 0x18) = *(DWORD*)(old + 0x18), *(DWORD*)(nf + 0x34) = *(DWORD*)(old + 0x34);
+    (*(LONG*)(old + 8))--, (*(LONG*)(nf + 8))++;
+    *(u8**)(f + 8) = nf;  // no record, no lot signature change: the clone keeps the old footprint's copy on this node
+    // lot 1 forced (as a W3 build): a full batch rebases it and resyncs the map. 0.35.17: a portal list change alone (a
+    // signature move, Q list unchanged) is a shell refresh, which neither walks nor resyncs the map
+    g_rpForce[g_rpNForce++] = *(DWORD*)g_rf.lots[1];
+    const char* r = PcRunJob(0, list, s, g, opts);
+    assert(strstr(r, "\"refused\":\"mat\"") && strstr(r, "\"sub\":\"stale\"") && k.snPcRefused[7] == st + 1);
+    assert(k.rpDiverge == dv + 1 && k.rpEpochs == ep && g_rpStale && !g_rpNeedEpoch);
+    const LONG repin0 = g_rpRepinScans;
+    r = PcRunJob(0, list, s, g, opts);  // lot 0 forced into this cut's batch: the map resyncs, the clone answers again
+    assert(g_rpRepinScans == repin0);  // 0.34.1: a batch never walks every clone footprint per replaced one (the long holds)
+    assert(strstr(r, "\"refused\":null") && k.snM[0] == m0 + 1 && !g_rpStale && k.rpEpochs == ep && k.rpDiverge == dv + 1);
+    {  // 0.35.3 (docs/94 §21.18): a consumer miss before a queued EPOCH marks the clone bad and asks no rebuild; P4 refuses it
+        const DWORD at0 = g_rpEpochAt;  // g_rpTail is left alone (a consumer thread may read it)
+        const LONG old0 = k.rpOldAsk, bad0 = k.p4AcqBad, ref0 = k.snPcRefused[2];
+        t_rpReplay++;
+        g_rpEpochAt = g_rpTail + 5;  // an EPOCH at tail + 4: the record being applied is older
+        RP_NEED_EPOCH();
+        assert(!g_rpNeedEpoch && g_rpBad && k.rpOldAsk == old0 + 1);
+        g_rpEpochAt = g_rpTail;  // the record is after the last EPOCH: the newest clone missed it, rebuild as before
+        RP_NEED_EPOCH();
+        assert(g_rpNeedEpoch && k.rpOldAsk == old0 + 1);
+        t_rpReplay--;
+        g_rpEpochAt = at0, g_rpNeedEpoch = 0;
+        r = PcRunJob(0, list, s, g, opts);  // the rebuild ask is gone (a later cut built it), the clone is still bad
+        assert(strstr(r, "\"sub\":\"noclone\"") && k.p4AcqBad == bad0 + 1 && k.snPcRefused[2] == ref0 + 1);
+        g_rpBad = 0;
+        r = PcRunJob(0, list, s, g, opts);
+        assert(strstr(r, "\"refused\":null"));
+    }
+    // (c) 0.35.5 (docs/94 §21.20): two batches cut before the consumer's force lands, then 5 fresh misses in a row (0.35.2
+    // rebuilt on the 4th failed batch): the second batch's miss is in flight (not forced again), no rebuild, the clone matches
+    // once the forced lots are in a batch
+    auto swap = [&](int lot) {  // an unrecorded footprint swap on one of the lot's FMEs (as (b))
+        u8* fm = NULL;
+        for (DWORD i = 0; !fm && i < *(DWORD*)(m + 8); i++)
+            for (u8* nd = (u8*)(uintptr_t)(*(DWORD**)(m + 4))[i]; nd && !fm; nd = RpP(nd + 0x10)) {
+                u8* fme = RpP(nd + 8);
+                const u8* fp = fme ? RpP(fme + 8) : NULL;
+                if (!fp || RpIsChild(fp)) continue;
+                for (u8** qp = *(u8***)(g_rf.lots[lot] + 0x10 + 0x74); qp < *(u8***)(g_rf.lots[lot] + 0x10 + 0x78); qp++)
+                    if (*qp == RpP(fme + 0xC)) fm = fme;
+            }
+        assert(fm);
+        u8* o = RpP(fm + 8);
+        u8* n = RfFootprint(*(DWORD*)(o + 0x14));
+        *(DWORD*)(n + 0x18) = *(DWORD*)(o + 0x18), *(DWORD*)(n + 0x34) = *(DWORD*)(o + 0x34);
+        (*(LONG*)(o + 8))--, (*(LONG*)(n + 8))++;
+        *(u8**)(fm + 8) = n;
+    };
+    const LONG fl0 = k.rpSoftInFlight, fr0 = k.rpSoftFresh, h0 = k.rpHard[1], why1 = k.rpRebaseWhy[1];
+    swap(0);
+    g_rpForce[g_rpNForce++] = *(DWORD*)g_rf.lots[1];  // a full batch (0.35.17: a portal list change alone is a shell refresh, no resync)
+    RpCut(g_rf.world);
+    g_rpForce[g_rpNForce++] = *(DWORD*)g_rf.lots[1];
+    RpCut(g_rf.world);  // cut before the consumer saw the first batch's miss
+    RpDrain(false);
+    assert(k.rpSoftFresh == fr0 + 1 && k.rpSoftInFlight == fl0 + 1 && g_rpStale && !g_rpNeedEpoch && g_rpNForce == 1);
+    RfCut();  // lot 0 forced into this batch
+    assert(!g_rpStale && k.rpEpochs == ep && k.rpRebaseWhy[1] == why1 + 1 && !g_rpNSoftPend);
+    swap(0);
+    g_rpForce[g_rpNForce++] = *(DWORD*)g_rf.lots[1];
+    RfCut();
+    for (int i = 1; i <= 4; i++) {  // each batch rebases the lot forced before and misses the other one
+        swap(i & 1);
+        RfCut();
+        assert(g_rpStale && !g_rpNeedEpoch && g_rpSoftFresh == i + 1);
+    }
+    RfCut();
+    assert(!g_rpStale && !g_rpSoftFresh && k.rpEpochs == ep && k.rpHard[1] == h0 && k.rpSoftFresh == fr0 + 6);
+    k.snP4Mode = mode;
+    printf("P4 0.33.1: two cut slots (older hold kept until its shadow ends, dropped shadows move it on, stale holds replaced); "
+           "soft map resync (lot forced, clone stale, no rebuild, next cut compares M0); 0.35.5: a miss in flight not forced "
+           "again, 5 fresh misses in a row without a rebuild\n");
+}
+
+// 0.33.2 (docs/94 §21.15): the threaded shape of the 0.33.1 hang. Real locks: +0x918 is a CRITICAL_SECTION (g_spAcq /
+// g_spRel), the replay consumer runs on its own thread (RpThread, RpDrain(true)), the "worker" thread runs each job's live
+// plan under +0x918 and then P4Shadow, the test thread is the sim (recorded writes under +0x918, async STARTs with their
+// cut). A step that makes no progress for 5 s is a hang: the phases of the three threads are printed and the test fails.
+// Every 7th job the worker keeps +0x918 through its shadow (a leaked hold): 0.33.1's consumer then waited for the lock while
+// holding g_rpUse and the shadow waited for g_rpUse (the hang shape); 0.33.2 refuses that shadow ("other", sub "held").
+// +0x918 is a real CRITICAL_SECTION inside the fake world, as in the game (P4HoldsRoutingLock reads its owner).
+static CRITICAL_SECTION* g_stLk;
+#define g_stCs (*g_stLk)
+static LONG __fastcall StAcq(void*, void*, const DWORD* d) {
+    if (d && *d == 0) return TryEnterCriticalSection(g_stLk) ? 1 : -2;  // deadline 0: a try, as Lock_Acquire 0x4E16F0
+    EnterCriticalSection(g_stLk);
+    return 1;
+}
+static LONG __fastcall StRel(void*, void*) { LeaveCriticalSection(g_stLk); return 0; }
+static volatile LONG g_stWorkPhase, g_stJobs, g_stStop, g_stLeaks, g_stB2b;
+static HANDLE g_stGo;
+static int* g_stArgs[4];
+// g_stB2b (0.34.1): back to back, as BP / IP play: the sim STARTs the next job as soon as the last one's live plan is done,
+// so it queues while the worker runs the shadow; with nothing queued the idle worker runs a parked shadow (ServeAsync's)
+static DWORD WINAPI StWorker(LPVOID) {
+    for (;;) {
+        WaitForSingleObject(g_stGo, g_stB2b ? 20 : INFINITE);
+        if (g_stStop) return 0;
+        AsyncJob* jp = NULL;
+        for (int i = 0; i < 2; i++)
+            if (g_jobs[i].state == J_QUEUED && (!jp || (LONG)(g_jobs[i].seq - jp->seq) < 0)) jp = &g_jobs[i];
+        if (!jp) {  // a wake-up without a job: the idle worker's parked shadow
+            if (g_stB2b) { g_stWorkPhase = 3; P4ShadowIdle(); g_stWorkPhase = 0; }
+            continue;
+        }
+        AsyncJob& j = *jp;
+        InterlockedExchange(&j.state, J_RUNNING);
+        g_stWorkPhase = 1;  // live plan under +0x918
+        EnterCriticalSection(&g_stCs);
+        P4LiveBegin(&j);
+        int* list = g_stArgs[0];
+        list[0] = list[1] = (int)(uintptr_t)list;
+        int o1 = -1, o2 = -1;
+        g_pcVariant = 0;
+        PlanLockedHook(g_rf.world, NULL, list, g_stArgs[1], g_stArgs[2], 0xA6E, 1, (u8*)g_stArgs[3], &o1, &o2, 5, 0);
+        P4LiveEnd(&j);
+        P4FakeListFree(list, NULL);
+        const bool leak = !g_stB2b && j.seq % 7 == 0;
+        if (!leak) LeaveCriticalSection(&g_stCs);
+        InterlockedExchange(&j.state, J_DONE);
+        g_stWorkPhase = 2;  // shadow
+        if (leak) InterlockedIncrement(&g_stLeaks);
+        P4Shadow();
+        if (leak) LeaveCriticalSection(&g_stCs);
+        g_stWorkPhase = 0;
+        InterlockedExchange(&j.state, J_FREE);
+        InterlockedIncrement(&g_stJobs);
+    }
+}
+static void TestPcThreadedB2b();
+static void TestPcThreaded(int* list, int* s, int* g, u8* opts) {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG mode = k.snP4Mode;
+    k.snP4Mode = 1;
+    g_stLk = (CRITICAL_SECTION*)(g_rf.world + 0x918);
+    InitializeCriticalSection(g_stLk);
+    const DWORD* savedWs = g_p4WorldSlot;
+    g_p4WorldSlot = (const DWORD*)&g_rfWorldSlot;
+    const LONG oth0 = k.snAbort[P4_AB_OTHER], m1 = k.snM[1], m2 = k.snM[2], m3 = k.snM[3], m5 = k.snM[5];
+    const LockAcquireFn savedAcq = g_spAcq;
+    const SpRelFn savedRel = g_spRel;
+    g_spAcq = StAcq, g_spRel = (SpRelFn)StRel;
+    g_stArgs[0] = list, g_stArgs[1] = s, g_stArgs[2] = g, g_stArgs[3] = (int*)opts;
+    g_rpThreaded = true, g_rpStop = 0;
+    // own events: the consumer's and the worker's must be two (0.33.3: a closed g_rpEvent value left by an earlier test was
+    // recycled as g_stGo, so the consumer's wake-ups ran extra "jobs" and the main thread's go reached the consumer)
+    const HANDLE savedEv = g_rpEvent;
+    g_rpEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_stGo = CreateEventW(NULL, FALSE, FALSE, NULL);
+    assert(g_rpEvent && g_stGo && g_rpEvent != g_stGo);
+    g_stStop = 0, g_stJobs = 0, g_stLeaks = 0, g_stB2b = 0;
+    memset(&g_jobs[1], 0, sizeof(g_jobs[1]));
+    HANDLE cons = CreateThread(NULL, 0, RpThread, NULL, 0, NULL), work = CreateThread(NULL, 0, StWorker, NULL, 0, NULL);
+    const LONG m0 = k.snM[0], recs0 = k.snShadow;
+    g_rfSeed = 4242;
+    for (int i = 0; i < 400; i++) {
+        EnterCriticalSection(&g_stCs);  // the sim's own routing writes
+        for (int n = (int)RfRnd(4); n >= 0; n--) RfStep();
+        LeaveCriticalSection(&g_stCs);
+        if (g_jobs[0].state != J_FREE) continue;
+        AsyncJob& j = g_jobs[0];
+        memset(&j, 0, sizeof(j));
+        j.kind = 1, j.seq = 1000 + i, j.x87 = GetX87(), j.mxcsr = _mm_getcsr();
+        P4OnStart(&j);  // the cut takes +0x918 on this thread
+        const LONG done = g_stJobs;
+        InterlockedExchange(&j.state, J_QUEUED);
+        SetEvent(g_stGo);
+        // the sim goes on while the job is queued or runs: recorded writes (W1 / W2 leaves) wait for +0x918. Not RfStep's
+        // unrecorded kinds here (portal list IC, lot table, polygon cache): the cut's signature compare finds those only at
+        // the next cut, and in the game their families are D5 nr bits, which this fake world does not count
+        for (int n = (int)RfRnd(3); n > 0; n--) {
+            EnterCriticalSection(&g_stCs);
+            u8* q = RfQOf((int)RfRnd(g_rf.nLots), RfRnd(4));
+            if (RfRnd(2)) RfIns(q, g_rf.fps[RfRnd(g_rf.nFps)], 1, true); else RfRem(q, g_rf.fps[RfRnd(g_rf.nFps)], true);
+            LeaveCriticalSection(&g_stCs);
+        }
+        const ULONGLONG t0 = GetTickCount64();
+        while (g_stJobs == done) {
+            if (GetTickCount64() - t0 > 5000) {
+                printf("threaded P4 HANG at job %d: worker phase %ld, job state %ld, hold %lu next %lu tail %lu pub %lu head %lu, "
+                       "stale %ld needEpoch %ld\n", i, g_stWorkPhase, g_jobs[0].state, g_rpHoldAt, g_pcHoldNext, g_rpTail, g_rpPub,
+                       g_rpHead, g_rpStale, g_rpNeedEpoch);
+                assert(false);
+            }
+            Sleep(1);
+        }
+    }
+    // one shadow per job, a "held" refusal for exactly the jobs that kept the lock, M1-M3 0 (stale mismatches are M5)
+    const LONG recs1 = k.snShadow - recs0, held1 = k.snAbort[P4_AB_OTHER] - oth0;
+    assert(recs1 == g_stJobs && held1 == g_stLeaks && g_stLeaks > 0);
+    TestPcThreadedB2b();
+    g_stStop = 1;
+    SetEvent(g_stGo);
+    WaitForSingleObject(work, 5000);
+    g_rpStop = 1;
+    SetEvent(g_rpEvent);
+    WaitForSingleObject(cons, 5000);
+    CloseHandle(work), CloseHandle(cons), CloseHandle(g_stGo), CloseHandle(g_rpEvent);
+    g_rpEvent = savedEv;
+    g_rpThreaded = false, g_rpStop = 0;
+    g_rpHoldAt = 0, g_pcHoldNext = 0;
+    g_spAcq = savedAcq, g_spRel = savedRel;
+    g_p4WorldSlot = savedWs;
+    DeleteCriticalSection(g_stLk);
+    memset(g_stLk, 0, sizeof(CRITICAL_SECTION));
+    k.snP4Mode = mode;
+    // the sim's writes between START and the live plan make the clone at the cut older than what the live plan reads: each
+    // such mismatch is "stale" (M5), never M1-M3 (the 0.33.1 M2 shape); leaked holds refuse their shadows
+    printf("P4 threaded (sim + worker + replay consumer, real +0x918): serial 400 jobs, %ld shadows (%ld held); with back-to-back "
+           "jobs: M0 %ld, M5 (stale) %ld, M1-M3 %ld / %ld / %ld, no hang\n", recs1, held1, k.snM[0] - m0, k.snM[5] - m5,
+           k.snM[1] - m1, k.snM[2] - m2, k.snM[3] - m3);
+    assert(k.snM[1] == m1 && k.snM[2] == m2 && k.snM[3] == m3 && k.snM[0] > m0);
+}
+
+// back-to-back phase of TestPcThreaded (threads, lock and events already set up): 400 jobs, each START as soon as no job is
+// queued or running; shadows park behind the next job and run before its own; every job ends in a record or a busy drop
+static void TestPcThreadedB2b() {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG recs0 = k.snShadow, busy0 = k.snShadowBusy, park0 = g_p4ParkN, run0 = g_p4ParkRun, cap0 = k.snAbort[P4_AB_CAPTURE];
+    LONG ab0[P4_AB_N], m0s[6], pr0[8];
+    memcpy(ab0, (const void*)k.snAbort, sizeof(ab0)), memcpy(m0s, (const void*)k.snM, sizeof(m0s));
+    memcpy(pr0, (const void*)k.snPcRefused, sizeof(pr0));
+    g_stB2b = 1;
+    const LONG jobs0 = g_stJobs;
+    int started = 0;
+    for (int i = 0; i < 400; i++) {
+        if (i % 2) Sleep(2);  // every other job: the sim does other work first, so the worker has idle gaps (as in play)
+        const ULONGLONG t0 = GetTickCount64();
+        int slot = -1;
+        for (;;) {  // no job queued or running, and a free slot (the other may be in its shadow)
+            bool busy = false;
+            for (int s2 = 0; s2 < 2; s2++) busy |= g_jobs[s2].state == J_QUEUED || g_jobs[s2].state == J_RUNNING;
+            for (int s2 = 0; s2 < 2 && !busy && slot < 0; s2++) if (g_jobs[s2].state == J_FREE) slot = s2;
+            if (!busy && slot >= 0) break;
+            slot = -1;
+            if (GetTickCount64() - t0 > 5000) {
+                printf("threaded P4 (back to back) HANG at job %d: worker phase %ld, states %ld / %ld, hold %lu next %lu, parked %d\n", i,
+                       g_stWorkPhase, g_jobs[0].state, g_jobs[1].state, g_rpHoldAt, g_pcHoldNext, (int)g_p4Parked);
+                assert(false);
+            }
+            Sleep(0);
+        }
+        // the sim's writes after the last job's live plan (it took the job: no unrecorded write lands in a job's window;
+        // in the game those families are D5 nr bits, not counted in this fake world)
+        EnterCriticalSection(&g_stCs);
+        for (int n = (int)RfRnd(3); n >= 0; n--) RfStep();
+        LeaveCriticalSection(&g_stCs);
+        AsyncJob& j = g_jobs[slot];
+        memset(&j, 0, sizeof(j));
+        j.kind = 1, j.seq = 5000 + i, j.x87 = GetX87(), j.mxcsr = _mm_getcsr();
+        P4OnStart(&j);
+        InterlockedExchange(&j.state, J_QUEUED);
+        started++;
+        SetEvent(g_stGo);
+    }
+    const ULONGLONG t0 = GetTickCount64();
+    while (g_stJobs - jobs0 < started || g_p4Parked) {
+        if (GetTickCount64() - t0 > 5000) { printf("threaded P4 (back to back): jobs or a parked shadow never finished\n"); assert(false); }
+        Sleep(1);
+    }
+    g_stB2b = 0;
+    const LONG recs = k.snShadow - recs0, busy = k.snShadowBusy - busy0, parks = g_p4ParkN - park0, runs = g_p4ParkRun - run0;
+    printf("P4 0.34.1 back-to-back jobs: %d jobs, %ld records, %ld busy drops, %ld parked (%ld run later)\n", started, recs, busy,
+           parks, runs);
+    printf("  classes M0-M5:");
+    for (int c2 = 0; c2 < 6; c2++) printf(" %ld", k.snM[c2] - m0s[c2]);
+    printf("; acquire refusals 0-7:");
+    for (int r2 = 0; r2 < 8; r2++) printf(" %ld", k.snPcRefused[r2] - pr0[r2]);
+    printf("; refusals:");
+    for (int r2 = 0; r2 < P4_AB_N; r2++) if (k.snAbort[r2] != ab0[r2]) printf(" %s %ld", kP4Ab[r2], k.snAbort[r2] - ab0[r2]);
+    printf("\n");
+    assert(recs + busy + (k.snAbort[P4_AB_CAPTURE] - cap0) == started && runs <= parks);  // parking follows the schedule: 0 parks is a valid run
+    // 0.35.2 (docs/94 §21.17): STARTs while the other job may still be queued (only a free slot is waited for): the cut tries
+    // +0x918 once (p4QCut, or p4QCutMiss when the worker took it first); every job still ends in a record, a busy drop or a
+    // capture refusal, and the caller's M1-M3 assert covers these jobs (the queued job's writes make a record stale, M5)
+    const LONG q0 = k.p4QCut, qm0 = k.p4QCutMiss, recsQ0 = k.snShadow, busyQ0 = k.snShadowBusy, capQ0 = k.snAbort[P4_AB_CAPTURE];
+    const LONG bq0 = k.p4Borrow, bmq0 = k.p4BorrowMiss, bdq0 = k.p4BorrowDirty;
+    const LONG jobsQ0 = g_stJobs;
+    LONG mq0[6];
+    memcpy(mq0, (const void*)k.snM, sizeof(mq0));
+    g_stB2b = 1;
+    int startedQ = 0;
+    for (int i = 0; i < 200; i++) {
+        const ULONGLONG tq = GetTickCount64();
+        int slot = -1;
+        while (slot < 0) {
+            for (int s2 = 0; s2 < 2 && slot < 0; s2++) if (g_jobs[s2].state == J_FREE) slot = s2;
+            if (slot >= 0) break;
+            if (GetTickCount64() - tq > 5000) {
+                printf("threaded P4 (queued STARTs) HANG at job %d: worker phase %ld, states %ld / %ld\n", i, g_stWorkPhase,
+                       g_jobs[0].state, g_jobs[1].state);
+                assert(false);
+            }
+            Sleep(0);
+        }
+        // 0.35.11: RfStep's unrecorded kinds only with no job between its cut and its live plan (as the phases above); with
+        // the other job queued or running, recorded writes only (they make its record stale, M5). Before, an unrecorded write
+        // in a queued job's window (or before a START that shares its cut) made the live plan differ from the clone: M1 ~8%
+        EnterCriticalSection(&g_stCs);
+        bool inWin = false;
+        for (int s2 = 0; s2 < 2; s2++) inWin |= g_jobs[s2].state == J_QUEUED || g_jobs[s2].state == J_RUNNING;
+        for (int n = (int)RfRnd(3); n >= 0; n--) {
+            if (!inWin) { RfStep(); continue; }
+            u8* q = RfQOf((int)RfRnd(g_rf.nLots), RfRnd(4));
+            if (RfRnd(2)) RfIns(q, g_rf.fps[RfRnd(g_rf.nFps)], 1, true); else RfRem(q, g_rf.fps[RfRnd(g_rf.nFps)], true);
+        }
+        LeaveCriticalSection(&g_stCs);
+        AsyncJob& j = g_jobs[slot];
+        memset(&j, 0, sizeof(j));
+        j.kind = 1, j.seq = 9000 + i, j.x87 = GetX87(), j.mxcsr = _mm_getcsr();
+        P4OnStart(&j);
+        InterlockedExchange(&j.state, J_QUEUED);
+        startedQ++;
+        // 0.35.11: every 4th job no wake-up (the worker's 20 ms poll takes it), so the next START finds it still queued and
+        // takes the queued-job cut; with a wake-up each time, under CPU load every START found the job running (0 cuts, 190 shared)
+        if (i % 4) SetEvent(g_stGo);
+    }
+    const ULONGLONG tq = GetTickCount64();
+    while (g_stJobs - jobsQ0 < startedQ || g_p4Parked) {
+        if (GetTickCount64() - tq > 5000) { printf("threaded P4 (queued STARTs): jobs or a parked shadow never finished\n"); assert(false); }
+        Sleep(1);
+    }
+    g_stB2b = 0;
+    const LONG recsQ = k.snShadow - recsQ0, busyQ = k.snShadowBusy - busyQ0;
+    // 0.35.6: STARTs while the other job runs share its pending cut (p4Borrow); the caller's M1-M3 assert covers their records
+    printf("P4 0.35.2 queued STARTs: %d jobs, %ld cuts behind a queued job, %ld tries missed, %ld records, %ld busy drops; "
+           "0.35.6 shared cuts %ld (none to share %ld, refused dirty %ld)\n", startedQ, k.p4QCut - q0, k.p4QCutMiss - qm0, recsQ,
+           busyQ, k.p4Borrow - bq0, k.p4BorrowMiss - bmq0, k.p4BorrowDirty - bdq0);
+    printf("  queued STARTs classes M0-M5:");
+    for (int c2 = 0; c2 < 6; c2++) printf(" %ld", k.snM[c2] - mq0[c2]);
+    printf("\n");
+    assert(recsQ + busyQ + (k.snAbort[P4_AB_CAPTURE] - capQ0) == startedQ && k.p4QCut + k.p4QCutMiss > q0 + qm0);
+}
+
+// 0.33.1: the grid copy's records own their polygon sets (both levels private; 0.32.8 fault at 0x7CDAA8 read a freed one)
+static void TestPcGridPoly() {
+    static u8 P[0x110], cell[32];
+    static DWORD bk[2];
+    static __declspec(align(16)) u8 rec[2][0x50];
+    static float pts[2][2][6];
+    static u8 polys[2][2][16];
+    memset(P, 0, sizeof(P)), memset(cell, 0, sizeof(cell)), memset(rec, 0, sizeof(rec));
+    for (int r = 0; r < 2; r++) {
+        for (int p = 0; p < 2; p++) {
+            for (int i = 0; i < 6; i++) pts[r][p][i] = (float)(r * 100 + p * 10 + i);
+            *(float**)polys[r][p] = pts[r][p], *(float**)(polys[r][p] + 4) = *(float**)(polys[r][p] + 8) = pts[r][p] + 6;
+            *(DWORD*)(polys[r][p] + 12) = 0xA110C;
+        }
+        *(u8**)(rec[r] + 8) = polys[r][0], *(u8**)(rec[r] + 0xC) = *(u8**)(rec[r] + 0x10) = polys[r][0] + 32;
+        *(DWORD*)(rec[r] + 0x38) = 0x1000 + r;
+    }
+    *(u8**)(rec[0] + 0x48) = rec[1];
+    bk[0] = (DWORD)(uintptr_t)rec[0], bk[1] = 0xFFFFFFFF;
+    *(DWORD**)(cell + 4) = bk, *(DWORD*)(cell + 8) = 1;
+    *(u8**)(P + 0xDC) = cell, *(u8**)(P + 0xE0) = cell + 32;
+    PcGrid* gr = PcGridCopy(P);
+    assert(gr && gr->nCells == 1);
+    float want[2][2][6];
+    memcpy(want, pts, sizeof(pts));
+    memset(pts, 0xCC, sizeof(pts)), memset(polys, 0, sizeof(polys));  // the sim freed and reused the live sets after the cut
+    const u8* c = (const u8*)(uintptr_t)(*(DWORD**)(gr->cells + 4))[0];
+    for (int r = 0; r < 2; r++, c = RpP(c + 0x48)) {
+        assert(c && c != rec[r] && RpD(c + 0x38) == 0x1000 + (DWORD)r);
+        const u8* pb = RpP(c + 8);
+        assert(pb && pb != polys[r][0] && RpP(c + 0xC) == pb + 32 && RpP(c + 0x10) == pb + 32);
+        for (int p = 0; p < 2; p++) {
+            const float* v = (const float*)RpP(pb + p * 16);
+            assert(v && v != pts[r][p] && RpP(pb + p * 16 + 4) == (const u8*)(v + 6) && RpD(pb + p * 16 + 12) == 0xA110C);
+            assert(!memcmp(v, want[r][p], sizeof(want[r][p])));
+        }
+    }
+    assert(!c);
+    PcGridRel(gr);
+    // a broken set (end before begin) fails the copy: the cut is refused, never a half-live copy
+    memcpy(pts, want, sizeof(pts));
+    *(u8**)(rec[1] + 0xC) = polys[1][0] - 16;
+    assert(!PcGridCopy(P));
+    printf("P4 0.33.1: grid records' polygon sets deep-copied (live freed after the cut: copy intact); a broken set refuses the copy\n");
+}
+
+// 0.35.4 (docs/94 §21.19): the obstacle sets of an M2/M3 record. replay-fake.h's world and its clone after a cut hold the
+// same footprints (same id, class, point hash); a polygon point moved in place on a live footprint (a write no replay record
+// carries) shows as that footprint's hash differing; the record line carries "obst" once
+static const P4Ob* TObFind(const P4ObSet& s, const P4Ob& o) {
+    for (int i = 0; i < s.n; i++) if (s.o[i].id == o.id && s.o[i].vt == o.vt) return &s.o[i];
+    return NULL;
+}
+static void TestP4Obst() {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG bytes0 = g_rpBytes;  // TestP4's provider may still hold blocks of its own
+    RfSetup(21);
+    RfCut();
+    assert(g_rpClone && g_rpClone->p);
+    static u8 cloneWorld[0xA00];  // a routing world stand-in: the clone planner at +0x95C
+    *(u8**)(cloneWorld + 0x95C) = g_rpClone->p;
+    g_p4ObBox[0] = g_p4ObBox[1] = -1.0f, g_p4ObBox[2] = g_p4ObBox[3] = 65.0f;
+    P4ObWalk(g_rf.world, g_p4ObL);
+    P4ObWalk(cloneWorld, g_p4ObC);
+    assert(g_p4ObL.n > 0 && g_p4ObL.more >= 0 && g_p4ObC.more >= 0);
+    int same = 0;
+    for (int i = 0; i < g_p4ObC.n; i++) {
+        const P4Ob* l = TObFind(g_p4ObL, g_p4ObC.o[i]);
+        if (!l) continue;
+        for (int j = 0; j < g_p4ObL.n && l->h != g_p4ObC.o[i].h; j++)  // the fake world reuses ids: the same id and hash
+            if (g_p4ObL.o[j].id == g_p4ObC.o[i].id && g_p4ObL.o[j].h == g_p4ObC.o[i].h) l = &g_p4ObL.o[j];
+        assert(l->h == g_p4ObC.o[i].h && l->inv == 0 && !memcmp(l->b, g_p4ObC.o[i].b, sizeof(l->b)));
+        same++;
+    }
+    assert(same > 0 && (g_p4ObL.more || g_p4ObC.more || (same == g_p4ObL.n && same == g_p4ObC.n)));
+    // in-place move of one live point (no W1/W2): only the hash / bounds of that footprint change
+    const P4Ob target = g_p4ObL.o[0];
+    u8* fp = NULL;
+    for (int i = 0; i < g_rf.nFps && !fp; i++)
+        if (g_rf.fps[i] && *(DWORD*)(g_rf.fps[i] + 0x14) == (DWORD)target.id && *(DWORD*)g_rf.fps[i] == target.vt) fp = g_rf.fps[i];
+    assert(fp);
+    float* v = *(float**)(*(u8**)(*(u8**)(fp + 0x38)));  // level 0, polygon 0, point 0
+    v[0] += 0.25f;
+    P4ObWalk(g_rf.world, g_p4ObL);
+    const P4Ob* moved = TObFind(g_p4ObL, target);
+    const P4Ob* old = TObFind(g_p4ObC, target);
+    assert(moved && old && moved->h != old->h);
+    v[0] -= 0.25f;
+    // the capture and the record: one obstacle block after "copy", live read under the (fake) lock
+    static P4Job job;
+    memset(&job, 0, sizeof(job));
+    g_p4Live.valid = g_p4Copy.valid = true;
+    g_p4Live.nPaths = g_p4Copy.nPaths = 0;
+    g_p4Live.nNodes = g_p4Copy.nNodes = 2;
+    g_p4Live.n[0].x = g_p4Live.n[0].z = 10.0f, g_p4Live.n[1].x = g_p4Live.n[1].z = 12.0f;
+    g_p4Copy.n[0] = g_p4Live.n[0], g_p4Copy.n[1] = g_p4Live.n[1];
+    const LONG ob0 = k.p4Obst;
+    P4ObCapture(job, cloneWorld);
+    assert(k.p4Obst == ob0 + 1 && g_p4ObLive == 1 && g_p4ObOn && g_p4ObBox[0] == 9.0f && g_p4ObBox[3] == 13.0f);
+    if (!g_p4Buf) g_p4Buf = (char*)VirtualAlloc(NULL, kP4BufCap, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    P4Record(job, NULL, 0);
+    g_p4Buf[g_p4Len] = 0;
+    assert(!g_p4ObOn && strstr(g_p4Buf, ",\"obst\":{\"box\":[9,9,13,13],\"liveState\":\"ok\"") && strstr(g_p4Buf, "\"live\":[[\"0x"));
+    P4Record(job, NULL, 0);  // the next record has none
+    g_p4Buf[g_p4Len] = 0;
+    assert(!strstr(g_p4Buf, "\"obst\""));
+    g_p4Live.valid = g_p4Copy.valid = false;
+    g_p4Live.nNodes = g_p4Copy.nNodes = 0;
+    printf("P4 obstacle sets: live %d (+%d), clone %d (+%d), %d equal, in-place move found\n", g_p4ObL.n, g_p4ObL.more, g_p4ObC.n,
+           g_p4ObC.more, same);
+    RfTeardown();
+    assert(g_rpBytes == bytes0);
+}
+
+// docs/94 §22.27 (I-94-499): [RouteSnap] DoorDump. Two lots, one portal each, live and clone lot tables; the clone's lot B
+// has +0x8F = 0 while live has 1 (the stale-byte case): the dump names lot B in f8fDiff, both doors in ids, the live ask the
+// clone did not use, the portal records on both sides and the door mirror; capped; box mode dumps a matched plan
+static LONG __fastcall TDdAcq(void*, void*, const DWORD*) { return 1; }
+static LONG __fastcall TDdRel(void*, void*) { return 0; }
+static void TestP4DoorDump() {
+    static u8 worlds[2][0xA00], Ps[2][0x100], nodes[2][2][0x194], pts[2][0x80];
+    static DWORD bks[2][3], vecs[2][2][1];
+    const unsigned __int64 lotA = 0x285900360000AAAAull, lotB = 0x6C11003300BBBB00ull;
+    const unsigned __int64 doorA = 0x285900362D9533C0ull, doorB = 0x6C1100337D22F4D0ull;
+    memset(worlds, 0, sizeof(worlds)), memset(Ps, 0, sizeof(Ps)), memset(nodes, 0, sizeof(nodes)), memset(pts, 0, sizeof(pts));
+    for (int p = 0; p < 2; p++) {
+        const unsigned __int64 own = p ? doorB : doorA;
+        *(DWORD*)(pts[p] + 8) = (DWORD)own, *(DWORD*)(pts[p] + 0xC) = (DWORD)(own >> 32);
+        *(float*)(pts[p] + 0x2C) = 1.5f + p;
+        *(WORD*)(pts[p] + 0x48) = (WORD)(3 + p), *(WORD*)(pts[p] + 0x4A) = (WORD)(7 + p);
+        *(DWORD*)(pts[p] + 0x78) = 0x0F00u + p, *(DWORD*)(pts[p] + 0x7C) = 0;
+    }
+    for (int w = 0; w < 2; w++) {  // 0 live, 1 clone
+        *(u8**)(worlds[w] + 0x95C) = Ps[w];
+        for (int l = 0; l < 2; l++) {
+            u8* nd = nodes[w][l];
+            const unsigned __int64 key = l ? lotB : lotA;
+            *(DWORD*)nd = (DWORD)key, *(DWORD*)(nd + 4) = (DWORD)(key >> 32);
+            u8* g = nd + 0x10;
+            g[0x8C] = 1, g[0x8F] = (u8)(w == 1 && l == 1 ? 0 : 1);
+            vecs[w][l][0] = (DWORD)(uintptr_t)pts[l];
+            *(DWORD**)(g + 0x44) = vecs[w][l], *(DWORD**)(g + 0x48) = vecs[w][l] + 1;
+            bks[w][l] = (DWORD)(uintptr_t)nd;
+        }
+        bks[w][2] = 0;
+        *(DWORD**)(Ps[w] + 0x4C) = bks[w], *(DWORD*)(Ps[w] + 0x50) = 2;
+    }
+    const u8* const* slot0 = g_spWorldSlot;
+    const LockAcquireFn acq0 = g_spAcq;
+    const SpRelFn rel0 = g_spRel;
+    static const u8* liveSlot;
+    liveSlot = worlds[0];
+    g_spWorldSlot = &liveSlot, g_spAcq = TDdAcq, g_spRel = (SpRelFn)TDdRel;
+    // door mirror: one record for door B
+    const int dn0 = g_spDoorN;
+    static SpDoor mir;
+    memset(&mir, 0, sizeof(mir));
+    mir.obj = doorB, mir.kind = 2, mir.lock = 4, mir.owner = 0x1234;
+    SpDoorLot* ml = SpDoorLotFor(lotB, true);
+    assert(ml);
+    ml->d = &mir, ml->n = 1, ml->valid = 1, ml->epoch = g_spEpoch;
+    // the job: goal at (10, 20), one live ask for door B (answer 1 = locked) the clone did not replay
+    static P4Job job;
+    memset(&job, 0, sizeof(job));
+    static float goal[16];
+    goal[0] = 10.0f, goal[1] = 0.0f, goal[2] = 20.0f;
+    job.goals[0] = (DWORD)(uintptr_t)goal, job.goals[1] = (DWORD)(uintptr_t)(goal + 16);
+    job.seq = 66;
+    P4Door& d = job.doors[job.nDoors++];
+    d.a[0] = (DWORD)(lotB & 0xFFFFFFFF), d.a[1] = (DWORD)(lotB >> 32), d.a[4] = (DWORD)(doorB & 0xFFFFFFFF), d.a[5] = (DWORD)(doorB >> 32);
+    d.a[6] = 3, d.a[7] = 7;
+    d.eax = 1, d.used = 0;
+    g_p4DdOn = true, g_p4DdBoxOn = false, g_p4DdLeft = 1;
+    P4DdPlan(job, worlds[0]);
+    assert(job.ddN == 2 && job.dd[1].key == lotB && job.dd[1].f8f == 1);
+    g_p4Live.valid = g_p4Copy.valid = true;
+    g_p4Live.nNodes = g_p4Copy.nNodes = 0, g_p4Live.out2 = 0;
+    g_p4Live.nPaths = g_p4Copy.nPaths = 2;
+    memset(g_p4Live.p, 0, 2 * sizeof(P4Path)), memset(g_p4Copy.p, 0, 2 * sizeof(P4Path));
+    g_p4Live.p[0].obj = g_p4Copy.p[0].obj = 0x6C1100337D2360D0ull;  // shared door: not in ids
+    g_p4Live.p[1].obj = doorA, g_p4Copy.p[1].obj = doorB;
+    P4DdCapture(job, worlds[1], 2);
+    assert(g_p4DdRec && g_p4DdNIds == 2 && g_p4DdIds[0] == doorA && g_p4DdIds[1] == doorB);
+    assert(g_p4DdC.state == 1 && g_p4DdL.state == 1 && g_p4DdC.nAll == 2 && g_p4DdL.nAll == 2 && g_p4DdC.nRec == 2 && g_p4DdL.nRec == 2);
+    P4DdDiff df[kDdDiff];
+    assert(P4DdDiffs(job, df) == 1 && df[0].key == lotB && df[0].clone == 0 && df[0].plan == 1 && df[0].now == 1);
+    if (!g_p4Buf) g_p4Buf = (char*)VirtualAlloc(NULL, kP4BufCap, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    P4Record(job, NULL, 0);
+    g_p4Buf[g_p4Len] = 0;
+    assert(!g_p4DdRec && strstr(g_p4Buf, ",\"doors\":{\"why\":\"m2\",\"cloneState\":\"ok\",\"liveState\":\"ok\",\"ids\":[\"0x285900362D9533C0\",\"0x6C1100337D22F4D0\"]"));
+    assert(strstr(g_p4Buf, "\"asksN\":1,\"unused\":1,\"asks\":[[\"0x6C11003300BBBB00\",\"0x6C1100337D22F4D0\",3,7,0,1,0]]"));
+    assert(strstr(g_p4Buf, "\"f8fDiffN\":1,\"f8fDiff\":[[\"0x6C11003300BBBB00\",0,1,1]]"));
+    assert(strstr(g_p4Buf, "{\"lot\":\"0x6C11003300BBBB00\",\"f8f\":0,\"f8c\":1,\"portals\":[[\"0x6C1100337D22F4D0\",\"0x"));
+    assert(strstr(g_p4Buf, "\"live\":[{\"lot\":\"0x285900360000AAAA\",\"f8f\":1"));
+    assert(strstr(g_p4Buf, ",2.5,4,8,\"0x0000000000000F01\",0]"));
+    assert(strstr(g_p4Buf, "\"mirror\":[[\"0x6C1100337D22F4D0\",\"0x6C11003300BBBB00\",1,1,2,4,\"0x0000000000001234\""));
+    const char* line = strstr(g_p4Buf, "\"doors\"");
+    printf("P4 door dump record: %.200s...\n", line);
+    // capped: DoorDumpMax=1 is spent, the next M2 has no block
+    P4DdCapture(job, worlds[1], 2);
+    assert(!g_p4DdRec);
+    P4Record(job, NULL, 0);
+    g_p4Buf[g_p4Len] = 0;
+    assert(!strstr(g_p4Buf, "\"doors\""));
+    // box mode: a matched plan (class 0) whose goal is in the box is dumped, one outside is not; off = never
+    g_p4DdLeft = 5, g_p4DdBoxOn = true;
+    g_p4DdBox[0] = 9.0f, g_p4DdBox[1] = 19.0f, g_p4DdBox[2] = 11.0f, g_p4DdBox[3] = 21.0f;
+    g_p4Copy.p[1].obj = doorA;
+    P4DdCapture(job, worlds[1], 0);
+    assert(g_p4DdRec && !strcmp(g_p4DdWhy, "box") && g_p4DdNIds == 2);  // nothing differs: every path owner
+    g_p4DdRec = false;
+    goal[0] = 30.0f;
+    P4DdCapture(job, worlds[1], 0);
+    assert(!g_p4DdRec);
+    g_p4DdOn = false;
+    P4DdCapture(job, worlds[1], 2);
+    assert(!g_p4DdRec);
+    // a fault in the walk (a broken bucket pointer) is a "fault" state, never a crash
+    g_p4DdOn = true;
+    *(DWORD*)(Ps[1] + 0x4C) = 0x10;
+    P4DdCapture(job, worlds[1], 2);
+    assert(g_p4DdRec && g_p4DdC.state == -1);
+    g_p4DdRec = false, g_p4DdOn = false, g_p4DdBoxOn = false;
+    g_p4Live.valid = g_p4Copy.valid = false;
+    g_p4Live.nPaths = g_p4Copy.nPaths = 0;
+    ml->d = NULL, ml->n = 0, ml->valid = 0;
+    g_spDoorN = dn0;
+    g_spWorldSlot = slot0, g_spAcq = acq0, g_spRel = rel0;
+    printf("P4 door dump: stale clone +0x8F named, ids, unused ask, portals, mirror, cap, box mode, fault state\n");
+}
+
+// 0.35.21 (docs/94 §22.24, I-94-484): on PcSetup's world (provider registered, every cut audits every lot)
+// (a) the clone-run stop sites: ApplyLotUpdate names its lot and keeps the clone (P4LazyKeep), another world-level writer
+//     stops as before (rebuild); W6b names the clone footprint's lot (no all-lot rebase); W3 names its lot argument
+// (b) a keep release after unhooked clone writes on lot A (built byte, a transform: what 0x630F10 / 0x82B810 write) and a
+//     quadtree pin the unwind left on a lot-B Q: no rebuild, the pin cleared, A and B rebased at the next cut, every lot
+//     audit equal, the same clone acquired again
+// (c) contrast: the same clone write with A missing from the dirty list: the audit finds the lot (the dirty list heals it)
+static const u8* PcCloneFme(const RpLot* l) {  // a clone FME on one of the lot's clone Qs
+    const u8* m = g_rpClone->m;
+    for (DWORD i = 0; i < RpD(m + 8); i++)
+        for (const u8* nd = (const u8*)(uintptr_t)((const DWORD*)RpP(m + 4))[i]; nd; nd = RpP(nd + 0x10)) {
+            const u8* f = RpP(nd + 8);
+            for (int j = 0; f && j < l->nQ; j++) if (l->q[j] && RpP(f + 0xC) == l->q[j] && !RpIsChild(RpP(f + 8))) return f;
+        }
+    return NULL;
+}
+static void TestPcLazyKeep() {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG mode = k.snP4Mode;
+    k.snP4Mode = 1;
+    g_rpLazyKeep = 1;  // [RouteSnap] LazyKeep=1 (default off since 0.35.22)
+    for (PcCut& h : g_pcCuts) h.pend = 0;
+    g_rpHoldAt = 0;
+    RfCut();
+    RpClone* const cl0 = g_rpClone;
+    assert(cl0 && cl0->nLots >= 3 && !g_rpNeedEpoch && !g_rpBad);
+    RpLot* A = &cl0->lots[0];
+    RpLot* B = &cl0->lots[1];
+    // (a)
+    DWORD stk[64] = {};
+    DWORD* slot = &stk[20];
+    static u8 lotObj[0x50];
+    *(u64*)(lotObj + 0x48) = A->key;
+    slot[1] = (DWORD)(uintptr_t)lotObj;
+    t_snapRun = 1;
+    g_p4Job.abort = -1, g_p4Job.nDirty = 0, g_p4LazyKeep = 0;
+    bool stopped = false;
+    __try { SnEnter(18, slot); } __except (GetExceptionCode() == kP4LazyCode ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) { stopped = true; }
+    assert(stopped && g_p4LazyKeep == 1 && g_p4Job.nDirty == 1 && g_p4Job.dirty[0] == A->key);
+    g_p4Job.nDirty = 0, g_p4LazyKeep = 0, stopped = false;
+    g_rpLazyKeep = 0;  // LazyKeep=0 (the default since 0.35.22): the same stop discards as before 0.35.21
+    __try { SnEnter(18, slot); } __except (GetExceptionCode() == kP4LazyCode ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) { stopped = true; }
+    assert(stopped && !g_p4LazyKeep);
+    g_rpLazyKeep = 1, g_p4Job.nDirty = 0, stopped = false;
+    slot[1] = (DWORD)A->key, slot[2] = (DWORD)(A->key >> 32);
+    __try { SnEnter(21, slot); } __except (GetExceptionCode() == kP4LazyCode ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) { stopped = true; }
+    assert(stopped && !g_p4LazyKeep);  // grid remove: not audited, the release still rebuilds
+    g_p4Job.nDirty = 0;
+    const u8* fme = PcCloneFme(B);
+    assert(fme);
+    slot[-2] = RpD(fme + 8);
+    SnEnter(SN_W6B, slot);  // W6b on a clone footprint: its lot, not "every lot"
+    {
+        bool hasB = false;  // the footprint may sit in other lots' Qs too: each named
+        for (int i = 0; i < g_p4Job.nDirty; i++) hasB |= g_p4Job.dirty[i] == B->key;
+        if (!hasB) printf("W6b lots: nDirty %d\n", g_p4Job.nDirty);
+        assert(g_p4Job.nDirty >= 1 && hasB);
+    }
+    // 0.35.23 (docs/94 §22.26.2): a live footprint (refcount far below RP_BIAS) wrote no clone memory: no lot, no all-lot rebase
+    g_p4Job.nDirty = 0;
+    slot[-2] = (DWORD)(uintptr_t)lotObj;
+    SnEnter(SN_W6B, slot);
+    assert(g_p4Job.nDirty == 0);
+    *(LONG*)(lotObj + 8) = RP_BIAS;  // negative control: a clone-biased object the map cannot name still rebases every lot
+    SnEnter(SN_W6B, slot);
+    assert(g_p4Job.nDirty == -1);
+    *(LONG*)(lotObj + 8) = 0;
+    g_p4Job.nDirty = 0;
+    {  // an older clone copy of B's footprint (not the one the map's FMEs hold): named by its key
+        const u8* cur = (const u8*)(uintptr_t)RpD(fme + 8);
+        static __declspec(align(16)) u8 older[0x200];
+        assert(RpClass(RpD(cur)) && RpClass(RpD(cur))->size <= sizeof(older));
+        memcpy(older, cur, RpClass(RpD(cur))->size);  // +8 keeps RP_BIAS: a clone copy
+        slot[-2] = (DWORD)(uintptr_t)older;
+        SnEnter(SN_W6B, slot);
+        bool hasB = false;
+        for (int i = 0; i < g_p4Job.nDirty; i++) hasB |= g_p4Job.dirty[i] == B->key;
+        assert(g_p4Job.nDirty >= 1 && hasB);
+        g_p4Job.nDirty = 0;
+    }
+    slot[1] = (DWORD)B->key, slot[2] = (DWORD)(B->key >> 32), slot[3] = 0, slot[4] = 1;
+    SnEnter(2, slot);  // W3: its lot argument
+    assert(g_p4Job.nDirty == 1 && g_p4Job.dirty[0] == B->key);
+    t_snapRun = 0;
+    g_p4Job.abort = -1, g_p4Job.nDirty = 0;
+    // (b)
+    const LONG ep0 = k.rpEpochs, mis0 = k.rpMis, au0 = k.rpAudits, disc0 = k.snPcDiscard;
+    AsyncJob a = {};
+    a.kind = 1;
+    P4OnStart(&a);
+    P4Clone ca = {};
+    assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0 && g_rpClone == cl0);
+    u8* ga = RpGraph(A->node);
+    ga[0x8C] ^= 1, ((float*)(ga + 0xA0))[3] += 1.0f;  // unhooked clone writes on lot A before the stop
+    int bq = 0;
+    while (bq < B->nQ && !B->q[bq]) bq++;
+    assert(bq < B->nQ);
+    *(LONG*)(B->q[bq] + 0x48) = 2;  // a pin the unwind left on a lot-B Q
+    const u64 dirtyA = A->key;
+    g_rpNForce = 0, g_rpForceAll = 0;
+    PcRelease(&ca, P4REL_LAZY, &dirtyA, 1);
+    assert(!g_rpNeedEpoch && !g_rpBad && k.snPcDiscard == disc0 && *(LONG*)(B->q[bq] + 0x48) == 0 && !g_rpForceAll);
+    assert(g_rpNForce == 2 && ((g_rpForce[0] == A->key && g_rpForce[1] == B->key) || (g_rpForce[0] == B->key && g_rpForce[1] == A->key)));
+    const LONG rb0 = k.rpRebaseWhy[0];
+    RfCut();
+    assert(k.rpRebaseWhy[0] == rb0 + 2 && k.rpEpochs == ep0 && k.rpMis == mis0 && k.rpAudits > au0 && g_rpClone == cl0);
+    RfCut();
+    P4OnStart(&a);
+    assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0);  // the clone answers again (no rebuild)
+    PcRelease(&ca, 0, NULL, 0);
+    // (d) 0.35.22 (docs/94 §22.25): the BP 0.35.21 0419 crash shapes. With an A* object (a stand-in with the game's deleting
+    // destructor slot), a keep release drops it; the next acquire must re-point every clone Q's +0x28 from the freed object to
+    // the new one (0.35.21 left them on the freed one: the fault at 0x664396, then the EA heap). A cut made before a keep release
+    // (a parked or second-slot shadow's) is refused "stale" (0.35.21 let it read the half-written lot)
+    {
+        struct AsFake {
+            static void* __fastcall Ctor(void* self, void*) { static DWORD vt[4] = {(DWORD)(uintptr_t)&Dtor}; *(DWORD**)self = vt; return self; }
+            static void __fastcall Dtor(u8* self, void*, DWORD) { memset(self, 0xDD, 64); RfFreeP(self); }
+        };
+        const PcCtorFn savedCtor = g_pcAstarCtor;
+        g_pcAstarCtor = AsFake::Ctor;
+        const LONG odd0 = k.snPcOddQ, bd0 = k.p4BorrowDirty;
+        auto qsOn = [](const u8* as) {
+            int n = 0;
+            for (int i = 0; i < g_rpClone->nLots; i++)
+                for (int j = 0; j < g_rpClone->lots[i].nQ; j++)
+                    if (const u8* q = g_rpClone->lots[i].q[j]) { assert(RpP(q + 0x28) == as); n++; }
+            return n;
+        };
+        P4OnStart(&a);
+        assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0 && g_pcWork.astar);
+        const u8* a1 = g_pcWork.astar;
+        assert(qsOn(a1) > 0);
+        AsyncJob b2 = {};
+        b2.kind = 1;
+        P4OnStart(&b2);  // a second pending cut, made before the keep release below (as a parked shadow's)
+        const unsigned __int64 lotA = g_rpClone->lots[0].key;
+        PcRelease(&ca, P4REL_LAZY, &lotA, 1);
+        assert(!g_pcWork.astar && g_pcAstarDead == a1);
+        P4Clone cb2 = {};
+        assert(b2.p4Ver && PcAcquire(b2.p4Ver, &cb2) == P4_AB_MAT && g_pcAcqWhy == PS_STALE && k.p4BorrowDirty == bd0 + 1);
+        void* blocker = RfAlloc(0x9C90);  // the next A* object gets another address
+        RfCut();
+        P4OnStart(&a);
+        assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0 && g_pcWork.astar && g_pcWork.astar != a1);
+        assert(qsOn(g_pcWork.astar) > 0 && k.snPcOddQ == odd0 && !g_pcAstarDead);
+        PcRelease(&ca, 0, NULL, 0);
+        RfFreeP(blocker);
+        PcAstarDrop(g_pcWork);  // later tests run without an A* object
+        g_pcAstarDead = NULL;
+        g_pcAstarCtor = savedCtor;
+    }
+    // (c)
+    P4OnStart(&a);
+    assert(a.p4Ver && PcAcquire(a.p4Ver, &ca) < 0);
+    A = &g_rpClone->lots[0];
+    RpGraph(A->node)[0x8C] ^= 1;
+    const u64 other = g_rpClone->lots[2].key;
+    PcRelease(&ca, P4REL_LAZY, &other, 1);
+    RfCut();
+    assert(k.rpMis > mis0);  // the audit sees a clone write the dirty list missed
+    RfCut();  // the mismatch rebuilds the clone
+    RfCut();
+    k.snP4Mode = mode;
+    g_rpLazyKeep = 0;
+    printf("P4 0.35.21 lazy keep: ApplyLotUpdate / deferral stops name their lot and keep the clone, W6b and W3 name theirs; a keep "
+           "release rebased the dirty lot and a pinned one (pin cleared), no rebuild, audits equal (%ld); a write outside the list is "
+           "found by the audit\n", k.rpAudits - au0);
+}
+
 static void TestP4() {
     Ts3nCounters& k = ts3native_counters;
     // T1-T4 on dummies: bytes checked first (all or nothing), then each thunk by thread state
@@ -7464,7 +8684,7 @@ static void TestP4() {
     g_p4Buf =(char*)VirtualAlloc(NULL, kP4BufCap, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     char path[MAX_PATH];
     GetTempPathA(MAX_PATH, path);
-    strcat_s(path, "ts3native-p4-selftest.jsonl");
+    sprintf_s(path + strlen(path), MAX_PATH - strlen(path), "ts3native-p4-selftest-%lu.jsonl", GetCurrentProcessId());
     g_p4Jsonl = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     static u8 guard12 = 1;
     static DWORD guard14[2] = {0, 3};
@@ -7672,6 +8892,7 @@ static void TestP4() {
         P4SetCloneProvider(&kPcProvider);
         g_planOrig = (PlanLockedFn)PcFakePlan;
         const LONG c0 = k.snM[0], c1 = k.snM[1], c3 = k.snM[3], acq = k.snPcAcquired, cuts = k.snPcCuts;
+        TestPcGridPoly();
         PcSetup(31);
         const char* r0 = PcRunJob(0, list, s, g, opts);  // unchanged world: M0
         assert(strstr(r0, "\"refused\":null") && !strstr(r0, "\"ver\":0,") && k.snM[0] == c0 + 1 && k.snPcAcquired == acq + 1 && k.snPcCuts == cuts + 1);
@@ -7682,6 +8903,20 @@ static void TestP4() {
         r0 = PcRunJob(0, list, s, g, opts);
         assert(strstr(r0, "\"refused\":null") && k.snM[0] == c0 + 2);
         assert(g_pcWork.wp == wp0);  // W' kept across acquires
+        // 0.35.7 (docs/94 §21.22, I-94-430): 70 lock-key tables in one clone's life (no epoch, as soft resync since 0.35.5):
+        // still M0, and the clone keeps only the table its footprints point into (0.35.5 refused "mat"/"copy" from the 64th on)
+        {
+            const RpClone* cl0 = g_rpClone;
+            for (int i = 0; i < 70; i++) {
+                if (i % 7 == 0) RfStep();
+                g_spKeysDirty = 1;  // a lock-key IC ran: the next cut copies a new table
+                const LONG mk = k.snM[0];
+                r0 = PcRunJob(0, list, s, g, opts);
+                if (!strstr(r0, "\"refused\":null") || k.snM[0] != mk + 1) { printf("lock-key tables: run %d: %s\n", i, r0); assert(false); }
+            }
+            assert(g_rpClone == cl0 && g_pcWork.nKeys == 1);
+        }
+        TestPcMode2(list, s, g, opts);  // 0.35.9: the same clone life under P5 / P5b / P5c
         PcFakeW(1);  // another live W (a world load): W' made again from it
         r0 = PcRunJob(0, list, s, g, opts);
         assert(strstr(r0, "\"refused\":null"));
@@ -7705,7 +8940,7 @@ static void TestP4() {
             *(DWORD**)(g0 + 0x54) = pendAdd, *(DWORD**)(g0 + 0x58) = pendAdd + 1;
             const LONG pc = k.snPcPortalPend[0], pa = k.snPcPortalPend[1];
             const char* rp = PcRunJob(0, list, s, g, opts);
-            assert(strstr(rp, "\"refused\":\"nover\"") && k.snPcPortalPend[0] == pc + 1);
+            assert(strstr(rp, "\"refused\":\"nover\"") && strstr(rp, "\"sub\":\"portal\"") && k.snPcPortalPend[0] == pc + 1);
             *(DWORD*)(g0 + 0x54) = sb, *(DWORD*)(g0 + 0x58) = se;
             rp = PcRunJob(0, list, s, g, opts);  // settled: the lot is rebased to the empty vector again
             assert(strstr(rp, "\"refused\":null") && k.snPcPortalPend[0] == pc + 1);
@@ -7713,7 +8948,7 @@ static void TestP4() {
             const DWORD ce = RpD(cg + 0x68);
             *(DWORD*)(cg + 0x68) = RpD(cg + 0x64) + 8;
             rp = PcRunJob(0, list, s, g, opts);
-            assert(strstr(rp, "\"refused\":\"mat\"") && k.snPcPortalPend[1] == pa + 1);
+            assert(strstr(rp, "\"refused\":\"mat\"") && strstr(rp, "\"sub\":\"portal\"") && k.snPcPortalPend[1] == pa + 1);
             *(DWORD*)(cg + 0x68) = ce;
         }
         // a held cut the worker never acquires expires; an older cut is refused "epoch"
@@ -7725,6 +8960,9 @@ static void TestP4() {
         P4Clone cl = {};
         assert(v1 && j.p4Ver && v1 != j.p4Ver && PcAcquire(v1, &cl) == P4_AB_EPOCH);  // the second cut replaced the first
         g_rpHoldAt = 0;
+        TestPcTwoSlots(list, s, g, opts);
+        TestPcThreaded(list, s, g, opts);
+        TestPcLazyKeep();
         RfTeardown();
         g_p4Variant = 0;
         g_spWmSlot = (const u8* const*)(uintptr_t)0x011ECBC4;
@@ -7760,6 +8998,7 @@ static void TestP4() {
         assert(!j.p4);  // nothing armed any more
     }
     CloseHandle(g_p4Jsonl);
+    DeleteFileA(path);  // per-process name (parallel runs): no leftovers in %TEMP%
     g_p4Jsonl = INVALID_HANDLE_VALUE;
     P4SetCloneProvider(NULL);
     g_planOrig = planSave;
@@ -7823,8 +9062,20 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, m2Ready) == 0x2F70 && offsetof(Ts3nCounters, m2Take) == 0x2F74 &&
                   offsetof(Ts3nCounters, m2Fb) == 0x2F90 && offsetof(Ts3nCounters, m2VerM) == 0x2FDC &&
                   offsetof(Ts3nCounters, m2DoorHist) == 0x3000 && offsetof(Ts3nCounters, m2Guard) == 0x3024 &&
-                  sizeof(Ts3nCounters) == 3082 * 4, "counters v61 layout (docs/registry.md)");
-    assert(k.version == 61);
+                  sizeof(Ts3nCounters) == 3155 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, p4QCut) == 0x30EC && offsetof(Ts3nCounters, p4QCutMiss) == 0x30F0 &&
+                  offsetof(Ts3nCounters, p4WaitExt) == 0x30F4 && offsetof(Ts3nCounters, oiClone) == 0x30F8 &&
+                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 3155 * 4,
+                  "counters v67 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, rpOldAsk) == 0x310C && offsetof(Ts3nCounters, p4AcqBad) == 0x3110, "counters v68 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, p4Obst) == 0x3114 && offsetof(Ts3nCounters, p4ObstBusy) == 0x3118,
+                  "counters v69 layout after v68 (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, rpSoftReal) == 0x311C && offsetof(Ts3nCounters, rpRebaseWhy) == 0x3128 &&
+                  offsetof(Ts3nCounters, rpRebaseQSame) == 0x3138, "counters v70 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, p4Borrow) == 0x313C && offsetof(Ts3nCounters, p4BorrowMiss) == 0x3140 &&
+                  offsetof(Ts3nCounters, p4BorrowDirty) == 0x3144, "counters v71 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, rpKidsKept) == 0x3148, "counters v72 layout (docs/registry.md)");
+    assert(k.version == 72);
     PlanLockedFn planSave = g_planOrig;
     CacheEntry* tab = g_tab;
     const LONG workerMode = k.workerMode, budgetMode = k.budgetMode;
@@ -7995,6 +9246,582 @@ static void TestP5() {
            "/ fault (off) all planned by the game; runtime switch; M2-1 site change off; M2-3 L2 log only ok\n");
 }
 
+#include "monothread-test.h"  // TestMonoThreadM5 (P3, P4, worker; docs/30 §14)
+#include "p5b-test.h"  // TestP5b (P5b, docs/94 §22.9)
+#include "hitchattr-test.h"  // TestHitchAttr ([HitchAttr], docs/96 §9)
+#include "p5c-test.h"  // TestP5cIn (P5c, docs/94 §22.11), run from TestP5b
+#include "autshadow-test.h"  // TestAutShadow ([AutShadow] part 1, docs/122 §13: T1, T2, T4)
+#include "threadstack-test.h"  // TestThreadStack ([ThreadStack], docs/66 §6)
+
+// 0.35.9 (docs/94 §22.13, I-94-450..452): P5 (Mode=2) with ReleaseLock=1 and FreeLock=1 on the replay clone provider, in one
+// clone's life (no epoch, as with soft resync since 0.35.5); the test thread is the worker, world+0x918 the game's lock:
+// (a) 70 taken jobs, a new lock-key table each: every answer the clone's, the window lent each time, one table kept (lane F)
+// (b) a bad clone (lane B): refused "mat", the game's plan answers, no window
+// (c) a START while a job runs, with another cut pending: no shared cut in Mode=2 (lane D is Mode=1 only)
+// (d) a clone footprint whose lock-key origin no table has: kPcKeyFailMax refusals, then one rebuild, then taken again
+// (0.35.8 refused it for the rest of the session)
+static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts) {
+    void* const lock = g_rf.world + 0x918;
+    static const DWORD kInf = 0xFFFFFFFF;
+    AsyncJob j = {};
+    j.kind = 3;
+    j.seq = seq;
+    j.x87 = GetX87();
+    j.mxcsr = _mm_getcsr();
+    P4OnStart(&j);
+    assert(j.p4 == 2 && j.p4Ver);
+    P5bAcq(lock, NULL, &kInf);  // ServeAsync's hold for the job
+    g_async.state = A_RUNNING;
+    P4LiveBegin(&j);
+    list[0] = list[1] = (int)(uintptr_t)list;
+    int o1 = -1, o2 = -1;
+    const u8 r = PlanLockedHook(g_rf.world, NULL, list, s, g, 0xA6E, 1, opts, &o1, &o2, 5, 0);
+    P4LiveEnd(&j);
+    g_async.state = A_IDLE;
+    assert(P5bOwner(lock) == (LONG)GetCurrentThreadId() && *(LONG*)((u8*)lock + 0x20) == 1);  // retaken, every level
+    P5bRel(lock, NULL);
+    assert(!g_p5bWin && !g_p5cJob);
+    P4FakeListFree(list, NULL);
+    return r;
+}
+static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
+    Ts3nCounters& k = ts3native_counters;
+    void* const lock = g_rf.world + 0x918;
+    u8 w918[0x28];
+    memcpy(w918, lock, sizeof(w918));
+    memset(lock, 0, sizeof(w918));
+    InitializeCriticalSection((CRITICAL_SECTION*)lock);
+    const LockAcquireFn savedAcq = g_lockOrig;
+    const LockReleaseFn savedRel = g_rgRelOrig;
+    void* const savedRgLock = g_rgLock;
+    const AsyncSlot savedAsync = g_async;
+    const LONG mode = k.snP4Mode, kinds = g_p4Kinds, verify = g_p5Verify, nSites = g_p5NSites;
+    void* const guardLock = g_p5GuardLock;
+    g_lockOrig = P5bAcq, g_rgRelOrig = P5bRel, g_rgLock = lock;
+    g_async.lock = lock, g_async.state = A_IDLE;
+    k.snP4Mode = 2, g_p4Kinds = 15;
+    g_p5On = 1, k.m2Take = 1, k.m2Ready = 1, k.m2Off = 0, g_p5Verify = 0, g_p5NSites = 0, g_p5GuardLock = lock;
+    g_p5bOn = 1, k.p5bRelease = 1, k.p5bGates = 0;
+    g_p5cOn = 1, k.p5cFree = 1, k.p5cOff = 0;
+    DWORD seq = 900;
+    // (a)
+    const RpClone* const cl0 = g_rpClone;
+    const LONG taken0 = k.m2Taken, wins0 = k.p5bWins, jobs0 = k.p5cJobs;
+    for (int i = 0; i < 70; i++) {
+        if (i % 7 == 0) RfStep();
+        g_spKeysDirty = 1;
+        const LONG t = k.m2Taken;
+        PcRunM2(seq++, list, s, g, opts);
+        if (k.m2Taken != t + 1) { printf("Mode=2 lock-key tables: job %d not taken (fallbacks mat %ld)\n", i, k.m2Fb[P4_AB_MAT]); assert(false); }
+    }
+    assert(g_rpClone == cl0 && g_pcWork.nKeys == 1 && k.m2Taken == taken0 + 70 && k.p5bWins == wins0 + 70 && k.p5cJobs == jobs0 + 70);
+    // (b)
+    LONG mat = k.m2Fb[P4_AB_MAT], wins = k.p5bWins, taken = k.m2Taken;
+    g_rpBad = 1;
+    PcRunM2(seq++, list, s, g, opts);
+    assert(k.m2Fb[P4_AB_MAT] == mat + 1 && k.m2Taken == taken && k.p5bWins == wins);
+    g_rpBad = 0;
+    PcRunM2(seq++, list, s, g, opts);
+    assert(k.m2Taken == taken + 1);
+    // (c)
+    {
+        AsyncJob a = {}, b = {};
+        a.kind = b.kind = 3;
+        a.seq = seq++, b.seq = seq++;
+        const LONG borrow = k.p4Borrow, miss = k.p4BorrowMiss;
+        P4OnStart(&a);
+        assert(a.p4 == 2 && a.p4Ver);
+        g_async.state = A_RUNNING;
+        P4OnStart(&b);
+        g_async.state = A_IDLE;
+        assert(b.p4 == 2 && !b.p4Ver && k.p4Borrow == borrow && k.p4BorrowMiss == miss);
+        P4CloneDrop(a.p4Ver);
+        assert(!g_rpHoldAt);
+    }
+    // (d)
+    u8* fp = NULL;
+    for (DWORD e = 0; e < g_rpClone->fps.cap && !fp; e++)
+        if (g_rpClone->fps.k[e] > 1 && *(u8**)((u8*)(uintptr_t)g_rpClone->fps.v[e] + 0x20)) fp = (u8*)(uintptr_t)g_rpClone->fps.v[e];
+    assert(fp);
+    static u8 foreign[0x40];
+    u8* const set0 = *(u8**)(fp + 0x20);
+    *(u8**)(fp + 0x20) = foreign + 16;  // an origin no lock-key table has
+    mat = k.m2Fb[P4_AB_MAT], taken = k.m2Taken;
+    const RpClone* const cl1 = g_rpClone;
+    for (int n = 0; n < kPcKeyFailMax; n++) {
+        g_spKeysDirty = n & 1;  // with and without a new table
+        assert(!g_rpNeedEpoch);
+        PcRunM2(seq++, list, s, g, opts);
+    }
+    assert(k.m2Fb[P4_AB_MAT] == mat + kPcKeyFailMax && k.m2Taken == taken && g_rpNeedEpoch && g_rpClone == cl1);
+    *(u8**)(fp + 0x20) = set0;  // the old clone is freed with its own pointer
+    PcRunM2(seq++, list, s, g, opts);  // the START cut rebuilds; the new clone's footprints hold live sets
+    assert(g_rpClone != cl1 && !g_rpNeedEpoch && k.m2Taken == taken + 1 && g_pcWork.nKeys == 1 && !g_pcWork.keyFails);
+    g_p5On = 0, k.m2Take = 0, g_p5bOn = 0, k.p5bRelease = 0, g_p5cOn = 0, k.p5cFree = 0;
+    g_p5Verify = verify, g_p5NSites = nSites, g_p5GuardLock = guardLock;
+    k.snP4Mode = mode, g_p4Kinds = kinds;
+    g_lockOrig = savedAcq, g_rgRelOrig = savedRel, g_rgLock = savedRgLock, g_async = savedAsync;
+    DeleteCriticalSection((CRITICAL_SECTION*)lock);
+    memcpy(lock, w918, sizeof(w918));
+    printf("P5 / P5b / P5c on the replay clone, one clone life (0.35.9): 70 taken jobs with a new lock-key table each (window lent "
+           "each time, one table kept); bad clone refused (game plan); no shared cut in Mode=2; a key origin no table has: %d "
+           "refusals, then one rebuild, then taken\n", kPcKeyFailMax);
+}
+
+// 0.35.19 (docs/94 §22.22): a Mode=2 job waits for the replay consumer before it takes +0x918 (the consumer applies only under
+// it), until the consumer is at the job's cut and idle, bounded by kPcWaitMs; Mode=1, no cut or a passed cut: no wait
+static DWORD WINAPI TestP5PreLockConsumer(void*) {
+    Sleep(2);
+    g_rpPhase = 1;  // applying, then caught up and running RpGc (still holding g_rpUse)
+    g_rpTail = 105;
+    Sleep(3);
+    g_rpPhase = 0;
+    return 0;
+}
+static void TestP5PreLock() {
+    const DWORD tail = g_rpTail, head = g_rpHead;
+    const bool thr = g_rpThreaded;
+    const P4CloneProvider* const pv = g_p4Clone;
+    const LONG ph = g_rpPhase;
+    const HANDLE ev = g_rpEvent;
+    g_rpEvent = NULL;  // no consumer thread here: SetEvent must not reach a recycled handle (0.33.3)
+    g_rpThreaded = true, g_p4Clone = &kPcProvider;
+    g_rpTail = 100, g_rpHead = 110, g_rpPhase = 0;
+    AsyncJob j = {};
+    j.p4 = 2, j.p4Ver = 105;
+    LARGE_INTEGER t0;
+    for (int n = 0; n < 5; n++) {  // (a) the consumer reaches the cut and goes idle: the job starts then, not at the bound
+        g_rpTail = 100;
+        HANDLE th = CreateThread(NULL, 0, TestP5PreLockConsumer, NULL, 0, NULL);
+        assert(th);
+        QueryPerformanceCounter(&t0);
+        P5PreLock(&j);
+        const LONG us = UsSince(t0);
+        // under heavy parallel load the fake consumer may miss the bound itself: then the bound ended the wait
+        assert((g_rpTail == 105 && !g_rpPhase) || us >= (LONG)kPcWaitMs * 1000 - 16000);
+        WaitForSingleObject(th, INFINITE);
+        CloseHandle(th);
+    }
+    g_rpTail = 100;  // (b) never reached: the bound
+    QueryPerformanceCounter(&t0);
+    P5PreLock(&j);
+    LONG us = UsSince(t0);
+    assert(us >= (LONG)kPcWaitMs * 1000 - 16000 && g_rpTail == 100);
+    QueryPerformanceCounter(&t0);  // (c) no wait: Mode=1 (shadow after J_DONE), no cut, a passed cut, no consumer thread
+    j.p4 = 1, P5PreLock(&j);
+    j.p4 = 3, j.p4Ver = 0, P5PreLock(&j);
+    j.p4Ver = 99, P5PreLock(&j);
+    j.p4Ver = 105, g_rpThreaded = false, P5PreLock(&j);
+    us = UsSince(t0);
+    assert(us < (LONG)kPcWaitMs * 1000 / 2);
+    g_rpTail = tail, g_rpHead = head, g_rpThreaded = thr, g_p4Clone = pv, g_rpPhase = ph, g_rpEvent = ev;
+    printf("P5 pre-lock (0.35.19): a Mode=2 job waits for the replay consumer at its cut and idle before it takes +0x918; bounded; no wait otherwise\n");
+}
+
+// 0.35.20 (docs/94 §22.23): the cut's lot signatures use RpSigMix instead of RpMix. The 0.35.19 signature (copied here) and
+// the new one must agree on "changed" for every mutation; then a hook-less node change still rebases its lot in the cut
+static u64 RsOldSig(const u8* node) {
+    u64 h = RpMix(0xCBF29CE484222325ull, (DWORD)(uintptr_t)node);
+    const u8* g = node + 0x10;
+    h = RpMix(RpMix(h, g[0x8C]), RpD(g + 0x40));
+    for (DWORD o = 0xA0; o < 0x120; o += 4) h = RpMix(h, RpD(g + o));
+    for (DWORD v = 0x44; v <= 0x74; v += 0x10) {
+        const u8* b = RpP(g + v);
+        const u8* e = RpP(g + v + 4);
+        h = RpMix(h, (DWORD)(e - b));
+        if (v == 0x44 || v == 0x74) for (const u8* p = b; p && p < e && p < b + 4 * 4096; p += 4) h = RpMix(h, RpD(p));
+    }
+    return h;
+}
+static u64 RsOldQSig(const u8* node) {
+    u64 h = 0xCBF29CE484222325ull;
+    const u8* b = RpP(node + 0x10 + 0x74);
+    const u8* e = RpP(node + 0x10 + 0x78);
+    for (const u8* p = b; p && p < e && p < b + 64; p += 4) h = RpMix(h, RpD(p));
+    return h;
+}
+static void TestReplaySigMix() {
+    Ts3nCounters& k = ts3native_counters;
+    static __declspec(align(16)) u8 node[0x200];
+    static DWORD vec[4][64];
+    DWORD seed = 12345;
+    auto rnd = [&](DWORD n) { seed = seed * 1103515245 + 12345; return ((seed >> 8) & 0xFFFFFF) % n; };
+    int same = 0, diff = 0;
+    for (int step = 0; step < 20000; step++) {
+        if (step % 50 == 0) {  // a fresh node
+            for (int i = 0; i < 0x200 / 4; i++) ((DWORD*)node)[i] = rnd(0x1000000) * 256 + rnd(256);
+            for (int v = 0; v < 4; v++) {
+                for (int i = 0; i < 64; i++) vec[v][i] = rnd(0x1000000);
+                const DWORD len = v == 3 ? 1 + rnd(16) : rnd(40);
+                *(DWORD*)(node + 0x10 + 0x44 + v * 0x10) = (DWORD)(uintptr_t)vec[v];
+                *(DWORD*)(node + 0x10 + 0x48 + v * 0x10) = (DWORD)(uintptr_t)(vec[v] + len);
+            }
+        }
+        const u64 o0 = RsOldSig(node), n0 = RpSig(node), oq0 = RsOldQSig(node), nq0 = RpQSig(node);
+        const int kind = (int)rnd(7);
+        const int nm = 1 + (int)rnd(3);
+        for (int m = 0; m < nm; m++) {
+            const DWORD bit = 1u << rnd(32);
+            switch (kind) {
+                case 0: *(DWORD*)(node + 0x10 + 0xA0 + rnd(32) * 4) ^= bit; break;  // transforms
+                case 1: node[0x10 + 0x8C] ^= (u8)(1 + rnd(255)); *(DWORD*)(node + 0x10 + 0x40) += rnd(2); break;  // built, level
+                case 2: vec[0][rnd(64)] ^= bit; break;  // portals (maybe past the end: no change)
+                case 3: vec[3][rnd(16)] ^= bit; break;  // Q pointers (maybe past the end)
+                case 4: vec[1][rnd(64)] ^= bit; break;  // +0x54 contents: not in the signature
+                case 5: *(DWORD*)(node + 0x10 + 0x30 + rnd(4) * 4) ^= bit; break;  // outside the signature
+                default: *(DWORD*)(node + 0x10 + 0x48) -= *(DWORD*)(node + 0x10 + 0x48) > *(DWORD*)(node + 0x10 + 0x44) ? 4 : 0; break;  // shorter
+            }
+        }
+        const bool oc = RsOldSig(node) != o0, nc = RpSig(node) != n0, oqc = RsOldQSig(node) != oq0, nqc = RpQSig(node) != nq0;
+        if (oc != nc || oqc != nqc) printf("sig mix step %d kind %d: old %d new %d, q old %d new %d\n", step, kind, oc, nc, oqc, nqc);
+        assert(oc == nc && oqc == nqc);
+        (oc ? diff : same)++;
+    }
+    assert(same > 2000 && diff > 2000);
+    // end to end: a node change no hook saw (transform, portal) rebases that lot at the next cut; the audit (every cut, all lots) stays equal
+    static DWORD simTid;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    simTid = GetCurrentThreadId();
+    g_rtSimTidSlot = &simTid;
+    RfSetup(7);
+    RfCut();
+    const LONG mis0 = k.rpMis, ep0 = k.rpEpochs;
+    for (int i = 0; i < 20; i++) {
+        const LONG w2 = k.rpRebaseWhy[2];
+        u8* g = g_rf.lots[i % g_rf.nLots] + 0x10;
+        if (i & 1) ((float*)(g + 0xA0))[i % 32] += 1.0f;
+        else (*(DWORD**)(g + 0x44))[0] ^= 0x10;
+        RfCut();
+        assert(k.rpRebaseWhy[2] == w2 + 1 && k.rpMis == mis0 && k.rpEpochs == ep0);
+        RfCut();  // nothing new: no rebase
+        assert(k.rpRebaseWhy[2] == w2 + 1 && k.rpMis == mis0);
+    }
+    // 0.35.24 (docs/94 §22.28, I-94-499): a door-ask byte +0x8F flip with no other node change. The 0.35.23 signature (RsOldSig)
+    // misses it, so the clone kept the old byte (recurring BP M2); now the next cut refreshes the lot and the clone holds the new byte
+    for (int i = 0; i < 6; i++) {
+        u8* live = g_rf.lots[i % g_rf.nLots];
+        const u64 key = ((u64)*(DWORD*)(live + 4) << 32) | *(DWORD*)live;
+        const u8 was = live[0x10 + 0x8F];
+        assert(RpFindLot(g_rpClone, key) && RpFindLot(g_rpClone, key)->node[0x10 + 0x8F] == was);
+        const u64 o = RsOldSig(live);
+        live[0x10 + 0x8F] ^= 1;
+        assert(RsOldSig(live) == o);  // the 0.35.23 shape: no signature change, no rebase
+        const LONG w2 = k.rpRebaseWhy[2];
+        RfCut();
+        assert(k.rpRebaseWhy[2] == w2 + 1 && k.rpMis == mis0 && RpFindLot(g_rpClone, key)->node[0x10 + 0x8F] == (u8)(was ^ 1));
+        RfCut();
+        assert(k.rpRebaseWhy[2] == w2 + 1);
+    }
+    RfTeardown();
+    g_rtSimTidSlot = savedSim;
+    printf("replay signature mix (0.35.20): 20000 random node mutations, old and new signature agree on every change (%d changed, %d not); "
+           "20 hook-less node changes rebased at the next cut, audits equal; 6 lone +0x8F flips refresh the clone byte (0.35.24)\n", diff, same);
+}
+
+// 0.35.21 (docs/94 §22.24.3, I-94-485): ReplayQuietMs. Cuts with nothing recorded reuse the clone position (a SYNC each, no
+// signature scan); a recorded write or a routing IC makes the next cut full; a hook-less node change waits for the next full
+// scan (ReplayQuietMs after the last one), which rebases it and counts it as a late catch; audits stay equal
+static void TestReplayQuiet() {
+    Ts3nCounters& k = ts3native_counters;
+    static DWORD simTid;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    simTid = GetCurrentThreadId();
+    g_rtSimTidSlot = &simTid;
+    RfSetup(9);
+    RfCut();
+    g_rpAuditEvery = 0;
+    g_rpQuietMs = 250;
+    RfCut();  // the first full cut with reuse on
+    const LONG q0 = g_rcN[RC_QUIET], ep0 = k.rpEpochs, mis0 = k.rpMis;
+    for (int i = 0; i < 5; i++) {
+        const DWORD pub = g_rpPub;
+        RfCut();
+        assert(g_rpPub != pub);  // a SYNC per cut: each P4 cut keeps its own position
+    }
+    assert(g_rcN[RC_QUIET] == q0 + 5);
+    RfIns(RfQOf(0, 0), g_rf.fps[3], 0, true);  // a recorded write: full
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 5);
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 6);
+    SpIcNote(5);  // a routing IC (a portal change no leaf records): full
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 6);
+    const LONG w2 = k.rpRebaseWhy[2], ls = g_rcLateScans, ll = g_rcLateLots;
+    ((float*)(g_rf.lots[1] + 0x10 + 0xA0))[2] += 1.0f;  // hook-less: waits for the full scan
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 7 && k.rpRebaseWhy[2] == w2);
+    g_rpQFullAt -= 1000;  // ReplayQuietMs passed
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 7 && k.rpRebaseWhy[2] == w2 + 1 && g_rcLateScans == ls + 1 && g_rcLateLots == ll + 1);
+    g_rpAuditEvery = 1;  // an audit cut is always full
+    RfCut();
+    assert(g_rcN[RC_QUIET] == q0 + 7 && k.rpMis == mis0 && k.rpEpochs == ep0 && k.rpAudits > 0);
+    g_rpQuietMs = 0;
+    RfTeardown();
+    g_rtSimTidSlot = savedSim;
+    printf("replay quiet cuts (ReplayQuietMs): 7 reused with a SYNC each, a recorded write and a routing IC force a full cut, a hook-less "
+           "change rebased at the next full scan (counted late), audits equal\n");
+}
+
+// 0.35.23 (docs/94 §22.26): (a) a shells-only rebase is published while a map batch is in flight or a P4 run owns the pool
+// set (a full one still waits); (b) ReplaySigMs: a hook-less change waits for the next scan, a rebase on a skipped-scan cut
+// keeps the other lots' old signatures (negative control: a plain mirror set loses the change, only the audit finds it);
+// (c) LotsUnlocked: batches applied outside the lock, their leftovers freed in the next hold; audits equal throughout
+static void RfW3(int lot) {  // a new Q on the lot (W3 build): a full rebase with map work
+    u8* g = g_rf.lots[lot] + 0x10;
+    u8** qv = *(u8***)(g + 0x74);
+    RfRemAll(qv[0]);
+    DWORD* s = RfSlot();
+    s[1] = *(DWORD*)g, s[2] = 0, s[3] = 0, s[4] = 1;
+    qv[0] = NULL;
+    SnEnter(2, s);
+    qv[0] = RfQ(*(DWORD*)g);
+    RfIns(qv[0], g_rf.fps[0], 0, true);
+}
+static void RfAuditAll() {  // every lot hashed at the next cut
+    const DWORD e = g_rpAuditEvery, l = g_rpAuditLots;
+    g_rpAuditEvery = 1, g_rpAuditLots = 0;
+    RfCut();
+    g_rpAuditEvery = e, g_rpAuditLots = l;
+}
+// 0.35.25 (docs/94 §22.29): [RouteSnap] InsFreeInPlace. The same random replay (inserts, removes, replaced footprints, W3 / W4,
+// lot adds / removes) with the switch off and on: every-lot audits equal both ways, the clone ends with the same footprint
+// count, and with it on the old copies nothing holds are freed in place (no whole-clone repin scan). Plus a BP-size bench of
+// the scan an INS no longer pays (~74k clone footprints, as BP's clone map)
+static void TestInsFreeInPlace() {
+    Ts3nCounters& k = ts3native_counters;
+    static DWORD simTid;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    simTid = GetCurrentThreadId();
+    g_rtSimTidSlot = &simTid;
+    LONG freed[2], retired[2], scans[2], fps[2];
+    for (int on = 0; on < 2; on++) {
+        g_rpInsFreeInPlace = on;
+        RfSetup(31);
+        RfCut();
+        const LONG mis0 = k.rpMis, dv0 = k.rpDiverge, fr0 = g_rpInsFreed, rt0 = g_rpInsRetired, rs0 = g_rpRepinScans;
+        for (int i = 1; i <= 8000; i++) {
+            RfStep();
+            if (i % 5 == 0) RfCut();
+            if (i % 400 == 0) RfAuditAll(), RfCut();
+        }
+        RfAuditAll();
+        RfCut();
+        freed[on] = g_rpInsFreed - fr0, retired[on] = g_rpInsRetired - rt0, scans[on] = g_rpRepinScans - rs0, fps[on] = k.rpFps;
+        assert(k.rpMis == mis0 && k.rpDiverge == dv0 && k.rpFaults == 0);
+        RfTeardown();
+        assert(g_rpBytes == 0 && k.rpFps == 0);
+    }
+    g_rpInsFreeInPlace = 0;
+    assert(freed[0] == 0 && freed[1] > 0 && scans[1] < scans[0] && freed[1] + retired[1] == retired[0] && fps[0] == fps[1]);
+    // the scan: RpRepin over a clone footprint table of BP size (top-level copies, none a child of the retired block)
+    const DWORD n = 74000;
+    u8* buf = (u8*)VirtualAlloc(NULL, n * 64, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    assert(buf);
+    RpClone c = {};
+    for (DWORD i = 0; i < n; i++) {
+        RpFpHdr* h = (RpFpHdr*)(buf + (size_t)((i * 40503u) % n) * 64);  // scattered, as heap blocks are
+        h->pad = 0;
+        assert(RpTabPut(c.fps, 0x10000000 + i * 16, (DWORD)(uintptr_t)((u8*)h + 16)));
+    }
+    u8 old[64] = {}, fresh[64] = {};
+    LARGE_INTEGER f, t0, t1;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&t0);
+    for (int r = 0; r < 50; r++) RpRepin(&c, old + 16, fresh + 16);
+    QueryPerformanceCounter(&t1);
+    const double us = (t1.QuadPart - t0.QuadPart) * 1e6 / f.QuadPart / 50;
+    RpTabFree(c.fps);
+    VirtualFree(buf, 0, MEM_RELEASE);
+    printf("InsFreeInPlace: off retired %ld (repin scans %ld), on freed in place %ld + retired %ld (repin scans %ld); audits equal; "
+           "one repin scan over %lu clone footprints %.0f us\n", retired[0], scans[0], freed[1], retired[1], scans[1], n, us);
+    g_rtSimTidSlot = savedSim;
+}
+static void TestReplay03523() {
+    Ts3nCounters& k = ts3native_counters;
+    static DWORD simTid;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    simTid = GetCurrentThreadId();
+    g_rtSimTidSlot = &simTid;
+    RfSetup(23);
+    RfCut();
+    const LONG mis0 = k.rpMis, ep0 = k.rpEpochs, dv0 = k.rpDiverge;
+    // (a) in flight: the consumer does not drain between these cuts
+    g_rpThreaded = true;
+    const HANDLE ev = g_rpEvent;
+    g_rpEvent = NULL;
+    RfW3(0);
+    RpCut(g_rf.world);
+    assert(!g_rpCutDeferred && RpRingCount(RP_LOTS) == 1);
+    RfW4(1);
+    RpCut(g_rf.world);
+    assert(!g_rpCutDeferred && RpRingCount(RP_LOTS) == 2);  // the shells went out behind the batch in flight
+    RfW3(2);
+    RpCut(g_rf.world);
+    assert(g_rpCutDeferred && RpRingCount(RP_LOTS) == 2);  // a full one still waits (one map batch in flight)
+    RpDrain(false);
+    RpCut(g_rf.world);
+    assert(!g_rpCutDeferred && RpRingCount(RP_LOTS) == 1);
+    RpDrain(false);
+    // pools owned by a "P4 run" (this thread holds g_plSet as another owner would)
+    AcquireSRWLockExclusive(&g_plSet);
+    RfW4(3);
+    RpCut(g_rf.world);
+    assert(!g_rpCutDeferred && RpRingCount(RP_LOTS) == 1);
+    RfW3(4);
+    RpCut(g_rf.world);
+    assert(g_rpCutDeferred);
+    ReleaseSRWLockExclusive(&g_plSet);
+    g_rpThreaded = false;
+    g_rpEvent = ev;
+    RfCut();
+    RfAuditAll();
+    assert(k.rpMis == mis0 && k.rpEpochs == ep0 && k.rpDiverge == dv0);
+    // (b) ReplaySigMs (no audit cuts in between: an audit would find the change and force the lot itself)
+    const DWORD ae = g_rpAuditEvery;
+    g_rpAuditEvery = 0;
+    g_rpSigMs = 250;
+    RfCut();
+    const LONG w2 = k.rpRebaseWhy[2], late0 = g_rcSigLate;
+    g_rpSigAt = GetTickCount64();  // a scan just ran
+    ((float*)(g_rf.lots[1] + 0x10 + 0xA0))[3] += 1.0f;  // hook-less
+    RfW4(2);  // a shell rebase in the same, unscanned cut: the mirror keeps lot 1's old signature
+    RfCut();
+    assert(k.rpRebaseWhy[2] == w2);
+    RfCut();
+    assert(k.rpRebaseWhy[2] == w2);
+    g_rpSigAt -= 1000;  // ReplaySigMs passed
+    RfCut();
+    assert(k.rpRebaseWhy[2] == w2 + 1 && g_rcSigLate == late0 + 1);
+    RfAuditAll();
+    assert(k.rpMis == mis0);
+    // negative control: the same change, then a mirror set without keep (0.35.22's call) on an unscanned cut: lost
+    g_rpSigAt = GetTickCount64();
+    ((float*)(g_rf.lots[1] + 0x10 + 0xA0))[3] += 1.0f;
+    RpMirrorSet(g_rpLive, g_rpNMir);
+    g_rpSigAt -= 1000;
+    RfCut();
+    assert(k.rpRebaseWhy[2] == w2 + 1);  // the scan found nothing
+    RfAuditAll();
+    assert(k.rpMis > mis0);  // only the audit sees it (and forces the lot)
+    RfCut();
+    RfAuditAll();
+    const LONG mis1 = k.rpMis;
+    g_rpSigMs = 0;
+    g_rpAuditEvery = ae;
+    // (c) LotsUnlocked: random steps with W3 / W4 rebases, applied outside the lock
+    g_rpLotsUnlocked = 1;
+    const LONG un0 = g_rpLotsUnlockedN;
+    for (int i = 1; i <= 400; i++) {
+        RfStep();
+        if (i % 40 == 0) RfW3(i / 40 % g_rf.nLots);
+        if (i % 7 == 0) RfW4(i % g_rf.nLots);
+        if (i % 5 == 0) { RfCut(); assert(!g_rpLotsFreePend); }
+    }
+    RfAuditAll();
+    assert(g_rpLotsUnlockedN > un0 + 10 && k.rpMis == mis1 && k.rpFaults == 0 && k.rpEpochs == ep0);
+    g_rpLotsUnlocked = 0;
+    RfTeardown();
+    g_rtSimTidSlot = savedSim;
+    printf("replay 0.35.23: shells published past a batch in flight and busy pools (full rebases wait); ReplaySigMs keeps unscanned "
+           "signatures (a hook-less change rebased late, %ld late; a plain mirror set loses it: control); %ld batches applied "
+           "outside the lock, audits equal\n", g_rcSigLate - late0, g_rpLotsUnlockedN - un0);
+}
+
+// 0.35.21 (docs/94 §22.24.5): REM bounds patch. Stand-ins with the logic of the level-box answer 0x80EF80 (box of the level
+// entry, widened by +0x30 when +0x34 bit 0x2000000 and the child list is empty, else by z) and the child's 0x806C50 (its parent's
+// answer with z = the child's +0x10). The IP shapes: a child copy whose +0x10 is stale (copy widened by 2.0 more than live), a
+// box drift of 0.001 (an unrecorded transform), and a copy parent whose child list is empty while live's is not (not patchable)
+static float* __fastcall StLevelBox(u8* fp, void*, float* out, DWORD lvl, float z) {
+    const float* e = (const float*)(*(u8**)(fp + 0x38) + lvl * 0x24 + 0x10);
+    const float w = (*(DWORD*)(fp + 0x34) & 0x2000000) ? (*(u8**)(fp + 0x24) == fp + 0x24 ? *(float*)(fp + 0x30) : z) : 0.f;
+    out[0] = e[0] - w, out[1] = e[1] - w, out[2] = e[2] + w, out[3] = e[3] + w;
+    return out;
+}
+static float* __fastcall StChildBox(u8* fp, void*, float* out, DWORD lvl, float) {
+    u8* par = *(u8**)(fp + 0xC);
+    return ((RpBoundsFn)(uintptr_t)RpD(RpP(par) + 0x2C))(par, NULL, out, lvl, *(float*)(fp + 0x10));
+}
+static void TestRemPatch() {
+    static DWORD parVt[0x48 / 4], kidVt[0x48 / 4];
+    parVt[0] = kidVt[0] = (DWORD)(uintptr_t)RfLevels1;
+    parVt[0x2C / 4] = (DWORD)(uintptr_t)StLevelBox, kidVt[0x2C / 4] = (DWORD)(uintptr_t)StChildBox;
+    RpCls cls[2] = {{(DWORD)(uintptr_t)parVt, 0x44, 1, 0}, {(DWORD)(uintptr_t)kidVt, 0x28, 0, 1}};
+    const RpCls* savedCls = g_rpCls;
+    const int savedN = g_rpNCls;
+    const DWORD savedBox = g_rpLevelBox;
+    g_rpCls = cls, g_rpNCls = 2, g_rpLevelBox = (DWORD)(uintptr_t)StLevelBox;
+    struct Fp { u8 b[0x50]; u8 lvl[0x24]; u8 node[16]; };
+    static Fp lp, cp, lk, ck;  // live parent / copy parent / live child / copy child
+    auto mk = [](Fp& p, Fp& k, bool listed, float z, float x0) {
+        memset(&p, 0, sizeof(p)), memset(&k, 0, sizeof(k));
+        *(DWORD*)p.b = (DWORD)(uintptr_t)parVt, *(DWORD*)k.b = (DWORD)(uintptr_t)kidVt;
+        *(u8**)(p.b + 0x38) = p.lvl, p.lvl[0x20] = 1;
+        float* bx = (float*)(p.lvl + 0x10);
+        bx[0] = x0, bx[1] = 4.f, bx[2] = 25.f, bx[3] = 35.f;
+        *(float*)(p.b + 0x30) = 2.f, *(DWORD*)(p.b + 0x34) = 0x2000000;
+        *(u8**)(k.b + 0xC) = p.b, *(float*)(k.b + 0x10) = z, *(DWORD*)(k.b + 0x14) = 0x78;
+        *(DWORD*)(p.b + 0x14) = 0x99;
+        if (listed) {  // list head {next, prev}; node {next, prev, footprint}
+            *(u8**)p.node = p.b + 0x24, *(u8**)(p.node + 4) = p.b + 0x24, *(u8**)(p.node + 8) = k.b;
+            *(u8**)(p.b + 0x24) = *(u8**)(p.b + 0x28) = p.node;
+        } else *(u8**)(p.b + 0x24) = *(u8**)(p.b + 0x28) = p.b + 0x24;
+    };
+    u8 fme[0x14] = {};
+    *(DWORD*)(fme + 0x10) = 0x200;
+    const LONG pt0 = g_rpRemPatched, d0 = g_rpRemDiff;
+    auto run = [&](u8* liveFp, u8* copyFp) {  // the REM record from live, then the replay's compare on the copy
+        RpRemLive lv = {};
+        RpRemLiveE& e = lv.e[lv.n++];
+        float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(liveFp) + 0x2C))(liveFp, NULL, e.b, 0, 0.f);
+        memcpy(e.b, r, 16);
+        e.cls = RpD(liveFp), e.lo = RpD(liveFp + 0x14), e.hi = RpD(liveFp + 0x18), e.lvl = 0;
+        RpRemPatchTake(e.p, liveFp, 0);
+        float b[4];
+        const float* rc = ((RpBoundsFn)(uintptr_t)RpD(RpP(copyFp) + 0x2C))(copyFp, NULL, b, 0, 0.f);
+        const bool differ = memcmp(e.b, rc, 16) != 0;
+        const bool force = differ && RpRemDiff(&lv, copyFp, fme, rc, NULL);
+        return differ ? (force ? 2 : 1) : 0;
+    };
+    mk(lp, lk, true, 0.f, 2.1f), mk(cp, ck, true, 2.f, 2.1f);  // (1) the child's +0x10: copy 2.0, live 0.0
+    assert(run(lk.b, ck.b) == 1 && *(float*)(ck.b + 0x10) == 0.f && g_rpRemPatched == pt0 + 1 && g_rpRemDiff == d0);
+    mk(lp, lk, true, 0.f, 5.634f), mk(cp, ck, true, 0.f, 5.633f);  // (2) a box drift on the parent itself (as 0xFEB848)
+    assert(run(lp.b, cp.b) == 1 && ((float*)(cp.lvl + 0x10))[0] == 5.634f && g_rpRemPatched == pt0 + 2);
+    mk(lp, lk, true, 0.f, 2.1f), mk(cp, ck, false, 0.f, 2.1f);  // (3) copy parent's list empty, live's not: forced
+    assert(run(lk.b, ck.b) == 2 && g_rpRemPatched == pt0 + 2 && g_rpRemDiff == d0 + 1);
+    mk(lp, lk, true, 0.f, 2.1f), mk(cp, ck, true, 0.f, 2.1f);  // (4) equal: nothing to do
+    assert(run(lk.b, ck.b) == 0);
+    g_rpCls = savedCls, g_rpNCls = savedN, g_rpLevelBox = savedBox;
+    puts("replay REM bounds patch (0.35.21): a stale child +0x10 and a drifted level box are patched to live's answer (no rebase); "
+         "a copy parent with another child-list state is still forced");
+}
+
+// 0.35.21 (docs/94 §22.24.4): thread CPU cycles -> cycle-ms/s at the nominal 2.3 GHz; the read itself is cheap enough per
+// section, and a busy section counts cycles at a plausible rate (a preempted thread counts fewer, never more)
+static void TestCycles() {
+    assert(fabs(CycMsPerS(2300000, 1.0) - 1.0) < 1e-9);                 // 2.3 M cycles in 1 s = 1 cyc-ms/s
+    assert(fabs(CycMsPerS((LONG64)(2.3e9 * 0.005 * 300), 300.0) - 5.0) < 1e-6);  // the stage-1 budget over a 5-min window
+    assert(CycMsPerS(12345, 0.0) == 0.0 && CycMsPerS(0, 10.0) == 0.0);
+    LARGE_INTEGER f, t0, t1;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&t0);
+    const LONG64 c0 = CycNow();
+    for (int i = 0; i < 100000; i++) (void)CycNow();
+    const LONG64 c1 = CycNow();
+    QueryPerformanceCounter(&t1);
+    const double readNs = (t1.QuadPart - t0.QuadPart) * 1e9 / f.QuadPart / 100000;
+    volatile DWORD x = 1;
+    QueryPerformanceCounter(&t0);
+    const LONG64 b0 = CycNow();
+    do { for (int i = 0; i < 100000; i++) x = x * 1664525u + 1013904223u; QueryPerformanceCounter(&t1); } while ((t1.QuadPart - t0.QuadPart) * 1000 < f.QuadPart * 20);
+    const LONG64 b1 = CycNow();
+    const double secs = (t1.QuadPart - t0.QuadPart) / (double)f.QuadPart, hz = (b1 - b0) / secs;
+    assert(c1 > c0 && b1 > b0 && hz > 1e8 && hz < 1e10);
+    printf("thread cycles: read %.0f ns each, a 20 ms busy loop counted %.2f GHz (cycle-ms/s use 2.3 GHz nominal: %.1f vs %.1f wall ms)\n",
+           readNs, hz / 1e9, CycMsPerS(b1 - b0, 1.0), secs * 1000);
+}
+
 int main() {
     setvbuf(stdout, NULL, _IONBF, 0);  // a crash keeps what was printed
     SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* e) -> LONG {
@@ -8037,6 +9864,7 @@ int main() {
     TestIcLock();
     TestRouteGate();
     TestMonoThread();
+    TestMonoThreadM5();
     TestLotStream();
     TestVerify();
     TestRouteSites();
@@ -8056,15 +9884,32 @@ int main() {
     TestPlanRepeat();
     TestRouteSnap();
     TestSnapImages();
+    TestSnapCost();
+    TestBnmShare();
     TestRouteSnapP1b();
     TestSnapReplay();
+    TestReplaySigMix();
+    TestReplayQuiet();
+    TestReplay03523();
+    TestInsFreeInPlace();
+    TestRemPatch();
+    TestCycles();
+    TestReplayLongRun();
     TestPools();
     TestJobQueue();
     TestLotSinCos();
     TestIdCache();
+    g_p4ObsOn = false;  // TestP4's fake worlds have no planner at +0x95C and its +0x918 is not the fake lock; TestP4Obst covers it
     TestP4();
     TestP4DeferStop();
+    TestP4Obst();
+    TestP4DoorDump();
     TestP5();
+    TestP5b();
+    TestP5PreLock();
+    TestHitchAttr();
+    TestAutShadow();
+    TestThreadStack();
     puts("selftest ok");
     return 0;
 }

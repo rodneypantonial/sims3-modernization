@@ -5,6 +5,9 @@
 // shortcut: the writers here are stand-ins with the game's data layout, except the rasteriser in steerro-test; running the
 // game's footprint writers (0x8321F0 and below) needs a full object world and is left to the live audit (P3 queue).
 
+// FNV-1a: an image's bytes did not change while it lived (snap.cpp hashed every image until 0.35.15; now tests only)
+static DWORD SpHash(const u8* p, DWORD n) { DWORD h = 2166136261u; for (DWORD i = 0; i < n; i++) { h ^= p[i]; h *= 16777619u; } return h; }
+
 struct SfWorld {
     u8* world; u8* wm; u8* p; u8* W; u8* blendMap; u8* layer;
     DWORD gw, gh;              // G cells
@@ -17,6 +20,7 @@ static SfWorld g_sf;
 static DWORD g_sfSeed = 1;
 static DWORD SfRnd(DWORD n) { g_sfSeed = g_sfSeed * 1103515245 + 12345; return ((g_sfSeed >> 8) & 0xFFFFFF) % (n ? n : 1); }
 static void* SfA(size_t n) { void* p = _aligned_malloc(n, 16); memset(p, 0, n); return p; }  // shortcut: never freed (test process)
+static u8* g_sfPages;  // steerro-test K8: the world (+0) and P (+0x1000) on these two zeroed pages, so they can be guarded
 
 typedef void(__fastcall* SfRasterFn)(u8* g, void* edx, float x0, float z0, float x1, float z1, DWORD value, DWORD cls, void* rec);
 static void __fastcall SfRasterC(u8* g, void*, float x0, float z0, float x1, float z1, DWORD value, DWORD cls, void*) {
@@ -112,7 +116,7 @@ static void SfGridAddRec(DWORD lotKey, DWORD cell, DWORD key) {
 static void SfBuild(DWORD seed) {
     g_sfSeed = seed;
     memset(&g_sf, 0, sizeof(g_sf));
-    u8* world = g_sf.world = (u8*)SfA(0xA00);
+    u8* world = g_sf.world = g_sfPages ? g_sfPages : (u8*)SfA(0xA00);
     // R: 4 x 4 chunks, 512 bytes of records
     *(DWORD*)(world + 0x54) = 4, *(DWORD*)(world + 0x58) = 4;
     DWORD* tbl = (DWORD*)SfA(16 * 4);
@@ -136,7 +140,7 @@ static void SfBuild(DWORD seed) {
     DWORD* bnm = (DWORD*)SfA(5 * 4);
     *(DWORD**)(g + 0x360) = bnm, *(DWORD*)(g + 0x364) = 5;
     // P: lot table, footprint grid (16 x 16 cells of 32 bytes, 3 buckets each), pending flag
-    u8* p = g_sf.p = (u8*)SfA(0x200);
+    u8* p = g_sf.p = g_sfPages ? g_sfPages + 0x1000 : (u8*)SfA(0x200);
     *(u8**)(world + 0x95C) = p;
     DWORD* lbk = (DWORD*)SfA(8 * 4);
     lbk[7] = 0x05E117E1;
@@ -428,7 +432,7 @@ static void SnapK5(DWORD seed) {
     SpVer* held = SpVerRef(g_spCur);
     const u64 gone = held->lots[0]->key;
     SpImg* goneImg = held->lots[0];
-    const DWORD h0 = goneImg->hash;
+    const DWORD h0 = SpHash(goneImg->data, goneImg->size);
     for (int i = 0; i < g_sf.nLots; i++)
         if (*(DWORD*)g_sf.nodes[i] == (DWORD)gone) { DWORD* s = SfSlot(); s[1] = (DWORD)gone; SfSignal(17, s); g_sf.nodes[i] = g_sf.nodes[--g_sf.nLots]; break; }
     SfRelink();

@@ -72,9 +72,11 @@ static inline int RtRole(DWORD tid) {  // 0 main, 1 sim, 2 worker, 3 other
 
 // Waits until the async job is done unless this thread may not or need not: the worker, a real +0x918 owner (the worker is
 // outside its job body), the owner inside a callback for the job (returns false: waiting would deadlock). The owner pumps.
+// P5c (p5c.cpp): an owner of the lock the worker lent out is inside the job's window, so it waits (WaitAsyncDone hands it back)
 static bool RtWaitJob(volatile LONG* us, DWORD key) {
     const DWORD tid = GetCurrentThreadId();
-    if (g_async.state != A_RUNNING || !g_async.lock || RgIsWorker(tid) || ts3native_counters.rgOwnerTid == (LONG)tid) return true;
+    if (g_async.state != A_RUNNING || !g_async.lock || RgIsWorker(tid) || (ts3native_counters.rgOwnerTid == (LONG)tid && !P5cLent(tid)))
+        return true;
     if (tid == g_async.owner && g_inInvoke) return false;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
@@ -82,7 +84,7 @@ static bool RtWaitJob(volatile LONG* us, DWORD key) {
     else while (g_async.state == A_RUNNING) Sleep(1);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(us, waited);
-    if (tid == g_async.owner) WaitNote(key, waited);
+    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB);
     return true;
 }
 
@@ -130,6 +132,8 @@ static bool RtM1Allows(void** lock, int* whyOut) {
 
 static void DiscDrain(bool force);  // discourage.cpp
 static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait);
+static bool P5cPark(DWORD idLo, DWORD idHi);  // p5c.cpp: a destroy in a FreeLock window parks one reference and runs
+static void P5cFlush();                       // p5c.cpp: parked references released (no job running)
 
 // 1 = skip the site's body and return to its caller (only the routing debug frame, a plain `ret` function)
 static int __cdecl RtEnter(int i, DWORD* slot) {
@@ -148,14 +152,17 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
     RgThread& t = t_rg;
     RgDrop(t, slot);
     const char* note = NULL;
+    // D-X 0x939420 thiscall(svc; idLo, idHi): slot[1], slot[2]
+    const bool parked = s.kind == RT_DESTROY && enforce && !worker && P5cPark(slot[1], slot[2]);
     if (g_p4On && !worker) {
         // D5: writer families counted for the shadow's window (physics, destroys, lot index rebuilds)
         if (s.kind == RT_QWRITE) InterlockedIncrement(&g_nrN[0]);
         else if (s.kind == RT_DESTROY) InterlockedIncrement(&g_nrN[2]);
         else if (s.kind == RT_IDXREBUILD) InterlockedIncrement(&g_nrN[3]);
         // D2: destroys, saves, BuildRoutingData, lot saves and the travel / quit drain wait for a running clone run
-        if (s.kind == RT_DESTROY || s.kind == RT_SAVE || s.kind == RT_BRD || s.kind == RT_LOTSAVE || s.kind == RT_CLOSING) {
-            P4NrEnter();
+        // (a parked destroy runs beside the clone run: its object stays allocated, the nr count above refuses the answer)
+        if ((s.kind == RT_DESTROY && !parked) || s.kind == RT_SAVE || s.kind == RT_BRD || s.kind == RT_LOTSAVE || s.kind == RT_CLOSING) {
+            P5cNrEnter();
             if (!RgPush(t, slot, 1, RG_REL_NR)) InterlockedDecrement(&g_snNrIn);
         }
     }
@@ -196,7 +203,7 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
             if (enforce && !worker) {  // published first (no job starts during the destroy), then wait for a running one
                 InterlockedIncrement(&g_rgOffSimOpen);
                 if (!RgPush(t, slot, 1, RG_REL_OFFSIM)) InterlockedDecrement(&g_rgOffSimOpen);
-                const bool waited = RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY);
+                const bool waited = parked || RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY);
                 if (!waited) { InterlockedIncrement(&k.vfRtDestroyInInvoke); note = "destroy inside a job callback"; }
                 // D-X (docs/84 §7.2): thiscall(svc; idLo, idHi), ret 8 [verified 0x939420..0x939506]: slot[1], slot[2]
                 DiscOnDestroy(slot[1], slot[2], waited);
@@ -251,6 +258,8 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
         if (!RgPush(t, slot, 1, RG_REL_BUSY | RG_REL_OFFSIM)) { InterlockedDecrement(&k.rtBusy); InterlockedDecrement(&g_rgOffSimOpen); }
         RtWaitJob(&k.vfRtDrainWaitUs, 0x02000000 | s.kind);
     }
+    // P5c: parked references go at these entries when no job runs (a destroy, a save, travel / quit, world init / teardown)
+    if (!worker && (s.kind == RT_DESTROY || s.kind == RT_SAVE || s.kind == RT_CLOSING || s.kind == RT_TEARDOWN)) P5cFlush();
     if (note) RgNoteAs(32 + i, s.name, s.addr, note, VfRealRet(slot), (LONG)tid);
     return 0;
 }

@@ -1027,7 +1027,8 @@ rpc.exports = {
         'snDoorOver', 'snWorkerDirty', 'snDirtyOver', 'snNrWaits', 'snNrWaitUs', 'snNrArmWaitUs', ...n('snNrBits', 7), 'snJsonl',
         'snJsonlFail', 'snPathsFreed');
       // 0.29.0: P4 part B clone provider (+0x2A54..0x2AB3, 24 fields; docs/94 §21, p4clone.cpp; §17.9 N15 and Los). snPcRefused_<i>: 0 cut busy,
-      // 1 cut no version, 2 no clone, 3 older cut / passed, 4 wait timeout, 5 epoch or active lot moved, 6 copy failed
+      // 1 cut no version, 2 no clone, 3 older cut / passed, 4 wait timeout, 5 epoch or active lot moved, 6 copy failed,
+      // 7 (0.33.1) clone stale after a soft map resync
       if (c.readS32() >= 51) f.push('snPcReady', 'snPcCuts', 'snPcCutUs', 'snPcCutMaxUs', ...n('snPcRefused', 8), 'snPcAcquired',
         'snPcMatUs', 'snPcPending', 'snPcFlushed', 'snPcFirstUse', 'snPcFaults', 'snPcOddQ', 'snPcDirtyLots', 'snPcDiscard',
         'snNrBitDl', 'snDlOnClone', 'arLosRefused');
@@ -1056,6 +1057,34 @@ rpc.exports = {
       if (c.readS32() >= 61) f.push('m2Ready', 'm2Take', 'm2Off', 'm2Sites', 'm2SiteAt', 'm2Armed', 'm2Plans', 'm2Taken', ...n('m2Fb', 16),
         'm2FbList', 'm2FbNr', 'm2Verify', ...n('m2VerM', 6), 'm2VerBad', 'm2Trips', 'm2DoorAsk', ...n('m2DoorHist', 5), 'm2DoorWaitUs',
         'm2JobUs', 'm2Stale', 'm2StaleRecs', 'm2Guard');
+      // [RouteSnap] ReleaseLock=1, P5b (+0x3028..0x3067 without v58; docs/94 §22.9, p5b.cpp): p5bRefused_<0 switch / verify,
+      // 1 owner / counts, 2 acquire waiting, 3 other>; p5bRelease is the `--ab routesnaprel` switch
+      if (c.readS32() >= 62) f.push('p5bReady', 'p5bRelease', 'p5bWins', ...n('p5bRefused', 4), 'p5bWinUs', 'p5bRetakeUs',
+        'p5bRetakeMaxUs', 'p5bRetakeAsk', 'p5bRetakeTrip', 'p5bSimAcq', 'p5bHeldOut', 'p5bWatchdog', 'p5bRecMax');
+      // P5b read-only gate leaves (+0x3068..0x3077, v63, 0.34.2; docs/94 §22.10): p5bGateAcq_<0 gate 12, 1 gate-0 hit>;
+      // p5bGates is the `--ab routesnapgate` switch
+      if (c.readS32() >= 63) f.push('p5bGates', ...n('p5bGateAcq', 2), 'p5bGateMiss');
+      // [RouteSnap] FreeLock=1, P5c (+0x3078..0x30C3, v65, 0.35.0; v64 unused; docs/94 §22.11, p5c.cpp): p5cStale_<0 writes only
+      // before the window, 1 inside>, p5cKeptWait_<0 D-X record, 1 full, 2 off the sim / callback, 3 not found>; p5cFree is
+      // the `--ab routesnapfree` switch
+      if (c.readS32() >= 65) f.push('p5cReady', 'p5cFree', 'p5cJobs', 'p5cAcq', ...n('p5cStale', 2), 'p5cParked', ...n('p5cKeptWait', 4),
+        'p5cFlushed', 'p5cFlushRefused', 'p5cPendMax', 'p5cAgeMaxUs', 'p5cCountLow', 'p5cPlanHere', 'p5cHandOver', 'p5cOff');
+      // v66 (0.34.10 [HitchAttr], after P5c v65)
+      if (c.readS32() >= 66) f.push('haReady', ...n('haWaits', 4), ...n('haUs', 4), 'haMaxUs');
+      // v67 (0.35.2, docs/94 §21.17): P4 cuts behind queued jobs, longer shadow wait, [OptsInit] Enabled=2, replay hard-resync
+      // reasons rpHard_<0 no clone lot for the Q, 1 soft tries used up, 2 counts differ / > 16 lots, 3 other>
+      if (c.readS32() >= 67) f.push('p4QCut', 'p4QCutMiss', 'p4WaitExt', 'oiClone', ...n('rpHard', 4));
+      // v68 (0.35.3, docs/94 §21.18): consumer rebuild asks skipped (newer EPOCH queued), acquires refused on a bad clone
+      if (c.readS32() >= 68) f.push('rpOldAsk', 'p4AcqBad');
+      // v69 (0.35.4, docs/94 §21.19): M2/M3 records with obstacle sets, live set not read (lock busy)
+      if (c.readS32() >= 69) f.push('p4Obst', 'p4ObstBusy');
+      // v70 (0.35.5, docs/94 §21.20): replay soft resync by miss kind, rebase reasons
+      // rpRebaseWhy_<0 forced by a write, 1 soft resync force, 2 signature, 3 new or gone>
+      if (c.readS32() >= 70) f.push('rpSoftReal', 'rpSoftFresh', 'rpSoftInFlight', ...n('rpRebaseWhy', 4), 'rpRebaseQSame');
+      // v71 (0.35.6, docs/94 §21.21): P4 STARTs during a running job sharing the pending cut
+      if (c.readS32() >= 71) f.push('p4Borrow', 'p4BorrowMiss', 'p4BorrowDirty');
+      // v72 (0.35.8, docs/94 §21.23): replay child table entries kept for a reused live child address
+      if (c.readS32() >= 72) f.push('rpKidsKept');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
@@ -1094,6 +1123,37 @@ rpc.exports = {
       if (r.waterJpsReady !== 1) return Object.assign(r, { error: 'water JPS not active ([WaterJps] Enabled=0 or ts3native < 0.9.0)' });
       c.add(f.indexOf('waterJpsMode') * 4).writeS32(waterJps);
       r.waterJpsMode = c.add(f.indexOf('waterJpsMode') * 4).readS32();
+    }
+    // second Mono thread (M5 build, docs/30 §14): separate export ts3native_mtprobe (docs/registry.md), null when the asi has none
+    const mp = m.findExportByName('ts3native_mtprobe');
+    if (mp !== null) {
+      const mf = ['version', 'p3Ready', 'p3Sites', 'locking', 'lockedCalls', 'lockedWorker', 'lockWaits', 'lockWaitUs', 'lockMaxWaitUs',
+        'lockMaxDepth', 'lockOverflow', 'finRuns', 'p4Ready', 'p4Slots', 'workerState', 'workerTid', 'workerStarts', 'workerJobs',
+        'workerRunUs', 'workerMaxRunUs', 'workerExceptions', 'workerTrackSkips', 'workerStopFails', 'workerCollects', 'workerCtxSet',
+        'seq', 'result']; // v1: 27 LONG, +0x00..+0x68
+      if (mp.readS32() >= 2) mf.push('arenaRelNonEmpty', 'arenaDropped', 'n2mReady', 'n2mWorker', 'n2mMaxDepth', 'n2mOverflow'); // v2: +0x6C..+0x80 (docs/120 §9)
+      r.mtprobe = Object.fromEntries(mf.map((n, i) => [n, mp.add(i * 4).readS32()]));
+    }
+    // autonomy shadow pilot (docs/122 §13-§14): export ts3native_autshadow (docs/registry.md), null when the asi has none
+    const ap = m.findExportByName('ts3native_autshadow');
+    if (ap !== null) {
+      const af = ['version', 'ready', 'guardSlots', 'guardChained', 'guardSkipped', 'descIcs', 'guardSim', 'guardWorker', 'workerHits',
+        'workerMisses', 'cuts', 'cutUs', 'cutMaxUs', 'entries', 'refreshed', 'learned', 'learnDropped', 'epochs', 'objEvents',
+        'dirtyOverflow', 'listGen', 'memoRecords', 'auditN']; // v1: +0x00..+0x58, then auditMis[4] +0x5C, auditSkipped, snapBytes, full, abortTotal, abort[20] +0x7C
+      const v = ap.readS32(), rd = i => ap.add(i * 4).readS32();
+      const a = Object.fromEntries(af.map((n, i) => [n, rd(i)]));
+      a.auditMis = [0, 1, 2, 3].map(i => rd(23 + i));
+      Object.assign(a, { auditSkipped: rd(27), snapBytes: rd(28), full: rd(29), abortTotal: rd(30) });
+      const reasons = ['row', 'pos', 'memo', 'rng', 'slotpos', 'attach', 'query', 'ic', 'sf', 'privacy', 'roomcache', 'simstale', 'exc',
+        'stop', 'fmt', 'desirefn', 'punish', 'ref', 'list', 'other']; // registry order (AS_AB_*)
+      a.abort = Object.fromEntries(reasons.map((n, i) => [n, rd(31 + i)]));
+      if (v >= 2) {
+        const f2 = ['mode', 'req', 'busy', 'cutReq', 'refRuns', 'refUs', 'refMaxUs', 'refExc', 'rngDraws', 'workRuns', 'workUs', 'workMaxUs',
+          'workExc', 'workRefused', 'noWorker', 'windowUs', 'windowMaxUs', 'overrun', 'epochDrops', 'finishRuns', 'finishExc', 'stale',
+          'rooted', 'icRegistered', 'logLines', 'waitTicks', 'unguarded', 'workerClassInit']; // v2: +0xCC..+0x138
+        f2.forEach((n, i) => { a[n] = rd(51 + i); });
+      }
+      r.autshadow = a;
     }
     return r;
   },
@@ -1155,7 +1215,13 @@ rpc.exports = {
     }
     const mb = x => Math.round(x / 1048576 * 10) / 10;
     reservedBlocks.sort((x, y) => y.size - x.size);
+    // Boehm GC_heapsize [0x12225A0] and GC_large_free_bytes [0x12225B4] (mono_gc_get_used_size 0xE69670 = their difference;
+    // verified disassembly, docs/66 §6) and GC_gc_no [0x11F2F90] (collections so far, docs/119): the [GC] InitialHeapMB
+    // right-size reads gcHeapMB growth and the gcCount difference before/after a job
+    let gc = {};
+    try { gc = { gcHeapMB: mb(ptr('0x12225A0').readU32()), gcFreeMB: mb(ptr('0x12225B4').readU32()), gcCount: ptr('0x11F2F90').readU32() }; } catch (e) { /* not TS3W 1.67 */ }
     return {
+      ...gc,
       commitMB: mb(totals.commit), reserveOnlyMB: mb(totals.reserve), freeMB: mb(totals.free),
       largestFreeMB: mb(largestFree.size), largestFreeBase: largestFree.base,
       imageMB: mb(byType.image), mappedMB: mb(byType.mapped), privateMB: mb(byType.private),

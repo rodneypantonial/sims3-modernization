@@ -62,6 +62,8 @@ static DWORD VfRealRet(const DWORD* slot);          // verify.cpp: the caller be
 static volatile LONG g_p1bOn;                                     // lotfd.cpp: probe P1b
 static void P1bNote(int site, DWORD key, const DWORD* slot, LONG us);  // lotfd.cpp
 static bool SlGate(int site, DWORD* slot);                             // slotro.cpp
+static __declspec(thread) int t_p5bSite;       // p5b.cpp (0.34.2): site + 1 of the gate waiting for +0x918 here, 0 none
+static __declspec(thread) DWORD* t_p5bSlot;    //   and its return slot (P5bGate: read-only gate leaves may take a lent lock)
 
 // rel: what the leave undoes (S3b): RG_REL_LOCK releases `lock`, RG_REL_QT leaves g_qtCs, RG_REL_BUSY drops rtBusy,
 // RG_REL_OFFSIM drops g_rgOffSimOpen
@@ -255,7 +257,7 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
     // P4 D2 (§17.4): the two coarse rebuild gates wait for a running clone run and keep the next one out until they return;
     // a reader-marked frame, so the outermost-gate test below is unchanged
     if (g_p4On && site >= 13 && !RgIsWorker(GetCurrentThreadId())) {
-        P4NrEnter();
+        P5cNrEnter();  // P4NrEnter; P5c: never with the lent lock held
         if (!RgPush(t, slot, 1, RG_REL_NR)) InterlockedDecrement(&g_snNrIn);
     }
     if (site == 10 && t_p10) t_p10 |= P10_REACHED;  // P10: this IC reached the goal step (Route_PlanCommon with G10-C)
@@ -288,9 +290,9 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
                 LARGE_INTEGER t0;
                 QueryPerformanceCounter(&t0);
                 const DWORD key = VfRealRet(slot);
-                t_waitKey = key;  // P1 (docs/84 §4): gate waits keyed by the leaf's caller, not the site
+                t_waitKey = key, t_p5bSite = site + 1, t_p5bSlot = slot;  // P1 (docs/84 §4): keyed by the leaf's caller; P5b
                 LockAcquireHook(lock, NULL, &kInfinite);  // the owner pumps the job's managed calls while it waits
-                t_waitKey = 0;
+                t_waitKey = 0, t_p5bSite = 0;
                 const LONG us = UsSince(t0);
                 if (g_p1bOn || (site == 10 && g_p10On)) P1bNote(site, key, slot, us);  // P1b: and by the caller's caller (P10: by IC)
                 InterlockedIncrement(&k.rgGateWaits);

@@ -7,6 +7,12 @@
 //   node tools/harness/save-matrix.ts --reload-check    second half of case `reload`, after loading its ON save (printed commands)
 //   node tools/harness/save-matrix.ts --reload-check --off   same for its OFF save in a second load; the later check compares both
 //   node tools/harness/save-matrix.ts --self-check      log parsing and diff filtering, no game
+//   --fixes shipped: release mode (queue job key "saveMatrix": {"fixes": "shipped"}). The save fixes stay as the shipped ini and
+//     ts3fixes defaults set them (never switched); "fixes" in every case = the shipped routing features [RouteAsync]
+//     (/native?routeasync) and [Discourage] (counters +0x1074): "all on" = both on, "all off" = both off. [RouteGate] has no
+//     runtime switch: on in both sides (its gates only wait while an async job runs, so with routeasync 0 the off side
+//     never waits on them [inferred, ini notes]); reported as info. Every other check is unchanged. The queue runs the
+//     reload case's two loads itself in this mode.
 // Needs the probe server and a world in live mode (cycle.ts --save <save>). Never loads, launches or closes the game.
 // Fixes under test, switched at runtime: ts3fixes `fastreftable` and `cachedreflection` (agent patches), ts3native footprint index
 // (export ts3native_footprintMode), save compress (ts3native_counters +0x150, Verify +0x154) and save flush (+0x180).
@@ -25,8 +31,10 @@ import { GUARD_MS, stallGuard } from './game-alive.ts';
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
   to: { type: 'string', default: 'france' }, direct: { type: 'boolean' }, stay: { type: 'boolean' }, 'reload-check': { type: 'boolean' }, off: { type: 'boolean' }, 'case-timeout': { type: 'string', default: '900' },
-  port: { type: 'string', default: '47891' },
+  port: { type: 'string', default: '47891' }, fixes: { type: 'string', default: 'all' },
 } });
+if (!['all', 'shipped'].includes(values.fixes!)) { console.error(`--fixes must be all or shipped, not ${values.fixes}`); process.exit(2); }
+const SHIPPED = values.fixes === 'shipped';
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const USER_DIR = process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
 const SAVES = join(USER_DIR, 'Saves');
@@ -42,6 +50,11 @@ const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`${stamp()} ${m}`);
 
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
+
+const SAVE_FIXES = ['fastreftable', 'cachedreflection', 'footprint', 'compress', 'flush'] as const;
+const ROUTE_FIXES = ['routeasync', 'discourage'] as const; // --fixes shipped
+type Fix = typeof SAVE_FIXES[number] | typeof ROUTE_FIXES[number];
+export function fixSet(shipped: boolean): readonly Fix[] { return shipped ? ROUTE_FIXES : SAVE_FIXES; }
 
 // world names as travel_state reports them (GameUtils.GetCurrentWorld); case and punctuation never decide a trip
 function sameWorld(a: unknown, b: unknown): boolean {
@@ -192,6 +205,7 @@ if (values['self-check']) {
     '1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']), ['1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']);
   assert.equal(tripErrors([], ['1:04 uni_move_in 12 -> error: E: q']).length, 1);
   assert.throws(() => assertSafeName('Baseline-BP')); assert.throws(() => assertSafeName('MySave')); assertSafeName('Matrix-BP-off-1');
+  assert.deepEqual(fixSet(true), ['routeasync', 'discourage']); assert.ok(fixSet(false).includes('cachedreflection') && !fixSet(true).includes('cachedreflection'));
   console.log('self-check ok');
   process.exit(0);
 }
@@ -241,9 +255,10 @@ const delta = (a: Counters, b: Counters, k: string) => (b.native?.[k] ?? 0) - (a
 
 // ---------------------------------------------------------------- fixes
 
-const FIXES = ['fastreftable', 'cachedreflection', 'footprint', 'compress', 'flush'] as const;
-type Fix = typeof FIXES[number];
-const ready: Record<Fix, boolean> = { fastreftable: false, cachedreflection: false, footprint: false, compress: false, flush: false };
+const FIXES = fixSet(SHIPPED);
+const ready: Record<Fix, boolean> = { fastreftable: false, cachedreflection: false, footprint: false, compress: false, flush: false, routeasync: false, discourage: false };
+// release mode: [RouteGate] is part of the shipped set but cannot be switched at runtime
+const ROUTEGATE_NA: Check[] = SHIPPED ? [{ name: 'routegate', status: 'info', why: 'N/A: no runtime switch, installed on both sides; its gates wait only while an async job runs (none with routeasync 0)' }] : [];
 const notReady: Partial<Record<Fix, string>> = {}; // reason when known
 async function probeReady() {
   const p = await ag('patches');
@@ -259,6 +274,11 @@ async function probeReady() {
   const n = await get('native').catch(() => null);
   ready.compress = n?.compressReady === 1;
   ready.flush = n?.flushReady === 1;
+  // shipped routing features: installed, and on at start (= the shipped ini turned them on)
+  ready.routeasync = n?.asyncReady === 1 && n?.asyncMode === 1;
+  ready.discourage = n?.discReady === 1 && n?.discMode === 1;
+  notReady.routeasync = ready.routeasync ? '' : `asyncReady ${n?.asyncReady ?? '-'}, asyncMode ${n?.asyncMode ?? '-'} at start (shipped ini: [RouteAsync] Enabled=1 Mode=1, needs [RouteGate] Enabled/Sites/Enforce=1)`;
+  notReady.discourage = ready.discourage ? '' : `discReady ${n?.discReady ?? '-'}, discMode ${n?.discMode ?? '-'} at start (shipped ini: [Discourage] Enabled=1)`;
 }
 const nx = (q: string) => get(`nativeexport?${q}`).catch(() => null);
 async function setFix(f: Fix, on: boolean): Promise<boolean | null> {
@@ -266,6 +286,8 @@ async function setFix(f: Fix, on: boolean): Promise<boolean | null> {
   const v = on ? 1 : 0;
   if (f === 'fastreftable') return (await ag('patches', { fastreftable: on })).result?.fastreftable ?? null;
   if (f === 'cachedreflection') return (await ag('patches', { cachedreflection: on })).result?.cachedreflection ?? null;
+  if (f === 'routeasync') { const n = await get(`native?routeasync=${v}`).catch(() => null); return n?.asyncMode == null ? null : n.asyncMode === 1; }
+  if (f === 'discourage') { const r = await nx(`name=ts3native_counters&offset=0x1074&value=${v}`); return r ? r.value === 1 : null; }
   const r = f === 'footprint' ? await nx(`name=ts3native_footprintMode&value=${v}`)
     : await nx(`name=ts3native_counters&offset=${f === 'compress' ? '0x150' : '0x180'}&value=${v}`);
   return r ? r.value === 1 : null;
@@ -635,12 +657,12 @@ const CASES: Case[] = [
     const a = await save('off');
     const fixes = await setFixes(allOn);
     const b = await save('on');
-    return { fixes, saves: [a, b], checks: [...missingCheck(fixes, [...FIXES]), ...saveChecks(a), ...saveChecks(b), diffCheck(a, b, 'off vs on')] };
+    return { fixes, saves: [a, b], checks: [...missingCheck(fixes, [...FIXES]), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(b), diffCheck(a, b, 'off vs on')] };
   } },
   { id: 'per-fix', desc: 'each fix alone on vs all off (one off save), identical check; names the fix that changes a save', run: async () => {
     await setFixes({});
     const a = await save('pf-off');
-    const saves = [a], checks = saveChecks(a), fixes: Record<string, unknown> = {};
+    const saves = [a], checks = [...ROUTEGATE_NA, ...saveChecks(a)], fixes: Record<string, unknown> = {};
     for (const f of FIXES) {
       const got = await setFixes({ [f]: true });
       fixes[f] = got[f];
@@ -705,15 +727,16 @@ const CASES: Case[] = [
   { id: 'verify-counters', desc: 'fixes on with compress Verify (+0x154, runtime) on: game compressor runs too, mismatches 0; footprint verify if the ini has it', run: async () => {
     const fixes = await setFixes(allOn);
     const checks = missingCheck(fixes, [...FIXES]);
-    const prev = ready.compress ? (await nx('name=ts3native_counters&offset=0x154'))?.value : null;
-    if (ready.compress) await nx('name=ts3native_counters&offset=0x154&value=1');
+    const vOk = ready.compress && (!SHIPPED || fix0.native?.compressMode === 1); // release mode: only when shipped on
+    const prev = vOk ? (await nx('name=ts3native_counters&offset=0x154'))?.value : null;
+    if (vOk) await nx('name=ts3native_counters&offset=0x154&value=1');
     const s = await save('verify');
     if (prev === 0 || prev === 1) await nx(`name=ts3native_counters&offset=0x154&value=${prev}`);
     checks.push(...saveChecks(s));
     // 0.10.1: parallel compression has no batch path in a real save (records compress on close, docs/15 Phase 10), so the
     // compress line only measures; verify has nothing to compare unless a batch ran
-    checks.push(ready.compress && s.ev?.compressMismatches !== undefined ? { name: 'compress verify ran', status: s.ev.compressMismatches === 0 && !s.ev.mismatchLines ? 'pass' : 'fail', why: `log mismatches ${s.ev.compressMismatches}` }
-      : { name: 'compress verify ran', status: 'skip', why: ready.compress ? 'no batched compression in a save (measurement only)' : 'save compress not loaded' });
+    checks.push(vOk && s.ev?.compressMismatches !== undefined ? { name: 'compress verify ran', status: s.ev.compressMismatches === 0 && !s.ev.mismatchLines ? 'pass' : 'fail', why: `log mismatches ${s.ev.compressMismatches}` }
+      : { name: 'compress verify ran', status: 'skip', why: vOk ? 'no batched compression in a save (measurement only)' : SHIPPED && ready.compress ? 'save compress off as shipped' : 'save compress not loaded' });
     const fv = s.ev?.footprint?.verify;
     checks.push(fv === 'ok' ? { name: 'footprint verify ran', status: 'pass', why: 'verify ok' }
       : fv === 'mismatches' ? { name: 'footprint verify ran', status: 'fail', why: `${s.ev!.footprint!.mismatches} mismatches` }
@@ -728,7 +751,7 @@ const CASES: Case[] = [
     const exp = await householdsNow();
     writeFileSync(PENDING, JSON.stringify({ world, save: s.name, t: Date.now(), expected: exp, on: { save: s.name }, off: { save: a.name } }, null, 1));
     printReload(s.name, '');
-    return { fixes, saves: [a, s], checks: [...missingCheck(fixes, [...FIXES]), ...saveChecks(a), ...saveChecks(s)], pending: true };
+    return { fixes, saves: [a, s], checks: [...missingCheck(fixes, [...FIXES]), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(s)], pending: true };
   } },
   { id: 'travel', optIn: true, timeoutS: 3600, desc: 'fixes on: vacation (travel save), save in the vacation world, travel home (travel save), save at home', run: async () => {
     const fixes = values.stay ? {} : await setFixes(allOn); // --stay: the trip is a means, fixes as the job's ini set them
@@ -861,7 +884,8 @@ want = CASES.map(c => c.id).filter(id => want.includes(id)); // fixed order: con
 
 await probeReady();
 const ap0 = (await ag('autopilot')).result, speed0 = (await ag('time')).result?.speed, fix0 = await counters();
-log(`${world}, save ${st.result.save_name}, build ${build}; fixes available: ${FIXES.map(f => `${f} ${ready[f] ? 'yes' : 'NO'}`).join(', ')}; speed ${speed0}`);
+if (SHIPPED) log(`release mode (--fixes shipped): save fixes as shipped, not switched: fastreftable ${fix0.fastreftable}, cachedreflection ${fix0.cachedreflection}, footprint mode ${fix0.footprintMode}, compress mode ${fix0.native?.compressMode ?? '-'}, flush mode ${fix0.native?.flushMode ?? '-'}; switched: ${FIXES.join(', ')}; routegate: no runtime switch (on in both sides)`);
+log(`${world}, save ${st.result.save_name}, build ${build}; fixes ${values.fixes}; available: ${FIXES.map(f => `${f} ${ready[f] ? 'yes' : 'NO'}`).join(', ')}; speed ${speed0}`);
 for (const [f, why] of Object.entries(notReady)) if (why) log(`${f} not available: ${why}`);
 log(`cases: ${want.join(', ')}`);
 // a killed earlier run (queue timeout) can leave Sims with autonomy off in this game: take back what the agent tracked
@@ -892,6 +916,8 @@ try {
   if (ready.footprint && fix0.footprintMode != null) await nx(`name=ts3native_footprintMode&value=${fix0.footprintMode}`);
   if (ready.compress && fix0.native) await nx(`name=ts3native_counters&offset=0x150&value=${fix0.native.compressMode}`);
   if (ready.flush && fix0.native) await nx(`name=ts3native_counters&offset=0x180&value=${fix0.native.flushMode}`);
+  if (ready.routeasync) await get('native?routeasync=1').catch(() => null); // ready = on at start
+  if (ready.discourage) await nx('name=ts3native_counters&offset=0x1074&value=1');
   await restoreAutonomy(true);
   if (ap0) await ag('autopilot', { enabled: ap0.enabled, speed: ap0.speed, dialogs: ap0.dialogs });
   const sp: Record<string, string> = { Normal: 'normal', Double: 'fast', Triple: 'ultra' };

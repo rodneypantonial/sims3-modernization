@@ -44,7 +44,9 @@ static const char* const kSpName[SP_IN] = {"R", "Gcore", "Gtiles", "bnm", "grid"
 // failed clone builds; the IP tile storm 32 cells were meant for came from the key map that never erased (fixed in 0.28.0)
 static const int kSpTile = 64, kSpTileMax = 64;
 
-struct SpImg { volatile LONG refs; DWORD size, hash; DWORD pad; u64 key; u8 data[8]; };
+// 0.35.15 (docs/94 §22.18): no content hash any more. The byte-serial FNV-1a over every new image was most of a tile build
+// (40 KB, 51 us/tile live) and the whole cost of hashing R (~1 MB) at each R rebuild; the audit compares with memcmp
+struct SpImg { volatile LONG refs; DWORD size; DWORD pad[2]; u64 key; u8 data[8]; };
 struct SpVer {
     volatile LONG refs;
     LONG id, epoch;
@@ -75,7 +77,6 @@ static const u8* const* g_spWmSlot = (const u8* const*)(uintptr_t)0x011ECBC4;   
 static const u8* SpWorld() { return *g_spWorldSlot; }
 
 // --- images ---
-static DWORD SpHash(const u8* p, DWORD n) { DWORD h = 2166136261u; for (DWORD i = 0; i < n; i++) { h ^= p[i]; h *= 16777619u; } return h; }
 
 static SpImg* SpImgNew(const void* p, DWORD n, u64 key) {
     if (!g_spHeap) g_spHeap = HeapCreate(0, 0, 0);
@@ -85,7 +86,6 @@ static SpImg* SpImgNew(const void* p, DWORD n, u64 key) {
     m->size = n;
     m->key = key;
     memcpy(m->data, p, n);
-    m->hash = SpHash(m->data, n);
     Ts3nCounters& k = ts3native_counters;
     const LONG b = InterlockedExchangeAdd(&g_spBytes, (LONG)(sizeof(SpImg) + n)) + (LONG)(sizeof(SpImg) + n);
     k.spKB = b >> 10;
@@ -94,6 +94,7 @@ static SpImg* SpImgNew(const void* p, DWORD n, u64 key) {
     return m;
 }
 static SpImg* SpImgRef(SpImg* m) { if (m) InterlockedIncrement(&m->refs); return m; }
+static bool SpImgEq(const SpImg* a, const SpImg* b) { return a && b && a->size == b->size && !memcmp(a->data, b->data, a->size); }
 static void SpImgRel(SpImg* m) {
     if (!m || InterlockedDecrement(&m->refs)) return;
     ts3native_counters.spKB = (InterlockedExchangeAdd(&g_spBytes, -(LONG)(sizeof(SpImg) + m->size)) - (LONG)(sizeof(SpImg) + m->size)) >> 10;
@@ -219,8 +220,26 @@ static int __cdecl SpCmpU64(const void* a, const void* b) {
     return x < y ? -1 : x > y;
 }
 
-static SpImg* SpBuildBnm(const u8* g) {
-    SpBuf& b = g_spB;
+// LSD radix sort of n u64 (8-bit digits, a digit all keys share is skipped: bnm keys use 5 of 8); same order as qsort
+// SpCmpU64 at O(n) instead of a comparator call per compare (0.35.15)
+static SpBuf g_spB3, g_spB4;
+static void SpSortU64(u64* a, DWORD n) {
+    if (n < 2) return;
+    g_spB3.n = 0;
+    if (!SpPut(g_spB3, a, n * 8)) { qsort(a, n, 8, SpCmpU64); return; }  // no scratch: the old way
+    u64 *src = a, *dst = (u64*)g_spB3.p;
+    for (int sh = 0; sh < 64; sh += 8) {
+        DWORD cnt[256] = {0};
+        for (DWORD i = 0; i < n; i++) cnt[(src[i] >> sh) & 0xFF]++;
+        if (cnt[(src[0] >> sh) & 0xFF] == n) continue;
+        for (DWORD i = 0, s = 0; i < 256; i++) { const DWORD c = cnt[i]; cnt[i] = s; s += c; }
+        for (DWORD i = 0; i < n; i++) dst[cnt[(src[i] >> sh) & 0xFF]++] = src[i];
+        u64* t = src; src = dst; dst = t;
+    }
+    if (src != a) memcpy(a, src, n * 8);
+}
+
+static bool SpWalkBnm(const u8* g, SpBuf& b) {  // the (cell, count) pairs in hash order; false = a fault or over the cap
     b.n = 0;
     __try {
         const DWORD* bk = (const DWORD*)(uintptr_t)SpD(g + 0x360);
@@ -229,11 +248,36 @@ static SpImg* SpBuildBnm(const u8* g) {
             for (DWORD i = 0; i < n; i++)
                 for (const u8* nd = (const u8*)(uintptr_t)bk[i]; nd; nd = (const u8*)(uintptr_t)SpD(nd + 8)) {
                     const u64 e = ((u64)SpD(nd) << 32) | (nd[4]);
-                    if (!SpPut(b, &e, 8) || b.n > (16u << 20)) return SpFault();
+                    if (!SpPut(b, &e, 8) || b.n > (16u << 20)) return false;
                 }
-    } __except (EXCEPTION_EXECUTE_HANDLER) { return SpFault(); }
-    qsort(b.p, b.n / 8, 8, SpCmpU64);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    return true;
+}
+static SpImg* SpBuildBnm(const u8* g) {
+    SpBuf& b = g_spB;
+    if (!SpWalkBnm(g, b)) return SpFault();
+    SpSortU64((u64*)b.p, b.n / 8);
     return SpImgNew(b.p, b.n, 0);
+}
+// 0.35.23 (docs/94 §22.26.5): the cut's bnm. A grid add / remove mark (0x636BF0 / 0x62D9F0) sets SPD_BNM, but only
+// non-Sim, all-agent, shape-4 footprints reach the bnm writers 0x66FB40 / 0x66F6D0 (docs/100 §6), so most marked builds were
+// equal to the old image (BP 0444: 3,097 of 4,621 "same", 1.0-1.1 ms/s). The walk in hash order is kept with the image it
+// gave (g_spBnmFor); an equal walk (same bytes, same order) has the same sorted pairs, so the old image is shared without the
+// sort, the image copy and the compare. *same = shared (returns NULL)
+static SpBuf g_spBnmRaw;
+static const SpImg* g_spBnmFor;
+static SpImg* SpBnmCut(const u8* g, const SpImg* old, bool* same) {
+    SpBuf& b = g_spB;
+    *same = false;
+    if (!SpWalkBnm(g, b)) { g_spBnmFor = NULL; return SpFault(); }
+    if (old && old == g_spBnmFor && b.n == g_spBnmRaw.n && !memcmp(b.p, g_spBnmRaw.p, b.n)) return *same = true, (SpImg*)NULL;
+    g_spBnmRaw.n = 0;
+    const bool kept = SpPut(g_spBnmRaw, b.p, b.n) || !b.n;
+    g_spBnmFor = NULL;  // set by the caller to the image this walk gave
+    SpSortU64((u64*)b.p, b.n / 8);
+    SpImg* img = SpImgNew(b.p, b.n, 0);
+    if (!kept) g_spBnmRaw.n = 0xFFFFFFFF;  // no walk kept: never equal
+    return img;
 }
 
 // grid rows: lot id first so a lot's rows are adjacent
@@ -272,14 +316,30 @@ static bool SpGridLive(const u8* p, SpBuf& out, const u64* keys, int nKeys) {
     return true;
 }
 // incremental: rows of `old` for lots not in keys + live rows of the lots in keys (keys NULL = all live)
+// 0.35.15: the kept rows of `old` are already in order, so only the dirty lots' live rows are sorted and the two merged
+// (the whole image was sorted at every grid cut before)
 static SpImg* SpBuildGrid(const u8* p, const SpImg* old, const u64* keys, int nKeys) {
     SpBuf& b = g_spB;
     b.n = 0;
-    if (keys && old)
-        for (DWORD o = 0; o + sizeof(SpRow) <= old->size; o += sizeof(SpRow))
-            if (!SpRowIn(*(const SpRow*)(old->data + o), keys, nKeys) && !SpPut(b, old->data + o, sizeof(SpRow))) return SpFault();
-    if (!SpGridLive(p, b, keys && old ? keys : NULL, nKeys)) return SpFault();
-    qsort(b.p, b.n / sizeof(SpRow), sizeof(SpRow), SpCmpRow);
+    if (!keys || !old) {
+        if (!SpGridLive(p, b, NULL, 0)) return SpFault();
+        qsort(b.p, b.n / sizeof(SpRow), sizeof(SpRow), SpCmpRow);
+        return SpImgNew(b.p, b.n, 0);
+    }
+    SpBuf& f = g_spB4;
+    f.n = 0;
+    if (!SpGridLive(p, f, keys, nKeys)) return SpFault();
+    const DWORD nf = f.n / sizeof(SpRow);
+    qsort(f.p, nf, sizeof(SpRow), SpCmpRow);
+    const SpRow* fr = (const SpRow*)f.p;
+    DWORD j = 0;
+    for (DWORD o = 0; o + sizeof(SpRow) <= old->size; o += sizeof(SpRow)) {
+        const SpRow& r = *(const SpRow*)(old->data + o);
+        if (SpRowIn(r, keys, nKeys)) continue;
+        for (; j < nf && SpCmpRow(&fr[j], &r) < 0; j++) if (!SpPut(b, &fr[j], sizeof(SpRow))) return SpFault();
+        if (!SpPut(b, &r, sizeof(SpRow))) return SpFault();
+    }
+    if (j < nf && !SpPut(b, &fr[j], (nf - j) * sizeof(SpRow))) return SpFault();
     return SpImgNew(b.p, b.n, 0);
 }
 
@@ -500,6 +560,17 @@ static void SpMarkPolygon(const DWORD* slot) {
     if (z1 > e->z1) e->z1 = (short)(z1 > 0x7FFE ? 0x7FFE : z1);
 }
 
+// recorded routing writes (writer leaves, lot / epoch world events) on any thread but a clone run or the replay consumer
+// (0.33.2, docs/94 §21.15): P4 compares the count at the cut with the count when the job's live plan starts; a difference
+// means the live plan saw writes the clone at the cut does not have ("stale": a mismatch then is M5, not M1-M3)
+static volatile LONG g_spWrites;
+// 0.35.21 (docs/94 §22.24.4): noise-resistant cost. Live runs share the PC, so wall-clock us include preemption; the timed
+// sections also sum their thread CPU cycles (QueryThreadCycleTime on the measuring thread), logged next to the wall ms/s as
+// cycle-ms/s at a fixed nominal clock so both compare with earlier ms/s. Log lines only, no counters
+static const double kCycHz = 2.3e9;  // i7-11800H base clock; the cycle count ticks at the invariant TSC rate [inferred], so this is run time
+static inline LONG64 CycNow() { ULONG64 c = 0; QueryThreadCycleTime(GetCurrentThread(), &c); return (LONG64)c; }
+static double CycMsPerS(LONG64 cyc, double secs) { return secs > 0 ? cyc / (kCycHz / 1000.0) / secs : 0.0; }
+static volatile LONG64 g_cyCut, g_cyCopy, g_cyRebase, g_cyApply, g_cyRpAudit;  // sim cut, copies (any thread), rebases, consumer holds, replay audit
 // from SnEnter (routesnap.cpp), every thread, before P1's own counting returns
 static void SpNote(int i, const DWORD* slot) {
     if (!g_spOn) return;
@@ -509,9 +580,10 @@ static void SpNote(int i, const DWORD* slot) {
     __try {
         if (i == SN_WEV) {
             const DWORD id = slot[2];
-            if (id == 5 || id == 7 || id == 9 || id == 0x0A) g_spD.flags |= SPD_EPOCH;
-            else if (id >= 0x0D && id <= 0x10) g_spD.flags |= SPD_LOTS | SPD_GRID;
+            if (id == 5 || id == 7 || id == 9 || id == 0x0A) g_spD.flags |= SPD_EPOCH, InterlockedIncrement(&g_spWrites);
+            else if (id >= 0x0D && id <= 0x10) g_spD.flags |= SPD_LOTS | SPD_GRID, InterlockedIncrement(&g_spWrites);
         } else if (i != SN_FPEN) {
+            if (s.leaf != SL_SRC) InterlockedIncrement(&g_spWrites);
             unsigned __int64 key;
             switch (s.leaf) {
                 case SL_W1: case SL_W2: case SL_W3: case SL_W4: case SL_W5: case SL_W6: case SL_FPCORE: case SL_PRIVATE:
@@ -542,7 +614,9 @@ static void SpDoorInvalidateAll();
 // from SnIcEnter: portal and lock-status ICs (E9-E11, E24, portal handle destroy) re-image every lot; build/buy exit and
 // the door lock event invalidate the door mirror
 static volatile LONG g_spKeysDirty = 1;  // a lock-key IC ran (slots 0-3) or a new epoch: P4 re-copies the lock-key sets at its next cut
+static volatile LONG g_spIcN;  // routing ICs seen (any): the replay's quiet-cut test (0.35.21)
 static void SpIcNote(int i) {
+    InterlockedIncrement(&g_spIcN);
     if (i <= 3) g_spKeysDirty = 1;
     if (!g_spOn) return;
     if (i >= 4 && i <= 16) { SpLockD(); g_spD.flags |= SPD_LOTS; SpUnlockD(); }  // what that costs is the strategy's choice
@@ -611,6 +685,15 @@ static const SpLotStrategy kSpLotCopyRef = {"copy-ref (tests)", SpRefNote, SpRef
 // Lazy tiles (0.31.0, docs/94 §21.9): a dirty tile is rebuilt only when `fill` (a reader: an armed P4 cut) asks; else the
 // version does not carry it (NULL) and the next cut with a reader, or the audit, builds it (SpTilesFill). A tile a version
 // carries equals live at its cut: shared only when the old version carried it and no mark hit it since.
+// cut time split by input (0.35.15, docs/94 §22.18; log only, no counters): sim thread only. n = builds, same = builds equal
+// to the old image (shared), us = build time; SP_GHC = tiles built for a reader at the cut, SP_LOTS = the strategy's begin
+// (Lots=replay: RpCut, its rebases and copies). Logged every kSpSplitMs by SpCut, then reset
+struct SpSplit { LONG n, same; LONGLONG us; };
+static SpSplit g_spSplit[SP_IN];
+static LONGLONG g_spSplitCutUs;
+static LONG g_spSplitCuts;
+static ULONGLONG g_spSplitT0;
+static const DWORD kSpSplitMs = 300000;
 static SpVer* SpBuildVersion(const u8* world, const SpVer* old, const SpDirty& d, bool fill) {
     Ts3nCounters& k = ts3native_counters;
     const bool full = !old || (d.flags & SPD_EPOCH);
@@ -620,28 +703,52 @@ static SpVer* SpBuildVersion(const u8* world, const SpVer* old, const SpDirty& d
     SpVer* v = SpVerNew();
     if (!v) return NULL;
     if (full) old = NULL;
-    // world images
+    // world images. 0.35.15: a rebuilt image equal to the old one is dropped and the old one shared, so P4's readers that
+    // build only from the image (PcR, PcBnm, keyed on the image pointer) skip their rebuild too. Not the grid: P4's grid copy
+    // (PcGridCopy) reads live record bytes and polygons the image leaves out, and keys its recopy on a new grid image
     SpImg* const* ow = old ? old->w : NULL;
+    LARGE_INTEGER t0;
+    auto put = [&](int in, SpImg* fresh) {
+        SpImg* o = ow ? ow[in] : NULL;
+        const bool eq = fresh && SpImgEq(fresh, o);
+        g_spSplit[in].same += eq;  // grid: counted (how often a grid mark changed nothing), never shared
+        if (eq && in != SP_GRID) { SpImgRel(fresh); v->w[in] = SpImgRef(o); }
+        else v->w[in] = SpKeep(fresh, o);
+        k.spCopies[in]++;
+        g_spSplit[in].n++, g_spSplit[in].us += UsSince(t0);
+    };
     auto take = [&](int in, bool dirty, SpImg* (*build)(const u8*), const u8* arg) {
         if (!dirty && ow) { v->w[in] = SpImgRef(ow[in]); return; }
-        v->w[in] = SpKeep(build(arg), ow ? ow[in] : NULL);
-        k.spCopies[in]++;
+        QueryPerformanceCounter(&t0);
+        put(in, build(arg));
     };
     take(SP_R, (d.flags & SPD_R) != 0, SpBuildR, world);
     take(SP_GCORE, (d.flags & SPD_G) != 0, SpBuildGCore, g);
-    take(SP_BNM, (d.flags & SPD_BNM) != 0, SpBuildBnm, g);
+    if (!(d.flags & SPD_BNM) && ow) v->w[SP_BNM] = SpImgRef(ow[SP_BNM]);
+    else {  // 0.35.23: an equal walk shares the old image without the sort (SpBnmCut)
+        QueryPerformanceCounter(&t0);
+        SpImg* o = ow ? ow[SP_BNM] : NULL;
+        bool same;
+        SpImg* fresh = SpBnmCut(g, o, &same);
+        if (same) {
+            v->w[SP_BNM] = SpImgRef(o);
+            g_spSplit[SP_BNM].same++, k.spCopies[SP_BNM]++, g_spSplit[SP_BNM].n++, g_spSplit[SP_BNM].us += UsSince(t0);
+        } else {
+            put(SP_BNM, fresh);
+            if (fresh) g_spBnmFor = v->w[SP_BNM];  // fresh, or o when equal: either way the sorted walk
+        }
+    }
     take(SP_BLEND, (d.flags & SPD_BLEND) != 0, SpBuildBlend, wm);
     {  // tune: re-read at every cut (72 bytes). W+0x8C has a play-time writer, IC_RouteManager_SetMinimumDistanceForCarTravel
        // 0x74B500 -> 0x82A590 (P3 runs: 580/483 mismatches at +0x2), and the G-build path copies world+0x968/+0x970 at 0x829FE8
         SpImg* t = SpBuildTune(world);
         SpImg* o = ow ? ow[SP_TUNE] : NULL;
-        if (t && o && t->size == o->size && t->hash == o->hash && !memcmp(t->data, o->data, t->size)) { SpImgRel(t); v->w[SP_TUNE] = SpImgRef(o); }
+        if (SpImgEq(t, o)) { SpImgRel(t); v->w[SP_TUNE] = SpImgRef(o); }
         else { v->w[SP_TUNE] = SpKeep(t, o); k.spCopies[SP_TUNE]++; }
     }
     if (!old || (d.flags & SPD_GRID) || d.nGrid) {
-        v->w[SP_GRID] = SpKeep(p ? SpBuildGrid(p, old ? old->w[SP_GRID] : NULL, old && !(d.flags & SPD_GRID) ? d.grid : NULL, d.nGrid)
-                                 : NULL, old ? old->w[SP_GRID] : NULL);
-        k.spCopies[SP_GRID]++;
+        QueryPerformanceCounter(&t0);
+        put(SP_GRID, p ? SpBuildGrid(p, old ? old->w[SP_GRID] : NULL, old && !(d.flags & SPD_GRID) ? d.grid : NULL, d.nGrid) : NULL);
     } else v->w[SP_GRID] = SpImgRef(old->w[SP_GRID]);
     // tiles
     DWORD w = 0, h = 0, np, nh;
@@ -661,7 +768,11 @@ static SpVer* SpBuildVersion(const u8* world, const SpVer* old, const SpDirty& d
                 k.spCopies[SP_GHC]++;
             }
     }
-    if (g_spLot->begin) g_spLot->begin(v, old, world, d, NULL, 0);  // per-lot images: the strategy
+    if (g_spLot->begin) {  // per-lot images: the strategy
+        QueryPerformanceCounter(&t0);
+        g_spLot->begin(v, old, world, d, NULL, 0);
+        g_spSplit[SP_LOTS].n++, g_spSplit[SP_LOTS].us += UsSince(t0);
+    }
     k.spLots = v->nLots;
     k.spTiles = v->tw * v->th;
     k.spTileOut = 0;
@@ -703,12 +814,27 @@ static void SpLogMis(int in, const SpImg* img, const SpImg* live, DWORD off, con
 static bool SpSame(int in, const SpImg* img, SpImg* live, const void* base) {
     Ts3nCounters& k = ts3native_counters;
     k.spAudits[in]++;
-    bool eq = img && live && img->size == live->size && img->hash == live->hash && !memcmp(img->data, live->data, img->size);
+    bool eq = SpImgEq(img, live);
     if (!eq && img && live) {
         DWORD off = 0;
         const DWORD n = img->size < live->size ? img->size : live->size;
         while (off < n && img->data[off] == live->data[off]) off++;
         SpLogMis(in, img, live, off, base);
+        if (in == SP_GRID) {
+            // 0.35.14 (docs/94 §22.17, I-94-472): IP 0.35.13 kept one stale row through 8 audits (versions 272-300): name the
+            // rows at the first difference, and rebuild the whole grid at the next cut so a missed mark heals there
+            const DWORD row = off / sizeof(SpRow) * sizeof(SpRow);
+            if (g_spLogged <= (LONG)g_spLogMis) {
+                const SpRow* a = row + sizeof(SpRow) <= img->size ? (const SpRow*)(img->data + row) : NULL;
+                const SpRow* b = row + sizeof(SpRow) <= live->size ? (const SpRow*)(live->data + row) : NULL;
+                Log("snap audit grid rows at +0x%lX: image lot 0x%08lX%08lX cell %lu key 0x%08lX%08lX, live lot 0x%08lX%08lX cell %lu key 0x%08lX%08lX",
+                    row, a ? a->lotHi : 0, a ? a->lotLo : 0, a ? a->cell : 0, a ? a->keyHi : 0, a ? a->keyLo : 0, b ? b->lotHi : 0,
+                    b ? b->lotLo : 0, b ? b->cell : 0, b ? b->keyHi : 0, b ? b->keyLo : 0);
+            }
+            SpLockD();
+            g_spD.flags |= SPD_GRID;
+            SpUnlockD();
+        }
     }
     if (!eq) k.spMis[in]++;
     SpImgRel(live);
@@ -752,6 +878,8 @@ static bool SpCut(const u8* world, bool read = false) {
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    const LONG64 cy0 = CycNow(), cyA0 = g_cyRpAudit;
+    const LONG rpAudit0 = k.rpAuditUs;  // the replay's audit hashing (ReplayAuditEvery) runs inside the cut: audit cost, not cut cost
     SpDirty d;
     SpLockD();
     memcpy(&d, &g_spD, sizeof(d));
@@ -764,7 +892,11 @@ static bool SpCut(const u8* world, bool read = false) {
     if (p && p[0x10E]) k.spPendingAtCut++;
     SpVer* v = SpBuildVersion(world, g_spCur, d, false);
     if (!v) return false;
-    if (read) SpTilesFill(v, world, 0);
+    if (read) {
+        const LONG f0 = k.spTileFill[0], u0 = k.spTileFillUs[0];
+        SpTilesFill(v, world, 0);
+        g_spSplit[SP_GHC].n += k.spTileFill[0] - f0, g_spSplit[SP_GHC].us += k.spTileFillUs[0] - u0;
+    }
     if (!g_spCur || (d.flags & SPD_EPOCH)) k.spFullBuilds++;
     const int nl = p ? SpLotTable(p, g_spB2) : 0;  // some lot's level-0 quadtree has a deferred flush queued (E17)
     __try {
@@ -779,9 +911,38 @@ static bool SpCut(const u8* world, bool read = false) {
     g_spCur = v;
     SpVerRel(old);
     k.spCuts++;
-    const LONG us = UsSince(t0);
+    const LONG us = UsSince(t0) - (k.rpAuditUs - rpAudit0);  // 0.35.12 (docs/94 §22.15): BP 0.35.9 had 10.1 of its 23.4 ms/s there
     InterlockedExchangeAdd(&k.spCutUs, us);
     Max(&k.spCutMaxUs, us);
+    g_spSplitCutUs += us, g_spSplitCuts++;
+    g_cyCut += CycNow() - cy0 - (g_cyRpAudit - cyA0);
+    static LONG s_rpAudit0, s_simUs0;
+    static LONG64 s_cy0[3];  // cut, copies, rebases at the window start
+    const ULONGLONG now = GetTickCount64();
+    if (!g_spSplitT0) {
+        g_spSplitT0 = now, s_rpAudit0 = k.rpAuditUs, s_simUs0 = k.rpCopyUs + k.rpRebaseUs;
+        s_cy0[0] = g_cyCut, s_cy0[1] = g_cyCopy, s_cy0[2] = g_cyRebase;
+    } else if (now - g_spSplitT0 >= kSpSplitMs) {
+        const double s = (now - g_spSplitT0) / 1000.0;
+        const SpSplit* q = g_spSplit;
+        const LONGLONG rpa = k.rpAuditUs - s_rpAudit0;  // inside the strategy's begin, not in the cut cost
+        Log("snap cut split (%.0f s, %ld cuts, %.2f ms/s): R %ld (%ld same) %.2f, bnm %ld (%ld same) %.2f, grid %ld (%ld same) %.2f, "
+            "Gcore %ld %.2f, blend %ld %.2f, reader tiles %ld %.2f, lots (%s) %.2f, rest %.2f ms/s",
+            s, g_spSplitCuts, g_spSplitCutUs / 1000.0 / s, q[SP_R].n, q[SP_R].same, q[SP_R].us / 1000.0 / s, q[SP_BNM].n, q[SP_BNM].same,
+            q[SP_BNM].us / 1000.0 / s, q[SP_GRID].n, q[SP_GRID].same, q[SP_GRID].us / 1000.0 / s, q[SP_GCORE].n, q[SP_GCORE].us / 1000.0 / s,
+            q[SP_BLEND].n, q[SP_BLEND].us / 1000.0 / s, q[SP_GHC].n, q[SP_GHC].us / 1000.0 / s, g_spLot->name,
+            (q[SP_LOTS].us - rpa) / 1000.0 / s,
+            (g_spSplitCutUs - q[SP_R].us - q[SP_BNM].us - q[SP_GRID].us - q[SP_GCORE].us - q[SP_BLEND].us - q[SP_GHC].us - (q[SP_LOTS].us - rpa)) / 1000.0 / s);
+        // 0.35.21: the stage-1 sum (cut + sim) in wall ms/s and in thread CPU cycles (noise-resistant; same sections)
+        const LONG simUs = k.rpCopyUs + k.rpRebaseUs - s_simUs0;
+        const double cyCut = CycMsPerS(g_cyCut - s_cy0[0], s), cySim = CycMsPerS(g_cyCopy - s_cy0[1] + g_cyRebase - s_cy0[2], s);
+        Log("snap cut cost (%.0f s): wall cut %.2f + sim (copies + rebases) %.2f = %.2f ms/s; thread CPU (QueryThreadCycleTime / 2.3 GHz "
+            "nominal) cut %.2f + sim %.2f = %.2f cyc-ms/s", s, g_spSplitCutUs / 1000.0 / s, simUs / 1000.0 / s,
+            (g_spSplitCutUs + simUs) / 1000.0 / s, cyCut, cySim, cyCut + cySim);
+        memset(g_spSplit, 0, sizeof(g_spSplit));
+        g_spSplitCutUs = 0, g_spSplitCuts = 0, g_spSplitT0 = now, s_rpAudit0 = k.rpAuditUs, s_simUs0 = k.rpCopyUs + k.rpRebaseUs;
+        s_cy0[0] = g_cyCut, s_cy0[1] = g_cyCopy, s_cy0[2] = g_cyRebase;
+    }
     if (g_spAuditEvery && k.spCuts % (LONG)g_spAuditEvery == 0) SpAudit(v, world);
     if (g_spBytes > g_spCapBytes) {  // memory cap (docs/94 §3.3): off for the rest of the session
         g_spOn = 0;

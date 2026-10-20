@@ -1,0 +1,326 @@
+[
+  {
+    "id": "bp-snap-p4-long",
+    "note": "G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). docs/94 §21 P4 part B, shadow only (0.29.0, counters v51). DO NOT RUN before the private pools build (docs/94 §16.6, pools.cpp by a separate agent) is merged and this asi rebuilt with it: without it the replay consumer and the clone run share the game's unlocked pools. Then: env-on async + [RouteSnap] Enabled=1 Lots=replay Prebuild=1 Mode=1 (every async plan is planned again on the replay clone through the provider and compared; the game's answer is always kept). BP Spring, seeded. After: node tools/harness/shadow-compare-report.ts <row.shadowLog> and node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog>. Pass = no crash, snShadowFault 0, snCloneManaged / snCloneEvent / live-lock aborts 0, snDeadStamp 0, snDlOnClone 0, rpMis 0, M3 = 0 and M2 = 0 in the report (first run: a nonzero M2/M3/M4 is a finding to triage, not a regression), snPcAcquired > 0. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap03523",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-snap-p4-long-opt",
+    "note": "0.35.23 options trial: same as bp-snap-p4-long plus [RouteSnap] ReplaySigMs=250 LotsUnlocked=1 (signature scan at most every 250 ms; RP_LOTS batches applied outside +0x918). Pass = no crash, 0 M1-M3, 0 lot/image mismatches, longest consumer hold < 20 ms, cut+sim cyc-ms/s lower than the default job. G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). docs/94 §21 P4 part B, shadow only (0.29.0, counters v51). DO NOT RUN before the private pools build (docs/94 §16.6, pools.cpp by a separate agent) is merged and this asi rebuilt with it: without it the replay consumer and the clone run share the game's unlocked pools. Then: env-on async + [RouteSnap] Enabled=1 Lots=replay Prebuild=1 Mode=1 (every async plan is planned again on the replay clone through the provider and compared; the game's answer is always kept). BP Spring, seeded. After: node tools/harness/shadow-compare-report.ts <row.shadowLog> and node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog>. Pass = no crash, snShadowFault 0, snCloneManaged / snCloneEvent / live-lock aborts 0, snDeadStamp 0, snDlOnClone 0, rpMis 0, M3 = 0 and M2 = 0 in the report (first run: a nonzero M2/M3/M4 is a finding to triage, not a regression), snPcAcquired > 0. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap03523",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "ip-snap-p4-long",
+    "note": "G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn); ShadowWorld IP. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap03523",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-snap-p4-doordump",
+    "note": "Door dump (docs/94 §22.27, I-94-499/500): 0.35.23 + [RouteSnap] DoorDump=1 DoorBox=1260,1757,1262,1759. Read the shadow records doors block: f8fDiff for lot 0x6C110033.. as [lot,0,1,1] and the ...7D22F4D0 ask answer 1 used 0 confirms the stale +0x8F suspect. Correctness only. G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). docs/94 §21 P4 part B, shadow only (0.29.0, counters v51). DO NOT RUN before the private pools build (docs/94 §16.6, pools.cpp by a separate agent) is merged and this asi rebuilt with it: without it the replay consumer and the clone run share the game's unlocked pools. Then: env-on async + [RouteSnap] Enabled=1 Lots=replay Prebuild=1 Mode=1 (every async plan is planned again on the replay clone through the provider and compared; the game's answer is always kept). BP Spring, seeded. After: node tools/harness/shadow-compare-report.ts <row.shadowLog> and node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog>. Pass = no crash, snShadowFault 0, snCloneManaged / snCloneEvent / live-lock aborts 0, snDeadStamp 0, snDlOnClone 0, rpMis 0, M3 = 0 and M2 = 0 in the report (first run: a nonzero M2/M3/M4 is a finding to triage, not a regression), snPcAcquired > 0. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.doordump",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.DoorDump": 1,
+      "RouteSnap.DoorBox": "1260,1757,1262,1759"
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "bp-snap-p4-03524",
+    "note": "0.35.24 (+0x8F in the lot signature, I-94-499 fix) with DoorDump on: expect no M2 at 1261.20/1758.27, empty f8fDiff, rpRebaseWhy[2] near 0.35.23. Door dump (docs/94 §22.27, I-94-499/500): 0.35.23 + [RouteSnap] DoorDump=1 DoorBox=1260,1757,1262,1759. Read the shadow records doors block: f8fDiff for lot 0x6C110033.. as [lot,0,1,1] and the ...7D22F4D0 ask answer 1 used 0 confirms the stale +0x8F suspect. Correctness only. G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). docs/94 §21 P4 part B, shadow only (0.29.0, counters v51). DO NOT RUN before the private pools build (docs/94 §16.6, pools.cpp by a separate agent) is merged and this asi rebuilt with it: without it the replay consumer and the clone run share the game's unlocked pools. Then: env-on async + [RouteSnap] Enabled=1 Lots=replay Prebuild=1 Mode=1 (every async plan is planned again on the replay clone through the provider and compared; the game's answer is always kept). BP Spring, seeded. After: node tools/harness/shadow-compare-report.ts <row.shadowLog> and node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog>. Pass = no crash, snShadowFault 0, snCloneManaged / snCloneEvent / live-lock aborts 0, snDeadStamp 0, snDlOnClone 0, rpMis 0, M3 = 0 and M2 = 0 in the report (first run: a nonzero M2/M3/M4 is a finding to triage, not a regression), snPcAcquired > 0. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap03524",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "BP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.DoorDump": 1,
+      "RouteSnap.DoorBox": "1260,1757,1262,1759"
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "ip-snap-p4-03524",
+    "note": "0.35.24 IP with ReplaySigMs=250 LotsUnlocked=1 LazyKeep=1: the P6 gate for P5 taking Route.Plan answers needs 0 M2/M3 on IP too (2 runs for 10k). G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn); ShadowWorld IP. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap03524",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "ip-snap-p4-0362-1",
+    "note": "0.36.2 IP clone-run fault fix (docs/94 §22.31, I-94-508): a replayed remove whose copy bounds are flat or not live's (patched since 0.35.21) erases its leaves with a cover rect, so no clone leaf entry outlives its FME. Run 1 of 2 (crash rule: 2 clean runs). Same settings as ip-snap-p4-03524 (LazyKeep=1 LotsUnlocked=1 ReplaySigMs=250). Pass = no \"P4 FAULT\", no \"fault applying record\", \"removes erased with a cover rect\" lines present, audit MISMATCH lines with \"only in the clone\" child (0xFEBF90) entries gone or rare, rpMis near 0, M2 / M3 0 in shadow-compare-report.ts. 0.35.24 IP with ReplaySigMs=250 LotsUnlocked=1 LazyKeep=1: the P6 gate for P5 taking Route.Plan answers needs 0 M2/M3 on IP too (2 runs for 10k). G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn); ShadowWorld IP. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap0362",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  },
+  {
+    "id": "ip-snap-p4-0362-2",
+    "note": "0.36.2 IP clone-run fault fix (docs/94 §22.31, I-94-508): a replayed remove whose copy bounds are flat or not live's (patched since 0.35.21) erases its leaves with a cover rect, so no clone leaf entry outlives its FME. Run 2 of 2 (crash rule: 2 clean runs). Same settings as ip-snap-p4-03524 (LazyKeep=1 LotsUnlocked=1 ReplaySigMs=250). Pass = no \"P4 FAULT\", no \"fault applying record\", \"removes erased with a cover rect\" lines present, audit MISMATCH lines with \"only in the clone\" child (0xFEBF90) entries gone or rare, rpMis near 0, M2 / M3 0 in shadow-compare-report.ts. 0.35.24 IP with ReplaySigMs=250 LotsUnlocked=1 LazyKeep=1: the P6 gate for P5 taking Route.Plan answers needs 0 M2/M3 on IP too (2 runs for 10k). G4 sign-off: snap-p4 with a 20 min profile so one run per world reaches >= 10k compares (BP ~570/min, IP ~250/min: IP may need 2 runs). the same on Isla Paradiso (houseboats, water, EP portals, more footprint churn); ShadowWorld IP. trip shortcuts off so every trip is routed (more and longer plans for P4 coverage).",
+    "asi": "game-copy/ts3native.asi.snap0362",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "RouteAsync.Mode": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Mode": 1,
+      "RouteSnap.AuditEvery": 4,
+      "RouteSnap.Lots": "replay",
+      "RouteSnap.ReplayAuditEvery": 4,
+      "RouteSnap.Prebuild": 1,
+      "RouteSnap.ShadowEvery": 1,
+      "RouteSnap.Kinds": 15,
+      "RouteSnap.ShadowWorld": "IP",
+      "OptsInit.Enabled": 1,
+      "RouteSnap.LazyKeep": 1,
+      "RouteSnap.ReplaySigMs": 250,
+      "RouteSnap.LotsUnlocked": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 20,
+        "seed": 12345,
+        "untilCompares": 10000,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 45
+  }
+]

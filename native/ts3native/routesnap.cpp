@@ -41,7 +41,7 @@ enum { SL_W1, SL_W2, SL_W3, SL_W4, SL_W5, SL_W6, SL_FPCORE, SL_PRIVATE, SL_FPREM
        SL_APPLYLOT, SL_RESTORE, SL_GRIDADD, SL_GRIDREMOVE, SL_HIGHCOST, SL_MARKREMOVE, SL_GBUILD, SL_BLEND, SL_N, SL_SRC = 0xFF };
 enum { SRC_NONE, SRC_IC, SRC_WEV, SRC_OBJ, SRC_FPEN, SRC_N,  // v46 columns (snSrc)
        SRC_PLATFORM = SRC_N, SRC_USERTOOL, SRC_TREEINIT, SRC_TERRAIN, SRC_ROADPLAN, SRC_FLUSH, SRC_DRAIN, SRC_N2 };  // v48 (snSrc2)
-static const int SN_N = 38, SN_G0 = 24, SN_WEV = 30, SN_FPEN = 31, SN_F0 = 32;
+static const int SN_N = 38, SN_G0 = 24, SN_WEV = 30, SN_FPEN = 31, SN_F0 = 32, SN_W6B = 5;
 static const int SN_IC_N = 39, SN_IC_START = 35, SN_OBJ_N = 8;
 // lot: 1 = lot pointer in argument `arg` (key at +0x48/+0x4C, NULL = lot 0), 2 = lot id in arguments arg, arg + 1
 struct SnSite { DWORD at; u8 len; u8 pro[10]; DWORD target; u8 leaf; u8 lot; u8 arg; const char* name; };
@@ -451,6 +451,8 @@ static void SnObjRegister() {
     if (k.snObjNodes) k.snReady |= 8;
 }
 
+static void AsWorldEvent(DWORD id);  // autshadow.cpp ([AutShadow] change tracking, a consumer only)
+static void AsEpochBump();
 static void SpNote(int i, const DWORD* slot);  // snap.cpp (P3 dirty marks)
 static void SpIcNote(int i);
 static void SpStart();
@@ -527,10 +529,49 @@ static void __cdecl SnEnter(int i, DWORD* slot) {
         else if (s.leaf == SL_REMOVELOT || s.leaf == SL_APPLYLOT || s.leaf == SL_GRIDADD || s.leaf == SL_GRIDREMOVE ||
                  s.leaf == SL_HIGHCOST || s.leaf == SL_MARKREMOVE || s.leaf == SL_GBUILD) {
             if (InterlockedIncrement(&g_snWorldStopLog) <= 8) Log("P4: %s in a clone run (byte-copied world containers): run stopped", s.name);
+            // 0.35.21 (docs/94 §22.24.1, I-94-484): ApplyLotUpdate's callers write only its own lot before the call (0x82B810:
+            // 0x631AA0 / 0x630F10 / 0x631AF0 room and built bytes, 0x63D7B0 -> W4; 0x82C420: reads) [verified disassembly]:
+            // that lot goes into the dirty list and the release rebases it instead of rebuilding the clone
+            unsigned __int64 key = 0;
+            if (s.leaf == SL_APPLYLOT && SnLot(s, slot, &key)) { P4WorkerDirty(true, key); P4LazyKeep(); }
             P4Lazy();
         } else if (s.leaf != SL_SRC && i != SN_FPEN) {
             unsigned __int64 key = 0;
-            const bool known = s.leaf != SL_GBUILD && s.leaf != SL_BLEND && SnLot(s, slot, &key);
+            bool known = s.leaf != SL_GBUILD && s.leaf != SL_BLEND && SnLot(s, slot, &key);
+            // 0.35.14 (docs/94 §22.17, I-94-471): W1 / W2 (ecx = Q, lot id at Q+0x18/+0x1C) and W4 (arg 1 = the lot graph,
+            // lot id at +0/+4, replay.cpp RpPreBody) name their lot; before, every one made the release rebase all lots
+            DWORD lo = 0, hi = 0;
+            if (!known && (s.leaf == SL_W1 || s.leaf == SL_W2))
+                known = PvRead((const u8*)(uintptr_t)slot[-2] + 0x18, &lo) && PvRead((const u8*)(uintptr_t)slot[-2] + 0x1C, &hi);
+            else if (!known && s.leaf == SL_W4)
+                known = PvRead((const u8*)(uintptr_t)slot[1], &lo) && PvRead((const u8*)(uintptr_t)slot[1] + 4, &hi);
+            else if (!known && s.leaf == SL_W3) lo = slot[1], hi = slot[2], known = (lo | hi) != 0;  // lot id, args 1-2 (0.35.21)
+            else if (!known && i == SN_W6B) {  // 0.35.21 (docs/94 §22.24.2): ecx = a clone footprint, its lots from the clone map
+                unsigned __int64 lots[8];
+                const u8* fp = (const u8*)(uintptr_t)slot[-2];
+                const int nl = RpCloneFpLots(fp, lots, 8);
+                if (nl < 0) {  // 0.35.23: a live footprint's polygon cache, no clone memory: nothing to rebase
+                    static volatile LONG s_liveW6b;
+                    const LONG n = InterlockedIncrement(&s_liveW6b);
+                    if (n <= 8 || (n & (n - 1)) == 0) {
+                        DWORD vt = 0;
+                        PvRead(fp, &vt);
+                        Log("P4: W6b on a live footprint in a clone run (footprint 0x%08lX class 0x%08lX): no clone lot written, %ld so far",
+                            (DWORD)(uintptr_t)fp, vt, n);
+                    }
+                    return;
+                }
+                for (int j = 0; j + 1 < nl; j++) P4WorkerDirty(true, lots[j]);
+                if (nl > 0) known = true, key = lots[nl - 1];
+            }
+            if (lo | hi) key = ((unsigned __int64)hi << 32) | lo;
+            if (!known) {  // the write kinds that still force an all-lot rebase: logged at 1, 10, 100, ... per site
+                static volatile LONG s_unk[SN_N];
+                const LONG n = InterlockedIncrement(&s_unk[i]);
+                LONG p = 1;
+                while (p < n && p < 100000000) p *= 10;
+                if (p == n) Log("P4: clone run write with no lot (all lots rebased at release): %s, %ld so far", s.name, n);
+            }
             P4WorkerDirty(known, key);
         }
         return;
@@ -545,6 +586,7 @@ static void __cdecl SnEnter(int i, DWORD* slot) {
         const DWORD id = slot[2];
         InterlockedIncrement(&k.snWev[id < 95 ? id : 95]);
         if (cls != 0) { InterlockedIncrement(&k.snWevOffSim); return; }
+        AsWorldEvent(id);
         if (id == 7) { SnSeqNote(&k.snSeqEv7, "world event 7", s.at, tid); SnObjRegister(); }
         SnPush(t, slot, SRC_WEV, id < 255 ? id : 255);
         return;
@@ -604,6 +646,7 @@ static void __cdecl SnIcEnter(int i, DWORD* slot) {
     // inline writers record the new value from the slot shim (design B): lock keys 0-3, portal cost/flags/lock/ocean 12-15
     if (i <= 3 || (i >= 12 && i <= 15)) SnRecord(i <= 3 ? RK_LOCKKEY : RK_PORTAL, sim && SnInRebase(t));
     if (!sim) { InterlockedIncrement(&k.snIcOffSim); return; }
+    if (i == 22 || i == 23) AsEpochBump();  // [AutShadow]: build/buy boundary (OnExitBuildBuy, LotClusterTrees), docs/122 §2.1
     if (t.objDepth) { k.snObjOpenAtIc++; t.objDepth = 0; }  // a chain that stopped before our tail node
     SpIcNote(i);
     if (i >= SN_IC_START) {

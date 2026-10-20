@@ -1,0 +1,14 @@
+definition_type,assembly,mvid,closure_methods,ics_incl_mono_runtime,verdict,first_reason
+Sims3.Gameplay.Core.VisitCommunityLot+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,915,59,in,docs/118 §5 root; W sites all hooked (IsAllowedInRoom; LocalizeString subtree)
+Sims3.Gameplay.Core.VisitLot+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,640,37,in,docs/118 §5 root; needs worker hook OnlineDatingManager.DidSimsMeetOnline (docs/122 §12.2 H4)
+Sims3.Gameplay.Autonomy.GoToGarden+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,460,30,in,docs/118 §5 root
+Sims3.Gameplay.Core.GoToCommunityLot+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,445,29,in,docs/118 §5 root
+Sims3.Gameplay.Objects.RabbitHoles.AutonomouslyGoForMealInRestaurant+Definition,Sims3GameplayObjects,b2cc44b06fee39449dab2fb6b07e9995,466,30,in,docs/118 §5 root
+Sims3.Gameplay.Core.VisitCommunityLot+DateDefinition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,445,29,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Core.VisitCommunityLotWith+VisitWithDefinition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,968,60,out,S2: Punishment.GetPunishmentManagerFromSim lazily creates the manager and calls EventTracker.AddListener (W); in after a worker abort hook there
+Sims3.Gameplay.Core.VisitLotWithDate+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,445,29,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Objects.RabbitHoles.CityHall+AutonomouslyGoToCityHall+Definition,Sims3GameplayObjects,b2cc44b06fee39449dab2fb6b07e9995,464,30,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Objects.RabbitHoles.Hospital+AutonomouslyVisitHospital+Definition,Sims3GameplayObjects,b2cc44b06fee39449dab2fb6b07e9995,464,30,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Objects.RabbitHoles.Stadium+AutonomouslyAttendGame+Definition,Sims3GameplayObjects,b2cc44b06fee39449dab2fb6b07e9995,464,30,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Abstracts.ShoppingRabbitHole+AutonomouslyShopInRabbitHole+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,466,30,in,S2: ICs a subset of the core closure; no new W site
+Sims3.Gameplay.Abstracts.ShowVenue+AutonomouslyAttendShow+Definition,Sims3GameplaySystems,3681889397f4aa44b399a2926b2454fc,464,30,in,S2: ICs a subset of the core closure; no new W site

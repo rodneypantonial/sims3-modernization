@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.33.0"
+#define TS3NATIVE_VERSION "0.36.0"
 
 typedef unsigned char u8;
 
@@ -1005,7 +1005,8 @@ struct Ts3nCounters {
     LONG snPcCutUs;                  // +0x2A5C, sim time in those cuts (prepare + P3 cut + snapshot, summed)
     LONG snPcCutMaxUs;               // +0x2A60
     LONG snPcRefused[8];             // +0x2A64, 0 cut: busy / no world / lock; 1 cut: no version; 2 acquire: no clone; 3 an older
-                                     //   cut or the consumer passed it; 4 wait timeout; 5 epoch or active lot moved; 6 copy failed
+                                     //   cut or the consumer passed it; 4 wait timeout; 5 epoch or active lot moved; 6 copy failed;
+                                     //   7 (0.33.1) clone stale: a lot the consumer forced after a failed map resync not rebased yet
     LONG snPcAcquired;               // +0x2A84, working copies handed out
     LONG snPcMatUs;                  // +0x2A88, worker time building them (summed)
     LONG snPcPending;                // +0x2A8C, ApplyPendingUpdates run at a START (§8.5 step 3)
@@ -1107,8 +1108,80 @@ struct Ts3nCounters {
     LONG m2StaleRecs;                // +0x3020, sum of those records
     LONG m2Guard;                    // +0x3024, M2-3 log-only findings: bit 0 0xD7E560 detour, 1 0xE5CA90, 2 0xE59218, 3 0xE5637D,
                                      //   4 0xE648DC (MonoPatcher.asi, docs/107 §2.2)
+    // v62 (0.34.0): [RouteSnap] ReleaseLock=1, P5b: the job's +0x918 lent to the sim's steering while a P5 clone run runs
+    // (p5b.cpp, docs/94 §22.9). Offsets without v58 (+v58's size when it merges first).
+    LONG p5bReady;                   // +0x3028, 1 = installed (ReleaseLock=1 with Mode=2, the gate's Lock_Release and steering frames)
+    volatile LONG p5bRelease;        // +0x302C, switch (`--ab routesnaprel`): 1 = lend +0x918 out during clone runs, 0 = keep it (P5)
+    LONG p5bWins;                    // +0x3030, windows opened (a clone run's start, again after each door ask)
+    LONG p5bRefused[4];              // +0x3034, not opened: 0 switch off or verify job, 1 not the owner / counts differ, 2 an
+                                     //   acquire waiting inside the game's Lock_Acquire, 3 not the job's lock or no job
+    LONG p5bWinUs;                   // +0x3044, time the lock was lent out (us; compare m2JobUs)
+    LONG p5bRetakeUs;                // +0x3048, worker time to get it back (us)
+    LONG p5bRetakeMaxUs;             // +0x304C
+    LONG p5bRetakeAsk;               // +0x3050, taken back for a door ask (lent out again after it)
+    LONG p5bRetakeTrip;              // +0x3054, taken back for a tripwire (P4Abort: managed call, event, live lock, lazy stop)
+    LONG p5bSimAcq;                  // +0x3058, outermost +0x918 acquires granted while lent out (the sim's steering)
+    LONG p5bHeldOut;                 // +0x305C, other acquires while lent out: refused (tries) or held until the window closed
+    LONG p5bWatchdog;                // +0x3060, retakes still waiting after 2 s (logged with the owner thread)
+    LONG p5bRecMax;                  // +0x3064, highest recursion count lent out
+    // v63 (0.34.2): P5b read-only gate leaves ([RouteSnap] ReleaseGates=1, p5b.cpp P5bGate; docs/94 §22.10)
+    volatile LONG p5bGates;          // +0x3068, switch (`--ab routesnapgate`): 1 = gate-12 reads (F-B, F-C, F-G) and gate-0 hits
+                                     //   also take the lent lock, 0 = steering only (0.34.0)
+    LONG p5bGateAcq[2];              // +0x306C, outermost gate acquires granted while lent: 0 gate 12, 1 gate-0 hit
+    LONG p5bGateMiss;                // +0x3074, gate-0 entries that got the lent lock on a miss: given back, waited as before
+    // v65 (0.35.0; v64 was held for 0.34.3, which added no field): P5c, [RouteSnap] FreeLock=1 (p5c.cpp; docs/94 §22.11).
+    // Offsets without v58 (+v58's size when it merges first).
+    LONG p5cReady;                   // +0x3078, 1 = installed (FreeLock=1 with ReleaseLock=1)
+    volatile LONG p5cFree;           // +0x307C, switch (`--ab routesnapfree`): 1 = a taken window admits every plain sim acquire,
+                                     //   parks destroys and refuses stale answers; 0 = P5b admission only
+    LONG p5cJobs;                    // +0x3080, jobs whose window opened with P5c admission
+    LONG p5cAcq;                     // +0x3084, outermost plain sim acquires granted while lent (writers etc.; not steering or gates)
+    LONG p5cStale[2];                // +0x3088, answers refused (the game's plan answered): a routing write after the cut, 0 all
+                                     //   before the window, 1 at least one inside it
+    LONG p5cParked;                  // +0x3090, destroys in a window that parked one reference and ran without waiting
+    LONG p5cKeptWait[4];             // +0x3094, destroys in a window that waited as before: 0 D-X record, 1 graveyard full,
+                                     //   2 off the sim or in a job callback, 3 object not found
+    LONG p5cFlushed;                 // +0x30A4, parked references released
+    LONG p5cFlushRefused;            // +0x30A8, flush points that found a job running (left for the next point)
+    LONG p5cPendMax;                 // +0x30AC, most references parked at once (cap 512)
+    LONG p5cAgeMaxUs;                // +0x30B0, longest park-to-release time (us)
+    LONG p5cCountLow;                // +0x30B4, T-G1: a parked object's count below 1 at the flush (left unreleased; must be 0)
+    LONG p5cPlanHere;                // +0x30B8, sync plans under the lent lock: planned on the sim without the job wait
+    LONG p5cHandOver;                // +0x30BC, tripwire: a wait for the job or its clone run holding the lent lock (handed back)
+    LONG p5cOff;                     // +0x30C0, 1 = FreeLock off for the session (after a hand-over)
+    // v66 (0.34.10, merged after P5c v65 in 0.35.1): [HitchAttr] sim waits for the route job by class (hitchattr.cpp HA_*; docs/96 §9)
+    LONG haReady;                    // +0x30C4, 1 = [HitchAttr] Enabled
+    LONG haWaits[4];                 // +0x30C8, waits: 0 +0x918, 1 other lock during a job, 2 job wait, 3 plan waited for the job
+    LONG haUs[4];                    // +0x30D8, their time (us)
+    LONG haMaxUs;                    // +0x30E8, longest single wait
+    // v67 (0.35.2, docs/94 §21.17): P4 Mode=1 cuts behind queued jobs, the longer shadow acquire wait, [OptsInit] Enabled=2
+    LONG p4QCut;                     // +0x30EC, START cuts made while jobs were only queued (none running; try-lock, no sim wait)
+    LONG p4QCutMiss;                 // +0x30F0, such cuts refused "busy": the routing lock was taken (the worker started a job)
+    LONG p4WaitExt;                  // +0x30F4, shadow acquires that reached the cut after the old 250 ms limit
+    LONG oiClone;                    // +0x30F8, options ctor calls zeroed in a clone run ([OptsInit] Enabled=2)
+    LONG rpHard[4];                  // +0x30FC, replay map resync misses that rebuilt the clone: 0 no clone lot holds the missed
+                                     // node's Q, 1 soft tries used up (kRpSoftMax), 2 entry counts differ or > 16 lots, 3 other
+    // v68 (0.35.3, docs/94 §21.18): replay consumer misses on a clone a newer EPOCH already replaces (no rebuild asked)
+    LONG rpOldAsk;                   // +0x310C, consumer rebuild asks skipped: a newer EPOCH is in the ring (the clone only marked bad)
+    LONG p4AcqBad;                   // +0x3110, P4 acquires refused "noclone" on a clone marked bad with no rebuild ask pending
+    // v69 (0.35.4, docs/94 §21.19)
+    LONG p4Obst;                     // +0x3114, M2/M3 shadow records that carry the obstacle sets (clone and live footprints)
+    LONG p4ObstBusy;                 // +0x3118, of those, live set not read: the one +0x918 try failed
+    // v70 (0.35.5, docs/94 §21.20): replay soft resync by miss kind, rebase reasons
+    LONG rpSoftReal;                 // +0x311C, resync misses on a lot this very batch rebased (kRpSoftMax tries, then rebuild)
+    LONG rpSoftFresh;                // +0x3120, misses on a lot no pending soft force covers: forced (kRpSoftFreshMax batches)
+    LONG rpSoftInFlight;             // +0x3124, misses on a lot already forced whose batch was cut before the force: not counted
+    LONG rpRebaseWhy[4];             // +0x3128, lots rebased: 0 forced by a write (W3 / W4, refused copy), 1 soft resync force,
+                                     // 2 lot signature changed, 3 lot new or gone
+    LONG rpRebaseQSame;              // +0x3138, of [2]: the lot's Q list was unchanged (a lot shell refresh would have done)
+    // v71 (0.35.6, docs/94 §21.21): P4 Mode=1 STARTs while a job holds +0x918 share the newest pending cut
+    LONG p4Borrow;                   // +0x313C, START cuts shared with a pending cut (a job running; no sim wait, no new cut)
+    LONG p4BorrowMiss;               // +0x3140, such STARTs with no pending cut to share: refused "nover"/"busy" as before
+    LONG p4BorrowDirty;              // +0x3144, shadow acquires refused "mat"/"stale": a shadow on the same cut wrote clone lots
+    // v72 (0.35.8, docs/94 §21.23): replay child table entries kept because a reused live child address belongs to another copy
+    LONG rpKidsKept;                 // +0x3148, retire / GC of a block skipped a child entry another copy holds (I-94-440)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {61,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {72,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1238,6 +1311,11 @@ static void* volatile g_snapCtx;
 static __declspec(thread) LONG t_snapRun;
 static __declspec(thread) LONG t_rpReplay;  // replay.cpp consumer applying records (its game calls are not writer records)
 static volatile LONG g_snNrIn;
+// 0.33.2 hang diagnostics (docs/94 §21.15): where the route worker and the replay consumer are, for the routing lock watchdog
+// line in LockAcquireAsync. Worker: 0 idle, 1 live job, 2 shadow, 3 acquire: consumer wait, 4 acquire: g_rpUse / cut lock,
+// 5 clone run, 6 release. Consumer: 0 idle, 1 g_rpUse held, 2 +0x918 held (applying), 3 record type in bits 8-15
+static volatile LONG g_p4Phase, g_rpPhase;
+static volatile DWORD g_rpTid;
 static volatile LONG g_p4On;  // P4 installed: D2 handshakes, D3 physics lock, D5 counts
 static volatile LONG g_nrN[8];  // D5 writer families counted in our stubs: [0] physics, [2] destroys, [3] lot index rebuilds, [7] display level
 static __declspec(thread) LONG t_p4Read;
@@ -1247,6 +1325,8 @@ static inline bool SnLive() { return g_snapRunTid != 0; }
 static void P4Abort(int why);                                // p4.cpp
 static void P4WorkerDirty(bool known, unsigned __int64 key);
 static void P4Lazy();
+static void P4LazyKeep();
+static int RpCloneFpLots(const u8* fp, unsigned __int64* out, int cap);  // replay.cpp (W6b in a clone run, 0.35.21)
 static void P4NrEnter();                                     // D2: returns with g_snNrIn held and no clone run live
 enum { P4_AB_CLONE, P4_AB_NOVER, P4_AB_EPOCH, P4_AB_COLD, P4_AB_UNSUP, P4_AB_CAPTURE, P4_AB_NRBUSY, P4_AB_MAT, P4_AB_DOORMISS,
        P4_AB_DOOROVER, P4_AB_MANAGED, P4_AB_EVENT, P4_AB_LIVELOCK, P4_AB_LAZY, P4_AB_FAULT, P4_AB_OTHER, P4_AB_N };
@@ -1400,6 +1480,8 @@ struct AsyncJob {
     LONG us;           // worker time of the IC call
     LONG p4;           // P4 (p4.cpp): 1 = armed for a shadow at START; P5 (p5.cpp): 2 = take the clone answer, 3 = also verify
     DWORD p4Ver;       // P4: the clone version cut at START (0 = none)
+    int p4Why;         // P4: PS_* why the cut was refused (p4.cpp, 0.33.1)
+    LONG p4W;          // P4: snap.cpp's g_spWrites right after the cut (0.33.2)
 };
 static const int kJobs = 8;
 static const DWORD kDoneKeepMs = 5000;  // a Sim collects within a tick or two; older results lost their caller (reset)
@@ -1429,6 +1511,8 @@ static void* volatile g_rgLock;
 static __declspec(thread) DWORD t_steerRet;  // rtsites.cpp: caller of 0x82EDB0 / 0x82F0B0 while one runs on this thread
 static __declspec(thread) DWORD t_waitKey;   // routegate.cpp: set around a gate's +0x918 wait (probe P0)
 // P0: one owner-thread wait of `us` for `key` (only the owner thread waits for jobs, so no interlocked insert)
+enum { HA_LOCK, HA_OTHERLOCK, HA_JOB, HA_PLANWAIT, HA_N };
+static void HaNote(DWORD key, LONG us, int cls);  // hitchattr.cpp ([HitchAttr], per-frame sim waits)
 static void WaitNote(DWORD key, LONG us) {
     Ts3nCounters& k = ts3native_counters;
     int i = 0;
@@ -1452,10 +1536,20 @@ static u8* CallIc(int kind, u8* out, DWORD handle, const float* pt) {
     return ((IcPointFn)g_arOrig[kind])(out, handle, pt[0], pt[1], pt[2]);
 }
 static void WaitAsyncDone();
+// P5c (p5c.cpp, [RouteSnap] FreeLock=1, docs/94 §22.11): the sim may own the job's +0x918 inside a window; it never waits for
+// the job holding it (P5cHandBegin / P5cHandEnd around a wait, P5cPlanHere in RunPlan, P5cNrEnter at the D2 entries)
+static bool P5cLent(DWORD tid);
+static bool P5cPlanHere();
+static LONG P5cHandBegin();
+static void P5cHandEnd(LONG n);
+static void P5cNrEnter();
+static void P5cFlush();
 static void P4LiveBegin(AsyncJob* j);  // p4.cpp: the worker captures this job's Route_PlanLocked
 static void P4LiveEnd(AsyncJob* j);    // copies what the shadow needs before J_DONE
 static void P4Shadow();                // after J_DONE: the clone run, compare, record
+static void P4ShadowIdle();            // nothing queued: a parked shadow (p4.cpp, 0.34.1)
 static void P4OnStart(AsyncJob* j);    // sim, START: sampling and the clone cut
+static void P5PreLock(const AsyncJob* j);  // p5.cpp: worker, before a Mode=2 job takes +0x918
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline);
 static LONG __fastcall LockReleaseHook(void* lock, void* edx);  // routegate.cpp
 static int g_inInvoke;  // > 0 while the caller/owner thread runs a managed call for the worker (ServeInvoke)
@@ -1641,7 +1735,12 @@ static void ServeAsync() {
         AsyncJob* j = NULL;
         for (int i = 0; i < kJobs; i++)
             if (g_jobs[i].state == J_QUEUED && (!j || (LONG)(g_jobs[i].seq - j->seq) < 0)) j = &g_jobs[i];
-        if (!j) return;
+        if (!j) {
+            g_p4Phase = 2;
+            P4ShadowIdle();  // a shadow parked behind the job that just ran (0.34.1)
+            g_p4Phase = 0;
+            return;
+        }
         if (InterlockedCompareExchange(&j->state, J_RUNNING, J_QUEUED) != J_QUEUED) continue;  // cancelled meanwhile
         // the world may have changed since START: wrong world, closing, saving, pending lot updates, dirty lot index
         if (j->lock != g_rgLock || k.rtClosing || k.rtBusy || !RtQuietWorld(j->lock)) {
@@ -1653,6 +1752,7 @@ static void ServeAsync() {
         }
         // start only when no guarded routing call is open elsewhere (g_rgOffSimOpen); else back off and retry. The S2 tripwire
         // stubs are armed before A_RUNNING is published and stay armed through back-offs until after A_IDLE below
+        P5PreLock(j);  // P5: the replay consumer at this job's cut before the job holds +0x918 (0.35.19)
         TwArm(true);
         G0wHold h = {};  // H2: the sim's locomotion window holds the start too (locowin.cpp)
         for (;;) {
@@ -1664,6 +1764,7 @@ static void ServeAsync() {
             if (!g_rgOffSimOpen && !G0wHolds(h)) break;
             InterlockedExchange(&g_async.state, A_IDLE);
             LockReleaseHook(j->lock, NULL);
+            SetEvent(g_asyncDone);  // an owner that saw A_RUNNING meanwhile waits in WaitAsyncDone: wake it now, not at its 2 s timeout
             InterlockedIncrement(&k.asyncBackoffs);
         }
         G0wStarted(h);
@@ -1673,6 +1774,7 @@ static void ServeAsync() {
         _mm_setcsr(j->mxcsr);
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
+        g_p4Phase = 1;
         P4LiveBegin(j);
         CallIc(j->kind, j->result, j->handle, j->pt);
         const LONG us = UsSince(t0);
@@ -1688,7 +1790,9 @@ static void ServeAsync() {
         j->doneTick = GetTickCount();
         InterlockedExchange(&j->state, J_DONE);
         SetEvent(g_asyncDone);
+        g_p4Phase = 2;
         P4Shadow();  // works on its own copies only: collect and slot reuse never wait for it (docs/94 §12.4.2)
+        g_p4Phase = 0;
     }
 }
 
@@ -1727,11 +1831,14 @@ static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals,
     // worker, which waits in InvokeHook. Any other plan waits here for the job, running its managed calls, then goes on.
     if (g_async.state == A_RUNNING && me == g_async.owner) {
         if (g_inInvoke) viaWorker = true;
+        else if (P5cPlanHere()) viaWorker = false;  // P5c: this thread owns the lent lock; the job searches its clone
         else {
             LARGE_INTEGER w0;
             QueryPerformanceCounter(&w0);
             WaitAsyncDone();
-            WaitNote(0x05000000, UsSince(w0));
+            const LONG w = UsSince(w0);
+            WaitNote(0x05000000, w);
+            HaNote(0x05000000, w, HA_PLANWAIT);
         }
     }
     if (t_g10cOpen && !g_inInvoke) viaWorker = false;  // G10-C: no job can run now, and a worker in ServeAsync waits for us
@@ -1896,6 +2003,7 @@ static DWORD g_collect;  // handle whose READY said "done": the owner's next IC_
 
 // Owner side: runs the running job's managed calls until no job runs (2 s watchdog: log and keep waiting, as RunPlan does).
 static void WaitAsyncDone() {
+    const LONG hand = P5cHandBegin();  // P5c: never wait for the job holding the lock it lent out
     for (DWORD s = 0; g_async.state == A_RUNNING;) {
         HANDLE h[2] = {g_asyncDone, g_invReady};
         const DWORD w = WaitForMultipleObjects(2, h, FALSE, 2000);
@@ -1906,12 +2014,14 @@ static void WaitAsyncDone() {
             Log("route async: thread %lu waited %lu s for the job of route %08lX, still waiting", GetCurrentThreadId(), s, g_async.handle);
         }
     }
+    P5cHandEnd(hand);
 }
 
 // Owner side: the same for one job (queued jobs ahead of it run first)
 static void WaitJobDone(AsyncJob* j) {
     // H2: a queued or claimed job may be held by this thread's locomotion window; it must start for this wait to end
     if (j->state == J_QUEUED || j->state == J_RUNNING) G0wDrop(G0W_JOBWAIT, _ReturnAddress());
+    const LONG hand = P5cHandBegin();  // P5c, as WaitAsyncDone (a queued job waits for the running one too)
     for (DWORD s = 0; j->state == J_QUEUED || j->state == J_RUNNING;) {
         HANDLE h[2] = {g_asyncDone, g_invReady};
         const DWORD w = WaitForMultipleObjects(2, h, FALSE, 2000);
@@ -1922,6 +2032,7 @@ static void WaitJobDone(AsyncJob* j) {
             Log("route async: thread %lu waited %lu s for the job of route %08lX, still waiting", GetCurrentThreadId(), s, j->handle);
         }
     }
+    P5cHandEnd(hand);
 }
 
 static AsyncJob* JobFor(DWORD handle) {
@@ -2163,6 +2274,7 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
         }
         if (ts3native_counters.asyncMode != 1) DropAllJobs();
         DiscPoll();  // a script-IC point, as Route.Plan's START (docs/84 §2.4)
+        P5cFlush();  // P5c: parked destroy references, when no job runs (docs/88 §5.1 flush points)
         const bool ptOk = idx == 1 || g_arPtSet == 7;  // kinds 2-3: all three components since the last START
         g_arPtSet = 0;
         if (!idx || !ptOk) { g_collect = 0; return idx ? AsyncRefuse(handle, RFB_NOSTART, idx, false) : 0; }
@@ -2174,6 +2286,7 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
     if (optHi & kNoYieldHi) return !CanYield();
     if (ts3native_counters.asyncMode != 1) DropAllJobs();  // switched off mid-job: READY then says "done", Route.Plan plans inline
     DiscPoll();  // a script-IC point: deferred discourage footprints may be applied here (docs/84 §2.4)
+    P5cFlush();
     if (!(u8)options2) return AsyncStart(handle);
     AsyncJob* j = GetCurrentThreadId() == g_async.owner ? JobFor(handle) : NULL;
     if (optHi & kAsyncCancelHi) {  // the caller gives up (finally, Sim reset): its job must not outlive it
@@ -2234,11 +2347,15 @@ static bool AsyncBusy() {
     return false;
 }
 
+// P5b (p5b.cpp, docs/94 §22.9): every game Lock_Acquire below goes through P5bLock (the job's +0x918 lent to steering)
+static LONG P5bLock(void* lock, void* edx, const DWORD* deadline);
+static void P5bAsk(bool begin);  // p4.cpp P4DoorEnter
+static void P5bAbort();          // p4.cpp P4Abort
 static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD key) {
     // with jobs queued the worker may take any lock between jobs and then need this thread for a managed call: pump
-    if (*deadline == 0 || GetCurrentThreadId() != g_async.owner || !AsyncBusy()) return g_lockOrig(lock, edx, deadline);
+    if (*deadline == 0 || GetCurrentThreadId() != g_async.owner || !AsyncBusy()) return P5bLock(lock, edx, deadline);
     static const DWORD kTry = 0;
-    LONG r = g_lockOrig(lock, edx, &kTry);
+    LONG r = P5bLock(lock, edx, &kTry);
     if (r != -2) return r;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
@@ -2247,21 +2364,28 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
     const bool hold = lock == g_rgLock;
     if (hold) InterlockedIncrement(&g_rgOffSimOpen);
     for (DWORD start = GetTickCount(), next = 2000;;) {
-        if (!AsyncBusy()) { r = g_lockOrig(lock, edx, deadline); break; }  // no job left: wait as the game would
+        if (!AsyncBusy()) { r = P5bLock(lock, edx, deadline); break; }  // no job left: wait as the game would
         HANDLE h[2] = {g_invReady, g_asyncDone};
         if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) ServeInvoke();
-        if ((r = g_lockOrig(lock, edx, &kTry)) != -2) break;
-        if (*deadline != 0xFFFFFFFF && (LONG)(GetTickCount() - *deadline) >= 0) { r = g_lockOrig(lock, edx, deadline); break; }
+        if ((r = P5bLock(lock, edx, &kTry)) != -2) break;
+        if (*deadline != 0xFFFFFFFF && (LONG)(GetTickCount() - *deadline) >= 0) { r = P5bLock(lock, edx, deadline); break; }
         if (GetTickCount() - start >= next) {
             next += 2000;
             InterlockedIncrement(&ts3native_counters.watchdogs);
-            Log("route async: lock %p busy for %lu s during the job of route %08lX, still waiting", lock, next / 1000 - 2, g_async.handle);
+            // 0.33.2: who holds it (the lock is a CRITICAL_SECTION at +0) and where the P4 worker / replay consumer are
+            DWORD owner = 0;
+            __try { owner = (DWORD)(uintptr_t)((const CRITICAL_SECTION*)lock)->OwningThread; } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            Log("route async: lock %p busy for %lu s during the job of route %08lX, still waiting (owner thread %lu: worker %lu, "
+                "replay consumer %lu, last gate acquirer %ld; async state %ld, P4 phase %ld, replay phase 0x%lX)", lock, next / 1000 - 2,
+                g_async.handle, owner,
+                g_workerTid, g_rpTid, ts3native_counters.rgOwnerTid, g_async.state, g_p4Phase, g_rpPhase);
         }
     }
     if (hold) InterlockedDecrement(&g_rgOffSimOpen);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, waited);
     WaitNote(key, waited);
+    HaNote(key, waited, hold ? HA_LOCK : HA_OTHERLOCK);
     return r;
 }
 
@@ -2354,6 +2478,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "footprint.cpp"
 #include "heightcache.cpp"
 #include "gcthreads.cpp"
+#include "threadstack.cpp"
 #include "iclock.cpp"
 #include "routegate.cpp"
 #include "rtsites.cpp"
@@ -2374,14 +2499,20 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "vcall.cpp"
 #include "values.cpp"
 #include "routesnap.cpp"
+#include "autshadow.cpp"
 #include "snap.cpp"
 #include "pools.cpp"
 #include "replay.cpp"
 #include "p4.cpp"
 #include "p4clone.cpp"
 #include "p5.cpp"
+#include "p5b.cpp"
+#include "p5c.cpp"
 #include "loadprof.cpp"
 #include "planrepeat.cpp"
+#include "optsinit.cpp"
+#include "hitchattr.cpp"
+#include "worldimage.cpp"
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -2454,8 +2585,10 @@ static void Run(HMODULE self) {
         keepLog = ApplyFootprintIndex(ini) || keepLog;
         keepLog = ApplyHeightCache(ini) || keepLog;
         keepLog = ApplyGcThreadCheck(ini) || keepLog;
+        keepLog = ApplyThreadStack(ini) || keepLog;  // docs/66 §6: exe IAT CreateThread/_beginthreadex (default off)
         keepLog = ApplyIcLockCheck(ini) || keepLog;
         keepLog = ApplyMonoThread(ini) || keepLog;
+        keepLog = ApplyWorldImage(ini) || keepLog;  // after [MonoThread]: chains its Simulate slot hook
         keepLog = ApplyLotStream(ini) || keepLog;
         keepLog = ApplyJobQueue(ini) || keepLog;
         ApplyD3dMultithreaded(ini);
@@ -2470,8 +2603,11 @@ static void Run(HMODULE self) {
         keepLog = ApplyProbeSnap(ini) || keepLog;
         keepLog = ApplyLoadProf(ini) || keepLog;  // measurement: skips every site another section already hooked
         keepLog = ApplyPlanRepeat(ini) || keepLog;  // after [RouteSnap] (its world version) and the plan detour
+        keepLog = ApplyOptsInit(ini) || keepLog;    // I-94-322: the planner options' hub references start at 0 (default off)
+        keepLog = ApplyHitchAttr(ini) || keepLog;   // docs/96 §9: per-frame sim waits for the route job (observe only)
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
         P5Snapshot();                           // P5 M2-1: the code bytes of every site the clone run passes, after every install
+        keepLog = ApplyAutShadow(ini) || keepLog;  // docs/122 part 1: guard thunks after every other table owner (routesnap)
     }
     Log("done");
     if (!keepLog && g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

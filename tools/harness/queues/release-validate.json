@@ -1,0 +1,613 @@
+{
+  "note": "Release v0.1.4 standard validation (docs/RELEASE.md). Before running: copy the release build to game-copy/ts3native.asi.rel0360 (sha256 in docs/RELEASE.md) and run from a checkout whose native/ts3native/ts3native.ini has the release defaults (the release branch merged): the queue writes Bin/ts3native.ini = repo ini, no job overrides it. Install the release ts3fixes.package (build-fixes.ts, defaults unchanged) first. Clean night. Groups for --only: *-rel-play, *-rel-matrix, bp-rel-travel-*, *-rel-rare-*.",
+  "jobs": [
+    {
+      "id": "bp-rel-play",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Crash-free play on BP, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-rel-play",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Crash-free play on IP, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-rel-play",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Crash-free play on SV, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-rel-matrix",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "sv-rel-matrix",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "ip-rel-matrix",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "bp-rel-travel-france",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Travel round trip Bridgeport -> france -> home with the travel save case (as async-release.json bp-async-travel-france). Pass: travel case PASS (left, arrived, saved, back home, save loads).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-china",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Travel round trip Bridgeport -> china -> home with the travel save case (as async-release.json bp-async-travel-china). Pass: travel case PASS (left, arrived, saved, back home, save loads).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "china"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-egypt",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Travel round trip Bridgeport -> egypt -> home with the travel save case (as async-release.json bp-async-travel-egypt). Pass: travel case PASS (left, arrived, saved, back home, save loads).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "egypt"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-university",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Travel round trip Bridgeport -> university -> home with the travel save case (as async-release.json bp-async-travel-university). Pass: travel case PASS (left, arrived, saved, back home, save loads).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "university"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-future",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Travel round trip Bridgeport -> future -> home with the travel save case (as async-release.json bp-async-travel-future). Pass: travel case PASS (left, arrived, saved, back home, save loads).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "future"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-future-direct",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Future travel with the direct-trip start (as travel-all.json bp-travel-future-direct; covers the case where the test tool drops the queued future trip). Pass: travel case PASS, or bp-rel-travel-future PASS.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "future",
+          "--direct"
+        ]
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-rare-winter-pond",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-winter-pond (as bp-rare-winter-pond, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-winter-pond",
+          "noEnv": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-thunderstorm",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-thunderstorm (as bp-rare-thunderstorm, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-thunderstorm",
+          "noEnv": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-fullmoon-werewolf",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-fullmoon-werewolf (as bp-rare-fullmoon-werewolf, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-fullmoon-werewolf",
+          "noEnv": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "bp-rel-rare-route-bits",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-route-bits (as bp-rare-route-bits, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-route-bits"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-ghost-walk",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-ghost-walk (as bp-rare-ghost-walk, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-ghost-walk"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-occult-walks",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-occult-walks (as bp-rare-occult-walks, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-occult-walks"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "bp-rel-rare-death-walk",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-death-walk (as bp-rare-death-walk, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-death-walk"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-big-crowd",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-big-crowd (as bp-rare-big-crowd, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "ip-rel-rare-ip-water",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-ip-water (as ip-rare-ip-water, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-ip-water"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "sv-rel-rare-route-bits",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-route-bits (as sv-rare-route-bits, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-route-bits"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "sv-rel-rare-winter-pond",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-winter-pond (as sv-rare-winter-pond, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-winter-pond",
+          "noEnv": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "sv-rel-rare-death-walk",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-death-walk (as sv-rare-death-walk, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-death-walk"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "sv-rel-rare-big-crowd",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-big-crowd (as sv-rare-big-crowd, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "uni-rel-rare-world-walk",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-world-walk after travel to university (as uni-rare-world-walk, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-world-walk",
+          "travel": "university"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "fr-rel-rare-world-walk",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-world-walk after travel to france (as fr-rare-world-walk, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-world-walk",
+          "travel": "france"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "bp-rel-rare-owned-vehicles",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-owned-vehicles (as bp-rare-owned-vehicles, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 7,
+          "seed": 12345,
+          "repro": "rare-owned-vehicles"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rel-rare-stroller",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-stroller (as bp-rare-stroller, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-stroller"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-horse-ride",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-horse-ride (as bp-rare-horse-ride, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-horse-ride"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-rare-zombies",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-zombies (as bp-rare-zombies, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 7,
+          "seed": 12345,
+          "repro": "rare-zombies",
+          "noEnv": true
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rel-rare-flight-broom",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-flight-broom (as bp-rare-flight-broom, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 7,
+          "seed": 12345,
+          "repro": "rare-flight-broom"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-rel-rare-horse-ride",
+      "note": "Release v0.1.4 validation (ts3native 0.36.0, release ini defaults: [RouteAsync], [RouteGate] Sites+Enforce, [Discourage] on, every other experiment off; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.0\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0. Rare routing scenario (docs/117): repro rare-horse-ride (as sv-rare-horse-ride, without ProbeSnap). Pass also: the repro steps ran and its Sims routed (no route-fail loop on them).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-horse-ride"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    }
+  ]
+}

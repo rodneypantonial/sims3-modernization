@@ -27,6 +27,10 @@
 //      a tie lot, writes between plans, uncut writes, a clone path outliving its lot copy).
 //   K6 (docs/94 §13.3, G4): the game's world A* WorldAStar_Search 0x676260 on a fake R / G, live vs the working copy that
 //      p4clone.cpp's PcR / PcHighCost / PcBnm build from a P3 reader cut (sweeps, a tie lattice, writes between cuts).
+//   K7 (crash H): RoomGraph_FirstUse on clone lots' unbuilt rooms.
+//   K8 (docs/94 §13.3): the planner above the world search (PathPlan_WithRetries 0x661B50 -> 0x65E0D0: lot exits, closest
+//      waypoints, lot legs, water legs, node passes) on live W vs PcAcquire's W' over K6's world with the REPLAY world's lots,
+//      the live data on no-access pages; the world manager, terrain, physics and partition queries faked (g_k8Sites).
 // Built by build.cmd, not run there (needs the exe):  out\steerro-test.exe ["<path>\TS3W.exe"] [cases, default 400] [seed]
 #define TS3NATIVE_NO_DLLMAIN
 #include "ts3native.cpp"
@@ -1292,7 +1296,7 @@ static void K6Cut() {
     c.v = SpVerRef(g_spCur), c.epoch = g_spEpoch, c.active = PcActiveLot(), c.grid = NULL, c.keys = NULL;
     c.ver = ++g_rpPub, c.ok = 1;
     // the replay side PcAcquire expects: the consumer at the position, the clone (no lots: the world search reads none)
-    g_rpOn = 1, g_rpHave = true, g_rpThreaded = true, g_rpNeedEpoch = 0, g_rpTail = g_rpHead = c.ver;
+    g_rpOn = 1, g_rpHave = true, g_rpThreaded = true, g_rpNeedEpoch = 0, g_rpBad = 0, g_rpTail = g_rpHead = c.ver;
     if (!g_k6Clone.p) g_k6Clone.p = (u8*)A(0x110);
     g_rpClone = &g_k6Clone;
     K6Guard(true);
@@ -1510,6 +1514,627 @@ static void K6TieCases() {
                 g_k6TieFlip += memcmp(l.refs, r.refs, l.n * 4) != 0;
             }
         }
+}
+
+// --- K8 (docs/94 §13.3): the route planner above the world search, PathPlan_WithRetries 0x661B50 -> PathPlanner_PlanHierarchical
+// 0x65E0D0 (lot lookups, start/goal heights, closest waypoints 0x65BB90, lot exits 0x654CC0, lot legs LotPlan 0x6410B0 ->
+// LotPlan_Inner 0x63F6E0 / LotSearch_Entry 0x640E00, the world A*, water legs, the node passes 0x64E380), called as
+// RoutingJob_Execute calls it (0x81BF33..0x81BF79) once on the live W and once on PcAcquire's W' with the live routing data
+// on PAGE_NOACCESS pages. The world manager, terrain, physics and partition (room) queries are fakes (K8Sites). ---
+typedef DWORD(__fastcall* K8PlanFn)(u8* W, void*, u8* job, u8* starts, const float* goal, float prio, u8* goals, u8** path,
+                                    DWORD* sIdx, DWORD* gIdx, DWORD flags, void* ids, DWORD mode, DWORD a12);  // ret 0x30
+static const K8PlanFn kK8Plan = (K8PlanFn)(uintptr_t)0x00661B50;
+struct K8Lot { u8* obj; float x0, z0, x1, z1; };  // a world manager lot object and its world rectangle
+static K8Lot g_k8Lots[16];
+static int g_k8NLots;
+static long g_k8Calls[32];  // fake calls by kind (what the planner asked the world manager / physics)
+static u8* __fastcall K8LotAt(void*, void*, float x, float z) {
+    g_k8Calls[0]++;
+    for (int i = 0; i < g_k8NLots; i++)
+        if (x >= g_k8Lots[i].x0 && x < g_k8Lots[i].x1 && z >= g_k8Lots[i].z0 && z < g_k8Lots[i].z1) return g_k8Lots[i].obj;
+    return NULL;
+}
+static float __fastcall K8Terrain(void*, void*, float, float, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD) { g_k8Calls[1]++; return 0.0f; }
+static float __fastcall K8HeightAt(void*, void*, float, float, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD) { g_k8Calls[2]++; return 0.0f; }
+static float __fastcall K8Sea(void*, void*) { g_k8Calls[3]++; return -100.0f; }
+static void* __fastcall K8Pond(void*, void*, float, float, DWORD) { g_k8Calls[4]++; return NULL; }
+static char __fastcall K8Routable(void*, void*, float, float) { g_k8Calls[5]++; return 1; }
+static char __fastcall K8Routable2(void*, void*, float, float) { g_k8Calls[6]++; return 1; }
+static char __fastcall K8B87D30(void*, void*, float, float, DWORD, DWORD) { g_k8Calls[7]++; return 0; }
+// the world manager's lot near a point (x, z, radius; ret 0xC): its lot grid (+0x1D0 cell size) is not built here
+static u8* __fastcall K8LotNear(void*, void*, float x, float z, float r) {
+    g_k8Calls[13]++;
+    for (int i = 0; i < g_k8NLots; i++)
+        if (x + r >= g_k8Lots[i].x0 && x - r < g_k8Lots[i].x1 && z + r >= g_k8Lots[i].z0 && z - r < g_k8Lots[i].z1) return g_k8Lots[i].obj;
+    return NULL;
+}
+static char __fastcall K8TerrObj(void*, void*, float, float, DWORD, DWORD, void*, DWORD, DWORD) { g_k8Calls[12]++; return 0; }
+static char __fastcall K8TerrOk(void*, void*, float, float, DWORD) { g_k8Calls[14]++; return 1; }  // terrain +0x5C point test 0xB7E020
+static char __fastcall K8RayV(void*, void*, float, float, void*) { g_k8Calls[8]++; return 0; }
+static u8 g_k8Phys[0x40];
+static u8* __cdecl K8PhysGet() { g_k8Calls[9]++; return g_k8Phys; }
+static WORD __fastcall K8RoomAt(void*, void*, const float*, DWORD, DWORD) { g_k8Calls[10]++; return 0; }  // partition: outside
+// the world manager's segment-to-lot query (10 args, ret 0x28): clears the two out bytes args 5 and 8 first (0xC697B3,
+// 0xC697C7); no lot on the segment here
+static u8* __fastcall K8SegLot(void*, void*, float, float, float, float, u8* o5, DWORD, DWORD, u8* o8, DWORD, DWORD) {
+    g_k8Calls[11]++;
+    *o5 = 0, *o8 = 0;
+    return NULL;
+}
+static u8* __fastcall K8FindLot(void*, void*, DWORD lo, DWORD, DWORD);
+// Lot (world manager object) methods: sea level relative to the lot 0xAB3380 (through its vtable +0x64 position)
+static float __fastcall K8LotSea(void*, void*) { g_k8Calls[16]++; return -100.0f; }
+// the lot's terrain / structure query at a point (cdecl lot, point, 2 outs; 0xB01470 from the node height pass 0x6415F0): none
+static char __cdecl K8LotPoint(void*, const void*, void*, void*) { g_k8Calls[17]++; return 0; }
+static RkSite g_k8Sites[] = {
+    {0x00B01470, (const void*)K8LotPoint},
+    {0x00AB3380, (const void*)K8LotSea},
+    {0x00C62D40, (const void*)K8FindLot},  {0x00C69790, (const void*)K8SegLot},   {0x00C68B00, (const void*)K8LotNear}, {0x00B7E020, (const void*)K8TerrOk},   {0x00B793F0, (const void*)K8TerrObj},
+    {0x00C68990, (const void*)K8LotAt},    {0x00C6A540, (const void*)K8Terrain}, {0x00C6A250, (const void*)K8HeightAt},
+    {0x00C61670, (const void*)K8Sea},      {0x00C60E70, (const void*)K8Pond},    {0x00C6BAB0, (const void*)K8Routable},
+    {0x00C6BBC0, (const void*)K8Routable2}, {0x00B87D30, (const void*)K8B87D30}, {0x00686CC0, (const void*)K8RayV},
+    {0x00686A90, (const void*)K8PhysGet},  {0x00B499D0, (const void*)K8RoomAt},
+};
+struct K8Ans { DWORD ret, sIdx, gIdx; int n; u8 nodes[512][64]; };
+struct K8Q { float s[3], g[3]; DWORD mode, flags; };
+static DWORD g_k8Fault, g_k8FaultEip;
+static long g_k8Plans, g_k8Found, g_k8Nodes, g_k8Guarded, g_k8Ret[16];
+// one plan: the job parameter block (0x30, as 0x81B4C0..0x81B534 builds it: +0 the AGS / boat word job+0xC0, +0x28 the
+// RoutingOptions object job+0x40, test 0x81C880 reads +0x28..+0x37), one start record (0x20, as 0x6563E0 copies it: x, z, level,
+// direction, -999, 0, index) and one goal record (0x1C, 0x62A8B0: x, z, level, direction, index, priority)
+// fail fast: a plan that runs 10 s is a hang (a loop on fake data); the watchdog names where the main thread is
+static volatile ULONGLONG g_k8Since;
+static HANDLE g_k8Main;
+static DWORD WINAPI K8Watch(void*) {
+    for (;;) {
+        Sleep(500);
+        const ULONGLONG t = g_k8Since;
+        if (!t || GetTickCount64() - t < 10000) continue;
+        SuspendThread(g_k8Main);  // no CRT call from here on: the main thread may hold a CRT lock
+        CONTEXT c;
+        c.ContextFlags = CONTEXT_FULL;
+        GetThreadContext(g_k8Main, &c);
+        char b[512];
+        static const char kHead[] = "K8 FAIL: a plan ran 10 s (hang): eip, stack:";
+        int n = sizeof(kHead) - 1;
+        memcpy(b, kHead, n);
+        auto hex = [&](DWORD v) { b[n++] = ' '; for (int d = 7; d >= 0; d--) b[n++] = "0123456789ABCDEF"[(v >> (4 * d)) & 15]; };
+        hex(c.Eip);
+        const DWORD* sp = (const DWORD*)(uintptr_t)c.Esp;
+        for (int i = 0, k = 0; i < 2048 && k < 24; i++)
+            if (sp[i] >= 0x00401000 && sp[i] < 0x00F95000) { hex(sp[i]); k++; }
+        b[n++] = 10;
+        DWORD w;
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), b, (DWORD)n, &w, NULL);
+        ExitProcess(3);
+    }
+}
+// I-94-322: the planner's search options (stack struct at 0x65E828, ctor 0x652BF0) leave the start / goal lot hub refs +4 / +0x34
+// unset for a start / goal on open ground, and the cost functions compare a hub with +0x34 without testing flag 0x20
+// (RouteCost_Mode1 0x674F7B, Mode3 0x67438C / 0x6745A6, Mode4 0x675989 / 0x6759F0): an answer then depends on the stack an
+// earlier call left. Both runs get a cleared stack below K8Run, so live and copy compare the planner, not two stack histories
+// 0.34.1 [OptsInit] check: with g_k8Dirty the copy side keeps the stack earlier calls left (live cleared), as two threads'
+// histories would; with the options ctor patch (optsinit.cpp) every plan must still match
+static bool g_k8Dirty;
+static __declspec(noinline) void K8ZeroStack(DWORD fill = 0) {
+    volatile DWORD z[16 * 1024];
+    for (int i = 0; i < 16 * 1024; i++) z[i] = fill;
+}
+static void K8Run(u8* Wp, u8* world, const K8Q& q, K8Ans* a) {
+    *(u8**)(uintptr_t)0x011D9128 = world;  // RoutingWorld_Get: the copy in a clone run (T4)
+    g_k8Since = GetTickCount64();
+    static u8 opts[0x40];
+    __declspec(align(16)) u8 job[0x40] = {};
+    *(u8**)(job + 0x28) = opts;
+    __declspec(align(16)) float st[8] = {q.s[0], q.s[1], 0, 1, 0, -999.0f, 0, 0};
+    *(DWORD*)&st[2] = *(const DWORD*)&q.s[2], *(DWORD*)&st[7] = 0;
+    __declspec(align(16)) float gl[7] = {q.g[0], q.g[1], 0, 1, 0, 0, 0};
+    *(DWORD*)&gl[2] = *(const DWORD*)&q.g[2];
+    u8 sv[16], gv[16];
+    *(float**)sv = st, *(float**)(sv + 4) = *(float**)(sv + 8) = st + 8, *(DWORD*)(sv + 12) = 0x00FED4BC;
+    *(float**)gv = gl, *(float**)(gv + 4) = *(float**)(gv + 8) = gl + 7, *(DWORD*)(gv + 12) = 0x010212BC;
+    const float goal[3] = {q.g[0], q.g[1], q.g[2]};
+    u8* path = NULL;
+    DWORD si = 0, gi = 0xFFFFFFFF;  // *gIdx < 0: no preselected goal record, the goal point (arg 3) is used (0x65EAB8)
+    if (!g_k8Dirty || Wp == g_sf.W) K8ZeroStack(0);  // dirty: the copy side keeps what earlier calls left (the I-94-322 shape)
+    a->ret = kK8Plan(Wp, NULL, job, sv, goal, 0.0f, gv, &path, &si, &gi, q.flags, NULL, q.mode, 0);
+    g_k8Since = GetTickCount64();
+    a->sIdx = si, a->gIdx = gi, a->n = 0;
+    if (path) {  // shortcut: the path object is not released (test process)
+        const u8* b = *(u8**)(path + 8);
+        const u8* e = *(u8**)(path + 0xC);
+        a->n = b ? (int)((e - b) / 64) : 0;
+        assert(a->n <= 512);
+        if (a->n) memcpy(a->nodes, b, a->n * 64);
+    }
+}
+static int K8RunCopyTry(const K8Q& q, K8Ans* a) {
+    __try {
+        K8Run(g_k6Wc, g_pcWork.world, q, a);
+        return 0;
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
+                    ? (g_k8Fault = (DWORD)GetExceptionInformation()->ExceptionRecord->ExceptionInformation[1],
+                       g_k8FaultEip = (DWORD)GetExceptionInformation()->ContextRecord->Eip, EXCEPTION_EXECUTE_HANDLER)
+                    : EXCEPTION_CONTINUE_SEARCH) {
+        return 1;
+    }
+}
+static u8* g_k8Arena;  // the live replay world (RfAlloc's arena, K8Build)
+static const DWORD kK8ArenaSz = 8 << 20;
+static void K8Guard(bool on) {
+    DWORD old;
+    K6Guard(on);
+    assert(VirtualProtect(g_sfPages, 0x2000, on ? PAGE_NOACCESS : PAGE_READWRITE, &old));
+    if (g_k8Arena) assert(VirtualProtect(g_k8Arena, kK8ArenaSz, on ? PAGE_NOACCESS : PAGE_READWRITE, &old));
+}
+static void K8RunCopy(const K8Q& q, K8Ans* a) {
+    K8Guard(true);
+    const int f = K8RunCopyTry(q, a);
+    K8Guard(false);
+    if (f) {
+        printf("K8 FAIL: a plan on the working copy touched live memory at %08lX (eip %08lX)\n", g_k8Fault, g_k8FaultEip);
+        assert(false);
+    }
+    g_k8Guarded++;
+}
+static bool K8Same(const K8Ans& x, const K8Ans& y) {
+    if (x.ret != y.ret || x.sIdx != y.sIdx || x.gIdx != y.gIdx || x.n != y.n) return false;
+    // PathNode_Init 0x6412F0 leaves +0x36 (u16) and +0x3C unset: stale stack in both runs (docs/98 §10.1)
+    for (int i = 0; i < x.n; i++) if (memcmp(x.nodes[i], y.nodes[i], 0x36) || memcmp(x.nodes[i] + 0x38, y.nodes[i] + 0x38, 4)) return false;
+    return true;
+}
+static void K8Dump(const char* what, const K8Q& q, const K8Ans& l, const K8Ans& c) {
+    printf("K8 MISMATCH %s: (%.2f %.2f %ld) -> (%.2f %.2f %ld) mode %lu flags %lX: ret %lu/%lu idx %lu,%lu/%lu,%lu nodes %d/%d\n", what,
+           q.s[0], q.s[1], *(const LONG*)&q.s[2], q.g[0], q.g[1], *(const LONG*)&q.g[2], q.mode, q.flags, l.ret, c.ret, l.sIdx, l.gIdx,
+           c.sIdx, c.gIdx, l.n, c.n);
+    int shown = 0;
+    for (int i = 0; i < l.n && i < c.n && shown < 12; i++)
+        for (int o = 0; o < 0x3C; o += 4)
+            if (memcmp(l.nodes[i] + o, c.nodes[i] + o, o == 0x34 ? 2 : 4) && shown++ < 12)
+                printf("  node %d +0x%02X: live %08lX (%g) copy %08lX (%g)\n", i, o, *(const DWORD*)(l.nodes[i] + o), *(const float*)(l.nodes[i] + o),
+                       *(const DWORD*)(c.nodes[i] + o), *(const float*)(c.nodes[i] + o));
+}
+// the live W as the game makes it: K6's W holds snap-fake.h's random tuning bytes and no FindClosest object, enough for the
+// world A* only. Here the game's ctor 0x657C50 (its container ctor 0x673C70 stubbed: it registers tuning variables by name)
+// gives +0 and +0x88..+0x197 (caches, FindClosest list, lot-exit masks, BestLotEdgePortals sets); K6Build's P, R, G, container,
+// RNG word and group hash stay. Then the FindClosest init 0x652C50 as the W init 0x654101 calls it (P and W set first: no
+// AddRef through them)
+static u8* __fastcall K8NoCtr(u8* c, void*) { return c; }
+static void K8LiveW(u8* Wl) {
+    u8 saved[5];
+    memcpy(saved, (void*)(uintptr_t)0x00673C70, 5);
+    Jmp(0x00673C70, (const void*)K8NoCtr);
+    __declspec(align(16)) u8 w[kPcWSz];
+    memset(w, 0, sizeof(w));
+    ((void(__fastcall*)(u8*, void*))(uintptr_t)0x00657C50)(w, NULL);
+    memcpy((void*)(uintptr_t)0x00673C70, saved, 5);
+    const DWORD rng = *(DWORD*)(Wl + 0x9C);
+    u8 grp[0x10];
+    memcpy(grp, Wl + 0xA0, 0x10);
+    memcpy(Wl, w, 4);
+    memcpy(Wl + 0x88, w + 0x88, kPcWSz - 0x88);
+    *(DWORD*)(Wl + 0x9C) = rng;
+    memcpy(Wl + 0xA0, grp, 0x10);
+    *(LONG*)(Wl + 4) = 1;
+    *(u8**)(Wl + 0xE0) = *(u8**)(Wl + 0xE4) = Wl + 0xE0;  // the FindClosest list anchor (the ctor linked it to its own buffer)
+    u8* P = *(u8**)(Wl + 8);
+    *(u8**)(Wl + 0xEC) = P, *(u8**)(Wl + 0xF0) = Wl;
+    ((PcFcInitFn)(uintptr_t)0x00652C50)(Wl + 0xE0, NULL, *(DWORD*)(Wl + 0xC), Wl, P, *(u8**)(Wl + 0x10));
+}
+// object-footprint rings: the planner's ring cache 0x6580F0 walks a type-0x0E waypoint's first-neighbour chain until it is back
+// at the start (K6 filled only chunks whose chains close). K6's R leaves some chains open, which the game never builds: K8
+// retypes those waypoints to 0x10 (walk) in the records
+static int K8FixRings() {
+    int n = 0;
+    u8* raw = *(u8**)(g_sf.world + 0x60);
+    for (int a = 0; a < g_k6N; a++)
+        if (g_k6Wp[a].type == 0x0E && !(g_k6Wp[a].n && K6Cycle(a))) {
+            g_k6Wp[a].type = 0x10;
+            raw[g_k6Wp[a].rec + 1] = (u8)((raw[g_k6Wp[a].rec + 1] & 0xE0) | 0x10);
+            n++;
+        }
+    return n;
+}
+// the K8 world: K6's routing world (world object and P pages, R, G, W, world manager) with the REPLAY world's planner P and its
+// lots (game quadtrees, footprints, portals, rooms) in place of snap-fake.h's P: world+0x95C = W+8 = the replay P, the snapshot's
+// lot strategy the replay (SpCut -> RpBegin -> RpCut on this world), so PcAcquire's clone P holds the replay clone's lots. The
+// live replay world comes from an arena (RfAlloc) that K8Guard makes no-access with the rest of the live routing data. Lots
+// 0 and 1 sit at world (0, 0) and (64, 64) (64 x 64 m each, lot -> world translation in the transforms g+0xA0 / g+0xE0); the
+// other lots of the table have no world manager lot object (never looked up)
+static __declspec(align(16)) u8 g_k8LotObj[2][0x600];  // 16-aligned: Lot_WorldToLocal2D 0xAB854F reads +0x190 with movaps
+static u8 g_k8Part[0x100];  // a lot's partition object (+0x298): only handed to the room fake
+static u8* __fastcall K8FindLot(void*, void*, DWORD lo, DWORD, DWORD) {
+    g_k8Calls[15]++;
+    for (int i = 0; i < g_k8NLots; i++) if (*(DWORD*)(g_k8Lots[i].obj + 0x48) == lo) return g_k8Lots[i].obj;
+    return NULL;
+}
+static u8* K8Portal() {  // a portal object (game vtable 0xFED048): shared with the clone by design (H20), so not on the arena
+    u8* const a = g_rfArena;
+    g_rfArena = NULL;
+    u8* p = RkPortal();
+    g_rfArena = a;
+    return p;
+}
+// R and the lot graph for lot l's exits, in the layouts the planner reads [verified in the disassembly unless marked]:
+// - R (docs/99 §1.5, §1.6): a walk waypoint inside the lot becomes the lot's hub (type 1) and its 2-4 neighbours the lot-edge
+//   waypoints (type 2, each with at least 4 neighbours: the exit gather skips a type-2 waypoint with 3 or fewer, 0x654FDC);
+//   edge bytes as the game's: hub <-> lot-edge 1, lot-edge <-> lot-edge of the same lot 2, the rest 7; each lot-edge record
+//   lists its hub first (0x650030 maps a lot-edge waypoint to its lot through the first neighbour's position, World_LotLookup);
+//   a group-hash entry W+0xA0 for each lot-edge waypoint (as K6Build gives every type-2 waypoint)
+// - rooms g+0x90 (0x44-byte records, indexed by room id; the outside room of level 0 is id 4 = level + 4, Lot_RoomIdAtPoint
+//   0x624780 with no partition room) with g+0x16C = 4; the outside room's portal vector +4 holds the exits, its lists +0x24 /
+//   +0x34 built by the game's RoomGraph_FirstUse 0x63D2F0 (live, before the first cut)
+// - each exit portal (vtable 0xFED048, count +0x70): +0x14 / +0x18 / +0x1C lot-local point and level on the room side, +0x20 /
+//   +0x24 / +0x28 the other side, +0x48 / +0x4A the room ids (0xFFFF: none, 0x633EA0), +0x4C the R reference (bits 0-13 chunk,
+//   14-23 waypoint; 28-30 flags), +0x50 / +0x54 world point, +0x58 bit 1 enabled (0x654E59), +0x34 kind (node +0x2C) [inferred
+//   from LotPath_AddPortalNodes' node writes, docs/99 §3]
+// - g+0x120: hash (buckets +4, count +8, size +0xC; node key, value byte, next +8; find 0xD38B00) from a lot-edge waypoint key
+//   (chunk << 16 | waypoint) to its portal's index in the outside room's list, bounded by the byte g+0x10 (0x653082); g+8 the
+//   lot's hub reference (chunk << 16 | waypoint, LotTable_HubRef 0x631BB0)
+static int g_k8Exits;
+static void K8LotExits(int l) {
+    u8* g = g_rf.lots[l] + 0x10;
+    const K8Lot& lr = g_k8Lots[l];
+    u8* raw = *(u8**)(g_sf.world + 0x60);
+    auto inLot = [&](const K6Wp& w) { float x, z; K6Pos(w, &x, &z); return x >= lr.x0 + 1 && x < lr.x1 - 1 && z >= lr.z0 + 1 && z < lr.z1 - 1; };
+    auto walk = [&](const K6Wp& w) { return (w.type == 0x10 || w.type == 0x11 || w.type == 0x07) && !w.noEdge && w.c != kK6Lat; };
+    int hub = -1;
+    // the hub: a walk waypoint inside the lot with a walk neighbour of 4+ neighbours (an exit); its other neighbours (other
+    // types) are unlinked both ways, so every hub link is a hub <-> lot-edge link
+    auto unlink = [&](int a, int b) {  // drop b from a's record (refs then edge bytes, compacted) and its mirror
+        K6Wp& w = g_k6Wp[a];
+        u8* p = raw + w.rec;
+        int at = 0;
+        while (at < w.n && w.nb[at] != b) at++;
+        if (at == w.n) return;
+        u8 eb[24];
+        memcpy(eb, p + 5 + 2 * w.n, w.n);
+        for (int k = at; k + 1 < w.n; k++) ((WORD*)(p + 5))[k] = ((WORD*)(p + 5))[k + 1], w.nb[k] = w.nb[k + 1], w.eb[k] = w.eb[k + 1], eb[k] = eb[k + 1];
+        w.n--, p[0] = (u8)w.n;
+        memcpy(p + 5 + 2 * w.n, eb, w.n);
+    };
+    int best = 0;  // the hub with the most exits
+    for (int a = 0; a < g_k6N; a++) {
+        const K6Wp& h = g_k6Wp[a];
+        if (!inLot(h) || !walk(h) || h.n < 2) continue;
+        bool ok = true;
+        int wide = 0;
+        for (int k = 0; k < h.n && ok; k++) {
+            const K6Wp& e = g_k6Wp[h.nb[k]];
+            if (!walk(e)) continue;  // unlinked below
+            wide += e.n >= 4;
+            for (int j = 0; j < e.n && ok; j++) ok = g_k6Wp[e.nb[j]].type != 1;  // not next to another lot's hub
+        }
+        if (ok && wide > best) hub = a, best = wide;
+    }
+    if (hub >= 0)
+        for (int k = g_k6Wp[hub].n - 1; k >= 0; k--) {
+            const int b = g_k6Wp[hub].nb[k];
+            if (!walk(g_k6Wp[b])) unlink(hub, b), unlink(b, hub);
+        }
+    int ex[4], n = 0;
+    if (hub >= 0) {
+        K6Wp& h = g_k6Wp[hub];
+        h.type = 1;
+        raw[h.rec + 1] = (u8)((raw[h.rec + 1] & 0xE0) | 1);
+        int le[24], nl = 0;  // every hub neighbour is a lot-edge waypoint; those with 4+ neighbours get an exit portal
+        for (int k = 0; k < h.n; k++) h.eb[k] = 1, raw[h.rec + 5 + 2 * h.n + k] = 1, le[nl++] = h.nb[k];
+        for (int i = 0; i < nl; i++) {
+            K6Wp& e = g_k6Wp[le[i]];
+            if (e.n >= 4 && n < 4) ex[n++] = le[i];
+            e.type = 2;
+            u8* p = raw + e.rec;
+            p[1] = (u8)((p[1] & 0xE0) | 2);
+            int at = 0;
+            while (e.nb[at] != hub) at++;
+            if (at) {  // the hub first (record and mirror)
+                const WORD r = ((WORD*)(p + 5))[0];
+                ((WORD*)(p + 5))[0] = ((WORD*)(p + 5))[at], ((WORD*)(p + 5))[at] = r;
+                const int t = e.nb[0]; e.nb[0] = e.nb[at], e.nb[at] = t;
+            }
+            for (int k = 0; k < e.n; k++) {
+                bool sib = false;
+                for (int j = 0; j < nl; j++) sib |= e.nb[k] == le[j];
+                e.eb[k] = k == 0 ? 1 : sib ? 2 : 7;
+                p[5 + 2 * e.n + k] = e.eb[k];
+            }
+            DWORD* gk = *(DWORD**)(g_sf.W + 0xA4);  // the live group hash: one more entry
+            DWORD* nd = (DWORD*)K6L(16);
+            nd[0] = (DWORD)e.c << 16 | (DWORD)e.i, nd[1] = 0x1000 + (DWORD)l, nd[2] = gk[nd[0] % 5];  // one group per lot [inferred]
+            gk[nd[0] % 5] = (DWORD)(uintptr_t)nd;
+            (*(DWORD*)(g_sf.W + 0xAC))++;
+        }
+    }
+    // rooms: 5 records, the outside room 4 with the exits
+    const int nr = 4 + (int)(*(u8***)(g + 0x78) - *(u8***)(g + 0x74));  // ids 0-3 unused, 4 + level per quadtree level
+    u8* rooms = RfVec(g + 0x90, nr * 0x44);
+    memset(rooms, 0, nr * 0x44);
+    for (int r = 0; r < nr; r++) RfVec(rooms + r * 0x44 + 4, r == 4 ? 4 * n : 0), RfVec(rooms + r * 0x44 + 0x14, 0),
+                                 RfVec(rooms + r * 0x44 + 0x24, 0), RfVec(rooms + r * 0x44 + 0x34, 0);
+    *(WORD*)(g + 0x16C) = 4;
+    {  // +0x34: one 16-byte list per portal, as LotGraph_Build sizes it (FirstUse fills them; an empty +0x34 builds nothing, 0x63D384)
+        u8* lists = RfVec(rooms + 4 * 0x44 + 0x34, 16 * n);
+        for (int i = 0; i < n; i++) memset(lists + 16 * i, 0, 12), *(DWORD*)(lists + 16 * i + 12) = 0x00FEAEE0;
+    }
+    u8** pv = *(u8***)(rooms + 4 * 0x44 + 4);
+    DWORD* bk = (DWORD*)RfAlloc(4 * 4);
+    bk[0] = bk[1] = bk[2] = 0, bk[3] = 0x2468ACE1;  // 3 buckets and the end marker
+    for (int i = 0; i < n; i++) {
+        const K6Wp& w = g_k6Wp[ex[i]];
+        float x, z;
+        K6Pos(w, &x, &z);
+        u8* p = K8Portal();
+        *(LONG*)(p + 0x70) = 1000;
+        *(DWORD*)(p + 8) = 0x7700 + 4 * l + i;
+        *(float*)(p + 0x14) = x - lr.x0, *(float*)(p + 0x18) = z - lr.z0;
+        *(float*)(p + 0x20) = x - lr.x0, *(float*)(p + 0x24) = z - lr.z0;
+        *(WORD*)(p + 0x48) = 4, *(WORD*)(p + 0x4A) = 0xFFFF;
+        *(DWORD*)(p + 0x4C) = (DWORD)w.c | (DWORD)w.i << 14;
+        *(float*)(p + 0x50) = x, *(float*)(p + 0x54) = z;
+        p[0x58] = 2;
+        *(DWORD*)(p + 0x34) = 0xB828;
+        pv[i] = p;
+        DWORD* nd = (DWORD*)RfAlloc(12);
+        nd[0] = (DWORD)w.c << 16 | (DWORD)w.i, nd[1] = (DWORD)i, nd[2] = bk[nd[0] % 3];
+        bk[nd[0] % 3] = (DWORD)(uintptr_t)nd;
+    }
+    *(DWORD**)(g + 0x124) = bk, *(DWORD*)(g + 0x128) = 3, *(DWORD*)(g + 0x12C) = (DWORD)n;
+    DWORD* bk2 = (DWORD*)RfAlloc(2 * 4);  // g+0x140, the lot build's second hash (0x63C326): empty, one bucket and the end marker
+    bk2[0] = 0, bk2[1] = 0x2468ACE2;
+    *(DWORD**)(g + 0x144) = bk2, *(DWORD*)(g + 0x148) = 1, *(DWORD*)(g + 0x14C) = 0;
+    g[0x10] = (u8)n;
+    *(DWORD*)(g + 8) = n ? ((DWORD)g_k6Wp[g_k6Wp[ex[0]].nb[0]].c << 16 | (DWORD)g_k6Wp[g_k6Wp[ex[0]].nb[0]].i) : 0xFFFFFFFF;
+    *(DWORD*)(lr.obj + 0x174) = 64, *(DWORD*)(lr.obj + 0x178) = 64;  // the lot's size in metres (0x654F9D)
+    // the outside room built by the game, as a plan's first use builds it
+    const char built = g_rpFirstUse(g_rf.p, NULL, g, 4);
+    assert(built);
+    g_k8Exits += n;
+}
+static void K8Build(DWORD seed) {
+    g_sfPages = (u8*)VirtualAlloc(NULL, 0x2000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);  // live world and P: guarded
+    assert(g_sfPages);
+    K6Build(seed);
+    {  // the world manager W+0xC (= world+0x964, live by design): origin +0xB4 / +0xB8 (water cells), size +0xBC / +0xC0 (the
+       // closest-waypoint chunk gather 0x654838 / 0x654896 stops there; 128 m = R's 4 x 4 chunks of 32 m); no terrain object
+       // +0x5C, no sea object +0x60, an empty pond list +0x100 / +0x104 (0xC60F50 walks it)
+        static u8 wm[0x400];
+        memset(wm, 0, sizeof(wm));
+        *(float*)(wm + 0xBC) = 128.0f, *(float*)(wm + 0xC0) = 128.0f;
+        *(u8**)(g_sf.W + 0xC) = wm, *(u8**)(g_sf.world + 0x964) = wm;
+    }
+    // the replay world on the arena (the clone is cut later, off the arena)
+    if (!g_k8Arena) g_k8Arena = (u8*)VirtualAlloc(NULL, kK8ArenaSz, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    assert(g_k8Arena);
+    g_rfArena = g_k8Arena, g_rfArenaUsed = 0, g_rfArenaSz = kK8ArenaSz;
+    g_rfMakeQ = RkQ, g_rfMakeFp = RkFp, g_rfIdentity = true, g_rfMakePortal = K8Portal;
+    RfSetup(seed, true);
+    u8* P = g_rf.p;
+    u8* astar = K3Astar();  // the live planner's cAStarSearch: P+0xBC and every live Q's +0x28 (as the P init 0x62E9F1)
+    *(u8**)(P + 0xBC) = astar;
+    for (int l = 0; l < g_rf.nLots; l++)
+        for (u8** q = *(u8***)(g_rf.lots[l] + 0x10 + 0x74); q < *(u8***)(g_rf.lots[l] + 0x10 + 0x78); q++) *(u8**)(*q + 0x28) = astar;
+    g_rfArena = NULL, g_rfMakePortal = NULL;
+    g_rfWorldSlot = g_sf.world;  // the snapshot's world: this one
+    *(u8**)(g_sf.world + 0x95C) = P, *(u8**)(g_sf.W + 8) = P;
+    P[0x10C] = 1;  // lot planning on (LotPlan_Inner 0x63F6E9)
+    g_k8NLots = 0;
+    for (int l = 0; l < 2 && l < g_rf.nLots; l++) {
+        u8* g = g_rf.lots[l] + 0x10;
+        const float ox = 64.0f * l, oz = 64.0f * l;
+        float* xf = (float*)(g + 0xA0);
+        xf[12] = -ox, xf[14] = -oz;          // world -> lot: row 3 (0x62ED40)
+        xf[16 + 12] = ox, xf[16 + 14] = oz;  // lot -> world (0x62ECD0)
+        u8* o = g_k8LotObj[l];
+        memset(o, 0, sizeof(g_k8LotObj[l]));
+        *(DWORD*)(o + 0x48) = *(DWORD*)g, *(DWORD*)(o + 0x4C) = 0;
+        *(u8**)(o + 0x298) = g_k8Part;
+        *(float*)(o + 0x190) = ox, *(float*)(o + 0x198) = oz;  // the lot's world origin x / z, angle +0x1A0 = 0 (0xAB8549)
+        g_k8Lots[g_k8NLots++] = K8Lot{o, ox, oz, ox + 64.0f, oz + 64.0f};
+    }
+    K8LiveW(g_sf.W);
+    g_sf.W[0x88] = 1;  // R usable: Route_PlanLocked copies world+0x97D there (0x82C753)
+    // G's water cell grid (+0x1C, 2 bytes per 4 m cell, +0xC cells): its row length +4 (WaterGrid_CellIndex 0x66D887, the water
+    // path 0x6719FA); snap-fake.h leaves it 0 (its checks never index the grid by row)
+    *(DWORD*)(g_sf.world + 0x8C + 4) = g_sf.gw;
+    K8FixRings();
+    g_rfArena = g_k8Arena;
+    for (int l = 0; l < g_k8NLots; l++) K8LotExits(l);
+    g_rfArena = NULL;
+    RfCut();  // the first clone, off the arena
+}
+// a reader cut as PcCutFn takes it, then PcAcquire on the replay clone (live pages guarded) and W' from 0x829C00 on the copy
+static long g_k8Cuts, g_k8Hashes;
+static void K8Cut() {
+    u8* world = g_sf.world;
+    if (g_k6Wc) PcRelease(&g_k6Cl, 0, NULL, 0);
+    assert(SpCut(world, true) && SpTilesAll(g_spCur));
+    PcCut& c = g_pcCut;
+    SpVerRel(c.v);
+    assert(PcSnap(c, world, g_rf.p));
+    c.v = SpVerRef(g_spCur), c.epoch = g_spEpoch, c.active = PcActiveLot(), c.grid = NULL, c.keys = NULL;
+    c.ver = g_rpPub, c.ok = 1;
+    RpDrain(false);  // the consumer reaches the cut's position (its own thread in the game, before the worker acquires)
+    assert(g_rpTail == c.ver && g_rpClone && g_rpClone->nLots == g_rf.nLots);
+    g_rpThreaded = true;  // PcAcquire does not drain (that reads live) under the guard
+    K8Guard(true);
+    const int why = PcAcquire(c.ver, &g_k6Cl);
+    K8Guard(false);
+    g_rpThreaded = false;
+    if (why >= 0) { printf("K8 FAIL: PcAcquire refused (%d)\n", why); assert(false); }
+    g_k6Wc = ((u8*(__fastcall*)(const u8*, void*))(uintptr_t)0x00829C00)(g_pcWork.world, NULL);
+    assert(g_k6Wc == g_pcWork.wp && *(u8**)(g_k6Wc + 8) == g_rpClone->p);
+    // I-94-321: every clone lot's two hashes g+0x120 / g+0x140 are private (own bucket arrays and nodes), chains equal to live
+    for (int l = 0; l < g_rf.nLots; l++) {
+        const u8* lg = g_rf.lots[l] + 0x10;
+        const RpLot* cl = RpFindLot(g_rpClone, *(const DWORD*)lg);
+        assert(cl && cl->node);
+        const u8* cg = cl->node + 0x10;
+        for (int h = 0; h < 2; h++) {
+            const DWORD* lb = *(const DWORD* const*)(lg + 0x124 + 0x20 * h);
+            const DWORD* cb = *(const DWORD* const*)(cg + 0x124 + 0x20 * h);
+            const DWORD nb = *(const DWORD*)(lg + 0x128 + 0x20 * h);
+            if (!lb) { assert(!cb); continue; }
+            assert(cb != lb && *(const DWORD*)(cg + 0x128 + 0x20 * h) == nb && cb[nb] == lb[nb]);
+            for (DWORD b = 0; b < nb; b++) {
+                const u8 *x = (const u8*)(uintptr_t)lb[b], *y = (const u8*)(uintptr_t)cb[b];
+                for (; x && y; x = *(u8**)(x + 8), y = *(u8**)(y + 8)) assert(x != y && !memcmp(x, y, 8));
+                assert(!x && !y);
+            }
+            g_k8Hashes++;
+        }
+    }
+    g_k8Cuts++;
+}
+static void K8Drop() {
+    PcRelease(&g_k6Cl, 0, NULL, 0);
+    g_k6Wc = NULL;
+    PcWork& pw = g_pcWork;
+    PcAstarDrop(pw);
+    PcWpDrop(pw);
+    RpFree(pw.r), RpFree(pw.bnm), RpFree((void*)pw.tileImg), RpFree(pw.world), RpFree(pw.wx);
+    for (int m = 0; m < 16; m++) RpFree(pw.hc[m]);
+    SpVerRel(pw.v);
+    if (pw.csInit) DeleteCriticalSection(&pw.cs);
+    memset(&pw, 0, sizeof(pw));
+    SpVerRel(g_pcCut.v), PcWxRel(g_pcCut.wx), PcWxRel(g_pcWxLast);
+    g_pcCut.v = NULL, g_pcCut.wx = NULL, g_pcWxLast = NULL;
+    RfTeardown();
+    SfTeardown();
+    VirtualFree(g_sfPages, 0, MEM_RELEASE);
+    g_sfPages = NULL;
+}
+// coverage: the closest-waypoint search 0x65BB90, the lot exit gather 0x654CC0 and the world A* 0x676260 behind counting
+// detours (both runs; the counts say which planner parts the sweep reached)
+typedef char(__fastcall* K8CwFn)(void*, void*, float, float, float, float, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD);
+static K8CwFn g_k8CwOrig;
+static long g_k8Cw[2];
+static char __fastcall K8CwCount(void* t, void* e, float a, float b, float c, float d, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10,
+                                 DWORD a11) {
+    const char r = g_k8CwOrig(t, e, a, b, c, d, a5, a6, a7, a8, a9, a10, a11);
+    g_k8Cw[r != 0]++;
+    return r;
+}
+typedef void(__fastcall* K8GaFn)(void*, void*, u8*, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD*);  // ret 0x20; arg 8 = the set
+static K8GaFn g_k8GaOrig;
+static long g_k8Ga[3];
+static void __fastcall K8GaCount(void* t, void* e, u8* lot, DWORD a2, DWORD a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD* out) {
+    g_k8GaOrig(t, e, lot, a2, a3, a4, a5, a6, a7, out);
+    const long n = (long)((out[1] - out[0]) / 0x1C);  // 28-byte candidates (docs/99 §4.4)
+    g_k8Ga[n ? 1 : 0]++, g_k8Ga[2] += n;
+}
+typedef DWORD*(__fastcall* K8AsFn)(u8*, void*, const u8*, const u8*, const DWORD*, const DWORD*, DWORD, DWORD*, DWORD*);
+static K8AsFn g_k8AsOrig;
+static long g_k8As[2];
+static DWORD* __fastcall K8AsCount(u8* c, void* e, const u8* R, const u8* G, const DWORD* s, const DWORD* g, DWORD m, DWORD* o, DWORD* b) {
+    DWORD* r = g_k8AsOrig(c, e, R, G, s, g, m, o, b);
+    g_k8As[r != NULL]++;
+    return r;
+}
+// random pairs: kinds = open ground / lot 0 / lot 1 for start and goal (every combination), the lot's level drawn from its
+// quadtrees (a level without stairs to the other: no route), cost modes 1-4, planner flag words from the job's set (0x8000,
+// 0x1000000, 0x8000000: water planning, docs/99 §2.3; 0x40; 0x800000: the retry)
+static long g_k8Kind[9][2], g_k8Water, g_k8LotLeg, g_k8CrossLevel, g_k8BadFree;
+// a random request; returns its start / goal kind (0..8)
+static int K8RandQ(K8Q& q) {
+    memset(&q, 0, sizeof(q));
+    // where: 0 open ground (the two quadrants without a lot), 1 / 2 lot 0 / 1 at one of its quadtree levels
+    auto pt = [](int where, float* o) {
+        if (!where) { const bool a = Rnd(2) != 0; o[0] = Rf(1, 63) + (a ? 64 : 0), o[1] = Rf(1, 63) + (a ? 0 : 64); return; }
+        o[0] = Rf(1, 63) + 64.0f * (where - 1), o[1] = Rf(1, 63) + 64.0f * (where - 1);
+        const u8* g = g_rf.lots[where - 1] + 0x10;
+        *(LONG*)&o[2] = Rnd(4) ? 0 : (LONG)Rnd((DWORD)(*(u8***)(g + 0x78) - *(u8***)(g + 0x74)));
+    };
+    const int sw = (int)Rnd(3), gw = (int)Rnd(3), kind = sw * 3 + gw;
+    pt(sw, q.s), pt(gw, q.g);
+    g_k8CrossLevel += sw && sw == gw && *(LONG*)&q.s[2] != *(LONG*)&q.g[2];
+    q.mode = 1 + Rnd(4);
+    if (q.mode == 2 && Rnd(2)) q.mode = 1;
+    static const DWORD kFlags[6] = {0x8000, 0x1000000, 0x8000000, 0x40, 0x800000, 0x9008000};
+    if (Rnd(2)) q.flags = kFlags[Rnd(6)];
+    if (Rnd(3) == 0) q.flags = 0x9008000, q.mode = Rnd(2) ? 1 : 4;  // water planning in the modes that allow it (docs/94 §13.3 K6)
+    return kind;
+}
+// [OptsInit] pass: dirty stacks that differ per side; returns the plans whose live and copy answers differ
+static long g_k8OiPlans, g_k8OiDiffOff;
+static bool g_k8OiClone;  // 0.35.2: the copy side runs marked as a clone run ([OptsInit] Enabled=2 zeroes only there)
+static int K8OiPass(int pairs) {
+    static K8Ans l, c;
+    int diff = 0;
+    for (int p = 0; p < pairs; p++) {
+        K8Q q;
+        K8RandQ(q);
+        g_k8Dirty = true;
+        K8Run(g_sf.W, g_sf.world, q, &l);
+        if (g_k8OiClone) t_snapRun = 1;
+        K8RunCopy(q, &c);
+        t_snapRun = 0;
+        g_k8Dirty = false;
+        diff += !K8Same(l, c);
+        g_k8OiPlans++, g_k8Guarded--;  // not a K8 sweep plan (its count check)
+    }
+    return diff;
+}
+static void K8Sweep(int pairs) {
+    static K8Ans l, c;
+    for (int p = 0; p < pairs; p++) {
+        K8Q q;
+        const int kind = K8RandQ(q);
+        const LONG bad0 = g_rfBadFree;
+        K8Run(g_sf.W, g_sf.world, q, &l);
+        const LONG bad1 = g_rfBadFree;
+        K8RunCopy(q, &c);
+        if (g_rfBadFree != bad1 || bad1 != bad0) {
+            printf("K8 FAIL: %s run freed %ld blocks the game did not allocate (EA free 0x4E3F70 on a non-EA block)\n",
+                   g_rfBadFree != bad1 ? "a copy" : "a live", g_rfBadFree != bad1 ? g_rfBadFree - bad1 : bad1 - bad0);
+            assert(false);
+        }
+        if (!K8Same(l, c)) {
+            static K8Ans l2, c2;  // run both again: a side that changes its own answer is history, not the copy
+            K8Run(g_sf.W, g_sf.world, q, &l2);
+            K8RunCopy(q, &c2);
+            printf("K8 debug: plan %ld; live again %s, copy again %s\n", g_k8Plans, K8Same(l, l2) ? "same" : "DIFFERS", K8Same(c, c2) ? "same" : "DIFFERS");
+            K8Dump("sweep", q, l, c);
+            assert(false);
+        }
+        g_k8Plans++, g_k8Ret[l.ret < 16 ? l.ret : 15]++;
+        g_k8Kind[kind][l.ret ? 1 : 0]++;
+        if (!l.ret) {
+            g_k8Found++, g_k8Nodes += l.n;
+            bool water = false, leg = false;
+            for (int i = 0; i < l.n; i++) {
+                const DWORD t = *(const DWORD*)(l.nodes[i] + 0x1C), wt = *(const DWORD*)(l.nodes[i] + 0x38);
+                water |= wt == 0x14, leg |= wt == 2 && t != 6 && t != 7;  // a virtual water node; a lot exit (lot-edge waypoint) node
+            }
+            g_k8Water += water, g_k8LotLeg += leg;
+        }
+    }
+}
+
+// negative check (I-94-321): the byte copy of a lot hash before 0.33.4, i.e. lot 0's clone graph with the LIVE bucket array
+// of g+0x120 again; a copy run from lot 0 to open ground (lot exits: LotEdge_WaypointPosition 0x653020) must touch the guarded
+// live arena. The copy is dropped afterwards (the fault left the run half done)
+static long g_k8Neg;
+static void K8Negative() {
+    u8* cg = RpFindLot(g_rpClone, *(DWORD*)(g_rf.lots[0] + 0x10))->node + 0x10;
+    const DWORD saved = *(DWORD*)(cg + 0x124);
+    if (!*(DWORD*)(g_rf.lots[0] + 0x10 + 0x124)) return;
+    *(DWORD*)(cg + 0x124) = *(DWORD*)(g_rf.lots[0] + 0x10 + 0x124);
+    bool hit = false;
+    for (int i = 0; i < 40 && !hit; i++) {
+        K8Q q;
+        memset(&q, 0, sizeof(q));
+        q.s[0] = Rf(1, 63), q.s[1] = Rf(1, 63), q.g[0] = Rf(65, 127), q.g[1] = Rf(1, 63), q.mode = 1;
+        static K8Ans a;
+        K8Guard(true);
+        const int f = K8RunCopyTry(q, &a);
+        K8Guard(false);
+        g_k8Since = GetTickCount64();
+        hit = f && g_k8Fault >= (DWORD)(uintptr_t)g_k8Arena && g_k8Fault < (DWORD)(uintptr_t)g_k8Arena + kK8ArenaSz;
+        assert(!f || hit);  // any other fault is a test bug
+    }
+    *(DWORD*)(cg + 0x124) = saved;
+    if (!hit) { printf("K8 FAIL (I-94-321 negative): no copy run read lot 0's hash with the live bucket array in place\n"); assert(false); }
+    g_k8Neg++;
 }
 
 int main(int argc, char** argv) {
@@ -3197,6 +3822,93 @@ int main(int argc, char** argv) {
         assert(g_k6Masks == g_k6Cuts && g_k6HcfMiss == g_k6Cuts && g_k6ObjFp > 0 && g_k6ObjFpPts > 0 && g_k6Stops == g_k6Cuts * 11);
         assert(g_k6CacheIns == g_k6Cuts && g_k6Drops == 2 &&g_k6Found > g_k6Plans / 4 && g_k6Water > 0 && g_k6TieFlip > 0 && k4Moved > 0 && g_k6HcCells > 0 && g_k6TreeEnds > 0 &&
                g_k6Guarded >= g_k6Plans);
+    }
+    // K8 (docs/94 §13.3): the planner above the world search on live W vs PcAcquire's W'
+    {
+        const DWORD savedRw = *(DWORD*)(uintptr_t)0x011D9128, savedWm = *(DWORD*)(uintptr_t)0x011ECBC4;
+        *(DWORD*)(uintptr_t)0x011D9128 = 0, *(DWORD*)(uintptr_t)0x011ECBC4 = 0;
+        g_sfRaster = (SfRasterFn)(uintptr_t)0x00670750;
+        for (RkSite& s : g_k8Sites) { memcpy(s.saved, (void*)(uintptr_t)s.at, 5); Jmp(s.at, s.to); }
+        RkPatch();  // EA alloc / free -> RfNew / RfFreeP (a free of a block that is not an EA one is counted), the private pools,
+                    // the global world manager [0x11ECBC4] with an active lot that is none of ours (LotTable_Contains, 0xC88FD0)
+        // the routing pools the lot searches pop (goal, cell node, start, cell object): the game's pool objects, as K3
+        static const DWORD kPoolInit[4] = {0x0061AD30, 0x0061AEE0, 0x0061EC00, 0x0066BBD0};
+        static const DWORD kPoolGlobal[4] = {0x011CEF50, 0x011CEF68, 0x011CEF90, 0x011CF448};
+        DWORD savedPool[4];
+        for (int i = 0; i < 4; i++) savedPool[i] = *(DWORD*)(uintptr_t)kPoolGlobal[i], ((void(__cdecl*)())(uintptr_t)kPoolInit[i])();
+        {
+            static const u8 kCw[] = {0x51, 0x53, 0x8B, 0x5C, 0x24, 0x2C}, kAs[] = {0x83, 0xEC, 0x3C, 0x53, 0x8B, 0x5C, 0x24, 0x58};
+            g_k8CwOrig = (K8CwFn)InstallDetour("K8 count 0x65BB90", 0x0065BB90, kCw, sizeof(kCw), (void*)K8CwCount);
+            g_k8AsOrig = (K8AsFn)InstallDetour("K8 count 0x676260", 0x00676260, kAs, sizeof(kAs), (void*)K8AsCount);
+            static const u8 kGa[] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0};
+            g_k8GaOrig = (K8GaFn)InstallDetour("K8 count 0x654CC0", 0x00654CC0, kGa, sizeof(kGa), (void*)K8GaCount);
+        }
+        DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_k8Main, 0, FALSE, DUPLICATE_SAME_ACCESS);
+        g_k8Since = GetTickCount64();  // from here on: 10 s without a finished plan = a hang (cuts and builds included)
+        CloseHandle(CreateThread(NULL, 0, K8Watch, NULL, 0, NULL));
+        for (DWORD seed = seedArg; seed < seedArg + 2; seed++) {
+            K8Build(seed);
+            K8Cut();
+            K8Sweep(cases / 20 + 10);
+            // I-94-322 / [OptsInit] (0.34.1): dirty stacks without the patch may differ (counted); with it every plan matches
+            {
+                u8 saved[5];
+                memcpy(saved, (void*)(uintptr_t)0x00652BF0, 5);
+                g_k8OiDiffOff += K8OiPass(cases / 20 + 10);
+                assert(OiInstall());
+                const int on = K8OiPass(cases / 20 + 10);
+                if (on) { printf("K8 WARNING: [OptsInit] on, %d plans still differ with dirty stacks\n", on); assert(false); }
+                // 0.35.2 Enabled=2: only the copy side (run as a clone run, t_snapRun) is zeroed; live keeps its cleared stack
+                const LONG oc0 = ts3native_counters.oiClone;
+                g_oiMode = 2, g_k8OiClone = true;
+                const int on2 = K8OiPass(cases / 20 + 10);
+                g_oiMode = 1, g_k8OiClone = false;
+                if (on2 || ts3native_counters.oiClone == oc0) {
+                    printf("K8 WARNING: [OptsInit] Enabled=2, %d plans differ, %ld clone-run zeroings\n", on2, ts3native_counters.oiClone - oc0);
+                    assert(false);
+                }
+                DWORD old;
+                VirtualProtect((void*)(uintptr_t)0x00652BF0, 5, PAGE_EXECUTE_READWRITE, &old);
+                memcpy((void*)(uintptr_t)0x00652BF0, saved, 5);  // off again for the next seed (the trampoline leaks)
+                VirtualProtect((void*)(uintptr_t)0x00652BF0, 5, old, &old);
+                g_oiJmp = NULL;
+            }
+            K8Negative();
+            K8Drop();
+        }
+        g_k8Since = 0;
+        printf("K8 [OptsInit] (I-94-322): %ld plans with dirty stacks (copy side hub-like words): %ld differ without the options ctor "
+               "patch, 0 with it\n", g_k8OiPlans, g_k8OiDiffOff);
+        for (RkSite& s : g_k8Sites) memcpy((void*)(uintptr_t)s.at, s.saved, 5);
+        for (int i = 0; i < 4; i++) *(DWORD*)(uintptr_t)kPoolGlobal[i] = savedPool[i];  // shortcut: the game's pool objects leak
+        RkUnpatch();
+        VirtualFree(g_k6Live, 0, MEM_RELEASE);
+        g_k6Live = NULL;
+        VirtualFree(g_k8Arena, 0, MEM_RELEASE);
+        g_k8Arena = NULL;
+        g_sfRaster = SfRasterC;
+        *(DWORD*)(uintptr_t)0x011D9128 = savedRw, *(DWORD*)(uintptr_t)0x011ECBC4 = savedWm;
+        long kinds = 0;
+        for (int i = 0; i < 9; i++) kinds += g_k8Kind[i][0] > 0;
+        printf("K8 (seeds %lu-%lu): PathPlan_WithRetries 0x661B50 (planner 0x65E0D0) on live W vs PcAcquire's W' with the live routing "
+               "world, P, lots, R, G trees, W and replay world on PAGE_NOACCESS pages: %ld plans equal (return code, start / goal index, "
+               "every node but the unset +0x36 / +0x3C), %ld guarded copy runs with no live access and no free of a non-EA block; "
+               "%ld found (%ld nodes; codes 0:%ld 4:%ld 5:%ld 6:%ld), %ld through a lot exit, %ld with a water leg, %d of 9 start / goal "
+               "kinds found, %ld same-lot pairs across levels\n",
+               seedArg, seedArg + 1, g_k8Plans, g_k8Guarded, g_k8Found, g_k8Nodes, g_k8Ret[0], g_k8Ret[4], g_k8Ret[5], g_k8Ret[6], g_k8LotLeg,
+               g_k8Water, (int)kinds, g_k8CrossLevel);
+        printf("K8 reached: closest waypoints 0x65BB90 %ld (%ld found), lot exit gathers 0x654CC0 %ld (%ld with candidates, %ld "
+               "candidates), world A* 0x676260 %ld (%ld found); %ld lot exits built, %ld cuts; I-94-321: %ld clone lot hashes "
+               "(g+0x120 / g+0x140) private and equal at each cut, %ld negative runs (the byte copy before 0.33.4) read the live hash\n",
+               g_k8Cw[0] + g_k8Cw[1], g_k8Cw[1], g_k8Ga[0] + g_k8Ga[1], g_k8Ga[1], g_k8Ga[2], g_k8As[0] + g_k8As[1], g_k8As[1], (long)g_k8Exits,
+               g_k8Cuts, g_k8Hashes, g_k8Neg);
+        printf("K8 fakes (world manager, terrain, physics, partition): lot lookups %ld, terrain heights %ld / %ld, sea %ld, ponds %ld, "
+               "routable %ld, lot by id %ld, lot near %ld, segment lots %ld, terrain object %ld / %ld / %ld, partition rooms %ld, lot sea %ld, "
+               "lot point %ld\n",
+               g_k8Calls[0], g_k8Calls[1], g_k8Calls[2], g_k8Calls[3], g_k8Calls[4], g_k8Calls[5] + g_k8Calls[6], g_k8Calls[15], g_k8Calls[13],
+               g_k8Calls[11], g_k8Calls[12], g_k8Calls[14], g_k8Calls[7], g_k8Calls[10], g_k8Calls[16], g_k8Calls[17]);
+        assert(g_k8Guarded == g_k8Plans && g_k8Found > g_k8Plans / 3 && g_k8LotLeg > 0 && kinds == 9 && g_k8Neg == 2 &&
+               g_k8Hashes > 0 && g_k8Ga[1] > 0 && g_k8Cw[1] > 0);
     }
     printf("steerro-test ok\n");
     return 0;

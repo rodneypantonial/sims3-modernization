@@ -31,6 +31,8 @@ static const DWORD kPcEmptyBk = 0x0114C900;  // the shared empty bucket array an
 static const DWORD kPcGridRec = 0x50;    // footprint grid record (chain +0x48) [size inferred, I-94-131]
 static const DWORD kPcHoldMs = 3000;
 static const DWORD kPcWaitMs = 50;
+static const int kPcKeyFailMax = 8;  // lock-key applies failed in a row before a clone rebuild is asked (0.35.9)
+static const DWORD kPcWaitShadowMs = 250;  // Mode=1: the worker is idle after J_DONE (0.33.1)
 static const DWORD kPcKeyMagic = 0x4B455953;  // "SEYK" in the 16-byte header of our lock-key set copies
 
 struct PcBlocks { void* p[4096]; int n; PcBlocks* next; };
@@ -53,8 +55,20 @@ struct PcCut {
     const u8* liveW;                  // [world+0x960] at the cut (NULL: no world planner, no W')
     u8 wb[kPcWSz];                    // its bytes
     PcWx* wx;
+    LONG w;               // g_spWrites at the cut (under its +0x918 hold)
+    LONG dirtied;         // a shadow on this cut released with clone lots written: a second shadow on it is refused (0.35.6)
+    LONG pend; ULONGLONG tick; DWORD seq;  // seq: cut order (tick has 15 ms steps)        // pend: a Mode=1 job's cut its shadow has not ended yet (acquire + release, refusal, drop)
 };
-static PcCut g_pcCut;                 // the latest armed cut (sim writes it at cut, the worker reads it after the hold)
+// Two slots (0.33.1, docs/94 §21.14): the next job's START used to replace the cut of a job whose shadow had not acquired yet
+// (409 "epoch" refusals on BP 0.32.8); now the newer cut goes to the other slot and the hold stays on the older one until its
+// shadow ends, then moves on (g_pcHoldNext). Sim writes a slot at cut, the worker reads it after the hold.
+// 0.34.1: three slots, the hold on the oldest pending cut (a parked shadow keeps its cut while the next job runs, docs/94 §21.16)
+static const int kPcSlots = 3;
+static PcCut g_pcCuts[kPcSlots];
+static PcCut& g_pcCut = g_pcCuts[0];  // steerro-test K6 fills slot 0 directly
+static DWORD g_pcCutSeq;
+static DWORD g_pcHoldNext;            // the next pending cut after the held one (0 = none; diagnostics and tests)
+static const DWORD kPcPendMs = 1000;  // an older cut keeps the hold only this long (a job that never reaches its shadow)
 static SRWLOCK g_pcCutLock = SRWLOCK_INIT;
 static PcGrid* g_pcGridLast;          // sim: the last grid copy (shared while P3's grid image is unchanged)
 static PcKeys* g_pcKeysLast;
@@ -96,6 +110,33 @@ static void PcFreeBlocks(PcBlocks* b) {
 static void PcGridRel(PcGrid* g) { if (g && !InterlockedDecrement(&g->refs)) { PcFreeBlocks(g->blk); RpFree(g); } }
 static void PcKeysRel(PcKeys* k) { if (k && !InterlockedDecrement(&k->refs)) { PcFreeBlocks(k->blk); RpTabFree(k->map); RpFree(k); } }
 
+// A grid record's polygon set at +8 (EASTL vector of 16-byte polygons {begin, end, cap, allocator} of 8-byte 2D points; the
+// segment test 0x627780 reads it through PolySet_SegmentIntersects 0x67B190 -> 0x7CDAA0) is owned by the record and freed
+// with it, so a flat record copy points into live memory the sim frees after the cut (0.32.8: C0000005 at 0x7CDAA8 read a
+// polygon {0, garbage} in a clone run; docs/94 §21.14). Both levels deep-copied into the grid's arena (0.33.1).
+static bool PcPolyCopy(PcBlocks*& blk, u8* rec) {
+    const u8* b = RpP(rec + 8);
+    const u8* e = RpP(rec + 0xC);
+    if (!b || e == b) return true;  // empty: never dereferenced (0x67B1E9 compares begin and end first)
+    const DWORD n = (DWORD)(e - b);
+    if (e < b || n % 16 || n > 4096 * 16) return false;
+    u8* nb = (u8*)PcAlloc(blk, n);
+    if (!nb) return false;
+    memcpy(nb, b, n);
+    for (u8* p = nb; p < nb + n; p += 16) {
+        const u8* pb = RpP(p);
+        const u8* pe = RpP(p + 4);
+        const DWORD m = pb && pe > pb ? (DWORD)(pe - pb) : 0;
+        if ((pb && pe < pb) || m % 8 || m > 65536 * 8) return false;
+        u8* np = m ? (u8*)PcAlloc(blk, m) : NULL;
+        if (m && !np) return false;
+        if (m) memcpy(np, pb, m);
+        *(u8**)p = np, *(u8**)(p + 4) = *(u8**)(p + 8) = np ? np + m : NULL;
+    }
+    *(u8**)(rec + 8) = nb, *(u8**)(rec + 0xC) = *(u8**)(rec + 0x10) = nb + n;
+    return true;
+}
+
 // P's footprint grid +0xDC (32-byte cells: buckets +4, count +8, records chained at +0x48), deep-copied in chain order
 static PcGrid* PcGridCopy(const u8* P) {
     PcGrid* g = (PcGrid*)RpAlloc(sizeof(PcGrid));
@@ -129,6 +170,7 @@ static PcGrid* PcGridCopy(const u8* P) {
                     if (!nr) { ok = false; break; }
                     memcpy(nr, r, kPcGridRec);
                     *(DWORD*)(nr + 0x48) = 0;
+                    if (!PcPolyCopy(g->blk, nr)) { ok = false; break; }
                     *link = (DWORD)(uintptr_t)nr;
                     link = (DWORD*)(nr + 0x48);
                 }
@@ -297,15 +339,81 @@ static bool PcSnap(PcCut& c, const u8* world, const u8* P) {
     return ok;
 }
 
+// under g_pcCutLock (exclusive): a pending cut older than kPcPendMs no longer counts (its job never reached the shadow); the
+// hold goes to the oldest pending cut (a new holder gets a fresh kPcHoldMs), g_pcHoldNext names the next one
+static void PcHoldPick(ULONGLONG now) {
+    int a = -1, b = -1;
+    for (int i = 0; i < kPcSlots; i++) {
+        PcCut& h = g_pcCuts[i];
+        if (h.pend && now - h.tick >= kPcPendMs) h.pend = 0;
+        if (!h.pend || !h.ok || !h.ver) continue;
+        if (a < 0 || (LONG)(h.seq - g_pcCuts[a].seq) < 0) b = a, a = i;
+        else if (b < 0 || (LONG)(h.seq - g_pcCuts[b].seq) < 0) b = i;
+    }
+    const DWORD at = a >= 0 ? g_pcCuts[a].ver : 0;
+    if (at && at != g_rpHoldAt) g_rpHoldUntil = now + kPcHoldMs;
+    g_rpHoldAt = at;
+    g_pcHoldNext = b >= 0 ? g_pcCuts[b].ver : 0;
+}
+// the job of cut `ver` is done with it (released, refused or dropped): the hold moves to the next pending cut, if any
+static void PcHoldEnd(DWORD ver) {
+    AcquireSRWLockExclusive(&g_pcCutLock);
+    for (int i = 0; i < kPcSlots; i++) if (g_pcCuts[i].ver == ver && g_pcCuts[i].pend > 0) g_pcCuts[i].pend--;  // a shared cut: one per shadow
+    PcHoldPick(GetTickCount64());
+    ReleaseSRWLockExclusive(&g_pcCutLock);
+    if (g_rpThreaded) SetEvent(g_rpEvent);
+}
+static void PcDrop(DWORD ver) { PcHoldEnd(ver); }
+
+// 0.35.6 (docs/94 §21.21): a Mode=1 START while a job holds +0x918 shares the newest pending cut instead of a "busy"
+// refusal: no sim wait and no new cut. The job's w0 is that cut's write count, so any recorded routing write after it (the
+// running job's own, the sim's) makes the record stale (M5), as for a cut behind queued jobs (0.35.2). The slot holds the
+// consumer until both shadows end (pend counts them); a shadow that wrote clone lots refuses the other one (PcAcquire)
+static DWORD PcBorrow() {
+    Ts3nCounters& k = ts3native_counters;
+    if (k.snP4Mode != 1 || !g_rpOn || !g_spOn) return 0;
+    AcquireSRWLockExclusive(&g_pcCutLock);
+    const ULONGLONG now = GetTickCount64();
+    int b = -1;
+    for (int i = 0; i < kPcSlots; i++) {
+        const PcCut& h = g_pcCuts[i];
+        if (h.pend > 0 && h.ok && h.ver && !h.dirtied && now - h.tick < kPcPendMs && (b < 0 || (LONG)(h.seq - g_pcCuts[b].seq) > 0)) b = i;
+    }
+    DWORD ver = 0;
+    if (b >= 0) g_pcCuts[b].pend++, ver = g_pcCuts[b].ver, g_pcCutW = g_pcCuts[b].w;
+    ReleaseSRWLockExclusive(&g_pcCutLock);
+    if (ver) k.p4Borrow++, g_pcCutWhy = PS_NONE;
+    else k.p4BorrowMiss++;
+    return ver;
+}
+
 static DWORD PcCutFn() {
     Ts3nCounters& k = ts3native_counters;
-    if (!g_rpOn || !g_spOn || AsyncBusy()) { k.snPcRefused[0]++; return 0; }
+    g_pcCutWhy = PS_OFF;
+    if (!g_rpOn || !g_spOn) { k.snPcRefused[0]++; return 0; }
+    // a job queued or running holds or will take +0x918: the cut would wait for it on the sim, and its own lazy writes
+    // (first use, pending updates) would land between this START and its live plan (kept: docs/94 §21.14)
+    // 0.35.2 (docs/94 §21.17): Mode=1 with jobs only queued (none running, so the worker holds no +0x918, e.g. it runs a
+    // shadow): the lock is tried once, no sim wait. The queued jobs' writes before this job's live plan count in g_spWrites
+    // after this cut, so such a record is stale (M5) instead of a refusal. A running job, or P5 (Mode=2), refuses as before
+    bool qcut = false;
+    if (AsyncBusy()) {
+        bool running = g_async.state == A_RUNNING;
+        for (int i = 0; i < kJobs && !running; i++) running = g_jobs[i].state == J_RUNNING;
+        if (running || k.snP4Mode != 1) { g_pcCutWhy = PS_BUSY; k.snPcRefused[0]++; return PcBorrow(); }
+        qcut = true;
+    }
     const u8* world = *g_spWorldSlot;
     const u8* P = world ? RpP(world + 0x95C) : NULL;
     if (!P) { k.snPcRefused[0]++; return 0; }
-    static const DWORD kInf = 0xFFFFFFFF;
+    static const DWORD kInf = 0xFFFFFFFF, kTry = 0;
     void* lk = (void*)(world + 0x918);
-    if (g_spAcq(lk, NULL, &kInf) <= 0) { k.snPcRefused[0]++; return 0; }
+    if (g_spAcq(lk, NULL, qcut ? &kTry : &kInf) <= 0) {
+        k.snPcRefused[0]++;
+        if (qcut) { g_pcCutWhy = PS_BUSY, k.p4QCutMiss++; return PcBorrow(); }
+        return 0;
+    }
+    if (qcut) k.p4QCut++;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     const int pend = PcPrepare(world, P);
@@ -313,10 +421,22 @@ static DWORD PcCutFn() {
     g_spLastCut = GetTickCount64();
     const bool cut = SpCut(world, true) && SpTilesAll(g_spCur);  // P3 images (every tile: PcHighCost reads them all) + RpCut
     AcquireSRWLockExclusive(&g_pcCutLock);
-    PcCut& c = g_pcCut;
+    // the slot: one no Mode=1 job still waits on (0.33.1 two slots, 0.34.1 three: a parked shadow keeps its cut); none free =
+    // the newest pending one is replaced (its shadow is refused "replaced"). Mode 2 (P5): one cut at a time, as before
+    const ULONGLONG now = GetTickCount64();
+    for (int i = 0; i < kPcSlots; i++) if (g_pcCuts[i].pend && (now - g_pcCuts[i].tick >= kPcPendMs || k.snP4Mode != 1)) g_pcCuts[i].pend = 0;
+    int si = -1;
+    for (int i = 0; i < kPcSlots && si < 0; i++) if (!g_pcCuts[i].pend) si = i;
+    if (si < 0) {
+        si = 0;
+        for (int i = 1; i < kPcSlots; i++) if ((LONG)(g_pcCuts[i].seq - g_pcCuts[si].seq) > 0) si = i;
+    }
+    PcCut& c = g_pcCuts[si];
+    c.pend = 0;
     SpVerRel(c.v);
-    c.v = NULL, c.ok = 0, c.ver = 0;
-    if (cut && !pend && g_spCur && g_rpHave && !g_rpNeedEpoch && g_rpPub) {
+    c.v = NULL, c.ok = 0, c.ver = 0, c.pend = 0;
+    g_pcCutWhy = !cut || !g_spCur ? PS_P3 : pend ? PS_PORTAL : !g_rpHave || g_rpNeedEpoch || !g_rpPub || g_rpCutDeferred ? PS_NOCLONE : PS_COPY;
+    if (cut && !pend && g_spCur && g_rpHave && !g_rpNeedEpoch && g_rpPub && !g_rpCutDeferred) {  // deferred: nothing published (0.35.12)
         c.ok = PcSnap(c, world, P);
         c.active = PcActiveLot();
         c.epoch = g_spEpoch;
@@ -337,10 +457,12 @@ static DWORD PcCutFn() {
         if (c.ok) {
             c.v = SpVerRef(g_spCur);
             c.ver = g_rpPub;
-            g_rpHoldUntil = GetTickCount64() + kPcHoldMs;
-            g_rpHoldAt = c.ver;
+            c.pend = 1, c.tick = now, c.seq = ++g_pcCutSeq;
+            c.w = g_pcCutW = g_spWrites, c.dirtied = 0;  // +0x918 still held: no write of a worker job lands before this read
+            g_pcCutWhy = PS_NONE;
         }
     }
+    PcHoldPick(now);  // the consumer stays at the oldest pending cut until its shadow ends
     const DWORD ver = c.ok ? c.ver : 0;
     ReleaseSRWLockExclusive(&g_pcCutLock);
     g_spRel(lk, NULL);
@@ -364,6 +486,7 @@ struct PcWork {
     const SpImg* bnmImg; u8* bnm; DWORD bnmCap;  // blockedNodeMap buckets + nodes
     PcGrid* grid;        // held for the run
     PcKeys* keysAll[64]; int nKeys; const RpClone* clone;  // every lock-key table this clone's footprints may point into
+    int keyFails;        // lock-key applies failed in a row on this clone (0.35.9)
     SpVer* v;
     DWORD ver;
     bool held;           // g_rpUse taken
@@ -391,10 +514,15 @@ static bool PcAstar(PcWork& w) {
     w.fresh = 1;
     return true;
 }
+// 0.35.22 (docs/94 §22.25): the clone's Qs keep +0x28 = the dropped object until the next acquire re-points them; that test
+// knew only the live P's object and the current one, so after a drop that kept the clone (P4REL_LAZY, and WRAP since 0.29)
+// every Q kept the freed object: BP 0.35.21 0419 faulted in its node hash (0x664396) and corrupted the EA heap (0x4E5EC6)
+static const u8* g_pcAstarDead;
 static void PcAstarDrop(PcWork& w) {
     u8* a = w.astar;
     w.astar = NULL;
     if (!a) return;
+    g_pcAstarDead = a;
     // its nodes are private pool nodes: pushed as P4 job work (else each is a plForeign push leaked to the sink, crash G log)
     if (g_p4PoolsEnterJob) g_p4PoolsEnterJob();
     __try { *(LONG*)(a + 4) = 1; ((RpDtorFn)(uintptr_t)RpD(RpP(a)))(a, NULL, 1); }  // deleting dtor 0x61EB20: nodes back to the pools
@@ -640,31 +768,90 @@ static bool PcWp(PcWork& w, const PcCut& c, u8* cp) {
     return true;
 }
 
-static int PcAcquire(DWORD ver, P4Clone* out) {
+static int PcAcquireBody(DWORD ver, P4Clone* out);
+static int PcAcquire(DWORD ver, P4Clone* out) {  // the worker's phase marker back to the caller's (P5 acquires inside its job)
+    const LONG phase = g_p4Phase;
+    const int r = PcAcquireBody(ver, out);
+    g_p4Phase = phase;
+    return r;
+}
+static int PcAcquireBody(DWORD ver, P4Clone* out) {
     Ts3nCounters& k = ts3native_counters;
     PcWork& w = g_pcWork;
-    if (!g_rpOn || !g_rpHave) { k.snPcRefused[2]++; return P4_AB_MAT; }
-    // the consumer reaches the position (it stops there) and is idle; offline tests drain here
-    const ULONGLONG until = GetTickCount64() + kPcWaitMs;
+    if (!g_rpOn || !g_rpHave) { k.snPcRefused[2]++; g_pcAcqWhy = PS_NOCLONE; PcHoldEnd(ver); return P4_AB_MAT; }
+    // the consumer reaches the position (it stops there) and is idle; offline tests drain here. A shadow (Mode=1) waits up to
+    // kPcWaitShadowMs unless a live job queues meanwhile (0.33.1: 50 ms refused BP shadows while the consumer applied a rebase
+    // batch); a P5 acquire runs inside the live job and keeps 50 ms
+    const ULONGLONG until0 = GetTickCount64() + (k.snP4Mode == 1 ? kPcWaitShadowMs : kPcWaitMs);
+    ULONGLONG until = until0;
+    // 0.35.2 (docs/94 §21.17): a shadow waits on, up to 900 ms after its cut (the hold lasts kPcPendMs = 1 s), while nothing is
+    // queued: the worker is idle and holds no game lock here, so a longer wait costs the sim nothing ("mat"/"timeout" was the
+    // consumer still applying a batch or a clone free when 250 ms ran out)
+    if (k.snP4Mode == 1) {
+        AcquireSRWLockShared(&g_pcCutLock);
+        for (int i = 0; i < kPcSlots; i++)
+            if (g_pcCuts[i].ver == ver && g_pcCuts[i].ok && g_pcCuts[i].tick + kPcPendMs - 100 > until) until = g_pcCuts[i].tick + kPcPendMs - 100;
+        ReleaseSRWLockShared(&g_pcCutLock);
+    }
+    g_p4Phase = 3;
     for (;;) {
         if (!g_rpThreaded) RpDrain(false);
-        if (g_rpTail == ver) break;
-        if ((DWORD)(ver - g_rpTail) > (DWORD)(g_rpHead - g_rpTail)) { k.snPcRefused[3]++; return P4_AB_EPOCH; }  // passed it
-        if (GetTickCount64() > until) { k.snPcRefused[4]++; return P4_AB_MAT; }
+        if (g_rpTail == ver) {
+            if (GetTickCount64() > until0) k.p4WaitExt++;
+            break;
+        }
+        if ((DWORD)(ver - g_rpTail) > (DWORD)(g_rpHead - g_rpTail)) {  // passed it
+            k.snPcRefused[3]++, g_pcAcqWhy = PS_PASSED;
+            PcHoldEnd(ver);
+            return P4_AB_EPOCH;
+        }
+        bool queued = false;
+        for (int i = 0; i < kJobs && k.snP4Mode == 1; i++) queued |= g_jobs[i].state == J_QUEUED;
+        if (GetTickCount64() > until || queued) {
+            k.snPcRefused[4]++, g_pcAcqWhy = queued ? PS_QUEUED : PS_TIMEOUT;
+            if (!queued) PcHoldEnd(ver);  // queued: P4Shadow parks the shadow (keeps the cut) or drops it (0.34.1)
+            return P4_AB_MAT;
+        }
         if (g_rpThreaded) SetEvent(g_rpEvent);
         Sleep(0);
     }
-    AcquireSRWLockExclusive(&g_rpUse);
+    // 0.33.2 (docs/94 §21.15): never an unbounded wait here. P5 acquires inside its job with the routing lock held, and a
+    // consumer that waited for that lock while holding g_rpUse made both wait for ever (the 0.33.1 hang shape); both locks are
+    // tried until the same deadline, then the shadow is refused
+    g_p4Phase = 4;
+    while (!TryAcquireSRWLockExclusive(&g_rpUse)) {
+        if (GetTickCount64() > until) { k.snPcRefused[4]++, g_pcAcqWhy = PS_LOCK; PcHoldEnd(ver); return P4_AB_MAT; }
+        Sleep(0);
+    }
     w.held = true;
-    AcquireSRWLockShared(&g_pcCutLock);
-    const PcCut& c = g_pcCut;
+    while (!TryAcquireSRWLockShared(&g_pcCutLock)) {
+        if (GetTickCount64() > until) {
+            w.held = false;
+            ReleaseSRWLockExclusive(&g_rpUse);
+            k.snPcRefused[4]++, g_pcAcqWhy = PS_LOCK;
+            PcHoldEnd(ver);
+            return P4_AB_MAT;
+        }
+        Sleep(0);
+    }
+    int ci = 0;
+    for (int i = 1; i < kPcSlots; i++) if (g_pcCuts[i].ver == ver && g_pcCuts[i].ok) ci = i;
+    const PcCut& c = g_pcCuts[ci];
     int why = -1;
-    if (g_rpTail != ver || c.ver != ver || !c.ok) why = P4_AB_EPOCH, k.snPcRefused[3]++;
-    else if (c.epoch != g_spEpoch || PcActiveLot() != c.active) why = P4_AB_EPOCH, k.snPcRefused[5]++;  // I-94-87: refuse
-    else if (!g_rpClone || g_rpNeedEpoch) why = P4_AB_MAT, k.snPcRefused[2]++;
+    if (g_rpTail != ver || c.ver != ver || !c.ok) why = P4_AB_EPOCH, k.snPcRefused[3]++, g_pcAcqWhy = PS_REPLACED;
+    else if (c.dirtied) why = P4_AB_MAT, k.p4BorrowDirty++, g_pcAcqWhy = PS_STALE;  // a shared cut's clone was written by its other shadow
+    else if (c.epoch != g_spEpoch || PcActiveLot() != c.active) why = P4_AB_EPOCH, k.snPcRefused[5]++, g_pcAcqWhy = PS_MOVED;  // I-94-87
+    else if (!g_rpClone || g_rpNeedEpoch || g_rpBad) {  // g_rpBad alone: a rebuild cleared the ask, its EPOCH is after this cut
+        why = P4_AB_MAT, k.snPcRefused[2]++, g_pcAcqWhy = PS_NOCLONE;
+        if (g_rpClone && !g_rpNeedEpoch) k.p4AcqBad++;
+    }
+    else if (g_rpStale) why = P4_AB_MAT, k.snPcRefused[7]++, g_pcAcqWhy = PS_STALE;  // a lot the consumer forced is not rebased yet
     else
         for (int i = 0; i < g_rpClone->nLots; i++)  // H20c on the clone itself (what the run reads)
-            if (g_rpClone->lots[i].node && PcPortalPending(RpGraph(g_rpClone->lots[i].node))) { why = P4_AB_MAT, k.snPcPortalPend[1]++; break; }
+            if (g_rpClone->lots[i].node && PcPortalPending(RpGraph(g_rpClone->lots[i].node))) {
+                why = P4_AB_MAT, k.snPcPortalPend[1]++, g_pcAcqWhy = PS_PORTAL;
+                break;
+            }
     if (why < 0) {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
@@ -692,26 +879,44 @@ static int PcAcquire(DWORD ver, P4Clone* out) {
                     for (int i = 0; i < g_rpClone->nLots; i++)
                         for (int j = 0; j < g_rpClone->lots[i].nQ; j++) {
                             u8* q = g_rpClone->lots[i].q[j];
-                            if (q && (RpD(q + 0x28) == liveA || RpD(q + 0x28) == (DWORD)(uintptr_t)w.astar)) *(u8**)(q + 0x28) = w.astar;
-                            else if (q && RpD(q + 0x28)) k.snPcOddQ++;
+                            const DWORD qa = q ? RpD(q + 0x28) : 0;
+                            if (q && (qa == liveA || qa == (DWORD)(uintptr_t)w.astar || (qa && qa == (DWORD)(uintptr_t)g_pcAstarDead)))
+                                *(u8**)(q + 0x28) = w.astar;
+                            else if (qa) k.snPcOddQ++;
                         }
+                    g_pcAstarDead = NULL;  // every clone Q points at w.astar now
                 }
                 *(u8**)(w.world + 0x95C) = cp;
                 ok = ok && PcR(w, c.v->w[SP_R]) && PcHighCost(w, c, c.v) && PcBnm(w, c, c.v->w[SP_BNM]);
                 ok = ok && (!c.liveW || (c.wx && PcWp(w, c, cp)));  // I-94-220 / I-94-221: [copy+0x960] = W'
                 if (w.clone != g_rpClone) {  // a new clone: its footprints hold live sets only
                     for (int i = 0; i < w.nKeys; i++) PcKeysRel(w.keysAll[i]);
-                    w.nKeys = 0, w.clone = g_rpClone;
+                    w.nKeys = 0, w.keyFails = 0, w.clone = g_rpClone;
                 }
+                bool kok = true;
                 if (c.keys && (!w.nKeys || w.keysAll[w.nKeys - 1] != c.keys)) {
-                    if (w.nKeys == 64) ok = false;  // shortcut: 64 lock-key tables in one clone's life: refused until the next epoch
+                    if (w.nKeys == 64) kok = false;  // 64 failed applies in a row in one clone's life (kPcKeyFailMax asks a rebuild first)
                     else { InterlockedIncrement(&c.keys->refs); w.keysAll[w.nKeys++] = c.keys; }
                 }
-                ok = ok && PcKeysApply(c.keys, g_rpClone->fps) && PcKeysApply(c.keys, g_rpClone->kids);
+                if (ok) {
+                    kok = kok && PcKeysApply(c.keys, g_rpClone->fps) && PcKeysApply(c.keys, g_rpClone->kids);
+                    // 0.35.9 (docs/94 §22.13, I-94-450): a clone lives the session since soft resync (0.35.5), so an apply that
+                    // keeps failing (an origin no later table has, or the cap above) refused every acquire, Mode=2 included, until
+                    // an epoch that no longer comes; kPcKeyFailMax failures in a row ask one (the new clone holds live sets only)
+                    if (kok) w.keyFails = 0;
+                    else if (++w.keyFails >= kPcKeyFailMax) w.keyFails = 0, g_rpEpochWhy = -__LINE__, g_rpNeedEpoch = 1;  // the build log names this line
+                    ok = kok;
+                }
+                // 0.35.7 (I-94-430): a full apply re-pointed every clone footprint set into c.keys (an origin it lacks fails
+                // the apply), so the older tables are unreferenced; a partial apply keeps them all (mixed pointers)
+                if (ok && c.keys && w.nKeys > 1 && w.keysAll[w.nKeys - 1] == c.keys) {
+                    for (int i = 0; i < w.nKeys - 1; i++) PcKeysRel(w.keysAll[i]);
+                    w.keysAll[0] = c.keys, w.nKeys = 1;
+                }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; k.snPcFaults++; }
         InterlockedExchangeAdd(&k.snPcMatUs, UsSince(t0));
-        if (!ok) why = P4_AB_MAT, k.snPcRefused[6]++;
+        if (!ok) why = P4_AB_MAT, k.snPcRefused[6]++, g_pcAcqWhy = PS_COPY;
     }
     if (why < 0) {
         PcGridRel(w.grid), SpVerRel(w.v);
@@ -728,16 +933,49 @@ static int PcAcquire(DWORD ver, P4Clone* out) {
     if (why >= 0) {
         w.held = false;
         ReleaseSRWLockExclusive(&g_rpUse);
-        if (g_rpHoldAt == ver) g_rpHoldAt = 0;
-        if (g_rpThreaded) SetEvent(g_rpEvent);
+        PcHoldEnd(ver);
     }
     return why;
 }
 
+// 0.35.21 (docs/94 §22.24.1, I-94-484): after a lazy stop (P4LazyKeep) the unwind skipped the unpins and iteration ends of the
+// frames above the stop, so clone Qs can keep +0x48 > 0; the consumer's next apply on such a Q would defer into the LIVE
+// pending maps (the clone P's +0x30 / +0x3C are live, see PcDeferStop). Cleared here (g_rpUse held: nobody else touches
+// the clone) and their lots go to the dirty list with the run's own (rebased at the next cut). Returns the dirty count, -1 = all
+static volatile LONG g_pcLazyKeep, g_pcLazyPins;  // log only (no counter change)
+static int PcLazyPins(unsigned __int64* lots, int n, int cap) {
+    RpClone* c = g_rpClone;
+    for (int i = 0; c && i < c->nLots; i++) {
+        bool hit = c->lots[i].node && PcPortalPending(RpGraph(c->lots[i].node));
+        for (int j = 0; j < c->lots[i].nQ; j++) {
+            u8* q = c->lots[i].q[j];
+            if (q && *(LONG*)(q + 0x48)) *(LONG*)(q + 0x48) = 0, hit = true, InterlockedIncrement(&g_pcLazyPins);
+        }
+        if (!hit || n < 0) continue;
+        int j = 0;
+        while (j < n && lots[j] != c->lots[i].key) j++;
+        if (j == n) { if (n < cap) lots[n++] = c->lots[i].key; else n = -1; }
+    }
+    return n;
+}
 static void PcRelease(const P4Clone* cl, LONG flags, const unsigned __int64* dirty, int nDirty) {
     Ts3nCounters& k = ts3native_counters;
     PcWork& w = g_pcWork;
     if (!w.held) return;
+    unsigned __int64 lazy[64];
+    if (flags & P4REL_LAZY) {
+        const int n0 = nDirty < 0 ? -1 : nDirty < 64 ? nDirty : -1;
+        if (n0 > 0) memcpy(lazy, dirty, n0 * sizeof(lazy[0]));
+        nDirty = PcLazyPins(lazy, n0, 64), dirty = lazy;
+        if (!nDirty) nDirty = -1;  // shortcut: a keep-stop always names its lot; none = something unexpected, rebase all
+        const LONG n = InterlockedIncrement(&g_pcLazyKeep);
+        LONG p = 1;
+        while (p < n && p < 100000000) p *= 10;
+        if (p == n) Log("P4: lazy stop released without a clone rebuild: %d lot(s) rebased at the next cut (%s), %ld so far, %ld pins cleared",
+                        nDirty < 0 ? -1 : nDirty, nDirty < 0 ? "all" : "dirty list", n, g_pcLazyPins);
+        flags |= P4REL_WRAP;  // the A* object and W' are dropped below (the stopped search left them mid-plan)
+        PcWpDrop(w);
+    }
     // lots the clone run wrote: rebased from live at the next cut (their clone copy is no longer the live one)
     if (nDirty || (flags & P4REL_DISCARD)) {
         while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
@@ -750,12 +988,19 @@ static void PcRelease(const P4Clone* cl, LONG flags, const unsigned __int64* dir
         InterlockedExchange(&g_rpRingLock, 0);
         k.snPcDirtyLots += nDirty < 0 ? 1 : nDirty;
     }
-    if (flags & P4REL_DISCARD) { g_rpEpochWhy = -__LINE__, g_rpNeedEpoch = 1; PcAstarDrop(w); PcWpDrop(w); k.snPcDiscard++; }  // the clone (and W') may hold half-done writes
+    if (nDirty || (flags & P4REL_DISCARD)) {  // a second shadow on this cut (shared, 0.35.6) would read those lots
+        AcquireSRWLockExclusive(&g_pcCutLock);
+        // 0.35.22: after a lazy stop every pending cut (a parked or second-slot shadow's, made before this release) is refused
+        // too: the stopped lots are half-written until the next cut's rebase, and cuts made meanwhile are deferred (refused).
+        // BP 0.35.21 0419: a run at log line 230 read such a clone while every cut since the release deferred
+        for (int i = 0; i < kPcSlots; i++) if (g_pcCuts[i].ver == cl->ver || (flags & P4REL_LAZY)) g_pcCuts[i].dirtied = 1;
+        ReleaseSRWLockExclusive(&g_pcCutLock);
+    }
+    if (flags & P4REL_DISCARD) { g_rpEpochWhy = -__LINE__, g_rpNeedEpoch = 1, g_rpBad = 1; PcAstarDrop(w); PcWpDrop(w); k.snPcDiscard++; }  // the clone (and W') may hold half-done writes
     else if (flags & P4REL_WRAP) { PcAstarDrop(w); w.fresh = 1; }  // stamps wrapped: a new A* object, fresh stamps
-    if (g_rpHoldAt == cl->ver) g_rpHoldAt = 0;
     w.held = false;
     ReleaseSRWLockExclusive(&g_rpUse);
-    if (g_rpThreaded) SetEvent(g_rpEvent);
+    PcHoldEnd(cl->ver);
 }
 
 // 0.31.4 (docs/94 §21.11): the clone's P is a copy of the live P, so its pending-insert / pending-remove maps P+0x30 / P+0x3C
@@ -772,12 +1017,17 @@ static void PcDeferStop(const void* q) {
     if (!t_snapRun || !q || *(const LONG*)((const u8*)q + 0x48) <= 0) return;
     if (InterlockedIncrement(&ts3native_counters.pcDeferStop) <= 8)
         Log("P4: quadtree deferral on clone Q %p in a clone run (would write the live pending maps): run stopped", q);
-    P4Lazy();
+    // 0.35.21 (docs/94 §22.24.1): the stop is at the wrapper's entry; its 8 callers write before it only hooked leaves (W3,
+    // W6f, the lot-0 remove), new footprint objects or this Q's lot [verified disassembly], and the unwind leaves this Q's
+    // iteration count +0x48 (PcRelease clears it). So this Q's lot is rebased instead of a clone rebuild
+    const u8* b = (const u8*)q;
+    P4WorkerDirty(true, ((unsigned __int64)*(const DWORD*)(b + 0x1C) << 32) | *(const DWORD*)(b + 0x18));
+    P4LazyKeep();
 }
 static DWORD __fastcall PcQInsHook(void* q, void* edx, void* fp) { PcDeferStop(q); return g_pcQIns(q, edx, fp); }
 static DWORD __fastcall PcQRemHook(void* q, void* edx, DWORD lo, DWORD hi) { PcDeferStop(q); return g_pcQRem(q, edx, lo, hi); }
 
-static const P4CloneProvider kPcProvider = {PcCutFn, PcAcquire, PcRelease};
+static const P4CloneProvider kPcProvider = {PcCutFn, PcAcquire, PcRelease, PcDrop};
 static void PcRegister() {
     if (!g_p4On) return;
     if (!g_rpOn) { Log("route snapshot P4: no clone provider (needs [RouteSnap] Lots=replay): every shadow refused \"clone\""); return; }

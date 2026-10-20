@@ -1,0 +1,310 @@
+ic,address,class,min_depth,ic_verdict,ic_confidence,reason
+ScriptCore.Animation::Animation_SetBonePosition,0x73a220,writes-world,15,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.Audio::Audio_StartObjectSoundImpl,0x8644A0,engine-only,7,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.Audio::Audio_StartSoundImpl,0x863B60,engine-only,10,PROXY,medium,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.CASUtils::CASUtils_ApplyPresetToPartImpl,0x5AB440,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_CASPartLoadImpl,0x5A86A0,static-data,16,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_FindReplacementPartForCategoryImpl,0x5A6FD0,static-data,15,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_GetCASPartImpl,0x5A8B60,static-data,17,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_GetOutfitInGameObjectImpl,0x5A9430,static-data,15,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_InjectEyebrowColorImpl,0x5ABB90,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_InjectHairColorsImpl,0x5AB810,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_PartDataGetPresetImpl,0x5AACC0,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_PartDataNumPresetsImpl,0x5A79F0,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderAddPartImpl,0x5A5470,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderCacheOutfitImpl,0x5A5D40,static-data,14,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderClearFacialBlendsImpl,0x5A6260,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderCreateImpl,0x5A52D0,static-data,13,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderRemovePartImpl,0x5A54E0,static-data,14,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetAgeGenderSpeciesImpl,0x5A5330,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetCurlPixelRadiusImpl,0x5A4C70,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetFacialBlendImpl,0x5A6070,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetFurMapImpl,0x5A4B70,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetHairBaseColorImpl,0x5A7DC0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetHairHaloHighColorImpl,0x5A7F20,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetHairHaloLowColorImpl,0x5A7E70,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetMorphWeightAImpl,0x5A5860,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetMorphWeightBImpl,0x5A58A0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetMorphWeightCImpl,0x5A58E0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetNumCurlsImpl,0x5A4C30,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetPartPresetImpl,0x5AA990,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetSecondaryNormalMapWeightImpl,0x5A5420,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetSkinToneImpl,0x5A5370,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetSkinToneIndexImpl,0x5A53D0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimBuilderSetUseCompressionImpl,0x5A5EE0,static-data,13,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetAgeGenderSpeciesImpl,0x5A6930,static-data,11,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetBlendInfoImpl,0x5A89B0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetCurlPixelRadiusImpl,0x5A4DE0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetFurMapImpl,0x5A4D70,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetHairBaseColorImpl,0x5A6690,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetHairHaloHighColorImpl,0x5A67B0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetHairHaloLowColorImpl,0x5A6720,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetMorphWeightAImpl,0x5A6AC0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetMorphWeightBImpl,0x5A6B40,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetMorphWeightCImpl,0x5A6BC0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetNumBlendsImpl,0x5A8960,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetNumCurlsImpl,0x5A4D30,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetNumPartsImpl,0x5A8A50,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetPartImpl,0x5A8AA0,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetPartPresetImpl,0x5AB300,static-data,15,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetSecondaryNormalMapWeightImpl,0x5A6A10,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetSkinToneIndexImpl,0x5A69D0,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetSkinToneKeyImpl,0x5A6970,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitGetUniformComponentsImpl,0x5A6840,static-data,15,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.CASUtils::CASUtils_SimOutfitLoadImpl,0x5A88C0,static-data,12,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_GetOption,0x741230,static-data,5,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_GetOptionDefault,0x7412B0,static-data,8,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_GetProcessorLevel,0x741130,static-data,5,SAFE,high,"ic-safety SAFE/; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_GetProperty,0x740ED0,static-data,10,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_IsMac,0x740E80,static-data,12,SAFE,high,"ic-safety SAFE/; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.DeviceConfig::DeviceConfig_SaveOptions,0x740F90,engine-only,10,PROXY,low,user option write: no-op
+ScriptCore.DeviceConfig::DeviceConfig_SetProperty,0x740F00,engine-only,10,PROXY,low,user option write: no-op
+ScriptCore.EAText::EAText_GetMoneyString,0x7419B0,static-data,5,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.EAText::EAText_GetNumberString,0x741AA0,static-data,5,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.EAText::EAText_GetTimeString,0x741B80,static-data,7,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_GetCommandLineSwitch,0xEC2730,static-data,7,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_GetWorldName,0xEC1030,static-data,3,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_GetWorldType,0xEC1050,static-data,3,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_IsWorldInstalled,0xEC1000,static-data,7,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_SetGameTimeScaleImpl,0xEC1270,static-data,19,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.GameUtils::GameUtils_SetGameTimeSpeedLevel,0xEC0F30,static-data,19,PROXY,medium,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.LocalizedStringService::LocalizedStringService_GetLocalizedStringByString,0x7437E0,static-data,4,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.LookAtTask::LookAt_CreateLookAtTaskImpl,0x743a60,writes-world,16,PROXY,medium,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_EnableLookAtTaskImpl,0x743ba0,reads-world,14,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.LookAtTask::LookAt_SetAttenuatorPitchImpl,0x7446e0,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetAttenuatorYawImpl,0x7447c0,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetBlendInFramesImpl,0x744300,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetLookAwaySpeedImpl,0x744100,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetLookTowardsCurveRateImpl,0x7448a0,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetLookTowardsSpeedImpl,0x744020,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetRightTiltnessImpl,0x744440,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetTargetObjectIdImpl,0x743cf0,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetTargetSlotNameHashImpl,0x743dd0,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetTorsoPercentImpl,0x744600,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_SetTorsoThresholdImpl,0x744520,writes-world,14,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.LookAtTask::LookAt_StopLookAtTaskImpl,0x743c00,writes-world,13,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.NameGuidMapService::NameGuidMapService_GetGuidByName,0x744940,reads-world,16,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.NameGuidMapService::NameGuidMapService_GetGuidByNameHash,0x744920,reads-world,19,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Objects::Objects_GetForward,0x744fd0,reads-world,12,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Objects::Objects_GetPosition,0x744db0,reads-world,4,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Objects::Objects_GetTransform,0x744a80,reads-world,12,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Objects::Objects_IsValid,0x7449c0,reads-world,18,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.OnlineFeatures::OnlineFeaturesHost_GetPersonaName,0x747D90,static-data,5,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.Queries::Query_CountObjectsOnLot,0x749bc0,reads-world,3,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Queries::Query_GetObjects,0x749630,reads-world,5,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Queries::Query_GetObjectsInRange,0x7496e0,reads-world,19,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Queries::Query_GetObjectsOnLot,0x749d30,reads-world,4,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Random::Random_NextDoubleImpl,0x74A780,reads-world,6,PROXY,medium,native RNG state: record the stream or seed it (docs/27)
+ScriptCore.RouteManager::RouteManager_AddPrivateFootprint,0x75dcf0,writes-world,20,PROXY,low,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.RouteManager::RouteManager_FootprintRemoveLockKey,0x74b600,writes-world,19,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.RouteManager::RouteManager_RemoveDiscourageFootprint,0x754580,writes-world,20,PROXY,low,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.RouteManager::RouteManager_RemovePrivateFootprint,0x754610,writes-world,20,PROXY,low,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_EnterStateImpl,0x767010,reads-world,19,PROXY,low,ic-safety PROXY/sync-or-queued; reads sim or world state: replay from a recording (M3)
+ScriptCore.SACS::SACS_IsEventQueueValidImpl,0x7673F0,reads-world,16,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.SACS::SACS_RequestStateImpl,0x767440,reads-world,17,PROXY,low,ic-safety PROXY/sync-or-queued; reads sim or world state: replay from a recording (M3)
+ScriptCore.SACS::SACS_SetActorImpl,0x767890,writes-world,20,PROXY,low,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_SetParamCompositeImpl,0x766D30,writes-world,15,PROXY,low,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_SetParamImpl,0x766F40,writes-world,15,PROXY,medium,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_SetParamStringImpl,0x766F70,writes-world,20,PROXY,low,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_StopAllAnimationImpl,0x767B00,writes-world,20,PROXY,low,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.SACS::SACS_UpdateEventFilterImpl,0x7670D0,reads-world,16,PROXY,low,ic-safety PROXY/sync-or-queued; reads sim or world state: replay from a recording (M3)
+ScriptCore.ScriptProxy::ScriptProxy_GetResourceKeyImpl,0x7872E0,static-data,7,PROXY,medium,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.Simulator::MonoScriptHost_GetEnumSimpleName,,pure,16,,,registered by MonoScriptHost_Init 0xD7E560 itself (not in the binding table): enum name or hash from metadata
+ScriptCore.Simulator::Simulator_AddObjectImpl,0x76cc70,managed-reentry,6,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.Simulator::Simulator_AppendToScriptErrorFileImpl,0x76cbe0,reads-world,16,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Simulator::Simulator_CloseScriptErrorFileImpl,0x76cc20,reads-world,15,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Simulator::Simulator_CountResources,0x76d770,reads-world,13,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Simulator::Simulator_CreateDnPExportFileImpl,0x76d960,writes-world,14,PROXY,low,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.Simulator::Simulator_CreateObjectImpl,0x76d0e0,managed-reentry,18,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.Simulator::Simulator_DestroyObjectImpl,0x76d120,writes-world,13,PROXY,high,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.Simulator::Simulator_DisableScriptImpl,0x76ca90,writes-world,13,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.Simulator::Simulator_GetCurrentTaskImpl,0x76cca0,managed-reentry,12,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.Simulator::Simulator_GetTaskImpl,0x76ca60,reads-world,4,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Simulator::Simulator_LoadXmlAsString,0x76d290,static-data,15,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.Simulator::Simulator_SleepImpl,0x76cb00,managed-reentry,15,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.Slots::Slots_AttachToSlotWithOffsetImpl,0x76E590,writes-world,20,PROXY,low,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.Slots::Slots_GetChildrenImpl,0x76FC30,reads-world,20,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Slots::Slots_GetContainedObjectImpl,0x76F820,reads-world,16,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Slots::Slots_GetContainmentSlotNamesImpl,0x76F990,reads-world,19,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Slots::Slots_GetParentIdImpl,0x76F780,reads-world,3,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.Slots::Slots_GetPositionOfSlotImpl,0x76F2F0,reads-world,6,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.SocialFeatures::SocialFeaturesHost_CancelPassport,0x770DB0,reads-world,18,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.SocialFeatures::SocialFeaturesHost_GetID,0x76FE00,pure,18,SAFE,high,ic-safety SAFE: init-time config or no sim state
+ScriptCore.SocialFeatures::SocialFeaturesHost_GetPassportGiftedItem,0x770E60,reads-world,20,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.SocialFeatures::SocialFeaturesHost_GetPassportHost,0x770E40,reads-world,20,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.SocialFeatures::SocialFeaturesHost_GetProfileName,0x772EB0,reads-world,20,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UIManager::UIManager_AddTriggerHookImpl,0x77CC00,engine-only,16,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_BeginModalImpl,0x77B030,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_DeRegisterEventImpl,0x77B1A0,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_DestroyWindowImpl,0x779430,engine-only,14,PROXY,medium,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_EffectListGenericImpl,0x77CD90,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetCASThumbnailImageImpl,0x782F00,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetChildByIDImpl,0x77A7D0,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetChildByIndexImpl,0x77A850,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetClassIDImpl,0x77A5C0,engine-only,14,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetCustomControlIDImpl,0x77A660,engine-only,14,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetDrawablePropertyImpl,0x77BEA0,engine-only,20,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetFocusImpl,0x779580,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetParentWindowImpl,0x77A760,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetPhysicalAreaImpl,0x77AE80,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetRectFloatPropertyImpl,0x77B810,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetThumbnailImageImpl,0x782D00,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetUInt32PropertyImpl,0x77B3C0,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GetWindowByExportIDImpl,0x77F500,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_GridGenericImpl,0x77C030,engine-only,18,UNSAFE,medium,"ic-safety UNSAFE; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_LoadLayoutAndAddToWindowByIDImpl,0x77A440,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_LoadLayoutImpl,0x782BC0,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_LoadUIImageImpl,0x77F350,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_MoveDrawOrderImpl,0x77ABF0,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_RegisterEventImpl,0x77B150,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetFloatPropertyImpl,0x77B4B0,engine-only,19,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetFocusImpl,0x77AC70,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetImagePropertyImpl,0x77BC40,engine-only,20,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetRectFloatPropertyImpl,0x77B6A0,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetStringPropertyImpl,0x77BAE0,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_SetUInt32PropertyImpl,0x77D570,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_TextAutoSizeImpl,0x77D150,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UIManager::UIManager_TriggerEffectImpl,0x77CC90,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorSimulator::Simulator_AddObjectImpl,0x76cc70,managed-reentry,6,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.UTFConnectorSimulator::Simulator_AppendToScriptErrorFileImpl,0x76cbe0,reads-world,16,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_CloseScriptErrorFileImpl,0x76cc20,reads-world,15,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_CountResources,0x76d770,reads-world,13,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_CreateDnPExportFileImpl,0x76d960,writes-world,14,PROXY,low,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_CreateObjectImpl,0x76d0e0,managed-reentry,18,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.UTFConnectorSimulator::Simulator_DestroyObjectImpl,0x76d120,writes-world,13,PROXY,high,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_DisableScriptImpl,0x76ca90,writes-world,13,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_GetCurrentTaskImpl,0x76cca0,managed-reentry,12,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.UTFConnectorSimulator::Simulator_GetTaskImpl,0x76ca60,reads-world,4,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_GetTickCountImpl,0x76ccc0,reads-world,11,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.UTFConnectorSimulator::Simulator_LoadXmlAsString,0x76d290,static-data,16,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.UTFConnectorSimulator::Simulator_SleepImpl,0x76cb00,managed-reentry,15,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.UTFConnectorUIManager::UIManager_AddTriggerHookImpl,0x77CC00,engine-only,16,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_BeginModalImpl,0x77B030,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_DeRegisterEventImpl,0x77B1A0,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_DestroyWindowImpl,0x779430,engine-only,14,PROXY,medium,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_EffectListGenericImpl,0x77CD90,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetCASThumbnailImageImpl,0x782F00,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetChildByIDImpl,0x77A7D0,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetChildByIndexImpl,0x77A850,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetClassIDImpl,0x77A5C0,engine-only,14,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetCustomControlIDImpl,0x77A660,engine-only,14,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetDrawablePropertyImpl,0x77BEA0,engine-only,20,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetFocusImpl,0x779580,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetParentWindowImpl,0x77A760,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetPhysicalAreaImpl,0x77AE80,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetRectFloatPropertyImpl,0x77B810,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetThumbnailImageImpl,0x782D00,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetUInt32PropertyImpl,0x77B3C0,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GetWindowByExportIDImpl,0x77F500,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_GridGenericImpl,0x77C030,engine-only,18,UNSAFE,medium,"ic-safety UNSAFE; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_LoadLayoutAndAddToWindowByIDImpl,0x77A440,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_LoadLayoutImpl,0x782BC0,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_LoadUIImageImpl,0x77F350,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_MoveDrawOrderImpl,0x77ABF0,engine-only,18,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_RegisterEventImpl,0x77B150,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetFloatPropertyImpl,0x77B4B0,engine-only,19,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetFocusImpl,0x77AC70,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetImagePropertyImpl,0x77BC40,engine-only,20,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetRectFloatPropertyImpl,0x77B6A0,engine-only,15,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetStringPropertyImpl,0x77BAE0,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_SetUInt32PropertyImpl,0x77D570,engine-only,12,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_TextAutoSizeImpl,0x77D150,engine-only,13,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UTFConnectorUIManager::UIManager_TriggerEffectImpl,0x77CC90,engine-only,17,PROXY,low,"ic-safety PROXY; device, UI or audio: no-op or fixed value"
+ScriptCore.UserToolUtils::UserToolUtils_GetProductImpl,0xCE6320,static-data,7,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.UserToolUtils::UserToolUtils_ProductGenericImpl,0xCE99E0,static-data,7,PROXY,low,"ic-safety PROXY/sync-or-queued; install or session data (strings, world name, options, products): record once per session"
+ScriptCore.WeatherControl::WeatherControl_SetSettings,0x7846E0,writes-world,8,PROXY,medium,ic-safety PROXY/sync-or-queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_AddObjectToObjectManagerImpl,0x784db0,writes-world,19,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_AddObjectToObjectManagersImpl,0x784dd0,writes-world,19,PROXY,medium,ic-safety PROXY/sync; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_CanSeeObjectImpl,0x78f090,managed-reentry,11,UNSAFE,high,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.World::World_GetDoorRoomsImpl,0x7981f0,reads-world,6,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetGlobalObjectManagerId,0x789540,reads-world,18,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetLevelHeightImpl,0x786260,pure,18,SAFE,high,ic-safety SAFE: init-time config or no sim state
+ScriptCore.World::World_GetLotLocationImpl,0x784f90,reads-world,3,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetLotName,0x7955c0,reads-world,8,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetLotNameKey,0x7956c0,reads-world,8,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetManagerIdForObject,0x784e90,reads-world,19,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetMoonPhaseImpl,0x78aa70,reads-world,7,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetObjectTombRoomIdImpl,0x78ac00,reads-world,5,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetRoomIdAtPosImpl,0x78adf0,reads-world,5,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetSeaLevelImpl,0x786240,reads-world,5,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetSunriseTime,0x784e50,reads-world,4,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetSunsetTime,0x784e70,reads-world,4,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetTerrainTypeImpl,0x789890,reads-world,17,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_GetWorldNameKey,0x795320,reads-world,5,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_HasAnyRoofOrFloorAbovePosImpl,0x786e50,reads-world,5,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_IsObjectOnScreenImpl,0x78aab0,reads-world,10,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_IsPositionOutsideImpl,0x7850b0,reads-world,4,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_IsSimOnHill,0x78e590,reads-world,15,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectDesigner_GetDefaultPresetIdImpl,0x787b30,reads-world,16,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectDesigner_GetDesignPresetImpl,0x794fc0,reads-world,16,PROXY,low,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectDesigner_GetDesignPresetIndexFromIdImpl,0x787b40,reads-world,16,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectDesigner_SetCASPartImpl,0x7875f0,reads-world,16,PROXY,medium,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectEnableFootprint,0x78d520,managed-reentry,19,UNSAFE,low,"ic-safety UNSAFE; yields, reads the running task or calls back into managed code: scheduler shim"
+ScriptCore.World::World_ObjectGetHiddenFlags,0x78d400,reads-world,4,PROXY,high,ic-safety PROXY/sync; reads sim or world state: replay from a recording (M3)
+ScriptCore.World::World_ObjectSetMaterial,0x78ca60,writes-world,15,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_ObjectSetOpacity,0x78cc60,writes-world,18,PROXY,high,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_RemoveObjectFromObjectManagerImpl,0x784e30,writes-world,17,PROXY,medium,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+ScriptCore.World::World_SetFloorFeaturesImpl,0x785660,writes-world,20,PROXY,low,ic-safety PROXY/queued; changes sim or engine state: stub plus record (M3)
+Sims3.UI.LocalizedStringService::LocalizedStringService_GetLocalizedStringByString,0x7437E0,static-data,4,PROXY,low,"ic-safety PROXY/sync; install or session data (strings, world name, options, products): record once per session"
+System.Activator::CreateInstanceInternal,,pure,11,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.AppDomain::GetData,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.AppDomain::LoadAssembly,,pure,20,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.AppDomain::getCurDomain,,pure,6,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::ClearInternal,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::Clone,,pure,6,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::CreateInstanceImpl,,pure,19,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::FastCopy,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::GetLength,,pure,4,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::GetLowerBound,,pure,3,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::GetRank,,pure,6,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::GetValueImpl,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Array::SetValueImpl,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Buffer::BlockCopyInternal,,pure,18,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Buffer::ByteLengthInternal,,pure,19,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Delegate::CreateDelegate_internal,,pure,13,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Diagnostics.StackFrame::get_frame_info,,pure,17,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Double::ParseImpl,,pure,14,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Enum::ToObject,,pure,7,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Enum::get_value,,pure,10,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.GC::SuppressFinalize,,pure,11,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CompareInfo::construct_compareinfo,,pure,14,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CompareInfo::internal_compare,,pure,14,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CompareInfo::internal_index,,pure,18,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CultureInfo::construct_datetime_format,,pure,9,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CultureInfo::construct_internal_locale_from_lcid,,pure,9,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Globalization.CultureInfo::construct_number_format,,pure,8,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Acos,,pure,10,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Exp,,pure,18,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Floor,,pure,3,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Log10,,pure,11,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Pow,,pure,7,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Round,,pure,12,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Round2,,pure,4,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Sqrt,,pure,9,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Math::Tan,,pure,20,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.MonoEnumInfo::get_enum_info,,pure,7,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Object::GetType,,pure,2,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Object::InternalGetHashCode,,pure,3,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Object::MemberwiseClone,,pure,10,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Reflection.Assembly::GetExecutingAssembly,,pure,17,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Reflection.Assembly::InternalGetType,,pure,19,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray,,pure,18,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Runtime.CompilerServices.RuntimeHelpers::get_OffsetToStringData,,pure,2,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Runtime.InteropServices.Marshal::copy_from_unmanaged,,pure,17,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::.ctor,,pure,8,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalAllocateStr,,pure,2,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalCopyTo,,pure,13,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalJoin,,pure,4,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalReplace,,pure,12,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalSplit,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalStrcpy,,pure,4,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::InternalTrim,,pure,8,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.String::get_Chars,,pure,3,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Text.Encoding::InternalCodePage,,pure,19,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::Equals,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::GetTypeCodeInternal,,pure,8,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::get_IsGenericType,,pure,20,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::internal_from_handle,,pure,3,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::internal_from_name,,pure,12,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::type_is_assignable_from,,pure,5,,,Mono runtime IC in mscorlib: implemented by the runtime itself
+System.Type::type_is_subtype_of,,pure,8,,,Mono runtime IC in mscorlib: implemented by the runtime itself

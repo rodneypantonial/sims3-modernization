@@ -142,7 +142,7 @@ class Probe:
 
     def sample_memory(self):
         """Address-space timeline (memory.csv): shows what fills the 4 GB before an out-of-memory crash."""
-        cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads']
+        cols = ['time', 'commitMB', 'reserveOnlyMB', 'freeMB', 'largestFreeMB', 'imageMB', 'mappedMB', 'privateMB', 'threads', 'gcHeapMB', 'gcFreeMB']  # gc*: Boehm heap (docs/66 §6)
         with open(self.out / 'memory.csv', 'a', encoding='utf-8') as f:
             f.write(','.join(cols) + '\n')
             n, threads = 0, 0
@@ -154,7 +154,7 @@ class Probe:
                     n += 1
                     m['threads'] = threads
                     m['time'] = time.strftime('%H:%M:%S')
-                    f.write(','.join(str(m[c]) for c in cols) + '\n')
+                    f.write(','.join(str(m.get(c, '')) for c in cols) + '\n')
                     f.flush()
                     if m['largestFreeMB'] < 200:
                         self.log({'kind': 'low-address-space', 'largestFreeMB': m['largestFreeMB'], 'freeMB': m['freeMB']})
