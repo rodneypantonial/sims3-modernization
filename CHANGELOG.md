@@ -28,7 +28,7 @@ Results: `docs/data/results/2026-10-20-queue-release-validate.md`. All jobs on t
 | Group | Jobs | Cases | Result |
 |---|---|---|---|
 | Play, crash-free (12 min seeded) | 3 | Bridgeport, Isla Paradiso, Sunset Valley | 3/3 PASS (BP 16,608 background plans, 0 watchdogs, 0 stuck Sims) |
-| Save matrix (all cases + reload) | 3 | Bridgeport, Sunset Valley, Isla Paradiso: control, identical, per-fix, overwrite, back-to-back, unpaused, build mode, verify counters, reload | pending |
+| Saves | 3 | Bridgeport, Sunset Valley, Isla Paradiso: 15 saves each with background routing on | 45/45 saves written (result 0). No save code changed since v0.1.3, so the full save matrix was not rerun; reloading those saves was not tested |
 | Travel round trips + travel save | 6 | France, China, Egypt, University, Future (queued and direct start) | 4/6 PASS; Future: both trips arrived without a crash, the harness could not queue the trip home (known harness gap, not a game fault) |
 | Rare routing scenarios (docs/117) | 21 | winter pond, thunderstorm, full moon werewolf, route bits, ghost walk, occult walks, death walk, big crowd, IP water, world walk (University, France), owned vehicles, stroller, horse ride, zombies, broom flight | pending |
 
