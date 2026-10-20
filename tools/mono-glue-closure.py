@@ -900,6 +900,7 @@ def main():
     ap.add_argument("--csv", default=os.path.join(REPO, "docs", "data", "mono-glue-closure.csv"))
     ap.add_argument("--races", default=os.path.join(REPO, "docs", "data", "mono-glue-races.csv"))
     ap.add_argument("--summary", default=None)
+    ap.add_argument("--sites", default=None, help="also write one row per indirect site (docs/133: docs/data/mono-glue-sites.csv)")
     ap.add_argument("--self-check", action="store_true")
     ap.add_argument("--no-typing", action="store_true", help="no caller-side receiver typing (compare with docs/131 v1)")
     a = ap.parse_args()
@@ -1025,6 +1026,15 @@ def main():
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
+    if a.sites:  # docs/133: one row per indirect site, columns as docs/data/routing-indirect-sites.csv (indirect-live-vs-static.ts reads it)
+        with open(a.sites, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["site", "caller", "kind", "slot offset", "targets", "status", "note"])
+            for fn in sorted(hop):
+                for (s, _, kind, status, basis, tg, api) in sorted(sites.get(fn, [])):
+                    tgs = ";".join("0x%06X %s" % (t, names.get(t, "")) if names.get(t) else "0x%06X" % t for t in sorted(tg))
+                    w.writerow(["0x%06X" % s, "0x%06X %s" % (fn, names.get(fn, "FUN_%x" % fn)), kind, "",
+                                api or tgs, status, "[%s] | hop %d; groups %s" % (basis, hop[fn], grp(fn))])
 
     # ---- coverage per root group
     for g in "abc":

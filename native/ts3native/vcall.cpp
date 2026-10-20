@@ -16,10 +16,13 @@
 // Threads=1 (docs/109 §8.8): each pair also counts its hits by thread class (job = route worker inside a plan, worker =
 // route worker between plans, sim, other; logged as " thr=job:N,worker:N,sim:N,other:N"), and only job hits spend the
 // PerWindow budget; other hits disarm the site after VC_OTHER_MUL x PerWindow. Build with /DTS3N_VCSITES3 for the
-// four-site table of probe pass 3 (vcallsites3.h).
+// four-site table of probe pass 3 (vcallsites3.h), with /DTS3N_VCSITES4 for the docs/133 table of the docs/131 Mono glue sites
+// that are unresolved, partial or caller-typed (vcallsites4.h, tools/snap-vcall-sites.py --only-sites).
 struct VcSiteDef { DWORD addr; u8 len; u8 bytes[7]; };
-#ifdef TS3N_VCSITES3
+#if defined(TS3N_VCSITES3)
 #include "vcallsites3.h"
+#elif defined(TS3N_VCSITES4)
+#include "vcallsites4.h"
 #else
 #include "vcallsites.h"
 #endif

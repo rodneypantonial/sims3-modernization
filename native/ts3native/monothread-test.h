@@ -1,6 +1,8 @@
 // TestMonoThreadM5 (monothread-m5.cpp: P3 gated GC lock, P4 frame TLS blocks, worker entry; docs/30 §14). Included by
 // selftest.cpp after TestMonoThread, whose fake GC thread table (g_mtFakeTab, MtFakeNewThread) it reuses.
 
+#include <setjmp.h>
+
 // fake free list, popped and pushed with a gap so two unlocked threads would race
 struct MtNode { MtNode* next; volatile LONG owner; };
 static MtNode g_mtNodes[64];
@@ -36,6 +38,65 @@ static void* __stdcall MtFakeGrow(int n) {
     }
     return (void*)((uintptr_t)last | 1);
 }
+// I-120-8 fakes: a hooked entry left by longjmp while locked (as GC_oom_fn -> 0xE53740), and a hooked outer entry that
+// catches it inside its own frame and then returns normally
+typedef void(__cdecl* MtJumpFn)(jmp_buf*);
+typedef int(__cdecl* MtOuterFn)(int);
+static MtJumpFn g_mtHJump;
+static MtOuterFn g_mtHOuter;
+static void __cdecl MtFakeJump(jmp_buf* jb) { longjmp(*jb, 1); }
+#pragma warning(push)
+#pragma warning(disable : 4611)  // setjmp with C++: no objects with destructors here
+static int __cdecl MtFakeOuter(int v) {
+    jmp_buf jb;
+    if (!setjmp(jb)) g_mtHJump(&jb);
+    return v + 1;
+}
+static int MtJumpOut() {
+    jmp_buf jb;
+    if (!setjmp(jb)) g_mtHJump(&jb);
+    return 1;
+}
+#pragma warning(pop)
+static DWORD WINAPI MtOtherLocked(void*) {
+    void* n = g_mtHAlloc(8);
+    if (n) g_mtHFree((MtNode*)n);
+    return n ? 0 : 1;
+}
+// GC_oom_fn wrapper fakes (docs/120 §10.5): hooked outer -> hooked inner -> call [slot] (as GC_malloc ->
+// GC_generic_malloc -> GC_oom_fn); the fake Mono handler checks the lock is free for another thread, then longjmps
+// (interpreter context) or returns NULL (none)
+static DWORD g_mtOomFakeSlot;
+static jmp_buf* g_mtOomJb;
+static LONG g_mtOomOther = -1;  // other thread's result inside the handler: 0 = got the lock
+typedef void*(__cdecl* MtOomCallFn)(size_t);
+static MtOomCallFn g_mtHOomInner, g_mtHOomOuter;
+static void* __cdecl MtFakeOomInner(size_t n) { return ((MtOomFn)(uintptr_t)g_mtOomFakeSlot)(n); }
+static volatile LONG g_mtOomOuterBack;
+static void* __cdecl MtFakeOomOuter(size_t n) {  // not a tail call: a real nested frame, as GC_malloc -> GC_generic_malloc
+    void* r = g_mtHOomInner(n);
+    g_mtOomOuterBack++;
+    return r;
+}
+static void* __cdecl MtFakeMonoOom(size_t) {
+    HANDLE ot = CreateThread(NULL, 0, MtOtherLocked, NULL, 0, NULL);  // no further call on this thread before it finishes
+    DWORD rc = 9;
+    if (WaitForSingleObject(ot, 5000) == WAIT_OBJECT_0) GetExitCodeThread(ot, &rc);
+    CloseHandle(ot);
+    g_mtOomOther = (LONG)rc;
+    if (g_mtOomJb) longjmp(*g_mtOomJb, 1);
+    return NULL;
+}
+#pragma warning(push)
+#pragma warning(disable : 4611)
+static int MtOomJumpOut() {
+    jmp_buf jb;
+    g_mtOomJb = &jb;
+    if (!setjmp(jb)) g_mtHOomOuter(16);
+    g_mtOomJb = NULL;
+    return 1;
+}
+#pragma warning(pop)
 static volatile LONG g_mtDup, g_mtNull;
 static void MtHammer(int iters) {
     const LONG me = (LONG)GetCurrentThreadId();
@@ -156,25 +217,34 @@ static void MtWaitFor(volatile LONG* v, LONG want) {
 static void TestMonoThreadM5() {
     Ts3nMtProbe& m = ts3native_mtprobe;
     static_assert(offsetof(Ts3nMtProbe, locking) == 0x0C && offsetof(Ts3nMtProbe, p4Ready) == 0x30 &&
-                  offsetof(Ts3nMtProbe, seq) == 0x64 && offsetof(Ts3nMtProbe, arenaRelNonEmpty) == 0x6C && sizeof(Ts3nMtProbe) == 0x84,
-                  "ts3native_mtprobe v2 layout (docs/registry.md)");
-    assert(m.version == 2 && m.locking == 0);
+                  offsetof(Ts3nMtProbe, seq) == 0x64 && offsetof(Ts3nMtProbe, arenaRelNonEmpty) == 0x6C && offsetof(Ts3nMtProbe, lockStale) == 0x84 &&
+                  offsetof(Ts3nMtProbe, lockOomReleased) == 0x88 && sizeof(Ts3nMtProbe) == 0x8C,
+                  "ts3native_mtprobe v4 layout (docs/registry.md)");
+    assert(m.version == 4 && m.locking == 0);
     MtLockInit();
     const DWORD me = GetCurrentThreadId();
 
     // --- P3: three fake GC entries (cdecl alloc, cdecl free, stdcall nested grow) behind generated stubs ---
     u8* code = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    MtSite sites[3] = {{(DWORD)(uintptr_t)MtMakeFake(code, (const void*)MtFakeAlloc), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
+    MtSite sites[7] = {{(DWORD)(uintptr_t)MtMakeFake(code, (const void*)MtFakeAlloc), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
                        {(DWORD)(uintptr_t)MtMakeFake(code + 16, (const void*)MtFakeFree), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
-                       {(DWORD)(uintptr_t)MtMakeFake(code + 32, (const void*)MtFakeGrow), 5, {0x90, 0x90, 0x90, 0x90, 0x90}}};
+                       {(DWORD)(uintptr_t)MtMakeFake(code + 32, (const void*)MtFakeGrow), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
+                       {(DWORD)(uintptr_t)MtMakeFake(code + 48, (const void*)MtFakeJump), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
+                       {(DWORD)(uintptr_t)MtMakeFake(code + 64, (const void*)MtFakeOuter), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
+                       {(DWORD)(uintptr_t)MtMakeFake(code + 80, (const void*)MtFakeOomInner), 5, {0x90, 0x90, 0x90, 0x90, 0x90}},
+                       {(DWORD)(uintptr_t)MtMakeFake(code + 96, (const void*)MtFakeOomOuter), 5, {0x90, 0x90, 0x90, 0x90, 0x90}}};
     MtSite bad = sites[0];
     bad.bytes[2] = 0xCC;
     MtSite two[2] = {sites[0], bad};
     assert(MtInstallLockSites(two, 2) == 0 && code[0] == 0x90);  // one prologue differs: nothing written
-    assert(MtInstallLockSites(sites, 3) == 3 && code[0] == 0xE9 && code[16] == 0xE9 && code[32] == 0xE9);
+    assert(MtInstallLockSites(sites, 7) == 7 && code[0] == 0xE9 && code[16] == 0xE9 && code[32] == 0xE9);
     g_mtHAlloc = (MtAllocFn)(uintptr_t)sites[0].addr;
     g_mtHFree = (MtFreeFn)(uintptr_t)sites[1].addr;
     g_mtHGrow = (MtGrowFn)(uintptr_t)sites[2].addr;
+    g_mtHJump = (MtJumpFn)(uintptr_t)sites[3].addr;
+    g_mtHOuter = (MtOuterFn)(uintptr_t)sites[4].addr;
+    g_mtHOomInner = (MtOomCallFn)(uintptr_t)sites[5].addr;
+    g_mtHOomOuter = (MtOomCallFn)(uintptr_t)sites[6].addr;
     MtResetList();
     // gate 0: the stub runs the original, no lock taken
     void* p = g_mtHAlloc(8);
@@ -225,6 +295,46 @@ static void TestMonoThreadM5() {
     g_mtFinFakeLim = 0;
     assert(MtInvokeFinalizersC() == 1 && g_mtFinFakeQ == 0 && g_mtFinFakeAcc == 48 && m.finRuns == 3);
     assert(MtInvokeFinalizersC() == 0 && m.finRuns == 3);
+
+    // --- I-120-8 (docs/120 §10): a locked hook frame left by longjmp; the next hooked enter/exit drops it ---
+    {
+        assert(MtJumpOut() == 1 && g_mtDepth == 1 && g_mtLock.RecursionCount == 1 && m.lockStale == 0);  // leaked as before the fix
+        void* q = g_mtHAlloc(8);  // enter path: the stale entry is dropped, this call returns to us
+        assert(q == &g_mtNodes[0] && g_mtDepth == 0 && m.lockStale == 1 && g_mtLock.RecursionCount == 0 && !g_mtLock.OwningThread);
+        g_mtHFree((MtNode*)q);
+        HANDLE ot = CreateThread(NULL, 0, MtOtherLocked, NULL, 0, NULL);  // the lock is free for another thread
+        assert(WaitForSingleObject(ot, 5000) == WAIT_OBJECT_0);
+        DWORD orc = 9;
+        GetExitCodeThread(ot, &orc);
+        CloseHandle(ot);
+        assert(orc == 0);
+        // exit path: the inner frame jumps back into the outer hooked frame, which returns through the thunk
+        assert(g_mtHOuter(41) == 42 && g_mtDepth == 0 && m.lockStale == 2 && g_mtLock.RecursionCount == 0 && MtListLen() == 64);
+        printf("mono thread M5: I-120-8 longjmp out of a locked hook: stale entries dropped on enter and exit (%ld), lock free\n", m.lockStale);
+    }
+
+    // --- GC_oom_fn wrapper (docs/120 §10.5): the lock is free during the OOM call, before any further call on this thread ---
+    {
+        g_mtOomFakeSlot = 0x1234;
+        assert(!MtWrapOom(&g_mtOomFakeSlot, (DWORD)(uintptr_t)MtFakeMonoOom) && g_mtOomFakeSlot == 0x1234);  // someone else's handler: left alone
+        g_mtOomFakeSlot = (DWORD)(uintptr_t)MtFakeMonoOom;
+        assert(MtWrapOom(&g_mtOomFakeSlot, (DWORD)(uintptr_t)MtFakeMonoOom) && g_mtOomFakeSlot == (DWORD)(uintptr_t)MtOomWrap);
+        const LONG st = m.lockStale;
+        // not the owner: pass-through, nothing released
+        assert(((MtOomFn)(uintptr_t)g_mtOomFakeSlot)(8) == NULL && g_mtOomOther == 0 && m.lockOomReleased == 0);
+        // longjmp path (interpreter context): 2 locked frames released before the handler, the other thread got the lock in it
+        g_mtOomOther = -1;
+        assert(MtOomJumpOut() == 1 && g_mtOomOther == 0 && m.lockOomReleased == 2 && m.lockStale == st && g_mtOomOuterBack == 0);
+        assert(g_mtDepth == 0 && g_mtLock.RecursionCount == 0 && !g_mtLock.OwningThread);
+        // return path (no context): entries taken back, both frames return through their thunks
+        g_mtOomOther = -1;
+        assert(g_mtHOomOuter(16) == NULL && g_mtOomOther == 0 && m.lockOomReleased == 4 && m.lockStale == st && g_mtOomOuterBack == 1);
+        assert(g_mtDepth == 0 && g_mtLock.RecursionCount == 0 && !g_mtLock.OwningThread && MtListLen() == 64);
+        void* q = g_mtHAlloc(8);  // later locked calls on this thread still return right
+        assert(q == &g_mtNodes[0] && g_mtDepth == 0 && m.lockStale == st);
+        g_mtHFree((MtNode*)q);
+        printf("mono thread M5: GC_oom_fn wrapper: lock free for another thread inside the OOM call (longjmp and return paths), %ld entries released\n", m.lockOomReleased);
+    }
     m.locking = 0;
 
     // --- P4: the three blocks, copied with their game bytes and patched, run on fake frames ---

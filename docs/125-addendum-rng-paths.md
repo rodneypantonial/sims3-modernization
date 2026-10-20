@@ -49,6 +49,12 @@ No path reaches `System.Random` [verified: tool]. Static constructors are a resi
 3. **Posture list guard:** at the request, read `actor.Posture.Interactions` on the sim thread (fills it as the game would). On the worker, abort when the posture's list is still null (new hook on `Posture.get_Interactions`, `OnWorker()` only). This also removes the Mode W off-thread write.
 4. Count draws inside the reference that happen while a hook's `Orig` runs (`rngRefHooked`), so G-A3 shows whether 1 is needed before it is built.
 
+### 4.1 Built (2026-10-20, offline only, ts3native 0.36.5, contract Version 4)
+
+- **1 + 4:** IC `AutShadowNative.RngPause(on)` (native `AsIcRngPause`): only inside the reference on the sim thread; the outermost open saves the host MT, seeds it with a scratch seed (`AsRngSeed(cut, 0x7FFFFFFF)`), the close puts it back; nested brackets count; a pending unit is not started by a bracketed draw (its stream starts at its first real draw). ts3fixes brackets the four `LocalizeString` hooks and `IsAllowedInRoom` when `sInRef`. Counters `ts3native_autshadow` v4 `rngPause` / `rngPauseDraws` (the `rngRefHooked` of item 4). Selftests: ts3native T5 (a bracketed draw before a unit's first draw and a nested one mid-unit, unit draws still equal to the worker's); monohost G-A2 now makes a bracketed reference-only draw in every RNG object (1,632 brackets) and stays A0 10000 of 10000.
+- **2:** `PreWarm` at the request (sim thread, after the rows): `IsAllowedInRoom(lot, 0)` for the actor's current lot and every request lot.
+- **3:** `PreWarm` reads `Posture.Interactions` along the actor's posture chain (up to 8); worker hook `AutPostureHook` on `Posture.get_Interactions`: a filled list is returned, a null one aborts with the new reason `posture` (21) and answers an empty list. No off-thread `TryPopulateInteractionList` any more (Mode W write removed).
+
 ## Reproduce
 
 ```sh

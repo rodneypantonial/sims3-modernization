@@ -83,16 +83,35 @@ struct Ts3nAutShadow {
     LONG waitTicks;       // +0x130, Simulate ticks spent waiting for a stopped worker to leave its job
     LONG unguarded;       // +0x134, reserved: worker reached an IC with no thunk (not wired yet, stays 0)
     LONG workerClassInit; // +0x138, reserved: class init on the worker (not wired yet, stays 0)
+    // v3: mono ledger probe (autledger.cpp, [AutShadow] Ledger=1; docs/51 I-121-5/7/9/12, I-120-4, I-119-44)
+    LONG lgOn;            // +0x13C, bit 0 Ledger=1, 1 a Simulate tick counted, 2 a scope opened, 3 a frame chain read, 4 a task id read
+    LONG lgTicks;         // +0x140, MonoScriptHost_Simulate entries counted
+    LONG lgTrackTicks;    // +0x144, of those, ticks that found EA memory tracking [0x11DC18C] != 0
+    LONG lgTrackLast;     // +0x148, last non-zero [0x11DC18C] (0 = never)
+    LONG lgScopes;        // +0x14C, meta scopes opened (game B13 calls through ts3fixes' MetaHook)
+    LONG lgScopeUs;       // +0x150, wall time inside scopes (sum, us; includes ticks a yielded B13 slept)
+    LONG lgScopeFull;     // +0x154, opens refused (8 tasks already in scope) or leaves with no open scope
+    LONG lgIn[4];         // +0x158, in-scope calls: 0 Random_NextDoubleImpl, 1 Slots_GetPositionOfSlotImpl, 2 Query_GetObjects, 3 Query_GetObjectsInRange
+    LONG lgOut[4];        // +0x168, the same outside every scope (any thread)
+    LONG lgSlotIds;       // +0x178, distinct object ids of in-scope slot position calls (saturates at 64)
+    LONG lgSleep[8];      // +0x17C, Sleep probe: Sleep(0) resumes 0/1/2/3+ ticks later, then the same for Sleep(1)
+    LONG lgDropped;       // +0x19C, in-scope calls whose class or caller record did not fit
+    LONG lgCls[16][3];    // +0x1A0, in-scope query classes: {watch 2|3, MonoClass*, calls}
+    LONG lgCall[32][10];  // +0x260, in-scope callers: {watch, calls, MonoMethod* of interpreter frames 0..7, innermost first}
+    // v4: mod guards and docs/125 addendum / docs/127 (abort reasons 20+, reference RNG pause brackets)
+    LONG abort2[2];       // +0x760, abort reasons AS_AB_RAIN (20, H11, docs/127 §4), AS_AB_POSTURE (21, null posture list)
+    LONG rngPause;        // +0x768, RngPause brackets opened in the reference (hooked calls draw from a scratch stream)
+    LONG rngPauseDraws;   // +0x76C, reference draws inside a bracket (would have been one-sided on the unit stream)
 };
-extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {2};
+extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {4};
 
-enum { AO_OBJ, AO_LIST, AO_CUT, AO_WORLD, AO_MEMO, AO_STUB, AO_ABORT };
+enum { AO_OBJ, AO_LIST, AO_CUT, AO_WORLD, AO_MEMO, AO_STUB, AO_ABORT, AO_RNG };  // AO_RNG: per-unit MT streams (docs/125 §2)
 enum { AK_INT, AK_FP, AK_STRUCT, AK_REF, AK_ARRAY };
 enum { AS_AB_ROW, AS_AB_POS, AS_AB_MEMO, AS_AB_RNG, AS_AB_SLOTPOS, AS_AB_ATTACH, AS_AB_QUERY, AS_AB_IC, AS_AB_SF,
        AS_AB_PRIVACY, AS_AB_ROOMCACHE, AS_AB_SIMSTALE, AS_AB_EXC, AS_AB_STOP, AS_AB_FMT, AS_AB_DESIREFN, AS_AB_PUNISH,
-       AS_AB_REF, AS_AB_LIST, AS_AB_OTHER, AS_AB_N };
+       AS_AB_REF, AS_AB_LIST, AS_AB_OTHER, AS_AB_RAIN, AS_AB_POSTURE, AS_AB_N };
 static const char* const kAsAbortName[AS_AB_N] = {"row", "pos", "memo", "rng", "slotpos", "attach", "query", "ic", "sf",
-    "privacy", "roomcache", "simstale", "exc", "stop", "fmt", "desirefn", "punish", "ref", "list", "other"};
+    "privacy", "roomcache", "simstale", "exc", "stop", "fmt", "desirefn", "punish", "ref", "list", "other", "rain", "posture"};
 
 // One row per IC of docs/122 §3.2. nArg = stack dwords after the hidden result pointer (struct kinds); sz = INT width in
 // bytes or struct size; at = the key dword where the owner id (u64) starts; strMask = input dwords that are MonoString*
@@ -145,10 +164,12 @@ static const AsDesc kAsDesc[] = {
     AS_D("ScriptCore.LocalizedStringService::LocalizedStringService_GetLocalizedStringByString", AO_STUB, AK_REF, 1, 4, 0, AS_AB_REF),
     AS_D("Sims3.UI.LocalizedStringService::LocalizedStringService_GetLocalizedStringByString", AO_STUB, AK_REF, 1, 4, 0, AS_AB_REF),
     AS_D("ScriptCore.OnlineFeatures::OnlineFeaturesHost_GetPersonaName", AO_STUB, AK_REF, 0, 4, 0, AS_AB_REF),
-    AS_D("ScriptCore.Random::Random_NextDoubleImpl", AO_ABORT, AK_FP, 0, 8, 0, AS_AB_RNG),
-    AS_D("ScriptCore.Slots::Slots_GetPositionOfSlotImpl", AO_ABORT, AK_STRUCT, 5, 12, 0, AS_AB_SLOTPOS),
+    // docs/125: the RNG draws from per-unit streams; slot positions (handle, slot hash, age/gender/species, exit) and
+    // Query_GetObjects(Type) are learned keys re-asked at every cut through the game's body (AO_CUT: no event needed)
+    AS_D("ScriptCore.Random::Random_NextDoubleImpl", AO_RNG, AK_FP, 0, 8, 0, AS_AB_RNG),
+    AS_D("ScriptCore.Slots::Slots_GetPositionOfSlotImpl", AO_CUT, AK_STRUCT, 5, 12, 0, AS_AB_SLOTPOS),
     AS_D("ScriptCore.Slots::Slots_CanAttachToSlotImpl", AO_ABORT, AK_INT, 7, 4, 0, AS_AB_ATTACH),
-    AS_D("ScriptCore.Queries::Query_GetObjects", AO_ABORT, AK_ARRAY, 1, 4, 0, AS_AB_QUERY),
+    AS_D("ScriptCore.Queries::Query_GetObjects", AO_CUT, AK_ARRAY, 1, 4, 0, AS_AB_QUERY),
 };
 static const int AS_NDESC = sizeof(kAsDesc) / sizeof(kAsDesc[0]);
 
@@ -187,7 +208,7 @@ static int AsKindOfName(const char* name) {
 static void AsAbort(int reason, DWORD idx) {
     Ts3nAutShadow& k = ts3native_autshadow;
     InterlockedIncrement(&k.abortTotal);
-    InterlockedIncrement(&k.abort[reason]);
+    InterlockedIncrement(reason < 20 ? &k.abort[reason] : &k.abort2[reason - 20]);
     InterlockedCompareExchange(&g_asAbortReason, reason, -1);
     if (InterlockedIncrement(&g_asLogged) <= 64)
         Log("autshadow abort %s at %s", kAsAbortName[reason], idx < (DWORD)g_asIcN && g_asName[idx] ? g_asName[idx] : "-");
@@ -201,6 +222,7 @@ void AsResetAbort() { InterlockedExchange(&g_asAbortReason, -1); }
 
 // ---- answer tables ----
 static const int AS_CAP = 1024, AS_IDX = 2048, AS_POOL = 8192, AS_KEY = 8;
+static const LONG AS_QUERY_MAX = 256;  // Query_GetObjects answers kept up to this length (docs/125 §4)
 enum { AE_LEARNED = 1, AE_FRESH = 2, AE_NOPAY = 4, AE_STALE = 8 };
 struct AsEnt {
     WORD ic; u8 nKey; u8 flags;
@@ -353,6 +375,7 @@ static void AsRefresh(int idx, AsEnt& e, DWORD* pool, LONG* poolN) {
     if (d.kind == AK_ARRAY && r.lo) {  // MonoArray {vtable, sync, max_length, bounds, data at +16} [verified in monohost, docs/122 §14.4]
         const DWORD* arr = (const DWORD*)(uintptr_t)r.lo;
         const LONG len = (LONG)arr[2];
+        if (d.reason == AS_AB_QUERY && len > AS_QUERY_MAX) { e.flags |= AE_NOPAY; return; }  // world-wide type: abort query
         if (len < 0 || *poolN + 2 + len > AS_POOL) { e.flags |= AE_NOPAY; ts3native_autshadow.full++; return; }
         e.pay = *poolN, e.payN = 2 + len;
         pool[*poolN] = arr[0], pool[*poolN + 1] = (DWORD)len;
@@ -453,6 +476,8 @@ static void AsLearn(DWORD idx, const DWORD* key, int n) {
 void AsWorkerBegin() { InterlockedExchange(&g_asHeld, g_asPub); InterlockedExchange(&g_asStop, 0); }
 void AsWorkerEnd() { InterlockedExchange(&g_asHeld, -1); }
 
+static int AsRngWorker(DWORD idx, AsRet* r);  // autshadow-run.cpp (docs/125 §2)
+
 // returns 1 when the answer is on the x87 stack (r->f)
 static int AsWorkerAnswer(DWORD idx, DWORD* args, AsRet* r) {
     Ts3nAutShadow& k = ts3native_autshadow;
@@ -464,6 +489,7 @@ static int AsWorkerAnswer(DWORD idx, DWORD* args, AsRet* r) {
     if (g_asStop) { AsAbort(AS_AB_STOP, idx); return fp; }
     if (!d) { AsAbort(AS_AB_IC, idx); return fp; }
     if (d->owner == AO_ABORT) { AsAbort(d->reason, idx); return fp; }
+    if (d->owner == AO_RNG) return AsRngWorker(idx, r);
     if (d->owner == AO_STUB) {
         if (!g_asEmptyStr) AsAbort(AS_AB_REF, idx); else r->lo = (DWORD)(uintptr_t)g_asEmptyStr;
         return 0;
@@ -630,6 +656,7 @@ static bool AsSame(const AsDesc& d, const AsEnt& a, const DWORD* poolA, const As
 
 // add an object's parent entry when a learned key names an object we have no parent for (the dirty propagation needs it)
 static int g_asIcParent = -1;  // guard index of Slots_GetParentIdImpl
+static int g_asIcRng = -1;     // guard index of Random_NextDoubleImpl (the reference's draws, docs/125 §2)
 static void AsEnsureParent(AsU64 id) {
     const DWORD key[2] = {(DWORD)id, (DWORD)(id >> 32)};
     if (g_asIcParent >= 0 && AsFind(g_as->m, g_asIcParent, key, 2) < 0) AsInsert(g_asIcParent, key, 2, 0);
@@ -789,6 +816,7 @@ LONG AsCut() {
 }
 
 #include "autshadow-run.cpp"  // part 2: request, cut, reference, worker, window, AutShadowNative ICs (docs/122 §14)
+#include "autledger.cpp"      // mono ledger probe on the guard thunks ([AutShadow] Ledger=1, docs/51)
 
 // ---- install ----
 static bool AsIsName(const char* s, DWORD hi) {
@@ -821,7 +849,9 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
         if ((!all && !d) || g_asIcN >= AS_MAXIC) { k.guardSkipped++; continue; }
         const int idx = g_asIcN;
         u8* t = g_asThunks + idx * 10;
-        const void* entry = d && d->owner == AO_MEMO ? (void*)AsCallEntry : (void*)AsGuardEntry;
+        const int lw = AsLgWatchOf(s);  // Ledger=1: the four watched ICs count on the way through (autledger.cpp)
+        g_asLgWatch[idx] = (char)(lw + 1);
+        const void* entry = lw >= 0 ? (void*)AsLedgerEntry : d && d->owner == AO_MEMO ? (void*)AsCallEntry : (void*)AsGuardEntry;
         t[0] = 0x68, memcpy(t + 1, &idx, 4);
         t[5] = 0xE9;
         const LONG rel = (LONG)((DWORD)(uintptr_t)entry - ((DWORD)(uintptr_t)t + 10));
@@ -834,6 +864,7 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
         if (chained) k.guardChained++;
         if (d) k.descIcs++;
         if (d == &kAsDesc[0]) g_asIcParent = idx;
+        if (d && d->owner == AO_RNG) g_asIcRng = idx;
     }
     if (k.guardSlots) k.ready |= 1;
     return k.guardSlots;
@@ -852,6 +883,7 @@ static bool ApplyAutShadow(const wchar_t* ini) {
     wchar_t guard[16];
     GetPrivateProfileStringW(L"AutShadow", L"Guard", L"all", guard, 16, ini);
     g_asAudit = GetPrivateProfileIntW(L"AutShadow", L"Audit", 50, ini);
+    if (GetPrivateProfileIntW(L"AutShadow", L"Ledger", 0, ini)) g_asLedger = true, ts3native_autshadow.lgOn |= 1;
     const u8* base = (const u8*)GetModuleHandleW(NULL);
     const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
     const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
@@ -871,11 +903,11 @@ static bool ApplyAutShadow(const wchar_t* ini) {
     AsInstallRun(ini, (ts3native_counters.mtReady & 2) != 0);  // part 2 rides [MonoThread]'s Simulate slot stub
     const Ts3nAutShadow& k = ts3native_autshadow;
     Log("%s autonomy shadow: Guard=%ls, %ld IC slots guarded (%ld in front of routesnap's stubs, %ld left), %ld of %d "
-        "descriptor ICs, F2 %s, change tracking %s; Mode=%d (%s), Sample=%d, WarmIn=%d (docs/122 §13-§14)",
+        "descriptor ICs, F2 %s, change tracking %s; Mode=%d (%s), Sample=%d, WarmIn=%d, Ledger=%d (docs/122 §13-§14, docs/51 ledger probe)",
         k.guardSlots && g_asFmtTramp && g_snJmp[SN_WEV] && g_asMode >= 0 ? "OK  " : "PART", guard, k.guardSlots, k.guardChained,
         k.guardSkipped, k.descIcs, AS_NDESC, g_asFmtTramp ? "on" : "SKIPPED", g_snJmp[SN_WEV] ? "from routesnap's World_FireEvent detour" :
         "OFF ([RouteSnap] Count=0: every cut rebuilds in full)", g_asMode,
         g_asMode < 0 ? "no cut: needs [MonoThread] Enabled=1" : g_asMode == 0 ? "count only" : g_asMode == 1 ? "R: reference + worker" : "W: worker",
-        g_asSample, g_asWarmIn);
+        g_asSample, g_asWarmIn, g_asLedger ? 1 : 0);
     return true;
 }

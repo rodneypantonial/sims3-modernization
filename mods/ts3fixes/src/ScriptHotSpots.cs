@@ -129,6 +129,7 @@ namespace Ts3Fixes
         {
             public bool HoursHook(ref float openHour, ref float closingHour)
             {
+                if (OnWorker()) return HoursOrig(ref openHour, ref closingHour);  // docs/128 G-M3: no memo or stamp writes off the sim thread
                 if (!sHoursMemoReady || Paused() || !ShortcutOn("hoursmemo")) { sHours.Stamp.Reset(); return HoursOrig(ref openHour, ref closingHour); }
                 if (sHours.Stamp.Renew(Simulator.TicksElapsed(), null, System.Environment.TickCount)) sHours.Clear();
                 ulong id = ((Lot)(object)this).LotId;

@@ -86,6 +86,30 @@ namespace MonoHostTest
         {
             for (int i = 0; i < n; i++) { Finalizable f = new Finalizable(); f.Id = i; }
         }
+        // docs/128 G-M4 / G-M5 under the game's Mono: resolve the generated closure list (mods/ts3fixes/src/AutShadowLists.cs)
+        // in the loaded script assemblies, L3 each method, then the override census over non-game assemblies. monohost times it.
+        public static int SweepFound, SweepForeign, SweepAsms, CensusTypes;
+        static readonly string[] kGame = { "mscorlib", "System", "System.Xml", "ScriptCore", "SimIFace", "Sims3GameplaySystems",
+            "Sims3GameplayObjects", "Sims3Metadata", "Sims3StoreObjects", "UI" };
+        public static int GuardSweep()
+        {
+            System.Collections.Generic.List<System.Reflection.Assembly> game = new System.Collections.Generic.List<System.Reflection.Assembly>(), other = new System.Collections.Generic.List<System.Reflection.Assembly>();
+            foreach (System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+                (Array.IndexOf(kGame, a.GetName().Name) >= 0 ? game : other).Add(a);
+            SweepAsms = game.Count;
+            System.Collections.Generic.Dictionary<string, System.Reflection.MethodBase> got = Ts3Fixes.AutShadowCore.Resolve(game.ToArray(), Ts3Fixes.AutShadowLists.Methods);
+            int foreign = 0;
+            foreach (System.Reflection.MethodBase m in got.Values)
+                if (Marshal.ReadIntPtr(new IntPtr(m.MethodHandle.Value.ToInt32() + 8)) != Marshal.ReadIntPtr(m.DeclaringType.TypeHandle.Value)) foreign++;
+            SweepFound = got.Count; SweepForeign = foreign;
+            System.Collections.Generic.List<Type> types = new System.Collections.Generic.List<Type>();
+            foreach (System.Reflection.Assembly a in other) types.AddRange(a.GetTypes());
+            bool[] hit = new bool[Ts3Fixes.AutShadowLists.Slots.Length];
+            CensusTypes = Ts3Fixes.AutShadowCore.OverrideCensus(types.ToArray(), delegate(Type t) { return t != null && other.Contains(t.Assembly); },
+                Ts3Fixes.AutShadowLists.Slots, hit, null);
+            return got.Count;
+        }
+        public static int GetSweep(int what) { return what == 0 ? SweepFound : what == 1 ? SweepForeign : what == 2 ? SweepAsms : what == 3 ? CensusTypes : Ts3Fixes.AutShadowLists.Methods.Length; }
         public static int FinalizedCount() { return Finalizable.Finalized; }
         public static int Collections() { return GC.CollectionCount(0); }
 
@@ -246,7 +270,8 @@ namespace MonoHostTest
             return 1;
         }
 
-        public static void Reference() { if (sReq != null) Score(sReq, sRef, sRefCode); }
+        static bool sInRef;
+        public static void Reference() { if (sReq == null) return; sInRef = true; try { Score(sReq, sRef, sRefCode); } finally { sInRef = false; } }
         public static void Work()
         {
             if (sReq == null) return;
@@ -261,6 +286,7 @@ namespace MonoHostTest
             for (int i = 0; i < ids.Length; i++)
             {
                 if (AutShadowNative.Stopped()) return;
+                AutShadowNative.RngUnit(i);  // docs/125: each object draws from its own stream
                 AutShadowNative.ResetAbort();
                 float sc = 0;
                 try
@@ -276,6 +302,8 @@ namespace MonoHostTest
                     sc = p.x * 0.5f + p.z * 0.25f + AsIc.World_GetSunriseTime() + loc.mX + loc.mZ * 2 + loc.mRoom + (float)(lot & 0xFFFF)
                         + (a == null ? -1 : a.Length) + sum + (key == null ? -7 : key.Length * 3 + key[0]) + (money == null ? -3 : money.Length);
                     Node garbage = new Node(); garbage.Kids = new Node[3]; garbage.Tag = "g" + i;  // allocation on both threads
+                    // docs/125 addendum §4.1: a reference-only draw (a hooked call) in a bracket leaves the unit stream alone
+                    if (sInRef && i % 7 == 0) { AutShadowNative.RngPause(1); AsIc.Random_NextDoubleImpl(); AutShadowNative.RngPause(0); }
                     if (i % 7 == 0) sc += (float)AsIc.Random_NextDoubleImpl();
                 }
                 catch (Exception) { code[i] = 3 + 12; score[i] = 0; AutShadowNative.ResetAbort(); continue; }
@@ -317,7 +345,7 @@ namespace MonoHostTest
             for (int i = 0; i < kObjects; i++) ids[i] = 0x500000000UL + (ulong)(i + 1);
             Score(ids, s, c);
             int bad = 0;
-            for (int i = 0; i < kObjects; i++) if (c[i] != 0 || s[i] != sRef[i]) bad++;
+            for (int i = 0; i < kObjects; i++) if (c[i] != 0 || (i % 7 != 0 && s[i] != sRef[i])) bad++;  // i % 7: live RNG draws
             MainBad += bad;
             return bad;
         }
@@ -356,5 +384,7 @@ namespace Ts3Fixes
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void SetMethods(IntPtr finish, IntPtr reference, IntPtr work);
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void SetRefs(string empty, Exception fmtException);
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Log(string jsonLine);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void RngUnit(int unit);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void RngPause(int on);
     }
 }

@@ -1,0 +1,117 @@
+[
+  {
+    "id": "bp-mt-p4-tls",
+    "note": "1/6 Mono night (quiet overnight run, clean-night rules: read the machine load line; other CPU >= 10% or a clock drop = timing not valid, correctness still counts). asi mono0366 = ts3native 0.36.6 (Mono integration: ledger probe, docs/125 ICs, G-M1..G-M5, H11, P3 OOM fixes I-120-8 + GC_oom_fn wrapper; mtprobe v4, autshadow v4, contract 4). P4 TLS confirm, 5 min BP smoke, no worker: [MonoThread] Enabled=1 GcLock=1 FrameTls=1 Mode=0, everything else release defaults. PASS = 0 crashes, 0 watchdog lines; ts3native.log 'OK   mono thread P4: frame globals -> TLS a/b' with both indexes < 64 (reserved at load) and no 'SKIP mono thread P4' line; 'OK   mono thread P3: ... GC_oom_fn wrapped'; -native.json mtprobe version 4, p4Ready 15 (0xF), p3Sites 19, p3Ready bit 5 set, locking 0, lockedCalls 0, lockOverflow 0, lockStale 0, lockOomReleased 0, workerState 0. STOP the night on a crash, a P4 SKIP or p4Ready != 15 (every later job needs FrameTls): triage against 0.36.6 first (crash-cause-before-fix).",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.Mode": 0
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-mt-idle-worker",
+    "note": "2/6 Run only after bp-mt-p4-tls passed. Idle worker, 5 min BP: [MonoThread] Enabled=1 GcLock=1 FrameTls=1 Mode=1 (one worker registered with GC_new_thread under the lock, gate on while it runs; no managed jobs: [AutShadow] off). PASS = 0 crashes, no freeze, 0 watchdog lines; ts3native.log worker start line; mtprobe v4: workerState 2 (idle), workerStarts 1, workerTid != 0, workerJobs 0, workerCtxSet 0, workerStopFails 0, locking 1, lockedCalls > 0, lockOverflow 0, finRuns > 0, arenaRelNonEmpty reported (I-120-22 sample), lockStale 0, lockOomReleased 0 (non-zero = an OOM longjmp or unwind out of a locked hook happened: record it in docs/51 I-120-27..31, the fix worked if the game kept running). STOP the night on a crash or freeze (the lock is live from here on), or lockOverflow/workerCtxSet > 0.",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.Mode": 1
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-mono-ledger",
+    "note": "3/6 Mono ledger probe on 0.36.6 (closes docs/51 I-121-5, I-121-7, I-121-9, I-121-12, I-120-4, I-119-44; settings as tools/harness/queues/mono-ledger-probe.json). Measurement only, 10 min BP: [MonoThread] Enabled=1 Mode=0 (no GcLock/FrameTls: the frame walk reads the vanilla interpreter context), [AutShadow] Enabled=1 Guard=closure Mode=0 Ledger=1, ts3fixes switch autledger on for the window (autshadow off: no requests, no cuts). PASS = 0 crashes, 0 watchdog lines, result row 'mono ledger ok'; the per-item lines under the result table (mono-ledger-report.ts) go into docs/51. 'mono ledger INCOMPLETE' = read ts3fixes.applied 'AutLedger:' lines and the ts3native.log 'autonomy shadow' line (Ledger=1, Mode=0) first; that is a probe gap, not a stop. STOP only on a crash (Ledger=1 is the first in-game run of autledger.cpp).",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 0,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Guard": "closure",
+      "AutShadow.Mode": 0,
+      "AutShadow.Ledger": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "fixesOn": "autledger" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-autshadow-count",
+    "note": "4/6 [AutShadow] G-A3 count, Mode 0 = cut and count only, no worker, 5 min BP (settings as tools/harness/queues/autshadow-first.json). fixesOn autshadow switches the driver on for this job only. With simler90's core mod installed, G-M1 must accept it: ts3fixes.applied shows 'AutShadow: game assemblies = accepted set 1' (simler90 UPDATE242 SGS/SGO) and no 'AutShadow: off for the session ... MVIDs' line; also read the 'G-M4 sweep: N of 688' and 'G-M5' lines (counters [123]-[126]: 125 foreign swaps 0, 126 overriding types 0 on this install, 124 sweep time). PASS = 0 crashes, 0 watchdog lines; -native.json autshadow v4: mode 0, icRegistered 14, req > 0, cutReq == req, noWorker == cutReq, refRuns 0, auditMis[0] 0, cutMaxUs and cutUs/cutReq reported (target p95 0.3 ms), guardSim per s (<= 1 ms/s); patches autshadow_requests > 0, autshadow_guardskips 0, autshadow_exceptions 0; no 'autshadow abort' lines. STOP before Mode R if it crashes, or if autshadow_requests == 0 (read 'AutShadow:' lines in ts3fixes.applied first: MVID, contract version, L3, warm-up).",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 0,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 0,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "ip-autshadow-count",
+    "note": "5/6 Same as bp-autshadow-count on Isla Paradiso (more lots and Sims: the largest snapshot). Same asi, switch, G-M1 log check ('accepted set 1') and pass rule. STOP before Mode R on a crash or requests == 0.",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 0,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 0,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50
+    },
+    "run": { "profile": { "minutes": 5, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-autshadow-r",
+    "note": "6/6 Run only after jobs 2, 4 and 5 passed. [AutShadow] Mode 1 = R, gate G-A4, 10 min BP (settings as autshadow-first.json bp-autshadow-r): sim thread re-scores each sampled request at the cut (RNG saved/restored), the M5 worker scores it from the snapshot, ts3fixes compares bit for bit; [MonoThread] Mode=1 GcLock=1 FrameTls=1 ArenaFix=1 N2mPrivate=1. PASS = 0 crashes, no freeze; patches autshadow_a2 == 0 and autshadow_a3 == 0, autshadow_a1 0 or each record in autshadow.jsonl explained; autshadow_a4 < 20% of compared pairs; a5, overrun, epochDrops counted, not failures; -native.json autshadow v4: workRuns > 0, workExc 0, refExc 0, finishExc 0, abort.rain and abort.posture reported (posture 0 expected, I-182-5), rngPauseDraws reported (I-182-4); mtprobe v4: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0, n2mWorker > 0, lockStale/lockOomReleased reported. Report the compared-search count (G-A4 needs >= 2,000 per world over R runs). Any crash: stop and triage against 0.36.6.",
+    "asi": "game-copy/ts3native.asi.mono0366",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 72,
+    "ini": {
+      "RouteSnap.Enabled": 1,
+      "RouteSnap.Count": 1,
+      "MonoThread.Enabled": 1,
+      "MonoThread.Mode": 1,
+      "MonoThread.GcLock": 1,
+      "MonoThread.FrameTls": 1,
+      "MonoThread.ArenaFix": 1,
+      "MonoThread.N2mPrivate": 1,
+      "AutShadow.Enabled": 1,
+      "AutShadow.Mode": 1,
+      "AutShadow.Sample": 4,
+      "AutShadow.Audit": 50,
+      "AutShadow.DumpOnMismatch": 1
+    },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "fixesOn": "autshadow" } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  }
+]

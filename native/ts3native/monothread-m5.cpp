@@ -17,7 +17,7 @@
 // Counters (separate export so the routing lane's Ts3nCounters versions stay untouched; docs/registry.md "ts3native_mtprobe").
 struct Ts3nMtProbe {
     LONG version;            // +0x00, 1
-    LONG p3Ready;            // +0x04, bit 0 lock detours, 1 0xE4B3F0 replaced, 2 0xE4EC40 ret, 3 GC_add_roots left out (LockAddRoots=0), 4 arena fix
+    LONG p3Ready;            // +0x04, bit 0 lock detours, 1 0xE4B3F0 replaced, 2 0xE4EC40 ret, 3 GC_add_roots left out (LockAddRoots=0), 4 arena fix, 5 GC_oom_fn wrapped
     LONG p3Sites;            // +0x08, sites written (19 with everything)
     volatile LONG locking;   // +0x0C, the gate: 1 = hooks take the lock (set by the sim thread at a tick boundary)
     LONG lockedCalls;        // +0x10, hook entries that took the lock (any thread)
@@ -51,8 +51,12 @@ struct Ts3nMtProbe {
     LONG n2mWorker;          // +0x78, entries on the worker (private records)
     LONG n2mMaxDepth;        // +0x7C, deepest private record nesting
     LONG n2mOverflow;        // +0x80, tripwire: nesting past the private records (that call took the game's shared chain)
+    // v3: stale shadow entries (docs/120 §10, I-120-8)
+    LONG lockStale;          // +0x84, locked hook frames left without their exit (longjmp/unwind), dropped and their lock entry released
+    // v4: GC_oom_fn wrapper (docs/120 §10.5)
+    LONG lockOomReleased;    // +0x88, shadow entries (and lock recursions) the OOM thread released before calling 0xE78610
 };
-extern "C" __declspec(dllexport) Ts3nMtProbe ts3native_mtprobe = {2};
+extern "C" __declspec(dllexport) Ts3nMtProbe ts3native_mtprobe = {4};
 
 static const DWORD MT_COLLECT_A = 0x00E4A050, MT_COLLECT_B = 0x00E4A0B0;
 
@@ -88,6 +92,7 @@ static const u8 kMtMallocHeap[4] = {0x83, 0xEC, 0x20, 0x53};                    
 static CRITICAL_SECTION g_mtLock;
 static bool g_mtLockInit;
 static DWORD g_mtRet[64];   // callers' return addresses, guarded by g_mtLock (only its owner is inside a locked hook)
+static DWORD* g_mtSlot[64]; // each entry's return-slot address (caller's ESP at entry): frames nest, so outer slots are higher
 static LONG g_mtDepth;
 static void* g_mtTramp[17];
 void MtLockExitThunk();
@@ -120,9 +125,19 @@ static void MtLockTake() {
     if (us > m.lockMaxWaitUs) m.lockMaxWaitUs = us;
 }
 
+// A locked hook frame left by longjmp (GC_oom_fn -> 0xE53740, docs/120 §10) or any unwind never reaches the thunk: its
+// entry stays, and so does one recursion of g_mtLock. The owner drops such entries at its next hooked enter or exit.
+static void MtDropTop() {
+    g_mtDepth--;
+    ts3native_mtprobe.lockStale++;
+    LeaveCriticalSection(&g_mtLock);
+}
+
 // C side of a locked hook entry: no Log, no allocation (it can run inside GC and interpreter code).
 static void __cdecl MtLockEnter(DWORD site, DWORD* retSlot) {
     MtLockTake();
+    // any entry left is ours (we hold the lock); one at or below the new slot is a frame already unwound
+    while (g_mtDepth > 0 && g_mtSlot[g_mtDepth - 1] <= retSlot) MtDropTop();
     Ts3nMtProbe& m = ts3native_mtprobe;
     m.lockedCalls++;
     if (g_mtWorkerTid && GetCurrentThreadId() == g_mtWorkerTid) {
@@ -130,12 +145,16 @@ static void __cdecl MtLockEnter(DWORD site, DWORD* retSlot) {
         if (site == MT_COLLECT_A || site == MT_COLLECT_B) m.workerCollects++;
     }
     if (g_mtDepth >= 64) { m.lockOverflow++; LeaveCriticalSection(&g_mtLock); return; }
+    g_mtSlot[g_mtDepth] = retSlot;
     g_mtRet[g_mtDepth++] = *retSlot;
     if (g_mtDepth > m.lockMaxDepth) m.lockMaxDepth = g_mtDepth;
     *retSlot = (DWORD)(uintptr_t)MtLockExitThunk;
 }
 
-static DWORD __cdecl MtLockLeave() {
+// esp = the thunk's entry ESP (returning slot + 4 + any `ret N`): entries with a slot below it are the returning frame
+// (the lowest such) and, above it, frames unwound past it
+static DWORD __cdecl MtLockLeave(DWORD* esp) {
+    while (g_mtDepth > 1 && g_mtSlot[g_mtDepth - 2] < esp) MtDropTop();
     const DWORD r = g_mtRet[--g_mtDepth];
     LeaveCriticalSection(&g_mtLock);
     return r;
@@ -147,12 +166,54 @@ __declspec(naked) void MtLockExitThunk() {
         push 0
         pushad
         pushfd
+        lea eax, [esp + 40]
+        push eax
         call MtLockLeave
+        add esp, 4
         mov [esp + 36], eax
         popfd
         popad
         ret
     }
+}
+
+// GC_oom_fn [0x11949BC] wrapper (docs/120 §10.5). Boehm calls the slot cdecl(size) with no lock of its own (allocation
+// lock compiled out) from 0xE4BDAD, 0xE4AB81, 0xE4AD66, so the only lock held is ours. Mono's 0xE78610 raises the OOM
+// exception, which longjmps past every locked hook frame of this thread (none sits above the interpreter's setjmp,
+// docs/120 §10.1): release them all first so the other thread gets the lock now, not at our next hooked call. Without
+// an interpreter context 0xE78610 returns NULL instead and the hooked frames return through their thunks, so the
+// entries are taken back then (a call, not a tail jump). No SEH frame or destructor here: the longjmp crosses this frame.
+typedef void*(__cdecl* MtOomFn)(size_t);
+static const DWORD MT_OOM_SLOT = 0x011949BC, MT_OOM_MONO = 0x00E78610;
+static MtOomFn g_mtOomOrig;
+static void* __cdecl MtOomWrap(size_t n) {
+    DWORD ret[64];
+    DWORD* slot[64];
+    LONG k = 0;
+    if (g_mtLock.OwningThread == (HANDLE)(uintptr_t)GetCurrentThreadId()) {  // owner: every entry is this thread's
+        k = g_mtDepth;
+        memcpy(ret, g_mtRet, k * sizeof(DWORD));
+        memcpy(slot, g_mtSlot, k * sizeof(DWORD*));
+        ts3native_mtprobe.lockOomReleased += k;
+        g_mtDepth = 0;
+        for (LONG i = 0; i < k; i++) LeaveCriticalSection(&g_mtLock);  // C-side holds (MtLockC), if any, stay
+    }
+    void* r = g_mtOomOrig(n);
+    if (k) {  // returned (no longjmp): the frames are live again, put their entries back on top
+        MtLockTake();
+        for (LONG i = 1; i < k; i++) EnterCriticalSection(&g_mtLock);
+        memcpy(g_mtRet + g_mtDepth, ret, k * sizeof(DWORD));
+        memcpy(g_mtSlot + g_mtDepth, slot, k * sizeof(DWORD*));
+        g_mtDepth += k;
+    }
+    return r;
+}
+// Only over Mono's own handler (any other value = someone else hooked it: leave it). The selftest passes a fake slot.
+static bool MtWrapOom(DWORD* slot, DWORD expect) {
+    if (*slot != expect) return false;
+    g_mtOomOrig = (MtOomFn)(uintptr_t)expect;
+    const DWORD w = (DWORD)(uintptr_t)MtOomWrap;
+    return Write(slot, &w, 4);
 }
 
 // Lock for C code (finalizer pop, worker registration): only while the gate is set, as the hooks.
@@ -348,9 +409,10 @@ static void MtInstallP3(bool addRoots) {
     if (MtJmpTo(MT_FIN_INVOKE, (const void*)MtInvokeFinalizers, 5)) m.p3Ready |= 2, m.p3Sites++;
     const u8 ret = 0xC3;
     if (Write((void*)(uintptr_t)MT_MALLOC_HEAP, &ret, 1)) m.p3Ready |= 4, m.p3Sites++;
-    Log("OK   mono thread P3: %d lock detours%s, 0xE4B3F0 %s, 0xE4EC40 %s, arena fix %s (%ld pool duplicates dropped; gate 0 until a worker runs)",
+    if (MtWrapOom((DWORD*)(uintptr_t)MT_OOM_SLOT, MT_OOM_MONO)) m.p3Ready |= 32;  // data slot, not counted in p3Sites
+    Log("OK   mono thread P3: %d lock detours%s, 0xE4B3F0 %s, 0xE4EC40 %s, arena fix %s (%ld pool duplicates dropped), GC_oom_fn %s (gate 0 until a worker runs)",
         done, addRoots ? "" : " (GC_add_roots left out)", (m.p3Ready & 2) ? "replaced" : "NOT replaced", (m.p3Ready & 4) ? "ret" : "NOT patched",
-        (m.p3Ready & 16) ? "on" : "off", m.arenaDropped);
+        (m.p3Ready & 16) ? "on" : "off", m.arenaDropped, (m.p3Ready & 32) ? "wrapped" : "NOT wrapped (slot is not 0xE78610)");
 }
 
 // --- P4: interpreter frame globals to TLS ---

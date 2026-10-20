@@ -1,0 +1,124 @@
+[
+  {
+    "id": "sv-base-3",
+    "note": "Sunset Valley rerun (runs 3-4 per side): the first pair had high machine noise on both release runs (other apps 12.9%/17.8% of game CPUs) and NoStart sync plans of 0.9-1.25 s; Baseline side, run 1 of 2 on Sunset Valley: same asi, every section the release ini enables set Enabled=0 (GC, RouteAsync, SaveWrite, Decompress, WaterJps, RouteGate, Discourage, LotRemoveGuard, OptsInit), and every default-on ts3fixes switch off for the whole window (profile.fixesOff, read back by profile-world.ts). kWalkStyleComparer has no runtime switch and stays on (install-time patch, sort comparer only). Measures the game with the community stack (DXVK, S3SS, ...) and no fixes of ours, same 10 min seeded window (seed 12345, test_env on). ABBA order per world (base, rel, rel, base) cancels drift; tools/release-vs-baseline-report.ts averages the two runs per side. Pass: 0 crashes, 0 watchdog lines, a full 600 s profile window (seconds.csv ~600 rows), machine load ok (probe-out/queue/<tag>-*-machine.jsonl: other CPU < 10% on average and clock not below 80% of its first sample, noise low or medium; else rerun this job at a clean night, memory external-load-check). Timing is only valid from a clean-night run.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "ini": {
+      "GC.Enabled": 0,
+      "RouteAsync.Enabled": 0,
+      "SaveWrite.Enabled": 0,
+      "Decompress.Enabled": 0,
+      "WaterJps.Enabled": 0,
+      "RouteGate.Enabled": 0,
+      "Discourage.Enabled": 0,
+      "LotRemoveGuard.Enabled": 0,
+      "OptsInit.Enabled": 0
+    },
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,broadcast,virtualhome,failreplan,watchdog,watchdogidle,backoff,stations,portaladaptorleak,fastreftable,motivebar,buffgrid,namecache,overwatchstuck"
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-rel-3",
+    "note": "Sunset Valley rerun (runs 3-4 per side): the first pair had high machine noise on both release runs (other apps 12.9%/17.8% of game CPUs) and NoStart sync plans of 0.9-1.25 s; Release side, run 1 of 2 on Sunset Valley: ts3native 0.36.0 (v0.1.4) with the release ini as shipped (d6ff7a9; the enabled sections are pinned in ini so a later repo ini cannot change them) and ts3fixes with its shipped tuning (no switch overrides). Measures what v0.1.4 gives a player: sim iterations/s, hitches/min (>= 50 ms), p99 and worst iteration, sim-thread route ms/s over a 10 min seeded window (seed 12345, test_env on). ABBA order per world (base, rel, rel, base) cancels drift; tools/release-vs-baseline-report.ts averages the two runs per side. Pass: 0 crashes, 0 watchdog lines, a full 600 s profile window (seconds.csv ~600 rows), machine load ok (probe-out/queue/<tag>-*-machine.jsonl: other CPU < 10% on average and clock not below 80% of its first sample, noise low or medium; else rerun this job at a clean night, memory external-load-check). Timing is only valid from a clean-night run.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "ini": {
+      "GC.Enabled": 1,
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "SaveWrite.Enabled": 1,
+      "Decompress.Enabled": 1,
+      "WaterJps.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "Discourage.Mode": 1,
+      "LotRemoveGuard.Enabled": 1,
+      "OptsInit.Enabled": 1
+    },
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-rel-4",
+    "note": "Sunset Valley rerun (runs 3-4 per side): the first pair had high machine noise on both release runs (other apps 12.9%/17.8% of game CPUs) and NoStart sync plans of 0.9-1.25 s; Release side, run 2 of 2 on Sunset Valley: ts3native 0.36.0 (v0.1.4) with the release ini as shipped (d6ff7a9; the enabled sections are pinned in ini so a later repo ini cannot change them) and ts3fixes with its shipped tuning (no switch overrides). Measures what v0.1.4 gives a player: sim iterations/s, hitches/min (>= 50 ms), p99 and worst iteration, sim-thread route ms/s over a 10 min seeded window (seed 12345, test_env on). ABBA order per world (base, rel, rel, base) cancels drift; tools/release-vs-baseline-report.ts averages the two runs per side. Pass: 0 crashes, 0 watchdog lines, a full 600 s profile window (seconds.csv ~600 rows), machine load ok (probe-out/queue/<tag>-*-machine.jsonl: other CPU < 10% on average and clock not below 80% of its first sample, noise low or medium; else rerun this job at a clean night, memory external-load-check). Timing is only valid from a clean-night run.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "ini": {
+      "GC.Enabled": 1,
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "SaveWrite.Enabled": 1,
+      "Decompress.Enabled": 1,
+      "WaterJps.Enabled": 1,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "Discourage.Mode": 1,
+      "LotRemoveGuard.Enabled": 1,
+      "OptsInit.Enabled": 1
+    },
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-base-4",
+    "note": "Sunset Valley rerun (runs 3-4 per side): the first pair had high machine noise on both release runs (other apps 12.9%/17.8% of game CPUs) and NoStart sync plans of 0.9-1.25 s; Baseline side, run 2 of 2 on Sunset Valley: same asi, every section the release ini enables set Enabled=0 (GC, RouteAsync, SaveWrite, Decompress, WaterJps, RouteGate, Discourage, LotRemoveGuard, OptsInit), and every default-on ts3fixes switch off for the whole window (profile.fixesOff, read back by profile-world.ts). kWalkStyleComparer has no runtime switch and stays on (install-time patch, sort comparer only). Measures the game with the community stack (DXVK, S3SS, ...) and no fixes of ours, same 10 min seeded window (seed 12345, test_env on). ABBA order per world (base, rel, rel, base) cancels drift; tools/release-vs-baseline-report.ts averages the two runs per side. Pass: 0 crashes, 0 watchdog lines, a full 600 s profile window (seconds.csv ~600 rows), machine load ok (probe-out/queue/<tag>-*-machine.jsonl: other CPU < 10% on average and clock not below 80% of its first sample, noise low or medium; else rerun this job at a clean night, memory external-load-check). Timing is only valid from a clean-night run.",
+    "asi": "game-copy/ts3native.asi.rel0360",
+    "ini": {
+      "GC.Enabled": 0,
+      "RouteAsync.Enabled": 0,
+      "SaveWrite.Enabled": 0,
+      "Decompress.Enabled": 0,
+      "WaterJps.Enabled": 0,
+      "RouteGate.Enabled": 0,
+      "Discourage.Enabled": 0,
+      "LotRemoveGuard.Enabled": 0,
+      "OptsInit.Enabled": 0
+    },
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,broadcast,virtualhome,failreplan,watchdog,watchdogidle,backoff,stations,portaladaptorleak,fastreftable,motivebar,buffgrid,namecache,overwatchstuck"
+      }
+    },
+    "minCounters": 72,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

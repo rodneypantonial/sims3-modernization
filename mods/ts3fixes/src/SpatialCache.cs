@@ -42,6 +42,7 @@ namespace Ts3Fixes
 
             public static Array GetObjectsHook(Type type, ulong lotId)
             {
+                if (OnWorker()) return GetObjectsOrig(type, lotId);  // docs/128 G-M3: no cache or counter writes off the sim thread
                 if (!sSpatialCacheReady || type == null || Sims3.Gameplay.Gameflow.CurrentGameSpeed == Gameflow.GameSpeed.Pause || !ShortcutOn("spatialcache"))
                     return GetObjectsOrig(type, lotId);
                 long tick = Simulator.TicksElapsed();

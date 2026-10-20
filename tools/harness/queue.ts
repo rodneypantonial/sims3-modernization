@@ -42,6 +42,7 @@
 //   "worker" -> also --watchstalk-worker (the stalk phase follows the route worker's Route_PlanLocked, docs/113 §8; needs RouteAsync on).
 // profile.livereads2: true -> profile-world.ts --livereads2 (tools/frida/live-reads2.js, routing live reads pass 2, docs/114; live-reads2-report.ts reads <tag>-livereads2.json).
 // profile.f4b: true -> profile-world.ts --f4b (tools/frida/f4b-reads.js, F-4b live read, docs/99 §12.6; f4b-report.ts reads <tag>-f4b.json).
+// profile.vres: true -> profile-world.ts --vres (docs/133: callvirt inline-cache snapshots through the probe agent's /vcache; virtual-resolution-report.ts reads <tag>-vres.json).
 // profile.noEnv: true -> profile-world.ts --no-env (no test_env guard: the repro sets winter, weather or a full moon itself, docs/117).
 // ini ProbeSnap.Enabled=1 -> profile-world.ts --no-prof (no second Frida agent beside the int3 sampler: docs/67 §7).
 // profile.travel: "university" | "future" | "france" | "china" | "egypt" -> profile-world.ts --travel (save-matrix.ts travel case with
@@ -70,6 +71,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, normalize, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { CSV_HEADER, csvLine, summarize, type AgeRow } from './age-report.ts';
+import { ledgerReport } from './mono-ledger-report.ts';
 import { saveStats } from './save-stats.ts';
 import { GUARD_MS } from './game-alive.ts';
 import { saveForeground } from './focus-game.ts';
@@ -97,7 +99,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; run: { repro?: string; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' } };
 
 export function parseQueue(json: unknown): Job[] {
@@ -157,6 +159,7 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.profile?.watchstalk !== undefined && typeof j.run.profile.watchstalk !== 'boolean' && j.run.profile.watchstalk !== 'worker') throw new Error(`${at}: run.profile.watchstalk must be true, false or "worker"`);
     if (j.run.profile?.livereads2 !== undefined && typeof j.run.profile.livereads2 !== 'boolean') throw new Error(`${at}: run.profile.livereads2 must be true or false`);
     if (j.run.profile?.f4b !== undefined && typeof j.run.profile.f4b !== 'boolean') throw new Error(`${at}: run.profile.f4b must be true or false`);
+    if (j.run.profile?.vres !== undefined && typeof j.run.profile.vres !== 'boolean') throw new Error(`${at}: run.profile.vres must be true or false`);
     if (j.run.profile?.noEnv !== undefined && typeof j.run.profile.noEnv !== 'boolean') throw new Error(`${at}: run.profile.noEnv must be true or false`);
     if (j.run.profile?.travel !== undefined && !['university', 'future', 'france', 'china', 'egypt'].includes(j.run.profile.travel)) throw new Error(`${at}: run.profile.travel must be university, future, france, china or egypt`);
     if (j.run.profile?.mainstack !== undefined &&!/^(main|all|\d+)$/.test(String(j.run.profile.mainstack))) throw new Error(`${at}: run.profile.mainstack must be main, all or a thread id`);
@@ -407,6 +410,7 @@ if (values['self-check']) {
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, repro: 7 } } }], /profile.repro/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, mainstack: 'render' } } }], /profile.mainstack/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, f4b: 'yes' } } }], /profile.f4b/],
+    [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, vres: 1 } } }], /profile.vres/],
     [[{ id: 'a', asi: 'tested', save: 'menu', run: { menuMemory: { draws: 0 } } }], /draws/],
   ];
   assert.equal(parseQueue([{ id: 'a', asi: 'tested', save: 'menu', content: 'no-cc', run: { menuMemory: {} } }])[0].content, 'no-cc');
@@ -645,7 +649,7 @@ const runArgs = (j: Job): string[] | null =>
     : j.run.profile ? [H('profile-world.ts'), '--tag', profileTag(j), '--minutes', String(j.run.profile.minutes), ...(j.run.profile.seed !== undefined ? ['--seed', String(j.run.profile.seed)] : []),
       ...(j.run.profile.repro ? ['--repro', j.run.profile.repro] : []), ...(j.run.profile.mainstack ? ['--mainstack', String(j.run.profile.mainstack)] : []),
       ...(j.run.profile.ab ? ['--ab', j.run.profile.ab, '--slice', String(j.run.profile.slice ?? 2)] : []), ...(j.run.profile.untilCompares ? ['--until-compares', String(j.run.profile.untilCompares)] : []), ...(j.run.profile.fixesOff ? ['--fixes-off', j.run.profile.fixesOff] : []), ...(j.run.profile.fixesOn ? ['--fixes-on', j.run.profile.fixesOn] : []), ...(j.run.profile.taskstall ? ['--taskstall', String(j.run.profile.taskstall)] : []),
-      ...(j.run.profile.inroom ? ['--inroom'] : []), ...(j.run.profile.watchstalk ? ['--watchstalk'] : []), ...(j.run.profile.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(j.run.profile.livereads2 ? ['--livereads2'] : []), ...(j.run.profile.f4b ? ['--f4b'] : []), ...(j.run.profile.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) ? ['--no-prof'] : []), ...(j.run.profile.travel ? ['--travel', j.run.profile.travel] : [])]
+      ...(j.run.profile.inroom ? ['--inroom'] : []), ...(j.run.profile.watchstalk ? ['--watchstalk'] : []), ...(j.run.profile.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(j.run.profile.livereads2 ? ['--livereads2'] : []), ...(j.run.profile.f4b ? ['--f4b'] : []), ...(j.run.profile.vres ? ['--vres'] : []), ...(j.run.profile.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) ? ['--no-prof'] : []), ...(j.run.profile.travel ? ['--travel', j.run.profile.travel] : [])]
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
 const SAVES = join(USER, 'Saves');
@@ -840,6 +844,7 @@ const sha = (p: string) => (existsSync(p) ? createHash('sha256').update(readFile
 const memLine = (m: any) => (m ? `${m.commitMB}/${m.privateMB}/${m.largestFreeMB}` : '?');
 
 let prevCrashed = !!earlier.at(-1)?.crashed, stopWhy = '', exitCode = 0;
+const ledgerBlocks: string[] = [];  // mono ledger probe (docs/51, mono-ledger-report.ts): printed under the result table at the end
 for (const [n, j] of jobs.entries()) {
   const t0 = new Date().toISOString(), deadline = Date.now() + (j.timeoutMin ?? 60) * 60000;
   const logFile = join(OUT, `${queueName}-${date}-${j.id}.log`);
@@ -1022,6 +1027,12 @@ for (const [n, j] of jobs.entries()) {
     row.memory.after = afterRun?.mem ?? await get('memory');
     const c1 = afterRun?.native ?? await get('native');
     if (j.minCounters !== undefined) { row.nativeDump = join(OUT, `${queueName}-${date}-${j.id}-native.json`); writeFileSync(row.nativeDump, JSON.stringify({ before: c0, after: c1, maxReset: resetMax && Number(c0?.vfMaxReset) > 0 }, null, 1)); }
+    if (c1?.autshadow?.ledger) {  // [AutShadow] Ledger=1: one line per docs/51 item
+      const lr = ledgerReport(c0, c1, j.run?.profile?.minutes ?? 10);
+      row.ledger = lr.lines;
+      row.verdict.push(`mono ledger ${lr.ok ? 'ok' : 'INCOMPLETE'}: per-item numbers below the table`);
+      ledgerBlocks.push(`\n### ${j.id}: mono ledger probe (docs/51)\n\n${lr.lines.map(l => '    ' + l).join('\n')}\n`);
+    }
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
@@ -1096,6 +1107,7 @@ for (const [n, j] of jobs.entries()) {
   if (asiOk && iniOk) log(`restored: Bin/ts3native.asi = ${existsSync(TESTED_ASI) ? 'tested build' : 'copy from the start'}, ini from the start`);
   else { log(`restore failed (copies in ${BEFORE})`); exitCode = 1; }
 }
+for (const b of ledgerBlocks) appendFileSync(md, b);
 if (stopWhy) appendFileSync(md, `\nStopped: ${stopWhy}.\n`);
 log(`results: ${jsonl}, ${md}`);
 process.exit(exitCode);

@@ -1,0 +1,1547 @@
+site,caller,kind,slot offset,targets,status,note
+0x405819,0x405790 FUN_405790,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x405830,0x405790 FUN_405790,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x405886,0x405790 FUN_405790,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x405A23,0x4059F0 FUN_4059f0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x405A70,0x405A50 FUN_405a50,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x405A8E,0x405A50 FUN_405a50,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x405AA8,0x405A50 FUN_405a50,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x405B05,0x405AD0 FUN_405ad0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x405C35,0x405C00 FUN_405c00,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x405FF0,0x405FB0 FUN_405fb0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x40605D,0x405FB0 FUN_405fb0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x406083,0x405FB0 FUN_405fb0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x408C23,0x408B90 FUN_408b90,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x408C34,0x408B90 FUN_408b90,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x408C8B,0x408B90 FUN_408b90,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x408E47,0x408E20 FUN_408e20,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x408E69,0x408E20 FUN_408e20,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x408E8B,0x408E20 FUN_408e20,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x408EE7,0x408EB0 FUN_408eb0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x409C12,0x409BB0 FUN_409bb0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x409F27,0x409F00 FUN_409f00,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x40ABFF,0x40AB90 FUN_40ab90,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x40B738,0x40B700 FUN_40b700,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x40C7EC,0x40C7C0 FUN_40c7c0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x446486,0x4463F0 FUN_4463f0,switch,,,resolved,[switch] | hop 2; groups a
+0x446734,0x446710 FUN_446710,reg,,,unresolved,[register] | hop 3; groups a
+0x446CF7,0x446CD0 FUN_446cd0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x446D19,0x446CD0 FUN_446cd0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x446D3B,0x446CD0 FUN_446cd0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x448766,0x448640 FUN_448640,switch,,,resolved,[switch] | hop 3; groups a
+0x44926B,0x449110 FUN_449110,switch,,,resolved,[switch] | hop 1; groups a
+0x449475,0x449370 FUN_449370,switch,,,resolved,[switch] | hop 2; groups a
+0x44A191,0x44A0F0 FUN_44a0f0,switch,,,resolved,[switch] | hop 2; groups a
+0x44B00F,0x44AF20 FUN_44af20,switch,,,resolved,[switch] | hop 1; groups a
+0x45594F,0x455930 FUN_455930,import,,MSVCR80!tolower,resolved,[import] | hop 5; groups a
+0x455A15,0x455A00 FUN_455a00,slot,,0x4CDC40;0x4CE9A0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x455FE3,0x455F50 FUN_455f50,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x455FF4,0x455F50 FUN_455f50,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x456050,0x455F50 FUN_455f50,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x456CFC,0x456CC0 FUN_456cc0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0x4A0A1B,0x4A0A00 FUN_4a0a00,reg,,,unresolved,[register] | hop 3; groups a
+0x4A0A2C,0x4A0A00 FUN_4a0a00,reg,,,unresolved,[register] | hop 3; groups a
+0x4A16AA,0x4A1630 FUN_4a1630,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x4A16BE,0x4A1630 FUN_4a1630,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4A16CF,0x4A1630 FUN_4a1630,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4A1702,0x4A1630 FUN_4a1630,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x4A172F,0x4A1630 FUN_4a1630,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4A9130,0x4A8F70 DBPF_PackedFile_ctor,reg,,,unresolved,[register] | hop 4; groups a
+0x4AEBB8,0x4AEB90 ResourceKey_HashNameFNV64,import,,MSVCR80!towlower,resolved,[import] | hop 2; groups ab
+0x4CF583,0x4CF560 FUN_4cf560,slot,,0x4056F0;0x4CFB50;0x5A8CD0;0x5C89E0;0x5C9D50;0x7A9FE0;0x8E18E0;0xB7A9B0;0xC53F30,resolved,[docs/102 prior] | hop 5; groups a
+0x4D2588,0x4D2510 FUN_4d2510,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D25FE,0x4D25A0 FUN_4d25a0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D395C,0x4D3900 FUN_4d3900,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4D3979,0x4D3900 FUN_4d3900,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4D39C6,0x4D3900 FUN_4d3900,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4D3A38,0x4D3900 FUN_4d3900,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x4D3A59,0x4D3900 FUN_4d3900,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4D3A87,0x4D3900 FUN_4d3900,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4D3AB2,0x4D3900 FUN_4d3900,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x4D40C8,0x4D4090 FUN_4d4090,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9B0E,0x4D9AF0 FUN_4d9af0,import,,KERNEL32!FindNextFileW,resolved,[import] | hop 3; groups a
+0x4D9C66,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9C7D,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9C89,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9CB2,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9CD9,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9CEF,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9D6F,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9D80,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4D9D9A,0x4D9BE0 FUN_4d9be0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4DA0C5,0x4DA0B0 FUN_4da0b0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4DA125,0x4DA110 FUN_4da110,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4DA267,0x4DA1A0 FUN_4da1a0,slot,,0x4E3E90 ICoreAllocator_AllocAligned,resolved,[receiver typed (caller)] | hop 3; groups a
+0x4DA292,0x4DA1A0 FUN_4da1a0,import,,KERNEL32!FindFirstFileW,resolved,[import] | hop 3; groups a
+0x4DA351,0x4DA1A0 FUN_4da1a0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4DA378,0x4DA1A0 FUN_4da1a0,slot,,0x4E3EF0 ICoreAllocator_Free,resolved,[receiver typed (caller)] | hop 3; groups a
+0x4DA3A2,0x4DA1A0 FUN_4da1a0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4DA50F,0x4DA3C0 FUN_4da3c0,import,,KERNEL32!FindClose,resolved,[import] | hop 2; groups a
+0x4DA52D,0x4DA3C0 FUN_4da3c0,slot,,0x4E3EF0 ICoreAllocator_Free,resolved,[receiver typed (caller)] | hop 2; groups a
+0x4DB3AB,0x4DB390 FUN_4db390,slot,,0x4DBA20,resolved,[receiver typed (caller)] | hop 4; groups a
+0x4DB530,0x4DB4C0 FileStream_Open,switch,,,resolved,[switch] | hop 4; groups a
+0x4DB583,0x4DB4C0 FileStream_Open,import,,KERNEL32!CreateFileW,resolved,[import] | hop 4; groups a
+0x4DB591,0x4DB4C0 FileStream_Open,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x4DB684,0x4DB670 FUN_4db670,import,,KERNEL32!GetFileSizeEx,resolved,[import] | hop 4; groups a
+0x4DB697,0x4DB670 FUN_4db670,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x4DB86D,0x4DB850 FileStream_Read,import,,KERNEL32!ReadFile,resolved,[import] | hop 4; groups a
+0x4DB87F,0x4DB850 FileStream_Read,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x4DB8BD,0x4DB8A0 FUN_4db8a0,import,,KERNEL32!WriteFile,resolved,[import] | hop 5; groups a
+0x4DB8CD,0x4DB8A0 FUN_4db8a0,import,,KERNEL32!GetLastError,resolved,[import] | hop 5; groups a
+0x4DB8EF,0x4DB8E0 FUN_4db8e0,import,,KERNEL32!FlushFileBuffers,resolved,[import] | hop 5; groups a
+0x4DB8FE,0x4DB8E0 FUN_4db8e0,import,,KERNEL32!GetLastError,resolved,[import] | hop 5; groups a
+0x4DB963,0x4DB910 FUN_4db910,import,,KERNEL32!MultiByteToWideChar,resolved,[import] | hop 5; groups a
+0x4DB9BB,0x4DB970 FUN_4db970,import,,MSVCR80!wcsncpy,resolved,[import] | hop 4; groups a
+0x4DBA32,0x4DBA20 FUN_4dba20,import,,KERNEL32!CloseHandle,resolved,[import] | hop 5; groups a
+0x4DBBAF,0x4DBBA0 FUN_4dbba0,import,,KERNEL32!GetFileAttributesW,resolved,[import] | hop 4; groups a
+0x4DBFBB,0x4DBFB0 FUN_4dbfb0,import,,MSVCR80!_wgetcwd,resolved,[import] | hop 4; groups a
+0x4DD551,0x4DD540 FUN_4dd540,slot,,0x4DEFA0,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DD671,0x4DD660 FUN_4dd660,slot,,0x4DEFA0,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DD711,0x4DD700 FUN_4dd700,slot,,0x4DEFA0,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DE651,0x4DE610 FUN_4de610,slot,,0x4559F0,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DE65A,0x4DE610 FUN_4de610,slot,,0x83F5F0 Stub_Return3,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DE668,0x4DE610 FUN_4de610,slot,,0x4DEB70,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DE683,0x4DE610 FUN_4de610,slot,,0x455A00,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x4DEA35,0x4DEA20 FUN_4dea20,slot,,0x4DE870;0x4DEA60,resolved,[receiver typed (caller)] | hop 5; groups a
+0x4DEAD3,0x4DEAC0 FUN_4deac0,switch,,0x4DEADA;0x4DEB00;0x4DEB1E;0x4DEB39;0x4DEB42,resolved,[docs/102 prior] | hop 4; groups a
+0x4DECF7,0x4DEC90 FUN_4dec90,slot,,0x4E3E40 ICoreAllocator_Alloc,resolved,[receiver typed (caller)] | hop 5; groups a
+0x4DED9E,0x4DEC90 FUN_4dec90,slot,,0x4E3EF0 ICoreAllocator_Free,resolved,[receiver typed (caller)] | hop 5; groups a
+0x4DEF07,0x4DEE40 FUN_4dee40,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x4DEF11,0x4DEE40 FUN_4dee40,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x4E0A93,0x4E09B0 FUN_4e09b0,import,,MSVCR80!ceil,resolved,[import] | hop 2; groups abc
+0x4E0ADB,0x4E09B0 FUN_4e09b0,import,,MSVCR80!ceil,resolved,[import] | hop 2; groups abc
+0x4E10F3,0x4E10E0 FUN_4e10e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups b
+0x4E111D,0x4E10E0 FUN_4e10e0,import,,KERNEL32!GetExitCodeThread,resolved,[import] | hop 3; groups b
+0x4E1135,0x4E10E0 FUN_4e10e0,import,,KERNEL32!CloseHandle,resolved,[import] | hop 3; groups b
+0x4E1157,0x4E10E0 FUN_4e10e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups b
+0x4E1178,0x4E1160 FUN_4e1160,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups b
+0x4E1198,0x4E1160 FUN_4e1160,import,,KERNEL32!CloseHandle,resolved,[import] | hop 3; groups b
+0x4E119F,0x4E1160 FUN_4e1160,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups b
+0x4E11AF,0x4E1160 FUN_4e1160,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups b
+0x4E11D2,0x4E1160 FUN_4e1160,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups b
+0x4E11DF,0x4E1160 FUN_4e1160,import,,KERNEL32!CloseHandle,resolved,[import] | hop 3; groups b
+0x4E11EE,0x4E1160 FUN_4e1160,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups b
+0x4E1283,0x4E1270 FUN_4e1270,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups b
+0x4E128F,0x4E1270 FUN_4e1270,import,,KERNEL32!GetCurrentThread,resolved,[import] | hop 2; groups b
+0x4E12A8,0x4E1270 FUN_4e1270,import,,KERNEL32!GetCurrentProcess,resolved,[import] | hop 2; groups b
+0x4E12AC,0x4E1270 FUN_4e1270,import,,KERNEL32!GetCurrentProcess,resolved,[import] | hop 2; groups b
+0x4E12AF,0x4E1270 FUN_4e1270,import,,KERNEL32!DuplicateHandle,resolved,[import] | hop 2; groups b
+0x4E12C6,0x4E1270 FUN_4e1270,import,,KERNEL32!TlsAlloc,resolved,[import] | hop 2; groups b
+0x4E12F2,0x4E1270 FUN_4e1270,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups b
+0x4E130D,0x4E1270 FUN_4e1270,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 2; groups b
+0x4E1330,0x4E1330 FUN_4e1330,import,,KERNEL32!GetTickCount,resolved,[import] | hop 3; groups ab
+0x4E16AC,0x4E1690 FUN_4e1690,import,,KERNEL32!InitializeCriticalSection,resolved,[import] | hop 5; groups a
+0x4E16C9,0x4E1690 FUN_4e1690,import,,KERNEL32!CreateMutexA,resolved,[import] | hop 5; groups a
+0x4E1707,0x4E16F0 Lock_Acquire,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups ab
+0x4E1721,0x4E16F0 Lock_Acquire,import,,KERNEL32!TryEnterCriticalSection,resolved,[import] | hop 2; groups ab
+0x4E173C,0x4E16F0 Lock_Acquire,import,,KERNEL32!Sleep,resolved,[import] | hop 2; groups ab
+0x4E173F,0x4E16F0 Lock_Acquire,import,,KERNEL32!TryEnterCriticalSection,resolved,[import] | hop 2; groups ab
+0x4E1783,0x4E16F0 Lock_Acquire,import,,KERNEL32!WaitForSingleObject,resolved,[import] | hop 2; groups ab
+0x4E17BF,0x4E17B0 Lock_Release,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ab
+0x4E17CC,0x4E17B0 Lock_Release,import,,KERNEL32!ReleaseMutex,resolved,[import] | hop 2; groups ab
+0x4E4215,0x4E41F0 EA_AllocObject_B,slot,,0x4E3E90 ICoreAllocator_AllocAligned,resolved,[receiver typed (caller)] | hop 3; groups a
+0x4E48D1,0x4E48C0 GeneralAllocator_InitLock,import,,KERNEL32!InitializeCriticalSectionAndSpinCount,resolved,[import] | hop 5; groups b
+0x4E4DFD,0x4E4DF0 FUN_4e4df0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups b
+0x4E4E1D,0x4E4DF0 FUN_4e4df0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups b
+0x4E4E81,0x4E4E30 FUN_4e4e30,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 4; groups bc
+0x4E4EB4,0x4E4E30 FUN_4e4e30,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 4; groups bc
+0x4E4EDB,0x4E4E30 FUN_4e4e30,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 4; groups bc
+0x4E4FAC,0x4E4F90 GeneralAllocator_Decommit,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups abc
+0x4E504C,0x4E4F90 GeneralAllocator_Decommit,import,,KERNEL32!VirtualFree,resolved,[import] | hop 3; groups abc
+0x4E50DD,0x4E4F90 GeneralAllocator_Decommit,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups abc
+0x4E512A,0x4E50F0 GeneralAllocator_DirectAlloc,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 3; groups abc
+0x4E5306,0x4E51B0 GeneralAllocator_FreeCore,import,,KERNEL32!VirtualFree,resolved,[import] | hop 2; groups abc
+0x4E5334,0x4E5320 FUN_4e5320,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups b
+0x4E53D2,0x4E5320 FUN_4e5320,import,,KERNEL32!VirtualQuery,resolved,[import] | hop 5; groups b
+0x4E5448,0x4E5320 FUN_4e5320,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups b
+0x4E54BB,0x4E5320 FUN_4e5320,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups b
+0x4E5536,0x4E54D0 FUN_4e54d0,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 3; groups abc
+0x4E574E,0x4E5710 GeneralAllocator_InitBins,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups bc
+0x4E5893,0x4E5710 GeneralAllocator_InitBins,import,,KERNEL32!GetSystemInfo,resolved,[import] | hop 4; groups bc
+0x4E58AC,0x4E5710 GeneralAllocator_InitBins,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups bc
+0x4E5909,0x4E5710 GeneralAllocator_InitBins,reg,,,unresolved,[register] | hop 4; groups bc
+0x4E592F,0x4E5920 GeneralAllocator_Free,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups abc
+0x4E594E,0x4E5920 GeneralAllocator_Free,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0x4E624E,0x4E5E40 GeneralAllocator_MallocCore,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups abc
+0x4E626C,0x4E5E40 GeneralAllocator_MallocCore,reg,,,unresolved,[fn ptr field] | hop 2; groups abc
+0x4E6287,0x4E5E40 GeneralAllocator_MallocCore,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups abc
+0x4E68CE,0x4E6710 GeneralAllocator_ReallocCore,switch,,,resolved,[switch] | hop 2; groups bc
+0x4E69DF,0x4E69D0 GeneralAllocator_Malloc,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups abc
+0x4E6A05,0x4E69D0 GeneralAllocator_Malloc,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0x4E6A2F,0x4E6A20 GeneralAllocator_Memalign,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups a
+0x4E6A5F,0x4E6A20 GeneralAllocator_Memalign,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups a
+0x4E6A7F,0x4E6A70 GeneralAllocator_Realloc,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups bc
+0x4E6AAA,0x4E6A70 GeneralAllocator_Realloc,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups bc
+0x4E8C31,0x4E8BA0 FUN_4e8ba0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4E8CB3,0x4E8BA0 FUN_4e8ba0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x4EC368,0x4EC2A0 FUN_4ec2a0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4ECD52,0x4ECCB0 FUN_4eccb0,import,,MSVCR80!_getdrive,resolved,[import] | hop 3; groups a
+0x4ECDAD,0x4ECCB0 FUN_4eccb0,import,,MSVCR80!_wgetdcwd,resolved,[import] | hop 3; groups a
+0x4F3727,0x4F36F0 FUN_4f36f0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x4F3D45,0x4F3CC0 FUN_4f3cc0,import,,KERNEL32!GetACP,resolved,[import] | hop 2; groups ab
+0x4F3D6C,0x4F3CC0 FUN_4f3cc0,import,,KERNEL32!GetACP,resolved,[import] | hop 2; groups ab
+0x4F4071,0x4F3CC0 FUN_4f3cc0,switch,,0x4F4078;0x4F408A;0x4F409C;0x4F40AE;0x4F40C0;0x4F40D2,resolved,[docs/102 prior] | hop 2; groups ab
+0x4F41A8,0x4F3CC0 FUN_4f3cc0,import,,KERNEL32!MultiByteToWideChar,resolved,[import] | hop 2; groups ab
+0x4F41F9,0x4F3CC0 FUN_4f3cc0,import,,KERNEL32!WideCharToMultiByte,resolved,[import] | hop 2; groups ab
+0x4F49F9,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4ABF,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4B52,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4C9C,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4E30,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4E8D,0x4F4930 FUN_4f4930,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x4F4FFA,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F50BC,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F5152,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F524D,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F52CF,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F530D,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F5465,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F54B7,0x4F4F40 FUN_4f4f40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x4F55B4,0x4F55A0 FUN_4f55a0,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 1; groups a
+0x4F55F4,0x4F55E0 FUN_4f55e0,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 2; groups a
+0x4F5954,0x4F5800 FUN_4f5800,gfn,,0x4F9750;0x4F9950,resolved,[docs/102 prior] | hop 1; groups a
+0x4F5966,0x4F5800 FUN_4f5800,reg,,,unresolved,[register] | hop 1; groups a
+0x4F5983,0x4F5800 FUN_4f5800,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 1; groups a
+0x4F59A2,0x4F5800 FUN_4f5800,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 1; groups a
+0x4F59C2,0x4F5800 FUN_4f5800,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 1; groups a
+0x4F5D74,0x4F5D60 FUN_4f5d60,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 4; groups a
+0x4F5E73,0x4F5E60 FUN_4f5e60,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 4; groups a
+0x4F62D3,0x4F62C0 FUN_4f62c0,gfn,,0x4F97C0;0x4F9990,resolved,[docs/102 prior] | hop 1; groups a
+0x4F97EB,0x4F97C0 FUN_4f97c0,reg,,,unresolved,[register] | hop 2; groups a
+0x4FABF7,0x4FAB90 FUN_4fab90,switch,,0x4FABFE;0x4FAC04;0x4FAC0B;0x4FAC17;0x4FAC1E;0x4FAC48,resolved,[docs/102 prior] | hop 5; groups b
+0x4FAD32,0x4FAB90 FUN_4fab90,switch,,0x4FAD39;0x4FAD5C;0x4FAD7F;0x4FAD88;0x4FAD95;0x4FADA2;0x4FADAF;0x4FAE38,resolved,[docs/102 prior] | hop 5; groups b
+0x4FAE52,0x4FAB90 FUN_4fab90,switch,,0x4FAE59;0x4FAE7C;0x4FAE80;0x4FAE8E;0x4FAEA4;0x4FAEE3,resolved,[docs/102 prior] | hop 5; groups b
+0x4FB01C,0x4FAFD0 FUN_4fafd0,switch,,0x4FB023;0x4FB034;0x4FB046;0x4FB050;0x4FB062,resolved,[docs/102 prior] | hop 5; groups b
+0x4FB255,0x4FB1F0 FUN_4fb1f0,switch,,0x4FB25C;0x4FB270;0x4FB287;0x4FB28E;0x4FB2A5,resolved,[docs/102 prior] | hop 5; groups b
+0x4FB478,0x4FB460 FUN_4fb460,import,,MSVCR80!_isnan,resolved,[import] | hop 5; groups b
+0x4FB4F3,0x4FB460 FUN_4fb460,import,,MSVCR80!_finite,resolved,[import] | hop 5; groups b
+0x4FB5A0,0x4FB460 FUN_4fb460,switch,,0x4FB5A7;0x4FB5FE;0x4FB655,resolved,[docs/102 prior] | hop 5; groups b
+0x4FB93E,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FB996,0x4FB8D0 FUN_4fb8d0,switch,,0x4FB99D;0x4FBA96;0x4FBB2E;0x4FBB61;0x4FBC30;0x4FBC79;0x4FBCAC;0x4FBDA3,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBC4F,0x4FB8D0 FUN_4fb8d0,switch,,0x4FBC56;0x4FBC5D;0x4FBC65;0x4FBC72,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBCF0,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBD23,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBD4B,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBD7F,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FBDBB,0x4FB8D0 FUN_4fb8d0,slot,,0x4FAAD0,resolved,[docs/102 prior] | hop 4; groups b
+0x4FF168,0x4FF040 FUN_4ff040,import,,MSVCR80!_fcvt,resolved,[import] | hop 2; groups a
+0x501EF7,0x501ED0 FUN_501ed0,import,,MSVCR80!atoi,resolved,[import] | hop 4; groups b
+0x501F25,0x501ED0 FUN_501ed0,import,,WS2_32!#11,resolved,[import] | hop 4; groups b
+0x54170C,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x54173A,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x5417D2,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x5417EB,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x541805,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x541862,0x5416D0 FUN_5416d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x5722A6,0x572260 FUN_572260,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x572318,0x572260 FUN_572260,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x572344,0x572260 FUN_572260,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x577C40,0x577C20 FUN_577c20,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups b
+0x577C5E,0x577C20 FUN_577c20,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups b
+0x577C78,0x577C20 FUN_577c20,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups b
+0x582901,0x5828E0 FUN_5828e0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x58291F,0x5828E0 FUN_5828e0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x59C677,0x59C5B0 LocStrSvc_GetString_A,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0x59C71B,0x59C5B0 LocStrSvc_GetString_A,import,,MSVCR80!_wcsicmp,resolved,[import] | hop 2; groups a
+0x59C7B1,0x59C5B0 LocStrSvc_GetString_A,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0x59CC89,0x59CB00 FUN_59cb00,import,,MSVCR80!_wcsicmp,resolved,[import] | hop 2; groups a
+0x5A1FC6,0x5A1FB0 FUN_5a1fb0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0x5A2329,0x5A22F0 FUN_5a22f0,reg,,,unresolved,[register] | hop 4; groups a
+0x5A2337,0x5A22F0 FUN_5a22f0,reg,,,unresolved,[register] | hop 4; groups a
+0x5A24C7,0x5A22F0 FUN_5a22f0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x5A2533,0x5A22F0 FUN_5a22f0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x5A8CE3,0x5A8CD0 FUN_5a8cd0,reg,,,unresolved,[register] | hop 2; groups a
+0x5A94CA,0x5A9430 IC_CASUtils_GetOutfitInGameObjectImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x5B714F,0x5B7110 FUN_5b7110,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups bc
+0x5B76C8,0x5B7670 FUN_5b7670,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB010,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB063,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB086,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB099,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB0AD,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB0BC,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB0C6,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB0D6,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB0E9,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB148,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB15C,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB1C2,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB1D1,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB1F2,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BB201,0x5BB000 FUN_5bb000,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x5BE7C2,0x5BE7B0 FUN_5be7b0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x5BF1FB,0x5BF1E0 FUN_5bf1e0,reg,,,unresolved,[register] | hop 2; groups a
+0x5D1D9F,0x5D1D60 FUN_5d1d60,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups abc
+0x5D1E09,0x5D1D60 FUN_5d1d60,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups abc
+0x5D1E30,0x5D1D60 FUN_5d1d60,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups abc
+0x5E699E,0x5E6960 FUN_5e6960,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x6084F7,0x6084C0 FUN_6084c0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x61F0DA,0x61F070 FUN_61f070,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x61F0ED,0x61F070 FUN_61f070,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x61F107,0x61F070 FUN_61f070,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x62206B,0x621FE0 FUN_621fe0,reg,,,unresolved,[register] | hop 4; groups a
+0x62209B,0x621FE0 FUN_621fe0,reg,,,unresolved,[register] | hop 4; groups a
+0x62831C,0x6282F0 FootprintSet_FreeTree,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x62B9D8,0x62B930 LotGraph_dtor,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x62B9EC,0x62B930 LotGraph_dtor,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x62DF2E,0x62DE40 FUN_62de40,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x62DF97,0x62DE40 FUN_62de40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x62DFB1,0x62DE40 FUN_62de40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x62F7E5,0x62F760 LotRouting_PortalsForObject,reg,,,unresolved,[register] | hop 2; groups a
+0x67F106,0x67F0C0 FUN_67f0c0,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups abc
+0x681BD9,0x681B40 FootprintQuadtree_Leaf,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x686B4C,0x686B40 Physics_MaskForType,switch,,0x686B53;0x686B59;0x686B5F;0x686B65;0x686B6B;0x686B71,resolved,[docs/102 prior] | hop 2; groups a
+0x6B5EAE,0x6B5E70 FUN_6b5e70,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0x6FDF34,0x6FDF20 FUN_6fdf20,reg,,,unresolved,[register] | hop 1; groups a
+0x741140,0x741130 IC_DeviceConfig_GetProcessorLevel,import,,MSVCR80!atol,resolved,[import] | hop 0; groups a
+0x741245,0x741230 IC_DeviceConfig_GetOption,slot,,0xD71000,resolved,[receiver typed (obj)] | hop 0; groups a
+0x741A4F,0x7419B0 IC_EAText_GetMoneyString,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x741B37,0x741AA0 IC_EAText_GetNumberString,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x741C34,0x741B80 IC_EAText_GetTimeString,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x7437F1,0x7437E0 IC_LocalizedStringService_GetLocalizedStringByString,slot,,0xD71000,resolved,[receiver typed (obj)] | hop 0; groups a
+0x746119,0x7460F0 RefPtr_Release,reg,,,unresolved,[register] | hop 1; groups a
+0x7466C0,0x7466B0 FUN_7466b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0x7466C3,0x7466B0 FUN_7466b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0x7466D6,0x7466B0 FUN_7466b0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 2; groups a"
+0x7466DF,0x7466B0 FUN_7466b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0x7466E2,0x7466B0 FUN_7466b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0x7466E5,0x7466B0 FUN_7466b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0x7466F8,0x7466B0 FUN_7466b0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 2; groups a"
+0x7466FB,0x7466B0 FUN_7466b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0x7466FE,0x7466B0 FUN_7466b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0x746713,0x7466B0 FUN_7466b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0x747EB9,0x747D90 IC_OnlineFeaturesHost_GetPersonaName,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x749648,0x749630 IC_Query_GetObjects,slot,,0xD798F0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x749751,0x7496E0 IC_Query_GetObjectsInRange,slot,,0xD798F0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x749C37,0x749BC0 IC_Query_CountObjectsOnLot,slot,,0xD74C00,resolved,[receiver typed (obj)] | hop 0; groups a
+0x749DA9,0x749D30 IC_Query_GetObjectsOnLot,slot,,0xD798F0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x74A78F,0x74A780 IC_Random_NextDoubleImpl,slot,,0xD7CFD0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x74A798,0x74A780 IC_Random_NextDoubleImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x74B961,0x74B950 FUN_74b950,slot,,0x5044C0,partial,"[receiver typed, some sources untyped (caller)] | hop 1; groups a"
+0x76A84B,0x76A730 FUN_76a730,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x76CA6F,0x76CA60 IC_Simulator_GetTaskImpl,slot,,0xD7CFD0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x76CA87,0x76CA60 IC_Simulator_GetTaskImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76D284,0x76D270 FUN_76d270,reg,,,unresolved,[register] | hop 1; groups a
+0x76F2C3,0x76F0A0 FUN_76f0a0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x76F3AB,0x76F2F0 IC_Slots_GetPositionOfSlotImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76F3C3,0x76F2F0 IC_Slots_GetPositionOfSlotImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76F49E,0x76F2F0 IC_Slots_GetPositionOfSlotImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76F7E9,0x76F780 IC_Slots_GetParentIdImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76F810,0x76F780 IC_Slots_GetParentIdImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76F8BC,0x76F820 IC_Slots_GetContainedObjectImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76FA7C,0x76F990 IC_Slots_GetContainmentSlotNamesImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76FA95,0x76F990 IC_Slots_GetContainmentSlotNamesImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x76FACE,0x76F990 IC_Slots_GetContainmentSlotNamesImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x787301,0x7872E0 IC_ScriptProxy_GetResourceKeyImpl,slot,,0xD70B50,resolved,[receiver typed (obj)] | hop 0; groups a
+0x78A667,0x78A600 IC_World_LightGetDimmerImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x78A68E,0x78A600 IC_World_LightGetDimmerImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x78AD64,0x78AC00 IC_World_GetObjectTombRoomIdImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x78AD8B,0x78AC00 IC_World_GetObjectTombRoomIdImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x78F2FC,0x78F2B0 World_FireEvent,slot,,0xD75FA0 ScriptHost_InvokeDelegate,resolved,[receiver typed (obj)] | hop 4; groups a
+0x78F363,0x78F2B0 World_FireEvent,slot,,0xD7D2F0,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7926BE,0x792630 IC_World_FindPondRepresentativePositions,slot,,0xD71100,resolved,[receiver typed (obj)] | hop 0; groups a
+0x7926DC,0x792630 IC_World_FindPondRepresentativePositions,slot,,0xD71200,resolved,[receiver typed (obj)] | hop 0; groups a
+0x793C06,0x793A30 IC_World_GetFloorSurfaceTypeImpl,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x7953FB,0x795320 IC_World_GetWorldNameKey,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x79556E,0x795450 IC_World_GetWorldFileName,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x795663,0x7955C0 IC_World_GetLotName,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x7957AA,0x7956C0 IC_World_GetLotNameKey,slot,,0xD7BD40,resolved,[receiver typed (obj)] | hop 0; groups a
+0x79654E,0x796260 IC_World_GetTilesWithFloorFeaturesImpl,slot,,0xD710A0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x796563,0x796260 IC_World_GetTilesWithFloorFeaturesImpl,slot,,0xD71170,resolved,[receiver typed (obj)] | hop 0; groups a
+0x798281,0x7981F0 IC_World_GetDoorRoomsImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x798561,0x7981F0 IC_World_GetDoorRoomsImpl,slot,,0xD710D0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x798579,0x7981F0 IC_World_GetDoorRoomsImpl,slot,,0xD711C0,resolved,[receiver typed (obj)] | hop 0; groups a
+0x7985AC,0x7981F0 IC_World_GetDoorRoomsImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x7985EE,0x7981F0 IC_World_GetDoorRoomsImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0x7C4F7C,0x7C4F50 FUN_7c4f50,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x7C59EA,0x7C59C0 FUN_7c59c0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups a
+0x7C59ED,0x7C59C0 FUN_7c59c0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5A01,0x7C59C0 FUN_7c59c0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 4; groups a"
+0x7C5A0A,0x7C59C0 FUN_7c59c0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5A10,0x7C59C0 FUN_7c59c0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5ABA,0x7C59C0 FUN_7c59c0,import,,WININET!InternetGetCookieW,resolved,[import] | hop 4; groups a
+0x7C5AC4,0x7C59C0 FUN_7c59c0,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x7C5B06,0x7C59C0 FUN_7c59c0,import,,WININET!InternetGetCookieW,resolved,[import] | hop 4; groups a
+0x7C5B0C,0x7C59C0 FUN_7c59c0,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x7C5C1A,0x7C59C0 FUN_7c59c0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C5C4B,0x7C59C0 FUN_7c59c0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5C4E,0x7C59C0 FUN_7c59c0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5C63,0x7C59C0 FUN_7c59c0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7C5C6C,0x7C59C0 FUN_7c59c0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5C6F,0x7C59C0 FUN_7c59c0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups a
+0x7C5CA4,0x7C59C0 FUN_7c59c0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C5CC3,0x7C59C0 FUN_7c59c0,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7C64AA,0x7C63A0 FUN_7c63a0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C64BC,0x7C63A0 FUN_7c63a0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C65C0,0x7C63A0 FUN_7c63a0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C65D2,0x7C63A0 FUN_7c63a0,reg,,,unresolved,[register] | hop 4; groups a
+0x7C7707,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C770A,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C771D,0x7C76E0 FUN_7c76e0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 3; groups a"
+0x7C7726,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7729,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7733,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7736,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7749,0x7C76E0 FUN_7c76e0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 3; groups a"
+0x7C774C,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C774F,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C77D1,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C77D8,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C77EF,0x7C76E0 FUN_7c76e0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 3; groups a"
+0x7C77F2,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C77F5,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C785E,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7865,0x7C76E0 FUN_7c76e0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups a
+0x7C787C,0x7C76E0 FUN_7c76e0,slot,,0x7C76E0,partial,"[receiver typed, some sources untyped (caller)] | hop 3; groups a"
+0x7C787F,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C7882,0x7C76E0 FUN_7c76e0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups a
+0x7C8D1A,0x7C8D00 FUN_7c8d00,slot,,0x4559F0;0x5044C0,partial,"[receiver typed, some sources untyped (caller)] | hop 5; groups a"
+0x7C8D29,0x7C8D00 FUN_7c8d00,reg,,,unresolved,[register] | hop 5; groups a
+0x7C906E,0x7C9000 FUN_7c9000,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7C9081,0x7C9000 FUN_7c9000,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7C909A,0x7C9000 FUN_7c9000,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7C96FA,0x7C96A0 FUN_7c96a0,slot,,0x4559F0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C9725,0x7C96A0 FUN_7c96a0,slot,,0x4DEFF0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C972F,0x7C96A0 FUN_7c96a0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7C973C,0x7C96A0 FUN_7c96a0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C974B,0x7C96A0 FUN_7c96a0,slot,,0x7EAEA0 IC_GameUtils_AddOrConfigureLogReporter,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C978F,0x7C96A0 FUN_7c96a0,slot,,0xD1AA10,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C9820,0x7C96A0 FUN_7c96a0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C987E,0x7C96A0 FUN_7c96a0,slot,,0x4DB380,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C989D,0x7C96A0 FUN_7c96a0,slot,,0x4DB4C0 FileStream_Open,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C98AA,0x7C96A0 FUN_7c96a0,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C98C5,0x7C96A0 FUN_7c96a0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C98E3,0x7C96A0 FUN_7c96a0,slot,,0x4DB8A0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C98F2,0x7C96A0 FUN_7c96a0,slot,,0x4DB8A0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C98FB,0x7C96A0 FUN_7c96a0,slot,,0x4DB8E0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C9904,0x7C96A0 FUN_7c96a0,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7C991F,0x7C96A0 FUN_7c96a0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7CA153,0x7CA140 FUN_7ca140,slot,,0x4DE110,resolved,[receiver typed (caller)] | hop 5; groups a
+0x7CA18E,0x7CA140 FUN_7ca140,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x7CA202,0x7CA140 FUN_7ca140,slot,,0x4DE2F0,resolved,[receiver typed (caller)] | hop 5; groups a
+0x7CA282,0x7CA140 FUN_7ca140,reg,,,unresolved,[fn ptr field] | hop 5; groups a
+0x7CA29E,0x7CA140 FUN_7ca140,reg,,,unresolved,[register] | hop 5; groups a
+0x7CA2CC,0x7CA140 FUN_7ca140,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x7CA309,0x7CA140 FUN_7ca140,reg,,,unresolved,[fn ptr field] | hop 5; groups a
+0x7CA345,0x7CA320 FUN_7ca320,reg,,,unresolved,[fn ptr field] | hop 5; groups a
+0x7CA389,0x7CA320 FUN_7ca320,reg,,,unresolved,[fn ptr field] | hop 5; groups a
+0x7CADF8,0x7CAD40 FUN_7cad40,slot,,0x504DD0,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7CAE15,0x7CAD40 FUN_7cad40,slot,,0x4DEA20,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7CAE34,0x7CAD40 FUN_7cad40,slot,,0x7C9170,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CAEAE,0x7CAD40 FUN_7cad40,slot,,0x88A720,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CAEC0,0x7CAD40 FUN_7cad40,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CAEDB,0x7CAD40 FUN_7cad40,reg,,,unresolved,[register] | hop 4; groups a
+0x7CAFAD,0x7CAD40 FUN_7cad40,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x7CB02C,0x7CAD40 FUN_7cad40,reg,,,unresolved,[register] | hop 4; groups a
+0x7CB037,0x7CAD40 FUN_7cad40,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CB04A,0x7CAD40 FUN_7cad40,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7CB05E,0x7CAD40 FUN_7cad40,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7CB06B,0x7CAD40 FUN_7cad40,slot,,0x4DEA20,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7CB08E,0x7CAD40 FUN_7cad40,slot,,0x7C9170,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB0A9,0x7CAD40 FUN_7cad40,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7CB0B4,0x7CAD40 FUN_7cad40,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CB0C1,0x7CAD40 FUN_7cad40,slot,,0x4DEA20,resolved,[receiver typed (caller)] | hop 4; groups a
+0x7CB0E0,0x7CAD40 FUN_7cad40,slot,,0x7C9170,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB169,0x7CB0F0 FUN_7cb0f0,slot,,0x88A720,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB190,0x7CB0F0 FUN_7cb0f0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CB1F2,0x7CB0F0 FUN_7cb0f0,slot,,0x88A720,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB205,0x7CB0F0 FUN_7cb0f0,reg,,,unresolved,[register] | hop 4; groups a
+0x7CB2DA,0x7CB0F0 FUN_7cb0f0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x7CB359,0x7CB0F0 FUN_7cb0f0,reg,,,unresolved,[register] | hop 4; groups a
+0x7CB364,0x7CB0F0 FUN_7cb0f0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CB377,0x7CB0F0 FUN_7cb0f0,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7CB385,0x7CB0F0 FUN_7cb0f0,slot,,0x801C20,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB3A0,0x7CB0F0 FUN_7cb0f0,reg,,,unresolved,[fn ptr field] | hop 4; groups a
+0x7CB3AB,0x7CB0F0 FUN_7cb0f0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CB3B4,0x7CB0F0 FUN_7cb0f0,slot,,0x801C20,resolved,[receiver typed (obj)] | hop 4; groups a
+0x7CB3DF,0x7CB3D0 FUN_7cb3d0,slot,,0x9D56A0,partial,"[receiver typed, some sources untyped (caller)] | hop 3; groups a"
+0x7CB431,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB380,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB443,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB4C0 FileStream_Open,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB451,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB4A2,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB850 FileStream_Read,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB543,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB670,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB57A,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB850 FileStream_Read,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB5C2,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB703,0x7CB3D0 FUN_7cb3d0,slot,,0x4559F0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB72C,0x7CB3D0 FUN_7cb3d0,slot,,0x4DEFA0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB7DC,0x7CB3D0 FUN_7cb3d0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB80B,0x7CB3D0 FUN_7cb3d0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CB81F,0x7CB3D0 FUN_7cb3d0,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CB84E,0x7CB3D0 FUN_7cb3d0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CB87D,0x7CB3D0 FUN_7cb3d0,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CBAC1,0x7CBA50 FUN_7cba50,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7CBE5A,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CBF44,0x7CBE40 FUN_7cbe40,slot,,0x4559F0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CBF73,0x7CBE40 FUN_7cbe40,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CBFE1,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC000,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC013,0x7CBE40 FUN_7cbe40,slot,,0x4DEFF0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC022,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC035,0x7CBE40 FUN_7cbe40,slot,,0x4DEF30,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC03E,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC058,0x7CBE40 FUN_7cbe40,slot,,0x4DEFA0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC0F4,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC0FD,0x7CBE40 FUN_7cbe40,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC136,0x7CBE40 FUN_7cbe40,slot,,0x4DEB70,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC154,0x7CBE40 FUN_7cbe40,slot,,0x4DEFA0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC1FD,0x7CBE40 FUN_7cbe40,slot,,0x4DEF30,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC208,0x7CBE40 FUN_7cbe40,slot,,0x4DEB70,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC224,0x7CBE40 FUN_7cbe40,slot,,0x4DEFA0,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC2C9,0x7CBE40 FUN_7cbe40,slot,,0x4DEF30,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CC2DB,0x7CBE40 FUN_7cbe40,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7CC31E,0x7CBE40 FUN_7cbe40,slot,,0x455A00,resolved,[receiver typed (caller)] | hop 3; groups a
+0x7CFC75,0x7CFC50 FUN_7cfc50,import,,MSVCR80!tolower,resolved,[import] | hop 3; groups bc
+0x7D7771,0x7D7760 FUN_7d7760,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7D777C,0x7D7760 FUN_7d7760,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x7D784F,0x7D7840 FUN_7d7840,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7D7859,0x7D7840 FUN_7d7840,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7D8124,0x7D80E0 FUN_7d80e0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7D8153,0x7D80E0 FUN_7d80e0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x7D8326,0x7D8310 FUN_7d8310,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7D832F,0x7D8310 FUN_7d8310,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7D836E,0x7D8310 FUN_7d8310,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7D837D,0x7D8310 FUN_7d8310,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x7DD872,0x7DD860 FUN_7dd860,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x801C45,0x801C20 FUN_801c20,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x810E69,0x810DF0 FUN_810df0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x810E82,0x810DF0 FUN_810df0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x810E9D,0x810DF0 FUN_810df0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x829BF7,0x829BC0 RoutingWorld_GetLotPlanner,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x8318A3,0x831710 RoutingWorld_UpdateTerrainFootprints,reg,,,unresolved,[register] | hop 5; groups a
+0x831A15,0x831710 RoutingWorld_UpdateTerrainFootprints,slot,,0x915880 RefCounted_AddRefAt8,resolved,[docs/102 prior] | hop 5; groups a
+0x831A36,0x831710 RoutingWorld_UpdateTerrainFootprints,slot,,0xF1D800,resolved,[docs/102 prior] | hop 5; groups a
+0x831A53,0x831710 RoutingWorld_UpdateTerrainFootprints,slot,,0x620CF0,resolved,[docs/102 prior] | hop 5; groups a
+0x831A61,0x831710 RoutingWorld_UpdateTerrainFootprints,slot,,0x620D10,resolved,[docs/102 prior] | hop 5; groups a
+0x831A80,0x831710 RoutingWorld_UpdateTerrainFootprints,reg,,,unresolved,[register] | hop 5; groups a
+0x831AB9,0x831710 RoutingWorld_UpdateTerrainFootprints,slot,,0x915890 RefCounted_ReleaseAt8,resolved,[docs/102 prior] | hop 5; groups a
+0x834CB5,0x834B80 RoutingWorld_SurfaceAtPoint,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x862200,0x8621C0 FUN_8621c0,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x86226D,0x8621C0 FUN_8621c0,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x862293,0x8621C0 FUN_8621c0,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups a
+0x88690A,0x8868B0 FUN_8868b0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x886F4C,0x886E00 FUN_886e00,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0x887132,0x886FE0 FUN_886fe0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x887159,0x886FE0 FUN_886fe0,reg,,,unresolved,[register] | hop 4; groups a
+0x8871FC,0x8871D0 FUN_8871d0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x88A6CA,0x88A5B0 FUN_88a5b0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x88A769,0x88A730 FUN_88a730,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x88A8C1,0x88A800 FUN_88a800,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x88A969,0x88A910 FUN_88a910,reg,,,unresolved,[register] | hop 3; groups a
+0x88A97D,0x88A910 FUN_88a910,reg,,,unresolved,[register] | hop 3; groups a
+0x88A991,0x88A910 FUN_88a910,reg,,,unresolved,[register] | hop 3; groups a
+0x88C26B,0x88C220 FUN_88c220,reg,,,unresolved,[register] | hop 3; groups a
+0x88C29D,0x88C220 FUN_88c220,reg,,,unresolved,[register] | hop 3; groups a
+0x8A65EB,0x8A65D0 FUN_8a65d0,reg,,,unresolved,[register] | hop 4; groups a
+0x8B7115,0x8B70E0 FUN_8b70e0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x8B713B,0x8B70E0 FUN_8b70e0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x8B714B,0x8B70E0 FUN_8b70e0,reg,,,unresolved,[register] | hop 3; groups a
+0x8B71D3,0x8B70E0 FUN_8b70e0,reg,,,unresolved,[register] | hop 3; groups a
+0x931111,0x9310F0 FUN_9310f0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0x931133,0x9310F0 FUN_9310f0,reg,,,unresolved,[register] | hop 2; groups b
+0x93113C,0x9310F0 FUN_9310f0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0x93117F,0x9310F0 FUN_9310f0,reg,,,unresolved,[register] | hop 2; groups b
+0x9311A3,0x9310F0 FUN_9310f0,reg,,,unresolved,[register] | hop 2; groups b
+0x9311B9,0x9310F0 FUN_9310f0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0x9311C6,0x9310F0 FUN_9310f0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0x9312FC,0x9312B0 FUN_9312b0,import,,KERNEL32!GetSystemInfo,resolved,[import] | hop 2; groups b
+0x931346,0x9312B0 FUN_9312b0,reg,,,unresolved,[register] | hop 2; groups b
+0x9313D5,0x9312B0 FUN_9312b0,reg,,,unresolved,[register] | hop 2; groups b
+0x93149C,0x931470 FUN_931470,reg,,,unresolved,[register] | hop 5; groups b
+0x9314D2,0x931470 FUN_931470,reg,,,unresolved,[register] | hop 5; groups b
+0x931579,0x931550 FUN_931550,reg,,,unresolved,[register] | hop 5; groups b
+0x9315AF,0x931550 FUN_931550,reg,,,unresolved,[register] | hop 5; groups b
+0x931851,0x931790 FUN_931790,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0x931881,0x931860 FUN_931860,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0x931988,0x9318D0 FUN_9318d0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0x931A58,0x9319A0 FUN_9319a0,slot,,,unresolved,[slot signature (>6)] | hop 5; groups b
+0x931A91,0x931A70 FUN_931a70,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0x9321E0,0x9321C0 FUN_9321c0,slot,,,unresolved,[slot signature (>6)] | hop 5; groups b
+0x932361,0x932340 FUN_932340,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0x932691,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x9326D5,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932771,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x9327C1,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932810,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932854,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x9328A1,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x9328F0,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932943,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932992,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x9329E1,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932A34,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932A87,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932B00,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932B70,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932BB4,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x932BCE,0x932610 FUN_932610,reg,,,unresolved,[fn ptr field] | hop 2; groups b
+0x933679,0x933510 FUN_933510,reg,,,unresolved,[register] | hop 2; groups b
+0x9336AC,0x933510 FUN_933510,reg,,,unresolved,[register] | hop 2; groups b
+0x933838,0x9336F0 FUN_9336f0,reg,,,unresolved,[register] | hop 1; groups b
+0x933B42,0x933A60 FUN_933a60,reg,,,unresolved,[register] | hop 1; groups b
+0x93483D,0x934800 FUN_934800,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x9348A0,0x934800 FUN_934800,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x9348C0,0x934800 FUN_934800,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x9377FF,0x9377D0 FUN_9377d0,switch,,,resolved,[switch] | hop 2; groups a
+0x937C1D,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937C33,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937C4F,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937C5D,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937D2B,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937D3A,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937D73,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x937D8A,0x937BB0 FUN_937bb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0x93B300,0x93B2C0 FUN_93b2c0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x93B33F,0x93B2C0 FUN_93b2c0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x93B362,0x93B2C0 FUN_93b2c0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x93B388,0x93B2C0 FUN_93b2c0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups a
+0x93B3B3,0x93B2C0 FUN_93b2c0,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0x93B431,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B454,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B461,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B47F,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B49E,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B4C5,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B508,0x93B3D0 FUN_93b3d0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x93B529,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B540,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B551,0x93B3D0 FUN_93b3d0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0x93B57C,0x93B3D0 FUN_93b3d0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x958643,0x958560 FUN_958560,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x95894E,0x958560 FUN_958560,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x95895F,0x958560 FUN_958560,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0x99537C,0x995360 FUN_995360,import,,ADVAPI32!CryptAcquireContextA,resolved,[import] | hop 5; groups a
+0x995388,0x995360 FUN_995360,import,,KERNEL32!GetLastError,resolved,[import] | hop 5; groups a
+0x9953A3,0x995360 FUN_995360,import,,ADVAPI32!CryptAcquireContextA,resolved,[import] | hop 5; groups a
+0x9953A9,0x995360 FUN_995360,import,,KERNEL32!GetLastError,resolved,[import] | hop 5; groups a
+0x995469,0x995410 FUN_995410,import,,ADVAPI32!CryptCreateHash,resolved,[import] | hop 5; groups a
+0x99548B,0x995410 FUN_995410,import,,ADVAPI32!CryptHashData,resolved,[import] | hop 5; groups a
+0x9954B3,0x995410 FUN_995410,import,,ADVAPI32!CryptDeriveKey,resolved,[import] | hop 5; groups a
+0x9954EA,0x995410 FUN_995410,import,,ADVAPI32!CryptEncrypt,resolved,[import] | hop 5; groups a
+0x9954FA,0x995410 FUN_995410,import,,ADVAPI32!CryptDestroyKey,resolved,[import] | hop 5; groups a
+0x995505,0x995410 FUN_995410,import,,ADVAPI32!CryptDestroyHash,resolved,[import] | hop 5; groups a
+0x995512,0x995410 FUN_995410,import,,ADVAPI32!CryptReleaseContext,resolved,[import] | hop 5; groups a
+0x995589,0x995530 FUN_995530,import,,ADVAPI32!CryptCreateHash,resolved,[import] | hop 4; groups a
+0x9955AB,0x995530 FUN_995530,import,,ADVAPI32!CryptHashData,resolved,[import] | hop 4; groups a
+0x9955D3,0x995530 FUN_995530,import,,ADVAPI32!CryptDeriveKey,resolved,[import] | hop 4; groups a
+0x995609,0x995530 FUN_995530,import,,ADVAPI32!CryptDecrypt,resolved,[import] | hop 4; groups a
+0x995619,0x995530 FUN_995530,import,,ADVAPI32!CryptDestroyKey,resolved,[import] | hop 4; groups a
+0x995624,0x995530 FUN_995530,import,,ADVAPI32!CryptDestroyHash,resolved,[import] | hop 4; groups a
+0x995631,0x995530 FUN_995530,import,,ADVAPI32!CryptReleaseContext,resolved,[import] | hop 4; groups a
+0x9956AA,0x995690 FUN_995690,import,,ADVAPI32!RegOpenKeyExA,resolved,[import] | hop 3; groups a
+0x9956E3,0x995690 FUN_995690,import,,ADVAPI32!RegQueryValueExA,resolved,[import] | hop 3; groups a
+0x995717,0x995690 FUN_995690,import,,ADVAPI32!RegCloseKey,resolved,[import] | hop 3; groups a
+0x9962BF,0x9962B0 FUN_9962b0,reg,,,unresolved,[register] | hop 4; groups a
+0x9962D1,0x9962B0 FUN_9962b0,reg,,,unresolved,[register] | hop 4; groups a
+0x9962E2,0x9962B0 FUN_9962b0,reg,,,unresolved,[register] | hop 4; groups a
+0x9965C9,0x996590 FUN_996590,slot,,0x4DB380,resolved,[receiver typed (caller)] | hop 3; groups a
+0x9965DA,0x996590 FUN_996590,slot,,0x4DB4C0 FileStream_Open,resolved,[receiver typed (caller)] | hop 3; groups a
+0x9965E7,0x996590 FUN_996590,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x9965F6,0x996590 FUN_996590,slot,,0x4DB380,resolved,[receiver typed (caller)] | hop 3; groups a
+0x99660E,0x996590 FUN_996590,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x996617,0x996590 FUN_996590,slot,,0x4DB390,resolved,[receiver typed (caller)] | hop 3; groups a
+0x99CA26,0x99C9C0 FUN_99c9c0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups abc
+0x99CA33,0x99C9C0 FUN_99c9c0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups abc
+0x99CA73,0x99C9C0 FUN_99c9c0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups abc
+0x9EC452,0x9EC420 FUN_9ec420,reg,,,unresolved,[register] | hop 4; groups a
+0x9F5480,0x9F5470 Net_InternetGetConnectedState,import,,WININET!InternetGetConnectedState,resolved,[import] | hop 4; groups a
+0x9F548A,0x9F5470 Net_InternetGetConnectedState,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x9F5571,0x9F5560 FUN_9f5560,import,,WININET!HttpEndRequestA,resolved,[import] | hop 5; groups a
+0x9F572D,0x9F5700 FUN_9f5700,import,,WININET!HttpAddRequestHeadersA,resolved,[import] | hop 5; groups a
+0x9F5FE3,0x9F5FA0 FUN_9f5fa0,import,,WININET!InternetQueryOptionA,resolved,[import] | hop 4; groups a
+0x9F5FFC,0x9F5FA0 FUN_9f5fa0,import,,WININET!InternetSetOptionA,resolved,[import] | hop 4; groups a
+0x9F605C,0x9F5FA0 FUN_9f5fa0,import,,WININET!HttpSendRequestExA,resolved,[import] | hop 4; groups a
+0x9F6066,0x9F5FA0 FUN_9f5fa0,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x9F60D4,0x9F5FA0 FUN_9f5fa0,import,,WININET!HttpSendRequestA,resolved,[import] | hop 4; groups a
+0x9F60DE,0x9F5FA0 FUN_9f5fa0,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x9F6117,0x9F5FA0 FUN_9f5fa0,import,,WININET!HttpSendRequestA,resolved,[import] | hop 4; groups a
+0x9F6121,0x9F5FA0 FUN_9f5fa0,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0x9F6134,0x9F5FA0 FUN_9f5fa0,import,,WININET!HttpEndRequestA,resolved,[import] | hop 4; groups a
+0x9F6376,0x9F6340 FUN_9f6340,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0x9F6386,0x9F6340 FUN_9f6340,import,,WININET!InternetCloseHandle,resolved,[import] | hop 5; groups a
+0x9F6393,0x9F6340 FUN_9f6340,import,,WININET!InternetCloseHandle,resolved,[import] | hop 5; groups a
+0x9F65BA,0x9F6520 FUN_9f6520,import,,WININET!InternetCrackUrlA,resolved,[import] | hop 4; groups a
+0x9F65DF,0x9F6520 FUN_9f6520,import,,WININET!InternetConnectA,resolved,[import] | hop 4; groups a
+0x9F6646,0x9F6520 FUN_9f6520,import,,WININET!HttpOpenRequestA,resolved,[import] | hop 4; groups a
+0x9F6653,0x9F6520 FUN_9f6520,import,,KERNEL32!GetLastError,resolved,[import] | hop 4; groups a
+0xA8E064,0xA8DF80 Lot_RoomLookup,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xAACD6C,0xAACCE0 FUN_aacce0,slot,,0xAAC0D0,resolved,[receiver typed (obj)] | hop 2; groups a
+0xAAD7B1,0xAAD5B0 FUN_aad5b0,reg,,,unresolved,[register] | hop 2; groups a
+0xAAD7BA,0xAAD5B0 FUN_aad5b0,reg,,,unresolved,[register] | hop 2; groups a
+0xAAD7CD,0xAAD5B0 FUN_aad5b0,reg,,,unresolved,[register] | hop 2; groups a
+0xAAD7EF,0xAAD5B0 FUN_aad5b0,reg,,,unresolved,[register] | hop 2; groups a
+0xAAD805,0xAAD5B0 FUN_aad5b0,reg,,,unresolved,[register] | hop 2; groups a
+0xAAFF2F,0xAAFDA0 FUN_aafda0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xAAFFDD,0xAAFDA0 FUN_aafda0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xAB529B,0xAB5290 FUN_ab5290,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0xAB52C6,0xAB5290 FUN_ab5290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0xAB52D5,0xAB5290 FUN_ab5290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0xAB96ED,0xAB9580 World_SurfaceTypeAtPoint,switch,,0xAB96F4;0xAB9706;0xAB9755;0xAB9919;0xAB99B5,resolved,[docs/102 prior] | hop 2; groups a
+0xAB977B,0xAB9580 World_SurfaceTypeAtPoint,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xAB97B7,0xAB9580 World_SurfaceTypeAtPoint,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xAB980D,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9834,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB985B,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9874,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB989B,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB98C2,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB98E9,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9910,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9937,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB995E,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9985,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB99AC,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB99D3,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB99FA,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9A21,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAB9A48,0xAB9580 World_SurfaceTypeAtPoint,import,,MSVCR80!_strnicmp,resolved,[import] | hop 2; groups a
+0xAEB480,0xAEB440 FUN_aeb440,switch,,0xAEB487;0xAEB48F;0xAEB497;0xAEB49F,resolved,[docs/102 prior] | hop 4; groups a
+0xAEB4E0,0xAEB440 FUN_aeb440,switch,,0xAEB4E7;0xAEB4F6;0xAEB4FD;0xAEB513;0xAEB518,resolved,[docs/102 prior] | hop 4; groups a
+0xAEB52B,0xAEB440 FUN_aeb440,slot,,0xAEDE70;0xAF0660;0xAF2330,resolved,[docs/102 prior] | hop 4; groups a
+0xAFE3C0,0xAFE3B0 FUN_afe3b0,switch,,0xAFE3C7;0xAFE415;0xAFE492;0xAFE4EC;0xAFE565;0xAFE5CD;0xAFE64E;0xAFE6B2,resolved,[docs/102 prior] | hop 4; groups a
+0xB0A358,0xB0A1E0 FUN_b0a1e0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB2578C,0xB25760 FUN_b25760,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0xB2579B,0xB25760 FUN_b25760,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0xB31CF2,0xB31CE0 FUN_b31ce0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xB31E31,0xB31E00 FUN_b31e00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB31E52,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31E60,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31E80,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31E9A,0xB31E00 FUN_b31e00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB31F30,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31F59,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31F71,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31F7E,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31F94,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31FA8,0xB31E00 FUN_b31e00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB31FB5,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB31FCB,0xB31E00 FUN_b31e00,reg,,,unresolved,[register] | hop 3; groups a
+0xB324B0,0xB32480 FUN_b32480,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB324C5,0xB32480 FUN_b32480,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB32F59,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB32F71,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB32F86,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB32FC4,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB33001,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB33009,0xB32EF0 FUN_b32ef0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB33195,0xB33100 FUN_b33100,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xB331D5,0xB33100 FUN_b33100,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xB331EA,0xB33100 FUN_b33100,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xB33813,0xB337F0 FUN_b337f0,reg,,,unresolved,[register] | hop 4; groups a
+0xB3F9CB,0xB3F9A0 FUN_b3f9a0,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0xB4040A,0xB40170 FUN_b40170,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0xB40426,0xB40170 FUN_b40170,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0xB44DB5,0xB44D30 FUN_b44d30,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xB454B1,0xB45010 FUN_b45010,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0xB454C9,0xB45010 FUN_b45010,slot,,,unresolved,[slot signature (>6)] | hop 5; groups a
+0xB6463E,0xB64620 FUN_b64620,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB73D34,0xB73C70 FUN_b73c70,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB74D05,0xB74A20 FUN_b74a20,slot,,,unresolved,[slot signature (>6)] | hop 4; groups a
+0xB7B220,0xB7B1E0 FUN_b7b1e0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xB7B28D,0xB7B1E0 FUN_b7b1e0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xB7B2B3,0xB7B1E0 FUN_b7b1e0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xB7C0D6,0xB7BF20 FUN_b7bf20,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB7C28F,0xB7BF20 FUN_b7bf20,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB7C2AC,0xB7BF20 FUN_b7bf20,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB7C45D,0xB7BF20 FUN_b7bf20,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xB7CC9E,0xB7CC50 FUN_b7cc50,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB96446,0xB96380 FUN_b96380,reg,,,unresolved,[register] | hop 2; groups a
+0xB9646E,0xB96380 FUN_b96380,reg,,,unresolved,[register] | hop 2; groups a
+0xB9655D,0xB96380 FUN_b96380,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xB96580,0xB96380 FUN_b96380,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xC2A69D,0xC2A570 WorldCellGrid_Raycast,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xC2A819,0xC2A6D0 FUN_c2a6d0,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xC46BB9,0xC46B40 FUN_c46b40,switch,,0xC46BC0;0xC46C47;0xC46C7B;0xC46D08;0xC46D4E;0xC46DE5;0xC46E25,resolved,[docs/102 prior] | hop 1; groups a
+0xC4705A,0xC47040 FUN_c47040,switch,,0xC47061;0xC47076;0xC4708B;0xC470A0;0xC470B5;0xC470D5;0xC470F5,resolved,[docs/102 prior] | hop 2; groups a
+0xC5FA98,0xC5FA60 SceneNode_FindRecursive,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xC5FAAE,0xC5FA60 SceneNode_FindRecursive,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xC5FAC5,0xC5FA60 SceneNode_FindRecursive,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xC5FAE0,0xC5FA60 SceneNode_FindRecursive,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xC62D62,0xC62D40 WorldManager_FindLotByIdTyped,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC66714,0xC66700 FUN_c66700,slot,,0x619EF0 Stub_Return1;0xB742C0,partial,"[receiver typed, some sources untyped (caller)] | hop 4; groups a"
+0xC66755,0xC66700 FUN_c66700,slot,,0x5BFB90 IC_EATrace_AssertImpl;0xAA93C0,partial,"[receiver typed, some sources untyped (caller)] | hop 4; groups a"
+0xC6676F,0xC66700 FUN_c66700,slot,,0x6119E0;0xAA9190,partial,"[receiver typed, some sources untyped (caller)] | hop 4; groups a"
+0xC66786,0xC66700 FUN_c66700,slot,,0x5BFB90 IC_EATrace_AssertImpl;0xAA93C0,partial,"[receiver typed, some sources untyped (caller)] | hop 4; groups a"
+0xC7DC06,0xC7DBD0 FUN_c7dbd0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0xC8F974,0xC8F960 FUN_c8f960,switch,,,resolved,[switch] | hop 1; groups a
+0xC93A2E,0xC939F0 FUN_c939f0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93AAC,0xC93A40 FUN_c93a40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93ABD,0xC93A40 FUN_c93a40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93C40,0xC93BE0 FUN_c93be0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93C52,0xC93BE0 FUN_c93be0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93D0A,0xC93C90 FUN_c93c90,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93D1B,0xC93C90 FUN_c93c90,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC93EFF,0xC93EB0 FUN_c93eb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC946AE,0xC94670 FUN_c94670,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9472C,0xC946C0 FUN_c946c0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9473D,0xC946C0 FUN_c946c0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC948C0,0xC94860 FUN_c94860,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC948D2,0xC94860 FUN_c94860,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9498A,0xC94910 FUN_c94910,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9499B,0xC94910 FUN_c94910,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC94BEF,0xC94BA0 FUN_c94ba0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC955B1,0xC95570 FUN_c95570,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9607E,0xC96040 FUN_c96040,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC960FC,0xC96090 FUN_c96090,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9610D,0xC96090 FUN_c96090,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96290,0xC96230 FUN_c96230,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC962A2,0xC96230 FUN_c96230,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9635A,0xC962E0 FUN_c962e0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9636B,0xC962E0 FUN_c962e0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC964FF,0xC964B0 FUN_c964b0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96BBE,0xC96B80 FUN_c96b80,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96C3C,0xC96BD0 FUN_c96bd0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96C4D,0xC96BD0 FUN_c96bd0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96DD0,0xC96D70 FUN_c96d70,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96DE2,0xC96D70 FUN_c96d70,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96E9A,0xC96E20 FUN_c96e20,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC96EAB,0xC96E20 FUN_c96e20,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9709F,0xC97050 FUN_c97050,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC97EAE,0xC97E30 FUN_c97e30,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC97EC4,0xC97E30 FUN_c97e30,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC97F4A,0xC97ED0 FUN_c97ed0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC97F5B,0xC97ED0 FUN_c97ed0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC97FAE,0xC97F70 FUN_c97f70,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9802C,0xC97FC0 FUN_c97fc0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9803D,0xC97FC0 FUN_c97fc0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC984EF,0xC984A0 FUN_c984a0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99C7E,0xC99C40 FUN_c99c40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99D18,0xC99C90 FUN_c99c90,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99D29,0xC99C90 FUN_c99c90,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99DD9,0xC99D40 FUN_c99d40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99DEA,0xC99D40 FUN_c99d40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99FAE,0xC99F40 FUN_c99f40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC99FC0,0xC99F40 FUN_c99f40,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9A099,0xC9A000 FUN_c9a000,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9A0AA,0xC9A000 FUN_c9a000,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xC9A27D,0xC9A220 FUN_c9a220,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCCBB45,0xCCBB00 FUN_ccbb00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xCCBB60,0xCCBB00 FUN_ccbb00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xCCC4B5,0xCCBB00 FUN_ccbb00,slot,,,unresolved,[slot signature (>6)] | hop 3; groups a
+0xCCDE38,0xCCDD80 FUN_ccdd80,slot,,,unresolved,[slot signature (>6)] | hop 2; groups a
+0xCE5FA2,0xCE5F90 FUN_ce5f90,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE5FC2,0xCE5FB0 FUN_ce5fb0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE5FE2,0xCE5FD0 FUN_ce5fd0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE6002,0xCE5FF0 FUN_ce5ff0,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE6022,0xCE6010 FUN_ce6010,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE6042,0xCE6030 FUN_ce6030,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE6062,0xCE6050 FUN_ce6050,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCE6390,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCE639F,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,0x76AA60 ScriptHandles_GetOrCreate,resolved,[receiver typed (obj)] | hop 0; groups a
+0xCE63BA,0xCE6320 IC_UserToolUtils_GetProductImpl,switch,,,resolved,[switch] | hop 0; groups a
+0xCE63DF,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCE63EE,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,0x76AA60 ScriptHandles_GetOrCreate,resolved,[receiver typed (obj)] | hop 0; groups a
+0xCE6417,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCE6426,0xCE6320 IC_UserToolUtils_GetProductImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCE9A45,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,0x76A520 ScriptHandles_HandleToPtr,resolved,[receiver typed (obj)] | hop 0; groups a
+0xCE9A5B,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCE9A77,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,switch,,,resolved,[switch] | hop 0; groups a
+0xCE9AEC,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,0x76A730,resolved,[receiver typed (obj)] | hop 0; groups a
+0xCE9AF5,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCEA186,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCEA244,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCEA257,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCEA297,0xCE99E0 IC_UserToolUtils_ProductGenericImpl,slot,,,unresolved,[slot signature (>6)] | hop 0; groups a
+0xCEF796,0xCEF760 FUN_cef760,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCEF7C1,0xCEF760 FUN_cef760,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xCEF80A,0xCEF760 FUN_cef760,slot,,,unresolved,[slot signature (>6)] | hop 1; groups a
+0xD53FE6,0xD53FA0 FUN_d53fa0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xD54058,0xD53FA0 FUN_d53fa0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xD54084,0xD53FA0 FUN_d53fa0,import,,MSVCR80!memmove,resolved,[import] | hop 2; groups a
+0xD6DB42,0xD6DB00 FUN_d6db00,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD6DB72,0xD6DB00 FUN_d6db00,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD6DBA5,0xD6DB00 FUN_d6db00,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD6DE44,0xD6DE30 FUN_d6de30,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups a
+0xD6DE62,0xD6DE30 FUN_d6de30,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0xD6DED2,0xD6DE30 FUN_d6de30,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups a
+0xD7083C,0xD70820 ScriptHost_Sleep,slot,,0xD77B20,resolved,[receiver typed (caller)] | hop 0; groups bc
+0xD70882,0xD70870 Class_GetInterfaceOffset,switch,,,resolved,[switch] | hop 0; groups abc
+0xD708D0,0xD70870 Class_GetInterfaceOffset,import,,MSVCR80!bsearch,resolved,[import] | hop 0; groups abc
+0xD70910,0xD70900 GC_win32_get_mem,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 0; groups b
+0xD709BE,0xD70990 FUN_d70990,import,,KERNEL32!VirtualQuery,resolved,[import] | hop 0; groups b
+0xD70A00,0xD70990 FUN_d70990,import,,KERNEL32!VirtualFree,resolved,[import] | hop 0; groups b
+0xD71836,0xD71820 ScriptHost_GC_push_other_roots,import,,KERNEL32!VirtualQuery,resolved,[import] | hop 0; groups b
+0xD72098,0xD72050 FUN_d72050,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD7296C,0xD728F0 FUN_d728f0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD72983,0xD728F0 FUN_d728f0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD729DA,0xD728F0 FUN_d728f0,import,,MSVCR80!memmove,resolved,[import] | hop 3; groups a
+0xD7305D,0xD73020 FUN_d73020,slot,,,unresolved,[slot signature (>6)] | hop 4; groups b
+0xD7603A,0xD75FA0 ScriptHost_InvokeDelegate,switch,,,resolved,[switch] | hop 5; groups a
+0xD76168,0xD75FA0 ScriptHost_InvokeDelegate,switch,,,resolved,[switch] | hop 5; groups a
+0xD762C2,0xD75FA0 ScriptHost_InvokeDelegate,switch,,,resolved,[switch] | hop 5; groups a
+0xD763C7,0xD75FA0 ScriptHost_InvokeDelegate,switch,,,resolved,[switch] | hop 5; groups a
+0xD76B34,0xD76AB0 FUN_d76ab0,slot,,,unresolved,[slot signature (>6)] | hop 2; groups bc
+0xD77B5E,0xD77B20 FUN_d77b20,slot,,,unresolved,[slot signature (>6)] | hop 1; groups bc
+0xD77B88,0xD77B20 FUN_d77b20,reg,,,unresolved,[fn ptr field] | hop 1; groups bc
+0xD7878B,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD787A8,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD787B6,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD787DD,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD787EC,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD78805,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD78825,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD78834,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD78849,0xD78760 ScriptHost_LoadImage,slot,,,unresolved,[slot signature (>6)] | hop 2; groups b
+0xD7BD79,0xD7BD40 FUN_d7bd40,switch,,,resolved,[switch] | hop 1; groups a
+0xD7D355,0xD7D2F0 FUN_d7d2f0,switch,,,resolved,[switch] | hop 5; groups a
+0xD7D43B,0xD7D2F0 FUN_d7d2f0,switch,,,resolved,[switch] | hop 5; groups a
+0xD7D50F,0xD7D2F0 FUN_d7d2f0,import,,MSVCR80!strrchr,resolved,[import] | hop 5; groups a
+0xD7D51D,0xD7D2F0 FUN_d7d2f0,import,,MSVCR80!strrchr,resolved,[import] | hop 5; groups a
+0xD7D64F,0xD7D2F0 FUN_d7d2f0,switch,,,resolved,[switch] | hop 5; groups a
+0xD7D6CA,0xD7D2F0 FUN_d7d2f0,switch,,,resolved,[switch] | hop 5; groups a
+0xD9A659,0xD9A530 FUN_d9a530,import,,MSVCR80!strncmp,resolved,[import] | hop 1; groups bc
+0xD9AB09,0xD9AAF0 FUN_d9aaf0,import,,KERNEL32!VirtualAlloc,resolved,[import] | hop 0; groups bc
+0xE451DA,0xE451C0 FUN_e451c0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE45215,0xE451C0 FUN_e451c0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups c
+0xE4534A,0xE45330 FUN_e45330,import,,MSVCR80!printf,resolved,[import] | hop 1; groups c
+0xE45845,0xE457F0 FUN_e457f0,reg,,,unresolved,[register] | hop 3; groups bc
+0xE4590A,0xE458E0 FUN_e458e0,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE45930,0xE458E0 FUN_e458e0,reg,,,unresolved,[register] | hop 1; groups abc
+0xE4594A,0xE458E0 FUN_e458e0,slot,,,unresolved,[unknown receiver] | hop 1; groups abc
+0xE45993,0xE458E0 FUN_e458e0,reg,,,unresolved,[fn ptr field] | hop 1; groups abc
+0xE459A5,0xE458E0 FUN_e458e0,reg,,,unresolved,[fn ptr field] | hop 1; groups abc
+0xE45A0D,0xE459F0 FUN_e459f0,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE45A26,0xE459F0 FUN_e459f0,reg,,,unresolved,[register] | hop 2; groups abc
+0xE45A44,0xE459F0 FUN_e459f0,reg,,,unresolved,[fn ptr field] | hop 2; groups abc
+0xE45A9D,0xE45A80 FUN_e45a80,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE45AE8,0xE45A80 FUN_e45a80,slot,,,unresolved,[unknown receiver] | hop 5; groups c
+0xE45B2E,0xE45B10 FUN_e45b10,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE45B49,0xE45B10 FUN_e45b10,reg,,,unresolved,[register] | hop 1; groups abc
+0xE45B74,0xE45B10 FUN_e45b10,reg,,,unresolved,[fn ptr field] | hop 1; groups abc
+0xE45B9A,0xE45B10 FUN_e45b10,reg,,,unresolved,[fn ptr field] | hop 1; groups abc
+0xE45BAA,0xE45B10 FUN_e45b10,reg,,,unresolved,[fn ptr field] | hop 1; groups abc
+0xE45D2D,0xE45D10 FUN_e45d10,import,,MSVCR80!printf,resolved,[import] | hop 3; groups abc
+0xE45D6D,0xE45D10 FUN_e45d10,reg,,,unresolved,[fn ptr field] | hop 3; groups abc
+0xE45D7D,0xE45D10 FUN_e45d10,reg,,,unresolved,[fn ptr field] | hop 3; groups abc
+0xE46A60,0xE46A60 FUN_e46a60,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups c
+0xE46A7A,0xE46A70 FUN_e46a70,import,,MSVCR80!vprintf,resolved,[import] | hop 1; groups bc
+0xE46AE9,0xE46AB0 FUN_e46ab0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE46B08,0xE46AB0 FUN_e46ab0,import,,MSVCR80!abort,resolved,[import] | hop 4; groups c
+0xE46B39,0xE46B10 FUN_e46b10,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE46B55,0xE46B10 FUN_e46b10,import,,MSVCR80!abort,resolved,[import] | hop 1; groups abc
+0xE46B89,0xE46B60 FUN_e46b60,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE46BA5,0xE46B60 FUN_e46b60,import,,MSVCR80!abort,resolved,[import] | hop 1; groups abc
+0xE46C1D,0xE46C00 FUN_e46c00,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE46C47,0xE46C00 FUN_e46c00,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE46CC5,0xE46C00 FUN_e46c00,import,,MSVCR80!strncmp,resolved,[import] | hop 5; groups c
+0xE46CF3,0xE46C00 FUN_e46c00,import,,MSVCR80!strncmp,resolved,[import] | hop 5; groups c
+0xE46D32,0xE46C00 FUN_e46c00,import,,MSVCR80!strncmp,resolved,[import] | hop 5; groups c
+0xE46D45,0xE46C00 FUN_e46c00,import,,MSVCR80!strncmp,resolved,[import] | hop 5; groups c
+0xE46D99,0xE46D80 FUN_e46d80,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE46E0A,0xE46DF0 FUN_e46df0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE46E1A,0xE46DF0 FUN_e46df0,import,,MSVCR80!strrchr,resolved,[import] | hop 4; groups c
+0xE46E5B,0xE46DF0 FUN_e46df0,import,,MSVCR80!strncpy,resolved,[import] | hop 4; groups c
+0xE46F5C,0xE46F40 FUN_e46f40,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE46F9C,0xE46F80 FUN_e46f80,import,,MSVCR80!_getcwd,resolved,[import] | hop 5; groups c
+0xE46FA7,0xE46F80 FUN_e46f80,import,,MSVCR80!_errno,resolved,[import] | hop 5; groups c
+0xE46FB6,0xE46F80 FUN_e46f80,import,,MSVCR80!_errno,resolved,[import] | hop 5; groups c
+0xE4743D,0xE47420 FUN_e47420,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE474FA,0xE474E0 FUN_e474e0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE478FD,0xE478E0 FUN_e478e0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE47ADF,0xE47AD0 FUN_e47ad0,import,,MSVCR80!vsprintf,resolved,[import] | hop 3; groups abc
+0xE47C90,0xE47C70 FUN_e47c70,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE47CB9,0xE47C70 FUN_e47c70,import,,MSVCR80!strncmp,resolved,[import] | hop 5; groups c
+0xE47D15,0xE47C70 FUN_e47c70,import,,MSVCR80!isxdigit,resolved,[import] | hop 5; groups c
+0xE47D23,0xE47C70 FUN_e47c70,import,,MSVCR80!isxdigit,resolved,[import] | hop 5; groups c
+0xE47EAD,0xE47E90 FUN_e47e90,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE47EC8,0xE47E90 FUN_e47e90,import,,MSVCR80!tolower,resolved,[import] | hop 5; groups c
+0xE4801D,0xE48000 FUN_e48000,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE48118,0xE480F0 FUN_e480f0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE48156,0xE480F0 FUN_e480f0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE481B0,0xE480F0 FUN_e480f0,import,,MSVCR80!strncmp,resolved,[import] | hop 4; groups c
+0xE483A9,0xE48390 FUN_e48390,import,,MSVCR80!printf,resolved,[import] | hop 2; groups bc
+0xE483FA,0xE483E0 FUN_e483e0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups bc
+0xE48421,0xE483E0 FUN_e483e0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups bc
+0xE484BA,0xE484A0 FUN_e484a0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE484E0,0xE484A0 FUN_e484a0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE4851A,0xE48500 FUN_e48500,import,,MSVCR80!printf,resolved,[import] | hop 2; groups bc
+0xE4858D,0xE48570 FUN_e48570,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE4885B,0xE486F0 FUN_e486f0,switch,,,resolved,[switch] | hop 2; groups c
+0xE49540,0xE49320 FUN_e49320,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 5; groups bc
+0xE4999B,0xE49980 GC_stopped_mark,gfn,,0xC0FD60 IC_Animation_SetMissingAnimationCallback,resolved,[global fn ptr 0x1234360] | hop 3; groups b
+0xE499C1,0xE49980 GC_stopped_mark,reg,,,unresolved,[register] | hop 3; groups b
+0xE499E4,0xE49980 GC_stopped_mark,reg,,,unresolved,[register] | hop 3; groups b
+0xE49A0A,0xE49980 GC_stopped_mark,gfn,,0xC0FD60 IC_Animation_SetMissingAnimationCallback,resolved,[global fn ptr 0x1234360] | hop 3; groups b
+0xE49A1E,0xE49980 GC_stopped_mark,gfn,,,unresolved,[global fn ptr 0x11F3098] | hop 3; groups b
+0xE49A2F,0xE49980 GC_stopped_mark,gfn,,0xC0FD60 IC_Animation_SetMissingAnimationCallback,resolved,[global fn ptr 0x1234360] | hop 3; groups b
+0xE49A5E,0xE49A50 FUN_e49a50,gfn,,0xC0FD60 IC_Animation_SetMissingAnimationCallback,resolved,[global fn ptr 0x1234360] | hop 3; groups b
+0xE49AFE,0xE49A50 FUN_e49a50,gfn,,0xC0FD60 IC_Animation_SetMissingAnimationCallback,resolved,[global fn ptr 0x1234360] | hop 3; groups b
+0xE49D7B,0xE49C80 FUN_e49c80,gfn,,,unresolved,[global fn ptr 0x1234364] | hop 5; groups bc
+0xE49DE4,0xE49DA0 GC_collect_a_little_inner,reg,,,unresolved,[register] | hop 3; groups b
+0xE49F40,0xE49F10 GC_collect_a_little_mark,reg,,,unresolved,[register] | hop 2; groups b
+0xE49F5A,0xE49F10 GC_collect_a_little_mark,reg,,,unresolved,[register] | hop 2; groups b
+0xE49FD3,0xE49FB0 GC_collect_a_little_step,gfn,,,unresolved,[global fn ptr 0x11F30A0] | hop 2; groups bc
+0xE4A243,0xE4A120 GC_collect_or_expand,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4A262,0xE4A120 GC_collect_or_expand,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4A7AC,0xE4A6F0 FUN_e4a6f0,import,,MSVCR80!exit,resolved,[import] | hop 5; groups bc
+0xE4AD66,0xE4AC60 GC_register_finalizer_inner,gfn,,0x5BFB90 IC_EATrace_AssertImpl;0xE78610,resolved,[global fn ptr 0x11949BC] | hop 4; groups c
+0xE4AFB2,0xE4AE60 GC_finalize,reg,,,unresolved,[register] | hop 4; groups b
+0xE4B021,0xE4AE60 GC_finalize,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups b
+0xE4B438,0xE4B3F0 GC_invoke_finalizers,reg,,,unresolved,[fn ptr field] | hop 4; groups abc
+0xE4B4B4,0xE4B480 GC_notify_or_invoke_finalizers,gfn,,,unresolved,[global fn ptr 0x11F3044] | hop 3; groups abc
+0xE4B89A,0xE4B850 FUN_e4b850,reg,,,unresolved,[register] | hop 4; groups b
+0xE4BDAD,0xE4BCE0 GC_generic_malloc,gfn,,0x5BFB90 IC_EATrace_AssertImpl;0xE78610,resolved,[global fn ptr 0x11949BC] | hop 2; groups abc
+0xE4C45B,0xE4C3E0 GC_mark_hot,switch,,,resolved,[switch] | hop 5; groups b
+0xE4C682,0xE4C3E0 GC_mark_hot,reg,,,unresolved,[register] | hop 5; groups b
+0xE4D281,0xE4D270 GC_per_frame_path_a,switch,,,resolved,[switch] | hop 5; groups b
+0xE4DD62,0xE4DD50 GC_write,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups bc
+0xE4DD8B,0xE4DD50 GC_write,import,,KERNEL32!CreateFileA,resolved,[import] | hop 4; groups bc
+0xE4DDBB,0xE4DD50 GC_write,import,,KERNEL32!WriteFile,resolved,[import] | hop 4; groups bc
+0xE4DDC7,0xE4DD50 GC_write,import,,KERNEL32!DebugBreak,resolved,[import] | hop 4; groups bc
+0xE4DDD2,0xE4DD50 GC_write,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups bc
+0xE4DE48,0xE4DDF0 FUN_e4ddf0,import,,MSVCR80!sprintf,resolved,[import] | hop 3; groups bc
+0xE4DEFB,0xE4DEB0 FUN_e4deb0,import,,MSVCR80!sprintf,resolved,[import] | hop 5; groups bc
+0xE4E17A,0xE4E160 GC_init,import,,KERNEL32!InitializeCriticalSection,resolved,[import] | hop 4; groups abc
+0xE4E18B,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E1A4,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E1B8,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E1CC,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E1E0,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E1F4,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E208,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E221,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E231,0xE4E160 GC_init,import,,MSVCR80!atol,resolved,[import] | hop 4; groups abc
+0xE4E242,0xE4E160 GC_init,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4E257,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E261,0xE4E160 GC_init,import,,MSVCR80!atol,resolved,[import] | hop 4; groups abc
+0xE4E271,0xE4E160 GC_init,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4E2F0,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E2FC,0xE4E160 GC_init,import,,MSVCR80!atoi,resolved,[import] | hop 4; groups abc
+0xE4E315,0xE4E160 GC_init,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4E326,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E332,0xE4E160 GC_init,import,,MSVCR80!atol,resolved,[import] | hop 4; groups abc
+0xE4E348,0xE4E160 GC_init,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 4; groups abc
+0xE4E39D,0xE4E160 GC_init,import,,MSVCR80!exit,resolved,[import] | hop 4; groups abc
+0xE4E3C0,0xE4E160 GC_init,import,,MSVCR80!exit,resolved,[import] | hop 4; groups abc
+0xE4E3E3,0xE4E160 GC_init,import,,MSVCR80!getenv,resolved,[import] | hop 4; groups abc
+0xE4E8BE,0xE4E890 FUN_e4e890,import,,MSVCR80!exit,resolved,[import] | hop 3; groups bc
+0xE4EAD5,0xE4EAD0 FUN_e4ead0,import,,KERNEL32!GetSystemInfo,resolved,[import] | hop 5; groups bc
+0xE4EB0D,0xE4EAF0 FUN_e4eaf0,import,,KERNEL32!VirtualQuery,resolved,[import] | hop 5; groups bc
+0xE4EB70,0xE4EB70 GC_check_win32,import,,KERNEL32!GetVersion,resolved,[import] | hop 5; groups bc
+0xE4F00A,0xE4EFB0 GC_gww_dirty_init,import,,KERNEL32!GetWriteWatch,resolved,[import] | hop 5; groups b
+0xE4F055,0xE4EFB0 GC_gww_dirty_init,gfn,,0xE4DFA0,resolved,[global fn ptr 0x11949C0] | hop 5; groups b
+0xE4F301,0xE4F2E0 FUN_e4f2e0,gfn,,,unresolved,[global fn ptr 0x11F309C] | hop 3; groups abc
+0xE4F34E,0xE4F2E0 FUN_e4f2e0,gfn,,0xE4A410,resolved,[global fn ptr 0x1194830] | hop 3; groups abc
+0xE503CE,0xE50380 GC_reclaim_all,reg,,,unresolved,[register] | hop 3; groups b
+0xE511A3,0xE511A0 GC_stop_world,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 4; groups b
+0xE511D5,0xE511A0 GC_stop_world,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups b
+0xE5121D,0xE511A0 GC_stop_world,import,,KERNEL32!GetExitCodeThread,resolved,[import] | hop 4; groups b
+0xE51242,0xE511A0 GC_stop_world,import,,KERNEL32!CloseHandle,resolved,[import] | hop 4; groups b
+0xE51250,0xE511A0 GC_stop_world,import,,KERNEL32!SuspendThread,resolved,[import] | hop 4; groups b
+0xE5127B,0xE511A0 GC_stop_world,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups b
+0xE51291,0xE51290 GC_start_world,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 4; groups b
+0xE512D8,0xE51290 GC_start_world,import,,KERNEL32!ResumeThread,resolved,[import] | hop 4; groups b
+0xE513D9,0xE513D0 GC_thr_init,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups bc
+0xE514E9,0xE51400 tramp_create_thunk,switch,,,resolved,[switch] | hop 2; groups c
+0xE51727,0xE51400 tramp_create_thunk,switch,,,resolved,[switch] | hop 2; groups c
+0xE51BC7,0xE51400 tramp_create_thunk,switch,,,resolved,[switch] | hop 2; groups c
+0xE51E9D,0xE51E80 FUN_e51e80,import,,MSVCR80!__iob_func,resolved,[import] | hop 2; groups c
+0xE51EA3,0xE51E80 FUN_e51e80,import,,MSVCR80!fprintf,resolved,[import] | hop 2; groups c
+0xE51EC4,0xE51E80 FUN_e51e80,import,,MSVCR80!__iob_func,resolved,[import] | hop 2; groups c
+0xE51ECA,0xE51E80 FUN_e51e80,import,,MSVCR80!fprintf,resolved,[import] | hop 2; groups c
+0xE51F13,0xE51E80 FUN_e51e80,import,,MSVCR80!printf,resolved,[import] | hop 2; groups c
+0xE52149,0xE520E0 FUN_e520e0,slot,,,unresolved,[unknown receiver] | hop 0; groups c
+0xE521C7,0xE521A0 FUN_e521a0,switch,,,resolved,[switch] | hop 2; groups bc
+0xE52377,0xE52350 FUN_e52350,switch,,,resolved,[switch] | hop 1; groups c
+0xE52613,0xE525C0 FUN_e525c0,reg,,,unresolved,[fn ptr field] | hop 2; groups c
+0xE526C2,0xE52630 FUN_e52630,reg,,,unresolved,[register] | hop 1; groups bc
+0xE52853,0xE52840 FUN_e52840,switch,,,resolved,[switch] | hop 4; groups c
+0xE52B69,0xE52B60 FUN_e52b60,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 0; groups c
+0xE52C92,0xE52C70 interp_box_return,switch,,,resolved,[switch] | hop 1; groups c
+0xE52EE5,0xE52E70 FUN_e52e70,switch,,,resolved,[switch] | hop 2; groups c
+0xE52EEC,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52EFE,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52F1F,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52F4D,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52F78,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52FA3,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE52FD1,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE53003,0xE52E70 FUN_e52e70,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xE544E7,0xE53EB0 ves_exec_method_with_context,switch,,,resolved,[switch] | hop 1; groups c
+0xE545D5,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!memmove,resolved,[import] | hop 1; groups c
+0xE54D2A,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54D40,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54DC4,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54DDA,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54E60,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54E76,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54EFB,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54F11,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54F97,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE54FAD,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55032,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55048,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE550CE,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE550E4,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55169,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5517F,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55205,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5521B,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE552A0,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE552B6,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55337,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55349,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE553CC,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE553DE,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55440,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55456,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE554D7,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE554ED,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55574,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5558A,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5560B,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55621,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE556A8,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE556BE,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5573F,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55755,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE557DC,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE557F2,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55873,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE55889,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE57400,0xE53EB0 ves_exec_method_with_context,switch,,,resolved,[switch] | hop 1; groups c
+0xE57506,0xE53EB0 ves_exec_method_with_context,switch,,,resolved,[switch] | hop 1; groups c
+0xE58083,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE58094,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5812A,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE5813B,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE581C6,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE581DB,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE58273,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE58288,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE58313,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE58328,0xE53EB0 ves_exec_method_with_context,import,,MSVCR80!_isnan,resolved,[import] | hop 1; groups c
+0xE59FEA,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 0; groups c
+0xE5A150,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 0; groups c
+0xE5A1C7,0xE59FD0 interp_mono_invoke_with_state,switch,,,resolved,[switch] | hop 0; groups c
+0xE5A308,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 0; groups c
+0xE5A437,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 0; groups c
+0xE5A4AF,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 0; groups c
+0xE5A4CA,0xE59FD0 interp_mono_invoke_with_state,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 0; groups c
+0xE5A52C,0xE59FD0 interp_mono_invoke_with_state,import,,MSVCR80!longjmp,resolved,[import] | hop 0; groups c
+0xE5A537,0xE59FD0 interp_mono_invoke_with_state,import,,MSVCR80!printf,resolved,[import] | hop 0; groups c
+0xE5A85D,0xE5A7C0 FUN_e5a7c0,switch,,,resolved,[switch] | hop 3; groups c
+0xE5B1A7,0xE5B180 FUN_e5b180,switch,,,resolved,[switch] | hop 3; groups c
+0xE5C7CC,0xE5C660 FUN_e5c660,switch,,,resolved,[switch] | hop 3; groups c
+0xE5C88B,0xE5C660 FUN_e5c660,switch,,,resolved,[switch] | hop 3; groups c
+0xE5CFF4,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!_snprintf_s,resolved,[import] | hop 2; groups c
+0xE5D049,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!_snprintf_s,resolved,[import] | hop 2; groups c
+0xE5D110,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!_snprintf_s,resolved,[import] | hop 2; groups c
+0xE5D120,0xE5CA90 mono_interp_GenerateCode,import,,KERNEL32!OutputDebugStringA,resolved,[import] | hop 2; groups c
+0xE5D14B,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5D244,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5FAC0,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5FBA7,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5FC3A,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5FCA4,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE5FD32,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE60030,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE6186F,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE61B2F,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE61E85,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE627BB,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE6284F,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE62DB5,0xE5CA90 mono_interp_GenerateCode,switch,,,resolved,[switch] | hop 2; groups c
+0xE63B9A,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!printf,resolved,[import] | hop 2; groups c
+0xE63BB1,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!printf,resolved,[import] | hop 2; groups c
+0xE63BD5,0xE5CA90 mono_interp_GenerateCode,import,,MSVCR80!printf,resolved,[import] | hop 2; groups c
+0xE644A2,0xE643B0 FUN_e643b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups c
+0xE644B6,0xE643B0 FUN_e643b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE645BD,0xE643B0 FUN_e643b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE645EE,0xE643B0 FUN_e643b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE646CE,0xE643B0 FUN_e643b0,switch,,,resolved,[switch] | hop 1; groups c
+0xE648CF,0xE643B0 FUN_e643b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups c
+0xE648E3,0xE643B0 FUN_e643b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE64AD4,0xE643B0 FUN_e643b0,reg,,,unresolved,[fn ptr field] | hop 1; groups c
+0xE64AF2,0xE643B0 FUN_e643b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE67128,0xE67110 FUN_e67110,reg,,,unresolved,[fn ptr field] | hop 5; groups c
+0xE671B2,0xE67190 FUN_e67190,reg,,,unresolved,[fn ptr field] | hop 4; groups c
+0xE67369,0xE67350 FUN_e67350,reg,,,unresolved,[fn ptr field] | hop 4; groups c
+0xE67586,0xE67560 FUN_e67560,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xE675F4,0xE67560 FUN_e67560,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE67B8E,0xE67B80 FUN_e67b80,import,,MSVCR80!strstr,resolved,[import] | hop 5; groups c
+0xE67BBB,0xE67B80 FUN_e67b80,import,,MSVCR80!strncpy,resolved,[import] | hop 5; groups c
+0xE67F0D,0xE67EF0 FUN_e67ef0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups ac
+0xE67F22,0xE67EF0 FUN_e67ef0,import,,KERNEL32!InterlockedDecrement,resolved,[import] | hop 3; groups ac
+0xE67F4C,0xE67EF0 FUN_e67ef0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups ac
+0xE67F6C,0xE67EF0 FUN_e67ef0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xE68176,0xE68150 FUN_e68150,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 4; groups c
+0xE6833D,0xE68290 FUN_e68290,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xE68380,0xE68290 FUN_e68290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE683A2,0xE68290 FUN_e68290,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups c
+0xE683BC,0xE68290 FUN_e68290,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups c
+0xE683D1,0xE68290 FUN_e68290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE68415,0xE68290 FUN_e68290,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xE68421,0xE68290 FUN_e68290,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups c
+0xE68438,0xE68290 FUN_e68290,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups c
+0xE68449,0xE68290 FUN_e68290,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 5; groups c
+0xE68463,0xE68290 FUN_e68290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE68495,0xE68290 FUN_e68290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE684D6,0xE68290 FUN_e68290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE684EE,0xE68290 FUN_e68290,reg,,,unresolved,[fn ptr field] | hop 5; groups c
+0xE6851D,0xE68500 FUN_e68500,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups ac
+0xE68535,0xE68500 FUN_e68500,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xE685B0,0xE68590 mono_assembly_open_full,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE685E4,0xE68590 mono_assembly_open_full,import,,MSVCR80!strncmp,resolved,[import] | hop 4; groups c
+0xE686AC,0xE68590 mono_assembly_open_full,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups c
+0xE686C8,0xE68590 mono_assembly_open_full,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups c
+0xE68C0D,0xE68BF0 FUN_e68bf0,import,,MSVCR80!strstr,resolved,[import] | hop 4; groups c
+0xE68C3C,0xE68BF0 FUN_e68bf0,import,,MSVCR80!strncpy,resolved,[import] | hop 4; groups c
+0xE68F1D,0xE68EC0 FUN_e68ec0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups ac
+0xE68F33,0xE68EC0 FUN_e68ec0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xE68F69,0xE68EC0 FUN_e68ec0,reg,,,unresolved,[fn ptr field] | hop 3; groups ac
+0xE691AB,0xE691A0 FUN_e691a0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups abc
+0xE691C7,0xE691A0 FUN_e691a0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups abc
+0xE6928A,0xE691A0 FUN_e691a0,import,,MSVCR80!_errno,resolved,[import] | hop 2; groups abc
+0xE692B7,0xE691A0 FUN_e691a0,import,,MSVCR80!_errno,resolved,[import] | hop 2; groups abc
+0xE692BC,0xE691A0 FUN_e691a0,import,,MSVCR80!strerror,resolved,[import] | hop 2; groups abc
+0xE69353,0xE691A0 FUN_e691a0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups abc
+0xE69373,0xE691A0 FUN_e691a0,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 2; groups abc
+0xE693DB,0xE691A0 FUN_e691a0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups abc
+0xE699A7,0xE69990 FUN_e69990,switch,,,resolved,[switch] | hop 3; groups bc
+0xE69BD7,0xE69B60 FUN_e69b60,import,,KERNEL32!InterlockedCompareExchange,resolved,[import] | hop 1; groups abc
+0xE6A356,0xE6A1E0 mono_class_setup_interface_id,import,,MSVCR80!printf,resolved,[import] | hop 1; groups abc
+0xE6A4E4,0xE6A4A0 FUN_e6a4a0,import,,MSVCR80!strncmp,resolved,[import] | hop 1; groups abc
+0xE6A56F,0xE6A4A0 FUN_e6a4a0,import,,MSVCR80!strncmp,resolved,[import] | hop 1; groups abc
+0xE6A590,0xE6A4A0 FUN_e6a4a0,import,,MSVCR80!strncmp,resolved,[import] | hop 1; groups abc
+0xE6A5B1,0xE6A4A0 FUN_e6a4a0,import,,MSVCR80!strncmp,resolved,[import] | hop 1; groups abc
+0xE6A7A0,0xE6A6A0 FUN_e6a6a0,switch,,,resolved,[switch] | hop 2; groups abc
+0xE6B1BB,0xE6B130 FUN_e6b130,switch,,,resolved,[switch] | hop 3; groups abc
+0xE6B4F3,0xE6B4E0 FUN_e6b4e0,import,,MSVCR80!strchr,resolved,[import] | hop 2; groups abc
+0xE6B6DF,0xE6B6D0 FUN_e6b6d0,gfn,,,unresolved,[global fn ptr 0x11F4280] | hop 1; groups c
+0xE6B8AE,0xE6B890 FUN_e6b890,switch,,,resolved,[switch] | hop 2; groups abc
+0xE6C48A,0xE6BE90 FUN_e6be90,import,,MSVCR80!qsort,resolved,[import] | hop 2; groups abc
+0xE6D5D5,0xE6CCD0 FUN_e6ccd0,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE6D619,0xE6CCD0 FUN_e6ccd0,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE6EEBF,0xE6EE20 mono_class_init,gfn,,,unresolved,[global fn ptr 0x11F425C] | hop 0; groups abc
+0xE6F0FB,0xE6EE20 mono_class_init,gfn,,,unresolved,[global fn ptr 0x11F4284] | hop 0; groups abc
+0xE6F566,0xE6EE20 mono_class_init,gfn,,,unresolved,[global fn ptr 0x11F4260] | hop 0; groups abc
+0xE6F859,0xE6F840 FUN_e6f840,gfn,,,unresolved,[global fn ptr 0x11F4280] | hop 2; groups abc
+0xE6FAA5,0xE6FA90 mono_class_from_name,import,,MSVCR80!strchr,resolved,[import] | hop 1; groups abc
+0xE6FB26,0xE6FA90 mono_class_from_name,gfn,,,unresolved,[global fn ptr 0x11F4258] | hop 1; groups abc
+0xE6FEC7,0xE6FEA0 FUN_e6fea0,switch,,,resolved,[switch] | hop 3; groups abc
+0xE6FF99,0xE6FF80 FUN_e6ff80,gfn,,,unresolved,[global fn ptr 0x11F4280] | hop 3; groups c
+0xE70CF7,0xE70CD0 FUN_e70cd0,gfn,,,unresolved,[global fn ptr 0x11F4284] | hop 1; groups c
+0xE70D64,0xE70D50 mono_class_from_mono_type,switch,,,resolved,[switch] | hop 1; groups abc
+0xE70FB1,0xE70F90 FUN_e70f90,switch,,,resolved,[switch] | hop 3; groups bc
+0xE71175,0xE70F90 FUN_e70f90,import,,MSVCR80!strchr,resolved,[import] | hop 3; groups bc
+0xE7163A,0xE71620 FUN_e71620,switch,,,resolved,[switch] | hop 2; groups bc
+0xE718FD,0xE718E0 FUN_e718e0,import,,MSVCR80!strchr,resolved,[import] | hop 3; groups c
+0xE71911,0xE718E0 FUN_e718e0,import,,MSVCR80!strchr,resolved,[import] | hop 3; groups c
+0xE71937,0xE718E0 FUN_e718e0,import,,MSVCR80!strrchr,resolved,[import] | hop 3; groups c
+0xE71966,0xE718E0 FUN_e718e0,import,,MSVCR80!strrchr,resolved,[import] | hop 3; groups c
+0xE71CE7,0xE71CB0 FUN_e71cb0,reg,,,unresolved,[fn ptr field] | hop 4; groups c
+0xE71D51,0xE71CB0 FUN_e71cb0,switch,,,resolved,[switch] | hop 4; groups c
+0xE71D6C,0xE71CB0 FUN_e71cb0,reg,,,unresolved,[register] | hop 4; groups c
+0xE7208C,0xE72010 FUN_e72010,import,,MSVCR80!sprintf,resolved,[import] | hop 3; groups c
+0xE75266,0xE75260 mono_domain_get,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 1; groups abc
+0xE7527C,0xE75270 FUN_e75270,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 2; groups c
+0xE78675,0xE78630 object_register_finalizer,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups ac
+0xE786A9,0xE78630 object_register_finalizer,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xE8259E,0xE82580 FUN_e82580,import,,MSVCR80!bsearch,resolved,[import] | hop 1; groups c
+0xE8274A,0xE82680 mono_lookup_internal_call,import,,MSVCR80!bsearch,resolved,[import] | hop 0; groups c
+0xE82EB7,0xE82E90 FUN_e82e90,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE83760,0xE83740 FUN_e83740,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE8376D,0xE83740 FUN_e83740,import,,KERNEL32!InterlockedDecrement,resolved,[import] | hop 4; groups c
+0xE83797,0xE83740 FUN_e83740,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups c
+0xE83832,0xE83740 FUN_e83740,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups c
+0xE83840,0xE83740 FUN_e83740,import,,MSVCR80!fclose,resolved,[import] | hop 4; groups c
+0xE84099,0xE84080 FUN_e84080,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups bc
+0xE840B3,0xE84080 FUN_e84080,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 4; groups bc
+0xE840BE,0xE84080 FUN_e84080,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups bc
+0xE8412B,0xE84080 FUN_e84080,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups bc
+0xE8415D,0xE84140 FUN_e84140,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xE8417C,0xE84140 FUN_e84140,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xE841AA,0xE84140 FUN_e84140,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 5; groups c
+0xE841B5,0xE84140 FUN_e84140,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE841C6,0xE84140 FUN_e84140,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE841FA,0xE84140 FUN_e84140,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 5; groups c
+0xE84322,0xE84280 FUN_e84280,import,,MSVCR80!printf,resolved,[import] | hop 3; groups ac
+0xE84342,0xE84280 FUN_e84280,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups ac
+0xE84365,0xE84280 FUN_e84280,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 3; groups ac
+0xE84370,0xE84280 FUN_e84280,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xE8437D,0xE84280 FUN_e84280,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xE84393,0xE84280 FUN_e84280,import,,KERNEL32!InterlockedIncrement,resolved,[import] | hop 3; groups ac
+0xE848B6,0xE848B0 FUN_e848b0,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 1; groups abc
+0xE848C7,0xE848C0 FUN_e848c0,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 1; groups abc
+0xE848F6,0xE848C0 FUN_e848c0,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 1; groups abc
+0xE84914,0xE84900 FUN_e84900,switch,,,resolved,[switch] | hop 2; groups c
+0xE84F9C,0xE84F90 FUN_e84f90,gfn,,,unresolved,[global fn ptr 0x1195B34] | hop 3; groups bc
+0xE85025,0xE85020 mono_loader_lock,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups abc
+0xE85035,0xE85030 mono_loader_unlock,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0xE85058,0xE85040 mono_method_signature,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups abc
+0xE85069,0xE85040 mono_method_signature,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0xE850BA,0xE85040 mono_method_signature,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0xE851F5,0xE85040 mono_method_signature,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0xE85352,0xE85040 mono_method_signature,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups abc
+0xE853D3,0xE85390 mono_method_get_header,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE853E4,0xE85390 mono_method_get_header,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE8542A,0xE85390 mono_method_get_header,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE854C9,0xE85390 mono_method_get_header,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE85556,0xE85550 FUN_e85550,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 4; groups bc
+0xE855AB,0xE85550 FUN_e85550,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 4; groups bc
+0xE855C6,0xE855C0 FUN_e855c0,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups abc
+0xE85615,0xE855C0 FUN_e855c0,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 3; groups abc
+0xE85626,0xE85620 FUN_e85620,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 5; groups c
+0xE85660,0xE85620 FUN_e85620,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 5; groups c
+0xE85842,0xE85810 mono_get_method_full,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xE8586C,0xE85810 mono_get_method_full,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE85879,0xE85810 mono_get_method_full,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE858F5,0xE85810 mono_get_method_full,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xE8591F,0xE85810 mono_get_method_full,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE85DF8,0xE85DF0 FUN_e85df0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups bc
+0xE85E57,0xE85DF0 FUN_e85df0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups bc
+0xE86304,0xE862B0 FUN_e862b0,switch,,,resolved,[switch] | hop 4; groups c
+0xE8670E,0xE862B0 FUN_e862b0,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 4; groups c
+0xE86744,0xE862B0 FUN_e862b0,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 4; groups c
+0xE89B48,0xE89B20 FUN_e89b20,switch,,,resolved,[switch] | hop 4; groups c
+0xE89EB9,0xE89EB0 FUN_e89eb0,import,,MSVCR80!strstr,resolved,[import] | hop 3; groups c
+0xE8A1E5,0xE8A1A0 FUN_e8a1a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE8A2DF,0xE8A290 FUN_e8a290,switch,,,resolved,[switch] | hop 5; groups c
+0xE8A3A7,0xE8A390 FUN_e8a390,switch,,,resolved,[switch] | hop 5; groups c
+0xE8A41B,0xE8A410 FUN_e8a410,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE8A468,0xE8A410 FUN_e8a410,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE8A488,0xE8A480 FUN_e8a480,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A4B3,0xE8A480 FUN_e8a480,switch,,,resolved,[switch] | hop 3; groups c
+0xE8A4C1,0xE8A480 FUN_e8a480,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A4D3,0xE8A480 FUN_e8a480,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A4E5,0xE8A480 FUN_e8a480,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A4F7,0xE8A480 FUN_e8a480,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A53A,0xE8A520 FUN_e8a520,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A57F,0xE8A520 FUN_e8a520,switch,,,resolved,[switch] | hop 3; groups c
+0xE8A5DF,0xE8A520 FUN_e8a520,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE8A610,0xE8A600 FUN_e8a600,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xE8A62C,0xE8A600 FUN_e8a600,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xE8A867,0xE8A830 FUN_e8a830,switch,,,resolved,[switch] | hop 3; groups c
+0xE8A9C5,0xE8A960 FUN_e8a960,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE8A9DC,0xE8A960 FUN_e8a960,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE8AAC9,0xE8A960 FUN_e8a960,import,,MSVCR80!strstr,resolved,[import] | hop 2; groups c
+0xE8C5B6,0xE8C5A0 FUN_e8c5a0,switch,,,resolved,[switch] | hop 4; groups c
+0xE8D2E5,0xE8D290 FUN_e8d290,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE8D2FC,0xE8D290 FUN_e8d290,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE8E184,0xE8E170 FUN_e8e170,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups bc
+0xE8E21E,0xE8E1D0 FUN_e8e1d0,switch,,,resolved,[switch] | hop 2; groups c
+0xE8E2F4,0xE8E2C0 FUN_e8e2c0,switch,,,resolved,[switch] | hop 4; groups bc
+0xE8EA0F,0xE8EA00 FUN_e8ea00,switch,,,resolved,[switch] | hop 5; groups c
+0xE8F572,0xE8F510 FUN_e8f510,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE8F589,0xE8F510 FUN_e8f510,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE8F677,0xE8F510 FUN_e8f510,import,,MSVCR80!strstr,resolved,[import] | hop 2; groups c
+0xE8F78C,0xE8F720 mono_marshal_get_delegate_invoke,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE8F7A3,0xE8F720 mono_marshal_get_delegate_invoke,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE90B34,0xE908E0 FUN_e908e0,switch,,,resolved,[switch] | hop 4; groups c
+0xE90B95,0xE908E0 FUN_e908e0,switch,,,resolved,[switch] | hop 4; groups c
+0xE90BB3,0xE908E0 FUN_e908e0,switch,,,resolved,[switch] | hop 4; groups c
+0xE9117D,0xE91110 FUN_e91110,switch,,,resolved,[switch] | hop 4; groups c
+0xE91565,0xE91550 FUN_e91550,switch,,,resolved,[switch] | hop 4; groups c
+0xE91828,0xE91550 FUN_e91550,import,,MSVCR80!__iob_func,resolved,[import] | hop 4; groups c
+0xE91832,0xE91550 FUN_e91550,import,,MSVCR80!fprintf,resolved,[import] | hop 4; groups c
+0xE91856,0xE91550 FUN_e91550,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xE918AF,0xE91890 FUN_e91890,switch,,,resolved,[switch] | hop 4; groups c
+0xE91D4C,0xE91CB0 FUN_e91cb0,switch,,,resolved,[switch] | hop 4; groups c
+0xE921D0,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups bc
+0xE92203,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups bc
+0xE92217,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 3; groups bc
+0xE922C4,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups bc
+0xE924F7,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups bc
+0xE9251E,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 3; groups bc
+0xE92536,0xE92150 mono_marshal_load_type_info,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 3; groups bc
+0xE92F9E,0xE92F80 FUN_e92f80,switch,,,resolved,[switch] | hop 4; groups c
+0xE93535,0xE934F0 FUN_e934f0,switch,,,resolved,[switch] | hop 4; groups c
+0xE94003,0xE93F90 FUN_e93f90,switch,,,resolved,[switch] | hop 4; groups c
+0xE948CC,0xE93F90 FUN_e93f90,switch,,,resolved,[switch] | hop 4; groups c
+0xE95182,0xE95100 FUN_e95100,switch,,,resolved,[switch] | hop 3; groups c
+0xE95747,0xE95380 FUN_e95380,switch,,,resolved,[switch] | hop 2; groups c
+0xE957D9,0xE95380 FUN_e95380,import,,MSVCR80!strstr,resolved,[import] | hop 2; groups c
+0xE95848,0xE95380 FUN_e95380,switch,,,resolved,[switch] | hop 2; groups c
+0xE967E8,0xE963A0 FUN_e963a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE96CBD,0xE96C80 FUN_e96c80,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xE96CD4,0xE96C80 FUN_e96c80,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xE9704B,0xE97030 FUN_e97030,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xE97062,0xE97030 FUN_e97030,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xE97293,0xE97030 FUN_e97030,import,,MSVCR80!strstr,resolved,[import] | hop 3; groups c
+0xE9922D,0xE991B0 FUN_e991b0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups c
+0xE99244,0xE991B0 FUN_e991b0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xE995FB,0xE991B0 FUN_e991b0,import,,MSVCR80!strstr,resolved,[import] | hop 1; groups c
+0xE9B081,0xE9B060 FUN_e9b060,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE9B0C1,0xE9B0A0 FUN_e9b0a0,import,,MSVCR80!printf,resolved,[import] | hop 1; groups c
+0xE9B101,0xE9B0E0 FUN_e9b0e0,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE9B3F5,0xE9B3D0 FUN_e9b3d0,switch,,,resolved,[switch] | hop 2; groups abc
+0xE9BA75,0xE9BA50 FUN_e9ba50,switch,,,resolved,[switch] | hop 3; groups bc
+0xE9BE33,0xE9BDD0 FUN_e9bdd0,import,,MSVCR80!bsearch,resolved,[import] | hop 4; groups c
+0xE9BECF,0xE9BE70 FUN_e9be70,import,,MSVCR80!bsearch,resolved,[import] | hop 4; groups c
+0xE9BF68,0xE9BF00 FUN_e9bf00,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9C123,0xE9C0D0 FUN_e9c0d0,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9C213,0xE9C1C0 FUN_e9c1c0,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9C2AC,0xE9C260 FUN_e9c260,import,,MSVCR80!bsearch,resolved,[import] | hop 5; groups c
+0xE9C34F,0xE9C300 FUN_e9c300,import,,MSVCR80!bsearch,resolved,[import] | hop 4; groups bc
+0xE9C3D0,0xE9C3A0 FUN_e9c3a0,switch,,,resolved,[switch] | hop 2; groups abc
+0xE9C592,0xE9C540 FUN_e9c540,switch,,,resolved,[switch] | hop 2; groups c
+0xE9CB32,0xE9CA80 FUN_e9ca80,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups ac
+0xE9CD8B,0xE9CD30 FUN_e9cd30,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9CE7B,0xE9CE00 FUN_e9ce00,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9CF4F,0xE9CF00 FUN_e9cf00,import,,MSVCR80!bsearch,resolved,[import] | hop 4; groups c
+0xE9D1E0,0xE9D1A0 FUN_e9d1a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE9D245,0xE9D1A0 FUN_e9d1a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE9D2EF,0xE9D1A0 FUN_e9d1a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE9D40B,0xE9D1A0 FUN_e9d1a0,switch,,,resolved,[switch] | hop 5; groups c
+0xE9D62E,0xE9D5D0 FUN_e9d5d0,import,,MSVCR80!bsearch,resolved,[import] | hop 3; groups bc
+0xE9D666,0xE9D5D0 FUN_e9d5d0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xE9D705,0xE9D690 FUN_e9d690,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9DC36,0xE9DB80 FUN_e9db80,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xE9DF5A,0xE9DF20 mono_metadata_lookup_generic_inst,switch,,,resolved,[switch] | hop 2; groups abc
+0xE9E017,0xE9DF20 mono_metadata_lookup_generic_inst,switch,,,resolved,[switch] | hop 2; groups abc
+0xE9EDD8,0xE9ED90 FUN_e9ed90,switch,,,resolved,[switch] | hop 3; groups bc
+0xE9EFE0,0xE9EF70 FUN_e9ef70,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9F041,0xE9EF70 FUN_e9ef70,import,,MSVCR80!bsearch,resolved,[import] | hop 2; groups abc
+0xE9F4CC,0xE9F460 FUN_e9f460,switch,,,resolved,[switch] | hop 3; groups bc
+0xE9F75C,0xE9F6F0 FUN_e9f6f0,import,,MSVCR80!printf,resolved,[import] | hop 3; groups bc
+0xEA086D,0xEA0840 FUN_ea0840,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups c
+0xEA0887,0xEA0840 FUN_ea0840,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xEA0B32,0xEA0A50 FUN_ea0a50,switch,,,resolved,[switch] | hop 2; groups ac
+0xEA1090,0xEA1090 mono_runtime_invoke,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 0; groups abc
+0xEA10D7,0xEA10A0 FUN_ea10a0,switch,,,resolved,[switch] | hop 4; groups c
+0xEA12B0,0xEA1290 mono_field_set_value,import,,MSVCR80!printf,resolved,[import] | hop 3; groups c
+0xEA1370,0xEA1350 mono_field_get_value,import,,MSVCR80!printf,resolved,[import] | hop 3; groups c
+0xEA1461,0xEA1400 mono_runtime_delegate_invoke,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 0; groups c
+0xEA17FA,0xEA17D0 mono_ldstr_metadata_sig,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups c
+0xEA1818,0xEA17D0 mono_ldstr_metadata_sig,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xEA1837,0xEA17D0 mono_ldstr_metadata_sig,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups c
+0xEA190A,0xEA18F0 FUN_ea18f0,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 1; groups abc
+0xEA1A80,0xEA1A00 FUN_ea1a00,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 3; groups c
+0xEA1CA1,0xEA1C30 FUN_ea1c30,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 1; groups abc
+0xEA1E3A,0xEA1E30 mono_class_create_runtime_vtable,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 1; groups ac
+0xEA1E5C,0xEA1E30 mono_class_create_runtime_vtable,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups ac
+0xEA1E8F,0xEA1E30 mono_class_create_runtime_vtable,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups ac
+0xEA1ED5,0xEA1E30 mono_class_create_runtime_vtable,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 1; groups ac
+0xEA22EE,0xEA1E30 mono_class_create_runtime_vtable,gfn,,,unresolved,[global fn ptr 0x11F45C8] | hop 1; groups ac
+0xEA2301,0xEA1E30 mono_class_create_runtime_vtable,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 1; groups ac
+0xEA2356,0xEA1E30 mono_class_create_runtime_vtable,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 1; groups ac
+0xEA23E1,0xEA23B0 FUN_ea23b0,switch,,,resolved,[switch] | hop 5; groups c
+0xEA24DF,0xEA24C0 FUN_ea24c0,import,,MSVCR80!printf,resolved,[import] | hop 4; groups c
+0xEA2531,0xEA2510 FUN_ea2510,import,,MSVCR80!printf,resolved,[import] | hop 3; groups c
+0xEA2798,0xEA2770 FUN_ea2770,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 1; groups ac
+0xEA2C57,0xEA2C50 FUN_ea2c50,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 4; groups ac
+0xEA2C95,0xEA2C50 FUN_ea2c50,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups ac
+0xEA2CF8,0xEA2C50 FUN_ea2c50,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 4; groups ac
+0xEA2D19,0xEA2D10 FUN_ea2d10,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups ac
+0xEA2D82,0xEA2D10 FUN_ea2d10,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xEA2D92,0xEA2D10 FUN_ea2d10,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups ac
+0xEA2E4F,0xEA2DA0 FUN_ea2da0,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 1; groups c
+0xEA2EDF,0xEA2E70 FUN_ea2e70,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 3; groups c
+0xEA2F36,0xEA2E70 FUN_ea2e70,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 3; groups c
+0xEA319B,0xEA3140 FUN_ea3140,switch,,,resolved,[switch] | hop 0; groups ac
+0xEA3336,0xEA3220 FUN_ea3220,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 2; groups ac
+0xEA33E4,0xEA3370 mono_runtime_class_init,import,,KERNEL32!GetCurrentThreadId,resolved,[import] | hop 0; groups c
+0xEA33FD,0xEA3370 mono_runtime_class_init,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3417,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3465,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3489,0xEA3370 mono_runtime_class_init,import,,KERNEL32!InitializeCriticalSection,resolved,[import] | hop 0; groups c
+0xEA34A1,0xEA3370 mono_runtime_class_init,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 0; groups c
+0xEA352C,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3548,0xEA3370 mono_runtime_class_init,gfn,,0xEA1080 runtime_invoke_not_supported,resolved,[global fn ptr 0x1195B60] | hop 0; groups c
+0xEA35E7,0xEA3370 mono_runtime_class_init,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 0; groups c
+0xEA361A,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3647,0xEA3370 mono_runtime_class_init,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 0; groups c
+0xEA364E,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA3659,0xEA3370 mono_runtime_class_init,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 0; groups c
+0xEA367A,0xEA3370 mono_runtime_class_init,import,,KERNEL32!DeleteCriticalSection,resolved,[import] | hop 0; groups c
+0xEA36A8,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA36D1,0xEA3370 mono_runtime_class_init,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 0; groups c
+0xEA39B5,0xEA3990 FUN_ea3990,switch,,,resolved,[switch] | hop 2; groups ac
+0xEA478A,0xEA45A0 FUN_ea45a0,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 2; groups c
+0xEA49A4,0xEA47D0 FUN_ea47d0,gfn,,,unresolved,[global fn ptr 0x1195B64] | hop 2; groups c
+0xEA4BCE,0xEA4BB0 FUN_ea4bb0,gfn,,,unresolved,[global fn ptr 0x11F4630] | hop 2; groups c
+0xEA4C05,0xEA4BE0 FUN_ea4be0,gfn,,,unresolved,[global fn ptr 0x11F4644] | hop 2; groups c
+0xEA4C21,0xEA4BE0 FUN_ea4be0,gfn,,,unresolved,[global fn ptr 0x11F4640] | hop 2; groups c
+0xEA4C53,0xEA4C30 FUN_ea4c30,gfn,,,unresolved,[global fn ptr 0x11F45F0] | hop 1; groups ac
+0xEA4FAB,0xEA4F80 FUN_ea4f80,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups c
+0xEA4FC8,0xEA4F80 FUN_ea4f80,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups c
+0xEA4FCF,0xEA4F80 FUN_ea4f80,import,,KERNEL32!UnmapViewOfFile,resolved,[import] | hop 5; groups c
+0xEA4FD6,0xEA4F80 FUN_ea4f80,import,,KERNEL32!CloseHandle,resolved,[import] | hop 5; groups c
+0xEA82F2,0xEA82D0 FUN_ea82d0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups bc
+0xEA8325,0xEA82D0 FUN_ea82d0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups bc
+0xEA835B,0xEA82D0 FUN_ea82d0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups bc
+0xEA83AE,0xEA82D0 FUN_ea82d0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups bc
+0xEA8A18,0xEA8A00 FUN_ea8a00,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups ac
+0xEA8A77,0xEA8A00 FUN_ea8a00,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xEA8A9D,0xEA8A00 FUN_ea8a00,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xEA8AD4,0xEA8A00 FUN_ea8a00,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xEA8B27,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8B5E,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8C2B,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8C86,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8CB7,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8CEE,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8DAE,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 3; groups c
+0xEA8E09,0xEA8AF0 FUN_ea8af0,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 3; groups c
+0xEB9F46,0xEB9F40 FUN_eb9f40,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups abc
+0xEBAA90,0xEBAA80 FUN_ebaa80,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups ac
+0xEBAAC7,0xEBAA80 FUN_ebaa80,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xEBAAF8,0xEBAA80 FUN_ebaa80,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups ac
+0xEBAB17,0xEBAA80 FUN_ebaa80,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups ac
+0xEBAB55,0xEBAB30 FUN_ebab30,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups c
+0xEBAB85,0xEBAB30 FUN_ebab30,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 2; groups c
+0xEBAB99,0xEBAB30 FUN_ebab30,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 2; groups c
+0xEBAD64,0xEBAD00 FUN_ebad00,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups b
+0xEBAD84,0xEBAD00 FUN_ebad00,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups b
+0xEBAD8C,0xEBAD00 FUN_ebad00,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 5; groups b
+0xEBAD9D,0xEBAD00 FUN_ebad00,import,,KERNEL32!EnterCriticalSection,resolved,[import] | hop 5; groups b
+0xEBADBA,0xEBAD00 FUN_ebad00,import,,KERNEL32!LeaveCriticalSection,resolved,[import] | hop 5; groups b
+0xEBADE0,0xEBAD00 FUN_ebad00,gfn,,,unresolved,[global fn ptr 0x11F47D4] | hop 5; groups b
+0xEBADF7,0xEBADF0 FUN_ebadf0,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 4; groups b
+0xEBAE0D,0xEBADF0 FUN_ebadf0,import,,KERNEL32!TlsSetValue,resolved,[import] | hop 4; groups b
+0xEBAE23,0xEBADF0 FUN_ebadf0,import,,MSVCR80!exit,resolved,[import] | hop 4; groups b
+0xEBAE2B,0xEBADF0 FUN_ebadf0,import,,KERNEL32!ExitThread,resolved,[import] | hop 4; groups b
+0xEBB2C6,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!GetCurrentThread,resolved,[import] | hop 3; groups bc
+0xEBB2CD,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!WaitForSingleObjectEx,resolved,[import] | hop 3; groups bc
+0xEBB2D8,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!InterlockedDecrement,resolved,[import] | hop 3; groups bc
+0xEBB320,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!CreateEventW,resolved,[import] | hop 3; groups bc
+0xEBB340,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!SetEvent,resolved,[import] | hop 3; groups bc
+0xEBB354,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!WaitForSingleObject,resolved,[import] | hop 3; groups bc
+0xEBB36A,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!CloseHandle,resolved,[import] | hop 3; groups bc
+0xEBB37F,0xEBB2B0 FUN_ebb2b0,import,,KERNEL32!SetEvent,resolved,[import] | hop 3; groups bc
+0xEBB488,0xEBB480 FUN_ebb480,import,,KERNEL32!TlsGetValue,resolved,[import] | hop 2; groups bc
+0xEBBA1A,0xEBBA10 FUN_ebba10,import,,MSVCR80!_finite,resolved,[import] | hop 2; groups c
+0xEBBA72,0xEBBA30 FUN_ebba30,import,,MSVCR80!strncpy,resolved,[import] | hop 5; groups c
+0xEBBAAE,0xEBBA90 FUN_ebba90,import,,MSVCR80!_vsnprintf,resolved,[import] | hop 2; groups abc
+0xEBBAE1,0xEBBA90 FUN_ebba90,import,,MSVCR80!_vsnprintf,resolved,[import] | hop 2; groups abc
+0xEBBD56,0xEBBD10 FUN_ebbd10,reg,,,unresolved,[register] | hop 4; groups c
+0xEBBDFD,0xEBBDE0 g_hash_table_lookup,import,,MSVCR80!printf,resolved,[import] | hop 3; groups c
+0xEBBE16,0xEBBDE0 g_hash_table_lookup,reg,,,unresolved,[register] | hop 3; groups c
+0xEBBE34,0xEBBDE0 g_hash_table_lookup,reg,,,unresolved,[fn ptr field] | hop 3; groups c
+0xEBBE8D,0xEBBE70 FUN_ebbe70,import,,MSVCR80!printf,resolved,[import] | hop 3; groups c
+0xEBBED8,0xEBBE70 FUN_ebbe70,slot,,,unresolved,[unknown receiver] | hop 3; groups c
+0xEBBFFD,0xEBBFE0 g_hash_table_destroy,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xEBC02D,0xEBBFE0 g_hash_table_destroy,reg,,,unresolved,[fn ptr field] | hop 5; groups c
+0xEBC03D,0xEBBFE0 g_hash_table_destroy,reg,,,unresolved,[fn ptr field] | hop 5; groups c
+0xEBC08A,0xEBC060 g_hash_table_insert,import,,MSVCR80!printf,resolved,[import] | hop 2; groups c
+0xEBC0B0,0xEBC060 g_hash_table_insert,reg,,,unresolved,[register] | hop 2; groups c
+0xEBC0CA,0xEBC060 g_hash_table_insert,slot,,,unresolved,[unknown receiver] | hop 2; groups c
+0xEBC118,0xEBC060 g_hash_table_insert,reg,,,unresolved,[fn ptr field] | hop 2; groups c
+0xEBC12A,0xEBC060 g_hash_table_insert,reg,,,unresolved,[fn ptr field] | hop 2; groups c
+0xEBC47B,0xEBC3A0 FUN_ebc3a0,import,,MSVCR80!strncpy,resolved,[import] | hop 4; groups c
+0xEBC499,0xEBC3A0 FUN_ebc3a0,import,,MSVCR80!strtok,resolved,[import] | hop 4; groups c
+0xEBC51A,0xEBC3A0 FUN_ebc3a0,import,,MSVCR80!strtok,resolved,[import] | hop 4; groups c
+0xEBC5F9,0xEBC5A0 FUN_ebc5a0,import,,MSVCR80!strchr,resolved,[import] | hop 4; groups c
+0xEBC655,0xEBC5A0 FUN_ebc5a0,import,,MSVCR80!memmove,resolved,[import] | hop 4; groups c
+0xEBC668,0xEBC5A0 FUN_ebc5a0,import,,MSVCR80!strchr,resolved,[import] | hop 4; groups c
+0xEBE510,0xEBE4F0 FUN_ebe4f0,import,,MSVCR80!printf,resolved,[import] | hop 5; groups c
+0xEBE837,0xEBE7E0 FUN_ebe7e0,import,,MSVCR80!printf,resolved,[import] | hop 2; groups abc
+0xEC012F,0xEC00C0 FUN_ec00c0,import,,MSVCR80!memmove,resolved,[import] | hop 5; groups a
+0xF7E8A6,0xF7E8A6 FUN_f7e8a6,import,,MSVCR80!memcpy,resolved,[import] | hop 0; groups abc
+0xF7E8B8,0xF7E8B8 FUN_f7e8b8,import,,MSVCR80!memset,resolved,[import] | hop 0; groups abc
+0xF7E914,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_decode_pointer,resolved,[import] | hop 5; groups a
+0xF7E922,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_onexit,resolved,[import] | hop 5; groups a
+0xF7E93D,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_decode_pointer,resolved,[import] | hop 5; groups a
+0xF7E948,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_decode_pointer,resolved,[import] | hop 5; groups a
+0xF7E960,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_encode_pointer,resolved,[import] | hop 5; groups a
+0xF7E96F,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_encode_pointer,resolved,[import] | hop 5; groups a
+0xF7E979,0xF7E8FC FUN_f7e8fc,import,,MSVCR80!_encode_pointer,resolved,[import] | hop 5; groups a
+0xF7EDDE,0xF7EDDE FUN_f7edde,import,,MSVCR80!_CIacos,resolved,[import] | hop 4; groups a
+0xF7EDE4,0xF7EDE4 FUN_f7ede4,import,,MSVCR80!_CIasin,resolved,[import] | hop 4; groups a
+0xF7EDF0,0xF7EDF0 FUN_f7edf0,import,,MSVCR80!floor,resolved,[import] | hop 0; groups ab
+0xF7EDF6,0xF7EDF6 FUN_f7edf6,import,,MSVCR80!_CIpow,resolved,[import] | hop 0; groups ab
+0xF7EE92,0xF7EE92 FUN_f7ee92,import,,MSVCR80!_setjmp3,resolved,[import] | hop 0; groups bc
+0xF7EFB0,0xF7EFB0 FUN_f7efb0,import,,MSVCR80!_CIfmod,resolved,[import] | hop 0; groups bc
+0xF7F012,0xF7F012 FUN_f7f012,import,,MSVCR80!_CIsqrt,resolved,[import] | hop 0; groups bc
+0xF7F5AA,0xF7F5AA FUN_f7f5aa,import,,MSVCR80!_time32,resolved,[import] | hop 0; groups b
+0xF7FA2E,0xF7FA2E FUN_f7fa2e,import,,WS2_32!#151,resolved,[import] | hop 0; groups b

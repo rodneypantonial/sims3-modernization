@@ -69,6 +69,8 @@ A stopped mark runs root pushes (docs/30 §12.6) and may grow the mark stack. Wh
 
 `0xE4EC40` is the one that matters: it runs every collection, and the CRT heap lock is the lock a suspended game thread is most likely to hold. Why `ret` is safe: `GC_is_heap_base` exists to keep malloc heaps out of the root set, but EA's dynamic-library filter only accepts `MEM_IMAGE` regions, and `GC_register_root_section` only walks the exe image, so a "yes, malloc heap" answer can never change which region is registered [verified 2026-10-20, §2.2.1; was inferred, I-120-3]. The list it maintains, `[0x11F40E8]`, is used by `0xE4EC10`, `0xE4EC40` and `0xE4EDA0` (raw byte scan of `.text` for the address; one more match at `0xA241AB` is outside the GC block and was not decoded).
 
+Live check of the `[0x11DC18C]` rule (I-120-4): queue `mono-ledger-probe.json` reads the word at every `MonoScriptHost_Simulate` entry (`[AutShadow] Ledger=1`, autledger.cpp; counters `lgTicks`, `lgTrackTicks`, `lgTrackLast` in `ts3native_autshadow` v3) and `mono-ledger-report.ts` gives the verdict; built 2026-10-20, not run yet.
+
 Today's game has the same hazard if the main thread is the registered `GC_init` thread (docs/29 §4.3): every sim-thread stopped mark would then suspend the main thread and may `malloc` while it holds the heap lock. That this does not visibly freeze the game hints that only one thread is registered today, or that the timing is rare [inferred; I-120-1 settles which thread is registered].
 
 #### 2.2.1 Re-read of the filter and of the callers (2026-10-20, static)
@@ -293,5 +295,44 @@ Other unwind sources, all ruled out [verified]:
 - **I-120-8: refuted for one path, holds otherwise.** 7 of 17 entries fit outright; the other 10 fit on every path except the heap-exhausted `GC_oom_fn` path, which `longjmp`s out of the locked frame.
 - **Fix [design, not built]:** store the return-slot address with each shadow entry (`g_mtSlot[d] = retSlot`). Stack frames nest, so a live outer hooked frame always has a higher slot address than any inner one. In `MtLockEnter`, drop (and `LeaveCriticalSection` once for) every top entry whose slot address is at or below the new `retSlot`; in `MtLockLeave`, drop every top entry whose slot is below the returning frame's slot (`esp - 4` at thunk entry) before popping. A frame abandoned by any unwind is then cleaned up at the thread's next hooked entry or exit. Add a `lockStale` counter. Cheaper alternative: wrap `GC_oom_fn` (write our function into `[0x11949BC]` while the gate is on) to release this thread's lock depth and clear its shadow entries before calling `0xE78610`. That covers only the known path; the slot rule covers any unwind. Selftest: a fake hooked entry that `longjmp`s to its caller twice, then a normal locked call; expect `lockStale` 2, depth 0, the right return address.
 - Until the fix is in, `lockOverflow`/`lockMaxDepth` (the I-120-8 live test) would not show this leak, because no OOM happens in a normal 10-minute load. The live check should add an OOM case or wait for the fix.
+
+### 10.4 Fix built (ts3native 0.36.6 (branch build 0.36.4), offline, not run in game)
+
+The slot rule of §10.3, behind `GcLock=1` like the rest of P3 (no new key; default off):
+
+- `MtLockEnter` stores `g_mtSlot[d] = retSlot` (caller's ESP at entry) next to `g_mtRet[d]`. After taking the lock it drops every top entry whose slot is **at or below** the new `retSlot` (a live outer hooked frame always has a higher slot; equal means the same caller frame calling again after an unwind). Each dropped entry does one `LeaveCriticalSection` (the recursion the skipped thunk never released) and counts `lockStale`. Any entry present then belongs to the caller: it holds the lock, and entries are only pushed by the owner.
+- `MtLockExitThunk` now passes its entry ESP (returning slot + 4 + any `ret N`) to `MtLockLeave`, which drops top entries while the entry below also has a slot under that ESP (the lowest such entry is the returning frame, the ones above it were unwound), then pops as before.
+- Counter `ts3native_mtprobe` v3: `lockStale` at `+0x84` (docs/registry.md; `tools/probe/agent.js` reads it).
+- Selftest (`TestMonoThreadM5`, `selftest ok`): a fake hooked entry `longjmp`s to its caller with the gate on: depth 1 and lock recursion 1 remain (the leak as audited). The next locked call on the same thread returns its own value to the right place, depth 0, recursion 0, no owner, `lockStale` 1, and a second thread then takes the lock through a hook within 5 s. Exit path: a hooked outer entry `setjmp`s, calls the hooked jumper and returns normally through its thunk: value correct, depth 0, `lockStale` 2.
+- Limit [inferred]: a stale entry is only dropped when its thread makes another hooked call or exit from a shallower frame. After an OOM `longjmp` the interpreter allocates again almost at once (exception object handling, frame arena), so this is expected to be immediate; until then the other thread waits on the lock. The `GC_oom_fn` wrapper of §10.3 would close that gap for the known path; built in §10.5.
+
+Ledger: docs/51 §181.
+
+### 10.5 `GC_oom_fn` wrapper (ts3native 0.36.6 (branch build 0.36.5), offline, not run in game)
+
+Closes the §10.4 gap (I-120-28) for the known path: the out-of-memory thread gives the lock up **before** Mono raises, so the other thread does not wait for the OOM thread's next hooked call.
+
+**Static check of the slot and its callers** (capstone on the Steam 1.67 `TS3W.exe` game copy, Ghidra bounds; every 4-byte `BC 49 19 01` in the image) [verified]:
+
+| Site | Function | Use | Locks held at the call |
+|---|---|---|---|
+| `0xE695A2` | `mono_gc_base_init` `0xE69570` | `mov [0x11949BC], 0xE78610` (the only write) | - |
+| `0xE4BDAD` | `GC_generic_malloc` `0xE4BCE0` (hooked) | `push [esp+0xC]` (size); `call [0x11949BC]`; `add esp,4`; result returned | none of Boehm's: `LOCK()`/`UNLOCK()` compile to nothing (allocation lock compiled out, §1.1); the function has no `EnterCriticalSection` or lock call, only P3's |
+| `0xE4AB81` | register disappearing link `0xE4AAC0` (hooked) | `push 0xC`; `call [0x11949BC]`; `add esp,4`; NULL -> `[0x11F302C]++` (`GC_finalization_failures`), return 2 | none of Boehm's (same) |
+| `0xE4AD66` | `GC_register_finalizer_inner` `0xE4AC60` (from register finalizer `0xE4AE30`, hooked) | `push 0x18`; `call [0x11949BC]`; `add esp,4`; NULL -> `[0x11F302C]++`, return | none of Boehm's (same) |
+
+So the slot is `void* __cdecl (size_t)`, caller pops, result in EAX, and every caller treats NULL as failure. `0xE78610` ignores its argument: `mono_domain_get` `0xE75260`, push domain `+0x2C` (preallocated OOM exception), `mono_raise_exception` `0xEA18F0`, then `xor eax,eax; ret` (§10.2). The only lock any thread holds at the call is P3's `g_mtLock` (one recursion per locked hook frame on the shadow stack, plus any C-side hold), so releasing this thread's hook entries never releases a lock Boehm expects held. Static premise for releasing **all** of them: no hooked entry calls into the interpreter (§10.1 closures: the one callback reaches no managed code, finalizers run outside the lock), so every locked hook frame on the thread sits below the interpreter's `setjmp3` frame and the `longjmp` skips them all [verified, §10.1].
+
+**Wrapper** (`MtOomWrap` in `monothread-m5.cpp`, installed by `MtInstallP3`, i.e. only with `[MonoThread] GcLock=1`; default off):
+
+- Install: if `[0x11949BC]` is still `0xE78610`, keep it as the original and write `MtOomWrap` (`p3Ready` bit 5). Any other value (another mod's handler) is left alone and logged.
+- Call, on the thread that ran out: if it owns `g_mtLock`, copy its `g_mtDepth` shadow entries (return address + slot) to the wrapper's stack, set depth 0, `LeaveCriticalSection` once per entry, count them in `lockOomReleased` (`ts3native_mtprobe` v4, `+0x88`). C-side holds (`MtLockC`) are not entries and stay. A thread that does not own the lock (gate off, or no hooked frame) releases nothing.
+- Then **call** (not tail-jump) `0xE78610`. With an interpreter context it `longjmp`s past the wrapper and every hooked frame, exactly as without the wrapper (same argument, no SEH frame or destructor in the wrapper). Without one (native caller, worker before its context) it returns NULL and the hooked frames return normally through their thunks, so a tail jump would leave them with no entries (wrong return address). The wrapper therefore takes the lock again (one recursion per entry), puts the saved entries back on top and returns the NULL. The other thread may have used the lock meanwhile; it holds no entries once it has released it, so the stack is ours again.
+- The §10.4 slot rule stays for any other unwind; after an OOM `longjmp` through the wrapper nothing is stale (`lockStale` unchanged).
+
+**Selftest** (`TestMonoThreadM5`, `selftest ok`): fake hooked outer -> fake hooked inner -> `call [fake slot]` (as `GC_malloc` -> `GC_generic_malloc` -> `GC_oom_fn`), gate on. `MtWrapOom` refuses a slot that is not the expected handler. Not owner: pass-through, nothing released. Longjmp path: the fake Mono handler starts a second thread that takes the lock through a hook and waits for it (5 s limit) **before** the OOM thread makes any further call, then `longjmp`s: the other thread got the lock, `lockOomReleased` 2, `lockStale` unchanged, depth 0, recursion 0, no owner. Return path (no context): same, then both frames return through their thunks: NULL returned, outer frame resumed, `lockOomReleased` 4, depth 0, lock free; a following locked call returns right. The I-120-8 tests before it still pass.
+- Test note: the fake outer must not tail-call the inner hook. A hooked entry that tail-jumps into another hooked entry shares its return slot, which the §10.4 rule reads as an unwound frame (the outer entry is dropped as stale). No game entry does that: the three tail jumps of §10.1 land in unhooked functions [verified].
+
+Ledger: docs/51 §183.
 
 Reproduce: `python tools/p3-entry-audit.py <repo>/game-copy/bin/TS3W.exe <repo>/game-copy/analysis/functions.csv` (17 blocks; the `GC_oom_fn` line names the function that calls the slot), then capstone at `0xE695A2`, `0xE78610`, `0xEA18F0`, `0xE5A70A`, `0xE53740`, `0xE4D460`. Ledger: docs/51 §173.

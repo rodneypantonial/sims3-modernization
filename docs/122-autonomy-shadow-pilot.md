@@ -17,6 +17,7 @@ Naming: the Mono plan already uses M0-M6 for steps, so the shadow match classes 
 - **G-A0 static checks done (2026-10-20, §12):** 78 binder bodies are in the closure (no engine reads; 59 enter the interpreter through `0xD8A8E0`'s global call-record list, one writes `[0x11F2D84]`): new worker path F1 and abort F2. Three more managed W sites (online-dating records, punishment manager, reflection desire function): hooks H4-H6. 7 of the 8 extra definitions in, `VisitWithDefinition` out. No hook owner conflict; mod guard per method, not per session. +4-5 h.
 - **Part 1 built offline (2026-10-20, §13), G-A1 passed:** guard thunks on every provider-table slot, a generic snapshot (answers from the game's own IC bodies, A/B versions, learned keys, audit), change tracking as one more consumer of routesnap's event layer, F2 at `0xDA9790`; selftest T1/T2/T4 pass. Part 2 (cut, worker, ts3fixes driver, compare) waits for M5 F1.
 - **Part 2 built offline (2026-10-20, §14), G-A2 passed in monohost:** cut and window on `[MonoThread]`'s slot stub, sim-thread reference with the RNG restored, worker dispatch through `MtSubmit`, `AutShadowNative` ICs, rooted answer column and array allocator (part 1's MonoArray length offset was wrong: fixed), `simstale`; ts3fixes driver, H4-H6, worker hooks, per-method mod guard, Mode R/W compare. Host: 200 requests x 50 objects, 8,400 of 8,400 A0 with the main thread interpreting, allocating and collecting. Next: Mode 0 and Mode R in game (`autshadow-first.json`).
+- **Sim-thread ICs answered (2026-10-20, docs/125):** RNG by per-unit MT streams (driver `RngUnit` marks, contract Version 3), slot positions and `Query_GetObjects` as learned keys re-asked at every cut; monohost G-A2 now A0 10,000 of 10,000 with 0 `rng` aborts. Only `Slots_CanAttachToSlotImpl` still aborts by design.
 - **Biggest risks:** EA native method bodies (the binder's 1,085, docs/119 §9.4) inside the closure bypass IC shims; hidden managed writes from the driver's closure into shared objects; the quiescent-window premise; the cost of guarding every IC and of the M5 lock (§10).
 
 ## 1. Scope and flow
@@ -68,6 +69,7 @@ The worker never yields, never calls `Simulator.*`, never writes the request's g
 | **Session memo** (learned keys) | (IC, argument key) -> answer | `DeviceConfig_GetOption`, `GameUtils_IsWorldInstalled`, `UserToolUtils_GetProductImpl`, `UserToolUtils_ProductGenericImpl`, `World_GetLotName`, `World_GetLotNameKey` (strings rooted), `DeviceConfig_GetProcessorLevel` | **recorded on the sim-thread pass-through** of the guard thunk when the game itself calls these ICs (no extra call); worker miss = abort + key logged | session; lot names also cleared on lot events and loads |
 
 `Query_GetObjects` (class d) is not in the snapshot: the worker aborts and logs the requested class, which answers I-121-7 as a side effect. If the classes are few and rare, a per-class list fed by object events `4`/`6` makes it class a in a later round.
+**Update 2026-10-20 (docs/125):** the RNG, slot positions and `Query_GetObjects` are no longer aborts. The RNG draws per-unit streams (owner `AO_RNG`, `RngUnit` marks from the driver, contract Version 3); slot positions and `Query_GetObjects` are learned keys re-asked through the game body at every cut (`AO_CUT`), `Query_GetObjects` answers kept up to 256 objects. `Slots_CanAttachToSlotImpl` still aborts.
 
 ### 2.3 Size and cost budget [inferred]
 
@@ -105,9 +107,9 @@ The Sim refresh dominates. Pilot rule [design]: refresh only the Sims the reques
 | a, slots | `GetContainedObject`, `GetContainmentSlotNames` | slot contents per row; names from the session memo |
 | a, constants and memos | 7 world constants, 7 memo ICs | snapshot constants; memo hit, else abort `memo` + key logged |
 | a-stub | `EAText_GetMoneyString`, `EAText_GetNumberString`, `EAText_GetTimeString`, `LocalizedStringService_GetLocalizedStringByString` (both bindings), `OnlineFeaturesHost_GetPersonaName` | one preallocated, rooted empty string [inferred safe: I-121-4] |
-| b | `Random_NextDoubleImpl`, `Slots_GetPositionOfSlotImpl`, `Slots_CanAttachToSlotImpl` | abort `rng` / `slotpos` / `attach` |
+| b | `Random_NextDoubleImpl`, `Slots_GetPositionOfSlotImpl`, `Slots_CanAttachToSlotImpl` | abort `rng` / `slotpos` / `attach`; since docs/125: per-unit RNG streams, slot positions as learned `AO_CUT` keys, `attach` still aborts |
 | c | `UTFConnectorSimulator::Simulator_GetTaskImpl` | not registered in the game (docs/119 §9.1): stays unregistered |
-| d | `Query_GetObjects` | abort `query` + Mono class name logged (I-121-7) |
+| d | `Query_GetObjects` | abort `query` + Mono class name logged (I-121-7); since docs/125: learned type key (`AO_CUT`), ≤ 256 objects kept, larger types abort `query` |
 | not on the list | everything else, incl. `StopWatch_*`, `Simulator_SleepImpl`, `GetCurrentTaskImpl` | abort `ic:<name>` (Verify: should be 0 on the allow-listed path) |
 
 The "lot-at-position grid live read under lock `0x10786C8`" fallback of docs/121 §8.3 is **not** used in the pilot: every geometry answer comes from the copy, so the worker never touches the grid, the terrain reentrancy byte or a handle refcount (docs/121 §8.4).
@@ -119,6 +121,7 @@ The guard sets `abortReason` (first one wins) and returns the neutral value; the
 ### 3.4 RNG
 
 The worker never draws: `Random_NextDoubleImpl` aborts (docs/121 §4.1 option a). Mode R's sim-thread reference run copies the Mersenne Twister state at MonoScriptHost `+0xC30` (624 words + index, docs/27 §1.1 [verified there]) before the run and restores it after, so the reference leaves the sim's RNG stream unchanged [design]. Draws inside the reference run are still counted, and the matching worker objects are A4 `rng`.
+**Superseded 2026-10-20 (docs/125 §2):** the worker draws from per-unit Mersenne Twister streams seeded from (cut seed, unit) with the game's own `0x4FA990`/`0x4FAA70`; the reference re-seeds the host MT per unit inside the same save and restore, so both sides draw the same values per unit and Mode R stays bit-equal (monohost: A0 10,000 of 10,000, 0 `rng` aborts).
 
 ### 3.5 Managed worker shims and pre-warm (ts3fixes `AutShadow.cs`)
 
@@ -270,7 +273,7 @@ Go-live (worker results used) stays a separate decision after G-A6 with docs/59 
 
 ## 11. Ledger
 
-Open claims: docs/51 §146 (I-122-1 to I-122-11); G-A0 results: docs/51 §150 (I-122-12 to I-122-19); part 1 build: docs/51 §156 (I-122-20 to I-122-28); part 2 build: docs/51 §159 (I-122-29 to I-122-37).
+Open claims: docs/51 §146 (I-122-1 to I-122-11); G-A0 results: docs/51 §150 (I-122-12 to I-122-19); part 1 build: docs/51 §156 (I-122-20 to I-122-28); part 2 build: docs/51 §159 (I-122-29 to I-122-37).; RNG, slot position and query answers (docs/125): docs/51 §166 (I-125-1 to I-125-9).
 
 ## 12. G-A0 results (2026-10-20, static)
 
@@ -559,3 +562,11 @@ No direct raise call on these not-found paths (their call closures were not walk
 **Mismatch found and fixed.** The memo recorded every out after the call and keyed only on the non-out arguments. When a body leaves an out unwritten (`GetOption` on a missing option; `ProductGenericImpl` for most funcIDs, whose managed wrapper passes the caller's `ResourceKey` fields in by `ref`), the game leaves the caller's own value there, but the worker got the sim caller's value replayed. Fix in `AsKeyOf`: memo rows also key on the in-values of their out/ref parameters, computed before the body runs. A replay is then exact (same in-values -> same outs, written or not); a different in-value is a memo miss and aborts `memo`, never a wrong answer. Keys fit `AS_KEY` = 8 (ProductGeneric: 2 + 6 dwords). Cut rows are unchanged: the only cut row with an out (`World_GetLotLocationImpl`) always writes it (§14.8). Selftest: `AfOption` now writes its out only when found, like `0x741230`; new T1 cases (a missing option recorded with in-value 42 replays 42 to a worker caller holding 42; a worker caller holding 5 aborts `memo` and keeps 5) pass.
 
 **Other residuals.** `ScriptCore.UTFConnectorSimulator::Simulator_GetTaskImpl` (same signature as row 7) has no descriptor, so a worker call gets the guard thunk's unlisted path: abort `ic`, never a snapshot answer [verified in code; whether the closure reaches it stays unchecked, it only costs a run]. A null `Type` in a rows 15-17 key would fault natively at the next cut; managed callers always pass `typeof(T)`, so no guard was added.
+
+### 14.10 Mod guards, docs/125 addendum fixes and H11 (2026-10-20, offline, ts3native 0.36.5, contract Version 4)
+
+- Contract **Version 4**: new IC `RngPause` (16 ICs); ts3fixes wants 4; monohost checks 4 / 16. Counters `ts3native_autshadow` v4 (`abort2` for reasons 20 `rain` and 21 `posture`, `rngPause`, `rngPauseDraws`); ts3fixes counters 122-126.
+- docs/128 G-M1..G-M5 built as in docs/128 §5.1: accepted MVID pairs (EA, simler90 UPDATE242), scoring-function skip `sf` (`Def` -3) with `AlwaysChooseBest` recorded, ts3fixes hooks pass through on the worker, closure-wide L3 sweep (688 methods, generated list `mods/ts3fixes/src/AutShadowLists.cs`; ~65-110 ms per sweep under the game's Mono, once per load at the first sampled search), mod override census (63 slots).
+- docs/125 addendum §4 built (§4.1 there): reference RNG pause brackets around the `LocalizeString` and `IsAllowedInRoom` hooks, room cache and posture list pre-warm at the request, worker abort `posture` on an unfilled list.
+- **H11** (docs/127 §4): in `ScorePair` on the worker, before the score: autonomy search, Seasons on, rain or hail, outdoor non-Sim target = abort `rain` (20). The reference and the game score those pairs as before, so Mode R shows them as A4 with reason `rain`. Condition order and laziness selftested (`AutShadowCore.RainShelter`).
+- Not run in the game. Next: the docs/122 §14.7 first jobs with these guards on (expect `sf` 0, G-M4 foreign 0, G-M5 types 0 on an install without NRaas, `rain` only in rainy Seasons saves).

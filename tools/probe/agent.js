@@ -807,7 +807,165 @@ function routeLockReport() {
   };
 }
 
+// --- docs/133: read-only snapshot of the mint callvirt inline caches (no hook, nothing written). Each callvirt site keeps
+// one (MonoClass*, RuntimeMethod*) pair in its method's data items: the last receiver class and its resolved target
+// (handler 0xE549EB, miss 0xE51FC0 overwrites the pair at 0xE54B1D) [verified]. A snapshot walks every transformed method
+// reachable from the class caches of the images seen so far (corlib [0x1220E40], SimIFace via [0x1220F34], then every image
+// a cached class or method belongs to) and through call / callvirt data items (inflated generic methods are only reached
+// that way), decodes its mint code and reads each site's pair; the union over snapshots is dumped as JSON
+// (tools/virtual-resolution-report.ts). Layouts: RuntimeMethod +0 code, +8 MonoMethod, +0x14 data items, +0x44 bit 0x100 =
+// transformed (set after generate returns, 0xE64AE3); MonoMethod +8 class, +0x14 RuntimeMethod, +0x18 name; MonoClass +0
+// image, +0x28 nesting class, +0x34/+0x38 name/namespace, +0x70/+0x94 method count/array; image +0x298 class cache =
+// eglib GHashTable (+8 buckets, +0xC size; slot key, value, next) [verified docs/104, docs/130, 0xE459F0].
+// Mint words: callvirt 0xEC [op, cache, -, decl] (0xED/0xEE add a constrained-class word before decl), call 0xEA [op, m],
+// con.call 0xEB [op, c, m], switch 0xE8 [op, n32, n x off32], superops 0x1AB-0x1C0 keep the base instructions' words in
+// place (docs/130 §9), so they decode as their first base opcode [verified].
+const VC = { corlib: ptr('0x1220e40'), simulator: ptr('0x1220f34'), oplen: ptr('0x1195088'), superTab: ptr('0x108fcd8') };
+const vc = { lens: null, rtms: new Map(), images: new Set(), sites: new Map(), names: new Map(), snaps: 0, firstAt: null, lastAt: null, stats: {} };
+function vcLens() {
+  if (vc.lens) return vc.lens;
+  const t = new Uint8Array(VC.oplen.readByteArray(0x1ab)), lens = new Uint8Array(0x1c1);
+  lens.set(t);
+  for (let op = 0x1ab; op <= 0x1c0; op++) { // superop entry k = op - 0x1AA: u32 hash, u16 count, u16[count] base opcodes
+    const e = VC.superTab.add(72 * (op - 0x1aa)), first = e.add(4).readU16() ? e.add(6).readU16() : 0;
+    lens[op] = first && first < 0x1ab ? t[first] : 0;
+  }
+  return (vc.lens = lens);
+}
+// pure: mint words -> callvirt sites [word offset, cache item, declared item] and call items; bad = first undecodable offset
+function vcDecode(w, lens) {
+  const sites = [], calls = [];
+  for (let i = 0; i < w.length;) {
+    const op = w[i];
+    let n = op < lens.length ? lens[op] : 0;
+    if (op === 0xe8) n = i + 2 < w.length ? 3 + 2 * (w[i + 1] | w[i + 2] << 16) : 0;
+    if (!n) return { sites, calls, bad: i };
+    if (i + n > w.length) break;
+    if (op >= 0xec && op <= 0xee) sites.push([i, w[i + 1], w[i + n - 1]]);
+    else if (op === 0xea || op === 0xf1 || op === 0xf4 || op === 0xfc) calls.push(w[i + 1]);
+    else if (op === 0xeb) calls.push(w[i + 2]);
+    i += n;
+  }
+  return { sites, calls, bad: -1 };
+}
+function vcSelfCheck() {
+  const L = new Uint8Array(0x1c1); L[0] = 1; L[0xea] = 2; L[0xeb] = 3; L[0xec] = 4; L[0xed] = 5; L[0x06] = 1; L[0x1ab] = 1;
+  const w = Uint16Array.from([0, 0xea, 7, 0xe8, 2, 0, 1, 0, 2, 0, 0xec, 4, 0, 9, 0x1ab, 0xeb, 3, 8, 0xed, 6, 0, 5, 11, 0x06]);
+  const r = vcDecode(w, L);
+  const ok = JSON.stringify(r) === JSON.stringify({ sites: [[10, 4, 9], [18, 6, 11]], calls: [7, 8], bad: -1 }) && vcDecode(Uint16Array.from([0, 0x1a9]), L).bad === 1;
+  if (!ok) throw new Error('vcDecode self-check failed: ' + JSON.stringify(r));
+}
+function vcIsRtm(p) {
+  try { if (p.isNull()) return false; const m = p.add(8).readPointer(); return !m.isNull() && m.add(0x14).readPointer().equals(p); } catch (e) { return false; }
+}
+function vcClassName(k, d) {
+  const s = 'c' + k;
+  if (vc.names.has(s)) return vc.names.get(s);
+  const n = cstr(safeRead(k.add(0x34))), nest = safeRead(k.add(0x28)), ns = cstr(safeRead(k.add(0x38)));
+  const r = nest && !nest.isNull() && d < 8 ? `${vcClassName(nest, d + 1)}+${n}` : ns ? `${ns}.${n}` : n;
+  vc.names.set(s, r);
+  return r;
+}
+function vcMethodKey(m) { // "Namespace.Outer+Inner::Name", as the docs/78 index keys without the parameter list
+  const s = m.toString();
+  let k = vc.names.get(s);
+  if (k === undefined) { const c = safeRead(m.add(8)); k = c && !c.isNull() ? `${vcClassName(c, 0)}::${cstr(safeRead(m.add(0x18)))}` : '?'; vc.names.set(s, k); }
+  return k;
+}
+function vcInfo(r) { // decoded once per RuntimeMethod after its transform finished; null = not (yet) transformed
+  const s = r.toString();
+  let info = vc.rtms.get(s);
+  if (info) return info;
+  try {
+    if (!(r.add(0x44).readU32() & 0x100)) return null;
+    const code = r.readPointer(), items = r.add(0x14).readPointer(), m = r.add(8).readPointer();
+    if (code.isNull() || items.isNull()) return null;
+    const gap = items.sub(code).toUInt32(); // data items are allocated right after the code from the same mempool
+    const bounded = gap > 0 && gap <= 0x40000;
+    let words = null;
+    for (const bytes of bounded ? [gap & ~1] : [0x10000, 0x2000, 0x400]) { try { words = new Uint16Array(code.readByteArray(bytes)); break; } catch (e) { /* range end: smaller */ } }
+    if (!words) return null;
+    const d = vcDecode(words, vcLens());
+    const item = i => safeRead(items.add(4 * i));
+    const sites = [];
+    // plain numbers, not NativePointers: this cache lives in the game's 32-bit address space for the whole run
+    for (const [off, ci, di] of d.sites) { const decl = item(di); if (decl && vcIsRtm(decl)) sites.push({ off, cache: items.add(4 * ci).toUInt32(), decl: vcMethodKey(decl.add(8).readPointer()) }); }
+    const calls = d.calls.map(item).filter(p => p && vcIsRtm(p)).map(p => p.toUInt32());
+    info = { key: vcMethodKey(m), sites, calls, bounded, bad: d.bad >= 0 };
+    vc.rtms.set(s, info);
+    vc.stats.unbounded = (vc.stats.unbounded || 0) + (bounded ? 0 : 1);
+    vc.stats.badDecode = (vc.stats.badDecode || 0) + (d.bad >= 0 && bounded ? 1 : 0);
+    return info;
+  } catch (e) { return null; }
+}
+function vcSnapshot(budgetS) {
+  if (!vc.lens) vcSelfCheck();
+  const t0 = Date.now(), snap = ++vc.snaps, seen = new Set(), q = [], walked = new Set();
+  vc.firstAt = vc.firstAt ?? new Date(t0).toISOString();
+  const push = r => { const s = r.toString(); if (!seen.has(s)) { seen.add(s); q.push(r); } };
+  const addImage = img => { if (img && !img.isNull()) vc.images.add(img.toString()); };
+  addImage(safeRead(VC.corlib));
+  const sim = safeRead(VC.simulator); if (sim && !sim.isNull()) addImage(safeRead(sim));
+  let classes = 0, filled = 0, newPairs = 0, partial = false;
+  for (;;) {
+    for (const s of [...vc.images]) {
+      if (walked.has(s)) continue;
+      walked.add(s);
+      try {
+        const h = ptr(s).add(0x298).readPointer(), buckets = h.add(8).readPointer(), size = h.add(0xc).readU32();
+        for (let b = 0; b < size && b < 1 << 20; b++) {
+          for (let slot = safeRead(buckets.add(4 * b)), guard = 0; slot && !slot.isNull() && guard < 10000; slot = safeRead(slot.add(8)), guard++) {
+            const k = safeRead(slot.add(4)); if (!k || k.isNull()) continue;
+            classes++;
+            const n = k.add(0x70).readU32(), arr = safeRead(k.add(0x94));
+            if (!arr || arr.isNull() || n > 20000) continue;
+            for (let i = 0; i < n; i++) { const m = safeRead(arr.add(4 * i)), r = m && !m.isNull() ? safeRead(m.add(0x14)) : null; if (r && !r.isNull()) push(r); }
+          }
+        }
+      } catch (e) { vc.stats.imageErrors = (vc.stats.imageErrors || 0) + 1; }
+    }
+    if (!q.length) break;
+    while (q.length) {
+      if (Date.now() - t0 > budgetS * 1000) { partial = true; q.length = 0; break; }
+      const r = q.pop(), info = vcInfo(r);
+      if (!info) continue;
+      for (const c of info.calls) push(ptr(c));
+      for (const st of info.sites) {
+        const cache = ptr(st.cache), cls = safeRead(cache), tgt = safeRead(cache.add(4));
+        if (!tgt || tgt.isNull() || !vcIsRtm(tgt)) continue;
+        filled++;
+        push(tgt);
+        addImage(safeRead(cls));
+        const tm = tgt.add(8).readPointer(); addImage(safeRead(tm.add(8)));
+        const key = `${info.key}@${st.off}`;
+        let rec = vc.sites.get(key);
+        if (!rec) vc.sites.set(key, rec = { caller: info.key, off: st.off, decl: st.decl, snaps: 0, last: 0, targets: {}, classes: {} });
+        if (rec.last !== snap) { rec.last = snap; rec.snaps++; }
+        const tk = vcMethodKey(tm), ck = cls && !cls.isNull() ? vcClassName(cls, 0) : '?';
+        if (!(tk in rec.targets)) newPairs++;
+        rec.targets[tk] = (rec.targets[tk] || 0) + 1; rec.classes[ck] = (rec.classes[ck] || 0) + 1;
+      }
+    }
+    if (partial || [...vc.images].every(s => walked.has(s))) break;
+  }
+  vc.lastAt = new Date().toISOString();
+  return { snap, ms: Date.now() - t0, partial, images: vc.images.size, classes, methods: seen.size, decoded: vc.rtms.size, filled, sites: vc.sites.size, newPairs, stats: vc.stats };
+}
+
 rpc.exports = {
+  // docs/133: snap=1 takes one callvirt-cache snapshot (budget s); out=PATH writes the union so far as JSON.
+  vcache(snap, budgetS, out) {
+    const r = snap ? vcSnapshot(budgetS || 30) : { snaps: vc.snaps, sites: vc.sites.size };
+    if (out) {
+      const f = new File(out, 'w');
+      f.write(JSON.stringify({ version: 1, snaps: vc.snaps, firstAt: vc.firstAt, lastAt: vc.lastAt, images: vc.images.size, decoded: vc.rtms.size, stats: vc.stats,
+        sites: [...vc.sites.values()].map(({ last, ...s }) => s) }));
+      f.flush(); f.close();
+      r.wrote = out;
+    }
+    return r;
+  },
+
   // One exported ts3native DWORD by name (e.g. ts3native_footprintMode); value 0|1 writes it first. Null when missing.
   nativeExport(name, value, offset) {
     const m = Process.findModuleByName('ts3native.asi');
@@ -1132,6 +1290,8 @@ rpc.exports = {
         'workerRunUs', 'workerMaxRunUs', 'workerExceptions', 'workerTrackSkips', 'workerStopFails', 'workerCollects', 'workerCtxSet',
         'seq', 'result']; // v1: 27 LONG, +0x00..+0x68
       if (mp.readS32() >= 2) mf.push('arenaRelNonEmpty', 'arenaDropped', 'n2mReady', 'n2mWorker', 'n2mMaxDepth', 'n2mOverflow'); // v2: +0x6C..+0x80 (docs/120 §9)
+      if (mp.readS32() >= 3) mf.push('lockStale'); // v3: +0x84 (docs/120 §10, I-120-8)
+      if (mp.readS32() >= 4) mf.push('lockOomReleased'); // v4: +0x88 (docs/120 §10.5, GC_oom_fn wrapper)
       r.mtprobe = Object.fromEntries(mf.map((n, i) => [n, mp.add(i * 4).readS32()]));
     }
     // autonomy shadow pilot (docs/122 §13-§14): export ts3native_autshadow (docs/registry.md), null when the asi has none
@@ -1152,6 +1312,25 @@ rpc.exports = {
           'workExc', 'workRefused', 'noWorker', 'windowUs', 'windowMaxUs', 'overrun', 'epochDrops', 'finishRuns', 'finishExc', 'stale',
           'rooted', 'icRegistered', 'logLines', 'waitTicks', 'unguarded', 'workerClassInit']; // v2: +0xCC..+0x138
         f2.forEach((n, i) => { a[n] = rd(51 + i); });
+      }
+      if (v >= 3) { // v3: mono ledger probe ([AutShadow] Ledger=1, autledger.cpp, docs/51): +0x13C..+0x75C, pointers named here
+        const four = at => [0, 1, 2, 3].map(i => rd(at + i)), ics = ['rng', 'slotpos', 'getobjects', 'inrange'];
+        const name = (fn, p) => { if (!p) return null; try { return fn(ptr(p >>> 0)); } catch (e) { return null; } };
+        const lg = { on: rd(79), ticks: rd(80), trackTicks: rd(81), trackLast: rd(82), scopes: rd(83), scopeUs: rd(84), scopeFull: rd(85),
+          in: four(86), out: four(90), slotIds: rd(94), sleep0: four(95), sleep1: four(99), dropped: rd(103), classes: [], callers: [] };
+        for (let i = 0; i < 16 && rd(104 + i * 3 + 2); i++) {
+          const k = rd(104 + i * 3 + 1);
+          lg.classes.push({ ic: ics[rd(104 + i * 3)], klass: '0x' + (k >>> 0).toString(16), class: name(className, k), calls: rd(104 + i * 3 + 2) });
+        }
+        for (let i = 0; i < 32 && rd(152 + i * 10 + 1); i++) {
+          const m = Array.from({ length: 8 }, (_, j) => rd(152 + i * 10 + 2 + j)).filter(x => x);
+          lg.callers.push({ ic: ics[rd(152 + i * 10)], calls: rd(152 + i * 10 + 1), frames: m.map(x => name(monoMethodName, x) ?? '0x' + (x >>> 0).toString(16)) });
+        }
+        a.ledger = lg;
+      }
+      if (v >= 4) { // v4: +0x760 abort2[2] (reasons 20 rain, 21 posture, into a.abort), +0x768 rngPause, +0x76C rngPauseDraws
+        Object.assign(a.abort, { rain: rd(472), posture: rd(473) });
+        Object.assign(a, { rngPause: rd(474), rngPauseDraws: rd(475) });
       }
       r.autshadow = a;
     }
