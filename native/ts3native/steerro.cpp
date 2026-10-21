@@ -372,8 +372,7 @@ static bool SrIn(DWORD v, const DWORD* s, int n) {
 }
 
 // Slot targets of the 9 footprint classes and the middle table (docs/83 §8, re-read 2026-10-17); anything else is a doubt
-static bool SrSlotsOk(const u8* obj) {
-    if (!g_srCheckSlots) return true;
+static bool SrParentOk(const u8* obj) {
     static const DWORD k8[] = {0x0080F840, 0x0080C300, 0x00807090, 0x00807B70, 0x008066C0, 0x006119F0};
     const DWORD* vt = *(const DWORD* const*)obj;
     const DWORD* sv = *(const DWORD* const*)(obj + 4);
@@ -383,6 +382,24 @@ static bool SrSlotsOk(const u8* obj) {
            (vt[0xC0 / 4] == 0x00620D60 ||
             (vt[0xC0 / 4] == 0x007EAEA0 && vt[0xE8 / 4] == 0x0080E690 && (vt[0] == 0x00619EF0 || vt[0] == 0x0083F5F0))) &&
            sv[1] == 0x00620E60 && (sv[2] == 0x00624ED0 || sv[2] == 0x00620E50);
+}
+// 0.37 (docs/84 §3.6, bp-s2cov-shadow: every one of the 31% shape fallbacks was SRS_SLOT): the child footprint 0xFEBF90
+// ("Routing/ExtensionFootprint", 0x28 bytes, docs/94 §21; the only live class of replay.cpp's 11 that the list above
+// rejects). Its slots forward to the parent at +0xC or read its own +0x18/+0x1C mask and +0x20 byte, all pure [verified
+// disassembly 2026-10-21]: +0 0x626210 parent slot 0; +8 0x806BF0 class (+0x20 set: the parent's +8 with the same
+// arguments, else 2 or 0 from the mask); +0xC 0x626220 parent type; +0x28 0x620D60 false; +0x60 0x806F00 mask vs
+// 0x624180(arg) (bit arithmetic); +0x84 0x6262D0 parent +0x7C id; +0xB8 0xBFB320 false; +0xC0 0x620D60 false; interface
+// 0xFEBF6C: +4 0x6262E0 = ~(parent id), +8 0x626300 parent type. So the child is fine when its parent is one of the above.
+static bool SrSlotsOk(const u8* obj) {
+    if (!g_srCheckSlots) return true;
+    const DWORD* vt = *(const DWORD* const*)obj;
+    const DWORD* sv = *(const DWORD* const*)(obj + 4);
+    if (!vt || !sv) return false;
+    if (vt[0x60 / 4] != 0x00806F00) return SrParentOk(obj);
+    const u8* parent = *(const u8* const*)(obj + 0xC);  // the game forwards without a NULL check (it would fault)
+    return vt[0] == 0x00626210 && vt[2] == 0x00806BF0 && vt[3] == 0x00626220 && vt[0x28 / 4] == 0x00620D60 &&
+           vt[0x84 / 4] == 0x006262D0 && vt[0xB8 / 4] == 0x00BFB320 && vt[0xC0 / 4] == 0x00620D60 && sv[1] == 0x006262E0 &&
+           sv[2] == 0x00626300 && parent && SrParentOk(parent);
 }
 
 static void SrAdd(SrCtx* c, const u8* obj) {
@@ -535,13 +552,15 @@ static int SrCmpPtr(const void* a, const void* b) {
 }
 
 // Footprints of lot (lo, hi) near pt as 0x631F10 / 0x631E20 collect them (point: radius r, record rec, mode 0; segment:
-// NULL context, mode 1), sorted by sub-object pointer like 0x82EDB0 / 0x82F0B0 copy them out
-static int SrQuery(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt, bool point, float r, const u8* rec) {
+// NULL context, mode 1), sorted by sub-object pointer like 0x82EDB0 / 0x82F0B0 copy them out. mode1: a point query with
+// 0x82EDB0's mode 1 ([AvoidRO], RouteFollow_A / _B): QueryPoint 0x667480 then picks visitor 0x662DD0 (0x669CD0 flag 1)
+// instead of 0x662DB0 (flag 0), nothing else changes [verified 0x667493..0x6674A4]
+static int SrQuery(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt, bool point, float r, const u8* rec, bool mode1 = false) {
     c->n = 0;
     c->fail = SR_OK;
     c->over = 0;
     c->rec = point ? rec : NULL;
-    c->flag = point ? 0 : 1;
+    c->flag = point && !mode1 ? 0 : 1;
     const u8* entry;
     int why = SrEntry(p, lo, hi, true, &entry);
     if (why || !entry) return why;

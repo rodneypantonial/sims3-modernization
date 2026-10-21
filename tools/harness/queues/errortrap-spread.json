@@ -1,0 +1,43 @@
+{
+  "jobs": [
+    {
+      "id": "bp-errortrap-spread-repro",
+      "note": "docs/146 correctness first (5 min): repro bp-errortrap-spread-inventory under /taskstall, errortrapspread on for the whole run (set while paused, before the load-up scan's 1 sim-minute alarm fires). Pass: the load-up check ran ours (etspread_passes >= 1 before the repro steps, applied log 'Inventories.CheckInventories: ok'), our passes take > 1 tick with etspread_max_tick_us < ~5000, 'verify: ErrorTrap's own check logged 0 corrections' after ours, ErrorTrap's own check (repro step 3) shows its one-tick stall (>= 250 ms row with Inventories.GetName) and ours none, etspread_failed 0. Stop the queue on any 'failed' line in errortrapspread_log",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "fixesOn": "errortrapspread", "repro": "bp-errortrap-spread-inventory" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-errortrap-spread-yield",
+      "note": "docs/146 §3 marker contract on the installed ErrorTrap (5 min): repro bp-errortrap-spread-upstream-yield. Pass: etspread_upstream -1, etspread_theirs >= 1, the 'upstream spreading found (faked), ours off' line, no crash",
+      "asi": "tested",
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "bp-errortrap-spread-upstream-yield" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-errortrap-load-off",
+      "note": "docs/146 load-time hitch, fresh load, switch off (5 min, /taskstall 250, no repro): the load-up scan cannot be repeated in one load, so this is the off side of a two-load A/B with bp-errortrap-load-on (same save, seed, build). Pass: one taskstall row of 0.5-0.9 s from ErrorTrap's load-up task about one sim-minute after the window starts (samples in Inventories.GetName / CheckInventories, then DereferenceController PreProcess), as in 7 of 7 earlier /taskstall loads; etspread_theirs 1, etspread_passes 0",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "fixesOff": "errortrapspread" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-errortrap-load-on",
+      "note": "docs/146 load-time hitch, fresh load, switch on (5 min, /taskstall 250, no repro): the on side of the two-load A/B. Pass: etspread_passes 1, etspread_failed 0, no taskstall row with Inventories.GetName / CheckInventories samples; ErrorTrap's remaining first-tick row (controllers' PreProcess pass, expected ~0.15-0.3 s [inferred]) reported with its length; errortrapspread_log 'inventory pass' line with ticks > 1. Compare worst-hitches.ts --min 300 for the first 2 minutes of both loads (class 'first minute after load' / 'TaskObjects burst'): one fewer >= 300 ms iteration on the on side",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "fixesOn": "errortrapspread" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

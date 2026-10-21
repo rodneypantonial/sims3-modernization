@@ -39,6 +39,10 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSpatialCache value="False" />
     <kRoutableCache value="False" />
     <kStuckCheckBusy value="False" />
+    <kStuckCheckAsync value="False" />
+    <kSafeSpotCap value="False" />
+    <kFarthestLotSorted value="False" />
+    <kIndoorPositionCap value="False" />
     <kFastRefTable value="True" />
     <kCachedReflection value="False" />
     <kMotiveBarImageCache value="True" />
@@ -53,6 +57,20 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kTooltipThrottle value="False" />
     <kDoorMirror value="False" />
     <kAutShadow value="False" />
+    <kReplanDefer value="False" />
+    <kReplanSpread value="False" />
+    <kUnseenEnvThrottle value="False" />
+    <kUnseenMotiveThrottle value="False" />
+    <kUnseenBroadcastThrottle value="False" />
+    <kUnseenThrottleEvery value="4" />
+    <kUnseenBroadcastEvery value="16" />
+    <kUnseenCarThrottle value="False" />
+    <kUnseenCarEvery value="4" />
+    <kOverwatchSpread value="False" />
+    <kErrorTrapSpread value="False" />
+    <kEaSpreadLots value="False" />
+    <kEaSpreadPets value="False" />
+    <kEaSpreadDecay value="False" />
   </Current_Tuning>
 </base>
 `;

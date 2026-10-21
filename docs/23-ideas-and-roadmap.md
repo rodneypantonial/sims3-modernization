@@ -25,6 +25,9 @@ Claims here are `[inferred]` unless marked otherwise; most are proposals.
 | 15 | Mono interpreter speedups | high | high | high | research |
 | 16 | 64-bit research notes | low (clarity) | low | low | research |
 | 17 | Sim-thread offload architecture (long-term goal) | high | high | high | research |
+| 18 | Readability refactor (packages, files, docs; same behavior) | medium | medium (~1-2 days of agents + 1 validation night) | medium (native counter offsets, unity build split, byte-exact patch tables, install order) | refactor |
+
+#18 waits until after the Mono offload (Rodney, 2026-10-21): by then most hitches are fixed and the project is in maintenance mode. Guards: static_asserts, selftests, identical install-log lines, release validation queue; no parallel feature branches while it runs.
 
 Suggested order: 1, 2, 10, 9 first (they make every later contribution cheaper and comparable), then 7, 4, 3, 6, then the research bets as contributors with RE experience join.
 

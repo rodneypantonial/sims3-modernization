@@ -1,0 +1,45 @@
+{
+  "_comment": "Numbers for tools/mts-images.ts. Sources: README.md 'Results so far' (v0.1.4 vs no fixes, 2026-10-20/21). Friday: fill every null under v020 from the v0.2.0 release-vs-baseline runs (README v0.2.0 table), set thumbnail.claim, list the shipped v0.2.0 features, then run `node tools/mts-images.ts --final`.",
+  "version": "0.2.0",
+  "worlds": ["Bridgeport", "Sunset Valley", "Isla Paradiso"],
+  "metrics": [
+    {
+      "id": "stutters",
+      "title": "Stutters per minute (sim steps of 50 ms or more), lower is better",
+      "unit": "/min",
+      "nofixes": [177, 76, 146],
+      "v014": [152, 70, 117],
+      "v020": [null, null, null]
+    },
+    {
+      "id": "routing",
+      "title": "Route planning on the main thread, ms per second, lower is better",
+      "unit": "ms/s",
+      "nofixes": [129, 79, 282],
+      "v014": [53, 24, 92],
+      "v020": [null, null, null]
+    }
+  ],
+  "method": "10 min at speed 3, seeded, ABBA order, aged 14-day saves, one laptop (i7-11800H, 32 GB, RTX 3070 Laptop). 'No fixes' = same plugin with all our switches off.",
+  "thumbnail": {
+    "claim": "7-20% fewer stutters",
+    "sub": "v0.1.4, measured on 3 towns"
+  },
+  "features": {
+    "ts3fixes": [
+      "Unseen townies skip the long walk",
+      "No pointless route retries",
+      "Stuck Sims get unstuck",
+      "Faster saves in big towns",
+      "Lighter Sim panel"
+    ],
+    "ts3native": [
+      "Route planning on a second CPU core",
+      "Fewer script memory clean-up pauses",
+      "Faster boat and swimming routes",
+      "Faster unpacking of game files",
+      "Old save backed up in the background"
+    ],
+    "v020": null
+  }
+}

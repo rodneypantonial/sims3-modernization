@@ -49,10 +49,13 @@ namespace Ts3Fixes
             ApplyRouteFixes();
             ApplyRouteBackoff();
             ApplyOverwatchStuck(false);
+            ApplyOverwatchSpread(false);
+            ApplyErrorTrapSpread(false);
             ApplyPortalAdaptorLeak();
             ApplyCasGrid();
             ApplySpatialCache();
             ApplyFewerPlans();
+            ApplyCandidateLoops();
             ApplyRefTable();
             ApplyCachedReflection();
             ApplyUiCaches();
@@ -60,6 +63,9 @@ namespace Ts3Fixes
             ApplyScriptHotSpots();
             ApplyDoorMirror();
             ApplyAutShadow();
+            ApplyReplanDefer();
+            ApplyUnseenThrottle();
+            ApplyEaSpread();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -87,13 +93,26 @@ namespace Ts3Fixes
         // builds refused (doormirror; DoorMirror.cs, docs/105 §10.5), [106-121] [AutShadow] pilot (AutShadow.cs, docs/122): A0..A5,
         // L pairs / equal / Test agree / top-1 agree, skips, warm-in reference runs, requests posted, Begin busy, mod-guard
         // skips, managed exceptions in the driver, [122-126] [AutShadow] mod guards (docs/128 §5): sf skips, G-M4 methods /
-        // us / foreign swaps, G-M5 overriding mod types.
+        // us / foreign swaps, G-M5 overriding mod types, [127-131] 3 AM stuck checks in our task (stuckcheckasync; FewerPlans.cs,
+        // docs/134 §8): queued / run / dropped / most waiting / longest wait in sim-seconds,
+        // [132-136] replan defer / spread (ReplanDefer.cs, docs/141 §6): interrupts inserted, eligible calls kept sync, calls
+        // held back, calls replayed, replay exceptions,
+        // [137-145] candidate-loop caps (CandidateLoops.cs, docs/141 §7): safe-spot calls capped / limit reached, farthest-lot
+        // calls / plans / cache answers / unplanned after the cap, indoor-position calls / plans / rooms given up, [146-155] unseen script throttle
+        // (UnseenThrottle.cs, docs/144): environment calls classified / unseen / skipped, motive updates classified / unseen /
+        // skipped, broadcaster per-object rule unseen pulses run / skipped, unseen motive updates leaving a need <= -95, gate restarts,
+        // [156-166] NRaas Overwatch nightly cleanups spread (OverwatchSpread.cs, docs/145),
+        // [167-176] NRaas ErrorTrap load-up inventory check spread (ErrorTrapSpread.cs, docs/146).
+        // [177-196] EA maintenance alarms spread (EaSpread.cs, docs/147): venue cleanup passes / lots / Sims stepped / ticks /
+        // longest tick us / verify objects left to clean / passes stopped, pet pool alarms moved to our task / pets added / ticks /
+        // most ticks for one alarm / alarms left to the game (busy), decay passes / Sims queued / pairs stepped / pairs dropped /
+        // ticks / longest tick us / passes finished early / decay steps that threw, [197-200] unseen traffic cars: LiteDriver spot asks / unseen car + spot / turned down (stays parked) / seen (UnseenThrottle.cs, docs/143 §8.5), [201-206] reserved, [207] extra pet pool alarm fires dropped (second chain), [208] most decay pairs stepped in one tick, [209] most venue-cleanup units (objects tested, cleaned or repaired, per-lot steps) in one tick, [210] most Overwatch inventory items checked in one tick (OverwatchSpread.cs), [211-212] ErrorTrap inventory check: largest inventory checked whole (items), most items checked in one tick (ErrorTrapSpread.cs).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[127]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[213]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -125,6 +144,10 @@ namespace Ts3Fixes
                 case "spatialcache": return Instantiator.kSpatialCache;
                 case "routablecache": return Instantiator.kRoutableCache;
                 case "stuckcheckbusy": return Instantiator.kStuckCheckBusy;
+                case "stuckcheckasync": return Instantiator.kStuckCheckAsync;
+                case "safespotcap": return Instantiator.kSafeSpotCap;
+                case "farthestsorted": return Instantiator.kFarthestLotSorted;
+                case "indoorcap": return Instantiator.kIndoorPositionCap;
                 case "fastreftable": return Instantiator.kFastRefTable;
                 case "cachedreflection": return Instantiator.kCachedReflection;
                 case "motivebar": return Instantiator.kMotiveBarImageCache;
@@ -141,8 +164,23 @@ namespace Ts3Fixes
                 case "wildflowertask": return Instantiator.kWildflowerTask;
                 case "doormirror": return Instantiator.kDoorMirror;
                 case "autshadow": return Instantiator.kAutShadow;
+                case "replandefer": return Instantiator.kReplanDefer;
+                case "replanspread": return Instantiator.kReplanSpread;
                 case "autshadowverify": return false; // verify switch: test runs only
+                case "overwatchspread": return Instantiator.kOverwatchSpread;
+                case "overwatchspreadverify": case "overwatchspreadfakeupstream": return false; // test runs only
+                case "errortrapspread": return Instantiator.kErrorTrapSpread;
+                case "errortrapspreadverify": case "errortrapspreadfakeupstream": return false; // test runs only
                 case "autledger": return false; // ledger probe switch (docs/51 mono ledger): test runs only
+                case "unseenenv": return Instantiator.kUnseenEnvThrottle;
+                case "unseenmotives": return Instantiator.kUnseenMotiveThrottle;
+                case "unseenbroadcast": return Instantiator.kUnseenBroadcastThrottle;
+                case "unseenprobe": return false; // probe switch: test runs only
+                case "easpreadlots": return Instantiator.kEaSpreadLots;
+                case "easpreadpets": return Instantiator.kEaSpreadPets;
+                case "easpreaddecay": return Instantiator.kEaSpreadDecay;
+                case "easpreadlotsverify": case "easpreaddecayverify": return false; // verify switches: test runs only
+                case "unseencars": return Instantiator.kUnseenCarThrottle;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -573,6 +611,22 @@ namespace Ts3Fixes
                 int[] c = PatchCounters();
                 c[22]++;
                 Sims3.Gameplay.Interfaces.IGameObject o = b.BroadcastingObject;
+                // docs/144: per-broadcaster one pulse in kUnseenBroadcastEvery, staggered by the broadcaster, instead of the
+                // shared 1-in-4 counter below (which can starve the same broadcasters when their pulses line up with it)
+                if (o != null && ShortcutOn("unseenbroadcast"))
+                {
+                    int key = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(b);
+                    if (FarFromViewers(o.Position))
+                    {
+                        bool run = sBroadcastGate.Unseen(key, Math.Max(1, Instantiator.kUnseenBroadcastEvery));
+                        NoteGateClears(c);
+                        if (!run) { c[23]++; c[153]++; return; }
+                        c[152]++;
+                    }
+                    else sBroadcastGate.Seen(key);
+                    PulseOrig(pulseRadius, fullSimulation);
+                    return;
+                }
                 if (ShortcutOn("broadcast") && o != null && (++sCalls & 3) != 0 && FarFromViewers(o.Position))
                 {
                     c[23]++;

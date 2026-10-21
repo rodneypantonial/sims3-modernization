@@ -19,6 +19,8 @@
 //   F2. arm / disarm races (0.18.0): disarmed site not counted; writer gone before the arm; writer entering after the arm
 //      but before A_RUNNING; the job ending (and the next arming) inside the clone with a writer in the disarmed site.
 //   G. fix D-X; H. design H2 (see the sections);
+//   DG. design G standalone ([Discourage] DestroyPark): the game's DestroyById / FindById / release on a fake object service,
+//      a job thread holding raw pointers across the destroys (park on: no freed read, no job-thread destructor; off: both);
 //   J. [ObstructedRO] (0.22.1): the game's IC_Route_IsPointObstructedBySim 0x751480 vs OrRun (fakes for its phase-1 callees
 //      0x74B2C0, 0xADD860, 0xB015B0, 0x74A8F0 and the route's vtable pair), then its detour: job, shadow, QL busy.
 //   SNAP. route snapshot P3 (snap.cpp, docs/94 §4.4): K1, K2, K5 on the fake world of snap-fake.h, high-cost stamps and
@@ -141,14 +143,21 @@ static void __cdecl FkConv(const float* src, u8* out) {
 struct LotRect { u8* lot; float x0, z0, x1, z1; };
 static LotRect g_rects[4];
 static int g_nRects;
-static u8* __fastcall FkLotLookup(void*, void*, float x, float z) {
+static void* g_lookNone;  // AV: this world manager finds no lot (the consumer's wm apart from the query's wmw)
+static u8* __fastcall FkLotLookup(void* m, void*, float x, float z) {
+    if (m && m == g_lookNone) return NULL;
     for (int i = 0; i < g_nRects; i++)
         if (x >= g_rects[i].x0 && x < g_rects[i].x1 && z >= g_rects[i].z0 && z < g_rects[i].z1) return g_rects[i].lot;
     return NULL;
 }
 
 static long g_twAfter;  // F: read-only answers once the tripwire writer had left
-static void* A(size_t n) { void* p = _aligned_malloc(n, 16); memset(p, 0, n); return p; }
+static void* A(size_t n) {
+    void* p = _aligned_malloc(n, 16);
+    if (!p) { printf("out of memory (worlds are never freed: fewer cases)\n"); exit(4); }
+    memset(p, 0, n);
+    return p;
+}
 
 // --- the fake world ---
 static const DWORD kClasses[9] = {0xFEBBC0, 0xFEB848, 0xFEAE08, 0xFEBA98, 0xFEBE38, 0xFEB5F8, 0xFEB720, 0xFEBD10, 0xFEB970};
@@ -161,6 +170,7 @@ struct World {
     u8* entries[2];
     u8* qs[2][2];      // per lot entry, two levels
     u8* fps[2400];  // A2 adds its big leaf's footprints after the random ones
+    u8* kid[2400];  // 0.37: fps[i]'s child footprint or NULL (PickFp hands it out instead of fps[i] half the time)
     int nfp;
 };
 static World W;
@@ -182,11 +192,41 @@ static u8* NewFootprint(u8* cachePolys, int nPolys) {
     *(DWORD*)(f + 0x44) = 0;
     f[0x48] = (u8)Rnd(2);  // 0x620DD0
     u8* cache = (u8*)A(0x24 * 3);
-    *(u8**)(cache + 0) = cachePolys;
-    *(u8**)(cache + 4) = cachePolys + nPolys * 16;
-    cache[0x20] = 1;
+    for (int l = 0; l < 3; l++) {  // levels 1 and 2 for the classes with 3 (slot 0 0x83F5F0, [AvoidRO]'s +0xB8 loop)
+        *(u8**)(cache + l * 0x24) = cachePolys;
+        *(u8**)(cache + l * 0x24 + 4) = cachePolys + nPolys * 16;
+        cache[l * 0x24 + 0x20] = 1;
+    }
     *(u8**)(f + 0x38) = cache;
     return f;
+}
+
+// 0.37: the child footprint class 0xFEBF90 ("Routing/ExtensionFootprint", built by 0x807400 on a parent): +0xC the parent,
+// +8 references, +0x10 a float, +0x18/+0x1C the type mask (-1 as made, else set), +0x20 forward-class byte. 0x80 bytes
+// although the game's are 0x28. Children draw from their own generator, so the worlds of every other section (and their
+// statistical thresholds) come out of g_seed exactly as before 0.37; they reach the leaves only through PickFp.
+static DWORD g_kidSeed = 99991;
+static DWORD RndK(DWORD n) { g_kidSeed = g_kidSeed * 1103515245 + 12345; return ((g_kidSeed >> 8) & 0xFFFFFF) % n; }
+static u8* NewChild(u8* parent) {
+    u8* c = (u8*)A(0x80);
+    *(DWORD*)c = 0x00FEBF90;
+    *(DWORD*)(c + 4) = 0x00FEBF6C;
+    *(LONG*)(c + 8) = 100;
+    *(u8**)(c + 0xC) = parent;
+    *(float*)(c + 0x10) = 1.0f;
+    const DWORD m = RndK(3);
+    *(DWORD*)(c + 0x18) = m == 0 ? 0xFFFFFFFF : m == 1 ? 0 : RndK(0xFFFFFF) * 251;
+    *(DWORD*)(c + 0x1C) = m == 0 ? 0xFFFFFFFF : m == 1 ? 0 : RndK(0xFFFFFF) * 131;
+    c[0x20] = (u8)(RndK(3) != 0);  // mostly forwarding (the parent's class): mask-classed children are 0 or 2 and add no ids
+    return c;
+}
+static long g_kids;  // child footprints built (all worlds)
+static u8* PickFp() {  // a leaf entry's footprint: g_seed draws as before 0.37, the child (if any) half the time
+    const int i = (int)Rnd(W.nfp);
+    return W.kid[i] && RndK(2) ? W.kid[i] : W.fps[i];
+}
+static void RefsOk() {  // the game's references are balanced (parents and children)
+    for (int i = 0; i < W.nfp; i++) assert(*(LONG*)(W.fps[i] + 8) == 100 && (!W.kid[i] || *(LONG*)(W.kid[i] + 8) == 100));
 }
 
 static u8* Polys(int* n) {  // 1-2 quads somewhere in the 64 x 64 lot
@@ -216,7 +256,7 @@ static u8* NewLeaf() {
     n[4] = (u8)(Rnd(4) == 0 ? 2 : 0);  // kind 0 leaf, sometimes 2
     const int cnt = Rnd(5) == 0 ? 1 : Rnd(9);
     if (cnt == 1 && Rnd(2)) {  // inline entry (bit 0 clear)
-        u8* fp = W.fps[Rnd(W.nfp)];
+        u8* fp = PickFp();
         *(u8**)(n + 8) = NewEntry(fp);
         *(DWORD*)(n + 0xC) = Rnd(0xFFFFFFFF) | Rnd(0xFFFF) << 16;
         *(DWORD*)(n + 0x10) = Rnd(0xFFFFFF) << 8;
@@ -224,7 +264,7 @@ static u8* NewLeaf() {
     }
     u8* list = (u8*)A(12 * (cnt ? cnt : 1));
     for (int i = 0; i < cnt; i++) {
-        *(u8**)(list + i * 12) = Rnd(12) ? NewEntry(W.fps[Rnd(W.nfp)]) : NULL;
+        *(u8**)(list + i * 12) = Rnd(12) ? NewEntry(PickFp()) : NULL;
         *(DWORD*)(list + i * 12 + 4) = Rnd(2) ? Rnd(0xFFFFFF) * 251 : 0xFFFFFFFF;
         *(DWORD*)(list + i * 12 + 8) = Rnd(2) ? Rnd(0xFFFFFF) * 251 : 0xFFFFFFFF;
     }
@@ -290,6 +330,8 @@ static void BuildWorld() {
         u8* polys = Polys(&np);
         W.fps[i] = NewFootprint(polys, np);
     }
+    for (int i = 0, n = W.nfp; i < n; i++)  // a child on about a third of them (the leaves pick from all W.fps)
+        if (RndK(3) == 0) { W.kid[i] = NewChild(W.fps[i]); g_kids++; }
     // two lots in the table (one of them sometimes the active lot), one that is not
     for (int i = 0; i < 3; i++) {
         W.lots[i] = (u8*)A(0x420);  // the IC 0x751480 reads lot +0x408/+0x40C (section I)
@@ -406,7 +448,7 @@ static void Dump(const char* what, const DWORD* a, int na, const DWORD* b, int n
 }
 
 // one case: the game's 0x85FD10 vs SrRun; returns the clone's fallback reason (0 = compared)
-static long g_cases, g_withIds, g_idsTotal, g_withExcl, g_fbCases[9], g_gatherObjs;
+static long g_cases, g_withIds, g_idsTotal, g_withExcl, g_fbCases[9], g_gatherObjs, g_withKid;
 static int RunCase(const Agent& ag);
 static int OneCase() {
     BuildWorld();
@@ -433,7 +475,7 @@ static int RunCase(const Agent& ag) {
     // the game's call
     ((GameLocoFn)(uintptr_t)STEER_LOCO)(ag.a, NULL, &ids, ign1v, n1, ign2v, n2);
     const int added = (int)(ids.e - ids.b) / 2 - n0;
-    for (int i = 0; i < W.nfp; i++) assert(*(LONG*)(W.fps[i] + 8) == 100);  // the game's references are balanced
+    RefsOk();  // the game's references are balanced
     g_cases++;
     if (why) return why;
     if (added != out.nIds || memcmp(ids.b + n0 * 2, out.ids, (size_t)added * 8) != 0) {
@@ -496,6 +538,8 @@ static int RunCase(const Agent& ag) {
         printf("MISMATCH obstacle query: game %d footprints, clone %d (case %ld)\n", n, out.nSubs, g_cases);
         exit(1);
     }
+    for (int i = 0; i < n; i++)  // 0.37: a child footprint was in the compared answer (before 0.37 an SRS_SLOT fallback)
+        if (*(const DWORD*)(uintptr_t)((const DWORD*)(uintptr_t)vec[0])[i] == 0x00FEBF6C) { g_withKid++; break; }
     ((SrVecRelFn)(uintptr_t)0x00AAC090)(vec, NULL, (void*)(uintptr_t)vec[0], (void*)(uintptr_t)vec[1]);
     if (vec[0]) _aligned_free((void*)(uintptr_t)vec[0]);
     _aligned_free(ids.b);
@@ -587,6 +631,16 @@ struct I {
 };
 u8* I::route;
 int I::refIn, I::refOut;
+
+// AV ([AvoidRO]): fakes for RouteFollow_A's phase-1 callees the image cannot run on the fake world (the goal level 0x8468C0
+// reads lot objects, the height 0x829470 the terrain) and for its Sim scan's inputs (agent slots +0x10 / +0x3C)
+struct AVF {
+    static LONG __cdecl Level(const float* g) { return (LONG)g[3]; }  // as FkConv: the level rides in w
+    static float __fastcall Height(void*, void*, float, float, LONG, DWORD, DWORD) { return 0.5f; }
+    static u64 __fastcall AgId(u8*, void*) { return 0x5555; }
+    static void __fastcall AgBox(u8*, void*, float*) {}
+    static u8* __fastcall PathOpts(u8* path, void*) { return *(u8**)(path + 4); }
+};
 
 static DWORD WINAPI WorkerThread(void*) {
     g_workerTid = GetCurrentThreadId();
@@ -2339,7 +2393,10 @@ int main(int argc, char** argv) {
            g_fbCases[SR_FB_DEFERRED], g_fbCases[SR_FB_SHAPE], g_cases - g_fbCases[0] - g_fbCases[SR_FB_LOTMISS] - g_fbCases[SR_FB_DEFERRED] - g_fbCases[SR_FB_SHAPE]);
     printf("   gathered footprints %ld; visitor branches so far: masked %ld, leaf %ld, children %ld\n", g_gatherObjs, g_srVisitKind[0],
            g_srVisitKind[1], g_srVisitKind[2]);
+    printf("   0.37 child footprints 0xFEBF90: %ld built so far, in %ld compared obstacle queries (each a shape fallback before)\n",
+           g_kids, g_withKid);
     assert(g_fbCases[0] > cases / 2 && g_withIds > cases / 20 && g_withExcl > cases / 10 && g_srVisitKind[0] > cases);
+    assert(g_withKid > cases / 40 && g_fbCases[SR_FB_SHAPE] == 0);
 
     // A2. buffer limits (0.21.0): past the 0.13.0 sizes the clone must answer as the game's call; past the 0.21.0 ones it must
     // give up with SR_FB_SHAPE at that limit's site (RunCase still runs the game's call on the same world)
@@ -3107,6 +3164,143 @@ int main(int argc, char** argv) {
                "(the bp-snap-p4 crash); after SnLotRemovePending's flush it returns; an iterated Q is counted (%ld) and not flushed\n",
                crashAddr, k.lrPendBusy);
     }
+    // DG. design G standalone ([Discourage] DestroyPark, p5c.cpp P5cPark / P5cFlush outside a P5c window; docs/88 §6, §10):
+    //     the game's own ObjectService_DestroyById 0x939420, FindById 0x939560, FindByIdAddRef 0x9395A0 (through P5cPark) and
+    //     release 0x7460F0 on a fake object service (0x409 buckets at +0x10, end value [+0x1034], count [+0x1038]). A job
+    //     thread looks objects up by id (raw pointers; some also take a reference, the 0x643010 pattern), the main (owner)
+    //     thread destroys some of them, then the job reads them and drops its references. Park on: no read of a destroyed-and-
+    //     freed block, no destructor on the job thread, each destroyed object freed exactly once at the flush. Park off without
+    //     the wait (option P): the negative control must see both hazards. (Revived from the unmerged 0.30.0 branch 14a25ef.)
+    {
+        typedef u8(__fastcall* DestroyFn)(void* svc, void*, DWORD lo, DWORD hi);   // ret 8
+        typedef u8*(__fastcall* FindFn)(void* svc, void*, DWORD lo, DWORD hi);     // ret 8, NULL on a miss
+        static const DestroyFn destroyById = (DestroyFn)(uintptr_t)0x00939420;
+        static const FindFn findById = (FindFn)(uintptr_t)0x00939560;
+        assert(Matches((const void*)(uintptr_t)0x00939420, kRtSites[7].pro, kRtSites[7].len) && kRtSites[7].kind == RT_DESTROY);
+        assert(*(const DWORD*)(uintptr_t)(0x011DC2A8 + 5 * 4) == 0 && *(const DWORD*)(uintptr_t)(0x011DC2A8 + 6 * 4) == 0);  // no event 5/6 handlers
+        static const int kN = 32;
+        struct DgJob {
+            u8* svc; DWORD ids[kN]; int n; bool ref[kN]; HANDLE go, looked, go2, done; DWORD mainTid;
+            volatile LONG poisoned, jobDtors, frees, stop;
+        };
+        static DgJob J;
+        struct DgFk {
+            static void __fastcall Dtor(u8* obj, void*, DWORD flag) {  // vtable slot 0, deleting destructor (ret 4)
+                assert(flag == 1);
+                *(DWORD*)(obj + 0x18) = 0xDDDDDDDD;  // poisoned, not freed: the negative control keeps running
+                InterlockedIncrement(&J.frees);
+                if (GetCurrentThreadId() != J.mainTid) InterlockedIncrement(&J.jobDtors);
+            }
+            static void* __cdecl Svc() { return J.svc; }
+            static DWORD WINAPI Job(void*) {
+                u8* p[kN];
+                for (;;) {
+                    WaitForSingleObject(J.go, INFINITE);
+                    if (J.stop) return 0;
+                    for (int i = 0; i < J.n; i++) {
+                        p[i] = findById(J.svc, NULL, J.ids[i], 0);
+                        assert(p[i]);
+                        if (J.ref[i]) InterlockedIncrement((LONG*)(p[i] + 4));
+                    }
+                    SetEvent(J.looked);
+                    WaitForSingleObject(J.go2, INFINITE);
+                    for (int i = 0; i < J.n; i++) {
+                        if (*(volatile DWORD*)(p[i] + 0x18) == 0xDDDDDDDD) InterlockedIncrement(&J.poisoned);
+                        if (J.ref[i]) g_objRelease((void**)&p[i], NULL);
+                    }
+                    SetEvent(J.done);
+                }
+            }
+        };
+        static DWORD vt[1] = {(DWORD)(uintptr_t)DgFk::Dtor};
+        static u8 objs[kN][0x40];
+        J.svc = (u8*)A(0x1200);
+        *(DWORD*)(J.svc + 0x1034) = kSentinel;  // the bucket walk of the erase stops on it (non-zero)
+        J.mainTid = GetCurrentThreadId();
+        J.go = CreateEventW(NULL, FALSE, FALSE, NULL);
+        J.looked = CreateEventW(NULL, FALSE, FALSE, NULL);
+        J.go2 = CreateEventW(NULL, FALSE, FALSE, NULL);
+        J.done = CreateEventW(NULL, FALSE, FALSE, NULL);
+        HANDLE dgTh = CreateThread(NULL, 0, DgFk::Job, NULL, 0, NULL);
+        const SvcFn svcSave = g_objSvc;
+        g_objSvc = DgFk::Svc;
+        g_async.owner = J.mainTid;
+        g_discCount = 0;
+        g_p5cJob = 0, g_p5bWin = 0;  // standalone: no P5c window
+        k.rtClosing = 0;
+        k.dpReady = 1;
+        long keptTotal = 0, offPoisoned = 0, offJobDtors = 0;
+        const LONG low0 = k.p5cCountLow;
+        const int runs = cases + cases / 4;
+        for (int c = 0; c < runs; c++) {
+            const bool on = c < cases;  // the last quarter: park off, no wait (negative control)
+            J.n = 4 + (int)Rnd(kN - 3);
+            bool kill[kN];
+            int kills = 0;
+            for (int i = 0; i < J.n; i++) {
+                u8* o = objs[i];
+                memset(o, 0, 0x40);
+                *(DWORD**)o = vt;
+                *(LONG*)(o + 4) = 1;  // the hash's reference
+                J.ids[i] = (Rnd(0x10000) << 8) | (DWORD)i;  // unique per case (low byte), random bucket
+                *(DWORD*)(o + 8) = J.ids[i];
+                *(DWORD*)(o + 0x18) = 0x5AFE0000 | i;
+                DWORD* bucket = (DWORD*)(J.svc + 0x10 + (J.ids[i] % 0x409) * 4);
+                *(DWORD*)(o + 0x10) = *bucket;
+                *bucket = (DWORD)(uintptr_t)o;
+                ++*(DWORD*)(J.svc + 0x1038);
+                J.ref[i] = Rnd(2) != 0;
+                kill[i] = Rnd(2) != 0;
+                kills += kill[i] ? 1 : 0;
+            }
+            J.poisoned = J.jobDtors = J.frees = 0;
+            k.dpMode = on ? 1 : 0;
+            g_async.state = A_RUNNING;
+            SetEvent(J.go);
+            WaitForSingleObject(J.looked, INFINITE);
+            const LONG parked0 = k.dpParked;
+            for (int i = 0; i < J.n; i++) {
+                if (!kill[i]) continue;
+                assert(P5cPark(J.ids[i], 0) == on);
+                assert(destroyById(J.svc, NULL, J.ids[i], 0) == 1);
+                assert(findById(J.svc, NULL, J.ids[i], 0) == NULL);
+            }
+            if (on) assert(J.frees == 0 && k.dpParked - parked0 == kills && g_p5cGyN == kills);
+            P5cFlush();  // a flush point while the job runs: refused
+            if (on) assert(J.frees == 0 && g_p5cGyN == kills);
+            SetEvent(J.go2);
+            WaitForSingleObject(J.done, INFINITE);
+            if (on) assert(J.frees == 0);  // still parked: no flush since the job
+            g_async.state = A_IDLE;
+            P5cFlush();
+            assert(g_p5cGyN == 0 && *(DWORD*)(J.svc + 0x1038) == (DWORD)(J.n - kills));
+            if (on) {
+                assert(J.poisoned == 0 && J.jobDtors == 0 && J.frees == kills);
+                keptTotal += kills;
+            } else {
+                offPoisoned += J.poisoned;
+                offJobDtors += J.jobDtors;
+            }
+            for (int i = 0; i < J.n; i++) {
+                if (kill[i]) { assert(*(DWORD*)(objs[i] + 0x18) == 0xDDDDDDDD); continue; }  // freed
+                assert(*(LONG*)(objs[i] + 4) == 1 && *(DWORD*)(objs[i] + 0x18) == (0x5AFE0000 | (DWORD)i));
+                assert(destroyById(J.svc, NULL, J.ids[i], 0) == 1);  // no job: survivors go as today
+            }
+            assert(*(DWORD*)(J.svc + 0x1038) == 0 && J.frees == J.n);
+            for (int b = 0; b < 0x409; b++) assert(((DWORD*)(J.svc + 0x10))[b] == 0);
+        }
+        assert(offPoisoned > 0 && offJobDtors > 0 && k.p5cCountLow == low0);
+        J.stop = 1;
+        SetEvent(J.go);
+        WaitForSingleObject(dgTh, INFINITE);
+        CloseHandle(dgTh);
+        g_objSvc = svcSave;
+        g_async.owner = 0;
+        k.dpMode = 0, k.dpReady = 0;
+        printf("DG: design G standalone on the game's DestroyById / FindById / FindByIdAddRef / release: %d cases, %ld objects "
+               "parked and freed once at the flush, 0 freed reads, 0 job-thread destructors; negative control (no wait, no park, "
+               "%d cases): %ld freed reads, %ld job-thread destructors\n", cases, keptTotal, cases / 4, offPoisoned, offJobDtors);
+    }
     // K. design SH (slotro.cpp, docs/90): the gate-skip decision and the interlocked portal count pair on the game's own code.
     // SH runs the game's own 0x76F0A0 body under a QL-shared hold; the hold changes no computation, it only lets RgEnter skip
     // the +0x918 wait at gate 12 (LotTable_Contains) and gate-0 hits (GetOrInsert). So equal answers are structural; the real
@@ -3439,7 +3633,7 @@ int main(int argc, char** argv) {
             assert(I::refIn - i0 == 1 && I::refOut - o0 == 1);
             const u64 game = ((OrFn)(uintptr_t)OR_IC)(0x25000001, at);
             assert(I::refIn - i0 == 2 && I::refOut - o0 == 2);
-            for (int i = 0; i < W.nfp; i++) assert(*(LONG*)(W.fps[i] + 8) == 100);  // the game's references are balanced
+            RefsOk();  // the game's references are balanced
             fb[why < 8 ? why : 7]++;
             if (why) continue;
             if (game != mine) {
@@ -3509,6 +3703,241 @@ int main(int argc, char** argv) {
                "pair balanced (%d / %d)\n", orN, k.orShadowRuns, busy, I::refIn, I::refOut);
         assert(busy > 25);
         k.orMode = 0;
+    }
+    // AV. [AvoidRO] (avoidro.cpp, docs/137 §7): G-AV1 the bytes and call edges; G-AV2 the point walk with mode 1 (the game's
+    // RoutingWorld_ObstacleQuery 0x82EDB0 vs SrQuery(mode1), radius 0 and > 0); G-AV3 the game's RouteFollow_A 0x846B70
+    // (its own query, consumer, 0x62EF30, polygon tests 0x80E8A0 and Sim scan) vs AvRunA; G-AV4 the game's RouteFollow_B
+    // 0x85B470 vs AvRunB; G-AV5 the A-site and both detours on the mapped image: job -> clone (a miss runs the game's body
+    // with the site skipped), no job -> the game's code, shadow with 0 mismatches, QL busy -> the game's code. Worlds of
+    // section A (with 0.37's child footprints); 0x8468C0 and 0x829470 faked (lot objects / terrain), the Sim scan runs on
+    // an empty locomotion list.
+    {
+        // worlds are never freed: bounded so that 3000-case runs stay inside the 32-bit address space
+        const int avN = cases * 4 < 1600 ? cases * 4 : 1600, avH = cases < 400 ? cases : 400;
+        const DWORD seedAv = g_seed;  // put back at the end: the sections after this one draw what they drew before 0.37
+        assert(Matches((const void*)(uintptr_t)AV_A, kAvPro, sizeof(kAvPro)) && Matches((const void*)(uintptr_t)AV_B, kAvPro, sizeof(kAvPro)) &&
+               Matches((const void*)(uintptr_t)0x0085FF30, kAvPro, sizeof(kAvPro)) &&
+               Matches((const void*)(uintptr_t)0x0081D090, kAvAssignPro, sizeof(kAvAssignPro)));
+        assert(callsTo(AV_SITE, AV_QUERY) && callsTo(0x00846B9F, 0x008292D0) && callsTo(0x00846BB6, 0x00829BC0) &&
+               callsTo(0x00846BC3, 0x008468C0) && callsTo(0x00846C0D, 0x00829470) && callsTo(0x00846C64, 0x00C68990) &&
+               callsTo(0x00846CF8, 0x00953690) && callsTo(0x00846D74, 0x0085AAA0) && callsTo(0x00846D99, 0x0081C970) &&
+               callsTo(0x00846DB3, 0x0081C930) && callsTo(0x00846E09, 0x0062EF30) && callsTo(0x00846F07, 0x00AAC090));
+        assert(callsTo(0x0085B4D2, 0x0085AE60) && callsTo(0x0085B507, AV_QUERY) && callsTo(0x0085B536, 0x00C68990) &&
+               callsTo(0x0085B579, 0x0062EF30));
+        // QueryPoint 0x667480: the mode byte picks 0x662DD0 (flag 1) or 0x662DB0 (flag 0), nothing else reads it
+        assert(Matches((const void*)(uintptr_t)0x00667493, (const u8*)"\x80\x7C\x24\x20\x00\xB8\xD0\x2D\x66\x00\x75\x05\xB8\xB0\x2D\x66\x00", 17));
+        u8 savedLevel[5], savedHeight[5];  // put back at the end (later sections run the planner on the image)
+        memcpy(savedLevel, (const void*)(uintptr_t)0x008468C0, 5);
+        memcpy(savedHeight, (const void*)(uintptr_t)0x00829470, 5);
+        Jmp(0x008468C0, (void*)AVF::Level);
+        Jmp(0x00829470, (void*)AVF::Height);
+        static u8 loco[0x80];
+        *(u8**)(loco + 0x40) = loco + 0x40;  // empty locomotion agent list: the Sim scan finds no one
+        u8* const savedLoco = *(u8**)(uintptr_t)0x011D9140;
+        *(u8**)(uintptr_t)0x011D9140 = loco;
+        static DWORD agVt[0x20], pathVt[4];
+        agVt[0x10 / 4] = (DWORD)(uintptr_t)AVF::AgId;
+        agVt[0x3C / 4] = (DWORD)(uintptr_t)AVF::AgBox;
+        pathVt[3] = (DWORD)(uintptr_t)AVF::PathOpts;
+        static u8 agBase[0x80], path[8], opts[0x80];
+        *(DWORD**)(agBase + 8) = agVt;
+        *(DWORD**)path = pathVt;
+        *(u8**)(path + 4) = opts;
+        static DWORD ids38[8], ids58[8], ign[8];
+        static __declspec(align(16)) float goal[4];
+        static u8* wmw2;
+        if (!wmw2) wmw2 = (u8*)A(0x200);
+        struct ACase { u8* path; u8* agent; DWORD ni; DWORD opt; };
+        auto newCase = [&](ACase* a) {
+            BuildWorld();
+            const int lot = Rnd(2);
+            float x, z;
+            WorldPoint(lot, Rf(-4, 68), Rf(-4, 68), &x, &z);
+            if (lot == 0 && x >= 0) x = -0.5f;
+            if (lot == 1 && x < 0) x = 0.5f;
+            if (Rnd(8) == 0) x += lot == 0 ? 50 : 150;  // another lot's frame, or lot 2 (not in the table)
+            goal[0] = x, goal[1] = Rf(0, 2), goal[2] = z, goal[3] = (float)(Rnd(5) == 0 ? 1 : 0);
+            g_lookNone = NULL;
+            if (Rnd(6) == 0) {  // the consumer's wm finds no lot, the query's (another manager) does: the first survivor
+                *(u8**)(W.world + 0x964) = wmw2;
+                g_lookNone = W.wm;
+            }
+            for (int i = 0; i < 4; i++) {
+                ids38[i * 2] = 0x1000 + Rnd(40), ids38[i * 2 + 1] = Rnd(3) ? 0 : 7;
+                ids58[i * 2] = 0x1000 + Rnd(40), ids58[i * 2 + 1] = Rnd(3) ? 0 : 7;
+                ign[i * 2] = 0x1000 + Rnd(40), ign[i * 2 + 1] = Rnd(3) ? 0 : 7;
+            }
+            const DWORD n38 = Rnd(3), n58 = Rnd(3);
+            *(DWORD**)(opts + 0x38) = ids38, *(DWORD**)(opts + 0x3C) = ids38 + n38 * 2;
+            *(DWORD**)(opts + 0x58) = ids58, *(DWORD**)(opts + 0x5C) = ids58 + n58 * 2;
+            a->path = Rnd(4) ? path : NULL;
+            a->agent = Rnd(5) ? agBase + 8 : NULL;
+            *(DWORD*)(agBase + 0x4C) = Rnd(0x10000), *(DWORD*)(agBase + 0x54) = Rnd(4) ? 0 : Rnd(0x10000) << 8;
+            a->ni = Rnd(4);
+            a->opt = Rnd(0x10000);
+        };
+        auto refsOk = [&]() { RefsOk(); };
+        // G-AV2: the mode-1 point walk
+        long lCmp = 0, lObjs = 0, lKids = 0, lFb[9] = {};
+        for (int c = 0; c < avN; c++) {  // mode 1 keeps only blocking classes: few footprints per walk
+            ACase a;
+            newCase(&a);
+            SrPt pt;
+            memset(&pt, 0, sizeof(pt));
+            pt.v[0] = goal[0], pt.v[1] = goal[1], pt.v[2] = goal[2], pt.v[3] = goal[3];
+            pt.one = 1.0f;
+            pt.level = (LONG)goal[3];
+            const float r = Rnd(4) == 0 ? 0.0f : Rf(0.2f, 6);  // A and B use 0; larger radii reach more cells and classes
+            const u8* ql = FkLotLookup(*(u8**)(W.world + 0x964), NULL, goal[0], goal[2]);
+            DWORD vec[4] = {0, 0, 0, kSrVecTag};
+            const u8 gotQ = ((SrQueryFn)(uintptr_t)AV_QUERY)(W.world, NULL, &pt, r, vec, 1, a.opt);
+            assert((gotQ != 0) == (ql != NULL));
+            static SrCtx ctx;
+            __declspec(align(16)) u8 rec[0x30] = {};
+            *(DWORD*)rec = a.opt;
+            rec[0x24] = 1;
+            ctx.n = 0;
+            const int why = ql ? SrQuery(&ctx, W.p, *(const DWORD*)(ql + 0x48), *(const DWORD*)(ql + 0x4C), pt, true, r, rec, true) : SR_OK;
+            const int n = (int)((vec[1] - vec[0]) / 4);
+            lFb[why]++;
+            if (!why) {
+                bool same = n == ctx.n;
+                for (int i = 0; same && i < n; i++) same = ((const DWORD*)(uintptr_t)vec[0])[i] == (DWORD)(uintptr_t)(ctx.objs[i] + 4);
+                if (!same) {
+                    printf("MISMATCH mode-1 point walk: case %d, game %d footprints, clone %d, r %g\n", c, n, ctx.n, r);
+                    exit(1);
+                }
+                lCmp++;
+                lObjs += n;
+                for (int i = 0; i < n; i++) if (*(const DWORD*)(uintptr_t)((const DWORD*)(uintptr_t)vec[0])[i] == 0x00FEBF6C) { lKids++; break; }
+            }
+            ((SrVecRelFn)(uintptr_t)0x00AAC090)(vec, NULL, (void*)(uintptr_t)vec[0], (void*)(uintptr_t)vec[1]);
+            if (vec[0]) _aligned_free((void*)(uintptr_t)vec[0]);
+            refsOk();
+        }
+        printf("AV G-AV2: 0x82EDB0 mode 1 vs SrQuery(mode1): %d cases, %ld compared equal (%ld footprints, %ld with a child footprint); "
+               "gave up: lot %ld, deferred %ld, shape %ld\n", avN, lCmp, lObjs, lKids, lFb[SR_FB_LOTMISS], lFb[SR_FB_DEFERRED], lFb[SR_FB_SHAPE]);
+        assert(lCmp > avN / 2 && lObjs > avN / 8 && lKids > avN / 400 && lFb[SR_FB_SHAPE] == 0);
+        // G-AV3: RouteFollow_A
+        long aCmp = 0, aHits = 0, aMiss = 0, aFirst = 0, aKids = 0, aFb[9] = {};
+        for (int c = 0; c < avN; c++) {
+            ACase a;
+            newCase(&a);
+            static AvIn in;
+            u64 mine;
+            bool none;
+            const int why = AvRunA(a.path, a.agent, goal, ign, a.ni, false, &mine, &in, &none);  // first: it must change nothing
+            refsOk();
+            const u64 game = ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni);
+            refsOk();
+            assert(!none);
+            aFb[why]++;
+            if (why) continue;
+            if (game != mine) {
+                printf("MISMATCH RouteFollow_A: case %d at (%.3f, %.3f) level %d: game %08lX:%08lX, clone %08lX:%08lX (lot %p, query lot %p)\n",
+                       c, goal[0], goal[2], (int)goal[3], (DWORD)(game >> 32), (DWORD)game, (DWORD)(mine >> 32), (DWORD)mine, in.lotE, in.qlot);
+                exit(1);
+            }
+            aCmp++;
+            if (game) aHits++; else aMiss++;
+            aFirst += !in.lotE && game;
+            if (game && (DWORD)(game >> 32) != 0 && (DWORD)(game >> 32) != 7) aKids++;  // ~(parent id): a child answered
+        }
+        printf("AV G-AV3: game 0x846B70 vs AvRunA: %d cases, %ld compared equal (%ld footprint ids, %ld of them with no goal lot, "
+               "%ld from a child; %ld none -> Sim scan); gave up: lot %ld, deferred %ld, cache %ld, shape %ld, other %ld\n", avN, aCmp,
+               aHits, aFirst, aKids, aMiss, aFb[SR_FB_LOTMISS], aFb[SR_FB_DEFERRED], aFb[SR_FB_CACHE], aFb[SR_FB_SHAPE],
+               avN - aCmp - aFb[SR_FB_LOTMISS] - aFb[SR_FB_DEFERRED] - aFb[SR_FB_CACHE] - aFb[SR_FB_SHAPE]);
+        assert(aCmp > avN / 2 && aHits > avN / 40 && aMiss > avN / 80 && aFirst > 0 && aFb[SR_FB_SHAPE] == 0);
+        // G-AV4: RouteFollow_B
+        long bCmp = 0, bOnes = 0, bFb[9] = {};
+        for (int c = 0; c < avN; c++) {
+            ACase a;
+            newCase(&a);
+            static AvIn in;
+            u8 mine;
+            const int why = AvRunB(W.wm, W.world, W.p, goal, a.opt, false, &mine, &in);
+            refsOk();
+            const u8 game = ((AvBFn)(uintptr_t)AV_B)(W.wm, W.world, W.p, goal, a.opt);
+            refsOk();
+            bFb[why]++;
+            if (why) continue;
+            if (game != mine) {
+                printf("MISMATCH RouteFollow_B: case %d at (%.3f, %.3f): game %d, clone %d\n", c, goal[0], goal[2], game, mine);
+                exit(1);
+            }
+            bCmp++;
+            bOnes += game;
+        }
+        printf("AV G-AV4: game 0x85B470 vs AvRunB: %d cases, %ld compared equal (%ld answer 1); gave up: lot %ld, deferred %ld, shape %ld\n",
+               avN, bCmp, bOnes, bFb[SR_FB_LOTMISS], bFb[SR_FB_DEFERRED], bFb[SR_FB_SHAPE]);
+        assert(bCmp > avN / 2 && bOnes > avN / 80 && bCmp - bOnes > avN / 80 && bFb[SR_FB_SHAPE] == 0);
+        // G-AV5: the A-site and the two detours on the mapped image
+        const CallSite cs = {AV_SITE, AV_QUERY, (void*)AvSite};
+        assert(PatchCalls("avoid RO A-site", &cs, 1));
+        g_avAOrig = (AvAFn)InstallDetour("RouteFollow_A", AV_A, kAvPro, sizeof(kAvPro), (void*)AvAHook);
+        g_avBOrig = (AvBFn)InstallDetour("RouteFollow_B", AV_B, kAvPro, sizeof(kAvPro), (void*)AvBHook);
+        assert(g_avAOrig && g_avBOrig);
+        g_async.owner = me;
+        k.avMode = 1;
+        for (int c = 0; c < avH; c++) {
+            ACase a;
+            newCase(&a);
+            Job(true);
+            const u64 x = ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni);
+            const u8 bx = ((AvBFn)(uintptr_t)AV_B)(W.wm, W.world, W.p, goal, a.opt);
+            Job(false);
+            const u64 y = ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni);  // no job: the trampoline, site passes through
+            const u8 by = ((AvBFn)(uintptr_t)AV_B)(W.wm, W.world, W.p, goal, a.opt);
+            assert(x == y && bx == by);
+            refsOk();
+        }
+        assert(k.avTakenHit > avH / 25 && k.avTakenMiss > avH / 2 && k.avSiteSkip == k.avTakenMiss && k.avTakenB > avH / 2 &&
+               t_avMiss == 0);
+        k.avShadow = 1;
+        for (int c = 0; c < avH; c++) {
+            ACase a;
+            newCase(&a);
+            ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni);
+            ((AvBFn)(uintptr_t)AV_B)(W.wm, W.world, W.p, goal, a.opt);
+            refsOk();
+        }
+        assert(k.avShadowRuns > avH && k.avShadowMismatch == 0 && k.avShadowMismatchB == 0 && k.avShadowQueryMismatch == 0 &&
+               k.avShadowOrder == 0 && g_rgOffSimOpen == 0 && k.avSiteSkip == k.avTakenMiss);
+        k.avShadow = 0;
+        // a worker writer holds QL: the hook falls back to the game's code, same answer
+        g_wIn = CreateEventW(NULL, FALSE, FALSE, NULL);
+        g_wGo = CreateEventW(NULL, FALSE, FALSE, NULL);
+        HANDLE qh = CreateThread(NULL, 0, [](void*) -> DWORD {
+            AcquireSRWLockExclusive(&g_ql);
+            SetEvent(g_wIn);
+            WaitForSingleObject(g_wGo, 5000);
+            ReleaseSRWLockExclusive(&g_ql);
+            return 0;
+        }, NULL, 0, NULL);
+        WaitForSingleObject(g_wIn, INFINITE);
+        const LONG busy0 = k.avFb[AV_FB_TRY];
+        for (int c = 0; c < 50; c++) {
+            ACase a;
+            newCase(&a);
+            Job(true);
+            const u64 x = ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni);
+            Job(false);
+            assert(x == ((AvAFn)(uintptr_t)AV_A)(a.path, a.agent, goal, ign, a.ni));
+        }
+        SetEvent(g_wGo);
+        WaitForSingleObject(qh, INFINITE);
+        CloseHandle(qh);
+        printf("AV G-AV5: hook A %ld hits + %ld misses (site skipped %ld) and B %ld answers equal to the game's; shadow %ld runs, 0 "
+               "mismatches (%ld answered by the Sim scan); QL busy %ld x -> game's call; fallbacks lot %ld cache %ld shape %ld\n",
+               k.avTakenHit, k.avTakenMiss, k.avSiteSkip, k.avTakenB, k.avShadowRuns, k.avShadowSimScan, k.avFb[AV_FB_TRY] - busy0,
+               k.avFb[AV_FB_LOTMISS], k.avFb[AV_FB_CACHE], k.avFb[AV_FB_SHAPE]);
+        assert(k.avFb[AV_FB_TRY] - busy0 > 25);
+        k.avMode = 0;
+        g_lookNone = NULL;
+        memcpy((void*)(uintptr_t)0x008468C0, savedLevel, 5);
+        memcpy((void*)(uintptr_t)0x00829470, savedHeight, 5);
+        *(u8**)(uintptr_t)0x011D9140 = savedLoco;
+        g_seed = seedAv;
     }
     printf("visitor branches: masked %ld, leaf %ld, children %ld\n", g_srVisitKind[0], g_srVisitKind[1], g_srVisitKind[2]);
     // SNAP K1, K2, K5 (snap.cpp, docs/94 §4.4, phase P3): the snapshot's dirty marks, cut, versions and audit on the fake

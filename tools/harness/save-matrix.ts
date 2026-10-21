@@ -1,6 +1,6 @@
 // Save-safety test matrix: proves the save-path fixes write the same save as the game, in one load, before a release.
 //   node tools/harness/save-matrix.ts [--cases control,identical,...] [--travel] [--to france|university|future] [--direct] [--case-timeout 900]
-//   --direct: university / future skip the queued trip interaction (agent `direct: true`); default the real queued trip
+//   --direct: university / future skip the queued trip interaction (agent `direct: true`; future: out and back); default the real queued trip
 //   --stay: travel case only goes out and stays (no save away, no trip back) and leaves the save fixes as they are; for
 //     profile-world.ts --travel, which runs a repro in the destination world after this exits (docs/117 §2.11)
 //   node tools/harness/save-matrix.ts --list            cases and what each checks
@@ -782,7 +782,8 @@ const CASES: Case[] = [
       if (values.stay) { checks.push({ name: 'stay', status: 'info', why: `staying in ${out.world} (--stay)` }); return { fixes, saves, checks }; }
       const s1 = await save('travel-away'); saves.push(s1); checks.push(...saveChecks(s1));
       leg = 'trip back';
-      const back = await enterWorld('travel_home', {}, out.world, 'household'); // away, the household is the travellers
+      // away, the household is the travellers; --direct future also returns without the portal interaction (agent direct: true)
+      const back = await enterWorld('travel_home', fut && direct ? { direct } : {}, out.world, 'household');
       checks.push(...travelSaveChecks('trip back', back.travelEvs), { name: 'back home', status: sameWorld(back.world, home) ? 'pass' : 'fail', why: `${back.world} (home ${home})` });
       const s2 = await save('travel-home'); saves.push(s2); checks.push(...saveChecks(s2));
     } catch (e) {

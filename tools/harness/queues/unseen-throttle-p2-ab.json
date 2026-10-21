@@ -1,0 +1,590 @@
+[
+  {
+    "id": "bp-ut2-list",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part list alone (the other parts not installed), --ab unseenthrottle, off-first (warm-up on, then off,on,on,off; pair with -onfirst), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: phase 1 (fixed): utSkipped > 0 in on slices, 0 in off; wait-ab.ts: key 0x85FE10 (steering) lower on than off beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher. Two clean runs of this pair = the 0.36.13 freeze is fixed (AGENTS.md crash rule).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-list-onfirst",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part list alone (the other parts not installed), --ab unseenthrottle, on-first (on,off,off,on; pair with bp-ut2-list), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: phase 1 (fixed): utSkipped > 0 in on slices, 0 in off; wait-ab.ts: key 0x85FE10 (steering) lower on than off beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher. Two clean runs of this pair = the 0.36.13 freeze is fixed (AGENTS.md crash rule).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-snapback",
+    "note": "[UnseenThrottle] in-game snap-back check (docs/143 §8.9; Rodney: proof that Sims return to full-rate routing when seen). Every part on for the whole run (List, Avoid, Footprint, Rate; modes 1, no --ab), repro unseen-snapback: 6 unseen walking Sims mid-route, the agent moves the in-game camera onto each (never the game window) and records the flip pass, whether the update ran that same pass, owed time, position jump, avoidance / footprint after. BP 12 min. Correctness, daytime OK. Build as the other jobs (0.36.15 on game-copy/ts3native.asi.0315, this branch ts3fixes + agent). Pass: the repro step unseen_snapback {result, require} succeeds (the harness fails the job otherwise: state done, failed 0, >= 6 Sims pass; Sims the camera never made visible or lost again are retried / counted \"not tested\", never pass), no crash or freeze, 0 watchdog lines, no stuck Sims. 2026-10-21 first run: queue PASS but 3 of 6 Sims had skips after the flip, all while classed unseen again (the camera stopped following at the flip), and 1 never flipped; the check now keeps the camera on the Sim and splits visible from unseen-again skips (docs/143 §8.9).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345,
+        "repro": "unseen-snapback"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  },
+  {
+    "id": "ip-ut2-boats",
+    "note": "[UnseenThrottle] boats / water taxi / swimming check (docs/143 §8.10; Rodney: never a Sim left in open water off a vehicle). Isla Paradiso, every part on for the whole run (List, Avoid, Footprint, Rate; no --ab), repro unseen-boats (10 spawned Sims cross water to the farthest lot, swim into the sea, return, all unseen). 12 min. Correctness, daytime OK. Build as the other jobs (0.36.15, game-copy/ts3native.asi.0315, this branch ts3fixes + agent). Pass: no crash or freeze, 0 watchdog lines, both unseen_water_check steps stranded 0, no stuck Sims; unseen-report: rate why \"not a Sim\" (13) > 0 and the rider rows counted (utRateWhy_5, utFpWhy_11); skip counters > 0.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345,
+        "repro": "unseen-boats"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  },
+  {
+    "id": "bp-ut2-horses",
+    "note": "[UnseenThrottle] ridden-horse check (docs/143 §8.10; Rodney: ridden horses at full rate). BP, every part on (List, Avoid, Footprint, Rate; no --ab), repro unseen-horses (2 Sims mount new horses and ride unseen to the farthest lot and back). 10 min, needs Pets. Correctness, daytime OK. Build as the other jobs (0.36.15, game-copy/ts3native.asi.0315, this branch ts3fixes + agent). Pass: no crash or freeze, 0 watchdog lines, unseen_water_check stranded 0 both times, no stuck Sims, rider rows counted (utRateWhy_5, utWhy_5, utFpWhy_11) while the horses ride.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "unseen-horses"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-avoid",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part avoid alone (the other parts not installed), --ab unseenavoid, off-first (warm-up on, then off,on,on,off; pair with -onfirst), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: avoidance: utAvSkipped > 0 only in on slices; wait-ab.ts: key 0x846D21 (avoidance) lower on than off, steering 0x85FE10 not higher (the wait must not just move); unseen agent ms/s (unAgentUs_1_0) lower.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0,
+      "UnseenThrottle.AvoidNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenavoid",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-avoid-onfirst",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part avoid alone (the other parts not installed), --ab unseenavoid, on-first (on,off,off,on; pair with bp-ut2-avoid), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: avoidance: utAvSkipped > 0 only in on slices; wait-ab.ts: key 0x846D21 (avoidance) lower on than off, steering 0x85FE10 not higher (the wait must not just move); unseen agent ms/s (unAgentUs_1_0) lower.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0,
+      "UnseenThrottle.AvoidNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenavoid",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-footprint",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part footprint alone (the other parts not installed), --ab unseenfootprint, off-first (warm-up on, then off,on,on,off; pair with -onfirst), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: footprint: utFpSkipped / utFpCalls (held-back share), utFpGone small, unFpUs_1 and key 0x833593 waits lower on than off; no Sim walking through another unseen Sim more than before (stuck check).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 0,
+      "UnseenThrottle.FpMs": 500
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenfootprint",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-footprint-onfirst",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part footprint alone (the other parts not installed), --ab unseenfootprint, on-first (on,off,off,on; pair with bp-ut2-footprint), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: footprint: utFpSkipped / utFpCalls (held-back share), utFpGone small, unFpUs_1 and key 0x833593 waits lower on than off; no Sim walking through another unseen Sim more than before (stuck check).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 0,
+      "UnseenThrottle.FpMs": 500
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenfootprint",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-rate",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part rate alone (the other parts not installed), --ab unseenrate, off-first (warm-up on, then off,on,on,off; pair with -onfirst), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: rate: utRateSkipped share (~0.6-0.7 expected), utRateDebtMaxUs <= 500000, utRateDropped small; unseen Sim update ms/s (unAgentUs_1_0) and keys 0x85FE10 / 0x846D21 lower on than off; it/s not down > 2%; no Sim stuck at a door or goal it walked to while unseen.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenrate",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-rate-onfirst",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part rate alone (the other parts not installed), --ab unseenrate, on-first (on,off,off,on; pair with bp-ut2-rate), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: rate: utRateSkipped share (~0.6-0.7 expected), utRateDebtMaxUs <= 500000, utRateDropped small; unseen Sim update ms/s (unAgentUs_1_0) and keys 0x85FE10 / 0x846D21 lower on than off; it/s not down > 2%; no Sim stuck at a door or goal it walked to while unseen.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenrate",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-cars",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part cars alone (the other parts not installed), --ab unseencars, off-first (warm-up on, then off,on,on,off; pair with -onfirst), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: repro unseen-traffic (20 driverless cars placed out of view, ultra speed for more LiteDriver rounds). traffic: patches unseen_car_asks > 0, unseen_car_parked > 0 only in on slices; unPlan_1_1 / unPlanUs_1_1 (car-only plans of unseen followers) lower on than off; no stuck Sims, cars still seen driving near the camera (unseen_car_seen > 0).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "unseen-traffic",
+        "ab": "unseencars",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-cars-onfirst",
+    "note": "[UnseenThrottle] phase 2 A/B (docs/143 §8.6), part cars alone (the other parts not installed), --ab unseencars, on-first (on,off,off,on; pair with bp-ut2-cars), BP Spring 10 min, 2-min slices, seed 12345. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: repro unseen-traffic (20 driverless cars placed out of view, ultra speed for more LiteDriver rounds). traffic: patches unseen_car_asks > 0, unseen_car_parked > 0 only in on slices; unPlan_1_1 / unPlanUs_1_1 (car-only plans of unseen followers) lower on than off; no stuck Sims, cars still seen driving near the camera (unseen_car_seen > 0).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "unseen-traffic",
+        "ab": "unseencars",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-crowd",
+    "note": "[UnseenThrottle] phase 2, every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars: all switch at once), rare-big-crowd (many walking Sims, doors), BP 8 min, off-first. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: per-part skip counters only in on slices, utWhy_11 / utRateWhy_11 (portal) > 0, no Sim stuck at a door, keyed waits per side (wait-ab.ts).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd",
+        "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-ut2-crowd-onfirst",
+    "note": "[UnseenThrottle] phase 2, every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars: all switch at once), rare-big-crowd (many walking Sims, doors), BP 8 min, on-first. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: per-part skip counters only in on slices, utWhy_11 / utRateWhy_11 (portal) > 0, no Sim stuck at a door, keyed waits per side (wait-ab.ts).",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd",
+        "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  {
+    "id": "ip-ut2-all",
+    "note": "[UnseenThrottle] phase 2, every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars), Isla Paradiso 10 min (water, boats: paddleboats stay unthrottled, utWhy_4 / utRateWhy_4), off-first. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: as bp-ut2-crowd; the unseen share by part on a second world.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-ut2-all-onfirst",
+    "note": "[UnseenThrottle] phase 2, every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars), Isla Paradiso 10 min (water, boats: paddleboats stay unthrottled, utWhy_4 / utRateWhy_4), on-first. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Release ini defaults plus [UnseenProbe] Enabled=1 (classes, keyed waits), HitchAttr. Timing: clean night only (daytime = correctness read). Pass for every job: no crash or freeze (0.36.13 phase 1 froze the game ~10 s after the switch: the path reference bug fixed in 0.36.14, docs/143 §6.6; a freeze here = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, node tools/harness/unseen-report.ts <native.json> ok and its throttle lines present, stuck Sims not above the off halves (docs/TESTING.md). Read: as bp-ut2-crowd; the unseen share by part on a second world.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut2-stuck-off",
+    "note": "[UnseenThrottle] phase 2 stuck-Sim check, reference arm: every part installed but its switch off for the whole run (utMode / utAvMode / utFpMode / utRateMode 0 is not reachable from the ini, so this arm sets UnseenThrottle.Enabled=0: only the probe), unseencars off (tuning default), BP 15 min with repro unseen-crowd-far (20 Sims walk unseen to the farthest lot and back), no --ab. Correctness, daytime OK. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Read: end-of-run stuck Sims as the reference for bp-ut2-stuck-on.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 0,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 0,
+      "UnseenThrottle.Avoid": 0,
+      "UnseenThrottle.Footprint": 0,
+      "UnseenThrottle.Rate": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 15,
+        "seed": 12345,
+        "repro": "unseen-crowd-far"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  },
+  {
+    "id": "bp-ut2-stuck-on",
+    "note": "[UnseenThrottle] phase 2 stuck-Sim check, every part on for the whole run (List, Avoid, Footprint, Rate installed, modes 1 from the start, no --ab; unseencars on for the whole run through profile.fixesOn), BP 15 min, otherwise as bp-ut2-stuck-off. Build: ts3native 0.36.15 from this branch (copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.0315) and build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 \"no viewers\" taking every call: stop and install). Pass: no crash, 0 watchdog lines, skip counters of every part > 0, stuck Sims at the end no more than bp-ut2-stuck-off (docs/TESTING.md: at most one more, none standing at a door or route goal it walked to while unseen); new cases go to docs/data/stuck-log.md with the utRateWhy / utAvWhy mix.",
+    "asi": "game-copy/ts3native.asi.0315",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 80,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1,
+      "UnseenThrottle.List": 1,
+      "UnseenThrottle.Avoid": 1,
+      "UnseenThrottle.Footprint": 1,
+      "UnseenThrottle.Rate": 1,
+      "UnseenThrottle.AvoidNearM": 3,
+      "UnseenThrottle.FpMs": 500,
+      "UnseenThrottle.RateNearM": 3
+    },
+    "run": {
+      "profile": {
+        "minutes": 15,
+        "seed": 12345,
+        "repro": "unseen-crowd-far",
+        "fixesOn": "unseencars"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  }
+]

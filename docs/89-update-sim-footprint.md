@@ -2,6 +2,8 @@
 
 Written 2026-10-18. Static only; the game was not run (PLAN "Routing off-thread" item 5, docs/84 §7 item 4). Tools: Ghidra headless decompiles on a private copy of the docs/86 project (`game-copy/ghidra-usf`, copied from `ghidra-g0`, read-only runs), capstone 5 on `game-copy/bin/TS3W.exe` (Steam 1.67): a direct-call graph over `game-copy/analysis/functions.csv`, a raw `E8`/`E9` scan of all of `.text` for the callers (the function list misses the small object-event handlers, see §2), forward closures (5 hops from `0x833560`, 8 hops from the job roots `IC_Route_Plan 0x765160`, `Route_PlanLocked 0x82C6E0`, `RoutingJob_Execute 0x81B2A0`), a displacement scan for the world fields the function writes, and the absolute-pointer index for event registrations. Live numbers are re-read from existing runs in `probe-out/queue` (`*-native.json`, after minus before; 10 min = 600 s) and the sim-thread stack samples in `probe-out/profile/*-simstack.jsonl`. `native/` was read, not changed. Script side: `game-copy/decompiled` (grep). Scratch scripts stay in the session scratchpad.
 
+**Built 2026-10-21 (offline, no game run): §10** (`[Discourage] DeferFootprint`, counters v74, queue `defer-footprint-ab.json`).
+
 Tags as in AGENTS.md: **[verified]** = read in the disassembly, decompile, source or a run file (address or file given); **[inferred]** = reasoning, to confirm with the §7 probe or the A/B job.
 
 ## 1. Summary
@@ -143,4 +145,52 @@ Re-run P0 after (gains do not add).
 
 ## 9. Ledger
 
-Rows `I-89-1` .. `I-89-8` in docs/51 §21.
+Rows `I-89-1` .. `I-89-8` in docs/51 §21; the build's rows `I-197-1` .. `I-197-7` in docs/51 §197.
+
+## 10. Design U as built (2026-10-21, offline; no game run)
+
+Built in `native/ts3native/discourage.cpp` on the 0.36.9 base (version set at merge), counters **v74** (docs/registry.md; renumbered from v75 at the 0.36.11 merge), selftest `TestFootprintDefer`. Ini `[Discourage] DeferFootprint=1` (default 0; the §5.1 name `[FootprintDefer]` was not used), installed only after design D's two detours; runtime switch `usfMode` (+0x3178, `--ab deferfootprint`).
+
+### 10.1 What it does
+
+Detour on `0x833560` (`83 EC 10 80 7C 24 1C 00`, refused if a byte differs; docs/68 row added). In order:
+
+1. **Pass through** (the original with the caller's arguments) when: not the async owner (sim) thread, a P4 clone run, `obj` NULL, the thread owns `+0x918` (`rgOwnerTid`: nested calls from discourage Add/Remove, from D's drains and from the applies themselves), inside a job callback (`g_inInvoke`), during a D drain, world `+0x974` clear, `world+0x918` is not the learned routing lock, or `rtClosing` (`usfPass`).
+2. **Order rule.** If the object (id + world) already has a record in D's queue, the call is queued whatever the mode and whether a job runs (`usfOrderDefer`); otherwise it is queued only with `usfMode = 1` while a job runs, else it runs now (today's call). Every object's records stay in FIFO order with its own discourage records (§5.1 "why the order holds").
+3. **Early out at call time:** `force == 0` and `0x82A720 (world; obj)` (thiscall, `ret 4` [verified `0x82A720..0x82A778`]) says no: return, as the original does before its lock (`usfEarlyOut`).
+4. **Parked object** (id in the lock-key map, read lock-free: the map is sim-only, §3.2) with nothing queued: the original with `force = 1` (it waits as today; `usfParkedPass`). The parked branch only stores the enable byte in the node and inserts into an empty node vector [verified `0x833639..0x833663`], so the supersede rule below does not hold for it.
+5. **Duplicate:** the object's newest queued record is a U record with the same object pointer, enable byte and `arg`: dropped (`usfDup`). Applying the same call twice equals applying it once in both branches [verified body: remove-all plus re-insert from the current component state; parked: same byte, non-empty vector after the first].
+6. **Queue full (256):** with no Add record queued, D's drain runs here (Remove and U records are managed-free: docs/84 §7.1, §1 above), then the call (`usfFullDrain`); with an Add queued (Add may fire `World_FireEvent 0x11`, IC points only) the call runs now, possibly out of order (`usfFullPass`, expected 0).
+7. **Record** `{usf, id, enable byte, arg, object pointer (no reference), world, tick}` at the tail of D's FIFO (`usfDeferred`).
+
+**Apply** (D's drain points: the next D call with no job, `GetOptionHook` START / READY / CANCEL, save, travel / quit; max age 250 ms; and D-X's destroy gate): `ObjectService_FindByIdAddRef 0x9395A0`, pointer check, then the original with `force = 1` holding `+0x918` with no job running, release (`usfApplied`; `usfApplyInJob` = tripwire T-U1, expected 0). **Collapse at the drain:** a U record whose object's next queued record is also a U record (same pointer, object not parked now) is skipped (`usfCollapsed`): the later one redoes the whole remove plus re-insert from the then-current state. A D record in between stops the collapse. **Destroy (D-X):** the object's U records are applied in order before the destroy (no collapse there; `usfDestroyApplied`), its Add records dropped, everything else kept; design G (`P5cDiscHas`) sees the queued record and keeps its wait, unchanged. **Gone at apply:** a disable record runs D's dead-id sweep (`0x635700`, lot 0, with `DeadSweep=1`; `usfGoneEnable0`, `usfSwept`, T-U3: equal), an enable record is dropped (`usfGoneEnable1`), a reused id is dropped (`usfIdMismatch`). A record from another world is dropped (`discDropped`, shared queue). Ages: `usfAgeMaxMs` (T-U2 < 300). A 60-s log line `footprint defer: ...` when installed.
+
+**Not built (from §6/§7):** the P-U caller keys and stage tags (`usfKey_*`), the `usfSyncWriterSameId` shadow, steerro-test section J and the emu spec. `usfCalls` / `usfInJob` in the off slices of the A/B give the call and in-job rates. **Phase 2 (`0x8334A0`) not built:** it is not the same call (its caller `0x9470B0` brackets it with world `+0x978` and clears component `C+0x40` bit 1, §2), so not "trivially the same".
+
+### 10.2 Readers between record and apply
+
+The body writes, all under `+0x918` [verified `0x833580..0x83362B`]: the lock-key map node `+0x1C` (parked branch), `P+0x10D` (set, then restored), world `+0x994`, and through `0x82CBF0` / `0x8321F0` the object's routing footprints, the lot quadtree, lot table and portals (§3.1). U moves the whole body, so no reader can see a half-done update; a reader before the apply sees the whole pre-call state.
+
+| Reader | What it sees | Tag |
+|---|---|---|
+| Route job on the worker (§3.2 closure) | the pre-call footprint, as if the call came after the job: consistent | verified closure, effect inferred |
+| Sim-thread routing reads under `+0x918` or QL (sync plans, steering `0x82EDB0`/`0x85FD10`, gates, slot and obstruction checks, `LotTable_Contains`) | the pre-call footprint until the drain (at most to the next no-job IC point or 250 ms): consistent, stale; the same staleness design D has had since 0.12.4 (§5.2 rows 1-2) | inferred effect |
+| The calling code right after the call | `Locomotion_Notify` returns (`0x947611`), `0x947040` returns (`0x947080`, `0x9470A0`), `0x947360` returns (`0x94757A`), `0x948F30` returns (`0x948F6F`); `0x947160` then calls `0x790D60` (string building and a channel message through `0x78F2B0`; no routing world access in its direct calls). `RigPose_Update` continues with component lookups at `0x9405A3` | verified disassembly (first instructions after each call; `0x78F2B0`'s virtual target inferred) |
+| Same-object discourage Add / Remove | a D call with no job drains first (U records included), so order holds | verified code + selftest |
+| Destroy, save, travel / quit | D-X applies the id's records; `RT_SAVE` and `RT_CLOSING` drain everything first | verified code + selftest |
+| Other sync writers of the same object (`0x82D280`, `0x8334A0`, `RemovePrivateFootprint`) | each makes the footprints match the current state; the later apply redoes it from the then-current state (I-89-6) | inferred |
+| Lock-key map ICs (park / unpark) | a parked object with nothing queued takes today's path; a queued record applies on whichever branch the object is in then | verified branch, effect inferred |
+| Footprint component bits (`C+0x40`, flag words) | written by the callers before the call, as today; the apply reads them current (§3.3) | verified |
+| `P+0x10D`, world `+0x994` | written only by the body; no job reader (§3.2) | verified scan |
+
+No reader needs today's wait as a fallback beyond the parked case. Not proven: script-side reads of routing footprint data between record and apply (none found statically; an IC reading the footprint component sees the new state anyway) [inferred].
+
+### 10.3 Offline checks
+
+`build.cmd`: selftest ok. `TestFootprintDefer` (fake world, fake lock, fake original and early out, D-X fakes): no-job pass-through with the caller's `force`; in-job records in one FIFO with D's records, applied in order at the next drain with `force = 1` and the lock held (`pbQ`); early out leaves no record; drain on job end; exact repeat dropped; drain-time collapse (`qP`), stopped by a D record between (`Pap`); order rule with no job and in mode 0 (`Qap`); a D call with no job drains U records first (`pb`); pass-throughs (mode 0, `+0x918` owned, job callback, another world) and a nested call from inside an apply; parked object (today's call; queued records not collapsed); destroy while queued (`pP` before the destroy, Add dropped, the other object kept); gone at apply (disable swept with the dead id, enable dropped, reused id dropped); queue full with and without an Add; T-U1 0 and T-U2 < 300 ms. `hook-sites.ts --check`: `0x833560` / `0x82A720` in docs/68. `queue.ts --self-check` ok, `--dry-run` of the new queue.
+
+### 10.4 Live jobs (queued, not run)
+
+`tools/harness/queues/defer-footprint-ab.json` (asi `game-copy/ts3native.asi.deferfp`, copied by hand from the build; base = snap-p5c-ab.json settings + `Discourage.DeferFootprint=1`, HitchAttr on, 10 min, 2-min slices, `minCounters` 75): `bp-wr-deferfp` (off-first ABBA), `bp-wr-deferfp-onfirst` (`run.profile.abOnFirst`, new `profile-world.ts --ab-on-first`: on, off, off, on, for docs/136 §2's slot bias), `ip-wr-deferfp` (off-first). Read with `node tools/harness/wait-ab.ts <tag>`.
+
+**Expected [inferred]:** key `0x833593` from ~7-9 ms/s BP (docs/116 §4.1; 7.2-9.7 in §4) and 6.3-7.9 IP down to ~0-1 ms/s in the on slices (left: parked objects, a full queue); the sim-thread keyed total down 3-5 ms/s BP, since part of the wait moves to the next sync acquire after the job (gains do not add, §5). Apply cost per record outside jobs: tens of µs, not measured.

@@ -285,8 +285,10 @@ class Probe:
             return rpc.task_stall(q.get('start') == '1', q.get('stop') == '1', int(q.get('ms', 0)), int(q.get('sample', 0)), int(q.get('n', 10)))
         if path == 'managedstack':  # C# call stack of the sim thread, innermost first (interpreter frames)
             return rpc.interp_stack(int(q.get('frames', 64)))
-        if path == 'vcache':  # docs/133: snap=1 one callvirt inline-cache snapshot (budget=s); out=PATH writes the union as JSON (read-only)
-            return rpc.vcache(q.get('snap') == '1', int(q.get('budget', 30)), q.get('out'))
+        if path == 'vcache':  # docs/133 §5: snap=1 one slice of the callvirt inline-cache snapshot (repeat until done); budget=s per
+            # snapshot, slice=ms of work, wait=ms for the next sim tick, dry=N methods only, max=method cap; out=PATH writes the union (read-only)
+            o = {k: int(q[k]) for k in ('slice', 'wait', 'dry', 'max') if k in q}
+            return rpc.vcache(q.get('snap') == '1', int(q.get('budget', 120)), q.get('out'), o)
         if path == 'interp':  # Mono interpreter frame chain of the sim thread (read-only)
             return rpc.interp_frames(int(q.get('frames', 32)))
         if path in ('simstack', 'threadstack') and not self.sample_lock.acquire(blocking=False):

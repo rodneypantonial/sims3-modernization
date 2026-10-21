@@ -592,12 +592,39 @@ namespace Ts3Agent
             return r;
         }
 
-        // travel_home: everyone returns early, the way the game's own UI does it per world type.
+        // travel_home {direct?}: everyone returns early, the way the game's own UI does it per world type.
+        // Future world: the portal's Travel ("Travel Home") needs an Active portal, which only the arrival animation
+        // (TimePortal.Arrive, anim event 201 -> SwitchActiveState) sets. [inferred] Arrive never ran or was cancelled: it
+        // is pushed 1 Sim minute after arrival only when the household lot has a portal (else a fade-in), and the harness
+        // cancels all actions before the trip back. Seen: portal Inactive, Travel Test refused (2026-10-20 release-validate,
+        // queued false). So portal_prepare does that activation first. direct: true skips the interaction and the portal and
+        // runs Travel.Run's future-world tail (kTravelToPresent, GameStates.ReturnFromVacationWorld) on a one-shot task.
         static object TravelHome(Args a)
         {
             if (GameStates.IsTravelling) throw new McpException("a world switch is already running");
             Sim s = Util.ActiveSim();
-            if (GameUtils.IsFutureWorld()) return QueuePortalTravel(s);
+            if (GameUtils.IsFutureWorld())
+            {
+                if (TravelUtil.PlayerMadeTravelRequest) throw new McpException("another trip is already requested");
+                if (!a.Bool("direct", false))
+                {
+                    object prepared = PortalPrepare(a);
+                    Dictionary<string, object> q = (Dictionary<string, object>)QueuePortalTravel(s);
+                    q["prepare"] = prepared;
+                    return q;
+                }
+                s.InteractionQueue.CancelAllInteractions();
+                RunAsync("travel_home future direct", delegate
+                {
+                    EventTracker.SendEvent(EventTypeId.kTravelToPresent, s);
+                    GameStates.ReturnFromVacationWorld();
+                });
+                Dictionary<string, object> d = Util.Obj();
+                d["sim"] = s.FullName;
+                d["direct"] = true;
+                d["via"] = "ReturnFromVacationWorld (TimePortal.Travel future-world tail)";
+                return d;
+            }
             Dictionary<string, object> r = Util.Obj();
             if (GameUtils.IsUniversityWorld())
             {

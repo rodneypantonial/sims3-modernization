@@ -124,6 +124,11 @@ static void __cdecl MtTick() {
 static void __cdecl MtSimLeave() {
     if (g_mtOnLeave) g_mtOnLeave();
 }
+// end of every Simulate loop iteration (simloop.cpp): the frame's "return", then the next frame's "top"
+static void __cdecl MtIterate() {
+    MtSimLeave();
+    MtTick();
+}
 
 static void MtFirstTick() {
     g_mtTicked = 1;
@@ -217,8 +222,11 @@ static bool ApplyMonoThread(const wchar_t* ini) {
     const DWORD push = (DWORD)(uintptr_t)MtPushOtherRoots, stub = (DWORD)(uintptr_t)MtSimulateStub;
     if (!Write(hook, &push, 4)) { Log("FAIL mono thread: write [0x%08X] (err %lu)", MT_PUSH_HOOK, GetLastError()); return false; }
     k.mtReady = 1;
-    if (Write(slot, &stub, 4)) k.mtReady |= 2;
-    else Log("FAIL mono thread: Simulate vtable slot (err %lu); P2 stays, no sim registration", GetLastError());
+    if (Write(slot, &stub, 4)) {
+        k.mtReady |= 2;
+        // the slot runs once per session (Simulate loops, simloop.cpp): per-frame ticks come from the loop-back hook
+        if (SimLoopAdd(MtIterate, "mono thread tick")) k.mtReady |= 8;
+    } else Log("FAIL mono thread: Simulate vtable slot (err %lu); P2 stays, no sim registration", GetLastError());
     Log("OK   mono thread: [0x%08X] 0x%08X -> MtPushOtherRoots, Simulate slot 0x%08X %s (Mode=%ld, GcLock=%d, FrameTls=%d)", MT_PUSH_HOOK,
         (DWORD)(uintptr_t)g_mtOrigPush, MT_SIM_SLOT, (k.mtReady & 2) ? "hooked" : "not hooked", k.mtMode, g_mtWantP3, g_mtWantP4);
     return true;

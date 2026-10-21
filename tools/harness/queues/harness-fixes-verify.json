@@ -1,0 +1,46 @@
+{
+  "note": "Harness fixes verify (correctness only, daytime OK, timing not judged): re-runs the 6 non-PASS v0.1.4 release-validate jobs' failure paths (docs/data/results/2026-10-20-queue-release-validate.md) on the same v0.1.4 release asi with the master harness fixes: save-matrix --fixes shipped (9a69500), future trip home portal_prepare + direct trip back and Generations stroller key (f7dd9d1, fb9e6ee). One matrix world is enough: all three failed on the same check ('fixes switched on': save fixes off as shipped). Run from the main checkout after the merge (cycle.ts --restart rebuilds and installs ts3agent from the checkout). 4 jobs, ~50 min real (matrix + its two reload loads ~18 min, travel ~6 min each, stroller ~9 min, ~2 min load per job).",
+  "jobs": [
+    {
+      "id": "bp-fix-matrix",
+      "note": "Save matrix in release mode (saveMatrix.fixes shipped) on the v0.1.4 release asi, all cases + the reload case's two loads run by the queue. Pass: no 'fixes switched on' fail (save fixes logged as shipped, routeasync + discourage switched); every case PASS. A case that still FAILs on any other check (identical/overwrite .backup/back-to-back/unpaused/verify) is a real save finding: report it, do not loosen the check.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": { "matrix": [] },
+      "saveMatrix": { "fixes": "shipped" },
+      "minCounters": 72,
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-fix-travel-future",
+      "note": "Future round trip, queued portal both ways. Pass: travel case PASS (left, arrived, saved away, back home, saved). Read travel_home's prepare.before: state Inactive again = the arrival Arrive did not activate the portal (2026-10-20 runs; inferred: harness cancels or pauses before Arrive) -> log it in docs/51 I-77 and check once by hand without the harness that a player's trip home works.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future"] },
+      "minCounters": 72,
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-fix-travel-future-direct",
+      "note": "Future round trip with direct: true both ways (save-matrix --direct now also sends it for travel_home: ReturnFromVacationWorld on a one-shot task, no portal). Pass: travel case PASS.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": { "matrix": ["--travel", "--cases", "travel", "--to", "future", "--direct"] },
+      "minCounters": 72,
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-fix-rare-stroller",
+      "note": "Repro rare-stroller: own_vehicle {kind: stroller} now creates the Generations strollerSimple by EP4 product key (NMAP in EP4 FullBuild_p08 maps strollerSimple -> OBJD 0x98A509, group 0x38000000). Pass: own_vehicle ok (result type Stroller), stroll queued, the toddler and the Sim routed (no route-fail loop), profile ran 6 min.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 6, "seed": 12345, "repro": "rare-stroller" } },
+      "minCounters": 72,
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 21
+    }
+  ]
+}

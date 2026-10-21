@@ -6,7 +6,7 @@
 // autopilot at x3 with popups cleared, keep_alive + decline_requests every 30 s, and the native stutter profiler
 // (separate Frida session). Samplers in turn: managed C# stack (minutes 1-4), native sim-thread stack (5-8).
 // --ab: A/B in one load. The named fixes (patches switches; `routeworker` / `routebudget` / `routeasync` = ts3native [RouteWorker] / [RouteBudget] / [RouteAsync] via /native) switch every --slice minutes: a warm-up slice
-// (on, not counted), then off,on,on,off repeating (ABBA); use minutes = slice x (1 + multiple of 4). Slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
+// (on, not counted), then off,on,on,off repeating (ABBA; --ab-on-first: on,off,off,on); use minutes = slice x (1 + multiple of 4). Slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
 // --fixes-off a,b,c: switch those ts3fixes patches (--ab names, e.g. gohome,rabbithole,visit) OFF for the whole run while paused, log `fixes off: ... (verified)` after reading them back; previous state restored at the end and on a crash.
 // --fixes-on a,b,c: the same, switched ON (e.g. autshadow: tuning kAutShadow is off, so pilot jobs turn it on here and every other job keeps it off).
@@ -31,7 +31,8 @@
 // y vs terrain) from the window start, into <tag>-f4b.json (f4b-report.ts) and <tag>-f4b.log; the stack samplers are skipped
 // (its terrain call runs on the sim thread).
 // --vres: callvirt inline-cache snapshots through the probe agent's /vcache every 60 s, union in <tag>-vres.json (docs/133,
-// tools/virtual-resolution-report.ts); the stack samplers are skipped (a snapshot holds the agent's script thread for seconds).
+// tools/virtual-resolution-report.ts); the stack samplers are skipped. --vres-dry N: the same with N methods per snapshot.
+// --no-samplers: skip the stack samplers without any other probe (docs/133 §5: the int3-only bisect job matches bp-vres).
 // --no-prof: no stutter profiler session (no <tag>-<secs>-* files). queue.ts sets it for [ProbeSnap] jobs: a second Frida
 // agent injecting while the int3 sampler storms the sim thread with breakpoints crashed the game in that agent's exception
 // path (docs/67 §7, bp-rare-winter-pond 2026-10-19).
@@ -51,8 +52,9 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
+if (values['vres-dry'] !== undefined && !/^[1-9]\d*$/.test(values['vres-dry'])) throw new Error('--vres-dry must be a positive integer');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'profile');
@@ -201,23 +203,44 @@ const watchDone = side(values.watchstalk, 'watch-stalk.js', 'watchstalk', values
 const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
 const f4bDone = side(values.f4b, 'f4b-reads.js', 'f4b');
 // --vres (docs/133): a callvirt inline-cache snapshot through the probe agent every 60 s from the window start, then a last one
-// that writes the union to <tag>-vres.json; nothing is hooked, so the cost is the agent's reads on its own thread
-const vresDone = values.vres ? (async () => {
+// that writes the union to <tag>-vres.json; nothing is hooked. --vres-dry N: the same, but each snapshot walks only N methods
+// (no call / target following; docs/133 §5 bisect). A snapshot is many short /vcache calls (one tick-aligned slice of <= 20 ms
+// each, 50 ms apart), so the agent's script thread is never held for long: bp-vres (2026-10-20) held it with one synchronous
+// call past game-alive's 60 s heartbeat limit, and the harness killed a running game.
+const vresDry = Number(values['vres-dry'] ?? 0), vresOn = values.vres || values['vres-dry'] !== undefined;
+const vresSnapshot = async (q: string) => {
+  let fails = 0, slowest = 0, r: any;
+  for (const t = Date.now(); !stopped;) {
+    const s0 = Date.now();
+    try { r = await get(`vcache?snap=1&budget=45&slice=20&wait=100${vresDry ? `&dry=${vresDry}` : ''}${q}`, 10000); fails = 0; }
+    catch (e: any) { if (++fails >= 2) throw new Error(`two slices in a row failed: ${e.message}`); continue; }
+    slowest = Math.max(slowest, Date.now() - s0);
+    if (r.done) return Object.assign(r, { slowest });
+    if (Date.now() - t > 60000) throw new Error(`not done after 60 s (agent budget is 45 s): ${r.methods} methods, ${r.queued} queued`);
+    await sleep(50);
+  }
+  return Object.assign(r ?? {}, { slowest });
+};
+const vresLine = (r: any) => `${r.ms} ms wall, ${r.workMs} ms work in ${r.slices} slices (${r.tickAligned} tick-aligned, slowest call ${r.slowest} ms), ${r.images} images, ${r.methods} methods walked, ${r.decoded} decoded, ${r.filled} filled caches, ${r.sites} sites, +${r.newPairs} pairs${r.partial ? ' (budget hit: partial)' : ''}${r.dry ? ` (dry ${r.dry})` : ''}`;
+const vresDone = vresOn ? (async () => {
   let fails = 0;
   for (let s = 60; s < secs - 20 && !stopped; s += 60) {
     await sleep(Math.max(0, at(s) - Date.now()));
     try {
-      const r = await get('vcache?snap=1&budget=30', 90000);
+      const r = await vresSnapshot('');
       fails = 0;
-      console.log(`${stamp()} [vres] snapshot ${r.snap}: ${r.ms} ms, ${r.images} images, ${r.decoded} methods decoded, ${r.filled} filled caches, ${r.sites} sites, +${r.newPairs} pairs${r.partial ? ' (budget hit: partial)' : ''}; ${Math.ceil((secs - s) / 60)} min left`);
+      console.log(`${stamp()} [vres] snapshot ${r.snap}: ${vresLine(r)}; ${Math.ceil((secs - s) / 60)} min left`);
     } catch (e: any) {
       console.log(`${stamp()} [vres] snapshot failed: ${e.message}`);
       if (++fails >= 2) { console.log(`${stamp()} FAIL: [vres] two snapshots in a row failed (fail-fast guard)`); break; }
     }
   }
   const out = `${pre}-vres.json`.replace(/\\/g, '/');
-  try { const r = await get(`vcache?snap=1&budget=30&out=${encodeURIComponent(out)}`, 120000); console.log(`${stamp()} [vres] last snapshot ${r.snap} (${r.ms} ms), wrote ${r.wrote}`); }
-  catch (e: any) { console.log(`${stamp()} FAIL: [vres] last snapshot / dump: ${e.message}`); }
+  try {
+    const r = await vresSnapshot('');
+    const w = await get(`vcache?out=${encodeURIComponent(out)}`, 30000);
+    console.log(`${stamp()} [vres] last snapshot ${r.snap}: ${vresLine(r)}; wrote ${w.wrote}`);
+  } catch (e: any) { console.log(`${stamp()} FAIL: [vres] last snapshot / dump: ${e.message}`); }
 })() : Promise.resolve();
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
@@ -226,14 +249,15 @@ if (abNames.length) writeFileSync(`${pre}-ab-native.jsonl`, '');
 const toggler = (async () => {
   if (!abNames.length) return;
   for (let i = 0; i * Number(values.slice) * 60 < secs; i++) {
-    // slice 0 is warm-up (on, not counted); then off,on,on,off (ABBA) so a drift in world activity hits both sides alike
-    const on = i === 0 || [false, true, true, false][(i - 1) % 4];
+    // slice 0 is warm-up (on, not counted); then off,on,on,off (ABBA) so a drift in world activity hits both sides alike;
+    // --ab-on-first: on,off,off,on (docs/136 §2: the first counted slice is a heavy stretch, so pair jobs by start side)
+    const on = i === 0 || [false, true, true, false][(i - 1) % 4] !== !!values['ab-on-first'];
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
     // ts3native counters at every switch (end of the previous slice): wait-ab.ts splits the sim-thread waits per side
     await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
     const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
     // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74, routesnaprel: 0x302C, routesnapgate: 0x3068, routesnapfree: 0x307C };
+    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74, routesnaprel: 0x302C, routesnapgate: 0x3068, routesnapfree: 0x307C, fallbackasync: 0x314C, deferfootprint: 0x3178, m1retry: 0x31C8, destroypark: 0x31E0, avoidro: 0x31F0, avoidshadow: 0x31F4, earlyout: 0x3260, unseenthrottle: 0x33C8, unseenavoid: 0x3424, unseenfootprint: 0x3428, unseenrate: 0x342C, fbjobcap: 0x354C };
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
@@ -299,7 +323,7 @@ const run = (args: string[], file: string) => new Promise(r => {
   p.stdout.pipe(createWriteStream(file)); p.on('exit', r);
 });
 // none with --taskstall: two samplers suspending the sim thread deadlocked the probe agent (bp-detour, 2026-10-13)
-const window = abNames.length || values.taskstall || values.repro || values.inroom || values.watchstalk || values.livereads2 || values.f4b || values.vres ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
+const window = abNames.length || values.taskstall || values.repro || values.inroom || values.watchstalk || values.livereads2 || values.f4b || vresOn || values['no-samplers'] ? 0 : Math.min(180, Math.floor(secs / 2) - 60); // 3 min each in a 10 min run; none in --ab mode
 const mainSample = async (t: number) => {
   try {
     const r = await get(`threadstack?which=${values.mainstack}&frames=24`, 5000);

@@ -1,0 +1,43 @@
+{
+  "jobs": [
+    {
+      "id": "bp-easpread-lots-repro",
+      "note": "docs/147 §2 correctness first (5 min): repro bp-easpread-lots under /taskstall. Pass: both easpread_log lines show the same lots per kind and Sim count, ours > 1 tick with easpread_lots_max_tick_us < ~5000 and verify 'after' equal to the game's; the game's pass shows one >= 250 ms stall under LotManager.CleanUpLotsAndInventories, ours none. Stop the queue on any 'failed' or 'stopped' line",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "bp-easpread-lots" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-easpread-pets-repro",
+      "note": "docs/147 §3 (5 min): repro bp-easpread-pets under /taskstall. Pass: test pet 1 tick on the game's path, > 1 tick on ours (easpread_pets_max_ticks > 1), no 'failed' line, no >= 250 ms stall under PetPoolManager/GeneticsPet on our side; the real alarm's line follows",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "bp-easpread-pets" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-easpread-decay-repro",
+      "note": "docs/147 §4 (5 min): repro bp-easpread-decay under /taskstall. Pass: ours > 1 tick, easpread_decay_max_tick_us < ~5000, easpread_decay_threw 0, both verify lines (relationships after <= before); the game's DecayAll is one tick (a stall only on old saves)",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "bp-easpread-decay" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ab-easpread",
+      "note": "docs/147 in-load A/B, seeded BP, 10 min, 2-min slices, easpreadlots + easpreadpets + easpreaddecay alternating together (each decided when its alarm fires; a pass started in an on slice may finish in the next). Natural fires only: 3 AM venue cleanup and midnight decay once per sim-day, pet alarm every 5-30 sim-minutes while a pool is open. Pass: worst-hitches.ts --min 300 shows no iteration with LotManager.CleanUpLotsAndInventories / PetPoolManager.AlarmCallBack / Relationship.DecayAll on a managed sample in on slices; easpread_log 'ours' lines with no 'failed'/'stopped'; it/s and hitches >= 100 ms per side within noise. With overwatchspread also on in a later run, the 3 AM TaskObjects burst (class B) should be gone",
+      "asi": "tested",
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "easpreadlots,easpreadpets,easpreaddecay", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    }
+  ]
+}

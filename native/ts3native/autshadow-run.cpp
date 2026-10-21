@@ -5,10 +5,14 @@
 //
 // One shadow search (docs/122 §1.2):
 //   ts3fixes request hook (sim thread, B13 entry): Begin() -> AddRow(...) -> Post(id)
-//   return of Simulate (AsSimLeave): cut (AsCut), then Mode 1/2: the reference method on the sim thread with the script
+//   end of the frame (AsSimLeave): cut (AsCut), then Mode 1/2: the reference method on the sim thread with the script
 //     RNG (host +0xC30) saved and restored, then the work method on the M5 worker; Mode 0 or no idle worker: finish at once
-//   top of the next Simulate (AsSimEnter): window closed; a worker still inside gets the stop flag (overrun, A5)
-//   a later return of Simulate, once the job left the worker: the finish method on the sim thread (compare, counters)
+//   top of the next frame (AsSimEnter): window closed; a worker still inside gets the stop flag (overrun, A5)
+//   a later end of frame, once the job left the worker: the finish method on the sim thread (compare, counters)
+// Where (docs/51 I-188-3, docs/122 §14.11): Simulate loops (simloop.cpp), so "end" and "top" both sit at the loop-back and
+// the window there is ~0. With the post-pump hook (simloop.cpp SimPumpAdd) the end runs after the sim's remote-call pump
+// (0xD81FDA returns to 0xD81FDC), just before the frame limiter 0xD81FDE, and the top stays at the loop-back: the window
+// is the limiter's sleep. Without a pump call (main == sim: no sim job record) the loop-back keeps doing both.
 // Managed methods are static, no arguments: request and results live in rooted ts3fixes statics.
 
 enum { AS_RUN_IDLE, AS_RUN_WINDOW, AS_RUN_WAIT };
@@ -22,6 +26,8 @@ static volatile LONG g_asRun;           // AS_RUN_*
 static LONG g_asLast = AS_LAST_OK;      // what LastRun() tells finish
 static LONG g_asRunEpoch, g_asTrack0, g_asWaitTicks;
 static volatile LONG g_asJobExc;
+static volatile LONG g_asJobIn;         // the worker entered the current job (phase 0 seen)
+static bool g_asPumpCut;                // the post-pump hook fired: the loop-back no longer cuts
 static LARGE_INTEGER g_asWin0, g_asJob0;
 static double g_asUsPerTick;
 static HANDLE g_asJsonl = INVALID_HANDLE_VALUE;
@@ -180,6 +186,7 @@ static void __cdecl AsJobHook(int phase, void* method) {
         InterlockedExchange(&g_asHeld, g_asPub);  // AsWorkerBegin without clearing stop: the sim may have set it already
         if (g_asRunEpoch != g_asEpoch) InterlockedExchange(&g_asStop, 1);  // the world moved between cut and start
         g_asRngUnitW = -1, g_asRngLiveW = false;
+        InterlockedExchange(&g_asJobIn, 1);
         QueryPerformanceCounter(&g_asJob0);
         return;
     }
@@ -208,6 +215,7 @@ static void __cdecl AsSimLeave() {
     AsCut();
     g_asRngSeedV[g_asPub] = AsRngCutSeed();
     k.cutReq++;
+    k.cutSite = g_asPumpCut ? 2 : 1;
     g_asRunEpoch = g_asEpoch;
     if (g_asMode == 0 || !g_asMRef || !g_asMWork) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
     AsReference();
@@ -215,12 +223,22 @@ static void __cdecl AsSimLeave() {
     g_asWorkerTid = g_mtWorkerTid;
     g_asLast = AS_LAST_OK;
     g_asJobExc = 0;
+    g_asJobIn = 0;
     g_asTrack0 = ts3native_mtprobe.workerTrackSkips;
     InterlockedExchange(&g_asStop, 0);
     InterlockedExchange(&g_asRun, AS_RUN_WINDOW);
     QueryPerformanceCounter(&g_asWin0);
     if (!MtSubmit(g_asMWork, NULL, NULL)) { k.workRefused++; AsFinish(AS_LAST_REFUSED); return; }
     k.workRuns++;
+}
+// loop-back end of frame (g_mtOnLeave): cuts only while the post-pump hook has not fired
+static void __cdecl AsSimLeaveLoop() {
+    if (!g_asPumpCut) AsSimLeave();
+}
+// after the sim pump, before the frame limiter (SimPumpAdd): the end of frame from now on
+static void __cdecl AsSimPump() {
+    g_asPumpCut = true;
+    AsSimLeave();
 }
 
 // top of MonoScriptHost_Simulate (sim thread): the window closes; a worker still inside is told to stop (no wait)
@@ -242,6 +260,7 @@ static void __cdecl AsSimEnter() {
         if (g_mtBusy) {
             InterlockedExchange(&g_asStop, 1);
             k.overrun++;
+            if (!g_asJobIn) k.overrunIdle++;
             if (g_asLast == AS_LAST_OK) g_asLast = AS_LAST_STOPPED;
         }
         InterlockedExchange(&g_asRun, AS_RUN_WAIT);
@@ -376,6 +395,7 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     k.mode = g_asMode;
     if (!slotStub) return;
     g_mtOnEnter = AsSimEnter;
-    g_mtOnLeave = AsSimLeave;
+    g_mtOnLeave = AsSimLeaveLoop;
     g_mtJobHook = AsJobHook;
+    if (ini) SimPumpAdd(AsSimPump, "autshadow cut + worker dispatch (window = frame limiter)");  // game only: patches 0xFD97C8
 }

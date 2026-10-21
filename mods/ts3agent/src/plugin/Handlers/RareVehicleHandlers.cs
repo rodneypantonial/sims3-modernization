@@ -40,9 +40,14 @@ namespace Ts3Agent
             if (name != null) tries.Add(name);
             else if (kind == "stroller")
             {
+                // [verified] Generations OBJD instance names (EP4 FullBuild_p08 OBJDs 0x98A509 / 0x98A6DD, group 0x38000000);
+                // an EP4 object needs its ProductVersion in the key (group), as the game's own EP4 creates do. StrollerCheap
+                // is the script class (the only Stroller subclass), not an instance name, so the old BaseGame-keyed last
+                // resort never resolved (2026-10-18 and 2026-10-20 rare-stroller runs).
+                tries.Add(GlobalFunctions.CreateProductKey("strollerSimple", ProductVersion.EP4));
+                tries.Add(GlobalFunctions.CreateProductKey("strollerDeluxe", ProductVersion.EP4));
                 foreach (BuildBuyProduct p in Catalog())
                     if ((p.ObjectInstanceName ?? "").ToLowerInvariant().IndexOf("stroller") >= 0) tries.Add(p.ProductResourceKey);
-                tries.Add("StrollerCheap"); // [inferred] name of the EP4 stroller, last resort
             }
             else
             {

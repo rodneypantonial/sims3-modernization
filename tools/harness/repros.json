@@ -5030,6 +5030,127 @@
     "expect": "With S2 on (Mode 1, Shadow 1): steerCalls and steerTaken > 0, both shadow mismatch counters 0, no crash, no stuck Sim. steerTaken 0 with steerCalls > 0 = no job held the lock during the walks or every check fell back (read steerFb*): inconclusive, rerun. Off slices of --ab: steerTaken stays 0"
   },
   {
+    "id": "avoid-crowd",
+    "bug": "none (feature check): [AvoidRO] (docs/137) answers the avoidance obstruction check RouteFollow_A 0x846B70 (key 0x846D21) and RouteFollow_B 0x85B470 from a read-only clone while route jobs run; needs Sims ending their walks near each other and near objects (the check runs only near a path end)",
+    "fix": "ts3native (version set at merge, counters v74) [AvoidRO] Enabled=1 Mode=1 (Shadow=1: with no job running, the game's call then the clone, compared); needs [RouteGate] Enforce=1, [RouteAsync] and the S2 writer set; run with [SteerRO] Enabled=1 Mode=1 so the wait reaches 0x846D21; A/B in one load with --ab avoidro (or --ab avoidshadow)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (offline only, 2026-10-21): never run. Same crowd as steer-crowd (10 spawned Sims, 6 townies and the active Sim sent to Hogan's Deep-Fried Diner at ultra speed): arrivals at a crowded lot run the avoidance check near their path ends while other Sims' route jobs run. Counters are deltas over watch.minutes (av* from counters v74)",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30,
+        "note": "background route plans (jobs running while the crowd steers)"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Paul Hogue",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Lilly-Bo Chique",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Marie Desmarais",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wayne Bumble",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "go_here",
+        "args": {
+          "x": 312.4,
+          "z": 1496.7
+        },
+        "waitS": 90,
+        "note": "active Sim joins the crowd at the diner; arrivals steer round each other"
+      }
+    ],
+    "cleanup": [
+      {
+        "cmd": "remove_sims",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "native",
+      "minutes": 3,
+      "checks": [
+        {
+          "name": "avShadowMismatch",
+          "equals": 0
+        },
+        {
+          "name": "avShadowMismatchB",
+          "equals": 0
+        },
+        {
+          "name": "avShadowQueryMismatch",
+          "equals": 0
+        },
+        {
+          "name": "avSimWriteInRo",
+          "equals": 0
+        },
+        {
+          "name": "avSiteSkip",
+          "equalsName": "avTakenMiss"
+        }
+      ]
+    },
+    "expect": "With S2 and AvoidRO on (Mode 1, Shadow 1): avTakenHit + avTakenMiss > 0 (answers during jobs), avSiteSkip = avTakenMiss, avShadowRuns > 0 with avShadowMismatch, avShadowMismatchB and avShadowQueryMismatch 0, avSimWriteInRo 0, no crash, no stuck Sim. avTaken* 0 with avShadowRuns > 0 = no job ran during the arrivals: inconclusive, rerun. Off slices of --ab avoidro: avTakenHit and avTakenMiss stay 0"
+  },
+  {
     "id": "lot-front-door-burst",
     "bug": "none (feature check): design L1 read-only lot front door (docs/84 §4) answers the front-door lookup (LotRouting_FrontDoorPortal 0x631800, Lot.GetFrontDoor) without the +0x918 wait while a route job runs; needs many Sims sent to one lot's front door at once",
     "fix": "ts3native 0.14.0 [LotFrontDoorRO] Enabled=1 Mode=1 (Shadow=1: with no job running, the game's call then the clone, compared); needs [RouteGate] Enforce=1 and [RouteAsync]; A/B in one load with --ab lotfdro (or --ab lotfdshadow)",
@@ -7457,7 +7578,7 @@
     "bug": "none (probe coverage): docs/117 §2.13, a stroller walk with a toddler (stroller path type, follower routing)",
     "fix": "measurement only: probe coverage (docs/117), [ProbeSnap] pass 2 or [RouteSnap] Count=1 writer counters",
     "save": "Baseline-BP-Spring",
-    "note": "UNVERIFIED (static only, 2026-10-19): never run. make_sim adds a random toddler to the household of the lot the active Sim stands on (the active home at save load; household cap 8). The stroller is the first catalog product named *stroller* (Generations), owner lot home, in the Sim's inventory or placed. stroll queues Stroller.GoOnStrollSocial with that stroller (the public variant, no Sim picker): a walk to a lot 0..360 m away for about 2 Sim hours. A baby instead of a toddler lies on the floor when made (Pregnancy has the mother hold it), so toddler",
+    "note": "UNVERIFIED (static only, 2026-10-19): never run. make_sim adds a random toddler to the household of the lot the active Sim stands on (the active home at save load; household cap 8). The stroller is the Generations strollerSimple (EP4 product key; strollerDeluxe, then catalog products named *stroller*, as fallbacks; the old StrollerCheap name is the script class and never resolved: 2026-10-18 and 2026-10-20 runs failed own_vehicle), owner lot home, in the Sim's inventory or placed. stroll queues Stroller.GoOnStrollSocial with that stroller (the public variant, no Sim picker): a walk to a lot 0..360 m away for about 2 Sim hours. A baby instead of a toddler lies on the floor when made (Pregnancy has the mother hold it), so toddler",
     "steps": [
       {
         "cmd": "make_sim",
@@ -7901,5 +8022,1035 @@
       }
     ],
     "expect": "no crash in FutureWorld; a crash at 0x6A81D6 (or 0x6A7CF0 / 0x6A7FF0 / 0x6A80E0 / 0x6A86F0 / 0x6A88B0) = repeat; compare with the portal trip"
+  },
+  {
+    "id": "stuck-check-3am",
+    "bug": "the game's 3 AM stuck check (LotManager.RunStuckCheckHelper) plans up to 10 routes per Sim that has not moved, inside a world-alarm callback: sync plans up to 483 ms in play (freeze-fix-ab 2026-10-20, script stack Route.PlanToPoint < RunStuckCheckHelper.RunOrig), or with [RouteAsync] FallbackAsync=1 the world lot task sleeping inside the alarm",
+    "fix": "ts3fixes stuckcheckasync (FewerPlans.cs, docs/134 §8): the check runs in our own task, one Sim per tick, its plans foreign-task async plans",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. No agent action forces the check; this jumps the clock across 3:00 so the game's own venue cleanup alarm (LotManager.CleanUpLotsAndInventories, kVenueCleanupTime 3) fires and arms one RunStuckCheckHelper alarm per actor, 20-60 sim-minutes later [verified, decompiled]. test_env hour uses SimClock.AddOneHour; that due alarms then fire at once is [inferred] (rare-fullmoon-werewolf note). A save already between 3:00 and 4:00 does not cross 3:00: pick another hour. Only Sims that have not moved by their alarm get plans (most are asleep in bed: stuckcheckbusy would skip those, keep it off here).",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "hour": 4
+        },
+        "waitS": 5,
+        "note": "clock 4:xx, the 3 AM cleanup alarm has fired"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 240,
+        "note": "wait for the 20-60 sim-minute stuck-check alarms"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "waitS": 1,
+        "note": "stuckcheckasync_queued / _run / _dropped / _maxdepth / _maxwait_simsec (0 with the switch off)"
+      }
+    ],
+    "expect": "no crash; ts3native.log sync plan lines whose script stack has RunStuckCheckHelper.RunOrig: with the switch off the stack ends in the alarm (Lot.Simulate), with it on in Ts3Fixes.Fixes.StuckCheckDrain and none over LogFallbackMs unless refused (reason other than Foreign/NoStart); stuckcheckasync_run > 0, _dropped small"
+  },
+  {
+    "id": "replan-buildbuy-crowd",
+    "bug": "docs/141 §4 #2 and #4: the door/elevator route action (PortalRouteThroughAction.ForceReplan) replans synchronously inside callbacks, and build/buy exit replans every Sim in one loop",
+    "fix": "ts3fixes replandefer (door/elevator replans through the Sim's own ReplanRouteInterruptAction) and replanspread (OnBuildBuyExit / OnRoutingDataChanged replayed 4 routing Sims a tick); docs/141 §6",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. 20 spawned Sims plus the household walk onto the home lot (through its doors), three build/buy enter/exit cycles while they route, then a far-lot wave and one more cycle. The switches come from the queue job (profile.fixesOn / fixesOff). Read the patches step: replandefer_deferred / _kept_sync, replanspread_held / _replayed / _exceptions (exceptions must be 0); ts3native sync plan lines with reason and script stack (LogFallbackStack=16) right after each exit",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 6,
+        "note": "wave 1: everyone onto the active home lot, through its doors"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 8,
+        "note": "build mode 1 while the crowd routes (enter pauses the sim)"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20,
+        "note": "exit 1: ExitBuildBuyMode -> OnBuildBuyExit for every Sim (replanspread holds these back, 4 routing Sims a tick); Sims in a doorway replan (replandefer)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 6
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 8,
+        "note": "build mode 2 while the crowd routes (enter pauses the sim)"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20,
+        "note": "exit 2: ExitBuildBuyMode -> OnBuildBuyExit for every Sim (replanspread holds these back, 4 routing Sims a tick); Sims in a doorway replan (replandefer)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 6
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 8,
+        "note": "build mode 3 while the crowd routes (enter pauses the sim)"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20,
+        "note": "exit 3: ExitBuildBuyMode -> OnBuildBuyExit for every Sim (replanspread holds these back, 4 routing Sims a tick); Sims in a doorway replan (replandefer)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 6,
+        "note": "one far lot: long routes being followed at the exit"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 8,
+        "note": "build mode 4 while the crowd routes (enter pauses the sim)"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 20,
+        "note": "exit 4: ExitBuildBuyMode -> OnBuildBuyExit for every Sim (replanspread holds these back, 4 routing Sims a tick); Sims in a doorway replan (replandefer)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "waitS": 1,
+        "note": "replandefer_* / replanspread_* counters"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
+    ],
+    "expect": "off arm: replanspread_held 0, replandefer_deferred 0. On arm: replanspread_held > 0 at every exit, replanspread_replayed = held minus destroyed, replanspread_exceptions 0, replandefer_deferred > 0 when a Sim was in a doorway at an exit; Sims stop and reroute as in the off arm (no stuck Sims, no new route failures); fewer and shorter IC Replan sync lines (QueueFull, Active) after each exit"
+  },
+  {
+    "id": "candidate-loops",
+    "bug": "docs/141 §4 #1/#3/#5: route plans in candidate loops on the sim thread: a reset's safe-spot search near the front door (IsPointInLotSafelyRoutable per placement cell, 345/456 ms stalls), LotManager.GetFarthestLot with routing (a world plan per record lot), Lot.GetRoutableIndoorPositions (a plan per fire position until each room has one)",
+    "fix": "ts3fixes CandidateLoops.cs (docs/141 §7): safespotcap (EA's own IsPointSafelyRoutable limit 5 per call), farthestsorted (farthest lot planned first, same answer, cap 3, sim-day cache), indoorcap (a room given up after 4 failed plans); all default off",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. No game event is waited for: the probe Ts3Fixes.Fixes.CandidateLoopProbe runs the three loops once for the selected Sim (front door of its home lot, farthest lot from where it stands with routing, indoor positions of its home lot), synchronously in the agent call, and returns ms and results per loop. Switch-neutral: compare a run with the switches off against one with them on (repro.ts run candidate-loops --set safespotcap=true,..., or queue candidate-loop-ab.json via profile.fixesOn).",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.CandidateLoopProbe"
+        },
+        "waitS": 2,
+        "note": "frontdoor ok/ms, farthest lot id/ms, indoor count/ms; the farthest lot id must match between the off and on runs"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.CandidateLoopProbe"
+        },
+        "waitS": 2,
+        "note": "again: with farthestsorted on, farthest answered from the sim-day cache (farthest_cache 1)"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "waitS": 1,
+        "note": "safespotcap_calls / _limited, farthest_calls / _plans / _cache / _capped, indoorcap_calls / _plans / _rooms_given_up"
+      }
+    ],
+    "expect": "no crash; same farthest lot id off and on; frontdoor true in both (on: the game's own mailbox fallback when safespotcap_limited > 0); indoor count on <= off (fewer only when indoorcap_rooms_given_up > 0); on: farthest_plans <= the unroutable lots farther than the answer + 1, farthest_cache 1; off: every candidate-loop counter 0"
+  },
+  {
+    "id": "bp-overwatch-spread-inventory",
+    "bug": "NRaas Overwatch's nightly inventory cleanup looks up a localized catalog name for every world object in one FunctionTask tick: ~500 ms TaskObjects burst once per sim-day, 23% of >= 300 ms hitch time (docs/96 §4.1, docs/145)",
+    "fix": "ts3fixes OverwatchSpread.cs (switch overwatchspread, tuning kOverwatchSpread, default off): our inventory pass from Overwatch's observable behaviour, no name lookups, <= 25 inventories or 2 ms per tick; overwatchspreadverify counts the repairs still pending before and after either path",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true,
+          "overwatchspreadverify": true
+        },
+        "note": "applied log must list Overwatch.OnTimer: ok (else Overwatch missing or not V123: see the overwatchspread line)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "CleanupInventory",
+            0
+          ]
+        },
+        "waitS": 10,
+        "note": "ours first: its line gives the repairs per kind and 'pending before N, after 0' with N = its repairs"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "CleanupInventory",
+            0
+          ]
+        },
+        "waitS": 5,
+        "note": "Overwatch's own pass now (switch off: their option runs); run under profile-world --taskstall 250 to see its one-tick stall"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "overwatchspread_log has both lines"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "owspread_inv_passes",
+      "min": 1,
+      "minutes": 1
+    },
+    "expect": "ours: owspread_inv_passes 1, owspread_ticks > 1, owspread_max_tick_us < ~5000, verify 'after 0'; Overwatch's own pass after it: 'pending before 0, after 0' (ours left nothing it would repair). Run once more with the two halves swapped (switch off first) on a fresh load: theirs 'after 0', ours 'pending before 0'. Same counts both orders = same result"
+  },
+  {
+    "id": "bp-overwatch-spread-all",
+    "bug": "NRaas Overwatch runs every nightly cleanup option in one tick at the alarm hour (docs/96 §4.1, docs/145)",
+    "fix": "ts3fixes OverwatchSpread.cs (switch overwatchspread): each cleanup type in its own one-shot task, 10 sim-minutes apart (1 here), Overwatch's own code except the inventory cleanup",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 60,
+        "note": "22 types, one sim-minute apart: all done within ~22 sim-minutes"
+      },
+      {
+        "cmd": "patches",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "owspread_types_run",
+      "min": 10,
+      "minutes": 2
+    },
+    "expect": "owspread_alarms 1, owspread_types_scheduled = Overwatch's option count (22 in V123: 21 alarm options + the console alarm commands), owspread_types_run = that minus 1 (the inventory type is ours, owspread_inv_passes 1 when the player setting is on); no 'failed' line in overwatchspread_log; /taskstall (if on) shows no stall over 100 ms from NRaas"
+  },
+  {
+    "id": "bp-overwatch-spread-upstream-yield",
+    "bug": "Our spreading must stand down when an Overwatch build spreads the cleanups itself (upstream patch, docs/145 §4)",
+    "fix": "ts3fixes OverwatchSpread.cs: marker NRaas.Overwatch.StaggeredCleanupVersion present = nothing patched; overwatchspreadfakeupstream simulates it on the installed V123",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true,
+          "overwatchspreadfakeupstream": true
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 10,
+        "note": "returns 'Upstream'; Overwatch's own OnTimer runs"
+      },
+      {
+        "cmd": "patches",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "owspread_theirs",
+      "min": 1,
+      "minutes": 1
+    },
+    "expect": "owspread_upstream -1, owspread_alarms 0, owspread_inv_passes 0, owspread_theirs 1, overwatchspread_log 'upstream spreading found (faked), ours off'. With the patched Overwatch installed (no fake switch): applied log 'overwatchspread: upstream spreading found (v1), ours off', owspread_upstream 1, no OnTimer patch line"
+  },
+  {
+    "id": "bp-easpread-lots",
+    "bug": "EA's 3 AM venue cleanup LotManager.CleanUpLotsAndInventories cleans every lot (Lot.MagicallyCleanUp) and arms every Sim's stuck check in one alarm tick, in the same tick as NRaas Overwatch's nightly alarm: 10 TaskObjects bursts 306-587 ms over 213 runs (docs/145 §6, docs/147 §2)",
+    "fix": "ts3fixes EaSpread.cs (switch easpreadlots, tuning kEaSpreadLots, default off): the same per-lot and per-Sim steps in our task, <= 4 lots / 16 Sims or 2 ms per tick; easpreadlotsverify counts objects still to clean before and after either path",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false,
+          "easpreadlotsverify": true
+        },
+        "note": "applied log must list LotManager.CleanUpLotsAndInventories: ok"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 90,
+        "note": "the game's own pass first (fires 1 sim-minute later, inside an alarm like the real one): easpread_log 'venue cleanup (game's)' with lots per kind and 'to clean before N, after M'; under /taskstall it is one stall"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 90,
+        "note": "ours: 'venue cleanup (ours)' with the same lots per kind, ticks > 1, longest < ~5 ms; 'to clean before' ~ the game's 'after' (little left), 'after' <= the game's 'after'"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "easpread_log has both lines; easpread_lots_passes 1"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "easpread_lots_passes",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "Both lines list the same lot kinds (cleaned / virtual-slot / season only) and the same Sim count; ours: easpread_lots_ticks > 1, easpread_lots_max_tick_us < ~5000, easpread_lots_stopped 0, verify after equal to the game's after (objects that stay dirty are on lots with active jobs or in use, on both paths). Swap the halves on a fresh load (ours first): ours 'before' N -> after M, the game's then 'before' ~M. Same counts both orders = same result"
+  },
+  {
+    "id": "bp-easpread-pets",
+    "bug": "EA's pet pool alarm (PetPoolManager.AlarmCallBack) builds one random pet through CAS part searches in one alarm tick; EA's builder has sleep points (GeneticsPet.SleepIfPossible) that do nothing inside an alarm: 16 iterations >= 300 ms with it on a sample (docs/145 §6, docs/147 §3)",
+    "fix": "ts3fixes EaSpread.cs (switch easpreadpets, tuning kEaSpreadPets, default off): the alarm's own code runs unchanged inside our task, so EA's own sleeps split the build over several ticks; a second alarm while one build runs takes the game's path",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "note": "applied log must list PetPoolManager.AlarmCallBack: ok"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 90,
+        "note": "the game's path: one stray cat built inside an alarm and thrown away; easpread_log 'test pet (game's path): 1 ticks'"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 90,
+        "note": "ours: 'test pet (ours): ... N ticks' with N > 1 (EA's sleep points took effect)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "pets"
+          ]
+        },
+        "waitS": 120,
+        "note": "the real pool alarm, ours: 'pet pool alarm (ours): pets in pools A -> B' (A = B when every pool is full: nothing to build, the alarm only re-arms)"
+      },
+      {
+        "cmd": "patches",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "easpread_pets_moved",
+      "min": 2,
+      "minutes": 4
+    },
+    "expect": "game's path 1 tick, ours > 1 tick (easpread_pets_max_ticks > 1) with no 'failed' line; the real alarm adds 1 pet when a pool is open and the pool alarm keeps firing afterwards (a later 'pet pool alarm' line within ~30 sim-minutes). Under /taskstall: no stall >= 250 ms from PetPoolManager on our side"
+  },
+  {
+    "id": "bp-easpread-decay",
+    "bug": "EA's midnight relationship decay (SocialComponent.RelationshipDecay -> Relationship.DecayAll) steps every relationship pair in one alarm tick; it grows with the save's age (docs/145 §6, docs/147 §4)",
+    "fix": "ts3fixes EaSpread.cs (switch easpreaddecay, tuning kEaSpreadDecay, default off): the same per-pair step in our task, <= 64 Sims or 2 ms per tick, time checks at the alarm time, one step per pair per day (DailyPass), drops at the end of the pass; easpreaddecayverify logs a census before/after either path",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false,
+          "easpreaddecayverify": true
+        },
+        "note": "applied log must list SocialComponent.RelationshipDecay: ok (else \"Relationship members differ\")"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 90,
+        "note": "the game's DecayAll (one extra decay day): 'relationship decay (game's): verify: relationships before N, after M; pairs with liking ...'"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 120,
+        "note": "ours: 'relationship decay (ours): pairs stepped P, dropped D, Sims that threw 0; verify: ...' and a ticks line"
+      },
+      {
+        "cmd": "patches",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "easpread_decay_passes",
+      "min": 1,
+      "minutes": 4
+    },
+    "expect": "ours: easpread_decay_ticks > 1, easpread_decay_max_tick_us < ~5000, easpread_decay_threw 0, easpread_decay_finished_early 0; both verify lines: relationships after <= before (drops only), the second day's sum |liking| change about the first's (same per-pair step; the two days differ only by the first day's decay). Exact per-pair equality is the selftest's job (tools/selftest/easpread), not this run's"
+  },
+  {
+    "id": "bp-errortrap-spread-inventory",
+    "bug": "NRaas ErrorTrap's load-up checks run in one FunctionTask tick one sim-minute after every load: a 0.5-0.9 s frame, about three quarters in its inventory check, which looks up a localized name for every world object for its log text (docs/146 §2)",
+    "fix": "ts3fixes ErrorTrapSpread.cs (switch errortrapspread, tuning kErrorTrapSpread, default off): ErrorTrap's own per-inventory check for objects with an inventory and the household inventories, no name lookups for the rest, <= 2 ms per tick, a tick break before and after; errortrapspreadverify counts the corrections either path logs",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true,
+          "errortrapspreadverify": true
+        },
+        "note": "applied log must list Inventories.CheckInventories: ok (else ErrorTrap missing or changed: see the errortrapspread line)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "ours"
+          ]
+        },
+        "waitS": 10,
+        "note": "ours first: 'inventory pass: N objects, M inventories checked, K name lookups skipped, T ticks, longest x ms' and 'verify: our pass logged C corrections'"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "theirs"
+          ]
+        },
+        "waitS": 5,
+        "note": "ErrorTrap's own one-tick check right after ours; under profile-world --taskstall 250 its stall row shows Inventories.GetName"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "errortrapspread_log has both verify lines"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "etspread_passes",
+      "min": 1,
+      "minutes": 1
+    },
+    "expect": "ours: etspread_passes 1 (2 when the load-up check ran ours too), etspread_ticks > 1, etspread_max_tick_us < ~5000, etspread_names_skipped > 0, etspread_failed 0; ErrorTrap's own check after it: 'verify: ErrorTrap's own check logged 0 corrections' (ours left nothing it would correct). Run once more with the two calls swapped on a fresh load: theirs first, then ours logs 0. Same counts both orders = same result"
+  },
+  {
+    "id": "bp-errortrap-spread-upstream-yield",
+    "bug": "Our spreading must stand down when an ErrorTrap build spreads the load-up scan itself (upstream patch, docs/146 §4)",
+    "fix": "ts3fixes ErrorTrapSpread.cs: marker NRaas.ErrorTrap.SpreadScanVersion present = nothing patched; errortrapspreadfakeupstream simulates it on the installed build",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true,
+          "errortrapspreadfakeupstream": true
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 10,
+        "note": "returns 'Upstream'; ErrorTrap's own check runs"
+      },
+      {
+        "cmd": "patches",
+        "args": {}
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "etspread_theirs",
+      "min": 1,
+      "minutes": 1
+    },
+    "expect": "etspread_upstream -1, etspread_passes 0 (unless the load-up check ran with the switch on), etspread_theirs 1, errortrapspread_log 'upstream spreading found (faked), ours off'. With the patched ErrorTrap installed (no fake switch): applied log 'errortrapspread: upstream spreading found (v1), ours off', etspread_upstream 1, no CheckInventories patch line"
+  },
+  {
+    "id": "night-maintenance-clock",
+    "bug": "The nightly maintenance alarms (EA midnight relationship decay, EA 3 AM venue cleanup LotManager.CleanUpLotsAndInventories with its stuck-check arming, NRaas Overwatch's nightly cleanups in the same 3 AM frame) fire at a sim time that depends on the save's clock, so an in-load A/B of their spreads (docs/145, docs/147) cannot say which slices see them",
+    "fix": "timing anchor for the spreads A/B (easpreadlots, easpreadpets, easpreaddecay, overwatchspread; clean-night-0.2.0.json): the switches come from the queue job's --ab; this only fixes the clock",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. Jumps the clock to 22:00 at the window start (test_env hour = SimClock.AddOneHour, alarms in between fire at once, in the warm-up slice). At the measured ~9.5-11 sim-minutes per real second (seeded BP-Spring profiles, rng.json simMinutes) midnight and 3 AM then fall in the warm-up and about every 2.3-2.6 real minutes after it: midnight ~164 / 316 / 467 s, 3 AM ~183 / 335 / 486 s into the window [inferred from the rate; it moves with it/s], so each counted slice of a 10-min --ab run with 2-min slices sees about one of each, and the off-first and on-first jobs of a pair put the same fire on opposite sides. Read per fire (easpread_log 'game's' / 'ours' lines, owspread alarm lines), not per slice.",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "hour": 22
+        },
+        "waitS": 5,
+        "note": "clock 22:xx"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "hour 22 in the reply"
+      }
+    ],
+    "expect": "reply hour 22; then in the run: easpread_log venue cleanup, decay and pet lines once per sim-day each, overwatchspread alarm lines at 3 AM; the sim clock (rng.json simMinutes) covers >= 3 sim-days in 10 min"
+  },
+  {
+    "id": "unseen-crowd-far",
+    "bug": "none (fix check): docs/143 §8 [UnseenThrottle] phase 2 (Rate / Avoid / Footprint) must not strand unseen walkers or make them miss their goal",
+    "fix": "ts3native [UnseenThrottle] Rate=1, Avoid=1, Footprint=1 (unseen walking Sims: whole update every 4th pass with the summed step, avoidance every 4th pass beyond 3 m of the goal, footprint refresh at most every 500 ms)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. 20 spawned Sims walk from their homes to the farthest community lot and back while the camera stays on the active lot, so the walk is unseen; the household stays home. Read utRateSkipped / utAvSkipped / utFpSkipped > 0 and the profile stuck list.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 150,
+        "note": "out: every spawned Sim to the farthest community lot (unseen walk)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 150,
+        "note": "back: every spawned Sim onto the active home lot (arrives into view)"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; crowd_go sends 20 Sims each way; every Sim reaches the far lot and then the home lot (profile stuck list empty); skip counters of the installed parts > 0"
+  },
+  {
+    "id": "unseen-traffic",
+    "bug": "none (fix check): docs/143 §8.5 ts3fixes unseencars must not strand cars or Sims (the docs/04 traffic teleport did)",
+    "fix": "ts3fixes unseencars (kUnseenCarThrottle): an unseen LiteDriver car bound for an unseen spot stays parked 3 rounds in 4",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. spawn_traffic places driverless cars on roads out of view, as TrafficManager does; their LiteDriver tasks then pick spots every kCarWaitingTimeRange sim-minutes (ultra speed for more rounds).",
+    "steps": [
+      {
+        "cmd": "spawn_traffic",
+        "args": {
+          "count": 20
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 240
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; spawn_traffic placed > 0; patches unseen_car_asks > 0 and, with unseencars on, unseen_car_parked > 0; no stuck Sims"
+  },
+  {
+    "id": "unseen-snapback",
+    "bug": "none (fix check, Rodney: proof that Sims return to full-rate routing when seen): docs/143 §8.9",
+    "fix": "ts3native [UnseenThrottle] phase 2 snap-back rule (a Sim that becomes visible runs that same pass with its owed time; avoidance, footprint and the obstacle list at full rate after) and the v80 utSnap / utSnapMaxMs counters",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. Needs [UnseenThrottle] Enabled=1 with List, Avoid, Footprint, Rate on, [RouteAsync] (the viewer channel) and this branch ts3fixes + agent. 10 spawned Sims walk to the farthest lot so unseen walkers exist; the agent task moves only the in-game camera (CameraController), never the game window.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 20,
+        "note": "gives the check unseen Sims mid-route"
+      },
+      {
+        "cmd": "unseen_snapback",
+        "args": {
+          "count": 6
+        },
+        "waitS": 360,
+        "note": "one Sim at a time: watch armed, camera onto it and kept on it, flip recorded, camera back; keeps picking until 6 passed or 18 tried"
+      },
+      {
+        "cmd": "unseen_snapback",
+        "args": {
+          "result": true
+        },
+        "waitS": 120,
+        "optional": true,
+        "note": "records so far (the run may still be going)"
+      },
+      {
+        "cmd": "unseen_snapback",
+        "args": {
+          "result": true,
+          "require": true
+        },
+        "note": "FAILS the step (and the job) unless done, 0 failed and >= 6 passed"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
+    ],
+    "expect": "no crash; the require step answers ok: state done, failed 0, passed >= 6 (verdict per Sim: pass = flipped, ran that same pass, 0 visible skips, jump within its bound, classed visible for the whole window; not tested = no flip after two camera tries or the camera lost it (unseen_updates_after_flip > 0); fail = anything else); native utSnap_3 counted when Rate held time; no stuck Sims"
+  },
+  {
+    "id": "unseen-boats",
+    "bug": "none (fix check, Rodney: can the unseen throttle leave a Sim in the ocean off a boat?): docs/143 §8.10",
+    "fix": "ts3native [UnseenThrottle] vehicle / rider holds: agents whose owner is not a Sim (Car, Bicycle, Paddleboat, Rail, AnimatedBoat) and parented Sims (in a vehicle, on a horse, carried) run every pass in every part (rate, avoidance, obstacle list, footprint)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. Isla Paradiso: 10 spawned Sims sent to the farthest community lot (across water when it is on another island: boat, water taxi or swimming, by the Sim), then 10 m into the sea (swimming), then back to the active lot; the camera stays on the active lot so every leg is unseen. Needs [UnseenThrottle] Enabled=1 with List, Avoid, Footprint, Rate on.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 180,
+        "note": "leg 1: across water where the far lot is on another island"
+      },
+      {
+        "cmd": "unseen_water_check",
+        "args": {},
+        "note": "after leg 1"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 120,
+        "note": "leg 2: swim 10 m into the sea"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 180,
+        "note": "leg 3: back to the active lot (out of the sea, across water)"
+      },
+      {
+        "cmd": "unseen_water_check",
+        "args": {},
+        "note": "at arrival"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; both unseen_water_check results stranded 0 (no Sim in water deeper than 0.5 m outside a vehicle, not routing and not swimming / boating); at arrival every Sim on land or still in its vehicle; no stuck Sims; native hold counters: utRateWhy_13 (not a Sim: vehicles incl. AnimatedBoat) > 0, utRateWhy_5 / utFpWhy_11 (riders) counted, utSkipped / utRateSkipped > 0 (the throttle was active)"
+  },
+  {
+    "id": "unseen-horses",
+    "bug": "none (fix check, Rodney: ridden horses at full rate): docs/143 §8.10",
+    "fix": "ts3fixes UnseenViewers.cs pushes ridden horses, their riders and both sides of Mount / Dismount / BeingDismounted to ts3native (viewer channel codes 12-15); every [UnseenThrottle] part holds them like a parented rider",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run; needs Pets. 4 spawned Sims, 2 of them mount new horses (unseen_horse_ride), then all ride / walk to the farthest community lot and back while the camera stays on the active lot.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 4
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "unseen_horse_ride",
+        "args": {
+          "count": 2
+        },
+        "waitS": 60,
+        "note": "Mount queued for 2 riders"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 150,
+        "note": "riders ride their horses away (unseen)"
+      },
+      {
+        "cmd": "unseen_water_check",
+        "args": {},
+        "note": "riders show parent = the horse; stranded 0"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 150,
+        "note": "back to the active lot"
+      },
+      {
+        "cmd": "unseen_water_check",
+        "args": {},
+        "note": "at arrival"
+      },
+      {
+        "cmd": "unseen_horse_ride",
+        "args": {
+          "remove": true
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; unseen_horse_ride pairs mount_queued true; unseen_water_check stranded 0 both times, riders parented to their horse while riding; no stuck Sims; native utRateWhy_5 / utWhy_5 / utFpWhy_11 (rider rows, horses included) counted while the horses ride unseen"
+  },
+  {
+    "id": "bp-nraas-upstream-verify",
+    "bug": "The NRaas upstream patches (PR #45 Overwatch, PR #46 ErrorTrap, v2: time-sliced inventory check, chained nightly cleanups) must give the same cleanup results as the unpatched build (docs/145 §5, docs/146 §5)",
+    "fix": "test only: run once with fix nraas-upstream-base and once with nraas-upstream-v2 (queue nraas-upstream-verify); ts3fixes switches overwatchspread/errortrapspread stay off, so Overwatch's and ErrorTrap's own code runs; the verify switches only count",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. ErrorTrap's load-up scan runs 1 sim-minute after the load, before these steps",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspreadverify": true,
+          "errortrapspreadverify": true
+        },
+        "waitS": 30,
+        "note": "v2 load: applied log 'overwatchspread: upstream spreading found (v1), ours off' and the same for errortrapspread (markers seen); base load: both hooks applied but off"
+      },
+      {
+        "cmd": "reflect_get",
+        "args": {
+          "path": "NRaas.ErrorTrap.CorrectionLogger.sLogger.mCount"
+        },
+        "waitS": 1,
+        "note": "corrections ErrorTrap's load-up scan logged and not yet written out [inferred: the logger keeps them until it writes its log]; base and v2 must match"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "theirs"
+          ]
+        },
+        "waitS": 10,
+        "note": "ErrorTrap's own one-frame check after its load-up scan: 'verify: ErrorTrap's own check logged 0 corrections' on both loads (the load-up scan, spread or not, left nothing)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "CleanupInventory",
+            0
+          ]
+        },
+        "waitS": 15,
+        "note": "Overwatch's own nightly inventory cleanup (base: one frame; v2: 10 ms slices): overwatchspread_log 'pending before N, after 0', same N on both loads"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            10
+          ]
+        },
+        "waitS": 60,
+        "note": "Overwatch's own OnTimer (base: all 22 cleanups in one frame; v2: one after another, 10 sim-minutes apart, ~22 s at the BP rate): one notice at the end on both, owspread_theirs +1"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "overwatchspread_log and errortrapspread_log with every verify line"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "owspread_theirs",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "both loads: etspread verify 0 after the load-up scan, overwatchspread verify 'after 0' with the same 'before' count, the same CorrectionLogger count, owspread_inv_passes 0 and etspread_passes 0 (ours never ran); v2 only: owspread_upstream 1, etspread_upstream 1, no /taskstall row >= 250 ms with Inventories.GetName/CheckInventories (load-up or CleanupInventory) and no row from OnTimer's 22 cleanups in one frame"
   }
 ]

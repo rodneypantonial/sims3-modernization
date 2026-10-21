@@ -1,0 +1,100 @@
+[
+  {
+    "id": "bp-ffx2-play-off",
+    "note": "docs/134 §2.6 M1Retry A/B (ts3native 0.36.13 merge build, game-copy/ts3native.asi.0313; ts3fixes from the same commit). Both arms: FallbackAsync=1, SyncCapMs=0 (no cap, so M1Pending sync plans show their full length), LogFallbackMs=20, LogFallbackStack=16 (docs/141: 8 frames showed only ~2 game frames). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines with reason M1Pending (count, sum, max ms) off vs on, 'route fallback retry:' line (parked, queued, gave up, max ticks), fbPendApplied / fbPendBusy, asyncDropped, stuck-Sim lines (log only). BP play (bp-ffx-play shape, seed 12345); this pair starts with OFF. Arm OFF: M1Retry=0 (one try, busy = sync plan, today).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345
+      }
+    },
+    "minCounters": 75,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0,
+      "RouteAsync.M1Retry": 0
+    }
+  },
+  {
+    "id": "bp-ffx2-play-on",
+    "note": "docs/134 §2.6 M1Retry A/B (ts3native 0.36.13 merge build, game-copy/ts3native.asi.0313; ts3fixes from the same commit). Both arms: FallbackAsync=1, SyncCapMs=0 (no cap, so M1Pending sync plans show their full length), LogFallbackMs=20, LogFallbackStack=16 (docs/141: 8 frames showed only ~2 game frames). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines with reason M1Pending (count, sum, max ms) off vs on, 'route fallback retry:' line (parked, queued, gave up, max ticks), fbPendApplied / fbPendBusy, asyncDropped, stuck-Sim lines (log only). BP play (bp-ffx-play shape, seed 12345); this pair starts with OFF. Arm ON: M1Retry=1 (a busy +0x918 try parks the START; READY retries each tick, max 30).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345
+      }
+    },
+    "minCounters": 75,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0,
+      "RouteAsync.M1Retry": 1
+    }
+  },
+  {
+    "id": "bp-ffx2-big-crowd-on",
+    "note": "docs/134 §2.6 M1Retry A/B (ts3native 0.36.13 merge build, game-copy/ts3native.asi.0313; ts3fixes from the same commit). Both arms: FallbackAsync=1, SyncCapMs=0 (no cap, so M1Pending sync plans show their full length), LogFallbackMs=20, LogFallbackStack=16 (docs/141: 8 frames showed only ~2 game frames). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines with reason M1Pending (count, sum, max ms) off vs on, 'route fallback retry:' line (parked, queued, gave up, max ticks), fbPendApplied / fbPendBusy, asyncDropped, stuck-Sim lines (log only). BP big crowd (bp-ffx-rare-big-crowd shape, seed 12345); this pair starts with ON (swapped start). Arm ON: M1Retry=1 (a busy +0x918 try parks the START; READY retries each tick, max 30).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 75,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0,
+      "RouteAsync.M1Retry": 1
+    }
+  },
+  {
+    "id": "bp-ffx2-big-crowd-off",
+    "note": "docs/134 §2.6 M1Retry A/B (ts3native 0.36.13 merge build, game-copy/ts3native.asi.0313; ts3fixes from the same commit). Both arms: FallbackAsync=1, SyncCapMs=0 (no cap, so M1Pending sync plans show their full length), LogFallbackMs=20, LogFallbackStack=16 (docs/141: 8 frames showed only ~2 game frames). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines with reason M1Pending (count, sum, max ms) off vs on, 'route fallback retry:' line (parked, queued, gave up, max ticks), fbPendApplied / fbPendBusy, asyncDropped, stuck-Sim lines (log only). BP big crowd (bp-ffx-rare-big-crowd shape, seed 12345); this pair starts with ON (swapped start). Arm OFF: M1Retry=0 (one try, busy = sync plan, today).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 75,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0,
+      "RouteAsync.M1Retry": 0
+    }
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "bp-ut-play",
+    "note": "[UnseenThrottle] phase 1 A/B, off-first (docs/143 §6.4 G-U2, counters v79 ut*). ts3native 0.36.13 (game-copy/ts3native.asi.0313) with ts3fixes built from the same commit installed (it pushes the active-household positions; with an older ts3fixes NeedViewers=1 keeps every call running and utWhy_7 'no viewers' takes all calls: stop and install the right ts3fixes). Release ini defaults ([RouteAsync], [RouteGate] Sites+Enforce, [Discourage]) plus [UnseenProbe] Enabled=1 (classes, keyed waits by class), [UnseenThrottle] Enabled=1 Every=4 switched by --ab unseenthrottle (2-min slices: warm-up on, then off,on,on,off), HitchAttr. BP Spring 10 min, seed 12345. Timing: clean night only (daytime = correctness read). Pass: no crash, 0 watchdog lines, utReady 3 (call site + viewer channel), utSkipped > 0 in the on slices and 0 in the off slices, utViewerPushes > 0, node tools/harness/unseen-report.ts <native.json> ok; node tools/harness/wait-ab.ts bp-ut-play shows key 0x85FE10 (steering) lower on than off beyond the docs/136 per-key null (-1.5..+9.4 ms/s) and no keyed wait higher; it/s not down more than 2%. Read: skipped share, utWhy mix (visible / viewer / near goal / portal / after / turn), utPathUs (path-test cost). A crash or a stuck Sim near an unseen walk: stop, triage against unseen.cpp UtWhy.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 1, "UnseenThrottle.Every": 4, "HitchAttr.Enabled": 1 },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "unseenthrottle", "slice": 2 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut-play-onfirst",
+    "note": "[UnseenThrottle] A/B, on-first: the same job as bp-ut-play with the slice order swapped (warm-up on, then on,off,off,on), so the heavy first counted slot (docs/136 §2) lands on the on side here and the off side there. Pass as bp-ut-play; read the two together (mean of the per-key on - off of both jobs).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 1, "UnseenThrottle.Every": 4, "HitchAttr.Enabled": 1 },
+    "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "unseenthrottle", "slice": 2, "abOnFirst": true } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut-crowd",
+    "note": "[UnseenThrottle] A/B, off-first, door-heavy crowd (rare-big-crowd repro: many walking Sims at once): as bp-ut-play, 8 min. Pass as bp-ut-play, plus utWhy_11 (portal) > 0 (the sub-path rule fires on doors) and no Sim stuck at a door at the end.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 1, "UnseenThrottle.Every": 4, "HitchAttr.Enabled": 1 },
+    "run": { "profile": { "minutes": 8, "seed": 12345, "repro": "rare-big-crowd", "ab": "unseenthrottle", "slice": 2 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-ut-crowd-onfirst",
+    "note": "[UnseenThrottle] A/B, on-first, rare-big-crowd: bp-ut-crowd with the slice order swapped. Pass as bp-ut-crowd; read the two together.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 1, "UnseenThrottle.Every": 4, "HitchAttr.Enabled": 1 },
+    "run": { "profile": { "minutes": 8, "seed": 12345, "repro": "rare-big-crowd", "ab": "unseenthrottle", "slice": 2, "abOnFirst": true } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-ut-stuck-off",
+    "note": "[UnseenThrottle] stuck-Sim check, reference arm: release defaults with [UnseenThrottle] off (Enabled=0) and [UnseenProbe] on, BP 15 min, seed 12345, no --ab. Correctness only, daytime OK. Read the end-of-run stuck Sims (docs/TESTING.md rule) as the reference for bp-ut-stuck-on.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 0 },
+    "run": { "profile": { "minutes": 15, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 35
+  },
+  {
+    "id": "bp-ut-stuck-on",
+    "note": "[UnseenThrottle] stuck-Sim check, throttle on for the whole run (Enabled=1, utMode 1 from the start, no --ab), otherwise as bp-ut-stuck-off. Pass: no crash, 0 watchdog lines, utSkipped > 0, stuck Sims at the end no more than bp-ut-stuck-off (docs/TESTING.md: at most one more, and none standing at a door or route goal it was walking to while unseen); new cases go to docs/data/stuck-log.md with the utWhy mix of the run.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": { "UnseenProbe.Enabled": 1, "UnseenThrottle.Enabled": 1, "UnseenThrottle.Every": 4 },
+    "run": { "profile": { "minutes": 15, "seed": 12345 } },
+    "gameArgs": ["-disablestoryprogression"],
+    "timeoutMin": 35
+  }
+]

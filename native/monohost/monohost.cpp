@@ -11,12 +11,14 @@
 // driver with yields) against out\MonoHostTest.dll (HostTest.cs) and prints PASS/FAIL lines; exit code = failed checks.
 // It also runs the M2 stubs (docs/119 §12; "m13 <hostdata> m2" for the sweep alone) and the M5 proof (docs/120 §8: the
 // unchanged ts3native [MonoThread] code with a worker; both threads interpreting at once, docs/120 §9).
+// docs/139 (env, selftest mode): MONOHOST_MINT=count|threaded|nocheck, MONOHOST_MINTFUSE=sub, MONOHOST_MINTBENCH=<n>.
 // Never point it at the installed game: the exe is only mapped, but keep EA files out of git (copy under game-copy/).
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <intrin.h>  // _ReturnAddress (ts3native simloop.cpp SppHook)
 
 typedef unsigned char u8;
 static const DWORD IMG_LO = 0x00400000, IMG_HI = 0x0125A000;  // SizeOfImage 0xE5A000 (Steam 1.67)
@@ -1007,6 +1009,7 @@ static bool Write(void* addr, const void* bytes, size_t n) {
     FlushInstructionCache(GetCurrentProcess(), addr, n);
     return true;
 }
+#include "../ts3native/simloop.cpp"  // the per-iteration hook ApplyMonoThread adds (the host never runs Simulate)
 #include "../ts3native/monothread.cpp"
 // [AutShadow] (docs/122 §13-§14) on top of M5: routesnap's pieces it touches, as no-ops (no routing in the host)
 typedef char(__cdecl* SnObjRegFn)(DWORD id, void* fn, LONG priority);
@@ -1436,12 +1439,201 @@ static int GuardSweepTest() {
     return 0;
 }
 
+// ---- docs/139: mint dispatch instrumentation. Env MONOHOST_MINT=count: every jump-table entry of 0xE59880 goes through a
+// counter (opcode and opcode-pair counts, callvirt cache misses at 0xE54B0B); =threaded: each of the 417 handler-tail
+// `jmp 0xE544D5` gets its own byte copy of the dispatch head (same instructions, own indirect-branch site).
+// Env MONOHOST_MINTBENCH=<n>: after the selftest, time HostTest.MintBench(n) 7 times (QPC) and log the checksum.
+static const DWORD MINT_HEAD = 0xE544D5, MINT_TABLE = 0xE59880, MINT_NOP = 0x1C1, MINT_UNIMPL = 0xE596C2;
+static const u8 kMintHead[25] = {0x0F, 0xB7, 0x07, 0x0F, 0xB7, 0xD0, 0x81, 0xFA, 0xC0, 0x01, 0x00, 0x00, 0x0F,
+                                 0x87, 0xDB, 0x51, 0x00, 0x00, 0xFF, 0x24, 0x95, 0x80, 0x98, 0xE5, 0x00};
+static DWORD g_opN[MINT_NOP], g_pairN[MINT_NOP * MINT_NOP], g_prevOp, g_cvMiss;
+static void* g_opOrig[MINT_NOP];
+static void* g_cvMissNext = (void*)(uintptr_t)0xE51FC0;
+static int g_mintMode;  // 0 off, 1 count, 2 threaded
+static __declspec(naked) void MintCount() {  // entry state of every handler: eax = edx = opcode; keep all registers and flags
+    __asm {
+        pushfd
+        push ecx
+        inc dword ptr g_opN[edx*4]
+        mov ecx, g_prevOp
+        imul ecx, ecx, 0x1C1
+        add ecx, edx
+        inc dword ptr g_pairN[ecx*4]
+        mov g_prevOp, edx
+        pop ecx
+        popfd
+        jmp dword ptr g_opOrig[edx*4]
+    }
+}
+static __declspec(naked) void MintMiss() {  // replaces `call 0xE51FC0` in callvirt (ecx = receiver); flags are dead after a call
+    __asm {
+        inc g_cvMiss
+        jmp g_cvMissNext
+    }
+}
+static bool InstallMint() {
+    char v[16] = "";
+    GetEnvironmentVariableA("MONOHOST_MINT", v, sizeof(v));
+    g_mintMode = !strcmp(v, "count") ? 1 : !strcmp(v, "threaded") ? 2 : !strcmp(v, "nocheck") ? 3 : 0;
+    if (!g_mintMode) return true;
+    if (memcmp((void*)(uintptr_t)MINT_HEAD, kMintHead, sizeof(kMintHead))) { Log("mint: dispatch head bytes differ\n"); return false; }
+    DWORD* table = (DWORD*)(uintptr_t)MINT_TABLE;
+    if (g_mintMode == 3) {  // drop the opcode range check: `jmp [edx*4+table]` right after the two movzx (experiment only)
+        if (!mt::Write((void*)(uintptr_t)(MINT_HEAD + 6), kMintHead + 18, 7)) return false;
+        Log("mint: nocheck mode, range check at 0x%lX skipped\n", MINT_HEAD + 6);
+        return true;
+    }
+    if (g_mintMode == 1) {
+        DWORD mine[MINT_NOP];
+        for (DWORD i = 0; i < MINT_NOP; i++) g_opOrig[i] = (void*)(uintptr_t)table[i], mine[i] = (DWORD)(uintptr_t)MintCount;
+        u8 call[5] = {0xE8};
+        *(DWORD*)(call + 1) = (DWORD)(uintptr_t)MintMiss - (0xE54B0B + 5);
+        const u8* at = (const u8*)(uintptr_t)0xE54B0B;
+        if (at[0] != 0xE8 || 0xE54B0B + 5 + *(const int*)(at + 1) != 0xE51FC0) { Log("mint: callvirt miss call differs\n"); return false; }
+        if (!mt::Write(table, mine, sizeof(mine)) || !mt::Write((void*)at, call, 5)) return false;
+        Log("mint: count mode, %u jump-table entries -> counter, callvirt miss call hooked\n", MINT_NOP);
+        return true;
+    }
+    // threaded: scan ves_exec_method_with_context for `E9 rel32` -> head (docs/139 §2: 417 sites, capstone sweep agrees)
+    u8* lo = (u8*)(uintptr_t)0xE53EB0;
+    u8* copies = (u8*)VirtualAlloc(NULL, 0x10000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    int n = 0;
+    for (u8* p = lo; p + 5 <= (u8*)(uintptr_t)MINT_TABLE && copies; p++) {
+        if (*p != 0xE9 || (DWORD)(uintptr_t)p + 5 + *(int*)(p + 1) != MINT_HEAD) continue;
+        u8* c = copies + n * 32;
+        memcpy(c, kMintHead, sizeof(kMintHead));
+        *(int*)(c + 14) = (int)(MINT_UNIMPL - ((DWORD)(uintptr_t)c + 18));  // ja rel32 re-based to the copy
+        int rel = (int)((DWORD)(uintptr_t)c - ((DWORD)(uintptr_t)p + 5));
+        if (!mt::Write(p + 1, &rel, 4)) return false;
+        n++;
+        p += 4;
+    }
+    FlushInstructionCache(GetCurrentProcess(), copies, 0x10000);
+    Log("mint: threaded mode, %d handler tails got their own dispatch copy\n", n);
+    return n == 417;
+}
+// subfuse (docs/139 §4): EA's peephole 0xE5C660 hands the matcher 0xD89930 one whole run (no branch target inside, cut
+// before every call/ret/newobj-class op) and fuses only when the WHOLE run equals one of the 22 descriptors at 0x108FCD8.
+// This replacement also fuses descriptors found inside a run: greedy, longest first, left to right. Same encoding (first
+// opcode word replaced, operands and later words in place), so branch targets and fault ips stay as docs/130 §9.1.
+static volatile LONG g_subRuns, g_subWhole, g_subInner;
+static int __cdecl SubFuse(const unsigned short* win, int n, unsigned short* out, unsigned short* code) {
+    const u8* oplen = (const u8*)(uintptr_t)0x1195088;
+    unsigned short* pos[32];
+    bool gap[33] = {};  // gap[k]: an instruction not in the window (nop, the only "skip" op) sits right before op k
+    unsigned short* p = code;
+    for (int k = 0, guard = 0; k < n && guard < 64; guard++) {
+        unsigned short op = *p;
+        int len = op < 0x1A9 && oplen[op] ? oplen[op] : -1;
+        if (len < 0) return 0;  // switch or out of table: leave the run alone
+        if (op == win[k]) pos[k++] = p; else gap[k] = true;
+        p += len;
+    }
+    g_subRuns++;
+    *out = 0;
+    for (int i = 0; i < n;) {
+        int best = 0, bestLen = 1;
+        for (int j = 1; j <= 22; j++) {
+            const u8* e = (const u8*)(uintptr_t)(0x108FCD8 + 0x48 * j);
+            int m = *(const unsigned short*)(e + 4);
+            if (m <= bestLen || m > n - i) continue;
+            bool ok = !memcmp(e + 6, win + i, 2 * m);
+            for (int k = i + 1; ok && k < i + m; k++) ok = !gap[k];
+            if (ok) best = j, bestLen = m;
+        }
+        if (!best) { i++; continue; }
+        if (i == 0 && bestLen == n) *out = (unsigned short)(0x1AA + best), g_subWhole++;  // EA's own case: caller writes it
+        else *pos[i] = (unsigned short)(0x1AA + best), g_subInner++;
+        i += bestLen;
+    }
+    return 0;
+}
+static __declspec(naked) void SubFuseShim() {  // replaces `call 0xD89930` at 0xE5C8CA; edi = run start (word index)
+    __asm {
+        mov eax, [esp + 0x80]  // the pass's first argument (transform context; caller reads it at [esp+0x70])
+        mov eax, [eax + 0x38]  // mint code base
+        lea eax, [eax + edi * 2]
+        push eax
+        push dword ptr [esp + 0x10]
+        push dword ptr [esp + 0x10]
+        push dword ptr [esp + 0x10]
+        call SubFuse
+        add esp, 16
+        ret
+    }
+}
+static bool InstallSubFuse() {
+    char v[64] = "";
+    GetEnvironmentVariableA("MONOHOST_MINTFUSE", v, sizeof(v));
+    if (strcmp(v, "sub")) return true;
+    const u8* at = (const u8*)(uintptr_t)0xE5C8CA;
+    if (at[0] != 0xE8 || 0xE5C8CA + 5 + *(const int*)(at + 1) != 0xD89930) { Log("mint: matcher call differs\n"); return false; }
+    u8 call[5] = {0xE8};
+    *(DWORD*)(call + 1) = (DWORD)(uintptr_t)SubFuseShim - (0xE5C8CA + 5);
+    Log("mint: subfuse on (descriptors inside runs)\n");
+    return mt::Write((void*)at, call, 5);
+}
+static const char* MintName(DWORD op, char* buf) {
+    const char* const* names = (const char* const*)(uintptr_t)0x11949E0;
+    if (op <= 0x1A8) return names[op];
+    sprintf_s(buf, 16, "super_%03X", op);
+    return buf;
+}
+// log the top opcodes and pairs of this phase, append every non-zero pair to mint-pairs.csv next to the exe, reset
+static void MintDump(const char* phase) {
+    if (g_subRuns) Log("mint %s: subfuse runs %ld, whole-run fusions %ld, inner fusions %ld\n", phase, g_subRuns, g_subWhole, g_subInner);
+    if (g_mintMode != 1) return;
+    unsigned long long tot = 0;
+    for (DWORD i = 0; i < MINT_NOP; i++) tot += g_opN[i];
+    Log("mint %s: %llu dispatches; callvirt %u, cache misses %u (%.2f%%)\n", phase, tot, g_opN[0xEC], g_cvMiss,
+        g_opN[0xEC] ? 100.0 * g_cvMiss / g_opN[0xEC] : 0.0);
+    char path[MAX_PATH], a[16], b[16];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    strcpy_s(strrchr(path, '\\') + 1, 64, "mint-pairs.csv");
+    FILE* f = NULL;
+    bool fresh = !strcmp(phase, "m13");
+    fopen_s(&f, path, fresh ? "w" : "a");
+    if (f && fresh) fprintf(f, "phase,op1,name1,op2,name2,count\n");
+    for (DWORD i = 0; i < MINT_NOP; i++)
+        if (g_opN[i] && f) fprintf(f, "%s,0x%03X,%s,,,%u\n", phase, i, MintName(i, a), g_opN[i]);
+    for (DWORD i = 0; i < MINT_NOP * MINT_NOP; i++)
+        if (g_pairN[i] && f) fprintf(f, "%s,0x%03X,%s,0x%03X,%s,%u\n", phase, i / MINT_NOP, MintName(i / MINT_NOP, a), i % MINT_NOP, MintName(i % MINT_NOP, b), g_pairN[i]);
+    if (f) fclose(f);
+    memset(g_opN, 0, sizeof(g_opN));
+    memset(g_pairN, 0, sizeof(g_pairN));
+    g_cvMiss = 0;
+}
+static void MintBench() {
+    char v[16] = "";
+    if (!GetEnvironmentVariableA("MONOHOST_MINTBENCH", v, sizeof(v))) return;
+    int n = atoi(v), sum = 0;
+    void* args[1] = {&n};
+    LARGE_INTEGER fq, t0, t1;
+    QueryPerformanceFrequency(&fq);
+    double best = 1e9;
+    SetThreadAffinityMask(GetCurrentThread(), 1 << 2);  // one core, high priority: less noise between A/B processes
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+    for (int r = 0; r < 7; r++) {
+        QueryPerformanceCounter(&t0);
+        sum = I32(T("MintBench", 1, args));
+        QueryPerformanceCounter(&t1);
+        double ms = 1000.0 * (t1.QuadPart - t0.QuadPart) / fq.QuadPart;
+        if (ms < best) best = ms;
+        Log("mintbench mode %d run %d: %.1f ms, checksum %d\n", g_mintMode, r, ms, sum);
+    }
+    Log("mintbench mode %d n %d: best %.1f ms, checksum %d\n", g_mintMode, n, best, sum);
+}
+
 static int SelfTest(void* domain) {
     int rc = M13(domain);
+    MintDump("m13");  // docs/139: the .cctor sweep = EA script code; the rest is HostTest code
     if (!rc) rc = M14();
     if (!rc) rc = M15();
     if (!rc) rc = M5();
     if (!rc) rc = GuardSweepTest();  // after M5: M5-arena-dedupe expects M1.5's arena state
+    MintDump("selftest-rest");
+    if (!rc) MintBench();
+    MintDump("bench");
     Log("SELFTEST %s: %d passed, %d failed%s\n", g_fail || rc ? "FAILED" : "OK", g_pass, g_fail, rc ? " (stopped early)" : "");
     return rc ? rc : g_fail;
 }
@@ -1473,6 +1665,7 @@ static int Run(const wchar_t* exe) {
         if (!Jmp(p.at, p.to)) { Log("STEP 2 FAIL: patch 0x%08lX\n", p.at); return 20; }
     Log("STEP 2 OK: eglib g_malloc/g_malloc0/g_free/g_strdup/g_realloc and GeneralAllocator alloc/free/realloc -> host CRT\n");
     Log("STEP 3 OK: image loader 0xD6FCB0 and config path 0xD6FC40 detoured (assemblies from %s)\n", g_asmDir);
+    if (!InstallMint() || !InstallSubFuse()) { Log("STEP 3 FAIL: mint instrumentation (docs/139)\n"); return 30; }
 
     void* domain = ((InterpInit)0xE5A680)("MonoEngine");
     void* corlib = *(void**)(uintptr_t)0x1220E40;          // mono_defaults.corlib

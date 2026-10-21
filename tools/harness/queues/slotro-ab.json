@@ -1,0 +1,197 @@
+[
+  {
+    "id": "ip-slotro-offfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), IP 10 min, 2-min slices, off-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-slotro-onfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), IP 10 min, 2-min slices, on-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-slotro-offfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), SV 10 min, 2-min slices, off-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "sv-slotro-onfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), SV 10 min, 2-min slices, on-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-slotro-offfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), BP 10 min, 2-min slices, off-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-slotro-onfirst",
+    "note": "SlotEnabledRO A/B for v0.2.0 (docs/136: ship if it holds on IP/SV), release ini base (RouteSnap/P5c off), BP 10 min, 2-min slices, on-first to cancel the slot-1 bias. Pass: no crash, 0 watchdog lines; read key 0x62F782 and 0x83156D per side with wait-ab.ts, plus it/s and hitches.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "OptsInit.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "HitchAttr.Enabled": 1,
+      "SlotEnabledRO.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "slotenabledro",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

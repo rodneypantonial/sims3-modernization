@@ -1,0 +1,51 @@
+[
+  {
+    "id": "bp-sca-off",
+    "note": "docs/134 §8 A/B, arm OFF: the 3 AM stuck check in the world alarm, as the game does it. ts3native 0.36.13 (game-copy/ts3native.asi.0313) with ts3fixes built from the commit that adds stuckcheckasync installed (the switch defaults off). Both arms: FallbackAsync=1 (foreign-task plans async), LogFallbackMs=20, LogFallbackStack=16 (deep enough to show the frames below the route funnel: alarm vs our task). Repro stuck-check-3am jumps the clock across 3:00. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines with RunStuckCheckHelper.RunOrig in the stack (count, max ms, reasons), route fallback line (foreign / started), patches stuckcheckasync_* (all 0 here).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "stuck-check-3am"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-sca-on",
+    "note": "docs/134 §8 A/B, arm ON: as bp-sca-off with ts3fixes stuckcheckasync on for this job (profile.fixesOn, verified through the agent, restored at the end): the alarm only queues the check, Ts3Fixes.Fixes.StuckCheckDrain runs the game's RunStuckCheck one Sim per tick in our task. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0, patches stuckcheckasync_run > 0 and stuckcheckasync_dropped small (Sims gone between alarm and run), stuckcheckasync_maxwait_simsec small (a few sim-minutes at most). Read: sync plan lines with RunStuckCheckHelper.RunOrig (expect fewer and shorter than OFF; their stack shows StuckCheckDrain), Sims reset by the check (compare with OFF: should match within the seed's drift).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "stuck-check-3am",
+        "fixesOn": "stuckcheckasync"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  }
+]

@@ -25,6 +25,14 @@
 //      object means the id was reused: dropped and counted (discIdMismatch), not swept (the sweep would strip the new
 //      object's footprints).
 //   Tripwire T-D5: discDropRemove = discDeadSweep while discSweepMode is on.
+//
+// Design U (docs/89 §5.1, §10; counters v74, [Discourage] DeferFootprint=1, default 0; runtime switch usfMode, --ab
+// deferfootprint): RoutingWorld_UpdateSimFootprint 0x833560 thiscall(world; obj, enable, force, arg), ret 0x10, void, is a
+// remove-all plus optional re-insert of the object's routing footprints under +0x918 (key 0x833593), managed-free. On the
+// sim thread while a job runs, the call's lock-free early out 0x82A720 runs now and the rest becomes a record in D's FIFO
+// (kind usf: high = enable byte, allow = arg), applied by the original with force = 1 at D's drain points, D-X destroy
+// included. A call for an object that already has queued records is queued too (any mode, job or not), so per-object order
+// holds. Readers before the drain see the whole pre-call footprint (the body never runs part-way; docs/89 §10.2).
 
 static const DWORD DISC_ADD = 0x00834370, DISC_REMOVE = 0x00834860;
 static const u8 kDiscAddPro[] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0};  // push ebp; mov ebp,esp; and esp,-16
@@ -51,8 +59,18 @@ typedef void(__fastcall* KeyFindFn)(void* map, void* edx, DWORD* out, const DWOR
 static LotRemoveFn g_lotRemove = (LotRemoveFn)(uintptr_t)0x00635700;
 static KeyFindFn g_keyFind = (KeyFindFn)(uintptr_t)0x0082AD60;
 
+// design U: thiscall(world; obj, enable, force, arg), ret 0x10 [verified disassembly 0x833560..0x833675]; the early out
+// 0x82A720 thiscall(world; obj), ret 4, al [verified 0x82A720..0x82A778]
+static const DWORD USF_FN = 0x00833560, USF_SHOULD = 0x0082A720;
+static const u8 kUsfPro[] = {0x83, 0xEC, 0x10, 0x80, 0x7C, 0x24, 0x1C, 0x00};  // sub esp,10h; cmp byte [esp+1Ch],0
+typedef void(__fastcall* UsfFn)(void* world, void* edx, void* obj, DWORD enable, DWORD force, DWORD arg);
+typedef u8(__fastcall* UsfShouldFn)(void* world, void* edx, void* obj);
+static UsfFn g_usfOrig;
+static UsfShouldFn g_usfShould = (UsfShouldFn)(uintptr_t)USF_SHOULD;
+
 // flags kept as whole dwords; lock: the world it was made in; obj: the object at defer time (D-X pointer check, no reference)
-struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; };
+// usf: a design U record (high = enable byte, allow = arg); else add says Add or Remove
+struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; bool usf; };
 static const int kDiscCap = 256;
 static const DWORD kDiscMaxAgeMs = 250;  // older records are applied even if that means waiting for the running job
 static DiscRec g_disc[kDiscCap];
@@ -61,18 +79,23 @@ static bool g_discDraining;
 
 static bool DiscWorldOk(void* world) { return world && *((const u8*)world + 0x974) != 0; }
 
+// the id is in the lock-key map (a parked object). The map is written on the sim thread only and never by a job (docs/89
+// §3.2), so the sim reads it without +0x918.
+static bool DiscKeyMapHas(u8* world, DWORD idLo, DWORD idHi) {
+    if (!*(const DWORD*)(world + 0x8C4)) return false;  // Remove / 0x833560 look the id up only when the map holds entries
+    const DWORD id[2] = {idLo, idHi};
+    DWORD it[2] = {};
+    g_keyFind(world + 0x8B8, NULL, it, id);
+    const DWORD* buckets = *(const DWORD* const*)(world + 0x8BC);
+    return it[0] != buckets[*(const DWORD*)(world + 0x8C0)];
+}
+
 // D-X 2: the Remove record's object is gone; remove whatever footprints its id left in the lot quadtrees. Caller holds +0x918.
 static void DiscDeadSweep(const DiscRec& r, u8* world) {
     Ts3nCounters& k = ts3native_counters;
     void* p = *(void**)(world + 0x95C);
     if (!p) return;
-    if (*(const DWORD*)(world + 0x8C4)) {  // Remove looks the id up only when the map holds entries
-        const DWORD id[2] = {r.idLo, r.idHi};
-        DWORD it[2] = {};
-        g_keyFind(world + 0x8B8, NULL, it, id);
-        const DWORD* buckets = *(const DWORD* const*)(world + 0x8BC);
-        if (it[0] != buckets[*(const DWORD*)(world + 0x8C0)]) InterlockedIncrement(&k.discDeadKeyMap);  // shortcut: not erased
-    }
+    if (DiscKeyMapHas(world, r.idLo, r.idHi)) InterlockedIncrement(&k.discDeadKeyMap);  // shortcut: not erased
     InterlockedIncrement(&k.discDeadSweep);
     if (g_lotRemove(p, NULL, 0, 0, r.idLo, r.idHi)) InterlockedIncrement(&k.discDeadHit);
     world[0x994] = 0;  // as Remove does after 0x635700
@@ -85,7 +108,21 @@ static bool DiscApplyOne(DiscRec& r, void* world) {
     void* obj = NULL;
     if (!svc || !g_findRef(svc, NULL, r.idLo, r.idHi, &obj)) obj = NULL;
     const bool applied = obj && obj == r.obj;
-    if (obj && obj != r.obj) {  // the id names another object now (reused id): not the one the call was made for
+    if (r.usf) {  // design U: same lookup and pointer check; gone: a disable sweeps like a Remove, an enable is dropped
+        if (applied) {
+            if (g_async.state == A_RUNNING) InterlockedIncrement(&k.usfApplyInJob);  // T-U1
+            g_usfOrig(world, NULL, obj, r.high, 1, r.allow);  // force 1: the early out already passed at call time
+            InterlockedIncrement(&k.usfApplied);
+        } else if (obj) {
+            InterlockedIncrement(&k.usfIdMismatch);
+        } else if (r.high) {
+            InterlockedIncrement(&k.usfGoneEnable1);
+        } else {
+            InterlockedIncrement(&k.usfGoneEnable0);
+            if (k.discSweepMode) { DiscDeadSweep(r, (u8*)world); InterlockedIncrement(&k.usfSwept); }
+        }
+        if (obj) g_objRelease(&obj, NULL);
+    } else if (obj && obj != r.obj) {  // the id names another object now (reused id): not the one the call was made for
         InterlockedIncrement(&k.discIdMismatch);
         g_objRelease(&obj, NULL);
         InterlockedIncrement(&k.discDropped);
@@ -106,6 +143,19 @@ static bool DiscApplyOne(DiscRec& r, void* world) {
     _aligned_free(r.pts);
     r.pts = NULL;
     return applied;
+}
+
+// Design U collapse at the drain (r already popped): the object's next queued record is also a U record, so it redoes the
+// whole remove plus re-insert from the then-current component state and r's apply changes nothing it leaves. Not for a parked
+// object: the parked branch only stores the enable byte and inserts into an empty node, so there a skipped enable could lose
+// an insert [verified 0x833639..0x833663]. Caller holds +0x918 with no job running.
+static bool UsfSuperseded(const DiscRec& r, u8* world) {
+    for (int i = 0; i < g_discCount; i++) {
+        const DiscRec& n = g_disc[(g_discHead + i) % kDiscCap];
+        if (n.idLo == r.idLo && n.idHi == r.idHi && n.lock == r.lock)
+            return n.usf && n.obj == r.obj && !DiscKeyMapHas(world, r.idLo, r.idHi);
+    }
+    return false;
 }
 
 // Owner thread: applies every record in order. force = wait for a running job; else only when no job runs.
@@ -134,13 +184,17 @@ static void DiscDrain(bool force) {
         g_discHead = (g_discHead + 1) % kDiscCap;
         g_discCount--;
         Max(&k.discAgeMaxMs, (LONG)(now - r.t));
-        if (r.lock == lock && DiscWorldOk(world)) DiscApplyOne(r, world);  // a record from another world is dropped
+        if (r.usf) Max(&k.usfAgeMaxMs, (LONG)(now - r.t));
+        if (r.usf && r.lock == lock && DiscWorldOk(world) && UsfSuperseded(r, (u8*)world)) InterlockedIncrement(&k.usfCollapsed);
+        else if (r.lock == lock && DiscWorldOk(world)) DiscApplyOne(r, world);  // a record from another world is dropped
         else { InterlockedIncrement(&k.discDropped); _aligned_free(r.pts); }
     }
     if (lock) LockReleaseHook(lock, NULL);
     InterlockedDecrement(&g_rgOffSimOpen);
     g_discDraining = false;
 }
+
+static bool DiscPending() { return g_discCount != 0; }  // records still deferred (docs/134 §2.6 order check)
 
 // A drain point that is not a D1/D2 call: apply when no job runs, or when the oldest record is too old.
 static void DiscPoll() {
@@ -174,6 +228,8 @@ static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait) {
         if (r.idLo != idLo || r.idHi != idHi || r.lock != lock) {
             if (w != i) { g_disc[(g_discHead + w) % kDiscCap] = r; r.pts = NULL; }
             w++;
+        } else if (r.usf) {  // design U: applied in order like a Remove (destroy does not remove routing footprints)
+            if (DiscApplyOne(r, world)) InterlockedIncrement(&k.usfDestroyApplied);
         } else if (r.add) {
             InterlockedIncrement(&k.discDropAdd);
             InterlockedIncrement(&k.discDropped);
@@ -211,6 +267,7 @@ static bool DiscDefer(bool add, void* obj, const u8* begin, int n, int high, int
     r.pts = NULL;
     r.lock = g_rgLock;
     r.obj = obj;
+    r.usf = false;
     if (add) {
         // 16-byte aligned like the game's own vector: the original reads the points with movaps (0xAB88BD); a malloc'd
         // copy (8-byte aligned) crashed it in 0.12.2 (#GP reported as an access violation at 0xFFFFFFFF, 2026-10-17)
@@ -241,8 +298,80 @@ static u8 __fastcall DiscRemoveHook(void* world, void* edx, void* obj) {
     return g_discRemoveOrig(world, edx, obj);
 }
 
+// Design U hook. Pass-through rules (docs/89 §5.1 rule 1), then the early out, then a record.
+static void __fastcall UsfHook(u8* world, void* edx, u8* obj, DWORD enable, DWORD force, DWORD arg) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD me = GetCurrentThreadId();
+    if (me != g_async.owner || t_snapRun || !obj) return g_usfOrig(world, edx, obj, enable, force, arg);
+    InterlockedIncrement(&k.usfCalls);
+    const bool running = g_async.state == A_RUNNING;
+    if (running) InterlockedIncrement(&k.usfInJob);
+    // nested under +0x918 (discourage Add/Remove, D's drains and the applies themselves), a job callback, another world, closing
+    if (k.rgOwnerTid == (LONG)me || g_inInvoke || g_discDraining || !DiscWorldOk(world) || (void*)(world + 0x918) != g_rgLock ||
+        k.rtClosing) {
+        InterlockedIncrement(&k.usfPass);
+        return g_usfOrig(world, edx, obj, enable, force, arg);
+    }
+    const DWORD idLo = *(const DWORD*)(obj + 8), idHi = *(const DWORD*)(obj + 0xC);
+    int last = -1;  // the object's newest queued record: later calls queue behind it in any mode
+    for (int i = g_discCount - 1; i >= 0 && last < 0; i--) {
+        const DiscRec& r = g_disc[(g_discHead + i) % kDiscCap];
+        if (r.idLo == idLo && r.idHi == idHi && r.lock == g_rgLock) last = i;
+    }
+    if (last < 0 && !(k.usfMode == 1 && running)) return g_usfOrig(world, edx, obj, enable, force, arg);  // today's call
+    if (!(u8)force && !g_usfShould(world, NULL, obj)) { InterlockedIncrement(&k.usfEarlyOut); return; }  // as the original
+    if (last < 0 && DiscKeyMapHas(world, idLo, idHi)) {  // parked: no collapse rule for it, so today's call (it waits)
+        InterlockedIncrement(&k.usfParkedPass);
+        return g_usfOrig(world, edx, obj, enable, 1, arg);
+    }
+    const DWORD en = enable & 0xFF;  // the original reads the byte
+    if (last >= 0) {  // the same call again: applying both equals applying one (both branches of the body)
+        const DiscRec& p = g_disc[(g_discHead + last) % kDiscCap];
+        if (p.usf && p.obj == obj && p.high == en && p.allow == arg) { InterlockedIncrement(&k.usfDup); return; }
+    }
+    if (g_discCount == kDiscCap) {
+        bool add = false;
+        for (int i = 0; i < g_discCount && !add; i++) add = g_disc[(g_discHead + i) % kDiscCap].add;
+        // Remove and U records are managed-free (docs/84 §7.1, docs/89 §1), so they may be applied here; an Add may fire
+        // World_FireEvent 0x11 and waits for an IC point: then this call runs out of order (counted)
+        if (!add) DiscDrain(true);
+        InterlockedIncrement(add ? &k.usfFullPass : &k.usfFullDrain);
+        return g_usfOrig(world, edx, obj, enable, 1, arg);
+    }
+    DiscRec& r = g_disc[(g_discHead + g_discCount) % kDiscCap];
+    r = DiscRec{};
+    r.usf = true;
+    r.high = en;
+    r.allow = arg;
+    r.idLo = idLo;
+    r.idHi = idHi;
+    r.t = GetTickCount();
+    r.lock = g_rgLock;
+    r.obj = obj;
+    g_discCount++;
+    InterlockedIncrement(&k.usfDeferred);
+    if (!(k.usfMode == 1 && running)) InterlockedIncrement(&k.usfOrderDefer);
+    Max(&k.discPendingMax, g_discCount);
+}
+
+static void InstallFootprintDefer(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"Discourage", L"DeferFootprint", 0, ini)) { Log("footprint deferral off (DeferFootprint=0)"); return; }
+    if (!ts3native_counters.discReady) { Log("FAIL footprint deferral: needs the discourage deferral ([Discourage] Enabled=1)"); return; }
+    g_usfOrig = (UsfFn)InstallDetour("RoutingWorld_UpdateSimFootprint", USF_FN, kUsfPro, sizeof(kUsfPro), (void*)UsfHook);
+    if (!g_usfOrig) { Log("FAIL footprint deferral: detour"); return; }
+    ts3native_counters.usfReady = 1;
+    ts3native_counters.usfMode = 1;
+    Log("OK   footprint deferral (design U, docs/89)");
+}
+
 static void InstallDiscourage(const wchar_t* ini) {
     if (!ts3native_counters.rgEnforce) return;  // the deferral is only needed (and only safe to reason about) with the gate on
+    // design G standalone (docs/88 §10, p5c.cpp P5cPark): independent of D's detours and of P5c / RouteSnap
+    if (GetPrivateProfileIntW(L"Discourage", L"DestroyPark", 0, ini)) {
+        ts3native_counters.dpMode = 1;
+        ts3native_counters.dpReady = 1;
+        Log("OK   destroy park (design G): a destroy during an async route job parks one reference and runs without the wait");
+    }
     // default off until the 0.12.4 alignment fix has run in game (0.12.2 crashed on an 8-byte aligned points copy)
     if (!GetPrivateProfileIntW(L"Discourage", L"Enabled", 0, ini)) { Log("discourage deferral off (Enabled=0)"); return; }
     g_discAddOrig = (DiscAddFn)InstallDetour("RoutingWorld_AddDiscourageFootprint", DISC_ADD, kDiscAddPro, sizeof(kDiscAddPro), (void*)DiscAddHook);
@@ -256,4 +385,5 @@ static void InstallDiscourage(const wchar_t* ini) {
     ts3native_counters.discSweepMode = Clamp(GetPrivateProfileIntW(L"Discourage", L"DeadSweep", 1, ini), 0, 1);
     Log("OK   discourage deferral (Mode=%ld DestroyApply=%ld DeadSweep=%ld)", ts3native_counters.discMode,
         ts3native_counters.discDestroyMode, ts3native_counters.discSweepMode);
+    InstallFootprintDefer(ini);
 }

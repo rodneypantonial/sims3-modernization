@@ -102,16 +102,20 @@ struct Ts3nAutShadow {
     LONG abort2[2];       // +0x760, abort reasons AS_AB_RAIN (20, H11, docs/127 §4), AS_AB_POSTURE (21, null posture list)
     LONG rngPause;        // +0x768, RngPause brackets opened in the reference (hooked calls draw from a scratch stream)
     LONG rngPauseDraws;   // +0x76C, reference draws inside a bracket (would have been one-sided on the unit stream)
+    // v5: H12 route stub (docs/127 §7.2), worker window after the sim pump (docs/51 I-188-3, docs/122 §14.11)
+    LONG abortRoute;      // +0x770, abort reason AS_AB_ROUTE (22): a ScriptCore.Route IC on the worker
+    LONG cutSite;         // +0x774, where the last request cut ran: 0 none, 1 Simulate loop-back (window ~0), 2 after the sim pump
+    LONG overrunIdle;     // +0x778, of the overruns, those where the worker had not entered the job yet (scheduling, not scoring)
 };
-extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {4};
+extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {5};
 
 enum { AO_OBJ, AO_LIST, AO_CUT, AO_WORLD, AO_MEMO, AO_STUB, AO_ABORT, AO_RNG };  // AO_RNG: per-unit MT streams (docs/125 §2)
 enum { AK_INT, AK_FP, AK_STRUCT, AK_REF, AK_ARRAY };
 enum { AS_AB_ROW, AS_AB_POS, AS_AB_MEMO, AS_AB_RNG, AS_AB_SLOTPOS, AS_AB_ATTACH, AS_AB_QUERY, AS_AB_IC, AS_AB_SF,
        AS_AB_PRIVACY, AS_AB_ROOMCACHE, AS_AB_SIMSTALE, AS_AB_EXC, AS_AB_STOP, AS_AB_FMT, AS_AB_DESIREFN, AS_AB_PUNISH,
-       AS_AB_REF, AS_AB_LIST, AS_AB_OTHER, AS_AB_RAIN, AS_AB_POSTURE, AS_AB_N };
+       AS_AB_REF, AS_AB_LIST, AS_AB_OTHER, AS_AB_RAIN, AS_AB_POSTURE, AS_AB_ROUTE, AS_AB_N };
 static const char* const kAsAbortName[AS_AB_N] = {"row", "pos", "memo", "rng", "slotpos", "attach", "query", "ic", "sf",
-    "privacy", "roomcache", "simstale", "exc", "stop", "fmt", "desirefn", "punish", "ref", "list", "other", "rain", "posture"};
+    "privacy", "roomcache", "simstale", "exc", "stop", "fmt", "desirefn", "punish", "ref", "list", "other", "rain", "posture", "route"};
 
 // One row per IC of docs/122 §3.2. nArg = stack dwords after the hidden result pointer (struct kinds); sz = INT width in
 // bytes or struct size; at = the key dword where the owner id (u64) starts; strMask = input dwords that are MonoString*
@@ -170,6 +174,10 @@ static const AsDesc kAsDesc[] = {
     AS_D("ScriptCore.Slots::Slots_GetPositionOfSlotImpl", AO_CUT, AK_STRUCT, 5, 12, 0, AS_AB_SLOTPOS),
     AS_D("ScriptCore.Slots::Slots_CanAttachToSlotImpl", AO_ABORT, AK_INT, 7, 4, 0, AS_AB_ATTACH),
     AS_D("ScriptCore.Queries::Query_GetObjects", AO_CUT, AK_ARRAY, 1, 4, 0, AS_AB_QUERY),
+    // docs/127 §7.1: (Type) -> the game's answer at the cut, NULL kept (v0 key: Callbox). Learned like Query_GetObjects.
+    // shortcut: AO_CUT reruns each key's body at every cut (~25-100 us per key, docs/127 §7.1) instead of only when the
+    // global container changed; add the container trigger if the cut time shows it
+    AS_D("ScriptCore.Queries::Query_GetGlobalObjects", AO_CUT, AK_ARRAY, 1, 4, 0, AS_AB_QUERY),
 };
 static const int AS_NDESC = sizeof(kAsDesc) / sizeof(kAsDesc[0]);
 
@@ -178,6 +186,7 @@ static const int AS_MAXIC = 2048;
 static void* volatile g_asOrig[AS_MAXIC];  // what each slot held: the thunk's sim-thread target
 static const AsDesc* g_asDescOf[AS_MAXIC];
 static char g_asKind[AS_MAXIC];            // 'f', 'd', 's' or 0 (autshadow-kinds.h)
+static u8 g_asNoDesc[AS_MAXIC];            // worker abort reason of an IC with no descriptor: ic, or route (H12)
 static const char* g_asName[AS_MAXIC];
 static int g_asIcN;
 static u8* g_asThunks;
@@ -208,7 +217,7 @@ static int AsKindOfName(const char* name) {
 static void AsAbort(int reason, DWORD idx) {
     Ts3nAutShadow& k = ts3native_autshadow;
     InterlockedIncrement(&k.abortTotal);
-    InterlockedIncrement(reason < 20 ? &k.abort[reason] : &k.abort2[reason - 20]);
+    InterlockedIncrement(reason < 20 ? &k.abort[reason] : reason < AS_AB_ROUTE ? &k.abort2[reason - 20] : &k.abortRoute);
     InterlockedCompareExchange(&g_asAbortReason, reason, -1);
     if (InterlockedIncrement(&g_asLogged) <= 64)
         Log("autshadow abort %s at %s", kAsAbortName[reason], idx < (DWORD)g_asIcN && g_asName[idx] ? g_asName[idx] : "-");
@@ -487,7 +496,7 @@ static int AsWorkerAnswer(DWORD idx, DWORD* args, AsRet* r) {
     r->lo = kind == 's' ? args[0] : 0, r->hi = 0, r->f = 0;
     const AsDesc* d = g_asDescOf[idx];
     if (g_asStop) { AsAbort(AS_AB_STOP, idx); return fp; }
-    if (!d) { AsAbort(AS_AB_IC, idx); return fp; }
+    if (!d) { AsAbort(g_asNoDesc[idx], idx); return fp; }  // never the body: H12 route ICs would answer for handle 0
     if (d->owner == AO_ABORT) { AsAbort(d->reason, idx); return fp; }
     if (d->owner == AO_RNG) return AsRngWorker(idx, r);
     if (d->owner == AO_STUB) {
@@ -701,6 +710,8 @@ LONG AsCut() {
             k.learned++;
             const AsDesc& d = *g_asDescOf[r.idx];
             if (d.owner == AO_OBJ) AsEnsureParent(m.e[m.n - 1].owner);
+            // shortcut: the System.Type pointer, not its name (no class-name call wired); match it in a dump if needed
+            if (d.reason == AS_AB_QUERY && k.learned <= 64) Log("autshadow learned %s key 0x%08lX", g_asName[r.idx], r.key[0]);
         }
         MemoryBarrier();
         g_asRingTail = t + 1;
@@ -846,7 +857,8 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
         const char* s = (const char*)(uintptr_t)name;
         const AsDesc* d = NULL;
         for (int i = 0; i < AS_NDESC && !d; i++) if (!strcmp(s, kAsDesc[i].name)) d = &kAsDesc[i];
-        if ((!all && !d) || g_asIcN >= AS_MAXIC) { k.guardSkipped++; continue; }
+        const bool route = !strncmp(s, "ScriptCore.Route::", 18);  // H12: guarded with Guard=closure too
+        if ((!all && !d && !route) || g_asIcN >= AS_MAXIC) { k.guardSkipped++; continue; }
         const int idx = g_asIcN;
         u8* t = g_asThunks + idx * 10;
         const int lw = AsLgWatchOf(s);  // Ledger=1: the four watched ICs count on the way through (autledger.cpp)
@@ -857,6 +869,7 @@ static int AsInstallGuards(DWORD* lo, DWORD* hi, DWORD imgLo, DWORD imgHi, DWORD
         const LONG rel = (LONG)((DWORD)(uintptr_t)entry - ((DWORD)(uintptr_t)t + 10));
         memcpy(t + 6, &rel, 4);
         g_asOrig[idx] = (void*)(uintptr_t)fn, g_asDescOf[idx] = d, g_asName[idx] = s, g_asKind[idx] = (char)AsKindOfName(s);
+        g_asNoDesc[idx] = (u8)(route ? AS_AB_ROUTE : AS_AB_IC);
         const DWORD thunk = (DWORD)(uintptr_t)t;
         if (!Write(p - 1, &thunk, 4)) { k.guardSkipped++; continue; }
         g_asIcN++;

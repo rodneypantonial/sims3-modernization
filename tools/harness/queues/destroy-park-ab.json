@@ -1,0 +1,105 @@
+[
+  {
+    "id": "bp-wr-destroypark",
+    "note": "docs/88 design G standalone A/B (counters v76, [Discourage] DestroyPark=1, built 2026-10-21 on the 0.36.9 base, offline only so far; revived from the unmerged 0.30.0 branch 14a25ef onto P5c's graveyard). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, BP 10 min, --ab destroypark (dpMode +0x31E0) 2-min slices, warm-up then off,on,on,off (ABBA). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x2000003 (RT_DESTROY job wait, ~7-11 ms/s BP, docs/88 §4, docs/136): P5c off, so every destroy during a job waits today; those park in the on slices. Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait: D-X records, full, off sim, not found), net 3-6 ms/s BP / 1-3 ms/s IP less keyed wait (gains do not add: part may reappear at the next routing touch). Pass: no crash, 0 watchdog lines, dpReady 1, dpParked > 0, T-G1 p5cCountLow 0, T-G3 p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; read node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DestroyPark": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "destroypark",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-wr-destroypark-onfirst",
+    "note": "docs/88 design G standalone A/B (counters v76, [Discourage] DestroyPark=1, built 2026-10-21 on the 0.36.9 base, offline only so far; revived from the unmerged 0.30.0 branch 14a25ef onto P5c's graveyard). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, BP 10 min, --ab destroypark (dpMode +0x31E0) 2-min slices, warm-up then on,off,off,on (abOnFirst; pairs with the off-first job: docs/136 §2 slot bias). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x2000003 (RT_DESTROY job wait, ~7-11 ms/s BP, docs/88 §4, docs/136): P5c off, so every destroy during a job waits today; those park in the on slices. Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait: D-X records, full, off sim, not found), net 3-6 ms/s BP / 1-3 ms/s IP less keyed wait (gains do not add: part may reappear at the next routing touch). Pass: no crash, 0 watchdog lines, dpReady 1, dpParked > 0, T-G1 p5cCountLow 0, T-G3 p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; read node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DestroyPark": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "destroypark",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-wr-destroypark",
+    "note": "docs/88 design G standalone A/B (counters v76, [Discourage] DestroyPark=1, built 2026-10-21 on the 0.36.9 base, offline only so far; revived from the unmerged 0.30.0 branch 14a25ef onto P5c's graveyard). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, IP 10 min, --ab destroypark (dpMode +0x31E0) 2-min slices, warm-up then off,on,on,off (ABBA). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x2000003 (RT_DESTROY job wait, ~7-11 ms/s BP, docs/88 §4, docs/136): P5c off, so every destroy during a job waits today; those park in the on slices. Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait: D-X records, full, off sim, not found), net 3-6 ms/s BP / 1-3 ms/s IP less keyed wait (gains do not add: part may reappear at the next routing touch). Pass: no crash, 0 watchdog lines, dpReady 1, dpParked > 0, T-G1 p5cCountLow 0, T-G3 p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; read node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 76,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DestroyPark": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "destroypark",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

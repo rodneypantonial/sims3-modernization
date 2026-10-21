@@ -1,0 +1,26 @@
+{
+  "jobs": [
+    {
+      "id": "bp-nraas-upstream-base",
+      "note": "docs/145 §5 + docs/146 §5 behaviour A/B, side 1 (6 min, fresh load): NRaas Overwatch + ErrorTrap built from Chain-Reaction/NRaas master with our pipeline (fix nraas-upstream-base, installed for the job, originals restored after), repro bp-nraas-upstream-verify under /taskstall 250, ts3fixes spread switches off. Needs build/nraas-upstream (node tools/setup/build-nraas-upstream.ts <NRaas clone>). Record: CorrectionLogger count, etspread verify after the load-up scan, overwatchspread verify before/after, the load-up /taskstall row (0.5-0.9 s expected)",
+      "asi": "tested",
+      "fixes": { "install": ["nraas-upstream-base"] },
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 6, "seed": 12345, "taskstall": 250, "repro": "bp-nraas-upstream-verify" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-nraas-upstream-v2",
+      "note": "side 2 (6 min, fresh load, same save/seed/build): the PR #45/#46 v2 builds (fix nraas-upstream-v2). Pass = same results as side 1: same CorrectionLogger count, etspread verify 0 after the load-up scan, overwatchspread verify 'after 0' with the same 'before' count, OnTimer ran all cleanups (owspread_theirs +1, one notice); plus the markers seen (owspread_upstream 1, etspread_upstream 1) and no /taskstall row >= 250 ms from the load-up scan's inventory check or from CleanupInventory. Different counts = stop, compare the two errortrapspread_log/overwatchspread_log, no timing claims. Baseline-BP has few broken inventories, so equal small counts are expected; ErrorTrap's load-up scan repairs inventories before Overwatch runs, so Overwatch's 'before' is usually 0 on both",
+      "asi": "tested",
+      "fixes": { "install": ["nraas-upstream-v2"] },
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 6, "seed": 12345, "taskstall": 250, "repro": "bp-nraas-upstream-verify" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    }
+  ]
+}

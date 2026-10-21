@@ -20,6 +20,323 @@ namespace Ts3Agent
             Dispatcher.Register("crowd_go", CrowdGo);
             Dispatcher.Register("kill_sim", KillSim);
             Dispatcher.Register("zombies", Zombies);
+            Dispatcher.Register("spawn_traffic", SpawnTraffic);
+            Dispatcher.Register("unseen_snapback", UnseenSnapback);
+            Dispatcher.Register("unseen_water_check", UnseenWaterCheck);
+            Dispatcher.Register("unseen_horse_ride", UnseenHorseRide);
+        }
+
+        // unseen_horse_ride {count?: 1..4} | {remove: true}: the horse case of repro unseen-boats (docs/143 §8.10, needs
+        // Pets): makes `count` adult horses (GeneticsPet.MakeRandomPet) next to the first spawn_sims Sims and queues each
+        // of those Sims a Mount on its horse; a later crowd_go then rides them away (the rider routes, the horse carries).
+        // The horses are kept apart from the spawn_sims list (crowd_go must not send them on their own); {remove:true}
+        // destroys them. Returns the pairs.
+        static readonly List<ulong> sHorses = new List<ulong>();
+        static object UnseenHorseRide(Args a)
+        {
+            RequireLive();
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Has("remove"))
+            {
+                int n0 = 0;
+                foreach (ulong id in sHorses)
+                {
+                    SimDescription sd = SimDescription.Find(id);
+                    if (sd == null) continue;
+                    if (sd.Household != null) sd.Household.Remove(sd);
+                    sd.Dispose(true, false, true);
+                    n0++;
+                }
+                sHorses.Clear();
+                r["removed"] = n0;
+                return r;
+            }
+            int n = a.Has("count") ? (int)a.Long("count") : 2;
+            if (n < 1 || n > 4) throw new McpException("count must be 1..4");
+            List<Sim> riders = SpawnedInWorld();
+            if (riders.Count == 0) throw new McpException("spawn_sims first (the riders)");
+            List<object> pairs = new List<object>();
+            for (int i = 0; i < n && i < riders.Count; i++)
+            {
+                Sim rider = riders[i];
+                SimDescription hd = Sims3.Gameplay.CAS.GeneticsPet.MakeRandomPet(Sims3.SimIFace.CAS.CASAgeGenderFlags.Adult, Sims3.SimIFace.CAS.CASAgeGenderFlags.Female, Sims3.SimIFace.CAS.CASAgeGenderFlags.Horse);
+                if (hd == null) throw new McpException("no horse made (Pets not installed?)");
+                if (rider.Household != null) rider.Household.Add(hd);
+                Sim horse = hd.Instantiate(rider.Position + new Vector3(2f, 0f, 2f));
+                if (horse == null) throw new McpException("horse not placed");
+                sHorses.Add(hd.SimDescriptionId);
+                InteractionInstance mount = Sim.Mount.Singleton.CreateInstance(horse, rider, new InteractionPriority(InteractionPriorityLevel.UserDirected), false, true);
+                Dictionary<string, object> o = Util.Obj();
+                o["rider"] = rider.FullName;
+                o["horse"] = Util.Id(horse.ObjectId);
+                o["mount_queued"] = rider.InteractionQueue.Add(mount);
+                pairs.Add(o);
+            }
+            r["pairs"] = pairs;
+            return r;
+        }
+
+        // unseen_water_check {}: for every spawn_sims Sim (repro unseen-boats, docs/143 §8.10), where it is relative to the
+        // sea: terrain under it below sea level (water), parent (the vehicle or horse it sits in), routing, interaction, lot.
+        // "stranded" = in water deeper than 0.5 m, in no vehicle, not routing and not in a swim / boat interaction (the
+        // dropped-off-a-boat case). Read only.
+        static object UnseenWaterCheck(Args a)
+        {
+            RequireLive();
+            float sea = World.GetSeaLevel();
+            List<object> rows = new List<object>();
+            int stranded = 0, inWater = 0, inVehicle = 0;
+            foreach (Sim s in SpawnedInWorld())
+            {
+                Dictionary<string, object> o = Util.Obj();
+                Vector3 p = s.Position;
+                float depth = sea - World.GetTerrainHeight(p.x, p.z);
+                bool water = depth > 0.5f;
+                object parent = s.Parent;
+                bool routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
+                string inter = s.CurrentInteraction != null ? s.CurrentInteraction.GetType().Name : null;
+                bool swimOrBoat = inter != null && (inter.IndexOf("Swim", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Boat", StringComparison.OrdinalIgnoreCase) >= 0
+                    || inter.IndexOf("Taxi", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Ocean", StringComparison.OrdinalIgnoreCase) >= 0);
+                bool bad = water && parent == null && !routing && !swimOrBoat;
+                o["name"] = s.FullName;
+                o["x"] = Math.Round(p.x, 1); o["z"] = Math.Round(p.z, 1);
+                o["water_depth_m"] = Math.Round(depth, 2);
+                o["parent"] = parent != null ? parent.GetType().Name : null;
+                o["routing"] = routing;
+                o["interaction"] = inter;
+                o["lot"] = s.LotCurrent != null ? s.LotCurrent.Name : null;
+                o["stranded"] = bad;
+                if (water) inWater++;
+                if (parent != null) inVehicle++;
+                if (bad) stranded++;
+                rows.Add(o);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["sims"] = rows;
+            r["in_water"] = inWater;
+            r["in_vehicle"] = inVehicle;
+            r["stranded"] = stranded;
+            r["sea_level"] = Math.Round(sea, 2);
+            return r;
+        }
+
+        // unseen_snapback {count?: 5..12} | {result: true, require?: true}: in-game check that ts3native [UnseenThrottle]
+        // (docs/143 §8.9) puts a Sim back on full-rate locomotion the pass it becomes visible. A game task picks walking Sims
+        // that are unseen by the throttle's rule (not household, routing, off screen, outside the camera reach and 100 m
+        // from every household Sim), then one at a time: arms ts3native's snap-back watch (viewer channel codes 6/7), moves
+        // the in-game camera onto the Sim and keeps it on the Sim every tick (CameraController only; the game window is
+        // never moved or focused) until ts3native reports the class flip and for 10 ticks after it, then reads the record.
+        // Verdict per Sim: "fail" = it did not run the flip pass, a part skipped it while it was classed visible (code 10),
+        // or the position jump over the flip tick passed its normal per-tick step + 4 m/s x owed time + 0.25 m; "pass" =
+        // none of that and it stayed classed visible for the whole window; "not tested" = no flip within 2 x 120 ticks
+        // (second try with the camera closer) or classed unseen again inside the window (the camera lost it: 2026-10-21
+        // bp-ut2-snapback, where those skips were read as failures). The task keeps picking Sims until `count` passed or
+        // 3 x count were tried. {result:true, require:true} throws (the repro step and the queue job fail) unless the run is
+        // done, no Sim failed and at least `count` passed.
+        static List<object> sSnapRows;
+        static string sSnapState = "idle";
+        static int sSnapWant, sSnapPassed, sSnapFailed, sSnapNotTested;
+        static readonly ScriptCore.Route sSnapProbe = new ScriptCore.Route();
+        const ulong kSnapBits = 0x8200000000000000UL;
+        static bool SnapMsg(int code, uint value) { return sSnapProbe.GetOption2((Route.RouteOption2)(kSnapBits | (ulong)(uint)code << 48 | value)); }
+
+        static bool SnapUnseen(Sim s, Vector3 camPos, Vector3 camTgt)
+        {
+            if (s == null || s.HasBeenDestroyed || s.IsSelectable || s.Household == Household.ActiveHousehold) return false;
+            if (s.SimRoutingComponent == null || !s.SimRoutingComponent.IsRouting) return false;
+            float reach = Math.Max(80f, 2f * Math.Abs(camPos.y - camTgt.y)) + 20f;  // 20 m margin over the native rule
+            Vector3 p = s.Position;
+            if ((p - camPos).Length() < reach || (p - camTgt).Length() < reach || World.IsObjectOnScreen(s)) return false;
+            if (Household.ActiveHousehold != null)
+                foreach (Sim h in Household.ActiveHousehold.AllActors)
+                    if (h != null && (h.Position - p).Length() < 100f) return false;
+            return true;
+        }
+
+        static object UnseenSnapback(Args a)
+        {
+            RequireLive();
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Has("result"))
+            {
+                r["state"] = sSnapState;
+                r["want"] = sSnapWant;
+                r["passed"] = sSnapPassed;
+                r["failed"] = sSnapFailed;
+                r["not_tested"] = sSnapNotTested;
+                r["sims"] = sSnapRows ?? new List<object>();
+                bool ok = sSnapState.StartsWith("done") && sSnapFailed == 0 && sSnapWant > 0 && sSnapPassed >= sSnapWant;
+                r["check_ok"] = ok;
+                if (a.Bool("require", false) && !ok)
+                    throw new McpException("unseen_snapback check failed: state " + sSnapState + ", passed " + sSnapPassed + " of " + sSnapWant +
+                        ", failed " + sSnapFailed + ", not tested " + sSnapNotTested);
+                return r;
+            }
+            int n = a.Has("count") ? (int)a.Long("count") : 6;
+            if (n < 5 || n > 12) throw new McpException("count must be 5..12");
+            if (sSnapState == "running") throw new McpException("already running");
+            sSnapRows = new List<object>();
+            sSnapState = "running";
+            sSnapWant = n;
+            sSnapPassed = sSnapFailed = sSnapNotTested = 0;
+            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+            {
+                Vector3 homePos = CameraController.GetPosition(), homeTgt = CameraController.GetTarget();
+                try
+                {
+                    List<ulong> done = new List<ulong>();
+                    int waited = 0;
+                    while (sSnapPassed < n && done.Count < 3 * n && waited < 12000)
+                    {
+                        Sim pick = null;
+                        foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+                            if (!done.Contains(s.ObjectId.Value) && SnapUnseen(s, homePos, homeTgt)) { pick = s; break; }
+                        if (pick == null) { Simulator.Sleep(10); waited += 10; continue; }
+                        done.Add(pick.ObjectId.Value);
+                        Dictionary<string, object> row = SnapOne(pick);
+                        object v;
+                        string verdict = row.TryGetValue("verdict", out v) ? (string)v : "not tested";
+                        if (verdict == "pass") sSnapPassed++;
+                        else if (verdict == "fail") sSnapFailed++;
+                        else sSnapNotTested++;
+                        sSnapRows.Add(row);
+                        CameraController.SetPositionAndTarget(homePos, homeTgt);
+                        Simulator.Sleep(30);  // back out of view before the next pick
+                        waited += 30;
+                    }
+                    sSnapState = sSnapPassed < n ? "done (fewer passes than asked)" : "done";
+                }
+                catch (Exception e) { sSnapState = "failed: " + e.Message; }
+                finally { SnapMsg(11, 0); CameraController.SetPositionAndTarget(homePos, homeTgt); }
+            }));
+            r["state"] = sSnapState;
+            r["count"] = n;
+            return r;
+        }
+
+        // largest t <= max with "value >= t" for a watch query code (binary search over the one-bit channel)
+        static int SnapAtLeast(int code, int max)
+        {
+            int v = 0;
+            for (int bit = 1 << 10; bit > 0; bit >>= 1) if (v + bit <= max && SnapMsg(code, (uint)(v + bit))) v += bit;
+            return v;
+        }
+
+        static Dictionary<string, object> SnapOne(Sim s)
+        {
+            Dictionary<string, object> o = Util.Obj();
+            o["id"] = Util.Id(s.ObjectId);
+            o["name"] = s.FullName;
+            ulong id = s.ObjectId.Value;
+            if (!SnapMsg(6, (uint)id) || !SnapMsg(7, (uint)(id >> 32)))
+            {
+                o["error"] = "ts3native snap-back watch not answering ([UnseenThrottle] off?)";
+                o["verdict"] = "fail";
+                return o;
+            }
+            Simulator.Sleep(4);  // a few unseen passes first, so the throttle holds some owed time
+            Vector3 before = s.Position;
+            int tick = 0, flipTick = -1, tries = 1;
+            float jump = -1f, camAtFlip = -1f, camMax = 0f;
+            List<float> steps = new List<float>();
+            Vector3 prev = s.Position, offset = new Vector3(-8f, 10f, -8f);
+            CameraController.SetPositionAndTarget(prev + offset, prev);
+            while (true)
+            {
+                Simulator.Sleep(0);
+                tick++;
+                if (s.HasBeenDestroyed) { o["error"] = "Sim destroyed"; o["verdict"] = "not tested"; SnapMsg(11, 0); return o; }
+                Vector3 now = s.Position;
+                float step = (now - prev).Length(), cam = (CameraController.GetTarget() - now).Length();
+                if (flipTick < 0 && SnapMsg(8, 1)) { flipTick = tick; jump = step; camAtFlip = cam; }
+                else if (flipTick >= 0) { steps.Add(step); camMax = Math.Max(camMax, cam); }
+                prev = now;
+                if (flipTick >= 0 && tick - flipTick >= 10) break;
+                if (flipTick < 0 && tick >= 120)
+                {
+                    if (tries == 2) break;
+                    tries = 2;  // second try with the camera closer
+                    tick = 0;
+                    offset = new Vector3(-3f, 4f, -3f);
+                }
+                CameraController.SetPositionAndTarget(now + offset, now);  // stays on the Sim through the whole window
+            }
+            int owedMs = flipTick >= 0 ? SnapAtLeast(9, 1000) : 0;
+            steps.Sort();
+            float median = steps.Count > 0 ? steps[steps.Count / 2] : 0f;
+            float bound = median + 4f * owedMs / 1000f + 0.25f;
+            bool ran = SnapMsg(8, 2);
+            int skipsVis = SnapAtLeast(10, 1000), skipsUnseen = SnapAtLeast(16, 1000), unseenAfter = SnapAtLeast(17, 1000);
+            o["flipped"] = flipTick >= 0;
+            o["flip_tick"] = flipTick;
+            o["tries"] = tries;
+            o["ran_same_pass"] = ran;
+            o["owed_ms"] = owedMs;
+            o["avoid_called"] = SnapMsg(8, 3);
+            o["avoid_ran"] = SnapMsg(8, 4);
+            o["footprint_called"] = SnapMsg(8, 5);
+            o["footprint_ran"] = SnapMsg(8, 6);
+            o["skips_visible"] = skipsVis;
+            o["skips_unseen_again"] = skipsUnseen;
+            o["unseen_updates_after_flip"] = unseenAfter;
+            o["camera_target_dist_at_flip_m"] = Math.Round(camAtFlip, 2);
+            o["camera_target_dist_max_m"] = Math.Round(camMax, 2);
+            o["before"] = Pos(before);
+            o["after"] = Pos(s.Position);
+            o["jump_m"] = Math.Round(jump, 3);
+            o["step_median_m"] = Math.Round(median, 3);
+            o["jump_bound_m"] = Math.Round(bound, 3);
+            o["still_routing"] = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
+            string verdict;
+            if (flipTick < 0) verdict = "not tested";  // no flip: the camera never made it visible (or it stopped walking)
+            else if (!ran || skipsVis > 0 || jump > bound) verdict = "fail";
+            else if (unseenAfter > 0) verdict = "not tested";  // classed unseen again inside the window: the camera lost it
+            else verdict = "pass";
+            o["verdict"] = verdict;
+            o["pass"] = verdict == "pass";
+            SnapMsg(11, 0);
+            return o;
+        }
+
+        // spawn_traffic {count: 1..20}: driverless traffic cars made the way TrafficManager makes them (CarTaxiLightweight,
+        // EP3, a street parking spot of a random commercial lot, placed on a road out of view within 100 m of it, driving
+        // around for 2 sim-hours); each one's LiteDriver task then picks lots and drives (the ts3fixes unseencars repro,
+        // docs/143 §8.5). Returns how many were placed.
+        static object SpawnTraffic(Args a)
+        {
+            RequireLive();
+            int n = (int)a.Long("count");
+            if (n < 1 || n > 20) throw new McpException("count must be 1..20");
+            List<Lot> lots = new List<Lot>();
+            foreach (Lot l in LotManager.AllLots)
+                if (l.LotType == LotType.Commercial && l.StreetParking != null) lots.Add(l);
+            if (lots.Count == 0) throw new McpException("no commercial lot with street parking");
+            int placed = 0, noSpot = 0, noRoad = 0;
+            for (int i = 0; i < n; i++)
+            {
+                Lot lot = RandomUtil.GetRandomObjectFromList(lots);
+                Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver car =
+                    Sims3.Gameplay.GlobalFunctions.CreateObjectOutOfWorld("CarTaxiLightweight", ProductVersion.EP3) as Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver;
+                if (car == null) throw new McpException("CarTaxiLightweight not created (Late Night content missing?)");
+                Matrix44 mat = default(Matrix44);
+                if (!lot.StreetParking.GetParkingSpotForCar(car, ref mat)) { car.Destroy(); noSpot++; continue; }
+                Vector3[] pos;
+                Quaternion[] orient;
+                if (World.FindPlaceOnRoadOffScreen(car.Proxy, mat.pos.V3, FindPlaceOnRoadOption.Road, 100f, out pos, out orient))
+                {
+                    car.GeneratingClassName = "ts3agent";
+                    car.PlaceAt(pos[0], mat.at.V3, null);
+                    car.DriveAroundFor(2f, Sims3.Gameplay.Utilities.TimeUnit.Hours);
+                    placed++;
+                }
+                else { car.Destroy(); noRoad++; }
+                lot.StreetParking.FreeParkingSpotForCar(car);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["placed"] = placed;
+            r["no_spot"] = noSpot;
+            r["no_road"] = noRoad;
+            return r;
         }
 
         // Point for {to}: "pond" = representative point of the world pond nearest the Sim; "ocean" = 10 m into the sea

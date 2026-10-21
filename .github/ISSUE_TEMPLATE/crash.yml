@@ -1,0 +1,41 @@
+name: Crash report (ts3native)
+description: A crash report written by ts3native [CrashReport], usually opened for you by `node tools/report-crash.ts`.
+title: "[crash] "
+labels: [crash, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sending this. The report was written on your PC by ts3native with user paths, your user name and your machine name removed. Read it once before you press Submit. If the text below ends with "[cut: ...]", attach the full report file from `Documents\Electronic Arts\The Sims 3\ts3native-crashes\` (drag it into the box). No saves, dumps or game files, please.
+  - type: input
+    id: signature
+    attributes:
+      label: Signature id
+      description: The `signature id:` line of the report (crashsig-xxxxxxxx). Crashes with the same id are linked automatically.
+      placeholder: crashsig-0a1b2c3d
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ts3native version
+      placeholder: 0.36.7
+  - type: textarea
+    id: what
+    attributes:
+      label: What were you doing? (optional)
+      description: World, what happened just before, how long you had played. Other mods you think matter.
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I read the report above; it has no personal paths, names or emails.
+          required: true

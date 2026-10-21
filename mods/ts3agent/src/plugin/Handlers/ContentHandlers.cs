@@ -284,22 +284,50 @@ namespace Ts3Agent
         }
 
         // remove_sims {}: remove and dispose every Sim spawn_sims made (the debug `exterminate` path, limited to ours).
-        // A Sim already gone is dropped from the list. No Sims of the save are touched.
+        // A Sim already gone is dropped from the list. No Sims of the save are touched. A Sim sitting in a vehicle, boat or on
+        // a horse (Parent set) or walking with a linked partner is not disposed in place: disposing a rider mid-ride left
+        // its partner's steering agent with a link to a destroyed agent and the game hit a pure virtual call in avoidance
+        // (2026-10-21 ip-ut2-boats crash at remove_sims, docs/143 §8.11). Such Sims are reset first (SetObjectToReset gets
+        // them out of the vehicle with the game's own reset path) and disposed by a task 30 ticks later ("deferred").
         static object RemoveSims(Args a)
         {
             List<ulong> spawned = SpawnedSims();
-            List<object> removed = new List<object>();
+            List<object> removed = new List<object>(), deferred = new List<object>();
+            List<SimDescription> later = new List<SimDescription>();
             foreach (ulong id in spawned.ToArray())
             {
                 SimDescription sd = SimDescription.Find(id);
                 spawned.Remove(id);
                 if (sd == null) { removed.Add(Util.Id(id) + " (already gone)"); continue; }
+                Sim s = sd.CreatedSim;
+                if (s != null && !s.HasBeenDestroyed && (s.Parent != null || s.IsRouting))
+                {
+                    s.SetObjectToReset();
+                    later.Add(sd);
+                    deferred.Add(Util.Id(id));
+                    continue;
+                }
                 if (sd.Household != null) sd.Household.Remove(sd);
                 sd.Dispose(true, false, true);
                 removed.Add(Util.Id(id));
             }
+            if (later.Count > 0)
+                Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+                {
+                    Simulator.Sleep(30);
+                    foreach (SimDescription sd in later)
+                    {
+                        try
+                        {
+                            if (sd.Household != null) sd.Household.Remove(sd);
+                            sd.Dispose(true, false, true);
+                        }
+                        catch (Exception) { }  // gone meanwhile
+                    }
+                }));
             Dictionary<string, object> r = Util.Obj();
             r["removed"] = removed;
+            r["deferred"] = deferred;
             AddSimCounts(r);
             return r;
         }

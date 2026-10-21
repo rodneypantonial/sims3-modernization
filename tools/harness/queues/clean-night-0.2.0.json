@@ -1,0 +1,952 @@
+{
+  "note": "v0.2.0 clean-night TIMING A/Bs, 2026-10-22 night (docs/RELEASE.md v0.2.0). Ordered by release importance: freeze fix (FallbackAsync+M1Retry), SlotEnabledRO, UnseenThrottle, unseen script throttle, nightly spreads, ErrorTrap scan. 38 jobs, ~7.1 h real (profile minutes + ~2 min load each). Groups for --only / --from: *-fb-*, *-slotro-*, *-ut-*, *-unseen-*, *-spreads-*, bp-et-*. Before: game-copy/ts3native.asi.0314 present (sha256 in PLAN.md 0.36.14 entry), ts3fixes from this commit installed, master ini. If unseen phase 2 lands as a later asi, point the *-ut-* jobs at it and raise minCounters. Reports: wait-ab.ts <tag> (native keys), profile-compare.mjs <tag>:on vs :off, worst-hitches.ts --min 300, hitch-attr-report.ts.",
+  "jobs": [
+    {
+      "id": "bp-fb-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. BP 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-fb-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. BP 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-fb-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. SV 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-fb-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. SV 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-fb-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. IP 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-fb-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix (docs/134): FallbackAsync + M1Retry as one release feature, both switched by --ab fallbackasync,m1retry; SyncCapMs=1000 (decided for v0.2.0) is on in both halves (no runtime switch; fbCapped was 0 in every freeze-fix-ab job). Pass also: fbActiveTrip 0, fbCapped reported. Read per side: worst iteration, iterations >= 300 ms, sync plan lines >= 200 ms (count, sum, max, reason NoStart/M1Pending/QueueFull/Foreign), fbForeignStarted, fbRetryParked/Queued/GaveUp, it/s, hitches/min, route fails. Play. IP 10 min, --ab fallbackasync,m1retry, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "fallbackasync,m1retry",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-fb-crowd-off",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix whole-load pair, OFF arm (v0.1.4 behaviour: FallbackAsync 0, M1Retry 0, SyncCapMs 0), SV rare-big-crowd 8 min (freeze-data: SV crowd sync plans up to 7,361 ms). The repro waves start at the window start, so this pair is two loads, not --ab. Read with sv-fb-crowd-on: sync plan lines (count, sum, max ms by reason), worst iteration, iterations >= 1 s, stuck Sims at the end.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 0,
+        "RouteAsync.M1Retry": 0,
+        "RouteAsync.SyncCapMs": 0,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-fb-crowd-on",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix whole-load pair, ON arm (release candidate: FallbackAsync 1, M1Retry 1, SyncCapMs 1000), SV rare-big-crowd 8 min. Pass also: fbActiveTrip 0; longest sync plan <= ~1,000 ms plus lot/portal search (the cap is on the world A* only), fbCapped listed with its plan lines. Read as sv-fb-crowd-off.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-fb-routebits-on",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix whole-load pair, ON arm first (swapped start), BP rare-route-bits 6 min (freeze-data: route-bits sync plans up to 4,060 ms). Pass also: fbActiveTrip 0, every sim_route_to step logged a plan result. Read with bp-fb-routebits-off: sync plan lines by reason, worst iteration, fbCapped (a capped plan here = a route-bits plan the cap failed: list which bits).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-route-bits"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "bp-fb-routebits-off",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Freeze fix whole-load pair, OFF arm (v0.1.4 behaviour), BP rare-route-bits 6 min. Read as bp-fb-routebits-on.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 0,
+        "RouteAsync.M1Retry": 0,
+        "RouteAsync.SyncCapMs": 0,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-route-bits"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "ip-slotro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. IP 10 min, --ab slotenabledro, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-slotro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. IP 10 min, --ab slotenabledro, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-slotro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. SV 10 min, --ab slotenabledro, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-slotro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. SV 10 min, --ab slotenabledro, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-slotro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. BP 10 min, --ab slotenabledro, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-slotro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. SlotEnabledRO (docs/90, docs/136: ship decided on BP, needs IP/SV) on the v0.1.4 release base (RouteSnap/P5c off), --ab slotenabledro toggles slMode. Pass also: slShadowMismatch 0, slTaken > 0 in on slices. Read per side with wait-ab.ts <tag>: key 0x62F782 (gate 12) and 0x83156D (RouteToObjectCheck, where ~60% reappeared), keyed total, it/s, hitches/min. Ship rule: gate 12 down, keyed total not up beyond the docs/136 per-key null, it/s not down > 2%. BP 10 min, --ab slotenabledro, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Play. BP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Play. BP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-ut-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Play. IP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-ut-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Play. IP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut-crowd-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Door-heavy crowd (rare-big-crowd; waves run from the window start, so the warm-up and first counted slice carry most of the crowd: the pair balances it). Pass also: utWhy_11 (portal) > 0. BP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut-crowd-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. UnseenThrottle phase 1 (docs/143), ship config ([UnseenProbe] off, Every=4), --ab unseenthrottle toggles utMode. Needs ts3fixes from the same commit (household positions; utWhy_7 taking all calls = wrong ts3fixes: stop). Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0, no Sim stuck at a door or goal at the end. Read: key 0x85FE10 (steering) per side with wait-ab.ts beyond the docs/136 null (-1.5..+9.4 ms/s), no keyed wait up, it/s not down > 2%, utWhy mix. Door-heavy crowd (rare-big-crowd; waves run from the window start, so the warm-up and first counted slice carry most of the crowd: the pair balances it). Pass also: utWhy_11 (portal) > 0. BP 10 min, --ab unseenthrottle, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-unseen-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. BP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-unseen-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. BP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseen-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. SV 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseen-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. SV 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-unseen-play-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. IP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-unseen-play-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Play. IP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-unseen-crowd-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Big crowd (rare-big-crowd). BP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-unseen-crowd-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Unseen script throttle (docs/144): unseenenv + unseenmotives + unseenbroadcast together (the release candidate set), ship config (unseenprobe off), --ab switches all three. Pass also: applied log lists SimUpdate.CalculateSimEnvironmentScore and Autonomy.Update ok, unseen_* skip counters > 0 in on slices, stuck Sims not above the docs/TESTING.md rule. Read per side: it/s, sim ms/s (profile-compare.mjs <tag>:on vs :off), broadcast_pulses/skipped. Big crowd (rare-big-crowd). BP 10 min, --ab unseenenv,unseenmotives,unseenbroadcast, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenenv,unseenmotives,unseenbroadcast",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-spreads-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Nightly spreads together (docs/145 overwatchspread, docs/147 easpreadlots/easpreadpets/easpreaddecay), --ab switches all four; repro night-maintenance-clock sets 22:00 at the window start, so with ~10 sim-minutes per real second midnight and 3 AM fire about every 2.5 real minutes, ~3 of each in the counted slices [inferred from the rate], and the pair puts each fire on both sides. Each fire is decided by the switch state when its alarm runs; read per fire, not per slice: easpread_log game's / ours lines and owspread alarm lines with their slice, worst-hitches.ts --min 300 per fire (LotManager.CleanUpLotsAndInventories, Relationship.DecayAll, PetPoolManager.AlarmCallBack, NRaas CleanupInventory / TaskObjects burst class B). Pass also: no easpread/owspread failed or stopped line, rng.json simMinutes >= 3 sim-days. Spread on = no >= 300 ms iteration from those callers. BP 10 min, --ab easpreadlots,easpreadpets,easpreaddecay,overwatchspread, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-spreads-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Nightly spreads together (docs/145 overwatchspread, docs/147 easpreadlots/easpreadpets/easpreaddecay), --ab switches all four; repro night-maintenance-clock sets 22:00 at the window start, so with ~10 sim-minutes per real second midnight and 3 AM fire about every 2.5 real minutes, ~3 of each in the counted slices [inferred from the rate], and the pair puts each fire on both sides. Each fire is decided by the switch state when its alarm runs; read per fire, not per slice: easpread_log game's / ours lines and owspread alarm lines with their slice, worst-hitches.ts --min 300 per fire (LotManager.CleanUpLotsAndInventories, Relationship.DecayAll, PetPoolManager.AlarmCallBack, NRaas CleanupInventory / TaskObjects burst class B). Pass also: no easpread/owspread failed or stopped line, rng.json simMinutes >= 3 sim-days. Spread on = no >= 300 ms iteration from those callers. BP 10 min, --ab easpreadlots,easpreadpets,easpreaddecay,overwatchspread, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-spreads-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Nightly spreads together (docs/145 overwatchspread, docs/147 easpreadlots/easpreadpets/easpreaddecay), --ab switches all four; repro night-maintenance-clock sets 22:00 at the window start, so with ~10 sim-minutes per real second midnight and 3 AM fire about every 2.5 real minutes, ~3 of each in the counted slices [inferred from the rate], and the pair puts each fire on both sides. Each fire is decided by the switch state when its alarm runs; read per fire, not per slice: easpread_log game's / ours lines and owspread alarm lines with their slice, worst-hitches.ts --min 300 per fire (LotManager.CleanUpLotsAndInventories, Relationship.DecayAll, PetPoolManager.AlarmCallBack, NRaas CleanupInventory / TaskObjects burst class B). Pass also: no easpread/owspread failed or stopped line, rng.json simMinutes >= 3 sim-days. Spread on = no >= 300 ms iteration from those callers. SV 10 min, --ab easpreadlots,easpreadpets,easpreaddecay,overwatchspread, 2-min slices (warm-up on, then off,on,on,off); read with the on-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-spreads-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. Nightly spreads together (docs/145 overwatchspread, docs/147 easpreadlots/easpreadpets/easpreaddecay), --ab switches all four; repro night-maintenance-clock sets 22:00 at the window start, so with ~10 sim-minutes per real second midnight and 3 AM fire about every 2.5 real minutes, ~3 of each in the counted slices [inferred from the rate], and the pair puts each fire on both sides. Each fire is decided by the switch state when its alarm runs; read per fire, not per slice: easpread_log game's / ours lines and owspread alarm lines with their slice, worst-hitches.ts --min 300 per fire (LotManager.CleanUpLotsAndInventories, Relationship.DecayAll, PetPoolManager.AlarmCallBack, NRaas CleanupInventory / TaskObjects burst class B). Pass also: no easpread/owspread failed or stopped line, rng.json simMinutes >= 3 sim-days. Spread on = no >= 300 ms iteration from those callers. SV 10 min, --ab easpreadlots,easpreadpets,easpreaddecay,overwatchspread, 2-min slices (warm-up on, then on,off,off,on); read with the off-first job of the pair (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-et-load-off",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. ErrorTrap load-up scan (docs/146): fires one sim-minute after the load, so the A/B is separate loads (two pairs, swapped order). OFF arm (switch off for the whole load). Pass: one 0.5-0.9 s taskstall row from the load-up task. Read: worst iteration in the first 2 minutes, the taskstall row of ErrorTrap's load-up task (length, samples in Inventories.GetName / CheckInventories), etspread_passes / etspread_failed.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "taskstall": 250,
+          "fixesOff": "errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-et-load-on",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. ErrorTrap load-up scan (docs/146): fires one sim-minute after the load, so the A/B is separate loads (two pairs, swapped order). ON arm. Pass: etspread_passes 1, etspread_failed 0, no GetName / CheckInventories stall row. Read: worst iteration in the first 2 minutes, the taskstall row of ErrorTrap's load-up task (length, samples in Inventories.GetName / CheckInventories), etspread_passes / etspread_failed.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "taskstall": 250,
+          "fixesOn": "errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-et-load-on-2",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. ErrorTrap load-up scan (docs/146): fires one sim-minute after the load, so the A/B is separate loads (two pairs, swapped order). ON arm, second pair (on first). Read: worst iteration in the first 2 minutes, the taskstall row of ErrorTrap's load-up task (length, samples in Inventories.GetName / CheckInventories), etspread_passes / etspread_failed.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "taskstall": 250,
+          "fixesOn": "errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-et-load-off-2",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every v0.2.0 candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr. Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. ErrorTrap load-up scan (docs/146): fires one sim-minute after the load, so the A/B is separate loads (two pairs, swapped order). OFF arm, second pair. Read: worst iteration in the first 2 minutes, the taskstall row of ErrorTrap's load-up task (length, samples in Inventories.GetName / CheckInventories), etspread_passes / etspread_failed.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "taskstall": 250,
+          "fixesOff": "errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}
