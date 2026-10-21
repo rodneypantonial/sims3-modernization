@@ -35,6 +35,7 @@
 // profile.fixesOff: "name,name" -> profile-world.ts --fixes-off (those switches off for the whole run).
 // profile.fixesOn: "name,name" -> profile-world.ts --fixes-on (those switches on for the whole run; e.g. autshadow, whose tuning is off).
 // profile.ab: "name,name" -> profile-world.ts --ab (runtime switches alternate on/off in one load), profile.slice: minutes per side.
+// profile.abOnFirst: true -> --ab-on-first (counted slices on,off,off,on instead of off,on,on,off).
 // profile.mainstack: main | all | <thread id> -> profile-world.ts --mainstack (main-thread stacks beside the sim sampler, docs/20 §7).
 // profile.taskstall: MS -> profile-world.ts --taskstall (stage stalls over MS ms with their managed stack; S3PP SimulatorStageProfiler must be off).
 // profile.inroom: true -> profile-world.ts --inroom (tools/frida/inroom-reads.js, in-room routing live reads, docs/111; inroom-report.ts reads <tag>-inroom.json).
@@ -43,6 +44,9 @@
 // profile.livereads2: true -> profile-world.ts --livereads2 (tools/frida/live-reads2.js, routing live reads pass 2, docs/114; live-reads2-report.ts reads <tag>-livereads2.json).
 // profile.f4b: true -> profile-world.ts --f4b (tools/frida/f4b-reads.js, F-4b live read, docs/99 §12.6; f4b-report.ts reads <tag>-f4b.json).
 // profile.vres: true -> profile-world.ts --vres (docs/133: callvirt inline-cache snapshots through the probe agent's /vcache; virtual-resolution-report.ts reads <tag>-vres.json).
+// profile.vresDry: N -> profile-world.ts --vres-dry N (the same snapshots, N methods each, no call following: docs/133 §5 bisect).
+// profile.noSamplers: true -> profile-world.ts --no-samplers (no stack samplers; profile.noProf: true -> --no-prof (no stutter
+// profiler session) also without [ProbeSnap]). Both make a bisect job match bp-vres apart from the one probe under test.
 // profile.noEnv: true -> profile-world.ts --no-env (no test_env guard: the repro sets winter, weather or a full moon itself, docs/117).
 // ini ProbeSnap.Enabled=1 -> profile-world.ts --no-prof (no second Frida agent beside the int3 sampler: docs/67 §7).
 // profile.travel: "university" | "future" | "france" | "china" | "egypt" -> profile-world.ts --travel (save-matrix.ts travel case with
@@ -99,7 +103,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; run: { repro?: string; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' } };
 
 export function parseQueue(json: unknown): Job[] {
@@ -154,12 +158,15 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.profile?.fixesOff !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.fixesOff))) throw new Error(`${at}: run.profile.fixesOff must be comma-separated switch names`);
     if (j.run.profile?.fixesOn !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.fixesOn))) throw new Error(`${at}: run.profile.fixesOn must be comma-separated switch names`);
     if (j.run.profile?.untilCompares !== undefined && !(Number.isInteger(j.run.profile.untilCompares) && j.run.profile.untilCompares > 0)) throw new Error(`${at}: run.profile.untilCompares must be a positive integer`);
+    if (j.run.profile?.abOnFirst !== undefined && (typeof j.run.profile.abOnFirst !== 'boolean' || !j.run.profile.ab)) throw new Error(`${at}: run.profile.abOnFirst must be true/false and needs run.profile.ab`);
     if (j.run.profile?.slice !== undefined && !(Number(j.run.profile.slice) > 0)) throw new Error(`${at}: run.profile.slice must be > 0 minutes`);
     if (j.run.profile?.inroom !== undefined && typeof j.run.profile.inroom !== 'boolean') throw new Error(`${at}: run.profile.inroom must be true or false`);
     if (j.run.profile?.watchstalk !== undefined && typeof j.run.profile.watchstalk !== 'boolean' && j.run.profile.watchstalk !== 'worker') throw new Error(`${at}: run.profile.watchstalk must be true, false or "worker"`);
     if (j.run.profile?.livereads2 !== undefined && typeof j.run.profile.livereads2 !== 'boolean') throw new Error(`${at}: run.profile.livereads2 must be true or false`);
     if (j.run.profile?.f4b !== undefined && typeof j.run.profile.f4b !== 'boolean') throw new Error(`${at}: run.profile.f4b must be true or false`);
     if (j.run.profile?.vres !== undefined && typeof j.run.profile.vres !== 'boolean') throw new Error(`${at}: run.profile.vres must be true or false`);
+    if (j.run.profile?.vresDry !== undefined && !(Number.isInteger(j.run.profile.vresDry) && j.run.profile.vresDry > 0)) throw new Error(`${at}: run.profile.vresDry must be a positive integer`);
+    for (const k of ['noSamplers', 'noProf']) if (j.run.profile?.[k] !== undefined && typeof j.run.profile[k] !== 'boolean') throw new Error(`${at}: run.profile.${k} must be true or false`);
     if (j.run.profile?.noEnv !== undefined && typeof j.run.profile.noEnv !== 'boolean') throw new Error(`${at}: run.profile.noEnv must be true or false`);
     if (j.run.profile?.travel !== undefined && !['university', 'future', 'france', 'china', 'egypt'].includes(j.run.profile.travel)) throw new Error(`${at}: run.profile.travel must be university, future, france, china or egypt`);
     if (j.run.profile?.mainstack !== undefined &&!/^(main|all|\d+)$/.test(String(j.run.profile.mainstack))) throw new Error(`${at}: run.profile.mainstack must be main, all or a thread id`);
@@ -178,6 +185,11 @@ export function parseQueue(json: unknown): Job[] {
   }
   return jobs;
 }
+
+// ts3fixes.applied (agent `patches` .applied): the AutShadow / AutLedger lines and every refused patch, for the job row
+// (docs/51 §188: a refused hook used to leave no trace in the row)
+export const fixesApplied = (applied: unknown): string[] => (Array.isArray(applied) ? applied.map(String) : [])
+  .filter(l => /^Aut(Shadow|Ledger)\b/.test(l) || (/^[\w.+]+\.\w+: /.test(l) && !/: ok$/.test(l))).slice(0, 40);
 
 // ---- worldimage (docs/123 §8.6): capture job pieces
 const GAME_COPY = join(ROOT, 'game-copy');
@@ -403,6 +415,7 @@ if (values['self-check']) {
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, fixesOff: 'go home' } } }], /fixesOff/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, fixesOn: 'go home' } } }], /fixesOn/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, untilCompares: 0 } } }], /untilCompares/],
+    [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, ab: 'x', abOnFirst: 'yes' } } }], /abOnFirst/],
     [[{ id: 'a', asi: 'tested', save: 'S', gameArgs: ['disablestoryprogression'], run: { profile: { minutes: 5 } } }], /gameArgs/],
     [[{ id: 'a', asi: 'tested', save: 'menu', defaultIni: { Seed: 1 }, run: { menuMemory: {} } }], /defaultIni/],
     [[{ id: 'a', asi: 'tested', save: 'menu', s3ppIni: { MonoIsinstCache: 0 }, run: { menuMemory: {} } }], /s3ppIni/],
@@ -411,6 +424,8 @@ if (values['self-check']) {
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 5, mainstack: 'render' } } }], /profile.mainstack/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, f4b: 'yes' } } }], /profile.f4b/],
     [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, vres: 1 } } }], /profile.vres/],
+    [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, vresDry: 0 } } }], /profile.vresDry/],
+    [[{ id: 'a', asi: 'tested', save: 'S', run: { profile: { minutes: 3, noSamplers: 1 } } }], /profile.noSamplers/],
     [[{ id: 'a', asi: 'tested', save: 'menu', run: { menuMemory: { draws: 0 } } }], /draws/],
   ];
   assert.equal(parseQueue([{ id: 'a', asi: 'tested', save: 'menu', content: 'no-cc', run: { menuMemory: {} } }])[0].content, 'no-cc');
@@ -537,6 +552,10 @@ if (values['self-check']) {
     assert.deepEqual([hd.done, hd.regions, hd.storedMB, hd.dumpMs, hd.threads, hd.modules, hd.tlsAllocated, hd.lockOwners], [false, 900, 2048, 2500, 1, 1, 1, ['11f4130:4242']]);
     assert.deepEqual([wiHeader('stats 1 0 0 5\nloose 1\n').done, wiHeader('loose 1\n').loose], [true, 1]);
   }
+  assert.deepEqual(fixesApplied(['GoHome.Run: ok', 'Localization.LocalizeString: already compiled', 'AutShadow: game assemblies = accepted set 1',
+    'AutLedger: ts3native Ledger=0 this load (off)', 'TooltipManager.Simulate at patch time: not started', 'Autonomy.CalculateScore: ok']),
+    ['Localization.LocalizeString: already compiled', 'AutShadow: game assemblies = accepted set 1', 'AutLedger: ts3native Ledger=0 this load (off)']);
+  assert.deepEqual(fixesApplied(null), []);
   assert.equal(g11Gate('Baseline-IP', 31.2), 'G11 go (IP needs >= 30 ms/s)');
   assert.equal(g11Gate('Baseline-IP.sims3', 29), 'G11 stop (IP needs >= 30 ms/s)');
   assert.equal(g11Gate('Baseline-BP', 15), 'G11 go (BP needs >= 15 ms/s)');
@@ -648,8 +667,8 @@ const runArgs = (j: Job): string[] | null =>
   j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
     : j.run.profile ? [H('profile-world.ts'), '--tag', profileTag(j), '--minutes', String(j.run.profile.minutes), ...(j.run.profile.seed !== undefined ? ['--seed', String(j.run.profile.seed)] : []),
       ...(j.run.profile.repro ? ['--repro', j.run.profile.repro] : []), ...(j.run.profile.mainstack ? ['--mainstack', String(j.run.profile.mainstack)] : []),
-      ...(j.run.profile.ab ? ['--ab', j.run.profile.ab, '--slice', String(j.run.profile.slice ?? 2)] : []), ...(j.run.profile.untilCompares ? ['--until-compares', String(j.run.profile.untilCompares)] : []), ...(j.run.profile.fixesOff ? ['--fixes-off', j.run.profile.fixesOff] : []), ...(j.run.profile.fixesOn ? ['--fixes-on', j.run.profile.fixesOn] : []), ...(j.run.profile.taskstall ? ['--taskstall', String(j.run.profile.taskstall)] : []),
-      ...(j.run.profile.inroom ? ['--inroom'] : []), ...(j.run.profile.watchstalk ? ['--watchstalk'] : []), ...(j.run.profile.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(j.run.profile.livereads2 ? ['--livereads2'] : []), ...(j.run.profile.f4b ? ['--f4b'] : []), ...(j.run.profile.vres ? ['--vres'] : []), ...(j.run.profile.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) ? ['--no-prof'] : []), ...(j.run.profile.travel ? ['--travel', j.run.profile.travel] : [])]
+      ...(j.run.profile.ab ? ['--ab', j.run.profile.ab, '--slice', String(j.run.profile.slice ?? 2), ...(j.run.profile.abOnFirst ? ['--ab-on-first'] : [])] : []), ...(j.run.profile.untilCompares ? ['--until-compares', String(j.run.profile.untilCompares)] : []), ...(j.run.profile.fixesOff ? ['--fixes-off', j.run.profile.fixesOff] : []), ...(j.run.profile.fixesOn ? ['--fixes-on', j.run.profile.fixesOn] : []), ...(j.run.profile.taskstall ? ['--taskstall', String(j.run.profile.taskstall)] : []),
+      ...(j.run.profile.inroom ? ['--inroom'] : []), ...(j.run.profile.watchstalk ? ['--watchstalk'] : []), ...(j.run.profile.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(j.run.profile.livereads2 ? ['--livereads2'] : []), ...(j.run.profile.f4b ? ['--f4b'] : []), ...(j.run.profile.vres ? ['--vres'] : []), ...(j.run.profile.vresDry ? ['--vres-dry', String(j.run.profile.vresDry)] : []), ...(j.run.profile.noSamplers ? ['--no-samplers'] : []), ...(j.run.profile.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || j.run.profile.noProf ? ['--no-prof'] : []), ...(j.run.profile.travel ? ['--travel', j.run.profile.travel] : [])]
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
 const SAVES = join(USER, 'Saves');
@@ -1033,6 +1052,10 @@ for (const [n, j] of jobs.entries()) {
       row.verdict.push(`mono ledger ${lr.ok ? 'ok' : 'INCOMPLETE'}: per-item numbers below the table`);
       ledgerBlocks.push(`\n### ${j.id}: mono ledger probe (docs/51)\n\n${lr.lines.map(l => '    ' + l).join('\n')}\n`);
     }
+    if (c1?.autshadow || /\baut/.test(j.run.profile?.fixesOn ?? '')) {
+      row.fixesApplied = fixesApplied((await agent('patches'))?.result?.applied);
+      log(`${j.id}: ts3fixes.applied: ${row.fixesApplied.join(' | ') || '(no AutShadow/AutLedger or refused-patch lines)'}`);
+    }
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);
   } catch (e) { row.error = String((e as Error).message ?? e); log(`${j.id}: ${row.error}`); }
@@ -1087,12 +1110,13 @@ for (const [n, j] of jobs.entries()) {
   earlier.push(row);
   const next = jobs[n + 1];
   if (stopWhy) { log(`STOP: ${stopWhy}${next ? `; resume: node tools/harness/queue.ts ${file} --from ${next.id}` : ''}`); exitCode = 1; break; }
-  // AI budget (best effort): pause at >= 80% in either window
+  // AI budget (best effort): pause at >= 80% in either window, or at the percent in probe-out/queue/ai-pause-pct (a day's raised line)
   try {
+    const pausePct = (() => { try { return Number(readFileSync(join(ROOT, 'probe-out', 'queue', 'ai-pause-pct'), 'utf8').trim()) || 80; } catch { return 80; } })();
     const first = execFileSync(process.execPath, [join(ROOT, 'tools', 'ai-usage.ts'), 'G', j.id], { cwd: ROOT }).toString().split(/\r?\n/)[0];
     const u = parseUsage(first);
     log(`ai usage: ${first}`);
-    if (next && Math.max(u.h5 ?? 0, u.d7 ?? 0) >= 80) {
+    if (next && Math.max(u.h5 ?? 0, u.d7 ?? 0) >= pausePct) {
       log(`PAUSE: AI usage ${first}; resume: node tools/harness/queue.ts ${file} --from ${next.id}`);
       appendFileSync(md, `\nPaused after ${j.id} (AI usage ${first}); resume with \`--from ${next.id}\`.\n`);
       break;

@@ -1,0 +1,311 @@
+[
+  {
+    "id": "bp-ut-play",
+    "note": "[UnseenThrottle] phase 1 A/B, off-first (docs/143 §6.4 G-U2, counters v79 ut*). ts3native 0.36.13 (game-copy/ts3native.asi.0314) with ts3fixes built from the same commit installed (it pushes the active-household positions; with an older ts3fixes NeedViewers=1 keeps every call running and utWhy_7 'no viewers' takes all calls: stop and install the right ts3fixes). Release ini defaults ([RouteAsync], [RouteGate] Sites+Enforce, [Discourage]) plus [UnseenProbe] Enabled=1 (classes, keyed waits by class), [UnseenThrottle] Enabled=1 Every=4 switched by --ab unseenthrottle (2-min slices: warm-up on, then off,on,on,off), HitchAttr. BP Spring 10 min, seed 12345. Timing: clean night only (daytime = correctness read). Pass: no crash, 0 watchdog lines, utReady 3 (call site + viewer channel), utSkipped > 0 in the on slices and 0 in the off slices, utViewerPushes > 0, node tools/harness/unseen-report.ts <native.json> ok; node tools/harness/wait-ab.ts bp-ut-play shows key 0x85FE10 (steering) lower on than off beyond the docs/136 per-key null (-1.5..+9.4 ms/s) and no keyed wait higher; it/s not down more than 2%. Read: skipped share, utWhy mix (visible / viewer / near goal / portal / after / turn), utPathUs (path-test cost). A crash or a stuck Sim near an unseen walk: stop, triage against unseen.cpp UtWhy.",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut-play-onfirst",
+    "note": "[UnseenThrottle] A/B, on-first: the same job as bp-ut-play with the slice order swapped (warm-up on, then on,off,off,on), so the heavy first counted slot (docs/136 §2) lands on the on side here and the off side there. Pass as bp-ut-play; read the two together (mean of the per-key on - off of both jobs).",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "unseenthrottle",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-ut-crowd",
+    "note": "[UnseenThrottle] A/B, off-first, door-heavy crowd (rare-big-crowd repro: many walking Sims at once): as bp-ut-play, 8 min. Pass as bp-ut-play, plus utWhy_11 (portal) > 0 (the sub-path rule fires on doors) and no Sim stuck at a door at the end.",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd",
+        "ab": "unseenthrottle",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-ut-crowd-onfirst",
+    "note": "[UnseenThrottle] A/B, on-first, rare-big-crowd: bp-ut-crowd with the slice order swapped. Pass as bp-ut-crowd; read the two together.",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd",
+        "ab": "unseenthrottle",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  {
+    "id": "bp-ut-stuck-off",
+    "note": "[UnseenThrottle] stuck-Sim check, reference arm: release defaults with [UnseenThrottle] off (Enabled=0) and [UnseenProbe] on, BP 15 min, seed 12345, no --ab. Correctness only, daytime OK. Read the end-of-run stuck Sims (docs/TESTING.md rule) as the reference for bp-ut-stuck-on.",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 0
+    },
+    "run": {
+      "profile": {
+        "minutes": 15,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  },
+  {
+    "id": "bp-ut-stuck-on",
+    "note": "[UnseenThrottle] stuck-Sim check, throttle on for the whole run (Enabled=1, utMode 1 from the start, no --ab), otherwise as bp-ut-stuck-off. Pass: no crash, 0 watchdog lines, utSkipped > 0, stuck Sims at the end no more than bp-ut-stuck-off (docs/TESTING.md: at most one more, and none standing at a door or route goal it was walking to while unseen); new cases go to docs/data/stuck-log.md with the utWhy mix of the run.",
+    "asi": "game-copy/ts3native.asi.0314",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 79,
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "UnseenThrottle.Enabled": 1,
+      "UnseenThrottle.Every": 4
+    },
+    "run": {
+      "profile": {
+        "minutes": 15,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 35
+  },
+  {
+    "id": "bp-easpread-lots-repro",
+    "note": "docs/147 §2 correctness first (5 min): repro bp-easpread-lots under /taskstall. Pass: both easpread_log lines show the same lots per kind and Sim count, ours > 1 tick with easpread_lots_max_tick_us < ~5000 and verify 'after' equal to the game's; the game's pass shows one >= 250 ms stall under LotManager.CleanUpLotsAndInventories, ours none. Stop the queue on any 'failed' or 'stopped' line",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "repro": "bp-easpread-lots"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-easpread-pets-repro",
+    "note": "docs/147 §3 (5 min): repro bp-easpread-pets under /taskstall. Pass: test pet 1 tick on the game's path, > 1 tick on ours (easpread_pets_max_ticks > 1), no 'failed' line, no >= 250 ms stall under PetPoolManager/GeneticsPet on our side; the real alarm's line follows",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "repro": "bp-easpread-pets"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-easpread-decay-repro",
+    "note": "docs/147 §4 (5 min): repro bp-easpread-decay under /taskstall. Pass: ours > 1 tick, easpread_decay_max_tick_us < ~5000, easpread_decay_threw 0, both verify lines (relationships after <= before); the game's DecayAll is one tick (a stall only on old saves)",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "repro": "bp-easpread-decay"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-ab-easpread",
+    "note": "docs/147 in-load A/B, seeded BP, 10 min, 2-min slices, easpreadlots + easpreadpets + easpreaddecay alternating together (each decided when its alarm fires; a pass started in an on slice may finish in the next). Natural fires only: 3 AM venue cleanup and midnight decay once per sim-day, pet alarm every 5-30 sim-minutes while a pool is open. Pass: worst-hitches.ts --min 300 shows no iteration with LotManager.CleanUpLotsAndInventories / PetPoolManager.AlarmCallBack / Relationship.DecayAll on a managed sample in on slices; easpread_log 'ours' lines with no 'failed'/'stopped'; it/s and hitches >= 100 ms per side within noise. With overwatchspread also on in a later run, the 3 AM TaskObjects burst (class B) should be gone",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "easpreadlots,easpreadpets,easpreaddecay",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-errortrap-spread-repro",
+    "note": "docs/146 correctness first (5 min): repro bp-errortrap-spread-inventory under /taskstall, errortrapspread on for the whole run (set while paused, before the load-up scan's 1 sim-minute alarm fires). Pass: the load-up check ran ours (etspread_passes >= 1 before the repro steps, applied log 'Inventories.CheckInventories: ok'), our passes take > 1 tick with etspread_max_tick_us < ~5000, 'verify: ErrorTrap's own check logged 0 corrections' after ours, ErrorTrap's own check (repro step 3) shows its one-tick stall (>= 250 ms row with Inventories.GetName) and ours none, etspread_failed 0. Stop the queue on any 'failed' line in errortrapspread_log",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "fixesOn": "errortrapspread",
+        "repro": "bp-errortrap-spread-inventory"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-errortrap-spread-yield",
+    "note": "docs/146 §3 marker contract on the installed ErrorTrap (5 min): repro bp-errortrap-spread-upstream-yield. Pass: etspread_upstream -1, etspread_theirs >= 1, the 'upstream spreading found (faked), ours off' line, no crash",
+    "asi": "tested",
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "repro": "bp-errortrap-spread-upstream-yield"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-errortrap-load-off",
+    "note": "docs/146 load-time hitch, fresh load, switch off (5 min, /taskstall 250, no repro): the load-up scan cannot be repeated in one load, so this is the off side of a two-load A/B with bp-errortrap-load-on (same save, seed, build). Pass: one taskstall row of 0.5-0.9 s from ErrorTrap's load-up task about one sim-minute after the window starts (samples in Inventories.GetName / CheckInventories, then DereferenceController PreProcess), as in 7 of 7 earlier /taskstall loads; etspread_theirs 1, etspread_passes 0",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "fixesOff": "errortrapspread"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  },
+  {
+    "id": "bp-errortrap-load-on",
+    "note": "docs/146 load-time hitch, fresh load, switch on (5 min, /taskstall 250, no repro): the on side of the two-load A/B. Pass: etspread_passes 1, etspread_failed 0, no taskstall row with Inventories.GetName / CheckInventories samples; ErrorTrap's remaining first-tick row (controllers' PreProcess pass, expected ~0.15-0.3 s [inferred]) reported with its length; errortrapspread_log 'inventory pass' line with ticks > 1. Compare worst-hitches.ts --min 300 for the first 2 minutes of both loads (class 'first minute after load' / 'TaskObjects burst'): one fewer >= 300 ms iteration on the on side",
+    "asi": "tested",
+    "s3ppIni": {
+      "Patches.SimulatorStageProfiler": 0
+    },
+    "save": "Baseline-BP",
+    "run": {
+      "profile": {
+        "minutes": 5,
+        "seed": 12345,
+        "taskstall": 250,
+        "fixesOn": "errortrapspread"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 20
+  }
+]

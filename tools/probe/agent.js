@@ -820,18 +820,13 @@ function routeLockReport() {
 // Mint words: callvirt 0xEC [op, cache, -, decl] (0xED/0xEE add a constrained-class word before decl), call 0xEA [op, m],
 // con.call 0xEB [op, c, m], switch 0xE8 [op, n32, n x off32], superops 0x1AB-0x1C0 keep the base instructions' words in
 // place (docs/130 §9), so they decode as their first base opcode [verified].
-const VC = { corlib: ptr('0x1220e40'), simulator: ptr('0x1220f34'), oplen: ptr('0x1195088'), superTab: ptr('0x108fcd8') };
-const vc = { lens: null, rtms: new Map(), images: new Set(), sites: new Map(), names: new Map(), snaps: 0, firstAt: null, lastAt: null, stats: {} };
-function vcLens() {
-  if (vc.lens) return vc.lens;
-  const t = new Uint8Array(VC.oplen.readByteArray(0x1ab)), lens = new Uint8Array(0x1c1);
-  lens.set(t);
-  for (let op = 0x1ab; op <= 0x1c0; op++) { // superop entry k = op - 0x1AA: u32 hash, u16 count, u16[count] base opcodes
-    const e = VC.superTab.add(72 * (op - 0x1aa)), first = e.add(4).readU16() ? e.add(6).readU16() : 0;
-    lens[op] = first && first < 0x1ab ? t[first] : 0;
-  }
-  return (vc.lens = lens);
-}
+// Safety (docs/133 §5, after bp-vres 2026-10-20: one synchronous snapshot held the agent's JS thread past the harness's 60 s
+// heartbeat limit): a snapshot is a series of short slices, one per /vcache call, each started right after a ts3agent
+// mailbox heartbeat change (a fixed point of the sim tick) and capped in time; every read goes through a VirtualQuery
+// check (committed, readable, no PAGE_GUARD) before Frida's guarded read; methods without the transformed bit are skipped
+// and retried next snapshot; code reads are capped at 64 KB. The walker below is pure over a `mem` interface, so
+// tools/probe/vcache-check.mjs runs it on synthetic memory (no game).
+// --- vcache begin
 // pure: mint words -> callvirt sites [word offset, cache item, declared item] and call items; bad = first undecodable offset
 function vcDecode(w, lens) {
   const sites = [], calls = [];
@@ -848,118 +843,214 @@ function vcDecode(w, lens) {
   }
   return { sites, calls, bad: -1 };
 }
+// Walker over mem = { u32(a) -> number|null, u16s(a, bytes) -> Uint16Array|null (clamped to the readable region),
+// cstr(a) -> string|null, reset() (optional: drop cached region answers), lens() -> Uint8Array, tick() -> number|null (sim tick counter), now() -> ms, sleep(ms) }.
+// Addresses are plain numbers (32-bit process). seeds = { corlib, simulator } (addresses of the two seed globals).
+const VC_MAX_CODE = 0x10000, VC_MAX_SEEN = 200000, VC_MAX_CHAIN = 1000, VC_MAX_BUCKETS = 1 << 20, VC_MAX_METHODS = 20000;
+function vcWalker(mem, seeds) {
+  const vc = { rtms: new Map(), images: new Set(), sites: new Map(), names: new Map(), snaps: 0, firstAt: null, lastAt: null, stats: {}, cur: null, last: null };
+  const stat = (k, n = 1) => { vc.stats[k] = (vc.stats[k] || 0) + n; };
+  const ok = p => p !== null && p !== undefined && p >= 0x10000;
+  const u32 = a => mem.u32(a >>> 0);
+  const isRtm = p => { if (!ok(p)) return false; const m = u32(p + 8); return ok(m) && u32(m + 0x14) === p; };
+  const addImage = img => { if (ok(img)) vc.images.add(img); };
+  function className(k, d) {
+    const s = 'c' + k;
+    if (vc.names.has(s)) return vc.names.get(s);
+    const n = mem.cstr(u32(k + 0x34)) || '?', nest = u32(k + 0x28), ns = mem.cstr(u32(k + 0x38));
+    const r = ok(nest) && d < 8 ? `${className(nest, d + 1)}+${n}` : ns ? `${ns}.${n}` : n;
+    vc.names.set(s, r);
+    return r;
+  }
+  function methodKey(m) { // "Namespace.Outer+Inner::Name", as the docs/78 index keys without the parameter list
+    const s = 'm' + m;
+    let k = vc.names.get(s);
+    if (k === undefined) { const c = u32(m + 8); k = ok(c) ? `${className(c, 0)}::${mem.cstr(u32(m + 0x18)) || '?'}` : '?'; vc.names.set(s, k); }
+    return k;
+  }
+  // decoded once per RuntimeMethod after its transform finished; null = not (yet) transformed or unreadable (retried later)
+  function info(r) {
+    let inf = vc.rtms.get(r);
+    if (inf) return inf;
+    const flags = u32(r + 0x44);
+    if (flags === null) { stat('unreadable'); return null; }
+    if (!(flags & 0x100)) { stat('notTransformed'); return null; }
+    const code = u32(r), items = u32(r + 0x14), m = u32(r + 8);
+    if (!ok(code) || !ok(items) || !ok(m)) { stat('unreadable'); return null; }
+    const gap = (items - code) >>> 0; // data items are allocated right after the code from the same mempool
+    const bounded = gap > 0 && gap <= 0x40000;
+    if (bounded && gap > VC_MAX_CODE) { stat('tooBig'); vc.rtms.set(r, inf = { key: methodKey(m), sites: [], calls: [], bounded, bad: false }); return inf; }
+    const words = mem.u16s(code, bounded ? gap & ~1 : VC_MAX_CODE); // unbounded: up to the region end, decoded to the first bad opcode
+    if (!words) { stat('unreadable'); return null; }
+    const d = vcDecode(words, mem.lens());
+    const sites = [];
+    for (const [off, ci, di] of d.sites) { const decl = u32(items + 4 * di); if (isRtm(decl)) sites.push({ off, cache: items + 4 * ci, decl: methodKey(u32(decl + 8)) }); }
+    const calls = [];
+    for (const ci of d.calls) { const p = u32(items + 4 * ci); if (isRtm(p)) calls.push(p); }
+    inf = { key: methodKey(m), sites, calls, bounded, bad: d.bad >= 0 };
+    vc.rtms.set(r, inf);
+    if (!bounded) stat('unbounded');
+    if (d.bad >= 0 && bounded) stat('badDecode');
+    return inf;
+  }
+  function start(o) {
+    const c = vc.cur = { snap: ++vc.snaps, t0: mem.now(), workMs: 0, slices: 0, tickAligned: 0, dry: o.dry || 0,
+      maxMethods: o.dry || o.maxMethods || 60000, budgetMs: (o.budgetS || 120) * 1000,
+      seen: new Set(), q: [], walked: new Set(), img: 0, bucket: 0, buckets: 0, size: 0,
+      classes: 0, methods: 0, filled: 0, newPairs: 0, partial: false };
+    vc.firstAt = vc.firstAt ?? new Date(c.t0).toISOString();
+    addImage(u32(seeds.corlib));
+    const sim = u32(seeds.simulator); if (ok(sim)) addImage(u32(sim));
+    return c;
+  }
+  const push = (c, r) => {
+    if (!ok(r) || c.seen.has(r)) return;
+    if (c.seen.size >= VC_MAX_SEEN) { c.partial = true; return; }
+    c.seen.add(r); c.q.push(r);
+  };
+  // one unit of work: one hash bucket chain, one image opened, or one method; false = snapshot complete
+  function unit(c) {
+    if (c.img) {
+      if (c.bucket >= c.size) { c.img = 0; return true; }
+      let slot = u32(c.buckets + 4 * c.bucket++);
+      for (let guard = 0; ok(slot) && guard < VC_MAX_CHAIN; guard++, slot = u32(slot + 8)) {
+        const k = u32(slot + 4); if (!ok(k)) continue;
+        c.classes++;
+        const n = u32(k + 0x70), arr = u32(k + 0x94);
+        if (!ok(arr) || n === null || n > VC_MAX_METHODS) continue;
+        for (let i = 0; i < n; i++) { const m = u32(arr + 4 * i), r = ok(m) ? u32(m + 0x14) : null; push(c, r); }
+      }
+      return true;
+    }
+    for (const img of vc.images) {
+      if (c.walked.has(img)) continue;
+      c.walked.add(img);
+      const h = u32(img + 0x298), buckets = ok(h) ? u32(h + 8) : null, size = ok(h) ? u32(h + 0xc) : null;
+      if (!ok(buckets) || size === null || size > VC_MAX_BUCKETS) { stat('imageErrors'); return true; }
+      c.img = img; c.bucket = 0; c.buckets = buckets; c.size = size;
+      return true;
+    }
+    if (!c.q.length) return false;
+    if (c.methods >= c.maxMethods) { c.partial = !c.dry; return false; }
+    const r = c.q.pop(), inf = info(r);
+    if (!inf) return true;
+    c.methods++;
+    if (!c.dry) for (const p of inf.calls) push(c, p);
+    for (const st of inf.sites) {
+      const cls = u32(st.cache), tgt = u32(st.cache + 4);
+      if (!isRtm(tgt)) continue;
+      const tm = u32(tgt + 8);
+      c.filled++;
+      if (!c.dry) { push(c, tgt); addImage(ok(cls) ? u32(cls) : null); const tc = u32(tm + 8); addImage(ok(tc) ? u32(tc) : null); }
+      const key = `${inf.key}@${st.off}`;
+      let rec = vc.sites.get(key);
+      if (!rec) vc.sites.set(key, rec = { caller: inf.key, off: st.off, decl: st.decl, snaps: 0, last: 0, targets: {}, classes: {} });
+      if (rec.last !== c.snap) { rec.last = c.snap; rec.snaps++; }
+      const tk = methodKey(tm), ck = ok(cls) ? className(cls, 0) : '?';
+      if (!(tk in rec.targets)) c.newPairs++;
+      rec.targets[tk] = (rec.targets[tk] || 0) + 1; rec.classes[ck] = (rec.classes[ck] || 0) + 1;
+    }
+    return true;
+  }
+  const summary = (c, done) => ({ snap: c.snap, done, partial: c.partial, dry: c.dry, ms: mem.now() - c.t0, workMs: c.workMs, slices: c.slices,
+    tickAligned: c.tickAligned, images: vc.images.size, classes: c.classes, methods: c.methods, queued: c.q.length, decoded: vc.rtms.size,
+    filled: c.filled, sites: vc.sites.size, newPairs: c.newPairs, stats: vc.stats });
+  // one slice: wait up to waitMs for the next sim tick, then at most sliceMs of work (at least one unit)
+  function step(o = {}) {
+    if (mem.reset) mem.reset();
+    const c = vc.cur || start(o), sliceMs = o.sliceMs ?? 20, waitMs = o.waitMs ?? 100;
+    const t = mem.tick();
+    if (t !== null) {
+      const until = mem.now() + waitMs;
+      while (mem.tick() === t && mem.now() < until) mem.sleep(1);
+      if (mem.tick() !== t) c.tickAligned++;
+    }
+    const s0 = mem.now();
+    let more = true;
+    do { more = unit(c); } while (more && mem.now() - s0 < sliceMs);
+    c.workMs += mem.now() - s0; c.slices++;
+    if (more && mem.now() - c.t0 > c.budgetMs) { c.partial = true; more = false; }
+    if (more) return summary(c, false);
+    vc.cur = null; vc.lastAt = new Date().toISOString();
+    return (vc.last = summary(c, true));
+  }
+  const dump = () => ({ version: 1, snaps: vc.snaps, firstAt: vc.firstAt, lastAt: vc.lastAt, images: vc.images.size, decoded: vc.rtms.size,
+    stats: vc.stats, sites: [...vc.sites.values()].map(({ last, ...s }) => s) });
+  return { vc, step, dump, info };
+}
 function vcSelfCheck() {
   const L = new Uint8Array(0x1c1); L[0] = 1; L[0xea] = 2; L[0xeb] = 3; L[0xec] = 4; L[0xed] = 5; L[0x06] = 1; L[0x1ab] = 1;
   const w = Uint16Array.from([0, 0xea, 7, 0xe8, 2, 0, 1, 0, 2, 0, 0xec, 4, 0, 9, 0x1ab, 0xeb, 3, 8, 0xed, 6, 0, 5, 11, 0x06]);
   const r = vcDecode(w, L);
-  const ok = JSON.stringify(r) === JSON.stringify({ sites: [[10, 4, 9], [18, 6, 11]], calls: [7, 8], bad: -1 }) && vcDecode(Uint16Array.from([0, 0x1a9]), L).bad === 1;
-  if (!ok) throw new Error('vcDecode self-check failed: ' + JSON.stringify(r));
+  const good = JSON.stringify(r) === JSON.stringify({ sites: [[10, 4, 9], [18, 6, 11]], calls: [7, 8], bad: -1 }) && vcDecode(Uint16Array.from([0, 0x1a9]), L).bad === 1;
+  if (!good) throw new Error('vcDecode self-check failed: ' + JSON.stringify(r));
 }
-function vcIsRtm(p) {
-  try { if (p.isNull()) return false; const m = p.add(8).readPointer(); return !m.isNull() && m.add(0x14).readPointer().equals(p); } catch (e) { return false; }
-}
-function vcClassName(k, d) {
-  const s = 'c' + k;
-  if (vc.names.has(s)) return vc.names.get(s);
-  const n = cstr(safeRead(k.add(0x34))), nest = safeRead(k.add(0x28)), ns = cstr(safeRead(k.add(0x38)));
-  const r = nest && !nest.isNull() && d < 8 ? `${vcClassName(nest, d + 1)}+${n}` : ns ? `${ns}.${n}` : n;
-  vc.names.set(s, r);
-  return r;
-}
-function vcMethodKey(m) { // "Namespace.Outer+Inner::Name", as the docs/78 index keys without the parameter list
-  const s = m.toString();
-  let k = vc.names.get(s);
-  if (k === undefined) { const c = safeRead(m.add(8)); k = c && !c.isNull() ? `${vcClassName(c, 0)}::${cstr(safeRead(m.add(0x18)))}` : '?'; vc.names.set(s, k); }
-  return k;
-}
-function vcInfo(r) { // decoded once per RuntimeMethod after its transform finished; null = not (yet) transformed
-  const s = r.toString();
-  let info = vc.rtms.get(s);
-  if (info) return info;
-  try {
-    if (!(r.add(0x44).readU32() & 0x100)) return null;
-    const code = r.readPointer(), items = r.add(0x14).readPointer(), m = r.add(8).readPointer();
-    if (code.isNull() || items.isNull()) return null;
-    const gap = items.sub(code).toUInt32(); // data items are allocated right after the code from the same mempool
-    const bounded = gap > 0 && gap <= 0x40000;
-    let words = null;
-    for (const bytes of bounded ? [gap & ~1] : [0x10000, 0x2000, 0x400]) { try { words = new Uint16Array(code.readByteArray(bytes)); break; } catch (e) { /* range end: smaller */ } }
-    if (!words) return null;
-    const d = vcDecode(words, vcLens());
-    const item = i => safeRead(items.add(4 * i));
-    const sites = [];
-    // plain numbers, not NativePointers: this cache lives in the game's 32-bit address space for the whole run
-    for (const [off, ci, di] of d.sites) { const decl = item(di); if (decl && vcIsRtm(decl)) sites.push({ off, cache: items.add(4 * ci).toUInt32(), decl: vcMethodKey(decl.add(8).readPointer()) }); }
-    const calls = d.calls.map(item).filter(p => p && vcIsRtm(p)).map(p => p.toUInt32());
-    info = { key: vcMethodKey(m), sites, calls, bounded, bad: d.bad >= 0 };
-    vc.rtms.set(s, info);
-    vc.stats.unbounded = (vc.stats.unbounded || 0) + (bounded ? 0 : 1);
-    vc.stats.badDecode = (vc.stats.badDecode || 0) + (d.bad >= 0 && bounded ? 1 : 0);
-    return info;
-  } catch (e) { return null; }
-}
-function vcSnapshot(budgetS) {
-  if (!vc.lens) vcSelfCheck();
-  const t0 = Date.now(), snap = ++vc.snaps, seen = new Set(), q = [], walked = new Set();
-  vc.firstAt = vc.firstAt ?? new Date(t0).toISOString();
-  const push = r => { const s = r.toString(); if (!seen.has(s)) { seen.add(s); q.push(r); } };
-  const addImage = img => { if (img && !img.isNull()) vc.images.add(img.toString()); };
-  addImage(safeRead(VC.corlib));
-  const sim = safeRead(VC.simulator); if (sim && !sim.isNull()) addImage(safeRead(sim));
-  let classes = 0, filled = 0, newPairs = 0, partial = false;
-  for (;;) {
-    for (const s of [...vc.images]) {
-      if (walked.has(s)) continue;
-      walked.add(s);
-      try {
-        const h = ptr(s).add(0x298).readPointer(), buckets = h.add(8).readPointer(), size = h.add(0xc).readU32();
-        for (let b = 0; b < size && b < 1 << 20; b++) {
-          for (let slot = safeRead(buckets.add(4 * b)), guard = 0; slot && !slot.isNull() && guard < 10000; slot = safeRead(slot.add(8)), guard++) {
-            const k = safeRead(slot.add(4)); if (!k || k.isNull()) continue;
-            classes++;
-            const n = k.add(0x70).readU32(), arr = safeRead(k.add(0x94));
-            if (!arr || arr.isNull() || n > 20000) continue;
-            for (let i = 0; i < n; i++) { const m = safeRead(arr.add(4 * i)), r = m && !m.isNull() ? safeRead(m.add(0x14)) : null; if (r && !r.isNull()) push(r); }
-          }
-        }
-      } catch (e) { vc.stats.imageErrors = (vc.stats.imageErrors || 0) + 1; }
-    }
-    if (!q.length) break;
-    while (q.length) {
-      if (Date.now() - t0 > budgetS * 1000) { partial = true; q.length = 0; break; }
-      const r = q.pop(), info = vcInfo(r);
-      if (!info) continue;
-      for (const c of info.calls) push(ptr(c));
-      for (const st of info.sites) {
-        const cache = ptr(st.cache), cls = safeRead(cache), tgt = safeRead(cache.add(4));
-        if (!tgt || tgt.isNull() || !vcIsRtm(tgt)) continue;
-        filled++;
-        push(tgt);
-        addImage(safeRead(cls));
-        const tm = tgt.add(8).readPointer(); addImage(safeRead(tm.add(8)));
-        const key = `${info.key}@${st.off}`;
-        let rec = vc.sites.get(key);
-        if (!rec) vc.sites.set(key, rec = { caller: info.key, off: st.off, decl: st.decl, snaps: 0, last: 0, targets: {}, classes: {} });
-        if (rec.last !== snap) { rec.last = snap; rec.snaps++; }
-        const tk = vcMethodKey(tm), ck = cls && !cls.isNull() ? vcClassName(cls, 0) : '?';
-        if (!(tk in rec.targets)) newPairs++;
-        rec.targets[tk] = (rec.targets[tk] || 0) + 1; rec.classes[ck] = (rec.classes[ck] || 0) + 1;
-      }
-    }
-    if (partial || [...vc.images].every(s => walked.has(s))) break;
+// --- vcache end
+const VC = { corlib: 0x1220e40, simulator: 0x1220f34, oplen: ptr('0x1195088'), superTab: ptr('0x108fcd8') };
+let vcLensTab = null;
+function vcLens() {
+  if (vcLensTab) return vcLensTab;
+  const t = new Uint8Array(VC.oplen.readByteArray(0x1ab)), lens = new Uint8Array(0x1c1);
+  lens.set(t);
+  for (let op = 0x1ab; op <= 0x1c0; op++) { // superop entry k = op - 0x1AA: u32 hash, u16 count, u16[count] base opcodes
+    const e = VC.superTab.add(72 * (op - 0x1aa)), first = e.add(4).readU16() ? e.add(6).readU16() : 0;
+    lens[op] = first && first < 0x1ab ? t[first] : 0;
   }
-  vc.lastAt = new Date().toISOString();
-  return { snap, ms: Date.now() - t0, partial, images: vc.images.size, classes, methods: seen.size, decoded: vc.rtms.size, filled, sites: vc.sites.size, newPairs, stats: vc.stats };
+  return (vcLensTab = lens);
 }
+// Live memory for the walker: a VirtualQuery region check (committed, readable, not PAGE_GUARD / NOACCESS) before every
+// Frida read. A guarded read alone is not enough: touching a PAGE_GUARD page clears the guard (a thread stack's guard page
+// then no longer grows the stack) even though Frida turns the fault into a JS exception. Region answers are cached per page
+// for one slice only (the heap changes between slices).
+const vcMbi = Memory.alloc(MBI_SIZE);
+let vcRegions = new Map();
+function vcRegionEnd(a) { // end of the readable committed region holding a, or 0
+  const page = Math.floor(a / 4096);
+  let e = vcRegions.get(page);
+  if (e === undefined) {
+    if (vcRegions.size > 50000) vcRegions = new Map();
+    e = 0;
+    if (VirtualQuery(ptr(page * 4096), vcMbi, MBI_SIZE) !== 0) {
+      const base = vcMbi.readPointer().toUInt32(), size = vcMbi.add(12).readU32(), state = vcMbi.add(16).readU32(), prot = vcMbi.add(20).readU32();
+      if (state === MEM_COMMIT && !(prot & 0x101) && (prot & 0xee)) e = base + size; // 0x101 NOACCESS|GUARD; 0xEE any readable
+    }
+    vcRegions.set(page, e);
+  }
+  return e;
+}
+const vcMem = {
+  u32(a) { if (a < 0x10000 || a > 0xfffffffb || vcRegionEnd(a) < a + 4) return null; try { return ptr(a).readU32(); } catch (e) { return null; } },
+  u16s(a, n) {
+    const end = vcRegionEnd(a); if (!end) return null;
+    n = Math.min(n, end - a) & ~1; if (n < 2) return null;
+    try { return new Uint16Array(ptr(a).readByteArray(n)); } catch (e) { return null; }
+  },
+  cstr(a) {
+    if (!a || a < 0x10000) return null;
+    const end = vcRegionEnd(a), n = Math.min(120, end - a); if (!end || n < 1) return null;
+    try { const b = new Uint8Array(ptr(a).readByteArray(n)); let e = 0; while (e < b.length && b[e] >= 0x20 && b[e] < 0x7f) e++; return String.fromCharCode(...b.subarray(0, e)); } catch (e) { return null; }
+  },
+  lens: vcLens,
+  reset() { vcRegions = new Map(); },
+  tick() { try { return mailbox && mailboxValid(mailbox) ? mailbox.add(MBX.offHeartbeat).readU32() : null; } catch (e) { return null; } },
+  now: () => Date.now(),
+  sleep(ms) { Thread.sleep(ms / 1000); },
+};
+const vcw = vcWalker(vcMem, VC);
 
 rpc.exports = {
-  // docs/133: snap=1 takes one callvirt-cache snapshot (budget s); out=PATH writes the union so far as JSON.
-  vcache(snap, budgetS, out) {
-    const r = snap ? vcSnapshot(budgetS || 30) : { snaps: vc.snaps, sites: vc.sites.size };
+  // docs/133 §5: snap=1 runs ONE slice of the current callvirt-cache snapshot (starts one when none runs) and returns
+  // within ~wait + slice ms, so agentstatus and every other call stay answered; the caller repeats until done=true.
+  // budgetS = wall seconds per snapshot (then partial), o.slice = ms of work per call, o.wait = ms to wait for the next
+  // sim tick, o.dry = walk only N methods (no call / target following), o.max = method cap. out=PATH writes the union.
+  vcache(snap, budgetS, out, o) {
+    o = o || {};
+    if (!vcw.vc.snaps) vcSelfCheck();
+    const r = snap ? vcw.step({ budgetS: budgetS || 120, sliceMs: o.slice, waitMs: o.wait, dry: o.dry, maxMethods: o.max })
+                   : { snaps: vcw.vc.snaps, sites: vcw.vc.sites.size, running: !!vcw.vc.cur, last: vcw.vc.last };
     if (out) {
       const f = new File(out, 'w');
-      f.write(JSON.stringify({ version: 1, snaps: vc.snaps, firstAt: vc.firstAt, lastAt: vc.lastAt, images: vc.images.size, decoded: vc.rtms.size, stats: vc.stats,
-        sites: [...vc.sites.values()].map(({ last, ...s }) => s) }));
+      f.write(JSON.stringify(vcw.dump()));
       f.flush(); f.close();
       r.wrote = out;
     }
@@ -1243,6 +1334,47 @@ rpc.exports = {
       if (c.readS32() >= 71) f.push('p4Borrow', 'p4BorrowMiss', 'p4BorrowDirty');
       // v72 (0.35.8, docs/94 §21.23): replay child table entries kept for a reused live child address
       if (c.readS32() >= 72) f.push('rpKidsKept');
+      // v73 (0.36.7, docs/134): sync fallback freezes; fbMode is the `--ab fallbackasync` switch, fbCapUs = SyncCapMs in us
+      if (c.readS32() >= 73) f.push('fbMode', 'fbForeign', 'fbForeignStarted', 'fbPendApplied', 'fbPendBusy', 'fbDeepQueued',
+        'fbCapUs', 'fbCapped', 'fbStacks', 'fbActiveTrip');
+      // v74 (docs/89 §10): design U; usfMode is the `--ab deferfootprint` switch
+      if (c.readS32() >= 74) f.push('usfReady', 'usfMode', 'usfCalls', 'usfInJob', 'usfPass', 'usfEarlyOut', 'usfDeferred',
+        'usfOrderDefer', 'usfDup', 'usfParkedPass', 'usfFullDrain', 'usfFullPass', 'usfApplied', 'usfCollapsed', 'usfDestroyApplied',
+        'usfGoneEnable0', 'usfSwept', 'usfGoneEnable1', 'usfIdMismatch', 'usfAgeMaxMs', 'usfApplyInJob');
+      // v75 (docs/134 §2.6): M1Retry, fbRetryMode = `--ab m1retry`
+      if (c.readS32() >= 75) f.push('fbRetryMode', 'fbRetryParked', 'fbRetryQueued', 'fbRetryGaveUp', 'fbRetryTicksMax');
+      // v76 (docs/88 §10): design G standalone, [Discourage] DestroyPark; dpMode is the `--ab destroypark` switch
+      if (c.readS32() >= 76) f.push('dpReady', 'dpMode', 'dpParked', 'dpKeptWait');
+      // v77 (docs/137): [AvoidRO] (v74 on its branch, moved at the 0.36.12 merge); avMode / avShadow are the `--ab avoidro` / `--ab avoidshadow` switches
+      if (c.readS32() >= 77) f.push('avReady', 'avMode', 'avShadow', 'avTakenHit', 'avTakenMiss', 'avTakenB', 'avSiteSkip',
+        ...['State', 'Try', 'Dirty', 'LotMiss', 'Deferred', 'Cache', 'Shape', 'Trip', 'Pin', 'JobEnd'].map(n => `avFb${n}`), 'avUs',
+        'avMaxUs', 'avTripAv', 'avTwSite81D090', 'avTwSite85FF30', 'avShadowRuns', 'avShadowMismatch', 'avShadowMismatchB',
+        'avShadowQueryMismatch', 'avShadowOrder', 'avShadowSimScan', 'avSimWriteInRo');
+      // v78 (docs/142, [RouteEarlyOut] probe; after v77): eoMode is the `--ab earlyout` switch;
+      // eoProvWhy_<0 car components, 1 game colours, 2 same-request memo>; eoWrong must stay 0
+      if (c.readS32() >= 78) f.push('eoMode', 'eoReady', 'eoReqs', 'eoAs', 'eoAsFail', 'eoAsMs', 'eoAsMaxUs', 'eoProv', 'eoProvMs',
+        ...n('eoProvWhy', 3), 'eoWrong', 'eoReachMax', 'eoLabelBuilds', 'eoLabelUs', 'eoSlow', 'eoSlowMs', 'eoSlowAsMs',
+        'eoSlowProvMs', 'eoSlowSaved');
+      // v79 ([UnseenProbe], docs/143, unseen.cpp): class 0 visible, 1 unseen, 2 outside an agent update / unknown; kind 0 Sim,
+      // 1 other. unAgents_<class>_<kind>, unAcq_<class>_<0 steering, 1 avoidance, 2 other>, unWaitN_<class>_<0 steering,
+      // 1 avoidance, 2 footprint, 3 other>, unPlan_<0 other route, 1 car-only>_<class>. Report: tools/harness/unseen-report.ts
+      if (c.readS32() >= 79) f.push('unReady', 'unPasses', 'unCamFail', 'unSkipped', 'unFlips', ...n('unAgents', 4, 2),
+        ...n('unAgentUs', 4, 2), ...n('unAgentMaxUs', 2), ...n('unAcq', 9, 3), ...n('unWaitN', 12, 4), ...n('unWaitUs', 12, 4),
+        ...n('unFp', 3), ...n('unFpUs', 3), ...n('unPlan', 6, 3), ...n('unPlanUs', 6, 3), 'unReachX10', ...n('unEaOff', 2),
+        // v79 [UnseenThrottle] (docs/143 §6): utMode is the `--ab unseenthrottle` switch; utWhy_<i> = why a call ran (unseen.cpp
+        // UTW_*: off, no agent, visible, EA byte, state, linked, viewer, no viewers, after, turn, near goal, portal, path)
+        'utMode', 'utReady', 'utEvery', 'utCalls', 'utRun', 'utSkipped', ...n('utWhy', 13), 'utPathUs', 'utViewerPushes', 'utViewers',
+        'utViewerBad');
+      // v80 [UnseenThrottle] phase 2 (docs/143 §8): switches unseenavoid / unseenfootprint / unseenrate; utAvWhy_<i> and
+      // utRateWhy_<i> = UTW_* (as utWhy, then 13 not a Sim, 14 short timer, 15 new path, 16 step cap, 17 slot taken);
+      // utFpWhy_<i> = UTF_* (off, pass, no class, visible, not a Sim, viewer, no viewers, parked, change, due, full, rider)
+      if (c.readS32() >= 80) f.push('utAvMode', 'utFpMode', 'utRateMode', 'ut2Ready', 'utAvCalls', 'utAvSkipped', ...n('utAvWhy', 18),
+        'utFpCalls', 'utFpSkipped', 'utFpCoalesced', 'utFpFlushed', 'utFpGone', ...n('utFpWhy', 12), 'utFpFlushUs', 'utFpPendMax',
+        'utRateCalls', 'utRateSkipped', ...n('utRateWhy', 18), 'utRateCatchUp', 'utRateDebtMaxUs', 'utRateDropped',
+        // utSnap_<part> / utSnapMaxMs_<part>: visible snap-backs after a skip, part 0 list, 1 avoidance, 2 footprint, 3 rate
+        ...n('utSnap', 4), ...n('utSnapMaxMs', 4));
+      // v81 (0.36.16, docs/134 §10): fbjcMode is the `--ab fbjobcap` switch
+      if (c.readS32() >= 81) f.push('fbjcMode', 'fbjcCapUs', 'fbjcCapped', 'fbjcMaxUs', 'ownJobMaxUs', 'fbjcLong', 'ownJobLong');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
@@ -1331,6 +1463,10 @@ rpc.exports = {
       if (v >= 4) { // v4: +0x760 abort2[2] (reasons 20 rain, 21 posture, into a.abort), +0x768 rngPause, +0x76C rngPauseDraws
         Object.assign(a.abort, { rain: rd(472), posture: rd(473) });
         Object.assign(a, { rngPause: rd(474), rngPauseDraws: rd(475) });
+      }
+      if (v >= 5) { // v5: +0x770 abortRoute (reason 22, H12), +0x774 cutSite (1 loop-back, 2 after the sim pump), +0x778 overrunIdle
+        a.abort.route = rd(476);
+        Object.assign(a, { cutSite: rd(477), overrunIdle: rd(478) });
       }
       r.autshadow = a;
     }

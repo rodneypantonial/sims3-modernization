@@ -1,8 +1,8 @@
 [
   {
     "id": "bp-worldimage",
-    "note": "Mono M3 first real world images (docs/123 §8.6). CORRECTNESS ONLY, never a timing run: each capture stalls the game a few seconds. [WorldImage] Enabled=1, MaxCaptures=2; queue.ts fills OutDir=<repo>\\game-copy\\worldimage (git-ignored: images hold the game's whole memory, personal data included) and Helper=<repo>\\native\\worldimage\\out\\worldimage.exe (run in place, nothing extra in Bin; build it first). ~2 GB disk per capture (raw mem.bin), 4 GB for this job. asi = tested build, which must include the M3.1 section + the G3-1 statics (docs/123 §8.6). Pass = 2 captures with header.txt complete; row.worldimage has stall ms, MB, loose, lock owners at the cut (I-123-17) and the G3-1 statics read (6/6 expected). Then offline: monohost <exe> <asm> image <dir> (G3-1 lines).",
-    "asi": "game-copy/ts3native.asi.master0352x",
+    "note": "0.36.7 (docs/51 §188): the capture now polls at the end of every 30th Simulate iteration (simloop.cpp); 0.35.x/0.36.6 polled only when Simulate returned, which it never does during play (request not taken, 2026-10-20). asi = game-copy/ts3native.asi.0368 (copy native/ts3native/out/ts3native.asi of the §188 commit; needs native/worldimage/out/worldimage.exe built). ts3native.log must show 'OK   sim loop: world image runs at the end of every Simulate iteration'. Mono M3 first real world images (docs/123 §8.6). CORRECTNESS ONLY, never a timing run: each capture stalls the game a few seconds. [WorldImage] Enabled=1, MaxCaptures=2; queue.ts fills OutDir=<repo>\\game-copy\\worldimage (git-ignored: images hold the game's whole memory, personal data included) and Helper=<repo>\\native\\worldimage\\out\\worldimage.exe (run in place, nothing extra in Bin; build it first). ~2 GB disk per capture (raw mem.bin), 4 GB for this job. asi = tested build, which must include the M3.1 section + the G3-1 statics (docs/123 §8.6). Pass = 2 captures with header.txt complete; row.worldimage has stall ms, MB, loose, lock owners at the cut (I-123-17) and the G3-1 statics read (6/6 expected). Then offline: monohost <exe> <asm> image <dir> (G3-1 lines).",
+    "asi": "game-copy/ts3native.asi.0368",
     "save": "Baseline-BP-Spring",
     "ini": {
       "WorldImage.Enabled": 1,
@@ -14,8 +14,8 @@
   },
   {
     "id": "ip-worldimage",
-    "note": "Same as bp-worldimage on Isla Paradiso (more lots, boats, water). CORRECTNESS ONLY, never a timing run. ~4 GB disk for 2 captures.",
-    "asi": "game-copy/ts3native.asi.master0352x",
+    "note": "0.36.7 (docs/51 §188): the capture now polls at the end of every 30th Simulate iteration (simloop.cpp); 0.35.x/0.36.6 polled only when Simulate returned, which it never does during play (request not taken, 2026-10-20). asi = game-copy/ts3native.asi.0368 (copy native/ts3native/out/ts3native.asi of the §188 commit; needs native/worldimage/out/worldimage.exe built). ts3native.log must show 'OK   sim loop: world image runs at the end of every Simulate iteration'. Same as bp-worldimage on Isla Paradiso (more lots, boats, water). CORRECTNESS ONLY, never a timing run. ~4 GB disk for 2 captures.",
+    "asi": "game-copy/ts3native.asi.0368",
     "save": "Baseline-IP-Spring",
     "ini": {
       "WorldImage.Enabled": 1,

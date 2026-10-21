@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using Sims3.Gameplay;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.Core;
 using Sims3.SimIFace;
@@ -67,9 +68,62 @@ namespace Ts3Fixes
                     PatchCounters()[67]++;
                     return;
                 }
+                if (sim != null && ShortcutOn("stuckcheckasync") && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown)
+                {
+                    StuckCheckDefer(this, sim);
+                    return;
+                }
                 RunOrig(sim);
             }
             public void RunOrig(Sim sim) { } // receives RunStuckCheckHelper.RunStuckCheck's original header
+        }
+
+        // docs/134 §8: the stuck check's alarm runs inside the world lot's task (Lot.Simulate -> AlarmManager.Simulate, a plain
+        // alarm, not YieldRequired). Its plans are foreign-task plans there, so with [RouteAsync] FallbackAsync=1 the world lot
+        // task sleeps inside the alarm while the worker plans (up to 10 plans per Sim), holding back every later world alarm
+        // and the world lot's own updates; with FallbackAsync=0 they all run in one tick. Switch "stuckcheckasync" (default off):
+        // the alarm only queues the check; our one task runs the game's own RunStuckCheck (RunOrig, same helper object, so the
+        // same position test, attempt count, reset or re-arm) for one Sim per tick. Its plans are still foreign-task plans (our
+        // task is not the Sim's), so FallbackAsync sends them to the worker and only our task sleeps. The check runs >= 1 tick
+        // after the alarm instead of in it. Counters: [127] queued, [128] run, [129] dropped (Sim gone, world left, exception),
+        // [130] most waiting at once, [131] longest wait in sim-seconds.
+        sealed class StuckCheck { public StuckCheckBusyHook Helper; public Sim Sim; } // Helper is really a RunStuckCheckHelper (swapped body)
+        static readonly SliceQueue<StuckCheck> sStuckQueue = new SliceQueue<StuckCheck>();
+        static ObjectGuid sStuckTask = ObjectGuid.InvalidObjectGuid;
+
+        static void StuckCheckDefer(StuckCheckBusyHook helper, Sim sim)
+        {
+            int[] c = PatchCounters();
+            if (!(sStuckTask.IsValid && Simulator.GetTask(sStuckTask) != null))
+            {
+                c[129] += sStuckQueue.Clear(); // left over from a task the world unload killed
+                sStuckTask = Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(StuckCheckDrain));
+            }
+            StuckCheck e = new StuckCheck();
+            e.Helper = helper;
+            e.Sim = sim;
+            sStuckQueue.Add(e, Sims3.Gameplay.Utilities.SimClock.CurrentTicks);
+            c[127]++;
+            c[130] = sStuckQueue.MaxDepth;
+        }
+
+        static void StuckCheckDrain()
+        {
+            int[] c = PatchCounters();
+            try
+            {
+                StuckCheck e;
+                while (sStuckQueue.Next(Sims3.Gameplay.Utilities.SimClock.CurrentTicks, out e))
+                {
+                    c[131] = (int)(sStuckQueue.MaxWait * 60 / Math.Max(1L, Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(1f, Sims3.Gameplay.Utilities.TimeUnit.Minutes)));
+                    if (GameStates.IsWorldShuttingDown || GameStates.IsTravelling || e.Sim.HasBeenDestroyed) { c[129]++; continue; }
+                    c[128]++;
+                    try { e.Helper.RunOrig(e.Sim); }
+                    catch (Exception) { c[129]++; } // the alarm's own caller (AlarmManager.Simulate) swallows these too
+                    if (sStuckQueue.Count > 0) Simulator.Sleep(0); // one Sim per tick
+                }
+            }
+            finally { sStuckTask = ObjectGuid.InvalidObjectGuid; }
         }
     }
 }

@@ -58,7 +58,8 @@ namespace Ts3Fixes
     // reference runs, [118] requests posted, [119] Begin busy, [120] mod-guard skips, [121] managed exceptions in the driver,
     // [122] scoring-function skips (G-M2, code sf), [123] closure methods L3-checked by the last sweep (G-M4), [124] its time
     // (us), [125] foreign swaps it found, [126] mod types overriding a closure virtual (G-M5).
-    // Abort reasons per pair: AppDomain data ts3fixes.autshadow.reasons (int[22], native reason order; 20 rain, 21 posture).
+    // Abort reasons per pair: AppDomain data ts3fixes.autshadow.reasons (int[23], native reason order; 20 rain, 21 posture,
+    // 22 route: a ScriptCore.Route IC on the worker, H12).
     public static partial class Fixes
     {
         const int kMaxObjs = 1024, kMaxPairs = 8192, kMaxLogPerLoad = 200;
@@ -102,7 +103,7 @@ namespace Ts3Fixes
         static readonly List<Vector3> sBakeSales = new List<Vector3>();
         static readonly string sEmpty = "";
         static readonly Exception sFmtException = new FormatException("autshadow");
-        static readonly int[] sReasons = new int[22];
+        static readonly int[] sReasons = new int[23];
 
         // State. sPosted: a request is with ts3native until AutFinish. sInWork: the worker is inside AutWork (worker hooks gate).
         // sInRef: the sim thread is inside AutReference (hooked calls draw from a scratch stream, docs/125 addendum §4.1).
@@ -186,19 +187,30 @@ namespace Ts3Fixes
                     throw new MissingMemberException("private member not found");
             }
             catch (Exception e) { AppliedLog().Add("AutShadow: off: " + e.Message); sSessionOff = true; return; }
-            // Worker shims first: the request hook goes in only when every worker hook did.
-            bool ok = Patch(typeof(Sim), "IsAllowedInRoom", new Type[] { typeof(ulong), typeof(int) }, typeof(AutRoomHook), "AllowedHook", "AllowedOrig")
-                & Patch(typeof(Sim), "get_NumSimsDoingGardening", null, typeof(AutGardenHook), "GardenHook", "GardenOrig")
-                & Patch(typeof(Localization), "LocalizeString", new Type[] { typeof(ulong) }, typeof(AutLocHook), "KeyHook", "KeyOrig")
-                & Patch(typeof(Localization), "LocalizeString", new Type[] { typeof(string), typeof(object[]) }, typeof(AutLocHook), "StrHook", "StrOrig")
-                & Patch(typeof(Localization), "LocalizeString", new Type[] { typeof(bool), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemHook", "FemOrig")
-                & Patch(typeof(Localization), "LocalizeString", new Type[] { typeof(bool[]), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemsHook", "FemsOrig")
-                & Patch(typeof(OnlineDatingManager), "DidSimsMeetOnline", new Type[] { typeof(ulong), typeof(ulong) }, typeof(AutDatingHook), "MetHook", "MetOrig")
-                & Patch(typeof(MetaAutonomyTuning), "GetSimCountForVenueWithCustomDesireFunction", null, typeof(AutDesireHook), "DesireHook", "DesireOrig")
-                & Patch(typeof(Punishment), "GetPunishmentManagerFromSim", new Type[] { typeof(Sim) }, typeof(AutPunishHook), "PunishHook", "PunishOrig")
-                & Patch(typeof(Sims3.Gameplay.ActorSystems.Posture), "get_Interactions", null, typeof(AutPostureHook), "ListHook", "ListOrig");
-            sCalcPatched = Patch(typeof(AutonomyT), "CalculateScore", new Type[] { typeof(InteractionObjectPair) }, typeof(AutScoreHook), "ScoreHook", "ScoreOrig");
-            sHooksOk = ok && sCalcPatched && Patch(typeof(AutonomyT), "ScoreInteractionsForMetaAutonomy", null, typeof(AutMetaHook), "MetaHook", "MetaOrig");
+            // Worker shims: Modes 1/2 need every one (TryRequest refuses them otherwise); Mode 0 (count only) runs no managed
+            // code off the sim thread and needs none. docs/51 §188: one failed shim used to keep MetaHook out as well, which
+            // silenced the requests and the ledger scope with no line saying which patch failed.
+            List<string> failed = new List<string>();
+            bool ok = Hook(failed, typeof(Sim), "IsAllowedInRoom", new Type[] { typeof(ulong), typeof(int) }, typeof(AutRoomHook), "AllowedHook", "AllowedOrig")
+                & Hook(failed, typeof(Sim), "get_NumSimsDoingGardening", null, typeof(AutGardenHook), "GardenHook", "GardenOrig")
+                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(ulong) }, typeof(AutLocHook), "KeyHook", "KeyOrig")
+                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(string), typeof(object[]) }, typeof(AutLocHook), "StrHook", "StrOrig")
+                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(bool), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemHook", "FemOrig")
+                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(bool[]), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemsHook", "FemsOrig")
+                & Hook(failed, typeof(OnlineDatingManager), "DidSimsMeetOnline", new Type[] { typeof(ulong), typeof(ulong) }, typeof(AutDatingHook), "MetHook", "MetOrig")
+                & Hook(failed, typeof(MetaAutonomyTuning), "GetSimCountForVenueWithCustomDesireFunction", null, typeof(AutDesireHook), "DesireHook", "DesireOrig")
+                & Hook(failed, typeof(Punishment), "GetPunishmentManagerFromSim", new Type[] { typeof(Sim) }, typeof(AutPunishHook), "PunishHook", "PunishOrig")
+                & Hook(failed, typeof(Sims3.Gameplay.ActorSystems.Posture), "get_Interactions", null, typeof(AutPostureHook), "ListHook", "ListOrig")
+                & Hook(failed, typeof(SimRoutingComponent), "CreateRoute", Type.EmptyTypes, typeof(AutRouteHook), "RouteHook", "RouteOrig")
+                & Hook(failed, typeof(SimRoutingComponent), "CreateRoute", new Type[] { typeof(Sims3.SimIFace.CAS.CASAgeGenderFlags) }, typeof(AutRouteHook), "AgsHook", "AgsOrig")
+                & Hook(failed, typeof(SimRoutingComponent), "CreateRouteAsAdult", null, typeof(AutRouteHook), "AdultHook", "AdultOrig");
+            sCalcPatched = Hook(failed, typeof(AutonomyT), "CalculateScore", new Type[] { typeof(InteractionObjectPair) }, typeof(AutScoreHook), "ScoreHook", "ScoreOrig");
+            sHooksOk = ok && sCalcPatched;
+            // B13: requests (any mode) and the ledger scope (autledger) both enter here; it passes through while both are off
+            if (!Hook(failed, typeof(AutonomyT), "ScoreInteractionsForMetaAutonomy", null, typeof(AutMetaHook), "MetaHook", "MetaOrig"))
+                AppliedLog().Add("AutShadow: B13 hook (Autonomy.ScoreInteractionsForMetaAutonomy) not patched: no requests, no ledger scopes");
+            if (failed.Count > 0)
+                AppliedLog().Add("AutShadow: not patched: " + string.Join(", ", failed.ToArray()) + (sHooksOk ? "" : "; Modes 1/2 off, Mode 0 (count only) still runs"));
             AppDomain.CurrentDomain.SetData("ts3fixes.autshadow.reasons", sReasons);
             MvidCheck();
         }
@@ -223,6 +235,16 @@ namespace Ts3Fixes
             bool scOk = false;
             foreach (string raw in kScriptCoreMvids) scOk |= sc == AutShadowCore.GuidNFromRaw(raw);
             if (!scOk) AppliedLog().Add("AutShadow: ScriptCore MVID " + sc + " unknown: per-method L3 only (G-M4 sweep)");
+        }
+
+        // Fixes.Patch, plus the exact overload in `failed` when it is refused (its own line names only Type.Method)
+        static bool Hook(List<string> failed, Type target, string method, Type[] args, Type hook, string replacement, string stub)
+        {
+            if (Patch(target, method, args, hook, replacement, stub)) return true;
+            string sig = "";
+            if (args != null) foreach (Type a in args) sig += (sig.Length > 0 ? "," : "") + a.Name;
+            failed.Add(target.Name + "." + method + "(" + (args == null ? "" : sig) + ")");
+            return false;
         }
 
         static string Mvid(Assembly a) { return a.ManifestModule.ModuleVersionId.ToString("N"); }
@@ -265,12 +287,19 @@ namespace Ts3Fixes
             for (int i = 0; i <= 64; i++) { AutShadowNative.Config(10); if (i < 64) Simulator.Sleep(1); }
         }
 
-        // World load finished (Instantiator): per-load state; ts3native is probed again at the next sampled search.
+        // World load finished (Instantiator): per-load state; ts3native is probed again at the next sampled search. With the
+        // switch on, the mod guard sweep (G-M4 L3 over ~690 methods, ~65-110 ms, docs/128 §5.1) runs here, under the load,
+        // instead of as a hitch inside the first sampled search; Ready() sweeps only if this did not (switch turned on later).
         internal static void AutShadowWorldLoad()
         {
             sLedger = 0;
             sProbe = 0; sPosted = false; sInWork = false; sGameAut = null; sWarmIn = 0; sLogged = 0; sWorkReady = sGameDone = false;
+            sSweptAtLoad = false;
+            if (sSessionOff || !ShortcutOn("autshadow")) return;
+            try { sSweptAtLoad = GuardSweep(); }
+            catch (Exception e) { AutNote("load sweep: " + e.Message); }
         }
+        static bool sSweptAtLoad;
 
         // ---- probe, warm-up, mod guard (sim thread) ----
 
@@ -284,10 +313,10 @@ namespace Ts3Fixes
             if (v != 4) { AppliedLog().Add("AutShadow: ts3native contract version " + v + ", want 4 (off)"); return false; }
             try
             {
-                if (!GuardSweep()) return false;
+                if (!sSweptAtLoad && !GuardSweep()) return false;
                 // Warm-up: nothing is pending, so each returns at once; it transforms them on the sim thread first.
                 AutFinish(); AutReference(); AutWork();
-                AutRoomHook.Warm(); AutDatingHook.Warm();
+                AutRoomHook.Warm(); AutDatingHook.Warm(); AutRouteHook.Warm();
                 sRain.TargetIsSim(); AutShadowCore.RainShelter(false, sRain, 0, 0); if (Sims3.Gameplay.Seasons.SeasonsManager.Enabled) sRain.Weather();
                 sSample = Math.Max(1, AutShadowNative.Config(1));
                 sWarmInMax = AutShadowNative.Config(2);
@@ -474,7 +503,7 @@ namespace Ts3Fixes
         {
             if (++sCalls % sSample != 0 || sPosted || sGameAut != null || !Ready()) return;
             int mode = AutShadowNative.Config(0);
-            if (mode < 0) return;
+            if (mode < 0 || (mode > 0 && !sHooksOk)) return;  // Modes 1/2 run managed code on the worker: every shim must be in
             sSample = Math.Max(1, AutShadowNative.Config(1));
             // G-M4: again after a MonoPatcher ForceJIT byte change or a ts3agent patch_* swap (it sets the flag)
             bool resweep = AppDomain.CurrentDomain.GetData("ts3fixes.autshadow.resweep") != null;
@@ -935,6 +964,24 @@ namespace Ts3Fixes
             }
             public List<InteractionObjectPair> ListOrig() { return null; } // receives Posture.get_Interactions' original header
         }
+        // H12 (docs/127 §7.2): SimRoutingComponent.CreateRoute(), CreateRoute(flags), CreateRouteAsAdult() on the worker
+        // return a handle-0 ScriptCore.Route from its public parameterless constructor (no Route_CreateRoute, no IC, no
+        // static write [verified: methods.csv]; its finalizer skips Route_DestroyRoute for handle 0) and skip
+        // SetRouteOptions (it reaches the UIManager wrapper cache). Any route IC the Test then calls aborts `route` in the
+        // ts3native guard (never the body). Sim thread and reference: the game's method.
+        public class AutRouteHook
+        {
+            public Route RouteHook() { return OnWorker() ? Stub() : RouteOrig(); }
+            public Route RouteOrig() { return null; } // receives SimRoutingComponent.CreateRoute()'s original header
+            public Route AgsHook(Sims3.SimIFace.CAS.CASAgeGenderFlags ags) { return OnWorker() ? Stub() : AgsOrig(ags); }
+            public Route AgsOrig(Sims3.SimIFace.CAS.CASAgeGenderFlags ags) { return null; } // CreateRoute(CASAgeGenderFlags)'s header
+            public Route AdultHook() { return OnWorker() ? Stub() : AdultOrig(); }
+            public Route AdultOrig() { return null; } // receives SimRoutingComponent.CreateRouteAsAdult()'s original header
+            static Route Stub() { return new ScriptCore.Route(); }
+            // I-122-37: the constructor is transformed on the sim thread first (the handle-0 route is dropped at once)
+            internal static void Warm() { Stub(); }
+        }
+
         // H6: Punishment.GetPunishmentManagerFromSim on the worker: an existing manager is read; creating one aborts.
         public static class AutPunishHook
         {

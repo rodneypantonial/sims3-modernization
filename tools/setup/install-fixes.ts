@@ -240,6 +240,17 @@ function generated(f: Fix, rec: Installed): boolean {
       place(f, rec, p, () => copyFileSync(built, p));
       return true;
     }
+    case 'nraas-upstream-base':
+    case 'nraas-upstream-v2': {
+      // test only: prebuilt by build-nraas-upstream.ts (needs an NRaas clone), so no build here
+      for (const name of f.install.files as string[]) {
+        const built = join(ROOT, 'build', 'nraas-upstream', c.variant, name);
+        if (!existsSync(built)) throw new Error(`${f.id}: ${built} not built (node tools/setup/build-nraas-upstream.ts <NRaas clone>)`);
+        const p = join(USER, 'Mods', 'Packages', name);
+        place(f, rec, p, () => copyFileSync(built, p));
+      }
+      return true;
+    }
     case 'cache-budget': {
       // the generic ResourceCache budget (bytes) comes from GraphicsRules.sgr `setProp $ResourceGroup CacheBudget`
       // (the ctor 0x732910 reads the wide "CacheBudget" property); Default.ini's CacheBudget is ignored [verified 2026-10-12].

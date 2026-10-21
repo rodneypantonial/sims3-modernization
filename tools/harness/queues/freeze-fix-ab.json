@@ -1,0 +1,338 @@
+[
+  {
+    "id": "bp-ffx-play-off",
+    "note": "docs/134 A/B, arm OFF: bp-frz-play (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-ffx-play-on",
+    "note": "docs/134 A/B, arm ON: bp-frz-play (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 12,
+        "seed": 12345
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "bp-ffx-rare-route-bits-off",
+    "note": "docs/134 A/B, arm OFF: bp-frz-rare-route-bits (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-ffx-rare-route-bits-on",
+    "note": "docs/134 A/B, arm ON: bp-frz-rare-route-bits (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "bp-ffx-rare-big-crowd-off",
+    "note": "docs/134 A/B, arm OFF: bp-frz-rare-big-crowd (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-ffx-rare-big-crowd-on",
+    "note": "docs/134 A/B, arm ON: bp-frz-rare-big-crowd (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "bp-ffx-rare-thunderstorm-off",
+    "note": "docs/134 A/B, arm OFF: bp-frz-rare-thunderstorm (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-thunderstorm",
+        "noEnv": true
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-ffx-rare-thunderstorm-on",
+    "note": "docs/134 A/B, arm ON: bp-frz-rare-thunderstorm (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-thunderstorm",
+        "noEnv": true
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "ip-ffx-rare-ip-water-off",
+    "note": "docs/134 A/B, arm OFF: ip-frz-rare-ip-water (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-IP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-ip-water"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "ip-ffx-rare-ip-water-on",
+    "note": "docs/134 A/B, arm ON: ip-frz-rare-ip-water (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-IP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-ip-water"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "sv-ffx-rare-big-crowd-off",
+    "note": "docs/134 A/B, arm OFF: sv-frz-rare-big-crowd (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "sv-ffx-rare-big-crowd-on",
+    "note": "docs/134 A/B, arm ON: sv-frz-rare-big-crowd (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 23,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  },
+  {
+    "id": "sv-ffx-rare-route-bits-off",
+    "note": "docs/134 A/B, arm OFF: sv-frz-rare-route-bits (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). OFF: FallbackAsync=0, SyncCapMs=0 (today; foreign plans logged as reason Foreign). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "sv-ffx-rare-route-bits-on",
+    "note": "docs/134 A/B, arm ON: sv-frz-rare-route-bits (freeze-data.json, same save, seed 12345, same repro) on ts3native 0.36.7 (game-copy/ts3native.asi.0368 = native/ts3native/out/ts3native.asi of the 0.36.7 build, copied there by hand) with ts3fixes built from the same commit installed (foreign START). Both arms: LogFallbackMs=20, LogFallbackStack=8 (every sync plan >= 20 ms logged with its script stack). ON: FallbackAsync=1 (foreign-task plans async, M1Pending applied first, 32-deep queue) + SyncCapMs=1000 (sim-thread sync plans capped at 1 s; the log marks capped plans). Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: sync plan lines (count, max ms, reasons, script stacks), route fallback line, rfbMs*/rfbMaxMs, fb* counters; compare max and sum of sync-plan ms per job off vs on.",
+    "asi": "game-copy/ts3native.asi.0368",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 21,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 1000
+    }
+  }
+]

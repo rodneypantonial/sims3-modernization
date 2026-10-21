@@ -81,9 +81,15 @@ namespace Ts3Fixes
             // yield aborts the game (interp.c:3595 `pState->yieldReturn'), so ts3native refuses START there (MayYield).
             // Switch "asyncroute" (default on; ts3native decides). Counters: [56] started, [57] yields, [58] poll cap.
             // H6 M1 (docs/60 §2.4): live mode only, no travel, no world shutdown (ts3native also refuses START then).
+            // docs/134: a plan from a yielding task that is not the route's Sim (another Sim's interaction planning this one's
+            // route, a vehicle or other non-Sim follower, a situation or one-shot task) sends the foreign START instead
+            // (GetOption2 bits 58 + 59, kind 0). ts3native 0.36.7+ starts it only with [RouteAsync] FallbackAsync=1 and refuses
+            // it as "Foreign" otherwise; older ts3native and the game answer false, so the plan stays synchronous as before.
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
-                if (!AsyncEligible(sim, "asyncroute") || !GetOption(kAsyncStart))
+                bool started = AsyncEligible(sim, "asyncroute") ? GetOption(kAsyncStart)
+                    : ForeignEligible() && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
+                if (!started)
                     return PlanOrig();
                 try
                 {
@@ -100,6 +106,14 @@ namespace Ts3Fixes
             {
                 return sim != null && ShortcutOn(shortcut) && Simulator.CurrentTask == sim.ObjectId
                     && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
+                    && Simulator.CheckYieldingContext(false);
+            }
+
+            // any running script task that may yield here; ts3native still refuses a nested native->managed call (NoYield) and a
+            // route being followed (Active)
+            static bool ForeignEligible()
+            {
+                return ShortcutOn("asyncroute") && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown
                     && Simulator.CheckYieldingContext(false);
             }
 

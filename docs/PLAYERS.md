@@ -18,6 +18,48 @@ Less stutter and more game time per second, mostly by skipping work nobody can s
 - **Cheaper background work.** Music, fires and smells far from the camera check for nearby Sims less often, and walk styles are looked up faster. (`kBroadcasterThrottle`, `kWalkStyleComparer`)
 - **Faster saving in big towns.** The list of objects already written into the save stays fast past 16,000 objects. Saves came out 14-24% faster in our tests, with the same save file. (`kFastRefTable`)
 - **Lighter Sim panel.** The needs bars, the moodlet grid and Sim names no longer rebuild from scratch on every small change. (`kMotiveBarImageCache`, `kBuffGridInPlace`, `kSimNameCache`)
+<!-- feature:stuckcheckasync on -->
+- **No freeze from the 3 AM stuck check.** Every night the game checks which Sims have not moved and plans routes for them, all inside one frame. That check now runs one Sim per tick in its own task, and its route plans run in the background. Same checks, same outcome. (`kStuckCheckAsync`)
+<!-- /feature -->
+<!-- feature:replandefer on -->
+- **Doors and elevators replan without a freeze.** When a door or elevator a Sim is walking through forces a new route, the Sim now replans from its own task instead of in the middle of the door's code. (`kReplanDefer`)
+<!-- /feature -->
+<!-- feature:replanspread on -->
+- **Leaving build/buy mode no longer freezes busy lots.** The game replans every walking Sim at once when you leave build/buy mode; those replans are now spread over a few ticks. (`kReplanSpread`)
+<!-- /feature -->
+<!-- feature:safespotcap on -->
+- **Shorter safe-spot searches.** When the game looks for a safe spot to put a Sim after a reset, it tries at most as many spots per call as the game's own limit says, instead of testing every cell. (`kSafeSpotCap`)
+<!-- /feature -->
+<!-- feature:farthestsorted on -->
+- **Faster "farthest lot" lookups.** The game's search for the farthest reachable lot plans the farthest lots first and stops at the first that works, with the same answer. (`kFarthestLotSorted`)
+<!-- /feature -->
+<!-- feature:indoorcap on -->
+- **Shorter indoor spot searches.** The search for indoor positions on a lot gives up on a room after a few failed route tests. (`kIndoorPositionCap`)
+<!-- /feature -->
+<!-- feature:overwatchspread on -->
+- **NRaas Overwatch's nightly cleanup without the freeze.** If you use NRaas Overwatch, its nightly inventory cleanup is spread over many ticks and skips a name lookup that was only for its log. A newer Overwatch that spreads the work itself switches this off on its own. (`kOverwatchSpread`)
+<!-- /feature -->
+<!-- feature:errortrapspread on -->
+- **NRaas ErrorTrap's check after loading without the freeze.** If you use NRaas ErrorTrap, its inventory check a moment after every load runs spread over many ticks instead of one long frame. A newer ErrorTrap that spreads the work itself switches this off on its own. (`kErrorTrapSpread`)
+<!-- /feature -->
+<!-- feature:easpreadlots on -->
+- **The game's 3 AM lot cleanup spread out.** The nightly venue cleanup now cleans a few lots per tick instead of every lot in one frame. (`kEaSpreadLots`)
+<!-- /feature -->
+<!-- feature:easpreadpets on -->
+- **Stray pets made without a freeze.** The game's alarm that makes new stray and wild pets runs in a task, so its own pauses split the work. (`kEaSpreadPets`)
+<!-- /feature -->
+<!-- feature:easpreaddecay on -->
+- **Midnight relationship decay spread out.** The nightly relationship update runs over several ticks instead of one frame, with the same result. (`kEaSpreadDecay`)
+<!-- /feature -->
+<!-- feature:unseenenv on -->
+- **Less work for Sims you can't see: surroundings.** Sims far from the camera and your household check how nice their surroundings are less often. Your household and anyone you can see are unchanged. (`kUnseenEnvThrottle`)
+<!-- /feature -->
+<!-- feature:unseenmotives on -->
+- **Less work for Sims you can't see: needs.** Unseen Sims update their needs in larger steps, with the same totals over time. (`kUnseenMotiveThrottle`)
+<!-- /feature -->
+<!-- feature:unseenbroadcast on -->
+- **Less work for Sims you can't see: nearby effects.** Effects that look for Sims nearby (music, smells, fires and the like) check unseen Sims less often. (`kUnseenBroadcastThrottle`)
+<!-- /feature -->
 
 ### `ts3native` (native plugin: `ts3native.asi` + `ts3native.ini`)
 
@@ -27,6 +69,27 @@ Less stutter and more game time per second, mostly by skipping work nobody can s
 - **Saving freezes a little less.** The backup copy of your old save is made in the background while the game writes the new one. (`[SaveWrite]`)
 - **Route planning in the background.** When a Sim plans a walk or drive, the plan now runs on a second CPU core while the game goes on, instead of freezing the simulation until it is done. In our tests the simulation spent 50 instead of 119 ms per second waiting on route plans, and the game ran 10-12% more simulation steps per second with 17% fewer hitches (Bridgeport). The game's own route planner still does the work; only where and when it runs changes. (`[RouteAsync]`, with the safety locks in `[RouteGate]` and `[Discourage]`, which must stay on together; needs `ts3fixes.package` from the same release)
 - **Two small crash and correctness guards for routing.** A removed object's leftover route data is cleaned up before the game walks over it (`[LotRemoveGuard]`), and the route planner starts every search with clean values instead of whatever an earlier call left behind (`[OptsInit]`).
+<!-- feature:fallbackasync on -->
+- **Fewer multi-second route freezes.** Some route plans still ran on the main thread and could freeze the game for seconds (a crowd, a route the background planner turned down). Plans asked for by one Sim on behalf of another now run in the background too, and a plan that must stay on the main thread is stopped after 1 second and counts as "no route" (the Sim tries again or goes elsewhere, as after any failed route). (`[RouteAsync]` `FallbackAsync=1`, `SyncCapMs=1000`)
+<!-- /feature -->
+<!-- feature:m1retry on -->
+- **Background plans wait their turn instead of freezing.** When a background plan has to apply lot changes first and the routing data is busy, the Sim waits a few ticks for its turn instead of planning on the main thread. (`[RouteAsync]` `M1Retry=1`)
+<!-- /feature -->
+<!-- feature:slotenabledro on -->
+- **Less waiting on object slot checks.** While a background route plan runs, the check where on an object a Sim can stand or sit no longer waits for the plan to finish when it only reads routing data. (`[SlotEnabledRO]`)
+<!-- /feature -->
+<!-- feature:avoidro on -->
+- **Less waiting when Sims step around each other.** While a background route plan runs, the check whether something blocks a Sim's next steps answers from a read-only copy instead of waiting. (`[AvoidRO]`)
+<!-- /feature -->
+<!-- feature:deferfootprint on -->
+- **Moving Sims and objects no longer wait for route plans.** When a Sim sits, stands up or picks something up while a background plan runs, the update of its routing footprint is queued and applied right after the plan, in order. (`[Discourage]` `DeferFootprint=1`)
+<!-- /feature -->
+<!-- feature:destroypark on -->
+- **Removing objects no longer waits for route plans.** An object removed while a background plan runs is removed at once; the plan keeps a reference to it until it is done. (`[Discourage]` `DestroyPark=1`)
+<!-- /feature -->
+<!-- feature:unseenthrottle on -->
+- **Walking Sims you can't see look around less often.** A walking Sim far from the camera and from your household checks for obstacles on one step in four; near its goal, a door or anyone you can see it checks every step as before. Needs `ts3fixes.package` from the same release. (`[UnseenThrottle]`)
+<!-- /feature -->
 
 To switch background routing off, set `Enabled=0` under `[RouteAsync]` in `ts3native.ini`; the game then plans every route itself as before.
 
@@ -59,6 +122,17 @@ You need two downloads from the release page: **`ts3fixes.package`** and **`ts3n
 ### Uninstall
 
 Close the game and delete what you added: `ts3fixes.package` from `Mods\Packages\`, and `ts3native.asi` and `ts3native.ini` from `Game\Bin` (plus `wininet.dll` if you added it only for this). Your saves are not changed by the install or the removal.
+
+### If the game crashes: sending a crash report
+
+This is **opt-in** and still being tested, so it is off in the release. Nothing is ever sent without you saying yes.
+
+1. **Switch it on:** in `Game\Bin\ts3native.ini`, under `[CrashReport]`, set `Enabled=1`.
+2. **Play as usual.** When the game crashes, the plugin writes a text file to `Documents\Electronic Arts\The Sims 3\ts3native-crashes\` (`crash-<date>-<time>-<n>.txt`). If the game just vanished without a report, the next start writes a `...-hard.txt` file instead. The file has the plugin version, which switches were on, where in the game's code it crashed, your package file names, the last lines of `ts3native.log`, and your CPU, RAM and Windows version. Your user name, your machine name and folder paths with your name in them are replaced by placeholders such as `<user>`. Open it in Notepad to see for yourself.
+3. **Send it (optional):** install [Node.js](https://nodejs.org/) 22.18 or newer, download [`tools/report-crash.ts`](https://github.com/rodneypantonial/sims3-modernization/blob/HEAD/tools/report-crash.ts) (or the whole repository), and run `node report-crash.ts` in a terminal. It shows each new report and **exactly** what would be sent, and asks first. If you have the [GitHub CLI](https://cli.github.com/) logged in (`gh auth login`), it adds your report to an existing issue for the same crash or opens a new one, as you. Otherwise it opens a prefilled GitHub page in your browser; check it and press **Submit new issue** (you need a free GitHub account). Answer `s` to never be asked about a report again.
+4. **Without the tool:** open a [crash report issue](https://github.com/rodneypantonial/sims3-modernization/issues/new?template=crash.yml), copy the `signature id:` line into the first box and paste the whole file into the report box.
+
+To switch it off again, set `Enabled=0`. The folder `ts3native-crashes` can be deleted at any time.
 
 ### Other mods
 

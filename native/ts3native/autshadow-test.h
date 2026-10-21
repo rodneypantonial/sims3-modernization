@@ -73,6 +73,20 @@ static DWORD* __cdecl AfQuery(DWORD type) {  // type 9: a world-wide type, 300 o
     g_afArenaAt += 4 + m;
     return a;
 }
+// docs/127 §7.1: Query_GetGlobalObjects(Type): NULL when nothing matches (type 2, the v0 Callbox case), else the objects
+// on lot 1 (type 4: changes with the objects' lots, no list event needed: AO_CUT)
+static DWORD* __cdecl AfGlobal(DWORD type) {
+    if (type != 4) return NULL;
+    if (g_afArenaAt + 4 + 64 > (1 << 16)) g_afArenaAt = 0;
+    DWORD* a = g_afArena + g_afArenaAt;
+    DWORD m = 0;
+    for (int i = 1; i <= 64; i++) if (g_afo[i].lot == 1) a[4 + m++] = i;
+    a[0] = 0xC0000 + type, a[1] = 0, a[2] = m, a[3] = 0;
+    g_afArenaAt += 4 + m;
+    return a;
+}
+static volatile LONG g_afRouteBody;  // H12: a route IC on the worker never runs its body
+static DWORD __cdecl AfRoute(DWORD, DWORD) { InterlockedIncrement(&g_afRouteBody); return 1; }
 static float __cdecl AfTerrain(float x, float) { return x + 0.5f; }  // unlisted 'f'
 static float* __cdecl AfCamPos(float* ret) { ret[0] = ret[1] = ret[2] = 9; return ret; }  // unlisted 's'
 static DWORD __cdecl AfUnlisted(DWORD a) { return a + 1; }  // unlisted int
@@ -97,9 +111,11 @@ static void* g_asFakeTab[] = {
     (void*)0x12345678, (void*)"ScriptCore.Fake::Fake_NotCode",  // fn outside .text: not a table entry
     (void*)AfSlotPos, (void*)"ScriptCore.Slots::Slots_GetPositionOfSlotImpl",
     (void*)AfQuery, (void*)"ScriptCore.Queries::Query_GetObjects",
+    (void*)AfGlobal, (void*)"ScriptCore.Queries::Query_GetGlobalObjects",
+    (void*)AfRoute, (void*)"ScriptCore.Route::Route_IsPointRoutable",
     NULL, NULL};
 enum { AF_POS, AF_PARENT, AF_HIDDEN, AF_TOMB, AF_SUNRISE, AF_SEA, AF_COUNT, AF_ONLOT, AF_LOTLOC, AF_OPTION, AF_RAND,
-       AF_TERRAIN, AF_CAMPOS, AF_UNLISTED, AF_MONEY, AF_NOTCODE, AF_SLOTPOS, AF_QUERY };
+       AF_TERRAIN, AF_CAMPOS, AF_UNLISTED, AF_MONEY, AF_NOTCODE, AF_SLOTPOS, AF_QUERY, AF_GLOBAL, AF_ROUTE };
 typedef float*(__cdecl* AfSlotPosFn)(float*, DWORD, DWORD, DWORD, DWORD, DWORD);
 typedef DWORD*(__cdecl* AfQueryFn)(DWORD);
 static void* AfSlot(int i) { return g_asFakeTab[i * 2]; }
@@ -227,6 +243,16 @@ static DWORD WINAPI AfWorker(void*) {
     AsResetAbort();
     assert(!((AfQueryFn)AfSlot(AF_QUERY))(9) && AsAborted() == AS_AB_QUERY);
     AsResetAbort();
+    // docs/127 §7.1: Query_GetGlobalObjects keys are learned the same way (a NULL answer and a list)
+    assert(!((AfQueryFn)AfSlot(AF_GLOBAL))(2) && AsAborted() == AS_AB_QUERY);
+    AsResetAbort();
+    assert(!((AfQueryFn)AfSlot(AF_GLOBAL))(4) && AsAborted() == AS_AB_QUERY);
+    AsResetAbort();
+    // H12 (docs/127 §7.2): a route IC aborts `route` with the neutral answer, never the body (handle 0 would answer false)
+    const LONG routeAb = k.abortRoute, routeBody = g_afRouteBody;
+    assert(((DWORD(__cdecl*)(DWORD, DWORD))AfSlot(AF_ROUTE))(0, 0) == 0 && AsAborted() == AS_AB_ROUTE);
+    assert(k.abortRoute == routeAb + 1 && g_afRouteBody == routeBody);
+    AsResetAbort();
     // T4: F2 at the fake ParseFormatSpecifier: abort fmt, exception out, body not run
     void* exc = NULL;
     ((void(__cdecl*)(DWORD, void**))g_afFmtFn)(0, &exc);
@@ -253,6 +279,11 @@ static DWORD WINAPI AfWorker2(void*) {
     assert(AsAborted() == -1);
     assert(!((AfQueryFn)AfSlot(AF_QUERY))(9) && AsAborted() == AS_AB_QUERY);
     AsResetAbort();
+    // docs/127 §7.1: the global query's NULL answer is kept (no abort), the list answers as the body at the cut
+    assert(!((AfQueryFn)AfSlot(AF_GLOBAL))(2) && AsAborted() == -1);
+    const DWORD* g = ((AfQueryFn)AfSlot(AF_GLOBAL))(4);
+    const DWORD* gf = AfGlobal(4);
+    assert(g && g != gf && g[0] == gf[0] && g[2] == gf[2] && gf[2] > 0 && !memcmp(g + 4, gf + 4, gf[2] * 4) && AsAborted() == -1);
     AsWorkerEnd();
     return 0;
 }
@@ -331,7 +362,7 @@ static void TestAutShadowRun() {
     g_asAddIc = AfT5AddIc, g_asAddRoots = AfT5AddRoots, g_asGcMalloc = AfT5Malloc, g_asHostPtr = &g_t5HostPtr;
     g_asMtInit = AfMtInit, g_asMtNext = AfMtNext, g_asDetFlag = &g_afDet;
     AsInstallRun(NULL, true);
-    assert(g_mtOnEnter == AsSimEnter && g_mtOnLeave == AsSimLeave && g_mtJobHook == AsJobHook && g_asMode == 0);
+    assert(g_mtOnEnter == AsSimEnter && g_mtOnLeave == AsSimLeaveLoop && g_mtJobHook == AsJobHook && g_asMode == 0 && g_sppN == 0);
     // ICs register at the first Simulate entry; Begin refuses until the methods are set
     AsSimEnter();
     assert(g_t5Ics == 16 && k.icRegistered == 16 && AsIcVersion() == 4 && AsIcConfig(1) == 4 && AsIcConfig(2) == 20);
@@ -403,7 +434,7 @@ static void TestAutShadowRun() {
     AfT5Request(43);
     AsSimLeave();
     AsSimEnter();
-    assert(k.overrun == 1 && g_asStop == 1);
+    assert(k.overrun == 1 && g_asStop == 1 && k.overrunIdle <= 1);  // idle: the worker had not entered the job yet (racy here)
     MtWaitFor(&g_mtBusy, 0);
     assert(g_t5SawStop == 1);
     AsSimLeave();
@@ -434,6 +465,18 @@ static void TestAutShadowRun() {
     AfT5Request(46);
     AsSimLeave();
     assert(g_t5Finish == 7 && g_t5Last == AS_LAST_NOWORKER && k.refRuns == 6 && k.rngDraws == 6);
+    // docs/51 I-188-3: the loop-back cuts until the post-pump hook fires; from then on only the post-pump point does
+    assert(k.cutSite == 1 && !g_asPumpCut);
+    AfT5Request(47);
+    AsSimPump();
+    assert(g_t5Finish == 8 && k.cutSite == 2 && g_asPumpCut && k.cutReq == 8);
+    AfT5Request(48);
+    AsSimLeaveLoop();  // loop-back: nothing (request still pending)
+    assert(k.cutReq == 8 && g_asReqId == 48);
+    AsSimEnter();
+    AsSimPump();
+    assert(g_t5Finish == 9 && k.cutReq == 9 && g_asReqId == 0);
+    g_asPumpCut = false;
 
     // AutShadowNative.Log -> autshadow.jsonl
     wchar_t tmp[MAX_PATH];
@@ -483,7 +526,8 @@ static const u8* __cdecl AfLgCtx() { return (const u8*)g_lgCtxNow; }
 static void TestAutLedger() {
     Ts3nAutShadow& k = ts3native_autshadow;
     assert(offsetof(Ts3nAutShadow, lgOn) == 0x13C && offsetof(Ts3nAutShadow, lgIn) == 0x158 && offsetof(Ts3nAutShadow, lgSleep) == 0x17C &&
-           offsetof(Ts3nAutShadow, lgCls) == 0x1A0 && offsetof(Ts3nAutShadow, lgCall) == 0x260 && offsetof(Ts3nAutShadow, abort2) == 0x760 && offsetof(Ts3nAutShadow, rngPauseDraws) == 0x76C && sizeof(Ts3nAutShadow) == 0x770);  // registry v3, v4
+           offsetof(Ts3nAutShadow, lgCls) == 0x1A0 && offsetof(Ts3nAutShadow, lgCall) == 0x260 && offsetof(Ts3nAutShadow, abort2) == 0x760 && offsetof(Ts3nAutShadow, rngPauseDraws) == 0x76C && offsetof(Ts3nAutShadow, abortRoute) == 0x770 &&
+           offsetof(Ts3nAutShadow, overrunIdle) == 0x778 && sizeof(Ts3nAutShadow) == 0x77C && k.version == 5);  // registry v3, v4, v5
     assert(AsIcConfig(5) == 0 && AsIcConfig(7) == 0 && AsLgWatchOf("ScriptCore.Queries::Query_GetObjects") < 0);  // Ledger=0: inert
     g_asLedger = true;
     const u8* base = (const u8*)GetModuleHandleW(NULL);
@@ -587,8 +631,8 @@ static void TestAutShadow() {
         if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) textLo = (DWORD)(uintptr_t)base + sec[i].VirtualAddress, textHi = textLo + sec[i].Misc.VirtualSize;
     const DWORD imgLo = (DWORD)(uintptr_t)base, imgHi = imgLo + nt->OptionalHeader.SizeOfImage;
     const int nTab = (int)(sizeof(g_asFakeTab) / sizeof(g_asFakeTab[0]));
-    assert(AsInstallGuards((DWORD*)g_asFakeTab, (DWORD*)g_asFakeTab + nTab, imgLo, imgHi, textLo, textHi, true) == 17);
-    assert(k.descIcs == 14 && g_asIcParent == 1 && g_asIcRng == AF_RAND && (k.ready & 1) && g_asFakeTab[30] == (void*)0x12345678);
+    assert(AsInstallGuards((DWORD*)g_asFakeTab, (DWORD*)g_asFakeTab + nTab, imgLo, imgHi, textLo, textHi, true) == 19);
+    assert(k.descIcs == 15 && g_asNoDesc[AF_ROUTE - 1] == AS_AB_ROUTE && g_asNoDesc[AF_UNLISTED] == AS_AB_IC &&g_asIcParent == 1 && g_asIcRng == AF_RAND && (k.ready & 1) && g_asFakeTab[30] == (void*)0x12345678);
     assert(g_asOrig[AF_POS] == (void*)AfPos && g_asKind[AF_SUNRISE] == 'f' && g_asKind[AF_CAMPOS] == 's');
     g_afFmtFn = (u8*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     memcpy(g_afFmtFn, g_afFmt, 16);
@@ -646,7 +690,7 @@ static void TestAutShadow() {
     // the worker's misses come back as learned keys at the next cut, then answer
     const LONG learned0 = k.learned;
     AsCut();
-    assert(k.learned == learned0 + 5);  // row 5:40 (Objects_GetPosition), list (3, lot 2, flags 1), slot, query 1 and 9
+    assert(k.learned == learned0 + 7);  // row 5:40 (Objects_GetPosition), list (3, lot 2, flags 1), slot, query 1 and 9, global 2 and 4
     const DWORD rk[2] = {40, 5};
     assert(AsFind(g_as->v[g_asPub], AF_POS, rk, 2) >= 0 && AsFind(g_as->v[g_asPub], AF_PARENT, rk, 2) >= 0);  // + its parent entry
     // docs/125: the slot and query keys answer from this cut on and follow changes that fire no event (AO_CUT)

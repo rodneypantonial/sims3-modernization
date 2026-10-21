@@ -39,6 +39,8 @@ out/
 native/ts3native/out/
 Debug/
 Release/
+# core.ignorecase makes Release/ match our release/ notes folder too; keep it tracked (release/mts/out/ stays ignored via out/)
+!/release/
 *.obj
 *.pdb
 *.ilk

@@ -1,0 +1,426 @@
+{
+  "note": "Clean-night TIMING subset of unseen-throttle-p2-ab.json ([UnseenThrottle] phase 2, asi .0315): per-part --ab pairs (rate, footprint, cars, list, avoid), every part on BP rare-big-crowd and on IP; snap-back and stuck-Sim jobs stay daytime. Ordered by expected gain (docs/143 §8 table): BP crowd all parts, rate, IP all parts, footprint, cars, list, avoid. Needs the phase-2 commit merged (ts3native 0.36.15 ini keys, repro unseen-traffic, ts3fixes unseencars). Skip bp-ut2-list-* (-24 min) when clean-night-0.2.0 bp-ut-play-* ran on .0315; bp-ut2-avoid-* is last so a short night can stop before it (-24 min). Groups for --only / --from: bp-ut2-crowd-*, bp-ut2-rate-*, ip-ut2-all-*, bp-ut2-footprint-*, bp-ut2-cars-*, bp-ut2-list-*, bp-ut2-avoid-*. Reports: wait-ab.ts <tag>, profile-compare.mjs <tag>:on vs :off, unseen-report.ts <native.json> (throttle lines), hitch-attr-report.ts. 14 jobs, ~2.8 h real (168 min: profile minutes + ~2 min load each).",
+  "jobs": [
+    {
+      "id": "bp-ut2-crowd-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars: all switch at once; expected ~25-45 ms/s, docs/143 §8 table), rare-big-crowd (many walking Sims, doors; waves from the window start, so the warm-up and first counted slice carry most of the crowd: the pair balances it). BP 10 min, 2-min slices (10, not the daytime queue's 8: 8 min gives off,on,on, one side short). Pass also: utSkipped, utAvSkipped, utFpSkipped, utRateSkipped > 0 in on slices only, utWhy_11 (portal) > 0. Read also utWhy / utAvWhy / utRateWhy mix. Off-first (warm-up on, then off,on,on,off); read with bp-ut2-crowd-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-crowd-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars: all switch at once; expected ~25-45 ms/s, docs/143 §8 table), rare-big-crowd (many walking Sims, doors; waves from the window start, so the warm-up and first counted slice carry most of the crowd: the pair balances it). BP 10 min, 2-min slices (10, not the daytime queue's 8: 8 min gives off,on,on, one side short). Pass also: utSkipped, utAvSkipped, utFpSkipped, utRateSkipped > 0 in on slices only, utWhy_11 (portal) > 0. Read also utWhy / utAvWhy / utRateWhy mix. On-first (warm-up on, then on,off,off,on); read with bp-ut2-crowd-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-rate-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part rate alone (List=0 Avoid=0 Footprint=0 Rate=1; the whole Locomotion_UpdateAgent every 4th pass for unseen Sims beyond RateNearM 3 m; expected ~15-35 ms/s, the largest part), --ab unseenrate, BP play 10 min, 2-min slices. Pass also: utRateSkipped > 0 in on slices only. Read also: Sim update ms/s, steering 0x85FE10 and avoidance 0x846D21 keys (rate contains most of list and avoid), utRateWhy mix. Off-first (warm-up on, then off,on,on,off); read with bp-ut2-rate-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenrate",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-rate-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part rate alone (List=0 Avoid=0 Footprint=0 Rate=1; the whole Locomotion_UpdateAgent every 4th pass for unseen Sims beyond RateNearM 3 m; expected ~15-35 ms/s, the largest part), --ab unseenrate, BP play 10 min, 2-min slices. Pass also: utRateSkipped > 0 in on slices only. Read also: Sim update ms/s, steering 0x85FE10 and avoidance 0x846D21 keys (rate contains most of list and avoid), utRateWhy mix. On-first (warm-up on, then on,off,off,on); read with bp-ut2-rate-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenrate",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-ut2-all-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars), Isla Paradiso play 10 min (water, boats: paddleboats stay unthrottled, utWhy_4 / utRateWhy_4), 2-min slices. Pass also: skips > 0 in on slices only, no boat or swimmer stuck at the end. Off-first (warm-up on, then off,on,on,off); read with ip-ut2-all-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2). Boats (docs/143 §8.10): vehicle agents (Car, Bicycle, Paddleboat, Rail, AnimatedBoat: water taxi, speedboat, sailboat, houseboat) and parented riders are never throttled in any part; read utRateWhy_13 / utRateWhy_5 / utFpWhy_11 per side; the correctness check is ip-ut2-boats in unseen-throttle-p2-ab.json (stranded 0).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-ut2-all-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Every part together (--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars), Isla Paradiso play 10 min (water, boats: paddleboats stay unthrottled, utWhy_4 / utRateWhy_4), 2-min slices. Pass also: skips > 0 in on slices only, no boat or swimmer stuck at the end. On-first (warm-up on, then on,off,off,on); read with ip-ut2-all-offfirst. Boats (docs/143 §8.10): vehicle agents (Car, Bicycle, Paddleboat, Rail, AnimatedBoat: water taxi, speedboat, sailboat, houseboat) and parented riders are never throttled in any part; read utRateWhy_13 / utRateWhy_5 / utFpWhy_11 per side; the correctness check is ip-ut2-boats in unseen-throttle-p2-ab.json (stranded 0).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-footprint-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part footprint alone (Footprint=1 FpMs=500: an unseen Sim's UpdateSimFootprint at most every 500 ms, equal calls folded; expected ~4-12 ms/s), --ab unseenfootprint, BP play 10 min, 2-min slices. Pass also: utFpSkipped > 0 in on slices only. Read also: key 0x833593 and footprint body ms/s, utFpSkipped / utFpCalls (the unmeasured share docs/143 §8 names). Off-first (warm-up on, then off,on,on,off); read with bp-ut2-footprint-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 0,
+        "UnseenThrottle.FpMs": 500,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenfootprint",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-footprint-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part footprint alone (Footprint=1 FpMs=500: an unseen Sim's UpdateSimFootprint at most every 500 ms, equal calls folded; expected ~4-12 ms/s), --ab unseenfootprint, BP play 10 min, 2-min slices. Pass also: utFpSkipped > 0 in on slices only. Read also: key 0x833593 and footprint body ms/s, utFpSkipped / utFpCalls (the unmeasured share docs/143 §8 names). On-first (warm-up on, then on,off,off,on); read with bp-ut2-footprint-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 0,
+        "UnseenThrottle.FpMs": 500,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenfootprint",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-cars-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part cars alone (ts3fixes unseencars; every native part 0; expected ~3-10 ms/s of car-only plans), --ab unseencars, repro unseen-traffic (from the phase-2 commit's repros.json), BP 10 min, 2-min slices. Read also: car-only IC_Route_Plan count and ms/s per side, unseencars_* counters. Off-first (warm-up on, then off,on,on,off); read with bp-ut2-cars-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "unseen-traffic",
+          "ab": "unseencars",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-cars-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part cars alone (ts3fixes unseencars; every native part 0; expected ~3-10 ms/s of car-only plans), --ab unseencars, repro unseen-traffic (from the phase-2 commit's repros.json), BP 10 min, 2-min slices. Read also: car-only IC_Route_Plan count and ms/s per side, unseencars_* counters. On-first (warm-up on, then on,off,off,on); read with bp-ut2-cars-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "unseen-traffic",
+          "ab": "unseencars",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-list-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part list alone (phase 1 obstacle list, List=1; expected ~3-9 ms/s on key 0x85FE10), --ab unseenthrottle, BP play 10 min, 2-min slices. The same switch, world and seed as clean-night-0.2.0 bp-ut-play-*: when those run on .0315 (that queue's note), skip this pair. Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0. Off-first (warm-up on, then off,on,on,off); read with bp-ut2-list-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-list-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part list alone (phase 1 obstacle list, List=1; expected ~3-9 ms/s on key 0x85FE10), --ab unseenthrottle, BP play 10 min, 2-min slices. The same switch, world and seed as clean-night-0.2.0 bp-ut-play-*: when those run on .0315 (that queue's note), skip this pair. Pass also: utReady 3, utSkipped > 0 in on slices only, utViewerPushes > 0. On-first (warm-up on, then on,off,off,on); read with bp-ut2-list-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenthrottle",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-avoid-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part avoid alone (Avoid=1 AvoidNearM=3: ObstacleAvoidance every 4th pass for unseen Sims beyond 3 m of the goal; expected ~2-6 ms/s, the smallest part), --ab unseenavoid, BP play 10 min, 2-min slices. Pass also: utAvSkipped > 0 in on slices only. Read also: key 0x846D21. Off-first (warm-up on, then off,on,on,off); read with bp-ut2-avoid-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "UnseenThrottle.AvoidNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenavoid",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-ut2-avoid-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). [UnseenThrottle] phase 2 timing (docs/143 §8.6; timing subset of unseen-throttle-p2-ab.json, whose snap-back and stuck-Sim jobs run in the daytime). ts3native 0.36.15 (game-copy/ts3native.asi.0315, copy of native/ts3native/out/ts3native.asi from the phase-2 commit) with build/ts3fixes.package + build/ts3agent.package from the same commit installed (ts3fixes pushes the household positions and owns unseencars; an older ts3fixes leaves utWhy_7 / utAvWhy_7 / utRateWhy_7 'no viewers' taking every call: stop and install), run from a checkout whose native/ts3native/ts3native.ini is master with phase 2 merged: the job ini adds only the parts under test and HitchAttr. Ship config: [UnseenProbe] off (its per-agent classification costs time and would sit in both halves; the daytime p2 jobs read the probe classes). Seed 12345, story progression off. Pass for every job: no crash or freeze (a freeze = stop, triage against unseen.cpp UtPathWhy / the part under test), 0 watchdog lines, the switch line in the log at every slice, stuck Sims not above the off halves (docs/TESTING.md). Read: wait-ab.ts <tag> per key beyond the docs/136 per-key null (-1.5..+9.4 ms/s), no keyed wait higher, it/s and sim ms/s (profile-compare.mjs <tag>:on vs :off), hitch-attr-report.ts. Part avoid alone (Avoid=1 AvoidNearM=3: ObstacleAvoidance every 4th pass for unseen Sims beyond 3 m of the goal; expected ~2-6 ms/s, the smallest part), --ab unseenavoid, BP play 10 min, 2-min slices. Pass also: utAvSkipped > 0 in on slices only. Read also: key 0x846D21. On-first (warm-up on, then on,off,off,on); read with bp-ut2-avoid-offfirst.",
+      "asi": "game-copy/ts3native.asi.0315",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 80,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 0,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 0,
+        "UnseenThrottle.Rate": 0,
+        "UnseenThrottle.AvoidNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenavoid",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "bp-rdf-crowd-off",
+    "note": "docs/141 §6 A/B, arm OFF: repro replan-buildbuy-crowd (20 spawned Sims + household routing onto the home lot and to a far lot, 4 build/buy enter/exit cycles while they route) with ts3fixes replandefer and replanspread off. ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from this commit installed. Both arms: LogFallbackMs=20, LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), FallbackAsync=0 and SyncCapMs=0 (only the ts3fixes switches differ). Pass = no crash, game alive, watchdogs 0, replanspread_exceptions 0. Read: IC Replan sync lines after each exit (count, max/sum ms, reasons QueueFull/Active/NoStart, frames PortalRouteThroughAction.ForceReplan / ReplanRouteInterruptAction.PerformAction / RoutingComponent.ForceRouteReplan), replandefer_* and replanspread_* counters, stuck Sims and route failures vs the ON arm.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "replan-buildbuy-crowd",
+        "fixesOff": "replandefer,replanspread"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-rdf-crowd-on",
+    "note": "docs/141 §6 A/B, arm ON: as bp-rdf-crowd-off with replandefer (door/elevator replans go to the Sim's own ReplanRouteInterruptAction when the route is being followed) and replanspread (OnBuildBuyExit / OnRoutingDataChanged replayed 4 routing Sims a sim tick) on. Expect: replanspread_held > 0 at every exit, replanspread_exceptions 0, replandefer_deferred > 0 if a Sim was in a doorway at an exit; fewer QueueFull and Active IC Replan sync lines right after the exits; Sims stop and reroute as in OFF (no stuck Sims, no extra route failures).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "replan-buildbuy-crowd",
+        "fixesOn": "replandefer,replanspread"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 0,
+      "RouteAsync.SyncCapMs": 0
+    }
+  }
+]

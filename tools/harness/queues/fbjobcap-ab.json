@@ -1,0 +1,39 @@
+{
+ "note": "docs/134 §10: FbJobCapMs (ts3native 0.36.16) A/B. Before: build native/ts3native (build.cmd), copy out/ts3native.asi to game-copy/ts3native.asi.0316b; ts3fixes as for clean-night-0.2.0 (unchanged). All jobs: FallbackAsync=1, M1Retry=1, SyncCapMs=1000 (v0.2.0 candidate), HitchAttr on; only the job cap differs (--ab fbjobcap toggles fbjcMode; FbJobCapMs=300 is the cap when on). Timing: clean night only. Read per side (profile-compare.mjs <tag>:on/:off, hitch-attr-report.ts, worst-hitches.ts --min 250): worst iteration and every hitch >= 250 ms by field (rtJob/rtLock behind a job), 'long job' log lines (foreign vs own, capped), route jobs line (fbjcMaxUs vs ownJobMaxUs, fbjcCapped), route fails, stuck Sims. Pass: no crash, 0 watchdogs, fbActiveTrip 0; with the cap on no foreign job much over ~300 ms + non-A* time.",
+ "jobs": [
+  {
+   "id": "sv-fjc-play-offfirst",
+   "asi": "game-copy/ts3native.asi.0316b",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 81,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "fbjobcap", "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "sv-fjc-play-onfirst",
+   "asi": "game-copy/ts3native.asi.0316b",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 81,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "fbjobcap", "abOnFirst": true, "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "bp-fjc-route-bits",
+   "note": "freeze-fix-ab ON had a 4,638 ms job here (4,664 ms hitch, all locomotion). Correctness + long-job lines; 6 min, cap on for the whole run.",
+   "asi": "game-copy/ts3native.asi.0316b",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 81,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 6, "seed": 12345, "repro": "rare-route-bits" } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 21
+  }
+ ]
+}

@@ -1,0 +1,315 @@
+{
+  "note": "Clean-night TIMING A/Bs for the v0.2.0 routing fixes clean-night-0.2.0.json lacks (run on another clean night, after or instead of part of it). Ordered by expected gain: steady keyed-wait reducers first (DestroyPark net 3-6 ms/s, AvoidRO ~3-8 with S2 off = low end, DeferFootprint 3-5), then freeze fixes (stuckcheckasync: the 483 ms 3 AM plan; replandefer/replanspread: build/buy exit replans; candidate-loop caps: 345/456 ms reset stalls, rare). All BP, seed 12345; --ab pairs off-first + on-first where a runtime switch exists, two-load pairs where the repro acts at the window start. Before: game-copy/ts3native.asi.0314 present (sha256 in PLAN.md 0.36.14 entry), ts3fixes from this commit installed, master ini; the daytime correctness reads of destroy-park-ab / defer-footprint-ab / avoidro.json bp-avoidro-shadow passed. Groups for --only / --from: bp-destroypark-*, bp-avoidro-*, bp-deferfp-*, bp-stuckcheck-*, bp-replan-crowd-*, bp-candloops-*. Reports: wait-ab.ts <tag>, profile-compare.mjs <tag>:on vs :off, worst-hitches.ts --min 300, hitch-attr-report.ts. Together with clean-night-unseen-p2.json: 12 jobs, ~1.9 h real (114 min: profile minutes + ~2 min load each). both files 4.7 h.",
+  "jobs": [
+    {
+      "id": "bp-destroypark-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DestroyPark (docs/88 design G, counters v76): a destroy during an async route job parks one reference and runs without the job wait; --ab destroypark toggles dpMode (+0x31E0). BP (key 0x2000003 ~7-11 ms/s BP vs less on IP, destroy-park-ab). Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait), net 3-6 ms/s less keyed wait (part may reappear at the next routing touch). Pass also: dpReady 1, dpParked > 0, p5cCountLow 0, p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; a crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue. Read: node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off beyond the docs/136 per-key null, all keyed waits not higher), it/s not down > 2%, hitch-attr-report.ts. BP 10 min, 2-min slices. Off-first (warm-up on, then off,on,on,off); read with bp-destroypark-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-destroypark-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DestroyPark (docs/88 design G, counters v76): a destroy during an async route job parks one reference and runs without the job wait; --ab destroypark toggles dpMode (+0x31E0). BP (key 0x2000003 ~7-11 ms/s BP vs less on IP, destroy-park-ab). Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait), net 3-6 ms/s less keyed wait (part may reappear at the next routing touch). Pass also: dpReady 1, dpParked > 0, p5cCountLow 0, p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; a crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue. Read: node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off beyond the docs/136 per-key null, all keyed waits not higher), it/s not down > 2%, hitch-attr-report.ts. BP 10 min, 2-min slices. On-first (warm-up on, then on,off,off,on); read with bp-destroypark-offfirst.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "destroypark",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-avoidro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [AvoidRO] (docs/137, counters v77): read-only RouteFollow_A 0x846B70 / RouteFollow_B 0x85B470 during async jobs, on the S2 writer set (installed by [AvoidRO] itself: [SteerRO] stays off as in master, so this measures the release setup, not avoidro.json's S2 + RouteSnap base); --ab avoidro toggles avMode (+0x31F0). BP (wait-reducers-ab: key 0x846D21 9.9 ms/s BP with S2 off). Expected [inferred]: 0x846D21 down, net ~3-8 ms/s summed wait (docs/137 §12 estimate was made with S2 on, where the key was 17.4; with S2 off expect the low end); part moves to the next +0x918 taker (steering 0x85FE10, footprint 0x833593, gates 0/10/12). Before: bp-avoidro-shadow (avoidro.json, correctness) passed. Pass also: 'OK   avoid RO' line in ts3native.log, avTakenHit + avTakenMiss > 0 in on slices, avSiteSkip = avTakenMiss, avSimWriteInRo 0. Read: wait-ab.ts <tag> (0x846D21 and 0x85B50C on vs off, all keyed waits not higher), it/s, hitch-attr-report.ts. BP 10 min, 2-min slices. Off-first (warm-up on, then off,on,on,off); read with bp-avoidro-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-avoidro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [AvoidRO] (docs/137, counters v77): read-only RouteFollow_A 0x846B70 / RouteFollow_B 0x85B470 during async jobs, on the S2 writer set (installed by [AvoidRO] itself: [SteerRO] stays off as in master, so this measures the release setup, not avoidro.json's S2 + RouteSnap base); --ab avoidro toggles avMode (+0x31F0). BP (wait-reducers-ab: key 0x846D21 9.9 ms/s BP with S2 off). Expected [inferred]: 0x846D21 down, net ~3-8 ms/s summed wait (docs/137 §12 estimate was made with S2 on, where the key was 17.4; with S2 off expect the low end); part moves to the next +0x918 taker (steering 0x85FE10, footprint 0x833593, gates 0/10/12). Before: bp-avoidro-shadow (avoidro.json, correctness) passed. Pass also: 'OK   avoid RO' line in ts3native.log, avTakenHit + avTakenMiss > 0 in on slices, avSiteSkip = avTakenMiss, avSimWriteInRo 0. Read: wait-ab.ts <tag> (0x846D21 and 0x85B50C on vs off, all keyed waits not higher), it/s, hitch-attr-report.ts. BP 10 min, 2-min slices. On-first (warm-up on, then on,off,off,on); read with bp-avoidro-offfirst.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-deferfp-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DeferFootprint (docs/89 design U, counters v74): UpdateSimFootprint calls during an async job deferred to D's queue and applied at D's drain points; --ab deferfootprint toggles usfMode (+0x3178). BP (key 0x833593 ~7-9 ms/s BP, docs/89 §4). Expected [inferred]: key near 0 in on slices except pass-throughs (usfParkedPass, usfFullPass, usfPass), net 3-5 ms/s less keyed wait. Pass also: usfReady 1, usfDeferred > 0, usfApplyInJob 0, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0, discIdMismatch / usfIdMismatch 0; a crash in 0x82xxxx/0x83xxxx/0x66xxxx/0x94xxxx stops the queue. Read: wait-ab.ts <tag> (0x833593 on vs off, all keyed waits not higher), it/s, hitch-attr-report.ts. BP 10 min, 2-min slices. Off-first (warm-up on, then off,on,on,off); read with bp-deferfp-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-deferfp-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DeferFootprint (docs/89 design U, counters v74): UpdateSimFootprint calls during an async job deferred to D's queue and applied at D's drain points; --ab deferfootprint toggles usfMode (+0x3178). BP (key 0x833593 ~7-9 ms/s BP, docs/89 §4). Expected [inferred]: key near 0 in on slices except pass-throughs (usfParkedPass, usfFullPass, usfPass), net 3-5 ms/s less keyed wait. Pass also: usfReady 1, usfDeferred > 0, usfApplyInJob 0, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0, discIdMismatch / usfIdMismatch 0; a crash in 0x82xxxx/0x83xxxx/0x66xxxx/0x94xxxx stops the queue. Read: wait-ab.ts <tag> (0x833593 on vs off, all keyed waits not higher), it/s, hitch-attr-report.ts. BP 10 min, 2-min slices. On-first (warm-up on, then on,off,off,on); read with bp-deferfp-offfirst.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-stuckcheck-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes stuckcheckasync (docs/134 §8, counters 127-131): the 3 AM stuck check queued from the alarm and run one Sim per tick in our task; --ab stuckcheckasync (ts3fixes patches switch). Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Repro night-maintenance-clock (the clock trick of bp-spreads-*: 22:00 at the window start, ~9.6 sim-minutes per real second, so 3 AM fires at ~31 s (warm-up, not counted) and ~183 s [inferred from the rate, moves with it/s]; the stuck-check alarms follow 20-60 sim-minutes = 2-6 real s later). BP 5 min with 1-min slices: warm-up 0-60 s, counted slots 60-120 / 120-180 / 180-240 / 240-300 s; the two middle slots share a side, so the ~183 s fire lands on 'on' in the off-first job and on 'off' in the on-first job anywhere in 120-240 s (one fire per side per pair). Each fire is decided by the switch state when its alarm runs: read per fire, not per slice. Pass also: on side patches stuckcheckasync_run > 0, _dropped small, _maxwait_simsec a few sim-minutes; off side 0. Read: sync plan lines with RunStuckCheckHelper.RunOrig in the stack (count, max/sum ms, reason; the on side's stack ends in StuckCheckDrain), worst iteration within 10 s of the fire, worst-hitches.ts --min 300, Sims reset by the check (equal within seed drift). Off-first (warm-up on, then off,on,on,off); read with bp-stuckcheck-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "stuckcheckasync",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-stuckcheck-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes stuckcheckasync (docs/134 §8, counters 127-131): the 3 AM stuck check queued from the alarm and run one Sim per tick in our task; --ab stuckcheckasync (ts3fixes patches switch). Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Repro night-maintenance-clock (the clock trick of bp-spreads-*: 22:00 at the window start, ~9.6 sim-minutes per real second, so 3 AM fires at ~31 s (warm-up, not counted) and ~183 s [inferred from the rate, moves with it/s]; the stuck-check alarms follow 20-60 sim-minutes = 2-6 real s later). BP 5 min with 1-min slices: warm-up 0-60 s, counted slots 60-120 / 120-180 / 180-240 / 240-300 s; the two middle slots share a side, so the ~183 s fire lands on 'on' in the off-first job and on 'off' in the on-first job anywhere in 120-240 s (one fire per side per pair). Each fire is decided by the switch state when its alarm runs: read per fire, not per slice. Pass also: on side patches stuckcheckasync_run > 0, _dropped small, _maxwait_simsec a few sim-minutes; off side 0. Read: sync plan lines with RunStuckCheckHelper.RunOrig in the stack (count, max/sum ms, reason; the on side's stack ends in StuckCheckDrain), worst iteration within 10 s of the fire, worst-hitches.ts --min 300, Sims reset by the check (equal within seed drift). On-first (warm-up on, then on,off,off,on); read with bp-stuckcheck-offfirst.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "stuckcheckasync",
+          "slice": 1,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-replan-crowd-off",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes replandefer + replanspread (docs/141 §6), whole-load pair, OFF arm (profile.fixesOff): repro replan-buildbuy-crowd (20 spawned Sims + household routing onto the home lot and a far lot, 4 build/buy enter/exit cycles while they route; steps 265 s, inside the 5-min window) runs from the window start, so this pair is two loads, not --ab. Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Pass also: replanspread_exceptions 0. Read with bp-replan-crowd-on: IC Replan sync lines after each exit (count, max/sum ms, reasons QueueFull/Active/NoStart, frames PortalRouteThroughAction.ForceReplan / ReplanRouteInterruptAction.PerformAction / RoutingComponent.ForceRouteReplan), worst iteration within 5 s of each exit, worst-hitches.ts --min 300, stuck Sims and route failures. BP 5 min.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "replan-buildbuy-crowd",
+          "fixesOff": "replandefer,replanspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-replan-crowd-on",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes replandefer + replanspread (docs/141 §6), whole-load pair, ON arm (profile.fixesOn): as bp-replan-crowd-off with both switches on. Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Pass also: replanspread_held > 0 at every exit, replanspread_exceptions 0, replandefer_deferred > 0 when a Sim was in a doorway at an exit; Sims stop and reroute as in OFF (no stuck Sims, no extra route failures). Read as bp-replan-crowd-off: fewer and shorter QueueFull / Active IC Replan sync lines right after the exits.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "replan-buildbuy-crowd",
+          "fixesOn": "replandefer,replanspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-candloops-on",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes candidate-loop caps (docs/141 §7: safespotcap, farthestsorted, indoorcap), whole-load pair, ON arm first (swapped start; profile.fixesOn; routablecache left off, it is its own feature): repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then play; the probe is in the load, so two loads, not --ab. Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Pass also: same farthest lot id as the OFF arm, frontdoor true. Read with bp-candloops-off: probe lines (ms per loop), safespotcap_* / farthest_* / indoorcap_* counters, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), worst-hitches.ts --min 300, stuck Sims. BP 5 min (route-cost read: the probe times are the measure).",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "candidate-loops",
+          "fixesOn": "safespotcap,farthestsorted,indoorcap"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-candloops-off",
+      "note": "Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.14 (game-copy/ts3native.asi.0314, as clean-night-0.2.0.json) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). ts3fixes candidate-loop caps (docs/141 §7), whole-load pair, OFF arm (profile.fixesOff: safespotcap, farthestsorted, indoorcap off): the game's candidate loops. Both arms run the v0.2.0 freeze-fix set (FallbackAsync 1, M1Retry 1, SyncCapMs 1000, as clean-night-0.2.0 bp-fb-*-on) plus LogFallbackMs=20 and LogFallbackStack=16 (every sync plan >= 20 ms logged with 16 script frames), so the pair measures what this fix removes on top of the release; only the ts3fixes switches differ. If the freeze fix does not ship, rerun with FallbackAsync 0 / M1Retry 0 / SyncCapMs 0 in both arms. Pass also: every candidate-loop counter 0. Read as bp-candloops-on.",
+      "asi": "game-copy/ts3native.asi.0314",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "candidate-loops",
+          "fixesOff": "safespotcap,farthestsorted,indoorcap"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

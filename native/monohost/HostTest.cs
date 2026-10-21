@@ -23,8 +23,51 @@ namespace MonoHostTest
         ~Finalizable() { Finalized++; }
     }
 
+    // docs/139 MintBench: two receiver types behind one abstract base (monomorphic and alternating callvirt sites)
+    public abstract class Shape
+    {
+        public int W;
+        public abstract int Area();
+        public virtual int Id() { return 1; }
+    }
+    public class Sq : Shape { public override int Area() { return W * W; } }
+    public class Rect : Shape
+    {
+        public int H;
+        public override int Area() { return W * H; }
+        public override int Id() { return 2; }
+    }
+
     public static class HostTest
     {
+        // ---- docs/139: interpreter workload for the mint dispatch A/B. The game's own mscorlib does the work
+        // (List/Dictionary generics, struct and interface enumerators, boxed Enum.Equals, GetType), the shapes add
+        // monomorphic and two-type callvirt sites. The result is a checksum: every dispatch variant must return the same.
+        public static int MintBench(int n)
+        {
+            System.Collections.Generic.Dictionary<int, Shape> map = new System.Collections.Generic.Dictionary<int, Shape>();
+            System.Collections.Generic.List<Shape> list = new System.Collections.Generic.List<Shape>();
+            for (int i = 0; i < 256; i++)
+            {
+                Shape s;
+                if (i % 3 == 0) { Rect r = new Rect(); r.H = i + 1; s = r; } else s = new Sq();
+                s.W = i;
+                map[i * 7] = s;
+                list.Add(s);
+            }
+            int acc = 0;
+            for (int r = 0; r < n; r++)
+            {
+                foreach (Shape s in list) acc += s.Area() + s.Id();
+                for (int i = 0; i < 256; i++) { Shape s; if (map.TryGetValue(i * 7 + (r & 1), out s)) acc ^= s.W; }
+                System.Collections.Generic.IEnumerable<Shape> e = list;
+                foreach (Shape s in e) if (s is Sq) acc++;
+                if (((object)DayOfWeek.Monday).Equals(r % 7 == 0 ? DayOfWeek.Monday : DayOfWeek.Friday)) acc += 5;
+                if (list[r & 255].GetType() == typeof(Rect)) acc += 3;
+            }
+            return acc;
+        }
+
         // ---- M1.4: a graph kept alive only through a GC handle ----
         static Node Build(int n, int seed)
         {

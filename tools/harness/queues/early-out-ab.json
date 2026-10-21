@@ -1,0 +1,194 @@
+[
+  {
+    "id": "bp-eo-rare-route-bits-off",
+    "note": "docs/142 [RouteEarlyOut] probe, arm OFF: bp-frz-rare-route-bits (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. OFF: [RouteEarlyOut] Enabled=0 (the release behaviour). Pass = no crash, game alive. Read: sync plan lines as the reference for the ON arm (the probe must not change counts or results, only add its lines).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 0
+    }
+  },
+  {
+    "id": "bp-eo-rare-route-bits-on",
+    "note": "docs/142 [RouteEarlyOut] probe, arm ON: bp-frz-rare-route-bits (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. ON: [RouteEarlyOut] Enabled=1 Mode=1 LogMs=50 (observe only: every result stays the game's; one line per request >= 50 ms with world A* calls/fails/ms and the provable share). Pass = no crash, game alive, eoWrong 0, watchdogs 0, eoReady 1. Read: route early-out lines next to each sync plan line (A* ms vs plan ms = is the freeze the world search; provable ms = what an acting early-out saves), eo* counters (eoSlowSaved, eoProvWhy, eoReachMax).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 1,
+      "RouteEarlyOut.Mode": 1,
+      "RouteEarlyOut.LogMs": 50
+    }
+  },
+  {
+    "id": "sv-eo-rare-route-bits-off",
+    "note": "docs/142 [RouteEarlyOut] probe, arm OFF: sv-frz-rare-route-bits (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. OFF: [RouteEarlyOut] Enabled=0 (the release behaviour). Pass = no crash, game alive. Read: sync plan lines as the reference for the ON arm (the probe must not change counts or results, only add its lines).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 0
+    }
+  },
+  {
+    "id": "sv-eo-rare-route-bits-on",
+    "note": "docs/142 [RouteEarlyOut] probe, arm ON: sv-frz-rare-route-bits (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. ON: [RouteEarlyOut] Enabled=1 Mode=1 LogMs=50 (observe only: every result stays the game's; one line per request >= 50 ms with world A* calls/fails/ms and the provable share). Pass = no crash, game alive, eoWrong 0, watchdogs 0, eoReady 1. Read: route early-out lines next to each sync plan line (A* ms vs plan ms = is the freeze the world search; provable ms = what an acting early-out saves), eo* counters (eoSlowSaved, eoProvWhy, eoReachMax).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 6,
+        "seed": 12345,
+        "repro": "rare-route-bits"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 1,
+      "RouteEarlyOut.Mode": 1,
+      "RouteEarlyOut.LogMs": 50
+    }
+  },
+  {
+    "id": "bp-eo-rare-big-crowd-off",
+    "note": "docs/142 [RouteEarlyOut] probe, arm OFF: bp-frz-rare-big-crowd (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. OFF: [RouteEarlyOut] Enabled=0 (the release behaviour). Pass = no crash, game alive. Read: sync plan lines as the reference for the ON arm (the probe must not change counts or results, only add its lines).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 0
+    }
+  },
+  {
+    "id": "bp-eo-rare-big-crowd-on",
+    "note": "docs/142 [RouteEarlyOut] probe, arm ON: bp-frz-rare-big-crowd (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. ON: [RouteEarlyOut] Enabled=1 Mode=1 LogMs=50 (observe only: every result stays the game's; one line per request >= 50 ms with world A* calls/fails/ms and the provable share). Pass = no crash, game alive, eoWrong 0, watchdogs 0, eoReady 1. Read: route early-out lines next to each sync plan line (A* ms vs plan ms = is the freeze the world search; provable ms = what an acting early-out saves), eo* counters (eoSlowSaved, eoProvWhy, eoReachMax).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 1,
+      "RouteEarlyOut.Mode": 1,
+      "RouteEarlyOut.LogMs": 50
+    }
+  },
+  {
+    "id": "sv-eo-rare-big-crowd-off",
+    "note": "docs/142 [RouteEarlyOut] probe, arm OFF: sv-frz-rare-big-crowd (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. OFF: [RouteEarlyOut] Enabled=0 (the release behaviour). Pass = no crash, game alive. Read: sync plan lines as the reference for the ON arm (the probe must not change counts or results, only add its lines).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 0
+    }
+  },
+  {
+    "id": "sv-eo-rare-big-crowd-on",
+    "note": "docs/142 [RouteEarlyOut] probe, arm ON: sv-frz-rare-big-crowd (freeze-data.json: same save, seed 12345, same repro) on the docs/142 build (game-copy/ts3native.asi.0313 = the 0.36.13 merge build). Both arms: LogFallbackMs=20, LogFallbackStack=8. ON: [RouteEarlyOut] Enabled=1 Mode=1 LogMs=50 (observe only: every result stays the game's; one line per request >= 50 ms with world A* calls/fails/ms and the provable share). Pass = no crash, game alive, eoWrong 0, watchdogs 0, eoReady 1. Read: route early-out lines next to each sync plan line (A* ms vs plan ms = is the freeze the world search; provable ms = what an acting early-out saves), eo* counters (eoSlowSaved, eoProvWhy, eoReachMax).",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "minCounters": 78,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 8,
+      "RouteEarlyOut.Enabled": 1,
+      "RouteEarlyOut.Mode": 1,
+      "RouteEarlyOut.LogMs": 50
+    }
+  }
+]

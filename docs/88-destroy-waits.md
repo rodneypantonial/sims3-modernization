@@ -163,4 +163,48 @@ Re-run P0 after (gains do not add).
 
 ## 9. Ledger
 
-Rows `I-88-1` .. `I-88-8` in docs/51 §19.
+Rows `I-88-1` .. `I-88-8` in docs/51 §19; the standalone build (§10) in docs/51 §202.
+
+## 10. Design G built standalone (`[Discourage] DestroyPark`, counters v76, 2026-10-21)
+
+Built offline on the 0.36.9 base, off by default (`DestroyPark=0`), not run in game. History: the first standalone build (`[DestroyGrave]`, `destroypark.cpp`, ts3native 0.30.0, counters v51, later reserved as v52) is commit `14a25ef` on an unmerged branch; P5c (0.35.0, docs/94 §22.11) then built the same graveyard in `p5c.cpp`, but only for destroys inside a `FreeLock` window. This build revives the standalone variant on P5c's graveyard instead of a second copy: one admission test more in `P5cPark`, no new file, no new hook site.
+
+**What it does.** `RtEnter` `RT_DESTROY` (`0x939420` stub, `rtsites.cpp`) already calls `P5cPark(idLo, idHi)` before D2 and the job wait. `P5cPark` now admits a destroy when either a P5c window is open (unchanged) or **`dpReady` and `dpMode == 1`, an async job is running (`g_async.state == A_RUNNING`) and the world is not closing**. Admitted destroys follow P5c's rules unchanged: kept wait (today's path) for a non-owner thread or a job callback (`p5cKeptWait[2]`), a queued D-X record for the id in this world (`[0]`; design U's records share D's queue, so they keep the wait too once U merges), a full graveyard of 512 (`[1]`), an id not in the hash (`[3]`); otherwise `ObjectService_FindByIdAddRef 0x9395A0` parks one reference and the destroy runs at once, with no `RtWaitJob`. Install: `InstallDiscourage` reads `[Discourage] DestroyPark` right after its `rgEnforce` test, before `Enabled`, so it needs `[RouteGate] Enforce=1` (the wait it removes exists only then) and neither design D, P5c nor RouteSnap.
+
+**Release points** (P5c's `P5cFlush`, unchanged except the thread rule below): every `RT_DESTROY`, `RT_SAVE`, `RT_CLOSING` and `RT_TEARDOWN` stub entry after its own wait, and both `GetOptionHook` paths (`Route.Plan` START / READY / CANCEL polls, beside `DiscPoll`). Each raises `g_rgOffSimOpen` first and refuses while a job runs (`p5cFlushRefused`), so the release runs with no job and none can start: the state the free has today after the wait. Save: `RT_SAVE` waits for the job, then flushes. Travel / quit: `RT_CLOSING` drains D, sets `rtClosing` (no START, no new park), waits for the job, then flushes. World teardown during a job keeps the graveyard (flush refused) for the next point; `ObjectService_DestroyAll` and the shutdown destroys pass `RT_DESTROY`, which flushes first.
+
+**Thread rule tightened (P5c too).** `P5cFlush` released on any non-worker thread outside a job callback; it now releases only on `g_async.owner` (the thread that STARTs jobs, the sim) outside a job callback. The free runs `Object_Destruct`, the component destructors and the managed release of the script component (§2), which belong on the sim. Every flush point of a live run is on the sim already (`vfRtDestroyOffSim` 0 in all runs), so this changes nothing measured; a non-sim save or destroy now leaves the graveyard for the next sim point.
+
+### 10.1 Safety argument
+
+| Claim | Why | Tag |
+|---|---|---|
+| The job never reads freed object memory (H-b) | The job's object reads (§3.2: `FindById` raw pointers, the `0x643010` / `0x627C40` `lock inc` pattern, component reads) all happen while `A_RUNNING`. A destroy in that time parks one reference before `DestroyById` runs, so the destroy's two `Release`s cannot reach 0; the block stays until a flush, and every flush refuses while `A_RUNNING` (read after `g_rgOffSimOpen` is raised, the Dekker pair with `ServeAsync`'s start). A job that starts later finds the id gone from the hash (the erase ran before it could start: `g_rgOffSimOpen` is held across the destroy) | verified code path; offline proof below |
+| No destructor runs on the worker (H-c) | The worker's own `lock dec` can no longer be the last one: our reference is dropped only on the owner thread at a flush | verified code path; offline proof below |
+| Refcount semantics | One `FindByIdAddRef` (`lock inc obj+4`) per park and one release `0x7460F0` (`lock dec`, deleting destructor at 0) per flush entry, both the game's own code; an extra holder delaying a free is a vanilla state (§5.1) | verified functions (docs/84 §7.2) |
+| Double release is impossible | T-G1: a parked object whose count is already below 1 at the flush is counted (`p5cCountLow`) and leaked, not released | design, selftest |
+| Release order | Park order (FIFO), on one thread; a release that destroys a child re-enters the stub, whose nested flush finds the list already taken | design, selftest |
+| D-X order kept | An id with a queued discourage record keeps today's wait, and `DiscOnDestroy` applies its records under it; a parked id has no record at park time and none can appear before `DiscOnDestroy` (same thread) | design, selftest |
+| What stays unsafe: H-d | A plan can see an object in one lookup and miss it in a later one (unchanged from §3.3; the planner's miss paths return "absent") | inferred, I-88-6 |
+| P4 / RouteSnap with the standalone park | A parked destroy skips D2's clone-run wait as in a P5c window: the clone run reads none of `DestroyById`'s writes (I-94-372) and `g_nrN[2]` still counts the destroy, so a P4 answer that saw it is refused | same argument as P5c (docs/94 §22.11) |
+
+### 10.2 Counters (v76, `docs/registry.md`; built as v77 at 0x3174, renumbered at the 0.36.11 merge)
+
+`dpReady` (+0x31DC), `dpMode` (+0x31E0, switch, `--ab destroypark`), `dpParked` (+0x31E4, parks outside a P5c window), `dpKeptWait` (+0x31E8, admitted outside a window but waited). The graveyard counters are shared with P5c: `p5cParked` (all parks), `p5cKeptWait[4]`, `p5cFlushed`, `p5cFlushRefused`, `p5cPendMax`, `p5cAgeMaxUs` (T-G3), `p5cCountLow` (T-G1). At the 0.36.11 merge it became v76 after v74 (design U) and v75 (M1Retry): 0x31DC-0x31EB, `destroypark` at +0x31E0 in `profile-world.ts counterSwitches`; `[AvoidRO]` moved to v77.
+
+### 10.3 Tests (2026-10-21, offline)
+
+| Test | What | Result |
+|---|---|---|
+| selftest `TestDestroyPark` | fakes with the game's count at `+4` through `RtEnter(7)`: a job holding A by raw pointer and B by its own reference across both destroys (no wait, no free, the job's release of B not the last); flush refused in the job, from another thread and inside a job callback, then A, B freed in park order on the owner; release order E, C, D at the next no-job destroy entry; not installed / switch off / closing / no job refuse; kept waits off the owner thread, in a callback, D-X record (one of another world does not keep), not in the hash; 512 parks fill the graveyard, the 513th keeps the wait, one flush releases all 512; T-G1; save entry (`RT_SAVE`) and travel / quit (`RT_CLOSING`) release, teardown in a job keeps | ok |
+| `TestP5cIn` (P5c, unchanged) | with the owner-only flush | ok |
+| steerro-test section DG | the game's own `DestroyById 0x939420`, `FindById 0x939560`, `FindByIdAddRef 0x9395A0` (through `P5cPark`, no P5c window) and release `0x7460F0` on a fake object service; a job thread holds raw pointers (half also a reference) across the owner's destroys | seeds 1 / 2 x 3000: 27,309 / 26,959 objects parked, each freed once at the flush, 0 freed reads, 0 job-thread destructors, hash back to 0. Negative control (park off, no wait, 750 cases each): 3,518 / 3,443 freed reads, 3,411 / 3,467 job-thread destructors |
+| `build.cmd` | all selftests | `selftest ok` |
+
+### 10.4 Expected gain and live jobs
+
+Destroy key `0x2000003`: 8.7-8.8 ms/s BP and 3.1-4.3 ms/s IP before RouteSnap (§4), ~7-11 ms/s BP on the docs/136 base. With P5c on in the base, destroys inside a `FreeLock` window already park; the standalone park takes the rest. **Expected [inferred]: the key near 0 in the on slices except kept waits; net 3-6 ms/s BP, 1-3 ms/s IP less keyed sim wait** (gains do not add: part may reappear at the sim's next routing touch of the same tick, docs/87 A10 lesson). Run-level it/s cannot resolve this on a noisy night (docs/136 §2); the mechanism read is `wait-ab.ts`.
+
+Queue `tools/harness/queues/destroy-park-ab.json` (not run; clean night only): `bp-wr-destroypark` (off-first ABBA), `bp-wr-destroypark-onfirst` (`abOnFirst`: on, off, off, on; pairs against the slot-1 bias of docs/136 §2), `ip-wr-destroypark`; base = `snap-p5c-ab.json` settings + `Discourage.DestroyPark=1`, 10 min, 2-min slices, `--ab destroypark`. asi: the build's `out/ts3native.asi` copied to `game-copy/ts3native.asi.destroypark`. Pass: no crash, `dpParked` > 0, T-G1 `p5cCountLow` 0, T-G3 `p5cAgeMaxUs` < 100 ms, `vfRtDestroyOffSim` 0; a crash in `0x939xxx`, `0x935xxx` or `0x64xxxx` stops the queue. Not built: probe P-G's caller / kind split and `dgJobMissParked` (§7).
+
+**Effort:** this build ~1 h (code 15 min, tests 30 min, docs and queue 15 min); the queue ~40 min of game time plus reading.

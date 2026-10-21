@@ -11,7 +11,7 @@
 //   - stale answers: the clone answers the START cut. Any recorded routing write since that cut (snap.cpp g_spWrites) refuses
 //     the answer at the retake, and the game's own plan answers under the retaken lock (P5's fallback, reason epoch);
 //   - lifetime (docs/88 design G): a destroy inside the window parks one reference to its object (FindByIdAddRef) and runs at
-//     once, without D2's clone-run wait and without the job wait. Parked references are released on a non-worker thread at a
+//     once, without D2's clone-run wait and without the job wait. Parked references are released on the owner (sim) thread at a
 //     point with no job (destroy, save, closing and teardown entries; the START / READY polls), job starts held off through
 //     g_rgOffSimOpen. Kept waits: a D-X record for the id, a full graveyard, off the sim thread or inside a job callback;
 //   - no deadlock against the retake: the sim never waits for the job or its clone run while it owns the lent lock. A sync
@@ -26,11 +26,11 @@ static __declspec(thread) bool t_p5cRan;  // worker: this job's window opened wi
 static __declspec(thread) LONG t_p5cW1;   // worker: g_spWrites when it opened
 static volatile LONG g_p5cLog;
 
-// the START cut's recorded-write count, by job sequence number (sim at START, worker at the retake; 16 > kJobs)
+// the START cut's recorded-write count, by job sequence number (sim at START, worker at the retake; 64 > kJobs)
 struct P5cCut { volatile LONG seq, w; };
-static P5cCut g_p5cCut[16];
+static P5cCut g_p5cCut[64];
 static void P5cOnStart(const AsyncJob* j) {  // P5OnStart, right after the cut (this thread wrote nothing since)
-    P5cCut& e = g_p5cCut[j->seq & 15];
+    P5cCut& e = g_p5cCut[j->seq & 63];
     e.w = g_spWrites;
     InterlockedExchange(&e.seq, (LONG)j->seq);
 }
@@ -54,7 +54,7 @@ static void P5cTake() {
 static bool P5cStale(DWORD seq) {
     if (!t_p5cRan) return false;
     t_p5cRan = false;
-    const P5cCut& e = g_p5cCut[seq & 15];
+    const P5cCut& e = g_p5cCut[seq & 63];
     const LONG now = g_spWrites;
     const bool known = e.seq == (LONG)seq;
     if (known && now == e.w) return false;
@@ -68,7 +68,7 @@ static bool P5cStale(DWORD seq) {
 static bool P5cStaleEarly(DWORD seq, bool verify) {
     Ts3nCounters& k = ts3native_counters;
     if (!g_p5cOn || !k.p5cFree || k.p5cOff || verify) return false;
-    const P5cCut& e = g_p5cCut[seq & 15];
+    const P5cCut& e = g_p5cCut[seq & 63];
     if (e.seq != (LONG)seq || g_spWrites == e.w) return false;
     InterlockedIncrement(&k.p5cStale[0]);
     return true;
@@ -90,10 +90,13 @@ static bool P5cDiscHas(DWORD idLo, DWORD idHi) {  // D-X: a queued discourage re
 }
 
 // rtsites.cpp RT_DESTROY (thiscall svc; idLo, idHi), before D2 and the job wait: true = one reference parked, the destroy runs
-// now; its last Release cannot run before a flush, so nothing the suspended frame or the clone run reads is freed
+// now; its last Release cannot run before a flush, so nothing the suspended frame or the clone run reads is freed.
+// Design G standalone ([Discourage] DestroyPark=1, dpMode; docs/88 §10): the same park for any running async job, with or
+// without P5c / RouteSnap. The job's FindById pointers (docs/88 §3.2) stay allocated until a no-job flush, as in the window.
 static bool P5cPark(DWORD idLo, DWORD idHi) {
     Ts3nCounters& k = ts3native_counters;
-    if (!g_p5cJob || !g_p5bWin) return false;
+    const bool alone = !(g_p5cJob && g_p5bWin);
+    if (alone && !(k.dpReady && k.dpMode == 1 && g_async.state == A_RUNNING && !k.rtClosing)) return false;
     int kept = -1;
     if (GetCurrentThreadId() != g_async.owner || g_inInvoke) kept = 2;
     else if (P5cDiscHas(idLo, idHi)) kept = 0;  // D-X applies its records under the job wait
@@ -105,6 +108,7 @@ static bool P5cPark(DWORD idLo, DWORD idHi) {
     }
     if (kept >= 0) {
         InterlockedIncrement(&k.p5cKeptWait[kept]);
+        if (alone) InterlockedIncrement(&k.dpKeptWait);
         return false;
     }
     AcquireSRWLockExclusive(&g_p5cGyLock);
@@ -114,16 +118,17 @@ static bool P5cPark(DWORD idLo, DWORD idHi) {
     InterlockedIncrement(&g_p5cGyN);
     ReleaseSRWLockExclusive(&g_p5cGyLock);
     Max(&k.p5cPendMax, g_p5cGyN);
-    InterlockedIncrement(&k.p5cParked);
+    InterlockedIncrement(&k.p5cParked);  // every park (graveyard total); dpParked = those outside a P5c window
+    if (alone) InterlockedIncrement(&k.dpParked);
     return true;
 }
 
-// a non-worker thread outside a job callback, no job running: every parked reference released, oldest first, with job starts
-// held off (ServeAsync's Dekker on g_rgOffSimOpen). A release may destroy more; a nested flush finds the list already taken.
+// the owner (sim) thread outside a job callback, no job running: every parked reference released, oldest first, with job
+// starts held off (ServeAsync's Dekker on g_rgOffSimOpen). A release may destroy more; a nested flush finds the list already
+// taken. Owner only (0.36.9 design G): the free runs component destructors and the managed release, which belong to the sim.
 static void P5cFlush() {
     if (!g_p5cGyN) return;
-    const DWORD me = GetCurrentThreadId();
-    if (RgIsWorker(me) || (me == g_async.owner && g_inInvoke)) return;
+    if (GetCurrentThreadId() != g_async.owner || g_inInvoke) return;
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&g_rgOffSimOpen);
     if (g_async.state == A_RUNNING) {

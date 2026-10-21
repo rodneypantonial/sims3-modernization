@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.6"
+#define TS3NATIVE_VERSION "0.36.16"
 
 typedef unsigned char u8;
 
@@ -201,7 +201,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 3082 int32 (v61; no v58 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 3418 int32 (v81; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, no v52 or v58 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -367,7 +367,7 @@ struct Ts3nCounters {
     LONG cacheHitMB;              // uncompressed input of the hits, MB
     LONG cacheHashMs;             // time hashing inputs, milliseconds
     // v18: second managed thread step 1 (docs/30 P1/P2, monothread.cpp)
-    LONG mtReady;                 // bit 0: GC root hook [0x11949CC] replaced (P2), bit 1: Simulate slot hooked, bit 2: first tick ran (P1)
+    LONG mtReady;                 // bit 0: GC root hook [0x11949CC] replaced (P2), bit 1: Simulate slot hooked, bit 2: first tick ran (P1), bit 3: per-iteration tick (simloop.cpp)
     volatile LONG mtMode;         // runtime switch (+0x2A8); step 1 has only 0 = patches, no worker
     LONG mtSimTid;                // sim thread id (first Simulate tick)
     LONG mtThreads;               // GC thread table entries in use at the first tick (after registration)
@@ -1180,8 +1180,171 @@ struct Ts3nCounters {
     LONG p4BorrowDirty;              // +0x3144, shadow acquires refused "mat"/"stale": a shadow on the same cut wrote clone lots
     // v72 (0.35.8, docs/94 §21.23): replay child table entries kept because a reused live child address belongs to another copy
     LONG rpKidsKept;                 // +0x3148, retire / GC of a block skipped a child entry another copy holds (I-94-440)
+    // v73 (0.36.7, docs/134): sync fallback freezes, [RouteAsync] FallbackAsync / SyncCapMs / LogFallbackStack
+    volatile LONG fbMode;            // +0x314C, runtime switch (--ab fallbackasync): 1 = foreign-task STARTs go async, M1Pending
+                                     //          applies the pending lot updates first, the job queue is 32 deep instead of 8
+    LONG fbForeign;                  // +0x3150, Route.Plan STARTs from a task that is not the route's Sim (ts3fixes 0.36.7+)
+    LONG fbForeignStarted;           // +0x3154, of those, started on the worker (fbMode 1)
+    LONG fbPendApplied;              // +0x3158, M1Pending STARTs: pending lot updates applied on the sim thread, START went on
+    LONG fbPendBusy;                 // +0x315C, M1Pending STARTs whose one +0x918 try failed (refused M1Pending as before)
+    LONG fbDeepQueued;               // +0x3160, STARTs that took a job slot past the first 8 (fbMode 1; QueueFull before)
+    LONG fbCapUs;                    // +0x3164, [RouteAsync] SyncCapMs in us (0 = off): search cap of a sim-thread sync plan
+    LONG fbCapped;                   // +0x3168, sync plans that cap ended (an ordinary no-path failure)
+    LONG fbStacks;                   // +0x316C, fallback log lines followed by a script stack line (LogFallbackStack)
+    LONG fbActiveTrip;               // +0x3170, tripwire: a foreign job's route was being followed at its collect (expected 0)
+    // v74 (docs/89 §10): design U, UpdateSimFootprint 0x833560 deferred into design D's queue
+    // ([Discourage] DeferFootprint=1, discourage.cpp)
+    LONG usfReady;                   // +0x3174, 1 = detour in place
+    volatile LONG usfMode;           // +0x3178, runtime switch (--ab deferfootprint): 1 = defer while a job runs
+    LONG usfCalls;                   // +0x317C, sim-thread calls
+    LONG usfInJob;                   // +0x3180, of those, while a job ran
+    LONG usfPass;                    // +0x3184, passed through: nested under +0x918, job callback, drain, another world, closing
+    LONG usfEarlyOut;                // +0x3188, deferral path: the early out 0x82A720 said no (nothing done, as the original)
+    LONG usfDeferred;                // +0x318C, records queued
+    LONG usfOrderDefer;              // +0x3190, of those, queued only because the object had queued records (no job or mode 0)
+    LONG usfDup;                     // +0x3194, calls equal to the object's newest queued record: dropped
+    LONG usfParkedPass;              // +0x3198, parked object (lock-key map), nothing queued: the original (waits)
+    LONG usfFullDrain;               // +0x319C, queue full, no Add queued: drained (waits), then the original
+    LONG usfFullPass;                // +0x31A0, queue full with an Add queued: the original (waits; may run out of order)
+    LONG usfApplied;                 // +0x31A4, records applied by the original (force 1) at a drain or a destroy
+    LONG usfCollapsed;               // +0x31A8, skipped at a drain: the object's next record is a U record (supersedes)
+    LONG usfDestroyApplied;          // +0x31AC, of usfApplied, by the D-X destroy gate
+    LONG usfGoneEnable0;             // +0x31B0, object gone at apply, disable record
+    LONG usfSwept;                   // +0x31B4, of those, dead-id sweeps (T-U3: = usfGoneEnable0 with DeadSweep=1)
+    LONG usfGoneEnable1;             // +0x31B8, object gone at apply, enable record: dropped
+    LONG usfIdMismatch;              // +0x31BC, the id names another object at apply: dropped
+    LONG usfAgeMaxMs;                // +0x31C0, oldest U record at its drain (T-U2: < 300)
+    LONG usfApplyInJob;              // +0x31C4, tripwire T-U1: an apply while a job ran (expected 0)
+    // v75 (docs/134 §2.6): M1Retry
+    volatile LONG fbRetryMode;       // +0x31C8, runtime switch (--ab m1retry): 1 = an M1Pending START whose +0x918 try failed
+                                     //          is parked; the task's READY polls retry once per tick (needs fbMode 1)
+    LONG fbRetryParked;              // +0x31CC, STARTs parked (answered yes, no job queued yet)
+    LONG fbRetryQueued;              // +0x31D0, parked STARTs queued on a later READY (pending updates applied or gone)
+    LONG fbRetryGaveUp;              // +0x31D4, parked STARTs that planned synchronously (tick cap, other refusal, poll cap)
+    LONG fbRetryTicksMax;            // +0x31D8, most READY ticks one parked START waited
+    // v76 (docs/88 §10): design G standalone, [Discourage] DestroyPark=1 (p5c.cpp P5cPark / P5cFlush; the graveyard and its
+    // p5c* counters shared)
+    LONG dpReady;                    // +0x31DC, 1 = installed ([RouteGate] Enforce=1 and [Discourage] DestroyPark=1)
+    volatile LONG dpMode;            // +0x31E0, runtime switch (--ab destroypark): 1 = a destroy during any async job parks
+    LONG dpParked;                   // +0x31E4, parks outside a P5c window (also in p5cParked, the graveyard total)
+    LONG dpKeptWait;                 // +0x31E8, destroys outside a P5c window that waited as before (also in p5cKeptWait[4])
+    // v77 (docs/137): [AvoidRO] (built as v74 at +0x3174 on its branch, moved after v76 at the 0.36.12 merge), read-only RouteFollow_A 0x846B70 / RouteFollow_B 0x85B470 while a job runs (avoidro.cpp)
+    LONG avReady;                    // +0x31EC, bit 0 A-entry, 1 A-site (call 0x846D1C), 2 B-entry, 3 T-AV stubs
+    volatile LONG avMode;            // +0x31F0, runtime switch (--ab avoidro): 1 = while a job runs, answer from the clone
+    volatile LONG avShadow;          // +0x31F4, runtime switch (--ab avoidshadow): no job, the game's call then the clone
+    LONG avTakenHit;                 // +0x31F8, A answers used: a footprint id (the game's body did not run)
+    LONG avTakenMiss;                // +0x31FC, A answers used: no footprint, the game's body ran with the site skipped
+    LONG avTakenB;                   // +0x3200, B answers used
+    LONG avSiteSkip;                 // +0x3204, A-site returns of 0 (must equal avTakenMiss)
+    LONG avFb[10];                   // +0x3208, fallbacks: state, QL busy, dirty lot index, lot miss, deferred flag, polygon
+                                     //          cache, shape/slot, tripwire, pin moved, job end
+    LONG avUs;                       // +0x3230, clone time of the answers used (us)
+    LONG avMaxUs;                    // +0x3234
+    LONG avTripAv;                   // +0x3238, T-AV: followed-path option writers entered off the sim thread while armed
+    LONG avTwSite[2];                // +0x323C, by site 0x81D090 RoutingOptions_Assign, 0x85FF30 EditPathForRoute
+    LONG avShadowRuns;               // +0x3244, shadow compares (A and B)
+    LONG avShadowMismatch;           // +0x3248, A: the game's id differs from the clone's (Sim scan included)
+    LONG avShadowMismatchB;          // +0x324C, B: 0/1 differs
+    LONG avShadowQueryMismatch;      // +0x3250, 0x82EDB0 (mode 1) footprint set differs from the clone's query
+    LONG avShadowOrder;              // +0x3254, same footprints in another order
+    LONG avShadowSimScan;            // +0x3258, A shadow cases where the clone found no footprint and the Sim scan answered
+    LONG avSimWriteInRo;             // +0x325C, sim-thread W1-W6 / tripwire writer entries during an AvoidRO clone (= 0)
+    // v78 (docs/142, [RouteEarlyOut] probe; after v77's fields): no-path pre-check at the world A*
+    volatile LONG eoMode;            // +0x3260, runtime switch (--ab earlyout): 1 = evaluate the proofs and count, 0 = pass-through
+    LONG eoReady;                    // +0x3264, A* detour installed
+    LONG eoReqs;                     // +0x3268, Route_PlanLocked requests seen with eoMode 1
+    LONG eoAs;                       // +0x326C, outer world A* calls (the circle rerun counts inside its outer call)
+    LONG eoAsFail;                   // +0x3270, of those, no path
+    LONG eoAsMs;                     // +0x3274, time in them
+    LONG eoAsMaxUs;                  // +0x3278, longest one
+    LONG eoProv;                     // +0x327C, calls a proof said would fail (they still ran: Mode 1 changes nothing)
+    LONG eoProvMs;                   // +0x3280, their time = what an acting early-out would save
+    LONG eoProvWhy[3];               // +0x3284, by proof: car components, game colours, same-request memo
+    LONG eoWrong;                    // +0x3290, proven calls that found a path (the correctness argument broke; expected 0)
+    LONG eoReachMax;                 // +0x3294, largest closed set of a failed search (nodes reachable from the start)
+    LONG eoLabelBuilds;              // +0x3298, car component builds (one per R)
+    LONG eoLabelUs;                  // +0x329C, their time
+    LONG eoSlow;                     // +0x32A0, requests >= LogMs
+    LONG eoSlowMs;                   // +0x32A4, their time
+    LONG eoSlowAsMs;                 // +0x32A8, world A* time inside them
+    LONG eoSlowProvMs;               // +0x32AC, provable A* time inside them
+    LONG eoSlowSaved;                // +0x32B0, slow requests the proofs alone would bring under LogMs
+    // v79 (docs/143, unseen.cpp, [UnseenProbe]; built as v78 at +0x3174 on its branch, moved after v78
+    // early-out at the 0.36.13 merge): sim-thread locomotion work by agent class. Classes: 0 visible, 1 unseen,
+    // 2 outside an agent update / not classified. Kinds: 0 Sim, 1 other (cars, boats).
+    LONG unReady;                    // +0x32B4, bit 0 agent call site, 1 footprint (own detour or via design U's stub), 2 plan split, 3 keyed +0x918 ([RouteGate])
+    LONG unPasses;                   // +0x32B8, locomotion passes seen (camera read once per pass)
+    LONG unCamFail;                  // +0x32BC, camera reads that failed (that pass's agents count as visible)
+    LONG unSkipped;                  // +0x32C0, agent updates not classified (no owner / transform, fault): not split
+    LONG unFlips;                    // +0x32C4, an agent's class changed since its last update
+    LONG unAgents[2][2];             // +0x32C8, agent updates [class 0-1][kind]
+    LONG unAgentUs[2][2];            // +0x32D8, their time (Locomotion_UpdateAgent 0x957210, whole call)
+    LONG unAgentMaxUs[2];            // +0x32E8, longest single update by class
+    LONG unAcq[3][3];                // +0x32F0, first +0x918 acquires on the sim [class 0-2][steering 0x85FE10, avoidance 0x846D21, other]
+    LONG unWaitN[3][4];              // +0x3314, keyed sim waits for the route job [class][steering, avoidance, footprint 0x833593, other]
+    LONG unWaitUs[3][4];             // +0x3344
+    LONG unFp[3];                    // +0x3374, UpdateSimFootprint 0x833560 calls on the sim [class 0-2]
+    LONG unFpUs[3];                  // +0x3380
+    LONG unPlan[2][3];               // +0x338C, IC_Route_Plan calls [0 other route, 1 car-only route][follower class 0-2]
+    LONG unPlanUs[2][3];             // +0x33A4, their sim-thread time
+    LONG unReachX10;                 // +0x33BC, the last camera reach in decimetres
+    LONG unEaOff[2];                 // +0x33C0, agent updates [class 0-1] after which EA's own on-screen byte agent+0xC8 was 0
+                                     //          (OffScreenSimBrain / SimpleBody for walking Sims, docs/143 §2.2)
+    // v79 continued (docs/143 §6, [UnseenThrottle] phase 1, unseen.cpp): steering obstacle list 0x85FFE0 at 0x9573B7 every
+    // Nth tick for unseen walking Sims; a skipped call leaves the caller's vector empty (the game's "no obstacles")
+    volatile LONG utMode;            // +0x33C8, runtime switch (--ab unseenthrottle): 1 = skip, 0 = every call runs
+    LONG utReady;                    // +0x33CC, bit 0 call site 0x9573B7 patched, 1 viewer channel heard (ts3fixes push)
+    LONG utEvery;                    // +0x33D0, N (Every)
+    LONG utCalls;                    // +0x33D4, obstacle-list calls seen
+    LONG utRun;                      // +0x33D8, of those, run (= utCalls - utSkipped)
+    LONG utSkipped;                  // +0x33DC, skipped: vector left empty
+    LONG utWhy[13];                  // +0x33E0, why a call ran: mode off, no agent context, visible, EA on-screen byte,
+                                     //          state not 1, linked agent, near a viewer, no fresh viewer table, first tick
+                                     //          after a hold / new agent, stagger turn, near goal, portal (sub-path end or
+                                     //          start), path fault / no path
+    LONG utPathUs;                   // +0x3414, time in the path tests (only on would-skip ticks)
+    LONG utViewerPushes;             // +0x3418, viewer tables accepted (END with a matching count)
+    LONG utViewers;                  // +0x341C, viewers in the current table
+    LONG utViewerBad;                // +0x3420, viewer messages refused (out of sequence, count mismatch, table full)
+    // v80 (docs/143 §8, [UnseenThrottle] phase 2, unseen.cpp): avoidance behaviour, footprint updates and whole agent
+    // updates of unseen walking Sims every Every-th pass; each part its own runtime switch (1 = throttle, 0 = every call runs)
+    volatile LONG utAvMode;          // +0x3424, --ab unseenavoid (ObstacleAvoidance slot 0x1026E10)
+    volatile LONG utFpMode;          // +0x3428, --ab unseenfootprint (UpdateSimFootprint 0x833560)
+    volatile LONG utRateMode;        // +0x342C, --ab unseenrate (Locomotion_UpdateAgent call 0x83CF52)
+    LONG ut2Ready;                   // +0x3430, bit 0 avoidance slot, 1 footprint layer, 2 it sits below design U, 3 rate
+    LONG utAvCalls;                  // +0x3434, avoidance behaviour updates seen
+    LONG utAvSkipped;                // +0x3438, skipped (the record stays as the last run left it, no notice)
+    LONG utAvWhy[18];                // +0x343C, why one ran: utWhy's 13 reasons, then not a Sim, short timer, new path,
+                                     //          step cap, hash slot taken (the last five: rate only)
+    LONG utFpCalls;                  // +0x3484, footprint calls the rule looked at (sim thread, mode on, not nested)
+    LONG utFpSkipped;                // +0x3488, held back (a new pending update or folded into one)
+    LONG utFpCoalesced;              // +0x348C, pending updates folded into or superseded by a later call
+    LONG utFpFlushed;                // +0x3490, pending updates applied when due
+    LONG utFpGone;                   // +0x3494, pending updates dropped at their due time (object gone, id reused, other world)
+    LONG utFpWhy[12];                // +0x3498, why a call ran: off, pass-through (other thread, nested, own flush, no
+                                     //          gate lock), not classified, visible, not a Sim, viewer, no viewer table,
+                                     //          parked, disable / other arguments, due (FpMs since the last), table full
+    LONG utFpFlushUs;                // +0x34C8, time in the flushes
+    LONG utFpPendMax;                // +0x34CC, most pending updates at once (64 max)
+    LONG utRateCalls;                // +0x34D0, agent updates the rate rule looked at
+    LONG utRateSkipped;              // +0x34D4, skipped: the pass's step went into the agent's debt
+    LONG utRateWhy[18];              // +0x34D8, why one ran (as utAvWhy)
+    LONG utRateCatchUp;              // +0x3520, runs that carried debt (summed step)
+    LONG utRateDebtMaxUs;            // +0x3524, largest summed step passed, us of game dt
+    LONG utRateDropped;              // +0x3528, debts dropped (agent not called the pass before, slot taken by another)
+    LONG utSnap[4];                  // +0x352C, snap-backs to full rate because the agent became visible after a skipped
+                                     //          call of that part [0 list, 1 avoidance, 2 footprint, 3 rate]
+    LONG utSnapMaxMs[4];             // +0x353C, the largest owed time at such a snap-back, ms (rate: the owed step)
+    // v81 (docs/134 §10, 0.36.16): [RouteAsync] FbJobCapMs, a world A* cap for foreign (FallbackAsync) jobs on the worker
+    volatile LONG fbjcMode;          // +0x354C, runtime switch (--ab fbjobcap): 1 = foreign jobs run under fbjcCapUs
+    LONG fbjcCapUs;                  // +0x3550, [RouteAsync] FbJobCapMs in us (0 = off)
+    LONG fbjcCapped;                 // +0x3554, foreign jobs the cap ended (an ordinary no-path failure)
+    LONG fbjcMaxUs;                  // +0x3558, longest foreign job (fb = 1), worker time of the IC call
+    LONG ownJobMaxUs;                // +0x355C, longest other job (own-task START, A10 kinds)
+    LONG fbjcLong;                   // +0x3560, foreign jobs >= 200 ms (each logged, rate-limited)
+    LONG ownJobLong;                 // +0x3564, other jobs >= 200 ms (each logged, rate-limited)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {72,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {81,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1264,6 +1427,7 @@ typedef int(__fastcall* PathStatusFn)(void* path, void* edx);  // path vtable +0
 static volatile LONG64 g_nextLog;
 
 static void PrLog();  // planrepeat.cpp
+static void EoLogCounters();  // earlyout.cpp
 
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
@@ -1280,6 +1444,25 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.asyncReady)
         Log("route async: mode %ld started %ld refused %ld collected %ld dropped %ld job %ld ms max %ld us pump %ld ms (%ld waits)", c.asyncMode,
             c.asyncStarted, c.asyncRefused, c.asyncCollected, c.asyncDropped, c.asyncUs / 1000, c.asyncMaxUs, c.asyncPumpUs / 1000, c.asyncPumpWaits);
+    if (c.asyncReady && (c.fbMode || c.fbForeign || c.fbCapUs))  // docs/134
+        Log("route fallback: mode %ld foreign %ld started %ld pending applied %ld busy %ld deep %ld capped %ld stacks %ld activeTrip %ld",
+            c.fbMode, c.fbForeign, c.fbForeignStarted, c.fbPendApplied, c.fbPendBusy, c.fbDeepQueued, c.fbCapped, c.fbStacks, c.fbActiveTrip);
+    if (c.usfReady)  // docs/89 design U
+        Log("footprint defer: mode %ld calls %ld inJob %ld deferred %ld applied %ld collapsed %ld dup %ld ageMax %ld ms applyInJob %ld",
+            c.usfMode, c.usfCalls, c.usfInJob, c.usfDeferred, c.usfApplied, c.usfCollapsed, c.usfDup, c.usfAgeMaxMs, c.usfApplyInJob);
+    if (c.asyncReady && (c.fbRetryMode || c.fbRetryParked))  // docs/134 §2.6
+        Log("route fallback retry: mode %ld parked %ld queued %ld gave up %ld max ticks %ld", c.fbRetryMode, c.fbRetryParked,
+            c.fbRetryQueued, c.fbRetryGaveUp, c.fbRetryTicksMax);
+    if (c.asyncReady && c.asyncStarted)  // docs/134 §10
+        Log("route jobs: longest foreign %ld us own %ld us, >= 200 ms foreign %ld own %ld; job cap mode %ld %ld ms capped %ld",
+            c.fbjcMaxUs, c.ownJobMaxUs, c.fbjcLong, c.ownJobLong, c.fbjcMode, c.fbjcCapUs / 1000, c.fbjcCapped);
+    if (c.avReady)  // docs/137
+        Log("avoid RO: mode %ld shadow %ld hit %ld miss %ld (site %ld) B %ld fallbacks %ld/%ld/%ld/%ld/%ld/%ld/%ld/%ld/%ld/%ld T-AV %ld "
+            "shadow %ld (mismatch %ld B %ld query %ld order %ld simscan %ld) writeInRo %ld", c.avMode, c.avShadow, c.avTakenHit,
+            c.avTakenMiss, c.avSiteSkip, c.avTakenB, c.avFb[0], c.avFb[1], c.avFb[2], c.avFb[3], c.avFb[4], c.avFb[5], c.avFb[6],
+            c.avFb[7], c.avFb[8], c.avFb[9], c.avTripAv, c.avShadowRuns, c.avShadowMismatch, c.avShadowMismatchB,
+            c.avShadowQueryMismatch, c.avShadowOrder, c.avShadowSimScan, c.avSimWriteInRo);
+    if (c.eoReady) EoLogCounters();
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
 }
@@ -1344,11 +1527,13 @@ static inline void QlSharedTrip(int slWhy) {
 // once per generated node right before it is allocated and pushed. Over budget, every edge cost returns the wall:
 // nothing new is pushed, the open list drains (goal check on pop still runs), and the search leaves through its own
 // "open list empty" exit 0x676BF7 (returns 0, no leak), i.e. an ordinary no-path failure.
-struct Budget { LONG on; LONG nodes; LARGE_INTEGER t0; LONG capped; };
+struct Budget { LONG on; LONG nodes; LARGE_INTEGER t0; LONG capped; LONG maxUs; LONG maxNodes; };
 // Per thread: a plan on another thread (another world's lock, or the route worker) never sees or overwrites this one.
 // Implicit TLS in a LoadLibrary'd DLL (the ASI loader) works on Vista+, existing threads included.
 static __declspec(thread) Budget t_budget;
 static LONG g_maxNodes, g_maxUs, g_onlyFlagged;
+// docs/134 SyncCapMs: SyncIc sets the cap of the sim-thread sync fallback plan it runs; CallPlan notes a hit
+static __declspec(thread) LONG t_fbCapUs, t_fbCapHit;
 static const float kWall = 1e9f;  // >= the planner's 1e8 blocked-edge constant at 0x00FEF678
 
 static int __cdecl BudgetStep(DWORD costArg5) {
@@ -1358,7 +1543,7 @@ static int __cdecl BudgetStep(DWORD costArg5) {
     if (costArg5 != 0) return 0;
     // clock starts at the first node, after Route_PlanLocked took the routing lock: lock wait is not search time
     if (b.nodes++ == 0) QueryPerformanceCounter(&b.t0);
-    if ((g_maxNodes && b.nodes > g_maxNodes) || (g_maxUs && (b.nodes & 15) == 0 && UsSince(b.t0) > g_maxUs)) {
+    if ((b.maxNodes && b.nodes > b.maxNodes) || (b.maxUs && (b.nodes & 15) == 0 && UsSince(b.t0) > b.maxUs)) {
         b.capped = 1;
         InterlockedIncrement(&ts3native_counters.budgetCapped);
         InterlockedExchangeAdd(&ts3native_counters.budgetCapNodes, b.nodes);
@@ -1420,21 +1605,28 @@ static bool PatchCostSites(const DWORD* sites, const DWORD* fns) {
 }
 
 // Runs the original Route_PlanLocked under a budget on this thread (the caller's or the worker's).
+// CallPlan (earlyout.cpp) wraps it in the [RouteEarlyOut] request scope.
 static u8 CallPlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
-                   int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+                   int* out1, int* out2, DWORD guidLo, DWORD guidHi);
+static u8 CallPlanBudget(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
+                         int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
     // DebugPathPlan (RouteOption hi word bit 0x1) as the "budget this route" flag for a future C# caller (docs/11 Q3)
-    if (ts3native_counters.budgetMode != 1 || !ts3native_counters.budgetReady ||
-        (g_onlyFlagged && !(((const DWORD*)(opts + 0x2C))[0] & 1)))
+    const bool ready = ts3native_counters.budgetReady != 0;
+    const bool global = ready && ts3native_counters.budgetMode == 1 && !(g_onlyFlagged && !(((const DWORD*)(opts + 0x2C))[0] & 1));
+    const LONG cap = ready ? t_fbCapUs : 0;  // docs/134: a sim-thread sync fallback plan, also with budgetMode 0
+    if (!global && !cap)
         return g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     // A plan nested on this thread (from a managed call inside the search) gets its own budget; the outer one resumes after.
     const Budget outer = t_budget;
-    const Budget fresh = {1, 0, {}, 0};
+    const LONG gUs = global ? g_maxUs : 0;
+    const Budget fresh = {1, 0, {}, 0, cap && (!gUs || cap < gUs) ? cap : gUs, global ? g_maxNodes : 0};
     t_budget = fresh;
     LARGE_INTEGER t0;  // whole request, lock wait included: for the counters only
     QueryPerformanceCounter(&t0);
     u8 r = g_planOrig(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
     LONG us = UsSince(t0), nodes = t_budget.nodes;
     if (t_budget.capped) InterlockedExchangeAdd(&ts3native_counters.budgetCapUs, us);
+    if (t_budget.capped && cap) t_fbCapHit = 1;
     t_budget = outer;
     InterlockedIncrement(&ts3native_counters.budgetCalls);
     Max(&ts3native_counters.budgetMaxNodes, nodes);
@@ -1467,7 +1659,8 @@ struct AsyncSlot {
     DWORD owner;   // the thread that starts jobs (the Mono sim thread); only it can run the jobs' managed calls
     void* lock;    // routing lock world+0x918 the worker holds for the whole running job (H6 S3b)
 };
-enum { J_FREE, J_QUEUED, J_RUNNING, J_DONE, J_SKIPPED };
+// J_PEND (docs/134 §2.6, M1Retry): a parked START, sim thread only; the worker never sees it
+enum { J_FREE, J_QUEUED, J_RUNNING, J_DONE, J_SKIPPED, J_PEND };
 struct AsyncJob {
     volatile LONG state;  // FREE -> QUEUED (sim) -> RUNNING (worker claims) -> DONE / SKIPPED (worker) -> FREE (sim)
     DWORD handle, seq, doneTick;
@@ -1482,8 +1675,11 @@ struct AsyncJob {
     DWORD p4Ver;       // P4: the clone version cut at START (0 = none)
     int p4Why;         // P4: PS_* why the cut was refused (p4.cpp, 0.33.1)
     LONG p4W;          // P4: snap.cpp's g_spWrites right after the cut (0.33.2)
+    LONG fb;           // docs/134: 1 = a foreign-task START (fbMode 1), the caller's task is not the route's Sim
+    LONG pend;         // docs/134 §2.6: READY ticks this J_PEND slot has waited
 };
-static const int kJobs = 8;
+// docs/134: 32 slots; with [RouteAsync] FallbackAsync off only the first kJobsBase are handed out (QueueFull as before)
+static const int kJobs = 32, kJobsBase = 8;
 static const DWORD kDoneKeepMs = 5000;  // a Sim collects within a tick or two; older results lost their caller (reset)
 static AsyncSlot g_async;
 static AsyncJob g_jobs[kJobs];
@@ -1513,8 +1709,13 @@ static __declspec(thread) DWORD t_waitKey;   // routegate.cpp: set around a gate
 // P0: one owner-thread wait of `us` for `key` (only the owner thread waits for jobs, so no interlocked insert)
 enum { HA_LOCK, HA_OTHERLOCK, HA_JOB, HA_PLANWAIT, HA_N };
 static void HaNote(DWORD key, LONG us, int cls);  // hitchattr.cpp ([HitchAttr], per-frame sim waits)
+// [UnseenProbe] (unseen.cpp, docs/143): keyed waits and +0x918 acquires split by the agent class of the sim thread
+static bool g_unOn;
+static void UnWait(DWORD key, LONG us);
+static void UnAcq(DWORD key);
 static void WaitNote(DWORD key, LONG us) {
     Ts3nCounters& k = ts3native_counters;
+    if (g_unOn) UnWait(key, us);
     int i = 0;
     while (i < 32 && k.blockKey[i] && k.blockKey[i] != (LONG)key) i++;
     if (i == 32) { InterlockedIncrement(&k.blockOther); return; }
@@ -1724,6 +1925,18 @@ static void G0wStarted(const G0wHold& h) {
     if (g_g0wIn) InterlockedIncrement(&k.g0wJobStartInPass);
 }
 
+// docs/134 §10: a job >= 200 ms (the sim thread waits for its rest at its next +0x918 acquire): counted, and logged
+// (worker only, 20 lines a minute) so a run names the long jobs: foreign or own START, IC kind, capped or not
+static void JobLongNote(const AsyncJob* j, LONG us, bool capped) {
+    static DWORD minute, lines;
+    InterlockedIncrement(j->fb ? &ts3native_counters.fbjcLong : &ts3native_counters.ownJobLong);
+    const DWORD now = GetTickCount();
+    if (now - minute >= 60000) minute = now, lines = 0;
+    if (lines++ >= 20) return;
+    Log("route async: long job %ld ms, %s START, IC kind %d, route %08lX%s", us / 1000, j->fb ? "foreign" : "own", j->kind,
+        j->handle, capped ? ", capped (FbJobCapMs)" : "");
+}
+
 // Worker side: runs every queued job, oldest first. Each job: the whole original route IC of its kind (IC_Route_Plan, or
 // with A10 Replan / PlanFromPoint / ReplanFromPosition: start points, Route_PlanCommon, Route_PlanLocked, result mapping)
 // with the starter's FPU state, under +0x918 for the whole job (H6 S3b;
@@ -1776,7 +1989,14 @@ static void ServeAsync() {
         QueryPerformanceCounter(&t0);
         g_p4Phase = 1;
         P4LiveBegin(j);
+        // docs/134 §10 FbJobCapMs: the sim thread waits out a long job at its next +0x918 acquire (steering, destroy), so a
+        // foreign job gets a world A* cap like a sync plan's SyncCapMs (nested plans the job's managed calls send back too)
+        t_fbCapUs = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : 0;
+        t_fbCapHit = 0;
         CallIc(j->kind, j->result, j->handle, j->pt);
+        t_fbCapUs = 0;
+        const bool capped = t_fbCapHit != 0;
+        t_fbCapHit = 0;
         const LONG us = UsSince(t0);
         j->us = us;
         P4LiveEnd(j);
@@ -1787,6 +2007,9 @@ static void ServeAsync() {
         TwArm(false);
         InterlockedExchangeAdd(&k.asyncUs, us);
         Max(&k.asyncMaxUs, us);
+        if (capped) InterlockedIncrement(&k.fbjcCapped);
+        Max(j->fb ? &k.fbjcMaxUs : &k.ownJobMaxUs, us);
+        if (us >= 200000) JobLongNote(j, us, capped);
         j->doneTick = GetTickCount();
         InterlockedExchange(&j->state, J_DONE);
         SetEvent(g_asyncDone);
@@ -2049,6 +2272,7 @@ static void NoteDrop(const AsyncJob* j) {
 
 // Owner side: a queued job is taken back; a running one is waited for (its managed calls served); the result is thrown away.
 static void DropJob(AsyncJob* j) {
+    if (InterlockedCompareExchange(&j->state, J_FREE, J_PEND) == J_PEND) return;  // parked, never queued: nothing to drop
     if (InterlockedCompareExchange(&j->state, J_FREE, J_QUEUED) == J_QUEUED) { NoteDrop(j); return; }
     WaitJobDone(j);
     if (j->state == J_DONE) NoteDrop(j);
@@ -2066,10 +2290,12 @@ static void DropAllJobs() {
 // route; its IC_Route_Plan right after takes it. Codes 1-7 = group 0 (refused), 8-11 = group 1 (queue), else group 2.
 // A10 (0.22.0) adds Shadow (Mode 0 refusal), KindMismatch (the job was another IC's) and Active (route being followed).
 enum { RFB_NOSTART, RFB_NOYIELD, RFB_M1, RFB_RUNNING = RFB_M1 + 6, RFB_QFULL, RFB_INVOKE, RFB_UNSTARTED, RFB_SKIPPED, RFB_UNCOLLECTED,
-       RFB_SHADOW, RFB_KIND, RFB_ACTIVE, RFB_LOS };
+       RFB_SHADOW, RFB_KIND, RFB_ACTIVE, RFB_LOS, RFB_FOREIGN };
+// docs/134: NoStart = no START came for the route (the ts3fixes hook found no yielding task, or asyncroute is off);
+// Foreign (0.36.7) = a START from a yielding task that is not the route's Sim, refused while fbMode is 0
 static const char* const kRfbName[] = {"NoStart", "NoYield", "M1NoLock", "M1Busy", "M1Closing", "M1Pending", "M1DirtyIndex",
                                        "M1FrameOpen", "Running", "QueueFull", "InvokeHook", "Unstarted", "Skipped", "Uncollected",
-                                       "Shadow", "KindMismatch", "Active", "Los"};
+                                       "Shadow", "KindMismatch", "Active", "Los", "Foreign"};
 
 // docs/94 §17.9 (I-105-3, 0.29.0): a route with ForcePhysicsBasedRaycast (RouteOption bit 0x2000000, route+0x158+0x28: the
 // test RoutingOptions_Test 0x81C880 makes at 0x75AB9C before World_CanSeeObject 0x75AC22) raises the lot display level
@@ -2095,6 +2321,50 @@ static u8 RfbRefuse(DWORD handle, int why) {
     g_rfbWhy = why;
     return 0;
 }
+// docs/134 [RouteAsync] LogFallbackStack=N: after each fallback log line, the sim thread's script (interpreter) frames,
+// innermost first, so a live run names the managed caller (the native caller is the same Mono IC wrapper for all of them).
+// Walk = autledger.cpp AsLgFrames (TEB TLS slot [0x11F4160] -> context, +8 frame, frame[0] parent, frame[1] info, info +8
+// MonoMethod*); names as tools/probe/agent.js: MonoMethod klass +8, name +0x18; MonoClass name +0x34, namespace +0x38.
+// Every read under SEH; called on the sim thread while it is still inside the route IC, so the frames are the caller's.
+static int AsLgFrames(DWORD* m, int n);  // autledger.cpp
+static LONG g_fbStackFrames;             // LogFallbackStack (0 = off, max 16)
+static int FbName(char* d, int room, DWORD method) {
+    int n = 0;
+    __try {
+        const u8* meth = (const u8*)(uintptr_t)method;
+        const u8* klass = meth ? *(const u8* const*)(meth + 8) : NULL;
+        const char* parts[3] = {klass ? *(const char* const*)(klass + 0x38) : NULL, klass ? *(const char* const*)(klass + 0x34) : NULL,
+                                meth ? *(const char* const*)(meth + 0x18) : NULL};
+        for (int p = 0; p < 3; p++) {
+            if (!parts[p] || !parts[p][0]) continue;
+            if (n && n < room - 1) d[n++] = '.';
+            for (int i = 0; i < 80 && parts[p][i] >= 0x20 && parts[p][i] < 0x7F && n < room - 1; i++) d[n++] = parts[p][i];
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (!n && room > 1) d[n++] = '?';
+    d[n] = 0;
+    return n;
+}
+// frames read (<= 0: none); d = "A.B.M < C.D.N < ..." innermost first
+static int FbStackText(char* d, int room, int frames) {
+    DWORD m[16] = {0};
+    const int got = AsLgFrames(m, frames < 16 ? frames : 16);
+    int n = 0;
+    d[0] = 0;
+    for (int i = 0; i < got && n < room - 8; i++) {
+        if (i) { memcpy(d + n, " < ", 4); n += 3; }
+        n += FbName(d + n, room - n, m[i]);
+    }
+    return got;
+}
+static void RfbStackLine(DWORD handle) {
+    if (!g_fbStackFrames) return;
+    char st[440];  // Log lines are 512 bytes
+    if (FbStackText(st, sizeof(st), g_fbStackFrames) <= 0) { Log("route async: script stack of route %08lX: unreadable", handle); return; }
+    InterlockedIncrement(&ts3native_counters.fbStacks);
+    Log("route async: script stack of route %08lX (innermost first): %s", handle, st);
+}
+
 // kind 0 adds to the v35 counters; A10 kinds only log (v35 stays Route.Plan's)
 static void RfbNote(int why, LONG ms, const char* entry, DWORD handle, const void* ret, int kind = 0) {
     Ts3nCounters& k = ts3native_counters;
@@ -2110,25 +2380,34 @@ static void RfbNote(int why, LONG ms, const char* entry, DWORD handle, const voi
     if (now - g_rfbMinute >= 60000) { g_rfbMinute = now; g_rfbLines = 0; }
     if (g_rfbLines >= (DWORD)kRfbLinesPerMin) { g_rfbDropped++; return; }
     g_rfbLines++;
-    Log("route async: sync plan %ld ms, IC %s, reason %s, entry %s, route %08lX, caller %p (%lu lines rate-limited before)", ms,
-        kArIcName[kind], kRfbName[why], entry, handle, ret, g_rfbDropped);
+    Log("route async: sync plan %ld ms, IC %s, reason %s, entry %s, route %08lX, caller %p (%lu lines rate-limited before)%s", ms,
+        kArIcName[kind], kRfbName[why], entry, handle, ret, g_rfbDropped, t_fbCapHit ? ", capped (SyncCapMs)" : "");
     g_rfbDropped = 0;
+    RfbStackLine(handle);
 }
-// the route IC on this thread. Plan: timed only in Mode 1 with LogFallbackMs set (two QPC reads per sync plan); A10 kinds:
-// always timed (arSyncUs), logged like Plan's
+// the route IC on this thread. Plan: timed only in Mode 1 with LogFallbackMs or SyncCapMs set (two QPC reads per sync plan);
+// A10 kinds: always timed (arSyncUs), logged like Plan's. docs/134 SyncCapMs: the world A* of this sim-thread plan ends at
+// the cap through the [RouteBudget] stubs (an ordinary no-path failure), whatever the reason it is not async
 static u8* SyncIc(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret) {
     Ts3nCounters& k = ts3native_counters;
-    if (!kind && (!k.rfbLogMs || k.asyncMode != 1)) return g_icPlanOrig(out, handle);
+    const LONG cap = k.asyncMode == 1 ? k.fbCapUs : 0;
+    if (!kind && !cap && (!k.rfbLogMs || k.asyncMode != 1)) return g_icPlanOrig(out, handle);
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    const LONG outerCap = t_fbCapUs;  // shortcut: a sync plan nested in another keeps one cap flag; nesting is rare (docs/134 §4)
+    t_fbCapUs = cap;
+    t_fbCapHit = 0;
     u8* r = CallIc(kind, out, handle, pt);
+    t_fbCapUs = outerCap;
+    if (t_fbCapHit) InterlockedIncrement(&k.fbCapped);
     const LONG us = UsSince(t0), ms = us / 1000;
     if (kind) {
         InterlockedExchangeAdd(&k.arSyncUs[kind - 1], us);
         InterlockedIncrement(&k.arSyncN[kind - 1]);
-        if (!k.rfbLogMs || k.asyncMode != 1) return r;
     }
-    if (ms >= kRfbCountMs) RfbNote(why, ms, entry, handle, ret, kind);
+    // the v35 counts and lines stay as before: Mode 1 with LogFallbackMs set (RfbNote's line reads t_fbCapHit)
+    if (k.rfbLogMs && k.asyncMode == 1 && ms >= kRfbCountMs) RfbNote(why, ms, entry, handle, ret, kind);
+    t_fbCapHit = 0;
     return r;
 }
 
@@ -2138,6 +2417,12 @@ static void ArTrip(LONG* n, const char* what, int kind, int jobKind, DWORD handl
         Log("route async: %s: IC %s met job kind %s, route %08lX, caller %p (logged once)", what, kArIcName[kind],
             jobKind >= 0 ? kArIcName[jobKind] : "none", handle, ret);
 }
+
+// A10: is the route being followed (Route_IsActive 0x74CFC0 reads route+0x60, set when following starts, cleared by
+// Route_StopFollowingRoute 0x753230 [verified writers])? Locomotion reads such a route every tick, so it is never replanned
+// on the worker [inferred race, never tested]. cdecl(handle), bool in AL; selftest swaps it. docs/134: foreign STARTs too.
+typedef u8(__cdecl* RouteIsActiveFn)(DWORD handle);
+static RouteIsActiveFn g_routeIsActive = (RouteIsActiveFn)(uintptr_t)0x0074CFC0;
 
 // The collect side of every async route IC (IcPlanHook, a10.cpp hooks): hands the stored result over when READY armed it
 // for this route and the job is this IC's (kind, start point), else plans here. Sim thread only.
@@ -2161,6 +2446,11 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
         DropJob(j);
         return SyncIc(kind, out, handle, pt, RFB_KIND, "mismatch", ret);
     }
+    // docs/134 §2.6: still parked (the C# poll cap, or a Plan without READY): plan here, as M1Pending did before M1Retry
+    if (InterlockedCompareExchange(&j->state, J_FREE, J_PEND) == J_PEND) {
+        InterlockedIncrement(&k.fbRetryGaveUp);
+        return SyncIc(kind, out, handle, pt, RFB_M1 + 3, "pending", ret);
+    }
     // never started: take it back and plan it here
     if (InterlockedCompareExchange(&j->state, J_FREE, J_QUEUED) == J_QUEUED) {
         NoteDrop(j);
@@ -2168,6 +2458,8 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
     }
     WaitJobDone(j);  // normally already done (READY said so)
     const bool done = j->state == J_DONE;
+    // docs/134 tripwire: the Sim whose route a foreign task planned started following it during the job (expected never)
+    if (j->fb && done && g_routeIsActive(handle)) ArTrip(&k.fbActiveTrip, "foreign job's route being followed at collect", kind, j->kind, handle, ret);
     if (done && collect) {
         memcpy(out, j->result, sizeof(j->result));
         InterlockedIncrement(&k.asyncCollected);
@@ -2182,18 +2474,15 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
     return done && collect ? out : SyncIc(kind, out, handle, pt, done ? RFB_UNCOLLECTED : RFB_SKIPPED, "job", ret);
 }
 
+static u8* UnPlan(u8* out, DWORD handle, const void* ret);  // unseen.cpp
 // noinline: P10 swaps this frame's own return slot (selftest calls it directly)
 static __declspec(noinline) u8* __cdecl IcPlanHook(u8* out, DWORD handle) {
     const void* ret = _ReturnAddress();
     if (g_p10On) P10Enter(0, (DWORD*)_AddressOfReturnAddress());  // P10: tags this IC until it returns (swaps the return slot)
+    if (g_unOn) return UnPlan(out, handle, ret);                  // [UnseenProbe]: the same call, timed and classified
     return IcCollect(0, out, handle, NULL, ret);
 }
 
-// A10: is the route being followed (Route_IsActive 0x74CFC0 reads route+0x60, set when following starts, cleared by
-// Route_StopFollowingRoute 0x753230 [verified writers])? Locomotion reads such a route every tick, so it is never replanned
-// on the worker [inferred race, never tested]. cdecl(handle), bool in AL; selftest swaps it.
-typedef u8(__cdecl* RouteIsActiveFn)(DWORD handle);
-static RouteIsActiveFn g_routeIsActive = (RouteIsActiveFn)(uintptr_t)0x0074CFC0;
 
 static u8 AsyncRefuse(DWORD handle, int why, int kind, bool total = true) {
     if (total) InterlockedIncrement(&ts3native_counters.asyncRefused);
@@ -2201,8 +2490,29 @@ static u8 AsyncRefuse(DWORD handle, int why, int kind, bool total = true) {
     return RfbRefuse(handle, why);
 }
 
-// kind 0 = Route.Plan's START; kinds 1-3 (A10) also need their collect detour and a route nobody follows; pt = kinds 2-3
-static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
+// docs/134 M1Pending (fbMode 1): Route_PlanLocked 0x82C6E0 takes +0x918 (Lock_Acquire call at 0x82C733) and then calls
+// RoutingWorld_ApplyPendingUpdates 0x82C420 (thiscall world, no stack args, plain `ret` at 0x82C48E) [verified bytes]. A sync
+// plan would do that first anyway; here the sim thread does only that, under one try of +0x918 (no wait, through the game's
+// Lock_Acquire / Lock_Release and so our detours), and the job then finds a quiet world. Selftest swaps the three pointers.
+typedef void(__fastcall* FbApplyFn)(void* world, void* edx);
+typedef LONG(__fastcall* FbRelFn)(void* lock, void* edx);
+static FbApplyFn g_fbApply = (FbApplyFn)(uintptr_t)0x0082C420;
+static LockAcquireFn g_fbAcq = (LockAcquireFn)(uintptr_t)0x004E16F0;
+static FbRelFn g_fbRel = (FbRelFn)(uintptr_t)0x004E17B0;
+static bool FbApplyPending() {
+    void* lock = g_rgLock;
+    static const DWORD kTry = 0;
+    if (!lock || g_fbAcq(lock, NULL, &kTry) <= 0) { InterlockedIncrement(&ts3native_counters.fbPendBusy); return false; }
+    g_fbApply((u8*)lock - 0x918, NULL);
+    g_fbRel(lock, NULL);
+    InterlockedIncrement(&ts3native_counters.fbPendApplied);
+    return true;
+}
+
+static bool JobQueue(AsyncJob* j, DWORD handle, int kind, const float* pt, bool foreign, void* lock);
+// kind 0 = Route.Plan's START; kinds 1-3 (A10) also need their collect detour and a route nobody follows; pt = kinds 2-3.
+// foreign (docs/134, fbMode 1): a kind-0 START from a yielding task that is not the route's Sim; also needs a route nobody follows
+static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool foreign = false) {
     g_collect = 0;
     g_rfbHandle = 0;
     Ts3nCounters& k = ts3native_counters;
@@ -2214,9 +2524,16 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
     // H6 M1 (docs/60 §2.4): only a quiet world, and only with the gate enforced (rtsites.cpp); the job's lock comes from there
     void* lock = NULL;
     int m1 = 0;
-    if (!RtM1Allows(&lock, &m1)) return AsyncRefuse(handle, RFB_M1 + m1, kind);
-    if (kind && g_routeIsActive(handle)) {
-        InterlockedIncrement(&k.arActive[kind - 1]);
+    bool park = false;  // docs/134 §2.6 M1Retry: the one +0x918 try met a running job; READY tries again each tick
+    if (!RtM1Allows(&lock, &m1)) {
+        if (m1 != 3 || k.fbMode != 1) return AsyncRefuse(handle, RFB_M1 + m1, kind);
+        if (FbApplyPending()) {
+            if (!RtM1Allows(&lock, &m1)) return AsyncRefuse(handle, RFB_M1 + m1, kind);
+        } else if (k.fbRetryMode == 1) park = true;
+        else return AsyncRefuse(handle, RFB_M1 + 3, kind);
+    }
+    if ((kind || foreign) && g_routeIsActive(handle)) {
+        if (kind) InterlockedIncrement(&k.arActive[kind - 1]);
         return AsyncRefuse(handle, RFB_ACTIVE, kind);
     }
     AsyncJob* j = JobFor(handle);
@@ -2227,17 +2544,37 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
         return RfbRefuse(handle, RFB_SHADOW);
     }
     if (j) DropJob(j);  // the same route again: the older request lost its caller
-    for (int i = 0; i < kJobs && !j; i++) if (g_jobs[i].state == J_FREE) j = &g_jobs[i];
-    for (int i = 0; i < kJobs && !j; i++)  // full: reclaim a finished result its Sim never collected (reset)
-        if ((g_jobs[i].state == J_DONE || g_jobs[i].state == J_SKIPPED) && GetTickCount() - g_jobs[i].doneTick >= kDoneKeepMs) {
+    const int slots = k.fbMode == 1 ? kJobs : kJobsBase;  // docs/134: a deeper queue instead of a QueueFull sync plan
+    for (int i = 0; i < slots && !j; i++) if (g_jobs[i].state == J_FREE) j = &g_jobs[i];
+    for (int i = 0; i < slots && !j; i++)  // full: reclaim a finished result its Sim never collected (reset)
+        if ((g_jobs[i].state == J_DONE || g_jobs[i].state == J_SKIPPED || g_jobs[i].state == J_PEND) &&
+            GetTickCount() - g_jobs[i].doneTick >= kDoneKeepMs) {  // a J_PEND this old lost its polling task
             if (g_jobs[i].state == J_DONE) NoteDrop(&g_jobs[i]);
             j = &g_jobs[i];
         }
     if (!j) { InterlockedIncrement(&k.asyncQueueFull); return AsyncRefuse(handle, RFB_QFULL, kind); }
+    if (park) {  // the slot is this route's; READY (FbRetry) queues it once the pending updates are applied
+        g_async.owner = GetCurrentThreadId();
+        j->handle = handle;
+        j->kind = kind;
+        j->fb = foreign;
+        j->pend = 0;
+        j->doneTick = GetTickCount();
+        if (pt) memcpy(j->pt, pt, sizeof(j->pt));
+        InterlockedIncrement(&k.fbRetryParked);
+        InterlockedExchange(&j->state, J_PEND);
+        return 1;
+    }
+    return JobQueue(j, handle, kind, pt, foreign, lock) ? 1 : AsyncRefuse(handle, RFB_INVOKE, kind, false);
+}
+
+// fills slot j and hands it to the worker (sim thread); false = the invoke hook is missing (the slot is left as it was)
+static bool JobQueue(AsyncJob* j, DWORD handle, int kind, const float* pt, bool foreign, void* lock) {
+    Ts3nCounters& k = ts3native_counters;
     EnterCriticalSection(&g_workerCs);
     const bool invokeOk = EnsureInvokeHook();  // the jobs' managed calls must come back to this thread
     LeaveCriticalSection(&g_workerCs);
-    if (!invokeOk) return AsyncRefuse(handle, RFB_INVOKE, kind, false);
+    if (!invokeOk) return false;
     g_async.owner = GetCurrentThreadId();
     j->handle = handle;
     j->seq = ++g_jobSeq;
@@ -2245,6 +2582,9 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
     j->mxcsr = _mm_getcsr();
     j->lock = lock;
     j->kind = kind;
+    j->fb = foreign;
+    if (j - g_jobs >= kJobsBase) InterlockedIncrement(&k.fbDeepQueued);
+    if (foreign) InterlockedIncrement(&k.fbForeignStarted);
     if (pt) memcpy(j->pt, pt, sizeof(j->pt));
     P4OnStart(j);
     InterlockedExchange(&j->state, J_QUEUED);
@@ -2254,7 +2594,42 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL) {
     InterlockedIncrement(&k.asyncStarted);
     if (kind) InterlockedIncrement(&k.arStarted[kind - 1]);
     SetEvent(g_asyncReady);
-    return 1;
+    return true;
+}
+
+// docs/134 §2.6 M1Retry: one READY tick of a parked START (sim thread, the polling task's READY; DiscPoll ran just before).
+// true = READY answers "not yet" (queued now, or wait another tick); false = given up, slot freed, the reason recorded for the
+// plan that follows (synchronous, as M1Pending before M1Retry). The pending lot updates are applied only by FbApplyPending
+// under a successful +0x918 try and only while the world's pending flag is set; a failed try applies nothing. D's deferred
+// footprint records go first: with records still queued (a job ran at DiscPoll) the tick waits, so they never land after
+// the pending updates, as in the sync plan (START's DiscPoll, then Route_PlanLocked's apply).
+static const LONG kFbRetryTicks = 30;
+static bool DiscPending();  // discourage.cpp
+static bool FbRetry(AsyncJob* j) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD h = j->handle;
+    void* lock = NULL;
+    int m1 = 0, why = -1;
+    Max(&k.fbRetryTicksMax, ++j->pend);
+    j->doneTick = GetTickCount();
+    if (k.fbMode != 1 || k.fbRetryMode != 1) why = RFB_M1 + 3;  // switched off while parked
+    else if (AsyncLosRoute(h)) why = RFB_LOS;
+    else if (!RtM1Allows(&lock, &m1)) {
+        if (m1 != 3) why = RFB_M1 + m1;
+        else if (DiscPending() || !FbApplyPending()) {
+            if (j->pend < kFbRetryTicks) return true;
+            why = RFB_M1 + 3;
+        } else if (!RtM1Allows(&lock, &m1)) why = RFB_M1 + m1;
+    }
+    if (why < 0 && (j->kind || j->fb) && g_routeIsActive(h)) why = RFB_ACTIVE;
+    if (why < 0 && JobQueue(j, h, j->kind, NULL, j->fb != 0, lock)) {
+        InterlockedIncrement(&k.fbRetryQueued);
+        return true;
+    }
+    InterlockedIncrement(&k.fbRetryGaveUp);
+    InterlockedExchange(&j->state, J_FREE);
+    RfbRefuse(h, why < 0 ? RFB_INVOKE : why);
+    return false;
 }
 
 // A10 handshake (ts3fixes RouteBackoff.cs), GetOption2 with bits 58 + 59 (no RouteOption2 names up there; the game answers
@@ -2264,8 +2639,10 @@ static const DWORD kArHi = 0x08000000, kArPtHi = 0x10000000, kArKindHi = 0x03000
 static DWORD g_arPt[3], g_arPtSet;  // sim thread only
 
 static u8 SpDoorMsg(DWORD lo, DWORD hi);  // snap.cpp: door mirror channel (RouteOption bits 63 + 58)
+static u8 UtViewerMsg(DWORD lo, DWORD hi);  // unseen.cpp: active-household viewer channel (RouteOption bits 63 + 57)
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
     if ((u8)options2 && (optHi & 0xFF000000) == 0x84000000) return SpDoorMsg(optLo, optHi);
+    if ((u8)options2 && (optHi & 0xFF000000) == 0x82000000) return UtViewerMsg(optLo, optHi);
     if ((u8)options2 && (optHi & ~(kArKindHi | kArPtHi)) == (kAsyncOptHi | kArHi)) {
         const int idx = (int)(optHi >> 24) & 3;
         if (optHi & kArPtHi) {
@@ -2277,6 +2654,13 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
         P5cFlush();  // P5c: parked destroy references, when no job runs (docs/88 §5.1 flush points)
         const bool ptOk = idx == 1 || g_arPtSet == 7;  // kinds 2-3: all three components since the last START
         g_arPtSet = 0;
+        // docs/134 foreign START (ts3fixes 0.36.7+, kind 0 on this channel; older builds answered 0 here): Route.Plan from a
+        // yielding task that is not the route's Sim. fbMode 0: refused as "Foreign" (the log then splits NoStart)
+        if (!idx) {
+            InterlockedIncrement(&ts3native_counters.fbForeign);
+            if (ts3native_counters.fbMode != 1) { g_collect = 0; return RfbRefuse(handle, RFB_FOREIGN); }
+            return AsyncStart(handle, 0, NULL, true);
+        }
         if (!idx || !ptOk) { g_collect = 0; return idx ? AsyncRefuse(handle, RFB_NOSTART, idx, false) : 0; }
         float pt[3];
         memcpy(pt, g_arPt, sizeof(pt));
@@ -2293,6 +2677,10 @@ static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD op
         g_collect = 0;
         if (j) DropJob(j);
         return 1;
+    }
+    if (j && j->state == J_PEND) {  // docs/134 §2.6: parked START, one more try this tick
+        if (FbRetry(j)) return 0;
+        j = NULL;  // given up: READY says done, the plan runs synchronously with the recorded reason
     }
     if (j && (j->state == J_QUEUED || j->state == J_RUNNING)) {
         if (WaitForSingleObject(g_invReady, 0) == WAIT_OBJECT_0) ServeInvoke();  // keep the running job moving
@@ -2327,8 +2715,9 @@ static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadl
         InterlockedIncrement(&ts3native_counters.rgBorrows);
         return 2;
     }
-    const LONG r = LockAcquireAsync(lock, edx, deadline,
-                                    t_waitKey ? t_waitKey : t_steerRet ? t_steerRet : (DWORD)(uintptr_t)_ReturnAddress());
+    const DWORD key = t_waitKey ? t_waitKey : t_steerRet ? t_steerRet : (DWORD)(uintptr_t)_ReturnAddress();
+    const LONG r = LockAcquireAsync(lock, edx, deadline, key);
+    if (g_unOn && lock == g_rgLock && r == 1) UnAcq(key);
     if (lock == g_rgLock && r > 0) {
         if (r == 1) {
             InterlockedIncrement(&ts3native_counters.rgAcquires);
@@ -2399,6 +2788,17 @@ static int ReadRouteAsync(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"RouteAsync", L"Enabled", 0, ini)) { Log("route async disabled (Enabled=0)"); return -1; }
     ts3native_counters.rfbLogMs = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"LogFallbackMs", 200, ini), 0, 600000);
     Log("route async: sync fallback log %ld ms (LogFallbackMs, 0 = off)", ts3native_counters.rfbLogMs);
+    // docs/134: sync fallback freezes
+    ts3native_counters.fbMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"FallbackAsync", 0, ini), 0, 1);
+    const int capMs = GetPrivateProfileIntW(L"RouteAsync", L"SyncCapMs", 0, ini);
+    ts3native_counters.fbCapUs = capMs > 0 ? Clamp(capMs, 50, 60000) * 1000 : 0;
+    g_fbStackFrames = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"LogFallbackStack", 0, ini), 0, 16);
+    ts3native_counters.fbRetryMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"M1Retry", 0, ini), 0, 1);
+    const int jobCapMs = GetPrivateProfileIntW(L"RouteAsync", L"FbJobCapMs", 0, ini);  // docs/134 §10
+    ts3native_counters.fbjcCapUs = jobCapMs > 0 ? Clamp(jobCapMs, 50, 60000) * 1000 : 0;
+    ts3native_counters.fbjcMode = ts3native_counters.fbjcCapUs ? 1 : 0;
+    Log("route async: FallbackAsync=%ld SyncCapMs=%ld LogFallbackStack=%ld M1Retry=%ld FbJobCapMs=%ld", ts3native_counters.fbMode,
+        ts3native_counters.fbCapUs / 1000, g_fbStackFrames, ts3native_counters.fbRetryMode, ts3native_counters.fbjcCapUs / 1000);
     return Clamp(GetPrivateProfileIntW(L"RouteAsync", L"Mode", 1, ini), 0, 1);
 }
 
@@ -2486,10 +2886,12 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "steerro.cpp"
 #include "lotfd.cpp"
 #include "obstructro.cpp"
+#include "avoidro.cpp"
 #include "slotro.cpp"
 #include "locowin.cpp"
 #include "p10.cpp"
 #include "a10.cpp"
+#include "simloop.cpp"
 #include "monothread.cpp"
 #include "lotstream.cpp"
 #include "jobqueue.cpp"
@@ -2512,7 +2914,10 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "planrepeat.cpp"
 #include "optsinit.cpp"
 #include "hitchattr.cpp"
+#include "unseen.cpp"
 #include "worldimage.cpp"
+#include "crashreport.cpp"
+#include "earlyout.cpp"
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -2543,6 +2948,7 @@ static void Run(HMODULE self) {
     if (dot) *dot = 0;
     swprintf_s(ini, L"%s.ini", path);
     swprintf_s(log, L"%s.log", path);
+    CrPreLog(ini, log);  // [CrashReport]: the previous session's last lines, before the log is truncated
     g_log = CreateFileW(log, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     SYSTEMTIME st;
@@ -2556,6 +2962,7 @@ static void Run(HMODULE self) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
         InstallXcptLog(ini);
+        InstallCrashReport(ini, log);
         ApplyGc(ini);
         bool cache = ApplyRouteCache(ini);
         bool worker = ApplyRouteWorker(ini);
@@ -2563,13 +2970,20 @@ static void Run(HMODULE self) {
         if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
         const bool gate = ReadRouteGate(ini);  // checks every prologue first: nothing is hooked if one differs
         // [PlanRepeat] (planrepeat.cpp) counts inside this detour
-        keepLog = InstallPlanDetour(cache, worker, ApplyRouteBudget(ini), gate || GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini));
+        // docs/134 SyncCapMs needs the cost-function stubs even with [RouteBudget] off (budgetMode then stays 0: no global cap)
+        const bool budget = ApplyRouteBudget(ini) || (asyncMode >= 0 && (ts3native_counters.fbCapUs > 0 || ts3native_counters.fbjcCapUs > 0));
+        const bool earlyOut = ReadEarlyOut(ini);  // docs/142: its request scope lives in this detour
+        keepLog = InstallPlanDetour(cache, worker, budget, gate || earlyOut || GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini));
+        if (earlyOut) InstallEarlyOut(keepLog);
+        if ((ts3native_counters.fbCapUs || ts3native_counters.fbjcCapUs) && !ts3native_counters.budgetReady)
+            Log("FAIL route async: SyncCapMs / FbJobCapMs need the cost-function stubs, no cap");
         if (asyncMode >= 0 && worker && keepLog && InstallAsync(asyncMode)) InstallA10(ini);
         InstallRtSites(ini, gate && InstallRouteGate(g_planOrig != NULL));
         InstallDiscourage(ini);
         InstallSteerRO(ini);
         InstallLotFd(ini);
         InstallObstructedRO(ini);
+        InstallAvoidRO(ini);
         InstallSlotRo(ini);
         InstallLocoWindow(ini);
         InstallP10(ini);
@@ -2588,7 +3002,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyThreadStack(ini) || keepLog;  // docs/66 §6: exe IAT CreateThread/_beginthreadex (default off)
         keepLog = ApplyIcLockCheck(ini) || keepLog;
         keepLog = ApplyMonoThread(ini) || keepLog;
-        keepLog = ApplyWorldImage(ini) || keepLog;  // after [MonoThread]: chains its Simulate slot hook
+        keepLog = ApplyWorldImage(ini) || keepLog;  // after [MonoThread]: second callback on the Simulate loop-back hook
         keepLog = ApplyLotStream(ini) || keepLog;
         keepLog = ApplyJobQueue(ini) || keepLog;
         ApplyD3dMultithreaded(ini);
@@ -2605,6 +3019,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyPlanRepeat(ini) || keepLog;  // after [RouteSnap] (its world version) and the plan detour
         keepLog = ApplyOptsInit(ini) || keepLog;    // I-94-322: the planner options' hub references start at 0 (default off)
         keepLog = ApplyHitchAttr(ini) || keepLog;   // docs/96 §9: per-frame sim waits for the route job (observe only)
+        keepLog = ApplyUnseenProbe(ini) || keepLog;  // docs/143: locomotion work split visible / unseen (observe only)
         keepLog = ApplyVerify(ini) || keepLog;  // last: probes skip whatever another section already hooked
         P5Snapshot();                           // P5 M2-1: the code bytes of every site the clone run passes, after every install
         keepLog = ApplyAutShadow(ini) || keepLog;  // docs/122 part 1: guard thunks after every other table owner (routesnap)
@@ -2619,6 +3034,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         DisableThreadLibraryCalls(inst);
         // Patch now: the ASI loader runs before the exe's entry point, so before GC_init (lazy, first GC use).
         Run(inst);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        CrCleanExit();
     }
     return TRUE;
 }

@@ -1,0 +1,105 @@
+[
+  {
+    "id": "bp-wr-deferfp",
+    "note": "docs/89 design U A/B (counters v74, [Discourage] DeferFootprint=1, built 2026-10-21 on the 0.36.9 base, offline only so far). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, BP 10 min, --ab deferfootprint (usfMode +0x3178) 2-min slices, warm-up then off,on,on,off (ABBA). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x833593 (UpdateSimFootprint +0x918 acquire, ~7-9 ms/s BP with D on, docs/89 §4). Expected [inferred]: key near 0 in the on slices except pass-throughs (usfParkedPass, usfFullPass, usfPass), net 3-5 ms/s less keyed wait. Pass: no crash, 0 watchdog lines, usfReady 1, usfDeferred > 0, T-U1 usfApplyInJob 0, T-U2 usfAgeMaxMs < 300, T-U3 usfSwept = usfGoneEnable0, discIdMismatch/usfIdMismatch 0; read node tools/harness/wait-ab.ts <tag> (0x833593 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x82xxxx/0x83xxxx/0x66xxxx/0x94xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 74,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DeferFootprint": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "deferfootprint",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "bp-wr-deferfp-onfirst",
+    "note": "docs/89 design U A/B (counters v74, [Discourage] DeferFootprint=1, built 2026-10-21 on the 0.36.9 base, offline only so far). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, BP 10 min, --ab deferfootprint (usfMode +0x3178) 2-min slices, warm-up then on,off,off,on (abOnFirst; pairs with the off-first job: docs/136 §2 slot bias). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x833593 (UpdateSimFootprint +0x918 acquire, ~7-9 ms/s BP with D on, docs/89 §4). Expected [inferred]: key near 0 in the on slices except pass-throughs (usfParkedPass, usfFullPass, usfPass), net 3-5 ms/s less keyed wait. Pass: no crash, 0 watchdog lines, usfReady 1, usfDeferred > 0, T-U1 usfApplyInJob 0, T-U2 usfAgeMaxMs < 300, T-U3 usfSwept = usfGoneEnable0, discIdMismatch/usfIdMismatch 0; read node tools/harness/wait-ab.ts <tag> (0x833593 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x82xxxx/0x83xxxx/0x66xxxx/0x94xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "minCounters": 74,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DeferFootprint": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "deferfootprint",
+        "slice": 2,
+        "abOnFirst": true
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  },
+  {
+    "id": "ip-wr-deferfp",
+    "note": "docs/89 design U A/B (counters v74, [Discourage] DeferFootprint=1, built 2026-10-21 on the 0.36.9 base, offline only so far). Base = release v0.1.4 ini defaults ([RouteAsync] Enabled/Mode 1 Kinds 0, [RouteGate] Enabled/Sites/Enforce 1, [Discourage] Enabled 1; RouteSnap off, P5c FreeLock off: P5c is parked and not in v0.2.0, so the A/B measures the release setup) plus LogFallbackStack=16 (docs/141), HitchAttr on, IP 10 min, --ab deferfootprint (usfMode +0x3178) 2-min slices, warm-up then off,on,on,off (ABBA). asi = game-copy/ts3native.asi.0313 (ts3native 0.36.13 merge build). Target key 0x833593 (UpdateSimFootprint +0x918 acquire, ~7-9 ms/s BP with D on, docs/89 §4). Expected [inferred]: key near 0 in the on slices except pass-throughs (usfParkedPass, usfFullPass, usfPass), net 3-5 ms/s less keyed wait. Pass: no crash, 0 watchdog lines, usfReady 1, usfDeferred > 0, T-U1 usfApplyInJob 0, T-U2 usfAgeMaxMs < 300, T-U3 usfSwept = usfGoneEnable0, discIdMismatch/usfIdMismatch 0; read node tools/harness/wait-ab.ts <tag> (0x833593 on vs off, all keyed waits not higher) and hitch-attr-report.ts. Any crash in 0x82xxxx/0x83xxxx/0x66xxxx/0x94xxxx stops the queue (crash-cause rule). Stuck Sims: log only.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-IP-Spring",
+    "minCounters": 74,
+    "ini": {
+      "RouteAsync.Enabled": 1,
+      "RouteAsync.Mode": 1,
+      "RouteAsync.Kinds": 0,
+      "RouteGate.Enabled": 1,
+      "RouteGate.Sites": 1,
+      "RouteGate.Enforce": 1,
+      "Discourage.Enabled": 1,
+      "RouteSnap.Enabled": 0,
+      "RouteSnap.FreeLock": 0,
+      "OptsInit.Enabled": 1,
+      "HitchAttr.Enabled": 1,
+      "RouteAsync.LogFallbackStack": 16,
+      "Discourage.DeferFootprint": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "ab": "deferfootprint",
+        "slice": 2
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 30
+  }
+]

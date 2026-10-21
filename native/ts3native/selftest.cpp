@@ -295,6 +295,24 @@ static void TestRouteBudget() {
     };
     assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1 && c.budgetCapped == 3 && c.budgetMaxUsOk >= 30000);
     g_maxUs = 0;
+    // docs/134 SyncCapMs: this thread's sync fallback cap ends an endless search with the global budget off, notes the hit
+    ts3native_counters.budgetMode = 0;
+    g_planOrig = [](void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) -> u8 {
+        g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+        for (;;) {
+            if (g_cost(0, 0, 0, 0, 1, 0, 0, 0) >= 1e8f) return 0;
+            g_cost(0, 0, 0, 0, 0, 0, 0, 0);
+            Sleep(1);
+        }
+    };
+    t_fbCapUs = 5000;
+    t_fbCapHit = 0;
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 0 && c.budgetCapped == 4 && t_fbCapHit == 1 && !t_budget.on);
+    t_fbCapUs = t_fbCapHit = 0;
+    ts3native_counters.budgetMode = 1;
+    g_costCalls = 0;
+    g_planOrig = FakeSearch;  // no cap on this thread and the global one has no limits: untouched, not counted as capped
+    assert(CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0) == 1 && c.budgetCapped == 4);
 
     // per-thread state: a capped plan on another thread in the middle of ours neither ends nor feeds our budget
     g_maxNodes = 300;
@@ -778,6 +796,224 @@ static void TestA10() {
     memset(&k.arReady, 0, sizeof(LONG) * 32);
 }
 
+// --- docs/134: sync fallback freezes ([RouteAsync] FallbackAsync, SyncCapMs, LogFallbackStack); runs inside TestRouteAsync ---
+static volatile DWORD g_fbActiveH;  // the route the fake Route_IsActive calls "being followed"
+static u8 __cdecl FbFakeActive(DWORD h) { return h == g_fbActiveH; }
+static volatile LONG g_fbApplyOk, g_fbSeenCap;
+static void __fastcall FbFakeApply(void* world, void*) {
+    const CRITICAL_SECTION* lock = (const CRITICAL_SECTION*)((u8*)world + 0x918);
+    g_fbApplyOk = lock->OwningThread == (HANDLE)(uintptr_t)GetCurrentThreadId();  // applied under +0x918, on this thread
+    (*(u8**)((u8*)world + 0x95C))[0x10E] = 0;
+}
+static LONG __fastcall FbBusyAcquire(void*, void*, const DWORD* deadline) { assert(*deadline == 0); return -2; }
+static u8* __cdecl FbCapIc(u8* out, DWORD handle) {  // stands in for a sim plan whose world A* hit the cap
+    g_fbSeenCap = t_fbCapUs;
+    if (t_fbCapUs) t_fbCapHit = 1;
+    return FakeIc(out, handle);
+}
+static u8 Foreign(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi | kArHi, 1); }  // ts3fixes 0.36.7 foreign START
+static u8 g_fbCtx[12], g_fbInfo[3][12], g_fbMeth[2][0x20], g_fbCls[2][0x40];
+static DWORD g_fbFrame[3][2];
+static const u8* __cdecl FbFakeCtx() { return g_fbCtx; }
+
+static void TestFallback() {
+    static_assert(offsetof(Ts3nCounters, fbMode) == 0x314C && offsetof(Ts3nCounters, fbCapUs) == 0x3164 &&
+                  offsetof(Ts3nCounters, fbActiveTrip) == 0x3170, "counters v73 layout (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, fbRetryMode) == 0x31C8 && offsetof(Ts3nCounters, fbRetryTicksMax) == 0x31D8,
+                  "counters v75 layout after v74 (docs/registry.md)");
+    static_assert(offsetof(Ts3nCounters, fbjcMode) == 0x354C && offsetof(Ts3nCounters, ownJobLong) == 0x3564,
+                  "counters v81 layout after v80 (docs/registry.md)");
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD me = GetCurrentThreadId();
+    u8 out[0x48];
+    const RouteIsActiveFn savedActive = g_routeIsActive;
+    g_routeIsActive = FbFakeActive;
+    g_fbActiveH = kH2;
+    g_rfbLines = g_rfbDropped = 0;
+    k.rfbLogMs = 1;
+
+    // 1. foreign START, fbMode 0: refused as "Foreign", the plan stays sync and is counted under that reason
+    g_icSleepMs = 60;
+    assert(!Foreign(kH1) && k.fbForeign == 1 && g_rfbHandle == kH1 && g_rfbWhy == RFB_FOREIGN && !JobFor(kH1));
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && (k.rfbMax & 0xFF) == RFB_FOREIGN && k.rfbN[2] == 1);
+    // fbMode 1: on the worker while the caller's task sleeps; READY, then the plan takes the worker's result
+    k.fbMode = 1;
+    g_icSleepMs = 20;
+    assert(Foreign(kH1) && k.fbForeignStarted == 1 && JobFor(kH1) && JobFor(kH1)->fb == 1);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid && k.fbActiveTrip == 0);
+    Cancel(kH1);
+    // a route being followed stays on the sim thread (Active), as for A10
+    assert(!Foreign(kH2) && g_rfbWhy == RFB_ACTIVE && !JobFor(kH2) && k.fbForeignStarted == 1);
+    assert(IcPlanHook(out, kH2) == out && *(DWORD*)(out + 0x40) == me);
+    // inside a native->managed call: NoYield, as for the Sim's own task
+    FakeTask(kNested, 7);
+    assert(!Foreign(kH1) && g_rfbWhy == RFB_NOYIELD);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    FakeTask(kRoot, 7);
+    // tripwire: the route started being followed during the job (logged once, counted)
+    assert(Foreign(kH1));
+    WaitReady(kH1);
+    g_fbActiveH = kH1;
+    assert(IcPlanHook(out, kH1) == out && k.fbActiveTrip == 1);
+    Cancel(kH1);
+    g_fbActiveH = kH2;
+
+    // 2. M1Pending: fbMode 0 refuses; fbMode 1 applies the pending lot updates under one +0x918 try, then starts
+    u8* world = (u8*)g_rgLock - 0x918;
+    u8* p = *(u8**)(world + 0x95C);
+    p[0x10E] = 1;
+    k.fbMode = 0;
+    assert(!Start(kH1) && g_rfbWhy == RFB_M1 + 3 && k.fbPendApplied == 0 && p[0x10E] == 1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    k.fbMode = 1;
+    g_fbAcq = FakeLockAcquire;
+    g_fbRel = FakeLockRelease;
+    g_fbApply = FbFakeApply;
+    assert(Start(kH1) && k.fbPendApplied == 1 && g_fbApplyOk && p[0x10E] == 0);
+    WaitReady(kH1);  // the worker took +0x918 for the job, so the START released it
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
+    Cancel(kH1);
+    p[0x10E] = 1;  // +0x918 busy: one try, nothing applied, refused as before
+    g_fbAcq = FbBusyAcquire;
+    assert(!Start(kH1) && k.fbPendBusy == 1 && k.fbPendApplied == 1 && p[0x10E] == 1 && g_rfbWhy == RFB_M1 + 3);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    p[0x10E] = 0;
+
+    // 2b. M1Retry (docs/134 §2.6): the busy try parks the START (answered yes, no job); each READY tries once more
+    k.fbRetryMode = 1;
+    p[0x10E] = 1;
+    const LONG started0 = k.asyncStarted;
+    assert(Start(kH1) && k.fbRetryParked == 1 && k.fbPendBusy == 2 && JobFor(kH1) && JobFor(kH1)->state == J_PEND);
+    assert(!AsyncBusy() && k.asyncStarted == started0);  // a parked START is no job: no lock pump, worker idle
+    assert(!Ready(kH1) && JobFor(kH1)->state == J_PEND && JobFor(kH1)->pend == 1 && k.fbPendBusy == 3 && p[0x10E] == 1);
+    // D's deferred footprint records still queued (here: a drain in progress): the tick waits even with the lock free
+    g_fbAcq = FakeLockAcquire;
+    g_discCount = 1;
+    g_discDraining = true;
+    assert(!Ready(kH1) && JobFor(kH1)->state == J_PEND && k.fbPendApplied == 1 && p[0x10E] == 1);
+    g_discCount = 0;
+    g_discDraining = false;
+    // lock free, D empty: applied once under +0x918 on this thread, then queued; READY later, the worker's result collected
+    g_fbApplyOk = 0;
+    assert(!Ready(kH1) && k.fbPendApplied == 2 && g_fbApplyOk && p[0x10E] == 0 && k.fbRetryQueued == 1);
+    assert(k.asyncStarted == started0 + 1 && k.fbRetryTicksMax == 3);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
+    Cancel(kH1);
+    assert(k.fbPendApplied == 2);  // never applied twice
+    // the tick cap: READY gives up, the plan runs here with reason M1Pending, nothing applied
+    p[0x10E] = 1;
+    g_fbAcq = FbBusyAcquire;
+    assert(Start(kH1) && JobFor(kH1)->state == J_PEND);
+    JobFor(kH1)->pend = kFbRetryTicks - 1;
+    assert(Ready(kH1) && !JobFor(kH1) && k.fbRetryGaveUp == 1 && g_rfbHandle == kH1 && g_rfbWhy == RFB_M1 + 3);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && k.fbPendApplied == 2);
+    // the C# poll cap (Plan without READY saying done): the parked slot is freed, planned here
+    assert(Start(kH1) && JobFor(kH1)->state == J_PEND);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me && !JobFor(kH1) && k.fbRetryGaveUp == 2);
+    // CANCEL while parked frees the slot; M1Retry off: refused at START as before
+    assert(Start(kH1) && JobFor(kH1)->state == J_PEND);
+    Cancel(kH1);
+    assert(!JobFor(kH1) && k.fbRetryParked == 4);
+    k.fbRetryMode = 0;
+    assert(!Start(kH1) && g_rfbWhy == RFB_M1 + 3 && !JobFor(kH1) && k.fbRetryParked == 4);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    p[0x10E] = 0;
+
+    // 3. QueueFull: 8 fresh uncollected results fill fbMode 0's slots; fbMode 1 queues past them
+    k.fbMode = 0;
+    g_icSleepMs = 0;
+    for (DWORD i = 0; i < 8; i++) assert(Start(0x25000200 + i));
+    for (DWORD i = 0; i < 8; i++) WaitReady(0x25000200 + i);
+    assert(!Start(kH1) && g_rfbWhy == RFB_QFULL);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == me);
+    k.fbMode = 1;
+    assert(Start(kH1) && k.fbDeepQueued == 1 && JobFor(kH1) - g_jobs >= kJobsBase);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == g_workerTid);
+    Cancel(kH1);
+    for (DWORD i = 0; i < 8; i++) Cancel(0x25000200 + i);
+    assert(!AsyncBusy());
+
+    // 4. SyncCapMs: a sim-thread sync plan runs with this thread's cap set (cleared after), a capped one is counted
+    k.fbCapUs = 150000;
+    g_icPlanOrig = FbCapIc;
+    g_fbSeenCap = -1;
+    assert(IcPlanHook(out, kH2) == out && g_fbSeenCap == 150000 && k.fbCapped == 1 && t_fbCapUs == 0 && t_fbCapHit == 0);
+    g_fbSeenCap = -1;
+    assert(Start(kH1));  // an async plan: the worker's call has no cap
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 0 && k.fbCapped == 1);
+    Cancel(kH1);
+    // 4b. FbJobCapMs (docs/134 §10): a foreign job runs under the job cap on the worker, an own job does not; switch off = none
+    k.fbjcCapUs = 200000;
+    k.fbjcMode = 1;
+    k.fbjcMaxUs = k.ownJobMaxUs = k.fbjcLong = k.ownJobLong = 0;  // earlier cases ran long own jobs
+    g_fbSeenCap = -1;
+    assert(Start(kH1));
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 0 && k.fbjcCapped == 0);
+    Cancel(kH1);
+    g_icSleepMs = 210;  // also a long job: counted and logged
+    assert(Foreign(kH1) && JobFor(kH1)->fb == 1);
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 200000 && k.fbjcCapped == 1 && k.fbCapped == 1);
+    assert(k.fbjcLong == 1 && k.ownJobLong == 0 && k.fbjcMaxUs >= 200000 && k.ownJobMaxUs < 200000);
+    Cancel(kH1);
+    g_icSleepMs = 0;
+    k.fbjcMode = 0;
+    g_fbSeenCap = -1;
+    assert(Foreign(kH1));
+    WaitReady(kH1);
+    assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 0 && k.fbjcCapped == 1);
+    Cancel(kH1);
+    k.fbCapUs = 0;
+    assert(IcPlanHook(out, kH2) == out && g_fbSeenCap == 0 && k.fbCapped == 1);  // off: no cap
+    g_icPlanOrig = FakeIc;
+
+    // 5. LogFallbackStack: interpreter frames named innermost first; a bad MonoMethod reads as "?"
+    const char* names[] = {"Route", "ScriptCore", "Plan", "Sim+GroupChatB", "Sims3.Gameplay.Actors", "RouteToGroupTalk"};
+    for (int i = 0; i < 2; i++) {
+        *(const char**)(g_fbCls[i] + 0x34) = names[i * 3];
+        *(const char**)(g_fbCls[i] + 0x38) = names[i * 3 + 1];
+        *(u8**)(g_fbMeth[i] + 8) = g_fbCls[i];
+        *(const char**)(g_fbMeth[i] + 0x18) = names[i * 3 + 2];
+        *(u8**)(g_fbInfo[i] + 8) = g_fbMeth[i];
+    }
+    *(DWORD*)(g_fbInfo[2] + 8) = 0x10;  // unreadable
+    for (int i = 0; i < 3; i++) {
+        g_fbFrame[i][0] = i < 2 ? (DWORD)(uintptr_t)g_fbFrame[i + 1] : 0;
+        g_fbFrame[i][1] = (DWORD)(uintptr_t)g_fbInfo[i];
+    }
+    *(DWORD**)(g_fbCtx + 8) = g_fbFrame[0];
+    const u8* (__cdecl* savedCtx)() = g_lgCtx;
+    g_lgCtx = FbFakeCtx;
+    char st[200];
+    assert(FbStackText(st, sizeof(st), 8) == 3 &&
+           strcmp(st, "ScriptCore.Route.Plan < Sims3.Gameplay.Actors.Sim+GroupChatB.RouteToGroupTalk < ?") == 0);
+    assert(FbStackText(st, sizeof(st), 1) == 1 && strcmp(st, "ScriptCore.Route.Plan") == 0);
+    g_fbStackFrames = 8;
+    g_rfbLines = 0;
+    RfbNote(RFB_NOSTART, 300, "nojob", kH1, NULL);
+    assert(k.fbStacks == 1);
+    g_fbStackFrames = 0;
+    RfbNote(RFB_NOSTART, 300, "nojob", kH1, NULL);
+    assert(k.fbStacks == 1);
+    g_lgCtx = savedCtx;
+
+    k.fbMode = 0;
+    g_fbAcq = (LockAcquireFn)(uintptr_t)0x004E16F0;
+    g_fbRel = (FbRelFn)(uintptr_t)0x004E17B0;
+    g_fbApply = (FbApplyFn)(uintptr_t)0x0082C420;
+    g_routeIsActive = savedActive;
+    g_rfbHandle = 0;
+    memset(&k.rfbLogMs, 0, sizeof(LONG) * 8);
+    memset((void*)&k.fbMode, 0, sizeof(LONG) * 10);  // v73
+    memset((void*)&k.fbRetryMode, 0, sizeof(LONG) * 5);  // v75
+    memset((void*)&k.fbjcMode, 0, sizeof(LONG) * 7);  // v80 (docs/134 §10)
+}
+
 static void TestRouteAsync() {
     const DWORD me = GetCurrentThreadId();
     const Ts3nCounters& c = ts3native_counters;
@@ -977,6 +1213,7 @@ static void TestRouteAsync() {
     assert(w.rfbN[1] == 30 && w.rfbMs[1] == 9000 && (w.rfbMax >> 8) == 300 && (w.rfbMax & 0xFF) == RFB_QFULL);
     assert(g_rfbLines == (DWORD)kRfbLinesPerMin && g_rfbDropped == 30 - (kRfbLinesPerMin - 2));  // rate limit: 20 lines/min
     memset(&w.rfbLogMs, 0, sizeof(LONG) * 8);
+    TestFallback();    // docs/134 on the same setup
     TestA10();         // A10 on the same setup
     TestLocoWindow();  // H2 on the same async setup (real worker, M1 world, gate enforced)
     ts3native_counters.rgEnforce = 0;
@@ -2120,6 +2357,94 @@ static void TestMonoThread() {
     CloseHandle(g_mtReady);
     CloseHandle(g_mtQuit);
     memset(&k.mtReady, 0, 8 * sizeof(LONG));
+}
+
+// --- Simulate loop-back hook (simloop.cpp, docs/51 §188): a copy of the game's loop tail driving a 3-iteration loop ---
+static int g_slpCalls;
+static DWORD g_slpEsiSeen;
+static u8 g_slpHost[0xC20];
+static void __cdecl SlpFake() {
+    g_slpCalls++;
+    g_slpEsiSeen = *(DWORD*)(g_slpHost + 0xC10);  // remaining count at the callback
+}
+static void TestSimLoop() {
+    u8* p = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    assert(p);
+    u8* q = p;
+    *q++ = 0x56;                                                          // push esi
+    *q++ = 0xBE, *(DWORD*)q = (DWORD)(uintptr_t)g_slpHost, q += 4;         // mov esi, host
+    u8* site = q;
+    memcpy(q, kSlpSite, sizeof(kSlpSite)), q += sizeof(kSlpSite);            // mov ecx,[esi+0xC08]; cmp ecx,1; je
+    u8* rel = q;
+    q += 4;
+    *q++ = 0x5E, *q++ = 0x33, *q++ = 0xC0, *q++ = 0xC3;                   // pop esi; xor eax,eax; ret
+    u8* head = p + 0x40;                                                  // loop head: dec [esi+0xC10]; jnz +10; mov [esi+0xC08],0; jmp site
+    *(LONG*)rel = (LONG)(head - (rel + 4));
+    q = head;
+    *q++ = 0xFF, *q++ = 0x8E, *(DWORD*)q = 0xC10, q += 4;
+    *q++ = 0x75, *q++ = 0x0A;
+    *q++ = 0xC7, *q++ = 0x86, *(DWORD*)q = 0xC08, q += 4, *(DWORD*)q = 0, q += 4;
+    *q++ = 0xE9, *(LONG*)q = (LONG)(site - (q + 4)), q += 4;
+    typedef int(__cdecl* RunFn)();
+    const RunFn run = (RunFn)(void*)p;
+    const DWORD target = (DWORD)(uintptr_t)head;
+    *(DWORD*)(g_slpHost + 0xC08) = 1, *(DWORD*)(g_slpHost + 0xC10) = 3;
+    assert(run() == 0 && g_slpCalls == 0);  // unhooked: the loop runs 3 times, no callback
+    // refused: a changed byte, or a je that goes elsewhere; nothing written
+    const LONG rel0 = *(LONG*)rel;
+    site[7] = 0xFA;
+    assert(!SlpInstall(site, target) && *(LONG*)rel == rel0);
+    site[7] = 0xF9;
+    assert(!SlpInstall(site, target + 1) && *(LONG*)rel == rel0);
+    // hooked: one callback per loop-back (3), none on the exit path; esi, the flags and the loop still work
+    assert(SimLoopAdd(SlpFake, "selftest", site, target) && g_slpState == 1 && g_slpN == 1 && g_slpBack == target);
+    assert((DWORD)(uintptr_t)(rel + 4) + (DWORD)*(LONG*)rel == (DWORD)(uintptr_t)SlpThunk);
+    *(DWORD*)(g_slpHost + 0xC08) = 1, *(DWORD*)(g_slpHost + 0xC10) = 3;
+    assert(run() == 0 && g_slpCalls == 1 + 1 + 1 && g_slpEsiSeen == 1);
+    assert(SimLoopAdd(SlpFake, "selftest 2") && g_slpN == 2);  // second owner: no second patch
+    *(DWORD*)(g_slpHost + 0xC08) = 1, *(DWORD*)(g_slpHost + 0xC10) = 2;
+    assert(run() == 0 && g_slpCalls == 3 + 2 * 2);
+    VirtualFree(p, 0, MEM_RELEASE);
+    g_slpN = 0, g_slpState = 0, g_slpBack = 0;
+    printf("sim loop: loop-back hook ok (3 iterations, %d callbacks)\n", g_slpCalls);
+}
+
+// post-pump hook (simloop.cpp SimPumpAdd): the slot chains to what it held; callbacks only after a return to the pump site
+static int g_sppFakeRuns, g_sppCalls;
+static DWORD __fastcall SppFakeRun(void* jm, void*, void* rec, DWORD deadline, DWORD nonblock) {
+    assert(jm == (void*)0x1234 && rec == (void*)0x77 && deadline == 0 && nonblock == 1);
+    g_sppFakeRuns++;
+    return 0x55;
+}
+static void __cdecl SppFake() { g_sppCalls++; }
+static void TestSimPump() {
+    u8* p = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    assert(p);
+    static DWORD slot;
+    u8* q = p;
+    *q++ = 0xB8, *(DWORD*)q = (DWORD)(uintptr_t)&slot, q += 4;  // mov eax, &slot
+    *q++ = 0x6A, *q++ = 0x01, *q++ = 0x6A, *q++ = 0x00, *q++ = 0x6A, *q++ = 0x77;  // push 1; push 0; push rec
+    *q++ = 0xB9, *(DWORD*)q = 0x1234, q += 4;  // mov ecx, jm
+    *q++ = 0xFF, *q++ = 0x10;  // call [eax] (thiscall, ret 0xC), as 0xD81FDA
+    u8* back = q;
+    *q++ = 0xC3;
+    typedef DWORD(__cdecl* SiteFn)();
+    const SiteFn site = (SiteFn)(void*)p;
+    // refused: the slot holds something that is neither RunJobs nor code of ours; nothing written
+    slot = 0x00001000;  // no module there
+    assert(!SimPumpAdd(SppFake, "selftest", &slot, 0x0059A430) && g_sppState == -1 && slot == 0x00001000);
+    g_sppState = 0;
+    // a stub of ours in the slot (stands for [JobQueue]'s): chained; callbacks after the pump site's return only
+    slot = (DWORD)(uintptr_t)SppFakeRun;
+    g_sppRet = (DWORD)(uintptr_t)back;
+    assert(SimPumpAdd(SppFake, "selftest", &slot, 0x0059A430) && g_sppState == 1 && slot == (DWORD)(uintptr_t)SppHook);
+    assert(site() == 0x55 && g_sppFakeRuns == 1 && g_sppCalls == 1);
+    assert(((SppRunFn)(uintptr_t)slot)((void*)0x1234, NULL, (void*)0x77, 0, 1) == 0x55 && g_sppFakeRuns == 2 && g_sppCalls == 1);  // other caller
+    assert(SimPumpAdd(SppFake, "selftest 2") && g_sppN == 2 && slot == (DWORD)(uintptr_t)SppHook);  // second owner: no second patch
+    assert(site() == 0x55 && g_sppFakeRuns == 3 && g_sppCalls == 3);
+    VirtualFree(p, 0, MEM_RELEASE);
+    g_sppN = 0, g_sppState = 0, g_sppRet = SPP_RET, g_sppNext = NULL;
+    printf("sim pump: post-pump hook ok (%d pump calls, %d callbacks)\n", g_sppFakeRuns, g_sppCalls);
 }
 
 // --- lot streaming measurement: each hook on a fake of the game function it wraps (docs/28 §5.5) ---
@@ -3711,6 +4036,453 @@ static void TestDiscourageDX() {
     g_asyncDone = savedDone;
     g_invReady = savedInv;
     DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- design U (docs/89 §10, counters v74): UpdateSimFootprint 0x833560 deferred into design D's queue ---
+// log: U records 'P'/'Q'/'R' (enable 1) or 'p'/'q'/'r' (enable 0) for A/B/C, D's 'A'.. / 'a'.. as in the D-X fakes
+static bool g_uShould = true, g_uNestOnce;
+static DWORD g_uForce[512];
+static void __fastcall FakeUsf(void* world, void*, void* obj, DWORD enable, DWORD force, DWORD arg) {
+    assert(arg == 7);
+    g_uForce[g_xLogN] = force;
+    g_xLog[g_xLogN++ & 63] = (char)((enable & 0xFF ? 'P' : 'p') + XIdx(obj));
+    if (g_uNestOnce) {  // a nested call under +0x918 (as Locomotion_Notify from a discourage apply): runs at once
+        g_uNestOnce = false;
+        assert(ts3native_counters.rgOwnerTid == (LONG)GetCurrentThreadId());
+        UsfHook((u8*)world, NULL, g_xObj[2], 1, 1, 7);
+    }
+}
+static u8 __fastcall FakeUsfShould(void*, void*, void* obj) { assert(obj); return g_uShould; }
+
+static void TestFootprintDefer() {
+    static_assert(offsetof(Ts3nCounters, usfReady) == 0x3174 && offsetof(Ts3nCounters, usfMode) == 0x3178 &&
+                  offsetof(Ts3nCounters, usfApplied) == 0x31A4 && offsetof(Ts3nCounters, usfApplyInJob) == 0x31C4 &&
+                  sizeof(Ts3nCounters) == 3418 * 4, "v74 layout (without v52, v58)");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
+    memset(&k.usfReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, usfReady));
+    const DWORD me = GetCurrentThreadId();
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_discAddOrig = XAdd;
+    g_discRemoveOrig = XRemove;
+    g_usfOrig = FakeUsf;
+    g_usfShould = FakeUsfShould;
+    g_objSvc = FakeSvc;
+    g_findRef = XFindRef;
+    g_objRelease = FakeObjRelease;
+    g_lotRemove = XLotRemove;
+    g_keyFind = XKeyFind;
+    static u8 world[0xA00];
+    static u8 planner[0x200];
+    static DWORD buckets[2] = {0, 0x5E5E5E5E};
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = planner;
+    *(DWORD**)(world + 0x8BC) = buckets;
+    *(DWORD*)(world + 0x8C0) = 1;
+    *(DWORD*)(world + 0x8C4) = 0;  // nothing parked
+    g_xKeyHit = false;
+    g_rgLock = world + 0x918;
+    for (int i = 0; i < 3; i++) { *(DWORD*)(g_xObj[i] + 8) = 0xA + i; *(DWORD*)(g_xObj[i] + 0xC) = 0; g_xLive[i] = g_xObj[i]; }
+    u8* const A = g_xObj[0], * const B = g_xObj[1], * const C = g_xObj[2];
+    k.discMode = 1;
+    k.discDestroyMode = 1;
+    k.discSweepMode = 1;
+    k.usfMode = 1;
+    g_async.owner = me;
+    g_xLogN = 0;
+    auto log = [](const char* s) { return g_xLogN == (int)strlen(s) && memcmp(g_xLog, s, g_xLogN) == 0; };
+    auto forced = [](int from) {  // every U apply in the log ran with force 1
+        for (int i = from; i < g_xLogN; i++)
+            if (((g_xLog[i] >= 'P' && g_xLog[i] <= 'R') || (g_xLog[i] >= 'p' && g_xLog[i] <= 'r')) && g_uForce[i] != 1) return false;
+        return true;
+    };
+
+    // 1. no job: the original at once, with the caller's force
+    UsfHook(world, NULL, A, 1, 0, 7);
+    assert(log("P") && g_uForce[0] == 0 && k.usfCalls == 1 && k.usfDeferred == 0 && g_discCount == 0);
+    // 2. a job runs: recorded in one FIFO with D's records, applied in order at the next drain with force 1
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    DiscRemoveHook(world, NULL, B);
+    UsfHook(world, NULL, B, 1, 1, 7);
+    g_uShould = false;
+    UsfHook(world, NULL, C, 1, 0, 7);  // the early out says no: nothing to do, no record
+    g_uShould = true;
+    assert(g_xLogN == 0 && g_discCount == 3 && k.usfDeferred == 2 && k.usfEarlyOut == 1 && k.usfInJob == 3);
+    DiscPoll();  // job still runs, records fresh: kept
+    assert(g_xLogN == 0 && g_discCount == 3);
+    g_async.state = A_IDLE;  // job end: the next drain point applies them
+    DiscPoll();
+    assert(log("pbQ") && forced(0) && g_discCount == 0 && k.usfApplied == 2 && k.discApplied == 1 && k.rgOwnerTid == 0);
+    // 3. collapse: an exact repeat is dropped at once; at the drain only the object's last U record runs
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    UsfHook(world, NULL, A, 1, 0, 7);  // same call again
+    UsfHook(world, NULL, A, 0, 0, 7);
+    UsfHook(world, NULL, B, 0, 0, 7);
+    UsfHook(world, NULL, A, 1, 0, 7);
+    assert(k.usfDup == 1 && g_discCount == 4);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("qP") && k.usfCollapsed == 2 && k.usfApplied == 4);
+    // a D record between two U records of the object stops the collapse (the Remove must see the first apply)
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    DiscRemoveHook(world, NULL, A);
+    UsfHook(world, NULL, A, 0, 0, 7);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("Pap") && k.usfCollapsed == 2);
+    // 4. order: with A's record queued, A's next call queues even with no job (and in mode 0); B runs at once
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    DiscRemoveHook(world, NULL, A);
+    g_async.state = A_IDLE;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    k.usfMode = 0;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    k.usfMode = 1;
+    UsfHook(world, NULL, B, 1, 0, 7);
+    assert(log("Q") && k.usfOrderDefer == 2 && g_discCount == 3);
+    DiscPoll();
+    assert(log("Qap") && g_discCount == 0);  // P collapsed into p
+    // a D call with no job drains the queue (U records first), then runs
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    g_async.state = A_IDLE;
+    DiscRemoveHook(world, NULL, B);
+    assert(log("pb") && g_discCount == 0);
+    // 5. pass-through: mode 0 with nothing queued, nested under +0x918 (from an apply), another world, a job callback
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    k.usfMode = 0;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    k.usfMode = 1;
+    k.rgOwnerTid = (LONG)me;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    k.rgOwnerTid = 0;
+    g_inInvoke = 1;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    g_inInvoke = 0;
+    static u8 world2[0xA00];
+    world2[0x974] = 1;
+    UsfHook(world2, NULL, A, 0, 0, 7);
+    assert(log("PpPp") && k.usfPass == 3 && g_discCount == 0);
+    UsfHook(world, NULL, B, 0, 0, 7);  // recorded; its apply makes a nested call for C, which runs inside it
+    g_uNestOnce = true;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("PpPpqR") && k.usfPass == 4 && g_discCount == 0);
+    // 6. parked object with nothing queued: the original (it waits); with records queued it queues, no collapse
+    g_xLogN = 0;
+    *(DWORD*)(world + 0x8C4) = 1;
+    g_xKeyHit = true;  // id 0xA is in the lock-key map
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    assert(log("P") && g_uForce[0] == 1 && k.usfParkedPass == 1 && g_discCount == 0);
+    DiscRemoveHook(world, NULL, A);
+    UsfHook(world, NULL, A, 1, 0, 7);
+    UsfHook(world, NULL, A, 0, 0, 7);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("PaPp") && k.usfCollapsed == 3);
+    *(DWORD*)(world + 0x8C4) = 0;
+    g_xKeyHit = false;
+    // 7. destroy while queued (D-X): the object's U records applied in order, its Add dropped, others kept
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    __declspec(align(16)) float pts[3][4] = {{1.5f}, {2}, {3}};
+    u8* vec[3] = {(u8*)pts, (u8*)pts + 48, (u8*)pts + 48};
+    UsfHook(world, NULL, A, 0, 0, 7);
+    UsfHook(world, NULL, B, 1, 0, 7);
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    UsfHook(world, NULL, A, 1, 0, 7);
+    g_async.state = A_IDLE;  // RT_DESTROY waited for the job
+    DiscOnDestroy(0xA, 0, true);
+    assert(log("pP") && k.usfDestroyApplied == 2 && g_discCount == 1 && k.rgOwnerTid == 0);
+    DiscPoll();
+    assert(log("pPQ") && g_discCount == 0);
+    // 8. gone at apply: a disable sweeps the dead id (T-U3), an enable is dropped, a reused id is dropped
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    UsfHook(world, NULL, B, 1, 0, 7);
+    UsfHook(world, NULL, C, 1, 0, 7);
+    g_xLive[0] = NULL, g_xLive[1] = NULL, g_xLive[2] = A;
+    const int sweeps0 = g_xSweeps;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(g_xLogN == 0 && k.usfGoneEnable0 == 1 && k.usfSwept == 1 && g_xSweeps == sweeps0 + 1 && g_xSweepArgs[2] == 0xA);
+    assert(k.usfGoneEnable1 == 1 && k.usfIdMismatch == 1 && g_discCount == 0);
+    for (int i = 0; i < 3; i++) g_xLive[i] = g_xObj[i];
+    // 9. queue full: with no Add queued it drains (Remove and U are managed-free), then runs the call
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, C, 0, 0, 7);
+    for (int i = 1; i < kDiscCap; i++) UsfHook(world, NULL, B, i & 1, 0, 7);
+    assert(g_discCount == kDiscCap);
+    g_async.state = A_IDLE;
+    g_xLogN = 0;
+    UsfHook(world, NULL, C, 1, 0, 7);  // C has a record: queues for order, finds the queue full
+    assert(log("rQR") && k.usfFullDrain == 1 && g_discCount == 0);  // B's 255 collapse into the last (enable 1)
+    // with an Add queued it cannot drain here: the call runs now (counted as out of order)
+    g_async.state = A_RUNNING;
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    for (int i = 1; i < kDiscCap; i++) UsfHook(world, NULL, B, i & 1, 0, 7);
+    g_xLogN = 0;
+    UsfHook(world, NULL, C, 1, 0, 7);
+    assert(log("R") && k.usfFullPass == 1 && g_discCount == kDiscCap);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("RAQ") && g_discCount == 0);
+    // tripwires
+    assert(k.usfApplyInJob == 0 && k.usfAgeMaxMs < 300);
+
+    g_async.owner = 0;
+    g_async.state = A_IDLE;
+    g_rgLock = NULL;
+    k.discMode = 0;
+    k.usfMode = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    g_lockOrig = savedLock;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
+// --- design G standalone ([Discourage] DestroyPark, counters v76; p5c.cpp P5cPark / P5cFlush outside a P5c window; docs/88
+// §10): fake objects with the game's layout where the park reads it (count +4). The fake release frees (poisons the canary,
+// logs the order) when the count reaches 0, as 0x7460F0's deleting destructor would; GDestroy is DestroyById's net effect
+// (hash erase, count -1). The run against the game's own DestroyById / FindById / release with a job thread is steerro-test
+// section DG. ---
+static const int kGObjs = 8;
+static u8 g_gObj[kGObjs][0x20];
+static bool g_gInHash[kGObjs];
+static char g_gFreeLog[640];
+static int g_gFreeN, g_gRelCalls;
+static DWORD g_gFreeTid;
+static int GIdx(const void* o) { for (int i = 0; i < kGObjs; i++) if (o == g_gObj[i]) return i; return -1; }
+static LONG& GCount(int i) { return *(LONG*)(g_gObj[i] + 4); }
+static DWORD& GCanary(int i) { return *(DWORD*)(g_gObj[i] + 0x18); }
+static void* __cdecl GSvc() { return g_gObj; }
+static u8 __fastcall GFindRef(void* svc, void*, DWORD lo, DWORD hi, void** out) {  // 0x9395A0's convention
+    assert(svc == (void*)g_gObj && hi == 0);
+    const int i = (int)lo - 0x100;
+    if (i < 0 || i >= kGObjs || !g_gInHash[i]) return 0;
+    InterlockedIncrement(&GCount(i));
+    *out = g_gObj[i];
+    return 1;
+}
+static void GDrop(int i) {
+    assert(GCount(i) > 0);
+    if (InterlockedDecrement(&GCount(i)) == 0) {
+        GCanary(i) = 0xDDDDDDDD;
+        g_gFreeLog[g_gFreeN++] = (char)('A' + i);
+        g_gFreeTid = GetCurrentThreadId();
+    }
+}
+static void __fastcall GRelease(void** pp, void*) { g_gRelCalls++; GDrop(GIdx(*pp)); }
+static void GDestroy(int i) { assert(g_gInHash[i]); g_gInHash[i] = false; GDrop(i); }
+static void GNew(int i) { GCount(i) = 1; *(DWORD*)(g_gObj[i] + 8) = 0x100 + i; GCanary(i) = 0xC0FFEE00 + i; g_gInHash[i] = true; }
+static DWORD WINAPI GFlushOther(void*) { P5cFlush(); return 0; }
+
+static void TestDestroyPark() {
+    static_assert(offsetof(Ts3nCounters, dpReady) == 0x31DC && offsetof(Ts3nCounters, dpMode) == 0x31E0 &&
+                  offsetof(Ts3nCounters, dpParked) == 0x31E4 && offsetof(Ts3nCounters, dpKeptWait) == 0x31E8 &&
+                  sizeof(Ts3nCounters) == 3418 * 4, "v76 layout after v75 (docs/registry.md)");
+    Ts3nCounters& k = ts3native_counters;
+    k.dpReady = k.dpMode = k.dpParked = k.dpKeptWait = 0;
+    k.vfRtDestroyWaitUs = 0;
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    const DWORD* const savedSim = g_rtSimTidSlot;
+    g_rtSimTidSlot = &simTid;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    const SvcFn savedSvc = g_objSvc;
+    const FindRefFn savedFind = g_findRef;
+    const ReleaseFn savedRel = g_objRelease;
+    const DWORD savedWorker = g_workerTid;
+    g_objSvc = GSvc, g_findRef = GFindRef, g_objRelease = GRelease;
+    k.rtReady = RT_ALL;
+    k.rgEnforce = 1;
+    k.rgOwnerTid = 0;
+    k.rtClosing = 0;
+    g_workerTid = me + 7;
+    g_async.owner = me;
+    g_rgLock = NULL;
+    g_discCount = 0;
+    g_p5cJob = 0, g_p5bWin = 0;  // no P5c window: the standalone path only
+    assert(g_p5cGyN == 0);
+    for (int i = 0; i < kGObjs; i++) GNew(i);
+    DWORD stack[24] = {};
+    auto reset = [&] { t_rg.n = 0; t_rg.readers = 0; g_rgOffSimOpen = 0; };
+    // RT_DESTROY through the stub's view: slot[1] / slot[2] = the id; the destroy itself (GDestroy) runs after the stub
+    auto destroy = [&](DWORD id) {
+        stack[20] = 0x777;
+        stack[21] = id;
+        stack[22] = 0;
+        RtEnter(7, &stack[20]);
+        assert(RgLeave() == 0x777 && g_rgOffSimOpen == 0);
+    };
+    const LONG parked0 = k.p5cParked, flushed0 = k.p5cFlushed, refused0 = k.p5cFlushRefused, low0 = k.p5cCountLow;
+
+    // 0. not installed / switch off: no park, today's path (a destroy with no job, so the stub does not wait)
+    g_async.state = A_RUNNING;
+    assert(!P5cPark(0x100, 0) && k.dpKeptWait == 0);  // dpReady 0: the probe's switch alone does not arm it
+    k.dpMode = 1;
+    assert(!P5cPark(0x100, 0));
+    k.dpReady = 1, k.dpMode = 0;
+    assert(!P5cPark(0x100, 0) && g_p5cGyN == 0);
+    k.dpMode = 1;
+
+    // 1. destroy during a job: a job uses A (raw pointer, FindById) and B (its own reference) across their destroys
+    u8* const jobA = g_gObj[0];
+    u8* const jobB = g_gObj[1];
+    InterlockedIncrement(&GCount(1));  // the job's lock inc on B (the 0x643010 pattern)
+    destroy(0x100);
+    GDestroy(0);
+    destroy(0x101);
+    GDestroy(1);
+    assert(g_async.state == A_RUNNING && k.vfRtDestroyWaitUs == 0 && k.dpParked == 2 && g_p5cGyN == 2);
+    assert(k.p5cParked == parked0 + 2 && k.p5cFlushRefused == refused0 + 2);  // the stub's own flush refused in the job
+    assert(GCount(0) == 1 && GCount(1) == 2 && g_gFreeN == 0);
+    assert(*(DWORD*)(jobA + 0x18) == 0xC0FFEE00 && *(DWORD*)(jobB + 0x18) == 0xC0FFEE01);  // H-b: no read of a freed block
+    GDrop(1);  // the job's release of B is not the last one (H-c: no destructor on the worker)
+    assert(GCount(1) == 1 && g_gFreeN == 0);
+    // release points refuse while the job runs: the START / READY poll
+    P5cFlush();
+    assert(g_p5cGyN == 2 && g_gFreeN == 0 && g_rgOffSimOpen == 0);
+    // the job ends; a flush from another (non-worker, non-owner) thread is refused: the free belongs to the sim
+    g_async.state = A_IDLE;
+    HANDLE th = CreateThread(NULL, 0, GFlushOther, NULL, 0, NULL);
+    WaitForSingleObject(th, INFINITE);
+    CloseHandle(th);
+    assert(g_p5cGyN == 2 && g_gFreeN == 0);
+    g_inInvoke = 1;  // nor inside a job callback
+    P5cFlush();
+    assert(g_p5cGyN == 2 && g_gFreeN == 0);
+    g_inInvoke = 0;
+    // the next poll on the owner frees both, in park order, on this thread
+    P5cFlush();
+    assert(g_p5cGyN == 0 && k.p5cFlushed == flushed0 + 2 && g_gFreeN == 2 && memcmp(g_gFreeLog, "AB", 2) == 0);
+    assert(g_gFreeTid == me && GCount(0) == 0 && GCount(1) == 0 && GCanary(0) == 0xDDDDDDDD && g_rgOffSimOpen == 0);
+
+    // 2. release order over three objects; a no-job destroy entry flushes them first (the stub's end), then runs as today
+    for (int i = 0; i < kGObjs; i++) GNew(i);
+    g_gFreeN = 0;
+    g_async.state = A_RUNNING;
+    destroy(0x104); GDestroy(4);
+    destroy(0x102); GDestroy(2);
+    destroy(0x103); GDestroy(3);
+    assert(k.dpParked == 5 && k.p5cPendMax >= 3 && g_gFreeN == 0 && k.vfRtDestroyWaitUs == 0);
+    g_async.state = A_IDLE;
+    const int rel0 = g_gRelCalls;
+    destroy(0x105);
+    assert(g_p5cGyN == 0 && g_gRelCalls - rel0 == 3 && memcmp(g_gFreeLog, "ECD", 3) == 0 && k.dpParked == 5);
+    GDestroy(5);
+    assert(g_gFreeN == 4 && g_gFreeLog[3] == 'F');
+
+    // 3. kept-wait rules (P5cPark false: RT_DESTROY then waits for the job as today)
+    g_async.state = A_RUNNING;
+    const LONG kw0[4] = {k.p5cKeptWait[0], k.p5cKeptWait[1], k.p5cKeptWait[2], k.p5cKeptWait[3]};
+    k.rtClosing = 1;
+    assert(!P5cPark(0x106, 0) && k.dpKeptWait == 0);  // closing: not admitted at all
+    k.rtClosing = 0;
+    g_async.state = A_IDLE;
+    assert(!P5cPark(0x106, 0));  // no job
+    g_async.state = A_RUNNING;
+    g_async.owner = me + 1;
+    assert(!P5cPark(0x106, 0) && k.p5cKeptWait[2] == kw0[2] + 1);  // not the owner (sim) thread
+    g_async.owner = me;
+    g_inInvoke = 1;
+    assert(!P5cPark(0x106, 0) && k.p5cKeptWait[2] == kw0[2] + 2);  // inside a job callback
+    g_inInvoke = 0;
+    g_disc[g_discHead].idLo = 0x106;  // D-X (and design U): a queued record for the id keeps the wait
+    g_disc[g_discHead].idHi = 0;
+    g_disc[g_discHead].lock = g_rgLock;
+    g_disc[g_discHead].pts = NULL;
+    g_discCount = 1;
+    assert(!P5cPark(0x106, 0) && k.p5cKeptWait[0] == kw0[0] + 1);
+    g_disc[g_discHead].lock = (void*)(uintptr_t)0x918;  // a record of another world does not
+    assert(P5cPark(0x106, 0) && g_p5cGyN == 1 && GCount(6) == 2);
+    g_discCount = 0;
+    assert(!P5cPark(0x1FF, 0) && k.p5cKeptWait[3] == kw0[3] + 1);  // not in the hash: waits as today
+    assert(k.dpKeptWait == 4 && k.dpParked == 6);
+
+    // 4. many parks: the graveyard fills to its cap (one object parked 511 more times), then a destroy keeps the wait
+    for (int n = 1; n < kP5cGrave; n++) assert(P5cPark(0x107, 0));
+    assert(g_p5cGyN == kP5cGrave && GCount(7) == kP5cGrave &&k.p5cPendMax == kP5cGrave);
+    assert(!P5cPark(0x107, 0) && k.p5cKeptWait[1] == kw0[1] + 1);
+    g_async.state = A_IDLE;
+    const int rel1 = g_gRelCalls;
+    P5cFlush();
+    assert(g_p5cGyN == 0 && GCount(6) == 1 && GCount(7) == 1 && g_gRelCalls - rel1 == kP5cGrave && g_gFreeN == 4);
+
+    // 5. T-G1: a parked object whose count is already 0 is counted and not released again
+    g_async.state = A_RUNNING;
+    assert(P5cPark(0x106, 0));
+    GDestroy(6);
+    GCount(6) = 0;  // someone dropped our reference: a refcount bug
+    g_async.state = A_IDLE;
+    const int rel2 = g_gRelCalls;
+    P5cFlush();
+    assert(k.p5cCountLow == low0 + 1 && g_gRelCalls == rel2 && g_p5cGyN == 0);
+    GCount(6) = 1, GCanary(6) = 0xC0FFEE06, g_gInHash[6] = true;
+
+    // 6. save: RT_SAVE waits for the job (none now) and releases what was parked
+    g_async.state = A_RUNNING;
+    assert(P5cPark(0x106, 0));
+    GDestroy(6);
+    g_async.state = A_IDLE;
+    assert(kRtSites[11].kind == RT_SAVE);
+    stack[20] = 0x778;
+    RtEnter(11, &stack[20]);
+    assert(g_p5cGyN == 0 && GCount(6) == 0 && g_gFreeLog[g_gFreeN - 1] == 'G');
+    assert(RgLeave() == 0x778 && g_rgOffSimOpen == 0 && k.rtBusy == 0);
+
+    // 7. world close: a teardown entry during a job keeps the graveyard; travel / quit (RT_CLOSING) waits for the job, then
+    //    releases; closing refuses new parks
+    GNew(6);
+    g_async.state = A_RUNNING;
+    assert(P5cPark(0x107, 0));
+    GDestroy(7);
+    assert(kRtSites[15].kind == RT_TEARDOWN && kRtSites[18].kind == RT_CLOSING);
+    RtEnter(15, &stack[20]);
+    assert(g_p5cGyN == 1 && GCount(7) == 1);
+    reset();
+    g_async.state = A_IDLE;
+    RtEnter(18, &stack[20]);
+    assert(g_p5cGyN == 0 && GCount(7) == 0 && g_gFreeLog[g_gFreeN - 1] == 'H' && k.rtClosing == 1);
+    g_async.state = A_RUNNING;  // a job that outlived the drain (not possible: START is refused while closing)
+    assert(!P5cPark(0x106, 0));
+    k.rtClosing = 0;
+    reset();
+    assert(k.p5cCountLow == low0 + 1);
+
+    g_async.state = A_IDLE;
+    k.dpMode = 0, k.dpReady = 0;
+    k.rtReady = 0;
+    k.rgEnforce = 0;
+    g_async.owner = 0;
+    g_workerTid = savedWorker;
+    g_objSvc = savedSvc, g_findRef = savedFind, g_objRelease = savedRel;
+    g_rtSimTidSlot = savedSim;
+    printf("destroy park (design G standalone): job across deletion, owner-only flush, release order, kept-wait rules, 512 "
+           "parks, T-G1, save and world close ok\n");
 }
 
 // --- design S2 (0.13.0, docs/84 §3.6): QL frames on the worker, W4, tripwires and the clone's give-up paths on fakes.
@@ -5322,6 +6094,512 @@ static void TestObstructedRO() {
     g_async.handle = 0;
     memset(&k.orReady, 0, 16 * 4);
     simTid = 0;
+}
+
+// --- [AvoidRO] (avoidro.cpp, docs/137): read-only RouteFollow_A / _B, the A-site, T-AV, shadow; S2's child footprint class ---
+namespace av {
+static u8 world[0xA00], wm[0x200], wmw[0x200], p[0x200], lot[0x60], lotB[0x60];
+static __declspec(align(16)) u8 node[0x200];
+static DWORD bk[2];
+static u8* wmSlot;
+static bool noLotE, noQlot;
+static int queryCalls, queryWhy, levelCalls, postureCalls, gameCalls, siteQueries, cacheSkewLevel = -1;
+static const u8* fps[8];
+static int nfps;
+static u64 gameAnswer, simScanAnswer;
+static bool bodySkipsSite;
+static float ptU, ptV;
+static DWORD optSeen;
+static u8* cacheSkew;
+static u8 bAnswer;
+static u8* __fastcall Look(void* m, void*, float, float) {
+    if (m == wm) return noLotE ? NULL : lot;
+    return noQlot ? NULL : lot;
+}
+static LONG __cdecl Level(const float* g) { assert(((uintptr_t)g & 15) == 0); levelCalls++; return 0; }
+static DWORD __fastcall Posture(const u8* a, void*) { postureCalls++; return *(const DWORD*)(a + 0x54) | *(const DWORD*)(a + 0x4C); }
+static u8 __fastcall Opt38(const u8* o, void*, DWORD lo, DWORD) { return lo == *(const DWORD*)(o + 0x38); }
+static u8 __fastcall Opt58(const u8* o, void*, DWORD lo, DWORD) { return lo == *(const DWORD*)(o + 0x58); }
+static u8* __fastcall PathOpts(u8* path, void*) { return *(u8**)(path + 4); }
+static int Query(SrCtx* c, const u8*, DWORD lo, DWORD, const SrPt& pt, const u8* rec) {
+    queryCalls++;
+    optSeen = *(const DWORD*)rec;
+    assert(lo == 0x30 && rec[0x24] == 1 && pt.v[0] == 3.0f && pt.v[2] == 5.0f && pt.one == 1.0f && t_qlShared == 1);
+    c->n = nfps;
+    for (int i = 0; i < nfps; i++) c->objs[i] = fps[i];
+    return queryWhy;
+}
+// footprints: outer slot 0 = levels (+0x50), slot +0xB8 = hit byte +0x60 + level; sub (obj + 4) +4 id (+0x14), +8 type (+0x35)
+static DWORD __fastcall Levels(const u8* o, void*) { return o[0x50]; }
+static u8 __fastcall Pt(const u8* o, void*, DWORD level, const float* v) {
+    assert(((uintptr_t)v & 15) == 0 && v[1] == 0.0f && v[3] == v[0]);
+    ptU = v[0], ptV = v[2];
+    if (cacheSkew && (int)level == cacheSkewLevel) cacheSkew[level * 0x24] ^= 1;
+    return o[0x60 + level];
+}
+static u64 __fastcall SubId(const u8* s, void*) { return *(const DWORD*)(s + 0x10); }
+static int __fastcall SubType(const u8* s, void*) { return (signed char)s[0x31]; }
+static u8 __fastcall FkQuery(u8*, void*, const void*, float, void* vec, DWORD mode, DWORD) {  // 0x82EDB0 for the site / shadow
+    siteQueries++;
+    assert(mode == 1);
+    DWORD* v = (DWORD*)vec;
+    DWORD* b = (DWORD*)malloc(4 * (nfps ? nfps : 1));
+    for (int i = 0; i < nfps; i++) b[i] = (DWORD)(uintptr_t)(fps[i] + 4);
+    v[0] = (DWORD)(uintptr_t)b, v[1] = (DWORD)(uintptr_t)(b + nfps);
+    return 1;
+}
+static void __fastcall FkVecRel(void*, void*, void*, void*) {}
+static void __cdecl FkFree(void* q) { free(q); }
+// the game's RouteFollow_A: the footprint part through the site (AvSite), then "the Sim scan"
+static u64 __cdecl GameA(u8*, u8*, const float*, const void*, DWORD) {
+    gameCalls++;
+    if (bodySkipsSite) return simScanAnswer;  // no routing world: the body never reaches 0x846D1C
+    DWORD vec[4] = {};
+    const u8 r = AvSite(world, NULL, NULL, 0.0f, vec, 1, 0);
+    if (vec[0]) free((void*)(uintptr_t)vec[0]);
+    return r && gameAnswer ? gameAnswer : simScanAnswer;
+}
+static u8 __cdecl GameB(u8*, u8*, u8*, const float*, DWORD) { gameCalls++; return bAnswer; }
+static u64 __fastcall TwTramp0(u8*, void*, const void*) { assert(g_avTwActive == 1); return 0x1234; }
+static u64 __cdecl TwTramp1(DWORD, DWORD, DWORD) { return 0; }
+}  // namespace av
+
+static void TestAvoidRO() {
+    static_assert(offsetof(Ts3nCounters, avReady) == 0x31EC && offsetof(Ts3nCounters, avMode) == 0x31F0 &&
+                      offsetof(Ts3nCounters, avShadow) == 0x31F4 && offsetof(Ts3nCounters, avSiteSkip) == 0x3204 &&
+                      offsetof(Ts3nCounters, avFb) == 0x3208 && offsetof(Ts3nCounters, avUs) == 0x3230 &&
+                      offsetof(Ts3nCounters, avTwSite) == 0x323C && offsetof(Ts3nCounters, avShadowRuns) == 0x3244 &&
+                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 3418 * 4,
+                  "counters v74 layout (docs/registry.md)");
+    using namespace av;
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.avReady, 0, 29 * 4);
+    const DWORD me = GetCurrentThreadId();
+    static DWORD simTid;
+    simTid = me;
+    const DWORD* savedSim = g_rtSimTidSlot;
+    g_rtSimTidSlot = &simTid;
+    const DWORD savedWorker = g_workerTid;
+    g_workerTid = me + 7;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+
+    // S2's child footprint class 0xFEBF90 (0.37): vtables as DWORD tables (compared, never called)
+    {
+        static DWORD pvt[0x40], psv[4], cvt[0x40], csv[4];
+        pvt[0] = 0x00619EF0, pvt[2] = 0x00807090, pvt[3] = 0x00624450, pvt[0x28 / 4] = 0x00620D60, pvt[0x60 / 4] = 0x009C1B00;
+        pvt[0x7C / 4] = 0x00806FE0, pvt[0x84 / 4] = 0x00620CC0, pvt[0xB8 / 4] = 0x0080E8A0, pvt[0xC0 / 4] = 0x007EAEA0;
+        pvt[0xE8 / 4] = 0x0080E690;
+        psv[1] = 0x00620E60, psv[2] = 0x00624ED0;
+        cvt[0] = 0x00626210, cvt[2] = 0x00806BF0, cvt[3] = 0x00626220, cvt[0x28 / 4] = 0x00620D60, cvt[0x60 / 4] = 0x00806F00;
+        cvt[0x84 / 4] = 0x006262D0, cvt[0xB8 / 4] = 0x00BFB320, cvt[0xC0 / 4] = 0x00620D60;
+        csv[1] = 0x006262E0, csv[2] = 0x00626300;
+        static u8 parent[0x40], child[0x28];
+        *(DWORD**)parent = pvt, *(DWORD**)(parent + 4) = psv;
+        *(DWORD**)child = cvt, *(DWORD**)(child + 4) = csv, *(u8**)(child + 0xC) = parent;
+        assert(SrSlotsOk(parent) && SrSlotsOk(child) && AvSlotsOk(parent) && AvSlotsOk(child));
+        *(u8**)(child + 0xC) = NULL;
+        assert(!SrSlotsOk(child) && !AvSlotsOk(child));  // the game would fault forwarding to it
+        *(u8**)(child + 0xC) = child;
+        assert(!SrSlotsOk(child));  // a child's parent must be one of the parent classes
+        *(u8**)(child + 0xC) = parent;
+        csv[1] = 0x00620E60;
+        assert(!SrSlotsOk(child));
+        csv[1] = 0x006262E0;
+        cvt[0xB8 / 4] = 0x0080E8A0;
+        assert(!SrSlotsOk(child));  // the child's +0xB8 is 0xBFB320 (every footprint the clone sees passed SrSlotsOk)
+        cvt[0xB8 / 4] = 0x00BFB320;
+        pvt[0] = 0x00401000;
+        assert(!AvSlotsOk(parent) && !AvSlotsOk(child));  // slot 0 (levels) unknown, also through the child
+        pvt[0] = 0x0083F5F0;
+        pvt[0xB8 / 4] = 0x00401000;
+        assert(!AvSlotsOk(parent) && AvSlotsOk(child));
+        pvt[0xB8 / 4] = 0x00BFB320;
+        assert(AvSlotsOk(parent));
+    }
+
+    // world, managers, planner with one lot (key 0x30); rows: u = x + 10, v = z
+    wmSlot = wm;
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = p;
+    *(u8**)(world + 0x964) = wmw;
+    *(DWORD*)(lot + 0x48) = 0x30;
+    *(DWORD*)(lotB + 0x48) = 0x31;  // not in the table
+    *(DWORD*)node = 0x30;
+    *(DWORD*)(node + 0x10) = 0x30;
+    float* rows = (float*)(node + 0x10 + 0xA0);
+    rows[0] = rows[5] = rows[10] = rows[15] = 1.0f;
+    rows[12] = 10.0f;
+    bk[0] = (DWORD)(uintptr_t)node;
+    bk[1] = 0x5E117E1;
+    *(DWORD**)(p + 0x4C) = bk;
+    *(DWORD*)(p + 0x50) = 1;
+    static float one = 1.0f;
+    const SrWorldFn savedWorld = g_srWorldGet;
+    const SrLotLookupFn savedLook = g_srLotLookup;
+    const SrLotFindFn savedFind = g_srLotFind;
+    const SrIdListFn savedIdList = g_srIdList;
+    const SrQueryFn savedQuery = g_srQuery;
+    const SrVecRelFn savedRel = g_srVecRel;
+    const SrFreeFn savedFree = g_srFree;
+    const SrConvFn savedConv = g_srConv;
+    u8* const* savedWm = g_srWmSlot;
+    const float* savedOne = g_srOne;
+    g_srWorldGet = []() -> u8* { return world; };
+    g_srLotLookup = Look;
+    g_srLotFind = [](const void* tbl, void*, DWORD* o, const DWORD* key) {
+        const DWORD* b = *(const DWORD* const*)((const u8*)tbl + 4);
+        o[0] = key[0] == *(const DWORD*)(uintptr_t)b[0] ? b[0] : b[1];
+    };
+    g_srIdList = [](DWORD lo, DWORD, const void* l, DWORD n) -> u8 {
+        for (DWORD i = 0; i < n; i++) if (((const DWORD*)l)[i * 2] == lo) return 1;
+        return 0;
+    };
+    g_srQuery = FkQuery;
+    g_srVecRel = FkVecRel;
+    g_srFree = FkFree;
+    g_srConv = [](const void* src, void* out) { memcpy(out, src, 16); };
+    g_srWmSlot = &wmSlot;
+    g_srOne = &one;
+    g_avLevel = Level;
+    g_avPosture = Posture;
+    g_avOpt38 = Opt38;
+    g_avOpt58 = Opt58;
+    g_avQuery = Query;
+    g_srCheckSlots = false;
+    // footprints
+    static void* fvt[0x40];
+    static void* svt[4];
+    fvt[0] = (void*)Levels;
+    fvt[0xB8 / 4] = (void*)Pt;
+    svt[1] = (void*)SubId;
+    svt[2] = (void*)SubType;
+    static u8 fp[6][0x80], cache[6][0x24 * 3];
+    const DWORD ids[6] = {0x700, 0x701, 0x702, 0x703, 0x704, 0x705};
+    for (int i = 0; i < 6; i++) {
+        *(void***)fp[i] = fvt;
+        *(void***)(fp[i] + 4) = svt;
+        *(DWORD*)(fp[i] + 0x14) = ids[i];
+        fp[i][0x35] = 3;
+        fp[i][0x50] = 1;
+        *(u8**)(fp[i] + 0x38) = cache[i];
+        cache[i][0x20] = cache[i][0x24 + 0x20] = cache[i][0x48 + 0x20] = 1;
+        fps[i] = fp[i];
+    }
+    nfps = 6;
+    fp[0][0x35] = 0x14;  // a Sim footprint: skipped
+    // 0x701 in the caller's ignore list, 0x702 in options +0x38, 0x703 in options +0x58; 0x704 one level, no hit; 0x705
+    // three levels, the hit at level 2
+    fp[5][0x50] = 3;
+    fp[5][0x62] = 1;
+    static u8 opts[0x80], path[8];
+    static void* pvtbl[4];
+    pvtbl[3] = (void*)PathOpts;
+    *(void***)path = pvtbl;
+    *(u8**)(path + 4) = opts;
+    *(DWORD*)(opts + 0x38) = 0x702;
+    *(DWORD*)(opts + 0x58) = 0x703;
+    static DWORD ign[2] = {0x701, 0};
+    static u8 agentBase[0x80];
+    u8* agent = agentBase + 8;
+    *(DWORD*)(agentBase + 0x54) = 0x40, *(DWORD*)(agentBase + 0x4C) = 0x2;
+    static __declspec(align(16)) float goal[4] = {3.0f, 1.0f, 5.0f, 3.0f};
+    static AvIn in;
+    u64 id;
+    bool none;
+    auto runA = [&](bool job, u8* pth = path, u8* ag = NULL) {
+        const int why = AvRunA(pth, ag ? ag : agentBase + 8, goal, ign, 1, job, &id, &in, &none);
+        assert(t_qlShared == 0 && !t_inRo && g_srInClone == 0);
+        return why;
+    };
+    assert(runA(false) == SR_OK && id == 0x705 && !none && ptU == 13.0f && ptV == 5.0f && optSeen == 0x42 && postureCalls == 1);
+    assert(runA(true) == SR_FB_STATE && t_avJobEnd);  // a job answer needs the tripwire stubs armed
+    TwArm(true);
+    assert(runA(true) == SR_OK && id == 0x705);
+    fp[5][0x62] = 0;
+    assert(runA(true) == SR_OK && id == 0);  // no footprint covers the goal: the Sim scan answers
+    fp[5][0x62] = 1;
+    // no options object: 0x702 / 0x703 are not filtered (0x702 misses, 0x703 hits); agent NULL or 8: option word 0x100
+    fp[3][0x60] = 1;
+    assert(runA(true, NULL) == SR_OK && id == 0x703);
+    {
+        const int pc = postureCalls;
+        assert(AvRunA(NULL, NULL, goal, ign, 1, true, &id, &in, &none) == SR_OK && id == 0x703 && optSeen == 0x100 && postureCalls == pc);
+        assert(AvRunA(path, (u8*)(uintptr_t)8, goal, ign, 1, true, &id, &in, &none) == SR_OK && optSeen == 0x100 && postureCalls == pc);
+    }
+    fp[3][0x60] = 0;
+    // no lot at the goal (consumer's lookup): the first survivor, no polygon test; no query lot: 0 and no lock, no query
+    noLotE = true;
+    assert(runA(true) == SR_OK && id == 0x704);
+    noLotE = false;
+    noQlot = true;
+    {
+        const int q = queryCalls;
+        assert(runA(true) == SR_OK && id == 0 && queryCalls == q);
+    }
+    noQlot = false;
+    // no routing world: none (the original takes no lock); dirty indexes; no planner; lot not in the table
+    g_srWorldGet = []() -> u8* { return NULL; };
+    assert(runA(true) == SR_OK && none);
+    g_srWorldGet = []() -> u8* { return world; };
+    wm[0x1CC] = 1;
+    assert(runA(true) == SR_FB_DIRTY);
+    wm[0x1CC] = 0;
+    wmw[0x1CC] = 1;
+    assert(runA(true) == SR_FB_DIRTY);
+    wmw[0x1CC] = 0;
+    world[0x974] = 0;
+    assert(runA(true) == SR_FB_SHAPE);
+    world[0x974] = 1;
+    // the consumer's lot (key 0x31) is not in the table: GetOrInsert would insert
+    g_srLotLookup = [](void* m, void*, float, float) -> u8* { return m == wm ? lotB : lot; };
+    assert(runA(true) == SR_FB_LOTMISS);
+    g_srLotLookup = Look;
+    // polygon cache: invalid at level 0 of 0x704, at level 2 of 0x705; changed during the test
+    cache[4][0x20] = 0;
+    assert(runA(true) == SR_FB_CACHE);
+    cache[4][0x20] = 1;
+    cache[5][0x48 + 0x20] = 0;
+    assert(runA(true) == SR_FB_CACHE);
+    cache[5][0x48 + 0x20] = 1;
+    cacheSkew = cache[5];
+    cacheSkewLevel = 1;
+    assert(runA(true) == SR_FB_CACHE);
+    cacheSkew = NULL;
+    cache[5][0x24] = 0;
+    // query doubts pass through; unknown +0xB8 with the whitelist on; tripwires; lost writer frame; QL held on this thread
+    queryWhy = SR_FB_DEFERRED;
+    assert(runA(true) == SR_FB_DEFERRED);
+    queryWhy = SR_OK;
+    g_srCheckSlots = true;
+    assert(runA(true) == SR_FB_SHAPE && t_srShape == SRS_SLOT);
+    g_srCheckSlots = false;
+    g_twActive = 1;
+    assert(runA(true) == SR_FB_TRIP && !t_avPin);
+    g_twActive = 0;
+    g_avTwActive = 1;
+    assert(runA(true) == SR_FB_TRIP);
+    g_avTwActive = 0;
+    g_steerBroken = 1;
+    assert(runA(true) == SR_FB_STATE);
+    g_steerBroken = 0;
+    t_qlDepth = 1;
+    assert(runA(true) == SR_FB_STATE);
+    t_qlDepth = 0;
+    assert(runA(true) == SR_OK && id == 0x705);
+
+    // B: types 0xC / 0xD / 0x17 answer 1; the wm lot must be a table hit (GetOrInsert); no query lot: 0, no query
+    {
+        static __declspec(align(16)) float raw[4] = {3.0f, 0.0f, 5.0f, 0.0f};
+        u8 res;
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_OK && res == 0 && optSeen == 0x77);
+        fp[2][0x35] = 0xD;
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_OK && res == 1);
+        fp[2][0x35] = 0x17;
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_OK && res == 1);
+        fp[2][0x35] = 0xC;
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_OK && res == 1);
+        g_srLotLookup = [](void* m, void*, float, float) -> u8* { return m == wm ? lotB : lot; };
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_FB_LOTMISS);
+        g_srLotLookup = Look;
+        noLotE = true;
+        assert(AvRunB(wm, world, NULL, raw, 0x77, true, &res, &in) == SR_OK && res == 1);  // no wm lot: no transform, no planner needed
+        noLotE = false;
+        assert(AvRunB(wm, world, NULL, raw, 0x77, true, &res, &in) == SR_FB_SHAPE);
+        noQlot = true;
+        const int q = queryCalls;
+        assert(AvRunB(wm, world, p, raw, 0x77, true, &res, &in) == SR_OK && res == 0 && queryCalls == q);
+        noQlot = false;
+        assert(AvRunB(wm, NULL, p, raw, 0x77, true, &res, &in) == SR_FB_SHAPE);
+        fp[2][0x35] = 3;
+    }
+
+    // the A-site: flag clear = the game's query; 1 = 0 once (counted), 2 = 0 once (shadow, not counted)
+    {
+        DWORD vec[4] = {};
+        const int sq = siteQueries;
+        assert(AvSite(world, NULL, NULL, 0.0f, vec, 1, 0) == 1 && siteQueries == sq + 1);
+        free((void*)(uintptr_t)vec[0]);
+        t_avMiss = 1;
+        assert(AvSite(world, NULL, NULL, 0.0f, vec, 1, 0) == 0 && t_avMiss == 0 && k.avSiteSkip == 1 && siteQueries == sq + 1);
+        t_avMiss = 2;
+        assert(AvSite(world, NULL, NULL, 0.0f, vec, 1, 0) == 0 && t_avMiss == 0 && k.avSiteSkip == 1);
+        k.avSiteSkip = 0;
+    }
+
+    // the hook: switches off, not the owner, a job (hit: the body does not run; miss: the body runs with the site skipped),
+    // each state fall-back, QL busy, a body that never reaches the site, shadow
+    const AvAFn savedA = g_avAOrig;
+    const AvBFn savedB = g_avBOrig;
+    g_avAOrig = GameA;
+    g_avBOrig = GameB;
+    gameAnswer = 0x705;
+    simScanAnswer = 0x900;
+    g_async.owner = me;
+    g_async.state = A_RUNNING;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 1);  // switches off: the game's call
+    k.avMode = 1;
+    g_async.owner = me + 1;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 2 && k.avTakenHit == 0);
+    g_async.owner = me;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 2 && k.avTakenHit == 1);
+    fp[5][0x62] = 0;
+    {
+        const int sq = siteQueries;
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x900 && gameCalls == 3 && k.avTakenMiss == 1 && k.avSiteSkip == 1 &&
+               siteQueries == sq && t_avMiss == 0);
+    }
+    fp[5][0x62] = 1;
+    g_inInvoke = 1;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 4 && k.avFb[AV_FB_STATE] == 1);
+    g_inInvoke = 0;
+    k.rgOwnerTid = (LONG)me;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 5 && k.avFb[AV_FB_STATE] == 2);
+    k.rgOwnerTid = 0;
+    t_rg.n = 1;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 6 && k.avFb[AV_FB_STATE] == 3);
+    t_rg.n = 0;
+    cache[4][0x20] = 0;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 7 && k.avFb[AV_FB_CACHE] == 1);
+    cache[4][0x20] = 1;
+    TwArm(false);  // disarmed (job end) while the job state still says running
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 8 && k.avFb[AV_FB_JOBEND] == 1);
+    TwArm(true);
+    // no routing world: the game's call, nothing counted
+    g_srWorldGet = []() -> u8* { return NULL; };
+    bodySkipsSite = true;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x900 && gameCalls == 9 && t_avMiss == 0);
+    // a miss whose body never reaches the site: the flag is cleared by A-entry
+    g_srWorldGet = []() -> u8* { return world; };
+    fp[5][0x62] = 0;
+    assert(AvAHook(path, agent, goal, ign, 1) == 0x900 && gameCalls == 10 && t_avMiss == 0 && k.avTakenMiss == 2 && k.avSiteSkip == 1);
+    bodySkipsSite = false;
+    fp[5][0x62] = 1;
+    // QL held exclusive by a worker writer: the try fails, the game's call
+    {
+        HANDLE held = CreateEventW(NULL, TRUE, FALSE, NULL), go = CreateEventW(NULL, TRUE, FALSE, NULL);
+        struct Hold { HANDLE held, go; } h = {held, go};
+        HANDLE th = CreateThread(NULL, 0, [](void* a) -> DWORD {
+            Hold* hh = (Hold*)a;
+            AcquireSRWLockExclusive(&g_ql);
+            SetEvent(hh->held);
+            WaitForSingleObject(hh->go, 5000);
+            ReleaseSRWLockExclusive(&g_ql);
+            return 0;
+        }, &h, 0, NULL);
+        WaitForSingleObject(held, 5000);
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == 11 && k.avFb[AV_FB_TRY] == 1);
+        static __declspec(align(16)) float raw[4] = {3.0f, 0.0f, 5.0f, 0.0f};
+        bAnswer = 1;
+        assert(AvBHook(wm, world, p, raw, 0x77) == 1 && gameCalls == 12 && k.avFb[AV_FB_TRY] == 2);
+        SetEvent(go);
+        WaitForSingleObject(th, 5000);
+        CloseHandle(th);
+        CloseHandle(held);
+        CloseHandle(go);
+        // B through the hook: the clone's answer (0: no 0xC / 0xD / 0x17 footprint), the game's body not run
+        assert(AvBHook(wm, world, p, raw, 0x77) == 0 && gameCalls == 12 && k.avTakenB == 1);
+        // T-AV: a writer off the sim thread while armed is counted and drops a clone that overlaps it
+        simTid = me + 1;  // this thread plays the worker
+        g_avTwTramp[0] = (void*)TwTramp0;
+        g_avTwTramp[1] = (void*)TwTramp1;
+        const LONG ep = g_avTwEpoch;
+        assert(AvTwAssign(NULL, NULL, NULL) == 0x1234 && k.avTripAv == 1 && k.avTwSite[0] == 1 && g_avTwEpoch == ep + 1 && g_avTwActive == 0);
+        AvTwEdit(1, 2, 3);
+        assert(k.avTripAv == 2 && k.avTwSite[1] == 1 && g_avTwEpoch == ep + 2);
+        TwArm(false);
+        g_async.state = A_IDLE;
+        AvTwEdit(1, 2, 3);  // no job, not armed, no clone: not counted
+        assert(k.avTripAv == 2 && g_avTwEpoch == ep + 2);
+        simTid = me;
+        AvTwEdit(1, 2, 3);  // the sim's own call: never counted
+        assert(k.avTripAv == 2);
+        g_avTwTramp[0] = g_avTwTramp[1] = NULL;
+        // shadow (no job, starts held off): equal; the game's footprint differs; the clone finds none and the Sim scan answers
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && k.avShadowRuns == 0);  // Mode 1 alone, no job: the game's call
+        k.avShadow = 1;
+        const int g0 = gameCalls;
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && gameCalls == g0 + 1 && k.avShadowRuns == 1 && k.avShadowMismatch == 0 &&
+               k.avShadowQueryMismatch == 0 && k.avShadowOrder == 0 && g_rgOffSimOpen == 0);
+        gameAnswer = 0x704;
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x704 && k.avShadowRuns == 2 && k.avShadowMismatch == 1);
+        gameAnswer = 0x705;
+        fp[5][0x62] = 0;
+        gameAnswer = 0;  // the game found no footprint either: its Sim scan answers 0x900 both times
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x900 && k.avShadowRuns == 3 && k.avShadowMismatch == 1 && k.avShadowSimScan == 1 &&
+               k.avSiteSkip == 1);  // the shadow's second body does not count as a skip
+        gameAnswer = 0x705;  // the game hit 0x705, the clone none: a mismatch
+        assert(AvAHook(path, agent, goal, ign, 1) == 0x705 && k.avShadowMismatch == 2);
+        fp[5][0x62] = 1;
+        // query level: the game's set in another order, then a different set
+        const u8* swap = fps[1];
+        fps[1] = fps[2], fps[2] = swap;
+        int savedN = nfps;
+        g_avQuery = [](SrCtx* c, const u8*, DWORD, DWORD, const SrPt&, const u8*) -> int {  // the clone keeps the old order
+            static const u8* order[6];
+            order[0] = fps[0], order[1] = fps[2], order[2] = fps[1], order[3] = fps[3], order[4] = fps[4], order[5] = fps[5];
+            c->n = nfps;
+            for (int i = 0; i < nfps; i++) c->objs[i] = order[i];
+            return SR_OK;
+        };
+        AvAHook(path, agent, goal, ign, 1);
+        assert(k.avShadowOrder == 1 && k.avShadowQueryMismatch == 0);
+        fps[2] = fps[1], fps[1] = swap;
+        g_avQuery = Query;
+        nfps = 5;  // the game's 0x82EDB0 sees 5, the clone (Query) too: equal; then make the clone see 6
+        AvAHook(path, agent, goal, ign, 1);
+        assert(k.avShadowQueryMismatch == 0);
+        g_avQuery = [](SrCtx* c, const u8*, DWORD, DWORD, const SrPt&, const u8*) -> int {
+            c->n = 6;
+            for (int i = 0; i < 6; i++) c->objs[i] = fps[i];
+            return SR_OK;
+        };
+        AvAHook(path, agent, goal, ign, 1);
+        assert(k.avShadowQueryMismatch == 1);
+        g_avQuery = Query;
+        nfps = savedN;
+        // B shadow: equal, then the game's answer differs
+        bAnswer = 0;
+        const LONG r0 = k.avShadowRuns;
+        assert(AvBHook(wm, world, p, raw, 0x77) == 0 && k.avShadowRuns == r0 + 1 && k.avShadowMismatchB == 0);
+        bAnswer = 1;
+        assert(AvBHook(wm, world, p, raw, 0x77) == 1 && k.avShadowMismatchB == 1);
+        // a shadow clone that gives up is counted, not compared
+        cache[4][0x20] = 0;
+        const LONG m0 = k.avShadowMismatch;
+        AvAHook(path, agent, goal, ign, 1);
+        assert(k.avShadowMismatch == m0 && k.avFb[AV_FB_CACHE] == 2);
+        cache[4][0x20] = 1;
+    }
+    assert(g_rgOffSimOpen == 0 && k.avSimWriteInRo == 0);
+    printf("avoid RO: clone A/B, A-site skips %ld, hits %ld misses %ld B %ld, fallbacks state %ld try %ld cache %ld jobend %ld, T-AV %ld, "
+           "shadow %ld runs (mismatch %ld / B %ld / query %ld / order %ld, sim scan %ld); child footprint whitelist\n",
+           k.avSiteSkip, k.avTakenHit, k.avTakenMiss, k.avTakenB, k.avFb[AV_FB_STATE], k.avFb[AV_FB_TRY], k.avFb[AV_FB_CACHE],
+           k.avFb[AV_FB_JOBEND], k.avTripAv, k.avShadowRuns, k.avShadowMismatch, k.avShadowMismatchB, k.avShadowQueryMismatch,
+           k.avShadowOrder, k.avShadowSimScan);
+
+    g_avAOrig = savedA;
+    g_avBOrig = savedB;
+    g_srWorldGet = savedWorld;
+    g_srLotLookup = savedLook;
+    g_srLotFind = savedFind;
+    g_srIdList = savedIdList;
+    g_srQuery = savedQuery;
+    g_srVecRel = savedRel;
+    g_srFree = savedFree;
+    g_srConv = savedConv;
+    g_srWmSlot = savedWm;
+    g_srOne = savedOne;
+    g_srCheckSlots = true;
+    g_avQuery = AvQueryGame;
+    g_avLevel = (AvLevelFn)(uintptr_t)0x008468C0;
+    g_avPosture = (AvPostureFn)(uintptr_t)0x00953690;
+    g_avOpt38 = (AvOptIdFn)(uintptr_t)0x0081C970;
+    g_avOpt58 = (AvOptIdFn)(uintptr_t)0x0081C930;
+    g_workerTid = savedWorker;
+    g_async.owner = 0;
+    g_async.state = A_IDLE;
+    g_rtSimTidSlot = savedSim;
+    memset(&k.avReady, 0, 29 * 4);
 }
 
 // --- [ProbeSnap] indirect call target sampler (vcall.cpp): decode, target, live int3 round trip on our own code ---
@@ -9073,10 +10351,10 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, m2Ready) == 0x2F70 && offsetof(Ts3nCounters, m2Take) == 0x2F74 &&
                   offsetof(Ts3nCounters, m2Fb) == 0x2F90 && offsetof(Ts3nCounters, m2VerM) == 0x2FDC &&
                   offsetof(Ts3nCounters, m2DoorHist) == 0x3000 && offsetof(Ts3nCounters, m2Guard) == 0x3024 &&
-                  sizeof(Ts3nCounters) == 3155 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 3418 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4QCut) == 0x30EC && offsetof(Ts3nCounters, p4QCutMiss) == 0x30F0 &&
                   offsetof(Ts3nCounters, p4WaitExt) == 0x30F4 && offsetof(Ts3nCounters, oiClone) == 0x30F8 &&
-                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 3155 * 4,
+                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 3418 * 4,
                   "counters v67 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpOldAsk) == 0x310C && offsetof(Ts3nCounters, p4AcqBad) == 0x3110, "counters v68 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4Obst) == 0x3114 && offsetof(Ts3nCounters, p4ObstBusy) == 0x3118,
@@ -9086,7 +10364,7 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, p4Borrow) == 0x313C && offsetof(Ts3nCounters, p4BorrowMiss) == 0x3140 &&
                   offsetof(Ts3nCounters, p4BorrowDirty) == 0x3144, "counters v71 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpKidsKept) == 0x3148, "counters v72 layout (docs/registry.md)");
-    assert(k.version == 72);
+    assert(k.version == 81);
     PlanLockedFn planSave = g_planOrig;
     CacheEntry* tab = g_tab;
     const LONG workerMode = k.workerMode, budgetMode = k.budgetMode;
@@ -9260,9 +10538,12 @@ static void TestP5() {
 #include "monothread-test.h"  // TestMonoThreadM5 (P3, P4, worker; docs/30 §14)
 #include "p5b-test.h"  // TestP5b (P5b, docs/94 §22.9)
 #include "hitchattr-test.h"  // TestHitchAttr ([HitchAttr], docs/96 §9)
+#include "unseen-test.h"  // TestUnseen ([UnseenProbe], docs/143)
 #include "p5c-test.h"  // TestP5cIn (P5c, docs/94 §22.11), run from TestP5b
 #include "autshadow-test.h"  // TestAutShadow ([AutShadow] part 1, docs/122 §13: T1, T2, T4)
 #include "threadstack-test.h"  // TestThreadStack ([ThreadStack], docs/66 §6)
+#include "crashreport-test.h"  // TestCrashReport ([CrashReport], docs/135)
+#include "earlyout-test.h"  // TestEarlyOut ([RouteEarlyOut] probe, docs/142)
 
 // 0.35.9 (docs/94 §22.13, I-94-450..452): P5 (Mode=2) with ReleaseLock=1 and FreeLock=1 on the replay clone provider, in one
 // clone's life (no epoch, as with soft resync since 0.35.5); the test thread is the worker, world+0x918 the game's lock:
@@ -9893,6 +11174,8 @@ int main() {
     TestIcLock();
     TestRouteGate();
     TestMonoThread();
+    TestSimLoop();
+    TestSimPump();
     TestMonoThreadM5();
     TestLotStream();
     TestVerify();
@@ -9901,10 +11184,13 @@ int main() {
     TestG11CloseBy();
     TestDiscourage();
     TestDiscourageDX();
+    TestFootprintDefer();
+    TestDestroyPark();
     TestSteerRO();
     TestSteerTrip();
     TestLotFd();
     TestObstructedRO();
+    TestAvoidRO();
     TestSlotRo();
     TestP10();
     TestProbeSnap();
@@ -9937,8 +11223,13 @@ int main() {
     TestP5b();
     TestP5PreLock();
     TestHitchAttr();
+    TestUnseen();
+    TestUnseenThrottle();
+    TestUnseenThrottle2();
     TestAutShadow();
     TestThreadStack();
+    TestCrashReport();
+    TestEarlyOut();
     puts("selftest ok");
     return 0;
 }

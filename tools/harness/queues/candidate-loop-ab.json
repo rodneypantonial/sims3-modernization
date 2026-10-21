@@ -1,0 +1,150 @@
+[
+  {
+    "id": "bp-cl-off",
+    "note": "docs/141 §7 candidate-loop A/B, arm OFF: the game's candidate loops (all three switches at their tuning default, off). ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-cl-on",
+    "note": "docs/141 §7 candidate-loop A/B, arm ON: safespotcap + farthestsorted + indoorcap on for the whole run (profile.fixesOn). ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops",
+        "fixesOn": "safespotcap,farthestsorted,indoorcap"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "bp-cl-onrc",
+    "note": "docs/141 §7 candidate-loop A/B, arm ON+routablecache: as ON plus the existing routablecache (shared 0.5 m verdict cache for IsPointInLotSafelyRoutable, opt-in since 2026-10-13 with no exercised A/B), to see its hits on reset paths. ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-BP-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops",
+        "fixesOn": "safespotcap,farthestsorted,indoorcap,routablecache"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "sv-cl-off",
+    "note": "docs/141 §7 candidate-loop A/B, arm OFF: the game's candidate loops (all three switches at their tuning default, off). ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "sv-cl-on",
+    "note": "docs/141 §7 candidate-loop A/B, arm ON: safespotcap + farthestsorted + indoorcap on for the whole run (profile.fixesOn). ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops",
+        "fixesOn": "safespotcap,farthestsorted,indoorcap"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  },
+  {
+    "id": "sv-cl-onrc",
+    "note": "docs/141 §7 candidate-loop A/B, arm ON+routablecache: as ON plus the existing routablecache (shared 0.5 m verdict cache for IsPointInLotSafelyRoutable, opt-in since 2026-10-13 with no exercised A/B), to see its hits on reset paths. ts3native 0.36.13 (game-copy/ts3native.asi.0313, as freeze-fix-ab) with ts3fixes built from the commit that adds CandidateLoops.cs installed. All arms: FallbackAsync=1, SyncCapMs=0, LogFallbackMs=20, LogFallbackStack=16 (deep enough to see the caller below our hook frames). Repro candidate-loops runs the probe (front door, farthest lot, indoor positions for the selected Sim) twice at the window start, then 10 min of play. Pass = no crash, game alive, fbActiveTrip 0, watchdogs 0. Read: the probe lines (farthest lot id must match across arms; ms per loop), patches safespotcap_* / farthest_* / indoorcap_* / routablecache_*, sync plan lines whose stack has FindRoutablePointInsideNearFrontDoor, IsPointInLotSafelyRoutable, GetFarthestLot or GetRoutableIndoorPositions (count, max ms), stuck Sims vs OFF.",
+    "asi": "game-copy/ts3native.asi.0313",
+    "save": "Baseline-SV-Spring",
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345,
+        "repro": "candidate-loops",
+        "fixesOn": "safespotcap,farthestsorted,indoorcap,routablecache"
+      }
+    },
+    "minCounters": 73,
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25,
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.SyncCapMs": 0
+    }
+  }
+]

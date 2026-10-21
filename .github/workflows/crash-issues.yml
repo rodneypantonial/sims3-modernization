@@ -1,0 +1,31 @@
+# Crash reports (docs/135): label every new issue that carries a ts3native crash signature id and link earlier issues
+# with the same id. Never closes anything. The issue body is passed through an env var, never into the script text.
+name: crash issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label-and-link:
+    if: contains(github.event.issue.body, 'crashsig-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label and link by signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BODY: ${{ github.event.issue.body }}
+          NUM: ${{ github.event.issue.number }}
+        run: |
+          sig=$(printf '%s' "$BODY" | grep -oE 'crashsig-[0-9a-f]{8}' | head -n1)
+          [ -n "$sig" ] || exit 0
+          gh label create crash --color B60205 --description "ts3native crash report" 2>/dev/null || true
+          gh issue edit "$NUM" --add-label crash
+          dups=$(gh issue list --state all --search "$sig in:body" --json number --jq ".[].number | select(. != $NUM)" | head -n5)
+          [ -n "$dups" ] || exit 0
+          refs=$(printf '#%s ' $dups)
+          gh issue comment "$NUM" --body "Same crash signature \`$sig\` as $refs. New details are welcome there; a maintainer may close this one as a duplicate."

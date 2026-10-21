@@ -1,0 +1,32 @@
+{
+  "jobs": [
+    {
+      "id": "bp-overwatch-spread-repro",
+      "note": "docs/145 correctness first (5 min): repro bp-overwatch-spread-inventory under /taskstall. Pass: our pass in > 1 tick with no tick over ~5 ms, verify 'after 0' for both paths, Overwatch's own pass shows its one-tick stall (>= 250 ms row from NRaas CleanupInventory) and ours none. Stop the queue on any 'failed' line in overwatchspread_log",
+      "asi": "tested",
+      "s3ppIni": { "Patches.SimulatorStageProfiler": 0 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "taskstall": 250, "repro": "bp-overwatch-spread-inventory" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-overwatch-spread-yield",
+      "note": "docs/145 §4 marker contract on the installed V123 (5 min): repro bp-overwatch-spread-upstream-yield. Pass: owspread_upstream -1, owspread_alarms 0, owspread_theirs 1, the 'upstream spreading found (faked), ours off' line, no crash",
+      "asi": "tested",
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "bp-overwatch-spread-upstream-yield" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ab-overwatchspread",
+      "note": "docs/145 in-load A/B, seeded BP, 10 min, 2-min slices, overwatchspread alternating (decided at each nightly alarm, so a sim-day's ~17 s of spread slots may run into the next slice). Pass: worst-hitches.ts class 'TaskObjects burst' 3-4 in the off slices -> 0-1 in the on slices, no NRaas CleanupInventory frame on a >= 300 ms managed sample in on slices; overwatchspread_log: one inventory pass per on-side alarm with repairs per kind in the same range as the off side's verify-less run (counts are tiny on a clean save: equal within the night's new items). Also it/s and hitches >= 100 ms per side",
+      "asi": "tested",
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "overwatchspread", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    }
+  ]
+}

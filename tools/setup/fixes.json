@@ -481,6 +481,64 @@
     "notes": "Generated. Tuning XML for NRaas.OverwatchSpace.PersistedSettings (instance 0x85842A96AEC69641) with kCleanupInventory = False: turns off the daily CleanupInventory alarm (docs/96 cause B, ~500 ms hitch once per sim day). Also stops its removal of broken or orphaned inventory items (docs/09 §2.1), so opt-in until the bp-overwatch-cleanup-ab queue job shows the gain. Same tuning instance as overwatch-no-stuckcheck, so the two conflict."
   },
   {
+    "id": "nraas-upstream-base",
+    "name": "NRaas Overwatch + ErrorTrap built from Chain-Reaction/NRaas master (test only, upstream A/B base)",
+    "author": "NRaas (built locally)",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaas_Overwatch.package",
+        "NRaas_ErrorTrap.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/setup/build-nraas-upstream.ts <NRaas clone>",
+      "variant": "base"
+    },
+    "conflictsWith": [
+      "nraas-upstream-v2"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Test only (queue nraas-upstream-verify). Replaces the installed NRaas_Overwatch/NRaas_ErrorTrap packages with copies whose assembly is built from NRaas master (build/nraas-upstream/base, run the build first); uninstall restores the originals from the backup. Same build pipeline as nraas-upstream-v2, so the A/B differs only in the patches."
+  },
+  {
+    "id": "nraas-upstream-v2",
+    "name": "NRaas Overwatch + ErrorTrap with the PR #45/#46 v2 patches (test only)",
+    "author": "NRaas + sims-3-modernization patches (built locally)",
+    "category": "script",
+    "version": null,
+    "source": {
+      "kind": "direct",
+      "url": null
+    },
+    "sha256": null,
+    "install": {
+      "target": "mods",
+      "files": [
+        "NRaas_Overwatch.package",
+        "NRaas_ErrorTrap.package"
+      ]
+    },
+    "config": {
+      "build": "node tools/setup/build-nraas-upstream.ts <NRaas clone>",
+      "variant": "v2"
+    },
+    "conflictsWith": [
+      "nraas-upstream-base"
+    ],
+    "requires": [],
+    "default": false,
+    "notes": "Test only (queue nraas-upstream-verify). Like nraas-upstream-base, built from the patched branches (docs/data/upstream/*-v2.patch on the PR heads). Carries the markers StaggeredCleanupVersion/SpreadScanVersion, so ts3fixes overwatchspread/errortrapspread stand down. Menu label of Set Alarm Spacing shows its string key (strings not repacked)."
+  },
+  {
     "id": "nraas-mastercontroller",
     "name": "NRaas MasterController",
     "author": "NRaas",
