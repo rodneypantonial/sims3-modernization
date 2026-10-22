@@ -1,0 +1,167 @@
+{
+  "note": "On-first twins of unseen-noavoid-ab and unseen-avoid-iso (2026-10-22): the off-first jobs alone are biased by slow middle slices.",
+  "jobs": [
+    {
+      "id": "ip-ut2-noav-1-onfirst",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off. On-first twin (warm-up off, then on,off,off,on): read as a pair with the off-first job (mean of both per-side deltas cancels the slice-position bias).",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ut2-noav-crowd-onfirst",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off. On-first twin (warm-up off, then on,off,off,on): read as a pair with the off-first job (mean of both per-side deltas cancels the slice-position bias).",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-ut2-avoid-iso-1-onfirst",
+      "note": "Avoidance isolation (docs/143 §8.14 follow-up): every unseen part on in BOTH halves via the ini (cars off: ts3fixes tuning), only [UnseenThrottle] Avoid switches (--ab unseenavoid). Question: is the throttled-Sim Replan cost (utRpUs_0_0 ON 16-31 ms/s vs off 7-16 in unseen-diag-ab) caused by the avoidance skip? Pass: no crash; read utRpN/utRpUs class 0 per slice on vs off, route ms/s, wait-ab total. On-first twin (warm-up off, then on,off,off,on): read as a pair with the off-first job (mean of both per-side deltas cancels the slice-position bias).",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenavoid",
+          "slice": 1.2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ut2-avoid-iso-crowd-onfirst",
+      "note": "Avoidance isolation (docs/143 §8.14 follow-up): every unseen part on in BOTH halves via the ini (cars off: ts3fixes tuning), only [UnseenThrottle] Avoid switches (--ab unseenavoid). Question: is the throttled-Sim Replan cost (utRpUs_0_0 ON 16-31 ms/s vs off 7-16 in unseen-diag-ab) caused by the avoidance skip? Pass: no crash; read utRpN/utRpUs class 0 per slice on vs off, route ms/s, wait-ab total. On-first twin (warm-up off, then on,off,off,on): read as a pair with the off-first job (mean of both per-side deltas cancels the slice-position bias).",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenavoid",
+          "slice": 1.2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-ut2-noav-2-onfirst",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off. On-first twin (warm-up off, then on,off,off,on): read as a pair with the off-first job (mean of both per-side deltas cancels the slice-position bias).",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-# MTS listing: Sims 3 Modernization v0.2.0
+# MTS listing: Sims 3 Modernization v0.1.5
 
-Everything the upload wizard needs, in wizard order. `TO-FILL` marks what waits for the v0.2.0 results (clean night 2026-10-22, `docs/RELEASE.md` decisions, README v0.2.0 table). Rules behind each choice: `RULES.md`.
+Everything the upload wizard needs, in wizard order. `TO-FILL` marks what waits for the v0.1.5 results (clean night 2026-10-22, `docs/RELEASE.md` decisions, README v0.1.5 table). Rules behind each choice: `RULES.md`.
 
 Before pasting: replace every `TO-FILL`, delete the `[TO-FILL ...]` blocks of features that did not ship, and remove the HTML comments. `node tools/mts-images.ts --final` and `grep -n TO-FILL release/mts/listing.md` must both come back clean.
 
@@ -11,10 +11,10 @@ Before pasting: replace every `TO-FILL`, delete the `[TO-FILL ...]` blocks of fe
 | Game | The Sims 3 |
 | Section / category | Game Mods > Miscellaneous (fallback: Game Mods > Script & Core Mods; RULES.md "Category") |
 | Type (if asked) | Other |
-| Title | `Sims 3 Modernization v0.2.0: Less Stutter, Background Route Planning (Script Mod + ASI)` |
+| Title | `Sims 3 Modernization v0.1.5: Less Stutter, Background Route Planning (Script Mod + ASI)` |
 | Packs required | **None** (base game). Tick no EP, SP or store pack. |
 | Game version (if asked; else in the text) | Steam, patch 1.67 only |
-| Main file | `release/mts/out/Sims3Modernization_v0.2.0.zip` (from `tools/mts-zip.ts`) |
+| Main file | `release/mts/out/Sims3Modernization_v0.1.5.zip` (from `tools/mts-zip.ts`) |
 | Thumbnail | `release/mts/images/thumbnail.png` (320x240) |
 | Screenshots, in order | `1-features.png`, `2-benchmark.png`, `3-install.png` (1200x900 each) |
 | Short description / summary (if asked) | see "Summary" |
@@ -33,7 +33,7 @@ Before pasting: replace every `TO-FILL`, delete the `[TO-FILL ...]` blocks of fe
 ## Description (BBCode)
 
 ```
-[size=4][b]Sims 3 Modernization v0.2.0[/b][/size]
+[size=4][b]Sims 3 Modernization v0.1.5[/b][/size]
 [i]Less stutter for The Sims 3 on modern PCs: a script mod plus a native ASI plugin. Steam version, patch 1.67 only.[/i]
 
 [b]What it does[/b]
@@ -64,7 +64,7 @@ Native plugin:
 [*]Faster unpacking of game files, byte-identical results.
 [*]The backup copy of your old save is made in the background while the game saves.
 [/list]
-New in v0.2.0:
+New in v0.1.5:
 [list]
 [*]TO-FILL: one line per feature that passed its A/B (copy the player wording from docs/PLAYERS.md after `release-features.ts --docs`).
 [/list]
@@ -72,10 +72,10 @@ New in v0.2.0:
 [b]Measured results[/b]
 10 minutes of play at speed 3 on aged 14-day saves, same seed, alternating order, one laptop (i7-11800H, 32 GB RAM, RTX 3070 Laptop GPU). "No fixes" = the same plugin with all our switches off.
 [list]
-[*]Stutters per minute (simulation steps of 50 ms or more), no fixes -> v0.1.4 -> v0.2.0: Bridgeport 177 -> 152 -> TO-FILL, Sunset Valley 76 -> 70 -> TO-FILL, Isla Paradiso 146 -> 117 -> TO-FILL.
+[*]Stutters per minute (simulation steps of 50 ms or more), no fixes -> v0.1.4 -> v0.1.5: Bridgeport 177 -> 152 -> TO-FILL, Sunset Valley 76 -> 70 -> TO-FILL, Isla Paradiso 146 -> 117 -> TO-FILL.
 [*]Route planning on the main thread (ms per second): Bridgeport 129 -> 53 -> TO-FILL, Sunset Valley 79 -> 24 -> TO-FILL, Isla Paradiso 282 -> 92 -> TO-FILL.
-[*]Game time per real second: unchanged in Bridgeport and Sunset Valley (already at the speed-3 cap), Isla Paradiso 11.0 -> 12.4 min (+13%) with v0.1.4; v0.2.0 TO-FILL.
-[*]Longest single freeze: TO-FILL (v0.1.4 had longer worst freezes than no fixes in two towns, up to about 2.5 s, from route plans that still ran on the main thread; v0.2.0's freeze fix targets exactly these).
+[*]Game time per real second: unchanged in Bridgeport and Sunset Valley (already at the speed-3 cap), Isla Paradiso 11.0 -> 12.4 min (+13%) with v0.1.4; v0.1.5 TO-FILL.
+[*]Longest single freeze: TO-FILL (v0.1.4 had longer worst freezes than no fixes in two towns, up to about 2.5 s, from route plans that still ran on the main thread; v0.1.5's freeze fix targets exactly these).
 [/list]
 All numbers come from one machine and one set of saves. Treat them as "this is what we saw", not as a promise; reports from other PCs are welcome.
 
@@ -111,7 +111,7 @@ Delete ts3fixes.package from Mods\Packages, and ts3native.asi and ts3native.ini 
 
 [b]Known issues[/b]
 [list]
-[*]TO-FILL from the v0.2.0 release validation (docs/data/results/...-queue-release-validate.md).
+[*]TO-FILL from the v0.1.5 release validation (docs/data/results/...-queue-release-validate.md).
 [*]An unseen townie that skips the walk can arrive sooner than the full walk would have taken.
 [*]Measured on one laptop only; numbers on other PCs may differ.
 [/list]
@@ -157,6 +157,6 @@ sims3fiend (Sims 3 Settings Setter), LazyDuchess (Smooth Patch, MonoPatcher), Tw
 
 ## Notes for Friday
 
-- The "Switched on in this release" lists name only features on in v0.1.4 (docs/PLAYERS.md minus the feature blocks). After `release-features.ts --docs`, add the chosen v0.2.0 features under "New in v0.2.0" in player words, max ~10 lines, and the same short labels to `mts-data.json` `features.v020` (max 6, under ~38 characters each).
-- Numbers: copy from the README v0.2.0 table; keep "no fixes -> v0.1.4 -> v0.2.0" order. Drop the "Longest single freeze" line if the freeze fix did not ship.
+- The "Switched on in this release" lists name only features on in v0.1.4 (docs/PLAYERS.md minus the feature blocks). After `release-features.ts --docs`, add the chosen v0.1.5 features under "New in v0.1.5" in player words, max ~10 lines, and the same short labels to `mts-data.json` `features.v020` (max 6, under ~38 characters each).
+- Numbers: copy from the README v0.1.5 table; keep "no fixes -> v0.1.4 -> v0.1.5" order. Drop the "Longest single freeze" line if the freeze fix did not ship.
 - "Tested together with": keep in step with docs/PLAYERS.md "Other mods".

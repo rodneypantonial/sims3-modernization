@@ -73,6 +73,17 @@ export function report(b: Counters, a: Counters, seconds: number) {
       `catch-up runs ${d('utRateCatchUp')}, largest step ${((a.utRateDebtMaxUs ?? 0) / 1000).toFixed(0)} ms, debts dropped ${d('utRateDropped')}; ` +
       `ran because: ${why(UT_WHY2, 'utRateWhy')}`);
   }
+  // v83 diagnostics (docs/143 §8.14): deferred notices, replan split by follower, last skipping part and its age
+  if (r2 || (a.utReady ?? 0) & 1) {
+    lines.push(`deferred notices (skips after a non-empty obstacle list): list ${d('utDefer_0')}, avoidance ${d('utDefer_1')}, ` +
+      `rate ${d('utDefer_2')}; unseen list runs with a notice ${d('utListNotices')}`);
+    const RP = ['Replan', 'ReplanFromPosition'], RC = ['throttled<=8 passes', 'other', 'no follower'], PARTS = ['list', 'avoid', 'rate', 'footprint'];
+    for (const i of [0, 1]) {
+      if (!((a.utDgReady ?? 0) >> i & 1)) continue;
+      lines.push(`${RP[i]} (n / ms/s / >=100 ms): ` + [0, 1, 2].map(c => `${RC[c]} ${d(`utRpN_${i}_${c}`)} / ${ms(d(`utRpUs_${i}_${c}`), seconds)} / ${d(`utRpLong_${i}_${c}`)}`).join(', ') +
+        `; last skip by: ` + PARTS.map((p, j) => { const n = d(`utRpPart_${i}_${j}`); return `${p} ${n}${n ? ` (mean ${(d(`utRpPartMs_${i}_${j}`) / n).toFixed(0)} ms before)` : ''}`; }).join(', '));
+    }
+  }
   return { ok, lines };
 }
 
@@ -89,6 +100,8 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
       ut2Ready: 15, utAvMode: 1, utAvCalls: 800, utAvSkipped: 600, utAvWhy_9: 200, utFpMode: 1, utFpCalls: 100, utFpSkipped: 75,
       utFpCoalesced: 40, utFpFlushed: 30, utFpWhy_9: 25, utRateMode: 1, utRateCalls: 1000, utRateSkipped: 700, utRateWhy_9: 250,
       utRateWhy_16: 50, utRateCatchUp: 290, utRateDebtMaxUs: 170000, utSnap_3: 12, utSnapMaxMs_3: 125,
+      utDgReady: 3, utDefer_0: 40, utListNotices: 90, utRpN_0_0: 10, utRpUs_0_0: 1_200_000, utRpLong_0_0: 4, utRpN_0_1: 20,
+      utRpPart_0_2: 6, utRpPartMs_0_2: 300,
     };
     const r = report(b, a, 600).lines.join('\n');
     const want = ['unseen share of agent updates: 80.0%', 'per pass: 5.0 visible, 20.0 unseen', 'Sim 90000 2.00 ms/s',
@@ -96,7 +109,9 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
       'byte 0 in 0% of visible, 50% of unseen', 'skipped 600 (60.0%), path tests 0.10 ms/s', 'ran because: visible 300, turn 100',
       'avoidance: mode 1, calls 800 (1.3/s), skipped 600 (75.0%); ran because: turn 200',
       'footprint: mode 1 (below design U), calls 100, held back 75 (75.0%), folded 40, flushed 30', 'ran because: due 25',
-      'rate: mode 1, updates looked at 1000, skipped 700 (70.0%), catch-up runs 290, largest step 170 ms', 'turn 250, step cap 50', 'rate 12 / 125'];
+      'rate: mode 1, updates looked at 1000, skipped 700 (70.0%), catch-up runs 290, largest step 170 ms', 'turn 250, step cap 50', 'rate 12 / 125',
+      'deferred notices (skips after a non-empty obstacle list): list 40', 'Replan (n / ms/s / >=100 ms): throttled<=8 passes 10 / 2.00 / 4, other 20',
+      'rate 6 (mean 50 ms before)'];
     const miss = want.filter(w => !r.includes(w));
     if (miss.length || !report(b, a, 600).ok) throw new Error(`unseen-report self-check failed (${miss.join('; ')})\n${r}`);
     if (report(b, { ...a, unReady: 0 }, 600).ok) throw new Error('unseen-report self-check: probe off must fail');

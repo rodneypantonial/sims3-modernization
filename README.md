@@ -26,8 +26,8 @@ Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play
 
 Read it as: smoother everywhere, faster only where the game was falling behind. Bridgeport and Sunset Valley already run at the speed-3 cap without our fixes, so game time per second cannot rise there; Isla Paradiso was lagging and gains 13%. The worse worst frames on Bridgeport and Sunset Valley are single route plans of about 1 s that the background planner refuses and runs on the main thread (`NoStart`); that is the next fix. Several runs had other programs at 10-18% of the game's CPU cores, so treat differences under ~5% as noise.
 
-<!-- v0.2.0 template: fill after the release-vs-baseline runs on the v0.2.0 build (queues release-vs-baseline*.json with a third arm on game-copy/ts3native.asi.rel020), then move it above the v0.1.4 table and update "Latest release" -->
-**Release v0.2.0 vs v0.1.4 vs no fixes of ours, [to fill date]:** same machine and saves, seeded (12345), ABBA order, [to fill] runs per side. Cells: no fixes -> v0.1.4 -> **v0.2.0** (change v0.2.0 vs v0.1.4). "No fixes" as above.
+<!-- v0.1.5 template: fill after the release-vs-baseline runs on the v0.1.5 build (queues release-vs-baseline*.json with a third arm on game-copy/ts3native.asi.rel020), then move it above the v0.1.4 table and update "Latest release" -->
+**Release v0.1.5 vs v0.1.4 vs no fixes of ours, [to fill date]:** same machine and saves, seeded (12345), ABBA order, [to fill] runs per side. Cells: no fixes -> v0.1.4 -> **v0.1.5** (change v0.1.5 vs v0.1.4). "No fixes" as above.
 
 | | Bridgeport | Sunset Valley | Isla Paradiso |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Read it as: smoother everywhere, faster only where the game was falling behind. 
 | game time per real second | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
 
 [to fill: one paragraph on how to read it, as for v0.1.4; worst iteration is the number the freeze fix should move.]
-<!-- end v0.2.0 template -->
+<!-- end v0.1.5 template -->
 
 **Earlier result, `ts3fixes` only (2026-10-12, build 62c39f6, docs/04 F13), 3 runs per world:**
 

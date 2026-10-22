@@ -59,6 +59,10 @@ row('seconds', runs.map(r => r.rows.length));
 row('iterations/s', runs.map(r => (r.sum('iters') / r.n).toFixed(1)));
 row('hitches/s (>=50 ms)', runs.map(r => (r.sum('hitches') / r.n).toFixed(2)));
 row('worst iteration ms', runs.map(r => Math.max(0, ...r.rows.map(x => x.maxIterMs)).toFixed(0)));
+const simCol = (k, d = 1) => runs.map(r => r.has(k) ? (r.sum(k) / r.n).toFixed(d) : '-'); // sim busy/idle: 'saved time went idle' vs 'eaten'
+row('sim busy ms/s (iteration - sleeps)', simCol('simBusy'));
+row('sim idle ms/s (in Sleep/NtDelay)', simCol('simIdle'));
+row('sim sleeps/s', simCol('simSleeps'));
 row('route ms/s', runs.map(r => (r.sum('route') / r.n).toFixed(1)));
 row('routes/s', runs.map(r => (r.sum('routes') / r.n).toFixed(1)));
 row('route fail %', runs.map(r => pct(r.sum('routeFails'), r.sum('routes'))));

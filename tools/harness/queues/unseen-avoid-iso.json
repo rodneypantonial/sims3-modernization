@@ -1,0 +1,99 @@
+{
+  "note": "Unseen throttle triage 2026-10-22: avoidance isolation, all other parts on in both halves.",
+  "jobs": [
+    {
+      "id": "ip-ut2-avoid-iso-1",
+      "note": "Avoidance isolation (docs/143 §8.14 follow-up): every unseen part on in BOTH halves via the ini (cars off: ts3fixes tuning), only [UnseenThrottle] Avoid switches (--ab unseenavoid). Question: is the throttled-Sim Replan cost (utRpUs_0_0 ON 16-31 ms/s vs off 7-16 in unseen-diag-ab) caused by the avoidance skip? Pass: no crash; read utRpN/utRpUs class 0 per slice on vs off, route ms/s, wait-ab total.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenavoid",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-ut2-avoid-iso-2",
+      "note": "Avoidance isolation (docs/143 §8.14 follow-up): every unseen part on in BOTH halves via the ini (cars off: ts3fixes tuning), only [UnseenThrottle] Avoid switches (--ab unseenavoid). Question: is the throttled-Sim Replan cost (utRpUs_0_0 ON 16-31 ms/s vs off 7-16 in unseen-diag-ab) caused by the avoidance skip? Pass: no crash; read utRpN/utRpUs class 0 per slice on vs off, route ms/s, wait-ab total.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenavoid",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ut2-avoid-iso-crowd",
+      "note": "Avoidance isolation (docs/143 §8.14 follow-up): every unseen part on in BOTH halves via the ini (cars off: ts3fixes tuning), only [UnseenThrottle] Avoid switches (--ab unseenavoid). Question: is the throttled-Sim Replan cost (utRpUs_0_0 ON 16-31 ms/s vs off 7-16 in unseen-diag-ab) caused by the avoidance skip? Pass: no crash; read utRpN/utRpUs class 0 per slice on vs off, route ms/s, wait-ab total.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenavoid",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

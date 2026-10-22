@@ -1375,6 +1375,11 @@ rpc.exports = {
         ...n('utSnap', 4), ...n('utSnapMaxMs', 4));
       // v81 (0.36.16, docs/134 §10): fbjcMode is the `--ab fbjobcap` switch
       if (c.readS32() >= 81) f.push('fbjcMode', 'fbjcCapUs', 'fbjcCapped', 'fbjcMaxUs', 'ownJobMaxUs', 'fbjcLong', 'ownJobLong');
+      // v83 (0.36.18, docs/143 §8.14): [UnseenThrottle] diagnostics; utRpN_<ic>_<cls> (ic 0 Replan, 1 ReplanFromPosition;
+      // cls 0 throttled in the last 8 passes, 1 other, 2 no follower), utRpPart_<ic>_<part> (0 list, 1 avoid, 2 rate, 3 footprint).
+      // shortcut: assumes no v82 fields in the build (v82 branch unmerged); its merge inserts its push before this one
+      if (c.readS32() >= 83) f.push('utDgReady', ...n('utDefer', 3), 'utListNotices', ...n('utRpN', 6, 3), ...n('utRpUs', 6, 3),
+        ...n('utRpLong', 6, 3), ...n('utRpPart', 8, 4), ...n('utRpPartMs', 8, 4));
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

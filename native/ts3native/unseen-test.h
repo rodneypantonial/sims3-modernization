@@ -37,8 +37,8 @@ static void TestUnseen() {
                   offsetof(Ts3nCounters, unEaOff) == 0x33C0 &&
                   offsetof(Ts3nCounters, utMode) == 0x33C8 && offsetof(Ts3nCounters, utWhy) == 0x33E0 &&
                   offsetof(Ts3nCounters, utPathUs) == 0x3414 && offsetof(Ts3nCounters, utViewerBad) == 0x3420 &&
-                  sizeof(Ts3nCounters) == 3418 * 4, "counters v79 layout after v78 (docs/registry.md)");
-    assert(k.version == 81);
+                  sizeof(Ts3nCounters) == 3457 * 4, "counters v79 layout after v78 (docs/registry.md)");
+    assert(k.version == 83);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // swap every game pointer for a fake
     const UnAgentFn agentSave = g_unAgentOrig;
@@ -295,8 +295,11 @@ static void TestUnseenThrottle() {
     k.utMode = 1;
     assert(k.utCalls - b.utCalls == k.utRun - b.utRun + k.utSkipped - b.utSkipped);
     assert(path[1] == (void*)1);  // path references balanced after every phase-1 row
+    // v83: every run returned one obstacle (the fake), so later skips of these unseen agents count as deferred notices
+    assert(k.utListNotices > b.utListNotices && k.utDefer[0] > b.utDefer[0] && k.utDefer[0] - b.utDefer[0] <= k.utSkipped - b.utSkipped);
 
     g_utOrig = origSave, g_utRemain = remSave;
+    memset(g_utDg, 0, sizeof(g_utDg));
     k.utMode = modeSave, k.utEvery = everySave, k.unPasses = passSave;
     g_utOn = onSave, g_utNeedViewers = needSave;
     g_utView.at = 0, g_utView.n = 0, g_utInOpen = false;
@@ -347,7 +350,7 @@ static void TestUnseenThrottle2() {
                   offsetof(Ts3nCounters, utRateCalls) == 0x34D0 && offsetof(Ts3nCounters, utRateWhy) == 0x34D8 &&
                   offsetof(Ts3nCounters, utRateCatchUp) == 0x3520 && offsetof(Ts3nCounters, utRateDropped) == 0x3528 &&
                   offsetof(Ts3nCounters, utSnap) == 0x352C && offsetof(Ts3nCounters, utSnapMaxMs) == 0x353C &&
-                  sizeof(Ts3nCounters) == 3418 * 4 && UTW_N2 <= 18 && UTF_N <= 12, "counters v80 layout after v79 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 3457 * 4 && UTW_N2 <= 18 && UTF_N <= 12, "counters v80 layout after v79 (docs/registry.md)");
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // fakes as TestUnseen and TestUnseenThrottle
     const UnAgentFn agentSave = g_unAgentOrig;
@@ -441,6 +444,7 @@ static void TestUnseenThrottle2() {
     // counted as a visible snap-back with its owed time; the watch saw the flip and the update in that same pass
     assert(k.utSnap[3] == snap0 + 1 && k.utSnapMaxMs[3] >= (LONG)(debt * 1000.0f) - 1);
     assert(UtMsg(8, 1) && UtMsg(8, 2) && UtMsg(8, 7) && UtMsg(9, (DWORD)(debt * 1000.0f) - 1) && !UtMsg(9, 1000) && !UtMsg(10, 1) && !UtMsg(16, 1) && !UtMsg(17, 1));
+    assert(UtMsg(18, (DWORD)(debt * 1000.0f) - 1) && !UtMsg(18, 1000));  // the debt it owed at its last update
     assert(UtMsg(11, 0) && !UtMsg(8, 0));  // disarmed
     for (int i = 0; i < 6; i++) {  // visible: every pass, plain dt
         r0 = g_ut2Runs;
@@ -664,4 +668,86 @@ static void TestUnseenThrottle2() {
     printf("UnseenThrottle phase 2: rate (1 run in 4, summed step = sum of max(dt, 1/30), cap 0.5 s, visible switch runs the "
            "same pass with its debt, snap-back rows, dropped debt), avoidance (turn, 3 m goal, visible, linked), footprint "
            "(hold-back, fold, flush when due, disable / other args / visible / nested drop it, gone, other world): ok\n");
+    memset(g_utDg, 0, sizeof(g_utDg));  // footprint holds above recorded skips
+}
+
+// ---- TestUnseenDiag ([UnseenThrottle] diagnostics, docs/143 §8.14, counters v83): replan split by follower, last skipping
+// part and its age, deferred notices ----
+static u8* __cdecl UtFakeRp(u8* out, DWORD) { return out; }
+static u8* __cdecl UtFakeRpPos(u8* out, DWORD, float, float, float) { return out; }
+static void TestUnseenDiag() {
+    Ts3nCounters& k = ts3native_counters;
+    static_assert(offsetof(Ts3nCounters, utDgReady) == 0x3568 && offsetof(Ts3nCounters, utDefer) == 0x356C &&
+                  offsetof(Ts3nCounters, utListNotices) == 0x3578 && offsetof(Ts3nCounters, utRpN) == 0x357C &&
+                  offsetof(Ts3nCounters, utRpUs) == 0x3594 && offsetof(Ts3nCounters, utRpLong) == 0x35AC &&
+                  offsetof(Ts3nCounters, utRpPart) == 0x35C4 && offsetof(Ts3nCounters, utRpPartMs) == 0x35E4 &&
+                  sizeof(Ts3nCounters) == 3457 * 4, "counters v83 layout after v81 (docs/registry.md)");
+    const UnCompFn compSave = g_unComp;
+    const UnPosFn posSave = g_unPos;
+    const UnFrustumFn frSave = g_unFrustum;
+    const UnInFrustumFn inSave = g_unInFrustum;
+    const UnFindFn findSave = g_unFind;
+    const AsRouteFn routeSave = g_unRoute;
+    const DWORD *btSave = g_unBitTransform, *bsSave = g_unBitSim;
+    void* const* mgrSave = g_unObjMgr;
+    const u8* const* rmSave = g_unRmSlot;
+    const DWORD tidSave = g_unSimTid;
+    const LONG passSave = k.unPasses;
+    g_unComp = UnFakeComp, g_unPos = UnFakePos, g_unFrustum = UnFakeFrustum, g_unInFrustum = UnFakeIn, g_unFind = UnFakeFind;
+    g_unRoute = UnFakeRouteLookup, g_unBitTransform = &kUnBitT, g_unBitSim = &kUnBitS;
+    static const u8 rmDummy = 0;
+    static const u8* rmPtr = &rmDummy;
+    static void* mgrPtr = (void*)&rmDummy;
+    g_unRmSlot = &rmPtr, g_unObjMgr = &mgrPtr;
+    memset(g_unFakeRoute, 0, sizeof(g_unFakeRoute));
+    *(DWORD*)(g_unFakeRoute + 0x40) = 0x1234, *(DWORD*)(g_unFakeRoute + 0x44) = 5;  // follower id: UnFakeFind -> sim
+    __declspec(align(16)) static UnFakeObj sim = {{300, 0, 0, 1}, true};
+    g_unFakeFound = &sim;
+    g_unSimTid = GetCurrentThreadId();
+    g_utRpOrig = UtFakeRp, g_utRpPosOrig = UtFakeRpPos;
+    memset(g_utDg, 0, sizeof(g_utDg));
+    k.unPasses = 5000;
+    static Ts3nCounters b;
+    memcpy(&b, &k, sizeof(k));
+    u8 out[0x48];
+    // 1. never skipped: "other follower"; an unknown route: "no follower"
+    assert(UtRpHook(out, 7) == out && k.utRpN[0][1] == b.utRpN[0][1] + 1);
+    UtRpHook(out, 8);
+    assert(k.utRpN[0][2] == b.utRpN[0][2] + 1);
+    // 2. a rate skip, then a ReplanFromPosition: throttled lately, rate was last
+    UtDgSkip(UT_DG_RATE, &sim);
+    assert(UtRpPosHook(out, 7, 1, 2, 3) == out && k.utRpN[1][0] == b.utRpN[1][0] + 1);
+    assert(k.utRpPart[1][UT_DG_RATE] == b.utRpPart[1][UT_DG_RATE] + 1);
+    // 3. a later footprint skip wins the attribution, with its age
+    UtDgSlot* s = UtDgFor(&sim, false);
+    assert(s && s->at[UT_DG_RATE]);
+    s->at[UT_DG_RATE] -= 400;
+    UtDgSkip(UT_DG_FOOT, &sim);
+    s->at[UT_DG_FOOT] -= 50;
+    UtRpHook(out, 7);
+    assert(k.utRpN[0][0] == b.utRpN[0][0] + 1 && k.utRpPart[0][UT_DG_FOOT] == b.utRpPart[0][UT_DG_FOOT] + 1);
+    const LONG ageMs = k.utRpPartMs[0][UT_DG_FOOT] - b.utRpPartMs[0][UT_DG_FOOT];
+    assert(ageMs >= 49 && ageMs < 399);  // the stamp is GetTickCount() | 1
+    // 4. more than 8 passes since the last skip: "other" again
+    k.unPasses += UT_DG_RECENT + 1;
+    UtRpHook(out, 7);
+    assert(k.utRpN[0][1] == b.utRpN[0][1] + 2);
+    // 5. deferred notices: list / avoidance / rate skips after a non-empty list count, footprint skips never do
+    UtDgSkip(UT_DG_LIST, &sim);
+    assert(k.utDefer[0] == b.utDefer[0]);  // its last list was empty
+    s->obst = true;
+    UtDgSkip(UT_DG_LIST, &sim), UtDgSkip(UT_DG_AVOID, &sim), UtDgSkip(UT_DG_RATE, &sim), UtDgSkip(UT_DG_FOOT, &sim);
+    assert(k.utDefer[0] == b.utDefer[0] + 1 && k.utDefer[1] == b.utDefer[1] + 1 && k.utDefer[2] == b.utDefer[2] + 1);
+    // 6. a call from another thread is passed through, not counted
+    g_unSimTid = 0;
+    UtRpHook(out, 7);
+    assert(k.utRpN[0][0] + k.utRpN[0][1] + k.utRpN[0][2] == b.utRpN[0][0] + b.utRpN[0][1] + b.utRpN[0][2] + 4);
+    assert(k.utRpLong[0][0] == b.utRpLong[0][0]);
+
+    g_unComp = compSave, g_unPos = posSave, g_unFrustum = frSave, g_unInFrustum = inSave, g_unFind = findSave, g_unRoute = routeSave;
+    g_unBitTransform = btSave, g_unBitSim = bsSave, g_unObjMgr = mgrSave, g_unRmSlot = rmSave, g_unSimTid = tidSave;
+    g_utRpOrig = NULL, g_utRpPosOrig = NULL, k.unPasses = passSave;
+    memset(g_utDg, 0, sizeof(g_utDg));
+    printf("UnseenThrottle diagnostics: replan split (throttled lately / other / no follower), last skipping part and its age, "
+           "8-pass window, deferred notices (list, avoidance, rate; not footprint): ok\n");
 }

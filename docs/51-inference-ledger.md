@@ -3100,3 +3100,14 @@ Same columns as §3. Sources: `probe-out/profile/clean-night-0.2.0-2026-10-21-*`
 | I-214-5 | 134 §10.3 | The long jobs are foreign STARTs (fb = 1), e.g. world-scale `PlanToLotEx`, `DriveAwayInNpcCar`, stuck-check plans | 0.36.16 `long job` lines and `fbjcMaxUs` vs `ownJobMaxUs` | `fbjobcap-ab.json` | long lines say `foreign`; `ownJobMaxUs` <= ~400 ms | an `own` long job = another cause | **inferred** |
 | I-214-6 | 134 §10.2 | BP's worst-iteration rise (371 -> 500 ms) is script (`taskObjects`), not routing | fields | - | - | - | **verified** (data) |
 | I-214-7 | 134 §10.4 | `FbJobCapMs=300` keeps every foreign job near the cap plus non-A* time and the SV worst route-wait hitch <= the off side's | `fbjobcap-ab.json` (clean night) | sv-fjc-play-* | `fbjcMaxUs` <= ~400 ms with the cap on, worst route-wait hitch <= ~350 ms, no route-fail / stuck rise | non-A* time (lot/portal search, callbacks) is not capped: a long capped job = needs another bound | **inferred** |
+
+## 215. Additions 2026-10-22 (docs/143 §8.14: route time rise with every unseen part on, diagnostics in ts3native 0.36.18)
+
+Same columns as §3. Sources: clean A/B summaries of the 0.36.15 every-part runs (byEntry hitches), `unseen.cpp`, disassembly `0x957380..0x9573E5`. No game run.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-215-1 | 143 §8.14 | After `0x85FFE0` returns, `0x9573BC..0x9573DB` loads the vector's begin `[vec]` and end `[vec+4]` and calls the agent's vtable `+0x60` only when they differ | disassembly | - | - | - | **verified** (static) |
+| I-215-2 | 143 §8.14 | The route follower found by id (`0x939560` on route `+0x40/+0x44`) is the same object pointer as the steering agent's owner `[agent+4]` | v83 split | `unseen-diag-ab.json` | class 0 > 0 in on slices | class 0 = 0 with `utSkipped` > 0 = refuted | **inferred** |
+| I-215-3 | 143 §8.14 | H1: deferred `+0x60` / `+0x64` notices make throttled Sims replan from worse spots (costlier Replan / ReplanFromPosition) | v83 split | `unseen-diag-ab.json` | extra replan time in class 0, last part list / avoidance with short age, `utDefer` a large share of skips | extra in class 1, or class 0 cost = class 1 | **inferred** |
+| I-215-4 | 143 §8.14 | H2 (cars), H3 (rate step pacing), H4 (stale footprints for other Sims' plans) as alternative causes | v83 split + per-part pairs | `unseen-diag-ab.json`, per-part BP pairs | H2/H4: extra in class 1; H3: class 0 with rate last | §8.14 table | **inferred** |

@@ -1,5 +1,5 @@
-// Release feature switchboard (docs/RELEASE.md "v0.2.0"): one step from "the A/Bs decided these features" to the release
-// defaults. It knows every v0.2.0 candidate and where its default lives: ts3native.ini keys (native/ts3native/ts3native.ini,
+// Release feature switchboard (docs/RELEASE.md "v0.1.5"): one step from "the A/Bs decided these features" to the release
+// defaults. It knows every v0.1.5 candidate and where its default lives: ts3native.ini keys (native/ts3native/ts3native.ini,
 // which build.cmd copies to out/) and ts3fixes tuning (tools/setup/build-fixes.ts TUNING_XML). Unchosen candidates are set
 // back to off, so the result depends only on the list.
 //   node tools/release-features.ts --list                      candidates, their edits, what they need

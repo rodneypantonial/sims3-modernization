@@ -1,0 +1,68 @@
+{
+  "note": "[UnseenThrottle] cause check for the sim-thread route time rise with every part on (docs/143 §8.14): ts3native 0.36.18 (counters v83, game-copy/ts3native.asi.0316diag = native/ts3native/out/ts3native.asi of the diagnostics commit) with build/ts3fixes.package + build/ts3agent.package from master (no C# change). Observe only: no new switch, every unseen part on vs off in one load. Slices: 6 min at 1.2 min = warm-up (on) + off,on,on,off; the requested off,on,off,on order is not supported by profile-world.ts (fixed ABBA, or --ab-on-first). Clean night for timing; the counter split is valid on any machine. Read: unseen-report.ts <native.json> (deferred notices, Replan / ReplanFromPosition by follower class, last skipping part and its age), per slice from <tag>-ab-native.jsonl (utRpN/utRpUs/utRpLong deltas per on and off slice), stutter-profile byEntry Route_Replan / Route_ReplanFromPosition, hitch-attr-report.ts. Needs utDgReady 3 (both IC detours; 0 = [RouteAsync] Kinds or [ProbeP10] own the prologues: run with both off, the ini default). 2 jobs, ~16 min real.",
+  "jobs": [
+    {
+      "id": "ip-ut2-diag",
+      "note": "Isla Paradiso, every unseen part on vs off (as ip-ut2-all), 6 min. Pass: no crash or freeze, utDgReady 3, utRpN_0_* + utRpN_1_* > 0, class 0 (follower throttled in the last 8 passes) > 0 in on slices and ~0 in off slices after their first 8 passes. Read per docs/143 §8.14 table: class 0 vs class 1 calls, ms/s, >= 100 ms counts and mean us per call; utRpPart_* (list / avoid / rate / footprint last) with mean age; utDefer_* vs utListNotices.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ut2-diag-crowd",
+      "note": "Bridgeport rare-big-crowd (many walking Sims, doors), every unseen part on vs off (as bp-ut2-crowd), 6 min. Pass and read as ip-ut2-diag; the crowd waves start with the window, so the warm-up and the first off slice carry most of the crowd: compare class 0 vs class 1 inside the on slices first, the on/off totals second.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate,unseencars",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}
