@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(repo, "native", "ts3native");
 const doc = join(repo, "docs", "68-hook-conflict-map.md");
+const apexCsv = join(repo, "docs", "data", "apex-sites.csv");
 const TEXT_LO = 0x00401000, TEXT_HI = 0x00f94fff;
 
 type Hit = { module: string; addr: number; where: string; label: string };
@@ -49,5 +50,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         const missing = addrs.filter((a) => !text.includes("0X" + a.toString(16).toUpperCase()));
         console.log(`\n${addrs.length} addresses, ${missing.length} not in docs/68${missing.length ? ": " + missing.map(hex).join(" ") : ""}`);
         if (missing.length) process.exitCode = 1;
+
+        // Apex Radiance (docs/148): an address both sides name needs a class (C0..C3) in docs/data/apex-sites.csv
+        const apex = new Map(readFileSync(apexCsv, "utf8").trim().split(/\r?\n/).slice(1).map((l) => l.split(",")).map((c) => [parseInt(c[0], 16), c[3]] as [number, string]));
+        const open = addrs.filter((a) => apex.has(a) && !apex.get(a));
+        console.log(`${addrs.filter((a) => apex.has(a)).length} addresses also named by Apex Radiance, ${open.length} without a class${open.length ? ": " + open.map(hex).join(" ") : ""}`);
+        if (open.length) process.exitCode = 1;
     }
 }

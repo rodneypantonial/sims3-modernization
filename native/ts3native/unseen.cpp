@@ -136,7 +136,7 @@ static bool g_utRateOn, g_utFpOn;  // [UnseenThrottle] phase 2 parts installed (
 // skipsVis = a part skipped while the Sim was classed visible (impossible by the rules: the bug the check looks for);
 // skipsUnseen = skips after the Sim was classed unseen again (the camera no longer shows it); unseenAfter = its updates
 // classed unseen after the flip (2026-10-21 bp-ut2-snapback: 3 of 6 Sims had skips after the flip, all while unseen again)
-static struct { DWORD lo, hi; bool armed, flipped, ran, avCalled, avRan, fpCalled, fpRan; LONG pass, skipsVis, skipsUnseen, unseenAfter; float owed; } g_utWatch;
+static struct { DWORD lo, hi; bool armed, flipped, ran, avCalled, avRan, fpCalled, fpRan; LONG pass, skipsVis, skipsUnseen, unseenAfter; float owed, curDebt; } g_utWatch;  // curDebt: Rate debt at its last update (code 18)
 static void UtWatchSkip(bool visible) { if (visible) g_utWatch.skipsVis++; else g_utWatch.skipsUnseen++; }
 static __declspec(thread) bool t_utWatchRun;  // the watched agent's update after its flip is running
 static bool UtWatched(const void* obj) {
@@ -173,6 +173,7 @@ static void __fastcall UnAgentThunk(void* agent, void* edx, float dt) {
     *slot = (void*)((uintptr_t)agent | (uintptr_t)c);  // agents are at least 4-byte aligned
     bool watchFlip = false;  // this call is the watched agent's first update after it turned visible
     if (g_utWatch.armed && UtWatched(*(void* const*)((const u8*)agent + 4))) {
+        g_utWatch.curDebt = UtRateOwed((const u8*)agent);  // lets the check prefer a Sim the Rate part is holding
         if (!g_utWatch.flipped && c == 0 && prevCls == 1) {
             g_utWatch.flipped = watchFlip = true, g_utWatch.pass = k.unPasses, g_utWatch.owed = UtRateOwed((const u8*)agent);
         } else if (g_utWatch.flipped && c == 1) {
@@ -250,8 +251,10 @@ static void __fastcall UnUsfHook(void* world, void* edx, void* obj, DWORD enable
 // IC_Route_Plan (IcPlanHook): kind 1 = a car-only route (RouteOption DisablePlanningAsPedestrian 0x20 in the option word
 // route+0x158+0x28, docs/15; CarRoutingComponent.CreateRoute sets it with BeginAsCar / EndAsCar), class of the follower
 // object (route+0x40/+0x44, written by Route_SetFollower 0x74B1B0 [verified]); 2 = no follower or not classified
-static void UnPlanClass(DWORD handle, int* kind, int* cls) {
+// objOut: the follower object found by id (NULL = none); [UnseenThrottle]'s replan split keys it like an agent's owner
+static void UnPlanClass(DWORD handle, int* kind, int* cls, void** objOut = NULL) {
     *kind = 0, *cls = 2;
+    if (objOut) *objOut = NULL;
     __try {
         const u8* rm = *g_unRmSlot;
         const u8* route = rm ? g_unRoute(rm, NULL, handle) : NULL;
@@ -260,6 +263,7 @@ static void UnPlanClass(DWORD handle, int* kind, int* cls) {
         const DWORD lo = *(const DWORD*)(route + 0x40), hi = *(const DWORD*)(route + 0x44);
         void* mgr = *g_unObjMgr;
         void* obj = mgr && (lo | hi) ? g_unFind(mgr, NULL, lo, hi) : NULL;
+        if (objOut) *objOut = obj;
         const int c = obj ? UnObjClass(obj, NULL) : -1;
         if (c >= 0) *cls = c;
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -338,7 +342,7 @@ static u8 UtViewerMsg(DWORD lo, DWORD hi) {
         g_utHeld.at = GetTickCount() ? GetTickCount() : 1;
         return 1;
     }
-    if ((code >= 6 && code <= 11) || code == 16 || code == 17) {
+    if ((code >= 6 && code <= 11) || (code >= 16 && code <= 18)) {
         if (code == 6) { memset(&g_utWatch, 0, sizeof(g_utWatch)); g_utWatch.lo = lo; return 1; }
         if (code == 7) { g_utWatch.hi = lo, g_utWatch.armed = true; return 1; }
         if (code == 11) { g_utWatch.armed = false; return 1; }
@@ -346,6 +350,7 @@ static u8 UtViewerMsg(DWORD lo, DWORD hi) {
         if (code == 10) return g_utWatch.skipsVis >= (LONG)lo ? 1 : 0;
         if (code == 16) return g_utWatch.skipsUnseen >= (LONG)lo ? 1 : 0;
         if (code == 17) return g_utWatch.unseenAfter >= (LONG)lo ? 1 : 0;
+        if (code == 18) return g_utWatch.curDebt * 1000.0f >= (float)lo ? 1 : 0;
         const bool b[8] = {g_utWatch.armed, g_utWatch.flipped, g_utWatch.ran, g_utWatch.avCalled, g_utWatch.avRan,
                            g_utWatch.fpCalled, g_utWatch.fpRan, g_utWatch.owed > 0};
         return lo < 8 && b[lo] ? 1 : 0;
@@ -399,6 +404,87 @@ static void UtSnapTrack(int part, u8* agent, int why) {
     if (e.agent != agent) e.agent = agent, e.lastRun = now, e.skipped = false;
     if (why < 0) e.skipped = true;
     else e.skipped = false, e.lastRun = now;
+}
+
+// ---- [UnseenThrottle] diagnostics (docs/143 §8.14, counters v83, observe only) ----
+// Per object (the agent's owner +4, or the footprint object): when each part last skipped it and whether its last obstacle
+// list was non-empty (the list's run posts the agent's vtable +0x60 notice then: `cmp eax,edx` at 0x9573C7 on the vector's
+// begin/end [verified disassembly]). The replan detours read it for the route's follower, found by id (UnPlanClass): the
+// follower object and the steering agent's owner are the same object [inferred], so class 0 staying 0 while the parts skip
+// would refute that, not the hypothesis.
+enum { UT_DG_LIST, UT_DG_AVOID, UT_DG_RATE, UT_DG_FOOT, UT_DG_N };
+static const LONG UT_DG_RECENT = 8;  // passes: "throttled lately" (2 x Every at the default Every=4)
+struct UtDgSlot { const void* owner; LONG pass; DWORD at[UT_DG_N]; bool obst; };
+static UtDgSlot g_utDg[512];  // sim thread only
+static UtDgSlot* UtDgFor(const void* owner, bool claim) {
+    if (!owner) return NULL;
+    UtDgSlot& s = g_utDg[((uintptr_t)owner >> 4) & 511];
+    if (s.owner != owner) {
+        if (!claim) return NULL;
+        memset(&s, 0, sizeof(s));
+        s.owner = owner, s.pass = ts3native_counters.unPasses - 1000;
+    }
+    return &s;
+}
+static const void* UtOwner(const u8* agent) {
+    __try { return agent ? *(void* const*)(agent + 4) : NULL; } __except (EXCEPTION_EXECUTE_HANDLER) { return NULL; }
+}
+// a skipped call of `part` for this object; a list / avoidance / rate skip while its last list was non-empty = a deferred notice
+static void UtDgSkip(int part, const void* owner) {
+    UtDgSlot* s = UtDgFor(owner, true);
+    if (!s) return;
+    s->pass = ts3native_counters.unPasses;
+    s->at[part] = GetTickCount() | 1;
+    if (part != UT_DG_FOOT && s->obst) ts3native_counters.utDefer[part]++;
+}
+
+// IC_Route_Replan 0x765490 cdecl(result*, handle) and IC_Route_ReplanFromPosition 0x765550 cdecl(result*, handle, x, y, z)
+// [verified, docs/87 §2; a10.cpp]: timed whole, as stutter-profile.js times its byEntry names, split by the follower
+typedef u8*(__cdecl* UtRpFn)(u8* out, DWORD handle);
+typedef u8*(__cdecl* UtRpPosFn)(u8* out, DWORD handle, float x, float y, float z);
+static UtRpFn g_utRpOrig;
+static UtRpPosFn g_utRpPosOrig;
+struct UtRpCls { int c, part; DWORD ms; };
+static UtRpCls UtRpClass(DWORD handle) {
+    UtRpCls r = {2, -1, 0};
+    int kind, cls;
+    void* obj;
+    UnPlanClass(handle, &kind, &cls, &obj);
+    if (!obj) return r;
+    r.c = 1;
+    const UtDgSlot* s = UtDgFor(obj, false);
+    if (!s || ts3native_counters.unPasses - s->pass > UT_DG_RECENT) return r;
+    r.c = 0;
+    const DWORD now = GetTickCount();
+    for (int p = 0; p < UT_DG_N; p++)  // the part that skipped it last
+        if (s->at[p] && (r.part < 0 || now - s->at[p] < r.ms)) r.part = p, r.ms = now - s->at[p];
+    return r;
+}
+static void UtRpNote(int ic, const UtRpCls& r, LARGE_INTEGER t0) {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG us = UsSince(t0);
+    k.utRpN[ic][r.c]++;
+    k.utRpUs[ic][r.c] += us;
+    if (us >= 100000) k.utRpLong[ic][r.c]++;
+    if (r.part >= 0) k.utRpPart[ic][r.part]++, k.utRpPartMs[ic][r.part] += (LONG)r.ms;
+}
+static u8* __cdecl UtRpHook(u8* out, DWORD handle) {
+    if (GetCurrentThreadId() != g_unSimTid) return g_utRpOrig(out, handle);
+    const UtRpCls r = UtRpClass(handle);
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    u8* res = g_utRpOrig(out, handle);
+    UtRpNote(0, r, t0);
+    return res;
+}
+static u8* __cdecl UtRpPosHook(u8* out, DWORD handle, float x, float y, float z) {
+    if (GetCurrentThreadId() != g_unSimTid) return g_utRpPosOrig(out, handle, x, y, z);
+    const UtRpCls r = UtRpClass(handle);
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    u8* res = g_utRpPosOrig(out, handle, x, y, z);
+    UtRpNote(1, r, t0);
+    return res;
 }
 
 // within nearM of the goal, or a portal ahead / just crossed within portalM (portalM < 0: no portal test); a fault or no
@@ -465,11 +551,17 @@ static void __cdecl UtListThunk(void* part, void* path, void* vec, DWORD a3, DWO
     if (why < 0) {
         k.utSkipped++;
         if (t_utWatchRun) UtWatchSkip(t_unCls == 1);
+        UtDgSkip(UT_DG_LIST, UtOwner(t_unAgent));
         return;  // the caller's vector stays empty: "no obstacles"
     }
     k.utWhy[why]++;
     k.utRun++;
     g_utOrig(part, path, vec, a3, a4);
+    if (t_unAgent) {  // v83: the notice this run posts (non-empty vector: begin [vec], end [vec+4]) for the deferral count
+        const bool obst = ((const DWORD*)vec)[0] != ((const DWORD*)vec)[1];
+        if (obst && t_unCls == 2) k.utListNotices++;
+        if (UtDgSlot* s = UtDgFor(UtOwner(t_unAgent), obst)) s->obst = obst;
+    }
 }
 
 // ---- [UnseenThrottle] phase 2 (docs/143 §8, counters v80): avoidance, footprint updates, whole-update rate ----
@@ -543,7 +635,7 @@ static void __fastcall UtAvHook(u8* beh, void* edx, float dt) {
         if (why < 0) UtWatchSkip(t_unCls == 1);
         else g_utWatch.avRan = true;
     }
-    if (why < 0) { k.utAvSkipped++; return; }
+    if (why < 0) { k.utAvSkipped++; UtDgSkip(UT_DG_AVOID, UtOwner(t_unAgent)); return; }
     k.utAvWhy[why]++;
     g_utAvOrig(beh, edx, dt);
 }
@@ -617,6 +709,7 @@ static bool UtRateStep(u8* agent, int c, int kind, const float* pos, float dt, f
     if (why < 0) {
         s.debt += d;
         k.utRateSkipped++;
+        UtDgSkip(UT_DG_RATE, UtOwner(agent));
         return false;
     }
     k.utRateWhy[why]++;
@@ -744,6 +837,7 @@ static void __fastcall UtFpHook(void* world, void* edx, void* obj, DWORD enable,
             p.force |= force & 0xFF;
             k.utFpSkipped++;
             k.utFpCoalesced++;
+            UtDgSkip(UT_DG_FOOT, obj);
             return;
         }
         why = UTF_CHANGE;
@@ -758,6 +852,7 @@ static void __fastcall UtFpHook(void* world, void* edx, void* obj, DWORD enable,
             p.obj = obj, p.world = world;
             Max(&k.utFpPendMax, g_utFpN);
             k.utFpSkipped++;
+            UtDgSkip(UT_DG_FOOT, obj);
             if (g_utWatch.flipped && g_utWatch.armed && UtWatched(obj)) g_utWatch.fpCalled = true, UtWatchSkip(c == 0);
             return;
         }
@@ -836,6 +931,18 @@ static void ApplyUnseenThrottle(const wchar_t* ini) {
                 k.utEvery, UT_MAX_STEP, g_utRateNearM, g_utPortalM);
         }
     }
+    // v83 diagnostics (§8.14): Replan / ReplanFromPosition IC entries; an IC whose prologue another section already owns
+    // ([RouteAsync] Kinds, [ProbeP10], both installed earlier) is left to it and its split stays 0
+    for (int i = 0; i < 2; i++) {
+        const int ic = i ? 3 : 1;
+        void* t = InstallDetour(kP10Name[ic], kP10Ic[ic], kP10Pro[ic], sizeof(kP10Pro[ic]), i ? (void*)UtRpPosHook : (void*)UtRpHook);
+        if (!t) continue;
+        if (i) g_utRpPosOrig = (UtRpPosFn)t;
+        else g_utRpOrig = (UtRpFn)t;
+        k.utDgReady |= 1 << i;
+    }
+    Log("unseen throttle diagnostics: replan split ready 0x%lX (bit 0 Replan, 1 ReplanFromPosition), deferred notices, skip ages",
+        k.utDgReady);
 }
 
 // [UnseenProbe] Enabled=1 or [UnseenThrottle] Enabled=1: the agent call site is checked first (refused and logged when it

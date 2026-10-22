@@ -322,3 +322,72 @@ Same save, seed and repro (`unseen-crowd-far`), 15 min each; `-on` ran the rebui
 - **Why more on the on side:** which day- or night-shift workers sit inside a building during some 3-minute window depends on where each run's Sims were when the shift ran (the runs diverge in who works when: e.g. Diana Jones worked 3 checks then went home in `-off`, 9 checks then went home in `-on`). Inside a work building or at a venue activity a Sim has no route and no walking update, so none of the four throttle parts touches it.
 - **The one routing entry** (`-on` only): Rafael Striker, "Visit Banzai Lounge", routing for 3 checks; at the next check he was ordering a drink at the lounge (arrived).
 - **Fix (harness):** `tools/harness/stuck-rule.ts` counts work shifts and long venue activities as standing still by design when the Sim is not routing (as sleep or frozen already were). Re-read with the new rule: off 1 (Romeo Rake, library visit), on 2 (the same Romeo Rake plus Rafael Striker, who arrived), within the docs/TESTING.md rule (at most one more). Ledger I-212-17.
+
+### 8.13 Making the live checks exercise their case (2026-10-21)
+
+- **Rate holds time only at small steps [measured].** In both snap-back runs Rate skipped 0.03-0.1% of the updates it looked at and `owed_ms` was 0 for every Sim: the step cap ran on 153,480 of 777,768 updates, i.e. a pass carried more than 0.25 s of game time (fast game speed), so one more skip could pass behaviour B's 0.5 s clamp. At speed 1 a pass is ~0.04 s and Rate skips 3 of 4. So **Rate saves time only at normal speed**; at faster speeds it runs nearly every pass (no gain, no risk).
+- **Snap-back check:** the repro now runs at normal speed; ts3native's watch reports the watched agent's current Rate debt (code 18, watch state only, no counter change); the check arms each candidate for 12 ticks and skips Sims without debt (at most 4 x count skips), and the require step also needs at least one pass with `owed_ms` > 0 (`passed_with_rate_debt`).
+- **Boats:** `crowd_go {to: island}` (new) goes to the community lot whose straight line from the active Sim crosses the most sea (>= 100 m), so the leg needs a boat, a water taxi or a swim; the new agent command `unseen_water_watch` samples every 15 ticks and its require step fails the job as "not exercised" unless >= 3 unseen Sims were at once in a vehicle or in water (and none stranded).
+- **Horses:** the same watch's require step needs a rider mounted on its horse (parent = horse) while unseen at least once.
+
+### 8.14 Route time rises with every part on: diagnostics (ts3native 0.36.18, counters v83, offline, not run)
+
+**Measured (clean A/B, 0.36.15 `.0315`, both run orders).** With every part on, locomotion drops only ~2.5 ms/s but sim-thread route time rises (IP +15-21 ms/s); route count unchanged (~7/s), route fails slightly lower. By hitch entry: `Route_Replan` > 100 ms ~40 on vs ~16 off; `Route_ReplanFromPosition` ~128 on vs ~108 off, ~54 vs ~46 ms each; `Route_Plan` and `PlanFromPoint` unchanged. Footprint alone and Rate alone: no route change. Per-part BP pairs (list, avoid, cars) still running.
+
+**Finding: the sim's `+0x918` wait is conserved per part [measured, 2026-10-22 per-part BP pairs].** `wait-ab.ts`, mean of both run orders, summed keyed sim waits on/off in ms/s: list 77.7 / 77.2 (steering S2 key -2.6, but gate 12 +1.9, destroy +1.5, `0x8334CC` +1.7), avoidance 77.1 / 73.1, rate 78.6 / 76.9, footprint 77.5 / 70.9 (`UpdateSimFootprint` key up, 7.8 vs 6.8), crowd (all parts) 56.7 / 54.8. Worker job time (`asyncUs`) ~115 ms per wall second, flat across slices (`bp-ut2-list-offfirst`: 133 / 114 / 115 / 116). Locomotion CPU saved per part <= 2.6 ms/s. The cars pair is invalid (the `unseen-traffic` repro jumps it/s from ~50 to ~300 after slice 1 in both orders).
+
+So throttling removes acquirers, but the next acquirer in the same tick waits out the worker's hold: the sim's wait is bound by the route job's `+0x918` hold time, not by how many sim-thread takers there are (the §6.3 factor m is ~0, not 0.25-1). Static side: `Route_PlanLocked 0x82C6E0` takes `+0x918` at `0x82C733` [verified bytes, ts3native.cpp M1Pending note]; that a job holds it for its whole search and that the sim acquires it several times per tick (steering, avoidance, footprint, slot and gate ICs, docs/81, docs/89, docs/90) are [inferred] from those docs, not re-read here.
+
+**Levers that do cut the wait** (shorter or lent hold, not fewer takers): P5b ReleaseLock and P5c FreeLock (the job lends or drops `+0x918` during its search; `p5b.cpp`, `p5c.cpp`), design H2 (no queued job starts during the locomotion pass, docs/86 §5, `[LocoWindow]`), and S2 / the read-only clones (`[SteerRO]`, `[AvoidRO]`, `[SlotEnabledRO]`: the taker reads under QL shared instead of `+0x918`). The unseen throttle's gain is its CPU (<= 2.6 ms/s per part) plus whatever the levers above free.
+
+**Secondary: the replan rise.** Avoidance raises `Route_Replan` hitches in both orders; the counters below test why. Hypotheses (all inferred):
+
+| # | Hypothesis | Mechanism |
+|---|---|---|
+| H1 | notice delay | a skipped obstacle list (`0x9573B7`) posts no `+0x60` obstacle notice that tick, a skipped avoidance no `+0x64` goal-obstructed notice (docs/82); the Sim walks on up to Every-1 ticks into a worse spot and the script replans from there, which costs more |
+| H2 | cars | `unseencars` keeps unseen traffic cars parked longer: different street and parking state for the Sims' replans |
+| H3 | idle pacing | Rate's summed steps (0.13-0.17 s for an unseen Sim) move a Sim further per update; it reaches a blocked spot or a stale route section between checks and replans |
+| H4 | stale footprint | footprint hold-back leaves an unseen Sim's footprint up to 0.5 s old, so *other* Sims' plans route through or around the wrong place and replan later |
+
+The measured "footprint alone" and "rate alone" A/Bs showed no route change, which already weighs against H3 and H4 alone (not against their interaction with the list and avoidance parts).
+
+**Counters (v83, `+0x3568..+0x3603`, on with `[UnseenThrottle] Enabled=1`, observe only, no switch).**
+- Per object (the agent's owner `+4`, or the footprint object), a 512-slot table remembers when each part last skipped it (`at[part]`, `GetTickCount`), the pass of its last skip, and whether its last obstacle-list run returned a non-empty vector (`begin != end`, the test at `0x9573C7` before the `+0x60` call [verified disassembly]).
+- `utDefer[3]` (+0x356C): list / avoidance / rate skips while that object's last list was non-empty, i.e. a `+0x60` notice the skipped tick would likely have posted again (estimate: the list can turn empty in between). `utListNotices` (+0x3578): list runs inside unseen updates that posted the notice (the base for `utDefer`).
+- Detours on `IC_Route_Replan 0x765490` and `IC_Route_ReplanFromPosition 0x765550` (the prologues `[ProbeP10]` / A10 use; skipped when either owns them, `utDgReady` bits 0/1): each sim-thread call is timed whole (what stutter-profile's `byEntry` times) and split by the route's follower (route `+0x40/+0x44`, found by id as `UnPlanClass`): class 0 = some part skipped it within the last 8 passes, 1 = other follower, 2 = none found. `utRpN[2][3]` (+0x357C), `utRpUs[2][3]` (+0x3594), `utRpLong[2][3]` (+0x35AC, calls >= 100 ms).
+- For class 0: `utRpPart[2][4]` (+0x35C4) the part that skipped the follower last (0 list, 1 avoidance, 2 rate, 3 footprint) and `utRpPartMs[2][4]` (+0x35E4) the summed ms from that skip to the replan (mean = age). The cars part lives in ts3fixes (slots 197-200) and has no per-Sim attribution here.
+- The follower object found by id and the steering agent's owner are the same object [inferred]; class 0 staying 0 in on slices while `utSkipped` > 0 would mean that identity is wrong, not that H1 is.
+
+**How each counter confirms or refutes each hypothesis** (per slice from `<tag>-ab-native.jsonl`; off slices have no skips, so class 0 empties 8 passes into each off slice):
+
+| Reading (on slices) | H1 notice delay | H2 cars | H3 idle pacing | H4 stale footprint |
+|---|---|---|---|---|
+| the extra `utRpUs` / `utRpLong` sit in class 0 (follower throttled lately), mean us per call class 0 > class 1 | supports | refutes as main cause | supports | refutes (H4 hits other Sims' replans: class 1) |
+| the extra sits in class 1 | refutes | supports | refutes | supports |
+| class 0 `utRpPart` mostly list / avoidance, mean age short (< ~0.5 s, a few passes) | confirms | - | weakens | - |
+| class 0 `utRpPart` mostly rate | weakens (rate also skips the list: read with `utDefer_2`) | - | supports | - |
+| `utDefer` a large share of the skips (vs `utListNotices`) | needed for H1 (notices really deferred) | - | - | - |
+| `utDefer` near 0 | refutes (nothing to defer) | - | - | - |
+| class 0 share of calls ~ the throttled share of walking Sims and class 0 cost = class 1 | refutes (replans not caused or worsened by skips) | possible | refutes | possible |
+
+H2 vs H4 then come from the per-part pairs: the cars pair (route time with `unseencars` alone) and the footprint pair (already measured: no change).
+
+**Checks:** `TestUnseenDiag` (split by class, last part wins with its age, the 8-pass window, deferred notices count list / avoidance / rate but not footprint, other-thread calls pass through uncounted) and the phase-1 test's notice count (`utListNotices`, `utDefer_0`); `unseen-report.ts` prints the lines (`--self-check`). Queue `tools/harness/queues/unseen-diag-ab.json` (not run): `ip-ut2-diag` (IP) and `bp-ut2-diag-crowd` (`rare-big-crowd`), 6 min, 1.2-min slices, every part `--ab` (warm-up + off,on,on,off; off,on,off,on is not supported by profile-world.ts), asi `game-copy/ts3native.asi.0316diag`. No fix is built until the cause is shown. Ledger §215.
+
+### 8.15 Why the throttle gains ~0: results (2026-10-22, clean night, ts3native 0.36.15 / 0.36.18)
+
+All numbers are measured, as pair means of an off-first and an on-first job (on minus off), so the slow middle slices of every run cancel. Single-order jobs (off, on, on, off) are not usable here: the middle slices are slow with nothing switching (BP crowd single-order deltas -33% and +39% for the same switch).
+
+| Test (queue) | it/s | locomotion ms/s | summed `+0x918` wait ms/s | Replan + ReplanFromPosition ms/s |
+|---|---|---|---|---|
+| List only, BP (`clean-night-unseen-p2` list pair) | +2.5 it/s (~+5%) | -2.6 | +0.5 | route -8.8 |
+| List + Footprint + Rate vs all off, IP run 1 / run 2 / BP crowd (`unseen-noavoid-ab` + twins) | -1.3% / +0.8% / +2.9% | -2.1 / -11.0 / +5.8 | +7.1 / -9.0 / +12.9 | +18.3 / +4.5 / -0.8 |
+| Avoid alone, other parts on in both halves, IP / BP crowd (`unseen-avoid-iso` + twins) | -10.8% / -10.6% | +10.7 / +14.1 | +10.3 / +13.5 | -17.9 / +7.7 |
+
+Findings:
+1. **The wait the design expected to remove is conserved.** Per part, the sim thread's summed keyed `+0x918` wait stays the same (list 77.7 vs 77.2 ms/s: steering -2.6, other keys up by the same amount; §8.14). The route worker's job time (`asyncUs` ~115 ms/s) bounds it; a skipped acquirer hands the wait to the next acquirer in the same tick (m ~ 0 in §6.3). The §8.7 estimate of ~25-45 ms/s assumed these waits were removable.
+2. **The CPU left to save is small.** EA already runs off-screen Sims on `OffScreenSimBrain` + `SimpleBody`; the parts save at most a few ms/s of locomotion, within the per-run noise.
+3. **The avoidance skip costs more than it saves** (both orders negative in IP): more locomotion work and more lock waits. Mechanism (inferred): late avoidance lets unseen Sims run into each other, so their steering and replans work harder.
+4. The release default is already the safe set: `release-features unseenthrottle` turns on `Enabled=1` with `List=1`, `Avoid=0`, `Footprint=0`, `Rate=0`.
+
+What would cut the wait is a shorter or lent `+0x918` hold (P5b `ReleaseLock`, P5c `FreeLock`, design H2 docs/86, S2), not fewer acquirers. The `unseen-traffic` cars pair is not usable (it/s jumps from ~50 to ~300 after the first slice in both orders).

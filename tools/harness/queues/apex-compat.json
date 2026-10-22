@@ -1,0 +1,55 @@
+{
+  "jobs": [
+    {
+      "id": "apex-base",
+      "note": "docs/148 §7 baseline: tested build + release-candidate ini, no Apex (5 min). Reference for the two Apex jobs",
+      "asi": "tested",
+      "ini": { "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1, "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000 },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "apex-first",
+      "note": "docs/148 §7 smoke, Apex loads BEFORE ts3native (file-name order: ApexRadiance.asi < ts3native.asi), Apex default config (no ApexRadiance.toml = every default). Pass: no crash; ts3native.log shows the same SKIP-free install as apex-base; ApexRadiance_LOG.txt (read by hand, see docs/148 §7: the queue does not copy it) shows no 'differs' for the sites in docs/data/apex-sites.csv except the expected C1 line 'Early save sites differ; existing world-save preparation retained'; a save and a reload work",
+      "asi": "tested",
+      "ini": { "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1, "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000 },
+      "fixes": { "install": ["apex-radiance"] },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    },
+    {
+      "id": "apex-last",
+      "note": "docs/148 §7 smoke, Apex loads AFTER ts3native (installed as zzApexRadiance.asi). Expected identical to apex-first: Apex installs its game-code features after the first Present + 1 s in both orders. Only the DllMain parts differ (Direct3DCreate9 detour order, instance mutex)",
+      "asi": "tested",
+      "ini": { "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1, "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000 },
+      "fixes": { "install": ["apex-radiance-late"] },
+      "save": "Baseline-BP",
+      "run": { "profile": { "minutes": 5, "seed": 12345 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    },
+    {
+      "id": "apex-save-matrix",
+      "note": "docs/148 C1: save path with Apex on (Room to Save) and [SaveWrite] on: control + identical cases (docs/TESTING.md). Checks the saves are byte-identical to the Apex-off matrix and that no Error 12 / hang appears when both wrap the 0xAB12AF dispatch",
+      "asi": "tested",
+      "fixes": { "install": ["apex-radiance"] },
+      "save": "Baseline-BP",
+      "run": { "matrix": ["--cases", "control,identical"] },
+      "timeoutMin": 60
+    },
+    {
+      "id": "apex-ab-saveprep",
+      "note": "docs/148 C1 proposal (needs the ts3native change in §8 first): same as apex-first with [SaveWrite] Enabled=0 (the call keeps its rel32; the RouteGate Sites=1 count-only jmp at 0xAAC110 stays, Apex accepts it) so the call at 0xAB12AF keeps its original rel32 and Apex's early save preparation can start; compare save time and peak private bytes with apex-save-matrix. Skip until §8 item 1 is built",
+      "asi": "tested",
+      "ini": { "SaveWrite.Enabled": 0 },
+      "fixes": { "install": ["apex-radiance"] },
+      "save": "Baseline-BP",
+      "run": { "matrix": ["--cases", "control,identical"] },
+      "timeoutMin": 60
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.2.0 (unreleased)
+## v0.1.5 (unreleased)
 
 <!-- DRAFT (2026-10-21). Every candidate is in a feature block: `node tools/release-features.ts <chosen ids> --write --docs`
 keeps the "on" text of the chosen ones and the "off" line of the rest, and removes the markers. Then replace every
@@ -13,7 +13,7 @@ The routing release: fewer multi-second route freezes, less waiting on the backg
 
 ### Download
 
-- `ts3native-v0.2.0.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` (replace the v0.1.4 files; **use the new `ts3native.ini`**, the old one keeps the new fixes off). Needs an ASI loader, as before. Built as ts3native [to fill: 0.36.14 or later].
+- `ts3native-v0.1.5.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` (replace the v0.1.4 files; **use the new `ts3native.ini`**, the old one keeps the new fixes off). Needs an ASI loader, as before. Built as ts3native [to fill: 0.36.14 or later].
 - `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` (replace the v0.1.4 file). The new `ts3native` features need this package from the same release.
 
 ### New in `ts3native` (on by default)

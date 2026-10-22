@@ -20,7 +20,7 @@ node tools/mts-zip.ts --self-check
 node tools/mts-zip.ts --final
 ```
 
-`--final` also compares the sha256 of the package, asi and ini with the `docs/RELEASE.md` "v0.2.0 release build" table and fails on a mismatch or a `[to fill]`. Other paths: `--package`, `--asi`, `--ini`, `--readme`, `--version`, `--out` (default `release/mts/out/`, git-ignored).
+`--final` also compares the sha256 of the package, asi and ini with the `docs/RELEASE.md` "v0.1.5 release build" table and fails on a mismatch or a `[to fill]`. Other paths: `--package`, `--asi`, `--ini`, `--readme`, `--version`, `--out` (default `release/mts/out/`, git-ignored).
 
 The zip is deterministic: entries sorted, timestamp fixed at 2026-10-23 00:00, deflate level 9. The same inputs give the same zip bytes, so its sha256 can go into the checklist.
 

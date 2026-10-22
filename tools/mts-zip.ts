@@ -1,8 +1,8 @@
 // Builds the ModTheSims upload zip (release/mts/package.md) from the release artifacts. Allow-list only: the zip holds
 // exactly these four files and nothing else; inputs are checked by name and content (no ts3agent, no test packages).
 //   node tools/mts-zip.ts                         defaults: build/ts3fixes.package, native/ts3native/out/ts3native.{asi,ini},
-//                                                 release/mts/README.txt -> release/mts/out/Sims3Modernization_v0.2.0.zip
-//   node tools/mts-zip.ts --package <p> --asi <p> --ini <p> [--readme <p>] [--version 0.2.0] [--out <dir>]
+//                                                 release/mts/README.txt -> release/mts/out/Sims3Modernization_v0.1.5.zip
+//   node tools/mts-zip.ts --package <p> --asi <p> --ini <p> [--readme <p>] [--version 0.1.5] [--out <dir>]
 //   node tools/mts-zip.ts --final                 also require the sha256 of the three files to match the
 //                                                 docs/RELEASE.md "v<version> release build" table (no [to fill] left)
 //   node tools/mts-zip.ts --self-check            offline checks with synthetic files (temp dir), writes nothing here
@@ -157,7 +157,7 @@ const { values: o } = parseArgs({ options: {
   asi: { type: 'string', default: join(ROOT, 'native', 'ts3native', 'out', 'ts3native.asi') },
   ini: { type: 'string', default: join(ROOT, 'native', 'ts3native', 'out', 'ts3native.ini') },
   readme: { type: 'string', default: join(ROOT, 'release', 'mts', 'README.txt') },
-  version: { type: 'string', default: '0.2.0' },
+  version: { type: 'string', default: '0.1.5' },
   out: { type: 'string', default: join(ROOT, 'release', 'mts', 'out') },
   final: { type: 'boolean' }, 'self-check': { type: 'boolean' },
 } });

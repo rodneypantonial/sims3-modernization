@@ -1,6 +1,6 @@
 {
-  "_comment": "Numbers for tools/mts-images.ts. Sources: README.md 'Results so far' (v0.1.4 vs no fixes, 2026-10-20/21). Friday: fill every null under v020 from the v0.2.0 release-vs-baseline runs (README v0.2.0 table), set thumbnail.claim, list the shipped v0.2.0 features, then run `node tools/mts-images.ts --final`.",
-  "version": "0.2.0",
+  "_comment": "Numbers for tools/mts-images.ts. Sources: README.md 'Results so far' (v0.1.4 vs no fixes, 2026-10-20/21). Friday: fill every null under v020 from the v0.1.5 release-vs-baseline runs (README v0.1.5 table), set thumbnail.claim, list the shipped v0.1.5 features, then run `node tools/mts-images.ts --final`.",
+  "version": "0.1.5",
   "worlds": ["Bridgeport", "Sunset Valley", "Isla Paradiso"],
   "metrics": [
     {

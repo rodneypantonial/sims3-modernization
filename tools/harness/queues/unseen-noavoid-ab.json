@@ -1,0 +1,99 @@
+{
+  "note": "Unseen throttle fix verification 2026-10-22: every part except avoidance, on vs off.",
+  "jobs": [
+    {
+      "id": "ip-ut2-noav-1",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-ut2-noav-2",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ut2-noav-crowd",
+      "note": "Fix verification (docs/143 §8.14): [UnseenThrottle] List+Footprint+Rate on vs all off, Avoid=0 (avoid-iso 2026-10-22: the avoidance skip costs +13-22 ms/s locomotion, +14-26 ms/s lock wait, -5..-21 it/s). Cars off. Pass: no crash; gain = it/s, locomotion, wait-ab total, route on vs off.",
+      "asi": "game-copy/ts3native.asi.0316diag",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 0,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "unseenthrottle,unseenfootprint,unseenrate",
+          "slice": 1.2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

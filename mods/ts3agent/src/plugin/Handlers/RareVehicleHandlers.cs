@@ -8,6 +8,7 @@ using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
 using Sims3.Gameplay.Objects.Vehicles;
 using Sims3.Gameplay.Socializing;
+using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 using Sims3.SimIFace.CAS;
 using Sims3.SimIFace.BuildBuy;
@@ -34,7 +35,7 @@ namespace Ts3Agent
 
         // Vehicle objects to try for a kind: the game's purchasable list (ParkingSpace.sPurchasableVehicleInfo, the parking
         // space Buy Vehicle dialog) for cars and bikes, catalog products named *stroller* for strollers; then fixed names.
-        static GameObject CreateVehicle(string kind, string name)
+        static GameObject CreateVehicle(string kind, string name, List<string> log)
         {
             List<object> tries = new List<object>();
             if (name != null) tries.Add(name);
@@ -46,8 +47,14 @@ namespace Ts3Agent
                 // resort never resolved (2026-10-18 and 2026-10-20 rare-stroller runs).
                 tries.Add(GlobalFunctions.CreateProductKey("strollerSimple", ProductVersion.EP4));
                 tries.Add(GlobalFunctions.CreateProductKey("strollerDeluxe", ProductVersion.EP4));
+                // [verified offline] the same OBJDs keyed directly (FullBuild_p08 NGMP maps fnv64 of both names to these
+                // GUIDs; OBJK script class Sims3.Gameplay.Objects.Vehicles.StrollerCheap), bypassing the name map lookup.
+                tries.Add(new ResourceKey(0x98A509uL, 0x319E4F1Du, 0x38000000u));
+                tries.Add(new ResourceKey(0x98A6DDuL, 0x319E4F1Du, 0x38000000u));
+                int matched = 0;
                 foreach (BuildBuyProduct p in Catalog())
-                    if ((p.ObjectInstanceName ?? "").ToLowerInvariant().IndexOf("stroller") >= 0) tries.Add(p.ProductResourceKey);
+                    if ((p.ObjectInstanceName ?? "").ToLowerInvariant().IndexOf("stroller") >= 0) { tries.Add(p.ProductResourceKey); matched++; }
+                log.Add("EP4 installed: " + GameUtils.IsInstalled(ProductVersion.EP4) + ", catalog stroller products: " + matched);
             }
             else
             {
@@ -66,13 +73,16 @@ namespace Ts3Agent
                         : t is ResourceKey ? GlobalFunctions.CreateObjectOutOfWorld((ResourceKey)t)
                         : GlobalFunctions.CreateObjectOutOfWorld((string)t)) as GameObject;
                 }
-                catch (Exception) { continue; }
-                if (go == null) continue;
+                // the real reason per try goes into the error: GlobalFunctions throws on a missing proxy and NREs on an
+                // invalid guid (sCreateObjectError says which), and a missing model gives a FailureObject
+                catch (Exception e) { log.Add(t + ": " + e.GetType().Name + ": " + e.Message + " (create error " + Simulator.sCreateObjectError + ")"); continue; }
+                if (go == null) { log.Add(t + ": null (create error " + Simulator.sCreateObjectError + ")"); continue; }
                 bool fits = name != null ? go is IOwnableVehicle
                     : kind == "car" ? go is CarOwnable
                     : kind == "bike" ? go is AdultBicycle && !(go is Motorcycle) && !(go is Scooter)
                     : go is Stroller;
                 if (fits) return go;
+                log.Add(t + ": made " + go.GetType().FullName + ", not a " + kind);
                 go.Destroy();
             }
             return null;
@@ -101,8 +111,9 @@ namespace Ts3Agent
             {
                 if (kind != "car" && kind != "bike" && kind != "stroller") throw new McpException("kind must be car, bike, stroller or broom");
                 if (s.LotHome == null) throw new McpException(s.FullName + " has no home lot to own a vehicle on");
-                go = CreateVehicle(kind, a.Has("name") ? a.Str("name") : null);
-                if (go == null) throw new McpException("no " + kind + " object could be created (expansion not installed?)");
+                List<string> log = new List<string>();
+                go = CreateVehicle(kind, a.Has("name") ? a.Str("name") : null, log);
+                if (go == null) throw new McpException("no " + kind + " object could be created: " + string.Join("; ", log.ToArray()));
                 go.SetOwnerLot(s.LotHome);
                 if (s.Inventory.TryToAdd(go)) where = "inventory";
                 else

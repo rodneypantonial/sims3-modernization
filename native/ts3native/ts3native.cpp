@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.16"
+#define TS3NATIVE_VERSION "0.36.18"
 
 typedef unsigned char u8;
 
@@ -201,7 +201,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 3418 int32 (v81; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, no v52 or v58 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 3457 int32 (v83; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -1343,8 +1343,20 @@ struct Ts3nCounters {
     LONG ownJobMaxUs;                // +0x355C, longest other job (own-task START, A10 kinds)
     LONG fbjcLong;                   // +0x3560, foreign jobs >= 200 ms (each logged, rate-limited)
     LONG ownJobLong;                 // +0x3564, other jobs >= 200 ms (each logged, rate-limited)
+    // v83 (docs/143 §8.14, 0.36.18; moves after v82 when that merges first): [UnseenThrottle] diagnostics, observe only, on
+    // with Enabled=1. Throttle parts: 0 obstacle list, 1 avoidance, 2 rate, 3 footprint (unseen.cpp UT_DG_*)
+    LONG utDgReady;                  // +0x3568, bit 0 IC_Route_Replan 0x765490 detour, 1 IC_Route_ReplanFromPosition 0x765550
+    LONG utDefer[3];                 // +0x356C, skips while the agent's last obstacle list was non-empty (its +0x60 notice
+                                     //          likely deferred) [list, avoidance, rate]
+    LONG utListNotices;              // +0x3578, obstacle-list runs in unseen agent updates that returned a non-empty list
+    LONG utRpN[2][3];                // +0x357C, sim-thread IC calls [Replan, ReplanFromPosition][follower: a throttle part
+                                     //          skipped it in the last 8 passes, other follower, no follower found]
+    LONG utRpUs[2][3];               // +0x3594, their time (whole IC call, as stutter-profile's byEntry)
+    LONG utRpLong[2][3];             // +0x35AC, of those >= 100 ms
+    LONG utRpPart[2][4];             // +0x35C4, class-0 calls by the part that skipped the follower last [IC][part]
+    LONG utRpPartMs[2][4];           // +0x35E4, summed ms from that skip to the IC call
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {81,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {83,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 

@@ -24,6 +24,90 @@ namespace Ts3Agent
             Dispatcher.Register("unseen_snapback", UnseenSnapback);
             Dispatcher.Register("unseen_water_check", UnseenWaterCheck);
             Dispatcher.Register("unseen_horse_ride", UnseenHorseRide);
+            Dispatcher.Register("unseen_water_watch", UnseenWaterWatch);
+        }
+
+        // unseen_water_watch {start: true} | {stop: true} | {result: true, min_engaged?: n, min_mounted?: n, require?: true}
+        // (docs/143 §8.10): a game task samples every spawn_sims Sim every 15 ticks while the repro's legs run and keeps,
+        // for Sims out of view (more than 100 m from the camera and its target, not on screen): the most at once in a
+        // vehicle or boat (Parent set, not a horse), in water deeper than 0.5 m (swimming or routing), and mounted on a horse
+        // (Parent is a horse Sim); and every "stranded" sample (in water deeper than 0.5 m, no vehicle, not routing, not in a
+        // swim / boat / taxi interaction). {result, require} throws unless no Sim was stranded and the maxima reached
+        // min_engaged (vehicle + water) and min_mounted: a run where nobody rode or swam unseen proves nothing and fails
+        // as "not exercised".
+        static int sWaterGen, sWaterSamples, sWaterMaxEngaged, sWaterMaxVehicle, sWaterMaxWater, sWaterMaxMounted;
+        static List<object> sWaterStranded = new List<object>();
+        static object UnseenWaterWatch(Args a)
+        {
+            RequireLive();
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Has("start"))
+            {
+                int gen = ++sWaterGen;
+                sWaterSamples = sWaterMaxEngaged = sWaterMaxVehicle = sWaterMaxWater = sWaterMaxMounted = 0;
+                sWaterStranded = new List<object>();
+                Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+                {
+                    while (gen == sWaterGen)
+                    {
+                        try { WaterSample(); } catch (Exception) { }
+                        Simulator.Sleep(15);
+                    }
+                }));
+                r["started"] = true;
+                return r;
+            }
+            if (a.Has("stop")) { sWaterGen++; r["stopped"] = true; }
+            r["samples"] = sWaterSamples;
+            r["max_engaged"] = sWaterMaxEngaged;
+            r["max_in_vehicle"] = sWaterMaxVehicle;
+            r["max_in_water"] = sWaterMaxWater;
+            r["max_mounted"] = sWaterMaxMounted;
+            r["stranded"] = sWaterStranded;
+            int minE = (int)a.Long("min_engaged", 0), minM = (int)a.Long("min_mounted", 0);
+            bool ok = sWaterStranded.Count == 0 && sWaterMaxEngaged >= minE && sWaterMaxMounted >= minM && sWaterSamples > 0;
+            r["check_ok"] = ok;
+            if (a.Bool("require", false) && !ok)
+                throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s)"
+                    : "unseen_water_watch: not exercised (max engaged " + sWaterMaxEngaged + " < " + minE + " or max mounted " + sWaterMaxMounted + " < " + minM + ", samples " + sWaterSamples + ")");
+            return r;
+        }
+
+        static void WaterSample()
+        {
+            float sea = World.GetSeaLevel();
+            Vector3 cam = CameraController.GetPosition(), tgt = CameraController.GetTarget();
+            int vehicle = 0, water = 0, mounted = 0;
+            foreach (Sim s in SpawnedInWorld())
+            {
+                Vector3 p = s.Position;
+                if ((p - cam).Length() < 100f || (p - tgt).Length() < 100f || World.IsObjectOnScreen(s)) continue;  // seen: not this check's case
+                object parent = s.Parent;
+                Sim horse = parent as Sim;
+                bool routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
+                float depth = sea - World.GetTerrainHeight(p.x, p.z);
+                string inter = (s.CurrentInteraction != null ? s.CurrentInteraction.GetType().Name : "") + " " + (s.Posture != null ? s.Posture.GetType().Name : "");
+                bool swimOrBoat = inter.IndexOf("Swim", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Boat", StringComparison.OrdinalIgnoreCase) >= 0
+                    || inter.IndexOf("Taxi", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Ocean", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (horse != null && horse.IsHorse) mounted++;
+                else if (parent != null) vehicle++;
+                else if (depth > 0.5f)
+                {
+                    if (routing || swimOrBoat) water++;
+                    else
+                    {
+                        Dictionary<string, object> o = Util.Obj();
+                        o["name"] = s.FullName; o["x"] = Math.Round(p.x, 1); o["z"] = Math.Round(p.z, 1);
+                        o["depth_m"] = Math.Round(depth, 2); o["interaction"] = inter;
+                        if (sWaterStranded.Count < 50) sWaterStranded.Add(o);
+                    }
+                }
+            }
+            sWaterSamples++;
+            sWaterMaxVehicle = Math.Max(sWaterMaxVehicle, vehicle);
+            sWaterMaxWater = Math.Max(sWaterMaxWater, water);
+            sWaterMaxEngaged = Math.Max(sWaterMaxEngaged, vehicle + water);
+            sWaterMaxMounted = Math.Max(sWaterMaxMounted, mounted);
         }
 
         // unseen_horse_ride {count?: 1..4} | {remove: true}: the horse case of repro unseen-boats (docs/143 §8.10, needs
@@ -135,7 +219,7 @@ namespace Ts3Agent
         // done, no Sim failed and at least `count` passed.
         static List<object> sSnapRows;
         static string sSnapState = "idle";
-        static int sSnapWant, sSnapPassed, sSnapFailed, sSnapNotTested;
+        static int sSnapWant, sSnapPassed, sSnapFailed, sSnapNotTested, sSnapRatePassed, sSnapNoDebtSkipped;
         static readonly ScriptCore.Route sSnapProbe = new ScriptCore.Route();
         const ulong kSnapBits = 0x8200000000000000UL;
         static bool SnapMsg(int code, uint value) { return sSnapProbe.GetOption2((Route.RouteOption2)(kSnapBits | (ulong)(uint)code << 48 | value)); }
@@ -164,12 +248,14 @@ namespace Ts3Agent
                 r["passed"] = sSnapPassed;
                 r["failed"] = sSnapFailed;
                 r["not_tested"] = sSnapNotTested;
+                r["passed_with_rate_debt"] = sSnapRatePassed;  // the Rate snap-back path (owed_ms > 0) exercised
+                r["candidates_without_debt_skipped"] = sSnapNoDebtSkipped;
                 r["sims"] = sSnapRows ?? new List<object>();
-                bool ok = sSnapState.StartsWith("done") && sSnapFailed == 0 && sSnapWant > 0 && sSnapPassed >= sSnapWant;
+                bool ok = sSnapState.StartsWith("done") && sSnapFailed == 0 && sSnapWant > 0 && sSnapPassed >= sSnapWant && sSnapRatePassed >= 1;
                 r["check_ok"] = ok;
                 if (a.Bool("require", false) && !ok)
                     throw new McpException("unseen_snapback check failed: state " + sSnapState + ", passed " + sSnapPassed + " of " + sSnapWant +
-                        ", failed " + sSnapFailed + ", not tested " + sSnapNotTested);
+                        ", failed " + sSnapFailed + ", not tested " + sSnapNotTested + ", passed with Rate debt " + sSnapRatePassed + " (needs 1)");
                 return r;
             }
             int n = a.Has("count") ? (int)a.Long("count") : 6;
@@ -178,7 +264,7 @@ namespace Ts3Agent
             sSnapRows = new List<object>();
             sSnapState = "running";
             sSnapWant = n;
-            sSnapPassed = sSnapFailed = sSnapNotTested = 0;
+            sSnapPassed = sSnapFailed = sSnapNotTested = sSnapRatePassed = sSnapNoDebtSkipped = 0;
             Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
             {
                 Vector3 homePos = CameraController.GetPosition(), homeTgt = CameraController.GetTarget();
@@ -186,17 +272,28 @@ namespace Ts3Agent
                 {
                     List<ulong> done = new List<ulong>();
                     int waited = 0;
-                    while (sSnapPassed < n && done.Count < 3 * n && waited < 12000)
+                    while ((sSnapPassed < n || sSnapRatePassed < 1) && done.Count < 6 * n && waited < 20000)
                     {
                         Sim pick = null;
                         foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
                             if (!done.Contains(s.ObjectId.Value) && SnapUnseen(s, homePos, homeTgt)) { pick = s; break; }
                         if (pick == null) { Simulator.Sleep(10); waited += 10; continue; }
                         done.Add(pick.ObjectId.Value);
+                        // prefer a Sim the Rate part is holding (debt > 0, watch code 18): arm, let it pass a few updates,
+                        // skip it while there are other candidates; at most 4 x count such skips, then any Sim is tested
+                        ulong pid = pick.ObjectId.Value;
+                        if (sSnapNoDebtSkipped < 4 * n && SnapMsg(6, (uint)pid) && SnapMsg(7, (uint)(pid >> 32)))
+                        {
+                            bool held = false;
+                            for (int t = 0; t < 12 && !held; t++) { Simulator.Sleep(1); held = SnapMsg(18, 1); }
+                            SnapMsg(11, 0);
+                            waited += 12;
+                            if (!held) { sSnapNoDebtSkipped++; continue; }
+                        }
                         Dictionary<string, object> row = SnapOne(pick);
                         object v;
                         string verdict = row.TryGetValue("verdict", out v) ? (string)v : "not tested";
-                        if (verdict == "pass") sSnapPassed++;
+                        if (verdict == "pass") { sSnapPassed++; if (row.ContainsKey("owed_ms") && (int)row["owed_ms"] > 0) sSnapRatePassed++; }
                         else if (verdict == "fail") sSnapFailed++;
                         else sSnapNotTested++;
                         sSnapRows.Add(row);
@@ -366,7 +463,35 @@ namespace Ts3Agent
                 Lot far = FarLot(s);
                 return far != null ? far.GetCenterPosition() : pos;
             }
-            throw new McpException("to must be pond, ocean or far");
+            if (to == "island")
+            {
+                Lot isl = IslandLot(s);
+                return isl != null ? isl.GetCenterPosition() : pos;
+            }
+            throw new McpException("to must be pond, ocean, far or island");
+        }
+
+        // "island": the community lot whose straight line from the Sim crosses the most sea (samples every 10 m, at least
+        // 100 m of sea), so a walk there needs a boat, a water taxi or a swim (the unseen-boats repro, docs/143 §8.10);
+        // null when no lot is that far over water (a world without sea or islands).
+        static Lot IslandLot(Sim s)
+        {
+            Lot best = null;
+            float bestSea = 99f;
+            Vector3 a = s.Position;
+            foreach (Lot l in LotManager.AllLots)
+            {
+                if (l == null || !l.IsCommunityLot || l.IsWorldLot) continue;
+                Vector3 b = l.GetCenterPosition(), d = b - a;
+                float len = d.Length(), sea = 0f;
+                for (float t = 0f; t < len; t += 10f)
+                {
+                    Vector3 p = a + d * (t / len);
+                    if ((TerrainType)World.GetTerrainType(p.x, p.z, 0) == TerrainType.WorldSea) sea += 10f;
+                }
+                if (sea > bestSea) { bestSea = sea; best = l; }
+            }
+            return best;
         }
 
         // The community lot (not the world lot) farthest from the Sim; null when the world has none.

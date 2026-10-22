@@ -1,0 +1,200 @@
+From bd9616dc52995189dd1d82e7d68ce32183e29e97 Mon Sep 17 00:00:00 2001
+From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 09:52:28 +0800
+Subject: [PATCH 1/2] Load-up checks: spread the delayed load-up scan over
+ several frames
+
+OnDelayedWorldLoadFinished ran the role, recovery, outfit, lot object and inventory checks and then the dereference controllers' first pass over every reference collected at load, all in one frame, before the first sleep inside ObjectLookup.BuildReference. In our profiles that is one 0.5-0.9 s frame one sim-minute after every load (7 of 7 measured loads), about three quarters in CheckInventories and the rest in the controllers' PreProcess pass.
+
+The checks now share an existing SleepWatch: a sleep after the role/recovery/outfit/lot checks, one after the inventory check, and one between controller items, each only once the frame has used the new kScanSleepInterval tunable (default 10 ms, ErrorTrapTuning7). The scan already lets other work run in between (BuildReference sleeps between and inside controller items), so these are more of the same kind of sleep points; every check and controller does the same work in the same order. Set kScanSleepInterval to 0 for the old one-frame run.
+
+Assisted with AI
+---
+ NRaasErrorTrap/ErrorTrap.cs                   | 14 ++++++++++
+ .../Controllers/DereferenceController.cs      |  2 ++
+ .../Dereferences/DereferenceManager.cs        | 27 +++++++++++++++++++
+ NRaasErrorTrap/NRaasErrorTrap.csproj          |  4 +++
+ NRaasErrorTrap/VersionStamp.cs                |  1 +
+ NRaasErrorTrap/XML/ErrorTrapTuning7.xml       |  8 ++++++
+ 6 files changed, 56 insertions(+)
+ create mode 100644 NRaasErrorTrap/XML/ErrorTrapTuning7.xml
+
+diff --git a/NRaasErrorTrap/ErrorTrap.cs b/NRaasErrorTrap/ErrorTrap.cs
+index 3b56da6..35cd1f3 100644
+--- a/NRaasErrorTrap/ErrorTrap.cs
++++ b/NRaasErrorTrap/ErrorTrap.cs
+@@ -59,6 +59,12 @@ public class ErrorTrapTuning6
+         [Tunable, TunableComment("Whether to enable OnProcessEventCallback UI exception reporting")]
+         public static bool kEnableOPECReporting = false;
+     }
++
++    public class ErrorTrapTuning7
++    {
++        [Tunable, TunableComment("Milliseconds the load-up checks may run in one frame before they sleep, 0 to run them in one go")]
++        public static int kScanSleepInterval = 10;
++    }
+    
+     public class ErrorTrap : Common, Common.IStartupApp, Common.IPreLoad, Common.IWorldLoadFinished, Common.IWorldQuit
+     {
+@@ -253,6 +259,8 @@ public void OnDelayedWorldLoadFinished()
+         {
+             sObjectsOfInterest.Clear();
+ 
++            DereferenceManager.StartScanSleep();
++
+             List<ICheck> checks = DerivativeSearch.Find<ICheck>();
+ 
+             foreach (ICheck check in checks)
+@@ -270,8 +278,12 @@ public void OnDelayedWorldLoadFinished()
+ 
+             CheckLotObjects();
+ 
++            DereferenceManager.ScanSleep();
++
+             Inventories.CheckInventories(LogCorrection, DebugLogCorrection, true);
+ 
++            DereferenceManager.ScanSleep();
++
+             List<IDereferenceController> controllers = DerivativeSearch.Find<IDereferenceController>();
+ 
+             foreach (IDereferenceController controller in controllers)
+@@ -333,6 +345,8 @@ public void OnDelayedWorldLoadFinished()
+ 
+             ObjectLookup.Clear();
+ 
++            DereferenceManager.StopScanSleep();
++
+             //sDelayLoading = false;
+ 
+             RecordErrors();
+diff --git a/NRaasErrorTrap/ErrorTrapSpace/Dereferences/Controllers/DereferenceController.cs b/NRaasErrorTrap/ErrorTrapSpace/Dereferences/Controllers/DereferenceController.cs
+index 3c62464..30e634c 100644
+--- a/NRaasErrorTrap/ErrorTrapSpace/Dereferences/Controllers/DereferenceController.cs
++++ b/NRaasErrorTrap/ErrorTrapSpace/Dereferences/Controllers/DereferenceController.cs
+@@ -88,6 +88,8 @@ protected void Perform(OnProcess process)
+                             SubPerform(obj, item.mParent, item.mField, performed, process);
+ 
+                             if (DereferenceManager.Logger.OnWorldQuit) return;
++
++                            DereferenceManager.ScanSleep();
+                         }
+                         catch (Exception e)
+                         {
+diff --git a/NRaasErrorTrap/ErrorTrapSpace/Dereferences/DereferenceManager.cs b/NRaasErrorTrap/ErrorTrapSpace/Dereferences/DereferenceManager.cs
+index aa992f7..d969dd0 100644
+--- a/NRaasErrorTrap/ErrorTrapSpace/Dereferences/DereferenceManager.cs
++++ b/NRaasErrorTrap/ErrorTrapSpace/Dereferences/DereferenceManager.cs
+@@ -32,6 +32,33 @@ public class DereferenceManager
+ 
+         static List<IDereference> sDereferences;
+ 
++        static SleepWatch sScanWatch;
++
++        public static void StartScanSleep()
++        {
++            if (ErrorTrapTuning7.kScanSleepInterval > 0)
++            {
++                sScanWatch = new SleepWatch((uint)ErrorTrapTuning7.kScanSleepInterval);
++            }
++            else
++            {
++                sScanWatch = null;
++            }
++        }
++
++        public static void StopScanSleep()
++        {
++            sScanWatch = null;
++        }
++
++        // Spreads the load-up checks over several frames instead of running them all in one
++        public static void ScanSleep()
++        {
++            if (sScanWatch == null) return;
++
++            sScanWatch.Sleep();
++        }
++
+         public static List<IDereference> Dereferences
+         {
+             get
+diff --git a/NRaasErrorTrap/NRaasErrorTrap.csproj b/NRaasErrorTrap/NRaasErrorTrap.csproj
+index 9b8029b..8095ecc 100644
+--- a/NRaasErrorTrap/NRaasErrorTrap.csproj
++++ b/NRaasErrorTrap/NRaasErrorTrap.csproj
+@@ -126,6 +126,9 @@
+     <Compile Include="..\NRaas\Helpers\SimTypes.cs">
+       <Link>CommonSpace\Helpers\SimTypes.cs</Link>
+     </Compile>
++    <Compile Include="..\NRaas\Helpers\SleepWatch.cs">
++      <Link>CommonSpace\Helpers\SleepWatch.cs</Link>
++    </Compile>
+     <Compile Include="..\NRaas\Helpers\StatBin.cs">
+       <Link>CommonSpace\Helpers\StatBin.cs</Link>
+     </Compile>
+@@ -921,6 +924,7 @@
+     <Content Include="XML\ErrorTrapTuning2.xml" />
+     <Content Include="XML\ErrorTrapTuning5.xml" />
+     <Content Include="XML\ErrorTrapTuning6.xml" />
++    <Content Include="XML\ErrorTrapTuning7.xml" />
+   </ItemGroup>
+   <ItemGroup>
+     <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
+diff --git a/NRaasErrorTrap/VersionStamp.cs b/NRaasErrorTrap/VersionStamp.cs
+index 9b59139..444ecbd 100644
+--- a/NRaasErrorTrap/VersionStamp.cs
++++ b/NRaasErrorTrap/VersionStamp.cs
+@@ -28,6 +28,7 @@ public override string Prompt
+                     msg += Common.NewLine + "kShowFullReferencing=" + DereferenceGameObject.kShowFullReferencing;
+                     msg += Common.NewLine + "kShowFoundReferences=" + DereferenceManagerTuning.kShowFoundReferences;
+                     msg += Common.NewLine + "kForceReferenceLog=" + ErrorTrapTuning4.kForceReferenceLog;                   
++                    msg += Common.NewLine + "kScanSleepInterval=" + ErrorTrapTuning7.kScanSleepInterval;
+ 
+                     return msg;
+                 }
+diff --git a/NRaasErrorTrap/XML/ErrorTrapTuning7.xml b/NRaasErrorTrap/XML/ErrorTrapTuning7.xml
+new file mode 100644
+index 0000000..548c9a0
+--- /dev/null
++++ b/NRaasErrorTrap/XML/ErrorTrapTuning7.xml
+@@ -0,0 +1,8 @@
++﻿<?xml version="1.0" encoding="utf-8"?>
++<base>
++  <Current_Tuning>
++    <kScanSleepInterval value="10">
++      <!--Milliseconds the load-up checks may run in one frame before they sleep, 0 to run them in one go-->
++    </kScanSleepInterval>
++  </Current_Tuning>
++</base>
+-- 
+2.56.0.windows.2
+
+From 708bafbd0954466ab1ddeec1ebf3dcd483ba37c0 Mon Sep 17 00:00:00 2001
+From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 09:52:42 +0800
+Subject: [PATCH 2/2] Add ErrorTrap.SpreadScanVersion marker
+
+SpreadScanVersion is a public marker for other mods (for example performance mods that spread the load-up scan themselves) to detect that ErrorTrap does it and stay out of the way.
+
+Assisted with AI
+---
+ NRaasErrorTrap/ErrorTrap.cs | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/NRaasErrorTrap/ErrorTrap.cs b/NRaasErrorTrap/ErrorTrap.cs
+index 35cd1f3..6a6839b 100644
+--- a/NRaasErrorTrap/ErrorTrap.cs
++++ b/NRaasErrorTrap/ErrorTrap.cs
+@@ -71,6 +71,9 @@ public class ErrorTrap : Common, Common.IStartupApp, Common.IPreLoad, Common.IWo
+         [Tunable, TunableComment("Scripting Mod Instantiator, value does not matter, only its existence")]
+         protected static bool kInstantiator = false;
+ 
++        // Read by other mods that would otherwise spread the load-up scan themselves. Bump when that behaviour changes.
++        public static readonly int SpreadScanVersion = 1;
++
+         static bool sLoading = true;
+         //static bool sDelayLoading = true;
+ 
+-- 
+2.56.0.windows.2
+

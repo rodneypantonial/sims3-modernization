@@ -1,7 +1,7 @@
 // ModTheSims listing images (release/mts/CHECKLIST.md): thumbnail + 3 info images, drawn as SVG from
 // release/mts/mts-data.json and converted to PNG. No EA artwork, no game assets, no personal names or paths.
 //   node tools/mts-images.ts                 write release/mts/images/*.png (TO FILL slots drawn dashed)
-//   node tools/mts-images.ts --final         same, but exit 1 while any v0.2.0 number or feature list is still null
+//   node tools/mts-images.ts --final         same, but exit 1 while any v0.1.5 number or feature list is still null
 //   node tools/mts-images.ts --svg-only      write the SVGs only (release/mts/out/svg), no converter needed
 //   node tools/mts-images.ts --self-check    offline checks, writes nothing
 // PNG converter: inkscape (1.x) or rsvg-convert on PATH (Windows, Ubuntu, macOS all have packages for both).
@@ -66,7 +66,7 @@ export function features(d: Data): string {
         const x = 76 + (i % 2) * 540, y = 680 + Math.floor(i / 2) * 50;
         return `<circle cx="${x}" cy="${y}" r="6" fill="${C.s2}"/>` + text(x + 20, y + 8, s, 24);
       }).join('\n')
-    : `<rect x="60" y="650" width="1080" height="90" rx="10" fill="none" stroke="${C.muted}" stroke-width="2" stroke-dasharray="10 8"/>` + text(84, 705, 'TO FILL: the v0.2.0 features that passed their A/B (release-features.ts)', 24, C.muted);
+    : `<rect x="60" y="650" width="1080" height="90" rx="10" fill="none" stroke="${C.muted}" stroke-width="2" stroke-dasharray="10 8"/>` + text(84, 705, 'TO FILL: the v0.1.5 features that passed their A/B (release-features.ts)', 24, C.muted);
   return svg(W, H, [
     text(60, 80, 'What it does', 44, C.ink, 'font-weight="700"'),
     text(60, 120, 'Two parts. Each works on its own; together they give the most.', 24, C.ink2),
@@ -172,7 +172,7 @@ function selfCheck() {
   const full: Data = structuredClone(d);
   full.metrics.forEach((m) => { m.v020 = m.v014.map((v) => v); });
   full.features.v020 = ['a', 'b'];
-  full.thumbnail.sub = 'v0.2.0, measured';
+  full.thumbnail.sub = 'v0.1.5, measured';
   if (missing(full).length) throw new Error('self-check: missing() on a full data set');
   if (render(full)['2-benchmark.png'].includes('TO FILL')) throw new Error('self-check: TO FILL drawn with full data');
   if (esc('a<&>"') !== 'a&lt;&amp;&gt;&quot;') throw new Error('self-check: esc');

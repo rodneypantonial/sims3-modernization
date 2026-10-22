@@ -14,7 +14,7 @@ Release `ts3native.ini` defaults: on = `[GC]`, `[WaterJps]`, `[Decompress]`, `[S
 
 Rebuild check: a rebuild from the release commit must give the same ini hash; the asi hash can differ only if the toolchain changed. Selftest note: one build of 0.36.0 failed once at `selftest.cpp:8441` (`W6b lots: nDirty -1`, threaded replay test), then passed 3 times in a row and in the next full build; a flaky threaded test, unrelated to the ini change, not yet investigated.
 
-## v0.2.0 (in preparation: release-validate Thursday night 2026-10-22, publish Friday 2026-10-23)
+## v0.1.5 (in preparation: release-validate Thursday night 2026-10-22, publish Friday 2026-10-23)
 
 The routing release. Each candidate ships on only if its A/B passes (`tools/harness/queues/clean-night-0.2.0.json`, ~7 h, plus the existing per-feature queues for the ones not in it: `defer-footprint-ab`, `destroy-park-ab`, `candidate-loop-ab`, `replan-defer-ab`, `avoid` jobs). Mono features are not in this release.
 
@@ -39,11 +39,11 @@ The routing release. Each candidate ships on only if its A/B passes (`tools/harn
 
 ### Release defaults in one step
 
-`node tools/release-features.ts <ids from the table, comma-separated> --write --docs` sets every candidate's `ts3native.ini` keys and `ts3fixes` tunables (`tools/setup/build-fixes.ts`) to on or off, refuses a feature without what it needs (`m1retry` needs `fallbackasync`), warns when CI's stable list in `.github/workflows/build.yml` lacks an enabled section, and resolves the feature blocks in `docs/PLAYERS.md` and the CHANGELOG `## v0.2.0` section (on text for chosen ones, the "shipped but off" line for the rest). Without `--write` it only prints the edits; `--list` shows the table, `--status` what the repo has on now; `none` is the v0.1.4 state. `--docs` is one way (the markers go), so run it once, on the release branch. Then: build (`native/ts3native/build.cmd`, `node tools/setup/build-fixes.ts`), fill the hashes below, copy the asi to `game-copy/ts3native.asi.rel020`, run `release-validate.json`.
+`node tools/release-features.ts <ids from the table, comma-separated> --write --docs` sets every candidate's `ts3native.ini` keys and `ts3fixes` tunables (`tools/setup/build-fixes.ts`) to on or off, refuses a feature without what it needs (`m1retry` needs `fallbackasync`), warns when CI's stable list in `.github/workflows/build.yml` lacks an enabled section, and resolves the feature blocks in `docs/PLAYERS.md` and the CHANGELOG `## v0.1.5` section (on text for chosen ones, the "shipped but off" line for the rest). Without `--write` it only prints the edits; `--list` shows the table, `--status` what the repo has on now; `none` is the v0.1.4 state. `--docs` is one way (the markers go), so run it once, on the release branch. Then: build (`native/ts3native/build.cmd`, `node tools/setup/build-fixes.ts`), fill the hashes below, copy the asi to `game-copy/ts3native.asi.rel020`, run `release-validate.json`.
 
 CI's stable list now also accepts `[SlotEnabledRO]`, `[AvoidRO]` and `[UnseenThrottle]` as `Enabled=1`; drop the ones not shipped from the list before tagging.
 
-### v0.2.0 release build
+### v0.1.5 release build
 
 | File | Version | sha256 |
 |---|---|---|
@@ -66,4 +66,4 @@ Release `ts3native.ini` defaults: as v0.1.4 (`[GC]`, `[WaterJps]`, `[Decompress]
 
 Via the scrubbed public copy only (Rodney): sync the tree into a clone of the public repo with `<user>` -> `<user>` and the machine name -> `<pc>` replaced, run `node tools/check-docs-code.ts`, open a PR, squash-merge, tag `v0.1.4`. The tag's CI run builds ts3native, checks the stable list and PLAYERS.md, and drafts the release from the CHANGELOG section; attach `ts3fixes.package` to the draft by hand (CI cannot build it: EA assemblies), then publish the draft. Never push local `master` to the public repo.
 
-From v0.2.0 also on ModTheSims, right after the GitHub release and with the same three files: `release/mts/CHECKLIST.md`.
+From v0.1.5 also on ModTheSims, right after the GitHub release and with the same three files: `release/mts/CHECKLIST.md`.

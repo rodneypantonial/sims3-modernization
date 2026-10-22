@@ -3,10 +3,10 @@ static void TestHitchAttr() {
     Ts3nCounters& k = ts3native_counters;
     static_assert(offsetof(Ts3nCounters, haReady) == 0x30C4 && offsetof(Ts3nCounters, haWaits) == 0x30C8 &&
                   offsetof(Ts3nCounters, haUs) == 0x30D8 && offsetof(Ts3nCounters, haMaxUs) == 0x30E8 &&
-                  sizeof(Ts3nCounters) == 3418 * 4, "counters v66 layout after v65 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 3457 * 4, "counters v66 layout after v65 (docs/registry.md)");
     static_assert(offsetof(HaFrame, us) == 0x08 && offsetof(HaFrame, n) == 0x18 && offsetof(HaFrame, maxKey) == 0x20 &&
                   sizeof(HaFrame) == 0x24, "ts3native_hitchattr layout (stutter-profile.js HA_*)");
-    assert(k.version == 81 && ts3native_hitchattr.version == 1);
+    assert(k.version == 83 && ts3native_hitchattr.version == 1);
     HaFrame& f = ts3native_hitchattr;
     const DWORD ownerSave = g_async.owner;
     const LONG enSave = f.enabled;

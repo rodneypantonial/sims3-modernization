@@ -8793,6 +8793,14 @@
         "waitS": 20
       },
       {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2,
+        "note": "Rate only holds time at small steps: at fast speeds a pass is over 0.25 s of game time and the step cap runs every pass (2026-10-21: 153,480 cap runs, 268 skips, owed_ms 0 for every Sim)"
+      },
+      {
         "cmd": "crowd_go",
         "args": {
           "to": "far"
@@ -8805,8 +8813,8 @@
         "args": {
           "count": 6
         },
-        "waitS": 360,
-        "note": "one Sim at a time: watch armed, camera onto it and kept on it, flip recorded, camera back; keeps picking until 6 passed or 18 tried"
+        "waitS": 480,
+        "note": "prefers Sims the Rate part holds (watch code 18), keeps the camera on each, keeps picking until 6 passed and 1 passed with owed time"
       },
       {
         "cmd": "unseen_snapback",
@@ -8815,7 +8823,7 @@
         },
         "waitS": 120,
         "optional": true,
-        "note": "records so far (the run may still be going)"
+        "note": "records so far"
       },
       {
         "cmd": "unseen_snapback",
@@ -8823,22 +8831,22 @@
           "result": true,
           "require": true
         },
-        "note": "FAILS the step (and the job) unless done, 0 failed and >= 6 passed"
+        "note": "FAILS unless done, 0 failed, >= 6 passed and >= 1 passed with owed_ms > 0 (the Rate snap-back path)"
       },
       {
         "cmd": "remove_sims",
         "args": {},
-        "waitS": 20
+        "waitS": 40
       }
     ],
-    "expect": "no crash; the require step answers ok: state done, failed 0, passed >= 6 (verdict per Sim: pass = flipped, ran that same pass, 0 visible skips, jump within its bound, classed visible for the whole window; not tested = no flip after two camera tries or the camera lost it (unseen_updates_after_flip > 0); fail = anything else); native utSnap_3 counted when Rate held time; no stuck Sims"
+    "expect": "no crash; the require step ok: failed 0, passed >= 6, passed_with_rate_debt >= 1 (owed_ms > 0, jump within bound); native utSnap_3 > 0; no stuck Sims"
   },
   {
     "id": "unseen-boats",
     "bug": "none (fix check, Rodney: can the unseen throttle leave a Sim in the ocean off a boat?): docs/143 §8.10",
     "fix": "ts3native [UnseenThrottle] vehicle / rider holds: agents whose owner is not a Sim (Car, Bicycle, Paddleboat, Rail, AnimatedBoat) and parented Sims (in a vehicle, on a horse, carried) run every pass in every part (rate, avoidance, obstacle list, footprint)",
     "save": "Baseline-IP-Spring",
-    "note": "UNVERIFIED (static only, 2026-10-21): never run. Isla Paradiso: 10 spawned Sims sent to the farthest community lot (across water when it is on another island: boat, water taxi or swimming, by the Sim), then 10 m into the sea (swimming), then back to the active lot; the camera stays on the active lot so every leg is unseen. Needs [UnseenThrottle] Enabled=1 with List, Avoid, Footprint, Rate on.",
+    "note": "UNVERIFIED (static only, 2026-10-21): never run. Isla Paradiso: 10 spawned Sims sent to the community lot behind the most sea (crowd_go to: island; boat, water taxi or swimming, by the Sim), then 10 m into the sea (swimming), then back to the active lot; the camera stays on the active lot so every leg is unseen. Needs [UnseenThrottle] Enabled=1 with List, Avoid, Footprint, Rate on.",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -8846,6 +8854,13 @@
           "count": 10
         },
         "waitS": 20
+      },
+      {
+        "cmd": "unseen_water_watch",
+        "args": {
+          "start": true
+        },
+        "note": "samples every 15 ticks: unseen Sims in a vehicle / boat, in water, mounted, stranded"
       },
       {
         "cmd": "set_speed",
@@ -8857,15 +8872,15 @@
       {
         "cmd": "crowd_go",
         "args": {
-          "to": "far"
+          "to": "island"
         },
         "waitS": 180,
-        "note": "leg 1: across water where the far lot is on another island"
+        "note": "leg 1: the community lot behind the most sea (boat, water taxi or swim needed)"
       },
       {
         "cmd": "unseen_water_check",
         "args": {},
-        "note": "after leg 1"
+        "note": "snapshot after leg 1"
       },
       {
         "cmd": "crowd_go",
@@ -8881,17 +8896,27 @@
           "target": "home"
         },
         "waitS": 180,
-        "note": "leg 3: back to the active lot (out of the sea, across water)"
+        "note": "leg 3: back across the water to the active lot"
       },
       {
         "cmd": "unseen_water_check",
         "args": {},
-        "note": "at arrival"
+        "note": "snapshot at arrival"
+      },
+      {
+        "cmd": "unseen_water_watch",
+        "args": {
+          "result": true,
+          "require": true,
+          "min_engaged": 3,
+          "stop": true
+        },
+        "note": "FAILS unless >= 3 Sims were at once in a vehicle or in water while unseen and none was stranded"
       },
       {
         "cmd": "remove_sims",
         "args": {},
-        "waitS": 20
+        "waitS": 40
       },
       {
         "cmd": "set_speed",
@@ -8901,7 +8926,7 @@
         "waitS": 2
       }
     ],
-    "expect": "no crash; both unseen_water_check results stranded 0 (no Sim in water deeper than 0.5 m outside a vehicle, not routing and not swimming / boating); at arrival every Sim on land or still in its vehicle; no stuck Sims; native hold counters: utRateWhy_13 (not a Sim: vehicles incl. AnimatedBoat) > 0, utRateWhy_5 / utFpWhy_11 (riders) counted, utSkipped / utRateSkipped > 0 (the throttle was active)"
+    "expect": "no crash; unseen_water_watch {result, require} ok: max_engaged >= 3 (unseen Sims at once in a vehicle / boat or in water), stranded empty; both snapshots stranded 0; no stuck Sims; native hold rows counted (utRateWhy_13 vehicles, utRateWhy_5 / utFpWhy_11 riders)"
   },
   {
     "id": "unseen-horses",
@@ -8916,6 +8941,13 @@
           "count": 4
         },
         "waitS": 20
+      },
+      {
+        "cmd": "unseen_water_watch",
+        "args": {
+          "start": true
+        },
+        "note": "samples riders mounted while unseen"
       },
       {
         "cmd": "unseen_horse_ride",
@@ -8959,6 +8991,16 @@
         "note": "at arrival"
       },
       {
+        "cmd": "unseen_water_watch",
+        "args": {
+          "result": true,
+          "require": true,
+          "min_mounted": 1,
+          "stop": true
+        },
+        "note": "FAILS unless a rider was mounted (parent = horse) while unseen at least once and nobody was stranded"
+      },
+      {
         "cmd": "unseen_horse_ride",
         "args": {
           "remove": true
@@ -8978,7 +9020,7 @@
         "waitS": 2
       }
     ],
-    "expect": "no crash; unseen_horse_ride pairs mount_queued true; unseen_water_check stranded 0 both times, riders parented to their horse while riding; no stuck Sims; native utRateWhy_5 / utWhy_5 / utFpWhy_11 (rider rows, horses included) counted while the horses ride unseen"
+    "expect": "no crash; unseen_horse_ride pairs mount_queued true; unseen_water_watch {result, require} ok: max_mounted >= 1 while unseen, stranded empty; no stuck Sims; native rider rows counted (utRateWhy_5, utWhy_5, utFpWhy_11)"
   },
   {
     "id": "bp-nraas-upstream-verify",
