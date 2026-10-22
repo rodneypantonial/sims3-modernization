@@ -67,10 +67,17 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kUnseenCarThrottle value="False" />
     <kUnseenCarEvery value="4" />
     <kOverwatchSpread value="False" />
+    <kOverwatchChain value="False" />
     <kErrorTrapSpread value="False" />
     <kEaSpreadLots value="False" />
     <kEaSpreadPets value="False" />
     <kEaSpreadDecay value="False" />
+    <kRouteSources value="False" />
+    <kLegReplanSkip value="False" />
+    <kBouncerSlotSkip value="False" />
+    <kIdlePlanMemo value="False" />
+    <kStuckCheckNear value="False" />
+    <kFailRepeat value="False" />
   </Current_Tuning>
 </base>
 `;

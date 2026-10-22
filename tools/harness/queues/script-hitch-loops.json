@@ -1,0 +1,257 @@
+{
+  "note": "docs/169 script causes: 10-min loop repros, 10 firings per arm ABBA in one load (clean night)",
+  "jobs": [
+    {
+      "id": "bp-stuckcheck-loop",
+      "note": "docs/169: hitch-stuckcheck-loop, 10 firings per arm in one load. Read: hitch-ab.ts --scenario <tag>; clean night only.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 12,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,errortrapspread",
+          "noSamplers": true,
+          "repro": "hitch-stuckcheck-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 120,
+              "minFirings": 10
+            },
+            "maxMinutes": 12
+          },
+          "fixesRequire": "stuckcheckasync_run>=10,stuckchecknear_checks>=10",
+          "hitchTasks": [
+            "Core\\.(World)?Lot$@50>=5"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-easpread-lots-loop",
+      "note": "docs/169: hitch-easpread-lots-loop, 10 firings per arm in one load. Read: hitch-ab.ts --scenario <tag>; clean night only.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "hitch-easpread-lots-loop",
+          "fixesRequire": "easpread_lots_passes>=10,easpread_lots_stopped==0",
+          "hitchTasks": [
+            "Core\\.(World)?Lot$@100>=5"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-easpread-pets-loop",
+      "note": "docs/169: hitch-easpread-pets-loop, 10 firings per arm in one load. Read: hitch-ab.ts --scenario <tag>; clean night only.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "hitch-easpread-pets-loop",
+          "fixesRequire": "easpread_pets_moved>=10",
+          "hitchTasks": [
+            "Core\\.(World)?Lot$@100>=5"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-easpread-decay-loop",
+      "note": "docs/169: hitch-easpread-decay-loop, 10 firings per arm in one load. Read: hitch-ab.ts --scenario <tag>; clean night only.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "hitch-easpread-decay-loop",
+          "fixesRequire": "easpread_decay_passes>=10,easpread_decay_threw==0",
+          "hitchTasks": [
+            "Core\\.(World)?Lot$@100>=5"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-errortrap-loop",
+      "note": "docs/169: hitch-errortrap-loop, 10 firings per arm in one load. Read: hitch-ab.ts --scenario <tag>; clean night only.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync",
+          "noSamplers": true,
+          "repro": "hitch-errortrap-loop",
+          "fixesRequire": "etspread_passes>=10,etspread_theirs>=10,etspread_failed==0",
+          "hitchTasks": [
+            "ErrorTrapSpreadNow@100>=5"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

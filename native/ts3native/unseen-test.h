@@ -37,8 +37,8 @@ static void TestUnseen() {
                   offsetof(Ts3nCounters, unEaOff) == 0x33C0 &&
                   offsetof(Ts3nCounters, utMode) == 0x33C8 && offsetof(Ts3nCounters, utWhy) == 0x33E0 &&
                   offsetof(Ts3nCounters, utPathUs) == 0x3414 && offsetof(Ts3nCounters, utViewerBad) == 0x3420 &&
-                  sizeof(Ts3nCounters) == 3457 * 4, "counters v79 layout after v78 (docs/registry.md)");
-    assert(k.version == 83);
+                  sizeof(Ts3nCounters) == 4274 * 4, "counters v79 layout after v78 (docs/registry.md)");
+    assert(k.version == 99);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // swap every game pointer for a fake
     const UnAgentFn agentSave = g_unAgentOrig;
@@ -350,7 +350,7 @@ static void TestUnseenThrottle2() {
                   offsetof(Ts3nCounters, utRateCalls) == 0x34D0 && offsetof(Ts3nCounters, utRateWhy) == 0x34D8 &&
                   offsetof(Ts3nCounters, utRateCatchUp) == 0x3520 && offsetof(Ts3nCounters, utRateDropped) == 0x3528 &&
                   offsetof(Ts3nCounters, utSnap) == 0x352C && offsetof(Ts3nCounters, utSnapMaxMs) == 0x353C &&
-                  sizeof(Ts3nCounters) == 3457 * 4 && UTW_N2 <= 18 && UTF_N <= 12, "counters v80 layout after v79 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4274 * 4 && UTW_N2 <= 18 && UTF_N <= 12, "counters v80 layout after v79 (docs/registry.md)");
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // fakes as TestUnseen and TestUnseenThrottle
     const UnAgentFn agentSave = g_unAgentOrig;
@@ -681,7 +681,7 @@ static void TestUnseenDiag() {
                   offsetof(Ts3nCounters, utListNotices) == 0x3578 && offsetof(Ts3nCounters, utRpN) == 0x357C &&
                   offsetof(Ts3nCounters, utRpUs) == 0x3594 && offsetof(Ts3nCounters, utRpLong) == 0x35AC &&
                   offsetof(Ts3nCounters, utRpPart) == 0x35C4 && offsetof(Ts3nCounters, utRpPartMs) == 0x35E4 &&
-                  sizeof(Ts3nCounters) == 3457 * 4, "counters v83 layout after v81 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4274 * 4, "counters v83 layout after v81 (docs/registry.md)");
     const UnCompFn compSave = g_unComp;
     const UnPosFn posSave = g_unPos;
     const UnFrustumFn frSave = g_unFrustum;
@@ -743,6 +743,21 @@ static void TestUnseenDiag() {
     UtRpHook(out, 7);
     assert(k.utRpN[0][0] + k.utRpN[0][1] + k.utRpN[0][2] == b.utRpN[0][0] + b.utRpN[0][1] + b.utRpN[0][2] + 4);
     assert(k.utRpLong[0][0] == b.utRpLong[0][0]);
+    // 7. per-Sim skip read (codes 19-23, unseen_water_cause): found by object id, newest part and its age, side switch
+    static DWORD idObj[4] = {0, 0, 0xAB, 0xCD};
+    assert(UtSkipQuery(19, 0xAB) && !UtSkipQuery(20, 0xCE) && !UtSkipQuery(21, 100000));  // unknown id
+    UtDgSkip(UT_DG_AVOID, idObj);
+    UtDgFor(idObj, false)->at[UT_DG_AVOID] -= 300;
+    UtDgSkip(UT_DG_RATE, idObj);
+    UtDgFor(idObj, false)->at[UT_DG_RATE] -= 100;
+    assert(UtSkipQuery(19, 0xAB) && UtSkipQuery(20, 0xCD));
+    assert(UtSkipQuery(22, UT_DG_RATE) && !UtSkipQuery(22, UT_DG_AVOID) && UtSkipQuery(21, 250) && !UtSkipQuery(21, 50));
+    const LONG modeSave = k.utMode, avSave = k.utAvMode, rateSave = k.utRateMode, fpSave = k.utFpMode;
+    k.utMode = k.utAvMode = k.utRateMode = k.utFpMode = 0;
+    assert(!UtSkipQuery(23, 0));
+    k.utRateMode = 1;
+    assert(UtSkipQuery(23, 0));
+    k.utMode = modeSave, k.utAvMode = avSave, k.utRateMode = rateSave, k.utFpMode = fpSave;
 
     g_unComp = compSave, g_unPos = posSave, g_unFrustum = frSave, g_unInFrustum = inSave, g_unFind = findSave, g_unRoute = routeSave;
     g_unBitTransform = btSave, g_unBitSim = bsSave, g_unObjMgr = mgrSave, g_unRmSlot = rmSave, g_unSimTid = tidSave;

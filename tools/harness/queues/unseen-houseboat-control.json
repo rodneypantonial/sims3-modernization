@@ -1,0 +1,79 @@
+{
+  "note": "Houseboat/dock control runs: throttle off vs on (2026-10-22).",
+  "jobs": [
+    {
+      "id": "ip-houseboat-move-off",
+      "note": "CONTROL (2026-10-22): same repro as ip-houseboat-move with [UnseenThrottle] OFF (all parts). If Sims also end up off the deck/dock or in water here, the game causes it, not the throttle. Compare the houseboat_move check count with ip-houseboat-move (4 and 5 Sims on 2026-10-22).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 9,
+          "seed": 12345,
+          "repro": "unseen-houseboat-move"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-dock-edge-off",
+      "note": "CONTROL (2026-10-22): same repro as ip-dock-edge with [UnseenThrottle] OFF (all parts). If Sims also end up off the deck/dock or in water here, the game causes it, not the throttle. Compare the houseboat_move check count with ip-dock-edge (4 and 5 Sims on 2026-10-22).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "unseen-dock-edge"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-houseboat-move-on2",
+      "note": "Repeat of ip-houseboat-move with the throttle on, to see whether the count repeats.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3
+      },
+      "run": {
+        "profile": {
+          "minutes": 9,
+          "seed": 12345,
+          "repro": "unseen-houseboat-move"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

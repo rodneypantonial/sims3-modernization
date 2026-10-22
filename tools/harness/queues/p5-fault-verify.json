@@ -1,0 +1,53 @@
+{
+ "note": "docs/157: live fault injection for P5 / P5b / P5c (day jobs, 5 min each, noisy machine OK: correctness only, no timing claims). Needs a TS3N_FAULTINJ build (never a release asi): set CL=/DTS3N_FAULTINJ, run native\\ts3native\\build.cmd out\\faultinj, clear CL, copy out\\faultinj\\ts3native.asi to game-copy/ts3native.asi.faultinj in the main checkout. [RouteSnap] FaultInject (mask: 1 OOM in the clone build, 2 managed-call tripwire in the clone run, 4 access violation in the clone run, 8 = with 4, the EA heap lock held at the fault) and FaultInjectEvery = N: every Nth armed Mode=2 plan injects the next mask bit in turn; each injection logs 'FaultInject: ...'. Bundle = bp-p5c-verify's (p5-bundle-verify.json) with VerifyEvery=10, so most armed jobs are taken with +0x918 lent (P5c). Expected crashes: none; any crash, hang (heartbeat stops), 'P5b: worker waited' or 'P5c: thread ... handed back' line = stop and triage (crash rule). Read: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block).",
+ "jobs": [
+  {
+   "id": "bp-p5-fault-trip",
+   "note": "FaultInject=3 (OOM, managed) every 10th armed plan, managed first: plan 10 managed, 20 OOM, 30 managed, 40 OOM, 50 managed = the third tripwire (a plan refused before its acquire or run drops its bit: count the 'FaultInject: OOM ...' / 'FaultInject: managed call ...' lines, not the 'injects' lines). PASS: (1) log 'FAULTINJ build (docs/157): FaultInject=0x3 every 10'; (2) 'FaultInject: OOM in the clone build' lines = m2Fb_mat counted for them (m2Fb_mat >= OOM lines); (3) exactly 3 'FaultInject: managed call' lines, m2Fb_managed 3, m2Trips 3, then 'RouteSnap: Mode=2 off: 3 clone-run tripwires (M2-2)', m2Off 2 at the end; (4) p5bRetakeTrip >= 3 minus p5bRefused_2 (each tripwire in an open window retaken at once); (5) after the off line, route jobs keep starting and finishing (asyncStarted and planOnCalls rise, no fbActiveTrip), snShadowFault 0, p5bWatchdog 0; (6) no crash, no hang.",
+   "asi": "game-copy/ts3native.asi.faultinj",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 89,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 10, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1,
+    "RouteSnap.FaultInject": 3, "RouteSnap.FaultInjectEvery": 10
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  },
+  {
+   "id": "bp-p5-fault-av",
+   "note": "FaultInject=12 (access violation with the EA heap lock held, crash H's shape) every 20th armed plan: one injection at plan 20, inside the lent P5c window. PASS: (1) exactly one 'FaultInject: access violation in a clone run holding the EA heap lock' line; (2) right after it 'P4 FAULT in a clone run: exception C0000005', 'P4 FAULT: EA heap lock released (1 holds the unwind left)' and 'RouteSnap: Mode=2 off: P4 fault'; snShadowFault 1, m2Off 3, m2Fb_fault 1; (3) the game keeps running for the rest of the 5 min (heartbeat, sim iterations rising, route jobs still finishing as A10 jobs), p5bWatchdog 0; (4) no crash, no hang, no new xcpt file. A hang here = the heap lock was not released: stop, capture a dump.",
+   "asi": "game-copy/ts3native.asi.faultinj",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 89,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 10, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1,
+    "RouteSnap.FaultInject": 12, "RouteSnap.FaultInjectEvery": 20
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  }
+ ]
+}

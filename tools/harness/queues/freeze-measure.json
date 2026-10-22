@@ -1,0 +1,230 @@
+{
+  "note": "Visible Sim freezes (sim publish gaps) and camera stutter (presented frame times) per world, docs/162, with the sim-budget.json all-on candidate set on asi.0329 (0328 + [Harness] ForegroundRender=1, TEST ONLY: unfocused runs pace like focused, docs/162 §7) + [HitchAttr] + LogFallbackMs 20 / stack 16 (sync plan reasons). BP twice: pan and no pan, so the pan effect on the sim is known. ~12 min per job, ~48 min. Report: tools/harness/freeze-report.ts. Timing: clean night only. Measurement jobs run with profile.noSamplers (samplers pause the sim thread and slow rendering: docs/161 §6); frames session stays loaded until the game closes (end-of-profile unload crash 2026-10-22).",
+  "jobs": [
+    {
+      "id": "bp-freeze-pan",
+      "note": "Visible freezes + camera stutter (docs/162), Bridgeport, same all-on set and asi as sim-budget.json; slow scripted camera pan (--camera-pan: 8 lots, 120 s per pass); frames.csv (frame-times.js, default on), freezes.jsonl and nativelog.jsonl. 10 min seeded profile with both samplers. Read: node tools/harness/freeze-report.ts <tag> (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, '[ts3prof] publish gaps: FrameDb_PublishFrame' and '[frames] hooked' in the logs, freezes.jsonl and frames.csv not empty, 'camera pan:' line without FAILED. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0331",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-freeze-still",
+      "note": "Visible freezes + camera stutter (docs/162), Bridgeport, same all-on set and asi as sim-budget.json; camera untouched (control for the pan job: the camera changes which Sims are seen); frames.csv (frame-times.js, default on), freezes.jsonl and nativelog.jsonl. 10 min seeded profile with both samplers. Read: node tools/harness/freeze-report.ts <tag> (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, '[ts3prof] publish gaps: FrameDb_PublishFrame' and '[frames] hooked' in the logs, freezes.jsonl and frames.csv not empty. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0331",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-freeze-pan",
+      "note": "Visible freezes + camera stutter (docs/162), Isla Paradiso, same all-on set and asi as sim-budget.json; slow scripted camera pan (--camera-pan: 8 lots, 120 s per pass); frames.csv (frame-times.js, default on), freezes.jsonl and nativelog.jsonl. 10 min seeded profile with both samplers. Read: node tools/harness/freeze-report.ts <tag> (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, '[ts3prof] publish gaps: FrameDb_PublishFrame' and '[frames] hooked' in the logs, freezes.jsonl and frames.csv not empty, 'camera pan:' line without FAILED. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0331",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-freeze-pan",
+      "note": "Visible freezes + camera stutter (docs/162), Sunset Valley, same all-on set and asi as sim-budget.json; slow scripted camera pan (--camera-pan: 8 lots, 120 s per pass); frames.csv (frame-times.js, default on), freezes.jsonl and nativelog.jsonl. 10 min seeded profile with both samplers. Read: node tools/harness/freeze-report.ts <tag> (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, '[ts3prof] publish gaps: FrameDb_PublishFrame' and '[frames] hooked' in the logs, freezes.jsonl and frames.csv not empty, 'camera pan:' line without FAILED. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0331",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-freeze-pan-mainstack",
+      "note": "Cause run for slow render frames: same as bp-freeze-pan plus main-thread stacks every 200 ms (main thread suspended per sample: read causes only, not FPS).",
+      "asi": "game-copy/ts3native.asi.0331",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true,
+          "mainstack": "main"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

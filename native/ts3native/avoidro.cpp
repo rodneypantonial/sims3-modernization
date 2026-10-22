@@ -273,7 +273,10 @@ static u8 __fastcall AvSite(u8* world, void* edx, const void* pt, float r, void*
         t_avMiss = 0;
         return 0;  // the caller's vector is still empty (made on its stack just before)
     }
-    return g_srQuery(world, edx, pt, r, vec, mode, opt);
+    t_avSite = true;  // probe P0 keys this wait 0x846D21, as without the retarget (docs/137 §12)
+    const u8 hit = g_srQuery(world, edx, pt, r, vec, mode, opt);
+    t_avSite = false;
+    return hit;
 }
 static u64 AvBodyNoQuery(u8* path, u8* agent, const float* goal, const void* ign, DWORD n, LONG how) {
     t_avMiss = how;

@@ -1064,7 +1064,7 @@ rpc.exports = {
     if (e === null) return null;
     const p = e.add(offset || 0); // offset: a field of ts3native_counters, e.g. compressMode +0x150
     if (value !== null) p.writeU32(value);
-    return { name, value: p.readU32() };
+    return { name, value: p.readU32(), address: p.toString() }; // address: /read of a whole export (hang capture: ts3native_lockholders)
   },
   net(start) {
     if (start) netStart();
@@ -1380,6 +1380,77 @@ rpc.exports = {
       // shortcut: assumes no v82 fields in the build (v82 branch unmerged); its merge inserts its push before this one
       if (c.readS32() >= 83) f.push('utDgReady', ...n('utDefer', 3), 'utListNotices', ...n('utRpN', 6, 3), ...n('utRpUs', 6, 3),
         ...n('utRpLong', 6, 3), ...n('utRpPart', 8, 4), ...n('utRpPartMs', 8, 4));
+      // v84 (0.36.20, docs/134 §11): foreign job split; fbjcJobHist_<i> / fbjcWaitHist_<i> buckets <100, <300, <500, <1000,
+      // <2000, >=2000 ms (foreign jobs; sim-thread waits behind one)
+      if (c.readS32() >= 84) f.push('fbjcCapAtMaxUs', 'fbjcCapLate', 'fbjcTailMaxUs', 'fbjcPlanMaxUs', 'fbjcHostMaxUs',
+        'fbjcSimWaitMaxUs', ...n('fbjcJobHist', 6), ...n('fbjcWaitHist', 6));
+      // v85 (0.36.21, docs/149): design H2 in-pass +0x918 waits, _0 = a job running at the wait's start, _1 = none running
+      if (c.readS32() >= 85) f.push('h2Released', ...n('h2PassLockN', 2), ...n('h2PassLockUs', 2), 'h2ReleaseMaxUs');
+      // v86 (0.36.22, docs/142 §9): [RouteEarlyOut] Mode 2; <kind> 0 car components, 1 same-request memo. eoAct 0 probe, 1 shadow
+      // every proof, 2 act; eoActDiff and eoWrong must stay 0 (after v85)
+      if (c.readS32() >= 86) f.push('eoAct', 'eoActed', ...n('eoActedWhy', 2), 'eoActUs', 'eoActMaxUs', 'eoActSavedMs', 'eoShadow',
+        ...n('eoShadowUs', 2), ...n('eoShadowNodes', 2), 'eoActDiff', 'eoActOff', ...n('eoStale', 2), 'eoActRefused', 'eoActTie');
+      // v87 (0.36.23, docs/150 §7): [RouteJobPhases] rjpN/rjpUs_<kind>_<phase> (kind 0 own START, 1 A10, 2 foreign; phase order
+      // in tools/harness/route-phases-report.ts), self time in us (after v86)
+      if (c.readS32() >= 87) f.push('rjpReady', 'rjpHooks', 'rjpSkipped', 'rjpDropped', ...n('rjpJobs', 3), ...n('rjpJobUs', 3),
+        ...n('rjpN', 45, 15), ...n('rjpUs', 45, 15), ...n('rjpMaxUs', 15));
+      // v89 (docs/150 §11): [RouteAsync] TailUnlock; tuRefused_<i> 0 switch, 1 not a holding worker job, 2 waiter, 3 P5b open;
+      // tuTrip_<i> 0 +0x918 acquire, 1 gate, 2 routing site (must stay 0). v88 was appended after it instead (no move)
+      if (c.readS32() >= 89) f.push('tuMode', 'tuReady', 'tuWins', ...n('tuRefused', 4), 'tuReleasedUs', 'tuRetakeUs',
+        'tuRetakeMaxUs', ...n('tuTrip', 3));
+      // v88 (docs/150 §12): [CellMemoProbe] at +0x38AC after v89, version field stays 89; the 0.36.23 TailUnlock-only build has
+      // no such fields (cmReady/cm* there are whatever follows the struct: read cm* only from builds with the cellmemo asi)
+      // cmLegs_/cmRepeats_<i> 0 InRoomPlan, 1 InRoomPlanToPoint; cmHist_<i> plans by repeats 0, 1, 2-3, 4-7, ..., 64+
+      if (c.readS32() >= 89) f.push('cmReady', 'cmSkipped', 'cmPlans', ...n('cmLegs', 2), ...n('cmRepeats', 2), 'cmCellUs',
+        'cmHitCellUs', 'cmHitCellN', 'cmMaxRepeats', ...n('cmHist', 8), 'cmFull');
+      // v90 (docs/150 §13): [RouteAsync] ReplanDedupe; arrays [0] Replan, [1] ReplanFromPosition; rdRepN/rdRepUs_<w>_<c>: w band
+      // <=250/500/1000 ms, c 0 failure same answer, 1 success same answer, 2 other answer; rdInval_<i> 0 route state, 1 footprints
+      // (BlockedByPeople), 2 routing writes, 3 other; rdWould*_<i> 0 nothing changed, 1 footprints only. At 0x38FC after v88 (2026-10-22 merge; branch-only v90 asis had it at 0x38AC)
+      if (c.readS32() >= 90) f.push('rdMode', 'rdReady', ...n('rdCalls', 2), ...n('rdUs', 2), 'rdNoKey', ...n('rdFails', 2),
+        ...n('rdRepN', 9, 3), ...n('rdRepUs', 9, 3), ...n('rdInval', 4), ...n('rdWould', 2), ...n('rdWouldSame', 2), ...n('rdWouldDiff', 2),
+        'rdServed', 'rdServedUs');
+      // v91 [Gate0RO] (docs/152 §G1; at 0x3998 after v90 since the 2026-10-22 merge)
+      if (c.readS32() >= 91) f.push('g0Mode', 'g0Shadow', 'g0Ready', 'g0Calls', 'g0Served', ...n('g0Fb', 4), 'g0Checks', 'g0Mismatch',
+        'g0Other');
+      // v92 (docs/150 §14): allocator call sites on the route worker ([RouteJobPhases] on); rows raSite_<i>/raParent_<i>/raN_<i>/
+      // raUs_<i> (100 ns units)/raBytes_<i>; report tools/harness/route-phases-report.ts. At 0x39C8 after v91 (2026-10-22 merge)
+      if (c.readS32() >= 92) f.push('raAllocN', 'raFreeN', 'raFull', ...n('raJobHist', 8), ...n('raSizeLog2', 16), ...n('raInsCap', 16),
+        ...n('raInsUs', 16), ...n('raSite', 64), ...n('raParent', 64), ...n('raN', 64), ...n('raUs', 64), ...n('raBytes', 64));
+      // v94 (docs/89 §12): design U phase 2; fp2*_<kind> 0 FromTool 0x8334A0, 1 UpdateObjectLot 0x82D280; fp2ApplyInJob and
+      // fp2FullPass must stay 0. At 0x3FB4 after v92 (2026-10-22 merge; no v93)
+      if (c.readS32() >= 94) f.push('fp2Mode', 'fp2Ready', ...n('fp2Deferred', 2), ...n('fp2Applied', 2), ...n('fp2Dropped', 2),
+        'fp2Dup', 'fp2Pass', 'fp2Forced', 'fp2FullPass', 'fp2AgeMaxMs', 'fp2ApplyInJob');
+      // v95 (docs/155 §8): gate-12 F-G (0x631F40) acquires held out by an open P5b / TailUnlock window (F-G no longer admitted)
+      if (c.readS32() >= 95) f.push('p5bFgHeldOut');
+      // v93 (docs/140 §12): [RouteToObjRO]; rtoFb_<i> 0 state, 1 QL busy, 2 dirty, 3 lot miss, 4 deferred/pin, 5 cache, 6 shape,
+      // 7 tripwire, 8 physics tail, 9 option 0x100000, 10 SH off, 11 job end; rtoCode_<c> answered codes. Appended after v95 at
+      // +0x3FF0 (0325 merge), version field stays 95: the 0324 build has no such fields (rto* there is whatever follows the struct)
+      if (c.readS32() >= 95) f.push('rtoReady', 'rtoMode', 'rtoShadow', 'rtoCalls', 'rtoTaken', 'rtoNoRoute', 'rtoWaitAvoided',
+        'rtoSlot', ...n('rtoFb', 12), 'rtoUs', 'rtoMaxUs', ...n('rtoCode', 9), 'rtoShadowRuns', 'rtoShadowMismatch',
+        'rtoShadowQueryMismatch', 'rtoShadowOrder', 'rtoShadowFb', 'rtoSimWriteInRo', 'rtoNested');
+      // v96 (docs/159, hostcalls.cpp): [RouteJobPhases] HostSplit=1 and [RouteAsync] DoorMemo at +0x4088; hcN_<s> / hcQueueUs_<s>
+      // sites 0 pump +0x918, 1 pump other lock, 2 READY poll, 3 WaitAsyncDone, 4 WaitJobDone, 5 RunPlan; dmFb_<i> 0 not the worker
+      // in a job, 1 nested in a managed call, 2 table full, 3 clone run. hcDoorRepeatDiff and dmMismatch must stay 0
+      if (c.readS32() >= 96) f.push('hcReady', 'dmMode', ...n('hcN', 6), ...n('hcQueueUs', 6), 'hcQueueMaxUs', 'hcServeUs',
+        'hcServeMaxUs', 'hcReturnUs', 'hcNestedUs', 'hcQueueSleepUs', 'hcSleepN', 'hcOtherCalls', 'hcDoorQ', 'hcDoorRepeatJob',
+        'hcDoorRepeatJobWaitUs', 'hcDoorRepeatDiff', 'hcDoorRepeatXJob', 'hcDoorRepeatXJobDiff', 'hcDoorFull', 'hcDoorWaitUs',
+        'dmHits', 'dmMisses', ...n('dmFb', 4), 'dmShadow', 'dmMismatch');
+      // v97 (docs/164, syncphases.cpp): [RouteJobPhases] SyncPlans=1 at +0x4120; sypPlans/sypUs_<r> 0 succeeded, 1 failed, 2 no
+      // Route_PlanLocked; sypEntry_<e> 0 route IC sync path, 1 Route_PlanLocked; syp*PhaseUs_<p> = RJP_* order
+      // (route-phases-report.ts PHASES); syp*Loop*_<l> 0 goal-lot entry loop, 1 open ground, 2 circle pre-pass, 3 other caller
+      if (c.readS32() >= 97) f.push('sypMode', ...n('sypPlans', 3), ...n('sypUs', 3), 'sypMaxUs', ...n('sypEntry', 2), 'sypBusy',
+        'sypStale', ...n('sypPhaseUs', 15), 'sypLongN', ...n('sypLongPhaseUs', 15), ...n('sypLoopN', 4), ...n('sypLoopUs', 4),
+        ...n('sypLongLoopN', 4), ...n('sypLongLoopUs', 4), 'sypLines', 'sypLinesDropped');
+      // v98 (docs/165 §8, hitchattr.cpp): [HitchAttr] Holders=1 at +0x4214; hoWaits/hoUs_<w> 0 sim, 1 main; hoByRole_<r> 0 sim,
+      // 1 main, 2 route worker, 3 replay consumer, 4 other thread (records: export ts3native_lockholders)
+      if (c.readS32() >= 98) f.push('hoReady', ...n('hoWaits', 2), ...n('hoUs', 2), 'hoMaxUs', ...n('hoByRole', 5), 'hoNoSite');
+      // v99 (docs/164 §7, plandeadline.cpp): [RouteAsync] PlanDeadlineMs / FailMemo at +0x4244; pdSessions_<e> 0 route IC sync
+      // path, 1 Route_PlanLocked; fmInval_<w> 0 route state, 1 footprints with BlockedByPeople, 2 routing writes, 3 other;
+      // fmWould*_<c> 0 nothing changed, 1 footprints only
+      if (c.readS32() >= 99) f.push('pdMode', 'pdUs', 'pdOwnUs', 'pdReady', ...n('pdSessions', 2), 'pdHit', 'pdHitOk', 'pdHitUs',
+        'pdLateMaxUs', 'pdSkipCell', 'pdSkipWater', 'pdWorldCapped', 'pdOwnExempt', 'pdLines', 'fmMode', 'fmReady', 'fmCalls',
+        'fmNoKey', 'fmFails', 'fmRep', ...n('fmInval', 4), ...n('fmWould', 2), ...n('fmWouldSame', 2), ...n('fmWouldDiff', 2),
+        'fmServed', 'fmServedUs');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

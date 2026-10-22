@@ -20,6 +20,11 @@ namespace Ts3Fixes
     //     inventories, same repairs, no catalog-name lookups (Overwatch looks up a name per world object for its log),
     //     at most kMaxItemsPerSlice inventory items or 2 ms per tick (a big inventory continues in the next tick). It runs only when the player's Overwatch setting has
     //     the inventory cleanup on; the setting itself is never written.
+    // Switch "overwatchchain" (tuning kOverwatchChain, default off; only when "overwatchspread" is off, docs/145 §10): the
+    // same types in Overwatch's order inside the alarm's own task, one sim tick apart (Sleep(0) between types) instead of
+    // 10 sim-minutes, the inventory cleanup as our sliced pass, notices collected into one message as Overwatch does. The
+    // night's ~300 ms tick was every type up to the first stuck-check plan in one tick, not the plans (docs/145 §10).
+    // Counters: [244] chained alarms, [245] ticks yielded between types ([158]/[223]/[224] also count chained types).
     // Overwatch builds that spread the cleanups themselves carry OverwatchSpreadCore.MarkerField: then we patch nothing
     // and log "upstream spreading found". No Overwatch, or an OnTimer we do not recognise: logged, nothing patched.
     // Test switches: overwatchspreadverify (count what is left to repair before and after either path, one log line),
@@ -27,13 +32,15 @@ namespace Ts3Fixes
     // Counters: [156] alarms taken over, [157] cleanup types scheduled, [158] Overwatch types run at their slot,
     // [159] our inventory passes finished, [160] inventories checked, [161] repairs made, [162] ticks used,
     // [163] longest tick of the pass in us, [164] repairs still pending after the last verified pass, [165] upstream
-    // marker version (-1 = faked), [166] alarms left to Overwatch's own path.
+    // marker version (-1 = faked), [166] alarms left to Overwatch's own path, [223] longest type run whole at its slot (us),
+    // [224] types that took >= kSlowTypeUs there (each logged by name). [162]/[163] include the world scan for inventories.
     public static partial class Fixes
     {
         static bool sOwSpreadTried, sOwSpreadReady, sOwUpstream;
         static Type sOwType;
         static MethodInfo sOwTimer, sOwFind, sOwPerform;  // Overwatch.OnTimer(), DerivativeSearch.Find<IAlarmOption>(), IAlarmOption.PerformAlarm()
         static PropertyInfo sOwSettings;
+        static StopWatch sOwTypeWatch;
         static FieldInfo sOwInvSetting;         // PersistedSettings.mCleanupInventory, read only
 
         internal static void ApplyOverwatchSpread(bool lastTry)
@@ -88,7 +95,64 @@ namespace Ts3Fixes
 
         static OverwatchSpreadCore.Mode OwMode()
         {
-            return OverwatchSpreadCore.Decide(ShortcutOn("overwatchspread"), sOwSpreadReady, sOwUpstream, ShortcutOn("overwatchspreadfakeupstream"));
+            return OverwatchSpreadCore.WithChain(OverwatchSpreadCore.Decide(ShortcutOn("overwatchspread"), sOwSpreadReady, sOwUpstream,
+                ShortcutOn("overwatchspreadfakeupstream")), ShortcutOn("overwatchchain"), sOwSpreadReady);
+        }
+
+        // Overwatch's notice batching (private statics sCollectNotices / sAlarmNotice, Common.Notify(string)): looked up
+        // once; missing = notices show one by one, as with overwatchspread.
+        static FieldInfo sOwCollect, sOwNotice;
+        static MethodInfo sOwNotify;
+        static bool sOwNoticeTried;
+
+        static bool OwCollectNotices(bool on)
+        {
+            if (!sOwNoticeTried)
+            {
+                sOwNoticeTried = true;
+                const BindingFlags st = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
+                sOwCollect = sOwType.GetField("sCollectNotices", st);
+                sOwNotice = sOwType.GetField("sAlarmNotice", st);
+                sOwNotify = sOwType.GetMethod("Notify", st, null, new Type[] { typeof(string) }, null);
+                if (sOwCollect == null || sOwCollect.FieldType != typeof(bool) || sOwNotice == null || sOwNotice.FieldType != typeof(string) || sOwNotify == null)
+                    sOwCollect = null;
+            }
+            if (sOwCollect == null) return false;
+            sOwCollect.SetValue(null, on);
+            return true;
+        }
+
+        // Chain: Overwatch's own option list and order, one type per sim tick in the calling task (it must be able to yield).
+        static void OwChain()
+        {
+            int[] c = PatchCounters();
+            c[244]++;
+            IList options = OwOptions();
+            bool collect = OwCollectNotices(true);
+            try
+            {
+                for (int i = 0; i < options.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        Simulator.Sleep(0);
+                        c[245]++;
+                        if (WorldGone()) { OwLog("chain stopped: world gone"); return; }
+                    }
+                    OwRunType(options[i], true);
+                }
+            }
+            finally
+            {
+                if (collect)
+                {
+                    OwCollectNotices(false);
+                    string text = sOwNotice.GetValue(null) as string;
+                    sOwNotice.SetValue(null, null);
+                    if (!string.IsNullOrEmpty(text) && !WorldGone())
+                        try { sOwNotify.Invoke(null, new object[] { text }); } catch (Exception) { }
+                }
+            }
         }
 
         static IList OwOptions() { return sOwFind.Invoke(null, null) as IList; }
@@ -107,8 +171,18 @@ namespace Ts3Fixes
                     if ((bool)sOwInvSetting.GetValue(sOwSettings.GetValue(null, null))) OwInventoryPass(ShortcutOn("overwatchspreadverify"));
                     return;
                 }
+                // Overwatch's own code runs whole at its slot: timed, so a heavy type shows as the burst left over (docs/145 §9)
+                if (sOwTypeWatch == null) sOwTypeWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds); // own watch: a type may sleep
+                sOwTypeWatch.Restart();
+                long tick = Simulator.TicksElapsed();
                 sOwPerform.Invoke(option, null);
-                if (ours) PatchCounters()[158]++;
+                long us = sOwTypeWatch.GetElapsedTime();
+                if (!ours) return;
+                int[] c = PatchCounters();
+                c[158]++;
+                if (Simulator.TicksElapsed() != tick) return; // a type that slept is not one tick (RecoverStrandedToddlers)
+                if (us > c[223]) c[223] = (int)us;
+                if (us >= OverwatchSpreadCore.kSlowTypeUs) { c[224]++; OwLog(OwName(option) + " (Overwatch's own code) took " + (us / 1000.0).ToString("0.0") + " ms in one tick"); }
             }
             catch (Exception e) { OwLog(OwName(option) + " failed: " + (e.InnerException ?? e).Message); }
         }
@@ -141,12 +215,17 @@ namespace Ts3Fixes
             List<Inventory> list = new List<Inventory>();
             foreach (GameObject o in Sims3.Gameplay.Queries.GetObjects<GameObject>())
                 if (o.Inventory != null) list.Add(o.Inventory);
+            OwHouseholdInventories(list);
+            return list;
+        }
+
+        static void OwHouseholdInventories(List<Inventory> list)
+        {
             foreach (Household h in new List<Household>(Household.sHouseholdList))
             {
                 if (h.SharedFamilyInventory != null && h.SharedFamilyInventory.Inventory != null) list.Add(h.SharedFamilyInventory.Inventory);
                 if (h.SharedFridgeInventory != null && h.SharedFridgeInventory.Inventory != null) list.Add(h.SharedFridgeInventory.Inventory);
             }
-            return list;
         }
 
         // Repairs per kind: 0 empty or broken stacks removed, 1 items without an object, 2 items without an item component
@@ -260,7 +339,22 @@ namespace Ts3Fixes
             int[] n = new int[7];
             int ticks = 1, mostItems = 0;
             long maxUs = 0;
-            List<Inventory> all = OwInventories();
+            // The world scan was one tick over every world object (o.Inventory each), outside the measured slices
+            // (docs/145 §9): now the query is timed and the per-object check runs a slice per tick like the items.
+            StopWatch w = EaWatch();
+            w.Restart();
+            GameObject[] objects = Sims3.Gameplay.Queries.GetObjects<GameObject>();
+            maxUs = w.GetElapsedTime();
+            List<Inventory> all = new List<Inventory>();
+            Simulator.Sleep(0);
+            ticks++;
+            if (WorldGone() || !RunSliced(new SlicedPass<GameObject>(objects), delegate(GameObject o) { if (!o.HasBeenDestroyed && o.Inventory != null) all.Add(o.Inventory); },
+                    OverwatchSpreadCore.kMaxScanPerSlice, ref ticks, ref maxUs))
+            {
+                OwLog("inventory pass stopped: world gone");
+                return;
+            }
+            OwHouseholdInventories(all);
             // the budget counts items, not inventories: one inventory with hundreds of items continues in the next tick
             if (!RunUnits(all, delegate(Inventory inv) { return OwInventoryUnits(inv, n); }, OverwatchSpreadCore.kMaxItemsPerSlice, n, ref ticks, ref maxUs, ref mostItems))
             {
@@ -319,7 +413,7 @@ namespace Ts3Fixes
             }
             if (sOwFind == null) return "option list not found";
             foreach (object option in OwOptions())
-                if (OwName(option) == type) { OwStartTask(option, mode == OverwatchSpreadCore.Mode.Ours); return mode + " " + type; }
+                if (OwName(option) == type) { OwStartTask(option, mode == OverwatchSpreadCore.Mode.Ours || mode == OverwatchSpreadCore.Mode.Chain); return mode + " " + type; }
             return "no Overwatch option " + type;
         }
 
@@ -332,6 +426,12 @@ namespace Ts3Fixes
                 {
                     try { OwSpread(OverwatchSpreadCore.kGapMinutes); return; }
                     catch (Exception e) { OwLog("spread failed, Overwatch's own path runs: " + e.Message); }
+                }
+                else if (mode == OverwatchSpreadCore.Mode.Chain)
+                {
+                    if (MayYield()) OwChain(); // the alarm's FunctionTask (RouteBackoff.cs MayYield)
+                    else Simulator.AddObject(new OneShotFunctionTask(OwChain));
+                    return;
                 }
                 else if (mode == OverwatchSpreadCore.Mode.Upstream)
                 {

@@ -1,0 +1,118 @@
+{
+  "note": "docs/142 §9: acting route early-out ([RouteEarlyOut] Mode=2 Act=1, ts3native 0.36.22, counters v86 after v85 (H2)). asi game-copy/ts3native.asi.0322 (sha256 ab2f6a7945793a11); ts3fixes unchanged. Every job: the freeze-fix settings of fbfix-ab (FallbackAsync=1, M1Retry=1, SyncCapMs=1000, FbJobCapMs=300, LogFallbackMs=20, LogFallbackStack=16, HitchAttr on) plus RouteEarlyOut Enabled=1 Mode=2 Act=1 (car and memo proofs answer the world A* without the flood; first 32 proofs and every 16th after are shadowed: both answers compared, eoActDiff must stay 0). Job 1 (bp-earlyout-verify) is a 5-min day job (noisy machine OK: counters and log lines only). Jobs 2-7 are the both-order timing pairs (clean night only; read pair means of off-first + on-first, never one order alone): BP route-bits, SV crowd, IP play, --ab earlyout (on = Mode 2 acting, off = pass-through). Read per pair: worst-hitches.ts --min 250 and hitch-attr-report.ts per side, the 'route early-out act:' and 'route early-out: plan' lines (acted, ~ms saved), 'route jobs split:', it/s, route fails, stuck Sims. Pass for every job: no crash, game alive, eoWrong 0, eoActDiff 0 (eoActOff 0), fbActiveTrip 0, the switch line at every slice.",
+  "jobs": [
+    {
+      "id": "bp-earlyout-verify",
+      "note": "Day job, 5 min, noisy machine OK (mechanism only). BP rare-route-bits: its forced car-only plan to the farthest community lot (step 51, FailedBecauseNoPathToDestination) floods the street graph once per goal-lot entry candidate (docs/142 §1, 4,060 ms in freeze-data 2026-10-20); every mode-2 call there is car-proven. Acting on for the whole run (Mode=2 Act=1, LogMs 200). PASS (from ts3native.log / native.json, no timing): (1) the asi is 0.36.22 with counters 86 ('route early-out act:' line present); (2) eoActed > 0 (eoActedWhy_0 car > 0 expected; memo optional); (3) eoWrong = 0 and eoActDiff = 0 (eoActOff 0) after eoShadow >= 32; (4) eoActSavedMs > 0 (acted searches' estimated time saved: nodes x the shadowed game us per node - act us); (5) no crash, fbActiveTrip 0. REPORT: eoShadowUs/eoShadowNodes per kind (game us per node), eoActUs/eoActMaxUs (cost of answering), eoActTie (heuristic ties left to the game), eoStale_0/1 (car labels vs BFS, memo wall print), eoActRefused, and per slow plan the 'route early-out: plan N ms ... acted a (car x memo y) ~z ms saved' line next to its 'route async: sync plan' / 'long job' line.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "rare-route-bits" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-earlyout-routebits-offfirst",
+      "note": "Clean night. BP rare-route-bits, --ab earlyout off-first (warm-up on, then off,on,on,off). Read with bp-earlyout-routebits-onfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-route-bits", "ab": "earlyout", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-earlyout-routebits-onfirst",
+      "note": "Clean night. BP rare-route-bits, --ab earlyout on-first (warm-up on, then on,off,off,on). Read with bp-earlyout-routebits-offfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-route-bits", "ab": "earlyout", "abOnFirst": true, "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-earlyout-crowd-offfirst",
+      "note": "Clean night. SV rare-big-crowd (freeze-data 2026-10-20: 7,361 + 7,350 ms NoStart plans, unattributed), --ab earlyout off-first. Memo proofs matter here (pedestrian candidates cut off by walls the colours do not see). Read with sv-earlyout-crowd-onfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-big-crowd", "ab": "earlyout", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-earlyout-crowd-onfirst",
+      "note": "Clean night. SV rare-big-crowd, --ab earlyout on-first. Read with sv-earlyout-crowd-offfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-big-crowd", "ab": "earlyout", "abOnFirst": true, "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-earlyout-play-offfirst",
+      "note": "Clean night. IP play (no repro: ordinary routing load, boats and water links), --ab earlyout off-first. Read with ip-earlyout-play-onfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "earlyout", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-earlyout-play-onfirst",
+      "note": "Clean night. IP play, --ab earlyout on-first. Read with ip-earlyout-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 86,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+        "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 2, "RouteEarlyOut.Act": 1, "RouteEarlyOut.LogMs": 200
+      },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "earlyout", "abOnFirst": true, "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "note": "Rerun after the 2026-10-22 ~15:12 PHT failure (TS3W.exe gone ~10 s into all 6 phases jobs, docs/67, docs/150 §7 fix: RjpPop popped the parent frame on ret-N leaves): game-copy/ts3native.asi.0326 = master 53bdb56d + the fix, sha256 C13367080FED1473EB925AA7F7B85A8FEBD77B62279E6031A73A51BB4566B63C. docs/150 §14 route job allocator call sites (2026-10-22, NOT run). Step 1 only (probe): [RouteAlloc] Enabled=1 (step 2) is NOT built, so there are no night pairs yet; they are added when step 2 is built from this probe's answer. Day jobs (5 min, noisy machine OK: counts and shares, not absolute timing). Release defaults (repo ts3native.ini) + [RouteJobPhases] Enabled=1 on the parked build game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) (0.36.23 + counters v92 after v89, without v88/v90/v91; sha256 26D7EE3D97B115D12337E16D511103CDC1AB7EFC37A33C9EE58DC64FAD31B200). Report: node tools/harness/route-phases-report.ts <native.json> --seconds 300 (phases as §7, then the v92 allocator site table, size / PathNodes_Insert grow / per-job histograms). Pass per job: no crash, game alive, rjpReady 1, raAllocN > 0 and raFreeN > 0, raFull 0 (else the 64-row table is too small: widen before reading), phases sum within 10% of asyncUs. Read (decides step 2, docs/150 §14.4): share of allocator self time in the top 2 rows; expected [K8 offline census] the post pass 16 height list (0x64CAD4 + 0x59B134, frees 0x64D4F9 / 0x64D557) and the PathNodes_Insert grow (0x6291DE, free 0x629254). Build step 2 only if those rows hold >= 50% of allocator time and allocator time is >= ~8 ms/s of the hold.",
+  "jobs": [
+    {
+      "id": "bp-routealloc-probe",
+      "note": "Bridgeport, release defaults + [RouteJobPhases]. Read: allocator ms/s per kind, top rows by self time (site, parent phase call, calls/job, mean bytes), PathNodes_Insert grows by capacity (how many vectors pass 16 / 64 nodes), jobs by allocator calls.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 92,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-routealloc-probe",
+      "note": "Isla Paradiso, release defaults + [RouteJobPhases]. Read: as BP, plus the water planner's 16-byte site 0x6DFE2D (via 0x620560, K8's top site on water legs) and foreign jobs.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 92,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

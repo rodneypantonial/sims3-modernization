@@ -1,0 +1,186 @@
+{
+  "note": "docs/150 §13 [RouteAsync] ReplanDedupe (2026-10-22, NOT run). Daytime: --only bp-dedupe-verify, then --only ip-dedupe-verify (5 min each, noisy machine OK: correctness and shares only). Night: --from bp-dedupe-play-offfirst (6 jobs, 10 min, 2-min slices: BP and IP on release defaults, BP with A10 Kinds=5, each off-first / on-first). Before: game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) parked from the branch build (sha256 in PLAN.md), master ini. Reports: node tools/harness/wait-ab.ts <tag> (sim keyed +0x918 wait, pair mean of both orders), profile-compare.mjs <tag>:on vs :off, rd* per slice from <tag>-ab-native.jsonl. 8 jobs, ~1 h 40 min real.",
+  "jobs": [
+    {
+      "id": "bp-dedupe-verify",
+      "note": "Daytime correctness, noisy machine OK (no timing read). ts3native 0.36.23 + counters v90 (game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D); sha256 in PLAN.md) from a checkout whose native/ts3native/ts3native.ini is master (release defaults: A10 Kinds=0, so both ICs get the section's own detours): the job ini adds only [RouteAsync] ReplanDedupe=2 (installed, rdMode starts 0). Needs 'OK   replan dedupe' in ts3native.log with ready 0xB or 0xF (else SKIP/PART = a prologue differs or another section owns it: stop) and the route snapshot counters line (world version). --ab replandedupe with 1-min slices: warm-up on, then off, on, on, off. A crash = stop the queue and triage against replandedupe.cpp (crash-cause rule). Pass (end minus start in <tag>-native.json; per slice from <tag>-ab-native.jsonl): no crash, game alive, 0 watchdog lines; rdReady bit 2 set; rdCalls_0 + rdCalls_1 > 0; repeat counters > 0 (rdRepN_2_0 + rdRepN_2_1 + rdRepN_2_2 > 0); off slices: rdWould_0 > 0 and rdWouldDiff_0 = 0 (any difference with nothing changed = the equivalence argument is wrong: stop, keep the switch off), rdWouldDiff_1 small next to rdWould_1 (footprint-only cases; > 5% = drop the footprint allowance); on slices (the second half has two): rdServed > 0; stuck Sims (ts3fixes watchdog resets / RouteBackoff stuck counts in <tag>-ab-fixes.jsonl) not above the off slices. Read also: the repeat share rdRepN_1_0 / rdFails_1 and its cost rdRepUs_1_0 (ms/s), rdInval_0..3 (why failed repeats were not eligible), rdServedUs per s on slices (expected cut). Fail = stop the night part.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 2
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "ab": "replandedupe",
+          "slice": 0.6
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-dedupe-verify",
+      "note": "IP play (water and boat replans), daytime, noisy OK. Everything else as bp-dedupe-verify (build, ini, install check, slices, pass and reads).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 2
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "ab": "replandedupe",
+          "slice": 0.6
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-dedupe-play-offfirst",
+      "note": "BP play, release defaults. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun); only after both verify jobs passed. ini ReplanDedupe=1; --ab replandedupe toggles rdMode (+0x38FC; 0 = observe, the detours stay). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, rdWouldDiff_0 = 0 on off slices. Read (pair mean with bp-dedupe-play-onfirst; single-order deltas are not usable, docs/143 §8.15): (1) sim route ms/s and sync plan time on vs off (the sync Replan / ReplanFromPosition time: rdUs per s of each side); (2) rdServed and rdServedUs per s on on-slices (the cut); (3) sim keyed +0x918 wait total (wait-ab.ts); (4) it/s and hitches/min (profile-compare.mjs <tag>:on vs :off); (5) stuck Sims per side (ts3fixes counters, ab-fixes.jsonl). Expected [inferred]: unknown until the verify shares; docs/150 §4 chunk 4 gives -8..-13 ms/s at a 30% repeat share (A10-on hold). Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-dedupe-play-onfirst",
+      "note": "BP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-dedupe-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-dedupe-play-offfirst",
+      "note": "IP play, release defaults. Clean night only. Off-first. Everything else as bp-dedupe-play-offfirst (pair mean with ip-dedupe-play-onfirst).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-dedupe-play-onfirst",
+      "note": "IP play, the on-first half of the pair (abOnFirst). Clean night only. Everything else as bp-dedupe-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-dedupe-a10-offfirst",
+      "note": "BP play with A10 on for Replan + ReplanFromPosition ([RouteAsync] Kinds=5: the docs/150 §4 chunk 4 config; the check then runs in A10's CallIc, on the worker inside jobs too, rdReady 0x7 without bit 3). Clean night only; needs ts3fixes with the A10 hooks (asyncreplan). Off-first. Read as bp-dedupe-play-offfirst plus the job hold: asyncUs per s and arJobUs_0 / arJobUs_2 per s on vs off (served jobs end at once), arSyncUs per s. A10 itself was never released: a crash with rdMode 0 is A10's, not this section's (compare with a Kinds=5 run without ReplanDedupe before blaming it).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.Kinds": 5
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-dedupe-a10-onfirst",
+      "note": "BP play with A10 Kinds=5, the on-first half of the pair (abOnFirst). Clean night only. Everything else as bp-dedupe-a10-offfirst.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.Kinds": 5
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "replandedupe",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

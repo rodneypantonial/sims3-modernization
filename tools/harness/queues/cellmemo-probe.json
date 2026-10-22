@@ -1,0 +1,49 @@
+{
+  "note": "Rerun after the 2026-10-22 ~15:12 PHT failure (TS3W.exe gone ~10 s into all 6 phases jobs, docs/67, docs/150 §7 fix: RjpPop popped the parent frame on ret-N leaves): game-copy/ts3native.asi.0326 = master 53bdb56d + the fix, sha256 C13367080FED1473EB925AA7F7B85A8FEBD77B62279E6031A73A51BB4566B63C. docs/150 §12 [CellMemoProbe] verify + read (2026-10-22, NOT run). Day jobs (5 min, noisy machine OK: counts and shares, the decision is a ratio of worker time, not sim timing). Release defaults (repo ts3native.ini) + [RouteJobPhases] Enabled=1 + [CellMemoProbe] Enabled=1 on the parked build game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) (0.36.23 + counters v88 appended after v89, version field 89). Pass per job: no crash, game alive, rjpReady 1, cmReady 1, cmSkipped 0, cmPlans > 0, cmLegs_0 + cmLegs_1 > 0, cmCellUs > 0, cmFull small (< 1% of legs). Read: would-hit cell A* ms/s = cmHitCellUs / 1000 / 180; also cmRepeats / cmLegs, cmHitCellUs / cmCellUs, cmMaxRepeats and the cmHist_* shape. Decision rule (docs/150 §8.4): build design M ([CellAStarCache] Enabled=0 Shadow=1) only if would-hit >= 5 ms/s in BP or IP; below that, M is dropped and chunk 1 moves to M2 (neighbour-list memo) or the allocator.",
+  "jobs": [
+    {
+      "id": "bp-cellmemo-verify",
+      "note": "Bridgeport, release defaults + [RouteJobPhases] + [CellMemoProbe]. Read would-hit ms/s (decision: >= 5 builds M), repeat share per wrapper, per-plan max and histogram.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteJobPhases.Enabled": 1,
+        "CellMemoProbe.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-cellmemo-verify",
+      "note": "Isla Paradiso, release defaults + [RouteJobPhases] + [CellMemoProbe]. Read as BP (IP plans are water-bound: fewer in-room legs expected).",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteJobPhases.Enabled": 1,
+        "CellMemoProbe.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

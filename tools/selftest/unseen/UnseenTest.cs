@@ -129,8 +129,33 @@ static class UnseenTest
         }
     }
 
+    // docs/144 §8: 40 Sims due on the same sim-minute run at most kCatchUpsPerTick per tick, every one within ceil(40/4)
+    // ticks, none lost; a forced (late) one runs over the cap.
+    static void CatchUpCap()
+    {
+        TickCap cap = new TickCap();
+        int k = UnseenMath.kCatchUpsPerTick;
+        List<int> waiting = new List<int>();
+        for (int i = 0; i < 40; i++) waiting.Add(i);
+        long tick = 100;
+        int ticks = 0;
+        while (waiting.Count > 0 && ticks < 100)
+        {
+            int ran = 0;
+            for (int i = waiting.Count - 1; i >= 0; i--) if (cap.Take(tick, k, false)) { waiting.RemoveAt(i); ran++; }
+            Check(ran <= k, "tick " + tick + ": " + ran + " catch-ups, cap " + k);
+            tick++; ticks++;
+        }
+        Check(waiting.Count == 0 && ticks == (40 + k - 1) / k, "40 due Sims all run within " + ((40 + k - 1) / k) + " ticks (" + ticks + ")");
+        Check(cap.Most == k && cap.Held > 0, "most per tick " + cap.Most + ", held " + cap.Held);
+        for (int i = 0; i < k; i++) cap.Take(500, k, false);
+        Check(!cap.Take(500, k, false) && cap.Take(500, k, true), "over the cap: waits, unless forced");
+        Check(UnseenMath.kHardGapMin < 60f && UnseenMath.kHardGapMin > 30f, "hard gap between the 30-minute cap and the 60-minute auto-satisfy switch");
+    }
+
     static int Main()
     {
+        CatchUpCap();
         GateCadence();
         TimeGate();
         Integrators();

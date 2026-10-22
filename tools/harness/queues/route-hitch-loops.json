@@ -1,0 +1,240 @@
+{
+  "note": "Routing freeze loop A/Bs (clean night): the repro-check-route jobs at A/B length on asi.0332 (deadline + fail memo + stuck-check fixes per arm, ABBA in one load). Read per arm: hitch-ab --scenario; stranding: pdHitOk, stuck Sims per arm.",
+  "jobs": [
+    {
+      "id": "bp-route-stuckcheck-reset-ab",
+      "note": "route-stuckcheck-reset-loop: the game's stuck-check alarm body and reset safe-location search on 20 stranded Sims, loop form, ABBA until 40 stuck checks armed and >= 10 firings per arm (loopRule, docs/168 §7; ~20 firings x <= 34 s; stuckchecknear, failrepeat, safespotcap). Pass: >= 20 stuck checks ran, >= 20 failed sim-thread plans.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "nativeRequire": "sypPlans.1>=20",
+      "logRequire": {
+        "route phases SyncPlans": 1,
+        "OK   route deadline": 1,
+        "OK   fail memo": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.PlanDeadlineMs": 1000,
+        "RouteAsync.FailMemo": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "repro": "route-stuckcheck-reset-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 40,
+              "minFirings": 10
+            },
+            "maxMinutes": 14
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "fixesRequire": "stuckcheckasync_run>=20",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-route-queuefull-replan-ab",
+      "note": "route-queuefull-replan-loop: 30+ Go Here starts in one tick and build/buy exit replan-all, loop form, 10 firings per arm (loopRule, docs/168 §7; the repro's own perArm 2 stays for repro-check-route) on native fallbackasync. Pass: >= 20 refused STARTs, QueueFull and NoStart sync plan lines. NoStart plans run async with FallbackAsync on (fbForeign), no sync NoStart line (2026-10-23).",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "nativeRequire": "asyncQueueFull>=20,fbForeign>=5",
+      "logRequire": {
+        "reason QueueFull": 5
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 19,
+          "repro": "route-queuefull-replan-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 18
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-route-nopath-crowd-ab",
+      "note": "route-nopath-crowd-loop: 30+ Go Here plans to one enclosed spot per loop, loop form, ABBA until 50 no-path plans sent and >= 10 firings per arm (loopRule, docs/168 §7; earlyout, failrepeat). Pass: >= 20 failed world A* searches (counted in the on arms only). Failed plans mostly end before world A* (2026-10-23: 94 failed sync plans, 8 A* fails): counted by sypPlans.1, not eoAsFail.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "nativeRequire": "sypPlans.1>=20",
+      "logRequire": {
+        "route phases SyncPlans": 1,
+        "OK   route deadline": 1,
+        "OK   fail memo": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.PlanDeadlineMs": 1000,
+        "RouteAsync.FailMemo": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "repro": "route-nopath-crowd-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 50,
+              "minFirings": 10
+            },
+            "maxMinutes": 14
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-route-seacheck-freeze-ab",
+      "note": "route-sv-seacheck-freeze: the game's stuck check on crowd Sims standing on the SV lot with the most sea, 4 loops ABBA (SyncCapMs + FbJobCapMs + stuckchecknear + failrepeat). Pass: >= 20 stuck checks ran, >= 20 failed world A* searches. Read: failed plans >= 1 s and their 16-frame stacks (the 7 s caller test).",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 99,
+      "nativeRequire": "eoAsFail>=20",
+      "logRequire": {
+        "route phases SyncPlans": 1,
+        "OK   route deadline": 1,
+        "OK   fail memo": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.PlanDeadlineMs": 1000,
+        "RouteAsync.FailMemo": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "repro": "route-sv-seacheck-freeze",
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "fixesRequire": "stuckcheckasync_run>=20",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

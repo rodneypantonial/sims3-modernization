@@ -126,6 +126,34 @@ static bool P5cPark(DWORD idLo, DWORD idHi) {
 // the owner (sim) thread outside a job callback, no job running: every parked reference released, oldest first, with job
 // starts held off (ServeAsync's Dekker on g_rgOffSimOpen). A release may destroy more; a nested flush finds the list already
 // taken. Owner only (0.36.9 design G): the free runs component destructors and the managed release, which belong to the sim.
+// Crash I (docs/67 §11): the last 64 released references (object, its vtable and count before the release, the flush's
+// caller in this module, time), matched by XcptLog against an access violation's registers: a hit names our flush as the
+// free of the faulting object. Owner thread writes only; the crash-time read is racy by design
+struct P5cRel { DWORD obj, vt, site; LONG count; LARGE_INTEGER t; };
+static P5cRel g_p5cRel[64];
+static volatile LONG g_p5cRelN;
+// per register the nearest released object at or below it (within 0x400); returns the first register's object, 0 = none
+static DWORD P5cRelMatch(const CONTEXT* c) {
+    const DWORD regs[6] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi};
+    static const char* const names[6] = {"eax", "ebx", "ecx", "edx", "esi", "edi"};
+    const LONG n = g_p5cRelN;
+    DWORD first = 0;
+    for (int i = 0; i < 6; i++) {
+        LONG best = -1;
+        for (LONG j = n - 1; j >= 0 && j >= n - 64; j--) {
+            const P5cRel& r = g_p5cRel[j & 63];
+            if (regs[i] >= r.obj && regs[i] - r.obj < 0x400 && (best < 0 || r.obj > g_p5cRel[best & 63].obj)) best = j;
+        }
+        if (best < 0) continue;
+        const P5cRel& r = g_p5cRel[best & 63];
+        if (!first) first = r.obj;
+        Log("P5c: fault register %s %08lX is +0x%lX into object %08lX (vt %08lX, count %ld before) released %ld releases ago "
+            "by the flush from %08lX, %lld us before the fault", names[i], regs[i], regs[i] - r.obj, r.obj, r.vt, r.count,
+            n - 1 - best, r.site, UsSince(r.t));
+    }
+    return first;
+}
+
 static void P5cFlush() {
     if (!g_p5cGyN) return;
     if (GetCurrentThreadId() != g_async.owner || g_inInvoke) return;
@@ -150,6 +178,13 @@ static void P5cFlush() {
             InterlockedIncrement(&k.p5cCountLow);
             continue;
         }
+        P5cRel& r = g_p5cRel[g_p5cRelN & 63];
+        r.obj = (DWORD)(uintptr_t)obj;
+        r.vt = *(const DWORD*)obj;
+        r.count = *(volatile LONG*)((u8*)obj + 4);
+        r.site = (DWORD)(uintptr_t)_ReturnAddress();
+        QueryPerformanceCounter(&r.t);
+        InterlockedIncrement(&g_p5cRelN);
         g_objRelease(&obj, NULL);
     }
     InterlockedExchangeAdd(&k.p5cFlushed, n);

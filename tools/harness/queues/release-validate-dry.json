@@ -1,0 +1,477 @@
+{
+  "note": "release-validate part A dry run on asi.0325.",
+  "jobs": [
+    {
+      "id": "bp-rel-play",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Crash-free play on BP, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results). Feature counters (only when on in the release ini, else 0 is right): fallbackasync fbForeignStarted > 0; m1retry fbRetryGaveUp < fbRetryParked; slotenabledro slTaken > 0; avoidro avTakenHit + avTakenMiss > 0; deferfootprint usfDeferred > 0; destroypark dpParked > 0; unseenthrottle utReady 3, utSkipped > 0, utViewerPushes > 0; unseenenv/unseenmotives/unseenbroadcast unseen_* skips > 0; stuckcheckasync stuckcheckasync_run > 0 once a 3 AM passed.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-rel-play",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Crash-free play on IP, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results). Feature counters (only when on in the release ini, else 0 is right): fallbackasync fbForeignStarted > 0; m1retry fbRetryGaveUp < fbRetryParked; slotenabledro slTaken > 0; avoidro avTakenHit + avTakenMiss > 0; deferfootprint usfDeferred > 0; destroypark dpParked > 0; unseenthrottle utReady 3, utSkipped > 0, utViewerPushes > 0; unseenenv/unseenmotives/unseenbroadcast unseen_* skips > 0; stuckcheckasync stuckcheckasync_run > 0 once a 3 AM passed.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-rel-play",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Crash-free play on SV, 12 min seeded profile. Pass also: asyncCollected ~= asyncStarted, discIdMismatch = 0. Iterations/s and sim route ms/s vs the env-on rows (docs/data/results/2026-10-17-queue-clean-night.md bp/ip-env-on) for information only (daytime numbers are not timing results). Feature counters (only when on in the release ini, else 0 is right): fallbackasync fbForeignStarted > 0; m1retry fbRetryGaveUp < fbRetryParked; slotenabledro slTaken > 0; avoidro avTakenHit + avTakenMiss > 0; deferfootprint usfDeferred > 0; destroypark dpParked > 0; unseenthrottle utReady 3, utSkipped > 0, utViewerPushes > 0; unseenenv/unseenmotives/unseenbroadcast unseen_* skips > 0; stuckcheckasync stuckcheckasync_run > 0 once a 3 AM passed.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-rel-stuck-unseen",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Stuck-Sim check for the unseen throttles (docs/143 bp-ut-stuck-on, docs/144): BP 15 min seeded, release ini. Pass also: stuck Sims at the end no more than the v0.1.4 bp-rel-play rate (docs/TESTING.md: at most one more, none standing at a door or route goal it walked to while unseen); new cases to docs/data/stuck-log.md with the utWhy mix. Feature counters (only when on in the release ini, else 0 is right): fallbackasync fbForeignStarted > 0; m1retry fbRetryGaveUp < fbRetryParked; slotenabledro slTaken > 0; avoidro avTakenHit + avTakenMiss > 0; deferfootprint usfDeferred > 0; destroypark dpParked > 0; unseenthrottle utReady 3, utSkipped > 0, utViewerPushes > 0; unseenenv/unseenmotives/unseenbroadcast unseen_* skips > 0; stuckcheckasync stuckcheckasync_run > 0 once a 3 AM passed.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 15,
+          "seed": 12345
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "bp-rel-matrix",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results. v0.2.0: the full matrix is required (save-change rule): destroypark releases parked references at save and travel, errortrapspread/easpread* drop or finish a pending pass at a save; every case PASS on all three worlds.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "sv-rel-matrix",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results. v0.2.0: the full matrix is required (save-change rule): destroypark releases parked references at save and travel, errortrapspread/easpread* drop or finish a pending pass at a save; every case PASS on all three worlds.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "ip-rel-matrix",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results. v0.2.0: the full matrix is required (save-change rule): destroypark releases parked references at save and travel, errortrapspread/easpread* drop or finish a pending pass at a save; every case PASS on all three worlds.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "bp-rel-travel-france",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> france -> home with the travel save case (as async-release.json bp-async-travel-france). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-china",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> china -> home with the travel save case (as async-release.json bp-async-travel-china). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "china"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-egypt",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> egypt -> home with the travel save case (as async-release.json bp-async-travel-egypt). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "egypt"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-university",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> university -> home with the travel save case (as async-release.json bp-async-travel-university). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "university"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-future",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> future -> home with the travel save case (as async-release.json bp-async-travel-future). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "future"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-travel-future-direct",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Future travel with the direct-trip start (as travel-all.json bp-travel-future-direct; covers the case where the test tool drops the queued future trip). Pass: travel case PASS, or bp-rel-travel-future PASS. v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "future",
+          "--direct"
+        ]
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rel-feat-stuck-check-3am",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro stuckcheckasync + fallbackasync (docs/134 §8): repro stuck-check-3am (clock to 4:00, then the stuck-check alarms). Pass also: with stuckcheckasync on, stuckcheckasync_run > 0 and no sync plan line over LogFallbackMs whose stack has RunStuckCheckHelper unless refused for a reason other than Foreign/NoStart; with it off, the plans are logged inside the alarm (Lot.Simulate) and fallbackasync (if on) starts them as foreign plans.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "stuck-check-3am"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-feat-steer-crowd",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro slotenabledro (docs/90): repro steer-crowd (crowd at Hogan's diner using seats and counters while route jobs run). Pass also: with slotenabledro on, slTaken > 0 and slShadowMismatch 0; the crowd arrived (no route-fail loop).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "steer-crowd"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-feat-avoid-crowd",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro avoidro (docs/137): repro avoid-crowd. Pass also: with avoidro on, avTakenHit + avTakenMiss > 0, avSiteSkip = avTakenMiss, avTripAv 0, avSimWriteInRo 0.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "avoid-crowd"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-feat-pet-guard-cancel",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro deferfootprint + destroypark against D-X (docs/88 §10 bp-pet-guard-dx-dg, docs/89 §7): repro pet-guard-cancel (discourage Remove then Destroy while route jobs run). Pass also: T-D5 discDropRemove = discDeadSweep, discIdMismatch 0, discDestroyApplied > 0; with destroypark on dpKeptWait counts the D-X ids (they keep the wait) and p5cCountLow 0; with deferfootprint on usfIdMismatch 0, usfApplyInJob 0.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 9,
+          "seed": 12345,
+          "repro": "pet-guard-cancel"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 24
+    },
+    {
+      "id": "bp-rel-feat-object-churn",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro deferfootprint + destroypark under object churn (docs/88 §6 item 4): repro rt-s2b-sweep (objects placed and removed twice, build/buy, a save, Sims removed, all while Sims route). Pass also: with destroypark on dpParked > 0 and 0 parked after the save step; with deferfootprint on usfDeferred > 0, usfAgeMaxMs < 300, usfApplyInJob 0; the save step result 0.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "repro": "rt-s2b-sweep"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 23
+    },
+    {
+      "id": "bp-rel-feat-replan-buildbuy-crowd",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro replandefer + replanspread (docs/141 §6): repro replan-buildbuy-crowd (crowd through doors, four build/buy cycles). Pass also: with replanspread on replanspread_held > 0 at every exit and replanspread_exceptions 0; with replandefer on replandefer_deferred > 0; with both off both 0; no Sim stuck at a door at the end.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "replan-buildbuy-crowd"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-feat-candidate-loops",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro safespotcap + farthestsorted + indoorcap (docs/141 §7): repro candidate-loops (CandidateLoopProbe twice). Pass also: same farthest lot id in both probe calls, frontdoor true, no exception line; with the switches on their counters (safespotcap_limited, farthestsorted_plans_saved, indoorcap_rooms_given_up) logged.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "candidate-loops"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-feat-overwatch-spread",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro overwatchspread (docs/145): repro bp-overwatch-spread-all (switches it on itself, runs every nightly type spread). Pass also: owspread_alarms 1, owspread_types_run = scheduled minus 1, no failed line; with the patched upstream Overwatch installed: applied log says ours off.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "bp-overwatch-spread-all"
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-feat-easpread-lots",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro easpreadlots (docs/147 §2): repro bp-easpread-lots (game's pass then ours, switch set by the repro). Pass also: same lots per kind on both paths, ours > 1 tick with easpread_lots_max_tick_us < ~5000, verify after equal.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "bp-easpread-lots",
+          "taskstall": 250
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20,
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      }
+    },
+    {
+      "id": "bp-rel-feat-easpread-pets",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro easpreadpets (docs/147 §3): repro bp-easpread-pets. Pass also: easpread_pets_max_ticks > 1 on ours, no failed line.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 6,
+          "seed": 12345,
+          "repro": "bp-easpread-pets",
+          "taskstall": 250
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 21,
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      }
+    },
+    {
+      "id": "bp-rel-feat-easpread-decay",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro easpreaddecay (docs/147 §4): repro bp-easpread-decay. Pass also: ours > 1 tick, easpread_decay_threw 0, relationships after <= before on both paths.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "bp-easpread-decay",
+          "taskstall": 250
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20,
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      }
+    },
+    {
+      "id": "bp-rel-feat-errortrap-spread",
+      "note": "DRY RUN on asi.0325 (2026-10-22 night): find harness/build problems before the real release-validate. Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Feature repro errortrapspread (docs/146): repro bp-errortrap-spread-inventory (ours, then ErrorTrap's own check as verify). Pass also: etspread_passes >= 1, etspread_failed 0, etspread_max_tick_us < ~5000, ErrorTrap's verify finds 0 corrections.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "bp-errortrap-spread-inventory",
+          "taskstall": 250
+        }
+      },
+      "minCounters": 79,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20,
+      "s3ppIni": {
+        "Patches.SimulatorStageProfiler": 0
+      }
+    }
+  ]
+}

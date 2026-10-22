@@ -89,7 +89,7 @@ All three proofs run at the A\* entry, outside any lock of ours, in the same thr
 - Counters v78 (`docs/registry.md`): `eoMode` `+0x3260` ... `eoSlowSaved` `+0x32B0` (after v77 AvoidRO's last field; built at `+0x3174` on its branch, moved at the 0.36.12 merge); `eoSlowSaved` = slow requests whose provable time alone would bring them under `LogMs`.
 - Selftest `TestEarlyOut` (`native/ts3native/earlyout-test.h`): fake R (2 chunks, byte-3 and byte-7 edges, an isolated waypoint), fake container and a fake search that floods like the game's (circle rerun through the detoured entry): car proof and no proof in one component, labels kept per R and refused for an out-of-range reference, colour proof and none with the water flag, memo store / proof / no proof inside the reached set / key changes / goal ref and goal point outside the key, a wall that opens behind the memo counted as `eoWrong`, no store after a restricted, capped or zero-factor search, a restricted search proven from an unrestricted memo, nested request scope, slow-request counters, Mode 0 pass-through, `CallPlan` scope on and off. Plus the v78 layout asserts.
 
-## 5. Acting mode (design, not built)
+## 5. Acting mode (design; built 2026-10-22 as §9, which replaces step 2's hooks with a content print and adds tie refusal)
 
 `Mode=2`, after the probe shows `eoWrong` 0 over the A/B and a useful `eoSlowProvMs`:
 
@@ -113,3 +113,59 @@ Upper bound = the provable share of world-A\* time in a slow plan; the probe mea
 ## 8. Effort
 
 Static study and probe build: ~3 h (agent, offline). Game: the A/B queue, 8 jobs (~1.5 h of game time; correctness and the line split are valid on a noisy machine, timings only on a clean night). Mode 2 if the probe says so: ~2-4 h build + one A/B + 2 clean runs before turning it on.
+
+## 9. Acting early-out (`[RouteEarlyOut] Mode=2 Act=1`, ts3native 0.36.22, counters v86; built 2026-10-22, offline, not run)
+
+**Offline build, selftest ok, steerro-test K6E against the game's own A\* (seeds 1-3 x 3000) ok, no game run.** Ledger rows: docs/51 §227. Counters v86 sit after v85 (H2) at `+0x3664` (built at `+0x364C` on the branch, moved at the merge).
+
+### 9.1 What a failed search leaves, re-read from the code
+
+The acting path must leave exactly what `0x676260` leaves when it fails. Re-read from the decompile and the disassembly of `0x676260..0x67642A` (`game-copy/analysis/decomp/astar-676260.asm`) [verified]:
+
+| Step (game order) | Address | What it writes | Acting path |
+|---|---|---|---|
+| circle prepass when `r²` (`opts+0xA0`) is 0.0 at entry | `0x676292` (stdcall, 4 args: R, opts, &start, &goal; returns AL) | centre and `r²`; on a failed inner run the A\* clears `r²` again (`0x6762C4`) | calls `0x673600` itself, clears `r²` when it accepted (the inner restricted run fails whenever the full one does) |
+| start / goal refs | `0x6762D2`, `0x6762DA` | `opts+0xA4` = start, `opts+0xB4` = goal | same |
+| LONG set | `0x6762E0..0x6762EB` | `opts+0x64..+0x87` = container `+0x4C` (9 dwords) | same |
+| closed bits cleared | `0x6762FB` (`memset`) | container `+0x10`, `+0x08` bytes | rewritten with the reachable set (below) |
+| h0 | `0x676388` (cdecl, 8 args, `add esp,0x20`; float in ST0) | - | the same cost function by address (`kCostFns`), edge 0, edge byte 0, parent null |
+| SHORT set when threshold >= h0 | `0x676393..0x6763AA` (`fcomip`, `jc`: NaN keeps LONG) | `opts+0x64..+0x87` = container `+0x28` | same, compared as double |
+| 1/x slots | `0x6763B0..0x676404` (divide when the factor is non-zero or NaN) | `opts+0x7C/+0x80/+0x84` = `[0x107A538]` / factor | same, float division |
+| flag `0x40` | `0x67640C` | `opts+0x68` = `[0x11587D0]` | same |
+| `*best` = start | `0x67642A` | `*best` | same |
+| loop: per generated node, heuristic h; `h < min` (strict, float) moves `*best` | `0x67672A`, `0x67694D`, `0x676B8A` (float `comiss`/`fcomip` of stored floats, `jbe` skips: NaN and equal keep the old one) | `*best` | one pass over the reachable set minus the start, heuristic by the same call |
+| open list empty | `0x676BF7` | frees the heap array; node pool back to its free list | nothing (pool contents are not an output) |
+
+- **Generated nodes = closed set minus the start** [verified, code structure + K6E]: a node is pushed only when its edge passes the 1e8 wall and it is not closed; every pushed node is popped and closed before the open list empties; the start is closed first and never pushed again. So the final `*best` is the first node in push order with the smallest heuristic below h0.
+- **Ties**: the game breaks equal minima by push order, which only the search knows. The acting path counts the nodes at the final minimum and refuses when two or more share it (`eoActTie`, the game answers). K6E found such ties on the byte grid (13 in ~5,200 answers); the first K6E run without the check failed on one (memo, mode 3: same closed set and context, best `0x0009000A` vs `0x0002000A`) [verified].
+- **Closed bits are now written as the game leaves them**, so §5 step 3 (no reader after the return, inferred) no longer matters.
+
+### 9.2 The proofs, and when their data is stale
+
+| Proof | Acts? | Why it is exact | Stale data and what happens [tag] |
+|---|---|---|---|
+| car (mode 2) | yes | Mode 2 walls every non-byte-3 edge and every virtual end, with no blocked, point, polygon or circle test on byte-3 edges (docs/99 §10.1) [verified]. The acting path does not trust the labels for the set: a BFS over the **live** R's forward byte-3 references writes the closed bits; if it reaches the goal the labels were stale and nothing acts (`eoStale_0`, no proof counted) | R's records change only through `WorldRoutingData_LoadChunks` (BuildRoutingData / world save, docs/99 §1.9); blocked bits, lot loads, build/buy, doors and portals do not touch mode-2 walls [verified docs/99 §10.1, §3.4]. The BFS reads R at call time, so nothing can be stale |
+| colour (modes 1-3) | **no** | the game's colours bound the reach but do not give the reachable set, so `*best` is unknown | observe only, as in Mode 1 (`eoActRefused`) |
+| memo (same request) | yes | a failed unrestricted search's closed set is the start's reachable set under its wall context (I-203-8, docs/99 §10.1) [verified rules] | **wall print** (below) at the memo's search and at each use; a different print = no proof (`eoStale_1`), the game answers [verified, selftest + K6E] |
+
+- **Cost sets (bug in v78)**: `EoCostSetsPlain` required all 18 floats of SHORT and LONG to be positive, but slots 6-8 of each set are the 1/x values the A\* computes into the context; the container holds 0 there (the compiled tuning, K6Ctr, docs/108 §7 F-1). **The v78 probe could never store a memo in game** [verified, code + K6 container]. Fixed: factors 0-5 of both sets finite and positive, and the largest edge factor of docs/99 §10.1 (`keep x max(1000 trespass, 10/sidewalk, 10/riding, 10/street, 30)`) times the longest edge (182 m) below the 1e8 wall, so no factor product makes a wall in one set and not the other. The Mode 1 probe now stores memos too.
+- **Wall print (replaces §5 step 2's writer hooks)**: the entries `0x82B590`, `0x82A190` and `0x63CB90` already carry stubs of `[RouteGate]` (on by default), `[RouteSnap]`, `[ProbeValues]` and `[LoadProf]` (docs/68 rule 3: one owner per entry), so a fourth detour there would SKIP. Instead the memo keeps an FNV print of what those writers change, compared at every use: R's record pointer, size, per-chunk counts and every record's flags byte (blocked bit and type bits: `ApplyLotUpdate`, `RestoreLotBlockedBits` from lazy lot builds, shoreline rewrites), the lot-edge group hash head `W+0xA0..+0xAF` (`ApplyLotUpdate`, `LoadLotData`, p4clone.cpp [verified xrefs there]) and the contents of the start/goal group sets `opts+0x18`/`+0x48` (EASTL trees walked, order-free hash). Cost: one walk of R's records per memo store and use (SV ~27,000 records, tens of µs [inferred]); a memo is kept only behind a failed search of at least `MemoMinUs` (1 ms).
+- **Not covered by the print** [inferred]: the world-manager point test `0xC6BAB0` (type-2 / `0x15` targets) and the segment test `0x627780` (edge bytes 2 and 7, footprints and the job's polygon set). Inside one request the plan holds `+0x918`; footprint writers take it (docs/89) [verified there]; lot routing writers on another thread wait at the gate sites with `[RouteGate] Enforce=1` (docs/60) [verified there]; world-manager lot state changing between two searches of one request is the open case. Sampled live: the first 32 proofs and every 16th after are shadowed (both answers compared, `eoActDiff`; the game's answer returned), and the first difference turns acting off for the session (`eoActOff`).
+- **Build/buy, doors/portals, lot loads**: doors and portals are lot-side (lot graph, portal A\*) and never part of R's edges [verified §3.4]; build/buy exit and lot loads reach R only through `ApplyLotUpdate`/`LoadLotData`/`RestoreLotBlockedBits` (print). A memo never outlives its request.
+- **Not acted**: restricted entry (`r²` set at entry: one restricted search over an unknown subset), a capped `[RouteBudget]`/`SyncCapMs`/`FbJobCapMs` budget (the game's own run ends at once with `*best` = start), modes outside 1-4, a container table shape the pass does not know (`eoActRefused`). The act path calls the cost functions by address, so `[RouteBudget]`'s stubs at the A\*'s `mov [esp+0x60]` sites do not count those heuristic calls.
+
+### 9.3 What was built
+
+- `native/ts3native/earlyout.cpp`: `EoCarFill` (BFS into the closed bits), `EoActPrologue` (the table of §9.1), `EoActBest` (heuristic pass, tie refusal), `EoWallPrint`/`EoSetHash`, `EoAct`; `EoAsHook` acts on car and memo proofs, shadows on schedule (`ShadowFirst`, `ShadowEvery`), latches off on a difference. The per-request line adds `acted a (car x memo y) ~z ms saved`; a second dump line `route early-out act: ...`.
+- Ini `[RouteEarlyOut]`: `Mode` 0-2, `Act` (Mode 2: 0 = shadow every proof, 1 = act), `ShadowFirst=32`, `ShadowEvery=16`, `MemoMinUs=1000`. `--ab earlyout` still toggles `eoMode` 0/1; with Mode 2 in the ini, on = acting.
+- Counters v86 (`+0x3664..+0x36AB`, 18 int32, total 3499): `eoAct` (0 probe, 1 shadow, 2 act), `eoActed`, `eoActedWhy[2]`, `eoActUs`, `eoActMaxUs`, `eoActSavedMs` (nodes x the shadowed game µs per node - act µs, per kind), `eoShadow`, `eoShadowUs[2]`, `eoShadowNodes[2]`, `eoActDiff`, `eoActOff`, `eoStale[2]`, `eoActRefused`, `eoActTie`.
+- Selftest `TestEarlyOut` (`earlyout-test.h`): the fake search now does what §9.1 lists (circle rerun, context writes, h0, SHORT/LONG, 1/x, `*best`); acting cases with and without the circle pass: car unreachable answered identical to the fake game (result, best, context `+0x64..+0xBB`, closed bits) without calling it; car and memo reachable never cut; memo answered identical; stale print (a flags byte flipped) falls back, and with a wall opened the game finds the path (no `eoWrong`); colour, restricted and capped refused; stale car labels (an edge byte changed in place) overruled by the BFS; shadow every proof with no difference; a forced difference latches acting off; the shadow schedule; ini levels.
+- steerro-test **K6E** (`steerro-test.cpp`): on the K6 fake world, the game's own `0x676260` (real circle prepass, cost functions, closed list `0x6735C0`) without the hook vs the same call through `EoAsHook` in act mode (no shadows), modes 1-4 with K6Sweep's flags, after blocked-bit writes too; a second goal on the same opts for memo answers; an R flags byte flipped after each memo answer. Seeds 1-3 x 3000: 5,235 answers identical, 810 car and 476 memo answers acted, 2,652 reachable goals never acted, 476 stale memos answered by the game, 13 heuristic ties left to the game, 21 car-only failures not acted (ties or start = goal), `eoWrong` 0.
+
+### 9.4 Queue `tools/harness/queues/earlyout-ab.json` (not run)
+
+asi `game-copy/ts3native.asi.0322` (0.36.22 merge build with H2, sha256 `ab2f6a7945793a11f2800510e02546c4591a1f06c2082c6f5722cb20b1ee3184`), the freeze-fix settings of fbfix-ab in every job, `Mode=2 Act=1`. Job 1 **`bp-earlyout-verify`** (day, 5 min BP `rare-route-bits`, noisy OK): pass = 0.36.22 / v86 lines, `eoActed` > 0, `eoWrong` 0, `eoActDiff` 0 after >= 32 shadows, `eoActSavedMs` > 0, no crash. Jobs 2-7 (clean night, 10 min, `--ab earlyout`, off-first + on-first): BP route-bits, SV `rare-big-crowd`, IP play. Read the pair means of the worst hitches and the `long job` / sync plan lines against the early-out lines.
+
+### 9.5 Effort
+
+Build, tests and docs: ~3 h (agent, offline). Game: 1 day job (~10 min) + 6 night jobs (~1.5 h), then 2 clean runs before it ships on.

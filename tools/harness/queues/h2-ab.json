@@ -1,0 +1,169 @@
+{
+  "note": "Design H2 (docs/149): one short correctness job first (daytime, noisy machine OK), then the clean-night timing pairs: BP play, IP play, BP big crowd, each off-first and on-first, 10 min, 2-min slices. Before: copy native/ts3native/out/ts3native.asi of the H2 merge commit to game-copy/ts3native.asi.0321 (done by the build agent; sha256 in PLAN.md), master ini. Daytime: --only bp-h2-verify. Night: --from bp-h2-play-offfirst. Groups: bp-h2-play-*, ip-h2-play-*, bp-h2-crowd-*. Reports: wait-ab.ts <tag> (main metric, pair mean of both orders), profile-compare.mjs <tag>:on vs :off, hitch-attr-report.ts. 7 jobs, ~1.4 h real.",
+  "jobs": [
+    {
+      "id": "bp-h2-verify",
+      "note": "Daytime correctness, noisy machine OK (no timing read). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). Mode 1 for the whole run (no --ab), BP play, 5 min. Pass (counters, end minus start in <tag>-native.json, all v85 / v37 fields): no crash, game alive, 0 watchdog lines; g0wReady 1, g0wPasses > 0; (1) jobs held back: g0wJobsHeld > 0; (2) no job start inside a locomotion pass: g0wJobStartInPass = 0 (exact since v85; if g0wDrop_0 + g0wDrop_1 > 0, then g0wJobStartInPass <= those drops, and each drop's caller line is in the log); (3) every held job started soon after its pass: h2ReleaseMaxUs < 20000 (20 ms; the worker spins Sleep(0), expected well under 1 ms) and g0wHoldMaxUs < 250000 with g0wWatchdog = 0; (4) no lost jobs: h2Released + g0wJobStartInPass >= g0wJobsHeld - 1 (at most one in flight at the snapshot) and asyncDropped not above the release-default runs (~4-6 per 10 min). Read also: h2PassLockN/Us_0 vs _1 (in-pass +0x918 waits with a job running vs none: with H2 on, _0 comes only from jobs running at pass entry, g0wRunningAtEntry). Fail = stop the night part.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-h2-play-offfirst",
+      "note": "BP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and bp-h2-play-onfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-h2-play-onfirst",
+      "note": "BP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and bp-h2-play-offfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). On-first (abOnFirst: warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-h2-play-offfirst",
+      "note": "IP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and ip-h2-play-onfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-h2-play-onfirst",
+      "note": "IP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and ip-h2-play-offfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). On-first (abOnFirst: warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-h2-crowd-offfirst",
+      "note": "BP big crowd (repro rare-big-crowd: many walking Sims, so many locomotion-pass +0x918 takers; waves from the window start, the pair balances them). Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and bp-h2-crowd-onfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-h2-crowd-onfirst",
+      "note": "BP big crowd (repro rare-big-crowd). Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, parked from the H2 merge commit; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] H2=1 and HitchAttr. Seed 12345, story progression off. Design H2 (docs/149, docs/86 §5): no queued async route job starts while the sim thread runs Locomotion_Update (0xD81C5C); held starts go right after the pass. Needs 'OK   loco window' in ts3native.log (else SKIP = bytes differ or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against locowin.cpp / ServeAsync (crash-cause rule). --ab h2 toggles g0wMode (+0x13E8; 0 = count only, the thunk stays). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, g0wWatchdog 0, g0wReady 1. Read (main metric): node tools/harness/wait-ab.ts <tag>: total keyed +0x918 sim wait, on vs off, as the pair mean of both orders (this job and bp-h2-crowd-offfirst; docs/136 §2, docs/143 §8.15: single-order deltas are not usable). Expected [inferred, docs/143 §8.14]: the sim's wait is bounded by the job's +0x918 hold, so H2 lowers it only by the in-pass share (h2PassLockUs_0 in off slices = the cap); 0 to -10 ms/s, may reappear at UpdateSimFootprint 0x833593 / destroys after the pass. Also: it/s and hitches/min (profile-compare.mjs <tag>:on vs :off, pair mean), hitch-attr-report.ts; from the per-slice counters (<tag>-ab-native.jsonl): jobs held g0wJobsHeld, hold time g0wHoldUs / g0wJobsHeld and g0wHoldMaxUs (< 250000), h2Released, h2ReleaseMaxUs, h2PassLockN/Us_0 (job running at the wait) vs _1 (none running), g0wJobStartInPass (on slices 0 unless g0wDrop_* > 0). On-first (abOnFirst: warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 85,
+      "ini": {
+        "RouteAsync.H2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true,
+          "ab": "h2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

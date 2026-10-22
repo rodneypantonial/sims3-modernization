@@ -47,10 +47,29 @@ void P4SetCloneProvider(const P4CloneProvider* p) {
     if (p && ts3native_counters.snP4Ready) ts3native_counters.snP4Ready |= 16;
 }
 static DWORD P4CloneCut() { return g_p4Clone && g_p4Clone->cut ? g_p4Clone->cut() : 0; }
+#ifdef TS3N_FAULTINJ
+// docs/157: fault injection for P5 / P5b / P5c, test builds only (selftest.cpp defines it; a live probe build sets CL=/DTS3N_FAULTINJ).
+// [RouteSnap] FaultInject = mask, FaultInjectEvery = N: every Nth armed Mode=2 plan injects the next mask bit in turn
+// (FI_EAHEAP only modifies FI_AV). Live builds read only FI_LIVE; the rest change shared state and are selftest only.
+enum { FI_OOM = 1, FI_MANAGED = 2, FI_AV = 4, FI_EAHEAP = 8, FI_STALE = 16, FI_CLOSE = 32, FI_BUDGET = 64 };
+static const LONG FI_LIVE = FI_OOM | FI_MANAGED | FI_AV | FI_EAHEAP, FI_TURN = FI_OOM | FI_MANAGED | FI_AV | FI_STALE | FI_CLOSE | FI_BUDGET;
+static LONG g_fiMask, g_fiEvery = 1, g_fiN, g_fiTurn;  // worker only (one Mode=2 plan at a time)
+static LONG g_fiPlan;                                   // the bits this plan injects (P5Plan sets and clears)
+static LONG g_fiBudgetOn = -1;                          // FI_BUDGET: t_budget.on seen inside the clone run
+#endif
 static int P4CloneAcquire(DWORD ver, P4Clone* out) {
     if (!g_p4Clone) return P4_AB_CLONE;
     if (!ver) return P4_AB_NOVER;
-    return g_p4Clone->acquire(ver, out);
+    const int r = g_p4Clone->acquire(ver, out);
+#ifdef TS3N_FAULTINJ
+    if (r < 0 && (g_fiPlan & FI_OOM)) {  // the copy failed after the hold (PcAcquire's RpAlloc NULL -> ok false -> PS_COPY)
+        g_fiPlan &= ~FI_OOM;
+        g_p4Clone->release(out, 0, NULL, 0);
+        Log("FaultInject: OOM in the clone build (acquire refused as mat)");
+        return P4_AB_MAT;
+    }
+#endif
+    return r;
 }
 static void P4CloneRelease(const P4Clone* c, LONG flags, const unsigned __int64* dirty, int nDirty) {
     if (g_p4Clone) g_p4Clone->release(c, flags, dirty, nDirty);
@@ -727,9 +746,15 @@ static int P4FaultFilter(EXCEPTION_POINTERS* e, P4Run* r) {
     if (r->faultCode != kP4LazyCode) XcptRefs(c, r->refs, sizeof(r->refs), 12);
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#ifdef TS3N_FAULTINJ
+static void FiInRun();  // below P4EaHeapUnlock (it uses g_p4EaHeap)
+#endif
 static bool P4Guarded(P4Run* r) {
     P4Job& c = *r->c;
     __try {
+#ifdef TS3N_FAULTINJ
+        if (t_snapRun && g_fiPlan) FiInRun();
+#endif
         r->ok = g_planOrig(r->world, NULL, r->head, (int*)c.starts, (int*)c.goals, c.agent, c.doPlan, c.opts, &r->out1, &r->out2,
                            c.guidLo, c.guidHi);
     } __except (P4FaultFilter(GetExceptionInformation(), r)) { return false; }
@@ -792,6 +817,28 @@ static int P4EaHeapUnlock() {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
     return n;
 }
+
+#ifdef TS3N_FAULTINJ
+// inside P4Guarded's __try, on the worker, in a Mode=2 clone run (the P5b / P5c window open if the job lends)
+static void FiInRun() {
+    const LONG b = g_fiPlan;
+    g_fiPlan = 0;
+    if (b & FI_BUDGET) g_fiBudgetOn = t_budget.on;
+    if (b & FI_STALE) InterlockedIncrement(&g_spWrites);  // a recorded routing write after the cut
+    if (b & FI_CLOSE) ts3native_counters.rtClosing = 1;  // world close during the run (the selftest clears it)
+    if (b & FI_MANAGED) { Log("FaultInject: managed call in a clone run"); P4Abort(P4_AB_MANAGED); }
+    if (b & FI_AV) {
+        Log("FaultInject: access violation in a clone run%s", b & FI_EAHEAP ? " holding the EA heap lock" : "");
+        if (b & FI_EAHEAP) {  // crash H's shape: the fault inside EA's allocator, its lock (+0x4E4, depth +0x18) held
+            u8* lk = *(u8**)((u8*)(uintptr_t)*g_p4EaHeap + 0x4E4);
+            EnterCriticalSection((CRITICAL_SECTION*)lk);
+            (*(LONG*)(lk + 0x18))++;
+        }
+        static volatile int* volatile s_null;
+        *s_null = 1;
+    }
+}
+#endif
 
 // a private out-list head laid out like route+0xE0 (I-94-67): empty, with the live head's allocator words
 static void P4Head(int* head, const P4Job& c) {

@@ -1,0 +1,315 @@
+{
+  "note": "Script-side fixes check (2026-10-22; docs/144 §8, docs/145 §9, docs/147 §6). Order: the three *-verify jobs first (5 min each, daytime and noisy machine OK: counters prove the mechanism), then the clean-night timing pairs (SV + BP spreads, SV unseen per switch), ~3 h. Before: build and install ts3fixes and ts3agent from this branch; game-copy/ts3native.asi.0321 present. Groups for --only / --from: *-verify, *-spreads-*, sv-unseen*-*.",
+  "jobs": [
+    {
+      "id": "bp-spreads-verify",
+      "note": "CORRECTNESS, daytime OK (noisy machine fine: counters, not timing), 5 min. All four spread switches on for the whole load; repro night-maintenance-clock sets 22:00, so at the measured 11-14 sim-minutes per real second (rng.json of the 2026-10-21 spreads jobs) midnight fires ~10 s and 3 AM ~25 s into the window and again every ~100-130 s: >= 2 nights in 5 min. Proves per counter: every pass ran to its end (passes >= 1, none stopped or finished early, decay threw 0), every tick of ours stayed under 8 ms incl. the world scan for inventories and the hot-spot pick (docs/145 §9, docs/147 §6; kSliceUs 2 ms + one unit, 8 ms leaves room for a noisy machine), Overwatch's 21 other types ran at their slots. Read too: owspread_max_type_us / owspread_slow_types and the overwatchspread_log '(Overwatch's own code) took' lines = the heavy part our spread does not slice (upstream work); easpread_log 'ours' lines. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "noSamplers": true,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_lots_stopped==0,easpread_lots_max_tick_us<8000,easpread_decay_passes>=1,easpread_decay_finished_early==0,easpread_decay_threw==0,easpread_decay_max_tick_us<8000,owspread_alarms>=1,owspread_inv_passes>=1,owspread_types_run>=21,owspread_max_tick_us<8000"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-spreads-verify",
+      "note": "CORRECTNESS, daytime OK (noisy machine fine: counters, not timing), 5 min. All four spread switches on for the whole load; repro night-maintenance-clock sets 22:00, so at the measured 11-14 sim-minutes per real second (rng.json of the 2026-10-21 spreads jobs) midnight fires ~10 s and 3 AM ~25 s into the window and again every ~100-130 s: >= 2 nights in 5 min. Proves per counter: every pass ran to its end (passes >= 1, none stopped or finished early, decay threw 0), every tick of ours stayed under 8 ms incl. the world scan for inventories and the hot-spot pick (docs/145 §9, docs/147 §6; kSliceUs 2 ms + one unit, 8 ms leaves room for a noisy machine), Overwatch's 21 other types ran at their slots. Read too: owspread_max_type_us / owspread_slow_types and the overwatchspread_log '(Overwatch's own code) took' lines = the heavy part our spread does not slice (upstream work); easpread_log 'ours' lines. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "noSamplers": true,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_lots_stopped==0,easpread_lots_max_tick_us<8000,easpread_decay_passes>=1,easpread_decay_finished_early==0,easpread_decay_threw==0,easpread_decay_max_tick_us<8000,owspread_alarms>=1,owspread_inv_passes>=1,owspread_types_run>=21,owspread_max_tick_us<8000"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-unseen-verify",
+      "note": "CORRECTNESS, daytime OK, 5 min, SV play (where the >= 300 ms frames rose). unseenenv + unseenmotives + unseenbroadcast on for the whole load. Proves: the throttle acts (env and motive skips > 0) and unseen motive catch-ups stay bounded per sim tick (unseen_catchup_max_tick <= 4 = UnseenMath.kCatchUpsPerTick, docs/144 §8; held ones in unseen_catchup_held) with no catch-up call over 20 ms (unseen_catchup_max_us). Read too: unseen_motive_critical, unseen_broadcast_skipped. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "fixesOn": "unseenenv,unseenmotives,unseenbroadcast",
+          "noSamplers": true,
+          "fixesRequire": "unseen_env_skipped>=1,unseen_motive_skipped>=1,unseen_catchup_max_tick<=4,unseen_catchup_max_us<20000"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-spreads-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Spreads (docs/145, docs/147) after the 2026-10-22 world-scan slicing and per-type timing. Read per fire (simmin of each easpread_log / overwatchspread_log line against the slice), not per slice: TaskObjects >= 150 ms per fire, it/s and TaskObjects ms per iteration per side (2026-10-21 SV: on side only +0.09 ms/iteration TaskObjects, the rest of -7.4% in ThreadedObjects/route, docs/147 §6). ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_decay_passes>=1,owspread_inv_passes>=1,easpread_lots_max_tick_us<8000,owspread_max_tick_us<8000"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-spreads-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Spreads (docs/145, docs/147) after the 2026-10-22 world-scan slicing and per-type timing. Read per fire (simmin of each easpread_log / overwatchspread_log line against the slice), not per slice: TaskObjects >= 150 ms per fire, it/s and TaskObjects ms per iteration per side (2026-10-21 SV: on side only +0.09 ms/iteration TaskObjects, the rest of -7.4% in ThreadedObjects/route, docs/147 §6). ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_decay_passes>=1,owspread_inv_passes>=1,easpread_lots_max_tick_us<8000,owspread_max_tick_us<8000",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-spreads-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Spreads (docs/145, docs/147) after the 2026-10-22 world-scan slicing and per-type timing. Read per fire (simmin of each easpread_log / overwatchspread_log line against the slice), not per slice: TaskObjects >= 150 ms per fire, it/s and TaskObjects ms per iteration per side (2026-10-21 SV: on side only +0.09 ms/iteration TaskObjects, the rest of -7.4% in ThreadedObjects/route, docs/147 §6). ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_decay_passes>=1,owspread_inv_passes>=1,easpread_lots_max_tick_us<8000,owspread_max_tick_us<8000"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-spreads-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Spreads (docs/145, docs/147) after the 2026-10-22 world-scan slicing and per-type timing. Read per fire (simmin of each easpread_log / overwatchspread_log line against the slice), not per slice: TaskObjects >= 150 ms per fire, it/s and TaskObjects ms per iteration per side (2026-10-21 SV: on side only +0.09 ms/iteration TaskObjects, the rest of -7.4% in ThreadedObjects/route, docs/147 §6). ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "night-maintenance-clock",
+          "ab": "easpreadlots,easpreadpets,easpreaddecay,overwatchspread",
+          "slice": 2,
+          "fixesRequire": "easpread_lots_passes>=1,easpread_decay_passes>=1,owspread_inv_passes>=1,easpread_lots_max_tick_us<8000,owspread_max_tick_us<8000",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenmotives-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenmotives ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenmotives",
+          "slice": 2,
+          "fixesRequire": "unseen_motive_skipped>=1,unseen_catchup_max_tick<=4"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenmotives-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenmotives ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenmotives",
+          "slice": 2,
+          "fixesRequire": "unseen_motive_skipped>=1,unseen_catchup_max_tick<=4",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenenv-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenenv ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv",
+          "slice": 2,
+          "fixesRequire": "unseen_env_skipped>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenenv-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenenv ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenenv",
+          "slice": 2,
+          "fixesRequire": "unseen_env_skipped>=1",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenbroadcast-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenbroadcast ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenbroadcast",
+          "slice": 2,
+          "fixesRequire": "unseen_broadcast_skipped>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-unseenbroadcast-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). 10 min, 2-min slices; only the pair mean of the off-first and on-first job counts (docs/143 §8.15). Per-slice ts3fixes counters land in <tag>-ab-fixes.jsonl (the 2026-10-21 pairs had none). Unseen script throttle, unseenbroadcast ALONE (v0.1.5 decisions data gap 6: the three were only measured together). SV play. Read: frames >= 300 ms per side by class (route plan / +0x918 wait / TaskObjects / other, as docs/144 §8 sorted the 2026-10-21 frames), it/s, route ms/s. ts3native game-copy/ts3native.asi.0321 (0.36.21 combined build) with ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every candidate off). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines, and the fixesRequire counter rules (PASS/FAIL: fixes counters line).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 79,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "unseenbroadcast",
+          "slice": 2,
+          "fixesRequire": "unseen_broadcast_skipped>=1",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

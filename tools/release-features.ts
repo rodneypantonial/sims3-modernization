@@ -155,7 +155,9 @@ function selfCheck(): void {
 }
 
 const args = process.argv.slice(2);
-if (args.includes('--self-check')) selfCheck();
+// only as a script: tools/release-check.ts imports FEATURES, setIni and setTuning
+if (import.meta.filename !== resolve(process.argv[1] ?? '')) { /* imported */ }
+else if (args.includes('--self-check')) selfCheck();
 else if (args.includes('--list')) {
   for (const [id, f] of Object.entries(FEATURES))
     console.log(`${id.padEnd(16)} ${[...Object.entries(f.ini ?? {}).map(([k, [on]]) => `${k}=${on}`), ...(f.tuning ?? []).map(t => `${t}=True`)].join(', ')}${f.needs ? `  (needs ${f.needs.join(', ')})` : ''}  [${f.doc}]`);

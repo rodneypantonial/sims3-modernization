@@ -1,0 +1,252 @@
+{
+  "note": "v0.1.5 bundle A/B (2026-10-22): cumulative on vs off of every v0.1.5 ship-on candidate in ONE --ab list (earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo); off = v0.1.4 release behaviour for all of them, on = all together. BP rare-route-bits, IP play, SV rare-big-crowd, each off-first and on-first (abOnFirst), 10 min, 2-min slices, seed 12345, story progression off. Clean night only (timing). Before running: asi in all 6 jobs is a placeholder (game-copy/ts3native.asi.0325): point at the release build (game-copy/ts3native.asi.rel020 or newer, counters >= 90). The ini is identical in all jobs and sets only what the switches cannot: the --ab switches flip the Enabled flags at runtime (earlyout, fallbackasync, m1retry, fbjobcap, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle = ts3native counter-field switches; legreplanskip, bouncerskip, idlememo = ts3fixes patches; every name exists in profile-world.ts). LOAD-ONLY parts, set identically in BOTH halves (the pair does not measure them): RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, the FbJobCapMs 300 value, and RouteAsync.SyncCapMs 1000, which has no runtime switch and so is also on in the off half (its effect is covered by fbfix-ab / v015-allon-verify; to measure it add a two-load pair SyncCapMs 0 vs 1000 without --ab). ts3fixes release defaults (stuckcheckasync, errortrapspread) stay in the build for both halves. PASS per job: no crash/freeze (game alive, 0 watchdog lines), no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, eoActDiff 0, eoActOff 0), the switch line at every slice, enabled counters moved in on slices (node tools/harness/v015-allon-check.ts on the dumps). READ per world from BOTH orders, never one order alone: pair-mean it/s (on minus off), frames >= 300 ms and >= 500 ms, worst frame, summed keyed +0x918 wait (wait-ab.ts on <job>-ab-native.jsonl), route ms/s. The bundle must not be worse than off on any world beyond the docs/136 null: run-level metrics cannot resolve a reducer there (no-op locowin leave-one-out excess: it/s -11.7, +35 hitches/min, +42 ms p99; per-key wait null e.g. steering -1.5..+9.4, avoidance -5.1..+2.4, gate 0 -4.0..-0.3, gate 12 -2.5..+2.0, gate 10 -0.5..+2.6 ms/s), so a worse delta inside that null is no difference; outside it and worse = fail, bisect with the per-feature queues (earlyout-ab, fbfix-ab, tailunlock, replan-dedupe, h2-ab, routesrc-ab, unseen-throttle-ab).",
+  "jobs": [
+    {
+      "id": "bp-v015bundle-offfirst",
+      "note": "Clean night. BP rare-route-bits, --ab bundle, off-first (warm-up on, then off,on,on,off). Read with the on-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-v015bundle-onfirst",
+      "note": "Clean night. BP rare-route-bits, --ab bundle, on-first (warm-up on, then on,off,off,on). Read with the off-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "abOnFirst": true,
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-v015bundle-offfirst",
+      "note": "Clean night. IP play, --ab bundle, off-first (warm-up on, then off,on,on,off). Read with the on-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-v015bundle-onfirst",
+      "note": "Clean night. IP play, --ab bundle, on-first (warm-up on, then on,off,off,on). Read with the off-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "abOnFirst": true,
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-v015bundle-offfirst",
+      "note": "Clean night. SV rare-big-crowd, --ab bundle, off-first (warm-up on, then off,on,on,off). Read with the on-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-v015bundle-onfirst",
+      "note": "Clean night. SV rare-big-crowd, --ab bundle, on-first (warm-up on, then on,off,off,on). Read with the off-first twin.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,legreplanskip,bouncerskip,idlememo",
+          "abOnFirst": true,
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

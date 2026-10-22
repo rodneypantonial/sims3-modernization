@@ -32,6 +32,7 @@ static bool P5cStaleEarly(DWORD seq, bool verify);  // p5c.cpp: the same, known 
 
 static volatile LONG g_p5On;   // Mode=2 installed and not turned off
 static LONG g_p5Verify = 10;   // VerifyEvery (0 = never)
+static LONG g_p5VerLend;       // VerifyLend=1 (0.36.23): verify jobs lend +0x918 (P5b / P5c window) like taken ones
 static DWORD g_p5N;            // sim thread: armed STARTs, for the verify sample
 static void* volatile g_p5GuardLock;  // the routing lock of the world the L2 check last ran in
 enum { P5_OFF_SITE = 1, P5_OFF_TRIPS, P5_OFF_FAULT };
@@ -122,7 +123,12 @@ static void P5OnStart(AsyncJob* j) {
         P5ModGuard();
     }
     j->p4 = g_p5Verify && ++g_p5N % (DWORD)g_p5Verify == 0 ? 3 : 2;
+    // 0.36.23 (docs/94 §22.32): the cut's write count, as P4OnStart keeps it. Before, Mode=2 left j->p4W as the slot's last
+    // value, so c.stale (writes between the cut and the live plan) was noise and a verify job compared a newer live world as M2
+    g_pcCutW = g_spWrites;
     j->p4Ver = P4CloneCut();
+    j->p4Why = j->p4Ver ? PS_NONE : g_pcCutWhy;
+    j->p4W = j->p4Ver ? g_pcCutW : g_spWrites;
     P5cOnStart(j);
     InterlockedIncrement(&k.m2Armed);
     InterlockedIncrement(&k.snShadowArmed);
@@ -176,7 +182,17 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     Ts3nCounters& k = ts3native_counters;
     P4Job& c = g_p4Job;
     const bool verify = c.mode == 3;
+    const bool noLend = verify && !g_p5VerLend;  // VerifyLend: the verify job's clone run also runs in the lent window
     InterlockedIncrement(&k.m2Plans);
+#ifdef TS3N_FAULTINJ
+    g_fiPlan = 0;  // docs/157: every Nth plan injects the next FaultInject bit in turn
+    if (const LONG turn = g_fiMask & FI_TURN)
+        if (++g_fiN % g_fiEvery == 0) {
+            do g_fiTurn = (g_fiTurn + 1) & 31; while (!(turn & (1 << g_fiTurn)));
+            g_fiPlan = 1 << g_fiTurn | (g_fiMask & FI_EAHEAP);
+            Log("FaultInject: Mode=2 plan %lu (armed plan %ld) injects 0x%lX", c.seq, g_fiN, g_fiPlan);
+        }
+#endif
     int why = c.abort;  // the capture's
     if (why < 0 && (!g_p5On || !(k.snP4Ready & 1))) why = P4_AB_OTHER;
     if (why < 0 && outList[0] != (int)(uintptr_t)outList) {  // the clone's nodes go into an empty list only
@@ -191,8 +207,8 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     bool have = false, ran = false, lent = false;
     if (why < 0) {
         // 0.35.26: the copy (5-6 ms on BP) inside the lent window when it makes no game call; else under the hold as before
-        if (!verify && g_p4Clone == &kPcProvider && PcAcquireOwnOnly(c.ver)) {
-            P5cLend((u8*)world + 0x918, verify);
+        if (!noLend && g_p4Clone == &kPcProvider && PcAcquireOwnOnly(c.ver)) {
+            P5cLend((u8*)world + 0x918, noLend);
             lent = true;
             g_p5EarlyLend++;
         }
@@ -209,7 +225,7 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     P4Head(head, c);
     LONG rel = 0;
     const LONG read0 = t_p4Read;  // the IC's own reader bits so far (P4RunClone resets the thread's)
-    if (have && !lent) P5cLend((u8*)world + 0x918, verify);
+    if (have && !lent) P5cLend((u8*)world + 0x918, noLend);
     if (have) rel = P4RunClone(c, cl, head, true);
     if (have || lent) P5cTake();  // also after a refused acquire in the window: +0x918 back before the game's plan
     if (have) {
@@ -224,9 +240,12 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     }
     LONG nr1[kP4Fam];
     P4NrSnap(nr1);
-    const LONG nr = P4NrBits(c.nr0, nr1, read0 | c.cloneRead);
+    LONG nr = P4NrBits(c.nr0, nr1, read0 | c.cloneRead);
     if (why < 0 && (k.rtClosing || k.rtBusy || c.epoch != (DWORD)g_spEpoch)) why = P4_AB_EPOCH;  // the world moved during the run
-    if (why < 0 && P5cStale(c.seq)) why = P4_AB_EPOCH;  // P5c: the lock was free; a routing write after the cut refuses the answer
+    // P5c: the lock was free; a routing write after the cut refuses the answer. A verify job (VerifyLend) is compared instead:
+    // the game's plan below sees the write, the record classifies it as time skew (M5) through c.stale
+    const bool stale5c = P5cStale(c.seq);
+    if (why < 0 && stale5c && !verify) why = P4_AB_EPOCH;
     if (why < 0 && !g_p4Copy.valid) why = P4_AB_CAPTURE;
     if ((why == P4_AB_MANAGED || why == P4_AB_EVENT) && InterlockedIncrement(&k.m2Trips) >= kP5Trips) P5Off(P5_OFF_TRIPS, 0);
     if (why == P4_AB_FAULT) P5Off(P5_OFF_FAULT, 0);
@@ -247,10 +266,17 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
         r = PlanLockedBody(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
         c.gameUs = UsSince(t0);
         if (verify) {
+            // 0.36.23 (docs/94 §22.32): the live plan ran after the clone run, so its skew window ends here, not at nr1: the
+            // non-routing writes up to its end (with its own reader bits), and every recorded write since the START cut (the
+            // job's queue time and any lent window) make a difference time skew (M5), as in the P4 shadow
+            P4NrSnap(nr1);
+            nr = P4NrBits(c.nr0, nr1, t_p4Read | read0 | c.cloneRead);
+            c.stale = g_spWrites != c.w0;
             int cls = 4;
             if (P4CaptureAnswerRaw(outList, r, out1 ? *out1 : -1, out2 ? *out2 : -1, &g_p4Live) && why < 0 && g_p4Copy.valid)
-                cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals));
+                cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals), c.stale);
             else if (why < 0) why = P4_AB_CAPTURE;
+            if (have && (cls == 2 || cls == 3) && g_p4ObsOn) P4ObCapture(c, cl.world);  // I-94-381: name an in-room M2 live
             InterlockedIncrement(&k.m2Verify);
             InterlockedIncrement(&k.m2VerM[cls]);
             if (cls == 2 || cls == 3) {
@@ -266,6 +292,9 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     if (rel & P4REL_WRAP) g_p4Work.wrap = 0;
     c.armed = 0;  // nothing left for P4Shadow after J_DONE
     P4JobFree(c);
+#ifdef TS3N_FAULTINJ
+    g_fiPlan = 0;  // a bit the plan never reached (refused before the acquire or the run) is not carried over
+#endif
     P5Log5();
     return r;
 }
@@ -274,6 +303,11 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
 static void ApplyP5(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     g_p5Verify = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"VerifyEvery", 10, ini), 0, 1000);
+    g_p5VerLend = GetPrivateProfileIntW(L"RouteSnap", L"VerifyLend", 0, ini) ? 1 : 0;
+    // I-94-322: verify compares the game's plan, whose open-ground hub refs are stack garbage unless OptsInit zeroes them for
+    // every call (Enabled=1); Enabled=0 / 2 leave door-pair M2s that are the game's, not the clone's
+    if (g_p5Verify && GetPrivateProfileIntW(L"OptsInit", L"Enabled", 0, ini) != 1)
+        Log("route snapshot P5: [OptsInit] Enabled is not 1: verify M2s at open-ground goals near lots can be I-94-322 (the game's stack)");
     if (!(g_p4Kinds & 8)) Log("route snapshot P5: Kinds has no ReplanFromPosition (8): no answer is taken");
     if (g_p4Kinds & 7) Log("route snapshot P5: takes ReplanFromPosition only; Kinds bits 1, 2, 4 are not taken (P6 widens)");
     if (!(k.arReady & 4)) Log("route snapshot P5: [RouteAsync] Kinds has no ReplanFromPosition (4): no Mode=2 job will start");
@@ -281,6 +315,11 @@ static void ApplyP5(const wchar_t* ini) {
     k.m2Ready = 1;
     g_p5On = 1;
     Log("OK   route snapshot P5 (Mode=2): ReplanFromPosition jobs take the clone answer; VerifyEvery=%ld; door asks proxied to the "
-        "sim thread; fallback = the game's own plan", g_p5Verify);
+        "sim thread; fallback = the game's own plan%s", g_p5Verify, g_p5VerLend ? "; VerifyLend=1 (verify jobs lend +0x918 too)" : "");
+#ifdef TS3N_FAULTINJ
+    g_fiMask = GetPrivateProfileIntW(L"RouteSnap", L"FaultInject", 0, ini) & FI_LIVE;
+    g_fiEvery = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"FaultInjectEvery", 10, ini), 1, 100000);
+    Log("route snapshot P5: FAULTINJ build (docs/157): FaultInject=0x%lX every %ld armed plans", g_fiMask, g_fiEvery);
+#endif
     ApplyP5b(ini);
 }

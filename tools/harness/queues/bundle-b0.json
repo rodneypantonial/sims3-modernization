@@ -1,0 +1,582 @@
+{
+  "note": "docs/152 §4.2-4.3 lock-taker bundle (2026-10-22, NOT run). Arm B0 = the existing read-only / defer / park pieces toggled together by one --ab list (steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark; every name checked in profile-world.ts counterSwitches, none missing). B0 needs no build: asi game-copy/ts3native.asi.0323 (master 0.36.23, counters v89). Expected [inferred, docs/152 §1]: summed keyed +0x918 wait about equal on vs off (the wait moves to gate 0 G-a, 0x83156D, 0x8334CC, 0x82D296); a drop >= 20 ms/s BP falsifies the 'one taker is enough' model. Daytime: --only bp-b0-verify (5 min, noisy machine OK: counters and log lines only). Night (clean machine only, docs/TESTING.md): --from bp-b0-play-offfirst, pairs off-first / on-first BP play, BP crowd, IP play; read node tools/harness/wait-ab.ts <tag> as the pair mean of both orders (never one order alone, docs/143 §8.15). Jobs from bp-gate0ro-verify on are arm B0 + G1 ([Gate0RO], docs/152 §G1) on game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) (sha256 in PLAN.md). Not built yet: G8 (seed every bundle key), so keys outside the probe-P0 / rofix seeds may show as untimed: the verify job checks that.",
+  "jobs": [
+    {
+      "id": "bp-b0-verify",
+      "note": "Daytime mechanism check, noisy machine OK (no timing read). asi 0324 (combined 0.36.23 integration build, counters v95; sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) from a checkout whose native/ts3native/ts3native.ini is master (release defaults); the job ini turns each B0 piece on (Enabled=1 Mode=1, shadows off) and --ab toggles all seven runtime switches at the same slice boundary (1-min slices: warm-up on, then off,on,on,off). Pass (per slice from <tag>-ab-native.jsonl, end minus start in <tag>-native.json): no crash, game alive, 0 watchdog lines, the switch line for all seven names at every slice; in on slices each piece counted > 0: steerTaken (S2), avSiteSkip + avTakenB (AvoidRO), slTaken (SlotEnabledRO), ltTaken (LotFrontDoorRO), orTaken (ObstructedRO), usfDeferred (DeferFootprint), dpParked (DestroyPark), and all ~0 in off slices; usfApplyInJob 0; every bundle key of docs/152 §2 timed (wait-ab.ts 'untimed waits/min' within 2x between halves and no key overflow: p1bOther / key slots not full); 'OK' install lines for SteerRO, AvoidRO, SlotEnabledRO, lot front door RO, ObstructedRO. Read (not a pass rule here): summed keyed +0x918 wait on vs off, node tools/harness/wait-ab.ts <tag>, and which keys rise on (gate 0 0x62EF7A, 0x83156D, 0x8334CC, 0x82D296, destroy 0x2000003). Fail = stop, fix, do not run the night part.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-b0-play-offfirst",
+      "note": "BP play, arm B0 as one switch. Clean night only (nothing else running, machine-load line < 10% other CPU, else rerun). Build, ini and install checks as bp-b0-verify; 2-min slices, off-first (warm-up on, then off,on,on,off). Pass: no crash, game alive, 0 watchdog lines, the switch line at every slice, usfApplyInJob 0. Read (pair mean with bp-b0-play-onfirst): (1) summed keyed sim +0x918 wait on vs off and per key (wait-ab.ts <tag>): removed keys (0x85FE10, 0x846D21, 0x62F782, 0x833593, 0x631814) vs absorbing keys (0x62EF7A, 0x83156D, 0x8334CC, 0x82D296, 0x2000003); (2) asyncUs per second (job hold) on vs off; (3) it/s and hitches/min (profile-compare.mjs <tag>:on vs :off). Expected [inferred]: summed about equal (|on - off| < 10 ms/s); >= 20 ms/s lower on = the model is wrong (docs/152 §4.3).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-b0-play-onfirst",
+      "note": "BP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-b0-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-b0-crowd-offfirst",
+      "note": "BP crowd (repro rare-big-crowd: many walking Sims, the per-tick takers at their largest). Clean night only. Off-first. Everything else as bp-b0-play-offfirst (pair mean with bp-b0-crowd-onfirst).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-b0-crowd-onfirst",
+      "note": "BP crowd, the on-first half of the pair (abOnFirst). Clean night only. Everything else as bp-b0-crowd-offfirst.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-b0-play-offfirst",
+      "note": "IP play (water-bound long plans). Clean night only. Off-first. Everything else as bp-b0-play-offfirst (pair mean with ip-b0-play-onfirst; IP summed keyed 66-80 ms/s off, docs/152 §4.2).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-b0-play-onfirst",
+      "note": "IP play, the on-first half of the pair (abOnFirst). Clean night only. Everything else as ip-b0-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-gate0ro-verify",
+      "note": "Daytime correctness for G1, noisy machine OK (no timing read). asi game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) from a checkout whose ts3native.ini is the branch ini (has [Gate0RO]). B0 pieces on for the whole run (no --ab on them); [Gate0RO] Enabled=1 Mode=1 Shadow=1; --ab gate0ro toggles g0Mode (+0x3998) in 1-min slices (warm-up on, then off,on,on,off). Needs the line \"OK   gate0 RO: ... S2 ready, AvoidRO ready\" in ts3native.log (else SKIP / NOT ready = stop, nothing measured). Pass (end minus start in <tag>-native.json; per slice in <tag>-ab-native.jsonl): no crash, game alive, 0 watchdog lines, the switch line at every slice; g0Ready 1; g0Mismatch 0 with g0Checks > 0 (shadow compares in every slice, answered calls in on slices); g0Served > 0 in on slices and 0 in off slices; g0Fb_0 (S2 or AvoidRO off) 0. Read (not pass rules): g0Calls vs g0Other (G-a vs other gate-0 entries while a job runs = I-152-1 / I-152-G1-7), g0Fb_1 (QL busy) and g0Fb_2 (misses), wait-ab.ts key 0x62EF7A on vs off. A crash = stop the queue, triage against gate0ro.cpp / routegate.cpp (crash-cause rule).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "ab": "gate0ro",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-g0b0-play-offfirst",
+      "note": "Arm B0 + G1 as one switch (docs/152 §4.2: B0 pieces and gate0ro toggled together at every slice), BP play. Clean night only (machine-load line < 10% other CPU, else rerun). asi and ini as bp-gate0ro-verify but Shadow=0; 2-min slices, off-first (warm-up on, then off,on,on,off). Run only after bp-gate0ro-verify passed. Pass: no crash, game alive, 0 watchdog lines, the switch line at every slice, g0Mismatch 0, usfApplyInJob 0. Read (pair mean with the on-first twin; compare with the bp-b0-play pair of this queue): summed keyed sim +0x918 wait on vs off and per key (wait-ab.ts <tag>), 0x62EF7A on vs B0 on, asyncUs per second, it/s and hitches/min (profile-compare.mjs <tag>:on vs :off). Expected [inferred]: B0+G1 vs off about B0 vs off minus what gate 0 absorbs in B0 (~0-3 ms/s BP, I-152-G1-8).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-g0b0-play-onfirst",
+      "note": "BP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-g0b0-play-offfirst (pair mean with its twin; compare with the matching b0 pair).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-g0b0-crowd-offfirst",
+      "note": "BP crowd (repro rare-big-crowd), off-first. Clean night only. Everything else as bp-g0b0-play-offfirst (pair mean with its twin; compare with the matching b0 pair).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-g0b0-crowd-onfirst",
+      "note": "BP crowd (repro rare-big-crowd), the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-g0b0-play-offfirst (pair mean with its twin; compare with the matching b0 pair).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-g0b0-play-offfirst",
+      "note": "IP play, off-first. Clean night only. Everything else as bp-g0b0-play-offfirst (pair mean with its twin; compare with the matching b0 pair).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-g0b0-play-onfirst",
+      "note": "IP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-g0b0-play-offfirst (pair mean with its twin; compare with the matching b0 pair).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 91,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "LotFrontDoorRO.Shadow": 0,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "ObstructedRO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,gate0ro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

@@ -497,6 +497,7 @@ static DWORD __fastcall ScCommitHook(void* pkg, void*) {
 // [SaveCompress]: Enabled=1 hooks the commit call and the codec slot; Mode is the start value of compressMode.
 static bool ApplySaveCompress(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"SaveCompress", L"Enabled", 0, ini)) { Log("save compress off (Enabled=0)"); return false; }
+    if (ApexStandsDown(AXF_FAST_CACHE, "[SaveCompress]", "codec slot 0xFB901C")) return false;
     QueryPerformanceFrequency(&g_qpf);
     Ts3nCounters& k = ts3native_counters;
     k.compressMode = GetPrivateProfileIntW(L"SaveCompress", L"Mode", 1, ini) ? 1 : 0;

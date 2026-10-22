@@ -68,9 +68,26 @@ typedef u8(__fastcall* UsfShouldFn)(void* world, void* edx, void* obj);
 static UsfFn g_usfOrig;
 static UsfShouldFn g_usfShould = (UsfShouldFn)(uintptr_t)USF_SHOULD;
 
+// design U phase 2 (docs/89 §12): RoutingWorld_ObjectFootprintFromTool 0x8334A0 and RoutingWorld_UpdateObjectLot 0x82D280,
+// both thiscall(world; obj), ret 4, void (their callers 0x94713D, 0xB585A1, 0x9462C9, 0x946F99 ignore eax) [verified
+// disassembly 0x8334A0..0x833558, 0x82D280..0x82D2CE]
+static const DWORD FT_FN = 0x008334A0, UOL_FN = 0x0082D280;
+static const u8 kFtPro[] = {0x83, 0xEC, 0x10, 0x56, 0x57};                                 // sub esp,10h; push esi; push edi
+static const u8 kUolPro[] = {0x55, 0x56, 0x8B, 0xF1, 0x8D, 0xAE, 0x18, 0x09, 0x00, 0x00};  // push ebp; push esi; mov esi,ecx; lea ebp,[esi+918h]
+typedef void(__fastcall* Fp2Fn)(void* world, void* edx, void* obj);
+static Fp2Fn g_ftOrig, g_uolOrig;
+// the private-footprint ICs' calls, flushed first for an object with records: IC 0x754610 -> RemoveFootprintLocked 0x82A0C0
+// thiscall(world; obj, flag), ret 8, al; IC 0x75DCF0 -> 0x831BA0 thiscall(world; obj, points, flag), ret 0xC, al [verified]
+static const DWORD PFR_SITE = 0x0075465E, PFR_FN = 0x0082A0C0, PFA_SITE = 0x0075DE1A, PFA_FN = 0x00831BA0;
+typedef u8(__fastcall* PfRemoveFn)(void* world, void* edx, void* obj, DWORD flag);
+typedef u8(__fastcall* PfAddFn)(void* world, void* edx, void* obj, void* points, DWORD flag);
+static PfRemoveFn g_pfRemove = (PfRemoveFn)(uintptr_t)PFR_FN;
+static PfAddFn g_pfAdd = (PfAddFn)(uintptr_t)PFA_FN;
+
 // flags kept as whole dwords; lock: the world it was made in; obj: the object at defer time (D-X pointer check, no reference)
-// usf: a design U record (high = enable byte, allow = arg); else add says Add or Remove
-struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; bool usf; };
+// usf: a design U record (high = enable byte, allow = arg); fp2: a phase 2 record (1 FromTool, high = world +0x978 at the
+// call; 2 UpdateObjectLot); else add says Add or Remove
+struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; bool usf; u8 fp2; };
 static const int kDiscCap = 256;
 static const DWORD kDiscMaxAgeMs = 250;  // older records are applied even if that means waiting for the running job
 static DiscRec g_disc[kDiscCap];
@@ -120,6 +137,23 @@ static bool DiscApplyOne(DiscRec& r, void* world) {
         } else {
             InterlockedIncrement(&k.usfGoneEnable0);
             if (k.discSweepMode) { DiscDeadSweep(r, (u8*)world); InterlockedIncrement(&k.usfSwept); }
+        }
+        if (obj) g_objRelease(&obj, NULL);
+    } else if (r.fp2) {  // phase 2: the game's call as if made now; gone or reused id: dropped (a later call re-does it)
+        if (applied) {
+            if (g_async.state == A_RUNNING) InterlockedIncrement(&k.fp2ApplyInJob);
+            if (r.fp2 == 1) {  // the caller's +0x978 bracket, replayed (its early outs read it in the world's batch mode)
+                u8* const w = (u8*)world;
+                const u8 cur = w[0x978];
+                w[0x978] = (u8)r.high;
+                g_ftOrig(world, NULL, obj);
+                w[0x978] = cur;
+            } else {
+                g_uolOrig(world, NULL, obj);
+            }
+            InterlockedIncrement(&k.fp2Applied[r.fp2 - 1]);
+        } else {
+            InterlockedIncrement(&k.fp2Dropped[r.fp2 - 1]);
         }
         if (obj) g_objRelease(&obj, NULL);
     } else if (obj && obj != r.obj) {  // the id names another object now (reused id): not the one the call was made for
@@ -185,9 +219,14 @@ static void DiscDrain(bool force) {
         g_discCount--;
         Max(&k.discAgeMaxMs, (LONG)(now - r.t));
         if (r.usf) Max(&k.usfAgeMaxMs, (LONG)(now - r.t));
+        if (r.fp2) Max(&k.fp2AgeMaxMs, (LONG)(now - r.t));
         if (r.usf && r.lock == lock && DiscWorldOk(world) && UsfSuperseded(r, (u8*)world)) InterlockedIncrement(&k.usfCollapsed);
         else if (r.lock == lock && DiscWorldOk(world)) DiscApplyOne(r, world);  // a record from another world is dropped
-        else { InterlockedIncrement(&k.discDropped); _aligned_free(r.pts); }
+        else {
+            InterlockedIncrement(&k.discDropped);
+            if (r.fp2) InterlockedIncrement(&k.fp2Dropped[r.fp2 - 1]);
+            _aligned_free(r.pts);
+        }
     }
     if (lock) LockReleaseHook(lock, NULL);
     InterlockedDecrement(&g_rgOffSimOpen);
@@ -228,8 +267,8 @@ static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait) {
         if (r.idLo != idLo || r.idHi != idHi || r.lock != lock) {
             if (w != i) { g_disc[(g_discHead + w) % kDiscCap] = r; r.pts = NULL; }
             w++;
-        } else if (r.usf) {  // design U: applied in order like a Remove (destroy does not remove routing footprints)
-            if (DiscApplyOne(r, world)) InterlockedIncrement(&k.usfDestroyApplied);
+        } else if (r.usf || r.fp2) {  // design U and phase 2: applied in order like a Remove (destroy does not remove routing footprints)
+            if (DiscApplyOne(r, world) && r.usf) InterlockedIncrement(&k.usfDestroyApplied);
         } else if (r.add) {
             InterlockedIncrement(&k.discDropAdd);
             InterlockedIncrement(&k.discDropped);
@@ -268,6 +307,7 @@ static bool DiscDefer(bool add, void* obj, const u8* begin, int n, int high, int
     r.lock = g_rgLock;
     r.obj = obj;
     r.usf = false;
+    r.fp2 = 0;
     if (add) {
         // 16-byte aligned like the game's own vector: the original reads the points with movaps (0xAB88BD); a malloc'd
         // copy (8-byte aligned) crashed it in 0.12.2 (#GP reported as an access violation at 0xFFFFFFFF, 2026-10-17)
@@ -354,6 +394,97 @@ static void __fastcall UsfHook(u8* world, void* edx, u8* obj, DWORD enable, DWOR
     Max(&k.discPendingMax, g_discCount);
 }
 
+// Design U phase 2 (docs/89 §12; counters v94, [Discourage] DeferFootprint2=1, default 0; runtime switch fp2Mode, --ab
+// deferfootprint2; needs design U installed, whose order rule keeps a U call behind a queued phase 2 record):
+//   kind 1, ObjectFootprintFromTool 0x8334A0 (key 0x8334CC; event 0x0E transform published -> 0x9470B0, build tool 0xB585A1):
+//     the original's lock-free early out 0x82A720 runs at call time; the record keeps world +0x978 (the callers' bracket), the
+//     apply runs the original with that byte set and restores it. While the world's batch mode is on (+0x97E and +0x976) the
+//     byte decides the early outs 0x82A720 / 0x829A60 inside (and the first clears +0x97F), so the call runs now.
+//   kind 2, UpdateObjectLot 0x82D280 (key 0x82D296; events 9 / 0x0A): no early out, no +0x978 reader or writer within 8
+//     direct hops; the apply re-homes the footprints to the object's lot at apply time.
+// Pass-through, order rule, duplicate drop, queue full, destroy and gone-at-apply as design U. Readers that need the fresh
+// footprints of the object get a flush first (fp2Forced): the private-footprint ICs (call sites 0x75465E, 0x75DE1A), D's
+// non-deferred Add/Remove (DiscDrain first), destroy (D-X), save / travel / quit and the START / READY / CANCEL polls.
+static int DiscLastOf(DWORD idLo, DWORD idHi) {  // the object's newest queued record in this world, else -1
+    for (int i = g_discCount - 1; i >= 0; i--) {
+        const DiscRec& r = g_disc[(g_discHead + i) % kDiscCap];
+        if (r.idLo == idLo && r.idHi == idHi && r.lock == g_rgLock) return i;
+    }
+    return -1;
+}
+
+static void Fp2Call(int kind, u8* world, u8* obj) { (kind == 1 ? g_ftOrig : g_uolOrig)(world, NULL, obj); }
+
+static void Fp2Hook(int kind, u8* world, u8* obj) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD me = GetCurrentThreadId();
+    if (me != g_async.owner || t_snapRun || !obj) return Fp2Call(kind, world, obj);
+    if (k.rgOwnerTid == (LONG)me || g_inInvoke || g_discDraining || !DiscWorldOk(world) || (void*)(world + 0x918) != g_rgLock ||
+        k.rtClosing || (kind == 1 && world[0x97E] && world[0x976])) {
+        InterlockedIncrement(&k.fp2Pass);
+        return Fp2Call(kind, world, obj);
+    }
+    const DWORD idLo = *(const DWORD*)(obj + 8), idHi = *(const DWORD*)(obj + 0xC);
+    const int last = DiscLastOf(idLo, idHi);
+    if (last < 0 && !(k.fp2Mode == 1 && g_async.state == A_RUNNING)) return Fp2Call(kind, world, obj);  // today's call
+    if (kind == 1 && !g_usfShould(world, NULL, obj)) return;  // the original's own early out says no: it does nothing
+    const DWORD br = kind == 1 ? world[0x978] : 0;
+    if (last >= 0) {  // the same call again right behind: remove plus re-insert (re-home) from the same state twice = once
+        const DiscRec& p = g_disc[(g_discHead + last) % kDiscCap];
+        if (p.fp2 == kind && p.obj == obj && p.high == br) { InterlockedIncrement(&k.fp2Dup); return; }
+    }
+    if (g_discCount == kDiscCap) {  // as design U: drain unless an Add (World_FireEvent 0x11) is queued
+        bool add = false;
+        for (int i = 0; i < g_discCount && !add; i++) add = g_disc[(g_discHead + i) % kDiscCap].add;
+        if (!add) DiscDrain(true);
+        InterlockedIncrement(add ? &k.fp2FullPass : &k.fp2Forced);
+        return Fp2Call(kind, world, obj);
+    }
+    DiscRec& r = g_disc[(g_discHead + g_discCount) % kDiscCap];
+    r = DiscRec{};
+    r.fp2 = (u8)kind;
+    r.high = br;
+    r.idLo = idLo;
+    r.idHi = idHi;
+    r.t = GetTickCount();
+    r.lock = g_rgLock;
+    r.obj = obj;
+    g_discCount++;
+    InterlockedIncrement(&k.fp2Deferred[kind - 1]);
+    Max(&k.discPendingMax, g_discCount);
+}
+static void __fastcall FtHook(u8* world, void*, u8* obj) { Fp2Hook(1, world, obj); }
+static void __fastcall UolHook(u8* world, void*, u8* obj) { Fp2Hook(2, world, obj); }
+
+// flush before a reader that needs the object's fresh footprints (an IC point: managed code is on the stack)
+static void Fp2FlushFor(const u8* obj) {
+    const DWORD me = GetCurrentThreadId();
+    if (!obj || !g_discCount || g_discDraining || me != g_async.owner || ts3native_counters.rgOwnerTid == (LONG)me) return;
+    if (DiscLastOf(*(const DWORD*)(obj + 8), *(const DWORD*)(obj + 0xC)) < 0) return;
+    DiscDrain(true);
+    InterlockedIncrement(&ts3native_counters.fp2Forced);
+}
+static u8 __fastcall PfRemoveSite(void* world, void*, u8* obj, DWORD flag) { Fp2FlushFor(obj); return g_pfRemove(world, NULL, obj, flag); }
+static u8 __fastcall PfAddSite(void* world, void*, u8* obj, void* points, DWORD flag) {
+    Fp2FlushFor(obj);
+    return g_pfAdd(world, NULL, obj, points, flag);
+}
+
+static void InstallFootprintDefer2(const wchar_t* ini) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!GetPrivateProfileIntW(L"Discourage", L"DeferFootprint2", 0, ini)) { Log("footprint deferral phase 2 off (DeferFootprint2=0)"); return; }
+    if (!k.usfReady) { Log("FAIL footprint deferral phase 2: needs design U ([Discourage] DeferFootprint=1)"); return; }
+    // the flush sites first: without them a deferred record could land after a private-footprint change of its object
+    static const CallSite kPf[] = {{PFR_SITE, PFR_FN, (void*)PfRemoveSite}, {PFA_SITE, PFA_FN, (void*)PfAddSite}};
+    if (!PatchCalls("private footprint flush (design U phase 2)", kPf, 2)) { Log("FAIL footprint deferral phase 2: flush sites"); return; }
+    g_ftOrig = (Fp2Fn)InstallDetour("RoutingWorld_ObjectFootprintFromTool", FT_FN, kFtPro, sizeof(kFtPro), (void*)FtHook);
+    g_uolOrig = g_ftOrig ? (Fp2Fn)InstallDetour("RoutingWorld_UpdateObjectLot", UOL_FN, kUolPro, sizeof(kUolPro), (void*)UolHook) : NULL;
+    if (!g_uolOrig) { Log("FAIL footprint deferral phase 2: detours incomplete"); return; }  // shortcut: a lone FromTool detour stays, mode 0
+    k.fp2Ready = 1;
+    k.fp2Mode = 1;
+    Log("OK   footprint deferral phase 2 (0x8334A0 FromTool, 0x82D280 UpdateObjectLot; docs/89 §12)");
+}
+
 static void InstallFootprintDefer(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"Discourage", L"DeferFootprint", 0, ini)) { Log("footprint deferral off (DeferFootprint=0)"); return; }
     if (!ts3native_counters.discReady) { Log("FAIL footprint deferral: needs the discourage deferral ([Discourage] Enabled=1)"); return; }
@@ -386,4 +517,5 @@ static void InstallDiscourage(const wchar_t* ini) {
     Log("OK   discourage deferral (Mode=%ld DestroyApply=%ld DeadSweep=%ld)", ts3native_counters.discMode,
         ts3native_counters.discDestroyMode, ts3native_counters.discSweepMode);
     InstallFootprintDefer(ini);
+    InstallFootprintDefer2(ini);
 }

@@ -40,14 +40,19 @@ static void __fastcall LocoWinThunk(void* self, void* edx, float dt) {
     g_g0wTid = GetCurrentThreadId();
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
-    InterlockedExchange(&g_g0wIn, 1);
+    // window before g_g0wIn, and g_g0wIn dropped first at the end: a worker that reads g_g0wIn = 1 and then no window started
+    // inside the pass for real (ServeAsync's inPass, g0wJobStartInPass exact since v85)
     if (k.g0wMode == 1) InterlockedExchange(&g_g0Win, 1);
+    InterlockedExchange(&g_g0wIn, 1);
     if (g_async.state == A_RUNNING) InterlockedIncrement(&k.g0wRunningAtEntry);
     __try {
         g_g0wOrig(self, edx, dt);
     } __finally {  // also when an exception leaves the pass: never a window left open
-        InterlockedExchange(&g_g0Win, 0);
+        LARGE_INTEGER end;  // before the window opens: a released start measures from here
+        QueryPerformanceCounter(&end);
+        InterlockedExchange64(&g_h2PassEnd, end.QuadPart);
         InterlockedExchange(&g_g0wIn, 0);
+        InterlockedExchange(&g_g0Win, 0);
         t_g0wDepth = 0;
         const LONG us = UsSince(t0);
         InterlockedIncrement(&k.g0wPasses);
@@ -64,16 +69,26 @@ static void G0wGateWait(DWORD key, LONG us) {
     if (key == 0x0062EF7A) { InterlockedIncrement(&k.g0wGate0Waits); InterlockedExchangeAdd(&k.g0wGate0Us, us); }
 }
 
-// [LocoWindow] Enabled=1: the call site bytes are checked first (refused and logged when they differ)
+// v85 (docs/149): +0x918 waits of the sim thread inside the pass, by whether a job was running when the wait began
+static bool H2InPass() { return g_g0wIn && GetCurrentThreadId() == g_g0wTid; }
+static void H2LockWait(bool running, LONG us) {
+    Ts3nCounters& k = ts3native_counters;
+    InterlockedIncrement(&k.h2PassLockN[running ? 0 : 1]);
+    InterlockedExchangeAdd(&k.h2PassLockUs[running ? 0 : 1], us);
+}
+
+// [LocoWindow] Enabled=1, or [RouteAsync] H2=1 (docs/149: same thunk, Mode 1): the call site bytes are checked first
+// (refused and logged when they differ)
 static void InstallLocoWindow(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
-    if (!GetPrivateProfileIntW(L"LocoWindow", L"Enabled", 0, ini)) { Log("loco window off (Enabled=0)"); return; }
+    const bool h2 = GetPrivateProfileIntW(L"RouteAsync", L"H2", 0, ini) != 0;
+    if (!h2 && !GetPrivateProfileIntW(L"LocoWindow", L"Enabled", 0, ini)) { Log("loco window off ([RouteAsync] H2=0, [LocoWindow] Enabled=0)"); return; }
     if (!k.rgEnforce || !k.asyncReady) { Log("SKIP loco window: needs [RouteGate] Enforce=1 with the async path"); return; }
     if (!Matches((const void*)(uintptr_t)(LOCO_CALL - 8), kLocoCall, sizeof(kLocoCall))) {
         Log("SKIP loco window: bytes at 0x%08X differ (not the Locomotion_Update call of Steam 1.67), nothing written", LOCO_CALL - 8);
         return;
     }
-    k.g0wMode = Clamp(GetPrivateProfileIntW(L"LocoWindow", L"Mode", 1, ini), 0, 1);
+    k.g0wMode = h2 ? 1 : Clamp(GetPrivateProfileIntW(L"LocoWindow", L"Mode", 1, ini), 0, 1);
     const CallSite site = {LOCO_CALL, LOCO_UPDATE, (void*)LocoWinThunk};
     if (!PatchCalls("loco window", &site, 1)) return;
     k.g0wReady = 1;

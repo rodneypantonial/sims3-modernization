@@ -1,0 +1,38 @@
+{
+  "note": "SV crowd 7 s freeze cause run (2026-10-23)",
+  "jobs": [
+    {
+      "id": "sv-crowd-freeze-cause",
+      "note": "Cause run for the SV big-crowd multi-second freeze (docs/161: 7.4 s max, real): fallback stacks 16, sync-plan phases, lock holders, task names. Read: freeze-report, route-phases-report --sync <log> --min 300. Sea-check theory refuted (PLAN 2026-10-23).",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 99,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "slice": 2,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

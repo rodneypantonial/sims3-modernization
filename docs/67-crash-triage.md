@@ -254,3 +254,59 @@ Static only (2026-10-19): `probe-out/queue/snap-p4-2026-10-19-bp-snap-p4-0252-ts
 | Tests (offline) | `steerro-test` K7: the game's `RoomGraph_FirstUse` on each clone lot's unbuilt room (built byte 0, one portal, empty `+0x24`, one `+0x34` list whose buffer sits on a `PAGE_NOACCESS` page during the call); the fake EA free refuses and counts a non-EA block. With the 0.32.6 copy: `K7 FAIL (crash H): ... touched a live room buffer`; 0.32.7: 10 rooms built per seed pair, no foreign free, live rooms untouched. Selftest: the fault variant takes a fake EA heap lock before faulting; after the run the lock is free. Seeds 1 and 2 x 3000 `steerro-test ok`, no K3/K6 WARNING; `hook-sites --check` 446 addresses, 0 missing |
 | Verify | park 0.32.7, `snap-p4.json` BP then IP, 2x each. Pass: no `P4 FAULT`, no hang, shadow records past plan 5. A `P4 FAULT` line followed by `EA heap lock released` and a game that keeps running = the fault path works; then triage the new fault |
 | Effort | ~1.5 h analysis (logs, disassembly), ~1 h fix and tests, ~0.5 h docs: ~3 h; live: 4 runs of ~13 min |
+
+## 11. Crash I (2026-10-22 01:11:05 UTC): a route-event handler with a NULL vtable in the follower's event list, `bp-destroypark-offfirst` on ts3native 0.36.14
+
+Static only (2026-10-22): EA report `xcpt <pc> 26-10-22 09.11.05.txt` (registers, stack scan), `probe-out/queue/clean-night-routing-extra-2026-10-22-bp-destroypark-offfirst{.log,-0102-ts3native.log}`, `probe-out/profile/...-offfirst-ab-native.jsonl`, capstone on the Steam exe copy. Ledger docs/51 §216.
+
+### 11.1 Fault
+
+| | Crash I |
+|---|---|
+| Run | BP, seed 12345, `[Discourage] DestroyPark=1`, `--ab destroypark` off-first (warm-up on 0-120 s, off 120-240, on 240-360, on 360-480, off 480-600); profile start 01:03:54 UTC [verified job log] |
+| When | 01:11:05 UTC = 431 s into the profile, **71 s into slice 4 (`dpMode` 1, ON)**, not the last OFF slice [verified: job log `destroypark on` at 01:09:54, ab-native row 3 `dpMode` 1]. The OFF slice before had emptied the graveyard (`p5cFlushed` = `p5cParked` = 127 at 240 s): no ON-to-OFF leftover is involved [verified] |
+| Fault | sim thread 25936: `ACCESS_VIOLATION` reading `0x10` at `0x84EAC3` `mov eax, [edx+0x10]`; `edx` = 0 = the vtable word of `ecx` = `0x3D90B098` [verified registers + disassembly] |
+| Code | `0x84EA00` (follower `this` = `esi` `0x32548A20`): `0x50ABE0` splices the agent's buffer (`agent+0x68`, `ebx` `0x9786C818`) back into the follower's event list at `this+0x1C`, then walks it: node `edi` `0x97CE7490` -> element `eax` = `[node+8]` `0x3ACB1460` (refcount `+4`, plain dec, deleting destructor at vtable `+0`; byte `+0x24` one-shot; `[node+0xC]` type 3 / 9 / 10 feed the follower counters `+0x174` and level `+0x248` +-1) -> handler `ecx` = `[element+0x1C]` -> `call [[handler]+0x10](element)` (still valid?). The handler's first dword is 0: a freed (or never constructed) block. The element holds the handler raw: no reference is taken here or in `0x849570` / `0x853500`, the two other walkers of the same list [verified disassembly] |
+| Path | `Locomotion_Update` `0x83CF52` -> `Locomotion_UpdateAgent 0x957210` (`0x957292`) -> agent step `0x956850` (`0x956C67`) -> `0x9564A0` (`0x95669A`) -> `0x84EA00` [verified EA call stack + call sites]. The previous loop iteration removed an element (return address `0x84EC8E` of its node free still on the stack at `0x43CEFC68`), so the bad element is the second one walked this tick [verified stack scan] |
+| Swap window | The agent step first moves the follower's list out (`0x84E900` at `0x956968`: follower `+0x1C` -> `agent+0x68`), runs the follow step `0x84D7E0` (`0x95667F`, many unresolved vcalls), then `0x84EA00` moves it back. In between, the follower's own list is empty [verified disassembly] |
+
+### 11.2 What DestroyPark changes
+
+With the switch on, a destroy during a running job parks one reference (`P5cPark`) and `DestroyById` runs at once (events 5/6, owner callback `0x68EC50` -> `+0x3C`, update-list removal `0x938CA0`, flag `obj+0x28 |= 0x400000`, hash erase, its releases); the deleting destructor (`Object_Destruct`, component destructors) waits for `P5cFlush` [verified code]. In 0.36.14 `P5cFlush` ran at the START / READY / CANCEL polls (`GetOptionHook`, yielding script tasks only: a non-yielding caller plans inline), at save / closing / teardown, **and at every `DestroyById` entry with no job running**. `DestroyById` has 18 callers, several native and mid-update: the locomotion effect list `0x84CE30` (called by `0x84EA00` itself at `0x84EE51` and by the follow family `0x84F2B0` / `0x8504D0` / `0x850E20` / `0x851280`), `Animation_DrainDeferred`, lot unload [verified docs/88 §2 + call sites]. So in 0.36.14 any parked object's destructor could run inside a native caller of `DestroyById`, a place where vanilla never frees a foreign object (vanilla frees an object at its own destroy, or where its last holder releases it). docs/88 §5.1 already banned flush points that can sit inside a native caller mid-update (gate entries); the destroy entry was let through on the argument that an extra holder delaying the free is a vanilla state, which covers *when* the free happens but not *where* [design flaw, verified against the doc].
+
+Counters of the crashed run: 279 parks, all flushed by 360 s, `p5cCountLow` 0 (no double release), `vfRtDestroyOffSim` 0; `p5cAgeMaxUs` 170,093 us in slice 3 (T-G3's 100 ms exceeded: one object parked across more than one job) [verified ab-native]. The on-first twin (`bp-destroypark-onfirst`, same build, 509 parks, ages <= 90 ms) **passed**: no crash [verified jsonl row].
+
+### 11.3 Cause (inferred; two candidates)
+
+| # | Mechanism | For | Against / open | Tag |
+|---|---|---|---|---|
+| B | **Nested flush**: a parked object's destructor runs at a `DestroyById` entry inside a native caller (the follow step inside the swap window, or a later native destroy), frees the handler (or what owns it), and the element, out of the follower's list at that moment, escapes whatever cleanup the destructor does | the flush is the only new free site; the swap window is exactly where an owner-side cleanup would miss an element | no direct-call chain from `0x84D7E0` to `0x939420` within 8 hops (only through its unresolved vcalls); the handler's class and its cleanup path are not identified | **inferred** |
+| A | **Zombie window**: between the destroy body and the deferred destructor (up to 170 ms, several sim ticks) the object is out of the hash and its owner already notified, but its components live and tick; a new element pointing at it is created then, and the destructor (relying on the owner-side cleanup that already ran) does not remove it | the window is new (vanilla's extra holders release within one call); 170 ms age seen in this run | needs a subsystem that registers references to an object after its owner callback; not shown | **inferred** |
+| V | vanilla bug unrelated to the park | - | first `0x84EAC3` among the crash reports kept; crash rule: ours until proven | not supported |
+
+What tells them apart: whether the faulting handler is (inside) an object our flush released, and from which flush site. 0.36.19 logs that (below); B is also removed by the fix, so a recurrence with a ring hit at a poll site = A.
+
+### 11.4 Fix and probe (0.36.19, counters unchanged)
+
+- `rtsites.cpp`: the `RT_DESTROY` entry releases parked references **only while the world closes** (`rtClosing`: `ObjectService_DestroyAll` and the shutdown destroys after `RT_CLOSING`). Remaining release points: START / READY / CANCEL polls (yielding script tasks, the IC points from which vanilla's script `Destroy()` frees), `RT_SAVE`, `RT_CLOSING`, `RT_TEARDOWN`. Removes candidate B; the graveyard still empties at the READY poll of the job it parked under (a full graveyard keeps the wait, as before). Applies to P5c's FreeLock windows too (same graveyard).
+- `p5c.cpp`: ring of the last 64 releases (object, vtable, count before, flush caller, time); `XcptLog` matches an access violation's registers against it (nearest released object within 0x400 bytes) and logs `P5c: fault register ... released N releases ago by the flush from ...`. A hit with the fix in = candidate A (or a cause B did not cover); no hit = the faulting block was not one our flush released directly (a separately allocated component, or a vanilla free).
+- Not done: naming the handler class (`[element+0x1C]` vtable) statically; a live probe of the element's constructor would name it.
+
+| | |
+|---|---|
+| Tests (offline) | selftest `TestDestroyPark` §2 rewritten: after a job, a native-caller destroy entry releases nothing (3 parked objects stay, canaries intact), the next poll releases them oldest first, the ring names object C for a fault register at C+0x18 and nothing for a stack address; a destroy entry while closing still releases. `selftest ok`; `hook-sites --check` 527 addresses (no new site; 4 pre-existing not in docs/68) |
+| Build | `game-copy/ts3native.asi.destroypark-fix`, ts3native 0.36.19 (this branch's 0.36.18 + fix), sha256 `6b1a0cdd37519be7f71fbddfaa26969acc254b7b211c239ee0747a1a755be516` |
+| Verify | `tools/harness/queues/destroypark-fix-verify.json` (off-first + on-first as in clean-night-routing-extra.json, clean night). Fixed = 2 clean runs of the queue. Pass also `p5cAgeMaxUs` < 100 ms, `p5cFlushed` within 512 of `p5cParked`, `p5cCountLow` 0 |
+| Effort | ~1.5 h analysis, ~20 min fix and tests, ~20 min docs; live 2 x ~25 min |
+
+## 12. Crash J (2026-10-22 ~15:12 PHT): TS3W.exe gone ~10 s into every `[RouteJobPhases]` job (`asi.phases`, `asi.0324`)
+
+- **Symptom**: all 6 jobs with `[RouteJobPhases] Enabled=1` (`route-phases-2026-10-22-*`, `cellmemo-probe-2026-10-22-*`, `routealloc-2026-10-22-*`) lost the process ~10 s after profiling began: no crash report, no xcpt file, `ts3native.log` ends in normal route gate lines. The same `asi.0324` with the switch off (tailunlock, dedupe) passed.
+- **Cause [verified]**: `RjpPop` (routephases.cpp) matched the leave thunk's `at` against frame slots top-down with `slot < at` = unwound. 12 of the 15 timed entries end in `ret N`, so `at` = slot + N and the function's own frame looked unwound: the parent's frame was popped and its return address used, so the thunk returned into the parent's caller with the callee's esp. The first nested ret-N return in a worker job hit it; whatever ran next on the corrupted stack ended the process before our filter could report (exact last instruction not captured live [inferred]: wrong esp into the caller, /GS or SEH-chain failure). Offline repro: steerro-test `STEERRO_PHASES=1` on the old code faults at `0x625420` in K8's first plans; the selftest's ret-N pair fails its drop count.
+- **Fix**: `RjpPop` searches from the outermost frame for the first `slot <= at` (loadprof's `LpLeave` rule; an outer frame's slot is above the callee's arguments). Branch-into scan of all 15 stolen prologues: none (I-150-2 closed). docs/150 §7 fix note, ledger §250.
+
+| | |
+|---|---|
+| Tests (offline) | selftest `TestRouteJobPhases` with a `ret 4` site inside a `ret 8` site (old: assert); steerro-test `STEERRO_PHASES=1` seeds 1-3 x 3000 ok (11 of 15 sites, 2560 jobs per seed, `rjpDropped` 0; old: AV); `hook-sites --check`, `check-docs-code` ok |
+| Build | `game-copy/ts3native.asi.0326` = master 53bdb56d + fix, sha256 `C13367080FED1473EB925AA7F7B85A8FEBD77B62279E6031A73A51BB4566B63C` |
+| Verify | `route-phases.json`, `cellmemo-probe.json`, `routealloc.json` on 0326 (day, 5 min). Fixed = 2 clean runs with the switch on |

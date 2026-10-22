@@ -1,5 +1,6 @@
 // Self-check for the patch helpers on local memory (no game needed). Built and run by build.cmd.
 #define TS3NATIVE_NO_DLLMAIN
+#define TS3N_FAULTINJ  // docs/157: the P5 / P5b / P5c fault-injection hooks (p4.cpp, p5.cpp), test builds only
 #include "ts3native.cpp"
 #include <assert.h>
 #include "savecompress-fake.h"
@@ -354,6 +355,7 @@ static void TestRouteBudget() {
 // --- async route plan: START/READY/CANCEL handshake, collect, drop, refuse, lock pump, plans queued behind a job ---
 static CRITICAL_SECTION g_fakeLock;  // stands in for the routing lock world+0x918
 static volatile LONG g_icHoldLock, g_icLockTaken, g_icInvoke, g_icSleepMs;
+static volatile LONG g_icInClose;  // CE-1 (docs/154): IC bodies run while rtClosing is set (a world close already drained)
 static LONG __fastcall FakeLockAcquire(void* lock, void*, const DWORD* deadline) {
     if (*deadline == 0xFFFFFFFF) { EnterCriticalSection((CRITICAL_SECTION*)lock); return 1; }
     return TryEnterCriticalSection((CRITICAL_SECTION*)lock) ? 1 : -2;
@@ -365,6 +367,7 @@ static u8* __cdecl FakeIc(u8* out, DWORD handle) {
     *(DWORD*)out = 1;  // Succeeded
     *(DWORD*)(out + 4) = handle;
     *(DWORD*)(out + 0x40) = GetCurrentThreadId();
+    if (ts3native_counters.rtClosing) InterlockedIncrement(&g_icInClose);
     if (g_icHoldLock) { EnterCriticalSection(&g_fakeLock); g_icLockTaken = 1; }
     if (g_icInvoke) {  // the portal-lock query: runs on the owner even though it is not waiting for us
         g_icInvoke = 0;
@@ -448,6 +451,17 @@ static void __fastcall FakePass(void* self, void*, float dt) {
             break;
         case 8:  // an exception leaves the pass: the window must not stay open
             RaiseException(0xE0000001, 0, 0, NULL);
+        case 9: {  // CE-1 (docs/154): travel / quit drains while a claimed job's start is held (after ServeAsync's world check,
+                   // before A_RUNNING); RT_CLOSING's body (rtsites.cpp): DiscDrain, rtClosing = 1, RtWaitJob (A_IDLE: no wait)
+            const LONG held0 = c.g0wJobsHeld;
+            assert(Start(kH1));
+            while (c.g0wJobsHeld == held0) Sleep(0);  // the worker passed the world check (rtClosing 0) and spins in G0wHolds
+            assert(g_async.state != A_RUNNING && JobFor(kH1)->state == J_RUNNING);
+            LONG us = 0;
+            InterlockedExchange(&ts3native_counters.rtClosing, 1);
+            assert(RtWaitJob(&us, 0x02000000 | RT_CLOSING) && us == 0);  // drained: the teardown may run from here on
+            break;
+        }
     }
 }
 // the thunk as the game calls it: ecx = self, one float pushed, callee pops it (ret 4)
@@ -534,8 +548,149 @@ static void TestLocoWindow() {
     assert(g_g0Win == 0 && g_g0wIn == 0 && t_g0wDepth == 0 && k.g0wPasses == passes + 3);
     // nothing left: no job, no window, no open off-sim frame, only the deliberate watchdog
     assert(!AsyncBusy() && g_rgOffSimOpen == 0 && k.watchdogs == wd0 && k.g0wPassMaxUs >= 240000);
+    // 9. CE-1: the held job starts after the pass, past the closing drain: it must back out (J_SKIPPED, IC not run), and the
+    //    route plans synchronously at its collect as with an early refusal
+    const LONG skip0 = k.asyncSkipped;
+    g_icInClose = 0;
+    g_lpCase = 9;
+    CallThunk((void*)0x55, 1.0f);
+    while (JobFor(kH1)->state == J_RUNNING) Sleep(0);
+    if (g_icInClose || JobFor(kH1)->state != J_SKIPPED)
+        printf("CE-1 FAIL: job state %ld, IC ran %ld time(s) after the closing drain\n", JobFor(kH1)->state, g_icInClose);
+    assert(g_icInClose == 0 && JobFor(kH1)->state == J_SKIPPED && k.asyncSkipped == skip0 + 1 && g_async.state == A_IDLE);
+    u8 out9[0x48];
+    assert(IcPlanHook(out9, kH1) == out9 && *(DWORD*)(out9 + 0x40) == GetCurrentThreadId());  // the game's sync answer
+    assert(TryEnterCriticalSection((CRITICAL_SECTION*)g_rgLock));  // the worker let +0x918 go on the way out
+    LeaveCriticalSection((CRITICAL_SECTION*)g_rgLock);
+    k.rtClosing = 0;
+    assert(!AsyncBusy() && g_rgOffSimOpen == 0 && g_g0Win == 0 && g_g0wIn == 0);
     g_g0wOrig = (LocoUpdateFn)(uintptr_t)LOCO_UPDATE;
     memset(&k.g0wReady, 0, sizeof(LONG) * 16);
+}
+
+// --- H2 threaded (docs/149): fake passes that take the real routing lock through LockAcquireHook, jobs queued inside and
+// between passes, real worker. Mode 1: no job starts inside a pass (except one running at entry), none lost or starved, no
+// deadlock; Mode 0 shows the check can fail (starts land inside) ---
+static volatile LONG g_tpIn, g_tpEntryHandle, g_tpViolations, g_tpStarts;
+static volatile LONG g_tpQueueInPass;
+static DWORD g_tpOut[4];  // handles started and not yet collected (0 = free)
+static DWORD g_tpNext;
+static u8* __cdecl TpIc(u8* out, DWORD handle) {  // worker: the job's start, then hold the lock a while (ServeAsync holds it)
+    InterlockedIncrement(&g_tpStarts);
+    if (g_tpIn && (LONG)handle != g_tpEntryHandle) InterlockedIncrement(&g_tpViolations);
+    return FakeIc(out, handle);
+}
+static int TpQueue() {  // owner thread only (START is the sim's)
+    for (int i = 0; i < 4; i++)
+        if (!g_tpOut[i]) {
+            const DWORD h = 0x26000000 + ++g_tpNext;
+            if (!Start(h)) return 0;
+            g_tpOut[i] = h;
+            return 1;
+        }
+    return 0;
+}
+static void TpCollect(bool wait) {
+    u8 out[0x48];
+    for (int i = 0; i < 4; i++)
+        if (g_tpOut[i] && (wait || Ready(g_tpOut[i]))) {
+            if (wait) WaitReady(g_tpOut[i]);
+            assert(IcPlanHook(out, g_tpOut[i]) == out && *(DWORD*)(out + 0x40) == g_workerTid && *(DWORD*)(out + 4) == g_tpOut[i]);
+            g_tpOut[i] = 0;
+        }
+}
+static void __fastcall TpPass(void*, void*, float) {
+    g_tpEntryHandle = g_async.state == A_RUNNING ? (LONG)g_async.handle : -1;  // after the thunk raised the window (Dekker)
+    InterlockedExchange(&g_tpIn, 1);
+    if (g_tpQueueInPass) TpQueue();
+    static const DWORD inf = 0xFFFFFFFF;
+    for (int i = 0; i < 3; i++) {  // three +0x918 takers per pass (steering, avoidance, footprint), a little work under it
+        assert(LockAcquireHook(g_rgLock, NULL, &inf) >= 1);
+        LARGE_INTEGER t0, t;
+        QueryPerformanceCounter(&t0);
+        do QueryPerformanceCounter(&t); while (t.QuadPart - t0.QuadPart < g_qpf.QuadPart / 5000);  // ~200 us
+        LONG* depth = (LONG*)((u8*)g_rgLock + 0x20);  // the game lock's recursion count (the fake lock keeps none): last release
+        *depth = 1;                                   // clears rgOwnerTid, else M1 refuses the sim's next START (why 5)
+        LockReleaseHook(g_rgLock, NULL);
+        *depth = 0;
+    }
+    InterlockedExchange(&g_tpIn, 0);
+}
+static LONG TpRun(LONG mode, int passes) {
+    Ts3nCounters& k = ts3native_counters;
+    k.g0wMode = mode;
+    g_tpViolations = 0;
+    const DWORD t0 = GetTickCount();
+    for (int p = 0; p < passes; p++) {
+        g_tpQueueInPass = p % 2 == 0;
+        CallThunk((void*)0x55, 1.0f);  // the game's convention (TpPassChecked feeds CallThunk's esp/argument check)
+        if (p % 3 == 0) TpQueue();     // between passes too
+        TpCollect(false);
+        Sleep(p % 4 == 0 ? 1 : 0);
+        assert(GetTickCount() - t0 < 20000);  // a deadlock ends the test here, not in a hang
+    }
+    TpCollect(true);
+    assert(GetTickCount() - t0 < 20000 && !AsyncBusy());
+    return g_tpViolations;
+}
+static void __fastcall TpPassChecked(void* self, void* edx, float dt) {
+    g_lpSelf = self;
+    g_lpDt = dt;
+    TpPass(self, edx, dt);
+}
+static void TestH2Threaded() {
+    static_assert(offsetof(Ts3nCounters, h2Released) == 0x364C && offsetof(Ts3nCounters, h2PassLockN) == 0x3650 &&
+                  offsetof(Ts3nCounters, h2PassLockUs) == 0x3658 && offsetof(Ts3nCounters, h2ReleaseMaxUs) == 0x3660 && sizeof(Ts3nCounters) == 4274 * 4, "v85 layout after v84 (docs/registry.md)");
+    Ts3nCounters& k = ts3native_counters;
+    const LONG wd0 = k.watchdogs;
+    QueryPerformanceFrequency(&g_qpf);
+    IcPlanFn icSaved = g_icPlanOrig;
+    g_icPlanOrig = TpIc;
+    g_g0wOrig = TpPassChecked;
+    k.g0wReady = 1;
+    memset(&k.h2Released, 0, sizeof(LONG) * 6);  // TestLocoWindow's held starts released at pass end
+    g_icSleepMs = 2;  // the job holds +0x918 ~2 ms (ServeAsync's whole-job hold)
+    // Mode 1: the window holds every start that is not already running at entry
+    LONG started = g_tpStarts;
+    assert(TpRun(1, 300) == 0);
+    // g0wJobStartInPass is exact (v84 inPass order): 0 here, as the independent TpIc check
+    assert(g_tpStarts - started > 50 && k.g0wJobStartInPass == 0 && k.g0wWatchdog == 0 && k.g0wDrop[0] == 0 && k.g0wDrop[1] == 0);
+    assert(k.h2Released == k.g0wJobsHeld && k.h2ReleaseMaxUs > 0 && k.h2ReleaseMaxUs < 100000);  // no held job lost, each soon after
+    assert(k.g0wJobsHeld > 0 && k.h2Released > 0 && k.h2Released <= k.g0wJobsHeld && k.g0wHoldUs > 0 && k.g0wHoldMaxUs < 250000);
+    assert(k.h2PassLockN[0] > 0 && k.h2PassLockUs[0] > 0);  // jobs running at entry: the pass waits out their hold
+    const LONG held = k.g0wJobsHeld, rel = k.h2Released, lockN = k.h2PassLockN[0] + k.h2PassLockN[1];
+    // Mode 0 (the off side of --ab h2): nothing held, starts land inside the pass, the same checker sees them
+    started = g_tpStarts;
+    assert(TpRun(0, 300) > 0);
+    assert(g_tpStarts - started > 50 && k.g0wJobStartInPass > 0 && k.g0wJobsHeld == held && k.h2Released == rel);
+    assert(k.h2PassLockN[0] + k.h2PassLockN[1] > lockN);  // counted in both modes
+    // a wait with no job at all inside the pass: another thread holds +0x918, nothing queued -> counted as "none running"
+    k.g0wMode = 1;
+    static volatile LONG s_held;
+    struct Holder {
+        static DWORD WINAPI Run(void*) {
+            EnterCriticalSection((CRITICAL_SECTION*)g_rgLock);
+            InterlockedExchange(&s_held, 1);
+            Sleep(40);
+            LeaveCriticalSection((CRITICAL_SECTION*)g_rgLock);
+            return 0;
+        }
+    };
+    HANDLE th = CreateThread(NULL, 0, Holder::Run, NULL, 0, NULL);
+    while (!s_held) Sleep(0);
+    const LONG none = k.h2PassLockN[1], noneUs = k.h2PassLockUs[1];
+    g_tpQueueInPass = 0;
+    CallThunk((void*)0x55, 1.0f);
+    WaitForSingleObject(th, INFINITE);
+    CloseHandle(th);
+    assert(k.h2PassLockN[1] == none + 1 && k.h2PassLockUs[1] - noneUs >= 20000);
+    // nothing left
+    assert(!AsyncBusy() && g_rgOffSimOpen == 0 && g_g0Win == 0 && g_g0wIn == 0 && t_g0wDepth == 0 && k.watchdogs == wd0);
+    g_icSleepMs = 0;
+    g_icPlanOrig = icSaved;
+    g_g0wOrig = (LocoUpdateFn)(uintptr_t)LOCO_UPDATE;
+    memset(&k.g0wReady, 0, sizeof(LONG) * 16);
+    memset(&k.h2Released, 0, sizeof(LONG) * 6);
 }
 
 // --- A10 (a10.cpp, docs/87 §5-§6): Replan-family jobs through the real worker, M1 world and gate (TestRouteAsync's setup) ---
@@ -812,6 +967,48 @@ static u8* __cdecl FbCapIc(u8* out, DWORD handle) {  // stands in for a sim plan
     return FakeIc(out, handle);
 }
 static u8 Foreign(DWORD h) { return GetOptionHook(h, 0, kAsyncOptHi | kArHi, 1); }  // ts3fixes 0.36.7 foreign START
+// docs/134 §11: a foreign job shaped like the BP 2026-10-22 one (32 world A* nodes in 1,942 ms): work before the first node,
+// slow expansions that generate few nodes, work after the cap; the world A* cost calls go through the patched stubs (g_cost)
+static volatile LONG g_fbPreMs, g_fbStepMs, g_fbPostMs, g_fbNodes;
+// every cost call stamped before and after (QPC), and the call that returned the wall: lets 4c bound how late the cap fired
+// by the measured gap between two deadline reads instead of by Sleep's wall time (timer resolution and machine load vary)
+static LONGLONG g_fbTs[2001][2], g_fbPreT, g_fbPostUs;
+static int g_fbCalls, g_fbWallAt;
+static float FbCost(DWORD isEdge) {
+    LARGE_INTEGER a, b;
+    QueryPerformanceCounter(&a);
+    const float r = g_cost(0, 0, 0, 0, isEdge, 0, 0, 0);
+    QueryPerformanceCounter(&b);
+    if (g_fbCalls < 2001) g_fbTs[g_fbCalls][0] = a.QuadPart, g_fbTs[g_fbCalls][1] = b.QuadPart;
+    if (r >= 1e8f && g_fbWallAt < 0) g_fbWallAt = g_fbCalls;
+    g_fbCalls++;
+    return r;
+}
+static u8 __fastcall FbSlowSearch(void*, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) {
+    g_fbCalls = 0, g_fbWallAt = -1;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    g_fbPreT = t.QuadPart;
+    Sleep(g_fbPreMs);
+    FbCost(0);
+    for (g_fbNodes = 0; g_fbNodes < 1000; g_fbNodes++) {
+        if (FbCost(1) >= 1e8f) break;
+        FbCost(0);
+        Sleep(g_fbStepMs);
+    }
+    QueryPerformanceCounter(&t);
+    Sleep(g_fbPostMs);
+    LARGE_INTEGER e;
+    QueryPerformanceCounter(&e);
+    g_fbPostUs = (e.QuadPart - t.QuadPart) * 1000000 / g_qpf.QuadPart;
+    return 0;
+}
+static u8* __cdecl FbSlowIc(u8* out, DWORD handle) {
+    u8 opts[0x38] = {0};
+    int list[2];
+    CallPlan(NULL, NULL, list, NULL, NULL, 0, 1, opts, NULL, NULL, 0, 0);
+    return FakeIc(out, handle);
+}
 static u8 g_fbCtx[12], g_fbInfo[3][12], g_fbMeth[2][0x20], g_fbCls[2][0x40];
 static DWORD g_fbFrame[3][2];
 static const u8* __cdecl FbFakeCtx() { return g_fbCtx; }
@@ -968,6 +1165,77 @@ static void TestFallback() {
     WaitReady(kH1);
     assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 0 && k.fbjcCapped == 1);
     Cancel(kH1);
+    // 4c. docs/134 §11: the job cap is a deadline from the job's start, read every 4th cost call of either kind
+    {
+        static_assert(offsetof(Ts3nCounters, fbjcCapAtMaxUs) == 0x3604 && offsetof(Ts3nCounters, fbjcWaitHist) == 0x3634 &&
+                          sizeof(Ts3nCounters) == 4274 * 4, "counters v84 layout after v83 (docs/registry.md)");
+        const PlanLockedFn planSave = g_planOrig;
+        const LONG readySave = k.budgetReady;
+        g_planOrig = FbSlowSearch;
+        k.budgetReady = 1;
+        g_icPlanOrig = FbSlowIc;
+        memset((void*)&k.fbjcCapAtMaxUs, 0, sizeof(LONG) * 18);
+        k.fbjcMode = 1;
+        k.fbjcCapped = 0;
+        // slow expansions (25 ms a node): the old clock read the time first at node 16 (>= 400 ms); now at most 2 nodes late
+        g_fbPreMs = 0, g_fbStepMs = 25, g_fbPostMs = 0;
+        assert(Foreign(kH1));
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && k.fbjcCapped == 1 && g_fbNodes < 16);
+        // the cap fired at a deadline read (every 4th call: the wall comes at that call or the next) and no later than the gap
+        // since the read before it, which saw the clock short of the deadline; the late counter agrees with the measured time
+        {
+            const int at = g_fbWallAt & ~3;
+            assert(g_fbWallAt >= 4 && g_fbWallAt - at <= 1);
+            const LONGLONG gapUs = (g_fbTs[at][1] - g_fbTs[at - 4][0]) * 1000000 / g_qpf.QuadPart;
+            if (k.fbjcCapAtMaxUs - 200000 > gapUs + 1)
+                printf("4c: cap at %ld us, deadline reads %lld us apart (calls %d, %d)\n", k.fbjcCapAtMaxUs, gapUs, at - 4, at);
+            assert(k.fbjcCapAtMaxUs >= 200000 && k.fbjcCapAtMaxUs - 200000 <= gapUs + 1);
+            assert(k.fbjcCapLate == (k.fbjcCapAtMaxUs > 220000) &&
+                   k.fbjcPlanMaxUs + 1 >= (g_fbTs[at][0] - g_fbPreT) * 1000000 / g_qpf.QuadPart);  // the plan ran past the firing read
+        }
+        Cancel(kH1);
+        // 300 ms before the first node (pending lot updates, lazy lot builds): the first cost call is already past the deadline,
+        // the search ends at its first edge; the cap fired late and says so
+        g_fbPreMs = 300, g_fbStepMs = 0;
+        const LONG late1 = k.fbjcCapLate;  // the case above may have been late too (finer timer, load)
+        assert(Foreign(kH1));
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && k.fbjcCapped == 2 && g_fbNodes == 0 && g_fbWallAt == 1);
+        // the cap fired at the first deadline read, after the work before it (measured: Sleep may wake a little early)
+        assert(k.fbjcCapAtMaxUs + 1 >= (g_fbTs[0][0] - g_fbPreT) * 1000000 / g_qpf.QuadPart && k.fbjcCapAtMaxUs > 220000 &&
+               k.fbjcCapLate == late1 + 1);
+        Cancel(kH1);
+        // work after the cap (lot legs per candidate) is the tail the cap cannot stop: measured
+        g_fbPreMs = 0, g_fbStepMs = 25, g_fbPostMs = 150;
+        assert(Foreign(kH1));
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && k.fbjcCapped == 3 && k.fbjcTailMaxUs + 2 >= g_fbPostUs &&g_fbPostUs >= 100000);
+        Cancel(kH1);
+        // an own job has no deadline: the whole search runs
+        g_fbPreMs = g_fbStepMs = g_fbPostMs = 0;
+        assert(Start(kH1));
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && k.fbjcCapped == 3 && g_fbNodes == 1000);
+        Cancel(kH1);
+        // switch off: a foreign job is not capped but still split and counted
+        k.fbjcMode = 0;
+        assert(Foreign(kH1));
+        WaitReady(kH1);
+        assert(IcPlanHook(out, kH1) == out && k.fbjcCapped == 3 && g_fbNodes == 1000);
+        Cancel(kH1);
+        LONG jobs = 0;
+        for (int i = 0; i < 6; i++) jobs += k.fbjcJobHist[i];
+        assert(jobs == 4 && k.fbjcJobHist[0] >= 1 && k.fbjcJobHist[0] + k.fbjcJobHist[1] + k.fbjcJobHist[2] + k.fbjcJobHist[3] == 4);
+        // sim waits behind a foreign job: buckets and max; other waits are not counted
+        FbjcSimWait(50000, true), FbjcSimWait(2500000, true), FbjcSimWait(9000000, false);
+        assert(k.fbjcWaitHist[0] == 1 && k.fbjcWaitHist[5] == 1 && k.fbjcSimWaitMaxUs == 2500000);
+        g_planOrig = planSave;
+        k.budgetReady = readySave;
+        g_icPlanOrig = FbCapIc;
+        memset((void*)&k.fbjcCapAtMaxUs, 0, sizeof(LONG) * 18);
+        k.fbjcCapped = 0;
+    }
     k.fbCapUs = 0;
     assert(IcPlanHook(out, kH2) == out && g_fbSeenCap == 0 && k.fbCapped == 1);  // off: no cap
     g_icPlanOrig = FakeIc;
@@ -1216,6 +1484,7 @@ static void TestRouteAsync() {
     TestFallback();    // docs/134 on the same setup
     TestA10();         // A10 on the same setup
     TestLocoWindow();  // H2 on the same async setup (real worker, M1 world, gate enforced)
+    TestH2Threaded();  // docs/149: threaded passes on the real lock
     ts3native_counters.rgEnforce = 0;
     ts3native_counters.rgOwnerTid = 0;
     ts3native_counters.rgAcquires = 0;  // the worker took m1Lock as the learned lock
@@ -3640,6 +3909,25 @@ static void TestRouteEnforce() {
     DeleteCriticalSection(&g_rgFakeCs);
 }
 
+// --- SeedWaitKeys (2026-10-22): the A/B keys keep their slots when the other 18 slots are full ---
+static void TestSeedWaitKeys() {
+    Ts3nCounters& k = ts3native_counters;
+    LONG key[32], n[32], us[32];
+    memcpy(key, k.blockKey, sizeof(key)), memcpy(n, k.blockN, sizeof(n)), memcpy(us, k.blockUs, sizeof(us));
+    const LONG other = k.blockOther;
+    memset(k.blockKey, 0, sizeof(k.blockKey)), memset(k.blockN, 0, sizeof(k.blockN)), memset(k.blockUs, 0, sizeof(k.blockUs));
+    SeedWaitKeys();
+    for (int i = 14; i < 32; i++) WaitNote(0x00700000 + i, 1);  // 18 other keys fill the table
+    WaitNote(0x00833593, 7);  // first hit after the table is full: still timed
+    assert(k.blockKey[3] == 0x00833593 && k.blockN[3] == 1 && k.blockUs[3] == 7 && k.blockOther == other);
+    WaitNote(0x00846D21, 5);
+    assert(k.blockKey[5] == 0x00846D21 && k.blockUs[5] == 5);
+    WaitNote(0x00999999, 5);  // an unseeded key: count only
+    assert(k.blockOther == other + 1);
+    memcpy(k.blockKey, key, sizeof(key)), memcpy(k.blockN, n, sizeof(n)), memcpy(k.blockUs, us, sizeof(us));
+    k.blockOther = other;
+}
+
 // --- vfG11CloseBy (0.11.2): each G11 close is keyed by its closer; a +0x918 acquire inside a steering query by its caller ---
 static void TestG11CloseBy() {
     static_assert(offsetof(Ts3nCounters, g11CloseKey) == 0xD58 && offsetof(Ts3nCounters, g11CloseN) == 0xDD8 &&
@@ -3681,6 +3969,13 @@ static void TestG11CloseBy() {
     assert(k.g11CloseKey[0] == 0x0085FE10 && k.g11CloseN[0] == 1 && k.g11CloseLostUs[0] >= 0);
     LockReleaseHook(g_rgLockObj, NULL);
     assert(RgLeave() == 0x0085FE10 && t_steerRet == 0 && t_rg.n == 0);
+    // AvSite (avoidro.cpp) runs the query for the retargeted call at 0x846D1C: keyed 0x846D21, not by AvSite's own return
+    t_avSite = true;
+    RtEnter(23, &stack[20]);
+    assert(t_steerRet == 0x00846D21 && t_rg.n == 1);
+    RgLeave();
+    assert(t_steerRet == 0 && t_rg.n == 0);
+    t_avSite = false;
     // outside a steering query an acquire is keyed by Lock_Acquire's return address (here: inside this test)
     G11PlanBegin();
     G11PlanEnd(true);
@@ -4057,7 +4352,7 @@ static u8 __fastcall FakeUsfShould(void*, void*, void* obj) { assert(obj); retur
 static void TestFootprintDefer() {
     static_assert(offsetof(Ts3nCounters, usfReady) == 0x3174 && offsetof(Ts3nCounters, usfMode) == 0x3178 &&
                   offsetof(Ts3nCounters, usfApplied) == 0x31A4 && offsetof(Ts3nCounters, usfApplyInJob) == 0x31C4 &&
-                  sizeof(Ts3nCounters) == 3457 * 4, "v74 layout (without v52, v58)");
+                  sizeof(Ts3nCounters) == 4274 * 4, "v74 layout (without v52, v58)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -4263,6 +4558,253 @@ static void TestFootprintDefer() {
     DeleteCriticalSection(&g_rgFakeCs);
 }
 
+// --- design U phase 2 (docs/89 §12, counters v94): ObjectFootprintFromTool 0x8334A0 / UpdateObjectLot 0x82D280 into D's queue,
+// flushed before the private-footprint ICs. log: FromTool 'F'/'G'/'H' (lower case = world +0x978 was 0 at the apply), lot
+// 'L'/'M'/'N', private remove 'X'/'Y'/'Z', private add 'U'/'V'/'W', U and D as above ---
+static u8* g_f2World;
+static void __fastcall FakeFt(void* world, void*, void* obj) {
+    assert(world == g_f2World);
+    g_xLog[g_xLogN++ & 63] = (char)((((u8*)world)[0x978] ? 'F' : 'f') + XIdx(obj));
+}
+static void __fastcall FakeUol(void*, void*, void* obj) { g_xLog[g_xLogN++ & 63] = (char)('L' + XIdx(obj)); }
+static u8 __fastcall FakePfRemove(void*, void*, void* obj, DWORD flag) {
+    assert(flag == 1);
+    g_xLog[g_xLogN++ & 63] = (char)('X' + XIdx(obj));
+    return 1;
+}
+static u8 __fastcall FakePfAdd(void*, void*, void* obj, void* pts, DWORD flag) {
+    assert(pts && flag == 0);
+    g_xLog[g_xLogN++ & 63] = (char)('U' + XIdx(obj));
+    return 1;
+}
+static DWORD WINAPI F2JobEnd(void*) {  // the running job ends a little later (a forced flush waits for it)
+    Sleep(30);
+    g_async.state = A_IDLE;
+    SetEvent(g_asyncDone);
+    return 0;
+}
+
+static void TestFootprintDefer2() {
+    static_assert(offsetof(Ts3nCounters, fp2Mode) == 0x3FB4 && offsetof(Ts3nCounters, fp2Deferred) == 0x3FBC &&
+                  offsetof(Ts3nCounters, fp2Forced) == 0x3FDC && offsetof(Ts3nCounters, fp2ApplyInJob) == 0x3FE8 &&
+                  sizeof(Ts3nCounters) == 4274 * 4, "counters v94 layout after v92 (docs/registry.md)");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
+    memset(&k.usfReady, 0, offsetof(Ts3nCounters, usfApplyInJob) + 4 - offsetof(Ts3nCounters, usfReady));
+    memset(&k.fp2Mode, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, fp2Mode));
+    const DWORD me = GetCurrentThreadId();
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_discAddOrig = XAdd;
+    g_discRemoveOrig = XRemove;
+    g_usfOrig = FakeUsf;
+    g_usfShould = FakeUsfShould;
+    g_ftOrig = FakeFt;
+    g_uolOrig = FakeUol;
+    g_pfRemove = FakePfRemove;
+    g_pfAdd = FakePfAdd;
+    g_objSvc = FakeSvc;
+    g_findRef = XFindRef;
+    g_objRelease = FakeObjRelease;
+    g_lotRemove = XLotRemove;
+    g_keyFind = XKeyFind;
+    static u8 world[0xA00];
+    static u8 planner[0x200];
+    static DWORD buckets[2] = {0, 0x5E5E5E5E};
+    g_f2World = world;
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = planner;
+    *(DWORD**)(world + 0x8BC) = buckets;
+    *(DWORD*)(world + 0x8C0) = 1;
+    *(DWORD*)(world + 0x8C4) = 0;
+    g_xKeyHit = false;
+    g_uShould = true;
+    g_rgLock = world + 0x918;
+    for (int i = 0; i < 3; i++) { *(DWORD*)(g_xObj[i] + 8) = 0xA + i; *(DWORD*)(g_xObj[i] + 0xC) = 0; g_xLive[i] = g_xObj[i]; }
+    u8* const A = g_xObj[0], * const B = g_xObj[1], * const C = g_xObj[2];
+    k.discMode = 1;
+    k.discDestroyMode = 1;
+    k.discSweepMode = 1;
+    k.usfMode = 1;
+    k.fp2Mode = 1;
+    g_async.owner = me;
+    g_xLogN = 0;
+    auto log = [](const char* s) { return g_xLogN == (int)strlen(s) && memcmp(g_xLog, s, g_xLogN) == 0; };
+    auto settled = [&]() {  // no lost update: every record queued was applied or dropped
+        return g_discCount == 0 && k.fp2Deferred[0] == k.fp2Applied[0] + k.fp2Dropped[0] &&
+               k.fp2Deferred[1] == k.fp2Applied[1] + k.fp2Dropped[1];
+    };
+
+    // 1. no job: both run at once
+    FtHook(world, NULL, A);
+    UolHook(world, NULL, B);
+    assert(log("fM") && g_discCount == 0 && k.fp2Deferred[0] == 0 && k.fp2Deferred[1] == 0);
+    // 2. a job runs: queued in one FIFO with U and D records, applied in order at the next drain; FromTool's early out runs
+    // at call time; the call-time +0x978 (the caller's bracket) is set for the apply and restored after
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 0, 0, 7);
+    world[0x978] = 1;  // 0x9470B0's bracket around the call
+    FtHook(world, NULL, A);
+    world[0x978] = 0;
+    UolHook(world, NULL, B);
+    DiscRemoveHook(world, NULL, C);
+    g_uShould = false;
+    FtHook(world, NULL, C);  // the early out says no: no record (the original would not take the lock)
+    g_uShould = true;
+    assert(g_xLogN == 0 && g_discCount == 4 && k.fp2Deferred[0] == 1 && k.fp2Deferred[1] == 1);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("pFMc") && world[0x978] == 0 && settled() && k.fp2Applied[0] == 1 && k.fp2Applied[1] == 1 && k.rgOwnerTid == 0);
+    // 3. order per object: with A's record queued, A's later FromTool / lot / U calls queue even with no job and in mode 0;
+    // an object with nothing queued runs at once
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UolHook(world, NULL, A);
+    g_async.state = A_IDLE;
+    k.fp2Mode = 0;
+    FtHook(world, NULL, A);
+    k.fp2Mode = 1;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    UolHook(world, NULL, A);
+    FtHook(world, NULL, B);
+    assert(log("g") && g_discCount == 4);
+    DiscPoll();
+    assert(log("gLfPL") && settled());
+    // a U record right before a phase 2 record of the object is not collapsed into it (it is not a U record)
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UsfHook(world, NULL, A, 1, 0, 7);
+    FtHook(world, NULL, A);
+    UsfHook(world, NULL, A, 0, 0, 7);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("Pfp") && settled());
+    // 4. duplicates: the same call right behind is dropped; another bracket byte, another kind or a record between is not
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    FtHook(world, NULL, A);
+    FtHook(world, NULL, A);  // dup
+    world[0x978] = 1;
+    FtHook(world, NULL, A);  // other bracket: kept
+    world[0x978] = 0;
+    UolHook(world, NULL, A);
+    UolHook(world, NULL, A);  // dup
+    UolHook(world, NULL, B);
+    UolHook(world, NULL, A);  // B between does not count: A's newest record is the same call
+    assert(k.fp2Dup == 3 && g_discCount == 4);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("fFLM") && settled());
+    // 5. pass-through: +0x918 owned, job callback, another world, the world's batch mode (FromTool only)
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    k.rgOwnerTid = (LONG)me;
+    FtHook(world, NULL, A);
+    k.rgOwnerTid = 0;
+    g_inInvoke = 1;
+    UolHook(world, NULL, A);
+    g_inInvoke = 0;
+    static u8 world2[0xA00];
+    world2[0x974] = 1;
+    g_f2World = world2;
+    FtHook(world2, NULL, A);
+    g_f2World = world;
+    world[0x97E] = 1, world[0x976] = 1;
+    FtHook(world, NULL, B);  // batch mode: the bracket byte decides the early outs inside, so today's call
+    UolHook(world, NULL, B);  // the lot update does not read it: queued
+    world[0x97E] = 0, world[0x976] = 0;
+    assert(log("fLfg") && k.fp2Pass == 4 && g_discCount == 1);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(log("fLfgM") && settled());
+    // 6. flush before a reader: a private-footprint IC call for an object with records drains the queue first, waiting for
+    // the running job; for an object with nothing queued, or with +0x918 owned, it only runs the call
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    FtHook(world, NULL, A);
+    UsfHook(world, NULL, B, 1, 0, 7);
+    assert(PfRemoveSite(world, NULL, C, 1) == 1 && log("Z") && g_discCount == 2 && k.fp2Forced == 0);
+    k.rgOwnerTid = (LONG)me;
+    assert(PfRemoveSite(world, NULL, A, 1) == 1 && log("ZX") && g_discCount == 2);
+    k.rgOwnerTid = 0;
+    const LONG forced0 = k.discForced;
+    CloseHandle(CreateThread(NULL, 0, F2JobEnd, NULL, 0, NULL));
+    assert(PfRemoveSite(world, NULL, A, 1) == 1);
+    assert(log("ZXfQX") && settled() && k.fp2Forced == 1 && k.discForced == forced0 + 1 && g_async.state == A_IDLE);
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    UolHook(world, NULL, B);
+    g_async.state = A_IDLE;
+    __declspec(align(16)) float pts[3][4] = {{1.5f}, {2}, {3}};
+    assert(PfAddSite(world, NULL, B, pts, 0) == 1 && log("MV") && settled() && k.fp2Forced == 2);
+    // 7. destroy while queued (D-X): the object's phase 2 records applied in order before it, others kept
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    FtHook(world, NULL, A);
+    UolHook(world, NULL, B);
+    UolHook(world, NULL, A);
+    g_async.state = A_IDLE;
+    DiscOnDestroy(0xA, 0, true);
+    assert(log("fL") && g_discCount == 1 && k.rgOwnerTid == 0);
+    DiscPoll();
+    assert(log("fLM") && settled());
+    // 8. gone or reused at apply: dropped and counted
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    FtHook(world, NULL, A);
+    UolHook(world, NULL, B);
+    g_xLive[0] = NULL, g_xLive[1] = A;
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(g_xLogN == 0 && k.fp2Dropped[0] == 1 && k.fp2Dropped[1] == 1 && settled());
+    for (int i = 0; i < 3; i++) g_xLive[i] = g_xObj[i];
+    // 9. queue full: drained (no Add queued) then the call, counted as forced; with an Add queued the call runs now
+    g_async.state = A_RUNNING;
+    for (int i = 0; i < kDiscCap; i++) (i & 1 ? UolHook : FtHook)(world, NULL, B);
+    assert(g_discCount == kDiscCap);
+    g_async.state = A_IDLE;
+    g_xLogN = 0;
+    const LONG forced1 = k.fp2Forced;
+    FtHook(world, NULL, B);
+    assert(g_xLogN == kDiscCap + 1 && g_discCount == 0 && k.fp2Forced == forced1 + 1 && settled());
+    g_async.state = A_RUNNING;
+    u8* vec[3] = {(u8*)pts, (u8*)pts + 48, (u8*)pts + 48};
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    for (int i = 1; i < kDiscCap; i++) (i & 1 ? UolHook : FtHook)(world, NULL, B);
+    g_xLogN = 0;
+    FtHook(world, NULL, B);  // B's newest record is a lot update: not a duplicate
+    assert(log("g") && k.fp2FullPass == 1 && g_discCount == kDiscCap);
+    g_async.state = A_IDLE;
+    DiscPoll();
+    assert(g_xLogN == kDiscCap + 1 && settled());
+    // tripwires
+    assert(k.fp2ApplyInJob == 0 && k.fp2AgeMaxMs < 300 && k.usfApplyInJob == 0);
+
+    g_async.owner = 0;
+    g_async.state = A_IDLE;
+    g_rgLock = NULL;
+    k.discMode = 0;
+    k.usfMode = 0;
+    k.fp2Mode = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    g_lockOrig = savedLock;
+    g_pfRemove = (PfRemoveFn)(uintptr_t)PFR_FN;
+    g_pfAdd = (PfAddFn)(uintptr_t)PFA_FN;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
 // --- design G standalone ([Discourage] DestroyPark, counters v76; p5c.cpp P5cPark / P5cFlush outside a P5c window; docs/88
 // §10): fake objects with the game's layout where the park reads it (count +4). The fake release frees (poisons the canary,
 // logs the order) when the count reaches 0, as 0x7460F0's deleting destructor would; GDestroy is DestroyById's net effect
@@ -4302,7 +4844,7 @@ static DWORD WINAPI GFlushOther(void*) { P5cFlush(); return 0; }
 static void TestDestroyPark() {
     static_assert(offsetof(Ts3nCounters, dpReady) == 0x31DC && offsetof(Ts3nCounters, dpMode) == 0x31E0 &&
                   offsetof(Ts3nCounters, dpParked) == 0x31E4 && offsetof(Ts3nCounters, dpKeptWait) == 0x31E8 &&
-                  sizeof(Ts3nCounters) == 3457 * 4, "v76 layout after v75 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4274 * 4, "v76 layout after v75 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     k.dpReady = k.dpMode = k.dpParked = k.dpKeptWait = 0;
     k.vfRtDestroyWaitUs = 0;
@@ -4358,7 +4900,7 @@ static void TestDestroyPark() {
     destroy(0x101);
     GDestroy(1);
     assert(g_async.state == A_RUNNING && k.vfRtDestroyWaitUs == 0 && k.dpParked == 2 && g_p5cGyN == 2);
-    assert(k.p5cParked == parked0 + 2 && k.p5cFlushRefused == refused0 + 2);  // the stub's own flush refused in the job
+    assert(k.p5cParked == parked0 + 2 && k.p5cFlushRefused == refused0);  // 0.36.19: no flush at a destroy entry (crash I)
     assert(GCount(0) == 1 && GCount(1) == 2 && g_gFreeN == 0);
     assert(*(DWORD*)(jobA + 0x18) == 0xC0FFEE00 && *(DWORD*)(jobB + 0x18) == 0xC0FFEE01);  // H-b: no read of a freed block
     GDrop(1);  // the job's release of B is not the last one (H-c: no destructor on the worker)
@@ -4381,7 +4923,10 @@ static void TestDestroyPark() {
     assert(g_p5cGyN == 0 && k.p5cFlushed == flushed0 + 2 && g_gFreeN == 2 && memcmp(g_gFreeLog, "AB", 2) == 0);
     assert(g_gFreeTid == me && GCount(0) == 0 && GCount(1) == 0 && GCanary(0) == 0xDDDDDDDD && g_rgOffSimOpen == 0);
 
-    // 2. release order over three objects; a no-job destroy entry flushes them first (the stub's end), then runs as today
+    // 2. release order over three objects. Crash I (docs/67 §11, 0.36.19): a no-job destroy entry no longer releases them
+    //    (DestroyById's native callers sit mid-update, e.g. locomotion 0x84CE30 with the follower's event list swapped out
+    //    at 0x84E900; a parked object's destructor run there can free what that caller holds); the next START / READY poll
+    //    does, oldest first, and the released ring names the flush when a fault register points into a released object
     for (int i = 0; i < kGObjs; i++) GNew(i);
     g_gFreeN = 0;
     g_async.state = A_RUNNING;
@@ -4391,10 +4936,30 @@ static void TestDestroyPark() {
     assert(k.dpParked == 5 && k.p5cPendMax >= 3 && g_gFreeN == 0 && k.vfRtDestroyWaitUs == 0);
     g_async.state = A_IDLE;
     const int rel0 = g_gRelCalls;
-    destroy(0x105);
-    assert(g_p5cGyN == 0 && g_gRelCalls - rel0 == 3 && memcmp(g_gFreeLog, "ECD", 3) == 0 && k.dpParked == 5);
+    destroy(0x105);  // the job ended; a native caller's destroy (the 0x84CE30 loop): nothing parked is released here
+    assert(g_p5cGyN == 3 && g_gRelCalls == rel0 && g_gFreeN == 0 && GCanary(2) == 0xC0FFEE02 && k.dpParked == 5);
     GDestroy(5);
-    assert(g_gFreeN == 4 && g_gFreeLog[3] == 'F');
+    assert(g_gFreeN == 1 && g_gFreeLog[0] == 'F');
+    const LONG relN0 = g_p5cRelN;
+    P5cFlush();  // the START / READY poll (GetOptionHook, a yielding script task)
+    assert(g_p5cGyN == 0 && g_gRelCalls - rel0 == 3 && memcmp(g_gFreeLog + 1, "ECD", 3) == 0 && g_p5cRelN == relN0 + 3);
+    {
+        CONTEXT c = {};
+        c.Ecx = (DWORD)(uintptr_t)(g_gObj[2] + 0x18);  // a fault on C's freed block (the canary word)
+        c.Eax = 0x10;
+        assert(P5cRelMatch(&c) == (DWORD)(uintptr_t)g_gObj[2]);  // C, the nearest released object below ecx
+        c.Ecx = (DWORD)(uintptr_t)&c;  // not one of ours
+        assert(P5cRelMatch(&c) == 0);
+    }
+    // ... while the world closes (DestroyAll, shutdown destroys after RT_CLOSING) a destroy entry still releases
+    g_async.state = A_RUNNING;
+    GNew(4);
+    destroy(0x104); GDestroy(4);
+    g_async.state = A_IDLE;
+    k.rtClosing = 1;
+    destroy(0x105);  // 0x105 is out of the hash: the stub's own work, then the flush
+    k.rtClosing = 0;
+    assert(g_p5cGyN == 0 && g_gFreeN == 5 && g_gFreeLog[4] == 'E');
 
     // 3. kept-wait rules (P5cPark false: RT_DESTROY then waits for the job as today)
     g_async.state = A_RUNNING;
@@ -4421,7 +4986,7 @@ static void TestDestroyPark() {
     assert(P5cPark(0x106, 0) && g_p5cGyN == 1 && GCount(6) == 2);
     g_discCount = 0;
     assert(!P5cPark(0x1FF, 0) && k.p5cKeptWait[3] == kw0[3] + 1);  // not in the hash: waits as today
-    assert(k.dpKeptWait == 4 && k.dpParked == 6);
+    assert(k.dpKeptWait == 4 && k.dpParked == 7);
 
     // 4. many parks: the graveyard fills to its cap (one object parked 511 more times), then a destroy keeps the wait
     for (int n = 1; n < kP5cGrave; n++) assert(P5cPark(0x107, 0));
@@ -4430,7 +4995,7 @@ static void TestDestroyPark() {
     g_async.state = A_IDLE;
     const int rel1 = g_gRelCalls;
     P5cFlush();
-    assert(g_p5cGyN == 0 && GCount(6) == 1 && GCount(7) == 1 && g_gRelCalls - rel1 == kP5cGrave && g_gFreeN == 4);
+    assert(g_p5cGyN == 0 && GCount(6) == 1 && GCount(7) == 1 && g_gRelCalls - rel1 == kP5cGrave && g_gFreeN == 5);
 
     // 5. T-G1: a parked object whose count is already 0 is counted and not released again
     g_async.state = A_RUNNING;
@@ -6169,7 +6734,7 @@ static void TestAvoidRO() {
                       offsetof(Ts3nCounters, avShadow) == 0x31F4 && offsetof(Ts3nCounters, avSiteSkip) == 0x3204 &&
                       offsetof(Ts3nCounters, avFb) == 0x3208 && offsetof(Ts3nCounters, avUs) == 0x3230 &&
                       offsetof(Ts3nCounters, avTwSite) == 0x323C && offsetof(Ts3nCounters, avShadowRuns) == 0x3244 &&
-                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 3457 * 4,
+                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 4274 * 4,
                   "counters v74 layout (docs/registry.md)");
     using namespace av;
     Ts3nCounters& k = ts3native_counters;
@@ -8376,6 +8941,22 @@ static int RpRingCount(DWORD type, bool mapOnly = false) {  // mapOnly: RP_LOTS 
     }
     return n;
 }
+// 0.36.23 (docs/94 §22.32, I-94-452): soft forces on a left-out or vanished lot leave g_rpSoftPend at the cut; live ones stay
+static void TestSoftPendPrune() {
+    const int nEx = g_rpNEx, nPend = g_rpNSoftPend;
+    u64 ex0[64], pend0[64];
+    memcpy(ex0, g_rpEx, sizeof(ex0)), memcpy(pend0, g_rpSoftPend, sizeof(pend0));
+    RpLiveLot live[3] = {{0x10, NULL}, {0x20, NULL}, {0x30, NULL}};
+    g_rpEx[0] = 0x20, g_rpNEx = 1;
+    g_rpSoftPend[0] = 0x10, g_rpSoftPend[1] = 0x20, g_rpSoftPend[2] = 0x99, g_rpSoftPend[3] = 0x30, g_rpNSoftPend = 4;
+    const LONG p0 = g_rpSoftPruned;
+    assert(RpSoftPendPrune(live, 3) == 2 && g_rpNSoftPend == 2 && g_rpSoftPruned == p0 + 2);
+    assert((g_rpSoftPend[0] == 0x10 && g_rpSoftPend[1] == 0x30) || (g_rpSoftPend[0] == 0x30 && g_rpSoftPend[1] == 0x10));
+    assert(RpSoftPendPrune(live, 3) == 0 && g_rpNSoftPend == 2);
+    memcpy(g_rpEx, ex0, sizeof(ex0)), memcpy(g_rpSoftPend, pend0, sizeof(pend0));
+    g_rpNEx = nEx, g_rpNSoftPend = nPend;
+    printf("soft pend prune ok\n");
+}
 static void TestReplayLongRun() {
     Ts3nCounters& k = ts3native_counters;
     static DWORD simTid;
@@ -8863,7 +9444,8 @@ static void P4FakeRelease(const P4Clone* c, LONG flags, const unsigned __int64*,
 static const P4CloneProvider kP4Fake = {P4FakeCut, P4FakeAcquire, P4FakeRelease};
 
 static volatile LONG g_nrDone;
-static DWORD WINAPI P4NrWriter(LPVOID) { P4NrEnter(); InterlockedExchange(&g_nrDone, 1); InterlockedDecrement(&g_snNrIn); return 0; }
+static volatile LONG g_nrStarted;  // the writer thread runs (under parallel load a thread can start > 50 ms late)
+static DWORD WINAPI P4NrWriter(LPVOID) { InterlockedExchange(&g_nrStarted, 1); P4NrEnter(); InterlockedExchange(&g_nrDone, 1); InterlockedDecrement(&g_snNrIn); return 0; }
 
 // one async job through the P4 path (START, live capture, J_DONE, shadow); returns the record
 static const char* P4RunJob(int variant, int* outList, int* s, int* g, u8* opts) {
@@ -9726,8 +10308,12 @@ static void TestPcLazyKeep() {
     {
         bool hasB = false;  // the footprint may sit in other lots' Qs too: each named
         for (int i = 0; i < g_p4Job.nDirty; i++) hasB |= g_p4Job.dirty[i] == B->key;
-        if (!hasB) printf("W6b lots: nDirty %d\n", g_p4Job.nDirty);
-        assert(g_p4Job.nDirty >= 1 && hasB);
+        // the random writes of TestPcThreaded (thread timing picks the steps) can put this footprint into more than the 8 lots
+        // routesnap's W6b names: then the designed fallback, every lot rebased (nDirty -1)
+        u64 all[64];
+        const int nl = RpCloneFpLots((const u8*)(uintptr_t)slot[-2], all, 64);
+        if (!hasB) printf("W6b lots: nDirty %d, footprint in %d lots\n", g_p4Job.nDirty, nl);
+        assert(nl > 8 ? g_p4Job.nDirty == -1 : g_p4Job.nDirty >= 1 && hasB);
     }
     // 0.35.23 (docs/94 §22.26.2): a live footprint (refcount far below RP_BIAS) wrote no clone memory: no lot, no all-lot rebase
     g_p4Job.nDirty = 0;
@@ -9748,7 +10334,9 @@ static void TestPcLazyKeep() {
         SnEnter(SN_W6B, slot);
         bool hasB = false;
         for (int i = 0; i < g_p4Job.nDirty; i++) hasB |= g_p4Job.dirty[i] == B->key;
-        assert(g_p4Job.nDirty >= 1 && hasB);
+        u64 all[64];
+        const int nl = RpCloneFpLots(older, all, 64);  // over 8 lots: every lot rebased, as above
+        assert(nl > 8 ? g_p4Job.nDirty == -1 : g_p4Job.nDirty >= 1 && hasB);
         g_p4Job.nDirty = 0;
     }
     slot[1] = (DWORD)B->key, slot[2] = (DWORD)(B->key >> 32), slot[3] = 0, slot[4] = 1;
@@ -9931,7 +10519,9 @@ static void TestP4() {
     assert(P4Arm(&nctx) && SnLive() && t_snapRun);
     g_nrDone = 0;
     const LONG nrWaits = k.snNrWaits;
+    g_nrStarted = 0;
     th = CreateThread(NULL, 0, P4NrWriter, NULL, 0, NULL);
+    while (!g_nrStarted) Sleep(1);
     Sleep(50);
     assert(!g_nrDone && g_snNrIn == 0);  // stepped back and waits
     P4Disarm();
@@ -10309,6 +10899,7 @@ static DWORD __cdecl P5FakeDoor(DWORD a1, DWORD a2, DWORD a3, DWORD a4, DWORD a5
     return P4FakeDoor(a1, a2, a3, a4, a5, a6, a7, a8, a9);
 }
 // one ReplanFromPosition job through START, the job's Route_PlanLocked and J_DONE; keepList: the route's list is not reset
+static bool g_p5WriteAfterCut;
 static u8 P5RunJob(int variant, int* outList, int* s, int* g, u8* opts, int* o2, bool keepList = false) {
     g_p4Variant = variant;
     AsyncJob j = {};
@@ -10316,7 +10907,9 @@ static u8 P5RunJob(int variant, int* outList, int* s, int* g, u8* opts, int* o2,
     j.seq = 300 + variant;
     j.x87 = GetX87();
     j.mxcsr = _mm_getcsr();
+    j.p4W = 0x7FFF0000;  // a stale slot value: P5OnStart must set the cut's count (0.36.23)
     P4OnStart(&j);
+    if (g_p5WriteAfterCut) InterlockedIncrement(&g_spWrites);  // a recorded routing write while the job is queued
     P4LiveBegin(&j);
     if (!keepList) outList[0] = outList[1] = (int)(uintptr_t)outList;
     int o1 = -1;
@@ -10351,10 +10944,10 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, m2Ready) == 0x2F70 && offsetof(Ts3nCounters, m2Take) == 0x2F74 &&
                   offsetof(Ts3nCounters, m2Fb) == 0x2F90 && offsetof(Ts3nCounters, m2VerM) == 0x2FDC &&
                   offsetof(Ts3nCounters, m2DoorHist) == 0x3000 && offsetof(Ts3nCounters, m2Guard) == 0x3024 &&
-                  sizeof(Ts3nCounters) == 3457 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4274 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4QCut) == 0x30EC && offsetof(Ts3nCounters, p4QCutMiss) == 0x30F0 &&
                   offsetof(Ts3nCounters, p4WaitExt) == 0x30F4 && offsetof(Ts3nCounters, oiClone) == 0x30F8 &&
-                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 3457 * 4,
+                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 4274 * 4,
                   "counters v67 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpOldAsk) == 0x310C && offsetof(Ts3nCounters, p4AcqBad) == 0x3110, "counters v68 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4Obst) == 0x3114 && offsetof(Ts3nCounters, p4ObstBusy) == 0x3118,
@@ -10364,7 +10957,7 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, p4Borrow) == 0x313C && offsetof(Ts3nCounters, p4BorrowMiss) == 0x3140 &&
                   offsetof(Ts3nCounters, p4BorrowDirty) == 0x3144, "counters v71 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpKidsKept) == 0x3148, "counters v72 layout (docs/registry.md)");
-    assert(k.version == 83);
+    assert(k.version == 99);
     PlanLockedFn planSave = g_planOrig;
     CacheEntry* tab = g_tab;
     const LONG workerMode = k.workerMode, budgetMode = k.budgetMode;
@@ -10445,7 +11038,14 @@ static void TestP5() {
            strstr(g_p4Buf, "\"refused\":null") && k.snJsonl == jsonl + 1 && k.m2Taken == taken + 1);
     P4FakeListFree(list, NULL);
     r = P5RunJob(2, list, s, g, opts, &o2);  // the clone's goal index differs: M2, logged, the game's index kept, Mode=2 stays on
-    assert(o2 == 1 && k.m2VerM[2] == vm2 + 1 && k.m2VerBad == bad + 1 && g_p5On);
+    assert(o2 == 1 && k.m2VerM[2] == vm2 + 1 && k.m2VerBad == bad + 1 && g_p5On && strstr(g_p4Buf, "\"stale\":false"));
+    P4FakeListFree(list, NULL);
+    // 0.36.23: the same difference with a recorded write between the START cut and the job is time skew (M5), not M2
+    const LONG vm5 = k.m2VerM[5];
+    g_p5WriteAfterCut = true;
+    r = P5RunJob(2, list, s, g, opts, &o2);
+    g_p5WriteAfterCut = false;
+    assert(o2 == 1 && k.m2VerM[2] == vm2 + 1 && k.m2VerM[5] == vm5 + 1 && k.m2VerBad == bad + 1 && strstr(g_p4Buf, "\"stale\":true"));
     P4FakeListFree(list, NULL);
     g_p5Verify = 0;
 
@@ -10475,13 +11075,13 @@ static void TestP5() {
     assert(k.m2Trips == trips + 3 && !g_p5On && k.m2Off == 2 && !(k.m2Ready & 1));
     const LONG plans = k.m2Plans, armed = k.m2Armed;
     r = P5RunJob(0, list, s, g, opts, &o2);
-    assert(r == 1 && o2 == 1 && k.m2Plans == plans && k.m2Armed == armed && g_p4LiveCalls == live0 + 13);
+    assert(r == 1 && o2 == 1 && k.m2Plans == plans && k.m2Armed == armed && g_p4LiveCalls == live0 + 14);
     P4FakeListFree(list, NULL);
     g_p5On = 1, k.m2Off = 0, k.m2Ready |= 1;
     // the runtime switch (`--ab routesnap`): 0 = plain A10 jobs
     k.m2Take = 0;
     P5RunJob(0, list, s, g, opts, &o2);
-    assert(k.m2Armed == armed && g_p4LiveCalls == live0 + 14);
+    assert(k.m2Armed == armed && g_p4LiveCalls == live0 + 15);
     P4FakeListFree(list, NULL);
     k.m2Take = 1;
     // M2-1: a snapshotted site whose bytes change (a foreign hook installed after us) turns Mode=2 off at the next START
@@ -10503,6 +11103,28 @@ static void TestP5() {
     P5ModGuard();
     P5ModGuard();
     assert(k.m2Guard == (1 | 4) && g_p5On);
+    // docs/157 (TS3N_FAULTINJ): a refusal storm, 64 clone builds out of memory in a row: each released to the provider and
+    // answered by the game's plan, Mode=2 stays on (no breaker by design: a refusal costs the request its clone run only)
+    {
+        g_fiMask = FI_OOM, g_fiEvery = 1, g_fiN = 0, g_fiTurn = 0;
+        const LONG mat = k.m2Fb[P4_AB_MAT], taken0 = k.m2Taken;
+        for (int i = 0; i < 64; i++) {
+            g_pvRel = 0;
+            P5Fallback(0, &k.m2Fb[P4_AB_MAT], list, s, g, opts);
+            assert(g_pvRel == 0x100 && g_fiPlan == 0);  // released with no flags, the hold not left to time out
+        }
+        assert(k.m2Fb[P4_AB_MAT] == mat + 64 && k.m2Taken == taken0 && g_p5On && g_p4On);
+        // a foreign ReplanFromPosition job with FbJobCapMs (the deadline already past on this thread): the clone run is not
+        // under CallPlanBudget, so the job cap never cuts a clone search short; the clone answer is taken whole
+        g_fiMask = FI_BUDGET;
+        const LONG ready = k.budgetReady;
+        k.budgetReady = 1, t_fbCapUs = 1, t_fbDeadline = 1, t_jobT0 = 1;
+        int o2b;
+        P5RunJob(0, list, s, g, opts, &o2b);
+        assert(g_fiBudgetOn == 0 && k.m2Taken == taken0 + 1 && o2b == 1);
+        k.budgetReady = ready, t_fbCapUs = 0, t_fbDeadline = 0, t_jobT0 = 0, g_fiMask = 0;
+        P4FakeListFree(list, NULL);
+    }
     // a fault in the clone run: P4 and Mode=2 off for the session, the request answered by the game's plan
     static u8 fkHeap[0x4E8];
     static DWORD fkHeapSlot;
@@ -10540,10 +11162,23 @@ static void TestP5() {
 #include "hitchattr-test.h"  // TestHitchAttr ([HitchAttr], docs/96 §9)
 #include "unseen-test.h"  // TestUnseen ([UnseenProbe], docs/143)
 #include "p5c-test.h"  // TestP5cIn (P5c, docs/94 §22.11), run from TestP5b
+#include "p5fault-test.h"  // TestP5Fault (docs/157 fault injection), run from TestP5b
 #include "autshadow-test.h"  // TestAutShadow ([AutShadow] part 1, docs/122 §13: T1, T2, T4)
 #include "threadstack-test.h"  // TestThreadStack ([ThreadStack], docs/66 §6)
 #include "crashreport-test.h"  // TestCrashReport ([CrashReport], docs/135)
+#include "apex-test.h"  // TestApex ([Compat] ApexStandDown, docs/148 §7)
 #include "earlyout-test.h"  // TestEarlyOut ([RouteEarlyOut] probe, docs/142)
+#include "routephases-test.h"  // TestRouteJobPhases ([RouteJobPhases], docs/150 §7)
+#include "fgrender-test.h"     // TestForegroundRender ([Harness] ForegroundRender, docs/162 §7)
+#include "syncphases-test.h"   // TestSyncPhases ([RouteJobPhases] SyncPlans, docs/164)
+#include "hostcalls-test.h"    // TestHostCalls (HostSplit + DoorMemo, docs/159)
+#include "tailunlock-test.h"  // TestTailUnlock ([RouteAsync] TailUnlock, docs/150 §11)
+#include "cellmemo-test.h"  // TestCellMemoProbe ([CellMemoProbe], docs/150 §12)
+#include "replandedupe-test.h"  // TestReplanDedupe ([RouteAsync] ReplanDedupe, docs/150 §13)
+#include "plandeadline-test.h"  // TestPlanDeadline ([RouteAsync] PlanDeadlineMs / FailMemo, docs/164 §7)
+#include "gate0ro-test.h"     // TestGate0Ro ([Gate0RO], docs/152 §G1)
+#include "rtoro-test.h"  // TestRouteToObjRO ([RouteToObjRO], docs/140 §12)
+#include "lockfast-test.h"  // TestLockFastPath (docs/165 F1)
 
 // 0.35.9 (docs/94 §22.13, I-94-450..452): P5 (Mode=2) with ReleaseLock=1 and FreeLock=1 on the replay clone provider, in one
 // clone's life (no epoch, as with soft resync since 0.35.5); the test thread is the worker, world+0x918 the game's lock:
@@ -10924,6 +11559,9 @@ static void TestInsFreeInPlace() {
         assert(g_rpBytes == 0 && k.rpFps == 0);
     }
     g_rpInsFreeInPlace = 0;
+    if (!(freed[0] == 0 && freed[1] > 0 && scans[1] < scans[0] && freed[1] + retired[1] == retired[0] && fps[0] == fps[1]))
+        printf("InsFreeInPlace: freed %ld/%ld retired %ld/%ld scans %ld/%ld fps %ld/%ld\n", freed[0], freed[1], retired[0], retired[1],
+               scans[0], scans[1], fps[0], fps[1]);
     assert(freed[0] == 0 && freed[1] > 0 && scans[1] < scans[0] && freed[1] + retired[1] == retired[0] && fps[0] == fps[1]);
     // the scan: RpRepin over a clone footprint table of BP size (top-level copies, none a child of the retired block)
     const DWORD n = 74000;
@@ -11182,9 +11820,11 @@ int main() {
     TestRouteSites();
     TestRouteEnforce();
     TestG11CloseBy();
+    TestSeedWaitKeys();
     TestDiscourage();
     TestDiscourageDX();
     TestFootprintDefer();
+    TestFootprintDefer2();
     TestDestroyPark();
     TestSteerRO();
     TestSteerTrip();
@@ -11210,6 +11850,7 @@ int main() {
     TestRemPatch();
     TestCycles();
     TestReplayLongRun();
+    TestSoftPendPrune();
     TestPools();
     TestJobQueue();
     TestLotSinCos();
@@ -11223,6 +11864,7 @@ int main() {
     TestP5b();
     TestP5PreLock();
     TestHitchAttr();
+    TestLockFastPath();
     TestUnseen();
     TestUnseenThrottle();
     TestUnseenThrottle2();
@@ -11230,7 +11872,18 @@ int main() {
     TestAutShadow();
     TestThreadStack();
     TestCrashReport();
+    TestApex();
     TestEarlyOut();
+    TestRouteJobPhases();
+    TestSyncPhases();
+    TestForegroundRender();
+    TestHostCalls();
+    TestTailUnlock();
+    TestCellMemoProbe();
+    TestReplanDedupe();
+    TestPlanDeadline();
+    TestGate0Ro();
+    TestRouteToObjRO();
     puts("selftest ok");
     return 0;
 }

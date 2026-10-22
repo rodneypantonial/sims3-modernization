@@ -194,3 +194,71 @@ No reader needs today's wait as a fallback beyond the parked case. Not proven: s
 `tools/harness/queues/defer-footprint-ab.json` (asi `game-copy/ts3native.asi.deferfp`, copied by hand from the build; base = snap-p5c-ab.json settings + `Discourage.DeferFootprint=1`, HitchAttr on, 10 min, 2-min slices, `minCounters` 75): `bp-wr-deferfp` (off-first ABBA), `bp-wr-deferfp-onfirst` (`run.profile.abOnFirst`, new `profile-world.ts --ab-on-first`: on, off, off, on, for docs/136 §2's slot bias), `ip-wr-deferfp` (off-first). Read with `node tools/harness/wait-ab.ts <tag>`.
 
 **Expected [inferred]:** key `0x833593` from ~7-9 ms/s BP (docs/116 §4.1; 7.2-9.7 in §4) and 6.3-7.9 IP down to ~0-1 ms/s in the on slices (left: parked objects, a full queue); the sim-thread keyed total down 3-5 ms/s BP, since part of the wait moves to the next sync acquire after the job (gains do not add, §5). Apply cost per record outside jobs: tens of µs, not measured.
+
+## 11. Results: no gain, wait conserved (2026-10-22, clean off-first + daytime pair)
+
+Data: `probe-out/profile/clean-night-routing-extra-2026-10-22-bp-deferfp-offfirst` (its on-first twin has no `-ab.json`), `defer-footprint-ab-2026-10-21-bp-wr-deferfp{,-onfirst}`, `-ip-wr-deferfp`. Measured unless marked.
+
+**It defers [verified, counters].** Per 240 s on: `usfDeferred` 273-288 BP, applied 208-215 + collapsed 58-77 + destroy-applied 24-63, `usfAgeMaxMs` 31-94, `usfApplyInJob` 0; off: 1-9 (order rule only).
+
+**The drain point holds nothing [verified].** `DiscDrain` waits for the job only when forced (queue full, a record older than `kDiscMaxAgeMs` 250, or an Add/Remove that cannot defer); `discDrainWaitUs` is 92-127 us per 240 s on both sides, and no usf record reached 250 ms. Not the cause.
+
+**The key was never timed [verified].** `0x833593` is missing from every table: the warm-up slice is on, so UpdateSimFootprint did not wait until the 32 probe-P0 slots were full, and its off-half waits counted only in `blockOther` (off 247-309 vs on 78-129 per 240 s BP; the difference ~0.7/s matches the deferred rate). So the draft's "keyed wait +5.7 / +8.4 ms/s" leaves out the removed key's off time. Corrected with 7.9 ms/s for `0x833593` off (mean of the four BP slotro halves on the same base, 6.8-9.2) [inferred]: clean off-first +12.5 -> ~+4.6; daytime off-first +7.1 -> ~-0.8, on-first +4.2 -> ~-3.7.
+
+**Where it went [verified per key, on minus off ms/s: clean / daytime off-first / on-first].** `0x8334CC` (inside the sibling `0x8334A0`, phase 2, not deferred [inferred from the address]) +3.3 / +2.1 / -2.4; `0x82D296` +2.2 / +1.6 / +3.1; destroy +2.4 / +0.9 / -1.7; gate 0 +2.1 / -0.8 / +1.7. The summed wait is conserved (docs/143 §8.14): the next taker in the tick waits out the same job hold. it/s -0.6% / +0.7% (draft pairs).
+
+**Verdict: no gain by design while other takers follow in the tick.** Phase 2 (`0x8334A0`) alone would move the wait again. What gains: a shorter or lent job hold (P5b / P5c), H2 (docs/86), or all takers of the pass lock-free in one bundle (docs/137 §12). Re-measure with the key timed (rofix build seeds `0x833593`): `tools/harness/queues/rofix-ab.json` (`bp-deferfp-verify` day job with counter pass rules, then `bp/ip-deferfp-offfirst/onfirst`, asi `.rofix`). Ledger docs/51 §218.
+
+## 12. Design U phase 2 as built (2026-10-22, offline; no game run)
+
+Built in `native/ts3native/discourage.cpp` on 0.36.23 (TS3NATIVE_VERSION not bumped), counters **v94** (`fp2*`, docs/registry.md), selftest `TestFootprintDefer2`. Ini `[Discourage] DeferFootprint2=1` (default 0), installed only after design U (its order rule keeps a U call behind a queued phase 2 record); runtime switch `fp2Mode` (+0x3FB4, `--ab deferfootprint2`). It closes docs/152 gaps G2 and G3; G4 (`RemovePrivateFootprint`) is not deferred (§12.3).
+
+### 12.1 Keys to functions [verified disassembly]
+
+| Key | Function | Proof |
+|---|---|---|
+| `0x8334CC` | `RoutingWorld_ObjectFootprintFromTool 0x8334A0`, `thiscall(world; obj)`, `ret 4`, void | return of `call Lock_Acquire 0x4E16F0` at `0x8334C7`, the function's only `+0x918` acquire, after its early out `0x82A720` (`0x8334AC`) |
+| `0x82D296` | `RoutingWorld_UpdateObjectLot 0x82D280`, `thiscall(world; obj)`, `ret 4`, void | return of `call 0x4E16F0` at `0x82D291` (no early out: the lock comes first) |
+| `0x82A0F6` | `RoutingWorld_RemoveFootprintLocked 0x82A0C0`, `thiscall(world; obj, flag)`, `ret 8`, `al` = a footprint was removed | return of `call 0x4E16F0` at `0x82A0F1` |
+
+Callers (direct `E8` scan of `.text`): `0x8334A0` from `0x94713D` (event `0x0E` handler path `0x9470B0`) and `0xB585A1` (build tool); `0x82D280` from `0x9462C9` and `0x946F99`; none reads `eax` after the call [verified]. `0x82A0C0` from the IC `0x754610` (`0x75465E`; `al` becomes the IC's result) and from `LockedLotUpdate` (`0x82B551`, under `+0x918`).
+
+What they do [verified disassembly]: `0x8334A0` = early out `0x82A720(obj)`, lock, `+0x974`, lock-key map lookup (a parked object: nothing), else `P+0x10D` set, `UpdateObjectFootprintCore 0x8321F0 (obj, 1, lot, 1, 0)` (5th argument 1: the core runs `0x82A720` again and on yes the remove `0x82CBF0`; then `0x829A60(obj, 1, 0)` and the insert), `P+0x10D` restored, world `+0x994 = 0`. So it is not `0x833560` with enable 1: the core's 5th and 6th arguments differ and there is no remove before the core. `0x82D280` = lock, `+0x974`, `obj`, `0x82C120 (world; id, lot of obj)` (re-home into the current lot), unlock.
+
+The `+0x978` bracket: `0x9470B0` sets world `+0x978 = 1` around the call when `C+0x40` bit 1, `+0x97E` and `0x945E40` hold, then clears `C+0x40` bit 1; `0xB58557..0xB58574` brackets the build tool call the same way. Readers of `+0x978` on that path: only `0x82A720` (`0x82A738`) and `0x829A60` (`0x829A80`), and only when `+0x97E` and `+0x976` are both set (the world's batch mode); each then clears `+0x97F`. The other readers (`0x835B46`, `0x8359B3`, `0x83609D`) and writers (`0x82FBB2`, `0x8359B9`, `0x8360AD`) are not within 8 direct hops of `0x8334A0` or `0x82D280` (BFS over direct calls; indirect sites not followed) [verified direct].
+
+### 12.2 What it does
+
+Same skeleton as §10.1; differences only:
+
+1. **Pass through** as U, plus FromTool while the batch mode is on (`+0x97E` and `+0x976`): there the bracket byte decides the early outs and the first clears `+0x97F` (`fp2Pass`).
+2. **Order rule** as U: an object with any queued record (D, U or phase 2) queues the call in any mode; otherwise only with `fp2Mode = 1` while a job runs.
+3. **FromTool early out at call time:** `0x82A720` says no: return (the original does nothing). UpdateObjectLot has none.
+4. **Duplicate:** the object's newest queued record is the same kind, same pointer and (FromTool) the same `+0x978` byte: dropped (`fp2Dup`). Remove plus re-insert, or the re-home, twice from the same state equals once [inferred from the bodies].
+5. **Queue full:** as U (drain unless an Add is queued, then the call: `fp2Forced`; with an Add queued the call runs now, out of order: `fp2FullPass`, expected 0).
+6. **Record:** `{fp2 = 1 FromTool / 2 lot, id, pointer, world, tick, high = world +0x978 at the call}` (`fp2Deferred[kind]`).
+
+**Apply** (D's drain points, D-X destroy): find by id + pointer check; FromTool: world `+0x978` set to the recorded byte, the original (it runs its own early out again: a call made now with the caller's bracket), `+0x978` restored; lot: the original (re-homes into the object's lot at apply time). Gone or reused id: dropped (`fp2Dropped`). No drain-time collapse for phase 2 records, and a U record followed by a phase 2 record of the same object is not collapsed (the U collapse only looks at U records). Tripwire `fp2ApplyInJob` = 0; age `fp2AgeMaxMs`.
+
+### 12.3 Readers that need the fresh state
+
+| Reader | Handling | Tag |
+|---|---|---|
+| Same object's later U / FromTool / lot calls | queue behind (order rule) | verified code + selftest |
+| Same object's D Add / Remove with no job | `DiscDrain` before the call (unchanged) | verified code + selftest |
+| Private-footprint ICs: `RouteManager_RemovePrivateFootprint` (`0x754610` -> `0x82A0C0`: removes every footprint of the id from its lot via `0x635700` and frees the component's private footprint `C+0x38` via `0x947880(0)`) and `RouteManager_AddPrivateFootprint` (`0x75DCF0` -> `0x831BA0`) | call sites `0x75465E` / `0x75DE1A` retargeted: an object with queued records is flushed first (`DiscDrain(true)`, waits for a running job; `fp2Forced`), else the call as today. Without it a deferred FromTool could re-insert after the remove | sites and flush verified + selftest; reorder effect inferred |
+| Destroy | D-X applies the object's U and phase 2 records first | verified code + selftest |
+| Save, travel / quit, START / READY / CANCEL polls | D's drains (all records) | verified code |
+| Route job on the worker | pre-call footprints, as if the call came after the job | inferred (as §10.2) |
+| Sim-thread sync routing reads (sync plans, steering, gates, slot checks) | stale until the next drain (at most 250 ms or the next no-job IC point), as U and D | inferred |
+| Event 9 `0x833680` and other unhooked writers of the same object | run now; the deferred record redoes from the then-current state (I-89-6) | inferred |
+
+**`RemovePrivateFootprint` not deferred (G4):** its result is the IC's return (`0x754667`). Script pops it (`DynamicSimFootprint.set_Enabled`, the only game caller, `IL_014e: pop`) [verified IL], but it is order-sensitive with `AddPrivateFootprint` and the U / phase 2 records (it removes all footprints of the id), its key is 0.1-0.7 ms/s, and its entry already carries `[RouteSnap] Count`'s stub. It stays a residual; the flush above keeps it in order.
+
+### 12.4 Offline checks
+
+`build.cmd`: selftest ok. `TestFootprintDefer2`: no-job pass-through; in-job records in one FIFO with U and D, applied in order with the call-time `+0x978` replayed and restored; FromTool early out leaves no record; order rule in mode 0 and with no job; U before phase 2 not collapsed; duplicates (not across another bracket byte, kind or object); pass-throughs incl. batch mode; flush before the private-footprint ICs (also waiting for a running job; skipped with `+0x918` owned or no record of the object); destroy; gone / reused at apply; queue full with and without an Add; no lost update (`fp2Deferred = fp2Applied + fp2Dropped` after every drain); tripwires 0. `steerro-test` (prologues and call sites asserted on the image): seeds 1 and 2 ok; seed 3 fails in section K8 (planner assert, `g_k8Found` etc.) identically on the unchanged base build, so not this change. `hook-sites.ts --check`: new sites in docs/68; 7 older addresses (threadstack, monothread-m5, seeded wait keys) were already unlisted on base. `check-docs-code.ts` ok. Parked `game-copy/ts3native.asi.deferfp2` sha256 `f6dc77c42c464b944111170e99157414438e0270b7af8be775cd499395592745`.
+
+### 12.5 Live jobs (queued, not run)
+
+`tools/harness/queues/deferfp2.json`: `bp-deferfp2-verify` (day, 5 min, modes on, no A/B: deferred = applied + dropped by the end, `fp2ApplyInJob` / `fp2FullPass` 0, ages < 300 ms, forced flushes counted, stuck Sims not above the baseline, no crash), then night pairs BP + IP off-first / on-first with every B0 switch plus `deferfootprint2` toggled together (`--ab steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2`). **Expected [inferred, docs/152 §1]:** keys `0x833593`, `0x8334CC`, `0x82D296` ~0 in the on slices and the summed keyed wait about unchanged (gate 0 G-a and `0x83156D` remain in every pass): this arm tests the bundle model, not a gain on its own. Ledger docs/51 §238.

@@ -25,6 +25,8 @@ namespace Ts3Agent
             Dispatcher.Register("unseen_water_check", UnseenWaterCheck);
             Dispatcher.Register("unseen_horse_ride", UnseenHorseRide);
             Dispatcher.Register("unseen_water_watch", UnseenWaterWatch);
+            Dispatcher.Register("unseen_water_cause", UnseenWaterCause);
+            Dispatcher.Register("houseboat_move", HouseboatMove);
         }
 
         // unseen_water_watch {start: true} | {stop: true} | {result: true, min_engaged?: n, min_mounted?: n, require?: true}
@@ -68,9 +70,22 @@ namespace Ts3Agent
             bool ok = sWaterStranded.Count == 0 && sWaterMaxEngaged >= minE && sWaterMaxMounted >= minM && sWaterSamples > 0;
             r["check_ok"] = ok;
             if (a.Bool("require", false) && !ok)
-                throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s)"
+                throw new McpException(sWaterStranded.Count > 0 ? "unseen_water_watch: " + sWaterStranded.Count + " stranded sample(s): " + StrandedSummary(3)
                     : "unseen_water_watch: not exercised (max engaged " + sWaterMaxEngaged + " < " + minE + " or max mounted " + sWaterMaxMounted + " < " + minM + ", samples " + sWaterSamples + ")");
             return r;
+        }
+
+        // first n stranded samples as "name depth/above-sea interaction lot", so a failed check names its Sims in the log
+        static string StrandedSummary(int n)
+        {
+            List<string> parts = new List<string>();
+            for (int i = 0; i < sWaterStranded.Count && i < n; i++)
+            {
+                Dictionary<string, object> o = sWaterStranded[i] as Dictionary<string, object>;
+                if (o == null) continue;
+                parts.Add(o["name"] + " depth " + o["depth_m"] + " m, " + o["y_above_sea_m"] + " m above sea, '" + o["interaction"] + "', lot " + (o["lot"] ?? "none"));
+            }
+            return string.Join("; ", parts.ToArray());
         }
 
         static void WaterSample()
@@ -88,10 +103,14 @@ namespace Ts3Agent
                 float depth = sea - World.GetTerrainHeight(p.x, p.z);
                 string inter = (s.CurrentInteraction != null ? s.CurrentInteraction.GetType().Name : "") + " " + (s.Posture != null ? s.Posture.GetType().Name : "");
                 bool swimOrBoat = inter.IndexOf("Swim", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Boat", StringComparison.OrdinalIgnoreCase) >= 0
-                    || inter.IndexOf("Taxi", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Ocean", StringComparison.OrdinalIgnoreCase) >= 0;
+                    || inter.IndexOf("Taxi", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Ocean", StringComparison.OrdinalIgnoreCase) >= 0
+                    || inter.IndexOf("Dive", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Snorkel", StringComparison.OrdinalIgnoreCase) >= 0
+                    || inter.IndexOf("Scuba", StringComparison.OrdinalIgnoreCase) >= 0 || inter.IndexOf("Mermaid", StringComparison.OrdinalIgnoreCase) >= 0;
+                // a Sim more than 0.3 m above the sea surface stands on something (houseboat deck, dock, pier, bridge), not in the water
+                bool aboveWater = p.y > sea + 0.3f;
                 if (horse != null && horse.IsHorse) mounted++;
                 else if (parent != null) vehicle++;
-                else if (depth > 0.5f)
+                else if (depth > 0.5f && !aboveWater)
                 {
                     if (routing || swimOrBoat) water++;
                     else
@@ -99,6 +118,8 @@ namespace Ts3Agent
                         Dictionary<string, object> o = Util.Obj();
                         o["name"] = s.FullName; o["x"] = Math.Round(p.x, 1); o["z"] = Math.Round(p.z, 1);
                         o["depth_m"] = Math.Round(depth, 2); o["interaction"] = inter;
+                        o["y_above_sea_m"] = Math.Round(p.y - sea, 2);
+                        o["lot"] = s.LotCurrent != null ? s.LotCurrent.Name : null;
                         if (sWaterStranded.Count < 50) sWaterStranded.Add(o);
                     }
                 }

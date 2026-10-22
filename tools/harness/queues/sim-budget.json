@@ -1,0 +1,122 @@
+{
+  "note": "Sim-thread budget per world (docs/160) WITH OUR FIXES ON (Rodney 2026-10-22: measure with fixes in place to retarget): the v0.1.5 all-on candidate set of v015-allon-verify.json (native ini keys + ts3fixes legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread via profile.fixesOn) in plain play, no repro, no --ab. Not in it until their day verify: RouteToObjRO, Gate0RO (G1), DeferFP2. 10 min per world, ~12 min per job, ~36 min. Report: tools/harness/sim-budget-report.ts. Timing: clean night only.",
+  "jobs": [
+    {
+      "id": "bp-sim-budget",
+      "note": "Sim-thread budget (docs/160), Bridgeport, all-on candidate set (queue note) on asi.0325 + [HitchAttr] (observe only, per-second and per-frame +0x918 / job waits). 10 min seeded profile with the stutter profiler and both stack samplers (managed minutes 1-4, native 5-8): no --ab, no repro. Read: node tools/harness/sim-budget-report.ts (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, /native waits by key present. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-sim-budget",
+      "note": "Sim-thread budget (docs/160), Isla Paradiso, all-on candidate set (queue note) on asi.0325 + [HitchAttr] (observe only, per-second and per-frame +0x918 / job waits). 10 min seeded profile with the stutter profiler and both stack samplers (managed minutes 1-4, native 5-8): no --ab, no repro. Read: node tools/harness/sim-budget-report.ts (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, /native waits by key present. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-sim-budget",
+      "note": "Sim-thread budget (docs/160), Sunset Valley, all-on candidate set (queue note) on asi.0325 + [HitchAttr] (observe only, per-second and per-frame +0x918 / job waits). 10 min seeded profile with the stutter profiler and both stack samplers (managed minutes 1-4, native 5-8): no --ab, no repro. Read: node tools/harness/sim-budget-report.ts (TS3_REPO=<main checkout> from a worktree). Pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, /native waits by key present. Timing only on a clean night (noisy-machine rule).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

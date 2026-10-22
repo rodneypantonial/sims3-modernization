@@ -20,8 +20,9 @@
 //     loop (the steering holder ends its call) and logs every 2 s with the owner thread.
 // 0.34.2 ([RouteSnap] ReleaseGates=1, switch p5bGates; docs/94 §22.10): read-only gate leaves are admitted too, on the sim
 // (the jobs' owner) outside a job callback, during a gate's +0x918 wait (RgEnter sets t_p5bSite / t_p5bSlot):
-//   - gate 12 LotTable_Contains (reads only the table) for the read families: F-C front door (key 0x631814), F-G placement
-//     (0x631F40), and F-B slot position (key 0x62F782 with second frame 0x76F15D). Not the rest of 0x62F782 / 0x62FB74: F-A
+//   - gate 12 LotTable_Contains (reads only the table) for the read families: F-C front door (key 0x631814) and F-B slot
+//     position (key 0x62F782 with second frame 0x76F15D). Not F-G placement (0x631F40; docs/155: its unlocked tail after the
+//     leaf can flush the quadtree, waits as before, counted in p5bFgHeldOut). Not the rest of 0x62F782 / 0x62FB74: F-A
 //     footprint level rebuild, F-D portal writer ICs (they write the live portal objects the clone holds), F-E, F-F;
 //   - gate 0 LotTable_GetOrInsert on a hit (checked with LtFind once the lent lock is ours, so nothing else moves the table):
 //     a hit writes nothing; a miss would insert, so the lock is given back and the entry waits as before.
@@ -54,7 +55,9 @@ static int P5bGate() {
     if (!ts3native_counters.p5bGates || !t_waitKey || !t_p5bSlot) return P5B_NO;
     if (t_p5bSite == 1) return P5B_G0;
     if (t_p5bSite != 13) return P5B_NO;
-    if (t_waitKey == 0x00631814 || t_waitKey == 0x00631F40) return P5B_G12;
+    // not F-G 0x631F40 (docs/155 §4, §8): after its Contains leaf 0x631F10 calls the pinned quadtree query 0x667480 at 0x631F9A
+    // without +0x918, which can flush (W1/W2) under the worker's remaining live plan (TailUnlock) or fallback plan (P5b)
+    if (t_waitKey == 0x00631814) return P5B_G12;
     return t_waitKey == kP5bPfoRet && VfRealRet(t_p5bSlot + 7) == kP5bSlotRet ? P5B_G12 : P5B_NO;  // P1b's frame offset
 }
 // gate 0 with the lent lock held: GetOrInsert(P+0x48)(key*) finds the key (slot[-2] = ecx, slot[1] = key*)
@@ -78,7 +81,7 @@ static int P5bAllowed(const void* lock) {
 
 // LockAcquireAsync's every call of the game's Lock_Acquire (tries, non-owner waits, the deadline's last try)
 static LONG P5bLock(void* lock, void* edx, const DWORD* d) {
-    if (!g_p5bOn || lock != g_rgLock) return g_lockOrig(lock, edx, d);
+    if (!(g_p5bOn || g_tuOn) || lock != g_rgLock) return g_lockOrig(lock, edx, d);  // TailUnlock lends with P5b's rules
     Ts3nCounters& k = ts3native_counters;
     if (const int adm = P5bAllowed(lock)) {
         const bool outer = P5bOwner(lock) != (LONG)GetCurrentThreadId();
@@ -100,7 +103,11 @@ static LONG P5bLock(void* lock, void* edx, const DWORD* d) {
             return r;
         }
         InterlockedDecrement(&g_p5bIn);
-        if (!counted) { counted = true; InterlockedIncrement(&k.p5bHeldOut); }
+        if (!counted) {
+            counted = true;
+            InterlockedIncrement(&k.p5bHeldOut);
+            if (t_p5bSite == 13 && t_waitKey == 0x00631F40) InterlockedIncrement(&k.p5bFgHeldOut);  // docs/155: F-G not admitted
+        }
         // the lock is the worker's for this caller: a try or a passed deadline fails as it would against the worker's hold
         if (*d == 0 || (*d != 0xFFFFFFFF && (LONG)(GetTickCount() - *d) >= 0)) return -2;
         while (g_p5bWin && (*d == 0xFFFFFFFF || (LONG)(GetTickCount() - *d) < 0)) Sleep(1);

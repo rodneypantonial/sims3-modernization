@@ -1,0 +1,49 @@
+{
+  "note": "docs/164 [RouteJobPhases] SyncPlans=1 (2026-10-22, NOT run). Build: game-copy/ts3native.asi.0328 (master 73707448 + syncphases.cpp, counters v97, combined build with v96; sha256 in docs/164 §6), master ini (release defaults). Day OK, noisy machine OK: observe only, the split is read per plan, not as a timing A/B. Jobs turn on ONLY SyncPlans=1 and LogFallbackStack=16 (LogFallbackMs stays 200). Report per job: node tools/harness/route-phases-report.ts --sync probe-out/queue/<tag>-ts3native.log --min 300 (exit 1 = no split line). ~25 min real.",
+  "jobs": [
+    {
+      "id": "sv-syncphases-big-crowd",
+      "note": "Sunset Valley rare-big-crowd (the docs/163 7,361 / 7,350 ms failed Route_Plans in ThreadedObjects). Needs in ts3native.log: 'OK   route phases SyncPlans' and 'route job phases: ... sim sync plans only'. Pass: no crash, game alive, at least one 'route phases: sync plan N ms' line (route-phases-report --sync exit 0), sypBusy and sypStale small (log them), rjpDropped 0. A crash = stop the queue, triage against syncphases.cpp / the routephases stub change (crash-cause rule). Read: per plan >= 300 ms the top phases, the goal-lot entry loop and open-ground counts and ms, failed vs succeeded, entry (IC vs Route_PlanLocked = Replan / no IC), the script stack line after the 'route async: sync plan' line; docs/164 §3 says which cap would cut it.",
+      "asi": "game-copy/ts3native.asi.0328",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 97,
+      "ini": {
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-syncphases-route-bits",
+      "note": "Bridgeport rare-route-bits (the docs/142 4,060 ms car-only plan and the 4,443 ms failed Route_Replan seen only in the hitch record: with A10 off it never reaches SyncIc, so its split line says entry Route_PlanLocked). Same needs and pass as sv-syncphases-big-crowd. Read: whether the car-only plan's time sits in the entry loop's world A* (docs/142 says every candidate fails by construction) or outside it.",
+      "asi": "game-copy/ts3native.asi.0328",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 97,
+      "ini": {
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "rare-route-bits"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

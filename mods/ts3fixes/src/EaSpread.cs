@@ -330,8 +330,17 @@ namespace Ts3Fixes
                 SlicedPass<Sim> actors = new SlicedPass<Sim>(new List<Sim>(LotManager.Actors));
                 whole = RunSliced(actors, delegate(Sim s) { ActorStep(s, n); }, EaSpreadCore.kMaxActors, ref ticks, ref maxUs);
             }
+            if (whole)
+            {
+                Simulator.Sleep(0); // the hot-spot pick gets a tick of its own, timed into the longest tick (docs/147 §6)
+                ticks++;
+                whole = !WorldGone();
+            }
             if (!whole) { c[183]++; EaLog("venue cleanup stopped: world gone"); return; }
+            StopWatch w = EaWatch();
+            w.Restart();
             MetaAutonomyManager.DecideTodaysHotSpotsAndDeadZones();
+            if (w.GetElapsedTime() > maxUs) maxUs = w.GetElapsedTime();
             c[177]++;
             c[178] += lotList.Count;
             if (maxUnits > c[209]) c[209] = maxUnits;

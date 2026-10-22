@@ -671,6 +671,11 @@ static bool ApplyVerify(const wchar_t* ini) {
     for (int i = 0; i < VF_N; i++) {
         const VfProbe& p = kVf[i];
         wanted[i] = (p.group & g_vfGroups) && (p.at != VF_THREADED_OBJS || threadedObjs);
+        if (wanted[i] && ApexVerifySite(p.at)) {
+            char what[64];
+            sprintf_s(what, "[Verify] probe %s", p.name);
+            if (ApexStandsDown(ApexVerifySite(p.at), what, "its entry")) wanted[i] = false;
+        }
         if ((p.group & g_vfGroups) && !wanted[i]) Log("verify %s off (ThreadedObjects=0: S3PP's stage profiler owns 0x%08X)", p.name, p.at);
         ok[i] = wanted[i] && Matches((const void*)(uintptr_t)p.at, p.pro, p.len);
         owner[i] = wanted[i] && !ok[i] && p.pair == VF_NONE ? VfOwnerSlot(p.at) : NULL;

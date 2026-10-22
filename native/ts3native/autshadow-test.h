@@ -481,7 +481,7 @@ static void TestAutShadowRun() {
     // AutShadowNative.Log -> autshadow.jsonl
     wchar_t tmp[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
-    swprintf_s(g_asJsonlPath, L"%sts3native-selftest-autshadow.jsonl", tmp);
+    swprintf_s(g_asJsonlPath, L"%sts3native-selftest-autshadow-%lu.jsonl", tmp, GetCurrentProcessId());  // per process: parallel selftest lanes
     DeleteFileW(g_asJsonlPath);
     AsFakeStr line = AfStr(L"{\"a\":1}");
     AsIcLog((const DWORD*)&line);

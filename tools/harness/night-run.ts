@@ -82,6 +82,6 @@ console.log(left.length ? `still open after 30 s: ${left.map(a => a.app).join(',
 if (values.queue) {
   const q = values.queue.includes('/') || values.queue.includes('\\') ? values.queue : join(ROOT, 'tools', 'harness', 'queues', values.queue);
   console.log(`starting queue ${q}`);
-  const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'harness', 'queue.ts'), q, ...(values.from ? ['--from', values.from] : [])], { stdio: 'inherit' });
+  const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'harness', 'queue.ts'), q, ...(values.from ? ['--from', values.from] : [])], { stdio: 'inherit', env: { ...process.env, TS3_NIGHT: '1' } }); // night rule: a failed reused session restarts fresh (docs/170 §2)
   process.exit(r.status ?? 1);
 }

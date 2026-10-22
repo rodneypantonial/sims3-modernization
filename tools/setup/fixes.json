@@ -785,8 +785,8 @@
     "requires": [
       "monopatcher"
     ],
-    "default": true,
-    "notes": "Island Paradise. Fixes houseboat routing that freezes the sim every few seconds. Published 2026-09-02; the tag says testing. No license file."
+    "default": false,
+    "notes": "Island Paradise. Fixes houseboat routing that freezes the sim every few seconds. Published 2026-09-02; the tag says testing. No license file. Default off since 2026-10-22: simler90-core (default on) already has the same EnterHouseboatThroughGangway condition (docs/153); install only without simler90."
   },
   {
     "id": "routing-sloped-terrain",

@@ -8929,6 +8929,64 @@
     "expect": "no crash; unseen_water_watch {result, require} ok: max_engaged >= 3 (unseen Sims at once in a vehicle / boat or in water), stranded empty; both snapshots stranded 0; no stuck Sims; native hold rows counted (utRateWhy_13 vehicles, utRateWhy_5 / utFpWhy_11 riders)"
   },
   {
+    "id": "unseen-water-cause",
+    "bug": "none (cause check, Rodney: tell a throttle glitch from a Sim's own intent when an unseen Sim ends up in water): docs/143 §8.16",
+    "fix": "ts3native [UnseenThrottle] (all parts) judged by agent unseen_water_cause: every water entry of an unseen Sim classed intended / support moved / unexplained, split by the --ab side",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Needs ts3native with viewer codes 19-23 (this branch, docs/143 §8.16) and --ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate. Isla Paradiso, normal speed (Rate skips only at normal speed, §8.13): 12 spawned Sims alternate legs across the sea (island lot), 10 m into the sea, home, sea again, all unseen; the cause watch samples every 5 ticks.",
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 12 }, "waitS": 20 },
+      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 }, "note": "per-Sim water entries with support, intent, edge, support movement, ts3native skip record and --ab side" },
+      { "cmd": "crowd_go", "args": { "to": "island" }, "waitS": 150, "note": "leg 1: across the sea (boat, water taxi or swim)" },
+      { "cmd": "crowd_go", "args": { "to": "ocean" }, "waitS": 100, "note": "leg 2: swim 10 m into the sea (intended entries)" },
+      { "cmd": "crowd_go", "args": { "target": "home" }, "waitS": 150, "note": "leg 3: back across the water" },
+      { "cmd": "crowd_go", "args": { "to": "ocean" }, "waitS": 100, "note": "leg 4: into the sea again, so both --ab sides see swims" },
+      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": true, "min_entries": 3, "slack": 1, "stop": true }, "note": "FAILS unless native answers, >= 3 entries, no unknown side, support_moved on == 0 and unexplained on <= unexplained off x (exposure on / off) + 1" },
+      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+    ],
+    "expect": "no crash; unseen_water_cause {result, require, ab} ok: sides.on.support_moved 0, sides.on.unexplained <= sides.off.unexplained x exposure ratio + 1, entries >= 3 (most intended: swims); no stuck Sims"
+  },
+  {
+    "id": "unseen-houseboat-move",
+    "bug": "none (cause check, Rodney: can an unseen walker on a houseboat deck be left in the water when the boat moves?): docs/143 §8.16",
+    "fix": "ts3native [UnseenThrottle] (all parts on): Sims on a moving houseboat's deck stay on its lot",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run; needs a houseboat with a houseboat lot in the save (houseboat_move setup fails otherwise: then pick or make a save with one). 6 spawned Sims placed on the deck by Houseboat.PlaceSimAtEntrance and kept walking between the entrance and the lot centre; the camera goes to the community lot farthest from the boat; the boat autopilots 80 m out (Houseboat.RequestAutopilotToLocation, what the helm's Cruise Here on Autopilot calls) and back to port.",
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 6 }, "waitS": 20 },
+      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 } },
+      { "cmd": "houseboat_move", "args": { "setup": "deck", "count": 6 }, "waitS": 40 },
+      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 150 },
+      { "cmd": "houseboat_move", "args": { "check": true }, "note": "snapshot at sea" },
+      { "cmd": "houseboat_move", "args": { "return": true }, "waitS": 180 },
+      { "cmd": "houseboat_move", "args": { "check": true, "require": true }, "note": "FAILS on a Sim that stood on the deck (dry) at move start and is in water now or at a walk sample with no water intent since the move; Sims that walked off dry are listed (left_deck_dry), not failed (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim" },
+      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": false, "min_entries": 0, "max_unexplained": 0, "stop": true }, "note": "FAILS on any support moved or unexplained entry" },
+      { "cmd": "houseboat_move", "args": { "stop": true } },
+      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+    ],
+    "expect": "no crash; both require steps ok: no watched deck Sim in water without a water intent, boat_moved_max_m >= 20; unseen_water_cause support_moved 0 and unexplained 0"
+  },
+  {
+    "id": "unseen-dock-edge",
+    "bug": "none (cause check, Rodney: unseen Sims walking on a dock edge while a boat arrives or leaves next to them): docs/143 §8.16",
+    "fix": "ts3native [UnseenThrottle] (all parts on): no dock walker ends up in the water",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run; needs a houseboat docked at a port gangway. 6 spawned Sims placed along the gangway's forward line and kept walking 2-8 m along it; the camera goes away; the houseboat leaves port (80 m out), returns to the same gangway, leaves again.",
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 6 }, "waitS": 20 },
+      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 } },
+      { "cmd": "houseboat_move", "args": { "setup": "dock", "count": 6 }, "waitS": 40 },
+      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 120 },
+      { "cmd": "houseboat_move", "args": { "return": true }, "waitS": 180 },
+      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 120 },
+      { "cmd": "houseboat_move", "args": { "check": true, "require": true }, "note": "FAILS on a Sim that stood on the dock (dry) at move start and is in water now or at a walk sample with no water intent since the move (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim" },
+      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": false, "min_entries": 0, "max_unexplained": 0, "stop": true } },
+      { "cmd": "houseboat_move", "args": { "stop": true } },
+      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+    ],
+    "expect": "no crash; both require steps ok: no watched dock Sim in water without a water intent, boat_moved_max_m >= 20; unseen_water_cause support_moved 0 and unexplained 0"
+  },
+  {
     "id": "unseen-horses",
     "bug": "none (fix check, Rodney: ridden horses at full rate): docs/143 §8.10",
     "fix": "ts3fixes UnseenViewers.cs pushes ridden horses, their riders and both sides of Mount / Dismount / BeingDismounted to ts3native (viewer channel codes 12-15); every [UnseenThrottle] part holds them like a parented rider",
@@ -9094,5 +9152,4855 @@
       "minutes": 2
     },
     "expect": "both loads: etspread verify 0 after the load-up scan, overwatchspread verify 'after 0' with the same 'before' count, the same CorrectionLogger count, owspread_inv_passes 0 and etspread_passes 0 (ours never ran); v2 only: owspread_upstream 1, etspread_upstream 1, no /taskstall row >= 250 ms with Inventories.GetName/CheckInventories (load-up or CleanupInventory) and no row from OnTimer's 22 cleanups in one frame"
+  },
+  {
+    "id": "scen-travel",
+    "bug": "Players see a long hitch around a world switch (trip home from a vacation world: save, load screen, arrival)",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Needs profile-world --travel france first (queue profile.travel; save-matrix.ts makes the Matrix-* copy, so the trip home never writes a Baseline save).",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "travel_home",
+        "args": {},
+        "waitS": 240,
+        "note": "world switch home; the arrival minute is in the window"
+      },
+      {
+        "cmd": "travel_state",
+        "args": {},
+        "waitS": 5
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "the trip home completes inside the window; its load and arrival hitches are listed under travel_home"
+  },
+  {
+    "id": "scen-lotswitch",
+    "bug": "Active lot change: the active Sim drives to the farthest community lot (lot loads at full detail, household lot drops) and back",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Steps are timed for a 10 min profile-world --repro window with no samplers.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "own_vehicle",
+        "args": {
+          "kind": "car"
+        },
+        "waitS": 3,
+        "note": "sim_visit_lot with vehicle needs an owned car (bp-scen-multi FAIL 2026-10-22: no vehicle)"
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far",
+          "vehicle": true
+        },
+        "waitS": 110
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "home",
+          "vehicle": true
+        },
+        "waitS": 110
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "far",
+          "vehicle": true
+        },
+        "waitS": 110
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "lot": "home",
+          "vehicle": true
+        },
+        "waitS": 110
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "the Sim arrives at each lot; hitches listed under sim_visit_lot"
+  },
+  {
+    "id": "scen-buildbuy",
+    "bug": "Build and buy mode enter/exit hitches (lot rebuild and replans at exit, docs/141 §4)",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Steps are timed for a 10 min profile-world --repro window with no samplers.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 40,
+        "note": "build exit (TransitionToLiveMode, as build_mode on:false)"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 20
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 40
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 40,
+        "note": "build exit (TransitionToLiveMode, as build_mode on:false)"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 20
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 40
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "enter and exit labelled apart: build_mode / enter_live_mode / buy_open / buy_close"
+  },
+  {
+    "id": "scen-cas",
+    "bug": "CAS enter/exit hitches (Sim model build, part cache, return to live mode)",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Steps are timed for a 10 min profile-world --repro window with no samplers.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 45
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 45
+      },
+      {
+        "cmd": "cas_open",
+        "waitS": 30
+      },
+      {
+        "cmd": "cas_close",
+        "waitS": 45
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "cas_open / cas_close labelled apart"
+  },
+  {
+    "id": "scen-edittown",
+    "bug": "Edit Town enter/exit hitches (lot thumbnails, map tags, return to live mode)",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Steps are timed for a 10 min profile-world --repro window with no samplers.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.GameStates.TransitionToEditTown"
+        },
+        "waitS": 30,
+        "note": "enter Edit Town as its button does (game task)"
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 15,
+        "note": "the Edit Town Play button"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30,
+        "note": "Edit Town pauses the clock"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.GameStates.TransitionToEditTown"
+        },
+        "waitS": 30,
+        "note": "enter Edit Town as its button does (game task)"
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 15,
+        "note": "the Edit Town Play button"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30,
+        "note": "Edit Town pauses the clock"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.GameStates.TransitionToEditTown"
+        },
+        "waitS": 30,
+        "note": "enter Edit Town as its button does (game task)"
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 15,
+        "note": "the Edit Town Play button"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 30,
+        "note": "Edit Town pauses the clock"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "reflect_call_async (enter) and enter_live_mode (exit) labelled apart; game_state sub_state back to LiveMode after each exit"
+  },
+  {
+    "id": "scen-save",
+    "bug": "Save hitches (crash-on-save lead path, docs/25/26)",
+    "fix": "measurement only (docs/168 §3): scenario cost read with hitch-ab.ts --scenario; queue scenario-hitches.json",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Steps are timed for a 10 min profile-world --repro window with no samplers.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the scenario starts after it"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Scenario-Scratch"
+        },
+        "waitS": 90,
+        "note": "a scratch save name: never the loaded Baseline save"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Scenario-Scratch"
+        },
+        "waitS": 90,
+        "note": "a scratch save name: never the loaded Baseline save"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "both saves succeed; hitches listed under save_game (and 0-step >= 1 s iterations as save/load)"
+  },
+  {
+    "id": "bp-overwatch-ab-loop",
+    "bug": "NRaas Overwatch nightly alarm: one ~280-360 ms TaskObjects tick per sim night (freeze-measure 2026-10-22: both real >= 300 ms freezes in BP, OverwatchSpreadHook.OnTimer)",
+    "fix": "ts3fixes overwatchspread (default off): each cleanup type in its own task; A/B in one load: 12 firings of the whole nightly cleanup, ABBA x3, 45 s apart at normal speed, arm per firing in the step note",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 2 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #1" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #1", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #2" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #2", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #3" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #3", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #4" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #4", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #5" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #5", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #6" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #6", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #7" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #7", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #8" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #8", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #9" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #9", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #10" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #10", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #11" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #11", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #12" },
+      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #12", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
+      { "cmd": "patches", "args": { "overwatchspread": false } }
+    ]
+  },
+  {
+    "id": "main-cas-builds",
+    "bug": "Camera stutter led by CAS/SimService (29% of services ms in BP camera-pan frames >= 100 ms, docs/167 §7): Sims needing an appearance build come into view",
+    "fix": "measurement / repro only (docs/169 main thread): Apex Radiance's area (engine); pass rule frame-lead.ts CAS/SimService > 50 ms x 20",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Timed for a 5 min profile-world --repro window (queue repro-check-main.json); the first minute counts for nothing in the pass rule (frame-lead.ts), so the loop simply runs through it.",
+    "steps": [
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "populated",
+          "lots": 8,
+          "dwellS": 6,
+          "spawn": 3,
+          "outfits": 6
+        },
+        "waitS": 285,
+        "note": "loop: camera jumps to the 8 most populated lots (re-ranked per loop); per jump 3 new Sims spawned in view (previous loop's removed) and up to 6 Sims on the lot switch outfit (athletic/everyday by loop): ~45 jumps, ~135 spawns + outfit builds"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "status": true
+        },
+        "note": "jumps, loops, spawned, outfitChanges for the log"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "optional": true,
+        "note": "dispose every Sim the loop spawned"
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "CAS/SimService leads >= 20 real frames > 50 ms; no crash"
+  },
+  {
+    "id": "main-lot-stream",
+    "bug": "Camera stutter led by World/Service (20% of services ms in BP camera-pan frames >= 100 ms, docs/167 §7): lots streaming in and out (WorldManager_Update 0xC6D570, docs/28 §5, docs/38)",
+    "fix": "measurement / repro only (docs/169 main thread): Apex Radiance's area (engine); pass rule frame-lead.ts World/Service > 50 ms x 20 and [LotStream] lotAdds >= 20",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Timed for a 5 min profile-world --repro window (queue repro-check-main.json); the first minute counts for nothing in the pass rule (frame-lead.ts), so the loop simply runs through it.",
+    "steps": [
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "far",
+          "lots": 12,
+          "dwellS": 8
+        },
+        "waitS": 285,
+        "note": "loop: camera jumps (no pan) across 12 lots in farthest-next order and holds still 8 s at street zoom so the lots around each stream in and the previous ones out: ~35 jumps"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "status": true
+        }
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "World/Service leads >= 20 real frames > 50 ms, >= 20 lot adds; no crash"
+  },
+  {
+    "id": "main-swarm-fx",
+    "bug": "Camera stutter led by SwarmSystem (16% of services ms in BP camera-pan frames >= 100 ms, docs/167 §7): effect-heavy scenes in view (fire, weather, magic; docs/44 §7)",
+    "fix": "measurement / repro only (docs/169 main thread): Apex Radiance's area (engine); pass rule frame-lead.ts SwarmSystem > 50 ms x 10; needs profile.noEnv (the repro sets the weather)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Timed for a 5 min profile-world --repro window (queue repro-check-main.json); the first minute counts for nothing in the pass rule (frame-lead.ts), so the loop simply runs through it.",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "weather": "rain",
+          "intensity": "Heavy",
+          "weather_hours": 24
+        },
+        "waitS": 2,
+        "note": "thunderstorm (heavy rain, lightning)"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "populated",
+          "lots": 2,
+          "dwellS": 300,
+          "loops": 1
+        },
+        "waitS": 3,
+        "note": "camera onto the busiest lot and held there (no further jumps: keeps World/Service out of the way)"
+      },
+      {
+        "cmd": "vfx_burst",
+        "args": {
+          "count": 24,
+          "radius": 8,
+          "seconds": 280,
+          "restartS": 3
+        },
+        "waitS": 280,
+        "note": "loop: 24 fire / ice spell / fairy / lightning / sparkle effects around the camera target, re-created every 3 s (~93 rounds)"
+      },
+      {
+        "cmd": "vfx_burst",
+        "args": {
+          "status": true
+        },
+        "note": "rounds, started, missing (unknown effect names)"
+      },
+      {
+        "cmd": "vfx_burst",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "SwarmSystem leads >= 10 real frames > 50 ms; missing 0; no crash"
+  },
+  {
+    "id": "hitch-stuckcheck-loop",
+    "bug": "EA's 3 AM stuck check (LotManager.RunStuckCheckHelper): every actor that has not moved gets up to 10 route plans in its alarm tick; a Sim on an unroutable spot fails all 10, each failed plan flooding its reachable area (docs/134 §8, docs/163 §3)",
+    "fix": "ts3fixes stuckcheckasync (one Sim per tick in our task) + stuckchecknear (nearest point first); ABBA per firing, both switches together",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. Every actor's stuck check armed due in 1 sim-minute, all in one alarm tick (StuckCheckNow spread 0), attempt 3 = the final round (all points fail -> the game's reset, no re-armed alarm left behind). Not the clock: test_env hour jumps by SimClock.AddOneHour in one agent call, so a jump to the next 2:57 fires every alarm skipped in those 24 h (midnight decay, pet pool, Overwatch, hourly alarms) in the same few ticks [inferred], and the real arming is 20-60 sim-minutes after 3:00. Overwatch's own nightly Stuck Check is not in this loop: OverwatchSpreadNow('StuckCheck', 0) fires it alone, bp-overwatch-ab-loop covers the whole alarm. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 20 hand-written firings); 12 stranded townies per firing (was 8; a world after a long session), count = Sims stranded (strand_many stranded), stop at 120 per arm = 10 firings per arm (unchanged firing count). [inferred] the off arm runs all its checks in one alarm tick, so a firing is one hitch there and more Sims per firing make that hitch bigger, not more hitches: the docs/168 confidence rule needs 10 firings per arm, so this timing A/B is not shortened.",
+    "steps": [
+      { "cmd": "time", "waitS": 75, "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it" },
+      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+    ],
+    "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is the world lot task (ScriptProxy>...WorldLot) >= 50 ms; on arm: the same firings with StuckCheckDrain runs and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes",
+    "loop": {
+      "steps": [
+        { "cmd": "patches", "setup": true, "args": {"stuckcheckbusy": false, "stuckcheckasync": "$on", "stuckchecknear": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "strand_many", "setup": true, "args": {"count": 12}, "waitS": 3, "note": "state: 12 townies on unroutable spots of 12 lots (re-created each firing: the previous round reset them)", "count": {"result": "stranded"} },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "Ts3Fixes.Fixes.StuckCheckNow", "args": [0, 3]}, "waitS": 20, "note": "fire", "waitUntil": {"on": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 3000}], "off": {"quiet": 3000}}, "minS": 4, "maxS": 20 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 120 },
+      "maxMinutes": 14
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"stuckcheckasync": false, "stuckchecknear": false} }
+    ]
+  },
+  {
+    "id": "hitch-stuckcheck-check",
+    "bug": "EA's 3 AM stuck check (LotManager.RunStuckCheckHelper): every actor that has not moved gets up to 10 route plans in its alarm tick; a Sim on an unroutable spot fails all 10, each failed plan flooding its reachable area (docs/134 §8, docs/163 §3)",
+    "fix": "ts3fixes stuckcheckasync (one Sim per tick in our task) + stuckchecknear (nearest point first); ABBA per firing, both switches together",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Correctness check of hitch-stuckcheck-loop for a 5-min job: 8 firings ABBA, no lead-in. Every actor's stuck check armed due in 1 sim-minute, all in one alarm tick (StuckCheckNow spread 0), attempt 3 = the final round (all points fail -> the game's reset, no re-armed alarm left behind). Not the clock: test_env hour jumps by SimClock.AddOneHour in one agent call, so a jump to the next 2:57 fires every alarm skipped in those 24 h (midnight decay, pet pool, Overwatch, hourly alarms) in the same few ticks [inferred], and the real arming is 20-60 sim-minutes after 3:00. Overwatch's own nightly Stuck Check is not in this loop: OverwatchSpreadNow('StuckCheck', 0) fires it alone, bp-overwatch-ab-loop covers the whole alarm.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (off #1)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": true,
+          "stuckchecknear": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (on #2)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": true,
+          "stuckchecknear": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (on #3)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (off #4)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (off #5)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": true,
+          "stuckchecknear": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (on #6)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": true,
+          "stuckchecknear": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (on #7)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckbusy": false,
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "strand_many",
+        "args": {
+          "count": 8
+        },
+        "waitS": 3,
+        "note": "state: 8 townies on unroutable spots of 8 lots (re-created each loop: the previous round reset them) (off #8)"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.StuckCheckNow",
+          "args": [
+            0,
+            3
+          ]
+        },
+        "waitS": 20,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 3000
+            }
+          ],
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "queue pass rules: counters (fixesRequire) show the 4 on firings ran ours; >= 2 hitch lines name the world lot task with a run >= 50 ms (hitchTasks; the 4 off firings)"
+  },
+  {
+    "id": "hitch-easpread-lots-loop",
+    "bug": "EA's 3 AM venue cleanup LotManager.CleanUpLotsAndInventories: every lot's magic clean-up, repairs and season step plus every Sim's stuck-check arming in one alarm tick, 306-587 ms (docs/147 §2)",
+    "fix": "ts3fixes easpreadlots (same per-lot and per-Sim units in our task, 64 units or 2 ms per tick); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. EaSpreadNow('lots') = the real callback from a 1-sim-minute global alarm (the real alarm's context). Each firing arms every Sim's stuck check 20-60 sim-minutes later, as at 3 AM; the job keeps stuckcheckasync on so those run as StuckCheckDrain, not in the world lot task this loop's off arm is read by. State: the lot object walk (the cost driver: every lot object tested, repairs over every object) is the same every firing; dirt cleaned by the first firing is not re-made (objects to clean drop to ~0, easpreadlotsverify shows it), so later firings measure the walk [inferred: the walk dominates].",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #9"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #9",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #10",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #11"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #11",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #12",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #13"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #13",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #14"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #14",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #15"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #15",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #16"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #16",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #17"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #17",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #18"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #18",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #19"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #19",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #20"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #20",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is the world lot task (ScriptProxy>...WorldLot) >= 100 ms; on arm: the same firings with CleanHook|LotCleanupTask runs and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes"
+  },
+  {
+    "id": "hitch-easpread-lots-check",
+    "bug": "EA's 3 AM venue cleanup LotManager.CleanUpLotsAndInventories: every lot's magic clean-up, repairs and season step plus every Sim's stuck-check arming in one alarm tick, 306-587 ms (docs/147 §2)",
+    "fix": "ts3fixes easpreadlots (same per-lot and per-Sim units in our task, 64 units or 2 ms per tick); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Correctness check of hitch-easpread-lots-loop for a 5-min job: 8 firings ABBA, no lead-in. EaSpreadNow('lots') = the real callback from a 1-sim-minute global alarm (the real alarm's context). Each firing arms every Sim's stuck check 20-60 sim-minutes later, as at 3 AM; the job keeps stuckcheckasync on so those run as StuckCheckDrain, not in the world lot task this loop's off arm is read by. State: the lot object walk (the cost driver: every lot object tested, repairs over every object) is the same every firing; dirt cleaned by the first firing is not re-made (objects to clean drop to ~0, easpreadlotsverify shows it), so later firings measure the walk [inferred: the walk dominates].",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "lots"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_lots_passes",
+              "easpread_lots_stopped"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadlots": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "queue pass rules: counters (fixesRequire) show the 4 on firings ran ours; >= 2 hitch lines name the world lot task with a run >= 100 ms (hitchTasks; the 4 off firings)"
+  },
+  {
+    "id": "hitch-easpread-pets-loop",
+    "bug": "EA's pet pool alarm PetPoolManager.AlarmCallBack builds one random pet (CASLogic.RandomizePet part search + outfits) in one alarm tick; 16 iterations >= 300 ms (docs/147 §3)",
+    "fix": "ts3fixes easpreadpets (the callback inside our task, so EA's own SleepIfPossible points split the outfit steps); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. EaSpreadNow('petbuild'): one stray cat built through the pool's own creator in a 1-sim-minute global alarm (game's path) or our task (ours), then disposed; works with full pools, so every firing does the full build (state re-created: a fresh pet each time). The real pool alarm ('pets') does nothing while every pool is full.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #9"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #9",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #10",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #11"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #11",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #12",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #13"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #13",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #14"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #14",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #15"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #15",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #16"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #16",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #17"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #17",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #18"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #18",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #19"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #19",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #20"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #20",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is the world lot task (ScriptProxy>...WorldLot) >= 100 ms; on arm: the same firings with PetTask runs and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes"
+  },
+  {
+    "id": "hitch-easpread-pets-check",
+    "bug": "EA's pet pool alarm PetPoolManager.AlarmCallBack builds one random pet (CASLogic.RandomizePet part search + outfits) in one alarm tick; 16 iterations >= 300 ms (docs/147 §3)",
+    "fix": "ts3fixes easpreadpets (the callback inside our task, so EA's own SleepIfPossible points split the outfit steps); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Correctness check of hitch-easpread-pets-loop for a 5-min job: 8 firings ABBA, no lead-in. EaSpreadNow('petbuild'): one stray cat built through the pool's own creator in a 1-sim-minute global alarm (game's path) or our task (ours), then disposed; works with full pools, so every firing does the full build (state re-created: a fresh pet each time). The real pool alarm ('pets') does nothing while every pool is full.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "petbuild"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "quiet": 3000
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreadpets": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "queue pass rules: counters (fixesRequire) show the 4 on firings ran ours; >= 2 hitch lines name the world lot task with a run >= 100 ms (hitchTasks; the 4 off firings)"
+  },
+  {
+    "id": "hitch-easpread-decay-loop",
+    "bug": "EA's midnight relationship decay SocialComponent.RelationshipDecay -> Relationship.DecayAll steps every relationship pair in one alarm tick, 366-399 ms own frames (docs/147 §4)",
+    "fix": "ts3fixes easpreaddecay (same per-pair step, 64 Sims or 2 ms per tick, DailyPass); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. EaSpreadNow('decay'): the real decay callback from a 1-sim-minute global alarm. Each firing is one extra decay day for every pair of the loaded save (never saved): the pair count stays (drops are rare), so the state is re-created by itself; easpread_decay_pairs per pass shows it.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #9"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #9",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #10",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #11"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #11",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #12",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #13"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #13",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #14"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #14",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #15"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #15",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #16"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #16",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #17"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #17",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #18"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #18",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #19"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #19",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #20"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #20",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is the world lot task (ScriptProxy>...WorldLot) >= 100 ms; on arm: the same firings with DecayTask runs and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes"
+  },
+  {
+    "id": "hitch-easpread-decay-check",
+    "bug": "EA's midnight relationship decay SocialComponent.RelationshipDecay -> Relationship.DecayAll steps every relationship pair in one alarm tick, 366-399 ms own frames (docs/147 §4)",
+    "fix": "ts3fixes easpreaddecay (same per-pair step, 64 Sims or 2 ms per tick, DailyPass); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Correctness check of hitch-easpread-decay-loop for a 5-min job: 8 firings ABBA, no lead-in. EaSpreadNow('decay'): the real decay callback from a 1-sim-minute global alarm. Each firing is one extra decay day for every pair of the loaded save (never saved): the pair count stays (drops are rare), so the state is re-created by itself; easpread_decay_pairs per pass shows it.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.EaSpreadNow",
+          "args": [
+            "decay"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": {
+            "counter": [
+              "easpread_decay_passes",
+              "easpread_decay_finished_early"
+            ]
+          },
+          "off": {
+            "quiet": 3000
+          }
+        },
+        "minS": 4,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "easpreaddecay": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "queue pass rules: counters (fixesRequire) show the 4 on firings ran ours; >= 2 hitch lines name the world lot task with a run >= 100 ms (hitchTasks; the 4 off firings)"
+  },
+  {
+    "id": "hitch-errortrap-loop",
+    "bug": "NRaas ErrorTrap's load-up scan: one 0.5-0.9 s FunctionTask tick a sim-minute after every load, ~3/4 in Inventories.CheckInventories (a localized name per world object) (docs/146 §2)",
+    "fix": "ts3fixes errortrapspread (ErrorTrap's own per-inventory check only for objects with an inventory, 128 items or 2 ms per tick); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. ErrorTrapSpreadNow('hook') re-runs the load-up scan's inventory check (its 3/4) with ErrorTrap's own log methods in a fresh one-shot task, through the path the switch picks. The rest of the scan cannot be re-run in one load: the dereference controllers' reference lists are filled only by the game's load callbacks and cleared after the scan (docs/146 §3), and steps 1 (role/recovery/outfit/lot checks) had 0 of 16 stall samples. Both arms run in our trigger's task, so the hitch name is ErrorTrapSpreadNow on both; the off arm is the long one.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #9"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #9",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #10",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #11"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #11",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #12",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #13"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #13",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #14"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #14",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #15"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #15",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #16"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #16",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #17"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #17",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #18"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #18",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #19"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #19",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #20"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #20",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is ErrorTrapSpreadNow >= 100 ms; on arm: the same firings with our task and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes"
+  },
+  {
+    "id": "hitch-errortrap-check",
+    "bug": "NRaas ErrorTrap's load-up scan: one 0.5-0.9 s FunctionTask tick a sim-minute after every load, ~3/4 in Inventories.CheckInventories (a localized name per world object) (docs/146 §2)",
+    "fix": "ts3fixes errortrapspread (ErrorTrap's own per-inventory check only for objects with an inventory, 128 items or 2 ms per tick); ABBA per firing",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Correctness check of hitch-errortrap-loop for a 5-min job: 8 firings ABBA, no lead-in. ErrorTrapSpreadNow('hook') re-runs the load-up scan's inventory check (its 3/4) with ErrorTrap's own log methods in a fresh one-shot task, through the path the switch picks. The rest of the scan cannot be re-run in one load: the dereference controllers' reference lists are filled only by the game's load callbacks and cleared after the scan (docs/146 §3), and steps 1 (role/recovery/outfit/lot checks) had 0 of 16 stall samples. Both arms run in our trigger's task, so the hitch name is ErrorTrapSpreadNow on both; the off arm is the long one.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #1",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #2",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #3",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #4",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #5",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #6",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire on #7",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
+          "args": [
+            "hook"
+          ]
+        },
+        "waitS": 23,
+        "note": "fire off #8",
+        "waitUntil": {
+          "counter": [
+            "etspread_passes",
+            "etspread_theirs"
+          ]
+        },
+        "minS": 2,
+        "maxS": 23
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "errortrapspread": false
+        },
+        "note": "switches back off; read the counters"
+      }
+    ],
+    "expect": "queue pass rules: counters (fixesRequire) show the 4 on firings ran ours; >= 2 hitch lines name ErrorTrapSpreadNow with a run >= 100 ms (hitchTasks; the 4 off firings)"
+  },
+  {
+    "id": "route-stuckcheck-reset-loop",
+    "bug": "docs/163 §3 + docs/141 §4 #1: the game's stuck check (LotManager.RunStuckCheckHelper: 10 plans to random lot points incl. sea, at attempt 3 SetObjectToReset) and the reset's safe-location search (AttemptToPutInSafeLocation -> IsPointInLotSafelyRoutable = PlanFromPoint per checked cell, sync NoStart on the sim thread)",
+    "fix": "ts3fixes stuckchecknear + failrepeat (docs/163) and safespotcap (docs/141 §7) per loop, with native PlanDeadlineMs (plandeadline) + FailMemo (failmemo) (docs/164 §7); stuckcheckasync from the job (queue fixesOn); native [RouteAsync] FallbackAsync / SyncCapMs from the job ini",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. 20 spawned Sims are stood on unroutable spots of Hogan's diner lot (not the active lot: the game's check skips that one), then the game's own RunStuckCheckHelper alarm is armed for each with attempt 3 and a 1 sim-minute delay (stuck_check_fire): the game's alarm body plans its 10 random points per Sim (all fail from the enclosed spot), then resets each Sim (the game's safe-location search). Re-stranded every loop, 8 loops ABBA; arms flip stuckchecknear, failrepeat, safespotcap together. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 8 hand-written firings); count = stuck checks armed (stuck_check_fire armed, 20 per firing), stop at 40 per arm = one ABBA cycle (4 firings). 20 stranded Sims per firing kept: more on one lot is not a real world.",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "expect": "no crash; every stuck_check_fire armed 20; ts3native: failed sim-thread plans (sypPlans failed) and \"IC PlanFromPoint, reason NoStart\" lines from the resets, script stacks with RunStuckCheckHelper / AttemptToFindSafeLocation; stuckcheckasync_run grows by ~20 a loop; on arms: stuckchecknear_checks and safespotcap_limited > 0",
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"plandeadline": "$on", "failmemo": "$on"}, "waitS": 1, "note": "arm (native)" },
+        { "cmd": "patches", "setup": true, "args": {"stuckchecknear": "$on", "failrepeat": "$on", "safespotcap": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "strand_crowd", "setup": true, "args": {"x": 312.4, "z": 1496.7}, "waitS": 2, "note": "strand" },
+        { "cmd": "stuck_check_fire", "setup": false, "args": {"attempt": 3, "delay_min": 1, "x": 312.4, "z": 1496.7}, "waitS": 28, "note": "fire: 20 stuck checks x 10 plans, then 20 resets", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 28, "count": {"result": "armed"} }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 40 },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false, "safespotcap": false} }
+    ]
+  },
+  {
+    "id": "route-queuefull-replan-loop",
+    "bug": "docs/134 QueueFull / docs/141 §6.2 #4: 30+ Sims start routes in one tick (the game's Go Here, own task) and build/buy exit replans every routing Sim at once (ExitBuildBuyMode -> OnBuildBuyExit -> ForceRouteReplan; door actions replan sync, ReplanFromPosition NoStart): the 8 (FallbackAsync=0) or 32 job slots fill and the rest plan sync as QueueFull",
+    "fix": "native [RouteAsync] FallbackAsync per loop (0: 8 slots, foreign plans sync; 1: 32 slots, foreign async); replanspread/replandefer stay as the job sets them",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. 30 spawned Sims plus the household; per loop: everyone Go Here to the far lot, build mode in/out while they route, everyone home (through the home lot doors), build mode in/out again. 6 loops ABBA on fallbackasync (native_set, profile-world only). 2026-10-23 (docs/170 §6, instances per firing): loop form (was 6 hand-written firings); 30+ Go Here starts per firing, one ABBA cycle (perArm 2 firings). Counted in firings: crowd_go has no numeric count.",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "expect": "no crash; asyncQueueFull grows every loop (more in off arms); \"reason QueueFull\" and \"IC ReplanFromPosition, reason NoStart\" sync plan lines right after the starts and exits; no Sim stuck at the end",
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"fallbackasync": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 5, "note": "start: 30+ Go Here plans in one tick" },
+        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "note": "exit: replan of every routing Sim", "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10 },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
+        { "cmd": "crowd_go", "setup": false, "args": {"target": "home", "household": true}, "waitS": 5, "note": "everyone home, through the doors" },
+        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10 },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 10
+    }
+  },
+  {
+    "id": "route-nopath-crowd-loop",
+    "bug": "docs/142: a failing no-path plan floods the start's whole reachable area before it fails; here from the game's own Go Here (30 Sims + household to one enclosed spot of Hogan's diner lot)",
+    "fix": "native [RouteEarlyOut] (eoMode), PlanDeadlineMs (plandeadline) and FailMemo (failmemo) (docs/164 §7) and ts3fixes failrepeat per loop",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. The goal is a spot of Hogan's diner lot that fails the game's IsPointInLotSafelyRoutable (found once, a plan per sample in the agent's task, then reused). Per loop: everyone Go Here to it (every plan fails), then everyone home so the next loop starts from the open world. 7 loops ABBA; eoMode 0 also stops the eo* counters, so read failures per arm from the on arms and the sync plan lines. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 7 hand-written firings); count = no-path Go Here plans sent (crowd_unreachable sent, 30 spawned + household per firing), stop at 50 per arm = one ABBA cycle (4 firings).",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "expect": "no crash; crowd_unreachable sent 30+ each loop; eoAsFail grows by >= 30 per on loop; route early-out lines for the slow ones; sync plan lines with reason QueueFull for the plans past the job slots; Sims show the route-fail reaction and walk home",
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"earlyout": "$on", "plandeadline": "$on", "failmemo": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "patches", "setup": true, "args": {"failrepeat": "$on"}, "waitS": 1 },
+        { "cmd": "crowd_unreachable", "setup": false, "args": {"x": 312.4, "z": 1496.7, "household": true}, "waitS": 18, "note": "fire: 30+ no-path Go Here plans", "waitUntil": {"quiet": 4000}, "minS": 6, "maxS": 18, "count": {"result": "sent"} },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 12 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 50 },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"failrepeat": false} }
+    ]
+  },
+  {
+    "id": "route-sv-seacheck-freeze",
+    "bug": "docs/163 §1-§4: the SV big-crowd 7,361 + 7,350 ms failed sim-thread Route_Plans (NoStart, ThreadedObjects, 0.3 s apart, 30-45 s after a crowd wave with the clock crossing 3 AM). Inferred caller: the game's stuck check on a crowd Sim standing on a lot with sea in its area: its random points include WorldSea, each one floods the reachable world and fails, back to back",
+    "fix": "native SyncCapMs (synccapus), FbJobCapMs (fbjobcapus), PlanDeadlineMs (plandeadline, docs/164 §7) and FailMemo (failmemo) per loop, ts3fixes stuckchecknear + failrepeat; stuckcheckasync from the job",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. 30 spawned Sims Go Here to the community lot with the most sea inside its area (crowd_sea_lot), wait till they stand, then the game's own stuck check is armed for those on that lot (attempt 1, 1 sim-minute: no reset, the game re-arms its next attempt itself). The clock is put at 2 AM first so the game's own 3 AM venue cleanup also arms its checks during the run. 4 loops ABBA: off = no caps, on = SyncCapMs 1000 + FbJobCapMs 300 + stuckchecknear + failrepeat. Tests the inferred caller: if no >= 1 s failed plan comes from RunStuckCheck here, the 7 s caller is something else (16-frame stacks name it).",
+    "steps": [
+      { "cmd": "test_env", "args": {"hour": 2}, "waitS": 2, "note": "the game's own 3 AM venue cleanup fires during the run" },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 },
+      { "cmd": "native_set", "args": {"synccapus": 0, "fbjobcapus": 0, "plandeadline": 0, "failmemo": 0}, "waitS": 1, "note": "arm off #1" },
+      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false}, "waitS": 1 },
+      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
+      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire off #1: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
+      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000, "plandeadline": 1, "failmemo": 1}, "waitS": 1, "note": "arm on #2" },
+      { "cmd": "patches", "args": {"stuckchecknear": true, "failrepeat": true}, "waitS": 1 },
+      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
+      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire on #2: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
+      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000, "plandeadline": 1, "failmemo": 1}, "waitS": 1, "note": "arm on #3" },
+      { "cmd": "patches", "args": {"stuckchecknear": true, "failrepeat": true}, "waitS": 1 },
+      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
+      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire on #3: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
+      { "cmd": "native_set", "args": {"synccapus": 0, "fbjobcapus": 0, "plandeadline": 0, "failmemo": 0}, "waitS": 1, "note": "arm off #4" },
+      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false}, "waitS": 1 },
+      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
+      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire off #4: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
+      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000} },
+      { "cmd": "patches", "args": {}, "note": "stuckcheckasync_* / stuckchecknear_* / failrepeat_* counters" }
+    ],
+    "expect": "no crash; every stuck_check_fire armed > 0; failed plans >= 1 s with RunStuckCheckHelper in the 16-frame stack (sync fallback lines or route phases lines with world A* / water share), more and longer in off arms; on arms: capped (SyncCapMs) lines, fbjcCapped > 0"
+  },
+  {
+    "id": "bp-overwatch-ab-loop2",
+    "bug": "NRaas Overwatch nightly alarm: one ~280-360 ms TaskObjects tick per sim night (freeze-measure 2026-10-22, OverwatchSpreadHook.OnTimer)",
+    "fix": "ts3fixes overwatchchain (default off, docs/145 §10; arms flip it with overwatchspread held off, so 'off' = Overwatch's own one-tick path with overwatchstuck on). Loop form of bp-overwatch-ab-loop (docs/168 §6): the body (arm, fire) runs ABBA until 10 firings per arm (fixed before the run), then the profile window ends; maxMinutes caps it",
+    "expect": "no crash, no 'overwatchspread: ... failed' line; off arms: one TaskObjects run of 250-380 ms per firing (OverwatchSpreadNow task, fresh or from ResetSimTask's Sleep to the first IsPointInLotSafelyRoutable); on arms: owchain_alarms +1 and owchain_yields +21 per firing, one inventory pass line per firing, no Overwatch task run >= 50 ms except a single stuck-check plan or a Sim re-instantiated after ResetSimTask's own Sleep (each named by owspread_slow_types / overwatchspread_log when >= 50 ms)",
+    "save": "Baseline-BP",
+    "steps": [
+      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "patches", "setup": true, "args": { "overwatchspread": false, "overwatchchain": "$on" }, "waitS": 1, "note": "arm" },
+        { "cmd": "reflect_call", "setup": false, "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire", "waitUntil": {"on": [{"counter": "owchain_alarms"}, {"quiet": 2000}], "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 10 },
+      "maxMinutes": 20
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": { "overwatchspread": false, "overwatchchain": false } }
+    ]
+  },
+  {
+    "id": "route-gate-crowd-loop",
+    "bug": "RouteGate / TailUnlock / H2 / OptsInit had no forced repro: every route repro passes the gates, none forces every gate site per firing (docs/170 §4 needs-repro list)",
+    "fix": "[RouteGate] (no runtime switch: on in both arms), [RouteAsync] TailUnlock and H2 (native_set arms), [OptsInit] (every plan's search options)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing 30+ Go Here plans start in one tick (async jobs), and while they run: 5 objects placed and destroyed (quadtree adds, ObjectService destroy gate), six route-mode plans + Replan of the active Sim (ghost through walls, car only, leading a horse, stroller, flier, direct/no avoidance: the old @route rare modes at plan level), a short camera pan (lot index rebuilds), build/buy enter (gate 15) and exit (gate 14 + replan of every routing Sim), then everyone home. World-neutral (far = farthest community lot). 2026-10-23 (docs/170 §6, instances per firing): each firing already starts 30+ Go Here plans (the 30 spawned Sims + household), so one ABBA cycle (2 firings per arm, 60+ plans per arm) is the stop rule: perArm 2 firings (was 4). Counted in firings: crowd_go answers a list, no numeric count for count: {result}.",
+    "expect": "no crash, no tripwire line, asyncStarted >= 20, rgEntries >= 1; on arms tuWins and h2Released rise, tuTrip_0-2 stay 0",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"tailunlock": "$on", "h2": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 5, "note": "start: 30+ Go Here plans in one tick" },
+        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 5}, "waitS": 10, "note": "quadtree adds while jobs run" },
+        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 5, "note": "destroys while jobs run" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsGhost", "PassThroughWalls", "PassThroughObjects"]}, "waitS": 2, "note": "ghost through walls" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["EnablePlanningAsCar", "DisablePlanningAsPedestrian", "BeginAsCar", "EndAsCar"]}, "waitS": 2, "note": "car only (mode 2)" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsSimLeadingHorse"]}, "waitS": 2, "note": "leading a horse" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["PlanUsingStroller", "BeginAsStroller", "EndAsStroller"]}, "waitS": 2, "note": "stroller" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsFlier"]}, "waitS": 2, "note": "flier" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["UseMostDirectPath", "DisableAvoidance", "BlockedByPeople"]}, "waitS": 2, "note": "direct / no avoidance" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
+        { "cmd": "camera_pan", "setup": false, "args": {"lots": 4, "height": 25, "seconds": 10, "passes": 1}, "waitS": 12, "note": "lot streaming while jobs run" },
+        { "cmd": "camera_pan", "setup": true, "args": {"stop": true} },
+        { "cmd": "build_mode", "setup": false, "args": {"on": true}, "waitS": 4, "note": "gate 15" },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10, "note": "fire: gate 14 + replan of every routing Sim" },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 12, "note": "everyone home (fixed: next firing starts from home)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 14
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "save-write-loop",
+    "bug": "SaveWrite / Decompress had no forced repro (the save matrix runs once per world)",
+    "fix": "[SaveWrite] (old-save backup copy on a worker from the second save on) and [Decompress] (every compressed resource read: CAS parts, buy catalog); no runtime switch: on only",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing CAS open/close and build/buy open/close (package resource reads through the RefPack decoder [inferred: CAS and catalog read compressed resources]) then a real save to the scratch name RC-SaveLoop (never the loaded Baseline save). The same name every firing, so from the second save on the old save exists and [SaveWrite] backs it up on its worker. The save end is the first 3 s with no sim iteration >= 500 ms after the save step (the sim thread is inside the native save until it returns). The load half of the save matrix is not here: each job load reads through [Decompress], and part b runs the matrix reload case. 2026-10-23 (docs/170 §6, instances per firing): one save per firing (a save is one instance); 4 saves cover the backup path (from the second save) and the job requirement saveCount >= 3 (was 6).",
+    "expect": "no crash, saveCount rises by the firings, decompressCalls > 0, decompressFails 0, decompressMismatches 0",
+    "steps": [
+      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "cas_open", "setup": true, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30, "note": "CAS model build: CAS part resources" },
+        { "cmd": "cas_category", "setup": true, "args": {"category": "hair"}, "waitS": 15, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 15 },
+        { "cmd": "cas_close", "setup": true, "timeoutS": 30, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
+        { "cmd": "buy_open", "setup": true, "waitS": 4, "note": "catalog thumbnails" },
+        { "cmd": "buy_close", "setup": true, "waitS": 4 },
+        { "cmd": "save_game", "setup": false, "args": {"name": "RC-SaveLoop"}, "waitS": 90, "waitUntil": {"quiet": 3000, "iterMs": 500}, "minS": 8, "maxS": 90, "note": "fire: real save, same scratch name (backup path from the second save)" }
+      ],
+      "arms": ["on"],
+      "until": { "events": 4 },
+      "maxMinutes": 12
+    }
+  },
+  {
+    "id": "alloc-churn-loop",
+    "bug": "[GC] heap settings had no forced repro (every frame allocates; no loop drives allocation hard)",
+    "fix": "[GC] InitialHeapMB / GrowthStepMB (no runtime switch: on only)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing Sim, object and CAS create/destroy churn through the GC and EA heaps (alloc-dupfree in loop form): 5 Sims spawned and removed, 20 EA objects placed and removed, CAS open/close. Ends on quiet (no sim iteration >= 100 ms for 3 s). 2026-10-23 (docs/170 §6, instances per firing): 8 Sims and 30 EA objects per firing (a household of 8 and a big build session), count = objects placed (place_objects tracked), stop at 90 objects = 3 firings (was 6 firings of 5 Sims + 20 objects).",
+    "expect": "no crash, gcForeignAllocs 0 (when the GC thread check is in the build), commit growth flat across firings (read the row's VAS before -> after)",
+    "steps": [
+      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "spawn_sims", "setup": false, "args": {"count": 8}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30 },
+        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 30}, "waitS": 40, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 40, "count": {"result": "tracked"} },
+        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 20 },
+        { "cmd": "cas_open", "setup": false, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30 },
+        { "cmd": "cas_close", "setup": false, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
+        { "cmd": "remove_sims", "setup": false, "args": {}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 30, "note": "fire: Sims and their objects released" }
+      ],
+      "arms": ["on"],
+      "until": { "events": 90 },
+      "maxMinutes": 15
+    }
+  },
+  {
+    "id": "unseen-crowd-loop",
+    "bug": "unseen-crowd-far ran once per job (plain, minutes); the ts3fixes unseen script throttles had no forced repro (docs/144 queue is natural play)",
+    "fix": "[UnseenThrottle] (native_set unseenthrottle) and ts3fixes unseenenv / unseenmotives / unseenbroadcast (patches), flipped together per arm",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of unseen-crowd-far: 20 spawned Sims walk from the home lot to the farthest community lot while the household and the camera stay home (unseen walkers for [UnseenThrottle]; Sims leaving the active lot keep high LOD for a while [inferred, docs/144 §2], so the script throttles see unseen high-LOD Sims), then walk back into view (snap-back). The out leg ends on the on arm once the three skip counters rose 10 in sum (min 20 s, so the walk is under way), on the off arm on 2 s quiet or 45 s; the home leg is fixed. Keep profile cameraPan off. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned walkers (was 20), one ABBA cycle (perArm 2 firings, was 4: 60 unseen walkers per arm). Counted in firings: the only per-walker counters rise on the on arm only (unseen_*_skipped) or need unseenprobe in the off arm, and crowd_go has no numeric count.",
+    "expect": "no crash; on arms: utSkipped and unseen_*_skipped rise, unseen_motive_critical stays 0",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"unseenthrottle": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "patches", "setup": true, "args": {"unseenenv": "$on", "unseenmotives": "$on", "unseenbroadcast": "$on"}, "waitS": 1 },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far"}, "waitS": 45, "waitUntil": {"on": {"counter": ["unseen_env_skipped", "unseen_motive_skipped", "unseen_broadcast_skipped"], "rises": 10}, "off": {"quiet": 2000}}, "minS": 20, "maxS": 45, "note": "fire: unseen walk out" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 30, "note": "back into view (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 12
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"unseenenv": false, "unseenmotives": false, "unseenbroadcast": false} },
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "ip-route-legs-loop",
+    "bug": "D1 legreplanskip and D5 idlememo had no forced repro (routesrc-ab measured them in natural play)",
+    "fix": "ts3fixes legreplanskip (boat / vehicle leg-end replan skip) and idlememo (watchdog idle-check memo), patches arms",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): IP: 20 spawned Sims plus the household Go Here to the farthest community lot and back; IP routes cross water by boat and water taxi, and every boat exit sets ReplanWhenFinished (docs/151 §2, the D1 case [inferred: which Sims take a boat is the planner's choice]); Sims that planned successfully and stand still are what D5 memoizes (watchdog pass every 10 sim-minutes, ~10 s at ultra). The out leg ends on the on arm when legreplanskip_skipped + idlememo_skipped rose (min 30 s), on the off arm on 4 s quiet or 90 s; the home leg is fixed. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned Sims + household cross the water per firing (was 20), one ABBA cycle (perArm 2 firings, was 4). legreplanskip_skipped / idlememo_skipped rise on the on arm only, so they cannot count both arms: firings.",
+    "expect": "no crash; on arms: legreplanskip_skipped and idlememo_skipped rise; stuck Sims not above the off arms",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "patches", "setup": true, "args": {"legreplanskip": "$on", "idlememo": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 90, "waitUntil": {"on": {"counter": ["legreplanskip_skipped", "idlememo_skipped"], "rises": 2}, "off": {"quiet": 4000}}, "minS": 30, "maxS": 90, "note": "fire: crowd across the water" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "back (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 16
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"legreplanskip": false, "idlememo": false} },
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "winter-pond-loop",
+    "bug": "rare-winter-pond ran once per job (plain, minutes)",
+    "fix": "[WaterJps] (native_set waterjps arms)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of rare-winter-pond (needs profile.noEnv): winter, frozen ponds (freeze level 100, -15 C), 6 spawned Sims cross the ice to the nearest pond and back per firing, plus a pond plan + Replan of the active Sim with EnablePondPlanning. 2026-10-23 (docs/170 §6, instances per firing): 12 Sims cross the ice per firing (was 6), one ABBA cycle (perArm 2 firings, was 4).",
+    "expect": "no crash, waterJpsMismatches 0",
+    "steps": [
+      { "cmd": "test_env", "args": {"mode": "fixed", "season": "winter", "weather": "snow", "intensity": "Heavy", "weather_hours": 24, "temperature": -15, "snow_level": "Deep", "freeze_ponds": true, "moon_phase": 4}, "waitS": 5 },
+      { "cmd": "test_env", "args": {"mode": "read"}, "waitS": 1, "note": "log: season, weather, temperature, snow level, pond state" },
+      { "cmd": "spawn_sims", "args": {"count": 12}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"waterjps": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "sim_route_to", "setup": false, "args": {"to": "pond", "options": ["EnablePondPlanning"]}, "waitS": 2, "note": "pond plan" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1 },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "pond"}, "waitS": 60, "waitUntil": {"quiet": 4000}, "minS": 20, "maxS": 60, "note": "fire: 12 Sims cross the ice" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 30, "note": "back across the snow (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 14
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 10 }
+    ]
+  },
+  {
+    "id": "pet-guard-loop",
+    "bug": "pet-guard-cancel ran once per job (plain, minutes); the [Discourage] dead sweep had no forced repro (2026-10-23: 6 firings, discDeadSweep 0)",
+    "fix": "[Discourage] footprints / destroy apply / dead sweep and DeferFootprint (native_set arms); the destroy gate is off around each firing's cancel (both arms) so the dead sweep runs",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of pet-guard-cancel: per firing the pet guards an object (discourage footprint add while route jobs run), the guard is cancelled (footprint remove + slot destroy in one call), one routing spawned Sim is killed (Sim.Kill: dead-Sim sweep of its footprints) and one is spawned to keep the crowd at 5. 2026-10-23 (docs/170 §6, instances per firing): why 6 firings gave discDeadSweep 0: a dead-id sweep runs only for a Remove record that was deferred (an async route job running at the cancel) and whose object is gone when D drains it; with [Discourage] DestroyApply=1 the destroy gate applies the Remove at ObjectService_DestroyById while the slot still exists (discDestroyApplied), so the sweep never runs (discourage.cpp DiscOnDestroy / DiscApplyOne; ledger I-84-7-12: sweep counters \"with the destroy gate off\"), and kill_sim never destroys the Sim object. Now per firing 10 spawned Sims start Go Here plans 2 s before the cancel and discdestroy is 0 around the cancel (both arms), so each firing makes one dead-id sweep; a plain one-off guard/cancel first keeps the destroy gate covered. One guard per firing: pet_guard drives the household's first pet only (no count arg); perArm 2 firings (was 4).",
+    "expect": "no crash, discApplied > 0, discDeadSweep >= 1 per firing, discDestroyApplied >= 1 (the plain one-off), discIdMismatch 0",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 5 },
+      { "cmd": "pet_guard", "args": {"action": "start"}, "waitS": 30, "note": "once: destroy gate check (DestroyApply on)" },
+      { "cmd": "crowd_go", "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the cancel" },
+      { "cmd": "pet_guard", "args": {"action": "cancel"}, "waitS": 5, "note": "once: Remove deferred, the destroy gate applies it (discDestroyApplied)" },
+      { "cmd": "crowd_go", "args": {"target": "home"}, "waitS": 10 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"deferfootprint": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "pet_guard", "setup": true, "args": {"action": "start"}, "waitS": 30, "note": "pet routes to the object, discourage footprint added" },
+        { "cmd": "crowd_go", "setup": true, "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the cancel" },
+        { "cmd": "native_set", "setup": true, "args": {"discdestroy": 0}, "note": "destroy gate off: the deferred Remove outlives its slot" },
+        { "cmd": "pet_guard", "setup": false, "args": {"action": "cancel"}, "waitS": 3, "note": "fire: footprint remove deferred + slot destroy, dead-id sweep at the drain" },
+        { "cmd": "native_set", "setup": true, "args": {"discdestroy": 1}, "waitS": 1 },
+        { "cmd": "kill_sim", "setup": false, "args": {"pick": "routing"}, "waitS": 5, "note": "a routing Sim dies (lifecycle; not the dead-id sweep: a dead Sim is not destroyed)" },
+        { "cmd": "spawn_sims", "setup": true, "args": {"count": 1}, "waitS": 8 },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 10, "note": "crowd home for the next firing" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "object-churn-loop",
+    "bug": "rt-s2b-sweep ran once per job (plain, minutes)",
+    "fix": "[Discourage] DestroyPark (native_set destroypark arms)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of rt-s2b-sweep: 5 routing Sims at ultra; per firing 10 EA objects placed (quadtree adds) and destroyed while route jobs run (ObjectService_DestroyById: the park path), then build/buy enter/exit (gates 15/14). 2026-10-23 (docs/170 §6, instances per firing): 20 EA objects per firing (was 10) destroyed 2 s after 10 spawned Sims (was 5) start Go Here plans, so the destroys meet running jobs; count = objects placed (place_objects tracked), stop at 30 per arm = one ABBA cycle (was perArm 4 firings).",
+    "expect": "no crash; on arms: dpParked rises",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 30 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 5 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"destroypark": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "place_objects", "setup": true, "args": {"filter": "ea", "count": 20}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30, "count": {"result": "tracked"} },
+        { "cmd": "crowd_go", "setup": true, "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the destroys" },
+        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 20, "note": "fire: destroys while jobs run" },
+        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10 },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 5 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 30 },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "diner-crowd-loop",
+    "bug": "steer-crowd / avoid-crowd ran once per job (plain, minutes)",
+    "fix": "[SlotEnabledRO] and [AvoidRO] (native_set arms, flipped together)",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of steer-crowd / avoid-crowd: 6 named townies visit Hogan's Deep-Fried Diner once (optional: a missing townie does not fail), then per firing the 10 spawned Sims and the household walk onto the diner lot at once (arrivals steer and run the avoidance check near their path ends while route jobs run) and back home. 2026-10-23 (docs/170 §6, instances per firing): on the SV save 15 spawned Sims + household arrive per firing (was 10; a busy diner), one ABBA cycle (perArm 2 firings, was 4). Counted in firings: crowd_go has no numeric count.",
+    "expect": "no crash; on arms: slTaken rises, slShadowMismatch 0, avShadowMismatch 0 (avTripAv counts foreign entries: the safety fallback, not a failure), avSimWriteInRo 0",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
+      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
+      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Wogan Hemlock", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Johnny Jones", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Paul Hogue", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Lilly-Bo Chique", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Marie Desmarais", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
+      { "cmd": "sim_visit_lot", "args": {"sim": "Wayne Bumble", "lot": "Hogan's Deep-Fried Diner"}, "optional": true }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"slotenabledro": "$on", "avoidro": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"x": 312.4, "z": 1496.7, "household": true}, "waitS": 60, "waitUntil": {"quiet": 4000}, "minS": 20, "maxS": 60, "note": "fire: crowd arrives at the diner" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 30, "note": "home (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 12
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "candidate-loops-loop",
+    "bug": "candidate-loops ran twice per job (plain, minutes)",
+    "fix": "ts3fixes farthestsorted, indoorcap and safespotcap (patches arms)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of candidate-loops: Ts3Fixes.Fixes.CandidateLoopProbe runs the front-door, farthest-lot and indoor-position loops for the selected Sim synchronously in the agent call; 2 s per firing.",
+    "expect": "no crash; farthest lot id equal between arms in the probe answers; on arms: farthest_calls, indoorcap_calls rise",
+    "steps": [],
+    "loop": {
+      "steps": [
+        { "cmd": "patches", "setup": true, "args": {"farthestsorted": "$on", "indoorcap": "$on", "safespotcap": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "reflect_call", "setup": false, "args": {"path": "Ts3Fixes.Fixes.CandidateLoopProbe"}, "waitS": 2, "note": "fire: frontdoor ok/ms, farthest lot id/ms, indoor count/ms" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 10 },
+      "maxMinutes": 3
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"farthestsorted": false, "indoorcap": false, "safespotcap": false} }
+    ]
+  },
+  {
+    "id": "replan-buildbuy-loop",
+    "bug": "replan-buildbuy-crowd ran once per job (plain, minutes)",
+    "fix": "ts3fixes replandefer and replanspread (patches arms)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of replan-buildbuy-crowd: 20 spawned Sims plus the household; per firing a wave onto the home lot (through its doors) with a build/buy enter/exit while they route (OnBuildBuyExit replan of every Sim), then a far-lot wave with another enter/exit. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned Sims + household (was 20), two build/buy exits per firing replan every routing Sim; one ABBA cycle (perArm 2 firings, was 4). replanspread_held / replandefer_deferred rise on the on arm only: firings.",
+    "expect": "no crash, replanspread_exceptions 0; on arms: replanspread_held or replandefer_deferred rise",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "patches", "setup": true, "args": {"replandefer": "$on", "replanspread": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 6, "note": "wave onto the home lot" },
+        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 8 },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20, "note": "fire: replan of every routing Sim" },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 2 },
+        { "cmd": "crowd_go", "setup": true, "args": {"to": "far", "household": true}, "waitS": 6, "note": "far wave: long routes followed at the exit" },
+        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 8 },
+        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
+        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 2 }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      { "cmd": "patches", "args": {"replandefer": false, "replanspread": false} },
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
   }
 ]

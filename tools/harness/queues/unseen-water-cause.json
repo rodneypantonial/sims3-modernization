@@ -1,0 +1,97 @@
+{
+  "note": "[UnseenThrottle] water-entry cause check (docs/143 §8.16; Rodney: tell a throttle glitch from a Sim's own intent). Day correctness jobs, noisy machine OK (no timing read). Build: ts3native from this branch (viewer codes 19-23 = per-Sim skip read and --ab side; counters unchanged, v83): game-copy/ts3native.asi.0322 (sha256 ab2f6a7945793a11, the 0.36.22 merge build that includes this read); build/ts3agent.package (unseen_water_cause, houseboat_move) and build/ts3fixes.package from the same commit installed. Every job: no crash or freeze, 0 watchdog lines, the repro's require steps ok, no stuck Sims. If houseboat_move setup fails with 'no houseboat', the save has none: the two houseboat jobs are not run (not a fail of the throttle) until a save with a houseboat household is picked.",
+  "jobs": [
+    {
+      "id": "ip-water-cause-ab",
+      "note": "Isla Paradiso, repro unseen-water-cause (12 spawned Sims cross the sea, swim, return, swim; normal speed), all four throttle parts switched together by --ab (warm-up on, then off,on,on,off; 2-min slices), 10 min. Pass: unseen_water_cause {result, require, ab} ok = native answering, >= 3 entries, no unknown side, support_moved on == 0, unexplained on <= unexplained off x (exposure on / exposure off) + 1. Read: sides.*, entries (support, before/after, intent, edge_m, support_moved_m, skip_age_ms, skip_part).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "unseen-water-cause",
+          "ab": "unseenthrottle,unseenavoid,unseenfootprint,unseenrate",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-houseboat-move",
+      "note": "Isla Paradiso, repro unseen-houseboat-move (6 spawned Sims walking on a houseboat deck, camera away, the boat autopilots 80 m out and back to port), every part on, no --ab, 9 min. Pass: houseboat_move {check, require} ok (every Sim on the houseboat lot, none in water, boat moved >= 20 m) and unseen_water_cause {ab: false} ok (support moved 0, unexplained 0).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3
+      },
+      "run": {
+        "profile": {
+          "minutes": 9,
+          "seed": 12345,
+          "repro": "unseen-houseboat-move"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-dock-edge",
+      "note": "Isla Paradiso, repro unseen-dock-edge (6 spawned Sims walking along a port gangway's dock while the docked houseboat leaves, returns and leaves again; camera away), every part on, no --ab, 10 min. Pass: houseboat_move {check, require} ok (no dock Sim in water, boat moved >= 20 m) and unseen_water_cause {ab: false} ok. Read edge_m on the dock rows: all 0.25 m means GetLevelHeight does not see dock tiles (docs/143 §8.16 shortcut).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 83,
+      "ini": {
+        "UnseenProbe.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.Every": 4,
+        "UnseenThrottle.List": 1,
+        "UnseenThrottle.Avoid": 1,
+        "UnseenThrottle.Footprint": 1,
+        "UnseenThrottle.Rate": 1,
+        "UnseenThrottle.AvoidNearM": 3,
+        "UnseenThrottle.FpMs": 500,
+        "UnseenThrottle.RateNearM": 3
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "unseen-dock-edge"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

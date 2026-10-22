@@ -1,0 +1,63 @@
+{
+  "note": "docs/153 routing community mods vs ours (2026-10-22, NOT run). Day jobs (5 min, noisy machine OK: counters and route fails only, no timing). Each pair = same save, seed and asi, release defaults (repo ts3native.ini = master), ts3fixes as master with routesrc on (observe only); one arm with the mod set as installed (all routing mods in), the other with one mod family taken out through install-fixes (fixes.uninstall, reinstalled after the job). Mods load at game start, so no --ab inside one load: compare the two jobs of a pair. One run per arm is indicative only; repeat a pair if the difference is within 20%. Groups for --only: ip-* (houseboat-fix, routing-ocean-play), bp-* (routing-sims-less-space + routing-pets-less-space + routing-sloped-terrain). routing-toddler has no job (verified static, toddler falls are rare in the baseline saves).",
+  "jobs": [
+    {
+      "id": "ip-mods-on",
+      "note": "Reference arm for the ip-* jobs: every routing mod installed (as the installer default). Read: routesrc_buckets (plans/us/fails per source; [2] houseboat = S2), routesrc_houseboat_legs, total route plans and fails, watchdog resets (counters 46-49), stuck-Sim lines. Pass: no crash, game alive, fixesRequire.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": { "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "fixesOn": "routesrc", "noSamplers": true, "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-houseboatfix-off",
+      "note": "docs/153 §3.1: House Boat Fix out, simler90 UPDATE242 in (it carries the same gangway condition). Expected if redundant: S2 houseboat plans, fails and legs within noise of ip-mods-on; stack frames name SimRoutingComponent.EnterHouseboatThroughGangway instead of fp.houseboatfix.Main (routesrc still buckets both as S2). A clear rise in S2 fails or stuck Sims at the houseboat = simler90 does not cover it: keep houseboat-fix and fix docs/153.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": { "HitchAttr.Enabled": 1 },
+      "fixes": { "uninstall": ["houseboat-fix"] },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "fixesOn": "routesrc", "noSamplers": true, "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-oceanplay-off",
+      "note": "docs/153 §3.5: Autonomous Play In The Ocean Fix out. Expected if the mod cuts ocean trips: more plans and plan us in routesrc 'other' and more water routes (Sims walking to the ocean from inland lots) than ip-mods-on. Read the same counters as ip-mods-on plus the interaction log for GoAndPlayInOcean starts if the agent logs them.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": { "HitchAttr.Enabled": 1 },
+      "fixes": { "uninstall": ["routing-ocean-play"] },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "fixesOn": "routesrc", "noSamplers": true, "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-mods-on",
+      "note": "Reference arm for bp-footprints-off: BP crowd (rare-big-crowd: 30 Sims, home lot, farthest community lot, home again), every routing mod installed. Read: routesrc_buckets (plans/us/fails per source), total route plans and fails, RouteBackoff counters, watchdog resets (counters 46-49), stuck-Sim lines.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": { "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "repro": "rare-big-crowd", "fixesOn": "routesrc", "noSamplers": true, "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-footprints-off",
+      "note": "docs/153 §3.3/3.4: OhRudi Sims/Pets need less Space (jig footprint polygons halved) and Nikel23 sloped terrain (jig OBJD slope bit) out. Expected if the mods help: more route fails and RouteBackoff entries, same or fewer plans than bp-mods-on (failed jig placements do not route). Fewer plans with the mods off and no rise in fails = the mods add route searches (more socials placed, each routed): keep but note in docs/153. Visual check in the screenshots: no Sims standing inside walls or objects with the mods on.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": { "HitchAttr.Enabled": 1 },
+      "fixes": { "uninstall": ["routing-sims-less-space", "routing-pets-less-space", "routing-sloped-terrain"] },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "repro": "rare-big-crowd", "fixesOn": "routesrc", "noSamplers": true, "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

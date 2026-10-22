@@ -1570,6 +1570,95 @@ static void K6TieCases() {
         }
 }
 
+// --- K6E (docs/142 §9): [RouteEarlyOut] Mode 2 against the game's own world A* on the K6 world. Per random pair (modes and
+// flags as K6Sweep): the game's answer with no hook (result, *best, opts +0x64..+0xBB, closed bits), then the same call through
+// EoAsHook in act mode (no shadows) inside a request: an acted answer must be identical, a reachable goal never acted. Memo: the
+// hook's failed search answers a second goal with the same opts. Stale: an R flags byte flipped in place after the memo: the
+// memo is not used (eoStale) and the game answers. ---
+struct K6EAns { DWORD r, best, closedN; u8 ctx[0x58]; u8 closed[1024]; };
+static long g_k6eAct[2], g_k6eSame, g_k6eReach, g_k6eStale, g_k6eCarFail, g_k6eMemoTry;
+static void K6ERun(const K6Q& q, DWORD g, bool hook, K6EAns* a) {
+    __declspec(align(16)) DWORD o[64];  // the circle prepass 0x673600 stores the centre with movaps at opts+0x90
+    memcpy(o, q.opts, sizeof(o));
+    u8* Wp = g_sf.W;
+    o[0x22] = (DWORD)(uintptr_t)Wp;
+    g_k6Job = q.job;
+    DWORD s = q.s, best = 0;
+    u8* c = Wp + 0x18;
+    const u8 *R = *(u8**)(Wp + 0x10), *G = *(u8**)(Wp + 0x14);
+    a->r = hook ? EoAsHook(c, NULL, R, G, &s, &g, q.mode, (u8*)o, &best)
+                : (DWORD)(uintptr_t)kK6Search(c, NULL, R, G, &s, &g, q.mode, o, &best);  // shortcut: path vectors leak (test)
+    a->r = a->r != 0;
+    a->best = best;
+    memcpy(a->ctx, (u8*)o + 0x64, sizeof(a->ctx));
+    a->closedN = *(DWORD*)(c + 8);
+    assert(a->closedN <= sizeof(a->closed));
+    memcpy(a->closed, *(u8**)(c + 0x10), a->closedN);
+}
+static void K6ECheck(const char* what, const K6Q& q, DWORD g, const K6EAns& x, const K6EAns& y) {
+    if (x.r == y.r && x.best == y.best && x.closedN == y.closedN && !memcmp(x.ctx, y.ctx, sizeof(x.ctx)) && !memcmp(x.closed, y.closed, x.closedN)) {
+        g_k6eSame++;
+        return;
+    }
+    printf("K6E MISMATCH %s: %08lX -> %08lX mode %lu flags %lX: game %lu best %08lX, early-out %lu best %08lX, context %s, closed %s\n", what,
+           q.s, g, q.mode, q.opts[0], x.r, x.best, y.r, y.best, memcmp(x.ctx, y.ctx, sizeof(x.ctx)) ? "DIFFERS" : "same",
+           x.closedN == y.closedN && !memcmp(x.closed, y.closed, x.closedN) ? "same" : "DIFFER");
+    assert(false);
+}
+static void K6EarlyOut(int pairs) {
+    Ts3nCounters& k = ts3native_counters;
+    static K6EAns ref, act;
+    const u8* raw = *(u8**)(*(u8**)(g_sf.W + 0x10) + 0xC);
+    for (int p = 0; p < pairs; p++) {
+        const DWORD mode = 1 + Rnd(4);
+        DWORD flags = 0;
+        if (Rnd(5) == 0) flags |= 0x40;
+        if ((mode == 1 || mode == 4) && Rnd(3)) flags |= 0x80;
+        if ((flags & 0x80) && Rnd(2)) flags |= 0x100;
+        if (Rnd(5) == 0) flags |= 0x200;
+        int sa = (int)Rnd(g_k6N), ga = (int)Rnd(g_k6N);
+        for (int t = 0; mode == 2 && t < 50 && g_k6Wp[sa].type != 0x0D; t++) sa = (int)Rnd(g_k6N);
+        for (int t = 0; mode == 2 && t < 50 && g_k6Wp[ga].type != 0x0D; t++) ga = (int)Rnd(g_k6N);
+        K6Q q = K6Query(sa, ga, mode, flags);
+        q.job = Rnd(2) ? 0xC00 : 0;
+        K6ERun(q, q.g, false, &ref);
+        EoReq saved;
+        EoBegin(saved);
+        LONG a0 = k.eoActed;
+        K6ERun(q, q.g, true, &act);
+        K6ECheck("first", q, q.g, ref, act);
+        if (ref.r) { assert(k.eoActed == a0); g_k6eReach++; }
+        else if (k.eoActed != a0) g_k6eAct[0]++;
+        else if (mode == 2) g_k6eCarFail++;  // car-only failures the act path did not answer (start = goal, refused)
+        // memo: the hook's search failed and was unrestricted: a second goal with the same opts
+        if (!ref.r && mode != 2 && t_eo.memo) {
+            g_k6eMemoTry++;
+            const DWORD g2 = K6Ref(g_k6Wp[Rnd(g_k6N)]);
+            K6ERun(q, g2, false, &ref);
+            a0 = k.eoActed;
+            const LONG m0 = k.eoActedWhy[1];
+            K6ERun(q, g2, true, &act);
+            K6ECheck("memo", q, g2, ref, act);
+            if (ref.r) { assert(k.eoActed == a0); g_k6eReach++; }
+            if (k.eoActedWhy[1] != m0) {
+                g_k6eAct[1]++;
+                // stale epoch: a record's flags byte (blocked bit) flipped in place since the memo: the game answers
+                u8* f = (u8*)raw + g_k6Wp[Rnd(g_k6N)].rec + 1;
+                *f ^= 0x80;
+                const LONG s0 = k.eoStale[1];
+                K6ERun(q, g2, false, &ref);
+                a0 = k.eoActed;
+                K6ERun(q, g2, true, &act);
+                *f ^= 0x80;
+                K6ECheck("stale", q, g2, ref, act);
+                assert(k.eoActed == a0 && k.eoStale[1] == s0 + 1);
+                g_k6eStale++;
+            }
+        }
+        EoEnd(saved, 0);
+    }
+}
+
 // --- K8 (docs/94 §13.3): the route planner above the world search, PathPlan_WithRetries 0x661B50 -> PathPlanner_PlanHierarchical
 // 0x65E0D0 (lot lookups, start/goal heights, closest waypoints 0x65BB90, lot exits 0x654CC0, lot legs LotPlan 0x6410B0 ->
 // LotPlan_Inner 0x63F6E0 / LotSearch_Entry 0x640E00, the world A*, water legs, the node passes 0x64E380), called as
@@ -1670,6 +1759,33 @@ static DWORD WINAPI K8Watch(void*) {
 // 0.34.1 [OptsInit] check: with g_k8Dirty the copy side keeps the stack earlier calls left (live cleared), as two threads'
 // histories would; with the options ctor patch (optsinit.cpp) every plan must still match
 static bool g_k8Dirty;
+static bool g_k8Rjp;  // STEERRO_PHASES=1 (docs/150 §7 fix): every K8 plan runs as a [RouteJobPhases] job of this thread
+static bool g_k8Sp;   // STEERRO_SYNCPHASES=1 (docs/164): every K8 plan runs as a SyncPlans session of this thread instead
+// STEERRO_PLANDEADLINE=1 (docs/164 §7): K8 plans by a hash of the query (the same for the live and the copy run) in a
+// [RouteAsync] PlanDeadlineMs session already past its deadline: class 0 none, 1 everything (world A* budget deadline + cell +
+// water stubs), 2 cell A* stub only, 3 water stub only; live and copy must still agree, per class found / skips counted
+static bool g_k8Pd;
+static long g_k8PdN[4], g_k8PdFound[4], g_k8PdWater[4], g_k8PdCapped;
+static int K8PdClass(const void* s, const void* g, DWORD flags) {
+    const DWORD h = *(const DWORD*)s * 2654435761u ^ *(const DWORD*)g * 40503u ^ flags * 2246822519u;
+    return (int)((h >> 9) & 3);
+}
+static int g_k8PdCur;
+static __declspec(noinline) void K8PdBegin(const void* s, const void* g, DWORD flags) {
+    if (t_pd.open) PdClose(false);  // a copy run that faulted inside the planner left its session open
+    if ((g_k8PdCur = K8PdClass(s, g, flags)) == 0) return;
+    PdOpen(1, 60000000);
+    t_pd.dl = 1;  // already past
+    g_pdSkipMask = g_k8PdCur == 1 ? 3 : g_k8PdCur == 2 ? 1 : 2;
+    if (g_k8PdCur == 1) { const Budget b = {1, 0, {}, 0, 0, 0, 1, 0}; t_budget = b; }  // CallPlanBudget's Budget with the deadline
+}
+static __declspec(noinline) void K8PdEnd(DWORD ret) {
+    if (!g_k8PdCur) return;
+    if (g_k8PdCur == 1 && t_budget.capped) g_k8PdCapped++;
+    const Budget z = {};
+    t_budget = z;
+    PdClose(ret == 0);
+}
 static __declspec(noinline) void K8ZeroStack(DWORD fill = 0) {
     volatile DWORD z[16 * 1024];
     for (int i = 0; i < 16 * 1024; i++) z[i] = fill;
@@ -1691,7 +1807,21 @@ static void K8Run(u8* Wp, u8* world, const K8Q& q, K8Ans* a) {
     u8* path = NULL;
     DWORD si = 0, gi = 0xFFFFFFFF;  // *gIdx < 0: no preselected goal record, the goal point (arg 3) is used (0x65EAB8)
     if (!g_k8Dirty || Wp == g_sf.W) K8ZeroStack(0);  // dirty: the copy side keeps what earlier calls left (the I-94-322 shape)
+    if (g_k8Rjp) RjpJobBegin(0);
+    // docs/159: the door stub sees K8's plan as a worker job (DoorMemo=2 shadow: every repeat asked and compared)
+    const DWORD k8Worker = g_workerTid;
+    if (g_k8Rjp) t_hcJob = ++g_hcJobSeq, g_workerTid = GetCurrentThreadId();
+    if (g_k8Sp) {
+        if (t_syp.open) SypEnd();  // a copy run that faulted inside the planner left its session open
+        static DWORD spSlot;
+        if (!SypBegin(SYP_IC, &spSlot)) assert(!"SyncPlans session refused");
+    }
+    if (g_k8Pd) K8PdBegin(q.s, q.g, q.flags);  // out of line: K8Run's frame (the dirty-stack check reads it) stays as it was
     a->ret = kK8Plan(Wp, NULL, job, sv, goal, 0.0f, gv, &path, &si, &gi, q.flags, NULL, q.mode, 0);
+    if (g_k8Pd) K8PdEnd(a->ret);
+    if (g_k8Sp) SypEnd();
+    if (g_k8Rjp) t_hcJob = 0, g_workerTid = k8Worker;
+    if (g_k8Rjp) RjpJobEnd(0);
     g_k8Since = GetTickCount64();
     a->sIdx = si, a->gIdx = gi, a->n = 0;
     if (path) {  // shortcut: the path object is not released (test process)
@@ -2160,6 +2290,11 @@ static void K8Sweep(int pairs) {
                 water |= wt == 0x14, leg |= wt == 2 && t != 6 && t != 7;  // a virtual water node; a lot exit (lot-edge waypoint) node
             }
             g_k8Water += water, g_k8LotLeg += leg;
+            if (g_k8Pd) g_k8PdWater[K8PdClass(q.s, q.g, q.flags)] += water;
+        }
+        if (g_k8Pd) {
+            const int pc = K8PdClass(q.s, q.g, q.flags);
+            g_k8PdN[pc]++, g_k8PdFound[pc] += !l.ret;
         }
     }
 }
@@ -2202,6 +2337,9 @@ static float* __fastcall RkFarBounds(const u8*, void*, float* out, DWORD, float)
 static long RkCoverRemove() {
     long n = 0;
     static DWORD farVt[8][0x80];
+    // replay.cpp caches cover tables by table address (the game's class vtables are fixed); farVt[n] holds another class each
+    // seed, so a cached copy of last seed's class (3 levels) walked a 1-level cache past its end: the 0x80ED25 / 0x61EE3C faults
+    g_rpNCoverVt = 0;
     for (int j = 0; j < g_rf.nFps && n < 4; j++) {
         u8* fp = g_rf.fps[j];
         u8* q = RfQOf(j % g_rf.nLots, j);
@@ -2216,6 +2354,8 @@ static long RkCoverRemove() {
         memcpy(fv, (const void*)(uintptr_t)vt, sizeof(farVt[0]));
         fv[0x2C / 4] = (DWORD)(uintptr_t)RkFarBounds;
         *(DWORD*)fp = (DWORD)(uintptr_t)fv;
+        const DWORD* ct = (const DWORD*)(uintptr_t)RpCoverVtFor((DWORD)(uintptr_t)fv);
+        assert(ct && !memcmp(ct, fv, 0x2C));  // the cover table is this class's (not the previous seed's class in farVt[n])
         u8* cov[1] = {fp};
         RpRemCovered(q, lo, hi, cov, 1);
         assert(*(DWORD*)fp == (DWORD)(uintptr_t)fv);  // the table put back
@@ -2234,7 +2374,9 @@ int main(int argc, char** argv) {
     AddVectoredExceptionHandler(1, [](EXCEPTION_POINTERS* e) -> LONG {
         const DWORD code = e->ExceptionRecord->ExceptionCode;
         if (code == 0x406D1388 || code == 0xE06D7363) return EXCEPTION_CONTINUE_SEARCH;
-        printf("exception %08lX at %08lX esp %08lX; stack:", code, e->ContextRecord->Eip, e->ContextRecord->Esp);
+        const CONTEXT* cx = e->ContextRecord;
+        printf("exception %08lX at %08lX esp %08lX (eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX tid %lu); stack:", code,
+               cx->Eip, cx->Esp, cx->Eax, cx->Ebx, cx->Ecx, cx->Edx, cx->Esi, cx->Edi, cx->Ebp, GetCurrentThreadId());
         const DWORD* sp = (const DWORD*)(uintptr_t)e->ContextRecord->Esp;
         for (int i = 0, k = 0; i < 256 && k < 10; i++)
             if (sp[i] >= 0x00401000 && sp[i] < 0x00F95000) { printf(" %08lX", sp[i]); k++; }
@@ -2262,6 +2404,30 @@ int main(int argc, char** argv) {
     assert(Matches((const void*)(uintptr_t)STEER_LOCO, kLocoPro, sizeof(kLocoPro)));
     for (int i = 0; i < QL_N; i++) assert(Matches((const void*)(uintptr_t)kQlSites[i].addr, kQlSites[i].pro, kQlSites[i].len));
     for (int i = 0; i < TW_N; i++) assert(Matches((const void*)(uintptr_t)kTwSites[i].addr, kTwSites[i].pro, kTwSites[i].len));
+    // design U phase 2 (docs/89 §12): both detour prologues and the two flush call sites on the image
+    assert(Matches((const void*)(uintptr_t)FT_FN, kFtPro, sizeof(kFtPro)) && Matches((const void*)(uintptr_t)UOL_FN, kUolPro, sizeof(kUolPro)));
+    for (DWORD s : {PFR_SITE, PFA_SITE}) {
+        const u8* p = (const u8*)(uintptr_t)s;
+        assert(p[0] == 0xE8 && (DWORD)(s + 5 + *(const LONG*)(p + 1)) == (s == PFR_SITE ? PFR_FN : PFA_FN));
+    }
+    for (const CallSite& c : kRtoSites) {  // RouteToObjRO (docs/140 §12): the three calls in 0x831530
+        const u8* p = (const u8*)(uintptr_t)c.site;
+        assert(p[0] == 0xE8 && (DWORD)(c.site + 5 + *(const LONG*)(p + 1)) == c.target);
+    }
+    for (const CallSite& c : kTuSites) {  // TailUnlock (docs/150 §11): the four calls in 0x64E380 InstallTailUnlock retargets
+        const u8* p = (const u8*)(uintptr_t)c.site;
+        assert(p[0] == 0xE8 && (DWORD)(c.site + 5 + *(const LONG*)(p + 1)) == c.target);
+    }
+    {  // ReplanDedupe (docs/150 §13): the IC's replan count it repeats when serving, the follower-position call Replan's start
+       // builder makes (0x75D93E -> 0x752480), and the destination list walk the goal key copies (0x751FF0: list at +0x18,
+       // destination = node - 4)
+        static const u8 kAdd[] = {0x83, 0x86, 0xF4, 0x01, 0x00, 0x00, 0x01};  // add dword ptr [esi+0x1F4],1
+        assert(Matches((const void*)(uintptr_t)0x007654BA, kAdd, sizeof(kAdd)) && Matches((const void*)(uintptr_t)0x00765589, kAdd, sizeof(kAdd)));
+        const u8* p = (const u8*)(uintptr_t)0x0075D93E;
+        assert(p[0] == 0xE8 && (DWORD)(0x0075D93E + 5 + *(const LONG*)(p + 1)) == 0x00752480);
+        static const u8 kList[] = {0x8D, 0x59, 0x18}, kNode[] = {0x8D, 0x4E, 0xFC};  // lea ebx,[ecx+0x18]; lea ecx,[esi-4]
+        assert(Matches((const void*)(uintptr_t)0x00751FFA, kList, 3) && Matches((const void*)(uintptr_t)0x00752018, kNode, 3));
+    }
     // P10 / G10-C (p10.cpp, docs/87): the three IC stubs' prologues, Route_PlanCommon has the goal step's prologue (site 10
     // moves there), and the call edges the P1b row and the G10-C keys rely on: 0x760BFA -> goal step, 0x764298 / 0x7643FB ->
     // Route_PlanCommon (returns 0x76429D / 0x764400)
@@ -3430,7 +3596,7 @@ int main(int argc, char** argv) {
         assert(Matches((const void*)(uintptr_t)0x0083D383, (const u8*)"\xC2\x04\x00", 3));  // its one return: ret 4
         wchar_t ini[MAX_PATH];
         GetTempPathW(MAX_PATH, ini);
-        wcscat_s(ini, L"steerro-test-h2.ini");
+        swprintf_s(ini + wcslen(ini), MAX_PATH - wcslen(ini), L"steerro-test-h2-%lu.ini", GetCurrentProcessId());  // parallel runs
         WritePrivateProfileStringW(L"LocoWindow", L"Enabled", L"1", ini);
         WritePrivateProfileStringW(L"LocoWindow", L"Mode", L"1", ini);
         const LONG enf = k.rgEnforce, ready = k.asyncReady;
@@ -3518,7 +3684,7 @@ int main(int argc, char** argv) {
         assert(*(const DWORD*)(uintptr_t)0x011D40C4 == 0);
         wchar_t ini[MAX_PATH];
         GetTempPathW(MAX_PATH, ini);
-        wcscat_s(ini, L"steerro-test-a10.ini");
+        swprintf_s(ini + wcslen(ini), MAX_PATH - wcslen(ini), L"steerro-test-a10-%lu.ini", GetCurrentProcessId());  // parallel runs
         WritePrivateProfileStringW(L"RouteAsync", L"Kinds", L"7", ini);
         const LONG ready = k.asyncReady;
         const IcPlanFn savedIc = g_icPlanOrig;
@@ -4223,11 +4389,18 @@ int main(int argc, char** argv) {
         static K6Q keep[64];
         static K6Ans keepAns[64], k6c, k6l;
         long k4Version = 0, k4Moved = 0;
+        // K6E: [RouteEarlyOut] Mode 2 on the game's A* (earlyout.cpp's hook, the game's cost functions and circle prepass)
+        InitializeCriticalSection(&g_eoCs);
+        QueryPerformanceFrequency(&g_qpf);
+        g_eoAsOrig = (EoAsFn)(uintptr_t)0x00676260;
+        ts3native_counters.eoMode = 1, ts3native_counters.eoAct = 2;
+        g_eoShadowFirst = 0, g_eoShadowEvery = 0, g_eoMemoMinUs = 0;
         for (DWORD seed = seedArg; seed < seedArg + 2; seed++) {
             K6Build(seed);
             K6Cut();
             K6Sweep(cases / 20 + 10, keep, keepAns, 0);
             K6TieCases();
+            K6EarlyOut(cases / 10 + 20);
             // writes between cuts (K4 on the world search): after each cut copy == live; after 25 uncut writes the copy still
             // answers for its version while live has moved
             for (int r = 0; r < 12; r++) {
@@ -4242,6 +4415,7 @@ int main(int argc, char** argv) {
                     K6Run(g_sf.W, keep[i], &k6l);
                     k4Moved += !K6Same(keepAns[i], k6l);
                 }
+                K6EarlyOut(cases / 60 + 6);  // after blocked-bit writes
             }
             // teardown: the copy released, W' freed through the game's clear functions, the working copy and the cut dropped
             PcRelease(&g_k6Cl, 0, NULL, 0);
@@ -4283,6 +4457,15 @@ int main(int argc, char** argv) {
                "= the copy's, own closed list and FindClosest blocks, group hash private and equal); %ld copy trees end at the copy's anchor "
                "(0x4E0B20); %ld copy runs with live W, R, G trees, group hash and blockedNodeMap on PAGE_NOACCESS pages: no access\n",
                g_k6Cuts, g_k6TreeEnds, g_k6Guarded);
+        printf("K6E (docs/142 §9): [RouteEarlyOut] Mode 2 vs the game's WorldAStar_Search: %ld answers identical (result, best, context "
+               "+0x64..+0xBB, closed bits); acted car %ld memo %ld (of %ld memo tries); %ld reachable goals never acted; %ld car-only "
+               "failures not acted; %ld stale memos (R flags byte flipped) answered by the game; eoWrong %ld, refused %ld, heuristic ties not acted %ld, stale car %ld\n",
+               g_k6eSame, g_k6eAct[0], g_k6eAct[1], g_k6eMemoTry, g_k6eReach, g_k6eCarFail, g_k6eStale, ts3native_counters.eoWrong,
+               ts3native_counters.eoActRefused, ts3native_counters.eoActTie, ts3native_counters.eoStale[0]);
+        assert(g_k6eAct[0] > 0 && g_k6eAct[1] > 0 && g_k6eStale > 0 && g_k6eReach > 0 && ts3native_counters.eoWrong == 0 &&
+               ts3native_counters.eoStale[0] == 0);
+        ts3native_counters.eoMode = 0, ts3native_counters.eoAct = 0;
+        g_eoAsOrig = NULL;
         printf("K6 crash G: %ld inserts into W'+0xC0 through the game's 0x657BC0, the shared empty bucket array 0x114C900 untouched; "
                "%ld W' drops on another thread with a filled cache, no fault\n", g_k6CacheIns, g_k6Drops);
         printf("K6 planner pieces (I-94-231): %ld lot-exit mask builds (0x64FEA0 on the copy world), %ld ObjectFootprints fills "
@@ -4313,7 +4496,34 @@ int main(int argc, char** argv) {
             static const u8 kGa[] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0};
             g_k8GaOrig = (K8GaFn)InstallDetour("K8 count 0x654CC0", 0x00654CC0, kGa, sizeof(kGa), (void*)K8GaCount);
         }
+        // STEERRO_PHASES=1 (docs/150 §7 fix): [RouteJobPhases] stubs on every planner site whose prologue is still the game's
+        // (the allocator, Lock_Acquire and world A* are K8's own fakes/counters here: skipped); the old RjpPop crashed on the
+        // first nested ret-N leave
+        // STEERRO_SYNCPHASES=1 (docs/164): the same stubs, each K8 plan a SyncPlans session; the world A* site is timed inside K8's
+        // counter (as inside [RouteEarlyOut] in game), so the loop split has to find the game's return address above that frame
+        g_k8Sp = GetEnvironmentVariableA("STEERRO_SYNCPHASES", NULL, 0) > 0;
+        g_k8Rjp = !g_k8Sp && GetEnvironmentVariableA("STEERRO_PHASES", NULL, 0) > 0;
+        g_k8Pd = !g_k8Sp && !g_k8Rjp && GetEnvironmentVariableA("STEERRO_PLANDEADLINE", NULL, 0) > 0;
+        if (g_k8Pd) {  // docs/164 §7: the game's cost-function sites get the budget stubs, cell A* and water the deadline stubs
+            if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+            assert(PatchCostSites(kCostSites, kCostFns));
+            PdInstallAt(0x0061E500, 0x00671930);
+            assert(g_pdOrig[0] && g_pdOrig[1]);
+            ts3native_counters.pdMode = 1;
+        }
+        int rjpSites = 0;
+        if (g_k8Rjp) {
+            for (int i = 0; i < RJS_N; i++) rjpSites += RjpInstallAt(i, kRjpSites[i].at, NULL);
+            ts3native_counters.rjpReady = 1;
+            if (HcInstallDoor(P4_DOOR_AT, P4_DOOR_TARGET)) g_hcOn = 1, ts3native_counters.dmMode = 2;  // docs/159 door stub, shadow
+        }
+        if (g_k8Sp) {
+            for (int i = 0; i < RJS_N; i++)
+                rjpSites += RjpInstallAt(i, kRjpSites[i].at, i == RJS_WORLD ? (void**)&g_k8AsOrig : NULL);
+            ts3native_counters.rfbLogMs = 0;  // no split lines from K8
+        }
         DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_k8Main, 0, FALSE, DUPLICATE_SAME_ACCESS);
+        g_rfSites = GetEnvironmentVariableA("STEERRO_ALLOCSITES", NULL, 0) > 0;  // docs/150 §14: EA allocator calls by game call site (off by default)
         g_k8Since = GetTickCount64();  // from here on: 10 s without a finished plan = a hang (cuts and builds included)
         CloseHandle(CreateThread(NULL, 0, K8Watch, NULL, 0, NULL));
         for (DWORD seed = seedArg; seed < seedArg + 2; seed++) {
@@ -4347,6 +4557,16 @@ int main(int argc, char** argv) {
             K8Drop();
         }
         g_k8Since = 0;
+        if (g_rfSites) {  // one line per game call site (return address - 5 = the call); plans = K8's live + copy + [OptsInit] runs
+            g_rfSites = false;
+            LONG nAl = 0, nFr = 0;
+            for (int i = 0; i < 1024; i++) nAl += g_rfSiteN[i], nFr += g_rfSiteFree[i];
+            printf("K8 alloc sites (STEERRO_ALLOCSITES): %ld allocs, %ld frees, %ld K8 plans, table full %ld\n", nAl, nFr, g_k8Plans, g_rfSiteFull);
+            for (int i = 0; i < 1024; i++)
+                if (g_rfSiteAt[i])
+                    printf("K8 alloc site 0x%08lX %s %ld bytes %ld\n", g_rfSiteAt[i] - 5, g_rfSiteN[i] ? "alloc" : "free",
+                           g_rfSiteN[i] ? g_rfSiteN[i] : g_rfSiteFree[i], g_rfSiteBytes[i]);
+        }
         printf("K8 [OptsInit] (I-94-322): %ld plans with dirty stacks (copy side hub-like words): %ld differ without the options ctor "
                "patch, 0 with it\n", g_k8OiPlans, g_k8OiDiffOff);
         for (RkSite& s : g_k8Sites) memcpy((void*)(uintptr_t)s.at, s.saved, 5);
@@ -4377,8 +4597,49 @@ int main(int argc, char** argv) {
                "lot point %ld\n",
                g_k8Calls[0], g_k8Calls[1], g_k8Calls[2], g_k8Calls[3], g_k8Calls[4], g_k8Calls[5] + g_k8Calls[6], g_k8Calls[15], g_k8Calls[13],
                g_k8Calls[11], g_k8Calls[12], g_k8Calls[14], g_k8Calls[7], g_k8Calls[10], g_k8Calls[16], g_k8Calls[17]);
-        assert(g_k8Guarded == g_k8Plans && g_k8Found > g_k8Plans / 3 && g_k8LotLeg > 0 && kinds == 9 && g_k8Neg == 2 &&
+        // STEERRO_PLANDEADLINE: 3 of 4 classes cut a phase on purpose; the found rate and the 9 kinds hold for the uncut class only
+        assert(g_k8Guarded == g_k8Plans && (g_k8Pd ? g_k8PdFound[0] * 4 > g_k8PdN[0] : g_k8Found > g_k8Plans / 3 && kinds == 9) && g_k8LotLeg > 0 && g_k8Neg == 2 &&
                g_k8Hashes > 0 && g_k8Ga[1] > 0 && g_k8Cw[1] > 0);
+        if (g_k8Pd) {
+            if (t_pd.open) PdClose(false);
+            const Ts3nCounters& pc = ts3native_counters;
+            printf("K8 [RouteAsync] PlanDeadlineMs (STEERRO_PLANDEADLINE), sweep plans by class (live == copy for all): none %ld (%ld "
+                   "found, %ld water), all cut %ld (%ld found, %ld world A* capped), cell only %ld (%ld found), water only %ld (%ld "
+                   "found, %ld water); stub skips cell %ld water %ld; sessions %ld past the deadline %ld\n",
+                   g_k8PdN[0], g_k8PdFound[0], g_k8PdWater[0], g_k8PdN[1], g_k8PdFound[1], g_k8PdCapped, g_k8PdN[2], g_k8PdFound[2],
+                   g_k8PdN[3], g_k8PdFound[3], g_k8PdWater[3], pc.pdSkipCell, pc.pdSkipWater, pc.pdSessions[1], pc.pdHit);
+            assert(g_k8PdN[1] > 0 && g_k8PdN[2] > 0 && g_k8PdN[3] > 0 && pc.pdSkipCell > 0 && pc.pdSkipWater > 0 && g_k8PdCapped > 0);
+            assert(g_k8PdFound[1] == 0 && g_k8PdWater[3] == 0);  // everything cut: no path; water cut: no found path has a water leg
+        }
+        if (g_k8Sp) {
+            if (t_syp.open) SypEnd();  // the last copy run that faulted inside the planner (K8RunCopyTry)
+            const Ts3nCounters& rc = ts3native_counters;
+            const LONG plans = rc.sypPlans[0] + rc.sypPlans[1] + rc.sypPlans[2], us = rc.sypUs[0] + rc.sypUs[1] + rc.sypUs[2];
+            LONG sum = 0;
+            for (int i = 0; i < RJP_N; i++) sum += rc.sypPhaseUs[i];
+            printf("K8 [RouteJobPhases] SyncPlans (STEERRO_SYNCPHASES): %d of %d sites, %ld sessions (%ld us, phases %ld us); world "
+                   "A* calls entry loop %ld, open ground %ld, pre-pass %ld, other caller %ld; self us cand %ld, lot leg %ld, cell %ld, "
+                   "world %ld, insert %ld, post %ld; dropped (unwound) %ld; sessions opened %ld, K8 plans %ld\n",
+                   rjpSites, (int)RJS_N, plans, us, sum, rc.sypLoopN[0], rc.sypLoopN[1], rc.sypLoopN[2], rc.sypLoopN[3],
+                   rc.sypPhaseUs[RJP_CAND], rc.sypPhaseUs[RJP_LOTLEG], rc.sypPhaseUs[RJP_CELL], rc.sypPhaseUs[RJP_WORLD],
+                   rc.sypPhaseUs[RJP_INSERT], rc.sypPhaseUs[RJP_POST], rc.rjpDropped, rc.sypEntry[0], (LONG)g_k8Plans);
+            assert(plans >= g_k8Plans && rc.sypEntry[0] == plans && rc.sypLoopN[0] + rc.sypLoopN[1] > 0 && rc.sypLoopN[3] == 0 &&
+                   rc.sypPhaseUs[RJP_CAND] > 0 && rc.sypPhaseUs[RJP_LOTLEG] > 0 && sum <= us && sum >= us - plans * RJP_N);
+            for (int i = 0; i < RJP_N; i++) assert(rc.rjpN[0][i] == 0);  // no worker rows
+        }
+        if (g_k8Rjp) {
+            const Ts3nCounters& rc = ts3native_counters;
+            printf("K8 [RouteJobPhases] (STEERRO_PHASES): %d of %d sites, %ld jobs; entries cand %ld, lot leg %ld, cell %ld, portal %ld, "
+                   "insert %ld, post %ld, lot graph %ld, water %ld; dropped (unwound) %ld\n",
+                   rjpSites, (int)RJS_N, rc.rjpJobs[0], rc.rjpN[0][RJP_CAND], rc.rjpN[0][RJP_LOTLEG], rc.rjpN[0][RJP_CELL],
+                   rc.rjpN[0][RJP_PORTAL], rc.rjpN[0][RJP_INSERT], rc.rjpN[0][RJP_POST], rc.rjpN[0][RJP_LOTGRAPH], rc.rjpN[0][RJP_WATER],
+                   rc.rjpDropped);
+            assert(rc.rjpJobs[0] >= g_k8Plans && rc.rjpN[0][RJP_CAND] > 0 && rc.rjpN[0][RJP_LOTLEG] > 0 && rc.rjpN[0][RJP_INSERT] > 0);
+            printf("K8 door stub (docs/159, DoorMemo=2 shadow): %s, asks %ld, repeats in a plan %ld, shadow compares %ld, mismatches %ld, "
+                   "answer changes %ld\n", g_hcOn ? "installed" : "NOT installed", rc.hcDoorQ, rc.hcDoorRepeatJob, rc.dmShadow, rc.dmMismatch,
+                   rc.hcDoorRepeatDiff);
+            assert(g_hcOn && rc.dmMismatch == 0 && rc.hcDoorRepeatDiff == 0);
+        }
     }
     printf("steerro-test ok\n");
     return 0;

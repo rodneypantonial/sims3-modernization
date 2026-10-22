@@ -1,0 +1,287 @@
+{
+  "note": "docs/151 route sources (2026-10-22): the two 5-min *-verify jobs first (daytime, noisy OK: routesrc counters + D1/D3/D5 skip counters via --ab), then clean-night pairs per D switch (off-first + on-first, 10 min, 2-min slices), ~2 h 10 min. Before: build and install ts3fixes and ts3agent from this branch; game-copy/ts3native.asi.0316b present. Groups for --only / --from: *-verify, *-legreplanskip-*, *-bouncerskip-*, *-idlememo-*. D2 (houseboat direct legs) is spec only: no job.",
+  "jobs": [
+    {
+      "id": "bp-routesrc-verify",
+      "note": "CORRECTNESS, daytime and noisy machine OK (counters, not timing), 5 min. docs/151 §5 V-job and first live look at D1/D3/D5: routesrc on for the whole load (observe only), legreplanskip, bouncerskip, idlememo alternating in 1-min slices (--ab; their skip counters move only in ON slices). BP crowd (rare-big-crowd: 30 Sims, home lot, farthest community lot, home again). ts3native as clean-night-0.2.0 (0316b, release defaults); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts; tuning as master, every docs/151 switch off). Pass: no crash, game alive, 0 watchdog lines, fixesRequire (the classifier ran). Expected non-zero where docs/151 §2 saw the source in BP: S4 traffic, S8 lot visits, S3a watchdog; S7 bouncer only if a velvet-rope venue is open on the crowd's route (else 0, not a failure). Read: routesrc_buckets (per bucket plans/us/fails = V1, [48-53] repeats = V2, [54-62] leg-end action and remainder distance = V3, [63] houseboat legs inside a replan = V4), routesrc_legend_near, routesrc_houseboat_legs, routesrc_bouncer_at_slot, routesrc_idle_memo_hits, and per slice (ab-fixes.jsonl) legreplanskip_skipped / bouncerskip_skipped / idlememo_skipped / idlememo_capped in the ON slices only; watchdog resets (counters 46-49) and route fails per slice OFF vs ON (no stuck Sims above the OFF slices).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "repro": "rare-big-crowd",
+          "fixesOn": "routesrc",
+          "ab": "legreplanskip,bouncerskip,idlememo",
+          "slice": 1,
+          "noSamplers": true,
+          "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-routesrc-verify",
+      "note": "CORRECTNESS, daytime and noisy machine OK, 5 min. As bp-routesrc-verify in IP play (no repro: the docs/151 §2 IP numbers are plain play with boats, water taxis and houseboats). Pass: no crash, game alive, 0 watchdog lines, fixesRequire. Expected non-zero: S1 leg-end replans (routesrc_buckets[1]) and S2 houseboat legs (routesrc_houseboat_legs); V3 (routesrc_buckets[54-62]) says which action asks for the leg-end replans and how many remainders start < 0.5 m (the D1 share, docs/51 I-151-3); legreplanskip_skipped > 0 in an ON slice if that share is real. Read: routesrc_buckets (per bucket plans/us/fails = V1, [48-53] repeats = V2, [54-62] leg-end action and remainder distance = V3, [63] houseboat legs inside a replan = V4), routesrc_legend_near, routesrc_houseboat_legs, routesrc_bouncer_at_slot, routesrc_idle_memo_hits, and per slice (ab-fixes.jsonl) legreplanskip_skipped / bouncerskip_skipped / idlememo_skipped / idlememo_capped in the ON slices only; watchdog resets (counters 46-49) and route fails per slice OFF vs ON (no stuck Sims above the OFF slices).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "fixesOn": "routesrc",
+          "ab": "legreplanskip,bouncerskip,idlememo",
+          "slice": 1,
+          "noSamplers": true,
+          "fixesRequire": "routesrc_plans>=1,routesrc_classify_us>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-legreplanskip-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D1 (leg-end replan skip): legreplanskip alternating in 2-min slices, 10 min; only the pair mean of ip-legreplanskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; legreplanskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Plain play.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "legreplanskip",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-legreplanskip-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D1 (leg-end replan skip): legreplanskip alternating in 2-min slices, 10 min; only the pair mean of ip-legreplanskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; legreplanskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Plain play.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "legreplanskip",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-legreplanskip-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D1 (leg-end replan skip): legreplanskip alternating in 2-min slices, 10 min; only the pair mean of bp-legreplanskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; legreplanskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "legreplanskip",
+          "slice": 2,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-legreplanskip-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D1 (leg-end replan skip): legreplanskip alternating in 2-min slices, 10 min; only the pair mean of bp-legreplanskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; legreplanskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "legreplanskip",
+          "slice": 2,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-bouncerskip-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D3 (bouncer at its slot): bouncerskip alternating in 2-min slices, 10 min; only the pair mean of bp-bouncerskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; bouncerskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "bouncerskip",
+          "slice": 2,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-bouncerskip-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D3 (bouncer at its slot): bouncerskip alternating in 2-min slices, 10 min; only the pair mean of bp-bouncerskip-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; bouncerskip skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "bouncerskip",
+          "slice": 2,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-idlememo-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D5 (watchdog success memo, cap 4): idlememo alternating in 2-min slices, 10 min; only the pair mean of bp-idlememo-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; idlememo skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "idlememo",
+          "slice": 2,
+          "repro": "rare-big-crowd"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-idlememo-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D5 (watchdog success memo, cap 4): idlememo alternating in 2-min slices, 10 min; only the pair mean of bp-idlememo-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; idlememo skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Repro rare-big-crowd.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "idlememo",
+          "slice": 2,
+          "repro": "rare-big-crowd",
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-idlememo-offfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D5 (watchdog success memo, cap 4): idlememo alternating in 2-min slices, 10 min; only the pair mean of ip-idlememo-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; idlememo skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Plain play.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "idlememo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-idlememo-onfirst",
+      "note": "CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). docs/151 D5 (watchdog success memo, cap 4): idlememo alternating in 2-min slices, 10 min; only the pair mean of ip-idlememo-offfirst and -onfirst counts (docs/143 §8.15). routesrc off (its stack walk would load both arms). Read: route ms/s, routeOtherThreads, rtLock, rtJob, keyed +0x918 wait, it/s and hitches per slice ON vs OFF; idlememo skip counter > 0 in ON slices; watchdog resets and route fails not above OFF. Plain play.",
+      "asi": "game-copy/ts3native.asi.0316b",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 81,
+      "ini": {
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "ab": "idlememo",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

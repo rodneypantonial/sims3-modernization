@@ -391,3 +391,57 @@ Findings:
 4. The release default is already the safe set: `release-features unseenthrottle` turns on `Enabled=1` with `List=1`, `Avoid=0`, `Footprint=0`, `Rate=0`.
 
 What would cut the wait is a shorter or lent `+0x918` hold (P5b `ReleaseLock`, P5c `FreeLock`, design H2 docs/86, S2), not fewer acquirers. The `unseen-traffic` cars pair is not usable (it/s jumps from ~50 to ~300 after the first slice in both orders).
+
+### 8.16 Water entry cause check: throttle glitch or the Sim's own intent (2026-10-22, offline, not run)
+
+Rodney asked for a stranding check that tells a throttle glitch from a Sim's own intent, not only "is the Sim over water".
+
+**Agent command `unseen_water_cause`** (ts3agent `WaterCauseHandlers.cs`, read only). A game task samples every spawn_sims Sim every 5 ticks. A **water entry** is a Sim that stood on something at the last sample (land, beach, dock, houseboat deck, or parented to a vehicle) and is now in water: not parented, `y <= sea + 0.3 m`, more than 0.5 m of water under it; only entries while the Sim is out of view count (100 m from the camera and its target, not on screen, as `unseen_water_watch`). Per entry it records:
+- support before: `vehicle:<type> #id` (parent), `houseboat:<lot> #boat` (`Lot.IsHouseboatLot`), `dock:<lot>` (above deep water, not a houseboat), `beach:` / `land:`;
+- interaction / posture before and after (type names);
+- the last water intent and its age: a current or queued interaction whose type name has Swim, Dive, Snorkel, Scuba, Jump, Fish, Boat, Mermaid, Ocean, Pond, Water or Taxi, or a route action of that kind in the routing component's action list (`GetCurrentRouteAction` / `GetRouteActionAfter` / `GetPreviousRouteAction`: `StartRoutingOnPondRouteAction`, `GoFromPondOrOceanWalkToStandingRouteAction`, `GetInBoatRouteAction`, ... [verified script: public accessors on `RoutingComponent`]). The route's sub-path list itself is not read (only native; the route actions are the script-side copy of the water sub-paths [inferred, §8.10]);
+- distance to the support's edge (0.25 m steps to 3 m, 8 directions): houseboat = off its lot (`World.GetLotLocation`); dock = no terrain (bridges included) or level-0 height above the sea. shortcut: that `GetLevelHeight` sees IP dock tiles is not verified; if every dock row reads 0.25 m it does not, and the dock edge needs another test;
+- support movement over the last 3 s (houseboat object or vehicle position; land and docks do not move);
+- ts3native's per-Sim throttle record over the viewer channel (new codes, no counter change, v83 layout kept): 19 / 20 object id halves (finds the Sim's `g_utDg` slot by the id at owner `+8/+0xC`, as the snap-back watch), 21 newest skip of any part `<= lo` ms ago (the agent bisects it: `skip_age_ms`), 22 that skip's part (`skip_part`: list, avoid, rate, footprint), 23 any part switched on (the `--ab` side). Selftest `TestUnseenDiag` step 7.
+
+**Classes:** `intended` = a water intent within 20 s before the entry or at it; `support moved` = not intended, the support moved > 0.5 m in the 3 s before, the Sim was within 1 m of its edge at the last sample, and a throttle part skipped the Sim within 500 ms; `unexplained` = the rest. `{result: true}` gives per side (off / on / unknown) the three counts and the exposure (unseen Sim-samples), and up to 10 sample rows per class.
+
+**A/B rule** (`{result, require, ab: true}`): ts3native answering, at least `min_entries` (3) entries, no entry with an unknown side, `support_moved` on == 0, and `unexplained` on <= `unexplained` off x (exposure on / exposure off) + 1. The exposure ratio removes the warm-up slice (always on) and uneven activity per side. Without `--ab` (all parts on, `ab: false`): `support_moved` == 0 and `unexplained` <= `max_unexplained` (0).
+
+**Houseboat move feasibility [verified script, game not run]:** the helm's "Cruise Here on Autopilot" interaction (`Helm`, string `CruiseHereOnAutoPilot`) only calls `Actor.LotCurrent.GetHouseboat().RequestAutopilotToLocation(hit point)`, a public method that queues an autopilot route with **no driver** (`RouteToRadialRange(null, point)`: `LeavePort`, `WaitForSafeToRoute`, a radial-range plan with `DisablePlanningOnLand`, `DoRoute`); `RequestAutopilotReturnToPort` docks it again (`ReturnToPort(null)`). The `HasAutoPilotUpgrade` test sits only in `AutopilotAllowed` (the UI), not on that path. So the game moves a houseboat with Sims aboard and script can do it. Sims on the deck stand on the houseboat **lot**, which the game parents to the boat (`World.ParentLotToHouseboat`); script converts between world and deck positions with `World.GetWorldToHouseboatDisplayPosition` / `GetHouseboatDisplayToWorldPosition`, so deck Sims' positions may be in the lot's own frame and not move in world space while the boat sails [inferred from the API names and `GoBelowDeck`'s use]. Then the throttle cannot strand a deck Sim by boat motion at all; the repro checks the outcome either way (lot membership, not world motion).
+
+**Repros and queue** (`tools/harness/queues/unseen-water-cause.json`, day correctness, noisy machine OK, asi `game-copy/ts3native.asi.0322` = the 0.36.22 merge build that includes it):
+- `ip-water-cause-ab` (repro `unseen-water-cause`, 10 min, `--ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate` together, 2-min slices): 12 spawned Sims at normal speed (Rate skips only there, §8.13) cross the sea, swim 10 m out, go home, swim again; the A/B rule above.
+- `ip-houseboat-move` (repro `unseen-houseboat-move`, 9 min, all parts on): agent `houseboat_move {setup: "deck"}` picks a houseboat with a lot (a household's first), places 6 spawned Sims with `Houseboat.PlaceSimAtEntrance` and keeps them walking between the entrance and the lot centre, moves the camera to the farthest community lot; `{move}` autopilots 80 m out, `{return}` back to port; `{check, require}` = every Sim on the houseboat lot and not in water, boat moved >= 20 m; then `unseen_water_cause {ab: false}`.
+- `ip-dock-edge` (repro `unseen-dock-edge`, 10 min): `{setup: "dock"}` needs a houseboat docked at a port gangway; 6 Sims walk 2-8 m along the gangway's forward line while the boat leaves, returns and leaves again; pass = no dock Sim in water, boat moved, cause check clean.
+If the save has no houseboat, both houseboat jobs fail at setup with "no houseboat": not a throttle result; pick a save with a houseboat household. Ledger §224.
+
+### 8.17 Houseboat move and dock edge results: the check, not the throttle (2026-10-22, measured on a noisy machine; fixed check offline, not run)
+
+Runs (asi `game-copy/ts3native.asi.0322`, save Baseline-IP-Spring, houseboat "Sea Spirit - 1br, 2ba", household The Romantic, boat moved 75-77 m out in every run). Logs `probe-out/queue/unseen-water-cause-2026-10-22-ip-*.log` and `unseen-houseboat-control-2026-10-22-*.log`, rows in `probe-out/profile/<tag>-repro.jsonl`:
+
+| job | throttle | final check: Sims "off the deck or in water" | mid check at sea (rows) |
+|---|---|---|---|
+| ip-houseboat-move (05:44 UTC) | on (all parts) | 4 | 5 of 5 on the deck, none in water |
+| ip-houseboat-move-off (06:43) | off | 2 | 4 of 6 on the deck; Marquis Clements on Port Pescado (y -0.32 m vs sea, `GoHere`), Elvis Libby on no lot (+0.53 m, `GoHere`); none in water |
+| ip-houseboat-move-on2 (07:01) | on | 3 | 2 of 6 on the deck; Gabriel Libby on Holiday House (+28.2 m, `GoHere`), Clayton Herring on The Spanish Queen (+23.6 m, `GoHere`), Latoya Hickey on Casita Azulita (+1.7 m, `GoHere`), Aja Grogan on no lot (+0.2 m, `GoHome`); none in water |
+| ip-dock-edge (05:53) | on | 5 ("off the dock or in water", water only) | none (no mid check) |
+| ip-dock-edge-off (06:51) | off | 5 | none |
+
+The final `require` checks threw with the count only, so no per-Sim rows exist for them, and the repro stopped there: `unseen_water_cause {result}` never ran in any of the five, so the cause classes are empty.
+
+**Cause [verified from the mid-check rows, dock part inferred].**
+- Not one of the 17 mid-check rows was in water (`in_water` false for all). Every Sim off the deck was dry, on another lot or on none, and doing `GoHere` (the repro's own walk task) or `GoHome` (the spawned Sim's own household). Two sat 24-28 m above the sea on hill lots, which only a route gets them to.
+- The walk task sent `GoHere` to two **world** points taken at setup: the entrance and the houseboat lot's centre, both at the berth. Once the boat sails, neither point is on the deck, so our own Go Here routes the Sim off the houseboat towards the old berth (the off run's Sim on Port Pescado at -0.32 m is next to it). That is the repro, not the game, and it happens with the throttle off as well (final: off 2, on 4 and 3; mid check off the deck: off 2, on 0 and 4).
+- Dock: the pacing points ran 2-8 m along the gangway's forward line, which points at the boat's berth [inferred: 5 of 6 counted in water on both sides, no rows]. With the boat away those points are open water, so Go Here sends the Sims swimming. The old dock check counted any Sim in water, intent or not.
+- The old check also counted Sims that were never on the deck at move start (Ginny Corley's object was gone by the first mid check) and Sims that left on their own interaction.
+
+**Does the game strand deck Sims on a move?** Not shown: no Sim in any row was in water, and every off-deck Sim carried a route interaction. The game's own move with Sims aboard keeps them on the lot when nothing sends them elsewhere (run 1 mid check: 5 of 5 on the deck while the boat was 75 m out, throttle on).
+
+**Verdict for the throttle: cleared of these five failures** (same counts with it off, cause = the repro's walk targets and check definition). The stranding question itself (Rodney: can a throttled deck or dock walker end up in the water?) stays open until the fixed check runs: queue `tools/harness/queues/unseen-water-cause.json` jobs `ip-houseboat-move` and `ip-dock-edge`, on and off.
+
+**Fixed check (ts3agent `houseboat_move`, built, not run):**
+- Walk targets: deck = the entrance and the centre kept as offsets from the houseboat lot's **live** centre, and a target is used only while `World.GetLotLocation` puts it on the houseboat lot (shortcut: the offset ignores the boat's turn, the lot test drops a point that falls off); dock = the first and last placed Sims' own spots (where `FindGoodLocationNearby` put them on the dock), never a point that reads as water.
+- The first `{move}` records which Sims stand on the support and are dry (`on_support_at_move`; deck = on the houseboat lot). Only those are watched.
+- The walk task (every ~8 s) records, per watched Sim, the first water intent (`WcIntent`: swim/boat/... interaction or route action) and whether the Sim was in water at a sample.
+- `{check, require}` fails only for a watched Sim that is in water now or was at a sample, with no water intent since the move. Sims that walked off dry are counted in `left_deck_dry`, not failed. It also needs boat moved >= 20 m and >= 1 watched Sim ("not exercised" otherwise). Rows now carry x/z, `wet_since_move` and `water_intent`, and the require error names each failing Sim with lot and height. Ledger §249.

@@ -1,0 +1,105 @@
+{
+  "note": "SyncCapMs 0 vs 1000 two-load pair (2026-10-23).",
+  "jobs": [
+    {
+      "id": "bp-synccap-0",
+      "note": "SyncCapMs two-load pair (load-only switch): BP route-bits, release defaults, SyncCapMs=0. Read frames >= 500 ms and worst sim-thread sync plan vs the other load.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 84,
+      "ini": {
+        "RouteAsync.SyncCapMs": 0,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-synccap-1000",
+      "note": "SyncCapMs two-load pair (load-only switch): BP route-bits, release defaults, SyncCapMs=1000. Read frames >= 500 ms and worst sim-thread sync plan vs the other load.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 84,
+      "ini": {
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-synccap-1000-b",
+      "note": "SyncCapMs two-load pair (load-only switch): BP route-bits, release defaults, SyncCapMs=1000. Read frames >= 500 ms and worst sim-thread sync plan vs the other load.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 84,
+      "ini": {
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-synccap-0-b",
+      "note": "SyncCapMs two-load pair (load-only switch): BP route-bits, release defaults, SyncCapMs=0. Read frames >= 500 ms and worst sim-thread sync plan vs the other load.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 84,
+      "ini": {
+        "RouteAsync.SyncCapMs": 0,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-route-bits",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

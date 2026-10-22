@@ -1337,6 +1337,23 @@ static bool RpIsEx(u64 key) {
     for (int i = 0; i < g_rpNEx; i++) if (g_rpEx[i] == key) return true;
     return false;
 }
+// 0.36.23 (docs/94 §22.32, I-94-452): a soft force on a lot the clone left out (or one no longer live) reaches no batch, so its
+// g_rpSoftPend entry stayed until an epoch and every later miss there counted "in flight" (not forced again) until 32 failed
+// batches asked for a rebuild. The cut drops such entries (sim, ring lock held); a later miss is then fresh. Returns the count
+static LONG g_rpSoftPruned;
+static int RpSoftPendPrune(const RpLiveLot* live, int n) {
+    int dropped = 0;
+    for (int j = 0; j < g_rpNSoftPend; j++) {
+        const u64 key = g_rpSoftPend[j];
+        int i = 0;
+        while (i < n && live[i].key != key) i++;
+        if (i < n && !RpIsEx(key)) continue;
+        g_rpSoftPend[j--] = g_rpSoftPend[--g_rpNSoftPend];
+        dropped++;
+    }
+    g_rpSoftPruned += dropped;
+    return dropped;
+}
 // live Qs of the left-out lots in `live` (sim, at a cut)
 static void RpExQs(const RpLiveLot* live, int n, RpTab& out) {
     for (int i = 0; i < n && g_rpNEx; i++) {
@@ -2006,12 +2023,16 @@ static void RpCutBody(const u8* world) {
         u64 softP[64];  // the soft resync's share of the forces (counted only)
         const int nSoftP = g_rpNSoftPend;
         memcpy(softP, g_rpSoftPend, nSoftP * 8);
+        const int pruned = nSoftP ? RpSoftPendPrune(g_rpLive, n) : 0;
         memcpy(unk, g_rpUnk, nUnk * 8);
         DWORD badQ[16];
         const int nBad = g_rpNBadQ;
         memcpy(badQ, g_rpBadQ, nBad * 4);
         g_rpNForce = 0, g_rpForceAll = 0, g_rpNShellF = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNBadQ = 0;
         InterlockedExchange(&g_rpRingLock, 0);
+        if (pruned && g_rpSoftPruned <= 16)
+            Log("snap replay: %d soft-forced lot(s) left out of the clone or gone dropped from the pending forces (%ld so far, I-94-452)",
+                pruned, g_rpSoftPruned);
         if (unkAll) RC_REBUILD(RC_NOQ)  // too many keys touched on unknown Qs: rebuild
         if (!RpNoQCut(P)) RC_REBUILD(RC_NOQ)  // Q-less nodes first: a batch below re-chains the map to live order
         // an insert the copy refused on a lot the clone holds: rebuild now (that lot is left out), before this cut's SYNC/audit
@@ -2838,7 +2859,7 @@ static void RpRemForce(u64 key, const u8* q, DWORD lo, DWORD hi) {
         Log("snap replay: lot 0x%08lX%08lX forced to rebase at the next cut (remove of 0x%08lX%08lX on Q 0x%08lX kept leaves or copy bounds not live's)",
             (DWORD)(key >> 32), (DWORD)key, hi, lo, (DWORD)(uintptr_t)q);
 }
-struct RpDiffEnt { DWORD lo, hi, fl, w4, w8, cls; };
+struct RpDiffEnt { DWORD lo, hi, fl, w4, w8, cls, fme; };
 static void RpTreeList(const u8* n, int depth, RpDiffEnt* v, DWORD cap, DWORD* nv) {  // RpTreeHash's walk
     if (!n || depth > 40) return;
     if (n[4] & 1) { for (int i = 0; i < 4; i++) RpTreeList(RpP(n + 0xC + 4 * i), depth + 1, v, cap, nv); return; }
@@ -2852,6 +2873,7 @@ static void RpTreeList(const u8* n, int depth, RpDiffEnt* v, DWORD cap, DWORD* n
         d.w4 = RpD(e + 4), d.w8 = RpD(e + 8);
         const u8* f = RpP(e);
         const u8* fp = f ? RpP(f + 8) : NULL;
+        d.fme = (DWORD)(uintptr_t)f;
         if (f) d.fl = RpD(f + 0x10);
         if (fp) d.lo = RpD(fp + 0x14), d.hi = RpD(fp + 0x18), d.cls = RpD(fp);
     }
@@ -2860,6 +2882,22 @@ static int __cdecl RpDiffCmp(const void* x, const void* y) { return memcmp(x, y,
 static u64 g_rpDiffLot;
 static volatile int g_rpDiffQ = -1;
 static LONG g_rpDiffN, g_rpDiffOnly[2];  // done; entries only live / only in the clone (selftest)
+// 0.36.23 (docs/94 §22.32, I-94-510): a clone-only leaf entry whose FME no clone map node holds (id or ~id) names an FME the
+// map erase freed: a replayed remove that missed leaves with no difference / cover line before it (log only; the audit still
+// forces the lot)
+static LONG g_rpDiffOrphan;
+static bool RpMapHoldsFme(const RpClone* c, DWORD lo, DWORD hi, DWORD fme) {
+    const u8* m = c->m;
+    const DWORD nb = m ? RpD(m + 8) : 0;
+    const DWORD* bk = nb ? (const DWORD*)RpP(m + 4) : NULL;
+    if (!bk) return true;  // no map to ask: not counted
+    for (int pass = 0; pass < 2; pass++) {
+        const DWORD klo = pass ? ~lo : lo, khi = pass ? ~hi : hi;
+        for (const u8* nd = (const u8*)(uintptr_t)bk[klo % nb]; nd; nd = RpP(nd + 0x10))
+            if (RpD(nd) == klo && RpD(nd + 4) == khi && RpD(nd + 8) == fme) return true;
+    }
+    return false;
+}
 static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
     const int qd = g_rpDiffQ;
     g_rpDiffQ = -1;
@@ -2877,19 +2915,26 @@ static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
         qsort(v[0], n[0], sizeof(RpDiffEnt), RpDiffCmp), qsort(v[1], n[1], sizeof(RpDiffEnt), RpDiffCmp);
         DWORD i = 0, j = 0;
         int logged = 0;
-        LONG only[2] = {0, 0};
+        LONG only[2] = {0, 0}, orphans = 0;
         while (i < n[0] || j < n[1]) {
             const int s = i == n[0] ? 1 : j == n[1] ? -1 : RpDiffCmp(&v[0][i], &v[1][j]);
             if (!s) { i++, j++; continue; }
             const RpDiffEnt& d = s < 0 ? v[0][i++] : v[1][j++];
             only[s < 0 ? 0 : 1]++;
+            if (s > 0) {
+                bool held = true;
+                __try { held = RpMapHoldsFme(c, d.lo, d.hi, d.fme); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+                orphans += !held;
+            }
             if (logged++ < 12)
                 Log("snap replay audit diff lot 0x%08lX%08lX Q %d: only %s: footprint 0x%08lX%08lX class 0x%08lX, FME +0x10 0x%08lX, entry +4 0x%08lX +8 0x%08lX",
                     (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, s < 0 ? "live" : "in the clone", d.hi, d.lo, d.cls, d.fl, d.w4, d.w8);
         }
         g_rpDiffOnly[0] += only[0], g_rpDiffOnly[1] += only[1];
-        Log("snap replay audit diff lot 0x%08lX%08lX Q %d: live %lu entries, clone %lu; only live %ld, only in the clone %ld",
-            (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, n[0], n[1], only[0], only[1]);
+        g_rpDiffOrphan += orphans;
+        Log("snap replay audit diff lot 0x%08lX%08lX Q %d: live %lu entries, clone %lu; only live %ld, only in the clone %ld "
+            "(%ld of them on an FME no clone map node holds: I-94-510 shape; %ld removes covered so far)",
+            (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, n[0], n[1], only[0], only[1], orphans, g_rpRemCover);
     }
     RpFree(v[0]), RpFree(v[1]);
 }
