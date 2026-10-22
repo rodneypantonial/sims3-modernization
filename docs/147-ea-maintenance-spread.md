@@ -99,6 +99,10 @@ docs/145 §6's per-job seconds (21.9 s, 26.4 s, 53.3 s) are mostly a few shared 
 - **Queue** `tools/harness/queues/ea-spread-ab.json` (not run): the three repros under `/taskstall 250` (5 min each), then seeded BP 10-minute in-load A/B `--ab easpreadlots,easpreadpets,easpreaddecay`, 2-minute slices. Pass rules in each job's note.
 - **Checked offline:** `node tools/setup/build-fixes.ts`, `node tools/harness/build-agent.ts` built; `node tools/selftest/easpread/run.ts` PASS; `node tools/harness/queue.ts --self-check` ok.
 
+### 6.1 2026-10-22: clean-night pair read (with docs/145 §9)
+
+The `clean-night-0.2.0` spreads pair ran all four switches together; the analysis is in docs/145 §9 (no ts3fixes counters were captured, fire timing at 13.1 / 10.8 sim-minutes per second, SV -7.4% = +0.09 ms per iteration of TaskObjects plus ThreadedObjects/route). For the venue cleanup: [verified in source] every per-lot and per-Sim step was inside a timed slice ([181]) except `MetaAutonomyManager.DecideTodaysHotSpotsAndDeadZones`, which ran after the last Sim slice in the same tick, untimed. Built: it gets a tick of its own and is timed into [181], so the verify job's `easpread_lots_max_tick_us < 8000` covers the whole pass. A lot's unit list (one `GetObjects` and 2-3 delegates per object, the world lot included) is built at the lot's turn inside a timed slice, so a big lot shows in [181]; it is not split further until a run shows it over the cap. The decay pass was already wholly inside timed slices ([194]); the pet pool body is EA's own code with its own sleeps (ticks counted, not µs). Day job: `bp-spreads-verify` / `sv-spreads-verify` in `tools/harness/queues/scriptfix-ab.json`.
+
 ## 7. Open risks
 
 - Not run in game. First the repros under `/taskstall` (correctness), then the A/B.

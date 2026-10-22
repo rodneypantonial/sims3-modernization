@@ -49,6 +49,7 @@ namespace Ts3Fixes
         [Tunable] public static bool kReplanDefer = false;         // opt-in: door/elevator route replans go to the Sim's own route loop instead of the callback (ReplanDefer.cs, docs/141 §6)
         [Tunable] public static bool kReplanSpread = false;        // opt-in: build/buy exit and replan-all spread over sim ticks, 4 routing Sims a tick (ReplanDefer.cs, docs/141 §6)
         [Tunable] public static bool kOverwatchSpread = false;     // opt-in until measured: NRaas Overwatch's nightly cleanups run one type at a time, 10 sim-minutes apart, its inventory cleanup as our sliced pass; off by itself with a spreading Overwatch build (OverwatchSpread.cs, docs/145)
+        [Tunable] public static bool kOverwatchChain = false;      // opt-in until measured: NRaas Overwatch's nightly cleanups one sim tick apart in its own order and task, its inventory cleanup as our sliced pass; overwatchspread and a spreading Overwatch build win (OverwatchSpread.cs, docs/145 §10)
         [Tunable] public static bool kErrorTrapSpread = false;     // opt-in until measured: NRaas ErrorTrap's load-up inventory check skips the name lookup for objects without an inventory and spreads over ticks; off by itself with a spreading ErrorTrap build (ErrorTrapSpread.cs, docs/146)
         [Tunable] public static bool kHoursMemo = false;           // opt-in until measured: a lot's opening hours are worked out once per sim tick (ScriptHotSpots.cs, docs/74)
         [Tunable] public static bool kUnseenEnvThrottle = false;   // opt-in until measured: unseen high-LOD Sims score their surroundings one time in kUnseenThrottleEvery (UnseenThrottle.cs, docs/144)
@@ -61,6 +62,12 @@ namespace Ts3Fixes
         [Tunable] public static bool kEaSpreadDecay = false;       // opt-in until measured: midnight relationship decay, a slice of Sims per sim tick, one step per pair per day (docs/147)
         [Tunable] public static bool kUnseenCarThrottle = false;   // opt-in until measured: an unseen traffic car (LiteDriver) bound for an unseen spot stays parked on kUnseenCarEvery-1 of kUnseenCarEvery rounds instead of planning a drive (UnseenThrottle.cs, docs/143 §8.3)
         [Tunable] public static int kUnseenCarEvery = 4;           // N for the traffic car rule
+        [Tunable] public static bool kRouteSources = false;        // test only: route plans counted by source (docs/151 §2 buckets), repeats, leg-end and bouncer shares; no behaviour change (RouteSources.cs)
+        [Tunable] public static bool kLegReplanSkip = false;       // opt-in until measured: no replan after a boat/vehicle get-out when the planned rest of the route starts within 0.5 m of the Sim (RouteSources.cs, docs/151 D1)
+        [Tunable] public static bool kBouncerSlotSkip = false;     // opt-in until measured: a velvet-rope bouncer standing on its spot does not re-route to it every 5 s (RouteSources.cs, docs/151 D3)
+        [Tunable] public static bool kStuckCheckNear = false;      // opt-in until measured: the 3 AM stuck check plans its random lot points nearest first (same points, same verdict), so fewer failed plans before the first success (FewerPlans.cs, docs/163 §3)
+        [Tunable] public static bool kFailRepeat = false;          // opt-in until measured: a Sim's plan that repeats its own no-path failure (same goal, same spot) within 500 ms returns that failure without searching again (RouteBackoff.cs, docs/163 §4)
+        [Tunable] public static bool kIdlePlanMemo = false;        // opt-in until measured: the idle watchdog skips Sims that planned a route from their spot since they went still, at most 4 checks a pass (RouteFixes.cs, docs/151 D5)
 
         public const string Version = "0.1.0";
 

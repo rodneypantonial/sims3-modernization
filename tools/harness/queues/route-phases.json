@@ -1,0 +1,47 @@
+{
+  "note": "Rerun after the 2026-10-22 ~15:12 PHT failure (TS3W.exe gone ~10 s into all 6 phases jobs, docs/67, docs/150 §7 fix: RjpPop popped the parent frame on ret-N leaves): game-copy/ts3native.asi.0326 = master 53bdb56d + the fix, sha256 C13367080FED1473EB925AA7F7B85A8FEBD77B62279E6031A73A51BB4566B63C. docs/150 §7 [RouteJobPhases] verify (2026-10-22, NOT run). Day jobs (5 min, noisy machine OK: shares and the sum check, not absolute timing). Release defaults (repo ts3native.ini) + [RouteJobPhases] Enabled=1 on the parked build game-copy/ts3native.asi.phases (0.36.23 + counters v87). Report: node tools/harness/route-phases-report.ts <native.json> --seconds 300. Pass per job: no crash, game alive, rjpReady 1, rjpSkipped as logged at install (expected 0), phases (self times incl. rest of job) sum to within 10% of asyncUs, every job kind that ran has phase entries > 0; rjpDropped small (< 1% of entries). Read: ms/s per phase and kind (closes docs/150 I-218-5: chunk 1 cell A* vs chunk 3 post pass first) and rjpJobUs vs asyncUs (timer overhead).",
+  "jobs": [
+    {
+      "id": "bp-route-phases-verify",
+      "note": "Bridgeport, release defaults + [RouteJobPhases]. Read: own START phase split (docs/150 §2 sampler estimate: cell A* ~30%, post pass ~19%, PathNodes_Insert ~13%, world A* ~10%), allocator and host-wait shares, foreign jobs if any.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 87,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-route-phases-verify",
+      "note": "Isla Paradiso, release defaults + [RouteJobPhases]. Read: water paths and world A* share (IP long plans are water-bound, docs/150 §2), foreign jobs and their host-call waits.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 87,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 3,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

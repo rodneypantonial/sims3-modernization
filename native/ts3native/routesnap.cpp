@@ -727,9 +727,13 @@ static bool SnSwapIc(int i) {
 
 // [RouteSnap] Count=1: every site checked and hooked or shared now (DllMain, after [ProbeValues]); nodes at world event 7
 static bool ApplyRouteSnap(const wchar_t* ini) {
-    // [PlanRepeat] (planrepeat.cpp) reads these counters as its world version
+    // [PlanRepeat] (planrepeat.cpp) and [RouteAsync] ReplanDedupe (replandedupe.cpp) read these counters as their world version
     if (!GetPrivateProfileIntW(L"RouteSnap", L"Count", 0, ini) && !GetPrivateProfileIntW(L"RouteSnap", L"Enabled", 0, ini) &&
-        !GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini)) { Log("route snapshot counters off (Count=0)"); return false; }
+        !GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini) && !GetPrivateProfileIntW(L"RouteAsync", L"ReplanDedupe", 0, ini) &&
+        !GetPrivateProfileIntW(L"RouteAsync", L"FailMemo", 0, ini)) {  // docs/164 §7 D5 reads them too
+        Log("route snapshot counters off (Count=0)");
+        return false;
+    }
     Ts3nCounters& k = ts3native_counters;
     memcpy(g_snIc, kSnIcDef, sizeof(g_snIc));
     SnTextInit();

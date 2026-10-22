@@ -410,7 +410,14 @@ static void SrAdd(SrCtx* c, const u8* obj) {
 
 // CollectLeaf 0x669850 (masked = 0, its args 4/5 are 1/0 from the visitor) and CollectMasked 0x669230 for this context:
 // options object 0 (0x8294E0 returns record+0x28 = 0, or 0 for no record), so the id list and RoutingOptions_Test are not
-// reached; ctx+0x50 = 0, so the type 0x13/0x18 and 0x1E branches are not either
+// reached; ctx+0x50 = 0, so the type 0x13/0x18 and 0x1E branches are not either.
+// flag bit 2 ([RouteToObjRO], BlockerCheck2d's record): record+0x28 is an options object, so both collectors first drop a
+// footprint whose id is in its lists (0x81C970, 0x669915 / 0x669332) and keep a type-0x14 footprint's class when
+// RoutingOptions_Test(0x1004, 0, 0) holds (0x669A2F / 0x669437) [verified disassembly 2026-10-22]
+typedef u8(__fastcall* SrOptIdFn)(const u8* opts, void* edx, DWORD lo, DWORD hi);           // 0x81C970, ret 8
+typedef u8(__fastcall* SrOptTestFn)(const u8* opts, void* edx, DWORD a, DWORD b, DWORD c);  // 0x81C880, ret 0xC
+static SrOptIdFn g_srOptId = (SrOptIdFn)(uintptr_t)0x0081C970;
+static SrOptTestFn g_srOptTest = (SrOptTestFn)(uintptr_t)0x0081C880;
 static void SrCollect(SrCtx* c, const u8* node, bool masked, DWORD bit) {
     const u8* l = node + 8;
     const bool heap = (l[0] & 1) != 0;
@@ -422,6 +429,7 @@ static void SrCollect(SrCtx* c, const u8* node, bool masked, DWORD bit) {
     int nl = 0;
     bool seen = false;
     const DWORD ow = c->rec ? *(const DWORD*)c->rec : 0;
+    const u8* opts = (c->flag & 2) && c->rec ? *(const u8* const*)(c->rec + 0x28) : NULL;
     for (; e != end; e += 12) {
         const u8* ent = *(const u8* const*)e;
         if (!ent) continue;
@@ -431,13 +439,17 @@ static void SrCollect(SrCtx* c, const u8* node, bool masked, DWORD bit) {
         if (!obj) { c->fail = SrShape(SRS_NULLFP); return; }  // the original dereferences a NULL footprint
         if (!SrSlotsOk(obj)) { c->fail = SrShape(SRS_SLOT); return; }
         const void* const* vt = *(const void* const* const*)obj;
+        if (opts) {
+            const unsigned __int64 id = ((SlotIdFn)vt[0x84 / 4])(obj, NULL);
+            if (g_srOptId(opts, NULL, (DWORD)id, (DWORD)(id >> 32))) continue;
+        }
         if (!((SlotBoolArgFn)vt[0x60 / 4])(obj, NULL, ow)) continue;
         if (((SlotBoolFn)vt[0x28 / 4])(obj, NULL)) continue;
         int cls = ((SlotClassFn)vt[2])(obj, NULL, c->rec, ent[0x10]);
         if (c->rec && ((SlotIdFn)vt[0x84 / 4])(obj, NULL) == *(const unsigned __int64*)(c->rec + 8)) continue;
         const int t = ((SlotIntFn)vt[3])(obj, NULL);
         if (t == 0x1F) { seen = true; continue; }
-        if (t == 0x14) cls = 1;
+        if (t == 0x14 && !(opts && g_srOptTest(opts, NULL, 0x1004, 0, 0))) cls = 1;
         if (c->flag) {
             if (cls == 2) {
                 if (nl < kSrLocal) local[nl] = obj;
@@ -531,12 +543,13 @@ static void SrXform(const u8* entry, float x, float z, float* u, float* v) {
 
 // One walk under QL. The original flushes first when Q+0x48 < 1 and the deferred flag is set (a write): a doubt. Pin counter
 // and flag must not move while we walk (tripwire: a job query or pin on this tree in between).
-static int SrWalk(SrCtx* c, const u8* q, bool point, float x, float y, float r) {
+// x1, y1: the segment's far end ([RouteToObjRO]'s BlockerCheck2d gather 0x631E20 -> 0x667400); S2 walks start == goal
+static int SrWalk2(SrCtx* c, const u8* q, bool point, float x, float y, float x1, float y1, float r) {
     const LONG q48 = *(volatile const LONG*)(q + 0x48);
     const u8 q4c = *(volatile const u8*)(q + 0x4C);
     if (q4c && q48 < 1) return SR_FB_DEFERRED;
     if (point) g_srWalkPt(q, NULL, c, x, y, r, (void*)SrVisit, NULL);
-    else g_srWalkSeg(q, NULL, c, x, y, x, y, r, (void*)SrVisit, 0, NULL);  // locomotion: start == goal, w = 0
+    else g_srWalkSeg(q, NULL, c, x, y, x1, y1, r, (void*)SrVisit, 0, NULL);  // locomotion: start == goal, w = 0
     if (*(volatile const LONG*)(q + 0x48) != q48 || *(volatile const u8*)(q + 0x4C) != q4c) {
         InterlockedIncrement(&ts3native_counters.steerPinMoved);
         return SR_FB_TRIP;
@@ -545,6 +558,7 @@ static int SrWalk(SrCtx* c, const u8* q, bool point, float x, float y, float r) 
     if (!c->fail && c->over) return SrShape(SRS_OBJCAP);
     return c->fail;
 }
+static int SrWalk(SrCtx* c, const u8* q, bool point, float x, float y, float r) { return SrWalk2(c, q, point, x, y, x, y, r); }
 
 static int SrCmpPtr(const void* a, const void* b) {
     const uintptr_t x = *(const uintptr_t*)a, y = *(const uintptr_t*)b;

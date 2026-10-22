@@ -69,9 +69,10 @@ static __declspec(thread) DWORD* t_p5bSlot;    //   and its return slot (P5bGate
 // RG_REL_OFFSIM drops g_rgOffSimOpen
 // RG_REL_STEER puts back the previous t_steerRet (kept in `lock`); RG_REL_QL releases the worker's QL hold (steerro.cpp);
 // RG_REL_TRIP ends a T4 / T-S7 tripwire call (steerro.cpp TwLeave); RG_REL_P10 ends a P10 IC frame (p10.cpp, previous t_p10
-// in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log); RG_REL_NR ends a P4 D2 writer window (g_snNrIn)
+// in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log); RG_REL_NR ends a P4 D2 writer window (g_snNrIn);
+// RG_REL_G0QL releases [Gate0RO]'s QL shared hold, RG_REL_G0CMP compares its predicted entry (in `lock`) with eax (gate0ro.cpp)
 enum { RG_REL_LOCK = 1, RG_REL_QT = 2, RG_REL_BUSY = 4, RG_REL_OFFSIM = 8, RG_REL_STEER = 16, RG_REL_QL = 32, RG_REL_TRIP = 64,
-       RG_REL_P10 = 128, RG_REL_G10C = 256, RG_REL_NR = 512 };
+       RG_REL_P10 = 128, RG_REL_G10C = 256, RG_REL_NR = 512, RG_REL_G0QL = 1024, RG_REL_G0CMP = 2048 };
 struct RgFrame { DWORD* slot; DWORD ret; LONG reader; LONG rel; void* lock; };
 struct RgThread { int n; LONG readers; RgFrame f[16]; };
 static __declspec(thread) RgThread t_rg;
@@ -82,6 +83,10 @@ static bool QlPushWorker(RgThread& t, DWORD* slot, LONG reader);  // steerro.cpp
 static void TwLeave();                                            // steerro.cpp
 static void P10Leave(DWORD prev);                                 // p10.cpp
 static void G10cLeave();
+static volatile LONG g_g0On;                                                    // gate0ro.cpp
+static LONG G0Gate(const DWORD* slot, DWORD tid, bool job, const u8** pred);  // gate0ro.cpp
+static void G0Undo();                                                           // gate0ro.cpp
+static void G0Check(const void* pred, DWORD eax);                               // gate0ro.cpp
 
 static void RgUndo(const RgFrame& f) {
     if (f.rel & RG_REL_NR) InterlockedDecrement(&g_snNrIn);
@@ -89,6 +94,7 @@ static void RgUndo(const RgFrame& f) {
     if (f.rel & RG_REL_P10) P10Leave((DWORD)(uintptr_t)f.lock);
     if (f.rel & RG_REL_G10C) G10cLeave();
     if (f.rel & RG_REL_QL) QlReleaseEx();
+    if (f.rel & RG_REL_G0QL) G0Undo();
     if (f.rel & RG_REL_LOCK) LockReleaseHook(f.lock, NULL);
     if (f.rel & RG_REL_QT) LeaveCriticalSection(&g_qtCs);
     if (f.rel & RG_REL_BUSY) InterlockedDecrement(&ts3native_counters.rtBusy);
@@ -133,7 +139,12 @@ static volatile LONG g_rgNoted;
 static DWORD g_rgCallers[48];    // distinct (site << 24 | return address & 0xFFFFFF) of counted entries, logged once each
 
 static LONG __fastcall LockReleaseHook(void* lock, void* edx) {
+    // docs/165 F1: every check below needs +0x918 or the job's lock; any other lock ends in the original unchanged
+    if (lock != g_rgLock && lock != g_async.lock) return g_rgRelOrig(lock, edx);
     if (t_snapRun) return g_rgRelOrig(lock, edx);  // P4 clone run: pass through (§12.4.3)
+    // CE-4 (docs/154): the worker releasing +0x918 with its TailUnlock window open (an unwind through passes 16-19 caught in
+    // Route_PlanLocked): every level back first, so the release is its own
+    if (t_tuOpen && lock == g_async.lock) LendBackstop();
     if (t_borrow && lock == g_async.lock) { t_borrow--; return 1; }  // a borrowed acquire (LockAcquireHook)
     if (lock == g_rgLock && *(const LONG*)((const u8*)lock + 0x20) == 1)
         InterlockedCompareExchange(&ts3native_counters.rgOwnerTid, 0, (LONG)GetCurrentThreadId());
@@ -242,6 +253,7 @@ static void G11Touch(int kind, DWORD key) {
 
 // Stub side: slot = the caller's return-address slot ([esp] at the site's entry).
 static void __cdecl RgEnter(int site, DWORD* slot) {
+    if (t_tuOpen) TuTrip(1);  // TailUnlock: no gate leaf in passes 16-19 (docs/150 §11)
     if (g_snRg[site]) SnEnter(g_snRg[site] - 1, slot);  // first: reads the caller's return address before a probe swaps it
     if (g_rgVf[site]) VfEnter(g_rgVf[site] - 1, slot);
     if (g_pvRg[site]) PvEnter(g_pvRg[site] - 1, slot);  // count only: no frame, *slot unchanged
@@ -283,6 +295,15 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
             InterlockedIncrement(&g_rgOffSimOpen);
             LONG rel = RG_REL_OFFSIM;
             void* lock = g_async.state == A_RUNNING ? g_async.lock : NULL;
+            // [Gate0RO] (gate0ro.cpp): a G-a hit runs under QL shared with no wait; shadow: the same prediction, no job
+            if (site == 0 && g_g0On) {
+                const u8* pred;
+                if (const LONG g0 = G0Gate(slot, tid, lock != NULL, &pred)) {
+                    rel |= g0;
+                    if (!RgPush(t, slot, 0, rel, (void*)pred)) RgUndo(RgFrame{NULL, 0, 0, rel, (void*)pred});
+                    return;
+                }
+            }
             if (lock && tid == g_async.owner && g_inInvoke) {
                 InterlockedIncrement(&k.rgBorrows);  // the worker waits in this callback: nested in the job, as without us
             } else if (lock) {
@@ -311,10 +332,11 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
     RgPush(t, slot, 0);
 }
 
-static DWORD __cdecl RgLeave() {
+static DWORD __cdecl RgLeave(DWORD eax = 0) {  // eax: what the site returned (RgLeaveThunk)
     RgThread& t = t_rg;
     const RgFrame f = t.f[--t.n];
     t.readers -= f.reader;
+    if (f.rel & RG_REL_G0CMP) G0Check(f.lock, eax);
     if (f.rel) RgUndo(f);
     return f.ret;
 }
@@ -325,7 +347,9 @@ static __declspec(naked) void __cdecl RgLeaveThunk() {
         push eax  // becomes the return address
         pushad
         pushfd
+        push eax
         call RgLeave
+        add esp, 4
         mov [esp + 36], eax
         popfd
         popad

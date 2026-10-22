@@ -20,22 +20,25 @@ The routing release. Each candidate ships on only if its A/B passes (`tools/harn
 
 ### Decisions (fill from the A/B results)
 
+Suggestions 2026-10-22 from the clean-night pair means (off-first + on-first, both orders and all numbers in `docs/data/results/2026-10-22-v015-decisions.md`). Every entry marked "suggested" is open until Rodney decides. Suggested set: `node tools/release-features.ts slotenabledro,unseenthrottle,stuckcheckasync,errortrapspread` (dry run only; `--write --docs` after his OK, on the release branch).
+
 | Feature id | What | A/B (clean night) | Decision | Edit when on |
 |---|---|---|---|---|
-| `fallbackasync` | `[RouteAsync]` foreign-task plans async + 1 s cap (docs/134) | `*-fb-*` | [to decide] (`SyncCapMs=1000` decided 2026-10-21 with it) | `FallbackAsync=1`, `SyncCapMs=1000` |
-| `m1retry` | `[RouteAsync]` parked M1Pending STARTs (needs `fallbackasync`) | `*-fb-*` | [to decide] | `M1Retry=1` |
-| `slotenabledro` | `[SlotEnabledRO]` (docs/90, docs/136) | `*-slotro-*` | ship decided on BP; IP/SV [to confirm] | `Enabled=1` |
-| `avoidro` | `[AvoidRO]` (docs/137) | not in tonight's queue | [to decide] | `Enabled=1` |
-| `deferfootprint` | `[Discourage] DeferFootprint` (design U) | `defer-footprint-ab.json` | [to decide] | `DeferFootprint=1` |
-| `destroypark` | `[Discourage] DestroyPark` (design G) | `destroy-park-ab.json` | [to decide] | `DestroyPark=1` |
-| `unseenthrottle` | `[UnseenThrottle]` (docs/143; phase 2 if it lands) | `*-ut-*` | [to decide] | `Enabled=1` |
-| `stuckcheckasync` | ts3fixes 3 AM stuck check in a task | release-validate repro only | [to decide] | `kStuckCheckAsync` True |
-| `replandefer`, `replanspread` | ts3fixes door / build-buy replans | `replan-defer-ab.json` | [to decide] | `kReplanDefer`, `kReplanSpread` True |
-| `safespotcap`, `farthestsorted`, `indoorcap` | ts3fixes candidate loops | `candidate-loop-ab.json` | [to decide] | `kSafeSpotCap`, `kFarthestLotSorted`, `kIndoorPositionCap` True |
-| `overwatchspread` | ts3fixes NRaas Overwatch nightly spread | `*-spreads-*` | [to decide] | `kOverwatchSpread` True |
-| `easpreadlots`, `easpreadpets`, `easpreaddecay` | ts3fixes EA nightly alarms spread | `*-spreads-*` | [to decide] | `kEaSpreadLots`, `kEaSpreadPets`, `kEaSpreadDecay` True |
-| `errortrapspread` | ts3fixes NRaas ErrorTrap load scan spread | `bp-et-*` | [to decide] | `kErrorTrapSpread` True |
-| `unseenenv`, `unseenmotives`, `unseenbroadcast` | ts3fixes unseen script throttle (docs/144) | `*-unseen-*` | [to decide] | `kUnseenEnvThrottle`, `kUnseenMotiveThrottle`, `kUnseenBroadcastThrottle` True |
+| `fallbackasync` | `[RouteAsync]` foreign-task plans async + 1 s cap (docs/134) | `*-fb-*` | suggested: ship off. Pair means BP/SV/IP it/s +1.3/-0.9/+9.1%, route -21/-3/-15 ms/s, keyed wait +14..+18 ms/s; multi-second freezes only with it on (SV 1,027 ms; 7.9 s twice in fbjobcap-ab; 8-16 s in candidate-loop SV) and `fbjobcap` does not bound them. `SyncCapMs=1000` alone is not expressible in `release-features.ts` (open) | `FallbackAsync=1`, `SyncCapMs=1000` |
+| `m1retry` | `[RouteAsync]` parked M1Pending STARTs (needs `fallbackasync`) | `*-fb-*` | suggested: ship off (needs `fallbackasync`) | `M1Retry=1` |
+| `fbjobcap` | `[RouteAsync]` worker job cap for foreign plans (docs/134 §10, needs `fallbackasync`) | `fbjobcap-ab` `*-fjc-*` | suggested: ship off. `fbjcCapped` 0 in every on slice (the 7,881/7,767/1,457 ms off-side frames vs 547/358 on are where long jobs fell, not the cap); BP route-bits: the one capped job still ran 1,948 ms (cap seen at 1,942 ms) | `FbJobCapMs=300` |
+| `slotenabledro` | `[SlotEnabledRO]` (docs/90, docs/136) | `*-slotro-*` | suggested: ship on (decided on BP earlier). Pair means IP +4.9%, SV -1.9%, BP -5.4% (both BP orders negative on a clean pair: Rodney to weigh), mean -0.8%, no crash | `Enabled=1` |
+| `avoidro` | `[AvoidRO]` (docs/137) | `clean-night-routing-extra` `bp-avoidro-*` | suggested: ship off. `avTakenHit` 0 in every job (never answers); pair -0.4% it/s, wait +6.0 ms/s | `Enabled=1` |
+| `deferfootprint` | `[Discourage] DeferFootprint` (design U) | `defer-footprint-ab.json`, routing-extra off-first only | suggested: ship off. Pairs -0.6% / +0.7% it/s, wait +5.7 / +8.4 ms/s; clean on-first not run | `DeferFootprint=1` |
+| `destroypark` | `[Discourage] DestroyPark` (design G) | `destroy-park-ab.json`, routing-extra, `destroypark-fix-verify` | suggested: ship off. Crash I on 0.36.14 in the clean night; fix 0.36.19 has 1 clean job of the 2 nights required; pairs +0.5% / +3.5% | `DestroyPark=1` |
+| `unseenthrottle` | `[UnseenThrottle]` (docs/143; phase 2 if it lands) | `*-ut-*` | suggested: ship on, List only (docs/143 §8.15). Pair means +0.6 / +2.8 / +5.6 / +6.1% it/s (BP, IP, BP crowd, BP list) | `Enabled=1` |
+| `stuckcheckasync` | ts3fixes 3 AM stuck check in a task | `stuckcheck-async` (two loads, daytime) | suggested: ship on (weak: no pair). +6.5% it/s, >= 300 ms frames 7 -> 4, `stuckcheckasync_run` 240, no crash; release-validate repro is the gate | `kStuckCheckAsync` True |
+| `replandefer`, `replanspread` | ts3fixes door / build-buy replans | `replan-defer-ab.json` | suggested: ship off. Only run fails the load rule (18.5% / 16.3% other CPU); +0.4% it/s, >= 300 ms 11 -> 12 | `kReplanDefer`, `kReplanSpread` True |
+| `safespotcap`, `farthestsorted`, `indoorcap` | ts3fixes candidate loops | `candidate-loop-ab.json` | suggested: ship off. Single loads, 9.7-15.2% other CPU; BP -1.0%, SV +6.8% with 7,985 ms frames on (FallbackAsync pattern) | `kSafeSpotCap`, `kFarthestLotSorted`, `kIndoorPositionCap` True |
+| `overwatchspread` | ts3fixes NRaas Overwatch nightly spread | `*-spreads-*` | suggested: ship off. No fewer TaskObjects bursts in the night windows (BP off 4 / on 3, SV off 5 / on 3, on max higher); SV -7.4% it/s in both orders; alarm firing in counted slices not shown | `kOverwatchSpread` True |
+| `easpreadlots`, `easpreadpets`, `easpreaddecay` | ts3fixes EA nightly alarms spread | `*-spreads-*` | suggested: ship off (measured together with `overwatchspread`, same numbers) | `kEaSpreadLots`, `kEaSpreadPets`, `kEaSpreadDecay` True |
+| `errortrapspread` | ts3fixes NRaas ErrorTrap load scan spread | `bp-et-*` | suggested: ship on. Both two-load pairs: TaskObjects `/taskstall` rows 4 -> 3, 1,347 / 1,389 -> 888 / 1,047 ms, max 420 -> 354 ms | `kErrorTrapSpread` True |
+| `unseenenv`, `unseenmotives`, `unseenbroadcast` | ts3fixes unseen script throttle (docs/144) | `*-unseen-*` | suggested: ship off. BP +5.5%, IP +7.2%, crowd +3.4%, but SV >= 300 ms frames 1 -> 13 over the pair (both orders) and route +7.8 ms/s BP/SV; switches never measured apart | `kUnseenEnvThrottle`, `kUnseenMotiveThrottle`, `kUnseenBroadcastThrottle` True |
 
 ### Release defaults in one step
 
@@ -51,7 +54,17 @@ CI's stable list now also accepts `[SlotEnabledRO]`, `[AvoidRO]` and `[UnseenThr
 | `native/ts3native/out/ts3native.ini` | release defaults from `release-features.ts [ids]` | `[to fill]` |
 | `build/ts3fixes.package` | v0.1.4 defaults + [chosen ts3fixes features] (shortcuts kGoHome, kBuildingTrip, kLotTrip, kVirtualHome True) | `[to fill]` |
 
-Release `ts3native.ini` defaults: as v0.1.4 (`[GC]`, `[WaterJps]`, `[Decompress]`, `[SaveWrite]`, `[LotRemoveGuard]`, `[OptsInit]`, `[RouteAsync]` `Mode=1` `Kinds=0`, `[RouteGate]`, `[Discourage]`) plus [to fill from the decisions]. Validation: `release-validate.json` (46 jobs, ~8 h real; parts A ~5 h and B ~3 h with `--only`, see the queue note), results `docs/data/results/[date]-queue-release-validate.md`; pass rules as below plus `fbCapped` per job and route fails not above v0.1.4's.
+Release `ts3native.ini` defaults: as v0.1.4 (`[GC]`, `[WaterJps]`, `[Decompress]`, `[SaveWrite]`, `[LotRemoveGuard]`, `[OptsInit]`, `[RouteAsync]` `Mode=1` `Kinds=0`, `[RouteGate]`, `[Discourage]`) plus [to fill from the decisions]. Validation: the generated release check (below; replaces the fixed 46-job `release-validate.json`, which stays as the source of the old jobs and the fallback), results `docs/data/results/[date]-queue-release-check.md`; pass rules as below plus `fbCapped` per job and route fails not above v0.1.4's.
+
+### Release check: queue from what changed (docs/170 §4)
+
+After `release-features.ts <ids> --write`, the build and the asi copy:
+
+1. `node tools/release-check.ts v0.1.4` (dry run): prints the ship set, what changed since v0.1.4 (git diff, map `tools/harness/feature-repros.json`), the time per part, the features without a repro and the coverage table against release-validate.json. Before the write, `--features <ids>` shows the same for a candidate set.
+2. `node tools/release-check.ts v0.1.4 --write --install-repros`: writes `tools/harness/queues/release-check.json` and splices the derived `rc-*` loop repros into `repros.json` (one block at the end; only when nobody else edits it).
+3. `node tools/harness/queue.ts tools/harness/queues/release-check.json`. Parts: a smoke (BP/IP/SV 6 min), b BP save matrix + france trip, c forced repro per new/changed shipped feature with the fix on only (fixed event count), d bundle A/B on those loop repros (ABBA, 10 firings per arm; clean night), e the release-validate.json rare jobs of shipped features whose code changed (incl. SV/IP matrices and the other trips when save code changed), f 45 min BP soak.
+
+Estimate for the suggested v0.1.5 set (slotenabledro, unseenthrottle, stuckcheckasync, errortrapspread): 41 jobs, ~6.7 h, of which a-d + f ~2.9 h and e ~3.8 h (routegate.cpp and savewrite.cpp changed since v0.1.4, so the route and save rare jobs come back). A release with unchanged shipped code: a + b + f ~1.5 h plus c + d for its new features.
 
 ## Before publishing (Rodney OKs each)
 

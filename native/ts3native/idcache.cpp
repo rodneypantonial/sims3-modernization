@@ -120,6 +120,7 @@ static void* __fastcall IdcEraseHook(u8* tbl, void* edx, void* out, u8* node, vo
 // [IdCache] Enabled=1 hooks; Mode = start value of ts3native_counters.idcMode; Verify=1 walks the chain on every hit.
 static bool ApplyIdCache(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"IdCache", L"Enabled", 0, ini)) { Log("object id cache disabled (Enabled=0)"); return false; }
+    if (ApexStandsDown(AXF_OBJECT_INDEX, "[IdCache]", "entries 0x939100, 0x938D00")) return false;
     g_idcVerify = GetPrivateProfileIntW(L"IdCache", L"Verify", 0, ini) != 0;
     ts3native_counters.idcMode = GetPrivateProfileIntW(L"IdCache", L"Mode", 1, ini) == 0 ? 0 : 1;
     // the invalidation first: the cache never runs without it

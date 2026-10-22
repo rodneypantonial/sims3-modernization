@@ -146,4 +146,23 @@ BP is the only BP job whose on side lost against the slot bias (leave-one-out ex
 
 - No reducer's run-level effect (it/s, hitches/min, p99) is resolved; that needs a clean night, or more slices per side (a 20-min run = 4 per side cuts the standard error only ~1.4x), and the slot effect handled: alternate the start side (off-first vs on-first) between two jobs of the same reducer.
 - `0x83156D`'s mapping to `0x831568` is inferred from the address; confirm in the disassembly before designing its reducer.
-- Why `0x631814` was absent from the native key table in the lotfdro run is not checked.
+- Why `0x631814` was absent from the native key table in the lotfdro run is not checked. (2026-10-22: the 32-slot key table overflow, §6.)
+
+## 6. SlotEnabledRO on the clean night: BP -5.4% it/s, what it costs (2026-10-22)
+
+Data: `probe-out/profile/clean-night-0.2.0-2026-10-21-{bp,ip,sv}-slotro-{offfirst,onfirst}` (asi `.0314`, release base, `SlotEnabledRO` Mode 1 Shadow 0, `--ab slotenabledro`). Measured unless marked.
+
+| BP | off-first (on / off) | on-first (on / off) |
+|---|---|---|
+| it/s (all seconds of the counted slices) | 46.8 / 48.7 (-4.0%) | 50.5 / 53.5 (-5.5%) |
+| gate 12 `0x62F782` ms/s | not timed in either half (see below) | 0.1 / 10.5 |
+| `0x83156D` (RouteToObjectCheck, docs/140) ms/s | 5.5 / 0.7 | 6.3 / 1.0 |
+| summed keyed wait ms/s | 89.6 / 78.6 (gate 12 untimed) | 79.4 / 92.4 |
+| RO body `slUs` | 6.3 ms in 240 s (574 answers, 11 us each) | 6.6 ms in 245 s (900 answers) |
+| worker job time `asyncUs` ms/s | 128.3 / 131.7 | 120.0 / 127.6 |
+
+What it is not [verified, counters]: the RO body costs ~0.03 ms/s (`slUs`, max 220 us); the QL-shared hold does not slow the worker (`asyncUs` lower on, `steerQlWaitUs` 0); script, route and locomotion ms/s move < 1.6 ms/s, in opposite directions in the two orders. Gate 12 drops 10.4 ms/s and about half of it reappears at `0x83156D`: `IsSlotUnobstructed` (`0x755AB0`) calls the slot helper first and `RoutingWorld_RouteToObjectCheck 0x831530` right after (docs/140 [verified]), so the same IC waits one call later. The rest goes to the next taker in the tick (conserved wait, docs/143 §8.14).
+
+The off-first BP table lacks gate 12: the warm-up slice is on, so gate 12 had no wait until the 32 probe-P0 slots were full, and its off-half waits only counted in `blockOther` (200 in the first off slice vs ~20-60 in the others) [verified]. Corrected off-first total with ~10 ms/s for gate 12 [inferred]: ~89 off vs 89.6 on; pair mean ~-6 ms/s summed wait. The same overflow is why `0x631814` was absent in the lotfdro run (§5).
+
+Verdict: no cost mechanism found. -4.0 / -5.5% (pair -4.3% from all seconds, -5.4% in the draft) is within the BP pair noise: the standard deviation of pair means over 10 BP switch pairs of the same two nights is 5.0% (avoidro -1.0, slotro -4.3, spreads -0.3, unseen-play +8.5, ut-play +3.5, fb-play +0.9, ut2 avoid -3.1, footprint -8.9, list +5.4, rate -2.8). IP +4.9%, SV -1.9%. A smaller summed wait does not show in it/s at this noise. The earlier BP ship decision rested on gate 12 -12.5 ms/s, which holds; an it/s change is not shown in either direction. What would gain: docs/140 `[RouteToObjRO]` for the moved half, and only together with the tick's other takers (docs/137 §12). Re-measure with every key timed: `tools/harness/queues/rofix-ab.json` (`bp-slotro-verify` day job, then `bp/ip-slotro-offfirst/onfirst`, asi `.rofix`). Ledger docs/51 §218.

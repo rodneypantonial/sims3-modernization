@@ -1,0 +1,183 @@
+{
+  "note": "Profiler cost control (docs/168 §4): what the measurement itself costs, Bridgeport, same save and seed, camera untouched. Lean = frames + freezes only (stutter-profile.js stages:false, tasks off, [HitchAttr] off, RouteJobPhases off) vs full = freeze-measure.json bp-freeze-still. ABBA order (off-1, on-1, on-2, off-2) so both orders are covered; two loads per pair. Read: node tools/harness/hitch-ab.ts profiler-cost-<date>-bp-profcost (it/s column, counts, two-load pairs and the pooled pair with 95% CIs) and freeze-report.ts <tag> per run (FPS, frames > 50/100 ms, freezes). ~12 min per job, ~50 min. Timing: clean night only.",
+  "jobs": [
+    {
+      "id": "bp-profcost-off-1",
+      "note": "Lean measurement: stutter-profile.js -P {\"stages\":false} (boundary, catch-up steps, publish gaps; no stage/GC/route/task hooks), [HitchAttr] off, RouteJobPhases off; frames.csv as in full. Pair partner of the matching -on job.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 0,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 0,
+        "RouteJobPhases.SyncPlans": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "profOpts": {
+            "stages": false
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-profcost-on-1",
+      "note": "Full measurement (freeze-measure.json bp-freeze-still as is): stage, GC, route and task hooks, [HitchAttr], RouteJobPhases + SyncPlans. Pair partner of the matching -off job (same save, seed 12345, camera untouched).",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-profcost-on-2",
+      "note": "Full measurement (freeze-measure.json bp-freeze-still as is): stage, GC, route and task hooks, [HitchAttr], RouteJobPhases + SyncPlans. Pair partner of the matching -off job (same save, seed 12345, camera untouched).",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-profcost-off-2",
+      "note": "Lean measurement: stutter-profile.js -P {\"stages\":false} (boundary, catch-up steps, publish gaps; no stage/GC/route/task hooks), [HitchAttr] off, RouteJobPhases off; frames.csv as in full. Pair partner of the matching -on job.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 99,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 0,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 0,
+        "RouteJobPhases.SyncPlans": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "profOpts": {
+            "stages": false
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

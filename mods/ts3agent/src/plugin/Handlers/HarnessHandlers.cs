@@ -31,8 +31,10 @@ namespace Ts3Agent
             RegisterRareVehicles();
             RegisterCas();
             RegisterContent();
+            RegisterMainThreadRepro();
             RegisterLabels();
             RegisterTravel();
+            RegisterRouteFreeze();
             Dispatcher.Register("patch_test", PatchTest);
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);

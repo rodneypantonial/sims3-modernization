@@ -195,3 +195,37 @@ Per answered call one point gather, the target lookup and one or two segment gat
 ## 11. Effort
 
 Wall-clock for Claude with agents: **~8-12 h** build and offline proof: `rtoro.cpp` with the three stubs and the clone, reusing S2 (`SrQuery` / `SrWalk` with a record parameter, `SrEntry`, `SrXform`) and SH's `SlCall` (~4-6 h, of which the BlockerCheck2d loop is the largest part); the object-map inserter check and the `StoreScan` items (~0.5-1 h); selftest (~1-1.5 h); steerro-test M/N and the emu spec (~2-3 h); docs/68, registry, agent.js, profile-world offsets, `wait-ab.ts` label (~0.5 h). Then **2 game runs**: one daytime shadow (`bp-rtoro-shadow`, ~15 min job) and one clean night with two in-load A/B jobs (`bp-rtoro-ab` off-first and on-first, ~15 min each; IP after BP).
+
+## 12. Built (2026-10-22, ts3native 0.36.23 + counters v93, offline, NOT run)
+
+`native/ts3native/rtoro.cpp`, `[RouteToObjRO] Enabled=1` (default 0), `Mode` (default 1, `--ab routetoobjro` = `rtoMode` +0x3FF4), `Shadow` (default 0, `--ab routetoobjroshadow` = `rtoShadow` +0x3FF8). Needs `[RouteGate] Enforce=1` and `[RouteAsync]`; installs the S2 writer set itself (as AvoidRO); slot targets need `[SlotEnabledRO]` (else `rtoFb_10`). Parked `game-copy/ts3native.asi.0325` (combined 0324 + RouteToObjRO + CE-1/CE-4 fix (docs/154 §7), counters v93 after v95, 4130 int32; branch-only asi.routetoobjro was B1CEA17E), sha256 `E6BFDC7A0B42BBA08B04692E2A42EF2A36CE41668E9AECE91777D226E1E00425`. Queue `tools/harness/queues/routetoobjro.json`.
+
+### 12.1 Read set re-verified in the disassembly (capstone over Steam 1.67, 2026-10-22)
+
+| Item | Result |
+|---|---|
+| Three sites | `0x831568` `E8` -> `0x4E16F0` (arg `0x1021CF0`, eax unused after), `0x831633` -> `0x830340` (10 args, ret 0x28; the caller reads only its local code and id words), `0x8316FF` -> `0x4E17B0`; no exit between `0x831568` and `0x8316FF` [verified] |
+| Step 2 | `0x82EDB0(point, [0xFEC6DC] = 0.123, &vec, 1, a6)`; jump table at `0x8308C0` / bytes `0x8308C8`: early types {2, 4, 0xC, 0xD, 0x11, 0x15, 0x17} [verified]; the early code-4 path writes **id 0** (`0x830523`) |
+| Steps 3-4 | `0x935770(target, [0x11E9158])` none = code 0; `0x631C20(P; Sim lot, target id, point+0x24)`; slot: `0xB02360`, `0x935770([0x11E9114])` or `0x951420(0x31229A4C)` none = code 8; slot point = slot matrix row 3 through `0x959060`'s matrix, then `0x76F0A0(&pos, target, a6, 0)` [verified] |
+| `0x631C20` / `0x6649C0` | lot 0: planner map `P+0x24`, holder `+8` -> object, `+0x7C` id and `+0x14` level (`0x806FD0` calls `+0x70` = `0x80E610` EnsureAllPolygons, a no-op when all levels are valid, then byte `+0x36`); else Contains, level -4..12, cell graph, maps `[Q+0x20]+0x3C` (entry for Q = none), `+0x30` (value `+8` when `+0xC == Q`), `+0x24` (holder `+8` when holder `+0xC == Q`); equal range of `0x6643E0` = the run of equal keys from the first match [verified]. I-198-5 (who inserts) stays open: read under QL shared, the shadow covers it |
+| Step 5 | `0x62F000` = GetOrInsert on the **Sim's** lot + `(x·A0 + D0) + y·B0 + z·C0`; target `+0xB8(0, lot point)` true = code 0 [verified] |
+| Step 6 | goal = target position (x, z, point level); kind 1/9 and `+0xC4(0)` false: `+0xBC(0, lot point, out)` then `0x62EB40` (rows `+0xE0..+0x110`, back to world); kind 9: x87 distance from the point, `> [0xFECE14]` (0.9) shifts the goal by `[0xF9A5AC]` (0.5) / d and sets the second check; kind 1: **the flag is bit `0x10000` of `+0xD0` of the object record `0xB01770(target)` = `0xC8EC50([0x11ED034]; target+0x18)`**, stored over P's stack slot (I-198-6 resolved: not the planner) [verified] |
+| Step 7 | `0x82E340` 13 args (res, sim, start, goal, options, target, &ignore id, 0, flag, a7, a10, 0, a6), second call (b34 = 1) with the shifted goal and its **code only** merged (`0x829250(code2, 0, 0)`) [verified]. Its record (frame `+0x150`): `+0` = a6, `+8` = ignore id, `+0x28` = the option copy (`0x81D3C0`, bit 4 forced by `0x81C810(4, 0, 1, 0)` when option 4 holds). The gather `0x631E20` uses ctx `+0x40` = record, `+0x44` = P, `+0x50` = 0, `+0x54` = Sim (lot key), flag 1. With an options object both collectors (`0x669850` / `0x669230`) first drop ids in its lists (`0x81C970`) and keep a type-0x14 class when `RoutingOptions_Test(0x1004, 0, 0)` holds [verified]. Set = `std::set` by pointer, unsigned compare at `0x628358` (I-198-7 verified). Loop rules as §3.1; `0x814C30` is a debug draw behind byte `[0x11D90B0]` (not cloned); the portal record's handle ctor/dtor (`0xB96150` / `0x643420`) are no-ops with its null handle [verified] |
+| Calls inside the hold | `0x81C970`, `0xB69840` (no store), `0x946E90` (reads, no lock), footprint slots `0x806FC0`, `0x806FE0`, `0x620CC0`, `0xF20360`, `0x80E540` (reads the level-0 entry), `0x80E8A0` / `0x80E910` / `0x80F080` (cache rule: valid byte first, 0x24 bytes compared after; their geometry `0x67B990` / `0x67D920` on the global `0x1165D28` store only to their own temporaries, 2-hop capstone scan [inferred: as S2's `0x80E8A0`]) |
+
+### 12.2 What the build does
+
+As §5 with these choices: R-acq is a naked stub (`RtoAcqStub`) that passes through by `jmp`, so the P0 key stays `0x83156D`; a given-up clone's late take sets `t_rtoKey = 0x83156D` (one term added to `LockAcquireHook`'s key). Phase 1 (no lock): planner, dirty lot index, the point's lot, target component, position, slot (0x76F0A0 through SH's own detour), object record, option tests, option copies, ignore ids. Phase R: one QL-shared hold (AvoidRO's protocol, own counters). S2 reuse: `SrWalk2` (segment with distinct ends; `SrWalk` forwards to it unchanged) and `SrCollect` with flag bit 2 (record options object; flags 0/1 of S2, AvoidRO and ObstructedRO unchanged, steerro-test seeds 1-3 x 3000 bit-equal). **Shortcuts (fall back, counted):** BlockerCheck2d's physics samples after a clean footprint pass (`rtoFb_8`), option 0x100000 slot children (`rtoFb_9`). Shadow: answer level (code, id) and the step-2 query set vs `0x82EDB0`; no separate segment-level compare (the answer covers it).
+
+### 12.3 Offline checks
+
+| Check | Result |
+|---|---|
+| `build.cmd` (`/W4 /WX`, all targets) | ok |
+| selftest `TestRouteToObjRO` (x5) | 29 hand-derived cases (every rule above, kind 9's shifted check, 3 fallbacks) equal in Mode 1 (job) and shadow; skew counted; no-route skip, switch off, `+0x918` owner, nesting; threaded with a real `+0x918` and QL, worker flipping the fake world under QL exclusive: 0 torn reads, 0 game calls without the lock, refcounts untouched, no hang |
+| `steerro-test` seeds 1-3 x 3000 | ok (incl. the three call sites on the image) |
+| `node tools/hook-sites.ts --check` | the new addresses in docs/68 (6 older ones not listed, as master) |
+| `node tools/check-docs-code.ts` | ok |
+| Not done from §9 | steerro-test sections M/N (game's `0x830340` vs the clone on random worlds), the emu segment spec, depth-3 StoreScan of the slot functions: the shadow job is the differential check instead |
+
+Next: `node tools/harness/queue.ts tools/harness/queues/routetoobjro.json --only bp-routetoobjro-verify` by day (5 min BP, Shadow=1: `rtoShadowMismatch` = `rtoShadowQueryMismatch` = 0, `rtoTaken` > 0, no crash), then the night pairs (alone on the SlotEnabledRO base, and inside the docs/152 B0 list). Ledger §NEW-I.

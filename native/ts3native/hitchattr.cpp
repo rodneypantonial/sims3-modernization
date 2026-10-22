@@ -33,8 +33,127 @@ static void HaNote(DWORD key, LONG us, int cls) {
     Max(&k.haMaxUs, us);
 }
 
+// --- [HitchAttr] Holders=1 (0.36.25, docs/165 §8 gap #2, counters v98): who holds the lock a long sim/main wait is on ---
+// Every thread's outermost acquire through LockAcquireHook stores (lock, thread, return address) in a 4-way set-associative
+// side table right after the acquire returns, before anything else. Entries are never cleared: a release leaves the last
+// holder's entry, and the next outermost acquire of that lock overwrites it (0.36.26, docs/165 §8: the old clear-on-release
+// and the write after HoNote left the holder's site 0 across lock hand-offs). A sim or main thread acquire of a lock another
+// thread holds (the EA lock's CRITICAL_SECTION OwningThread, plain read: the lock is live, we are about to take it) reads
+// the holder's entry at wait start and again when its own acquire returns (before writing its own; the holder has released
+// by then, so its entry is complete) and prefers the second, times the acquire, and at >= MinMs writes a record to
+// `ts3native_lockholders` (ring, read by stutter-profile.js into hitches.jsonl `holders`) and a ts3native.log line. +0x918
+// waits stay [HitchAttr]'s (keys); the acquire itself goes through LockAcquirePlain unchanged, so with Holders=0 (default)
+// the only cost is one global test in the acquire hook (the release hook has none).
+// shortcut: the holder tid is read once at wait start; a lock handed through several holders during one wait names the
+// first, with its site only while its entry is still in the set.
+// EA mutex-type locks (byte +0x24 == 0, a mutex handle at +0, Lock_Acquire 0x4E175F) have no OwningThread: never recorded.
+struct HoEntry { void* volatile lock; volatile DWORD tid, site, pad; };
+static __declspec(align(64)) HoEntry g_hoTab[256][4];  // one 64-byte line per set
+static u8 g_hoNext[256];                               // per-set FIFO victim; a racy increment only picks another way
+static inline int HoSetIx(void* lock) { return ((uintptr_t)lock >> 4 ^ (uintptr_t)lock >> 12) & 255; }
+// the site recorded for (lock, tid); 0 when no way holds a complete entry for both
+static DWORD HoFind(void* lock, DWORD tid) {
+    HoEntry* const set = g_hoTab[HoSetIx(lock)];
+    for (int w = 0; w < 4; w++) {
+        HoEntry& e = set[w];
+        if (e.lock != lock) continue;
+        const DWORD etid = e.tid, esite = e.site;
+        _ReadBarrier();
+        if (e.lock == lock && etid == tid) return esite;
+    }
+    return 0;
+}
+static void HoPut(void* lock, DWORD tid, DWORD site) {
+    const int ix = HoSetIx(lock);
+    HoEntry* const set = g_hoTab[ix];
+    int w = 0;
+    while (w < 4 && set[w].lock != lock) w++;
+    if (w == 4) w = g_hoNext[ix]++ & 3;
+    HoEntry& e = set[w];
+    e.lock = NULL;
+    _WriteBarrier();
+    e.tid = tid, e.site = site;
+    _WriteBarrier();
+    e.lock = lock;
+}
+enum { HO_SIM, HO_MAIN, HO_WORKER, HO_REPLAY, HO_OTHER, HO_ROLES };
+struct HoRec {
+    volatile LONG seq;  // +0x00, ring index + 1, written last (0 = never written)
+    LONG waiter;        // +0x04, 0 sim thread, 1 main thread
+    DWORD lock;         // +0x08
+    LONG us;            // +0x0C, wait time
+    DWORD holderTid;    // +0x10
+    LONG holderRole;    // +0x14, HO_* (4 = other: EA job threads, loaders, audio)
+    DWORD holderSite;   // +0x18, return address of the holder's acquire (0 = not in the side table)
+    DWORD waiterSite;   // +0x1C, return address of the waiting acquire
+};
+struct HoRing {
+    LONG version;         // +0x00, 1
+    LONG enabled;         // +0x04
+    LONG minUs;           // +0x08
+    volatile LONG head;   // +0x0C, records written so far; record i (1-based) sits at r[(i - 1) & 63]
+    HoRec r[64];          // +0x10
+};
+static_assert(sizeof(HoRec) == 32 && offsetof(HoRing, r) == 0x10, "ts3native_lockholders layout (stutter-profile.js)");
+extern "C" __declspec(dllexport) HoRing ts3native_lockholders = {1, 0, 20000, 0, {}};
+
+static int HoRole(DWORD tid) {
+    return tid == g_mainTid ? HO_MAIN : RgIsSim(tid) ? HO_SIM : RgIsWorker(tid) ? HO_WORKER : g_rpTid && tid == g_rpTid ? HO_REPLAY : HO_OTHER;
+}
+static const char* const kHoRoleName[HO_ROLES] = {"sim", "main", "route worker", "replay consumer", "thread"};
+
+static void HoNote(int waiter, void* lock, LONG us, DWORD htid, DWORD hsite, DWORD wsite) {
+    Ts3nCounters& k = ts3native_counters;
+    const int role = htid ? HoRole(htid) : HO_OTHER;
+    InterlockedIncrement(&k.hoWaits[waiter]);
+    InterlockedExchangeAdd(&k.hoUs[waiter], us);
+    Max(&k.hoMaxUs, us);
+    InterlockedIncrement(&k.hoByRole[role]);
+    if (!hsite) InterlockedIncrement(&k.hoNoSite);
+    HoRing& g = ts3native_lockholders;
+    const LONG i = InterlockedIncrement(&g.head);
+    HoRec& r = g.r[(i - 1) & 63];
+    r.seq = 0;
+    r.waiter = waiter, r.lock = (DWORD)(uintptr_t)lock, r.us = us, r.holderTid = htid, r.holderRole = role;
+    r.holderSite = hsite, r.waiterSite = wsite;
+    _WriteBarrier();
+    r.seq = i;
+    if (i <= 200 || i % 100 == 0)  // the first 200, then every 100th
+        Log("lock holders: %s waited %ld ms on lock %p (at 0x%08lX), held by %s %lu from 0x%08lX (wait #%ld)", waiter ? "main" : "sim",
+            us / 1000, lock, wsite, kHoRoleName[role], htid, hsite, i);
+}
+
+static __declspec(noinline) LONG HoAcquire(void* lock, void* edx, const DWORD* deadline, DWORD ret) {
+    const DWORD tid = __readfsdword(0x24);
+    const int waiter = tid == g_mainTid ? 1 : RgIsSim(tid) ? 0 : -1;
+    const DWORD htid = (DWORD)(uintptr_t)((const CRITICAL_SECTION*)lock)->OwningThread;
+    if (waiter < 0 || lock == g_rgLock || *deadline == 0 || !htid || htid == tid) {
+        const LONG r = LockAcquirePlain(lock, edx, deadline, ret);
+        if (r == 1) HoPut(lock, tid, ret);  // outermost acquire (EA Lock_Acquire returns the new count): this thread holds it
+        return r;
+    }
+    const DWORD site0 = HoFind(lock, htid);  // 0 when the holder took it an instant ago and has not written yet
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    const LONG r = LockAcquirePlain(lock, edx, deadline, ret);
+    const LONG us = UsSince(t0);
+    const DWORD site1 = HoFind(lock, htid);  // the holder's entry, complete now; before ours replaces it
+    // ours before the record: a waiter on this thread during HoNote's log write finds our site (docs/165 §8 cause A)
+    if (r == 1) HoPut(lock, tid, ret);
+    if (us >= ts3native_lockholders.minUs) HoNote(waiter, lock, us, htid, site1 ? site1 : site0, ret);
+    return r;
+}
+
 static bool ApplyHitchAttr(const wchar_t* ini) {
-    if (!GetPrivateProfileIntW(L"HitchAttr", L"Enabled", 0, ini)) return false;
+    if (GetPrivateProfileIntW(L"HitchAttr", L"Holders", 0, ini)) {
+        ts3native_lockholders.minUs = Clamp(GetPrivateProfileIntW(L"HitchAttr", L"HoldersMinMs", 20, ini), 1, 10000) * 1000;
+        ts3native_lockholders.enabled = 1;
+        ts3native_counters.hoReady = 1;
+        g_hoOn = 1;
+        Log("OK   HitchAttr Holders: sim/main waits >= %ld ms on any game lock with the holder's thread and acquire site "
+            "(ts3native_lockholders, needs the Lock_Acquire hook: [RouteAsync] or [RouteGate])", ts3native_lockholders.minUs / 1000);
+    }
+    if (!GetPrivateProfileIntW(L"HitchAttr", L"Enabled", 0, ini)) return g_hoOn != 0;
     ts3native_hitchattr.enabled = 1;
     ts3native_counters.haReady = 1;
     Log("OK   HitchAttr: sim waits for the route job per frame (ts3native_hitchattr, read by stutter-profile.js)");

@@ -9,7 +9,8 @@
 // seconds row are left out (docs/96 class C: load work, no routing).
 // Set TS3_REPO=<main checkout> when running from a git worktree.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
 const PROFILE = join(ROOT, 'probe-out', 'profile');
@@ -25,7 +26,7 @@ const KEYS: Record<string, string> = {
   '0x008343b9': 'discourage add', '0x02000003': 'destroy (RtWaitJob)', '0x05000000': 'plan waited for the job',
   '0x06000000': 'discourage drain', '0x0080e5b0': 'steering rebuild (P0)',
 };
-const keyName = (k: string) => KEYS[k] ?? (k.startsWith('0x02') ? 'RtWaitJob drain' : k);
+export const keyName = (k: string) => KEYS[k] ?? (k.startsWith('0x02') ? 'RtWaitJob drain' : k);
 
 type H = Record<string, any> & { t: number; wallMs: number };
 export type Run = { name: string; secs: number; hitches: H[]; rows: Record<string, number>[] };
@@ -120,7 +121,7 @@ function selfCheck() {
 }
 
 if (process.argv.includes('--self-check')) selfCheck();
-else {
+else if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) { // not when imported (sim-budget-report.ts)
   const args = process.argv.slice(2);
   const files = args.length ? args : existsSync(PROFILE) ? readdirSync(PROFILE).filter(n => /^hitch-attr-.*-\d+-hitches\.jsonl$/.test(n)) : [];
   if (!files.length) { console.error(`no hitch-attr-*-hitches.jsonl in ${PROFILE} (set TS3_REPO from a worktree, or pass tags)`); process.exit(2); }

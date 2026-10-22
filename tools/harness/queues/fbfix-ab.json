@@ -1,0 +1,90 @@
+{
+ "note": "docs/134 §11: FbJobCapMs as a deadline from the job's start (ts3native 0.36.20, counters v84). asi game-copy/ts3native.asi.0321 sha256 4233eec8e5fb4747a377dcc4d8f850b5a310ed1aad1a7120fbb554f834796575; ts3fixes unchanged (as installed for clean-night-0.2.0). Every job: FallbackAsync=1, M1Retry=1, SyncCapMs=1000, FbJobCapMs=300, HitchAttr on, LogFallbackMs=20. Job 1 (fbfix-verify) is a 5-min day job (noisy machine OK: counters and log lines only, no timing). Jobs 2-7 are the both-order timing pairs (clean night only; read pair means of off-first + on-first, never one order alone): SV play, SV crowd, BP route-bits, --ab fbjobcap (on = cap on, off = cap off; FallbackAsync on in both halves). Read per pair: worst-hitches.ts --min 250 and hitch-attr-report.ts per side (rtLock/rtJob behind a job), the 'route jobs split:' line and the 'long job' lines (capAt, tail, plan, host, other), it/s, route fails, stuck Sims. Pass for every job: no crash, game alive, fbActiveTrip 0, the switch line at every slice.",
+ "jobs": [
+  {
+   "id": "fbfix-verify",
+   "note": "Day job, 5 min, noisy machine OK (mechanism only). BP rare-route-bits: fbjobcap-ab 2026-10-22 had a 1,948 ms foreign job here capped only after 1,942 ms (32 world A* nodes). Cap on for the whole run; [RouteEarlyOut] Mode=1 (observe only) adds the world A* share of each slow plan (LogMs 200). PASS (all from ts3native.log / native.json, no timing): (1) the asi is 0.36.21 with counters 85 ('route jobs split:' line present); (2) every 'long job' line marked 'capped (FbJobCapMs)' has capAt <= 320 ms, or capAt > 320 ms with fbjcCapLate counting it (late = work before the first cost call, read 'other'/'plan' and the early-out line); (3) fbjcCapAtMaxUs <= 320000 unless fbjcCapLate > 0; (4) no crash, fbActiveTrip 0. REPORT (the open question, not a pass rule): fbjcTailMaxUs and each long line's tail/plan/host/other = where a capped job spends time the cap cannot stop; fbjcSimWaitMaxUs and the fbjcWaitHist buckets (<100, <300, <500, <1000, <2000, >=2000 ms) = freeze length behind foreign jobs; fbjcJobHist = foreign job lengths; early-out lines 'plan N ms (worker ...): world A* M ms' = world A* share. Target for shipping: fbjcSimWaitMaxUs <= ~400 ms, fbjcWaitHist[3..5] = 0.",
+   "asi": "game-copy/ts3native.asi.0322",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1,
+            "RouteEarlyOut.Enabled": 1, "RouteEarlyOut.Mode": 1, "RouteEarlyOut.LogMs": 200 },
+   "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "rare-route-bits" } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  },
+  {
+   "id": "sv-fbfix-play-offfirst",
+   "note": "Clean night. SV play, --ab fbjobcap off-first (warm-up on, then off,on,on,off). fbjobcap-ab 2026-10-22: 1,432 / 7,755 / 7,874 ms foreign jobs, all in cap-off slices. Read with sv-fbfix-play-onfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "fbjobcap", "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "sv-fbfix-play-onfirst",
+   "note": "Clean night. SV play, --ab fbjobcap on-first (warm-up on, then on,off,off,on). Read with sv-fbfix-play-offfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "fbjobcap", "abOnFirst": true, "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "sv-fbfix-crowd-offfirst",
+   "note": "Clean night. SV rare-big-crowd (freeze-data: 7,361 + 7,350 ms NoStart plans; with FallbackAsync on they become foreign jobs), --ab fbjobcap off-first. Read with sv-fbfix-crowd-onfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-big-crowd", "ab": "fbjobcap", "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "sv-fbfix-crowd-onfirst",
+   "note": "Clean night. SV rare-big-crowd, --ab fbjobcap on-first. Read with sv-fbfix-crowd-offfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-big-crowd", "ab": "fbjobcap", "abOnFirst": true, "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "bp-fbfix-routebits-offfirst",
+   "note": "Clean night. BP rare-route-bits, --ab fbjobcap off-first. Read with bp-fbfix-routebits-onfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-route-bits", "ab": "fbjobcap", "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  },
+  {
+   "id": "bp-fbfix-routebits-onfirst",
+   "note": "Clean night. BP rare-route-bits, --ab fbjobcap on-first. Read with bp-fbfix-routebits-offfirst.",
+   "asi": "game-copy/ts3native.asi.0321",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 84,
+   "ini": { "RouteAsync.FallbackAsync": 1, "RouteAsync.M1Retry": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.FbJobCapMs": 300,
+            "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1 },
+   "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "rare-route-bits", "ab": "fbjobcap", "abOnFirst": true, "slice": 2 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 30
+  }
+ ]
+}

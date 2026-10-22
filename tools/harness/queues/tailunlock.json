@@ -1,0 +1,115 @@
+{
+  "note": "docs/150 §11 [RouteAsync] TailUnlock (2026-10-22, NOT run). Daytime: --only bp-tailunlock-verify (5 min, noisy machine OK: correctness only). Night: --from bp-tailunlock-play-offfirst (4 jobs, 10 min, 2-min slices, BP and IP pairs off-first / on-first). Before: game-copy/ts3native.asi.tailunlock parked from the branch build (sha256 in PLAN.md), master ini. Reports: node tools/harness/wait-ab.ts <tag> (sim keyed +0x918 wait, pair mean of both orders), asyncUs per second on vs off (job hold), profile-compare.mjs <tag>:on vs :off. 5 jobs, ~1 h real.",
+  "jobs": [
+    {
+      "id": "bp-tailunlock-verify",
+      "note": "Daytime correctness, noisy machine OK (no timing read). ts3native 0.36.23 + counters v89 (game-copy/ts3native.asi.tailunlock; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds only [RouteAsync] TailUnlock=1. Seed 12345, story progression off. Design (docs/150 §11): the route worker lends +0x918 to the sim's steering while passes 16-19 of the node post pass 0x64E380 run (P5b's admission), and takes it back with the game's Lock_Acquire after pass 19. Needs 'OK   tail unlock' in ts3native.log (else SKIP = a call site differs or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against tailunlock.cpp (crash-cause rule). Mode 1 for the whole run (no --ab), BP play, 5 min. Pass (end minus start in <tag>-native.json, v89 / v62 fields): no crash, game alive, 0 watchdog lines; tuReady 1, tuMode 1; tuWins > 0 and tuReleasedUs > 0 (windows opened, lock lent); tuTrip_0 = tuTrip_1 = tuTrip_2 = 0 (no guarded touch in passes 16-19; any hit = stop, read the 'TailUnlock: tripwire' log line's caller); tuRefused_1 small next to tuWins; tuRetakeMaxUs < 20000 and p5bWatchdog = 0 (the retake waits only for a steering call); p5bSimAcq > 0 (steering granted in a window). Fail = stop the night part.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteAsync.TailUnlock": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-tailunlock-play-offfirst",
+      "note": "BP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). Build, ini and install check as bp-tailunlock-verify; --ab tailunlock toggles tuMode (+0x3878; 0 = keep the hold, the call sites stay patched). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, tuTrip_0..2 = 0, p5bWatchdog 0. Read (pair mean with bp-tailunlock-play-onfirst; single-order deltas are not usable, docs/143 §8.15): (1) sim keyed +0x918 wait total, node tools/harness/wait-ab.ts <tag>, on vs off; (2) job hold ms/s = asyncUs per second of the slice on vs off, and the lent share tuReleasedUs / asyncUs (expected ~5-10% of the hold [inferred: docs/150 §4 chunk 3, pass 16 ~40% of a post pass that is ~19% of the job]); (3) per slice (<tag>-ab-native.jsonl): tuWins, tuRefused_0..3, tuRetakeUs / tuWins, tuRetakeMaxUs (< 20000), p5bSimAcq; also it/s and hitches/min (profile-compare.mjs <tag>:on vs :off). Expected [inferred]: -2..-6 ms/s sim wait. Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteAsync.TailUnlock": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "tailunlock",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-tailunlock-play-onfirst",
+      "note": "BP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-tailunlock-play-offfirst (build, ini, pass, reads).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteAsync.TailUnlock": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "tailunlock",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-tailunlock-play-offfirst",
+      "note": "IP play (water-bound long plans: more post-pass time per job). Clean night only. Off-first. Everything else as bp-tailunlock-play-offfirst (build, ini, pass, reads; pair mean with ip-tailunlock-play-onfirst).",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteAsync.TailUnlock": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "tailunlock",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-tailunlock-play-onfirst",
+      "note": "IP play, the on-first half of the pair (abOnFirst). Clean night only. Everything else as bp-tailunlock-play-offfirst.",
+      "asi": "game-copy/ts3native.asi.0324",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 89,
+      "ini": {
+        "RouteAsync.TailUnlock": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "tailunlock",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

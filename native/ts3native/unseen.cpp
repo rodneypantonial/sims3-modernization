@@ -316,6 +316,7 @@ static void* g_utPrev[512];  // per agent (hash slot): agent pointer, bit 0 = a 
 // Sim thread only (GetOptionHook). 0 = refused: the throttle is not installed (ts3fixes stops for this load) or bad order.
 enum { UT_VMAX = 32 };
 static struct { float pos[UT_VMAX][3]; int n; DWORD at; } g_utView, g_utIn;
+static u8 UtSkipQuery(DWORD code, DWORD lo);
 static bool g_utInOpen;
 static DWORD g_utInHave;
 static float g_utInCur[3];
@@ -355,6 +356,7 @@ static u8 UtViewerMsg(DWORD lo, DWORD hi) {
                            g_utWatch.fpCalled, g_utWatch.fpRan, g_utWatch.owed > 0};
         return lo < 8 && b[lo] ? 1 : 0;
     }
+    if (code >= 19 && code <= 23) return UtSkipQuery(code, lo);
     if (!g_utInOpen || code < 2 || code > 5) { k.utViewerBad++; return 0; }
     if (code <= 4) {
         memcpy(&g_utInCur[code - 2], &lo, 4);
@@ -436,6 +438,34 @@ static void UtDgSkip(int part, const void* owner) {
     s->pass = ts3native_counters.unPasses;
     s->at[part] = GetTickCount() | 1;
     if (part != UT_DG_FOOT && s->obst) ts3native_counters.utDefer[part]++;
+}
+
+// Per-Sim skip read for the agent's stranding check (unseen_water_cause, docs/143 §8.16), viewer channel, sim thread, read
+// only: 19 object id low half, 20 its high half (finds that object's g_utDg slot by the id at owner +8/+0xC, as UtWatched;
+// 1 = found), 21 newest skip of any part <= lo ms ago, 22 the newest skip's part == lo (UT_DG_*), 23 any part switched on
+// (utMode / utAvMode / utRateMode / utFpMode: the --ab side). The agent reads the age by bisecting code 21.
+static DWORD g_utQLo;
+static const UtDgSlot* g_utQ;
+static u8 UtSkipQuery(DWORD code, DWORD lo) {
+    const Ts3nCounters& k = ts3native_counters;
+    if (code == 23) return k.utMode == 1 || k.utAvMode == 1 || k.utRateMode == 1 || k.utFpMode == 1 ? 1 : 0;
+    if (code == 19) { g_utQLo = lo, g_utQ = NULL; return 1; }
+    if (code == 20) {
+        g_utQ = NULL;
+        for (int i = 0; i < 512 && !g_utQ; i++) __try {
+                const u8* o = (const u8*)g_utDg[i].owner;
+                if (o && *(const DWORD*)(o + 8) == g_utQLo && *(const DWORD*)(o + 0xC) == lo) g_utQ = &g_utDg[i];
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        return g_utQ ? 1 : 0;
+    }
+    if (!g_utQ) return 0;
+    const DWORD now = GetTickCount();
+    int part = -1;
+    DWORD age = 0;
+    for (int p = 0; p < UT_DG_N; p++)
+        if (g_utQ->at[p] && (part < 0 || now - g_utQ->at[p] < age)) part = p, age = now - g_utQ->at[p];
+    if (part < 0) return 0;
+    return (code == 21 ? age <= lo : (DWORD)part == lo) ? 1 : 0;
 }
 
 // IC_Route_Replan 0x765490 cdecl(result*, handle) and IC_Route_ReplanFromPosition 0x765550 cdecl(result*, handle, x, y, z)
@@ -935,10 +965,16 @@ static void ApplyUnseenThrottle(const wchar_t* ini) {
     // ([RouteAsync] Kinds, [ProbeP10], both installed earlier) is left to it and its split stays 0
     for (int i = 0; i < 2; i++) {
         const int ic = i ? 3 : 1;
-        void* t = InstallDetour(kP10Name[ic], kP10Ic[ic], kP10Pro[ic], sizeof(kP10Pro[ic]), i ? (void*)UtRpPosHook : (void*)UtRpHook);
+        void* const hook = i ? (void*)UtRpPosHook : (void*)UtRpHook;
+        void* t = InstallDetour(kP10Name[ic], kP10Ic[ic], kP10Pro[ic], sizeof(kP10Pro[ic]), hook);
+        // [RouteAsync] ReplanDedupe's own detour (A10 off) owns the prologue: chain behind it, so the split counts the calls
+        // that planned (served repeats never reach it); the trampoline is published before the swap
+        const bool chained = !t && g_rdOrig[ic];
+        if (chained) t = g_rdOrig[ic];
         if (!t) continue;
         if (i) g_utRpPosOrig = (UtRpPosFn)t;
         else g_utRpOrig = (UtRpFn)t;
+        if (chained) InterlockedExchangePointer(&g_rdOrig[ic], hook), Log("OK   unseen throttle diagnostics: IC %d chained behind replan dedupe", ic);
         k.utDgReady |= 1 << i;
     }
     Log("unseen throttle diagnostics: replan split ready 0x%lX (bit 0 Replan, 1 ReplanFromPosition), deferred notices, skip ages",

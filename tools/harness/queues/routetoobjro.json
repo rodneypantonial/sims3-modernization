@@ -1,0 +1,155 @@
+{
+  "note": "docs/140 §12 [RouteToObjRO] (2026-10-22, NOT run). Daytime: --only bp-routetoobjro-verify (5 min, noisy machine OK: correctness only). Night: --from bp-routetoobjro-play-offfirst (4 jobs, 10 min, 2-min slices: the switch alone on the SlotEnabledRO base, both orders; then the docs/152 B0 bundle list plus routetoobjro toggled together, both orders). Before: game-copy/ts3native.asi.0325 parked from the branch build (sha256 in PLAN.md), master ini. Reports: node tools/harness/wait-ab.ts <tag> (key 0x83156D 'route-to-object check' and the docs/140 §8.2 absorbers: gate 10 0x760BFF, 0x82D296, gate 0 0x62EF7A, gate 12 0x62FB74 / 0x631F40 / 0x631814, destroy 0x2000003, 0x833593 / 0x8334CC, steering 0x85FE10, avoidance 0x846D21; pair mean of both orders), node tools/harness/hitch-attr-report.ts <tag>. 5 jobs, ~1 h real.",
+  "jobs": [
+    {
+      "id": "bp-routetoobjro-verify",
+      "note": "Daytime correctness, noisy machine OK (no timing read). ts3native 0.36.23 + counters v93 (game-copy/ts3native.asi.0325; sha256 in PLAN.md) run from a checkout whose native/ts3native/ts3native.ini is master (release defaults): the job ini adds [SlotEnabledRO] (SH, the slot branch's helper) and [RouteToObjRO] Enabled=1 Mode=1 Shadow=1 (answers while a job runs, compares with the game's 0x830340 when none runs). Seed 12345, story progression off, BP play 5 min, no --ab. Needs 'OK   route-to-object RO' in ts3native.log with 'SH on' (else SKIP = a call site differs or [RouteGate] Enforce / async off: stop, nothing measured). A crash = stop the queue and triage against rtoro.cpp (crash-cause rule). Pass (end minus start in <tag>-native.json, v93 fields): no crash, game alive, 0 watchdog lines; rtoReady 15; rtoShadowMismatch = rtoShadowQueryMismatch = 0 with rtoShadowRuns > 0 (any mismatch = stop: the 'route-to-object RO: shadow' log lines name game vs clone code and id); rtoSimWriteInRo = 0; rtoTaken > 0 (served read-only) and rtoWaitAvoided > 0. Read: rtoTaken / rtoCalls (answered share; docs/140 §8.1 expects 65-80%), rtoFb_0..11 mix (8 = physics tail and 9 = option 0x100000 are the shortcuts not cloned: a large share = clone them next), rtoNoRoute, rtoCode_0..8, rtoUs / rtoTaken (< 100 us), rtoShadowFb / rtoShadowRuns. Fail = stop the night part.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 93,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-routetoobjro-play-offfirst",
+      "note": "BP play, the switch alone. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). Run only after bp-routetoobjro-verify passed. Build and install check as the verify job; base = SlotEnabledRO on (v0.1.5 shipping setting), RouteToObjRO Mode=1 Shadow=0, --ab routetoobjro toggles rtoMode (+0x3FF4; 0 = the call sites pass through). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, rtoSimWriteInRo 0. Read (pair mean with bp-routetoobjro-play-onfirst; docs/136 §2 slot-1 bias): key 0x83156D on vs off (expected [inferred, docs/140 §8.1]: 9.0 -> ~2-3.5 ms/s with SlotEnabledRO on), every absorber of the queue note, all keyed, hitches/min; per slice (<tag>-ab-native.jsonl) rtoTaken, rtoFb_*, rtoWaitAvoided. Gates (docs/140 §8.3): target key down >= 4 ms/s in both orders, no absorber up by more than its null band in both, all keyed not up, 0 crashes. Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 93,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "routetoobjro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-routetoobjro-play-onfirst",
+      "note": "BP play, the switch alone, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-routetoobjro-play-offfirst (build, ini, pass, reads).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 93,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "routetoobjro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-b0-routetoobjro-offfirst",
+      "note": "BP play, the docs/152 §4 B0 list plus routetoobjro, all toggled together by --ab (steerro, avoidro, slotenabledro, lotfdro, obstructedro, deferfootprint, destroypark, routetoobjro): B0 + G5. Clean night only. Run after the alone pair. Every switch's section enabled in the job ini with Mode 1 (the --ab list sets each mode per slice; off = every takers' original path). Pass: no crash, game alive, 0 watchdog lines, every switch line in the log at every slice, steerSimWriteInRo, avSimWriteInRo, rtoSimWriteInRo 0. Read (pair mean with bp-b0-routetoobjro-onfirst): all keyed on vs off (docs/152 §1 model: B0 alone ~0, every removed key reappears at gate 0 G-a and 0x83156D; with G5 the 0x83156D share must go and the rest move to gate 0 / gate 10 / 0x8334CC / 0x82D296), per key, asyncUs (job hold unchanged expected), it/s, hitches/min. Off-first.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 93,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,routetoobjro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-b0-routetoobjro-onfirst",
+      "note": "BP play, B0 + routetoobjro, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-b0-routetoobjro-offfirst.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 93,
+      "ini": {
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "LotFrontDoorRO.Mode": 1,
+        "ObstructedRO.Enabled": 1,
+        "ObstructedRO.Mode": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,routetoobjro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

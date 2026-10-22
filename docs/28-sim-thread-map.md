@@ -115,7 +115,7 @@ Feasibility: **now** = built or no blocker; **with X** = one named blocker to so
 1. ~~**Can any C# run on a second thread?**~~ Answered in docs/29 §3 (H4): **not today** [verified: one GC-registered thread, only the collecting thread's stack scanned, unlocked `GC_malloc`, global `[0x11F4170]` and host`+0xBD0`]; the TLS slot `[0x11f4160]` is per thread and compile is locked. Fixable with a native GC patch (docs/29 §3.3); the S blockers remain.
 2. **Routing lock idle time.** The real gain of route offload is the share of a tick in which `RoutingWorld+0x918` is free; never measured (docs/18 step 1 probe).
 3. **Lot streaming:** threads answered statically in §5 (G13); cost per lot load (N16, E8) is still not measured. Probe design in §5.5.
-4. **Per-stage split of `MonoScriptHost::Simulate`**: partly answered in "Per-stage ms/s" above (G12: the scheduler stages, GC and finalizers are timed for BP/IP). Still missing: SV, plus the animation, locomotion and publish stages (~290 ms/s is not timed). The run needed is given there.
+4. **Per-stage split of `MonoScriptHost::Simulate`**: partly answered in "Per-stage ms/s" above (G12: the scheduler stages, GC and finalizers are timed for BP/IP). Still missing: SV, plus the animation, locomotion and publish stages (~290 ms/s is not timed). The run needed is given there; queue `sim-budget.json` + `sim-budget-report.ts` now do it per world with contributors (docs/160, not run).
 5. **Inclusive native costs** are approximate (24-frame cap, scanned frames not marked, docs/20 §6); route work hidden under "no family" is likely [inferred].
 6. **CAS and Buy** have timings but no native or managed stacks (docs/20 §5).
 

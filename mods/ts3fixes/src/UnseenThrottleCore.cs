@@ -36,8 +36,29 @@ namespace Ts3Fixes
         public void Clear() { mLeft.Clear(); }
     }
 
+    // At most max unseen motive catch-ups per sim tick (docs/144 §8). Sims that turned unseen together (load, camera jump,
+    // switch on) become due on the same sim-minute; one over the limit waits for the next tick, unless force (its gap
+    // reached the hard limit, so it never drifts toward the 60-minute auto-satisfy switch).
+    public sealed class TickCap
+    {
+        long mTick = long.MinValue;
+        int mUsed;
+        public int Most, Held;
+
+        public bool Take(long tick, int max, bool force)
+        {
+            if (tick != mTick) { mTick = tick; mUsed = 0; }
+            if (!force && mUsed >= max) { Held++; return false; }
+            if (++mUsed > Most) Most = mUsed;
+            return true;
+        }
+    }
+
     public static class UnseenMath
     {
+        public const int kCatchUpsPerTick = 4;   // unseen motive catch-ups run in one sim tick (TickCap)
+        public const float kHardGapMin = 45f;    // a catch-up this late runs even over the per-tick cap (< 60, auto-satisfy)
+
         // Motive updates (Autonomy.Update) integrate the sim-minutes since the Sim's last update. An unseen Sim's update
         // runs only once that gap reaches n base steps, so one update integrates the whole gap (n x dt). The gap stays
         // under capMin: Motive.Update switches a high-LOD Sim to the time-of-day auto-satisfy curve past

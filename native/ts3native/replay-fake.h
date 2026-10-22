@@ -37,6 +37,22 @@ static DWORD g_rfPad = 1;  // 0: no pad and no draw, so the step stream does not
 // only clears its magic (the arena goes as a whole)
 static u8* g_rfArena;
 static DWORD g_rfArenaUsed, g_rfArenaSz;
+// steerro-test K8 with STEERRO_ALLOCSITES=1 (docs/150 §14): EA alloc / free calls by the game's return address (calls from our
+// own code are not counted)
+static bool g_rfSites;
+static DWORD g_rfSiteAt[1024];
+static LONG g_rfSiteN[1024], g_rfSiteBytes[1024], g_rfSiteFree[1024], g_rfSiteFull;
+static void RfSiteCount(DWORD at, DWORD n, bool isFree) {
+    if (at < 0x00400000 || at >= 0x01400000) return;  // only the game image
+    for (DWORD i = 0, h = (at * 0x9E3779B1u) >> 22; i < 1024; i++, h = (h + 1) & 1023) {
+        if (g_rfSiteAt[h] && g_rfSiteAt[h] != at) continue;
+        g_rfSiteAt[h] = at;
+        if (isFree) g_rfSiteFree[h]++;
+        else g_rfSiteN[h]++, g_rfSiteBytes[h] += (LONG)n;
+        return;
+    }
+    g_rfSiteFull++;
+}
 static void* __cdecl RfAlloc(DWORD n) {
     if (g_rfArena) {
         const DWORD at = (g_rfArenaUsed + 16 + (g_rfPad ? RfRnd(16) * 16 : 0) + 15) & ~15u;
@@ -61,6 +77,7 @@ static void* __cdecl RfAlloc(DWORD n) {
 // stands in for EA's free too: a block that is not ours (an RpAlloc block, crash H) is counted and left alone
 static LONG g_rfBadFree;
 static void __cdecl RfFreeP(void* a) {
+    if (g_rfSites) RfSiteCount((DWORD)(uintptr_t)_ReturnAddress(), 0, true);
     if (!a) return;
     if (((DWORD*)a)[-2] != kRfMagic) { if (!g_rfBadFree++) printf("RfFreeP: %p is not a fake EA block (not freed), from %p\n", a, _ReturnAddress()); return; }
     ((DWORD*)a)[-2] = 0;
@@ -415,7 +432,10 @@ static char __fastcall RfApplyRemove(u8* q, void*, DWORD lo0, DWORD hi0) {
     return 1;
 }
 static void* __cdecl RfFmePool(DWORD, DWORD, DWORD, DWORD, DWORD, DWORD) { return RfAlloc(0x14); }
-static void* __cdecl RfNew(DWORD n, DWORD, DWORD, DWORD, DWORD, DWORD) { return RfAlloc(n); }
+static void* __cdecl RfNew(DWORD n, DWORD, DWORD, DWORD, DWORD, DWORD) {
+    if (g_rfSites) RfSiteCount((DWORD)(uintptr_t)_ReturnAddress(), n, false);
+    return RfAlloc(n);
+}
 // as 0x624A10 / 0x624AB0 (this = M+0x1C, pool at +0): 0x18-byte nodes from the pool, other sizes from the heap
 static void* __fastcall RfMapAlloc(void* a, void*, DWORD n, DWORD) { return n == 0x18 ? PlPopFrom(*(u8**)a) : RfAlloc(n); }
 static void __fastcall RfMapFree(void* a, void*, void* p, DWORD n) { if (n == 0x18) PlPushTo(*(u8**)a, p); else RfFreeP(p); }

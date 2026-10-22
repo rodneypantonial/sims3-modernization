@@ -56,6 +56,27 @@ const ROUTE_FIXES = ['routeasync', 'discourage'] as const; // --fixes shipped
 type Fix = typeof SAVE_FIXES[number] | typeof ROUTE_FIXES[number];
 export function fixSet(shipped: boolean): readonly Fix[] { return shipped ? ROUTE_FIXES : SAVE_FIXES; }
 
+// Why a save fix is not in this game, from ts3native.log (rewritten per game start) and ts3fixes.applied. `broken` = it
+// was meant to install and did not (SKIP/FAIL line, cachedreflection probe not ok, fastreftable missing): fix-on cases
+// still fail on it. Everything else (ini Enabled=0 = the release default for footprint/compress/flush, Apex stand-down,
+// [SaveFlush] without [SaveWrite], cachedreflection off as shipped or its methods compiled before ts3fixes patched them)
+// is dropped from the fix-on cases with a skip line.
+const NOT_LOADED: Record<'footprint' | 'compress' | 'flush', RegExp> = {
+  footprint: /^(?:footprint index disabled|compat: stood down for Apex \w+: \[FootprintIndex\]|(?:SKIP|FAIL) footprint index)[^\r\n]*/m,
+  compress: /^(?:save compress off|compat: stood down for Apex \w+: \[SaveCompress\]|(?:SKIP|FAIL) save compress)[^\r\n]*/m,
+  flush: /^(?:save flush off|(?:SKIP|FAIL) save flush)[^\r\n]*/m,
+};
+export function notLoadedWhy(nativeLog: string, applied: string[]): { why: Partial<Record<Fix, string>>; broken: Fix[] } {
+  const why: Partial<Record<Fix, string>> = {}, broken: Fix[] = [];
+  for (const [f, re] of Object.entries(NOT_LOADED) as [Fix, RegExp][]) {
+    const line = nativeLog.match(re)?.[0];
+    why[f] = line ?? 'no start line in ts3native.log';
+    if (!line || (/^(SKIP|FAIL) /.test(line) && !/needs the \[SaveWrite\]/.test(line))) broken.push(f);
+  }
+  if (applied.some(s => /^CachedReflection probe /.test(s) && !/: ok$/.test(s))) broken.push('cachedreflection');
+  return { why, broken };
+}
+
 // world names as travel_state reports them (GameUtils.GetCurrentWorld); case and punctuation never decide a trip
 function sameWorld(a: unknown, b: unknown): boolean {
   const norm = (x: unknown) => String(x ?? '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
@@ -127,6 +148,11 @@ export function differingTypes(a: Snap, b: Snap): Map<string, string> {
 export function judgeDiff(diff: Map<string, string>, unstable: Set<string>) {
   const bad = [...diff.keys()].filter(t => !unstable.has(t)), ignored = [...diff.keys()].filter(t => unstable.has(t));
   return { ok: bad.length === 0, bad: bad.map(t => `${t} (${diff.get(t)})`), ignored };
+}
+// [SaveWrite] Enabled=0 (apex-ab-saveprep, docs/148 §10) logs no `save:` line: a save is done when its folder exists and the
+// game says no save in progress (exists = folder changed since the save call), after it was seen saving or after one idle guard period (a save shorter than one poll)
+export function savedWithoutLine(exists: boolean, inProgress: unknown, seenBusy: boolean, idle: number): boolean {
+  return exists && inProgress === false && (seenBusy || idle >= 1);
 }
 export function assertSafeName(n: string) {
   if (/^baseline-/i.test(n)) throw new Error(`refusing to write save ${n}: Baseline-* saves are read-only`);
@@ -205,7 +231,16 @@ if (values['self-check']) {
     '1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']), ['1:03 travel_future direct -> error: TargetInvocationException: y > inner NullReferenceException: z']);
   assert.equal(tripErrors([], ['1:04 uni_move_in 12 -> error: E: q']).length, 1);
   assert.throws(() => assertSafeName('Baseline-BP')); assert.throws(() => assertSafeName('MySave')); assertSafeName('Matrix-BP-off-1');
+  assert.ok(savedWithoutLine(true, false, true, 0)); assert.ok(savedWithoutLine(true, false, false, 1));
+  assert.ok(!savedWithoutLine(false, false, true, 2)); assert.ok(!savedWithoutLine(true, true, true, 0)); assert.ok(!savedWithoutLine(true, undefined, true, 0));
+  assert.ok(!savedWithoutLine(true, false, false, 0)); // folder of an earlier attempt, save not started yet
   assert.deepEqual(fixSet(true), ['routeasync', 'discourage']); assert.ok(fixSet(false).includes('cachedreflection') && !fixSet(true).includes('cachedreflection'));
+  // apex-save-matrix 2026-10-22: release ini (all three Enabled=0) + cachedreflection compiled before ts3fixes = skips, not fails
+  const nl = notLoadedWhy('save flush off (Enabled=0)\r\nsave compress off (Enabled=0)\r\nfootprint index disabled (Enabled=0)\r\n',
+    ['PersistedClass.Init: already compiled', 'CachedReflection: not patched, off']);
+  assert.deepEqual(nl.broken, []); assert.equal(nl.why.compress, 'save compress off (Enabled=0)');
+  assert.deepEqual(notLoadedWhy('compat: stood down for Apex FastCacheCompression: [SaveCompress] not installed (x)\nSKIP save flush: needs the [SaveWrite] hooks (Enabled=1)\nSKIP footprint index: bytes differ\n', []).broken, ['footprint']);
+  assert.deepEqual(notLoadedWhy('', ['CachedReflection probe 12 objects: bytes differ']).broken, ['footprint', 'compress', 'flush', 'cachedreflection']);
   console.log('self-check ok');
   process.exit(0);
 }
@@ -260,6 +295,7 @@ const ready: Record<Fix, boolean> = { fastreftable: false, cachedreflection: fal
 // release mode: [RouteGate] is part of the shipped set but cannot be switched at runtime
 const ROUTEGATE_NA: Check[] = SHIPPED ? [{ name: 'routegate', status: 'info', why: 'N/A: no runtime switch, installed on both sides; its gates wait only while an async job runs (none with routeasync 0)' }] : [];
 const notReady: Partial<Record<Fix, string>> = {}; // reason when known
+const broken = new Set<Fix>(); // not ready although meant to install (notLoadedWhy): fix-on cases fail on these
 async function probeReady() {
   const p = await ag('patches');
   ready.fastreftable = p.ok && typeof p.result?.fastreftable === 'boolean' && !!p.result?.applied;
@@ -274,6 +310,10 @@ async function probeReady() {
   const n = await get('native').catch(() => null);
   ready.compress = n?.compressReady === 1;
   ready.flush = n?.flushReady === 1;
+  const nl = notLoadedWhy(logFrom(0), (p.result?.applied ?? []).map(String));
+  for (const f of ['footprint', 'compress', 'flush'] as Fix[]) notReady[f] = ready[f] ? '' : nl.why[f];
+  for (const f of nl.broken) if (!ready[f]) broken.add(f);
+  if (!ready.fastreftable) { broken.add('fastreftable'); notReady.fastreftable = p.ok ? 'not in ts3fixes patches (shipped on)' : `patches: ${p.error}`; }
   // shipped routing features: installed, and on at start (= the shipped ini turned them on)
   ready.routeasync = n?.asyncReady === 1 && n?.asyncMode === 1;
   ready.discourage = n?.discReady === 1 && n?.discMode === 1;
@@ -329,30 +369,33 @@ async function save(label: string, o: { overwrite?: string; keepSpeed?: boolean;
     }, 250);
   } catch { /* still refused after 30 s: reported below with the game's last answer */ }
   if (!r.ok) { log(`save ${name}: refused: ${r.error}`); return { name, ok: false, error: String(r.error), wallMs: 0, before, after: before, off }; }
-  let ev: SaveEv | undefined;
+  let ev: SaveEv | undefined, fileDone = false;
+  const lineless = /^save write disabled/m.test(logFrom(0)); // [SaveWrite] Enabled=0: no `save:` line will come
   try {
     // fail fast: the agent answers, no save in progress and no save line in ts3native.log, twice ~30 s apart = the save
     // never ran (the heartbeat moves while paused, so only this sees it); the 600 s limit stays for slow saves
-    let idle = 0, idleAt = Date.now() + GUARD_MS;
+    let idle = 0, idleAt = Date.now() + GUARD_MS, seenBusy = false;
     await until(`save ${name}`, 600, async () => {
       ev = parseLog(logFrom(off))[0];
       const gs = await ag('game_state');
+      if (gs.result?.save_in_progress === true) seenBusy = true;
       if (!ev && Date.now() >= idleAt) { idleAt = Date.now() + GUARD_MS; idle = gs.ok && gs.result?.save_in_progress === false ? idle + 1 : 0; }
+      if (lineless) return fileDone = savedWithoutLine(existsSync(dirOf(name)) && statSync(dirOf(name)).mtimeMs >= t0 - 2000, gs.result?.save_in_progress, seenBusy, idle);
       return !!ev && gs.result?.save_in_progress === false;
     }, 500, async () => idle >= 2 ? `save ${name}: not in progress and no save line in ts3native.log for ~${2 * GUARD_MS / 1000} s (fail-fast guard)` : '');
-    if (ev!.deferred > 0 && o.flushWait !== false)
+    if (ev && ev.deferred > 0 && o.flushWait !== false)
       await until(`save flush ${name}`, 60, async () => !!(ev = parseLog(logFrom(off))[0])?.flush).catch(() => {});
   } catch (e) { log(`save ${name}: ${e}`); }
   const wallMs = Date.now() - t0, after = await counters();
-  log(`saved ${name}: ${ev ? `result ${ev.result} travel ${ev.travel} total ${ev.totalMs} ms, backup ${ev.backup}, flush ${ev.flush ? `${ev.flush.fails} fails` : ev.deferred ? 'pending' : 'none'}` : 'NO save line in ts3native.log'} (${(wallMs / 1000).toFixed(1)} s)`);
-  return { name, ok: !!ev && ev.result === 0, ev, wallMs, before, after, off };
+  log(`saved ${name}: ${ev ? `result ${ev.result} travel ${ev.travel} total ${ev.totalMs} ms, backup ${ev.backup}, flush ${ev.flush ? `${ev.flush.fails} fails` : ev.deferred ? 'pending' : 'none'}` : fileDone ? 'save folder written, no save line ([SaveWrite] off), result not logged' : 'NO save line in ts3native.log'} (${(wallMs / 1000).toFixed(1)} s)`);
+  return { name, ok: ev ? ev.result === 0 : fileDone, ev, wallMs, before, after, off };
 }
 
 // checks every save gets; strict also fails fallbacks (backup copied by the game, footprint index not used)
 function saveChecks(s: SaveRec, strict = false): Check[] {
   const c: Check[] = [];
   const ev = s.ev;
-  c.push({ name: `${s.name} result 0`, status: s.ok ? 'pass' : 'fail', why: s.error ?? (ev ? `result ${ev.result}` : 'no save line in ts3native.log') });
+  c.push({ name: `${s.name} result 0`, status: s.ok ? 'pass' : 'fail', why: s.error ?? (ev ? `result ${ev.result}` : s.ok ? 'save folder written; [SaveWrite] off, so no save line and no result code' : 'no save line in ts3native.log') });
   const cm = delta(s.before, s.after, 'compressMismatches') + (ev?.compressMismatches ?? 0) + (ev?.mismatchLines ?? 0);
   c.push({ name: `${s.name} compress mismatches`, status: cm ? 'fail' : 'pass', why: `counter +${delta(s.before, s.after, 'compressMismatches')}, log ${ev?.compressMismatches ?? '-'} / ${ev?.mismatchLines ?? 0} lines` });
   const ff = delta(s.before, s.after, 'flushFails') + (ev?.flush?.fails ?? 0);
@@ -395,12 +438,14 @@ function missingCheck(fixes: Record<string, boolean | null>, want: Fix[]): Check
   const why = miss.filter(f => notReady[f]).map(f => `; ${f}: ${notReady[f]}`).join('');
   return miss.length ? [{ name: 'fixes switched on', status: 'fail', why: `not available or did not switch: ${miss.join(', ')} (check ts3native.ini Enabled=1 and ts3fixes)${why}` }] : [];
 }
-// travel case: the subject is the travel saves, so a fix that is not available in this game (startup probe refused it,
-// ini off) is reported, not failed; a fix that is available and does not switch still fails
-function availableCheck(fixes: Record<string, boolean | null>): Check[] {
-  const off = FIXES.filter(f => !ready[f]);
-  return [...missingCheck(fixes, FIXES.filter(f => ready[f])),
-    ...(off.length ? [{ name: 'fixes not available', status: 'info' as const, why: off.map(f => `${f}${notReady[f] ? ` (${notReady[f]})` : ''}`).join(', ') }] : [])];
+// fix-on cases switch only the fixes this build and ini installed: a fix not in this game by config (ini Enabled=0,
+// Apex stand-down, ts3fixes probe/compile refusal) is dropped with a skip line naming why (2026-10-20/22 identical FAILs
+// were only that); one that is available and does not switch, or was meant to install and did not (`broken`), still
+// fails. strict (release mode, --fixes shipped): every shipped routing feature must switch.
+function availableCheck(fixes: Record<string, boolean | null>, strict = SHIPPED): Check[] {
+  const off = FIXES.filter(f => !strict && !ready[f] && !broken.has(f));
+  return [...missingCheck(fixes, FIXES.filter(f => !off.includes(f))),
+    ...(off.length ? [{ name: 'fixes skipped (not in this build/ini)', status: 'skip' as const, why: off.map(f => `${f}${notReady[f] ? ` (${notReady[f]})` : ''}`).join(', ') }] : [])];
 }
 
 // ---------------------------------------------------------------- cases
@@ -657,7 +702,7 @@ const CASES: Case[] = [
     const a = await save('off');
     const fixes = await setFixes(allOn);
     const b = await save('on');
-    return { fixes, saves: [a, b], checks: [...missingCheck(fixes, [...FIXES]), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(b), diffCheck(a, b, 'off vs on')] };
+    return { fixes, saves: [a, b], checks: [...availableCheck(fixes), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(b), diffCheck(a, b, 'off vs on')] };
   } },
   { id: 'per-fix', desc: 'each fix alone on vs all off (one off save), identical check; names the fix that changes a save', run: async () => {
     await setFixes({});
@@ -666,7 +711,7 @@ const CASES: Case[] = [
     for (const f of FIXES) {
       const got = await setFixes({ [f]: true });
       fixes[f] = got[f];
-      if (got[f] !== true) { checks.push({ name: `${f} alone`, status: 'skip', why: 'fix not available in this game (ini/mod)' }); continue; }
+      if (got[f] !== true) { checks.push({ name: `${f} alone`, status: SHIPPED || ready[f] || broken.has(f) ? 'fail' : 'skip', why: `fix not available or did not switch: ${notReady[f] || 'no reason logged'}` }); continue; }
       const b = await save(`pf-${f}`);
       saves.push(b); checks.push(...saveChecks(b), diffCheck(a, b, `${f} alone vs off`));
     }
@@ -675,7 +720,7 @@ const CASES: Case[] = [
   { id: 'overwrite', desc: 'fixes on: new save, then save over it twice; result 0, .backup equals the previous save byte for byte, no mismatches/fails/fallbacks', run: async () => {
     const fixes = await setFixes(allOn);
     const s1 = await save('ow');
-    const saves = [s1], checks = [...missingCheck(fixes, [...FIXES]), ...saveChecks(s1, true)];
+    const saves = [s1], checks = [...availableCheck(fixes), ...saveChecks(s1, true)];
     let prev = fileHashes(dirOf(s1.name));
     for (let i = 2; i <= 3; i++) {
       const s = await save('ow', { overwrite: s1.name });
@@ -694,7 +739,7 @@ const CASES: Case[] = [
     const a = await save('b2b', { flushWait: false }), b = await save('b2b');
     a.ev = parseLog(logFrom(a.off))[0] ?? a.ev; // the first save's flush line came while the second waited
     const fw = delta(a.before, b.after, 'flushWaits');
-    return { fixes, saves: [a, b], checks: [...missingCheck(fixes, [...FIXES]), ...saveChecks(a), ...saveChecks(b),
+    return { fixes, saves: [a, b], checks: [...availableCheck(fixes), ...saveChecks(a), ...saveChecks(b),
       { name: 'flush waits', status: 'info', why: `+${fw} (0 means the worker had finished before the second save)` }] };
   } },
   { id: 'unpaused', desc: 'fixes on: save while the game runs at speed 3 (normal player behaviour)', run: async () => {
@@ -704,7 +749,7 @@ const CASES: Case[] = [
     const sp = (await ag('time')).result?.speed;
     const s = await save('run', { keepSpeed: true });
     await pause();
-    return { fixes, saves: [s], checks: [...missingCheck(fixes, [...FIXES]), { name: 'running at save', status: sp === 'Triple' ? 'pass' : 'fail', why: `speed ${sp}` }, ...saveChecks(s)] };
+    return { fixes, saves: [s], checks: [...availableCheck(fixes), { name: 'running at save', status: sp === 'Triple' ? 'pass' : 'fail', why: `speed ${sp}` }, ...saveChecks(s)] };
   } },
   { id: 'build-mode', desc: 'fixes on: save in build mode (agent build_mode)', run: async () => {
     const fixes = await setFixes(allOn);
@@ -722,11 +767,11 @@ const CASES: Case[] = [
     // the game itself refuses saves in build mode (CanSaveGame false): nothing of ours to test there
     if (!s.ok && /cannot save/.test(s.error ?? ''))
       return { fixes, saves: [s], checks: [{ name: 'save in build mode', status: 'skip', why: `game refuses: ${s.error}` }] };
-    return { fixes, saves: [s], checks: [...missingCheck(fixes, [...FIXES]), { name: 'in build mode at save', status: 'pass', why: st }, ...saveChecks(s)] };
+    return { fixes, saves: [s], checks: [...availableCheck(fixes), { name: 'in build mode at save', status: 'pass', why: st }, ...saveChecks(s)] };
   } },
   { id: 'verify-counters', desc: 'fixes on with compress Verify (+0x154, runtime) on: game compressor runs too, mismatches 0; footprint verify if the ini has it', run: async () => {
     const fixes = await setFixes(allOn);
-    const checks = missingCheck(fixes, [...FIXES]);
+    const checks = availableCheck(fixes);
     const vOk = ready.compress && (!SHIPPED || fix0.native?.compressMode === 1); // release mode: only when shipped on
     const prev = vOk ? (await nx('name=ts3native_counters&offset=0x154'))?.value : null;
     if (vOk) await nx('name=ts3native_counters&offset=0x154&value=1');
@@ -751,7 +796,7 @@ const CASES: Case[] = [
     const exp = await householdsNow();
     writeFileSync(PENDING, JSON.stringify({ world, save: s.name, t: Date.now(), expected: exp, on: { save: s.name }, off: { save: a.name } }, null, 1));
     printReload(s.name, '');
-    return { fixes, saves: [a, s], checks: [...missingCheck(fixes, [...FIXES]), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(s)], pending: true };
+    return { fixes, saves: [a, s], checks: [...availableCheck(fixes), ...ROUTEGATE_NA, ...saveChecks(a), ...saveChecks(s)], pending: true };
   } },
   { id: 'travel', optIn: true, timeoutS: 3600, desc: 'fixes on: vacation (travel save), save in the vacation world, travel home (travel save), save at home', run: async () => {
     const fixes = values.stay ? {} : await setFixes(allOn); // --stay: the trip is a means, fixes as the job's ini set them
@@ -761,7 +806,7 @@ const CASES: Case[] = [
     const startDir = join(SAVES, `${start.replace(/.sims3$/, '')}.sims3`), startM = existsSync(startDir) ? statSync(startDir).mtimeMs : 0;
     const s0 = await save('travel-start'); // save-as: makes a Matrix-* save the current one
     // only fixes this game has: a fix its startup probe refused (cachedreflection, 2026-10-16) is listed, not failed
-    const checks = [...(values.stay ? [] : availableCheck(fixes)), ...saveChecks(s0)];
+    const checks = [...(values.stay ? [] : availableCheck(fixes, false)), ...saveChecks(s0)];
     if (!s0.ok) return { fixes, saves: [s0], checks };
     const home = (await ag('travel_state')).result?.world;
     await ag('autopilot', { enabled: true, speed: 'none', dialogs: true });

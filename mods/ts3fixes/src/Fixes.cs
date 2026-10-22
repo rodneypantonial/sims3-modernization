@@ -66,6 +66,7 @@ namespace Ts3Fixes
             ApplyReplanDefer();
             ApplyUnseenThrottle();
             ApplyEaSpread();
+            ApplyRouteSources();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -106,13 +107,15 @@ namespace Ts3Fixes
         // [177-196] EA maintenance alarms spread (EaSpread.cs, docs/147): venue cleanup passes / lots / Sims stepped / ticks /
         // longest tick us / verify objects left to clean / passes stopped, pet pool alarms moved to our task / pets added / ticks /
         // most ticks for one alarm / alarms left to the game (busy), decay passes / Sims queued / pairs stepped / pairs dropped /
-        // ticks / longest tick us / passes finished early / decay steps that threw, [197-200] unseen traffic cars: LiteDriver spot asks / unseen car + spot / turned down (stays parked) / seen (UnseenThrottle.cs, docs/143 §8.5), [201-206] reserved, [207] extra pet pool alarm fires dropped (second chain), [208] most decay pairs stepped in one tick, [209] most venue-cleanup units (objects tested, cleaned or repaired, per-lot steps) in one tick, [210] most Overwatch inventory items checked in one tick (OverwatchSpread.cs), [211-212] ErrorTrap inventory check: largest inventory checked whole (items), most items checked in one tick (ErrorTrapSpread.cs).
+        // ticks / longest tick us / passes finished early / decay steps that threw, [197-200] unseen traffic cars: LiteDriver spot asks / unseen car + spot / turned down (stays parked) / seen (UnseenThrottle.cs, docs/143 §8.5), [201-206] reserved, [207] extra pet pool alarm fires dropped (second chain), [208] most decay pairs stepped in one tick, [209] most venue-cleanup units (objects tested, cleaned or repaired, per-lot steps) in one tick, [210] most Overwatch inventory items checked in one tick (OverwatchSpread.cs), [211-212] ErrorTrap inventory check: largest inventory checked whole (items), most items checked in one tick (ErrorTrapSpread.cs), [213-222] other branches (registry), [223] longest Overwatch cleanup type run whole at its slot (us), [224] Overwatch types that took >= 50 ms at their slot (OverwatchSpread.cs), [225-227] unseen motive catch-ups: most in one sim tick, held a tick by the per-tick cap, longest catch-up call (us) (UnseenThrottle.cs, docs/144 §8), [228-237] route sources and redundant-plan cuts (RouteSources.cs, docs/151 §6): plans classified / classifier us / V3 leg-end replans D1 could skip / V4 houseboat leg plans / V5 bouncer at its slot / V7 watchdog checks a successful plan answered / D1 replans skipped / D3 bouncer routes skipped / D5 checks skipped by the memo / D5 Sims left by the cap; per-bucket data in AppDomain ts3fixes.routesrc (int[64]),
+        // [238-243] docs/163 sync-plan callers: stuckchecknear checks run / plans / checks where every point failed (FewerPlans.cs), failrepeat failures recorded / repeats answered / ms of the recorded plans those repeats skipped (RouteBackoff.cs).
+        // [244-245] overwatchchain: Overwatch alarms run as a chain / ticks yielded between types (OverwatchSpread.cs, docs/145 §10).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[213]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[246]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -168,6 +171,7 @@ namespace Ts3Fixes
                 case "replanspread": return Instantiator.kReplanSpread;
                 case "autshadowverify": return false; // verify switch: test runs only
                 case "overwatchspread": return Instantiator.kOverwatchSpread;
+                case "overwatchchain": return Instantiator.kOverwatchChain;
                 case "overwatchspreadverify": case "overwatchspreadfakeupstream": return false; // test runs only
                 case "errortrapspread": return Instantiator.kErrorTrapSpread;
                 case "errortrapspreadverify": case "errortrapspreadfakeupstream": return false; // test runs only
@@ -181,6 +185,12 @@ namespace Ts3Fixes
                 case "easpreaddecay": return Instantiator.kEaSpreadDecay;
                 case "easpreadlotsverify": case "easpreaddecayverify": return false; // verify switches: test runs only
                 case "unseencars": return Instantiator.kUnseenCarThrottle;
+                case "routesrc": return Instantiator.kRouteSources;
+                case "legreplanskip": return Instantiator.kLegReplanSkip;
+                case "bouncerskip": return Instantiator.kBouncerSlotSkip;
+                case "idlememo": return Instantiator.kIdlePlanMemo;
+                case "stuckchecknear": return Instantiator.kStuckCheckNear;
+                case "failrepeat": return Instantiator.kFailRepeat;
                 case "spotspread": return true;
                 default: return true;
             }

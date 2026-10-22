@@ -1,0 +1,68 @@
+{
+  "note": "Route phase split, 10 min per world (quiet).",
+  "jobs": [
+    {
+      "id": "bp-route-phases-10",
+      "note": "Quiet-night measurement (2026-10-22): route job phase split 10 min, release defaults + [RouteJobPhases]. Read with route-phases-report.ts. Bridgeport, release defaults + [RouteJobPhases]. Read: own START phase split (docs/150 §2 sampler estimate: cell A* ~30%, post pass ~19%, PathNodes_Insert ~13%, world A* ~10%), allocator and host-wait shares, foreign jobs if any.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 87,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-route-phases-10",
+      "note": "Quiet-night measurement (2026-10-22): route job phase split 10 min, release defaults + [RouteJobPhases]. Read with route-phases-report.ts. Bridgeport, release defaults + [RouteJobPhases]. Read: own START phase split (docs/150 §2 sampler estimate: cell A* ~30%, post pass ~19%, PathNodes_Insert ~13%, world A* ~10%), allocator and host-wait shares, foreign jobs if any.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 87,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-route-phases-10",
+      "note": "Quiet-night measurement (2026-10-22): route job phase split 10 min, release defaults + [RouteJobPhases]. Read with route-phases-report.ts. Bridgeport, release defaults + [RouteJobPhases]. Read: own START phase split (docs/150 §2 sampler estimate: cell A* ~30%, post pass ~19%, PathNodes_Insert ~13%, world A* ~10%), allocator and host-wait shares, foreign jobs if any.",
+      "asi": "game-copy/ts3native.asi.0326",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 87,
+      "ini": {
+        "RouteJobPhases.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

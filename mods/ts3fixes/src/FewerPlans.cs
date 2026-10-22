@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using Sims3.Gameplay;
 using Sims3.Gameplay.Actors;
+using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
 using Sims3.SimIFace;
 
@@ -73,10 +74,72 @@ namespace Ts3Fixes
                     StuckCheckDefer(this, sim);
                     return;
                 }
-                RunOrig(sim);
+                StuckCheckRun(this, sim);
             }
             public void RunOrig(Sim sim) { } // receives RunStuckCheckHelper.RunStuckCheck's original header
         }
+
+        // docs/163 §3: the stuck check on a lot draws up to 10 random lot points (terrain incl. sea) and plans to them in
+        // draw order until one succeeds; a failed plan floods the Sim's whole reachable area first (docs/142 §2), so the
+        // freezes are the failed plans before the first success. Switch "stuckchecknear" (default off): the same draws
+        // (same Lot.GetRandomPosition calls, same arguments, all drawn first), planned nearest first, stop at the first
+        // success, then the game's own ending (reset after attempt 3, else re-arm through its private CreateAlarm). The
+        // verdict equals the game's: "not stuck" iff any of the drawn points routes, independent of the order; only the
+        // number of RandomUtil draws differs (the game stops drawing at its first success). The world lot branch (4 plans
+        // of 2 m) and any helper whose fields cannot be read run the game's body. Counters: [238] checks run here,
+        // [239] plans, [240] checks where every point failed (re-arm or reset, as the game).
+        static void StuckCheckRun(StuckCheckBusyHook helper, Sim sim)
+        {
+            if (ShortcutOn("stuckchecknear") && StuckCheckNear(helper, sim)) return;
+            helper.RunOrig(sim);
+        }
+
+        static bool StuckCheckNear(object helper, Sim sim)
+        {
+            if (sim == null || !StuckNearReflect(helper.GetType())) return false;
+            Lot lot = sim.LotCurrent;
+            if (lot == null || lot.IsWorldLot) return false;
+            // the game's own early return, in its order (the active lot test comes first there too)
+            if (lot == Household.ActiveHouseholdLot || sim.Position != (Vector3)sStuckLoc.GetValue(helper) || sim.SimInRabbitHolePosture) return true;
+            int[] c = PatchCounters();
+            c[238]++;
+            int n = Sim.kNumberOfPlanAttemptsForStuckSim, k = 0;
+            Vector3[] pts = new Vector3[Math.Max(n, 0)];
+            float[] d2 = new float[pts.Length];
+            Vector3 at = sim.Position;
+            for (int j = 0; j < n; j++)
+            {
+                Vector3 p = lot.GetRandomPosition(false, true, TerrainType.WorldTerrain | TerrainType.WorldSea | TerrainType.LotTerrain);
+                if (p == Vector3.Invalid) continue;
+                pts[k] = p;
+                d2[k] = (p - at).LengthSqr();
+                k++;
+            }
+            foreach (int i in NoStartCore.NearestFirst(d2, k))
+            {
+                c[239]++;
+                if (sim.CreateRoute().PlanToPoint(pts[i]).Succeeded()) return true;
+            }
+            c[240]++;
+            uint attempt = (uint)sStuckAttempt.GetValue(helper);
+            if (attempt >= 3) sim.SetObjectToReset();
+            else sStuckAlarm.Invoke(null, new object[] { sim, attempt + 1 });
+            return true;
+        }
+
+        static bool StuckNearReflect(Type t)
+        {
+            if (sStuckLoc == null)
+            {
+                const BindingFlags f = BindingFlags.Instance | BindingFlags.NonPublic;
+                sStuckLoc = t.GetField("mLocation", f);
+                sStuckAttempt = t.GetField("mAttempt", f);
+                sStuckAlarm = t.GetMethod("CreateAlarm", BindingFlags.Static | BindingFlags.NonPublic, null, new Type[] { typeof(Sim), typeof(uint) }, null);
+            }
+            return sStuckLoc != null && sStuckAttempt != null && sStuckAlarm != null;
+        }
+        static FieldInfo sStuckLoc, sStuckAttempt;
+        static MethodInfo sStuckAlarm;
 
         // docs/134 §8: the stuck check's alarm runs inside the world lot's task (Lot.Simulate -> AlarmManager.Simulate, a plain
         // alarm, not YieldRequired). Its plans are foreign-task plans there, so with [RouteAsync] FallbackAsync=1 the world lot
@@ -118,7 +181,7 @@ namespace Ts3Fixes
                     c[131] = (int)(sStuckQueue.MaxWait * 60 / Math.Max(1L, Sims3.Gameplay.Utilities.SimClock.ConvertToTicks(1f, Sims3.Gameplay.Utilities.TimeUnit.Minutes)));
                     if (GameStates.IsWorldShuttingDown || GameStates.IsTravelling || e.Sim.HasBeenDestroyed) { c[129]++; continue; }
                     c[128]++;
-                    try { e.Helper.RunOrig(e.Sim); }
+                    try { StuckCheckRun(e.Helper, e.Sim); }
                     catch (Exception) { c[129]++; } // the alarm's own caller (AlarmManager.Simulate) swallows these too
                     if (sStuckQueue.Count > 0) Simulator.Sleep(0); // one Sim per tick
                 }

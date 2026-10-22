@@ -240,3 +240,42 @@ The BP change of the worst iteration (371 -> 500) is script time (`taskObjects`)
 ### 10.5 Ship decision for v0.2.0 (recommendation)
 
 `FallbackAsync=1` (and with it `M1Retry`) **should not ship as built in 0.36.14**: it cuts mean route time by about a third but makes the rare long foreign plan an uncapped job, and the sim thread waits for all of it (seen 0.5-4.6 s), where the off arm keeps it under `SyncCapMs`. Ship it only with `FbJobCapMs` (0.36.17) after `fbjobcap-ab.json` shows no foreign job far past the cap and no route-fail or stuck-Sim rise; otherwise ship `FallbackAsync=0` with `SyncCapMs=1000` (that bounds the sync freezes on its own).
+
+## 11. Why FbJobCapMs did not bound the freezes (fbjobcap-ab 2026-10-22, candidate-loop-ab 2026-10-21) and the deadline fix (ts3native 0.36.20)
+
+**Log reading + code; fix built offline, selftest ok, no game run.** Ledger rows: docs/51 §218. Data: `probe-out/profile/fbjobcap-ab-2026-10-22-*` (hitches, ab.json, ab-native.jsonl), `probe-out/queue/fbjobcap-ab-2026-10-22-*-ts3native.log`, `candidate-loop-ab-2026-10-21-*` (ts3native 0.36.7, `FallbackAsync=1` in every arm).
+
+### 11.1 What the sim thread does in each multi-second frame [verified, hitch fields + log lines]
+
+| frame | job | fields | sim thread | job side |
+|---|---|---|---|---|
+| SV fjc on-first 7,767 + 7,881 ms | `long job 7755 ms` / `7874 ms, foreign START, IC kind 0` | `locomotion` 7,749 / 7,869, `rtLock` 7,749 / 7,868 at `0x85FE10` | steering's `+0x918` acquire (docs/81) pumping in `LockAcquireAsync` | worker holds `+0x918` (watchdog lines "lock busy for 2/4/6 s during the job of route 257CB664 / 251CCF90", owner = worker, P4 phase 1) |
+| SV fjc off-first 1,457 ms | `long job 1432 ms`, foreign | `rtLock` 1,436 at `0x85FE10` | same | same |
+| BP fjc route-bits 1,964 ms | `long job 1948 ms`, foreign, `capped (FbJobCapMs)` | `rtLock` 1,944 at `0x8334CC` (UpdateSimFootprint family, docs/89) | same lock, other site | same |
+| SV candidate-loop 7,985 / 8,426 / 16,435 / 7,951 ms | `asyncMaxUs` 7,959,816 (cl-on), 8,414,408 (cl-onrc) | `locomotion` 7,958 / 8,411 / 8,168 + `threaded` 8,259 / `threaded` 7,940 (0.36.7 has no `rt*` fields) | frame = job length | foreign [inferred: 0.36.7 has no `long job` line] |
+
+- **The sim thread never waits for a fallback job's result.** The calling task sleeps (`AsyncWait`); what blocks the sim thread is the routing lock: the worker holds `+0x918` for the whole job (H6 S3b) and every tick needs it (steering `0x85FE10`, footprints `0x8334CC`/`0x833593`, destroys `0x02000003`). A foreign job of N ms is a frame of ~N ms at the next acquire, whichever site (§10.3) [verified].
+- The BP 1,872 ms frame of the same run is different: a sim-thread `Route_Replan` (1,818 ms, failed, `taskObjects`). The log says `A10 off (Kinds=0)`, so `IC_Route_Replan` is not hooked and **`SyncCapMs` never sees Replan** (it lives in `SyncIc`, reached only from `IcCollect`) [verified, log + code]. Not a FallbackAsync effect; noted for the A10 decision.
+
+### 11.2 Why the cap "never fired" in SV and did not bound the BP job [verified]
+
+1. **SV: every long job fell in a cap-off slice.** `--ab fbjobcap` toggles only the cap; FallbackAsync is on in both halves. Per-slice counters: on-first `fbjcLong` 0 -> 2 in the slice 360-480 s whose snapshot has `fbjcMode 0`; off-first 0 -> 1 in 120-240 s, also `fbjcMode 0`. No on slice of either job had a foreign job >= 200 ms (`fbjcLong` flat; on-slice `fbjcMaxUs` <= 197 ms). The pair says nothing about the cap either way.
+2. **BP: the cap is a world A\* node clock.** `BudgetStep` (the cost-function stubs, docs/15 phase 4) starts its clock at the first generated world A\* node, reads it every 16th generated node and acts only by walling world A\* edges. The capped job: `capNodes 32`, request time `capMs 1942`, job 1,948 ms. The clock was read at node 16 (< 300 ms after node 1) and node 32 (> 300 ms); the whole `Route_PlanLocked` took 1,942 ms with 32 generated nodes. World A\* nodes cost microseconds (same run: successful plans up to 10,751 nodes in <= 75 ms, `maxNodesOk`/`maxUsOk`), so >= ~1.6 s of the job ran outside world A\* node generation, in code the cap neither times nor stops [verified arithmetic]. The job's time outside `Route_PlanLocked` was 6 ms.
+3. **Where inside `Route_PlanLocked`** is open [inferred candidates]: pending lot updates applied by the worker at its entry (`0x82C420`; `vfRtPendingInJob` 48 in that run), lazy lot routing builds (`LotGraph_Build 0x63CB90`), per-candidate lot legs (`LotPlan 0x6410B0`, portal A\* `0x63E340`), cell A\* `0x61E500`, expansions that evaluate many edges but generate few nodes, and after the cap the rest of the candidate loops (docs/142 §2.2).
+4. `SyncCapMs` has the same node clock (A\* only); it never fired in any run (`fbCapped` 0).
+
+### 11.3 Fix (ts3native 0.36.20, counters v84, same switches: `FbJobCapMs` + `--ab fbjobcap`)
+
+- **Deadline from the job's start.** `ServeAsync` sets `t_fbDeadline` = job start + `FbJobCapMs` (QPC) for a foreign job with `fbjcMode 1`; `CallPlanBudget` puts it into the request's budget; `BudgetStep` reads the clock on **every 4th cost call of either kind** (edge or heuristic, the first included), independent of generated nodes. Past the deadline the search ends through its own exit as before (no-path failure). Work before the first node now counts; a request that starts past the deadline is walled at its first edge. Nested plans that the job's managed calls send back inherit the absolute deadline. Own-task and A10 jobs, `SyncCapMs` and `[RouteBudget]` keep their node clock.
+- **What it cannot do** [verified, design]: stop code that makes no world A\* cost call (pending apply, lazy lot builds, lot legs, post passes). That part is now measured instead of guessed: each foreign job records `capAt` (job start -> cap fire), `tail` (cap fire -> job end), `plan` (summed `Route_PlanLocked`), `host` (waits for the sim thread to run the job's managed calls); the `long job` line prints them plus `other` (IC time outside both). A capped job whose cap fired > `FbJobCapMs` + 20 ms counts `fbjcCapLate` (work before the first cost call).
+- **Sim side:** every sim-thread wait behind a foreign job (`LockAcquireAsync` pump with a foreign job running, `RtWaitJob`) feeds `fbjcSimWaitMaxUs` and a histogram; foreign job lengths another. Dump line `route jobs split: ...`.
+- Counters v84 at `+0x3604` (after v83), 3475 int32: `fbjcCapAtMaxUs`, `fbjcCapLate`, `fbjcTailMaxUs`, `fbjcPlanMaxUs`, `fbjcHostMaxUs`, `fbjcSimWaitMaxUs`, `fbjcJobHist[6]`, `fbjcWaitHist[6]` (buckets < 100, < 300, < 500, < 1000, < 2000, >= 2000 ms). `tools/probe/agent.js` reads them.
+- Not done (needs the split first): stopping the non-A\* phases (a planner-level abort at the candidate loop or `LotPlan`, a cap on the portal and cell A\*). If the verify job shows long tails, that is the next step, aimed at the phase the split names.
+
+### 11.4 Selftest (`TestFallback` 4c, `selftest ok`)
+
+A fake foreign job sends its world A\* cost calls through the patched stubs like the BP job: (a) 25 ms per node, cap 200 ms: capped after < 16 nodes (the old clock first read the time at node 16, >= 400 ms), `capAt` 200-300 ms, not late; (b) 300 ms before the first node: walled at the first edge (0 nodes), `capAt` >= 300 ms, `fbjcCapLate` 1; (c) 150 ms after the cap: `fbjcTailMaxUs` >= 150 ms; (d) own job: full search, no cap; (e) `fbjcMode 0`: foreign job uncapped, still counted; histogram sums, sim-wait buckets and max.
+
+### 11.5 Queue `tools/harness/queues/fbfix-ab.json`
+
+asi `game-copy/ts3native.asi.fbfix` (sha256 `91a531c25503bf5a8ab1a94cb1e0be576f9c4180823e447b5c42ac0e4b3a92ea`), ts3fixes unchanged. Job 1 **`fbfix-verify`** (day job, 5 min BP route-bits, noisy machine OK, cap on for the whole run, `[RouteEarlyOut] Mode=1` observe-only for the world A\* share of each slow plan): pass = 0.36.20 / v84 lines present, every capped `long job` has `capAt` <= 320 ms or is counted late, `fbjcCapAtMaxUs` <= 320,000 unless `fbjcCapLate` > 0, no crash, `fbActiveTrip` 0; report = tails, split, sim-wait histogram (ship target: `fbjcSimWaitMaxUs` <= ~400 ms, no wait >= 500 ms). Jobs 2-7: SV play, SV crowd, BP route-bits, each off-first + on-first, 10 min, `--ab fbjobcap`, clean night; only pair means count.

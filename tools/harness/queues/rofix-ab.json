@@ -1,0 +1,376 @@
+{
+  "note": "rofix (2026-10-22, docs/137 §12, docs/136 §8, docs/89 §11, docs/51 §218): verify jobs first (day, 5 min, counters only), then the both-order timing pairs (clean night). asi game-copy/ts3native.asi.0321 sha256 4233eec8e5fb4747a377dcc4d8f850b5a310ed1aad1a7120fbb554f834796575. No feature behaviour changed: the build only fixes the wait-key accounting, so the pairs re-measure whether any wait is really removed.",
+  "jobs": [
+    {
+      "id": "bp-avoidro-verify",
+      "note": "Day job (5 min, noisy machine OK: counters and log lines only, no timing). ts3native 0.36.21 combined build incl. rofix (game-copy/ts3native.asi.0321, sha256 4233eec8...96575): wait keys 0x846D21/0x62F782/0x833593/0x83156D and the other A/B keys keep their probe-P0 slots from the start; AvoidRO pass-through keyed 0x846D21 again (was AvSite's own return, e.g. 0x6F28F468). Run from a checkout whose ts3native.ini is master (v0.1.4 release defaults); ts3fixes as master. 1-min slices (warm-up on, then off,on,on,off). Read: node tools/harness/wait-ab.ts rofix-ab-<date>-<id>. Pass for every verify job: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, wait-ab shows the feature key with time in the off half and \"untimed waits/min\" within 2x between halves (docs/51 §218). [AvoidRO] Mode=1 Shadow=1 (--ab avoidro toggles Mode; the shadow compares with no job in every slice). Pass: avShadowRuns > 500, avShadowMismatch = avShadowMismatchB = avShadowQueryMismatch = 0, avSiteSkip = avTakenMiss > 0 and avTakenB > 0 in on slices, avFb* < 5% of avTakenMiss, avTripAv counted but avFbTrip small, key 0x846D21 ~0 ms/s on vs > 0 off, no blockKey in 0x10000000+ (asi range). avTakenHit is NOT a pass rule: it counts footprint-id answers only, and goal points rarely lie in a footprint (2026-10-21 shadow: 43,186 runs, 0 mismatches, 294 Sim-scan answers; every answered call so far was a correct miss).",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-slotro-verify",
+      "note": "Day job (5 min, noisy machine OK: counters and log lines only, no timing). ts3native 0.36.21 combined build incl. rofix (game-copy/ts3native.asi.0321, sha256 4233eec8...96575): wait keys 0x846D21/0x62F782/0x833593/0x83156D and the other A/B keys keep their probe-P0 slots from the start; AvoidRO pass-through keyed 0x846D21 again (was AvSite's own return, e.g. 0x6F28F468). Run from a checkout whose ts3native.ini is master (v0.1.4 release defaults); ts3fixes as master. 1-min slices (warm-up on, then off,on,on,off). Read: node tools/harness/wait-ab.ts rofix-ab-<date>-<id>. Pass for every verify job: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, wait-ab shows the feature key with time in the off half and \"untimed waits/min\" within 2x between halves (docs/51 §218). [SlotEnabledRO] Mode=1 Shadow=1 (--ab slotenabledro toggles Mode). Pass: slTaken > 0 and slPass12 > 0 in on slices, slShadowMismatch 0, slUs / slTaken < 50 us (the RO body), key 0x62F782 ~0 on vs > 0 off, 0x83156D up on (the wait moves to RouteToObjectCheck, docs/140), both keys timed in both halves.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-deferfp-verify",
+      "note": "Day job (5 min, noisy machine OK: counters and log lines only, no timing). ts3native 0.36.21 combined build incl. rofix (game-copy/ts3native.asi.0321, sha256 4233eec8...96575): wait keys 0x846D21/0x62F782/0x833593/0x83156D and the other A/B keys keep their probe-P0 slots from the start; AvoidRO pass-through keyed 0x846D21 again (was AvSite's own return, e.g. 0x6F28F468). Run from a checkout whose ts3native.ini is master (v0.1.4 release defaults); ts3fixes as master. 1-min slices (warm-up on, then off,on,on,off). Read: node tools/harness/wait-ab.ts rofix-ab-<date>-<id>. Pass for every verify job: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, wait-ab shows the feature key with time in the off half and \"untimed waits/min\" within 2x between halves (docs/51 §218). [Discourage] DeferFootprint=1 (--ab deferfootprint toggles usfMode). Pass: usfDeferred > 0 in on slices, usfApplied + usfCollapsed + usfDestroyApplied >= 90% of usfDeferred over the run, usfApplyInJob 0, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0, the drain hold discDrainWaitUs < 1 ms per minute (2026-10-21/22: 92-127 us per 240 s on both sides), key 0x833593 ~0 on vs > 0 off, both timed.",
+      "asi": "game-copy/ts3native.asi.0322",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 1
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-avoidro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab avoidro, key 0x846D21; off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-avoidro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab avoidro, key 0x846D21; on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-slotro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab slotenabledro, key 0x62F782 (+0x83156D); off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-slotro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab slotenabledro, key 0x62F782 (+0x83156D); on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-deferfp-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab deferfootprint, key 0x833593; off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-deferfp-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab deferfootprint, key 0x833593; on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-avoidro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab avoidro, key 0x846D21; off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-avoidro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab avoidro, key 0x846D21; on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "avoidro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-slotro-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab slotenabledro, key 0x62F782 (+0x83156D); off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-slotro-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab slotenabledro, key 0x62F782 (+0x83156D); on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "slotenabledro",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-deferfp-offfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab deferfootprint, key 0x833593; off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-deferfp-onfirst",
+      "note": "Clean night only (docs/TESTING.md clean-night rules). Same asi and base as the verify jobs; 10 min, 2-min slices; read the off-first and on-first jobs together (pair means only). Timing re-measure with every A/B key timed in both halves (the 2026-10-21/22 pairs lost the removed key's off-half time to blockOther, docs/51 §218). Expected (docs/137 §12, docs/136 §8, docs/89 §11): the feature key drops to ~0 and the summed keyed +0x918 wait stays within ~±5 ms/s (the wait is conserved: it moves to the next acquirer in the same tick); it/s within the BP pair noise (SD of pair means 5.0% over 10 BP switch pairs). --ab deferfootprint, key 0x833593; on-first (warm-up on, then on,off,off,on).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "deferfootprint",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

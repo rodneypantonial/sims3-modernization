@@ -12,7 +12,7 @@ type Snap = { i: number; s: number; c: Record<string, number> };
 const LABEL: Record<number, string> = {
   0x2000003: 'destroy (closure #4)', 0x62EF7A: 'gate 0 transform', 0x62F782: 'gate 12 Contains', 0x62FB74: 'gate 12 (F-F)',
   0x631814: 'gate 12 front door (F-C)', 0x631F40: 'gate 12 (F-G)', 0x760BFF: 'gate 10 goal step', 0x833593: 'UpdateSimFootprint',
-  0x85FFC7: 'plan tail', 0x85FE10: 'steering S2 site', 0x846D21: 'avoidance steering',
+  0x85FFC7: 'plan tail', 0x85FE10: 'steering S2 site', 0x846D21: 'avoidance steering', 0x83156D: 'route-to-object check',
 };
 const TOTALS = ['asyncPumpUs', 'asyncUs', 'blockOther'];
 
@@ -60,6 +60,9 @@ function report(tag: string) {
     console.log(`  0x${k.toString(16).toUpperCase().padStart(7, '0')} ${(LABEL[k] ?? '').padEnd(26)} ${msps(on, s.on.secs).padStart(7)} ${msps(off, s.off.secs).padStart(7)}`);
   }
   console.log(`  ${'all keyed waits'.padEnd(34)} ${msps(ton, s.on.secs).padStart(7)} ${msps(toff, s.off.secs).padStart(7)}`);
+  // waits whose key found no free slot (count only, no time): a side with many more of them lacks a key's time (docs/51 §218)
+  const per = (n: number, secs: number) => (n / (secs || 1) * 60).toFixed(1);
+  console.log(`  ${'untimed waits/min (blockOther)'.padEnd(34)} ${per(s.on.tot.blockOther ?? 0, s.on.secs).padStart(7)} ${per(s.off.tot.blockOther ?? 0, s.off.secs).padStart(7)}`);
   console.log(`  ${'pump (asyncPumpUs)'.padEnd(34)} ${msps(s.on.tot.asyncPumpUs ?? 0, s.on.secs).padStart(7)} ${msps(s.off.tot.asyncPumpUs ?? 0, s.off.secs).padStart(7)}`);
   console.log(`  ${'worker job time (asyncUs)'.padEnd(34)} ${msps(s.on.tot.asyncUs ?? 0, s.on.secs).padStart(7)} ${msps(s.off.tot.asyncUs ?? 0, s.off.secs).padStart(7)}`);
 }

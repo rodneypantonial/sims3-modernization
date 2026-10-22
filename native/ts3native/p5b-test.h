@@ -138,6 +138,7 @@ static DWORD WINAPI P5bWorker(LPVOID) {
 }
 
 static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int* list);  // p5c-test.h
+static void TestP5Fault(void* lock, int* list);  // p5fault-test.h
 
 static void TestP5b() {
     Ts3nCounters& k = ts3native_counters;
@@ -145,9 +146,9 @@ static void TestP5b() {
                   offsetof(Ts3nCounters, p5bRefused) == 0x3034 && offsetof(Ts3nCounters, p5bWinUs) == 0x3044 &&
                   offsetof(Ts3nCounters, p5bSimAcq) == 0x3058 && offsetof(Ts3nCounters, p5bRecMax) == 0x3064 &&
                   offsetof(Ts3nCounters, p5bGates) == 0x3068 && offsetof(Ts3nCounters, p5bGateAcq) == 0x306C &&
-                  offsetof(Ts3nCounters, p5bGateMiss) == 0x3074 && sizeof(Ts3nCounters) == 3457 * 4,
+                  offsetof(Ts3nCounters, p5bGateMiss) == 0x3074 && sizeof(Ts3nCounters) == 4274 * 4,
                   "counters v62 + v63 + v65 + v66 layout (docs/registry.md)");
-    assert(k.version == 83);
+    assert(k.version == 99);
     // the fake world and its lock (the game's lock object: CRITICAL_SECTION at +0, its own count at +0x20)
     g_p5bW = (u8*)VirtualAlloc(NULL, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     void* lock = g_p5bW + 0x918;
@@ -216,7 +217,7 @@ static void TestP5b() {
         t_p5bSlot = fs + 2;
         const DWORD cases[][4] = {{13, 0x0062F782, 0x0076F15D, P5B_G12}, {13, 0x0062F782, 0x0080CF36, P5B_NO},
                                   {13, 0x0062FB74, 0, P5B_NO},           {13, 0x00631814, 0, P5B_G12},
-                                  {13, 0x00631F40, 0, P5B_G12},          {1, 0x0062EF7A, 0, P5B_G0},
+                                  {13, 0x00631F40, 0, P5B_NO},           {1, 0x0062EF7A, 0, P5B_G0},  // F-G: docs/155
                                   {11, 0x00760BFF, 0, P5B_NO},           {13, 0, 0, P5B_NO}};
         for (const auto& c : cases) {
             t_p5bSite = (int)c[0], t_waitKey = c[1], t_p5bSlot[7] = c[2];
@@ -266,7 +267,14 @@ static void TestP5b() {
         slot[1] = (DWORD)(uintptr_t)missKey;
         assert(P5bLock(lock, NULL, &kP5bTry) == -2 && !P5bMine() && k.p5bGateMiss == miss0 + 1 && t_p5bSite == 0);
         assert(*(LONG*)(g_p5bW + 0x938) == 0);
-        t_p5bSlot = NULL, t_waitKey = 0, k.p5bGates = 0;
+        // docs/155 §8: gate-12 F-G (0x631F40) is not admitted: held out like a writer and counted; F-C still gets the lock
+        t_p5bSite = 13, t_waitKey = 0x00631F40;
+        const LONG fg0 = k.p5bFgHeldOut, ho0 = k.p5bHeldOut, g12a = k.p5bGateAcq[0];
+        assert(P5bLock(lock, NULL, &kP5bTry) == -2 && !P5bMine() && k.p5bFgHeldOut == fg0 + 1 && k.p5bHeldOut == ho0 + 1);
+        t_waitKey = 0x00631814;
+        assert(P5bLock(lock, NULL, &kP5bTry) == 1 && P5bMine() && k.p5bGateAcq[0] == g12a + 1 && k.p5bFgHeldOut == fg0 + 1);
+        P5bRel(lock, NULL);
+        t_p5bSlot = NULL, t_waitKey = 0, t_p5bSite = 0, k.p5bGates = 0;
     }
     P5bEnd();
     assert(t_p5b == P5B_CLOSED && !g_p5bWin && P5bMine() && *(LONG*)(g_p5bW + 0x938) == 2);
@@ -336,10 +344,11 @@ static void TestP5b() {
                     c = C_STEER;
                     t_steerRet = 0x0085FE10;
                     r = LockAcquireHook(lock, NULL, &kP5bInf);
-                } else if (act < 20) {  // gate-12 reads: F-B (second frame in the slot position helper), F-C, F-G
-                    c = C_G12R;
+                } else if (act < 20) {  // gate-12 reads: F-B (second frame in the slot position helper), F-C; F-G (docs/155: a
+                                        // read leaf with an unlocked writer tail, not admitted) counts with the writer families
                     static const DWORD kKey[3] = {0x0062F782, 0x00631814, 0x00631F40};
                     const int f = (int)(act % 3);
+                    c = f == 2 ? C_G12W : C_G12R;
                     r = P5bGateWait(12, kKey[f], f ? 0 : 0x0076F15D, hitKey);
                 } else if (act < 22) {  // gate-12 writer families: F-A / F-D through PortalsForObject, GetIfPresent
                     c = C_G12W;
@@ -456,6 +465,7 @@ static void TestP5b() {
            k.p5bGateAcq[0] - g12a0, k.p5bGateAcq[1] - g0a0, k.p5bGateMiss - miss0, triesHeldOut, destroysLent, taken, livelocks);
 
     TestP5cIn(lock, hitKey, missKey, list);  // P5c (FreeLock=1) in the same fake world
+    TestP5Fault(lock, list);                 // docs/157 fault injection in the same fake world
     k.p5bRelease = 0;
     g_p5bOn = 0;
     DeleteCriticalSection((CRITICAL_SECTION*)lock);

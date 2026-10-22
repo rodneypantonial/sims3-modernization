@@ -120,10 +120,25 @@ namespace Ts3Fixes
         static readonly Dictionary<ulong, RouteFails> sRouteFails = new Dictionary<ulong, RouteFails>();
         static bool sInOwnCheck;
 
-        static void NotePlanResult(IScriptProxy follower, bool ok)
+        // D5 (docs/151 §6): last successful plan per Sim from its spot (goal >= 1 m away, so a turn in place does not count),
+        // recorded with routesrc (V7) or idlememo on.
+        static readonly PlanOkMemo sPlanOk = new PlanOkMemo();
+
+        static void NotePlanResult(IScriptProxy follower, bool ok, ScriptCore.Route route)
         {
             if (follower == null || sInOwnCheck) return;
-            if (ok) { if (sRouteFails.Count > 0) sRouteFails.Remove(follower.ObjectId.Value); return; }
+            if (ok)
+            {
+                if (sRouteFails.Count > 0) sRouteFails.Remove(follower.ObjectId.Value);
+                if (ShortcutOn("idlememo") || ShortcutOn("routesrc"))
+                {
+                    Sim s = follower.Target as Sim;
+                    Vector3 goal = s != null ? route.GetApproximateOriginalDestination() : Vector3.Invalid;
+                    if (s != null && goal != Vector3.Invalid && goal != Vector3.Origin && (goal - s.Position).Length() >= 1f)
+                        sPlanOk.Note(follower.ObjectId.Value, s.Position.x, s.Position.y, s.Position.z, SimClock.CurrentTicks);
+                }
+                return;
+            }
             if (!ShortcutOn("watchdog") || !ShortcutOn("watchdogidle")) return;
             Sim sim = follower.Target as Sim;
             if (sim == null) return;
@@ -245,14 +260,24 @@ namespace Ts3Fixes
 
                 // the route checks: one full plan per tick at most, re-validated after every yield
                 int asked = 0;
-                foreach (Sim s in queue)
+                // D5 (idlememo, docs/151 §6): a Sim that planned successfully from its spot since it went still can walk off
+                // it, so no check; and at most 4 checks a pass. routesrc counts the memo hits without acting (V7).
+                bool memo = ShortcutOn("idlememo"), src = ShortcutOn("routesrc");
+                int cap = memo ? RouteSrcCore.kIdleChecksCapped : kIdleChecksPerPass;
+                for (int qi = 0; qi < queue.Count; qi++)
                 {
-                    if (asked >= kIdleChecksPerPass) break;
+                    Sim s = queue[qi];
+                    if (asked >= cap) { if (memo) c[237] += queue.Count - qi; break; }
                     for (int tries = 0; tries < 4; tries++)
                     {
                         Still st;
                         if (s.HasBeenDestroyed || !s.InWorld || !mStill.TryGetValue(s.ObjectId.Value, out st) || (s.Position - st.Pos).Length() > 1f
                             || st.Cur != s.CurrentInteraction || s.IsRouting || s.Posture != s.Standing || s.LotCurrent == null || s.LotCurrent.IsWorldLot) break;
+                        if ((memo || src) && sPlanOk.Covers(s.ObjectId.Value, s.Position.x, s.Position.y, s.Position.z, st.Since, now))
+                        {
+                            c[233]++;
+                            if (memo) { c[236]++; st.OkAt = now; mStill[s.ObjectId.Value] = st; break; }
+                        }
                         Lot lot = s.LotCurrent;
                         int before = c[39];
                         bool? ok = SpotVerdict(s, lot, Verdicts(lot), ProfileOf(s), s.Position, true, true, false);

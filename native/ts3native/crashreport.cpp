@@ -392,7 +392,13 @@ static void CrReport(const EXCEPTION_POINTERS* e) {
     DeleteFileW(m);  // captured: no "hard" report next start
 }
 
+// Apex Radiance (docs/148 §6 #8, §7a) re-sets the kernel32 filter every second through its own import, keeps the one it
+// replaced (ours) and calls it after its report [verified crash_report.cpp Refresh]: chain Apex -> ours -> EA, nothing to
+// fight. The guard stops a cycle (a chain that leads back to ours on the same thread) instead of recursing until the stack
+// is gone.
+static thread_local int t_crDepth;
 static LONG WINAPI CrFilter(EXCEPTION_POINTERS* e) {
+    if (t_crDepth) return EXCEPTION_CONTINUE_SEARCH;
     if (InterlockedExchange(&g_crBusy, 1) == 0) {
         __try {
             CrReport(e);
@@ -400,7 +406,11 @@ static LONG WINAPI CrFilter(EXCEPTION_POINTERS* e) {
         }
     }
     const LPTOP_LEVEL_EXCEPTION_FILTER next = g_crPrev;
-    return next ? next(e) : EXCEPTION_CONTINUE_SEARCH;
+    if (!next || next == CrFilter) return EXCEPTION_CONTINUE_SEARCH;
+    t_crDepth = 1;
+    const LONG r = next(e);
+    t_crDepth = 0;
+    return r;
 }
 
 // Exe IAT stand-in for SetUnhandledExceptionFilter: ours stays on top, the caller's filter becomes the next one.
@@ -481,15 +491,7 @@ static void CrPreLog(const wchar_t* ini, const wchar_t* log) {
 }
 
 static void CrFindDirs() {
-    wchar_t docs[MAX_PATH];
-    DWORD sz = sizeof(docs);
-    // the folder SHGetFolderPath(CSIDL_PERSONAL) returns (OneDrive moves it), expanded by RegGetValueW
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", L"Personal",
-                     RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, NULL, docs, &sz) != ERROR_SUCCESS) {
-        if (!GetEnvironmentVariableW(L"USERPROFILE", docs, MAX_PATH)) docs[0] = 0;
-        wcscat_s(docs, L"\\Documents");
-    }
-    swprintf_s(g_crUser, L"%s\\Electronic Arts\\The Sims 3", docs);
+    UserSims3Dir(g_crUser);  // apex.cpp
     if (GetFileAttributesW(g_crUser) == INVALID_FILE_ATTRIBUTES) {
         // shortcut: localized folder names ("Die Sims 3") are not searched; the reports go next to ts3native.asi instead
         g_crUser[0] = 0;
@@ -538,6 +540,8 @@ static void InstallCrashReport(const wchar_t* ini, const wchar_t* log) {
     const bool hooked = g_crIatSlot && Write(g_crIatSlot, &v, 4);
     Log("crash report on: filter set (next 0x%p), exe IAT SetUnhandledExceptionFilter %s 0x%08lX, %d scrub needles", (void*)g_crPrev,
         hooked ? "hooked at" : "NOT hooked (a later filter replaces ours)", (DWORD)(uintptr_t)g_crIatSlot, g_crNeedleN);
+    if (g_apexFound)
+        Log("crash report: Apex crash report also active: chain Apex -> ours -> EA; expect ApexRadiance_Crash.txt next to ours (docs/148 §6 #8)");
 }
 
 // DLL_PROCESS_DETACH (normal quit through exit/ExitProcess): no marker = no "hard" report next start

@@ -219,6 +219,7 @@ static bool LsOpenLog(const wchar_t* path) {
 // optional hooks; ObjLogMs = objScene calls at least this slow go to the event file.
 static bool ApplyLotStream(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"LotStream", L"Enabled", 0, ini)) { Log("lot stream disabled (Enabled=0)"); return false; }
+    if (ApexStandsDown(AXF_LOT, "[LotStream]", "lot streaming sites")) return false;
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_lsUsPerTick = 1e6 / (double)f.QuadPart;

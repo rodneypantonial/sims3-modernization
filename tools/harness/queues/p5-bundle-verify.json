@@ -1,0 +1,97 @@
+{
+ "note": "docs/94 §22.32 (ts3native 0.36.23, counters v86): first live correctness run of P5 (Mode=2), P5b (ReleaseLock) and P5c (FreeLock) on top of every current routing feature. asi game-copy/ts3native.asi.0323 (master 88bb9e5, counters v86, sha256 2bbe8f7faae1ce0ba3b9faa183e99b1a28e50cb3481615f3dc441bc7eb6258e6). Day jobs, 5 min each, noisy machine OK: correctness only, no timing claims. Every job has VerifyEvery=1, so every armed ReplanFromPosition job runs the clone AND the game's plan and keeps the game's answer (nothing is taken in job 1; jobs 2-4 lend the lock with VerifyLend=1 and still keep the game's answer). Bundle in every job: FallbackAsync=1 + SyncCapMs=1000 + M1Retry=1 + FbJobCapMs=300, SlotEnabledRO, DeferFootprint, DestroyPark, AvoidRO, UnseenThrottle, LocoWindow (H2) Mode 1, OptsInit=1, HitchAttr, the snapshot replay settings of snap-p5c (LazyKeep, ReplaySigMs=250, LotsUnlocked, InsFreeInPlace). Stop the queue (crash rule) on a crash or hang, 'RouteSnap: Mode=2 off', 'P4 FAULT in a clone run', 'P5b: worker waited', 'P5c: thread ... handed back'. Read per job: node tools/harness/snap-audit-report.ts <row.nativeDump> --log <row.nativeLog> (P5 block + gates), node tools/harness/shadow-compare-report.ts <row.shadowLog> (the \"m2\":1 records; any M2/M3 with its plan, its obst block names in-room causes, I-94-381), and grep the log for 'I-94-510 shape' (audit diff lines with a nonzero orphan count) and 'I-94-452' (soft-force prunes).",
+ "jobs": [
+  {
+   "id": "bp-p5-mode2-verify",
+   "note": "Mode=2, VerifyEvery=1, no lend. PASS: (1) asi 0.36.23 (log first line); (2) m2Verify > 0 and m2Verify + m2Fb (all reasons) + m2FbNr = m2Plans; (3) m2VerM_1 + m2VerM_2 + m2VerM_3 = 0 (M5 = time skew is fine, read it with the record's stale/nr); (4) refusals listed by kind (m2Fb nover/mat/epoch/lazy/cold/...; mat <= 5% of m2Plans); (5) m2Trips 0, m2Off 0 (Mode=2 on at the end), snShadowFault 0; (6) rpMis 0 or every audit mismatch followed by its forced rebase, 0 'I-94-510 shape' orphans; (7) no crash, no hang, fbActiveTrip 0, g0wWatchdog 0.",
+   "asi": "game-copy/ts3native.asi.0323",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 86,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 0, "RouteSnap.ReleaseLock": 0, "RouteSnap.FreeLock": 0
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  },
+  {
+   "id": "bp-p5b-verify",
+   "note": "Job 1 + ReleaseLock=1 ReleaseGates=1 VerifyLend=1: every verify job's clone run runs with +0x918 lent to the sim's steering and read-only gate leaves. PASS: job 1's (2)-(7), plus p5bWins > 0, p5bSimAcq > 0 (steering granted inside a lent window), p5bRefused_1 (owner) 0, p5bWatchdog 0, no 'P5b: worker waited' line. Steering grants come from the steering obstacle list 0x85FE10 (SteerRO stays off; AvoidRO answers 0x846D21 itself).",
+   "asi": "game-copy/ts3native.asi.0323",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 86,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 0
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  },
+  {
+   "id": "bp-p5c-verify",
+   "note": "Job 2 + FreeLock=1: every plain sim +0x918 acquire is admitted in the window, destroys park one reference (with DestroyPark=1 also outside windows), a recorded write after the cut makes the record time skew (M5, stale true) instead of a refusal. PASS: job 2's, plus p5cJobs > 0, p5cAcq > 0, p5cParked = p5cFlushed + parked still pending at the end (<= p5cPendMax), p5cStale_0 + p5cStale_1 counted (> 0 expected on BP), 'P5c T-G1 / hand-over' 0 / 0, p5cFlushRefused allowed, no 'FreeLock off' or 'P5c: thread' line. steerSimTreeWrite / steerSimCacheWrite rise here by design (the sim writes under the lent lock while A_RUNNING).",
+   "asi": "game-copy/ts3native.asi.0323",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 86,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  },
+  {
+   "id": "ip-p5-mode2-verify",
+   "note": "Job 1 on Isla Paradiso (houseboats, water, EP portals, ~2x the door asks per plan; the 0.35.24/25 clone-run faults were IP). Same PASS as job 1.",
+   "asi": "game-copy/ts3native.asi.0323",
+   "save": "Baseline-IP-Spring",
+   "minCounters": 86,
+   "ini": {
+    "RouteAsync.Enabled": 1, "RouteAsync.Mode": 1, "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1, "RouteAsync.SyncCapMs": 1000, "RouteAsync.M1Retry": 1, "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1, "Discourage.DeferFootprint": 1, "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1, "AvoidRO.Enabled": 1, "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1, "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4, "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowWorld": "IP",
+    "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 0, "RouteSnap.ReleaseLock": 0, "RouteSnap.FreeLock": 0
+   },
+   "run": { "profile": { "minutes": 5, "seed": 12345 } },
+   "gameArgs": ["-disablestoryprogression"],
+   "timeoutMin": 20
+  }
+ ]
+}

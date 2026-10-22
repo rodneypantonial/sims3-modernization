@@ -9,12 +9,24 @@
 // (on, not counted), then off,on,on,off repeating (ABBA; --ab-on-first: on,off,off,on); use minutes = slice x (1 + multiple of 4). Slice boundaries go to <tag>-ab.json and profile-compare.mjs splits the per-second rows into <tag>:on and <tag>:off.
 // The samplers are skipped in this mode (they would mix both sides); hitches, iterations, routes, GC and stuck Sims remain.
 // --fixes-off a,b,c: switch those ts3fixes patches (--ab names, e.g. gohome,rabbithole,visit) OFF for the whole run while paused, log `fixes off: ... (verified)` after reading them back; previous state restored at the end and on a crash.
+// --frame-lead '{"service":"World/Service","ms":50,"min":20,"lotAdds":20}': frames > ms led by that main-slot service (and
+// [LotStream] lot adds) counted at the end by frame-lead.ts, repro windows included: FAIL verdict below min (docs/169).
+// --fixes-require 'name>=1,name<5000': ts3fixes counter rules (agent `patches` names, tools/harness/fixes-require.ts) checked at the end:
+//   `PASS: fixes counters ...` or `FAIL: fixes counters: ...` (exit 1). With --ab the patches counters are also snapshot at every
+//   switch into <tag>-ab-fixes.jsonl (the last line adds the spread / unseen logs).
+// --hitch-tasks '["<regex>>=N", ...]' (JSON list, tools/harness/hitch-tasks.ts): at the end each rule needs N hitch lines whose
+//   docs/166 task names match the regex: `PASS: hitch tasks ...` or `FAIL: hitch tasks: ...` (exit 1); docs/169 loop repros.
 // --fixes-on a,b,c: the same, switched ON (e.g. autshadow: tuning kAutShadow is off, so pilot jobs turn it on here and every other job keeps it off).
 // --until-compares N: P4 shadow runs: every 30 s count the compares in Bin/ts3native-shadow.jsonl (classify() of shadow-compare-report.ts: not M4, not M5) and end the window early at >= N; N reached before 5 min -> target 2N; --minutes is the cap.
 // --seed N: seed_rng {seed: N} while paused, just before the unpause that starts the window (docs/27 §B); game RNG put back at the end.
 // --repro ID: run the steps of that tools/harness/repros.json entry (agent commands, waitS after each) from the window start,
 // e.g. the lot streaming pan (lotstream-pan, docs/28 §5.5). The stack samplers are skipped (they suspend the sim thread);
 // with --mainstack too, only the main-thread stacks run, for the whole window (they never suspend the sim thread).
+// A repro with `loop` (repro-loop.ts, docs/168 §6) runs its steps, then the loop body per arm (ABBA) until its fixed-count stop
+// rule holds or loop.maxMinutes passes, and then ends the window early: `stopped at N events after M min` (queue.ts puts it in
+// the row) and <tag>-stop.json ({secs, ...}: the hitch reports take it as the run length). --minutes is the cap.
+// Early end (stop rule or --until-compares): the stutter profiler gets <tag>-stop.flag (its -P stopFile), unhooks and closes its
+// files exactly as on unload, then its repl is closed; the frames session stays loaded until the game closes, as at a normal end.
 // --mainstack main|all|TID: in the native sampler window also sample the main thread (or every non-sim game thread, or one id)
 // through /threadstack right after each sim sample, into <tag>-mainstack.jsonl (docs/20 §7); never suspends the sim thread.
 // --inroom: also run tools/frida/inroom-reads.js (docs/111: lot tree root-border dumps, SetBounds / QuadTreeBuild reads, in-room
@@ -39,37 +51,76 @@
 // --travel WORLD: before anything else, travel there with save-matrix.ts --cases travel --to WORLD --stay (university, future,
 // or a vacation world: france | china | egypt; the trip code and its fail-fast checks are save-matrix's; it saves the loaded
 // save as a Matrix-* copy first) and run the window in the destination world (docs/117 §2.11). A failed trip fails the run.
+// Frames (docs/162): presented-frame times from tools/harness/frame-times.js (CModule hook on the main thread, no JS lock, no
+// suspension) in their own Frida session into <tag>-<secs>-frames.csv; on unless --no-frames, --no-prof or --watchstalk.
+// The stutter profiler also writes <tag>-<secs>-freezes.jsonl (sim publish gaps >= 50 ms), and the sync-plan lines of
+// Bin/ts3native.log (`route async: sync plan ...` + its script stack) are stamped with epoch ms every second into
+// <tag>-nativelog.jsonl; freeze-report.ts joins them.
+// --prof-opts JSON: extra stutter-profile.js -P fields (docs/168 §4 profiler cost control): '{"stages":false}' = iteration
+// boundary, catch-up steps and publish gaps only (no stage, GC, route or task hooks), '{"tasks":false}' = no per-task attribution
+// (docs/166). out and hitchMs stay the harness's.
+// --since-load N / --frames-shared FILE (queue.ts reuseSession and profile.repros, docs/170): N windows of this game load ran
+// before this one. Written to <tag>-session.json, so the hitch reports exclude the 15 s profiler start edge instead of the first
+// minute when N > 0; a repro's "lead-in" first step is cut to 15 s then. FILE is the load's frame log (one kept frames session per
+// load): the first window starts it, every window copies its own span into <tag>-<secs>-frames.csv at the end.
+// --camera-pan: a slow scripted camera pan through the agent's camera_pan (8 lots around the densest one, 120 s per pass, there
+// and back) for the whole window; no window focus, no input. Off by default: the camera decides which Sims are seen (EA LOD,
+// unseen throttles), so pan runs only compare with pan runs.
 // Output: probe-out/profile/<tag>-{600-seconds.csv,600-hitches.jsonl,600.log,upkeep.log,managed.*,simstack.jsonl,mainstack.jsonl,stuck.json,houseboats.json,
 // rng.json (seed reply, sim minutes at window start and end), activity.jsonl (every Sim's interaction per 30 s check; rng-compare.ts)}.
 import { spawn } from 'node:child_process';
-import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { classify } from './shadow-compare-report.ts';
 import { parseArgs } from 'node:util';
+import { checkRequire, numericFields, parseRequire } from './fixes-require.ts';
+import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
+import { checkTag, parseRule } from './frame-lead.ts';
+import { isSetup, runLoop, runStep, stopLine, withRule } from './repro-loop.ts';
+import { counterSwitches, nativeNames, nativeValues } from './native-switches.ts';
+import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
 import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, travel: { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'loop-rule': { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
+const profOpts = values['prof-opts'] ? JSON.parse(values['prof-opts']) : {}; // fail before the game is touched on bad JSON
 if (values['vres-dry'] !== undefined && !/^[1-9]\d*$/.test(values['vres-dry'])) throw new Error('--vres-dry must be a positive integer');
 if (values.mainstack !== undefined && !/^(main|all|\d+)$/.test(values.mainstack)) throw new Error('--mainstack must be main, all or a thread id');
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const OUT = join(ROOT, 'probe-out', 'profile');
 mkdirSync(OUT, { recursive: true });
 const reproEntry: any = values.repro ? (JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'repros.json'), 'utf8')) as any[]).find(r => r.id === values.repro) : { steps: [] };
-const reproSteps: any[] | undefined = reproEntry?.steps;
-if (!reproSteps) throw new Error(`--repro: no entry ${values.repro} in tools/harness/repros.json`);
+if (!reproEntry) throw new Error(`--repro: no entry ${values.repro} in tools/harness/repros.json`);
+// --since-load N > 0 (queue.ts session reuse, docs/170): no load before this window, so a "lead-in" first step that waits out the
+// load minute is cut to the 15 s profiler start edge (session-reuse.ts leadInCut)
+const sinceLoad = values['since-load'] === undefined ? null : Number(values['since-load']);
+if (sinceLoad !== null && !(Number.isInteger(sinceLoad) && sinceLoad >= 0)) throw new Error('--since-load must be an integer >= 0');
+const reproSteps: any[] = sinceLoad ? leadInCut(reproEntry.steps ?? []) : reproEntry.steps ?? [];
+if (!reproEntry.steps && !reproEntry.loop) throw new Error(`--repro ${values.repro}: no steps and no loop`);
+// --loop-rule '{until?, maxMinutes?}' (queue.ts run.profile.loopRule, docs/168 §7): the A/B queue's stop rule over the repro's own
+const reproLoop = reproEntry.loop ? withRule(reproEntry.loop, values['loop-rule'] ? JSON.parse(values['loop-rule']) : undefined) : null;
+// one A/B mechanism per run; side probes (non-kept Frida sessions) would run on to the cap after an early end
+if (reproLoop && (values.ab || values['until-compares'] || values.inroom || values.watchstalk || values.livereads2 || values.f4b || values.vres || values['vres-dry'])) throw new Error(`--repro ${values.repro} has a loop: not with --ab, --until-compares or a side probe`);
 const mins = Number(values.minutes), secs = mins * 60, pre = join(OUT, `${values.tag}`);
+// <tag>-session.json: windows after the first one of a game load (queue.ts reuseSession / profile.repros) keep their first minute;
+// worst-hitches.ts runContext then excludes only the 15 s profiler start edge (docs/170 §2). No file = right after a load.
+rmSync(`${pre}-session.json`, { force: true });
+if (sinceLoad !== null) writeFileSync(`${pre}-session.json`, JSON.stringify({ sinceLoad, framesShared: values['frames-shared'] ?? null }, null, 1));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 19);
 const get = async (p: string, to = 20000) => (await fetch(`http://127.0.0.1:47891/${p}`, { signal: AbortSignal.timeout(to) })).json();
-const ag = async (cmd: string, args?: object): Promise<any> => {
-  const q = new URLSearchParams({ cmd, timeout: '8000' });
+// every agent call runs on the sim thread: <tag>-calls.jsonl keeps its epoch span so the hitch reports can exclude it (docs/161 §6)
+writeFileSync(`${pre}-calls.jsonl`, '');
+// timeoutMs: a repro step's own reply timeout (step.timeoutS), e.g. cas_close after a slow category sync (save-write-loop, 2026-10-23)
+const ag = async (cmd: string, args?: object, timeoutMs = 8000): Promise<any> => {
+  const q = new URLSearchParams({ cmd, timeout: String(timeoutMs) });
   if (args) q.set('args', JSON.stringify(args));
-  try { return await get(`agent?${q}`); } catch (e) { return { ok: false, error: String(e) }; }
+  const t0 = Date.now();
+  try { return await get(`agent?${q}`, Math.max(20000, timeoutMs + 5000)); } catch (e) { return { ok: false, error: String(e) }; } finally { appendFileSync(`${pre}-calls.jsonl`, JSON.stringify({ cmd, t0, t1: Date.now() }) + '\n'); }
 };
 
 if (values.travel) {
@@ -98,6 +149,10 @@ const env = values['no-env'] ? null : await ag('test_env', {});
 if (env && !env.ok) throw new Error(`test_env failed: ${env.error}`); // an agent without test_env would silently test another season
 if (env) console.log(`${stamp()} test_env: ${JSON.stringify(env.result)}`);
 // --fixes-off / --fixes-on: patches switches (same agent command as --ab) off / on for the whole run; read back, restored in restoreFixes
+if (values['fixes-require']) parseRequire(values['fixes-require']); // a bad rule fails before the run
+const hitchTasks: string[] = values['hitch-tasks'] ? JSON.parse(values['hitch-tasks']) : [];
+parseHitchTasks(hitchTasks);
+if (values['frame-lead']) parseRule(values['frame-lead']);
 const fixesOff = values['fixes-off'] ? values['fixes-off'].split(',') : [];
 const fixesOn = values['fixes-on'] ? values['fixes-on'].split(',') : [];
 if ([...fixesOff, ...fixesOn].some(n => !/^[a-z0-9]+$/.test(n))) throw new Error('--fixes-off / --fixes-on must be comma-separated switch names');
@@ -141,8 +196,22 @@ function untilCheck() {
   console.log(`${stamp()} compares ${compares} (target ${target}), ${Math.max(0, mins - el).toFixed(1)} min left`);
   if (compares < target) return;
   if (el < 5) { target = 2 * compares; console.log(`${stamp()} ${compares} compares before 5 min: target raised to ${target}`); return; }
-  console.log(`${stamp()} stopped at ${compares} compares after ${el.toFixed(1)} min (target ${untilN})`);
-  stopped = true; prof?.kill();
+  stopWindow(`stopped at ${compares} compares after ${el.toFixed(1)} min (target ${untilN})`);
+}
+// early end of the window, the same for every stop rule: loops and waits see `stopped`; the profiler runs its dispose work on
+// the stop flag (unhook, last second row, files closed), then its repl is closed (15 s at most for the flag to be seen)
+const stopFlag = `${pre}-stop.flag`;
+rmSync(stopFlag, { force: true }); rmSync(`${pre}-stop.json`, { force: true }); // a rerun with the same tag
+let profHalted = () => {};
+const profHaltSeen = new Promise<void>(r => { profHalted = r; });
+function stopWindow(line: string, extra: object = {}) {
+  if (stopped) return;
+  stopped = true;
+  console.log(`${stamp()} ${line}`);
+  writeFileSync(`${pre}-stop.json`, JSON.stringify({ secs: Math.round((Date.now() - t0) / 1000), capSecs: secs, line, ...extra }, null, 1));
+  if (!prof) return;
+  writeFileSync(stopFlag, '');
+  Promise.race([profHaltSeen, sleep(15000)]).then(() => prof.kill());
 }
 const waitUntil = async (t: number) => { while (!stopped && Date.now() < t) await sleep(Math.min(1000, t - Date.now())); };
 const rng: any = { seed: values.seed === undefined ? null : Number(values.seed), reply: null, simMinutes: {} };
@@ -179,8 +248,11 @@ const boats0 = (await ag('houseboats')).result ?? []; // empty outside Isla Para
 if (values.taskstall) console.log(`${stamp()} taskstall: ${JSON.stringify(await get(`taskstall?start=1&ms=${Number(values.taskstall)}`))}`);
 
 const prof = values.watchstalk || values['no-prof'] ? null : spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', 'stutter-profile.js'),
-  '-P', JSON.stringify({ out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50 }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
-if (prof) { const plog = createWriteStream(`${pre}-${secs}.log`); prof.stdout.pipe(plog); prof.stderr.pipe(plog); }
+  '-P', JSON.stringify({ ...profOpts, out: `${pre}-${secs}`.replace(/\\/g, '/'), hitchMs: 50, ...((reproLoop || untilN) && { stopFile: stopFlag.replace(/\\/g, '/') }) }), '-q', '-t', String(secs)], { stdio: ['ignore', 'pipe', 'pipe'] });
+if (prof) {
+  const plog = createWriteStream(`${pre}-${secs}.log`); prof.stdout.pipe(plog); prof.stderr.pipe(plog);
+  prof.stdout.on('data', (d: Buffer) => { if (String(d).includes('[ts3prof] stopped early')) profHalted(); });
+}
 const profDone = prof ? new Promise(r => prof.on('exit', r)) : Promise.resolve();
 // fail fast: the profiler stops itself after -t; one still running 90 s past that is hung, and the run would wait on it forever
 setTimeout(() => { if (prof && prof.exitCode === null && prof.signalCode === null) { console.log(`${stamp()} FAIL: stutter profiler still running 90 s past -t ${secs}; killed (fail-fast guard)`); prof.kill(); } }, (secs + 90) * 1000).unref();
@@ -188,10 +260,23 @@ setTimeout(() => { if (prof && prof.exitCode === null && prof.signalCode === nul
 await ag('autopilot', { enabled: true, speed: 'ultra', dialogs: true }); // window start: unpause to x3
 const t0 = Date.now(), at = (s: number) => t0 + s * 1000;
 // --inroom / --watchstalk: own Frida session like the stutter profiler; the script writes <tag>-<name>.json itself and prints a line every 30 s
-const side = (on: boolean | undefined, file: string, name: string, extra = {}) => on ? new Promise(r => {
-  const p = spawn('python', ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', file),
+// keep: never unload the session while the game runs; the repl exits when the game closes. Used for frames (a CModule on the
+// main thread's per-frame hot path): the one end-of-profile crash (freeze-pan 2026-10-22, eip outside every module) hit
+// right when that session unloaded.
+const side = (on: boolean | undefined, file: string, name: string, extra = {}, keep = false) => on ? new Promise(r => {
+  const args = ['-m', 'frida_tools.repl', '-n', 'TS3W.exe', '-l', join(ROOT, 'tools', 'frida', file),
     // +5 s: unload apart from the stutter profiler's session (two agents unloading together, docs/99 §12.7 / I-99-62)
-    '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins, ...extra }), '-q', '-t', String(secs + 5)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    '-P', JSON.stringify({ out: pre.replace(/\\/g, '/'), minutes: mins, ...extra }), '-q', '-t', String(keep ? secs + 86400 : secs + 5)];
+  if (keep) {
+    // own log file as stdout/stderr (no pipe to this process, which exits before the game closes) and no exit wait
+    const fd = openSync(`${pre}-${name}.log`, 'a');
+    const k = spawn('python', args, { stdio: ['ignore', fd, fd], detached: true, windowsHide: true });
+    k.unref(); closeSync(fd);
+    const end = Date.now() + (secs + 5) * 1000; // or at an early end: the session itself stays loaded either way
+    const iv = setInterval(() => { if (stopped || Date.now() >= end) { clearInterval(iv); r(undefined); } }, 1000);
+    return;
+  }
+  const p = spawn('python', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   const log = createWriteStream(`${pre}-${name}.log`);
   p.stdout.on('data', (d: Buffer) => { log.write(d); for (const l of String(d).split(/\r?\n/)) if (l.includes(`[${name}]`)) console.log(`${stamp()} ${l.trim()}`); });
   p.stderr.pipe(log);
@@ -202,6 +287,39 @@ const inroomDone = side(values.inroom, 'inroom-reads.js', 'inroom');
 const watchDone = side(values.watchstalk, 'watch-stalk.js', 'watchstalk', values['watchstalk-worker'] ? { worker: true } : {});
 const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
 const f4bDone = side(values.f4b, 'f4b-reads.js', 'f4b');
+// frame-times.js lives in tools/harness; side() loads from tools/frida
+const framesOn = !values['no-frames'] && !values['no-prof'] && !values.watchstalk;
+// --frames-shared FILE (queue.ts, one per game load): the kept frames session writes the load's frames there; the first window of
+// the load starts it, later ones find it running (a second session would refuse the hooked prologue) and every window copies
+// its own span into <tag>-<secs>-frames.csv at the end (sliceFrames), so readers see one file per run as before
+const framesShared = values['frames-shared'];
+const framesDone = side(framesOn && !(framesShared && existsSync(framesShared)), join('..', 'harness', 'frame-times.js'), 'frames', { out: (framesShared ?? `${pre}-${secs}-frames.csv`).replace(/\\/g, '/') }, true);
+// --camera-pan: the agent moves the camera from a sim-thread task (camera_pan), so the scripted pan stops while the sim is frozen;
+// a player's camera keeps moving then (docs/162 §4)
+if (values['camera-pan']) {
+  const r = await ag('camera_pan', { lots: 8, height: 25, seconds: 120, passes: Math.ceil(secs / 120) + 1 });
+  console.log(`${stamp()} camera pan: ${r.ok ? `${r.result.lengthM} m, ${r.result.passes} passes of ${r.result.passMs / 1000} s` : `FAILED ${r.error}`}`);
+}
+// sync-plan lines of ts3native.log get an epoch stamp (the log has none): new bytes read every second, so a line's t is at most ~1 s
+// after it was written
+const NLOG = join(process.env.TS3_BIN ?? 'C:/Program Files (x86)/Steam/steamapps/common/The Sims 3/Game/Bin', 'ts3native.log');
+writeFileSync(`${pre}-nativelog.jsonl`, '');
+const nlogDone = (async () => {
+  let off = (() => { try { return statSync(NLOG).size; } catch { return 0; } })(), carry = '';
+  while (!stopped && Date.now() - t0 < secs * 1000) {
+    await sleep(1000);
+    try {
+      const size = statSync(NLOG).size;
+      if (size < off) { off = 0; carry = ''; } // a new log (game restarted)
+      if (size === off) continue;
+      const fd = openSync(NLOG, 'r'), b = Buffer.alloc(size - off);
+      readSync(fd, b, 0, b.length, off); closeSync(fd); off = size;
+      const lines = (carry + b.toString('latin1')).split(/\r?\n/); carry = lines.pop()!;
+      const keep = lines.filter(l => /^route async: (sync plan|script stack)/.test(l));
+      if (keep.length) appendFileSync(`${pre}-nativelog.jsonl`, keep.map(line => JSON.stringify({ t: Date.now(), line }) + '\n').join(''));
+    } catch { /* no plugin log: nothing to stamp */ }
+  }
+})();
 // --vres (docs/133): a callvirt inline-cache snapshot through the probe agent every 60 s from the window start, then a last one
 // that writes the union to <tag>-vres.json; nothing is hooked. --vres-dry N: the same, but each snapshot walks only N methods
 // (no call / target following; docs/133 §5 bisect). A snapshot is many short /vcache calls (one tick-aligned slice of <= 20 ms
@@ -245,7 +363,21 @@ const vresDone = vresOn ? (async () => {
 const abNames = values.ab ? values.ab.split(',') : [];
 const slices: { from: number; on: boolean }[] = [];
 // a rerun with the same tag must not append to the last run's snapshots (wait-ab read run 1 twice, 2026-10-20)
-if (abNames.length) writeFileSync(`${pre}-ab-native.jsonl`, '');
+if (abNames.length) { writeFileSync(`${pre}-ab-native.jsonl`, ''); writeFileSync(`${pre}-ab-fixes.jsonl`, ''); }
+// ts3native switch tables (nativeNames, counterSwitches, nativeValues: native_set repro steps and --ab): native-switches.ts,
+// shared with session-reuse.ts, which puts them back between jobs that share one game load (docs/170 §2)
+async function nativeSet(args: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  const done: Record<string, number> = {};
+  for (const [n, v] of Object.entries(args ?? {})) {
+    const val = Number(v === true ? 1 : v === false ? 0 : v);
+    if (!Number.isInteger(val)) return { ok: false, error: `native_set: ${n} value ${v} is not an integer` };
+    if (nativeNames.includes(n)) await get(`native?${n}=${val}`);
+    else if (n in counterSwitches || n in nativeValues) await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n] ?? nativeValues[n]}&value=${val}`);
+    else return { ok: false, error: `native_set: unknown ts3native switch ${n}` };
+    done[n] = val;
+  }
+  return { ok: true, result: done };
+}
 const toggler = (async () => {
   if (!abNames.length) return;
   for (let i = 0; i * Number(values.slice) * 60 < secs; i++) {
@@ -255,9 +387,8 @@ const toggler = (async () => {
     await sleep(Math.max(0, at(i * Number(values.slice) * 60) - Date.now()));
     // ts3native counters at every switch (end of the previous slice): wait-ab.ts splits the sim-thread waits per side
     await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
-    const nativeNames = ['routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps']; // ts3native's runtime switches, not C# patches
-    // ts3native switches that live only as a Ts3nCounters field (no /native parameter): name -> byte offset
-    const counterSwitches: Record<string, number> = { heightcache: 0x1B4, simskipshared: 0xBF4, allocdedupe: 0xC1C, lotsincos: 0xC28, idcache: 0xC3C, terraingrave: 0xD00, discourage: 0x1074, discdestroy: 0x135C, discsweep: 0x1360, steerro: 0x10A4, steershadow: 0x10A8, fprebuildlock: 0x1110, lotfdro: 0x1134, lotfdshadow: 0x1138, locowin: 0x13E8, asyncreplan: 0x14A8, obstructedro: 0x1528, obstructedshadow: 0x152C, slotenabledro: 0x1568, slotenabledshadow: 0x156C, routesnap: 0x2F74, routesnaprel: 0x302C, routesnapgate: 0x3068, routesnapfree: 0x307C, fallbackasync: 0x314C, deferfootprint: 0x3178, m1retry: 0x31C8, destroypark: 0x31E0, avoidro: 0x31F0, avoidshadow: 0x31F4, earlyout: 0x3260, unseenthrottle: 0x33C8, unseenavoid: 0x3424, unseenfootprint: 0x3428, unseenrate: 0x342C, fbjobcap: 0x354C };
+    // ts3fixes counters too (2026-10-22: the spreads pair had no proof the nightly passes ran inside counted slices)
+    await ag('patches').then(r => appendFileSync(`${pre}-ab-fixes.jsonl`, JSON.stringify({ i, s: (Date.now() - t0) / 1000, c: numericFields(r.result) }) + '\n')).catch(() => {});
     const patchNames = abNames.filter(n => !nativeNames.includes(n) && !(n in counterSwitches));
     if (patchNames.length) await ag('patches', Object.fromEntries(patchNames.map(n => [n, on])));
     for (const n of abNames.filter(n => nativeNames.includes(n))) await get(`native?${n}=${on ? 1 : 0}`);
@@ -267,20 +398,33 @@ const toggler = (async () => {
     console.log(`${stamp()} ${abNames.join(',')} ${on ? 'on' : 'off'}`);
   }
 })();
+const reproFail = async (why: string) => {
+  console.log(`${stamp()} FAIL: ${why}`);
+  for (const c of reproEntry.cleanup ?? []) { const cr = await ag(c.cmd, c.args); console.log(`${stamp()} cleanup ${c.cmd}: ${cr.ok ? 'ok' : 'ERROR ' + cr.error}`); }
+  process.exit(1);
+};
+// the note goes into the log line: worst-hitches.ts labels the step's window by its arm ("fire off #3" -> reflect_call off)
+const reproStep = async (s: any) => {
+  const r = s.cmd === 'native_set' ? await nativeSet(s.args) : await ag(s.cmd, s.args, s.timeoutS ? s.timeoutS * 1000 : undefined);
+  console.log(`${stamp()} repro ${values.repro} step ${s.cmd}${s.note ? ` [${s.note}]` : ''}${isSetup(s) ? ' (setup)' : ''}: ${JSON.stringify(r).slice(0, 200)}`);
+  appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, note: s.note, r }) + '\n'); // full result: the log line is cut
+  // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
+  // ended PASS after wildflower_drain failed); "optional": true steps may fail. The queue closes the game after the job.
+  if (!r.ok && !s.optional) await reproFail(`repro step ${s.cmd} failed: ${String(r.error).split('\n')[0].slice(0, 300)}`);
+  return r;
+};
 const reproRun = (async () => {
-  for (const s of reproSteps) {
-    const r = await ag(s.cmd, s.args);
-    console.log(`${stamp()} repro ${values.repro} step ${s.cmd}: ${JSON.stringify(r).slice(0, 200)}`);
-    appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, r }) + '\n'); // full result: the log line is cut
-    // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
-    // ended PASS after wildflower_drain failed); "optional": true steps may fail. The queue closes the game after the job.
-    if (!r.ok && !s.optional) {
-      console.log(`${stamp()} FAIL: repro step ${s.cmd} failed: ${String(r.error).split('\n')[0].slice(0, 300)}`);
-      for (const c of reproEntry.cleanup ?? []) { const cr = await ag(c.cmd, c.args); console.log(`${stamp()} cleanup ${c.cmd}: ${cr.ok ? 'ok' : 'ERROR ' + cr.error}`); }
-      process.exit(1);
-    }
-    if (s.waitS) await sleep(s.waitS * 1000);
-  }
+  for (const s of reproSteps) await runStep(s, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) }); // fixed waitS or adaptive waitUntil (repro-loop.ts)
+  if (!reproLoop) return;
+  // firings inside the first minute are excluded by the hitch classifier (bp-overwatch-ab-loop2 2026-10-23: all 20 fell in it)
+  // shortcut: 65 s even in a reused session (whose start edge is only 15 s), upgrade when reuse measurement matters
+  if (Date.now() < at(65)) { console.log(`${stamp()} loop waits for the end of the excluded first minute`); await sleep(at(65) - Date.now()); }
+  const capMs =Math.min(reproLoop.maxMinutes ?? mins, mins) * 60000 - (Date.now() - t0); // the loop cap counts from the window start
+  try {
+    const r = await runLoop(reproLoop, capMs, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) });
+    if (r.why !== 'window') stopWindow(stopLine(r, reproLoop.until), { loop: r, until: reproLoop.until });
+    else console.log(`${stamp()} ${stopLine(r, reproLoop.until)}`);
+  } catch (e: any) { await reproFail(e.message); }
 })();
 // Stuck Sims, as watchdog.ts judges them: same spot and interaction for 6 checks (3 min), or routing without moving for 3.
 // Flagged Sims recently teleported by a shortcut are marked, so every shortcut gets checked for leaving Sims stuck.
@@ -332,20 +476,26 @@ const mainSample = async (t: number) => {
   } catch { /* sample lost */ }
 };
 // --repro with --mainstack: main-thread stacks only (they never suspend the sim thread), the whole window, so the repro steps are covered
-const mainOnly = !!(values.repro && values.mainstack && !abNames.length && !values.taskstall);
+// also with --no-samplers: main-thread stacks for the whole window (frame-cause runs; the main thread is suspended per sample, so
+// such a run gives causes, not frame rates)
+const mainOnly = !!((values.repro || values['no-samplers']) && values.mainstack && !abNames.length && !values.taskstall);
 if (values.mainstack) writeFileSync(`${pre}-mainstack.jsonl`, '');
 const mainOnlyRun = mainOnly ? (async () => {
-  console.log(`${stamp()} mainstack only (repro mode): ${secs - 15} s`);
-  for (const end = at(secs - 15); Date.now() < end;) { const t = Date.now(); await mainSample(t); await sleep(Math.max(0, 200 - (Date.now() - t))); }
+  console.log(`${stamp()} mainstack only (${values.repro ? 'repro' : 'no-samplers'} mode): ${secs - 15} s`);
+  for (const end = at(secs - 15); !stopped && Date.now() < end;) { const t = Date.now(); await mainSample(t); await sleep(Math.max(0, 200 - (Date.now() - t))); }
 })() : Promise.resolve();
 await waitUntil(at(60));
 console.log(`${stamp()} managed sampler ${window} s`);
-if (window) await run([join(ROOT, 'tools', 'probe', 'managed-sample.mjs'), String(window), '5', `${pre}-managed.jsonl`], `${pre}-managed.txt`);
+// both samplers suspend the sim thread: <tag>-samplers.jsonl keeps each window's epoch span (hitch reports exclude it, docs/161 §6)
+writeFileSync(`${pre}-samplers.jsonl`, '');
+const samplerSpan = (name: string, t0: number) => appendFileSync(`${pre}-samplers.jsonl`, JSON.stringify({ name, t0, t1: Date.now() }) + '\n');
+if (window) { const t = Date.now(); await run([join(ROOT, 'tools', 'probe', 'managed-sample.mjs'), String(window), '5', `${pre}-managed.jsonl`], `${pre}-managed.txt`); samplerSpan('managed', t); }
 await waitUntil(at(secs / 2));
 console.log(`${stamp()} native sampler ${window} s`);
 writeFileSync(`${pre}-simstack.jsonl`, '');
 if (values.mainstack && !window && !mainOnly) console.log(`${stamp()} mainstack skipped: no sampler window in this mode`);
 let simLost = 0; // an empty simstack.jsonl went unnoticed for 3 days (2026-10-16-sampler-hang.md): print the loss
+const nativeT0 = Date.now();
 for (const end = Date.now() + window * 1000; !stopped && Date.now() < end;) {
   const t = Date.now();
   try {
@@ -357,8 +507,10 @@ for (const end = Date.now() + window * 1000; !stopped && Date.now() < end;) {
   if (values.mainstack) await mainSample(t);
   await sleep(Math.max(0, 200 - (Date.now() - t)));
 }
-if (window) console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`);
-await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone, vresDone]);
+if (window) { samplerSpan('native', nativeT0); console.log(`${stamp()} native sampler done: ${simLost} sim samples lost`); }
+await Promise.all([upkeep, profDone, toggler, reproRun, mainOnlyRun, inroomDone, watchDone, lr2Done, f4bDone, vresDone, framesDone, nlogDone]);
+if (framesOn && framesShared) { await sleep(1000); console.log(`${stamp()} frames: ${sliceFrames(framesShared, `${pre}-${secs}-frames.csv`, t0, Date.now())} rows of the load's frame log copied`); } // drained every 250 ms
+if (values['camera-pan']) await ag('camera_pan', { stop: true });
 stopLoad();
 await restoreFixes();
 console.log(`${stamp()} ${summarize(`${pre}-machine.jsonl`).line}`);
@@ -367,6 +519,25 @@ if (rng.seed !== null) rng.restored = (await ag('seed_rng')).result?.restored ??
 writeFileSync(`${pre}-rng.json`, JSON.stringify(rng, null, 1));
 if (values.taskstall) { try { const r = await get('taskstall?stop=1&n=0'); console.log(`${stamp()} taskstall: ${JSON.stringify(r.counts ?? r)}`); } catch (e) { console.log(`${stamp()} taskstall stop failed: ${e.message}`); } }
 if (abNames.length) await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
+if (abNames.length) await ag('patches').then(r => appendFileSync(`${pre}-ab-fixes.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c: numericFields(r.result),
+  logs: Object.fromEntries(Object.entries(r.result ?? {}).filter(([k]) => /_log$/.test(k))) }) + '\n')).catch(() => {});
+if (values['fixes-require']) {
+  const fails = checkRequire(values['fixes-require'], (await ag('patches')).result);
+  console.log(`${stamp()} ${fails.length ? `FAIL: fixes counters: ${fails.join('; ')}` : `PASS: fixes counters ${values['fixes-require']}`}`);
+  if (fails.length) process.exitCode = 1;
+}
+if (values['frame-lead']) { // main-thread repro pass rule (frame-lead.ts, docs/169): frames led by the target service, lot adds
+  const r = checkTag(OUT, values.tag!, parseRule(values['frame-lead']));
+  console.log(`${stamp()} ${r.fails.length ? `FAIL: frame lead: ${r.fails.join('; ')}` : `PASS: frame lead: ${r.line}`}`);
+  if (r.fails.length) process.exitCode = 1;
+}
+if (hitchTasks.length) {
+  let hl: any[] = [];
+  try { hl = readFileSync(`${pre}-${secs}-hitches.jsonl`, 'utf8').split(/\r?\n/).filter(Boolean).map(l => JSON.parse(l)); } catch { /* no profiler file: every rule fails */ }
+  const { fails, counts } = checkHitchTasks(hitchTasks, hl);
+  console.log(`${stamp()} ${fails.length ? `FAIL: hitch tasks: ${fails.join('; ')}` : `PASS: hitch tasks ${hitchTasks.map((r, i) => `${r} (${counts[i]})`).join(', ')}`}`);
+  if (fails.length) process.exitCode = 1;
+}
 if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
 if (stuck.length) await reproSave(ag, values.tag!, stuck);

@@ -296,6 +296,7 @@ static bool FpRedirect(DWORD site, const void* hook) {
 // the real map. Returns true when hooked (the log stays open for the per-save lines).
 static bool ApplyFootprintIndex(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"FootprintIndex", L"Enabled", 0, ini)) { Log("footprint index disabled (Enabled=0)"); return false; }
+    if (ApexStandsDown(AXF_MEMORY_GUARD, "[FootprintIndex]", "call 0xAAC320")) return false;
     const int mode = GetPrivateProfileIntW(L"FootprintIndex", L"Mode", 1, ini);
     ts3native_footprintMode = mode == 0 ? 0 : 1;
     g_fpVerify = GetPrivateProfileIntW(L"FootprintIndex", L"Verify", 0, ini) != 0;

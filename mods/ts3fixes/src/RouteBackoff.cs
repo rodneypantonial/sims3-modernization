@@ -32,8 +32,10 @@ namespace Ts3Fixes
             public RoutePlanResult PlanHook()
             {
                 DoorMirror.SyncRoute(this, Vector3.Invalid); // doormirror: push the start/goal lots' doors to ts3native (DoorMirror.cs)
+                RouteSrcCall src = RouteSrcBegin(this, 0, Vector3.Invalid); // routesrc: source of this plan (RouteSources.cs, docs/151)
                 RoutePlanResult r = PlanBackoff();
-                NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded); // the stuck watchdog's route-fail count (RouteFixes.cs)
+                NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded, this); // the stuck watchdog's route-fail count and success memo (RouteFixes.cs)
+                RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
             }
 
@@ -43,6 +45,55 @@ namespace Ts3Fixes
                 c[24]++;
                 IScriptProxy proxy = Follower;
                 Sims3.Gameplay.Actors.Sim sim = proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null;
+                if (ShortcutOn("failrepeat") && sim != null) return PlanFailRepeat(sim);
+                return PlanBackoffBody(sim);
+            }
+
+            // docs/163 §4: the same Sim asking the same failing plan again right after the last one returned (the shape of the
+            // SV crowd pair of failed NoStart plans, 7,361 + 7,350 ms ~0.3 s apart; same goal inferred, not logged). Switch "failrepeat" (default off): when this Sim's previous plan
+            // to the same destination (1 m cell) from the same spot (0.25 m) failed with no path, blocked by neither a Sim nor
+            // a vehicle, and returned at most kFailRepeatMs real milliseconds ago, the plan returns that failure (all result
+            // fields, so callers take the same failure branch) without searching again. Short hops (< kBackoffMinDistance)
+            // and non-Sim followers are untouched. Differs from the game only when the world opened a path inside the window.
+            // Counters: [241] failures recorded, [242] repeats answered, [243] ms of the recorded plans those repeats skipped.
+            RoutePlanResult PlanFailRepeat(Sims3.Gameplay.Actors.Sim sim)
+            {
+                Vector3 dest = GetApproximateOriginalDestination();
+                Vector3 at = sim.Position;
+                if (dest == Vector3.Origin || dest == Vector3.Invalid || (at - dest).Length() < kBackoffMinDistance)
+                    return PlanBackoffBody(sim);
+                int[] c = PatchCounters();
+                BackoffKey key = new BackoffKey(Follower.ObjectId.Value, dest);
+                FailEntry e;
+                if (sFailRepeat.TryGetValue(key, out e) && NoStartCore.Within(System.Environment.TickCount, e.Tick, kFailRepeatMs)
+                    && (at - e.Start).LengthSqr() <= 0.0625f)
+                {
+                    c[242]++;
+                    c[243] += e.Ms;
+                    return FailFast(e.Result);
+                }
+                int t0 = System.Environment.TickCount;
+                RoutePlanResult r = PlanBackoffBody(sim);
+                if (r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination
+                    && r.mBlockerType != RouteBlockerType.Sim && r.mBlockerType != RouteBlockerType.Vehicle)
+                {
+                    // shortcut: whole map dropped at 256 live entries (a burst of distinct failures); entries expire by time anyway
+                    if (sFailRepeat.Count >= 256) sFailRepeat.Clear();
+                    e.Tick = System.Environment.TickCount;
+                    e.Ms = unchecked(e.Tick - t0);
+                    e.Start = at;
+                    e.Result = r;
+                    sFailRepeat[key] = e;
+                    c[241]++;
+                }
+                else sFailRepeat.Remove(key);
+                return r;
+            }
+
+            RoutePlanResult PlanBackoffBody(Sims3.Gameplay.Actors.Sim sim)
+            {
+                int[] c = PatchCounters();
+                IScriptProxy proxy = Follower;
                 if (!ShortcutOn("backoff")) return PlanAsync(sim);
                 Vector3 dest = GetApproximateOriginalDestination();
                 // non-Sim routers, no destination yet, or a short hop (turn in place, fail-path near the Sim): untouched
@@ -139,6 +190,13 @@ namespace Ts3Fixes
             // answer is ignored). ts3native refuses a route that is being followed. Switch "asyncreplan" (default on).
             public RoutePlanResult ReplanHook()
             {
+                RouteSrcCall src = RouteSrcBegin(this, 1, Vector3.Invalid);
+                RoutePlanResult r = ReplanAsync();
+                RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                return r;
+            }
+            RoutePlanResult ReplanAsync()
+            {
                 DoorMirror.SyncRoute(this, Vector3.Invalid);
                 if (!AsyncKindStart(1, Vector3.Origin)) return ReplanOrig();
                 try { AsyncWait(); return ReplanOrig(); }
@@ -148,6 +206,13 @@ namespace Ts3Fixes
 
             public RoutePlanResult PlanFromPointHook(Vector3 startPosition)
             {
+                RouteSrcCall src = RouteSrcBegin(this, 2, startPosition);
+                RoutePlanResult r = PlanFromPointAsync(startPosition);
+                RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                return r;
+            }
+            RoutePlanResult PlanFromPointAsync(Vector3 startPosition)
+            {
                 DoorMirror.SyncRoute(this, startPosition);
                 if (!AsyncKindStart(2, startPosition)) return PlanFromPointOrig(startPosition);
                 try { AsyncWait(); return PlanFromPointOrig(startPosition); }
@@ -156,6 +221,13 @@ namespace Ts3Fixes
             public RoutePlanResult PlanFromPointOrig(Vector3 startPosition) { return default(RoutePlanResult); }
 
             public RoutePlanResult ReplanFromPointHook(Vector3 fromPt)
+            {
+                RouteSrcCall src = RouteSrcBegin(this, 3, fromPt);
+                RoutePlanResult r = ReplanFromPointAsync(fromPt);
+                RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
+                return r;
+            }
+            RoutePlanResult ReplanFromPointAsync(Vector3 fromPt)
             {
                 DoorMirror.SyncRoute(this, fromPt);
                 if (!AsyncKindStart(3, fromPt)) return ReplanFromPointOrig(fromPt);
@@ -187,9 +259,15 @@ namespace Ts3Fixes
             // What Plan leaves after a real failure, minus the blocker (so no fail-path plans): empty paths, invalid start points.
             RoutePlanResult FailFast(RoutePlanResultType type)
             {
-                ClearPaths();
                 RoutePlanResult res = default(RoutePlanResult);
                 res.mType = type;
+                return FailFast(res);
+            }
+
+            // the same, with a recorded result (failrepeat keeps the blocker fields of the failure it repeats)
+            RoutePlanResult FailFast(RoutePlanResult res)
+            {
+                ClearPaths();
                 PlanResult = res;
                 if (sStartFields == null)
                 {
@@ -241,6 +319,10 @@ namespace Ts3Fixes
         static readonly Dictionary<BackoffKey, BackoffEntry> sBackoff = new Dictionary<BackoffKey, BackoffEntry>(new BackoffKeyComparer());
 
         struct BackoffEntry { public long From, Until; public RoutePlanResultType Type; }
+
+        const int kFailRepeatMs = 500;
+        struct FailEntry { public int Tick, Ms; public Vector3 Start; public RoutePlanResult Result; }
+        static readonly Dictionary<BackoffKey, FailEntry> sFailRepeat = new Dictionary<BackoffKey, FailEntry>(new BackoffKeyComparer());
 
         // Follower object id plus the destination's 1 m cell (x, height, z).
         struct BackoffKey

@@ -94,8 +94,31 @@ static class OverwatchSpreadTest
         }
     }
 
+    // docs/145 §9: the world scan for inventories (was one tick over every object) runs kMaxScanPerSlice objects per tick;
+    // 5,000 objects (every 7th with an inventory) -> ceil(5000/512) slices, each object checked once, same list as one pass.
+    static void WorldScanSlices()
+    {
+        List<int> objects = new List<int>();
+        for (int i = 0; i < 5000; i++) objects.Add(i);
+        SlicedPass<int> scan = new SlicedPass<int>(objects);
+        List<int> found = new List<int>();
+        int slices = 0, most = 0;
+        while (!scan.Done)
+        {
+            int n = scan.RunSlice(delegate(int o) { if (o % 7 == 0) found.Add(o); }, OverwatchSpreadCore.kMaxScanPerSlice, long.MaxValue, delegate { return 0; });
+            if (n > most) most = n;
+            slices++;
+        }
+        int want = (5000 + OverwatchSpreadCore.kMaxScanPerSlice - 1) / OverwatchSpreadCore.kMaxScanPerSlice;
+        Check(slices == want && most <= OverwatchSpreadCore.kMaxScanPerSlice, "world scan: " + slices + " slices (want " + want + "), most " + most);
+        Check(found.Count == (5000 + 6) / 7 && found[0] == 0 && found[found.Count - 1] == 4998, "world scan: same inventories as one pass, in order");
+        SlicedPass<int> timed = new SlicedPass<int>(objects);
+        Check(timed.RunSlice(delegate(int o) { }, OverwatchSpreadCore.kMaxScanPerSlice, EaSpreadCore.kSliceUs, delegate { return EaSpreadCore.kSliceUs; }) == 1, "world scan: time budget spent -> one object, then the tick ends");
+    }
+
     static int Main()
     {
+        WorldScanSlices();
         OverwatchSpreadCore.Mode ours = OverwatchSpreadCore.Mode.Ours, theirs = OverwatchSpreadCore.Mode.Theirs, up = OverwatchSpreadCore.Mode.Upstream;
         // yield path: the marker (real or faked) wins over everything, also over a switch that is on
         Check(OverwatchSpreadCore.Decide(true, true, true, false) == up, "marker present, switch on -> upstream");
@@ -104,6 +127,13 @@ static class OverwatchSpreadTest
         Check(OverwatchSpreadCore.Decide(true, true, false, false) == ours, "switch on, hook in -> ours");
         Check(OverwatchSpreadCore.Decide(false, true, false, false) == theirs, "switch off -> theirs");
         Check(OverwatchSpreadCore.Decide(true, false, false, false) == theirs, "hook missing -> theirs");
+        // overwatchchain only replaces Overwatch's own one-tick path
+        OverwatchSpreadCore.Mode chain = OverwatchSpreadCore.Mode.Chain;
+        Check(OverwatchSpreadCore.WithChain(theirs, true, true) == chain, "chain on, spread off -> chain");
+        Check(OverwatchSpreadCore.WithChain(theirs, false, true) == theirs, "chain off -> theirs");
+        Check(OverwatchSpreadCore.WithChain(theirs, true, false) == theirs, "chain on, hook missing -> theirs");
+        Check(OverwatchSpreadCore.WithChain(ours, true, true) == ours, "spread and chain on -> spread");
+        Check(OverwatchSpreadCore.WithChain(up, true, true) == up, "marker, chain on -> upstream");
 
         Check(OverwatchSpreadCore.HasMarker(typeof(OverwatchWithMarker)), "public static int marker found");
         Check(!OverwatchSpreadCore.HasMarker(typeof(OverwatchWithoutMarker)), "no marker");

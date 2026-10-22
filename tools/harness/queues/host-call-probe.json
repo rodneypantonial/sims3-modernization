@@ -1,0 +1,141 @@
+{
+  "note": "docs/159 §5 host-call probe + §4 H2 [RouteAsync] DoorMemo (2026-10-22, NOT run). Build: game-copy/ts3native.asi.0327 (master c7859e55 + hostcalls.cpp, counters v96, sha256 EC958FA9E503218ADA0EC8E5AC325967804017584041DFD63F54E845B21C320C), master ini (release defaults). Intermediate build: jobs turn on ONLY the new switches. Daytime: --only bp-hostcall-probe,ip-hostcall-probe (5 min, noisy machine OK for counts, repeat share and mismatches; the limiter-sleep share needs a clean run). Night: --from bp-doormemo-offfirst (4 jobs, 10 min, 2-min slices, DoorMemo=1 toggled by --ab doormemo, both orders per world), only after both day jobs passed. Reports: day = node tools/harness/route-phases-report.ts <tag>-native.json --seconds 300 (phases + 'host-call split (v96)' section, probe verdict and the docs/159 gate: repeat-ask wait >= 4 ms/s on BP with 0 answer changes); night = node tools/harness/hitch-ab.ts <tag> (player-noticeable hitches per arm: p99, p99.9, max iteration ms, counts of iterations >= 100 / 300 / 500 / 1000 ms; pair mean of both orders) and node tools/harness/wait-ab.ts <tag> (keys: the sim's +0x918 waits for the job, all keyed). ~1 h real.",
+  "jobs": [
+    {
+      "id": "bp-hostcall-probe",
+      "note": "Day, Bridgeport, noisy OK. Release defaults + [RouteJobPhases] Enabled=1 HostSplit=1 + [RouteAsync] DoorMemo=2 (shadow: repeats asked anyway and compared; nothing acts). Needs in ts3native.log: 'OK   door stub 0x0064F4D3' and 'OK   host-call split' (PART = no limiter window: counts still valid) and 'OK   door memo: DoorMemo=2'. A crash = stop the queue, triage against hostcalls.cpp (crash-cause rule). Pass (route-phases-report verdict PASS, end minus start): no crash, game alive, rjpReady 1, hcReady 7 (or 3), hcN_* > 0 and hcDoorQ > 0, split sum within 10% of the host phase, hcDoorRepeatDiff 0, dmMismatch 0 (any change or mismatch = the key misses an input: DoorMemo stays off, the night part does not run; the 'door memo shadow' log lines name the key). Read: queue per site, service / return / nested, door asks per job and repeat share, repeat wait ms/s (docs/159 expects 20-55% of 18.8 ms/s), cross-job repeats (sizes H4), hcOtherCalls (expected ~0: every host call is a door ask), dmFb_0..3.",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.HostSplit": 1,
+        "RouteAsync.DoorMemo": 2
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-hostcall-probe",
+      "note": "Day, Isla Paradiso, noisy OK. Same ini, needs and pass as bp-hostcall-probe. Read: the same split (docs/159: 11.1 ms/s host wait, 18.2 calls per job), repeat share vs BP.",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.HostSplit": 1,
+        "RouteAsync.DoorMemo": 2
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-doormemo-offfirst",
+      "note": "Night, clean only (docs/TESTING.md clean-night rules: machine-load line < 10% other CPU, else rerun). BP play, release defaults + [RouteAsync] DoorMemo=1 alone (no HostSplit: its stamps are overhead); --ab doormemo toggles dmMode (+0x408C; 0 = every repeat asked as today). Off-first (warm-up on, then off,on,on,off). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, dmMismatch 0. Read per arm with node tools/harness/hitch-ab.ts <tag> (pair mean with bp-doormemo-onfirst): p99, p99.9 and max iteration ms, iterations >= 100 / 300 / 500 / 1000 ms; then wait-ab.ts: the sim's +0x918 waits for the job (docs/159 §4 expects -2.5..-6.9 ms/s), all keyed; per slice dmHits / dmMisses. Gate: no hitch metric worse in both orders beyond its null band, >= 300 ms counts not up, 0 crashes; a wait cut alone is not a reason to ship (target = player-noticeable hitches).",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-doormemo-onfirst",
+      "note": "Night, clean only. The on-first half of the BP pair (abOnFirst: warm-up on, then on,off,off,on). Everything else as bp-doormemo-offfirst (ini, pass, hitch-ab.ts reads).",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-doormemo-offfirst",
+      "note": "Night, clean only. IP play, as bp-doormemo-offfirst (docs/159 §4 expects sim wait -1.5..-4.1 ms/s). Read with hitch-ab.ts (pair mean with ip-doormemo-onfirst).",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-doormemo-onfirst",
+      "note": "Night, clean only. The on-first half of the IP pair. Everything else as ip-doormemo-offfirst.",
+      "asi": "game-copy/ts3native.asi.0327",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 96,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

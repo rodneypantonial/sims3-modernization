@@ -1,0 +1,180 @@
+{
+  "note": "docs/163 NoStart sync-plan callers (2026-10-22): three day verify jobs (8 + 5 + 5 min, counters show the fixes acting, no crash), then clean-night both-order pairs judged on hitches (tools/harness/hitch-ab.ts) on SV big crowd and BP route bits (10 min each), ~1 h 40 min. Only the two new ts3fixes switches (stuckchecknear, failrepeat); LogFallbackStack=16 in every job so the multi-second NoStart plans finally carry their managed callers. Before: build and install ts3fixes and ts3agent from this branch; game-copy/ts3native.asi.0325 present. Groups for --only / --from: *-verify-*, sv-nostart-crowd-*, bp-nostart-routebits-*.",
+  "jobs": [
+    {
+      "id": "bp-nostart-verify-3am",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CORRECTNESS, daytime and noisy machine OK, 8 min (the clock jump plus 240 s for the 20-60 sim-minute stuck-check alarms; 5 min can end before they fire). Both new switches on for the whole run. Pass: no crash, game alive, 0 watchdog lines, stuckchecknear_checks >= 1 (fixesRequire), stuckchecknear_plans <= 10 x checks; Sims reset by the check compare with bp-sca-off (stuckcheck-async.json) within seed drift. Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 8,
+          "repro": "stuck-check-3am",
+          "fixesOn": "stuckchecknear,failrepeat",
+          "fixesRequire": "stuckchecknear_checks>=1"
+        }
+      },
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-nostart-verify-crowd",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CORRECTNESS, daytime and noisy machine OK, 5 min, SV big crowd (the 7,361 + 7,350 ms NoStart pair of freeze-data 2026-10-20). Both switches on for the whole run. Pass: no crash, game alive, 0 watchdog lines; failrepeat_answered counts only repeats inside 500 ms (0 is not a failure, it says the repeat shape did not occur). Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-SV-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "repro": "rare-big-crowd",
+          "fixesOn": "stuckchecknear,failrepeat"
+        }
+      },
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-nostart-verify-routebits",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CORRECTNESS, daytime and noisy machine OK, 5 min, BP route bits. Its multi-second plans are the agent's own sim_route_to / @route.Replan steps (docs/163 §2: Ts3Agent.Handlers.SimRouteTo, taskObjects stage), so this job checks only that the switches do not break those plans; the agent steps are 2-3 s apart, beyond failrepeat's 500 ms. Pass: no crash, game alive, 0 watchdog lines, the repro's plan results logged as in OFF runs. Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "repro": "rare-route-bits",
+          "fixesOn": "stuckchecknear,failrepeat"
+        }
+      },
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-nostart-crowd-offfirst",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). stuckchecknear + failrepeat alternating together in 2-min slices (one --ab list: intermediate build, only the new switches), 10 min; only the pair mean of -offfirst and -onfirst counts (docs/143 §8.15); the per-switch share comes from their counters per slice (ab-fixes.jsonl). Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-SV-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "rare-big-crowd",
+          "ab": "stuckchecknear,failrepeat",
+          "slice": 2
+        }
+      },
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-nostart-crowd-onfirst",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). stuckchecknear + failrepeat alternating together in 2-min slices (one --ab list: intermediate build, only the new switches), 10 min; only the pair mean of -offfirst and -onfirst counts (docs/143 §8.15); the per-switch share comes from their counters per slice (ab-fixes.jsonl). Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-SV-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "rare-big-crowd",
+          "ab": "stuckchecknear,failrepeat",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-nostart-routebits-offfirst",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). stuckchecknear + failrepeat alternating together in 2-min slices (one --ab list: intermediate build, only the new switches), 10 min; only the pair mean of -offfirst and -onfirst counts (docs/143 §8.15); the per-switch share comes from their counters per slice (ab-fixes.jsonl). Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "rare-route-bits",
+          "ab": "stuckchecknear,failrepeat",
+          "slice": 2
+        }
+      },
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-nostart-routebits-onfirst",
+      "note": "docs/163 (NoStart callers). ts3native 0325 at release defaults (only the two log keys and HitchAttr set); ts3fixes + ts3agent built from this branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts), every other switch at master tuning. CLEAN NIGHT ONLY (docs/TESTING.md: other CPU < 10%, else rerun). stuckchecknear + failrepeat alternating together in 2-min slices (one --ab list: intermediate build, only the new switches), 10 min; only the pair mean of -offfirst and -onfirst counts (docs/143 §8.15); the per-switch share comes from their counters per slice (ab-fixes.jsonl). Target: player-noticeable hitches, not speed. Read first: tools/harness/hitch-ab.ts (p99, p99.9, max, counts >= 100/300/500/1000 ms, both-order pair means); then (node tools/harness/nostart-report.ts --filter nostart-fix-ab --jobs, TS3_REPO=<main checkout> from a worktree): sync fallback plans count / sum / max ms and their callers (16-frame stacks: the first run that can name the multi-second NoStart callers, docs/163 §2), frames >= 300 ms, hitches/min; patches stuckchecknear_checks / _plans / _allfailed, failrepeat_recorded / _answered / _skipped_ms; watchdog resets and stuck list not above OFF.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "minCounters": 81,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "rare-route-bits",
+          "ab": "stuckchecknear,failrepeat",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "timeoutMin": 30
+    }
+  ]
+}

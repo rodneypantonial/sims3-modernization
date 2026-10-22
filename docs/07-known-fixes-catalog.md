@@ -28,7 +28,7 @@ D = in the default set, O = optional, X = excluded (not needed or not allowed). 
 | `overwatch-no-stuckcheck` | Overwatch Stuck Check off for new saves (tuning XML, §2.2) | ours (`tools/setup/build-overwatch-tuning.ts`) | n/a | generated | Mods\Packages | O |
 | `simler90-core` | simler90's Gameplay Core Mod (Steam file) | simler90 | UPDATE242 (2026-09-20) | MTS | Mods\Packages | D |
 | `catalogue-lag-fix` | Catalogue Lag and Memory Leak Fix | Sonja92yu | unknown | Nexus 242 | Mods\Packages | D |
-| `houseboat-fix` | House Boat Fix | FoulPlay | v1.0.0.1a-testing (2026-09-02) | GH | Mods\Packages | D |
+| `houseboat-fix` | House Boat Fix | FoulPlay | v1.0.0.1a-testing (2026-09-02) | GH | Mods\Packages | O (simler90-core has the same fix, docs/153; since 2026-10-22) |
 | `routing-sloped-terrain` | Interaction on sloped terrain enabler | (MTS 529671) | unknown | MTS | Mods\Packages | D |
 | `routing-sims-less-space` | Sims need less Space | (MTS 683612) | unknown | MTS | Mods\Packages | D |
 | `routing-pets-less-space` | Pets need less Space | (MTS 683307) | unknown | MTS | Mods\Packages | D |
@@ -169,6 +169,8 @@ D = in the default set, O = optional, X = excluded (not needed or not allowed). 
 
 ### 2.4 Routing and stuck-Sim fixes
 All from the Steam guide's "Step 8 - Routing Fixes (Essential)" [community]; all `.package` → Mods\Packages; versions not recorded on the guide.
+
+Decoded against EA and checked against our fixes in docs/153 (2026-10-22, static): no conflict with ts3fixes, ts3native or `[AutShadow]`; `houseboat-fix` is redundant with `simler90-core` UPDATE242, which has the same gangway change [verified] (drop when using ours); `routing-toddler` replaces the whole Sim class tuning file; the OhRudi packs halve jig footprint polygons (net route cost unmeasured, day jobs in `tools/harness/queues/routing-mods-compat.json`).
 
 | ID | Fix | URL | Pack | Default |
 |---|---|---|---|---|

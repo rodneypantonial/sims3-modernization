@@ -80,11 +80,12 @@ static bool RtWaitJob(volatile LONG* us, DWORD key) {
     if (tid == g_async.owner && g_inInvoke) return false;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    const bool fb = g_jobFb != 0;  // docs/134 §11: the job waited for is a foreign one (A_RUNNING checked above)
     if (tid == g_async.owner) WaitAsyncDone();
     else while (g_async.state == A_RUNNING) Sleep(1);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(us, waited);
-    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB);
+    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb);
     return true;
 }
 
@@ -137,6 +138,10 @@ static void P5cFlush();                       // p5c.cpp: parked references rele
 
 // 1 = skip the site's body and return to its caller (only the routing debug frame, a plain `ret` function)
 static int __cdecl RtEnter(int i, DWORD* slot) {
+    // TailUnlock: passes 16-19 reach the lot index (World_GetHeightAt -> 0xC688A0 -> 0xC68680, WM+0x228); nothing else here
+    if (t_tuOpen && kRtSites[i].kind != RT_LOTGRID && kRtSites[i].kind != RT_IDXREBUILD && kRtSites[i].kind != RT_QREAD &&
+        kRtSites[i].kind != RT_QLEAF)
+        TuTrip(2);
     if (g_rtVf[i]) VfEnter(g_rtVf[i] - 1, slot);
     Ts3nCounters& k = ts3native_counters;
     if (!k.rtReady) return 0;
@@ -238,7 +243,7 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
         case RT_STEER:  // outermost only: a nested call keeps the outer caller as the key
             if (!t_steerRet) {
                 const DWORD prev = t_steerRet;
-                t_steerRet = VfRealRet(slot);
+                t_steerRet = t_avSite ? 0x00846D21 : VfRealRet(slot);  // AvSite's own return would key it (0x6F28F468)
                 if (!RgPush(t, slot, 1, RG_REL_STEER, (void*)(uintptr_t)prev)) t_steerRet = prev;
             }
             break;
@@ -258,8 +263,12 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
         if (!RgPush(t, slot, 1, RG_REL_BUSY | RG_REL_OFFSIM)) { InterlockedDecrement(&k.rtBusy); InterlockedDecrement(&g_rgOffSimOpen); }
         RtWaitJob(&k.vfRtDrainWaitUs, 0x02000000 | s.kind);
     }
-    // P5c: parked references go at these entries when no job runs (a destroy, a save, travel / quit, world init / teardown)
-    if (!worker && (s.kind == RT_DESTROY || s.kind == RT_SAVE || s.kind == RT_CLOSING || s.kind == RT_TEARDOWN)) P5cFlush();
+    // P5c: parked references go at these entries when no job runs (a save, travel / quit, world init / teardown). A destroy
+    // entry releases them only while the world closes (DestroyAll, shutdown): DestroyById has native callers that sit
+    // mid-update (locomotion 0x84CE30 and its follow family); a parked object's destructor run there can free what that
+    // caller still holds (crash I, docs/67 §11, 0.36.19: inferred cause; p5c.cpp's released ring tells it apart)
+    if (!worker && ((s.kind == RT_DESTROY && k.rtClosing) || s.kind == RT_SAVE || s.kind == RT_CLOSING || s.kind == RT_TEARDOWN))
+        P5cFlush();
     if (note) RgNoteAs(32 + i, s.name, s.addr, note, VfRealRet(slot), (LONG)tid);
     return 0;
 }

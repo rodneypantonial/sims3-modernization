@@ -1,0 +1,270 @@
+{
+  "note": "Scenario hitches (docs/168 §3): one hitch-measured repro job per player scenario, Bridgeport, measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). The repro's first step waits out the load minute; its step windows (step + 10 s) are excluded from the real-only tables by design, so read them as the scenario's own cost: node tools/harness/hitch-ab.ts --scenario scenario-hitches-<date> (per step label: iterations and freezes >= 100/300/1000 ms, max, beside the same run's natural rate). freeze-report.ts <tag> for FPS. ~12 min per job (travel ~20), ~1 h 20 min. Timing: clean night only.",
+  "jobs": [
+    {
+      "id": "bp-scen-travel",
+      "note": "travel: trip home from France (profile.travel france goes out before the window on a Matrix copy; the trip home is the scenario). 10 min profile with --repro scen-travel (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-travel",
+          "travel": "france"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-scen-lotswitch",
+      "note": "lot switch: the active Sim drives to the farthest community lot and home again, twice. 10 min profile with --repro scen-lotswitch (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-lotswitch"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-scen-buildbuy",
+      "note": "build/buy enter/exit: build mode on/off and buy mode open/close, twice each. 10 min profile with --repro scen-buildbuy (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-buildbuy"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-scen-cas",
+      "note": "CAS enter/exit: CAS open and close, three times. 10 min profile with --repro scen-cas (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-cas"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-scen-edittown",
+      "note": "edit town enter/exit: GameStates.TransitionToEditTown and back to live mode, three times. 10 min profile with --repro scen-edittown (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-edittown"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-scen-save",
+      "note": "save: two saves to a scratch name (never the loaded Baseline). 10 min profile with --repro scen-save (repros.json), measurement settings of freeze-measure.json (asi.0329 all-on set, [Harness] ForegroundRender=1, [HitchAttr], RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, profile.noSamplers, frames.csv kept loaded, per-task attribution on by default). Pass: every repro step ok (profile-world fails fast otherwise), no crash, 0 watchdog lines, freezes.jsonl and frames.csv not empty. Read: hitch-ab.ts --scenario <tag>.",
+      "asi": "game-copy/ts3native.asi.0329",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "minutes": 10,
+          "repro": "scen-save"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}

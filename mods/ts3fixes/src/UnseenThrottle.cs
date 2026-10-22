@@ -23,12 +23,15 @@ namespace Ts3Fixes
     // active-household Sim (FarFromViewers, as the trip shortcuts), and not on screen. A seen Sim always runs.
     // Counters: [146-148] environment calls classified / unseen / skipped, [149-151] motive updates classified / unseen /
     // skipped, [154] unseen motive updates run that left a Sim at <= -95 hunger, energy, bladder or hygiene,
-    // [155] gate tables restarted (full). [152-153] belong to the broadcaster rule in BroadcasterPulseHook (Fixes.cs).
+    // [155] gate tables restarted (full), [225] most unseen motive catch-ups in one sim tick (cap UnseenMath.kCatchUpsPerTick),
+    // [226] catch-ups held a tick by the cap, [227] longest catch-up call (us). [152-153] belong to the broadcaster rule in BroadcasterPulseHook (Fixes.cs).
     public static partial class Fixes
     {
         static readonly EveryN sEnvGate = new EveryN(), sBroadcastGate = new EveryN(), sCarGate = new EveryN();
         static FieldInfo sSimUpdateSim, sAutonomyLastTime;
         const float kMotiveCapMin = 30f; // well under Motive.kMaxUpdateHoursBeforeAutoSatisfy (60 sim-minutes)
+        static readonly TickCap sCatchUps = new TickCap();
+        static StopWatch sCatchUpWatch;
 
         static void ApplyUnseenThrottle()
         {
@@ -137,17 +140,36 @@ namespace Ts3Fixes
                 c[149]++;
                 if (!SimUnseen(s)) { UpdateOrig(); return; }
                 c[150]++;
+                bool catchUp = false;
                 if (on)
                 {
                     float last = (float)sAutonomyLastTime.GetValue(a);
+                    float gap = SimClock.ElapsedTime(TimeUnit.Minutes) - last;
                     // the game's own Update leaves mLastTime alone below 1 sim-minute; we do the same below N
-                    if (last != 0f && !UnseenMath.Due(SimClock.ElapsedTime(TimeUnit.Minutes) - last, UnseenEvery(), 1f, kMotiveCapMin))
+                    if (last != 0f && !UnseenMath.Due(gap, UnseenEvery(), 1f, kMotiveCapMin))
                     {
                         c[151]++;
                         return;
                     }
+                    catchUp = last != 0f && UnseenEvery() > 1;
+                    // bounded per tick (docs/144 §8): a catch-up over the cap waits a tick, still counted as skipped
+                    if (catchUp && !sCatchUps.Take(Simulator.TicksElapsed(), UnseenMath.kCatchUpsPerTick, gap >= UnseenMath.kHardGapMin))
+                    {
+                        c[151]++;
+                        c[226] = sCatchUps.Held;
+                        return;
+                    }
                 }
-                UpdateOrig();
+                if (catchUp)
+                {
+                    if (sCatchUpWatch == null) sCatchUpWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+                    sCatchUpWatch.Restart();
+                    UpdateOrig();
+                    long us = sCatchUpWatch.GetElapsedTime();
+                    if (us > c[227]) c[227] = (int)us;
+                    c[225] = sCatchUps.Most;
+                }
+                else UpdateOrig();
                 if (!s.HasBeenDestroyed && Critical(s)) c[154]++;
             }
             public void UpdateOrig() { } // receives Autonomy.Update's original header

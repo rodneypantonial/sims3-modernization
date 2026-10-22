@@ -79,7 +79,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                   offsetof(Ts3nCounters, p5cAcq) == 0x3084 && offsetof(Ts3nCounters, p5cStale) == 0x3088 &&
                   offsetof(Ts3nCounters, p5cParked) == 0x3090 && offsetof(Ts3nCounters, p5cKeptWait) == 0x3094 &&
                   offsetof(Ts3nCounters, p5cFlushed) == 0x30A4 && offsetof(Ts3nCounters, p5cCountLow) == 0x30B4 &&
-                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 3457 * 4,
+                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 4274 * 4,
                   "counters v65 layout (docs/registry.md)");
     const DWORD me = GetCurrentThreadId();
     g_p5cSimTid = me;
@@ -234,9 +234,9 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                     t_steerRet = 0x0085FE10;
                     r = LockAcquireHook(lock, NULL, &kP5bInf);
                 } else if (act < 14) {
-                    c = C_G12R;
                     static const DWORD kKey[3] = {0x0062F782, 0x00631814, 0x00631F40};
                     const int f = (int)(act % 3);
+                    c = f == 2 ? C_GX : C_G12R;  // F-G is not admitted (docs/155 §8): a gate that waits, as C_GX
                     r = P5bGateWait(12, kKey[f], f ? 0 : 0x0076F15D, hitKey);
                 } else if (act < 17) {
                     c = C_G0H;

@@ -1,0 +1,52 @@
+{
+  "note": "Crash I verify (docs/67 §11, docs/51 §216): the two [Discourage] DestroyPark --ab jobs of clean-night-routing-extra.json on ts3native 0.36.19 (no graveyard release at a DestroyById entry outside closing; released-object ring matched against a fault register in ts3native.log). game-copy/ts3native.asi.0321 sha256 4233eec8e5fb4747a377dcc4d8f850b5a310ed1aad1a7120fbb554f834796575. Fixed = 2 clean runs of this queue (4 jobs, no crash). Pass also: p5cFlushed within 512 of p5cParked, p5cAgeMaxUs < 100000 (flushes now only at START/READY/CANCEL polls, save, closing, teardown), p5cCountLow 0. A crash: read the P5c: fault register lines in the ts3native log (a hit = our flush released the faulting object: cause A or B still open, see docs/67 §11.4). Clean night only, ~25 min.",
+  "jobs": [
+    {
+      "id": "bp-destroypark-fix-offfirst",
+      "note": "Crash I verify (docs/67 §11): Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, sha256 4233eec8e5fb...) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DestroyPark (docs/88 design G, counters v76): a destroy during an async route job parks one reference and runs without the job wait; --ab destroypark toggles dpMode (+0x31E0). BP (key 0x2000003 ~7-11 ms/s BP vs less on IP, destroy-park-ab). Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait), net 3-6 ms/s less keyed wait (part may reappear at the next routing touch). Pass also: dpReady 1, dpParked > 0, p5cCountLow 0, p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; a crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue. Read: node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off beyond the docs/136 per-key null, all keyed waits not higher), it/s not down > 2%, hitch-attr-report.ts. BP 10 min, 2-min slices. Off-first (warm-up on, then off,on,on,off); read with bp-destroypark-onfirst (mean of both per-side deltas cancels the slot-1 bias, docs/136 §2).",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "destroypark",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-destroypark-fix-onfirst",
+      "note": "Crash I verify (docs/67 §11): Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). ts3native 0.36.21 combined build (game-copy/ts3native.asi.0321, sha256 4233eec8e5fb...) with ts3fixes built and installed from the same commit (node tools/setup/build-fixes.ts; tuning as master, every candidate off), run from a checkout whose native/ts3native/ts3native.ini is master (v0.1.4 release defaults): the job ini adds only the switch under test and HitchAttr (freeze jobs also the v0.2.0 freeze-fix set, see their note). Seed 12345, story progression off. Pass for every job: no crash, game alive, 0 watchdog lines; --ab jobs: the switch line in the log at every slice. A crash = stop the queue and triage against the module under test (crash-cause rule). [Discourage] DestroyPark (docs/88 design G, counters v76): a destroy during an async route job parks one reference and runs without the job wait; --ab destroypark toggles dpMode (+0x31E0). BP (key 0x2000003 ~7-11 ms/s BP vs less on IP, destroy-park-ab). Expected [inferred]: key near 0 in the on slices except kept waits (dpKeptWait), net 3-6 ms/s less keyed wait (part may reappear at the next routing touch). Pass also: dpReady 1, dpParked > 0, p5cCountLow 0, p5cAgeMaxUs < 100000, p5cFlushed within 512 of p5cParked at the end, vfRtDestroyOffSim 0; a crash in 0x939xxx/0x935xxx/0x64xxxx stops the queue. Read: node tools/harness/wait-ab.ts <tag> (0x2000003 on vs off beyond the docs/136 per-key null, all keyed waits not higher), it/s not down > 2%, hitch-attr-report.ts. BP 10 min, 2-min slices. On-first (warm-up on, then on,off,off,on); read with bp-destroypark-offfirst.",
+      "asi": "game-copy/ts3native.asi.0321",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 79,
+      "ini": {
+        "Discourage.DestroyPark": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "destroypark",
+          "slice": 2,
+          "abOnFirst": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

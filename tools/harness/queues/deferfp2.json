@@ -1,0 +1,149 @@
+{
+  "note": "docs/89 §12 design U phase 2, [Discourage] DeferFootprint2 (2026-10-22, NOT run). Daytime: --only bp-deferfp2-verify (5 min, noisy machine OK: correctness only). Night: --from bp-deferfp2-b0-offfirst (4 jobs, 10 min, 2-min slices, BP and IP pairs off-first / on-first, every switch of bundle arm B0 (docs/152 §4.2) toggled together with deferfootprint2). Before: game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D) parked from the branch build (sha256 in PLAN.md), master ini (the job ini adds the rest). Reports: node tools/harness/wait-ab.ts <tag> (summed keyed +0x918 wait, keys 0x833593 / 0x8334CC / 0x82D296 seeded from the start), profile-compare.mjs <tag>:on vs :off. 5 jobs, ~1 h real.",
+  "jobs": [
+    {
+      "id": "bp-deferfp2-verify",
+      "note": "Daytime correctness, noisy machine OK (no timing read). ts3native 0.36.23 + counters v94 (game-copy/ts3native.asi.0324 (combined integration build, sha256 3F93D74994045DEDE812A9B3BA79A7475BC70CB6B148E22B65053468D6A8FB0D)) from a checkout whose ts3native.ini is master; the job ini turns on design U and phase 2. Seed 12345, story progression off. Needs 'OK   footprint deferral phase 2' in ts3native.log (else FAIL/SKIP = a prologue or call site differs: stop, nothing measured). A crash = stop the queue and triage against discourage.cpp (crash-cause rule). Modes 1 for the whole run (no --ab), BP play, 5 min. Pass (end of run, <tag>-native.json, v94 / v74 fields): no crash, game alive, 0 watchdog lines; fp2Ready 1, fp2Mode 1; fp2Deferred_0 > 0 and fp2Deferred_1 >= 0; no lost update: fp2Deferred_i = fp2Applied_i + fp2Dropped_i for i = 0, 1 (a difference <= the queue depth at the read is the records still queued: re-read after a pause, it must close); fp2ApplyInJob 0, fp2FullPass 0, usfApplyInJob 0, fp2AgeMaxMs < 300, usfAgeMaxMs < 300; fp2Forced counted (reported, no limit; each one may wait for a job); fp2Dropped small next to fp2Applied; stuck Sims: the probe's stuck list no longer than the last bp-deferfp-verify / release baseline run on this save (log only, do not research).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 94,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-deferfp2-b0-offfirst",
+      "note": "BP play. Clean night only (docs/TESTING.md clean-night rules: nothing else running, machine-load line < 10% other CPU, else rerun). Bundle arm B0 + U phase 2 (docs/152 §4.2: all of these switches toggled together at every slice): --ab steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2. Build and install check as bp-deferfp2-verify, plus 'OK' lines for SteerRO, AvoidRO, SlotEnabledRO, LotFrontDoorRO, ObstructedRO and destroy park. Pass: no crash, game alive, 0 watchdog lines, the switch line at every slice, fp2ApplyInJob / fp2FullPass / usfApplyInJob 0, the RO shadows off. Read (pair mean with bp-deferfp2-b0-onfirst only; single-order deltas are not usable, docs/143 §8.15): (1) summed keyed +0x918 wait on vs off (node tools/harness/wait-ab.ts <tag>), and where it went: 0x833593 / 0x8334CC / 0x82D296 ~0 on, rise of gate 0 0x62EF7A, 0x83156D, destroy 0x2000003, gate 10 0x760BFF, 0x62FB74, 0x82A0F6 (docs/152 §2 residual set); (2) per slice (<tag>-ab-native.jsonl): fp2Deferred_0/1, fp2Forced, fp2AgeMaxMs; (3) it/s and hitches/min (profile-compare.mjs <tag>:on vs :off). Expected [inferred, docs/152 §1]: about 0 net (B0 + U2 still leaves gate 0 G-a and 0x83156D in every pass), the three footprint keys gone. Off-first (warm-up on, then off,on,on,off).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 94,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "Discourage.DestroyPark": 1,
+        "SteerRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "ObstructedRO.Enabled": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-deferfp2-b0-onfirst",
+      "note": "BP play, the on-first half of the pair (abOnFirst: warm-up on, then on,off,off,on). Clean night only. Everything else as bp-deferfp2-b0-offfirst (build, ini, switch list, pass, reads).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 94,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "Discourage.DestroyPark": 1,
+        "SteerRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "ObstructedRO.Enabled": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-deferfp2-b0-offfirst",
+      "note": "IP play. Clean night only. Off-first. Everything else as bp-deferfp2-b0-offfirst (build, ini, switch list, pass, reads; pair mean with ip-deferfp2-b0-onfirst).",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 94,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "Discourage.DestroyPark": 1,
+        "SteerRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "ObstructedRO.Enabled": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-deferfp2-b0-onfirst",
+      "note": "IP play, the on-first half of the pair (abOnFirst). Clean night only. Everything else as bp-deferfp2-b0-offfirst.",
+      "asi": "game-copy/ts3native.asi.0325",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 94,
+      "ini": {
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "Discourage.DestroyPark": 1,
+        "SteerRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "LotFrontDoorRO.Enabled": 1,
+        "ObstructedRO.Enabled": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "steerro,avoidro,slotenabledro,lotfdro,obstructedro,deferfootprint,destroypark,deferfootprint2",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

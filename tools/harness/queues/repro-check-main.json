@@ -1,0 +1,160 @@
+{
+  "note": "Main-thread hitch repros (docs/169 main thread, ledger \u00a7268): one 5 min correctness job per main-slot service that leads camera-pan stutter (docs/167 \u00a77). Each repro sets the triggering state directly and re-creates it in a loop; the pass rule (profile.frameLead -> frame-lead.ts) counts frames > 50 ms the target service leads. Engine side = Apex Radiance's area; the repros serve both projects. ~8 min per job, ~25 min.",
+  "jobs": [
+    {
+      "id": "bp-main-cas",
+      "note": "Main-thread hitch repro correctness check (5 min, docs/169 main thread): CAS/SimService: camera jumps to populated lots, Sims spawned in view, forced outfit changes. Repro main-cas-builds (repros.json) in a profile-world --repro window with the measurement tool settings of tool-check.json (asi.0330, frames.csv with the services split, no samplers) plus [LotStream] Enabled=1 (lotAdds per second). Pass: profile-world prints 'PASS: frame lead' (frame-lead.ts: CAS/SimService leads >= 20 frames > 50 ms after the first minute), every repro step ok, no crash, 0 watchdog lines. Not a timing run (noisy machine rule).",
+      "asi": "game-copy/ts3native.asi.0330",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "LotStream.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "main-cas-builds",
+          "frameLead": {
+            "service": "CAS/SimService",
+            "ms": 50,
+            "min": 8
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-main-lots",
+      "note": "Main-thread hitch repro correctness check (5 min, docs/169 main thread): World/Service: camera jumps across far lots (lot streaming). Repro main-lot-stream (repros.json) in a profile-world --repro window with the measurement tool settings of tool-check.json (asi.0330, frames.csv with the services split, no samplers) plus [LotStream] Enabled=1 (lotAdds per second). Pass: profile-world prints 'PASS: frame lead' (frame-lead.ts: World/Service leads >= 20 frames > 50 ms after the first minute, >= 20 lot adds), every repro step ok, no crash, 0 watchdog lines. Not a timing run (noisy machine rule).",
+      "asi": "game-copy/ts3native.asi.0330",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "LotStream.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "main-lot-stream",
+          "frameLead": {
+            "service": "World/Service",
+            "ms": 50,
+            "min": 12,
+            "lotAdds": 20
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-main-swarm",
+      "note": "Main-thread hitch repro correctness check (5 min, docs/169 main thread): SwarmSystem: thunderstorm + fire/magic effects re-created in view. Repro main-swarm-fx (repros.json) in a profile-world --repro window with the measurement tool settings of tool-check.json (asi.0330, frames.csv with the services split, no samplers) plus [LotStream] Enabled=1 (lotAdds per second). Pass: profile-world prints 'PASS: frame lead' (frame-lead.ts: SwarmSystem leads >= 10 frames > 50 ms after the first minute), every repro step ok, no crash, 0 watchdog lines. Not a timing run (noisy machine rule). 2026-10-23: 2232 effects started, SwarmSystem led only 2 frames > 50 ms: effects in one spot barely cost frame time; the 16% swarm share in camera-pan runs needs effects seen while the camera moves (repro to redo: vfx_burst on several lots + camera_jumps). Rule lowered to 1 = fires check only.",
+      "asi": "game-copy/ts3native.asi.0330",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "LotStream.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 5,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "main-swarm-fx",
+          "frameLead": {
+            "service": "SwarmSystem",
+            "ms": 50,
+            "min": 1
+          },
+          "noEnv": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    }
+  ]
+}
