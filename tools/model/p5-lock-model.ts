@@ -8,6 +8,7 @@
 // --self-check: every config must end as its `expect` says (clean, or the named violation); mutations prove the checks bite.
 // shortcut: abstract model (one world, 2 job slots, a few sim ops per run, infinite deadlines only); a clean result covers
 // these interleavings, not the game's code paths the model leaves out (docs/154 §4).
+export {}; // ES module marker first: `node --check` (CI syntax step) strips types only when the first parse error is ESM syntax
 
 type Cfg = {
   name: string; ops: string[]; K: number; passOps?: string[];
