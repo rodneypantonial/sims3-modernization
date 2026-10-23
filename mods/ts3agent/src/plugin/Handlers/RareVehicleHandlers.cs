@@ -137,7 +137,7 @@ namespace Ts3Agent
             return r;
         }
 
-        // make_sim {age?: Toddler, species?: Human, gender?: Female}: Sim.MakeRandomSim (human) or Sim.MakePet (dog, cat,
+        // make_sim {age?: Toddler (pets: Adult), species?: Human, gender?: Female}: live mode only; Sim.MakeRandomSim (human) or Sim.MakePet (dog, cat,
         // horse...) at the active Sim's position, which joins the household of the lot there (the active household when the
         // active Sim is at home; household caps 8 humans / 6 pets apply). A horse gets liking 50 with the active Sim, above
         // the Mount test (5) and accept (10) limits. The new Sim is "@made" for stroll and ride.
@@ -145,10 +145,15 @@ namespace Ts3Agent
         {
             RequireLive();
             Sim me = Util.ActiveSim();
-            CASAgeGenderFlags age = (CASAgeGenderFlags)Enum.Parse(typeof(CASAgeGenderFlags), a.Str("age", "Toddler"), true);
-            CASAgeGenderFlags gender = (CASAgeGenderFlags)Enum.Parse(typeof(CASAgeGenderFlags), a.Str("gender", "Female"), true);
             CASAgeGenderFlags species = (CASAgeGenderFlags)Enum.Parse(typeof(CASAgeGenderFlags), a.Str("species", "Human"), true);
-            Sim made = species == CASAgeGenderFlags.Human ? Sim.MakeRandomSim(me.Position, age, gender) : Sim.MakePet(me.Position, age, gender, species);
+            bool pet = species != CASAgeGenderFlags.Human;
+            CASAgeGenderFlags age = (CASAgeGenderFlags)Enum.Parse(typeof(CASAgeGenderFlags), a.Str("age", pet ? "Adult" : "Toddler"), true);
+            CASAgeGenderFlags gender = (CASAgeGenderFlags)Enum.Parse(typeof(CASAgeGenderFlags), a.Str("gender", "Female"), true);
+            // pets have only Child (puppy, kitten, foal), Adult and Elder: MakePet does not check, and a Toddler Dog
+            // (the old default) was made 2 s before the 2026-10-23 native crash at 0x575651 (docs/171 §14)
+            if (pet && age != CASAgeGenderFlags.Child && age != CASAgeGenderFlags.Adult && age != CASAgeGenderFlags.Elder)
+                throw new McpException("a " + species + " cannot be " + age + " (pets: Child, Adult, Elder)");
+            Sim made = !pet ? Sim.MakeRandomSim(me.Position, age, gender) : Sim.MakePet(me.Position, age, gender, species);
             if (made == null) throw new McpException("the game made no " + species + " " + age + " (expansion not installed or household full?)");
             sMade = made;
             Dictionary<string, object> r = Util.Obj();

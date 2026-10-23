@@ -95,8 +95,9 @@ const isStep = (text: string) => /^repro .* step (?!set_speed|camera_pan|wait)/.
 // whole runs get RunCtx.invalid (left out of pair means and pools, named).
 export const EXCL = ['first minute', 'profiler edge', 'repro-triggered', 'sampler', 'probe call', 'render-paced'] as const;
 export type Excl = typeof EXCL[number];
-// QPC ms (the profiler's clock); setupEnd: a setup step's window (repro-loop.ts isSetup) runs a .. setupEnd (end of its wait)
-export type Win = { a: number; b: number; why: Excl; what: string; setupEnd?: number };
+// QPC ms (the profiler's clock); setupEnd: a setup step's window (repro-loop.ts isSetup) runs a .. setupEnd (end of its wait);
+// ms: a probe call's own round trip (calls.jsonl; absent for the older upkeep-round guesses)
+export type Win = { a: number; b: number; why: Excl; what: string; setupEnd?: number; ms?: number };
 export type RunCtx = { wins: Win[]; foreground: boolean; invalid: string | null; offSrc: string };
 export const SIM_MS = 50, EDGE_MS = 2000, STEP_POST_MS = 10_000;
 
@@ -116,10 +117,29 @@ export const afterLoad = (tag: string, dir = PROFILE) => {
   try { return !(existsSync(f) && Number(JSON.parse(readFileSync(f, 'utf8')).sinceLoad) > 0); } catch { return true; }
 };
 
+// docs/178 T2: a probe call excludes only a hitch it can explain. Never one led by a route wait (rtLock/rtOtherLock/rtJob/
+// rtPlanWait >= half the iteration: the sim waited on a route job's lock or result, which no agent call causes; sv-crowd-0333's
+// 2085 ms steering 0x85FE10 freeze had a 58 ms game_state call on top); else the call's round trip must cover >= half the
+// hitch, or the command leaves sim-thread work behind after it returns. Older upkeep-round guesses (no ms) still exclude
+export const ROUTE_WAITS = ['rtLock', 'rtOtherLock', 'rtJob', 'rtPlanWait'], BLOCKING_CALLS = /^(spawn_sims|remove_sims|crowd_go|save_game)\b/;
+export function callExplains(w: Pick<Win, 'what' | 'ms'>, ms: number, iter?: H): boolean {
+  if (iter && ROUTE_WAITS.reduce((s, k) => s + (iter[k] ?? 0), 0) >= 0.5 * iter.wallMs) return false;
+  return w.ms === undefined || BLOCKING_CALLS.test(w.what) || w.ms >= 0.5 * ms;
+}
+// the longest hitch of each seconds row (a hitch belongs to the first row whose t >= its t): a row's probe-call exclusion is
+// judged by it (callExplains), so a real freeze keeps its second
+export function rowLongest(rows: { t: number }[], hitches: H[]): (H | undefined)[] {
+  const out: (H | undefined)[] = rows.map(() => undefined);
+  for (const h of hitches) { let lo = 0, hi = rows.length; while (lo < hi) { const m = (lo + hi) >> 1; if (rows[m].t < h.t) lo = m + 1; else hi = m; } if (lo < rows.length && (out[lo]?.wallMs ?? -1) < h.wallMs) out[lo] = h; }
+  return out;
+}
+
 // x = one iteration [t - wallMs, t] (steps from hitches.jsonl) or one publish gap [t0, t1] with the longest sim iteration inside
-// and the iteration boundaries it spans; null = real
-export function exclusion(x: { a: number; b: number; wallMs?: number; steps?: number; gap?: { longestIterMs: number; iters: number } }, ctx: Pick<RunCtx, 'wins' | 'foreground'>): { why: Excl; what: string } | null {
-  for (const why of EXCL) { const w = ctx.wins.find(v => v.why === why && v.a < x.b && v.b > x.a); if (w) return w; }
+// and the iteration boundaries it spans, or one seconds row; iter = that iteration (the gap's / row's longest), for the
+// probe-call rule above; null = real
+export function exclusion(x: { a: number; b: number; wallMs?: number; steps?: number; gap?: { longestIterMs: number; iters: number }; iter?: H }, ctx: Pick<RunCtx, 'wins' | 'foreground'>): { why: Excl; what: string } | null {
+  const dur = x.gap ? x.b - x.a : x.wallMs ?? x.iter?.wallMs; // undefined (rows without a hitch, frames): any overlapping call
+  for (const why of EXCL) { const w = ctx.wins.find(v => v.why === why && v.a < x.b && v.b > x.a && (why !== 'probe call' || dur === undefined || callExplains(v, dur, x.iter))); if (w) return w; }
   // an unlogged save or load: no sim step and >= 1 s (classify's old 'harness step' rule)
   if (x.steps === 0 && (x.wallMs ?? 0) >= 1000) return { why: 'repro-triggered', what: '0-step iteration >= 1 s (save/load)' };
   // no sim iteration >= 50 ms inside: the screen waited on the render side (unfocused Sleep(10)/SleepEx(30), S3SS once-per-frame
@@ -141,7 +161,7 @@ export function runContext(tag: string, rows: { t: number }[], secs: number, off
   const exact = Number.isFinite(off), pad = exact ? 200 : 1500;
   if (!exact && q.start !== null && rows.length) off = q.start + LAG_MS - rows[0].t;
   const offSrc = exact ? 'frames.csv' : Number.isFinite(off) ? 'queue start + lag' : 'none';
-  const add = (a: number, b: number, why: Excl, what: string) => { if (Number.isFinite(off)) wins.push({ a: a - off - pad, b: b - off + pad, why, what }); };
+  const add = (a: number, b: number, why: Excl, what: string, ms?: number) => { if (Number.isFinite(off)) wins.push({ a: a - off - pad, b: b - off + pad, why, what, ...(ms === undefined ? {} : { ms }) }); };
   const day = q.start !== null ? new Date(q.start).toISOString().slice(0, 10) : '';
   // repro steps (from the end of the previous step, at most 15 s before the logged return: a sync plan runs inside the call),
   // saves, speed changes, camera_pan, test_env season/moon resets; each to 10 s after
@@ -172,7 +192,7 @@ export function runContext(tag: string, rows: { t: number }[], secs: number, off
   else for (const e of q.events) { const m = /^(managed|native) sampler (\d+) s$/.exec(e.text); if (m && +m[2] > 0) add(e.at, e.at + 1000 * (+m[2] + 1), 'sampler', m[1]); }
   // agent calls: they run on the sim thread (keep_alive, sims_activity, autopilot, patches, time, test_env)
   const calls = jsonl(join(PROFILE, `${tag}-calls.jsonl`));
-  if (calls.length) for (const c of calls) add(c.t0, c.t1, 'probe call', c.cmd);
+  if (calls.length) for (const c of calls) add(c.t0, c.t1, 'probe call', c.cmd, c.t1 - c.t0);
   else if (day) {
     // older runs: one upkeep round per activity line (t = ms since profile-world's t0, logged after sims_activity); t0 from the
     // upkeep.log stamps written at the end of the same round (1 s resolution: the tightest round bounds it)
@@ -330,7 +350,7 @@ function main(minMs: number, since: string, topN: number, jsonOut?: string) {
       const ai = act.reduce((b: number, a: any, i: number) => a.t <= sinceStart ? i : b, -1);
       const acts = ai >= 0 ? act[ai].sims.map((x: any) => x[1]).filter(Boolean) : [];
       const dSims = ai >= 1 ? act[ai].sims.length - act[ai - 1].sims.length : 0;
-      const ctx = ctxs.get(r)!, ex = ctx.invalid ? 'run invalid' : exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps }, ctx)?.why ?? null;
+      const ctx = ctxs.get(r)!, ex = ctx.invalid ? 'run invalid' : exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps, iter: h }, ctx)?.why ?? null;
       recs.push({ tag: r.id, world: r.world, h, rel, at, cls: classify(h, rel, step), step, events: evs.map(e => e.text.slice(0, 60)), native, managed, acts, dSims, excl: ex });
     }
   }
@@ -484,6 +504,24 @@ function selfCheck() {
   rmSync(`${sd}-a-session.json`); rmSync(`${sd}-b-session.json`);
   assert(it(205_000, 2000) === 'repro-triggered' && it(350_000, 300) === 'sampler' && it(102_000, 400) === 'probe call', 'windows');
   assert(it(150_000, 400) === 'real' && it(150_000, 1200, 0) === 'repro-triggered', 'real / 0-step save');
+  // docs/178 T2, rerun-0333-2026-10-23-sv-crowd-cause-0333: iteration n 5438 (2085 ms, rtLock 2069 ms on steering 0x85FE10 behind
+  // a foreign route job; gap 129700985..129703069.76) under the 110 ms keep_alive call that ends it (calls.jsonl at QPC
+  // 129702971..129703081 by the frames.csv offset; window padded 200 ms) stays real, as iteration, row and publish gap
+  const sv = { t: 129703071.59, wallMs: 2085.49, steps: 10, locomotion: 2069.53, rtLock: 2069.05, rtMaxKey: '0x0085fe10' };
+  const svWin: Win = { a: 129702971 - 200, b: 129703081 + 200, why: 'probe call', what: 'keep_alive', ms: 110 }, svCtx = { wins: [svWin], foreground: false };
+  assert(exclusion({ a: sv.t - sv.wallMs, b: sv.t, wallMs: sv.wallMs, steps: sv.steps, iter: sv }, svCtx) === null
+    && exclusion({ a: sv.t - 1000, b: sv.t, iter: sv }, svCtx) === null
+    && exclusion({ a: 129700985, b: 129703069.76, gap: { longestIterMs: sv.wallMs, iters: 1 }, iter: sv }, svCtx) === null, 'T2 lock-led freeze under a probe call stays real');
+  // without the route wait the same 110 ms call still does not explain a 2 s gap (round trip < half)
+  assert(exclusion({ a: 129700985, b: 129703069.76, gap: { longestIterMs: sv.wallMs, iters: 1 }, iter: { t: sv.t, wallMs: sv.wallMs } }, svCtx) === null, 'T2 short call');
+  // a true probe-call gap: the call's round trip covers most of it (no route wait) -> excluded; a short call under a long
+  // non-route hitch -> real; a command that leaves work behind (spawn_sims) -> excluded; same 58 ms call with no hitch -> row excluded
+  const pc = (ms: number, what: string, wallMs: number, extra = {}) => exclusion({ a: 160_000 - wallMs, b: 160_000, wallMs, steps: 3, iter: { t: 160_000, wallMs, threaded: wallMs, ...extra } },
+    { wins: [{ a: 159_900 - ms, b: 159_950, why: 'probe call', what, ms }], foreground: false })?.why ?? 'real';
+  assert(pc(350, 'keep_alive', 400) === 'probe call' && pc(26, 'keep_alive', 400) === 'real' && pc(26, 'spawn_sims', 400) === 'probe call'
+    && pc(350, 'keep_alive', 400, { rtJob: 300 }) === 'real', 'T2 probe call explains only its own gap');
+  assert(exclusion({ a: sv.t - 1000, b: sv.t }, svCtx)?.why === 'probe call' && callExplains({ what: 'upkeep round' }, 5000), 'T2 rows without a hitch / old upkeep guesses');
+  assert(rowLongest([{ t: 10 }, { t: 20 }], [{ t: 12, wallMs: 60 }, { t: 15, wallMs: 90 }, { t: 30, wallMs: 500 }]).map(h => h?.wallMs).join() === ',90', 'rowLongest');
   // repro-triggered wins over sampler when both overlap
   assert(exclusion({ a: 299_900, b: 300_400 }, { wins: [...wins, { a: 300_200, b: 300_300, why: 'repro-triggered', what: 'x' }], foreground: false })?.why === 'repro-triggered', 'priority');
   const gap = (longestIterMs: number, iters: number, fg = false) => exclusion({ a: 150_000, b: 150_200, gap: { longestIterMs, iters } }, { wins, foreground: fg })?.why ?? 'real';

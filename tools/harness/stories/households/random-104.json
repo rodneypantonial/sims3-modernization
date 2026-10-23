@@ -1,0 +1,202 @@
+{
+  "id": "random-104",
+  "name": "Marsh Household",
+  "archetype": null,
+  "seed": 104,
+  "structure": "siblings",
+  "summary": "siblings (random)",
+  "funds": 27000,
+  "balance": {
+    "up": 9,
+    "down": 4,
+    "neutral": 2
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Juno",
+      "last": "Marsh",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "Neat",
+        "Angler",
+        "Virtuoso",
+        "PartyAnimal",
+        "OverEmotional"
+      ],
+      "wish": {
+        "id": 506114036,
+        "name": "Level 10 music (symphonic branch)"
+      },
+      "food": "FruitParfait",
+      "music": "HipHop",
+      "color": "Blue",
+      "zodiac": "Capricorn",
+      "voice": "B",
+      "storyPersona": "party-animal",
+      "persona": "Juno (YoungAdult): Neat, Angler, Virtuoso, PartyAnimal, OverEmotional. Upside: cleans autonomously, tidy home, cleaner lots; catches fish faster and enjoys fishing (moodlet), better fish. Downside: big sad moodlets, cries, breaks down.",
+      "expect": [
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        },
+        {
+          "trait": "Angler",
+          "plus": "catches fish faster and enjoys fishing (moodlet), better fish",
+          "minus": "gets restless away from water, spends free time fishing instead of chores"
+        },
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "PartyAnimal",
+          "plus": "great parties, fun at parties (moodlet), quick friends at events",
+          "minus": "throws and joins parties all night: energy, money, work performance"
+        },
+        {
+          "trait": "OverEmotional",
+          "plus": "big happy moodlets from good events",
+          "minus": "big sad moodlets, cries, breaks down"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Gabe",
+      "last": "Marsh",
+      "age": "Child",
+      "gender": "Male",
+      "traits": [
+        "Brave",
+        "Adventurous",
+        "Slob"
+      ],
+      "wish": null,
+      "food": "Hamburger",
+      "music": "Indie",
+      "color": "Red",
+      "zodiac": "Aries",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Gabe (Child): Brave, Adventurous, Slob. Upside: firefighting, ghost and burglar encounters without fear, extinguishes fires; travel and tombs fun, visa faster. Downside: Stir Crazy moodlet when staying home too long; dirty home, smelly (moodlets for others), household disgust, roaches.",
+      "expect": [
+        {
+          "trait": "Brave",
+          "plus": "firefighting, ghost and burglar encounters without fear, extinguishes fires",
+          "minus": "runs into fires and danger; risky interactions offered"
+        },
+        {
+          "trait": "Adventurous",
+          "plus": "travel and tombs fun, visa faster",
+          "minus": "Stir Crazy moodlet when staying home too long"
+        },
+        {
+          "trait": "Slob",
+          "plus": "no need to clean; unaffected by mess",
+          "minus": "dirty home, smelly (moodlets for others), household disgust, roaches"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Elias",
+      "last": "Marsh",
+      "age": "Teen",
+      "gender": "Male",
+      "traits": [
+        "OverEmotional",
+        "GoodSenseOfHumor",
+        "Daredevil",
+        "LovesTheOutdoors"
+      ],
+      "wish": null,
+      "food": "MushroomOmelette",
+      "music": "Horror",
+      "color": "Aqua",
+      "zodiac": "Pisces",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Elias (Teen): OverEmotional, GoodSenseOfHumor, Daredevil, LovesTheOutdoors. Upside: jokes succeed, laughs more, fun; enjoys thrill objects, fearless climbing, extra fun. Downside: big sad moodlets, cries, breaks down.",
+      "expect": [
+        {
+          "trait": "OverEmotional",
+          "plus": "big happy moodlets from good events",
+          "minus": "big sad moodlets, cries, breaks down"
+        },
+        {
+          "trait": "GoodSenseOfHumor",
+          "plus": "jokes succeed, laughs more, fun",
+          "minus": "jokes at the wrong time annoy No Sense Of Humor Sims"
+        },
+        {
+          "trait": "Daredevil",
+          "plus": "enjoys thrill objects, fearless climbing, extra fun",
+          "minus": "takes risky interactions (fire, stunts), injuries and deaths more likely"
+        },
+        {
+          "trait": "LovesTheOutdoors",
+          "plus": "happy outside (moodlet), outdoor skills",
+          "minus": "Stir Crazy (moodlet) when indoors too long"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Freya",
+      "last": "Marsh",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Lucky",
+        "FamilyOriented",
+        "Insane"
+      ],
+      "wish": null,
+      "food": "Cobbler",
+      "music": "Kids",
+      "color": "Spiceberry",
+      "zodiac": "Libra",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Freya (Child): Lucky, FamilyOriented, Insane. Upside: lucky events: better outcomes on risky actions, gambling wins; better with kids, happy with family (moodlet), good parenting. Downside: misses family when apart (Homesick), demanding wishes for babies; erratic actions, talks to itself, scares others, bad social results.",
+      "expect": [
+        {
+          "trait": "Lucky",
+          "plus": "lucky events: better outcomes on risky actions, gambling wins",
+          "minus": "rare: luck runs out; overconfidence takes risks"
+        },
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Insane",
+          "plus": "strange fun socials, odd talk works with other Insane Sims",
+          "minus": "erratic actions, talks to itself, scares others, bad social results"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "sibling"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "sibling"
+    },
+    {
+      "a": "m0",
+      "b": "m3",
+      "type": "sibling"
+    }
+  ]
+}

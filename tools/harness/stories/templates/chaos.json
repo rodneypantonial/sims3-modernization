@@ -1,0 +1,118 @@
+[
+  { "id": "chaos-pool-drown", "category": "chaos", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "swimmer", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "pool", "prepare": false }, { "kind": "object", "value": "pool ladder", "prepare": false }],
+    "steps": [
+      { "cmd": "set_motive", "args": { "sim": "$actor.swimmer", "motive": "Energy", "value": -60 } },
+      { "cmd": "interact", "actor": "swimmer", "target": { "find": "object", "value": "pool" }, "label": "Swim", "waitS": 15 },
+      { "cmd": "sell_object", "target": { "find": "object", "value": "pool ladder" }, "waitS": 180 }
+    ],
+    "death": "swimmer", "cooldownMin": 480, "maxConcurrent": 1, "note": "classic ladder removal: route out of pool fails, drowning, Grim Reaper" },
+
+  { "id": "chaos-kitchen-fire", "category": "chaos", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "cook", "age": ["Teen", "YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "stove", "prepare": true }],
+    "steps": [
+      { "cmd": "set_skill", "args": { "sim": "$actor.cook", "skill": "Cooking", "level": 0 }, "optional": true },
+      { "cmd": "interact", "actor": "cook", "target": { "find": "object", "value": "fridge" }, "label": "Have", "waitS": 20, "optional": true },
+      { "cmd": "start_fire", "args": { "object": "$target" }, "target": { "find": "object", "value": "stove" }, "waitS": 120 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "fire spread, panic reactions, firefighter car + route" },
+
+  { "id": "chaos-fire-spot", "category": "chaos", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "victim", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "start_fire", "args": { "sim": "$actor.victim" }, "waitS": 120 }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "fire at a Sim's feet (catch fire, death by fire possible)" },
+
+  { "id": "chaos-burglar-night", "category": "chaos", "realism": "cheat", "weight": 0.4,
+    "actors": [],
+    "needs": [],
+    "steps": [
+      { "cmd": "cheat", "args": { "command": "burglar" } },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 90 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "gap: no spawn_burglar command; relies on a cheat/night roll" },
+
+  { "id": "chaos-thunderstorm", "category": "chaos", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "sim", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "Seasons", "prepare": false }],
+    "steps": [
+      { "cmd": "test_env", "args": { "weather": "Thunderstorm", "intensity": 1, "weather_hours": 4 } },
+      { "cmd": "go_here", "args": { "sim": "$actor.sim", "target": "$lot" }, "waitS": 120, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "lightning strikes, rain particles, shelter search (docs/127 rain branch)" },
+
+  { "id": "chaos-starvation", "category": "chaos", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "sim", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "set_motive", "args": { "sim": "$actor.sim", "motive": "Hunger", "value": -100 } },
+      { "cmd": "autonomy", "args": { "sim": "$actor.sim", "enabled": false }, "optional": true },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 120 },
+      { "cmd": "set_speed", "args": { "speed": 1 } },
+      { "cmd": "autonomy", "args": { "sim": "$actor.sim", "enabled": true }, "optional": true }
+    ],
+    "death": "sim", "cooldownMin": 720, "maxConcurrent": 1, "note": "starving moodlets, possible death; scratch save" },
+
+  { "id": "chaos-electrocution", "category": "chaos", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "fixer", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "tv", "prepare": true }],
+    "steps": [
+      { "cmd": "set_skill", "args": { "sim": "$actor.fixer", "skill": "Handiness", "level": 0 }, "optional": true },
+      { "cmd": "interact", "actor": "fixer", "target": { "find": "object", "value": "tv" }, "label": "Repair", "waitS": 60, "optional": true },
+      { "cmd": "kill_sim", "args": { "sim": "$actor.fixer", "death": "Electrocution" }, "waitS": 60 }
+    ],
+    "death": "fixer", "cooldownMin": 720, "maxConcurrent": 1, "note": "repair (shocks), electrocution death fallback; scratch save" },
+
+  { "id": "chaos-brawl-crowd", "category": "chaos", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "townie" },
+               { "role": "c", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "venue", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": "any" }, "waitS": 60 },
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": -100 } },
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.c", "liking": -100 } },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Fight", "waitS": 30, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.c", "label": "Fight", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "fights on a public lot: crowd watches (broadcasters)" },
+
+  { "id": "chaos-meteor", "category": "chaos", "realism": "natural", "weight": 0.2,
+    "actors": [{ "role": "sim", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "telescope", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "sim", "target": { "find": "object", "value": "telescope" }, "label": "Search the Galaxy", "waitS": 120 }
+    ],
+    "death": "sim", "cooldownMin": 720, "maxConcurrent": 1, "note": "meteor only on a random roll; gap: no spawn_meteor command" },
+
+  { "id": "chaos-blizzard-heatwave", "category": "chaos", "realism": "cheat", "weight": 0.3,
+    "actors": [],
+    "needs": [{ "kind": "ep", "value": "Seasons", "prepare": false }],
+    "steps": [
+      { "cmd": "test_env", "args": { "season": "Winter", "weather": "Snow", "intensity": 1, "snow_level": 1, "temperature": -20, "freeze_ponds": true } },
+      { "cmd": "camera_jumps", "args": { "order": "populated", "lots": 4, "loops": 1 }, "waitS": 40 },
+      { "cmd": "test_env", "args": { "season": "Summer", "weather": "Sun", "temperature": 45 }, "waitS": 60 }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "outfit swaps for temperature, frozen-pond routing (docs/100), snow particles" },
+
+  { "id": "chaos-vfx-swarm", "category": "chaos", "realism": "stress", "weight": 0.3,
+    "actors": [],
+    "needs": [],
+    "steps": [
+      { "cmd": "vfx_burst", "args": { "count": 20, "radius": 10, "seconds": 30 }, "waitS": 40 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "particle storm (docs/169 bp-main-swarm)" },
+
+  { "id": "chaos-zombie-night", "category": "chaos", "realism": "stress", "weight": 0.3,
+    "actors": [],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }],
+    "steps": [
+      { "cmd": "zombies", "args": { "spawn": 6 }, "waitS": 120 }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "zombies wander and bite: routing + transforms" }
+]

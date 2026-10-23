@@ -1,0 +1,127 @@
+{
+  "id": "lonely-genius",
+  "name": "Quill Lab",
+  "archetype": "lonely-genius",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "A reclusive young genius and an elderly father who wants grandchildren: inventions and chess, awkward socials, little company.",
+  "funds": 25000,
+  "balance": {
+    "up": 3,
+    "down": 4,
+    "neutral": 3
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Ines",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "Genius",
+        "Loner",
+        "ComputerWhiz",
+        "SociallyAwkward",
+        "Neurotic"
+      ],
+      "wish": {
+        "id": 962996558,
+        "name": "Level 10 of law enforcement (forensic)"
+      },
+      "food": "Hamburger",
+      "music": "Egypt",
+      "color": "Lilac",
+      "zodiac": "Leo",
+      "voice": "A",
+      "storyPersona": "socialite",
+      "persona": "Ines (YoungAdult): Genius, Loner, ComputerWhiz, SociallyAwkward, Neurotic. Upside: Logic skill faster, chess, science and invention success; fun alone, happy with solitude (moodlet), focuses on skills. Downside: uncomfortable in crowds and parties, hard to befriend; social fails, awkward moments.",
+      "expect": [
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "Loner",
+          "plus": "fun alone, happy with solitude (moodlet), focuses on skills",
+          "minus": "uncomfortable in crowds and parties, hard to befriend"
+        },
+        {
+          "trait": "ComputerWhiz",
+          "plus": "computer skills fast, hacks money, repairs computers",
+          "minus": "spends hours at the computer instead of needs"
+        },
+        {
+          "trait": "SociallyAwkward",
+          "plus": "science and logic focus, study bonus",
+          "minus": "social fails, awkward moments"
+        },
+        {
+          "trait": "Neurotic",
+          "plus": "notices problems early; checks locks and stoves",
+          "minus": "stress moodlets, worry, compulsive checks, fear of germs"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Gabe",
+      "last": "Northcott",
+      "age": "Elder",
+      "gender": "Male",
+      "traits": [
+        "FamilyOriented",
+        "Grumpy",
+        "HatesOutdoors",
+        "Angler",
+        "LightSleeper"
+      ],
+      "wish": {
+        "id": 2220612846,
+        "name": "Raise N children from baby to Teen"
+      },
+      "food": "KeyLimePie",
+      "music": "Rock",
+      "color": "Lime",
+      "zodiac": "Taurus",
+      "voice": "C",
+      "storyPersona": "family",
+      "persona": "Gabe (Elder): FamilyOriented, Grumpy, HatesOutdoors, Angler, LightSleeper. Upside: better with kids, happy with family (moodlet), good parenting; catches fish faster and enjoys fishing (moodlet), better fish. Downside: misses family when apart (Homesick), demanding wishes for babies; others dislike it, gets upset when around happy Sims, relationship decay.",
+      "expect": [
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Grumpy",
+          "plus": "fun from grumpy socials, unaffected by bad moods of others",
+          "minus": "others dislike it, gets upset when around happy Sims, relationship decay"
+        },
+        {
+          "trait": "HatesOutdoors",
+          "plus": "happy indoors, saves time",
+          "minus": "negative moodlet outside (Plagued By Nature), refuses outdoor jobs and travel"
+        },
+        {
+          "trait": "Angler",
+          "plus": "catches fish faster and enjoys fishing (moodlet), better fish",
+          "minus": "gets restless away from water, spends free time fishing instead of chores"
+        },
+        {
+          "trait": "LightSleeper",
+          "plus": "wakes for fires and burglars (safety)",
+          "minus": "woken by noise, less rest, cranky"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m1",
+      "b": "m0",
+      "type": "parent"
+    }
+  ]
+}

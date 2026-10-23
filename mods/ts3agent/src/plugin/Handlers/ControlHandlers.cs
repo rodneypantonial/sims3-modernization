@@ -907,6 +907,7 @@ namespace Ts3Agent
 
         static object BuyObject(Args a)
         {
+            // Live or Buy mode: GateHandlers wraps it (kLiveOrBuy), so the story buy flow runs inside Buy mode (docs/171 §16)
             string key = a.Str("product");
             BuildBuyProduct prod = null;
             foreach (BuildBuyProduct p in Catalog())
@@ -918,15 +919,37 @@ namespace Ts3Agent
             bool free = a.Bool("free", false);
             if (!free && hh.FamilyFunds < price) throw new McpException("not enough money: costs §" + price + ", have §" + hh.FamilyFunds);
 
-            GameObject go = GlobalFunctions.CreateObjectOutOfWorld(prod.ProductResourceKey) as GameObject;
+            GameObject go;
+            try { go = GlobalFunctions.CreateObjectOutOfWorld(prod.ProductResourceKey) as GameObject; }
+            catch (Exception e) { throw new McpException("the game could not create " + prod.CatalogName + ": " + e.GetType().Name + " (" + Simulator.sCreateObjectError + ")"); }
             if (go == null) throw new McpException("the game could not create that object");
+            // kind: a move-in essential (docs/181 §3.1) must create as that class (HouseholdHandlers.EssentialKind)
+            string kind = a.Str("kind", null);
+            if (kind != null && EssentialKind(go) != kind) { string made = go.GetType().Name; go.Destroy(); throw new McpException(prod.CatalogName + " made a " + made + ", not a " + kind); }
             Vector3 pos;
-            if (a.Has("near")) pos = FindTarget(a, "near").Position;
+            // on_lot: inside the house on the home lot by the game's own in-house placement (HouseholdHandlers.PlaceInHouse, the
+            // search make_household's fit test used), never the inventory: move-in essentials (docs/181 §3.1; chain157 found no
+            // spot for beds from the lot centre)
+            bool onLot = a.Bool("on_lot", false);
+            Lot home = hh.LotHome;
+            if (onLot && home == null) { go.Destroy(); throw new McpException("the active household has no home lot"); }
+            if (onLot) pos = Vector3.Zero;
+            else if (a.Has("near")) pos = FindTarget(a, "near").Position;
             else if (a.Has("x")) pos = new Vector3((float)a.Double("x"), (float)a.Double("y", 0), (float)a.Double("z"));
             else pos = Util.ActiveSim().Position;
             Vector3 fwd = Vector3.UnitZ;
             string where;
-            if (!a.Bool("to_inventory", false) && GlobalFunctions.FindGoodLocationNearby(go, ref pos, ref fwd))
+            if (onLot && !PlaceInHouse(go, home, null))
+            {
+                go.Destroy();
+                throw new McpException("no free spot in the house on the home lot for " + prod.CatalogName);
+            }
+            if (onLot)
+            {
+                go.AddToWorld();
+                where = "placed";
+            }
+            else if (!a.Bool("to_inventory", false) && GlobalFunctions.FindGoodLocationNearby(go, ref pos, ref fwd))
             {
                 go.SetPosition(pos);
                 go.SetForward(fwd);
@@ -955,6 +978,7 @@ namespace Ts3Agent
 
         static object SellObject(Args a)
         {
+            // Live or Buy mode: GateHandlers wraps it (kLiveOrBuy), so the story buy flow runs inside Buy mode (docs/171 §16)
             GameObject o = FindTarget(a, "target");
             if (o is Sim || o is Lot) throw new McpException("that cannot be sold");
             if (!o.CanBeSold()) throw new McpException(Util.ObjectName(o) + " cannot be sold");
@@ -974,6 +998,7 @@ namespace Ts3Agent
 
         static object MoveObject(Args a)
         {
+            RequireLive();
             GameObject o = FindTarget(a, "target");
             if (o is Sim || o is Lot) throw new McpException("use go_here to move sims");
             Vector3 pos;

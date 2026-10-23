@@ -1,0 +1,372 @@
+{
+  "id": "random-102",
+  "name": "Dunmore Household",
+  "archetype": null,
+  "seed": 102,
+  "structure": "multi-gen",
+  "summary": "multi-gen (random)",
+  "funds": 38000,
+  "balance": {
+    "up": 13,
+    "down": 7,
+    "neutral": 7
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Kira",
+      "last": "Dunmore",
+      "age": "Elder",
+      "gender": "Female",
+      "traits": [
+        "GreenThumb",
+        "LovesTheOutdoors",
+        "Unlucky",
+        "Unstable",
+        "ComputerWhiz"
+      ],
+      "wish": {
+        "id": 3631643856,
+        "name": "Have at least N different perfect plants"
+      },
+      "food": "EggRolls",
+      "music": "Egypt",
+      "color": "Aqua",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "chaos-agent",
+      "persona": "Kira (Elder): GreenThumb, LovesTheOutdoors, Unlucky, Unstable, ComputerWhiz. Upside: plants grow better, talk to plants, garden quality; happy outside (moodlet), outdoor skills. Downside: bad events, failures, accidents (Feeling Unlucky), death risks; erratic moods, unpredictable.",
+      "expect": [
+        {
+          "trait": "GreenThumb",
+          "plus": "plants grow better, talk to plants, garden quality",
+          "minus": "garden-bound; plants need daily care"
+        },
+        {
+          "trait": "LovesTheOutdoors",
+          "plus": "happy outside (moodlet), outdoor skills",
+          "minus": "Stir Crazy (moodlet) when indoors too long"
+        },
+        {
+          "trait": "Unlucky",
+          "plus": "lower expectations; funny mishaps",
+          "minus": "bad events, failures, accidents (Feeling Unlucky), death risks"
+        },
+        {
+          "trait": "Unstable",
+          "plus": "time-travel and future fun",
+          "minus": "erratic moods, unpredictable"
+        },
+        {
+          "trait": "ComputerWhiz",
+          "plus": "computer skills fast, hacks money, repairs computers",
+          "minus": "spends hours at the computer instead of needs"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Freya",
+      "last": "Dunmore",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Artistic",
+        "Mooch",
+        "GreatKisser",
+        "Hydrophobic",
+        "Loner"
+      ],
+      "wish": {
+        "id": 39298250,
+        "name": "N simoleons per week in royalties"
+      },
+      "food": "ChiliConCarne",
+      "music": "Rap",
+      "color": "Red",
+      "zodiac": "Aquarius",
+      "voice": "A",
+      "storyPersona": "family",
+      "persona": "Freya (Adult): Artistic, Mooch, GreatKisser, Hydrophobic, Loner. Upside: paints, writes and plays music faster and better, sells art; kisses succeed and raise romance fast. Downside: others dislike it; relationship hits when caught mooching; negative moodlets in pools, rain and showers; refuses swimming.",
+      "expect": [
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Mooch",
+          "plus": "gets free food, money and items from others",
+          "minus": "others dislike it; relationship hits when caught mooching"
+        },
+        {
+          "trait": "GreatKisser",
+          "plus": "kisses succeed and raise romance fast",
+          "minus": "more romantic attention: jealousy in households"
+        },
+        {
+          "trait": "Hydrophobic",
+          "plus": "avoids drowning risks",
+          "minus": "negative moodlets in pools, rain and showers; refuses swimming"
+        },
+        {
+          "trait": "Loner",
+          "plus": "fun alone, happy with solitude (moodlet), focuses on skills",
+          "minus": "uncomfortable in crowds and parties, hard to befriend"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Juno",
+      "last": "Dunmore",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Sailor",
+        "HeavySleeper",
+        "LovesTheOutdoors",
+        "Friendly",
+        "Inappropriate"
+      ],
+      "wish": {
+        "id": 256311295,
+        "name": "Own all Hidden Islands"
+      },
+      "food": "PumpkinPie",
+      "music": "Country",
+      "color": "Black",
+      "zodiac": "Sagittarius",
+      "voice": "C",
+      "storyPersona": "family",
+      "persona": "Juno (Adult): Sailor, HeavySleeper, LovesTheOutdoors, Friendly, Inappropriate. Upside: boats and fishing fun, no seasickness; sleeps through noise and alarms, rests well. Downside: restless on land; sleeps through fires and burglars and the alarm clock.",
+      "expect": [
+        {
+          "trait": "Sailor",
+          "plus": "boats and fishing fun, no seasickness",
+          "minus": "restless on land"
+        },
+        {
+          "trait": "HeavySleeper",
+          "plus": "sleeps through noise and alarms, rests well",
+          "minus": "sleeps through fires and burglars and the alarm clock"
+        },
+        {
+          "trait": "LovesTheOutdoors",
+          "plus": "happy outside (moodlet), outdoor skills",
+          "minus": "Stir Crazy (moodlet) when indoors too long"
+        },
+        {
+          "trait": "Friendly",
+          "plus": "friendly socials succeed, quick friends, relationships decay slower",
+          "minus": "too nice to refuse; spends time chatting instead of needs"
+        },
+        {
+          "trait": "Inappropriate",
+          "plus": "fun from rude acts, comic socials",
+          "minus": "embarrasses others, relationship hits, social fails"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Mira",
+      "last": "Dunmore",
+      "age": "Teen",
+      "gender": "Female",
+      "traits": [
+        "BornSalesman",
+        "Lucky",
+        "Frugal",
+        "Hydrophobic"
+      ],
+      "wish": null,
+      "food": "TriTipSteak",
+      "music": "Country",
+      "color": "Violet",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Mira (Teen): BornSalesman, Lucky, Frugal, Hydrophobic. Upside: sells more in shops and registers; lucky events: better outcomes on risky actions, gambling wins. Downside: pushy: relationship hits with buyers; negative moodlets in pools, rain and showers; refuses swimming.",
+      "expect": [
+        {
+          "trait": "BornSalesman",
+          "plus": "sells more in shops and registers",
+          "minus": "pushy: relationship hits with buyers"
+        },
+        {
+          "trait": "Lucky",
+          "plus": "lucky events: better outcomes on risky actions, gambling wins",
+          "minus": "rare: luck runs out; overconfidence takes risks"
+        },
+        {
+          "trait": "Frugal",
+          "plus": "bills cheaper feel, happy when saving (moodlet), shops cheap",
+          "minus": "refuses expensive objects; unhappy spending money"
+        },
+        {
+          "trait": "Hydrophobic",
+          "plus": "avoids drowning risks",
+          "minus": "negative moodlets in pools, rain and showers; refuses swimming"
+        }
+      ]
+    },
+    {
+      "key": "m4",
+      "first": "Hana",
+      "last": "Dunmore",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Mooch",
+        "LovesToSwim",
+        "Good"
+      ],
+      "wish": null,
+      "food": "Ceviche",
+      "music": "Classical",
+      "color": "Green",
+      "zodiac": "Aries",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Hana (Child): Mooch, LovesToSwim, Good. Upside: swimming fun, diving skill; charity, helps others, relationships rise, Good moodlets. Downside: others dislike it; relationship hits when caught mooching; restless away from water.",
+      "expect": [
+        {
+          "trait": "Mooch",
+          "plus": "gets free food, money and items from others",
+          "minus": "others dislike it; relationship hits when caught mooching"
+        },
+        {
+          "trait": "LovesToSwim",
+          "plus": "swimming fun, diving skill",
+          "minus": "restless away from water"
+        },
+        {
+          "trait": "Good",
+          "plus": "charity, helps others, relationships rise, Good moodlets",
+          "minus": "negative moodlet when doing or seeing mean acts; refuses Evil options"
+        }
+      ]
+    },
+    {
+      "key": "m5",
+      "first": "Marco",
+      "last": "Dunmore",
+      "age": "Toddler",
+      "gender": "Male",
+      "traits": [
+        "Athletic",
+        "Good"
+      ],
+      "wish": null,
+      "food": "Veggieburger",
+      "music": "Classical",
+      "color": "Aqua",
+      "zodiac": "Taurus",
+      "voice": "B",
+      "storyPersona": "family",
+      "persona": "Marco (Toddler): Athletic, Good. Upside: skill Athletic faster, fitness, less fatigue from exercise; charity, helps others, relationships rise, Good moodlets. Downside: .",
+      "expect": [
+        {
+          "trait": "Athletic",
+          "plus": "skill Athletic faster, fitness, less fatigue from exercise",
+          "minus": "Couch Potato conflict; gets fidgety (moodlet) when sedentary for long"
+        },
+        {
+          "trait": "Good",
+          "plus": "charity, helps others, relationships rise, Good moodlets",
+          "minus": "negative moodlet when doing or seeing mean acts; refuses Evil options"
+        }
+      ]
+    },
+    {
+      "key": "m6",
+      "first": "Paula",
+      "last": "Dunmore",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Excitable",
+        "Virtuoso",
+        "HotHeaded"
+      ],
+      "wish": null,
+      "food": "VegetarianFishAndChips",
+      "music": "Kids",
+      "color": "Purple",
+      "zodiac": "Sagittarius",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Paula (Child): Excitable, Virtuoso, HotHeaded. Upside: big positive moodlets from good events; music skills faster, better performances, sings. Downside: big swings: overreacts to bad events too; loses temper (fights, Furious), relationship hits, punches.",
+      "expect": [
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "partner"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m4",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m4",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m5",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m5",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m6",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m6",
+      "type": "parent"
+    }
+  ]
+}

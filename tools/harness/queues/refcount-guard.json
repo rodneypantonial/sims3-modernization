@@ -1,0 +1,142 @@
+{
+  "note": "docs/177 §7 build (ts3native 0.36.32, counters v104, asi game-copy/ts3native.asi.0338 = out-rc of branch worktree-agent-ad66b6410f69b02ad): [RouteAsync] RefcountGuard keeps the +0x918 level of the obstacle query / goal footprint gather on the sim thread until the query's caller returns, so the callers' plain [fp+4] writes never run beside a job. Job 1 = correctness on the SV diner crowd with the IP lock-taker loop's settings (every lock-taker piece on, shadows off, TailUnlock + H2), guard on; job 2 = guard on vs off per firing of ip-refcount-ring-loop (the ip-goal-ring-loop firing, only refcountguard flipped) (ABBA in one load, native_set refcountguard, 10 firings per arm fixed before the run, docs/168) with the measurement settings of tool-check.json. Copy out-rc/ts3native.asi to game-copy/ts3native.asi.0338 first. Job 1 FAIL (crash, watchdog line, rcPass_4 / rcDropped_1 > 0): stop, fix, do not run job 2. Dry run only so far.",
+  "jobs": [
+    {
+      "id": "sv-refcount-guard-verify",
+      "note": "Day (correctness, not timing): diner-crowd-loop until 3 firings (cap 8 min) on SV with the ip-locktaker-ab settings plus RefcountGuard=1 Mode 1. Pass: no crash, the OK lines, rcReady 1, kept levels on the steering callers (rcDeferred > 0, rcByFn_8 RouteFollow_A or rcByFn_11 Locomotion_ObstacleCheck > 0), every kept level released at its caller's return (rcLeaves = rcFrames, read), rcPass_4 0 (frame check), rcDropped_1 0 (no unwound frame), no watchdog line (g0wWatchdog 0, 'waited ... s for the job' 0). Read: rcBusyAtOpen (frames that mattered), rcHoldUs / rcHoldMaxUs (extra hold), rcDropped_0 (kept levels released before a sim wait: expected rare), rcPass_1 (callers not listed), rcByFn_* split.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "rcReady>=1,rcDeferred>=1,rcPass_4<=0,rcDropped_1<=0,g0wWatchdog<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,usfApplyInJob<=0,fp2ApplyInJob<=0",
+      "logRequire": {
+        "OK   refcount guard": 1,
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "diner-crowd-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 3,
+              "minFirings": 3
+            },
+            "maxMinutes": 8
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 24
+    },
+    {
+      "id": "ip-refcount-guard-ab",
+      "note": "Bundle check (clean night, timing): ip-refcount-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), refcountguard flipped per firing (ini installs it with Mode 0, the switch decides), measurement settings of tool-check.json, cap 45 min. Pass: no crash, the OK line, rcPass_4 0, rcDropped_1 0, no watchdog line, rcDeferred > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Hitches must not rise: per arm (hitch-ab.ts) iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved-waits table: does the kept level move waits to the worker's acquire or to new keys), it/s, asyncUs, rcHoldUs per arm. Expected: hitch change ~0 (the extra hold is the callers' loops, microseconds; inferred, not measured).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "rcReady>=1,rcDeferred>=1,rcPass_4<=0,rcDropped_1<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   refcount guard": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-refcount-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

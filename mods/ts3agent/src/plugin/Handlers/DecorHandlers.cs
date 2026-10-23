@@ -106,6 +106,7 @@ namespace Ts3Agent
 
         static object PlaceObject(Args a)
         {
+            RequireLive();
             BuildBuyProduct prod = FindProduct(a.Str("product"));
             Vector3 pos = new Vector3((float)a.Double("x"), (float)a.Double("y", 0), (float)a.Double("z"));
             if (!a.Has("y")) pos.y = World.GetTerrainHeight(pos.x, pos.z);
@@ -115,6 +116,7 @@ namespace Ts3Agent
 
         static object ReplaceObject(Args a)
         {
+            RequireLive();
             GameObject old = FindTarget(a, "target");
             if (old is Sim || old is Lot) throw new McpException("that cannot be replaced");
             if (old.InUse) throw new McpException(Util.ObjectName(old) + " is in use right now");
@@ -138,6 +140,7 @@ namespace Ts3Agent
 
         static object SetTransform(Args a)
         {
+            RequireLive();
             GameObject o = FindTarget(a, "target");
             if (o is Sim || o is Lot) throw new McpException("use go_here to move sims");
             Vector3 pos = o.Position;

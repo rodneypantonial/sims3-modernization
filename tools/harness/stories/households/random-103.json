@@ -1,0 +1,221 @@
+{
+  "id": "random-103",
+  "name": "Jessop Household",
+  "archetype": null,
+  "seed": 103,
+  "structure": "couple-kids",
+  "summary": "couple-kids (random)",
+  "funds": 29000,
+  "balance": {
+    "up": 6,
+    "down": 5,
+    "neutral": 5
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Rosa",
+      "last": "Jessop",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "BotFan",
+        "Charismatic",
+        "Artistic",
+        "Disciplined",
+        "NeverNude"
+      ],
+      "wish": {
+        "id": 1695049514,
+        "name": "Level 10 of journalism career"
+      },
+      "food": "VegetarianChili",
+      "music": "Spaghetti_Western",
+      "color": "Red",
+      "zodiac": "Aries",
+      "voice": "C",
+      "storyPersona": "socialite",
+      "persona": "Rosa (Adult): BotFan, Charismatic, Artistic, Disciplined, NeverNude. Upside: likes robots, bot-making bonus; Charisma skill faster, conversations succeed, more friends. Downside: odd with humans; showers in a swimsuit, refuses nude activities and some saunas.",
+      "expect": [
+        {
+          "trait": "BotFan",
+          "plus": "likes robots, bot-making bonus",
+          "minus": "odd with humans"
+        },
+        {
+          "trait": "Charismatic",
+          "plus": "Charisma skill faster, conversations succeed, more friends",
+          "minus": "socially demanding: wants company, Lonely sooner"
+        },
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Disciplined",
+          "plus": "martial arts faster, focus",
+          "minus": "rigid: unhappy with chaos"
+        },
+        {
+          "trait": "NeverNude",
+          "plus": "modesty: no skinny dipping embarrassment",
+          "minus": "showers in a swimsuit, refuses nude activities and some saunas"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Finn",
+      "last": "Jessop",
+      "age": "Adult",
+      "gender": "Male",
+      "traits": [
+        "HotHeaded",
+        "LovesToSwim",
+        "Charismatic",
+        "GathererTrait",
+        "AntiTV"
+      ],
+      "wish": {
+        "id": 3034414675,
+        "name": "Have N friends or better"
+      },
+      "food": "FishAndChips",
+      "music": "Rap",
+      "color": "Blue",
+      "zodiac": "Cancer",
+      "voice": "C",
+      "storyPersona": "chaos-agent",
+      "persona": "Finn (Adult): HotHeaded, LovesToSwim, Charismatic, GathererTrait, AntiTV. Upside: swimming fun, diving skill; Charisma skill faster, conversations succeed, more friends. Downside: loses temper (fights, Furious), relationship hits, punches; restless away from water.",
+      "expect": [
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        },
+        {
+          "trait": "LovesToSwim",
+          "plus": "swimming fun, diving skill",
+          "minus": "restless away from water"
+        },
+        {
+          "trait": "Charismatic",
+          "plus": "Charisma skill faster, conversations succeed, more friends",
+          "minus": "socially demanding: wants company, Lonely sooner"
+        },
+        {
+          "trait": "GathererTrait",
+          "plus": "finds more collectibles",
+          "minus": "wanders gathering instead of chores"
+        },
+        {
+          "trait": "AntiTV",
+          "plus": "skips TV for books, hobbies and skills",
+          "minus": "uncomfortable (moodlet) when made to watch TV; no TV fun source"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Lena",
+      "last": "Jessop",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "FamilyOriented",
+        "Ambitious",
+        "Unlucky"
+      ],
+      "wish": null,
+      "food": "FruitParfait",
+      "music": "RnB",
+      "color": "SpiceBrown",
+      "zodiac": "Taurus",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Lena (Child): FamilyOriented, Ambitious, Unlucky. Upside: better with kids, happy with family (moodlet), good parenting; faster job performance and promotions, more wishes for career. Downside: misses family when apart (Homesick), demanding wishes for babies; bad events, failures, accidents (Feeling Unlucky), death risks.",
+      "expect": [
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Ambitious",
+          "plus": "faster job performance and promotions, more wishes for career",
+          "minus": "stressed and unhappy when not promoted for a while (Stressed moodlet)"
+        },
+        {
+          "trait": "Unlucky",
+          "plus": "lower expectations; funny mishaps",
+          "minus": "bad events, failures, accidents (Feeling Unlucky), death risks"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Sami",
+      "last": "Jessop",
+      "age": "Child",
+      "gender": "Male",
+      "traits": [
+        "EasilyImpressed",
+        "Athletic",
+        "Diva"
+      ],
+      "wish": null,
+      "food": "PorciniRisotto",
+      "music": "Roots",
+      "color": "Lilac",
+      "zodiac": "Cancer",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Sami (Child): EasilyImpressed, Athletic, Diva. Upside: easy to befriend, enjoys everything; skill Athletic faster, fitness, less fatigue from exercise. Downside: gullible; impressed by bad performances and scams; tantrums, relationship hits, demanding.",
+      "expect": [
+        {
+          "trait": "EasilyImpressed",
+          "plus": "easy to befriend, enjoys everything",
+          "minus": "gullible; impressed by bad performances and scams"
+        },
+        {
+          "trait": "Athletic",
+          "plus": "skill Athletic faster, fitness, less fatigue from exercise",
+          "minus": "Couch Potato conflict; gets fidgety (moodlet) when sedentary for long"
+        },
+        {
+          "trait": "Diva",
+          "plus": "stage performance bonus, demands get met",
+          "minus": "tantrums, relationship hits, demanding"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "partner"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m0",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m3",
+      "type": "parent"
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+[
+  { "id": "world-ip-dive", "category": "world", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "diver", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "IslandParadise", "prepare": false }, { "kind": "venue", "value": "Diving", "prepare": false }],
+    "steps": [
+      { "cmd": "set_skill", "args": { "sim": "$actor.diver", "skill": "ScubaDiving", "level": 3 }, "optional": true },
+      { "cmd": "interact", "actor": "diver", "target": { "find": "venue", "value": "Diving" }, "label": "Scuba Dive", "waitS": 120 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "dive lot load (underwater world), boat routing to the spot" },
+
+  { "id": "world-ip-houseboat-move", "category": "world", "realism": "natural", "weight": 0.6,
+    "actors": [],
+    "needs": [{ "kind": "ep", "value": "IslandParadise", "prepare": false }, { "kind": "venue", "value": "Port", "prepare": false }],
+    "steps": [{ "cmd": "houseboat_move", "args": { "count": 1 }, "waitS": 60 }],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "houseboat lot moves and re-streams" },
+
+  { "id": "world-ip-boat-travel", "category": "world", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "sailor", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "IslandParadise", "prepare": false }, { "kind": "venue", "value": "Beach", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.sailor", "lot": "$target" }, "target": { "find": "venue", "value": "Beach" }, "waitS": 120 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "water route plans (EnablePlanningAsBoat), sea checks; gap: own_vehicle has no boat kind (car, bike, stroller, broom), so the game picks the travel mode" },
+
+  { "id": "world-ip-sea-crowd", "category": "world", "realism": "stress", "weight": 0.3,
+    "actors": [],
+    "needs": [{ "kind": "world", "value": "Isla Paradiso", "prepare": false }],
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 12 } },
+      { "cmd": "crowd_sea_lot", "args": { "max": 12 }, "waitS": 120 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "crowd Go Here to a lot with sea: world A* floods (docs/142)" },
+
+  { "id": "world-sv-park", "category": "world", "realism": "natural", "weight": 1.0,
+    "actors": [{ "role": "a", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "world", "value": "Sunset Valley", "prepare": false }, { "kind": "venue", "value": ["SmallPark", "BigPark", "RecreationPark"], "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": ["SmallPark", "BigPark", "RecreationPark"] } },
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.b", "lot": "$target" }, "target": { "find": "venue", "value": ["SmallPark", "BigPark", "RecreationPark"] }, "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "a", "target": { "find": "object", "value": "any" }, "waitS": 40, "optional": true },
+      { "cmd": "any_interaction", "actor": "b", "target": "$actor.a", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "park: grills, playground, fishing, chess, townie crowd" },
+
+  { "id": "world-sv-night-seacheck", "category": "world", "realism": "stress", "weight": 0.2,
+    "actors": [],
+    "needs": [{ "kind": "world", "value": "Sunset Valley", "prepare": false }],
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 12 } },
+      { "cmd": "crowd_sea_lot", "args": { "max": 12 }, "waitS": 90 },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 60 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "story version of route-sv-seacheck-freeze (docs/169)" },
+
+  { "id": "world-nightlife-bar", "category": "world", "realism": "natural", "weight": 0.9,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "ep", "value": "LateNight", "prepare": false }, { "kind": "venue", "value": ["DiveBarSports", "DiveBarIrish", "DiveBarCriminal", "CocktailLoungeAsian", "CocktailLoungeVampire", "CocktailLoungeCelebrity", "WerewolfBar", "FutureBar"], "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": ["DiveBarSports", "DiveBarIrish", "DiveBarCriminal", "CocktailLoungeAsian", "CocktailLoungeVampire", "CocktailLoungeCelebrity", "WerewolfBar", "FutureBar"] }, "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "a", "target": { "find": "object", "value": "bar" }, "waitS": 30, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Flirt", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "bartender NPC, drink making, crowd autonomy" },
+
+  { "id": "world-nightlife-club", "category": "world", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "LateNight", "prepare": false }, { "kind": "venue", "value": ["DanceClubRave", "DanceClubPool", "DanceClubLiveMusic"], "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": ["DanceClubRave", "DanceClubPool", "DanceClubLiveMusic"] }, "waitS": 90 },
+      { "cmd": "interact", "actor": "a", "target": { "find": "object", "value": "dance floor" }, "label": "Dance", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1, "note": "bouncer/VIP gate, light effects (particles), many dancers" },
+
+  { "id": "world-bp-vampire-night", "category": "world", "realism": "cheat", "weight": 0.5,
+    "actors": [{ "role": "vamp", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": "Vampire", "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "LateNight", "prepare": false }, { "kind": "occult", "value": "Vampire", "prepare": true }, { "kind": "venue", "value": "any" }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.vamp", "type": "Vampire" }, "optional": true },
+      { "cmd": "set_motive", "args": { "sim": "$actor.vamp", "motive": "VampireThirst", "value": -80 }, "optional": true },
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.vamp", "lot": "$target" }, "target": { "find": "venue", "value": "any" }, "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "vamp", "target": { "find": "age", "value": "YoungAdult" }, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "vampire run, mind read, sun-exposure checks at dawn" },
+
+  { "id": "world-mf-hangout", "category": "world", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "a", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "world", "value": "Moonlight Falls", "prepare": false }, { "kind": "venue", "value": ["Hangout", "RebelHangout", "UniversityHangout"], "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": ["Hangout", "RebelHangout", "UniversityHangout"] }, "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "a", "target": { "find": "occult", "value": "any" }, "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "occult townies meet; occult-only interactions in pie menus" },
+
+  { "id": "world-mf-elixir-shop", "category": "world", "realism": "cheat", "weight": 0.5,
+    "actors": [{ "role": "a", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }, { "kind": "venue", "value": ["ConsignmentStore", "PotionShopConsignmentStore"], "prepare": false }, { "kind": "shop", "value": "register" }],
+    "steps": [
+      { "cmd": "household_funds", "args": { "add": 2000 } },
+      { "cmd": "interact", "actor": "a", "target": { "find": "shop", "value": "register" }, "label": "Buy", "waitS": 40 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "Elixir consignment: elixirs, alchemy items" },
+
+  { "id": "world-strand-stuck", "category": "world", "realism": "stress", "weight": 0.3,
+    "actors": [],
+    "needs": [],
+    "steps": [
+      { "cmd": "strand_many", "args": { "count": 6 }, "waitS": 120 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "townies stuck on unroutable spots: stuck checks + reset plans (docs/169)" },
+
+  { "id": "world-portal-trip", "category": "world", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "a", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "sim_portal_trip", "args": { "sim": "$actor.a" }, "waitS": 90 }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "subway / elevator / stairs portal routing" }
+]

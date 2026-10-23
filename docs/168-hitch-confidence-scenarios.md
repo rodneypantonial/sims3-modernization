@@ -110,3 +110,24 @@ Found in the 2026-10-22/23 loop runs. Harness and data only; self-checks and dry
 **3. Measurement settings.** The three A/B queues already carried `freeze-measure.json`'s settings (frames on, `Harness.ForegroundRender=1`, `profile.noSamplers`, `HitchAttr` `Holders=1`, `RouteJobPhases` `SyncPlans=1`) on asi `.0332` (freeze-measure itself names `.0331`); their own switches (`fixesOn` without the armed fix, `cameraPan` only on the route loops) stay. The repro-loop self-check now asserts these settings, a `minFirings >= 10` loop rule on every loop job and `timeoutMin >= minutes + 10` for all 10 jobs of `route-hitch-loops`, `script-hitch-loops` and `overwatch-loop2`.
 
 **Checks [verified]:** `node tools/harness/repro-loop.ts` (minFirings: a counted perArm 20 stops after 1 cycle alone, after 5 with minFirings 10; single-arm minFirings; `withRule`; `isSetup` defaults; repros.json marks; queue settings), `hitch-ab.ts --self-check` (setup pieces 70-74 / 100-104 s, a 1700 ms setup iteration in `off setup`, seconds 26/4/96/4), `freeze-report.ts --self-check` (`off setup` cause row), `worst-hitches.ts --self-check` (`stepSetup` by mark and by repros.json position), `queue.ts --self-check`, `--dry-run` of the three A/B queues and `repro-check-route.json` (correctness rules unchanged). Not checked in the game: the `(setup)` mark and wait-end lines in a real log (I-168-8), the firing lengths behind the new caps (I-168-9).
+
+## 8. Addendum: probe calls exclude only what they explain (2026-10-23, docs/178 T2)
+
+`freeze-report.ts` dropped sv-crowd-0333's 2085 ms publish gap (`rerun-0333-2026-10-23-sv-crowd-cause-0333`, iteration n 5438: `rtLock` 2069 ms at steering `0x85FE10` behind a foreign 2.08 s route job) as `probe call`, because a 110 ms `keep_alive` call ended inside it (docs/178 §3 named it `game_state`; the call on the gap by the frames.csv offset is `keep_alive`). Harness only, **no game run**. Ledger §295.
+
+**Rule (worst-hitches.ts `exclusion()` / `callExplains()`, shared by freeze-report, hitch-ab, story-report, worst-hitches):** an overlapping probe call excludes an iteration, publish gap or seconds row only when it can explain it:
+- never when the iteration (the gap's / row's longest) is led by a route wait: `rtLock + rtOtherLock + rtJob + rtPlanWait` >= half its wall time (the sim waited on a route job's lock or result; no agent call causes that);
+- else when the call's own round trip (`calls.jsonl` t1 - t0) is >= half the hitch, or the command leaves sim-thread work behind after it returns (`spawn_sims`, `remove_sims`, `crowd_go`, `save_game`);
+- rows with no hitch, frames, and older runs without `calls.jsonl` (upkeep-round guesses, no duration) keep the old rule (any overlap excludes). A gap or hitch judged real by its own check is no longer re-excluded by its row's probe call.
+- Self-check cases in `worst-hitches.ts --self-check`: the exact sv-crowd-0333 iteration/row/gap (real), the same call without the route wait (real: 110 ms < half of 2 s), a 350 ms call on a 400 ms hitch (excluded), a 26 ms call (real), a 26 ms `spawn_sims` (excluded), a 350 ms call on an `rtJob`-led hitch (real).
+
+**Re-read (real counts, before -> after; freeze-report publish gaps, hitch-ab iterations):**
+
+| Run | real min | gaps >= 300 | gaps >= 1000 | iterations >= 300 | iterations >= 1000 |
+|---|---|---|---|---|---|
+| rerun-0333 sv-crowd-cause-0333 | 4.6 -> 4.8 | 3 -> 5 | 0 -> **1** (2085 ms) | 4 -> 7 | 0 -> 1 |
+| natural-play-2026-10-22 bp-natural-30 | 24.3 -> 25.8 | 5 -> 7 | 0 -> 0 | 5 -> 8 | 0 -> 0 |
+| natural-play-2026-10-22 ip-natural-30 | 25.0 -> 26.2 | 32 -> 33 | 0 -> 0 | 34 -> 43 | 0 -> 0 |
+| natural-play-2026-10-22 sv-natural-30 (INVALID: noisy) | 24.2 -> 25.2 | 24 -> 26 | 9 -> 10 (a 1595 ms gap over 663 short iterations; the only calls, `test_env` 27 ms + `time` 4 ms, start ~100 ms after it ends and were matched only through the 200 ms pad and the row) | (invalid run) | |
+
+Probe-call exclusions shrink to short calls on short hitches (sv-crowd 42 -> 8 gaps, max 2085 -> 123 ms; BP 481 -> 112, IP 270 -> 54). The SV crowd >= 1000 ms rate is 2.1 per 10 min (was 0.0), as docs/178 T2 predicted (~2.2). Conclusions that change: the lock-taker / foreign-job targets (docs/178 T1, T5) see more real freezes in every agent-polled run; IP natural's ~9 extra iterations >= 300 ms are the sim-side waits the calls had hidden.

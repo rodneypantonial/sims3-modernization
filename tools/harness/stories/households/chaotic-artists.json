@@ -1,0 +1,189 @@
+{
+  "id": "chaotic-artists",
+  "name": "Paintbrush Commune",
+  "archetype": "chaotic-artists",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "Three artist roommates: great art and music, messy house, stolen trinkets and odd behaviour.",
+  "funds": 30000,
+  "balance": {
+    "up": 6,
+    "down": 5,
+    "neutral": 4
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Ines",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "Artistic",
+        "Insane",
+        "Slob",
+        "Virtuoso",
+        "PartyAnimal"
+      ],
+      "wish": {
+        "id": 782846499,
+        "name": "Level 10 music (rock branch)"
+      },
+      "food": "Hamburger",
+      "music": "Egypt",
+      "color": "Lilac",
+      "zodiac": "Leo",
+      "voice": "A",
+      "storyPersona": "chaos-agent",
+      "persona": "Ines (YoungAdult): Artistic, Insane, Slob, Virtuoso, PartyAnimal. Upside: paints, writes and plays music faster and better, sells art; music skills faster, better performances, sings. Downside: erratic actions, talks to itself, scares others, bad social results; dirty home, smelly (moodlets for others), household disgust, roaches.",
+      "expect": [
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Insane",
+          "plus": "strange fun socials, odd talk works with other Insane Sims",
+          "minus": "erratic actions, talks to itself, scares others, bad social results"
+        },
+        {
+          "trait": "Slob",
+          "plus": "no need to clean; unaffected by mess",
+          "minus": "dirty home, smelly (moodlets for others), household disgust, roaches"
+        },
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "PartyAnimal",
+          "plus": "great parties, fun at parties (moodlet), quick friends at events",
+          "minus": "throws and joins parties all night: energy, money, work performance"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Theo",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Male",
+      "traits": [
+        "Artistic",
+        "Kleptomaniac",
+        "Excitable",
+        "NightOwlTrait",
+        "CouchPotato"
+      ],
+      "wish": {
+        "id": 153251938,
+        "name": "Own N simoleons in stolen goods"
+      },
+      "food": "VegetarianFishAndChips",
+      "music": "Indie",
+      "color": "HotPink",
+      "zodiac": "Scorpio",
+      "voice": "A",
+      "storyPersona": "chaos-agent",
+      "persona": "Theo (YoungAdult): Artistic, Kleptomaniac, Excitable, NightOwlTrait, CouchPotato. Upside: paints, writes and plays music faster and better, sells art; big positive moodlets from good events. Downside: relationship hit and arrest risk when caught; household fills with junk; big swings: overreacts to bad events too.",
+      "expect": [
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Kleptomaniac",
+          "plus": "swipes objects for fun and money (sell)",
+          "minus": "relationship hit and arrest risk when caught; household fills with junk"
+        },
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "NightOwlTrait",
+          "plus": "energy and fun at night, nightlife",
+          "minus": "grumpy and tired mornings: work and school"
+        },
+        {
+          "trait": "CouchPotato",
+          "plus": "big fun from TV, comfortable on couches",
+          "minus": "hates exercise, gains weight, low energy for jobs that need fitness"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Rosa",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Virtuoso",
+        "AbsentMinded",
+        "Eccentric",
+        "Clumsy",
+        "Lucky"
+      ],
+      "wish": {
+        "id": 160825286,
+        "name": "Level 10 of Ghost Hunter Career"
+      },
+      "food": "FirecrackerTofu",
+      "music": "Egypt",
+      "color": "IrishGreen",
+      "zodiac": "Aquarius",
+      "voice": "C",
+      "storyPersona": "chaos-agent",
+      "persona": "Rosa (Adult): Virtuoso, AbsentMinded, Eccentric, Clumsy, Lucky. Upside: music skills faster, better performances, sings; inventing faster, odd ideas. Downside: forgets what it was doing (cancels own actions), forgets names, wanders off mid-task; others find it odd, social fails.",
+      "expect": [
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "AbsentMinded",
+          "plus": "occasional bursts of insight, skill gain unaffected",
+          "minus": "forgets what it was doing (cancels own actions), forgets names, wanders off mid-task"
+        },
+        {
+          "trait": "Eccentric",
+          "plus": "inventing faster, odd ideas",
+          "minus": "others find it odd, social fails"
+        },
+        {
+          "trait": "Clumsy",
+          "plus": "comic relief; harmless trips can be funny",
+          "minus": "trips, spills food, falls, fails exercises; slower skill progress on some objects"
+        },
+        {
+          "trait": "Lucky",
+          "plus": "lucky events: better outcomes on risky actions, gambling wins",
+          "minus": "rare: luck runs out; overconfidence takes risks"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "roommate"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "roommate"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "roommate"
+    }
+  ]
+}

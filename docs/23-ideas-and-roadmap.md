@@ -193,3 +193,21 @@ Results from different machines only compare when everyone measures the same sav
 | IP | 9,810 | 166.9 ms/s | 1 | - | - | 0.00 ms/s |
 
 **Verdict [measured]: no plan cache.** Plans almost never repeat with the same inputs: Sims move between requests, so start points differ, and the few same-key repeats come after a world change. The 108-167 ms/s of sim-thread plan time is real search work; only taking it off the sim thread (docs/94 option G) removes it.
+
+### 19. Split into separate projects (Rodney 2026-10-23; plan only, not started)
+
+Idea: four repositories instead of one.
+
+| Project | Holds | Depends on |
+|---|---|---|
+| research (base) | RE notes, docs/, ledger, data CSVs, Ghidra/REA scripts, pointers to the others | nothing |
+| profiler (test kit) | `tools/harness`, `mods/ts3agent`, repros, queues, hitch/freeze reports, measurement method (docs/161-170) | a counter schema from ts3native (version + offsets) |
+| story fuzzer | `story-*.ts`, stories/, StoryHandlers | profiler's agent and measurement |
+| sims3-modernization | releases only: ts3native, ts3fixes, installer, CHANGELOG, player docs | profiler for its release checks |
+
+Assessment (2026-10-23):
+- Worth it: the profiler is reusable by other modders (Apex Radiance already takes the runner, PR #33); the release repo gets small and player-facing; research notes stop mixing with build files; each can have its own issues and contributors.
+- Cost now: the profiler reads ts3native counters by fixed offsets (docs/registry.md), ts3fixes switches by name and repros flip both; today one commit changes all three. Split repos turn that into versioned contracts and cross-repo PRs. Release week (v0.1.5, 2026-10-27) is the wrong time.
+- Story fuzzer as its own repo is early: it shares the agent command set and the measurement join with the profiler. Start it as a folder of the profiler repo; move it out once its agent commands are a separate package.
+- Order when started: (1) export a counter schema file from ts3native (generated, versioned) and make the harness read it instead of hard-coded offsets; (2) split research (docs only, no code deps; `git filter-repo` keeps history); (3) split profiler + fuzzer; (4) the rest stays as sims3-modernization. Public scrub (no paths, names, decompiled code) runs per repo.
+- Start after v0.1.5 ships and the Mono offload work is in maintenance (same rule as the readability refactor, #18 in PLAN/docs/23).

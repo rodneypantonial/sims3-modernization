@@ -1,0 +1,4 @@
+{ "world": "Moonlight Falls",
+  "goodFor": "Supernatural: occult population (witches, werewolves, fairies, vampires), occult venues (hangout, Elixir consignment), full-moon zombies, wooded far lots. Used only when installed (census `world`).",
+  "categoryBias": { "normal": 0.8, "world": 1.5, "lifestage": 0.8, "chaos": 1.0, "occult": 3.0 },
+  "templateBias": { "world-mf-": 3.0, "world-": 0.3, "occult-": 1.5 } }

@@ -239,9 +239,21 @@ namespace Ts3Fixes
             bool AsyncKindStart(int kind, Vector3 p)
             {
                 IScriptProxy proxy = Follower;
-                if (!AsyncEligible(proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null, "asyncreplan")) return false;
+                // docs/176: not the route's own Sim task (a boat or car follower driven from its Sim's task, another Sim's or a
+                // one-shot task) but a task that may yield: foreign START (bit 61). ts3native starts it only with [RouteAsync]
+                // ForeignKinds and refuses it as "Foreign" otherwise; older ts3native and the game answer false (sync as before).
+                // Switch "asyncreplanforeign" (default on; ts3native decides). Counters: [246] foreign STARTs sent, [247] started.
+                bool own = AsyncEligible(proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null, "asyncreplan");
+                if (!own && !(ShortcutOn("asyncreplan") && ShortcutOn("asyncreplanforeign") && ForeignEligible())) return false;
                 if (kind >= 2) { AsyncPoint(0, p.x); AsyncPoint(1, p.y); AsyncPoint(2, p.z); }
-                return GetOption2((Sims3.SimIFace.Route.RouteOption2)(kArStart | (ulong)kind << 56));
+                bool started = GetOption2((Sims3.SimIFace.Route.RouteOption2)((own ? kArStart : kArStart | kArForeign) | (ulong)kind << 56));
+                if (!own)
+                {
+                    int[] c = PatchCounters();
+                    c[246]++;
+                    if (started) c[247]++;
+                }
+                return started;
             }
             void AsyncPoint(int i, float f)
             {
@@ -253,7 +265,7 @@ namespace Ts3Fixes
             const Sims3.SimIFace.Route.RouteOption kAsyncStart = (Sims3.SimIFace.Route.RouteOption)0x0400000000000000L;
             const Sims3.SimIFace.Route.RouteOption2 kAsyncReady = (Sims3.SimIFace.Route.RouteOption2)0x0400000000000000L;
             const Sims3.SimIFace.Route.RouteOption2 kAsyncCancel = (Sims3.SimIFace.Route.RouteOption2)0x4400000000000000L;
-            const ulong kArStart = 0x0C00000000000000UL, kArPoint = 0x1C00000000000000UL;
+            const ulong kArStart = 0x0C00000000000000UL, kArPoint = 0x1C00000000000000UL, kArForeign = 0x2000000000000000UL;
             const int kAsyncMaxPolls = 1000;
 
             // What Plan leaves after a real failure, minus the blocker (so no fail-path plans): empty paths, invalid start points.

@@ -1,0 +1,141 @@
+{
+  "note": "Clean night Fri 2026-10-23 (release plan v0.1.5, Tue 10-27): Overwatch v2 confirm, then the lock-taker bundle A/B (10 firings per arm). No agents or builds during the run. ~1.5 h.",
+  "jobs": [
+    {
+      "id": "bp-overwatch-ab-loop4-clean",
+      "note": "Clean-night confirm of overwatchchain v2 (day run 2026-10-23 flagged noisy: on max 69 ms vs off 294). Numbers go into the NRaas PR follow-up comment. Rerun of repro bp-overwatch-ab-loop2 (arm + fire, ABBA, until 10 firings per arm, loop cap 20 min) with ts3fixes overwatchchain v2. Pass: every on-arm firing ran as a chain and no iteration holds a >= 100 ms run of the chain task (hitchTasks cap rule; the off arm runs in the trigger's own task, not counted). If StuckCheck still gets no per-plan yield, overwatchspread_log has one 'StuckCheck plan without a yield' line naming the gate. Read: node tools/harness/hitch-ab.ts --scenario <tag> (rows reflect_call off / on).",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 22,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "bp-overwatch-ab-loop2",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 20
+          },
+          "fixesRequire": "owchain_alarms>=10,owchain_yields>=150,owspread_inv_passes>=10",
+          "hitchTasks": [
+            "OwChainTheirs@100<1"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-locktaker-ab",
+      "note": "Clean night (timing): ABBA until 10 firings per arm (fixed before the run, docs/168), shadows off, cap 60 min. Pass: as verify without the shadow rows, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: iterations >= 100/300/1000 ms, p99/p99.9/max, visible freezes, rtMaxKey split (removed keys 0x85FE10, 0x846D21, 0x62EF7A, 0x833593, 0x8334CC, 0x83156D, 0x631F40 and the absorbers 0x62FB74, 0x760BFF, 0x2000003, 0x82D296, 0x82A0F6), it/s, asyncUs, m2DoorWaitUs; moved-waits table drives the next fix.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-locktaker-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    }
+  ]
+}

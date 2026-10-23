@@ -24,6 +24,7 @@ namespace Ts3Agent
             Dispatcher.Register("strand_many", StrandMany); // HitchReproHandlers.cs
             Dispatcher.Register("sim_visit_lot", SimVisitLot);
             Dispatcher.Register("sim_route_to", SimRouteTo);
+            Dispatcher.Register("route_replan", RouteReplan);
             Dispatcher.Register("sim_portal_trip", SimPortalTrip);
             Dispatcher.Register("thumbnails", Thumbnails);
             Dispatcher.Register("outfit_change", OutfitChange);
@@ -379,6 +380,7 @@ namespace Ts3Agent
         // place_sim {sim, x, z, y?}: stand the Sim at a world position (resets what it was doing, like the game's teleport)
         static object PlaceSim(Args a)
         {
+            RequireLive();
             Sim s = Util.FindSim(a, "sim");
             Vector3 p = s.Position;
             p.x = (float)a.Double("x");
@@ -455,7 +457,8 @@ namespace Ts3Agent
         static object SimVisitLot(Args a)
         {
             Sim s = Util.FindSim(a, "sim");
-            Lot lot = FindLotByName(a.Str("lot"));
+            string ln = a.Str("lot");
+            Lot lot = ln.StartsWith("lot:") ? FindLot(ln.Substring(4)) : FindLotByName(ln);  // "lot:<id>" = story fuzzer venue targets (docs/171 §7)
             InteractionDefinition def = lot.IsCommunityLot ? VisitCommunityLot.Singleton : VisitLot.Singleton;
             InteractionInstance i = def.CreateInstance(lot, s, new InteractionPriority(InteractionPriorityLevel.Autonomous), true, true);
             Dictionary<string, object> r = Util.Obj();
@@ -511,6 +514,57 @@ namespace Ts3Agent
             r["plan"] = route.PlanResult.mType.ToString();
             if (set.Count > 0) r["options"] = set;
             return r;
+        }
+
+        // route_replan {count?: 3}: replan "@route" (the last sim_route_to route, not followed) from its follower's position with
+        // Route.ReplanFromPoint, count times, in a one-shot task: a yielding task that is not the route's Sim, the context of the
+        // foreign ReplanFromPosition plans (docs/176: boat/car followers driven from their Sim's task, other tasks). Returns at
+        // once; {result: true} returns and clears the rows so far: plan type, paths, ms (TickCount) and sig, a hash of the path
+        // start points and the destination (the same sig on both arms = the same route).
+        static readonly List<object> sReplanRows = new List<object>();
+        static object RouteReplan(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            if (a.Bool("result", false))
+            {
+                lock (sReplanRows) { r["rows"] = new List<object>(sReplanRows); sReplanRows.Clear(); }
+                return r;
+            }
+            Route route = (Route)LastLiveRoute();
+            int count = (int)a.Long("count", 3);
+            RunAsync("route_replan", delegate
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    if (route.RouteHandle == 0 || route.Follower == null) throw new McpException("route disposed");
+                    GameObject f = route.Follower.Target as GameObject;
+                    Vector3 from = f != null ? f.PositionOnFloor : Vector3.Invalid;
+                    int t0 = System.Environment.TickCount;
+                    RoutePlanResult res = route.ReplanFromPoint(from);
+                    int ms = System.Environment.TickCount - t0;
+                    uint n = route.GetNumPaths();
+                    int sig = PointSig(17, route.GetDestPoint());
+                    for (uint p = 0; p < n; p++)
+                    {
+                        Vector3 s = default(Vector3);
+                        route.GetPathStartPoint(p, ref s);
+                        sig = PointSig(sig, s);
+                    }
+                    Dictionary<string, object> row = Util.Obj();
+                    row["plan"] = res.mType.ToString();
+                    row["paths"] = (long)n;
+                    row["ms"] = (long)ms;
+                    row["sig"] = sig.ToString("X8");
+                    lock (sReplanRows) { if (sReplanRows.Count < 400) sReplanRows.Add(row); }
+                }
+            });
+            r["queued"] = count;
+            return r;
+        }
+        // centimetre grid: a hash that does not depend on the runtime's struct hashing
+        static int PointSig(int h, Vector3 v)
+        {
+            return ((h * 31 + (int)Math.Round(v.x * 100f)) * 31 + (int)Math.Round(v.y * 100f)) * 31 + (int)Math.Round(v.z * 100f);
         }
 
         // sim_portal_trip {sim?, via?}: Go Here (user-directed, default the active Sim) into the sea (via "ocean", default:

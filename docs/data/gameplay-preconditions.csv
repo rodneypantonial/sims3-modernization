@@ -1,0 +1,155 @@
+command,handler,states,player_action,realism,preconditions,source,gate
+ping,SystemHandlers,Any,none (agent plumbing),harness,,handler,none
+commands,SystemHandlers,Any,none (agent plumbing),harness,,handler,none
+game_state,HarnessHandlers,Any,none (read),harness,,handler,none
+load_world,HarnessHandlers,MainMenu,New Game > pick a world,natural,not in a world,handler + R-MODE-1,none
+load_save,HarnessHandlers,MainMenu;Live,Load Game (reload: true = quit to the main menu then Load),natural,not in a world unless reload,handler + R-MODE-1,none
+world_households,HarnessHandlers,Any,none (read),harness,,handler,none
+houseboats,HarnessHandlers,Any,none (read),harness,,handler,none
+patch_test,HarnessHandlers,Any,none (our patches),harness,,handler,none
+method_handle,HarnessHandlers,Any,none (our patches),harness,,handler,none
+patch_test_cold,HarnessHandlers,Any,none (our patches),harness,,handler,none
+patches,HarnessHandlers,Any,none (our runtime switches),harness,,handler,none
+play_household,HarnessHandlers,EditTown,Edit Town > Play household,natural,household with a home lot,handler + R-MODE-5,none
+quit_game,HarnessHandlers,Any,Options > Quit,natural,,handler,none
+auto_dialog,HarnessHandlers,Any,answering a popup (player clicks OK/Cancel),natural,,handler,none
+enter_live_mode,HarnessHandlers,Live;Build;Buy;EditTown;CAS,Live button / Play from Edit Town,natural,,handler + R-MODE-1,none
+reflect_call_async,HarnessHandlers,Any,none (raw script call),cheat,a raw call can do anything: label the repro by what the path does,handler,none
+sims_activity,HarnessHandlers,Any,none (read),harness,,handler,none
+keep_alive,HarnessHandlers,Any,none (harness),harness,,handler,none
+decline_requests,HarnessHandlers,Live,player declines phone calls / requests,natural,,handler,none
+queues,HarnessHandlers,Any,none (read),harness,,handler,none
+seed_rng,HarnessHandlers,Any,none (fixed RNG seed for A/B),harness,,handler,none
+test_env,HarnessHandlers,Live,none: season and weather follow the calendar (Seasons options set lengths only; Weather Stone changes weather in game),cheat,mode realistic only undoes winter cold and a near full moon; mode fixed forces season/weather/moon,handler + R-EP-3 (community-reported),none
+quiet_ui,HarnessHandlers,Any,Options > memories off; dismissing notifications,natural,,handler,none
+autopilot,HarnessHandlers,Live,none (harness: keeps speed and answers dialogs),harness,,handler,none
+build_mode,BuildHandlers,Live;Build,Build button,natural,active household has a home lot; on = Build on the home lot; clock stops (R-MODE-2),handler + R-MODE-2,none
+pick,BuildHandlers,Any,none (read),harness,,handler,none
+calibrate,BuildHandlers,Any,none (harness),harness,,handler,none
+tile_info,BuildHandlers,Any,none (read),harness,,handler,none
+tool_select,BuildHandlers,Build;Buy,picking a build tool,natural,in Build or Buy mode,handler,none
+tool_drag,BuildHandlers,Build;Buy,dragging a build tool,natural,in Build or Buy mode,handler,none
+build_level,BuildHandlers,Build;Buy;Live,floor up/down,natural,,handler,none
+build_presets,BuildHandlers,Build,placing walls / rooms in Build mode,natural,in Build mode on the home lot,handler,none
+auto_roof,BuildHandlers,Build,Auto Roof tool,natural,in Build mode,handler,none
+cas_open,CasHandlers,Live,Plan Outfit (dresser) / Change Appearance (mirror); Edit in CAS is a cheat,cas,active household Sim Child+; agent opens Edit-in-CAS on a copy,handler + R-CAS-1,live
+cas_category,CasHandlers,CAS,clicking a CAS tab,natural,in CAS,handler,none
+cas_close,CasHandlers,CAS,Done in CAS,natural,in CAS,handler,none
+cas_state,CasHandlers,Any,none (read),harness,,handler,none
+cas_bench,CasHandlers,CAS,clicking through CAS parts,stress,timed part sweep,handler,none
+buy_open,CasHandlers,Live,Buy button,natural,active household has a home lot; clock stops (R-MODE-2),handler + R-MODE-2,live
+buy_category,CasHandlers,Buy,clicking a Buy catalog tab,natural,in Buy mode,handler,none
+buy_close,CasHandlers,Buy,Live button,natural,in Buy mode,handler,none
+catalog_objects,ContentHandlers,Any,none (read),harness,,handler,none
+place_objects,ContentHandlers,Live,none: a player places objects one at a time in Buy mode with the clock stopped,stress,up to 100 free objects on the home lot while the sim runs,handler,live
+remove_objects,ContentHandlers,Live,none: a player sells objects in Buy mode with the clock stopped,stress,removes place_objects objects,handler,live
+cas_parts,ContentHandlers,Any,none (read: the CAS part list),harness,,handler,none
+wear_parts,ContentHandlers,Live,none (outfit swap without CAS),stress,,handler,live
+restore_outfit,ContentHandlers,Live,none (undo wear_parts),harness,,handler,none
+spawn_sims,ContentHandlers,Live,none: debug `spawn` command; the game itself fills households via story progression,stress,new YA+ townies join random households,handler,live
+remove_sims,ContentHandlers,Any,none (cleanup of spawn_sims),harness,,handler,none
+camera,ContentHandlers,Live;Build;Buy;Map,moving the camera / map view click,natural,,handler + R-MODE-6,live
+camera_pan,ContentHandlers,Live;Build;Buy,panning the camera,natural,,handler,live
+look,ControlHandlers,Any,none (read),harness,,handler,none
+time,ControlHandlers,Any,none (read),harness,,handler,none
+set_speed,ControlHandlers,Live,speed buttons (pause / 1 / 2 / 3); skip only while the whole household sleeps or works,natural,speed skip: the game offers it only when every active Sim sleeps or is away,handler + R-MODE-4,none
+clock_state,ControlHandlers,Any,none (read),harness,,handler,none
+list_lots,ControlHandlers,Any,none (read),harness,,handler,none
+list_objects,ControlHandlers,Any,none (read),harness,,handler,none
+object_details,ControlHandlers,Any,none (read),harness,,handler,none
+list_interactions,ControlHandlers,Live,opening a pie menu,natural,,handler,none
+do_interaction,ControlHandlers,Live,clicking a pie menu entry,natural,actor is in the active household (players direct only those Sims); the entry is enabled for that Sim,handler + R-HH-4,live
+cancel_interactions,ControlHandlers,Live,cancelling queue items,natural,active household Sim,handler,live
+go_here,ControlHandlers,Live,Go Here on terrain / lot,natural,active household Sim; one Sim per click (R-VOL-1),handler + R-HH-4,live
+cheat,ControlHandlers,Live,cheat console (Ctrl+Shift+C),cheat,,handler,none
+save_game,ControlHandlers,Live,Save / Save As,natural,not while traveling to or from another world,handler,none
+pending_dialogs,ControlHandlers,Any,none (read),harness,,handler,none
+respond_dialog,ControlHandlers,Any,clicking a dialog button,natural,,handler,none
+catalog_search,ControlHandlers,Any,none (read),harness,,handler,none
+buy_object,ControlHandlers,Live;Buy,buying one object in Buy mode (agent places it without opening Buy mode),natural,home lot of the active household; enough funds (free = cheat),handler + R-MODE-3,live-or-buy
+sell_object,ControlHandlers,Live;Buy,selling in Buy mode (drag to catalog / Delete),natural,object on the active household's home lot,handler + R-MODE-3,live-or-buy
+move_object,ControlHandlers,Live;Buy,Hand tool in Buy mode,natural,object on the home lot (moveobjects cheat for anything else),handler + R-MODE-3,live-or-buy
+place_object,ControlHandlers,Live;Buy,placing from inventory / Buy mode,natural,home lot,handler + R-MODE-3,live-or-buy
+replace_object,DecorHandlers,Live;Buy,swap object in Buy mode,natural,home lot,handler,live-or-buy
+set_transform,DecorHandlers,Live,none (exact transform; moveobjects cheat),cheat,,handler,live
+lot_layout,ControlHandlers,Any,none (read),harness,,handler,none
+put_on,DecorHandlers,Live;Buy,placing an object on a surface,natural,home lot,handler,none
+async_log,ControlHandlers,Any,none (read),harness,,handler,none
+tick_status,ControlHandlers,Any,none (read),harness,,handler,none
+fresh_world,FreshWorld,MainMenu;Live,New Game with a premade household,natural,not in a world,handler,none
+crowd_go,RareHandlers,Live,none: one Go Here per click; 30-50 Sims to one point in one tick,stress,spawn_sims Sims (and the household),handler + R-VOL-1,live
+kill_sim,RareHandlers,Live,none (no vanilla kill command; MasterController-style),cheat,template death role (docs/171 §12),handler + R-LIFE-6,live
+zombies,RareHandlers,Live,none: full-moon zombies come from the game's 20% roll per night (Supernatural),stress,EP Supernatural,handler + R-EP-2,live
+spawn_traffic,RareHandlers,Live,none (more cars than the game spawns),stress,,handler,live
+unseen_snapback,RareHandlers,Live,none (probe),stress,,handler,live
+unseen_water_check,RareHandlers,Live,none (probe),harness,,handler,live
+unseen_horse_ride,RareHandlers,Live,riding a horse off-screen,natural,EP Pets; horse in the household,handler,live
+unseen_water_watch,RareHandlers,Live,none (probe),harness,,handler,live
+unseen_water_cause,RareHandlers,Live,none (probe),harness,,handler,live
+houseboat_move,WaterCauseHandlers,Live,Sail houseboat (helm) to a dock,natural,EP Island Paradise; household owns a houseboat,handler,live
+own_vehicle,RareVehicleHandlers,Live,buying a car / boat / bike in Buy mode,natural,home lot; funds,handler,live
+make_sim,RareVehicleHandlers,Live,Edit Town > Edit Household > Create a Sim (human Toddler+ / pet); a Baby only by birth or adoption,natural,household < 8 humans and < 6 pets (R-HH-1); not in Build/Buy/CAS (crash 0x575651); Baby = adoption-equivalent,handler + R-HH-1 + R-LIFE-3,live
+stroll,RareVehicleHandlers,Live,Go Here / walk the dog,natural,,handler,live
+ride,RareVehicleHandlers,Live,Ride horse,natural,EP Pets; Teen+ rider; horse liking,handler,live
+reflect_get,ReflectHandlers,Any,none (read),harness,,handler,none
+reflect_set,ReflectHandlers,Any,none (raw field write),cheat,,handler,none
+reflect_call,ReflectHandlers,Any,none (raw script call),cheat,a raw call can do anything: label the repro by what the path does,handler,none
+reflect_members,ReflectHandlers,Any,none (read),harness,,handler,none
+reflect_find_types,ReflectHandlers,Any,none (read),harness,,handler,none
+place_sim,ReproHandlers,Live,none: teleport (testingcheats / MasterController),cheat,,handler,live
+sim_go_home,ReproHandlers,Live,Go Home (active Sim) / autonomous for townies,natural,,handler,live
+sim_strand,ReproHandlers,Live,none: stands a Sim on an unroutable spot,stress,,handler,live
+strand_many,HitchReproHandlers,Live,none,stress,,handler,live
+sim_visit_lot,ReproHandlers,Live,Go Here / Visit Lot on a lot,natural,active household Sim; townies go by autonomy or invitation,handler + R-HH-4,live
+sim_route_to,ReproHandlers,Live,Go Here,natural,active household Sim,handler,live
+route_replan,ReproHandlers,Live,none (forced replan),stress,,handler,live
+sim_portal_trip,ReproHandlers,Live,taking a portal / sewer hole (Supernatural / ITF),natural,a portal on the lot,handler,live
+thumbnails,ReproHandlers,Any,none (thumbnail cache churn),stress,,handler,none
+outfit_change,ReproHandlers,Live,Change Into... (one Sim at a time),stress,up to 6 Sims at once without the spin,handler + R-VOL-1,live
+pet_guard,ReproHandlers,Any,none (harness guard),harness,,handler,live
+wildflower_drain,ReproHandlers,Live,none (probe),harness,,handler,live
+strand_crowd,RouteFreezeHandlers,Live,none,stress,,handler,live
+stuck_check_fire,RouteFreezeHandlers,Live,none (fires the stuck check now),stress,,handler,live
+crowd_unreachable,RouteFreezeHandlers,Live,none,stress,,handler,live
+crowd_sea_lot,RouteFreezeHandlers,Live,none,stress,,handler,live
+list_households,SimHandlers,Any,none (read),harness,,handler,none
+list_sims,SimHandlers,Any,none (read),harness,,handler,none
+sim_details,SimHandlers,Any,none (read),harness,,handler,none
+set_active_sim,SimHandlers,Live,clicking a household portrait,natural,Sim is in the active household,handler + R-HH-4,live
+household_funds,SimHandlers,Any,cheats motherlode / kaching / familyfunds,cheat,,handler + R-HH-5,none
+set_motive,SimHandlers,Live,testingcheats motive drag,cheat,,handler + R-CHEAT-1,live
+autonomy,SimHandlers,Any,Options > Free Will (household-wide),natural,,handler,none
+set_skill,SimHandlers,Live,none in vanilla (MasterController / mods),cheat,,handler + R-CHEAT-1,live
+skill_options,SimHandlers,Any,none (read),harness,,handler,none
+set_trait,SimHandlers,Live,CAS trait change (Edit in CAS cheat / mirror) or a trait potion,cheat,,handler,live
+trait_options,SimHandlers,Any,none (read),harness,,handler,none
+moodlet,SimHandlers,Live,none (testingcheats add buff),cheat,,handler,live
+lifetime_happiness,SimHandlers,Live,none (cheat-style points),cheat,,handler,live
+relationships,SimHandlers,Any,none (read),harness,,handler,none
+modify_relationship,SimHandlers,Live,none (testingcheats / MasterController relationship),cheat,romance and engagement need the age rules of R-LIFE-2,handler + R-CHEAT-1,live
+career,SimHandlers,Live,join: newspaper / computer / rabbit hole Join; promote / quit: quit is natural; promote is a cheat,natural,Teen part-time / YA+ full-time (R-DAY-1); promote = cheat,handler + R-DAY-1,live
+age_up,SimHandlers,Live,birthday cake (Blow Out Candles) when the age bar is full; forced = debug Trigger Age Transition,cheat,never with a cake in the same story (double age-up); Elder only with confirm_elder_death,handler + R-LIFE-1,live
+make_occult,StoryHandlers,Live,a new Sim: CAS (Vampire LN/SN; Werewolf/Witch/Fairy/Ghost SN; Genie SH; Mermaid IP; Plumbot ITF); an existing Sim: bite / curse / potion / death (no instant transform),cheat,new Sim with a CAS occult = natural (CAS-equivalent); existing Sim or Mummy/Zombie/PlantSim/ImaginaryFriend/SimBot = cheat,handler + R-OCC-1,live
+start_fire,StoryHandlers,Live,none: fires come from cooking at low skill / fireplaces / candles / lightning,cheat,home lot,handler + R-LIFE-7,live
+pregnancy_advance,StoryHandlers,Live,Try for Baby then 72 sim hours (to=pregnant is the conception; labor / birth jump timers = cheat),cheat,woman YA/Adult; partner YA+; household room (R-LIFE-3),handler + R-LIFE-3,live
+set_aging,StoryHandlers,Live,Options > Game Options (aging on/off and lifespan),natural,,handler + R-LIFE-1,live
+world_census,StoryHandlers,Live,none (read),harness,,handler,live
+story_day_state,StoryHandlers,Live,none (read),harness,,handler,live
+go_to_work,StoryHandlers,Live,Go To Work / the carpool,natural,work or school day and hour (ShouldBeAtWork),handler + R-DAY-1,live
+sim_fix_need,StoryHandlers,Live,clicking the matching object (or autonomy),natural,,handler,live
+sim_pursue,StoryHandlers,Live,clicking a skill object,natural,Sim can learn the skill,handler,live
+sim_practice,StoryHandlers,Live,none (read),harness,,handler,live
+death_rescue,StoryHandlers,Live,none (harness death guard),cheat,,handler,live
+town_snapshot,StoryHandlers,Any,none (read),harness,,handler (docs/180),none
+switch_household,StoryHandlers,Live,Edit Town > Change Active Household,natural,not on vacation / University / future; Edit Town allowed (no move; reaper; social worker; age-up; fire; burglar); target has a home lot,handler + R-MODE-5,live
+make_household,HouseholdHandlers,Live,Edit Town > Create a new household in CAS (traits / lifetime wish / favourites) > place on a vacant house (pay furnished or unfurnished) > Buy mode: missing essentials (docs/181 §3.1),natural,2..8 humans; no Baby and no pets (R-HH-1/R-HH-3); a YA+; CAS trait count / age / conflict rules; wish YA+; vacant house; price (furnished or unfurnished) + essentials <= CAS starting funds (the game checks only the price; R-HH-2 beds+fridge bought in Buy mode); essentials fit inside the house (the game's in-house placement; else the next affordable house); arg funds = the familyfunds cheat (realism cheat; story.householdFunds),handler + R-HH-1 + R-HH-2 + R-HH-3 + R-MODE-5,live
+label_check,LabelHandlers,Any,none (read),harness,,handler,none
+camera_jumps,MainThreadReproHandlers,Live,map view clicks / camera moves,natural,seconds per jump: faster than a player is stress (R-VOL-1),handler + R-MODE-6,live
+vfx_burst,MainThreadReproHandlers,Live,none (20+ effects at once),stress,,handler,live
+travel_vacation,TravelHandlers,Live,travel agent / phone > Travel,natural,EP World Adventures; YA+ traveller (Teens and younger only with an adult); not pregnant past the bump,handler + R-TRAV-1,live
+travel_university,TravelHandlers,Live,phone / computer / city hall > Go to University,natural,EP University Life; YA+ student (Teens cannot enroll),handler + R-TRAV-2,live
+travel_future,TravelHandlers,Live,time portal (Into the Future),natural,EP Into the Future; portal on the lot; YA+ (Teen with an adult),handler + R-TRAV-1,live
+portal_prepare,TravelHandlers,Live,none (places the portal),cheat,,handler,live
+travel_home,TravelHandlers,Travel;Live,phone > Return Home,natural,on vacation / university / future,handler + R-TRAV-1,none
+travel_state,TravelHandlers,Any,none (read),harness,,handler,none
+uni_move_in,TravelHandlers,Travel,moving into the dorm on arrival,natural,University world,handler,none

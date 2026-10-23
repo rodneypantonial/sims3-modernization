@@ -1,0 +1,246 @@
+{
+  "id": "party-house",
+  "name": "Neon Flat",
+  "archetype": "party-house",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "Four party-loving roommates: friends everywhere and great nights, broke, hungover and late for work.",
+  "funds": 35000,
+  "balance": {
+    "up": 10,
+    "down": 5,
+    "neutral": 5
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Ines",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "PartyAnimal",
+        "Flirty",
+        "Mooch",
+        "HeavySleeper",
+        "Charismatic"
+      ],
+      "wish": {
+        "id": 3034414675,
+        "name": "Have N friends or better"
+      },
+      "food": "Hamburger",
+      "music": "Egypt",
+      "color": "Lilac",
+      "zodiac": "Leo",
+      "voice": "A",
+      "storyPersona": "party-animal",
+      "persona": "Ines (YoungAdult): PartyAnimal, Flirty, Mooch, HeavySleeper, Charismatic. Upside: great parties, fun at parties (moodlet), quick friends at events; romance socials succeed, quick relationships. Downside: others dislike it; relationship hits when caught mooching; sleeps through fires and burglars and the alarm clock.",
+      "expect": [
+        {
+          "trait": "PartyAnimal",
+          "plus": "great parties, fun at parties (moodlet), quick friends at events",
+          "minus": "throws and joins parties all night: energy, money, work performance"
+        },
+        {
+          "trait": "Flirty",
+          "plus": "romance socials succeed, quick relationships",
+          "minus": "flirts autonomously with others: jealousy and breakups"
+        },
+        {
+          "trait": "Mooch",
+          "plus": "gets free food, money and items from others",
+          "minus": "others dislike it; relationship hits when caught mooching"
+        },
+        {
+          "trait": "HeavySleeper",
+          "plus": "sleeps through noise and alarms, rests well",
+          "minus": "sleeps through fires and burglars and the alarm clock"
+        },
+        {
+          "trait": "Charismatic",
+          "plus": "Charisma skill faster, conversations succeed, more friends",
+          "minus": "socially demanding: wants company, Lonely sooner"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Theo",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Male",
+      "traits": [
+        "PartyAnimal",
+        "Virtuoso",
+        "Slob",
+        "GoodSenseOfHumor",
+        "Daredevil"
+      ],
+      "wish": {
+        "id": 506114036,
+        "name": "Level 10 music (symphonic branch)"
+      },
+      "food": "Hamburger",
+      "music": "Egypt",
+      "color": "Turquoise",
+      "zodiac": "Sagittarius",
+      "voice": "B",
+      "storyPersona": "party-animal",
+      "persona": "Theo (YoungAdult): PartyAnimal, Virtuoso, Slob, GoodSenseOfHumor, Daredevil. Upside: great parties, fun at parties (moodlet), quick friends at events; music skills faster, better performances, sings. Downside: dirty home, smelly (moodlets for others), household disgust, roaches.",
+      "expect": [
+        {
+          "trait": "PartyAnimal",
+          "plus": "great parties, fun at parties (moodlet), quick friends at events",
+          "minus": "throws and joins parties all night: energy, money, work performance"
+        },
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "Slob",
+          "plus": "no need to clean; unaffected by mess",
+          "minus": "dirty home, smelly (moodlets for others), household disgust, roaches"
+        },
+        {
+          "trait": "GoodSenseOfHumor",
+          "plus": "jokes succeed, laughs more, fun",
+          "minus": "jokes at the wrong time annoy No Sense Of Humor Sims"
+        },
+        {
+          "trait": "Daredevil",
+          "plus": "enjoys thrill objects, fearless climbing, extra fun",
+          "minus": "takes risky interactions (fire, stunts), injuries and deaths more likely"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Rafael",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Male",
+      "traits": [
+        "SocialButterfly",
+        "Dramatic",
+        "Inappropriate",
+        "NightOwlTrait",
+        "Perfectionist"
+      ],
+      "wish": {
+        "id": 203586899,
+        "name": "Level 10 of Fortune Teller Career (Mystic Branch)"
+      },
+      "food": "FishAndChips",
+      "music": "RnB",
+      "color": "Lime",
+      "zodiac": "Cancer",
+      "voice": "C",
+      "storyPersona": "socialite",
+      "persona": "Rafael (YoungAdult): SocialButterfly, Dramatic, Inappropriate, NightOwlTrait, Perfectionist. Upside: social needs met fast, many friends; big moodlets, acting career. Downside: Lonely sooner, uncomfortable alone; tantrums, drama in relationships.",
+      "expect": [
+        {
+          "trait": "SocialButterfly",
+          "plus": "social needs met fast, many friends",
+          "minus": "Lonely sooner, uncomfortable alone"
+        },
+        {
+          "trait": "Dramatic",
+          "plus": "big moodlets, acting career",
+          "minus": "tantrums, drama in relationships"
+        },
+        {
+          "trait": "Inappropriate",
+          "plus": "fun from rude acts, comic socials",
+          "minus": "embarrasses others, relationship hits, social fails"
+        },
+        {
+          "trait": "NightOwlTrait",
+          "plus": "energy and fun at night, nightlife",
+          "minus": "grumpy and tired mornings: work and school"
+        },
+        {
+          "trait": "Perfectionist",
+          "plus": "higher quality output (art, cooking, homework)",
+          "minus": "slower work, unhappy with anything less than perfect"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Grace",
+      "last": "Northcott",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "Friendly",
+        "Workaholic",
+        "Neat",
+        "LightSleeper",
+        "Grumpy"
+      ],
+      "wish": {
+        "id": 198603941,
+        "name": "Level 10 of medical career"
+      },
+      "food": "FishAndChips",
+      "music": "Roots",
+      "color": "SeaFoam",
+      "zodiac": "Leo",
+      "voice": "C",
+      "storyPersona": "career-climber",
+      "persona": "Grace (YoungAdult): Friendly, Workaholic, Neat, LightSleeper, Grumpy. Upside: friendly socials succeed, quick friends, relationships decay slower; works hard, no work stress, promotions. Downside: unhappy on days off, works overtime, misses family time; woken by noise, less rest, cranky.",
+      "expect": [
+        {
+          "trait": "Friendly",
+          "plus": "friendly socials succeed, quick friends, relationships decay slower",
+          "minus": "too nice to refuse; spends time chatting instead of needs"
+        },
+        {
+          "trait": "Workaholic",
+          "plus": "works hard, no work stress, promotions",
+          "minus": "unhappy on days off, works overtime, misses family time"
+        },
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        },
+        {
+          "trait": "LightSleeper",
+          "plus": "wakes for fires and burglars (safety)",
+          "minus": "woken by noise, less rest, cranky"
+        },
+        {
+          "trait": "Grumpy",
+          "plus": "fun from grumpy socials, unaffected by bad moods of others",
+          "minus": "others dislike it, gets upset when around happy Sims, relationship decay"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "roommate"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "partner"
+    },
+    {
+      "a": "m1",
+      "b": "m3",
+      "type": "roommate"
+    },
+    {
+      "a": "m2",
+      "b": "m3",
+      "type": "roommate"
+    }
+  ]
+}

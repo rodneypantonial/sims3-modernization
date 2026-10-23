@@ -1,0 +1,1250 @@
+{
+  "note": "Overnight Fri->Sat 2026-10-23/24 (v0.1.5 release plan, Tue 10-27): ONE clean-machine queue, 25 jobs, timeout sum 736 min (12.3 h); expected wall time ~8 h (10-min profile jobs take ~12 min, loop jobs stop at their firing count). START (Rodney, 18:00 PHT, from the main checkout after merging this branch): set TS3_NIGHT=1 so a failed job does not stop the queue, then node tools/harness/queue.ts tools/harness/queues/overnight-1023.json (PowerShell: $env:TS3_NIGHT=1; node tools/harness/queue.ts tools/harness/queues/overnight-1023.json). Expected end ~02:00-03:00 PHT; worst case (every job at its timeout) ~06:30 PHT, before the 08:00 PHT end of the quiet window. NOTHING ELSE may run while it goes: no agents, no builds, no other queue, no use of the PC (timing runs; machine-load line must stay < 10% other CPU). Resume after a stop: same command with --from <job id>. Order: (1) clean-night-1023 (Overwatch v2 confirm, lock-taker A/B; moved to asi.0338), (2) clean-night-1024 (T1, refcount guard, D1+H2Ic), (3) DoorMemo verify + 4 A/B jobs on 0338, (4) provisional v0.1.5 bundle A/B BP/IP/SV both orders, natural play, (5) README vanilla vs v0.1.4 vs candidate, 1 load per side per world. Read each job with the reader named in its note (hitch-ab.ts --scenario for loop jobs, hitch-ab.ts pair means for --ab jobs, release-vs-baseline-report.ts for part 5).",
+  "jobs": [
+    {
+      "id": "bp-overwatch-ab-loop4-clean",
+      "note": "Clean-night confirm of overwatchchain v2 (day run 2026-10-23 flagged noisy: on max 69 ms vs off 294). Numbers go into the NRaas PR follow-up comment. Rerun of repro bp-overwatch-ab-loop2 (arm + fire, ABBA, until 10 firings per arm, loop cap 20 min) with ts3fixes overwatchchain v2. Pass: every on-arm firing ran as a chain and no iteration holds a >= 100 ms run of the chain task (hitchTasks cap rule; the off arm runs in the trigger's own task, not counted). If StuckCheck still gets no per-plan yield, overwatchspread_log has one 'StuckCheck plan without a yield' line naming the gate. Read: node tools/harness/hitch-ab.ts --scenario <tag> (rows reflect_call off / on). [overnight-1023: moved from asi.0333 to asi.0338; 0338 carries every section this ini sets (SteerRO/AvoidRO/Gate0RO/DeferFootprint2/RouteToObjRO/PlacementRO/ForeignKinds + overwatchchain v2 is ts3fixes), so 0333 is not needed]",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 22,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "bp-overwatch-ab-loop2",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 20
+          },
+          "fixesRequire": "owchain_alarms>=10,owchain_yields>=150,owspread_inv_passes>=10",
+          "hitchTasks": [
+            "OwChainTheirs@100<1"
+          ]
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-locktaker-ab",
+      "note": "Clean night (timing): ABBA until 10 firings per arm (fixed before the run, docs/168), shadows off, cap 60 min. Pass: as verify without the shadow rows, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: iterations >= 100/300/1000 ms, p99/p99.9/max, visible freezes, rtMaxKey split (removed keys 0x85FE10, 0x846D21, 0x62EF7A, 0x833593, 0x8334CC, 0x83156D, 0x631F40 and the absorbers 0x62FB74, 0x760BFF, 0x2000003, 0x82D296, 0x82A0F6), it/s, asyncUs, m2DoorWaitUs; moved-waits table drives the next fix. [overnight-1023: moved from asi.0333 to asi.0338; 0338 carries every section this ini sets (SteerRO/AvoidRO/Gate0RO/DeferFootprint2/RouteToObjRO/PlacementRO/ForeignKinds + overwatchchain v2 is ts3fixes), so 0333 is not needed]",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-locktaker-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "sv-crowd-t1-ab",
+      "note": "Forced repro A/B: sv-crowd-foreign-loop ABBA until 10 firings per arm (fixed before the run, docs/168), fbjobdeadline flipped (ini installs it, the arm step decides; FbJobCapMs 300 on both arms = today's world A* cap), cap 45 min. Pass: no crash, the OK line, 0 watchdog lines, fbjdSkip_0 >= 1 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario <tag>): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits), fbjcWaitHist / fbjcSimWaitMaxUs (sim waits behind foreign jobs), fbjdLong, 'route async: long job' capAt per arm; expected on arm: no foreign job much past ~300 ms + one in-flight cell A* frame, >= 1000 ms freezes behind foreign jobs gone (docs/178 T1 est. SV -3..-4 per 10 min).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "fbjdReady>=7,fbjdSkip_0>=1,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   foreign job deadline": 1
+      },
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "sv-crowd-foreign-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-refcount-guard-ab",
+      "note": "Bundle check (clean night, timing): ip-refcount-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), refcountguard flipped per firing (ini installs it with Mode 0, the switch decides), measurement settings of tool-check.json, cap 45 min. Pass: no crash, the OK line, rcPass_4 0, rcDropped_1 0, no watchdog line, rcDeferred > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Hitches must not rise: per arm (hitch-ab.ts) iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved-waits table: does the kept level move waits to the worker's acquire or to new keys), it/s, asyncUs, rcHoldUs per arm. Expected: hitch change ~0 (the extra hold is the callers' loops, microseconds; inferred, not measured).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "rcReady>=1,rcDeferred>=1,rcPass_4<=0,rcDropped_1<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   refcount guard": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-refcount-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-goal-ring-ab",
+      "note": "Forced repro A/B: ip-goal-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), goalgen + h2ic flipped together (ini installs both with start mode 0, the switch decides), cap 45 min. Pass: no crash, both OK lines, 0 watchdog lines (g0wWatchdog 0), hxStale 0, ggArgMismatch 0, ggSkipped > 0 and hxHeld > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (does the hold move waits to new keys: moved-waits table), it/s, asyncUs; expected change in hitches ~0 (D1 <= ~1 ms per radius plan, H2Ic is a correctness fix).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "hxReady>=7,ggSkipped>=1,hxHeld>=1,ggArgMismatch<=0,hxStale<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   goal gen D1": 1,
+        "OK   H2 IC window": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 0,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-goal-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "bp-doormemo-verify-0338",
+      "note": "DoorMemo shadow verify on asi.0338 (from host-call-probe bp-hostcall-probe; dmMode +0x408C and the door stub 0x0064F4D3 unchanged in v104, registry v96 row). 5 min BP, release defaults + [RouteJobPhases] HostSplit=1 + [RouteAsync] DoorMemo=2 (shadow: repeats asked anyway and compared, nothing acts). Pass: no crash, the \"OK   door stub\" and \"OK   door memo: DoorMemo=2\" lines (\"host-call split\" may log PART: counts still valid), dmMismatch 0, hcDoorRepeatDiff 0 (nativeRequire). GATE for the 4 doormemo A/B jobs after it: a night queue goes on after a failed job, so if this job FAILS (any mismatch = the memo key misses an input), discard the bp/ip-doormemo-* results and keep DoorMemo off. Read: node tools/harness/route-phases-report.ts <tag>-native.json --seconds 300.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.HostSplit": 1,
+        "RouteAsync.DoorMemo": 2
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 15,
+      "nativeRequire": "dmMismatch<=0,hcDoorRepeatDiff<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   door memo: DoorMemo=2": 1,
+        "OK   door stub 0x0064F4D3": 1
+      }
+    },
+    {
+      "id": "bp-doormemo-offfirst-0338",
+      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed) (docs/TESTING.md clean-night rules: machine-load line < 10% other CPU, else rerun). BP play, release defaults + [RouteAsync] DoorMemo=1 alone (no HostSplit: its stamps are overhead); --ab doormemo toggles dmMode (+0x408C; 0 = every repeat asked as today). Off-first (warm-up on, then off,on,on,off). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, dmMismatch 0. Read per arm with node tools/harness/hitch-ab.ts <tag> (pair mean with bp-doormemo-onfirst): p99, p99.9 and max iteration ms, iterations >= 100 / 300 / 500 / 1000 ms; then wait-ab.ts: the sim's +0x918 waits for the job (docs/159 §4 expects -2.5..-6.9 ms/s), all keyed; per slice dmHits / dmMisses. Gate: no hitch metric worse in both orders beyond its null band, >= 300 ms counts not up, 0 crashes; a wait cut alone is not a reason to ship (target = player-noticeable hitches).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22,
+      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
+    },
+    {
+      "id": "bp-doormemo-onfirst-0338",
+      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). The on-first half of the BP pair (abOnFirst: warm-up on, then on,off,off,on). Everything else as bp-doormemo-offfirst (ini, pass, hitch-ab.ts reads).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22,
+      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
+    },
+    {
+      "id": "ip-doormemo-offfirst-0338",
+      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). IP play, as bp-doormemo-offfirst (docs/159 §4 expects sim wait -1.5..-4.1 ms/s). Read with hitch-ab.ts (pair mean with ip-doormemo-onfirst).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22,
+      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
+    },
+    {
+      "id": "ip-doormemo-onfirst-0338",
+      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). The on-first half of the IP pair. Everything else as ip-doormemo-offfirst.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "abOnFirst": true,
+          "ab": "doormemo",
+          "slice": 2
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22,
+      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
+    },
+    {
+      "id": "bp-v015bundle-offfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), BP natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, off-first (warm-up on, then off,on,on,off), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-v015bundle-onfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), BP natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, on-first (warm-up on, then on,off,off,on), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "abOnFirst": true,
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-v015bundle-offfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), IP natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, off-first (warm-up on, then off,on,on,off), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-v015bundle-onfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), IP natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, on-first (warm-up on, then on,off,off,on), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "abOnFirst": true,
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-v015bundle-offfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), SV natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, off-first (warm-up on, then off,on,on,off), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-v015bundle-onfirst-0338",
+      "note": "PROVISIONAL v0.1.5 bundle A/B (clean night, timing), SV natural play (no repro), --ab of every release candidate (ts3native: earlyout, fallbackasync, m1retry, fbjobcap, fbjobdeadline T1, tailunlock, replandedupe, h2, slotenabledro, unseenthrottle, lock-taker bundle steerro/avoidro/gate0ro/deferfootprint/deferfootprint2/routetoobjro/placementro/a10foreign, goalgen D1 SameRing, h2ic, refcountguard; ts3fixes: legreplanskip, bouncerskip, idlememo, overwatchspread + overwatchchain v2, easpreadlots/pets/decay) vs off = v0.1.4 behaviour, on-first (warm-up on, then on,off,off,on), 10 min, 2-min slices. Measurement settings of tool-check.json (HitchAttr Holders, ForegroundRender, RouteJobPhases SyncPlans, noSamplers, cameraPan, seed 12345). LOAD-ONLY (on in both halves, not measured by the pair): SyncCapMs 1000, FbJobCapMs value 300, RouteEarlyOut Mode 2 / Act 1, UnseenThrottle.List 1, ForeignKinds 4, the release defaults stuckcheckasync + errortrapspread. Nightly script spreads (Overwatch 3 AM, EA 3 AM / midnight / pet pool) likely do not fire in a 10-min window: their verdict stays with their own loop A/Bs. Pass: no crash, 0 watchdog lines, no tripwire (tuTrip_0/1/2 0, fbActiveTrip 0, eoWrong 0, afActiveTrip 0, rcPass_4 0, hxStale 0), switch line at every slice. Read from BOTH orders: node tools/harness/hitch-ab.ts <tag> (pair mean: p99, p99.9, max, iterations >= 100/300/500/1000 ms) and wait-ab.ts <tag>; a piece that fails its own A/B is dropped from the bundle later.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "g0wWatchdog<=0,afActiveTrip<=0,rcPass_4<=0,hxStale<=0",
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "abOnFirst": true,
+          "slice": 2,
+          "fixesOn": "stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rvb-vanilla",
+      "note": "README comparison, side 1 of 3 (BP), \"vanilla\": queue.ts always installs an asi, so vanilla = asi.rel0360 with every section it enables set Enabled=0 and every default-on ts3fixes switch off (release-vs-baseline.json base side; kWalkStyleComparer stays, install-time). Community stack (DXVK, S3SS, S3PP) unchanged. 10 min seeded (12345). 1 load per side: a README number, not a significance test. Read: node tools/release-vs-baseline-report.ts --date <date> (or hitch-ab.ts per tag).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 0,
+        "RouteAsync.Enabled": 0,
+        "SaveWrite.Enabled": 0,
+        "Decompress.Enabled": 0,
+        "WaterJps.Enabled": 0,
+        "RouteGate.Enabled": 0,
+        "Discourage.Enabled": 0,
+        "LotRemoveGuard.Enabled": 0,
+        "OptsInit.Enabled": 0
+      },
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,broadcast,virtualhome,failreplan,watchdog,watchdogidle,backoff,stations,portaladaptorleak,fastreftable,motivebar,buffgrid,namecache,overwatchstuck"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rvb-v014",
+      "note": "README comparison, side 2 of 3 (BP): v0.1.4 = asi.rel0360 with the shipped release ini pinned (release-vs-baseline.json rel side), ts3fixes shipped tuning. 10 min seeded (12345).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "SaveWrite.Enabled": 1,
+        "Decompress.Enabled": 1,
+        "WaterJps.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.Mode": 1,
+        "LotRemoveGuard.Enabled": 1,
+        "OptsInit.Enabled": 1
+      },
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rvb-cand",
+      "note": "README comparison, side 3 of 3 (BP): v0.1.5 candidate = asi.0338 with every release candidate on from load (ini Modes 1, no --ab; same set as the bundle jobs' on arm) and ts3fixes candidates on (fixesOn), no observers (no HitchAttr / RouteJobPhases, like sides 1-2). 10 min seeded (12345). Provisional: pieces that fail their own A/B change this side.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "stuckcheckasync,errortrapspread,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rvb-vanilla",
+      "note": "README comparison, side 1 of 3 (IP), \"vanilla\": queue.ts always installs an asi, so vanilla = asi.rel0360 with every section it enables set Enabled=0 and every default-on ts3fixes switch off (release-vs-baseline.json base side; kWalkStyleComparer stays, install-time). Community stack (DXVK, S3SS, S3PP) unchanged. 10 min seeded (12345). 1 load per side: a README number, not a significance test. Read: node tools/release-vs-baseline-report.ts --date <date> (or hitch-ab.ts per tag).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 0,
+        "RouteAsync.Enabled": 0,
+        "SaveWrite.Enabled": 0,
+        "Decompress.Enabled": 0,
+        "WaterJps.Enabled": 0,
+        "RouteGate.Enabled": 0,
+        "Discourage.Enabled": 0,
+        "LotRemoveGuard.Enabled": 0,
+        "OptsInit.Enabled": 0
+      },
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,broadcast,virtualhome,failreplan,watchdog,watchdogidle,backoff,stations,portaladaptorleak,fastreftable,motivebar,buffgrid,namecache,overwatchstuck"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rvb-v014",
+      "note": "README comparison, side 2 of 3 (IP): v0.1.4 = asi.rel0360 with the shipped release ini pinned (release-vs-baseline.json rel side), ts3fixes shipped tuning. 10 min seeded (12345).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "SaveWrite.Enabled": 1,
+        "Decompress.Enabled": 1,
+        "WaterJps.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.Mode": 1,
+        "LotRemoveGuard.Enabled": 1,
+        "OptsInit.Enabled": 1
+      },
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rvb-cand",
+      "note": "README comparison, side 3 of 3 (IP): v0.1.5 candidate = asi.0338 with every release candidate on from load (ini Modes 1, no --ab; same set as the bundle jobs' on arm) and ts3fixes candidates on (fixesOn), no observers (no HitchAttr / RouteJobPhases, like sides 1-2). 10 min seeded (12345). Provisional: pieces that fail their own A/B change this side.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "stuckcheckasync,errortrapspread,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-rvb-vanilla",
+      "note": "README comparison, side 1 of 3 (SV), \"vanilla\": queue.ts always installs an asi, so vanilla = asi.rel0360 with every section it enables set Enabled=0 and every default-on ts3fixes switch off (release-vs-baseline.json base side; kWalkStyleComparer stays, install-time). Community stack (DXVK, S3SS, S3PP) unchanged. 10 min seeded (12345). 1 load per side: a README number, not a significance test. Read: node tools/release-vs-baseline-report.ts --date <date> (or hitch-ab.ts per tag).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 0,
+        "RouteAsync.Enabled": 0,
+        "SaveWrite.Enabled": 0,
+        "Decompress.Enabled": 0,
+        "WaterJps.Enabled": 0,
+        "RouteGate.Enabled": 0,
+        "Discourage.Enabled": 0,
+        "LotRemoveGuard.Enabled": 0,
+        "OptsInit.Enabled": 0
+      },
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,broadcast,virtualhome,failreplan,watchdog,watchdogidle,backoff,stations,portaladaptorleak,fastreftable,motivebar,buffgrid,namecache,overwatchstuck"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-rvb-v014",
+      "note": "README comparison, side 2 of 3 (SV): v0.1.4 = asi.rel0360 with the shipped release ini pinned (release-vs-baseline.json rel side), ts3fixes shipped tuning. 10 min seeded (12345).",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "SaveWrite.Enabled": 1,
+        "Decompress.Enabled": 1,
+        "WaterJps.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.Mode": 1,
+        "LotRemoveGuard.Enabled": 1,
+        "OptsInit.Enabled": 1
+      },
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-rvb-cand",
+      "note": "README comparison, side 3 of 3 (SV): v0.1.5 candidate = asi.0338 with every release candidate on from load (ini Modes 1, no --ab; same set as the bundle jobs' on arm) and ts3fixes candidates on (fixesOn), no observers (no HitchAttr / RouteJobPhases, like sides 1-2). 10 min seeded (12345). Provisional: pieces that fail their own A/B change this side.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "stuckcheckasync,errortrapspread,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    }
+  ]
+}

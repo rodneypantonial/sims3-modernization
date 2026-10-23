@@ -1,0 +1,4 @@
+{ "world": "Bridgeport",
+  "goodFor": "Late Night city: dense downtown, nightlife venues (bars, lounges, clubs), celebrity and paparazzi, vampires at night, elevators and subway portals, apartments; the measured BP route freezes (Hogan's diner lot, docs/169).",
+  "categoryBias": { "normal": 1.0, "world": 1.6, "lifestage": 0.8, "chaos": 1.0, "occult": 1.2 },
+  "templateBias": { "world-bp-": 3.0, "world-": 0.3, "world-nightlife": 2.0, "social-house-party": 1.5, "cam-populated": 1.5 } }

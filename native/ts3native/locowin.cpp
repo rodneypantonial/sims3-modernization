@@ -33,9 +33,12 @@ static void G0wDrop(int site, const void* ret) {
     if (!g_g0wDropLogged[site]++) Log("loco window: dropped before a sim wait (%s), caller %p", site ? "sync worker plan" : "WaitJobDone", ret);
 }
 
+static void HxReset();  // below: an IC window left open by an unwind is closed before the pass opens its own
+
 static void __fastcall LocoWinThunk(void* self, void* edx, float dt) {
     if (t_g0wDepth) { g_g0wOrig(self, edx, dt); return; }  // nested: the outer pass owns the window
     Ts3nCounters& k = ts3native_counters;
+    HxReset();
     t_g0wDepth = 1;
     g_g0wTid = GetCurrentThreadId();
     LARGE_INTEGER t0;
@@ -75,6 +78,122 @@ static void H2LockWait(bool running, LONG us) {
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&k.h2PassLockN[running ? 0 : 1]);
     InterlockedExchangeAdd(&k.h2PassLockUs[running ? 0 : 1], us);
+}
+
+// H2 IC window (docs/177 §4, counters v102 hx*, [RouteAsync] H2Ic=1, switch hxMode): the script ICs below run RouteFollow_A
+// (or EditPath via 0x85FF30) on the sim thread, which bump and drop footprint refcounts [fp+4] with plain read-modify-writes
+// after their obstacle query has released +0x918; a job that starts in that gap does the same writes on footprints of the same
+// quadtree (goal validation, its query copy, EditPath). The window is H2's: g_g0Win = 1 before the IC body, so the worker's
+// ServeAsync holds a queued start until the IC returns (Dekker with A_RUNNING as in the pass). A job already running at entry
+// holds +0x918 for its whole body, so the IC's first acquire waits for its end (hxRunningAtEntry), except when it lends the
+// lock: with TailUnlock / P5b the IC's query runs in the lend and the job's tail (EditPath) still overlaps the IC's writes
+// (p5-lock-model h2x-tu: not closed here, docs/177 §6). Sim waits for a held start drop the window (G0wDrop, same tid), and the
+// 250 ms watchdog lets a start go if one is missed. Entered through the IC binding slots (table {fn, name}, Steam 1.67) [verified
+// bytes]; the return slot is swapped for HxLeaveThunk (per-thread stack of 8; frames an exception unwound are dropped at the
+// next entry or the next locomotion pass, hxStale).
+// shortcut: a frame left by an unwind keeps the window up until the next IC entry, pass or the 250 ms watchdog; add a sim
+// tick reset if hxStale shows up in runs.
+struct HxIc { DWORD slot, fn; const char* name; };
+static const HxIc kHxIc[7] = {
+    {0x01160900, 0x0074C820, "Route_GetDestinationObstruction"},
+    {0x01160908, 0x0074C8E0, "Route_GetObstructionAtPoint"},
+    {0x011608C8, 0x00751480, "Route_IsPointObstructedBySim"},
+    {0x011608D0, 0x00750430, "Route_FindObstaclesForSimAlongRoute"},
+    {0x01160B88, 0x00755600, "Route_SetAGS"},
+    {0x01160988, 0x00758BA0, "Route_InsertRouteSubPathsAtIndex"},
+    {0x01160990, 0x007623A0, "Route_InsertCustomPathAtIndex"},
+};
+static void* g_hxOrig[7];
+struct HxThread { int n; DWORD* slot[8]; DWORD ret[8]; };
+static __declspec(thread) HxThread t_hx;
+static void __cdecl HxLeaveThunk();
+
+static void HxClose() {  // the outermost IC frame is gone: the window down (unless the pass owns it)
+    InterlockedExchange(&g_hxOpen, 0);
+    if (!t_g0wDepth) InterlockedExchange(&g_g0Win, 0);
+}
+static void HxReset() {  // drops only frames below this stack pointer (dead for sure); a live IC frame always sits above it
+    HxThread& t = t_hx;
+    const DWORD* sp = (const DWORD*)_AddressOfReturnAddress();
+    if (!t.n || t.slot[t.n - 1] >= sp) return;
+    while (t.n && t.slot[t.n - 1] < sp) { t.n--; InterlockedIncrement(&ts3native_counters.hxStale); }
+    if (!t.n) HxClose();
+}
+
+static void __cdecl HxEnter(int i, DWORD* slot) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD tid = GetCurrentThreadId();
+    if (!RgIsSim(tid)) { InterlockedIncrement(&k.hxOffSim); return; }
+    InterlockedIncrement(&k.hxCalls[i]);
+    HxThread& t = t_hx;
+    while (t.n && t.slot[t.n - 1] <= slot) {  // left by an unwind (a live caller frame sits above this slot)
+        t.n--;
+        InterlockedIncrement(&k.hxStale);
+        if (!t.n) HxClose();
+    }
+    if (k.hxMode != 1 || t_g0wDepth || t.n == 8) return;  // off, inside the pass (its window covers it) or too deep
+    if (!t.n) {
+        g_g0wTid = tid;  // G0wDrop: this thread's waits for a held start drop the window
+        InterlockedExchange(&g_hxOpen, 1);
+        InterlockedExchange(&g_g0Win, 1);  // before the IC's first read of the job state (its +0x918 acquire)
+        if (g_async.state == A_RUNNING) InterlockedIncrement(&k.hxRunningAtEntry);
+    }
+    t.slot[t.n] = slot;
+    t.ret[t.n++] = *slot;
+    *slot = (DWORD)(uintptr_t)HxLeaveThunk;
+}
+// at = the leave thunk's entry esp - 4 (slot + N for a callee-cleanup ret N): the frame found from the outermost, as RjpPop
+static DWORD __cdecl HxLeave(DWORD* at) {
+    HxThread& t = t_hx;
+    int i = 0;
+    while (i < t.n - 1 && t.slot[i] > at) i++;
+    const DWORD r = t.ret[i];
+    if (t.n - 1 > i) InterlockedExchangeAdd(&ts3native_counters.hxStale, t.n - 1 - i);
+    t.n = i;
+    if (!t.n) HxClose();
+    return r;
+}
+static __declspec(naked) void __cdecl HxLeaveThunk() {
+    __asm {
+        push eax  // becomes the return address
+        pushad
+        pushfd
+        lea eax, [esp + 36]
+        push eax
+        call HxLeave
+        add esp, 4
+        mov [esp + 36], eax
+        popfd
+        popad
+        ret
+    }
+}
+#define HX_IC(i) static __declspec(naked) void HxIc##i() { __asm pushad __asm pushfd __asm lea eax, [esp + 36] \
+    __asm push eax __asm push i __asm call HxEnter __asm add esp, 8 __asm popfd __asm popad __asm jmp dword ptr [g_hxOrig + i * 4] }
+HX_IC(0) HX_IC(1) HX_IC(2) HX_IC(3) HX_IC(4) HX_IC(5) HX_IC(6)
+static void (*const kHxShims[7])() = {HxIc0, HxIc1, HxIc2, HxIc3, HxIc4, HxIc5, HxIc6};
+
+// one slot: the game's fn expected (another owner or another exe: left alone, logged); `slot` lets the selftest use its own table
+static bool HxSwap(int i, DWORD* slot) {
+    const DWORD cur = Readable(slot, 4) ? *slot : 0;
+    if (cur != kHxIc[i].fn) {
+        Log("SKIP H2 IC window %s: slot 0x%08lX holds 0x%08lX, expected 0x%08lX", kHxIc[i].name, (DWORD)(uintptr_t)slot, cur, kHxIc[i].fn);
+        return false;
+    }
+    g_hxOrig[i] = (void*)(uintptr_t)cur;
+    const DWORD shim = (DWORD)(uintptr_t)kHxShims[i];
+    return Write(slot, &shim, 4);
+}
+
+// [RouteAsync] H2Ic=1 installs (needs the async path with [RouteGate] Enforce=1, as H2); H2IcMode = hxMode's start (default 1)
+static void InstallH2Ic(const wchar_t* ini) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!GetPrivateProfileIntW(L"RouteAsync", L"H2Ic", 0, ini)) { Log("H2 IC window off ([RouteAsync] H2Ic=0)"); return; }
+    if (!k.rgEnforce || !k.asyncReady) { Log("SKIP H2 IC window: needs [RouteGate] Enforce=1 with the async path"); return; }
+    for (int i = 0; i < 7; i++) if (HxSwap(i, (DWORD*)(uintptr_t)kHxIc[i].slot)) k.hxReady++;
+    k.hxMode = k.hxReady ? Clamp(GetPrivateProfileIntW(L"RouteAsync", L"H2IcMode", 1, ini), 0, 1) : 0;
+    Log("%s H2 IC window: %ld of 7 IC slots (Mode=%ld: %s)", k.hxReady == 7 ? "OK  " : "PART", k.hxReady, k.hxMode,
+        k.hxMode ? "no job starts while one runs on the sim thread" : "count only");
 }
 
 // [LocoWindow] Enabled=1, or [RouteAsync] H2=1 (docs/149: same thunk, Mode 1): the call site bytes are checked first

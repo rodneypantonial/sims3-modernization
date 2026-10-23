@@ -26,6 +26,13 @@
 // A plan that finishes before its deadline runs exactly as before: the stubs pass (one thread compare), the cost stubs read
 // the clock every 4th call. With a deadline, SyncCapMs's node clock is not used inside that plan (CallPlanBudget: dl wins).
 //
+// docs/178 T1 [RouteAsync] FbJobDeadline=1 (counters v103 fbjd*, runtime switch fbjdMode): the same two entry stubs also answer
+// the route worker while it runs a foreign (FallbackAsync) job whose FbJobCapMs deadline is set (t_fbDeadline from the job's
+// start, ServeAsync; g_pdWkTid = the worker's id for that job only). Before, only the world A* cost stubs read that deadline,
+// so a foreign job that spent its time in cell A* (SV crowds: 2.08 s) was never cut. Past the deadline each further cell A* /
+// water search takes the exit above; the job's IC continues through the game's own failure handling and its failed result
+// is collected like any failed job (IcCollect copies j->result), as with the world A* cap. Own and A10 jobs: no deadline.
+//
 // D5 FailMemo: replandedupe.cpp's RdRun with kind 0 on SyncIc's Plan call (CallIc, t_fmSync): a repeat of a FAILED plan within
 // 500 ms with the same follower, goal, start within 10 cm, route state as that plan left it and no routing write since is
 // answered with that plan's result bytes.
@@ -33,6 +40,7 @@
 static void* g_pdOrig[2];          // trampolines: [0] cell A*, [1] water ([RouteJobPhases] puts its stubs here, RjpOwner)
 static volatile DWORD g_pdTid;     // the sim's id while its session has a deadline (the entry stubs' thread compare), else 0
 static int g_fmIni;                // [RouteAsync] FailMemo as read
+static int g_fbjdIni;              // [RouteAsync] FbJobDeadline as read (docs/178 T1)
 struct PdSess {
     bool open;
     int entry;                     // 0 IC, 1 Route_PlanLocked
@@ -52,7 +60,10 @@ static void ReadPlanDeadline(const wchar_t* ini) {
     k.pdOwnUs = own > 0 ? Clamp(own, 50, 60000) * 1000 : 0;
     k.pdMode = k.pdUs || k.pdOwnUs ? 1 : 0;
     g_fmIni = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"FailMemo", 0, ini), 0, 2);
-    Log("route async: PlanDeadlineMs=%ld PlanDeadlineOwnMs=%ld FailMemo=%d", k.pdUs / 1000, k.pdOwnUs / 1000, g_fmIni);
+    g_fbjdIni = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"FbJobDeadline", 0, ini), 0, 1);  // docs/178 T1
+    k.owReady = GetPrivateProfileIntW(L"RouteAsync", L"OwnJobWait", 0, ini) ? 1 : 0;          // docs/178 T4 (observe only)
+    Log("route async: PlanDeadlineMs=%ld PlanDeadlineOwnMs=%ld FailMemo=%d FbJobDeadline=%d OwnJobWait=%ld", k.pdUs / 1000,
+        k.pdOwnUs / 1000, g_fmIni, g_fbjdIni, k.owReady);
 }
 
 static LONGLONG PdNow() { LARGE_INTEGER q; QueryPerformanceCounter(&q); return q.QuadPart; }
@@ -124,13 +135,42 @@ static void PdCapped() {
 }
 
 static int g_pdSkipMask = 3;  // bit 0 cell, bit 1 water (steerro-test cuts one phase at a time; always 3 in game)
-// the entry stubs' question (sim thread inside a session only): 1 = answer "no path" without searching
+// docs/178 T1: the worker inside a foreign job with a deadline (g_pdWkTid, set by ServeAsync while t_fbDeadline is set): the
+// same exits past t_fbDeadline (FbJobCapMs from the job's start), with the runtime switch fbjdMode. Counted per job
+// (t_fbjdCut, ServeAsync -> FbjdJobEnd) and per search; the first cut is the job's capAt (as BudgetCap's)
+static int PdWorkerSkip(int which) {
+    Ts3nCounters& k = ts3native_counters;
+    if (k.fbjdMode != 1 || !t_fbDeadline || GetCurrentThreadId() != g_pdWkTid || !(g_pdSkipMask >> which & 1)) return 0;
+    const LONGLONG now = PdNow();
+    if (now < t_fbDeadline) return 0;
+    if (t_jobT0 && !t_jobCapAt) t_jobCapAt = now;
+    t_fbjdCut[1 + which]++;
+    InterlockedIncrement(&k.fbjdSkip[which]);
+    return 1;
+}
+// the entry stubs' question (sim thread inside a session, or the worker in a foreign job): 1 = answer "no path" without searching
 static int __cdecl PdSkip(int which) {
     PdSess& s = t_pd;
-    if (!s.open || ts3native_counters.pdMode != 1 || !(g_pdSkipMask >> which & 1) || PdNow() < s.dl) return 0;
+    if (!s.open) return PdWorkerSkip(which);
+    if (ts3native_counters.pdMode != 1 || !(g_pdSkipMask >> which & 1) || PdNow() < s.dl) return 0;
     s.skip[which]++;
     InterlockedIncrement(which ? &ts3native_counters.pdSkipWater : &ts3native_counters.pdSkipCell);
     return 1;
+}
+
+// docs/178 T1: one foreign job's end (ServeAsync, worker): >= 300 / >= 1000 ms counted in either mode; a cut job's phases and
+// its time past the deadline (end - dl: the work after the first cut that no exit stopped)
+static void FbjdJobEnd(LONG us, LONGLONG end, LONGLONG dl) {
+    Ts3nCounters& k = ts3native_counters;
+    if (us >= 300000) InterlockedIncrement(&k.fbjdLong[0]);
+    if (us >= 1000000) InterlockedIncrement(&k.fbjdLong[1]);
+    if (!t_fbjdCut[0] && !t_fbjdCut[1] && !t_fbjdCut[2]) return;
+    for (int i = 0; i < 3; i++)
+        if (t_fbjdCut[i]) InterlockedIncrement(&k.fbjdCapped[i]);
+    const LONGLONG late = dl && end > dl ? (end - dl) * 1000000 / g_qpf.QuadPart : 0;
+    const LONG lateUs = late > 0x7FFFFFFF ? 0x7FFFFFFF : (LONG)late;
+    InterlockedExchangeAdd(&k.fbjdLateUs, lateUs);
+    Max(&k.fbjdLateMaxUs, lateUs);
 }
 
 // cell A* 0x61E500 (thiscall, 6 stack args): past the deadline its empty-start-set exit, else on to the trampoline
@@ -139,7 +179,10 @@ static __declspec(naked) void PdCellStub() {
         push eax
         mov eax, dword ptr fs:[0x24]
         cmp eax, g_pdTid
+        je on
+        cmp eax, g_pdWkTid
         jne off
+    on:
         pushad
         pushfd
         push 0
@@ -169,7 +212,10 @@ static __declspec(naked) void PdWaterStub() {
         push eax
         mov eax, dword ptr fs:[0x24]
         cmp eax, g_pdTid
+        je on
+        cmp eax, g_pdWkTid
         jne off
+    on:
         pushad
         pushfd
         push 1
@@ -210,14 +256,21 @@ static void PdInstallAt(DWORD cellAt, DWORD waterAt) {
 static void InstallPlanDeadline() {
     Ts3nCounters& k = ts3native_counters;
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
-    if (k.pdUs || k.pdOwnUs) {
+    if (k.pdUs || k.pdOwnUs || g_fbjdIni) {
         PdInstallAt(0x0061E500, 0x00671930);
+        if (g_fbjdIni) {  // docs/178 T1: the worker slot of the same stubs; the deadline is FbJobCapMs's (t_fbDeadline)
+            k.fbjdReady = (g_pdOrig[0] ? 1 : 0) | (g_pdOrig[1] ? 2 : 0);
+            k.fbjdMode = k.fbjdReady && k.fbjcCapUs && k.budgetReady ? 1 : 0;
+            Log("%s foreign job deadline: cell A* / water no-path exits for foreign jobs past FbJobCapMs %ld ms, ready 0x%lX, mode %ld%s",
+                k.fbjdMode && k.fbjdReady == 3 ? "OK  " : k.fbjdMode ? "PART" : "FAIL", k.fbjcCapUs / 1000, k.fbjdReady, k.fbjdMode,
+                k.fbjcCapUs && k.budgetReady ? "" : " (needs FbJobCapMs > 0 and the cost stubs: no foreign job has a deadline)");
+        }
         Log("%s route deadline: PlanDeadlineMs %ld, own task %ld (0 = never); ready 0x%lX (bit 0 world A* cost stubs, 1 cell A*, "
             "2 water), Route_PlanLocked detour %s, route IC sync path %s", k.pdReady == 7 && g_planOrig && k.asyncReady ? "OK  " : "PART",
             k.pdUs / 1000, k.pdOwnUs / 1000, k.pdReady, g_planOrig ? "yes" : "NO (non-IC plans not cut)",
             k.asyncReady ? "yes" : "NO (IC plans not cut)");
     } else {
-        Log("route deadline off (PlanDeadlineMs=0, PlanDeadlineOwnMs=0)");
+        Log("route deadline off (PlanDeadlineMs=0, PlanDeadlineOwnMs=0, FbJobDeadline=0)");
     }
     if (!g_fmIni) { Log("fail memo off (FailMemo=0)"); return; }
     if (!k.asyncReady) { Log("FAIL fail memo: the route IC's sync path is not hooked ([RouteAsync] detours), nothing served"); return; }

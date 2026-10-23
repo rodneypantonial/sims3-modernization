@@ -42,7 +42,27 @@ namespace Ts3Fixes
             return f != null && f.FieldType == typeof(int);
         }
 
+        // Marker version from which Overwatch's Stuck Check sleeps a frame after each route check itself (upstream patch v2):
+        // then overwatchstuck still counts but adds no yield of its own. 0 = no marker or not read yet, -1 = faked.
+        public const int kStuckYieldVersion = 2;
+        public static bool OurStuckYield(int upstreamVersion) { return upstreamVersion < kStuckYieldVersion; }
+
         public static float SlotMinutes(int index, int gapMinutes) { return index * (float)gapMinutes; }
+
+        // Chain (docs/145 §11): what the PerformAlarm hook does for the index-th type of Overwatch's own loop.
+        // A tick between types only where a yield is allowed; otherwise the loop stays Overwatch's one-tick loop.
+        public static bool SleepBefore(int index, bool mayYield) { return index > 0 && mayYield; }
+
+        public enum TypeRun { Theirs, OursInventory, Nothing }
+
+        // Our sliced inventory pass sleeps, so it replaces Overwatch's inventory cleanup only where a yield is allowed;
+        // with the player's setting off Overwatch's own option would return at once, so nothing runs.
+        public static TypeRun ChainType(bool isInventory, bool inventorySettingOn, bool mayYield)
+        {
+            if (!isInventory) return TypeRun.Theirs;
+            if (!inventorySettingOn) return TypeRun.Nothing;
+            return mayYield ? TypeRun.OursInventory : TypeRun.Theirs;
+        }
 
     }
 }

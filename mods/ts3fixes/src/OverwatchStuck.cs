@@ -18,7 +18,7 @@ namespace Ts3Fixes
     // Switch "overwatchstuck" (default on). Counters: [44] checks seen, [45] yields.
     public static partial class Fixes
     {
-        static bool sOverwatchDone;
+        static bool sOverwatchDone, sOwNoYieldLogged;
 
         internal static void ApplyOverwatchStuck(bool lastTry)
         {
@@ -47,10 +47,19 @@ namespace Ts3Fixes
                 try { ok = RoutableOrig(ths, lot, pos); } finally { sInOwnCheck = false; }
                 int[] c = PatchCounters();
                 c[44]++;
-                if (ShortcutOn("overwatchstuck") && MayYield()) // not inside a native->managed call (RouteBackoff.cs MayYield)
+                if (!ShortcutOn("overwatchstuck")) return ok;
+                if (!OverwatchSpreadCore.OurStuckYield(sOwUpstreamVersion)) return ok; // Overwatch v2+ sleeps after each check itself
+                if (MayYield()) // not inside a native->managed call (RouteBackoff.cs MayYield)
                 {
                     c[45]++;
                     Simulator.Sleep(0);
+                }
+                else if (!sOwNoYieldLogged)
+                {
+                    // which gate refused (docs/145 §11): EA's may-yield test 0xE53550 / yielding-disabled flag, or ts3native's root-state answer
+                    sOwNoYieldLogged = true;
+                    OwLog("StuckCheck plan without a yield: context " + Simulator.CheckYieldingContext(false) + ", yielding disabled " + Simulator.YieldingDisabled
+                        + ", ts3native no-yield " + sYieldProbe.GetOption2(kNoYield));
                 }
                 return ok;
             }

@@ -1,0 +1,140 @@
+[
+  { "id": "occult-vampire-bite", "category": "occult", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "vamp", "age": ["YoungAdult", "Adult", "Elder"], "occult": "Vampire", "pick": "driven" },
+               { "role": "victim", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "ep", "value": "LateNight", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.vamp", "type": "Vampire" }, "optional": true },
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.vamp", "other": "$actor.victim", "liking": 60 } },
+      { "cmd": "interact", "actor": "vamp", "target": "$actor.victim", "label": "Drink", "waitS": 30 },
+      { "cmd": "interact", "actor": "vamp", "target": "$actor.victim", "label": "Turn", "waitS": 60, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "bite + transform of a townie: occult swap, outfit rebuild" },
+
+  { "id": "occult-werewolf-full-moon", "category": "occult", "realism": "cheat", "weight": 0.9,
+    "actors": [{ "role": "wolf", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": "Werewolf", "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }, { "kind": "moon", "value": "Full", "prepare": true }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.wolf", "type": "Werewolf" }, "optional": true },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 60 },
+      { "cmd": "set_speed", "args": { "speed": 1 } },
+      { "cmd": "any_interaction", "actor": "wolf", "target": { "find": "object", "value": "any" }, "waitS": 40 }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "full-moon forced transform, hunting, rampage" },
+
+  { "id": "occult-fairy-zombie-moon", "category": "occult", "realism": "stress", "weight": 0.6,
+    "actors": [{ "role": "fairy", "age": ["Teen", "YoungAdult", "Adult"], "occult": "Fairy", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }, { "kind": "moon", "value": "Full", "prepare": true }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.fairy", "type": "Fairy" } },
+      { "cmd": "zombies", "args": { "spawn": 4 }, "waitS": 30 },
+      { "cmd": "any_interaction", "actor": "fairy", "target": { "find": "object", "value": "garden plot" }, "waitS": 30, "optional": true },
+      { "cmd": "set_speed", "args": { "speed": 2 }, "waitS": 60 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "fairy wings and aura particles amid full-moon zombies" },
+
+  { "id": "occult-witch-spells", "category": "occult", "realism": "cheat", "weight": 0.9,
+    "actors": [{ "role": "witch", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": "Witch", "pick": "driven" },
+               { "role": "target", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.witch", "type": "Witch" }, "optional": true },
+      { "cmd": "set_skill", "args": { "sim": "$actor.witch", "skill": "Spellcasting", "level": 6 }, "optional": true },
+      { "cmd": "any_interaction", "actor": "witch", "target": "$actor.target", "waitS": 30 },
+      { "cmd": "any_interaction", "actor": "witch", "target": "$actor.target", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "random spells (seeded), wand VFX, broom routing" },
+
+  { "id": "occult-genie-wishes", "category": "occult", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "genie", "age": ["YoungAdult", "Adult"], "occult": "Genie", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "Showtime", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.genie", "type": "Genie" } },
+      { "cmd": "any_interaction", "actor": "owner", "target": "$actor.genie", "waitS": 40 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "wish menu (money, revive, love): household-wide effects" },
+
+  { "id": "occult-mummy-curse", "category": "occult", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "mummy", "age": ["Adult", "Elder"], "occult": "Mummy", "pick": "new" },
+               { "role": "victim", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "WorldAdventures", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.mummy", "type": "Mummy" } },
+      { "cmd": "any_interaction", "actor": "mummy", "target": "$actor.victim", "waitS": 40 }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "curse moodlet, mummy chase routing" },
+
+  { "id": "occult-ghost-haunting", "category": "occult", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "ghost", "age": ["YoungAdult", "Adult", "Elder"], "occult": "Ghost", "pick": "new" },
+               { "role": "resident", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.ghost", "type": "Ghost" } },
+      { "cmd": "any_interaction", "actor": "ghost", "target": "$actor.resident", "waitS": 40 },
+      { "cmd": "any_interaction", "actor": "ghost", "target": { "find": "object", "value": "any" }, "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "scare reactions, through-wall routing" },
+
+  { "id": "occult-mermaid", "category": "occult", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "mermaid", "age": ["Teen", "YoungAdult", "Adult"], "occult": "Mermaid", "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "IslandParadise", "prepare": false }, { "kind": "venue", "value": "Beach", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.mermaid", "type": "Mermaid" }, "optional": true },
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.mermaid", "lot": "$target" }, "target": { "find": "venue", "value": "Beach" }, "waitS": 60 },
+      { "cmd": "any_interaction", "actor": "mermaid", "target": { "find": "object", "value": "any" }, "waitS": 60, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "swimming in the sea, tail outfit swap on water entry" },
+
+  { "id": "occult-plantsim", "category": "occult", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "sim", "age": ["YoungAdult", "Adult"], "occult": "PlantSim", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "UniversityLife", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.sim", "type": "PlantSim" } },
+      { "cmd": "any_interaction", "actor": "sim", "target": { "find": "object", "value": "garden plot" }, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1 },
+
+  { "id": "occult-imaginary-friend", "category": "occult", "realism": "cheat", "weight": 0.2,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult"], "occult": "ImaginaryFriend", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "Generations", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.sim", "type": "ImaginaryFriend" } },
+      { "cmd": "any_interaction", "actor": "sim", "target": { "find": "object", "value": "any" }, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1 },
+
+  { "id": "occult-robot", "category": "occult", "realism": "natural", "weight": 0.2,
+    "actors": [{ "role": "bot", "age": ["YoungAdult", "Adult"], "occult": "Robot", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "IntoTheFuture", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.bot", "type": "Robot" } },
+      { "cmd": "any_interaction", "actor": "bot", "target": { "find": "object", "value": "any" }, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1 },
+
+  { "id": "occult-mixed-household", "category": "occult", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "c", "age": ["Teen", "YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.a", "type": "Witch" } },
+      { "cmd": "make_occult", "args": { "sim": "$actor.b", "type": "Werewolf" } },
+      { "cmd": "make_occult", "args": { "sim": "$actor.c", "type": "Fairy" } },
+      { "cmd": "set_speed", "args": { "speed": 2 }, "waitS": 120 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 720, "maxConcurrent": 1, "note": "three transforms back to back, occult autonomy on one lot" },
+
+  { "id": "occult-zombie-cure", "category": "occult", "realism": "cheat", "weight": 0.2,
+    "actors": [{ "role": "sim", "age": ["YoungAdult", "Adult"], "occult": "Zombie", "pick": "new" }],
+    "needs": [{ "kind": "ep", "value": "Supernatural", "prepare": false }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.sim", "type": "Zombie" } },
+      { "cmd": "any_interaction", "actor": "sim", "target": { "find": "object", "value": "any" }, "waitS": 60, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1 }
+]

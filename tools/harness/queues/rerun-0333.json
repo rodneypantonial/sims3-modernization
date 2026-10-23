@@ -1,0 +1,283 @@
+{
+  "note": "Day reruns on asi.0333 (2026-10-23): void-run reruns (invoke hook fix), Overwatch delegate fix, lock-taker verify. Correctness and cause reads, not timing (noisy-machine rule). ~45 min.",
+  "jobs": [
+    {
+      "id": "sv-crowd-cause-0333",
+      "note": "Rerun on asi.0333 (invoke hook survives Frida; the 2026-10-23 00:01 run was VOID: hook failed, async off). Read: freeze-report; the stuck-check alarm plan should now be a foreign job capped by FbJobCapMs=300. Log must show OK route worker: runtime_invoke. Cause run for the SV big-crowd multi-second freeze (docs/161: 7.4 s max, real): fallback stacks 16, sync-plan phases, lock holders, task names. Read: freeze-report, route-phases-report --sync <log> --min 300. Sea-check theory refuted (PLAN 2026-10-23).",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 101,
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "slice": 2,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-overwatch-ab-loop3",
+      "note": "Rerun on asi.0333 + ts3fixes delegate fix (OwRunType calls PerformAlarm via a delegate so overwatchstuck can Sleep(0) per StuckCheck plan; loop2: on 8 vs off 0 iterations >= 300 ms). Read hitch-ab --scenario. Overwatch nightly cleanup A/B in one load, repro bp-overwatch-ab-loop2 (loop: arm + fire, ABBA, until 10 firings per arm, loop cap 20 min; the window ends there). Row keeps \"stopped at N events after M min\". Read: node tools/harness/hitch-ab.ts --scenario <tag> (rows reflect_call off / reflect_call on). Measurement settings of freeze-measure.json.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 22,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "bp-overwatch-ab-loop2",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 20
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-rcr-route-legs-0333",
+      "note": "Recheck on asi.0333 with async working (the 16:34/17:58 runs were VOID: hook failed); perArm rule as written in repros.json; if firings are fast again, restore perArm 4 (docs/170 §6). ip-route-legs-loop (legreplanskip, idlememo): IP crowd across the water and back, ABBA on the two ts3fixes switches. Pass: no crash, legreplanskip_skipped >= 1, idlememo_skipped >= 1. 2026-10-23: cap 16 min (4 firings per arm at 30-90 s need it; 6 min ran out after 3); legreplanskip never acted in this crowd-across-water scene (0 skips), so it is no longer required here: D1 needs its own trigger.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 16,
+          "repro": "ip-route-legs-loop",
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "fixesRequire": "idlememo_skipped>=1",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 28
+    },
+    {
+      "id": "ip-locktaker-verify",
+      "note": "Day (mechanism, not timing): one ABBA cycle (1 firing per arm), every shadow on (SteerRO, AvoidRO, Gate0RO, RouteToObjRO, PlacementRO). Pass: no crash, 0 watchdog lines, the six OK lines, every shadow mismatch and in-job apply 0, afActiveTrip 0, each piece answered on the on arms. Any FAIL: stop, fix, do not run job 2.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0,steerShadowMismatch<=0,avShadowMismatch<=0,avShadowMismatchB<=0,g0Mismatch<=0,rtoShadowMismatch<=0,fgShadowMismatch<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 1,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 1,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 8,
+          "repro": "ip-locktaker-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 1,
+              "minFirings": 1
+            },
+            "maxMinutes": 6
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-route-stuckcheck-reset-ab-0333",
+      "note": "Rerun on asi.0333 (setup FAILed 2026-10-23 01:12 UTC: strand_crowd 60 tries found no spot; now 240). route-stuckcheck-reset-loop: the game's stuck-check alarm body and reset safe-location search on 20 stranded Sims, loop form, ABBA until 40 stuck checks armed and >= 10 firings per arm (loopRule, docs/168 §7; ~20 firings x <= 34 s; stuckchecknear, failrepeat, safespotcap). Pass: >= 20 stuck checks ran, >= 20 failed sim-thread plans.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "sypPlans.1>=20",
+      "logRequire": {
+        "route phases SyncPlans": 1,
+        "OK   route deadline": 1,
+        "OK   fail memo": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.PlanDeadlineMs": 1000,
+        "RouteAsync.FailMemo": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "repro": "route-stuckcheck-reset-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 40,
+              "minFirings": 10
+            },
+            "maxMinutes": 14
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "fixesRequire": "stuckcheckasync_run>=20",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

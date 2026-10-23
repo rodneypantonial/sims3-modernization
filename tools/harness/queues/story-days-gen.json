@@ -1,0 +1,57 @@
+{
+  "note": "Story days with a generated CAS household (docs/181), first live run.",
+  "jobs": [
+    {
+      "id": "bp-story-days-fullhouse",
+      "note": "First live run of a generated household (docs/181): archetype full-house (8 Sims, traits with up- and downsides) made in CAS and moved in with make_household, then the day planner; rotation off so the generated household is played all run. Correctness, not timing. One 25-min story run with the day planner, seed 1, on the Story-* scratch copy; read with story-report.ts <tag> (Day plan section). Not a timing run.",
+      "asi": "game-copy/ts3native.asi.0332",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 98,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "minutes": 25,
+          "noSamplers": true,
+          "envGuard": false,
+          "story": {
+            "seed": 1,
+            "days": {
+              "tickS": 5,
+              "nightSkip": true,
+              "rotate": 0
+            },
+            "household": "full-house",
+            "householdFunds": 30000
+          }
+        }
+      },
+      "timeoutMin": 45
+    }
+  ]
+}

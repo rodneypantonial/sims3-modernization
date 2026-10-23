@@ -842,6 +842,7 @@ static bool AsIsName(const char* s, DWORD hi) {
 }
 static bool AsIsSnShim(DWORD fn) {
     for (int i = 0; i < SN_IC_N; i++) if (fn == (DWORD)(uintptr_t)kSnIcShims[i]) return true;
+    for (int i = 0; i < 7; i++) if (fn == (DWORD)(uintptr_t)kHxShims[i]) return true;  // [RouteAsync] H2Ic slot shims (locowin.cpp)
     return false;
 }
 

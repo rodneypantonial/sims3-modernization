@@ -39,7 +39,7 @@
 // profile.frameLead: {service, ms?, min, lotAdds?} -> profile-world.ts --frame-lead (frame-lead.ts pass rule: frames > ms led by that main-slot service, docs/169).
 // profile.fixesOff: "name,name" -> profile-world.ts --fixes-off (those switches off for the whole run).
 // profile.fixesRequire: "name>=1,name<5000" -> profile-world.ts --fixes-require (ts3fixes counter rules checked at the end; FAIL verdict when one fails).
-// profile.hitchTasks: ["<regex>>=N"] -> profile-world.ts --hitch-tasks (hitch lines naming the expected script task, docs/169; FAIL verdict when one fails).
+// profile.hitchTasks: ["<regex>[@ms]>=N" | "<regex>[@ms]<N"] -> profile-world.ts --hitch-tasks (hitch lines naming the expected script task, docs/169; FAIL verdict when one fails).
 // profile.fixesOn: "name,name" -> profile-world.ts --fixes-on (those switches on for the whole run; e.g. autshadow, whose tuning is off).
 // profile.ab: "name,name" -> profile-world.ts --ab (runtime switches alternate on/off in one load), profile.slice: minutes per side.
 // profile.abOnFirst: true -> --ab-on-first (counted slices on,off,off,on instead of off,on,on,off).
@@ -58,6 +58,8 @@
 // profile.loopRule: {until?, maxMinutes?} -> --loop-rule: a loop repro's stop rule for this job only (A/B queues: minFirings, docs/168 §7).
 // profile.profOpts: {stages?: false, tasks?: false} -> --prof-opts (stutter-profile.js -P fields; docs/168 §4 profiler cost control).
 // profile.noEnv: true -> profile-world.ts --no-env (no test_env guard: the repro sets winter, weather or a full moon itself, docs/117).
+// profile.envGuard: false -> profile-world.ts --no-env-guard (test_env at the start only; seasons then pass as in play: story runs, docs/171 §16).
+// profile.story: {seed?, stories?, censusOnly?, ...} -> profile-world.ts --story '<json>' (story fuzzer on a Story-* scratch copy, docs/171 §7).
 // ini ProbeSnap.Enabled=1 -> profile-world.ts --no-prof (no second Frida agent beside the int3 sampler: docs/67 §7).
 // profile.travel: "university" | "future" | "france" | "china" | "egypt" -> profile-world.ts --travel (save-matrix.ts travel case with
 //   --stay first, then the window and repro in that world, docs/117 §2.11); the job's timeoutMin must cover the trip (~30 min).
@@ -93,7 +95,7 @@
 // (copies of what was in Bin at the start: probe-out/queue/bin-before/). Windows-only by nature (TS3W.exe, taskkill).
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, copyFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, normalize, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -107,6 +109,9 @@ import { parseRule } from './frame-lead.ts';
 import { checkLoop, ruleText, STOP_LINE, withRule, type Loop } from './repro-loop.ts';
 import { drift, driftLine, failMode, logCopy, parseReuse, readSwitches, REUSE_DEFAULTS, reproItems, restoreSwitches, reuseBlock, snapshot, stableKey, subTag, type Extra, type ReproItem, type ReuseOpts, type WorldSnap } from './session-reuse.ts';
 import { saveForeground } from './focus-game.ts';
+import { parseStory, smokeFails, storyFile } from './story-report.ts';
+import { dayFails } from './story-day.ts';
+import { load as loadRun, type Run } from './freeze-report.ts';
 import { describePin, gameCpus, pinConfig, pinStatePending, restorePins, startPinner, type PinOpts } from './pin.ts';
 import { startMachineLoad, summarize as loadSummary } from './machine-load.ts';
 
@@ -131,7 +136,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
   save?: string; content?: string; run: { repro?: string; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
-    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; nativeRequire?: string; logRequire?: Record<string, number>; timeoutMin?: number; pin?: false | PinOpts;
+    profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; nativeRequire?: string; logRequire?: Record<string, number>; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' } };
 
 export function parseQueue(json: unknown): Job[] {
@@ -200,6 +205,8 @@ export function parseQueue(json: unknown): Job[] {
     for (const k of ['noSamplers', 'noProf', 'noFrames', 'cameraPan']) if (j.run.profile?.[k] !== undefined && typeof j.run.profile[k] !== 'boolean') throw new Error(`${at}: run.profile.${k} must be true or false`);
     if (j.run.profile?.loopRule !== undefined && (typeof j.run.profile.loopRule !== 'object' || !j.run.profile.repro)) throw new Error(`${at}: run.profile.loopRule must be {until?, maxMinutes?} with run.profile.repro`);
     if (j.run.profile?.noEnv !== undefined && typeof j.run.profile.noEnv !== 'boolean') throw new Error(`${at}: run.profile.noEnv must be true or false`);
+    if (j.run.profile?.envGuard !== undefined && typeof j.run.profile.envGuard !== 'boolean') throw new Error(`${at}: run.profile.envGuard must be true or false`);
+    if (j.run.profile?.story !== undefined && (typeof j.run.profile.story !== 'object' || j.run.profile.story === null || Array.isArray(j.run.profile.story))) throw new Error(`${at}: run.profile.story must be a story config object (docs/171 §7)`);
     if (j.run.profile?.travel !== undefined && !['university', 'future', 'france', 'china', 'egypt'].includes(j.run.profile.travel)) throw new Error(`${at}: run.profile.travel must be university, future, france, china or egypt`);
     if (j.run.profile?.mainstack !== undefined &&!/^(main|all|\d+)$/.test(String(j.run.profile.mainstack))) throw new Error(`${at}: run.profile.mainstack must be main, all or a thread id`);
     if (j.run.menuMemory?.draws !== undefined && !(Number.isInteger(j.run.menuMemory.draws) && j.run.menuMemory.draws > 0)) throw new Error(`${at}: run.menuMemory.draws must be a positive integer`);
@@ -373,11 +380,12 @@ export function lastSave(text: string): { result: number; totalMs: number } | nu
 }
 // age-save.ts "HH:MM:SS saved <name>" -> name (checkpoints <name>-dayN, then the final <name>)
 export const savedName = (line: string) => line.match(/^\d\d:\d\d:\d\d saved (\S+)\s*$/)?.[1] ?? null;
-// nativeRequire: every numeric /native field's after - before (arrays as name.i), checked with the fixes-require rules
+// nativeRequire: every numeric /native field's after - before (arrays as name.i), checked with the fixes-require rules;
+// `*Ready` fields are load-time install flags/masks, so they keep their after value (a delta is always 0: 3 FAILs 2026-10-23)
 export function flatDelta(a: any, b: any): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(b ?? {})) {
-    if (typeof v === 'number' && typeof a?.[k] === 'number') out[k] = v - a[k];
+    if (typeof v === 'number' && typeof a?.[k] === 'number') out[k] = /Ready$/.test(k) ? v : v - a[k];
     else if (Array.isArray(v) && Array.isArray(a?.[k])) v.forEach((x, i) => { if (typeof x === 'number' && typeof a[k][i] === 'number') out[`${k}.${i}`] = x - a[k][i]; });
   }
   return out;
@@ -385,6 +393,13 @@ export function flatDelta(a: any, b: any): Record<string, number> {
 // logRequire: { "<regex>": min lines } over this job's ts3native.log copy; failed rules as text
 export function logFails(text: string, req: Record<string, number>): string[] {
   return Object.entries(req).flatMap(([re, min]) => { const n = text.split(/\r?\n/).filter(l => new RegExp(re).test(l)).length; return n >= min ? [] : [`log /${re}/ ${n} lines (want >= ${min})`]; });
+}
+// [RouteAsync] Enabled=1 but the route worker hook failed (ts3native "FAIL route worker:"): plans stay on the sim thread, so every
+// async arm in the run is void (2026-10-22/23: 4 runs PASSed that way, Frida prologue on the runtime_invoke slot); '' when fine
+export function routeWorkerVoid(log: string, ini: string): string {
+  const sec = ini.split(/^\s*\[/m).find(b => /^RouteAsync\]/i.test(b)) ?? '';
+  if (!/^\s*Enabled\s*=\s*1\b/im.test(sec) || !/FAIL route worker:/.test(log)) return '';
+  return `route worker hook failed: async off, run void (${log.match(/FAIL route worker:[^\r\n]*/)![0].slice(0, 160)})`;
 }
 const delta = (a: any, b: any) => (a && b ?Object.fromEntries(Object.keys(b).filter(k => typeof b[k] === 'number' && typeof a[k] === 'number' && b[k] !== a[k]).map(k => [k, b[k] - a[k]])) : null);
 
@@ -529,6 +544,16 @@ if (values['self-check']) {
   assert.equal(mergeIni(toml, tomlSet({ 'patches.LotStreamingOptimizations.enabled': false })), '[patches.Mimalloc]\nenabled = true\n\n[patches.LotStreamingOptimizations]\nenabled=false\n');
   assert.equal(parseQueue([{ id: 'l', asi: 'x', save: 'S', s3ssToml: { 'patches.LotStreamingOptimizations.enabled': false }, run: { profile: { minutes: 6, repro: 'lotstream-pan' } } }])[0].run.profile!.repro, 'lotstream-pan');
   assert.equal(parseQueue([{ id: 'm', asi: 'x', save: 'S', run: { profile: { minutes: 6, mainstack: 'main' } } }])[0].run.profile!.mainstack, 'main');
+  assert.throws(() => parseQueue([{ id: 's', asi: 'x', save: 'S', run: { profile: { minutes: 6, story: '{"seed":1}' } } }]), /profile.story/);
+  assert.deepEqual(parseQueue([{ id: 's', asi: 'x', save: 'S', run: { profile: { minutes: 10, story: { seed: 1 } } } }])[0].run.profile!.story, { seed: 1 });
+  assert.throws(() => parseQueue([{ id: 's', asi: 'x', save: 'S', run: { profile: { minutes: 6, envGuard: 'off' } } }]), /envGuard/);
+  assert.equal(parseQueue(JSON.parse(readFileSync(join(import.meta.dirname, 'queues', 'story-days.json'), 'utf8')).jobs)[0].run.profile!.envGuard, false, 'story-days: seasons pass (docs/171 §16)');
+  // story jobs load a Story-* copy, never the named save; other jobs and existing Story-* saves load as named
+  const sj = (story?: object) => parseQueue([{ id: 's', asi: 'x', save: 'Baseline-BP-Spring', run: { profile: { minutes: 10, seed: 9, ...(story && { story }) } } }])[0];
+  assert.equal(storyCopy(sj({ seed: 1 }), 'Baseline-BP-Spring'), 'Story-Baseline-BP-Spring-s1');
+  assert.equal(storyCopy(sj({}), 'Baseline-BP-Spring.sims3'), 'Story-Baseline-BP-Spring-s9');
+  assert.equal(storyCopy(sj(), 'Baseline-BP-Spring'), 'Baseline-BP-Spring');
+  assert.equal(storyCopy(sj({ seed: 1 }), 'Story-Baseline-BP-Spring-s1'), 'Story-Baseline-BP-Spring-s1');
   assert.equal(parseQueue([{ id: 't', asi: 'x', save: 'S', run: { profile: { minutes: 6, travel: 'university' } } }])[0].run.profile!.travel, 'university');
   assert.throws(() => parseQueue([{ id: 't', asi: 'x', save: 'S', run: { profile: { minutes: 6, travel: 'Moon' } } }]), /travel/);
 
@@ -550,9 +575,16 @@ if (values['self-check']) {
   assert.throws(() => parseQueue([{ id: 'v', asi: 'x', save: 'S', minCounters: '20', run: { soak: { minutes: 1 } } }]), /minCounters/);
   // nativeRequire / logRequire (docs/169 route repro checks)
   assert.deepEqual(flatDelta({ a: 1, p: [1, 2], s: 'x' }, { a: 4, p: [1, 7], s: 'y' }), { a: 3, 'p.0': 0, 'p.1': 5 });
+  assert.deepEqual(flatDelta({ fgReady: 1, gsReady: 255 }, { fgReady: 1, gsReady: 255 }), { fgReady: 1, gsReady: 255 }); // load-time flags
   assert.deepEqual(checkRequire('sypPlans.1>=5,a==3', flatDelta({ a: 1, sypPlans: [0, 0] }, { a: 4, sypPlans: [9, 5] })), []);
   assert.deepEqual(logFails('route async: sync plan 50 ms, IC Plan, reason NoStart\nx\nroute async: sync plan 9 ms, IC Plan, reason QueueFull', { 'reason NoStart': 1, 'reason QueueFull': 2 }), ['log /reason QueueFull/ 1 lines (want >= 2)']);
   assert.throws(() => parseQueue([{ id: 'v', asi: 'x', save: 'S', logRequire: { x: 0 }, run: { soak: { minutes: 1 } } }]), /logRequire/);
+  // route worker hook FAIL with [RouteAsync] on = void run; off, or no FAIL line = fine
+  const rwLog = 'OK   x\r\nFAIL route worker: runtime_invoke slot 0x00F95000 holds 0x1, expected 0x2 with its prologue; plans stay on the calling thread\r\n';
+  assert.match(routeWorkerVoid(rwLog, '[A]\nEnabled=0\n[RouteAsync]\n; c\nEnabled=1\n'), /^route worker hook failed: async off, run void \(FAIL route worker: runtime_invoke.*thread\)$/);
+  assert.equal(routeWorkerVoid(rwLog, '[RouteAsync]\nEnabled=0\n[B]\nEnabled=1\n'), '');
+  assert.equal(routeWorkerVoid(rwLog, '[RouteAsync]\nEnabled=10\n'), '');
+  assert.equal(routeWorkerVoid('OK route worker\n', '[RouteAsync]\nEnabled=1\n'), '');
   assert.throws(() => parseQueue([{ id: 'v', asi: 'x', save: 'S', nativeRequire: 'a=>1', run: { soak: { minutes: 1 } } }]), /not name/);
   // saveMatrix: release mode reaches save-matrix.ts; the release queue's rel-matrix jobs use it
   assert.equal(parseQueue([{ id: 'm', asi: 'x', save: 'S', run: { matrix: [] }, saveMatrix: { fixes: 'shipped' } }])[0].saveMatrix?.fixes, 'shipped'); // -> --fixes shipped (--dry-run shows it)
@@ -743,13 +775,18 @@ const staleAsi = (j: Job) => {
 };
 const saveOf = (j: Job) => j.save ?? (j.run.menuMemory ? 'menu' : REPROS.find(r => r.id === j.run.repro)?.save);
 const saveFile = (s: string) => (/\.sims3$/i.test(s) ? s : `${s}.sims3`);
+// story jobs (docs/171 safety): the game loads Story-<save>-s<seed>, a copy queue.ts makes, never the named save itself
+function storyCopy(j: Job, s: string) { // a declaration: --self-check runs before this line
+  return !j.run.profile?.story || s === 'menu' || /^Story-/i.test(s) ? s
+    : `Story-${s.replace(/\.sims3$/i, '').replace(/[^A-Za-z0-9_-]/g, '_')}-s${(j.run.profile.story as any).seed ?? j.run.profile.seed ?? 1}`;
+}
 const ageName = (j: Job) => j.run.age?.save ?? `${j.id}-${new Date().toISOString().slice(0, 10)}`;
 const profileTag = (j: Job) => `${queueName}-${new Date().toISOString().slice(0, 10)}-${j.id}`;
 // p: the job's profile, or for one repro of profile.repros that merged with the item (docs/170 §1); extra: session flags
 const profileArgs = (j: Job, p: any = j.run.profile!, tag = profileTag(j), extra: string[] = []): string[] => [H('profile-world.ts'), '--tag', tag, '--minutes', String(p.minutes), ...(p.seed !== undefined ? ['--seed', String(p.seed)] : []),
       ...(p.repro ? ['--repro', p.repro] : []), ...(p.loopRule ? ['--loop-rule', JSON.stringify(p.loopRule)] : []),...(p.mainstack ? ['--mainstack', String(p.mainstack)] : []),
       ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []),
-      ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.noEnv ? ['--no-env'] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
+      ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.noEnv ? ['--no-env'] : []), ...(p.envGuard === false ? ['--no-env-guard'] : []), ...(p.story ? ['--story', JSON.stringify(p.story)] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
 const runArgs = (j: Job): string[] | null =>
   j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
     : j.run.profile ? profileArgs(j)
@@ -818,7 +855,8 @@ if (values['dry-run']) {
     if (j.fixes?.uninstall?.length) console.log(`  4 node tools/setup/install-fixes.ts uninstall --only ${j.fixes.uninstall.join(',')}   (reinstalled after the job)`);
     console.log(`  5 python tools/probe/ts3probe.py serve --launch${j.gameArgs?.length ? ` -- ${j.gameArgs.join(' ')}` : ''}   (child, killed at job end)`);
     console.log(`  5 ${describePin(pinConfig(j.pin))}; machine load every 30 s -> ${queueName}-<date>-${j.id}-machine.jsonl (noise verdict in the note)`);
-    console.log(`  6 ${s === 'menu' ? 'wait for the main menu (agent ping)' : `node tools/harness/cycle.ts --save ${saveFile(s)}`}`);
+    if (storyCopy(j, s) !== s) console.log(`  6 copy Saves/${saveFile(s)} -> Saves/${saveFile(storyCopy(j, s))}   (story scratch copy, replaced each job; the Baseline file is only read)`);
+    console.log(`  6 ${s === 'menu' ? 'wait for the main menu (agent ping)' : `node tools/harness/cycle.ts --save ${saveFile(storyCopy(j, s))}`}`);
     }
     if (items) items.forEach((it, k) => {
       const p = { ...j.run.profile, ...it, repro: it.id }, l = loopOfId(it.id);
@@ -1127,7 +1165,13 @@ for (const [n, j] of jobs.entries()) {
       }
       if (!up) throw new Error('agent not answering at the menu within 300 s');
     } else {
-      const r = await node([H('cycle.ts'), '--save', saveFile(s)], logFile, deadline);
+      const ld = storyCopy(j, s);
+      if (ld !== s) { // fresh copy each job; the name starts with Story-, so the rm can never hit a Baseline save
+        rmSync(join(SAVES, saveFile(ld)), { recursive: true, force: true });
+        cpSync(join(SAVES, saveFile(s)), join(SAVES, saveFile(ld)), { recursive: true });
+        log(`${j.id}: story scratch copy ${saveFile(s)} -> ${saveFile(ld)}`);
+      }
+      const r = await node([H('cycle.ts'), '--save', saveFile(ld)], logFile, deadline);
       if (r.code !== 0) throw new Error(`cycle.ts --save exit ${r.code}${r.timedOut ? ' (timeout)' : ''}`);
     }
     loaded(j);
@@ -1145,6 +1189,8 @@ for (const [n, j] of jobs.entries()) {
     const c0 = await get(resetMax ? 'native?vfresetmax=1' : 'native'); // read first, then the [Verify] maxima start again
     const gate = counterGate(c0, j.minCounters);
     if (gate) throw new Error(`${gate}; refused, nothing run`);
+    const rwVoid = routeWorkerVoid(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '', readFileSync(join(BIN, 'ts3native.ini'), 'utf8'));
+    if (rwVoid) throw new Error(rwVoid); // fail fast: the hook line is written at start-up, before any arm runs
     const items = itemsOf(j), args = j.run.profile && !items ? profileArgs(j, j.run.profile, profileTag(j), sessionFlags(j)) : runArgs(j);
     let afterRun: { mem: any; native: any } | null = null;
     if (items) {
@@ -1310,6 +1356,16 @@ for (const [n, j] of jobs.entries()) {
     const fails = [...(j.nativeRequire ? checkRequire(j.nativeRequire, row.nativeDelta) : []),
       ...(j.logRequire ? logFails(row.nativeLog && existsSync(row.nativeLog) ? readFileSync(row.nativeLog, 'utf8') : '', j.logRequire) : [])];
     row.verdict.push(fails.length ? `FAIL: events not fired: ${fails.join('; ')}` : 'PASS: repro events fired');
+    if (fails.length) row.pass = false;
+  }
+  // story jobs (docs/171): stories ran, story.jsonl written, story-report joins hitches (census-only jobs run no stories)
+  const st = j.run.profile?.story as any;
+  if (launched && st && !st.censusOnly) {
+    const tag = profileTag(j), sf = storyFile(tag), lines = existsSync(sf) ? parseStory(readFileSync(sf, 'utf8')) : [];
+    let run: Run | null = null; try { run = loadRun(tag); } catch (e) { log(`${j.id}: story-report load ${tag}: ${String(e).split('\n')[0]}`); }
+    // day planner jobs (docs/171 §12): also >= 2 sim days, 0 unscripted deaths, attendance, pursuits free days > work days
+    const fails = [...smokeFails(run, lines), ...(st.days ? dayFails(lines) : [])];
+    row.verdict.push(fails.length ? `FAIL: story: ${fails.join('; ')}` : `PASS: story: ${lines.filter(l => !l.kind).length} steps logged, join ok (story-report.ts ${tag})`);
     if (fails.length) row.pass = false;
   }
   // P4 shadow records (RouteSnap Mode=1, docs/94 §13): rewritten at every start too (row.shadowLog; shadow-compare-report.ts)

@@ -39,17 +39,27 @@ static void* const kArHooks[4] = {NULL, (void*)ArReplanHook, (void*)ArPlanFromPo
 static const int kArBuilt = 7;  // the Kinds bits this build hooks (ts3fixes hooks the same methods)
 
 // [RouteAsync] Kinds = bit 0 Replan, bit 1 PlanFromPoint, bit 2 ReplanFromPosition (7 = all); KindsMode = arMode's start.
+// [RouteAsync] ForeignKinds (docs/176, default 0) = the same bits for STARTs from a yielding task that is not the route's Sim
+// (vehicle/boat followers, other tasks; ts3fixes sends them with bit 61); ForeignKindsMode = afMode's start (default 1,
+// --ab a10foreign). A kind in ForeignKinds only is hooked too, but its own-task STARTs are refused (g_arOwnKinds), so
+// Kinds=0 ForeignKinds=4 moves only the foreign ReplanFromPosition plans. Foreign jobs are flagged af (not fb): no
+// FbJobCapMs cap, the worker runs the whole original IC, so the answer is the game's own.
 // Needs the async path (InstallAsync). Before InstallP10, which then leaves the hooked ICs to these detours.
 static void InstallA10(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     const int kinds = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"Kinds", 0, ini), 0, 7);
-    if (!kinds) { Log("route async A10 off (Kinds=0)"); return; }
+    const int fkinds = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"ForeignKinds", 0, ini), 0, 7);
+    if (!kinds && !fkinds) { Log("route async A10 off (Kinds=0, ForeignKinds=0)"); return; }
     if (!k.asyncReady || !g_icPlanOrig) { Log("SKIP route async A10: needs the async route path"); return; }
     k.arMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"KindsMode", 1, ini), 0, 1);
+    k.afMode = Clamp(GetPrivateProfileIntW(L"RouteAsync", L"ForeignKindsMode", 1, ini), 0, 1);
     for (int kind = 1; kind <= 3; kind++) {
-        if (!(kinds & kArBuilt & (1 << (kind - 1)))) continue;
+        if (!((kinds | fkinds) & kArBuilt & (1 << (kind - 1)))) continue;
         g_arOrig[kind] = InstallDetour(kP10Name[kind], kP10Ic[kind], kP10Pro[kind], sizeof(kP10Pro[kind]), kArHooks[kind]);
         if (g_arOrig[kind]) k.arReady |= 1 << (kind - 1);  // a kind without its detour is refused at START
     }
-    Log("route async A10: Kinds=%d KindsMode=%ld, hooked mask %ld", kinds, k.arMode, k.arReady);
+    g_arOwnKinds = kinds;
+    k.afKinds = fkinds & k.arReady;
+    Log("route async A10: Kinds=%d KindsMode=%ld ForeignKinds=%d ForeignKindsMode=%ld, hooked mask %ld", kinds, k.arMode, fkinds,
+        k.afMode, k.arReady);
 }

@@ -20,10 +20,13 @@ namespace Ts3Fixes
     //     inventories, same repairs, no catalog-name lookups (Overwatch looks up a name per world object for its log),
     //     at most kMaxItemsPerSlice inventory items or 2 ms per tick (a big inventory continues in the next tick). It runs only when the player's Overwatch setting has
     //     the inventory cleanup on; the setting itself is never written.
-    // Switch "overwatchchain" (tuning kOverwatchChain, default off; only when "overwatchspread" is off, docs/145 §10): the
-    // same types in Overwatch's order inside the alarm's own task, one sim tick apart (Sleep(0) between types) instead of
-    // 10 sim-minutes, the inventory cleanup as our sliced pass, notices collected into one message as Overwatch does. The
-    // night's ~300 ms tick was every type up to the first stuck-check plan in one tick, not the plans (docs/145 §10).
+    // Switch "overwatchchain" (tuning kOverwatchChain, default off; only when "overwatchspread" is off, docs/145 §10-11):
+    // Overwatch's own OnTimer loop runs in a one-shot task of ours (OwChainTheirs), and a hook on AlarmOption.PerformAlarm
+    // (the base every cleanup type but the console's RunAlarmCommands inherits) sleeps one sim tick before each type and
+    // runs our sliced pass for the inventory cleanup. Order, settings, exception handling and notice batching stay
+    // Overwatch's, and the call stack into each type is Overwatch's own (interface call from OnTimer), so overwatchstuck's
+    // per-plan Sleep(0) inside StuckCheck works as in Overwatch's own path. The first chain (docs/145 §10) called
+    // PerformAlarm from our loop (reflection, then a delegate) and StuckCheck got no yield there (docs/145 §11).
     // Counters: [244] chained alarms, [245] ticks yielded between types ([158]/[223]/[224] also count chained types).
     // Overwatch builds that spread the cleanups themselves carry OverwatchSpreadCore.MarkerField: then we patch nothing
     // and log "upstream spreading found". No Overwatch, or an OnTimer we do not recognise: logged, nothing patched.
@@ -37,6 +40,9 @@ namespace Ts3Fixes
     public static partial class Fixes
     {
         static bool sOwSpreadTried, sOwSpreadReady, sOwUpstream;
+        static bool sOwChainReady, sOwChaining, sOwChainStop; // PerformAlarm hook in place; a chain is running; world gone mid-chain
+        static int sOwChainIndex;                             // types seen in the running chain
+        static int sOwUpstreamVersion;                        // marker value read at world load (0 = none), see OverwatchStuck.cs
         static Type sOwType;
         static MethodInfo sOwTimer, sOwFind, sOwPerform;  // Overwatch.OnTimer(), DerivativeSearch.Find<IAlarmOption>(), IAlarmOption.PerformAlarm()
         static PropertyInfo sOwSettings;
@@ -72,16 +78,20 @@ namespace Ts3Fixes
                 return;
             }
             sOwSpreadReady = Patch(sOwType, "OnTimer", Type.EmptyTypes, typeof(OverwatchSpreadHook), "TimerHook", "TimerOrig");
+            Type alarmBase = ow.GetType("NRaas.OverwatchSpace.Alarms.AlarmOption");
+            sOwChainReady = sOwSpreadReady && alarmBase != null && Patch(alarmBase, "PerformAlarm", Type.EmptyTypes, typeof(OwAlarmHook), "PerformHook", "PerformOrig");
         }
 
         // World load: the marker's version is safe to read now (Overwatch's static constructor has run).
         internal static void OverwatchSpreadWorldLoad()
         {
+            sOwChaining = false; // a chain task dropped with the last world never ran its finally
             if (!sOwUpstream || sOwType == null) return;
             int v = 0;
             try { v = (int)sOwType.GetField(OverwatchSpreadCore.MarkerField).GetValue(null); } catch (Exception) { }
             PatchCounters()[165] = v;
-            OwLog("upstream spreading found (v" + v + "), ours off");
+            sOwUpstreamVersion = v;
+            OwLog("upstream spreading found (v" + v + "), ours off" + (OverwatchSpreadCore.OurStuckYield(v) ? "" : ", stuck-check yields theirs"));
         }
 
         static void OwLog(string line)
@@ -96,63 +106,63 @@ namespace Ts3Fixes
         static OverwatchSpreadCore.Mode OwMode()
         {
             return OverwatchSpreadCore.WithChain(OverwatchSpreadCore.Decide(ShortcutOn("overwatchspread"), sOwSpreadReady, sOwUpstream,
-                ShortcutOn("overwatchspreadfakeupstream")), ShortcutOn("overwatchchain"), sOwSpreadReady);
+                ShortcutOn("overwatchspreadfakeupstream")), ShortcutOn("overwatchchain"), sOwChainReady);
         }
 
-        // Overwatch's notice batching (private statics sCollectNotices / sAlarmNotice, Common.Notify(string)): looked up
-        // once; missing = notices show one by one, as with overwatchspread.
-        static FieldInfo sOwCollect, sOwNotice;
-        static MethodInfo sOwNotify;
-        static bool sOwNoticeTried;
-
-        static bool OwCollectNotices(bool on)
+        // Chain: Overwatch's own OnTimer in a one-shot task of ours (named in hitch lines, docs/166), the PerformAlarm hook
+        // spacing the types (OwAlarmHook).
+        static void OwChainTheirs()
         {
-            if (!sOwNoticeTried)
-            {
-                sOwNoticeTried = true;
-                const BindingFlags st = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
-                sOwCollect = sOwType.GetField("sCollectNotices", st);
-                sOwNotice = sOwType.GetField("sAlarmNotice", st);
-                sOwNotify = sOwType.GetMethod("Notify", st, null, new Type[] { typeof(string) }, null);
-                if (sOwCollect == null || sOwCollect.FieldType != typeof(bool) || sOwNotice == null || sOwNotice.FieldType != typeof(string) || sOwNotify == null)
-                    sOwCollect = null;
-            }
-            if (sOwCollect == null) return false;
-            sOwCollect.SetValue(null, on);
-            return true;
+            PatchCounters()[244]++;
+            sOwChaining = true;
+            sOwChainStop = false;
+            sOwChainIndex = 0;
+            try { OverwatchSpreadHook.TimerOrig(); }
+            finally { sOwChaining = false; }
         }
 
-        // Chain: Overwatch's own option list and order, one type per sim tick in the calling task (it must be able to yield).
-        static void OwChain()
+        // One chained type, called by Overwatch's own loop in place of AlarmOption.PerformAlarm. Outside a chain (Overwatch's
+        // own path, spread slots) it is the original.
+        public class OwAlarmHook
+        {
+            public void PerformHook()
+            {
+                if (!sOwChaining) { PerformOrig(); return; }
+                if (sOwChainStop) return;
+                bool may = MayYield();
+                if (OverwatchSpreadCore.SleepBefore(sOwChainIndex++, may))
+                {
+                    Simulator.Sleep(0);
+                    PatchCounters()[245]++;
+                    if (WorldGone()) { sOwChainStop = true; OwLog("chain stopped: world gone"); return; }
+                }
+                object option = this;
+                bool inv = OwIsInventory(option);
+                OverwatchSpreadCore.TypeRun run = OverwatchSpreadCore.ChainType(inv, inv && (bool)sOwInvSetting.GetValue(sOwSettings.GetValue(null, null)), may);
+                if (run == OverwatchSpreadCore.TypeRun.Nothing) return;
+                if (run == OverwatchSpreadCore.TypeRun.OursInventory)
+                {
+                    try { OwInventoryPass(ShortcutOn("overwatchspreadverify")); }
+                    catch (Exception e) { OwLog("inventory pass failed: " + e.Message); }
+                    return;
+                }
+                if (sOwTypeWatch == null) sOwTypeWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+                sOwTypeWatch.Restart();
+                long tick = Simulator.TicksElapsed();
+                PerformOrig();
+                OwTypeTime(option, tick, sOwTypeWatch.GetElapsedTime());
+            }
+            public void PerformOrig() { } // receives AlarmOption.PerformAlarm's original header
+        }
+
+        // A type's run, if it stayed in one tick: [223] longest, [224] + a log line at >= kSlowTypeUs (docs/145 §9).
+        static void OwTypeTime(object option, long tick, long us)
         {
             int[] c = PatchCounters();
-            c[244]++;
-            IList options = OwOptions();
-            bool collect = OwCollectNotices(true);
-            try
-            {
-                for (int i = 0; i < options.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        Simulator.Sleep(0);
-                        c[245]++;
-                        if (WorldGone()) { OwLog("chain stopped: world gone"); return; }
-                    }
-                    OwRunType(options[i], true);
-                }
-            }
-            finally
-            {
-                if (collect)
-                {
-                    OwCollectNotices(false);
-                    string text = sOwNotice.GetValue(null) as string;
-                    sOwNotice.SetValue(null, null);
-                    if (!string.IsNullOrEmpty(text) && !WorldGone())
-                        try { sOwNotify.Invoke(null, new object[] { text }); } catch (Exception) { }
-                }
-            }
+            c[158]++;
+            if (Simulator.TicksElapsed() != tick) return; // a type that slept is not one tick (RecoverStrandedToddlers, StuckCheck with overwatchstuck)
+            if (us > c[223]) c[223] = (int)us;
+            if (us >= OverwatchSpreadCore.kSlowTypeUs) { c[224]++; OwLog(OwName(option) + " (Overwatch's own code) took " + (us / 1000.0).ToString("0.0") + " ms in one tick"); }
         }
 
         static IList OwOptions() { return sOwFind.Invoke(null, null) as IList; }
@@ -175,16 +185,30 @@ namespace Ts3Fixes
                 if (sOwTypeWatch == null) sOwTypeWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds); // own watch: a type may sleep
                 sOwTypeWatch.Restart();
                 long tick = Simulator.TicksElapsed();
-                sOwPerform.Invoke(option, null);
+                OwPerformFn perform = OwPerformDelegate(option);
+                if (perform != null) perform();
+                else sOwPerform.Invoke(option, null);
                 long us = sOwTypeWatch.GetElapsedTime();
-                if (!ours) return;
-                int[] c = PatchCounters();
-                c[158]++;
-                if (Simulator.TicksElapsed() != tick) return; // a type that slept is not one tick (RecoverStrandedToddlers)
-                if (us > c[223]) c[223] = (int)us;
-                if (us >= OverwatchSpreadCore.kSlowTypeUs) { c[224]++; OwLog(OwName(option) + " (Overwatch's own code) took " + (us / 1000.0).ToString("0.0") + " ms in one tick"); }
+                if (ours) OwTypeTime(option, tick, us);
             }
             catch (Exception e) { OwLog(OwName(option) + " failed: " + (e.InnerException ?? e).Message); }
+        }
+
+        // Spread slots and the single-type trigger only (the chain goes through Overwatch's own loop). A delegate, not
+        // MethodInfo.Invoke (a nested native->managed call: no yield inside it); StuckCheck still got no per-plan yield
+        // this way in the 2026-10-23 loop (docs/145 §11). null (no interface map) = Invoke.
+        delegate void OwPerformFn();
+        static OwPerformFn OwPerformDelegate(object option)
+        {
+            try
+            {
+                InterfaceMapping map = option.GetType().GetInterfaceMap(sOwPerform.DeclaringType);
+                for (int i = 0; i < map.InterfaceMethods.Length; i++)
+                    if (map.InterfaceMethods[i] == sOwPerform)
+                        return (OwPerformFn)Delegate.CreateDelegate(typeof(OwPerformFn), option, map.TargetMethods[i]);
+            }
+            catch (Exception e) { OwLog(OwName(option) + ": no delegate, reflection call (" + e.Message + ")"); }
+            return null;
         }
 
         static void OwStartTask(object option, bool ours)
@@ -429,8 +453,7 @@ namespace Ts3Fixes
                 }
                 else if (mode == OverwatchSpreadCore.Mode.Chain)
                 {
-                    if (MayYield()) OwChain(); // the alarm's FunctionTask (RouteBackoff.cs MayYield)
-                    else Simulator.AddObject(new OneShotFunctionTask(OwChain));
+                    Simulator.AddObject(new OneShotFunctionTask(OwChainTheirs)); // own task: a yieldable root, and its name marks the chain's hitch lines
                     return;
                 }
                 else if (mode == OverwatchSpreadCore.Mode.Upstream)

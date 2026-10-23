@@ -236,7 +236,7 @@ namespace Ts3Agent
                 }
                 else
                 {
-                    CommodityKind k = Util.ParseEnum<CommodityKind>(which);
+                    CommodityKind k = OccultMotive(m, Util.ParseEnum<CommodityKind>(which));
                     if (!m.HasMotive(k)) throw new McpException(s.FullName + " has no motive " + k);
                     if (a.Has("value")) m.CheatValue(k, (float)a.Double("value"));
                     else m.SetMax(k);
@@ -245,6 +245,14 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             foreach (Sim s in sims) r[s.FullName] = MotiveValues(s);
             return r;
+        }
+
+        // A vampire has VampireThirst in place of Hunger (story-smoke 2026-10-23: "Wogan Hemlock has no motive Hunger"); other
+        // motives pass through and a Sim without them gets the "has no motive" error (story engine: a skip).
+        internal static CommodityKind OccultMotive(Motives m, CommodityKind k)
+        {
+            if (k == CommodityKind.Hunger && !m.HasMotive(k) && m.HasMotive(CommodityKind.VampireThirst)) return CommodityKind.VampireThirst;
+            return k;
         }
 
         // autonomy {sim?: name|id|active|household, enabled: bool}: the game's own switch, Sim.Autonomy.Increment/
@@ -581,6 +589,7 @@ namespace Ts3Agent
 
         static object AgeUp(Args a)
         {
+            RequireLive();
             Sim s = Util.FindSim(a, "sim");
             if (s.SimDescription.Elder && !a.Bool("confirm_elder_death", false))
                 throw new McpException(s.FullName + " is an Elder: aging up means dying of old age. Pass confirm_elder_death=true if that is really wanted.");

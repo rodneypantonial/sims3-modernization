@@ -80,7 +80,7 @@ Rule from Rodney: a slice's budget counts the work items inside an object, so on
 
 ## 4. Upstream patch (NRaas Overwatch)
 
-`docs/data/upstream/nraas-overwatch-staggered-cleanup.patch`, `git am`-able on Chain-Reaction/NRaas master (checked: applies cleanly on the fetched files; the repo's `NRaasOverwatch` project compiles with it, Roslyn C# 7.3 against their `Sims3/Compiler` DLLs, as does the unpatched master). It follows their style (option classes, `k*`/`m*` settings pairs, `Common.AlarmTask`, LF line endings, BOM where their files have one, UTF-16 string table). Three commits:
+v1 (this section; since 2026-10-23 the patch file holds v3, §5.2, and v1 is in its git history): `git am`-able on Chain-Reaction/NRaas master (checked: applies cleanly on the fetched files; the repo's `NRaasOverwatch` project compiles with it, Roslyn C# 7.3 against their `Sims3/Compiler` DLLs, as does the unpatched master). It follows their style (option classes, `k*`/`m*` settings pairs, `Common.AlarmTask`, LF line endings, BOM where their files have one, UTF-16 string table). Three commits:
 
 1. `NRaas/Helpers/Inventories.cs`: `CheckInventories` skips objects without an inventory before looking up their name (3 lines). Same objects checked, same repairs. This file is shared by all NRaas mods; ErrorTrap's load-time scan calls the same function and gets the same saving once rebuilt [verified: ErrorTrap's delayed world-load step calls it].
 2. A `CheckInventories` overload with `yieldEvery`; the nightly `CleanupInventory` sleeps every 25 inventories (the menu action still runs at once). Destroyed objects are skipped and the household list copied when sleeping. The old overload keeps its behaviour for the other mods.
@@ -148,6 +148,34 @@ One known difference, by design: an item the game adds to an inventory before th
 > Checked offline by running master's and the patched `CheckInventories` side by side on 400 generated towns (same log lines, same order, same final state, also when sleeping before every item), and with the game changing inventories at every sleep. In-game A/B still to come.
 >
 > 🤖 Assisted with AI together with @rodneypantonial
+
+### 5.2 v3: one cleanup per frame, one Stuck Check plan per frame (2026-10-23, compiled, not run as a patched build, not pushed)
+
+`docs/data/upstream/nraas-overwatch-staggered-cleanup.patch` now holds 2 new commits on the PR #45 head `e6aa54c` (the v1 commits 1-3 are in this file's git history and on the PR; commits 4-5 in `-v2.patch`). `git apply --check` clean on `e6aa54c`; `NRaasOverwatch` compiles (Roslyn C# 7.3, their `Sims3/Compiler` DLLs). PR #45 base = Chain-Reaction/NRaas `master` `2f57186` (their latest push, 2026-07-29). It does upstream what ts3fixes `overwatchchain` v2 + `overwatchstuck` do (§11, PLAN 2026-10-23):
+
+1. `Nightly alarm: one cleanup per frame without spacing`: in the chain loop of commit 5, when no spacing applies, `Common.Sleep()` (their helper: sleeps only when `CheckYieldingContext(false)`) between two cleanups, then the "newer run took over" check. Default `kAlarmSpacing` 10 -> 0, so the cleanups stay at the alarm hour (stereos/TVs as before) as in our chain; tunable comment and English prompt updated.
+2. `Stuck Check: one route check per frame; StaggeredCleanupVersion 2`: a Sim that needed `SimEx.IsPointInLotSafelyRoutable` gets `Common.Sleep()` at the end of its iteration, after its reset decision (our hook sleeps inside the call, before the decision; upstream keeps plan + decision in one frame); Sims destroyed while sleeping are skipped at the loop top. Marker 1 -> 2.
+
+**Call context [verified in their source]:** the daily alarm is `Common.AlarmTask` -> `AlarmManager` callback -> `FunctionTask.Perform(OnTimer)`, so `OnTimer` -> `RunAlarms` -> `PerformAlarm` -> `StuckCheck.PrivatePerformAction` runs in its own task where yielding is allowed (our off-arm counters agree: `overwatch_yields` = `overwatch_checks` on that stack, §11.1); the menu action runs in its interaction. Elsewhere `Common.Sleep()` returns without sleeping (old one-frame behaviour).
+
+**Kept parts and why:** commit 1 (skip the name lookup: removes the cost, not only spreads it), commits 2/4 (inventory sleeps by time: one cleanup per frame still leaves Cleanup Inventory itself as one long frame on big towns), commit 3/5 settings (`Set Alarm Spacing` > 0 stays as an option for players who want the cleanups apart; the chain code is the loop commit 6 sleeps in). None is redundant.
+
+**ts3fixes stand-down:** `overwatchspread`/`overwatchchain` stand down for any marker (v1 already spreads the types). `overwatchstuck` now stands down (counts, no own yield) for marker >= 2 (`OverwatchSpreadCore.OurStuckYield`, `kStuckYieldVersion` = 2; version read at world load, log "..., stuck-check yields theirs"); selftest PASS. Not built here (worktree has no game DLLs).
+
+**PR #45 body (edit) and comment (posted by Rodney/coordinator):** one day run, noisy, numbers from our ts3fixes equivalent (`overwatch-loop4`, asi.0333, 10 firings per arm), not from a build of this branch: off max 294 ms; on max 69 ms, 0 iterations >= 100 ms; StuckCheck yields 1,167 = checks 1,167. Clean-night confirmation as a follow-up comment. Comment text:
+
+> Two more commits on top:
+>
+> - Nightly alarm: with Set Alarm Spacing at 0 (now the default) the cleanups run one per frame at the alarm hour instead of all in one frame; spacing above 0 keeps the chained alarms.
+> - Stuck Check: one route check per frame (sleep after the Sim's decision); `StaggeredCleanupVersion` = 2.
+>
+> In game (one day run on one machine, flagged noisy, so indicative only; measured with our mod's equivalent of these two commits on the released Overwatch, 10 alarm firings per arm): off max 294 ms, on max 69 ms with 0 frames >= 100 ms; Stuck Check yielded after 1,167 of 1,167 route checks. A clean-night confirmation will follow as another comment.
+>
+> How to test: build `NRaasOverwatch`, install it over the released package; load a populated world with Overwatch logging, Cleanup Inventory and Stuck Check on, NPCs idle for a sim-day; set Alarm Hour to the next hour and let time pass it. The old one-frame hitch at the alarm hour should be gone, and the Overwatch log should list the same cleanups and repairs/resets in the same order as master. Alarm Spacing 10 runs them 10 sim-minutes apart, notices still as one message.
+>
+> 🤖 Assisted with AI together with @rodneypantonial
+
+**Maintainer test without our tools:** as in the comment; with our tools: `nraas-upstream-v2`-style package from `tools/setup/build-nraas-upstream.ts <clone> <v3 ref>`, repro `bp-overwatch-ab-loop2` with `overwatchchain`/`overwatchspread` off (the marker makes them stand down anyway), pass = no Overwatch-led iteration >= 100 ms, `overwatch_checks` rising with `overwatch_yields` flat (ours stood down).
 
 ## 6. Other one-tick maintenance work
 
@@ -221,3 +249,53 @@ Yielding before the first plan or between corner plans cannot help (one plan, an
 - Selftest `node tools/selftest/overwatchspread/run.ts`: PASS (adds chain vs spread vs marker vs hook cases). `build-fixes.ts`, `build-agent.ts`: built. Not run in game.
 
 Ledger docs/51 §271: I-145-7 .. I-145-9.
+
+## 11. 2026-10-23: why StuckCheck got no yield inside the first chain; `overwatchchain` v2 through Overwatch's own loop
+
+Data: `rerun-0333-2026-10-23-bp-overwatch-ab-loop3` (asi.0333, ts3fixes with the 679efd78 delegate call; `-repro.jsonl` per-firing counters, `-1320-hitches.jsonl`). Target (Rodney, 2026-10-23): every Overwatch-led iteration < 100 ms; ~300 ms counts as stutter.
+
+### 11.1 What the loop showed [measured]
+
+- Off arm (Overwatch's own `OnTimer` via `TimerHook` -> `TimerOrig`, `overwatchstuck` on): `overwatch_yields` = `overwatch_checks` (+54..+67 per firing); the trigger task's runs per firing are one 249-273 ms run (every type up to StuckCheck's first plan) and then ~50 ms runs (one plan each).
+- On arm (first chain): `owchain_yields` +21 per firing (our `Sleep(0)` between types worked), `overwatch_yields` +0; `overwatchspread_log` names only StuckCheck as a type >= 50 ms (377-582 ms in one tick, 10 of 10 firings); every other type < 50 ms in its own tick, our inventory pass longest 1.4-2.7 ms per tick.
+
+### 11.2 The two yield gates [verified, disassembly of TS3W.exe]
+
+`MayYield()` (RouteBackoff.cs) is `CheckYieldingContext(false) && !NOYIELD`:
+
+1. `CheckYieldingContext(false)` never runs its IL: the transform turns it into opcode `0x1A8` (`0xE5451A`, docs/119). It answers false when the global yielding-disabled flag `[0x11F414C]` is set (`Simulator_SetYieldingDisabledImpl` `0xD70BD0`; `Simulator.YieldingDisabled`, set briefly by EA's pregnancy and career code), else it asks `0xE53550`: task state `+0x148` set, and no frame record up to the current depth running a finally (`+0x128 != 0`) or named `.ctor`/`.cctor`. `Sleep` (opcode `0x1A6`, `0xE5939C`) asks only `0xE53550`, not the flag.
+2. NOYIELD (ts3native `GetOptionHook` bit 58|61) = `!CanYield()`: the current interpreter state `[0x11F4170]` (saved and restored by every `0xE53EB0` activation) must be the running task's root state.
+3. `MethodInfo.Invoke` runs `interp_runtime_invoke` `0xE5A600` on a stack-built state with `+0x148` clear: both gates refuse inside it (as docs/130 §1.2).
+
+### 11.3 The delegate path is not a nested call [verified static; refutes PLAN's "likely nested too"]
+
+- A delegate `Invoke` is compiled to Mono's delegate-invoke wrapper: the transform (`0xE64518`) swaps `Invoke`/`BeginInvoke`/`EndInvoke` of a `MulticastDelegate` subclass for `0xE8F720`/`0xE8F510`/`0xE8A960`; the wrapper ends in `calli` [inferred from Mono 1.2.3; the wrapper's IL was not decoded], and `calli` (`0xE547F7`) takes the same common push (`0xE54B44` -> `0xE56287`) as `call`; only P/Invoke targets go elsewhere. `callrun` (`0xE53D50`) handles only delegate `.ctor` and array `Set`/`Get`/`Address`.
+- `Delegate.CreateDelegate` (`CreateDelegate_internal` `0xE53370`) fills the same fields as the `ldftn` constructor `0xE52790` (target, runtime method, method object).
+- `GetInterfaceMapData` (`0xE7B870`) builds the interface methods with the interface as reflected class, as `GetMethodsByName` (`0xE7DBA0`) does for `alarm.GetMethod("PerformAlarm")`, so the identity compare in `OwPerformDelegate` should match and the delegate was built [inferred].
+- Live: OwChain's own `Sleep(0)` ran 21 times per firing in a frame reached through a delegate call (`OneShotFunctionTask.Simulate` -> `mFunction()`) [measured].
+
+So which gate refused inside the chained StuckCheck is **not known** [unknown]: the yielding-disabled flag, a `0xE53550` refusal from a frame below StuckCheck, or ts3native's root-state answer all fit the counters. v2 logs it once per session if it happens again: `overwatchspread_log` line "StuckCheck plan without a yield: context <bool>, yielding disabled <bool>, ts3native no-yield <bool>" (OverwatchStuck.cs).
+
+### 11.4 Fix: `overwatchchain` v2 (built, not run)
+
+Instead of calling each type from our code, the chain now runs Overwatch's own loop:
+
+- `TimerHook` in chain mode starts a one-shot task `OwChainTheirs` (its name marks the chain's runs in hitch lines) that calls `TimerOrig` = Overwatch's own `OnTimer`: its option list and order, its try/catch, its notice batching, its settings.
+- A body swap on `NRaas.OverwatchSpace.Alarms.AlarmOption.PerformAlarm` (the base of every cleanup type except the console's `RunAlarmCommands`; called only from `OnTimer`) = `OwAlarmHook.PerformHook`: outside a chain it calls the original. In a chain it sleeps one tick before every type but the first when `MayYield()` (else no sleep: Overwatch's one-tick loop), runs our sliced inventory pass for `CleanupInventory` (setting on, yield allowed; else Overwatch's own), and times every other type (`[223]`, `[224]` + log line at >= 50 ms, `kSlowTypeUs` was already 50 ms).
+- The call stack into StuckCheck is the off arm's (task -> `TimerHook` -> `OnTimer` interface call) plus one plain frame, so `overwatchstuck`'s per-plan `Sleep(0)` sees what it sees in Overwatch's own path, where it yields on every plan [inferred from the off-arm counters; to verify].
+- Removed: our option loop and the notice batching copy (Overwatch's own `OnTimer` does both). The delegate/Invoke call stays for the `overwatchspread` slots and the single-type trigger.
+- Pure decisions in `OverwatchSpreadCore.SleepBefore`/`ChainType`, selftest `node tools/selftest/overwatchspread/run.ts`: PASS. `build-fixes.ts`: see the commit. Counters unchanged ([244] chains, [245] ticks between types: 20 per firing with 21 `AlarmOption` types).
+- What can still pass 50 ms in one chained tick: one StuckCheck plan run (42-56 ms in the loop3 off arm, one 87-88 ms seen in §10.1) and a Sim re-instantiation after `ResetSimTask`'s Sleep (15-53 ms). Both stay < 100 ms on the data so far.
+
+Queue `tools/harness/queues/overwatch-loop4.json` (`bp-overwatch-ab-loop4`, repro `bp-overwatch-ab-loop2`, asi.0333, 10 firings per arm): pass = `owchain_alarms>=10,owchain_yields>=150,owspread_inv_passes>=10` and hitch-tasks cap rule `OwChainTheirs@100<1` (new `<N` form in `tools/harness/hitch-tasks.ts`: no iteration with a >= 100 ms run of the chain task). Dry-run only.
+
+### 11.5 Fallback ranked (not built)
+
+| Path | Effort | Risk | Floor per tick |
+|---|---|---|---|
+| A. v2 above: Overwatch's own loop + PerformAlarm hook | built (~1 h), 1 loop job | the unknown gate of §11.3 also refuses inside `OnTimer` when reached from our task (then: diag line, no regression vs off arm) | one plan (<= ~90 ms seen) |
+| B. our own StuckCheck (and any type >= 50 ms) time-sliced on the sim thread, 5 ms budget, Overwatch's type skipped while ours is on | ~3-6 h + selftest, 2 game runs (verdict parity, loop) | verdict parity: Overwatch keeps last position/interaction per Sim in private state, its routability uses its own route options; first night after switching differs | still one plan: a route plan cannot be split, and plans touch game objects, so not off-thread |
+
+B has the same per-plan floor as A, so it only helps if A's yields fail. No other type reached 50 ms in the loop3 chain arm [measured], so nothing else needs slicing now.
+
+Ledger docs/51 §290: I-145-10 .. I-145-13.
