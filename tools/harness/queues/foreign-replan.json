@@ -1,0 +1,101 @@
+{
+  "note": "docs/176 [RouteAsync] ForeignKinds=4 (A10 jobs for ReplanFromPosition from a yielding task that is not the route's Sim), Isla Paradiso, forced repro loop only (no natural-play job). Needs asi.0333-foreignreplan (ts3native 0.36.28, counters v100) and ts3fixes + ts3agent from the same commit installed (node tools/setup/install-fixes.ts install --only stutter-fixes; the agent knows route_replan, a10foreign_* and the asyncreplanforeign switch). Measurement settings of freeze-measure.json plus ForeignKinds=4 with ForeignKindsMode=0 (arms flip a10foreign). Daytime: ip-foreign-replan-verify only (correctness, noisy machine OK). Clean night: ip-foreign-replan-ab.",
+  "jobs": [
+    {
+      "id": "ip-foreign-replan-verify",
+      "note": "Short correctness check (noisy machine OK, no timing read): repro ip-foreign-replan-loop with 2 firings per arm. Pass: no crash, 0 watchdog lines, log 'route async A10: Kinds=0 KindsMode=1 ForeignKinds=4 ForeignKindsMode=0, hooked mask 4'; off arms 'IC ReplanFromPosition, reason Foreign' sync lines and afSeen_2 > 0; on arms afStarted_2 = afCollected_2 > 0, afActiveTrip 0, arMismatch 0, arOrphan 0; route_replan rows: the same plan type and sig on all rows of both arms.",
+      "asi": "game-copy/ts3native.asi.0333-foreignreplan",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 6,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "ip-foreign-replan-loop",
+          "loopRule": { "until": { "perArm": 2, "minFirings": 4 }, "maxMinutes": 4 }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 14
+    },
+    {
+      "id": "ip-foreign-replan-ab",
+      "note": "Loop A/B in one load (clean night only): repro ip-foreign-replan-loop, ABBA until 10 firings per arm (3 replans each), loop cap 12 min. Read per firing: node tools/harness/hitch-ab.ts --scenario <tag> (rows a10foreign off / on); route_replan rows for result equality; sync phases of the off-arm plans: node tools/harness/route-phases-report.ts --sync <ts3native log> --min 100. Pass: verify criteria + on-arm firing hitch worst well below off-arm (the plan time, ~150-300 ms) without longer route-job waits (HitchAttr holders: route worker) in the on windows.",
+      "asi": "game-copy/ts3native.asi.0333-foreignreplan",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "repro": "ip-foreign-replan-loop",
+          "loopRule": { "until": { "perArm": 10, "minFirings": 10 }, "maxMinutes": 12 }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 24
+    }
+  ]
+}

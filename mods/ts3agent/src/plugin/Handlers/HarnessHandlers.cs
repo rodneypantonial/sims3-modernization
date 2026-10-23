@@ -35,6 +35,8 @@ namespace Ts3Agent
             RegisterLabels();
             RegisterTravel();
             RegisterRouteFreeze();
+            RegisterStory();
+            RegisterHouseholds();
             Dispatcher.Register("patch_test", PatchTest);
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);
@@ -53,6 +55,7 @@ namespace Ts3Agent
             RegisterFreshWorld();
             Dispatcher.Register("quiet_ui", QuietUi);
             Dispatcher.Register("autopilot", Autopilot);
+            RegisterGates(); // docs/179: game-mode gates wrap the handlers registered above
             StartAutopilot();
         }
 

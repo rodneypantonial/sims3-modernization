@@ -278,6 +278,16 @@ static u8 __fastcall AvSite(u8* world, void* edx, const void* pt, float r, void*
     t_avSite = false;
     return hit;
 }
+// [RouteAsync] RefcountGuard (rcguard.cpp): RouteFollow_A's frame pointer at the A-site (ebp frame, never rewritten in
+// 0x846B70 [verified]), the consumer frame whose return ends a deferred +0x918 release; AvSite's own ebp is not one.
+// shortcut: one global, not TLS: RouteFollow_A runs on the sim thread only (rcguard.cpp reads it there only)
+static DWORD* volatile g_avRfEbp;
+static __declspec(naked) void AvSiteEntry() {
+    __asm {
+        mov g_avRfEbp, ebp
+        jmp AvSite
+    }
+}
 static u64 AvBodyNoQuery(u8* path, u8* agent, const float* goal, const void* ign, DWORD n, LONG how) {
     t_avMiss = how;
     const u64 r = g_avAOrig(path, agent, goal, ign, n);
@@ -445,7 +455,7 @@ static void InstallAvoidRO(const wchar_t* ini) {
     g_avTwTramp[1] = InstallDetour("RouteFollow_EditPathForRoute (T-AV)", 0x0085FF30, kAvPro, sizeof(kAvPro), (void*)AvTwEdit);
     if (!g_avTwTramp[1]) return;  // the first wrapper stays: it only counts
     k.avReady = 8;
-    const CallSite cs = {AV_SITE, AV_QUERY, (void*)AvSite};
+    const CallSite cs = {AV_SITE, AV_QUERY, (void*)AvSiteEntry};
     if (!PatchCalls("avoid RO A-site", &cs, 1)) return;
     k.avReady |= 2;
     if (!(g_avAOrig = (AvAFn)InstallDetour("RouteFollow_A", AV_A, kAvPro, sizeof(kAvPro), (void*)AvAHook))) return;

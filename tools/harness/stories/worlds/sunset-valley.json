@@ -1,0 +1,4 @@
+{ "world": "Sunset Valley",
+  "goodFor": "Base-game town: parks, fishing spots, rabbit holes (school, city hall, bookstore, grocery, gym, library), spread-out lots for far camera jumps, the measured SV sea-check freeze lots (docs/169).",
+  "categoryBias": { "normal": 1.2, "world": 1.0, "lifestage": 1.1, "chaos": 1.0, "occult": 0.6 },
+  "templateBias": { "world-sv-": 3.0, "world-": 0.3, "skill-fishing": 1.5, "skill-garden": 1.3, "daily-school": 1.3, "cam-far": 1.3 } }

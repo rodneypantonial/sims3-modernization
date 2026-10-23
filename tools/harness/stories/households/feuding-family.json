@@ -1,0 +1,284 @@
+{
+  "id": "feuding-family",
+  "name": "Thornbury Feud",
+  "archetype": "feuding-family",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "A hot-headed father, a mean-spirited grandmother and kind kids caught between: fights, insults and making up.",
+  "funds": 35000,
+  "balance": {
+    "up": 10,
+    "down": 10,
+    "neutral": 2
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Mira",
+      "last": "Northcott",
+      "age": "Elder",
+      "gender": "Female",
+      "traits": [
+        "MeanSpirited",
+        "Grumpy",
+        "Snob",
+        "Inappropriate",
+        "GreenThumb"
+      ],
+      "wish": {
+        "id": 203586953,
+        "name": "Alchemy Artisan (Reach Lvl 10 Spellcraft, Use N Alchemy Potions)"
+      },
+      "food": "TriTipTofuSteak",
+      "music": "Rock",
+      "color": "IrishGreen",
+      "zodiac": "Scorpio",
+      "voice": "B",
+      "storyPersona": "retiree",
+      "persona": "Mira (Elder): MeanSpirited, Grumpy, Snob, Inappropriate, GreenThumb. Upside: plants grow better, talk to plants, garden quality. Downside: relationship hits, enemies, family fights; others dislike it, gets upset when around happy Sims, relationship decay.",
+      "expect": [
+        {
+          "trait": "MeanSpirited",
+          "plus": "mean socials succeed, fun from insults",
+          "minus": "relationship hits, enemies, family fights"
+        },
+        {
+          "trait": "Grumpy",
+          "plus": "fun from grumpy socials, unaffected by bad moods of others",
+          "minus": "others dislike it, gets upset when around happy Sims, relationship decay"
+        },
+        {
+          "trait": "Snob",
+          "plus": "impressed by nice objects, Snob career bonus",
+          "minus": "dislikes cheap things, insults, relationship hits"
+        },
+        {
+          "trait": "Inappropriate",
+          "plus": "fun from rude acts, comic socials",
+          "minus": "embarrasses others, relationship hits, social fails"
+        },
+        {
+          "trait": "GreenThumb",
+          "plus": "plants grow better, talk to plants, garden quality",
+          "minus": "garden-bound; plants need daily care"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Adam",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Male",
+      "traits": [
+        "HotHeaded",
+        "Athletic",
+        "Inappropriate",
+        "Handy",
+        "CommitmentIssues"
+      ],
+      "wish": {
+        "id": 992169064,
+        "name": "Level 10 of military career"
+      },
+      "food": "StirFry",
+      "music": "Kids",
+      "color": "HotPink",
+      "zodiac": "Cancer",
+      "voice": "A",
+      "storyPersona": "chaos-agent",
+      "persona": "Adam (Adult): HotHeaded, Athletic, Inappropriate, Handy, CommitmentIssues. Upside: skill Athletic faster, fitness, less fatigue from exercise; repairs and upgrades faster, fewer electrocutions. Downside: loses temper (fights, Furious), relationship hits, punches; embarrasses others, relationship hits, social fails.",
+      "expect": [
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        },
+        {
+          "trait": "Athletic",
+          "plus": "skill Athletic faster, fitness, less fatigue from exercise",
+          "minus": "Couch Potato conflict; gets fidgety (moodlet) when sedentary for long"
+        },
+        {
+          "trait": "Inappropriate",
+          "plus": "fun from rude acts, comic socials",
+          "minus": "embarrasses others, relationship hits, social fails"
+        },
+        {
+          "trait": "Handy",
+          "plus": "repairs and upgrades faster, fewer electrocutions",
+          "minus": "repairs everything itself instead of resting"
+        },
+        {
+          "trait": "CommitmentIssues",
+          "plus": "career switches without penalty, freedom",
+          "minus": "negative moodlet when going steady/engaged/married, wants to break up, job ties"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Olive",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Good",
+        "OverEmotional",
+        "FamilyOriented",
+        "NaturalCook",
+        "Neat"
+      ],
+      "wish": {
+        "id": 2220612846,
+        "name": "Raise N children from baby to Teen"
+      },
+      "food": "Cobbler",
+      "music": "IslandLife",
+      "color": "White",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "family",
+      "persona": "Olive (Adult): Good, OverEmotional, FamilyOriented, NaturalCook, Neat. Upside: charity, helps others, relationships rise, Good moodlets; better with kids, happy with family (moodlet), good parenting. Downside: big sad moodlets, cries, breaks down; misses family when apart (Homesick), demanding wishes for babies.",
+      "expect": [
+        {
+          "trait": "Good",
+          "plus": "charity, helps others, relationships rise, Good moodlets",
+          "minus": "negative moodlet when doing or seeing mean acts; refuses Evil options"
+        },
+        {
+          "trait": "OverEmotional",
+          "plus": "big happy moodlets from good events",
+          "minus": "big sad moodlets, cries, breaks down"
+        },
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "NaturalCook",
+          "plus": "cooks better, no cooking fires (immune, docs/179 R-LIFE-7), faster recipes",
+          "minus": "cooks constantly; eats into time for other needs"
+        },
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Grace",
+      "last": "Northcott",
+      "age": "Teen",
+      "gender": "Female",
+      "traits": [
+        "Rebellious",
+        "HotHeaded",
+        "Friendly",
+        "Artistic"
+      ],
+      "wish": null,
+      "food": "Falafel",
+      "music": "Horror",
+      "color": "SeaFoam",
+      "zodiac": "Cancer",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Grace (Teen): Rebellious, HotHeaded, Friendly, Artistic. Upside: rebel socials, fun breaking rules; friendly socials succeed, quick friends, relationships decay slower. Downside: gets in trouble (police, school), relationship hits with authority; loses temper (fights, Furious), relationship hits, punches.",
+      "expect": [
+        {
+          "trait": "Rebellious",
+          "plus": "rebel socials, fun breaking rules",
+          "minus": "gets in trouble (police, school), relationship hits with authority"
+        },
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        },
+        {
+          "trait": "Friendly",
+          "plus": "friendly socials succeed, quick friends, relationships decay slower",
+          "minus": "too nice to refuse; spends time chatting instead of needs"
+        },
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        }
+      ]
+    },
+    {
+      "key": "m4",
+      "first": "Sofia",
+      "last": "Northcott",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Good",
+        "Friendly",
+        "Slob"
+      ],
+      "wish": null,
+      "food": "VeggiRolls",
+      "music": "Rock",
+      "color": "Yellow",
+      "zodiac": "Aries",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Sofia (Child): Good, Friendly, Slob. Upside: charity, helps others, relationships rise, Good moodlets; friendly socials succeed, quick friends, relationships decay slower. Downside: dirty home, smelly (moodlets for others), household disgust, roaches.",
+      "expect": [
+        {
+          "trait": "Good",
+          "plus": "charity, helps others, relationships rise, Good moodlets",
+          "minus": "negative moodlet when doing or seeing mean acts; refuses Evil options"
+        },
+        {
+          "trait": "Friendly",
+          "plus": "friendly socials succeed, quick friends, relationships decay slower",
+          "minus": "too nice to refuse; spends time chatting instead of needs"
+        },
+        {
+          "trait": "Slob",
+          "plus": "no need to clean; unaffected by mess",
+          "minus": "dirty home, smelly (moodlets for others), household disgust, roaches"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "spouse"
+    },
+    {
+      "a": "m1",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m4",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m4",
+      "type": "parent"
+    }
+  ]
+}

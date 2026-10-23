@@ -1,0 +1,127 @@
+{
+  "id": "random-101",
+  "name": "Calder Household",
+  "archetype": null,
+  "seed": 101,
+  "structure": "couple",
+  "summary": "couple (random)",
+  "funds": 25000,
+  "balance": {
+    "up": 3,
+    "down": 2,
+    "neutral": 5
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Nora",
+      "last": "Calder",
+      "age": "Elder",
+      "gender": "Female",
+      "traits": [
+        "SavvySculptor",
+        "Artistic",
+        "Evil",
+        "LovesTheOutdoors",
+        "PhotographersEye"
+      ],
+      "wish": {
+        "id": 1802509420,
+        "name": "Painting and Photography L10"
+      },
+      "food": "VegetarianChili",
+      "music": "IslandLife",
+      "color": "Turquoise",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "chaos-agent",
+      "persona": "Nora (Elder): SavvySculptor, Artistic, Evil, LovesTheOutdoors, PhotographersEye. Upside: sculpting faster and better; paints, writes and plays music faster and better, sells art. Downside: sculpts instead of chores; relationship hits (mean socials, pranks), Good Sims dislike it, unhappy around good deeds.",
+      "expect": [
+        {
+          "trait": "SavvySculptor",
+          "plus": "sculpting faster and better",
+          "minus": "sculpts instead of chores"
+        },
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Evil",
+          "plus": "fiendish laugh fun, mean socials succeed, Evil career boost",
+          "minus": "relationship hits (mean socials, pranks), Good Sims dislike it, unhappy around good deeds"
+        },
+        {
+          "trait": "LovesTheOutdoors",
+          "plus": "happy outside (moodlet), outdoor skills",
+          "minus": "Stir Crazy (moodlet) when indoors too long"
+        },
+        {
+          "trait": "PhotographersEye",
+          "plus": "better photos, sells photos",
+          "minus": "snaps photos instead of chores"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Leo",
+      "last": "Calder",
+      "age": "Elder",
+      "gender": "Male",
+      "traits": [
+        "Childish",
+        "BotFan",
+        "EasilyImpressed",
+        "Genius",
+        "Coward"
+      ],
+      "wish": {
+        "id": 1457442002,
+        "name": "Logic and athletic L10"
+      },
+      "food": "StirFry",
+      "music": "Classical",
+      "color": "Lilac",
+      "zodiac": "Leo",
+      "voice": "A",
+      "storyPersona": "retiree",
+      "persona": "Leo (Elder): Childish, BotFan, EasilyImpressed, Genius, Coward. Upside: fun from toys, playful socials with kids; likes robots, bot-making bonus. Downside: acts silly in serious moments; adults find it awkward; odd with humans.",
+      "expect": [
+        {
+          "trait": "Childish",
+          "plus": "fun from toys, playful socials with kids",
+          "minus": "acts silly in serious moments; adults find it awkward"
+        },
+        {
+          "trait": "BotFan",
+          "plus": "likes robots, bot-making bonus",
+          "minus": "odd with humans"
+        },
+        {
+          "trait": "EasilyImpressed",
+          "plus": "easy to befriend, enjoys everything",
+          "minus": "gullible; impressed by bad performances and scams"
+        },
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "Coward",
+          "plus": "avoids danger, runs from fires (survives)",
+          "minus": "scared of ghosts, burglars and the dark (Scared moodlets), panics"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "spouse"
+    }
+  ]
+}

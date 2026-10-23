@@ -15,8 +15,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { baseWins, cause, exclAdd, exclTable, exclusion, firingWins, reproSteps, runContext, SIM_MS, type ExclRow, type RunCtx, type Win } from './worst-hitches.ts';
+import { baseWins, cause, exclAdd, exclTable, exclusion, firingWins, reproSteps, rowLongest, runContext, SIM_MS, type ExclRow, type RunCtx, type Win } from './worst-hitches.ts';
 import { alignRun, category } from './stall-split.ts';
+import * as story from './story-report.ts'; // cycle is fine: neither file uses the other at load time
 import { parseSyncLines } from './route-phases-report.ts';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
@@ -77,7 +78,7 @@ export function syncPlans(nlog: Run['nlog']) {
 export function analyze(r: Run, minMs = 300) {
   const ctx = r.ctx ?? { wins: baseWins(r.rows), foreground: false, invalid: null, offSrc: 'none' };
   const t0 = r.rows[0]?.t ?? r.freezes[0]?.t0 ?? 0;
-  const rowWhy = r.rows.map((x, i) => exclusion({ a: i ? r.rows[i - 1].t : x.t - 1000, b: x.t }, ctx)?.why ?? null);
+  const rl = rowLongest(r.rows, r.hitches as any), rowWhy = r.rows.map((x, i) => exclusion({ a: i ? r.rows[i - 1].t : x.t - 1000, b: x.t, iter: rl[i] }, ctx)?.why ?? null);
   const excl = new Map<string, ExclRow>(); rowWhy.forEach(w => w && exclAdd(excl, w, 0, 1));
   const rowOf = (t: number) => r.rows.findIndex(x => x.t >= t);
   const rows = r.rows.filter((_, i) => !rowWhy[i]), mins = rows.length / 60;
@@ -96,8 +97,9 @@ export function analyze(r: Run, minMs = 300) {
   const itersOf = (f: Freeze) => f.n !== undefined && tl.size ? Array.from({ length: f.iters + 1 }, (_, k) => tl.get(f.n - f.iters + k)).filter(Boolean) as R[]
     : r.hitches.filter(h => h.t - h.wallMs < f.t1 && h.t > f.t0); // older hitches without n: by time
   const fz = r.freezes.filter(f => {
-    const ri = rowOf(f.t1), longest = Math.max(0, ...itersOf(f).map(h => h.wallMs));
-    const why = exclusion({ a: f.t0, b: f.t1, gap: { longestIterMs: longest, iters: f.iters } }, ctx)?.why ?? (ri < 0 ? 'profiler edge' : rowWhy[ri]);
+    const ri = rowOf(f.t1), main = itersOf(f).sort((a, b) => b.wallMs - a.wallMs)[0] as any;
+    const why = exclusion({ a: f.t0, b: f.t1, gap: { longestIterMs: main?.wallMs ?? 0, iters: f.iters }, iter: main }, ctx)?.why
+      ?? (ri < 0 ? 'profiler edge' : rowWhy[ri] === 'probe call' ? null : rowWhy[ri]); // the gap's own check judged the calls on it (docs/178 T2)
     if (!why) return true;
     exclAdd(excl, why, f.gapMs);
     if (ri >= 0 && !rowWhy[ri]) pubs--; // an excluded gap in a kept row leaves the publish count too
@@ -222,7 +224,7 @@ export function reproCauses(r: Pick<Run, 'tag' | 'rows' | 'hitches' | 'frames' |
   // longest first: each logged plan joins at most one iteration, the closest in duration within max(10 ms, 10%)
   for (const h of r.hitches.filter(x => x.wallMs >= minMs).sort((x, y) => y.wallMs - x.wallMs)) {
     const s0 = h.t - h.wallMs, fire = fires.find(f => f.a <= s0 && s0 < f.b); if (!fire) continue; // by its start, as hitch-ab.ts scenarioRows
-    const ex = exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps }, keep);
+    const ex = exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps, iter: h as any }, keep);
     if (ex) { exclAdd(excl, ex.why === 'repro-triggered' ? 'save/load (0-step >= 1 s)' : ex.why, h.wallMs); continue; }
     const c = cause(h as any, (h.t - t0) / 1000, null), longest = Math.max(0, ...Object.values(h.byEntry ?? {}).map((v: any) => v.ms ?? 0));
     let plan: typeof plans[number] | null = null;
@@ -383,7 +385,14 @@ if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
     const tags = args.filter((x, i) => !x.startsWith('--') && !['--min', '--top'].includes(args[i - 1]));
     if (!tags.length) { console.error('usage: node tools/harness/freeze-report.ts <tag> [...] [--min 300] [--top 10] | --self-check'); process.exit(2); }
     const min = Number(opt('--min', '300')), top = Number(opt('--top', '10'));
-    // --repro-causes: also the causes inside the run's repro firings (the windows the tables above exclude)
-    console.log(tags.map(t => { const r = load(t); return report(analyze(r, min), top) + (args.includes('--repro-causes') ? `\n\n${reproCauses(r, reproFires(r.ctx!.wins, reproSteps(t, r.secs), r.rows), undefined, min, top)}` : ''); }).join('\n\n'));
+    // --repro-causes: also the causes inside the run's repro firings (the windows the tables above exclude);
+    // story fuzzer runs (docs/171 §9): the 'by story' tables of story-report.ts after the run's own report
+    console.log(tags.map(t => {
+      const r = load(t);
+      const txt = report(analyze(r, min), top) + (args.includes('--repro-causes') ? `\n\n${reproCauses(r, reproFires(r.ctx!.wins, reproSteps(t, r.secs), r.rows), undefined, min, top)}` : '');
+      if (!existsSync(story.storyFile(t))) return txt;
+      const b = story.byStory(story.joinRun(r, story.parseStory(readFileSync(story.storyFile(t), 'utf8'))).events);
+      return `${txt}\n\n### By story template (story-report.ts; story steps = scenario cost, kept)\n\n${b.byTemplate}\n\n### By story step\n\n${b.byStep}`;
+    }).join('\n\n'));
   }
 }

@@ -1,0 +1,165 @@
+[
+  { "id": "social-chat", "category": "normal", "realism": "natural", "weight": 1.5,
+    "actors": [{ "role": "a", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Chat", "waitS": 20 },
+      { "cmd": "any_interaction", "actor": "a", "target": "$actor.b", "waitS": 20 }
+    ],
+    "cooldownMin": 10, "maxConcurrent": 4, "note": "social pie menu building, relationship updates" },
+
+  { "id": "social-flirt-date", "category": "normal", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": 60 } },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Flirt", "waitS": 20 },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Ask on Date", "waitS": 30, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Kiss", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "date situation, dating outfits" },
+
+  { "id": "social-date-restaurant", "category": "normal", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "rabbithole", "value": ["Bistro", "Diner", "FutureBistro", "PirateDiner", "ComboDaySpaBistro", "ComboBusinessRestaurant", "ComboDinerGrocery", "ComboDinerGroceryEP10"], "prepare": false }],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": 70 } },
+      { "cmd": "interact", "actor": "a", "target": { "find": "rabbithole", "value": ["Bistro", "Diner", "FutureBistro", "PirateDiner", "ComboDaySpaBistro", "ComboBusinessRestaurant", "ComboDinerGrocery", "ComboDinerGroceryEP10"] }, "label": "Dine", "waitS": 90 }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "two Sims enter a rabbit hole together" },
+
+  { "id": "social-woohoo", "category": "normal", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "object", "value": "bed", "prepare": true }],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": 90, "state": "Romantic Interest" } },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "WooHoo", "waitS": 60 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1 },
+
+  { "id": "social-propose-marriage", "category": "normal", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": 100, "state": "Partner" }, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Propose Marriage", "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Get Married", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "household merge dialog: move-in rebuilds household, family tree" },
+
+  { "id": "social-wedding-party", "category": "normal", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "host", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "fiance", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.host", "other": "$actor.fiance", "liking": 100, "state": "Fiance" }, "optional": true },
+      { "cmd": "interact", "actor": "host", "target": "$actor.host", "label": "Throw Wedding Party", "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "waitS": 180, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "guests arrive by car/taxi: route plans for 10+ Sims, outfit changes" },
+
+  { "id": "social-house-party", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "host", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "interact", "actor": "host", "target": "$actor.host", "label": "Throw a Party", "waitS": 20 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "party arrivals, autonomy on a crowded lot" },
+
+  { "id": "social-birthday", "category": "lifestage", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "kid", "age": ["Child", "Teen"], "occult": null, "pick": "driven" },
+               { "role": "host", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "fridge", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "host", "target": { "find": "object", "value": "fridge" }, "label": "Bake Birthday Cake", "waitS": 60 },
+      { "cmd": "interact", "actor": "kid", "target": { "find": "object", "value": "cake" }, "label": "Blow Out Candles", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "age-up: Sim rebuild + CAS outfit build (docs/42)" },
+
+  { "id": "social-fight", "category": "chaos", "realism": "cheat", "weight": 0.8,
+    "actors": [{ "role": "a", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": -80 } },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Insult", "waitS": 15, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Fight", "waitS": 40 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "fight cloud, bystander reactions (broadcasters)" },
+
+  { "id": "social-make-enemy", "category": "normal", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "a", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.a", "other": "$actor.b", "liking": -100 } },
+      { "cmd": "any_interaction", "actor": "a", "target": "$actor.b", "waitS": 30 }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1 },
+
+  { "id": "social-phone-call", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "caller", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "phone" }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "caller", "target": { "find": "object", "value": "phone" }, "waitS": 30 },
+      { "cmd": "pending_dialogs", "args": {}, "optional": true },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "phone menu lists every known Sim: relationship walk" },
+
+  { "id": "social-phone-invite-over", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "host", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "phone" }],
+    "steps": [
+      { "cmd": "interact", "actor": "host", "target": { "find": "object", "value": "phone" }, "label": "Invite Over", "args": { "pick": [""] }, "waitS": 90 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "Phone > Call > Invite Over (Phone.CallInviteOver), the first Sim the phone's picker lists (a Sim the household knows): the guest leaves its own day and routes over (docs/180 §6; label unverified)" },
+
+  { "id": "social-phone-outing", "category": "normal", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "host", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "phone" }, { "kind": "venue", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "interact", "actor": "host", "target": { "find": "object", "value": "phone" }, "label": "Invite Out", "args": { "pick": [""] }, "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "waitS": 120, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "Phone > Call > invite a known Sim to a community lot (Phone.CallInviteToLot; map-tag lot picker answered by auto_dialog): both meet there (docs/180 §6; label unverified)" },
+
+  { "id": "social-phone-party", "category": "normal", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "host", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "phone" }],
+    "steps": [
+      { "cmd": "interact", "actor": "host", "target": { "find": "object", "value": "phone" }, "label": "Throw", "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "waitS": 180, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "Phone > Throw Party (Phone.CallThrowParty, party type and guest list dialogs by auto_dialog): guests from other households come over (docs/180 §6; label unverified)" },
+
+  { "id": "social-invite-over", "category": "normal", "realism": "cheat", "weight": 0.7,
+    "actors": [{ "role": "host", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "guest", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.host", "other": "$actor.guest", "liking": 40 } },
+      { "cmd": "interact", "actor": "host", "target": "$actor.guest", "label": "Invite Over", "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "host", "target": "$actor.guest", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "townie spawns in and routes from the lot edge" },
+
+  { "id": "social-visit-community", "category": "normal", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "a", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "venue", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": "any" } },
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.b", "lot": "$target" }, "target": { "find": "venue", "value": "any" }, "waitS": 90 },
+      { "cmd": "any_interaction", "actor": "a", "target": "$actor.b", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 3, "note": "two route plans across town, car or bike" }
+]

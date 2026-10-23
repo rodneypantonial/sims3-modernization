@@ -1,0 +1,227 @@
+{
+  "id": "strict-overachievers",
+  "name": "Ladder Family",
+  "archetype": "strict-overachievers",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "Two ambitious parents and their gifted kids: promotions and grades, stress when things slip, no patience for mess.",
+  "funds": 30000,
+  "balance": {
+    "up": 12,
+    "down": 4,
+    "neutral": 1
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Mira",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Ambitious",
+        "Perfectionist",
+        "Workaholic",
+        "Neat",
+        "Snob"
+      ],
+      "wish": {
+        "id": 268290160,
+        "name": "Level 8 of business career"
+      },
+      "food": "TriTipTofuSteak",
+      "music": "Rock",
+      "color": "IrishGreen",
+      "zodiac": "Scorpio",
+      "voice": "B",
+      "storyPersona": "career-climber",
+      "persona": "Mira (Adult): Ambitious, Perfectionist, Workaholic, Neat, Snob. Upside: faster job performance and promotions, more wishes for career; higher quality output (art, cooking, homework). Downside: unhappy on days off, works overtime, misses family time; dislikes cheap things, insults, relationship hits.",
+      "expect": [
+        {
+          "trait": "Ambitious",
+          "plus": "faster job performance and promotions, more wishes for career",
+          "minus": "stressed and unhappy when not promoted for a while (Stressed moodlet)"
+        },
+        {
+          "trait": "Perfectionist",
+          "plus": "higher quality output (art, cooking, homework)",
+          "minus": "slower work, unhappy with anything less than perfect"
+        },
+        {
+          "trait": "Workaholic",
+          "plus": "works hard, no work stress, promotions",
+          "minus": "unhappy on days off, works overtime, misses family time"
+        },
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        },
+        {
+          "trait": "Snob",
+          "plus": "impressed by nice objects, Snob career bonus",
+          "minus": "dislikes cheap things, insults, relationship hits"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Adam",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Male",
+      "traits": [
+        "Ambitious",
+        "Schmoozer",
+        "Neurotic",
+        "Genius",
+        "NoSenseOfHumor"
+      ],
+      "wish": {
+        "id": 203586953,
+        "name": "Alchemy Artisan (Reach Lvl 10 Spellcraft, Use N Alchemy Potions)"
+      },
+      "food": "StirFry",
+      "music": "Kids",
+      "color": "HotPink",
+      "zodiac": "Cancer",
+      "voice": "A",
+      "storyPersona": "career-climber",
+      "persona": "Adam (Adult): Ambitious, Schmoozer, Neurotic, Genius, NoSenseOfHumor. Upside: faster job performance and promotions, more wishes for career; suck up to boss works, promotions, influence. Downside: stress moodlets, worry, compulsive checks, fear of germs.",
+      "expect": [
+        {
+          "trait": "Ambitious",
+          "plus": "faster job performance and promotions, more wishes for career",
+          "minus": "stressed and unhappy when not promoted for a while (Stressed moodlet)"
+        },
+        {
+          "trait": "Schmoozer",
+          "plus": "suck up to boss works, promotions, influence",
+          "minus": "shallow friendships; others find it slimy"
+        },
+        {
+          "trait": "Neurotic",
+          "plus": "notices problems early; checks locks and stoves",
+          "minus": "stress moodlets, worry, compulsive checks, fear of germs"
+        },
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "NoSenseOfHumor",
+          "plus": "serious: business socials, unaffected by bad jokes",
+          "minus": "jokes fail, fun lower, others find it boring"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Nora",
+      "last": "Northcott",
+      "age": "Teen",
+      "gender": "Female",
+      "traits": [
+        "Genius",
+        "Perfectionist",
+        "BookWorm",
+        "Grumpy"
+      ],
+      "wish": null,
+      "food": "Cobbler",
+      "music": "IslandLife",
+      "color": "White",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Nora (Teen): Genius, Perfectionist, BookWorm, Grumpy. Upside: Logic skill faster, chess, science and invention success; higher quality output (art, cooking, homework). Downside: others dislike it, gets upset when around happy Sims, relationship decay.",
+      "expect": [
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "Perfectionist",
+          "plus": "higher quality output (art, cooking, homework)",
+          "minus": "slower work, unhappy with anything less than perfect"
+        },
+        {
+          "trait": "BookWorm",
+          "plus": "reads faster, Writing skill faster, enjoys books (moodlet)",
+          "minus": "reads instead of eating or sleeping, buys many books (money)"
+        },
+        {
+          "trait": "Grumpy",
+          "plus": "fun from grumpy socials, unaffected by bad moods of others",
+          "minus": "others dislike it, gets upset when around happy Sims, relationship decay"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Grace",
+      "last": "Northcott",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "BookWorm",
+        "Neat",
+        "Neurotic"
+      ],
+      "wish": null,
+      "food": "Falafel",
+      "music": "Horror",
+      "color": "SeaFoam",
+      "zodiac": "Cancer",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Grace (Child): BookWorm, Neat, Neurotic. Upside: reads faster, Writing skill faster, enjoys books (moodlet); cleans autonomously, tidy home, cleaner lots. Downside: stress moodlets, worry, compulsive checks, fear of germs.",
+      "expect": [
+        {
+          "trait": "BookWorm",
+          "plus": "reads faster, Writing skill faster, enjoys books (moodlet)",
+          "minus": "reads instead of eating or sleeping, buys many books (money)"
+        },
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        },
+        {
+          "trait": "Neurotic",
+          "plus": "notices problems early; checks locks and stoves",
+          "minus": "stress moodlets, worry, compulsive checks, fear of germs"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "spouse"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m0",
+      "b": "m3",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m3",
+      "type": "parent"
+    }
+  ]
+}

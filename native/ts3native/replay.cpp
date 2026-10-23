@@ -3105,11 +3105,11 @@ static DWORD RpLimit() {
 static bool RpDrainBody(bool lock);
 // 0.35.13 (docs/94 §22.16): the consumer's time under +0x918 by record type (and the grave), logged every 5 min: which work
 // fills the 206 ms/s of 0.35.12 (only single records over 100 ms were logged)
-static LONGLONG g_rpTypeUs[RP_NTYPES + 2];  // + the grave, + RP_LOTS applied outside the lock (0.35.23)
-static LONG g_rpTypeN[RP_NTYPES + 2], g_rpTypeMax[RP_NTYPES + 2];
+static LONGLONG g_rpTypeUs[RP_NTYPES + 3];  // + the grave, + RP_LOTS applied outside the lock (0.35.23), + RecsUnlocked rounds (0.36.34)
+static LONG g_rpTypeN[RP_NTYPES + 3], g_rpTypeMax[RP_NTYPES + 3];
 static ULONGLONG g_rpTypeAt;
 static void RpTypeTime(DWORD type, LONG us) {
-    if (type > RP_NTYPES + 1) return;
+    if (type > RP_NTYPES + 2) return;
     g_rpTypeUs[type] += us, g_rpTypeN[type]++;
     if (us > g_rpTypeMax[type]) g_rpTypeMax[type] = us;
     const ULONGLONG now = GetTickCount64();
@@ -3117,10 +3117,11 @@ static void RpTypeTime(DWORD type, LONG us) {
     static LONG64 s_apCy0;
     if (!g_rpTypeAt) g_rpTypeAt = now, s_apUs0 = ts3native_counters.rpApplyUs, s_apCy0 = g_cyApply;
     if (now - g_rpTypeAt < 300000) return;
-    static const char* const kName[RP_NTYPES + 2] = {"noq", "ins", "rem", "stale", "lots", "epoch", "audit", "sync", "grave", "lots outside the lock"};
+    static const char* const kName[RP_NTYPES + 3] = {"noq", "ins", "rem", "stale", "lots", "epoch", "audit", "sync", "grave", "lots outside the lock",
+                                                     "records outside the lock (RecsUnlocked rounds)"};
     char buf[640];
     int o = 0;
-    for (int i = 0; i <= RP_NTYPES + 1 && o < 560; i++)
+    for (int i = 0; i <= RP_NTYPES + 2 && o < 560; i++)
         if (g_rpTypeN[i]) o += sprintf_s(buf + o, sizeof(buf) - o, " %s %lld ms (%ld, max %ld us);", kName[i], g_rpTypeUs[i] / 1000, g_rpTypeN[i], g_rpTypeMax[i]);
     buf[o] = 0;
     const double s = (now - g_rpTypeAt) / 1000.0;  // 0.35.21: the holds (closed before this record's) in wall ms/s and thread CPU
@@ -3195,6 +3196,50 @@ static bool RpLotsUnlocked() {  // false = the pool set is busy (the caller retr
     g_rpPhase = 1;
     return true;
 }
+// 0.36.34 (docs/182): [RouteSnap] RecsUnlocked (0 = off, the default). INS, REM, NOQ, STALE and SYNC records touch only the
+// clone (its Qs, trees, map M, footprint copies and tables), the private pool set, the locked FME pool and the locked EA heap:
+// the game's ApplyInsert 0x665C50 / ApplyRemove 0x666750 closure reaches no other pool or lock-guarded world state (docs/94
+// §16.6 forward closure [verified static]; footprint slots on clone copies [inferred], counted by ulLockTrip), and the
+// records' live addresses are table keys or read fault-guarded (RpQKey). So with RecsUnlocked=1 they are applied holding
+// g_rpUse and the pool set but not +0x918, up to 1 ms a round, as LotsUnlocked does for RP_LOTS. EPOCH (portal refs of the
+// replaced clone), AUDIT, the grave and leftover frees keep their locked holds. The cut never touches g_rpClone; the flags the
+// consumer sets (g_rpBad, g_rpNeedEpoch, forces under the ring lock) are the ones LotsUnlocked already sets outside the lock
+static LONG g_rpRecsUnlocked;
+static bool RpUlType(DWORD t) { return t == RP_INS || t == RP_REM || t == RP_NOQ || t == RP_STALE || t == RP_SYNC; }
+static bool RpRecsUnlocked() {  // false = the pool set is busy (the caller retries); the ring tail is an RpUlType record
+    Ts3nCounters& k = ts3native_counters;
+    LONG op;
+    if (!RpOpTry(&op)) { k.ulOpBusy++; return false; }
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    LONG n = 0;
+    t_rpUl = 1;
+    __try {
+        while (g_rpTail != RpLimit()) {
+            const RpRec& r = g_rpRing[g_rpTail & (kRpRing - 1)];
+            if (!RpUlType(r.type)) break;
+            g_rpPhase = 2 | (r.type & 0xFF) << 8 | 0x10000;  // bit 16: outside +0x918
+            RpApply(r);  // false only for AUDIT, not in the set
+            g_rpTail++, n++;
+            if (UsSince(t0) > 1000) break;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        k.rpFaults++, k.ulFaults++;
+        RP_NEED_EPOCH();
+        Log("snap replay: fault applying record %lu (RecsUnlocked round): clone dropped, rebuilt at the next cut", g_rpTail);
+        g_rpTail++;  // shortcut: as the locked path, the record's payload and the clone are dropped, not freed
+        g_rpClone = NULL;
+        k.rpReady &= ~2;
+    }
+    t_rpUl = 0;
+    const LONG us = UsSince(t0);
+    k.ulRounds++, k.ulRecs += n, k.ulUs += us;
+    if (us > k.ulMaxUs) k.ulMaxUs = us;
+    RpTypeTime(RP_NTYPES + 2, us);
+    RpOpLeave(op);
+    g_rpPhase = 1;
+    return true;
+}
 static void RpLotsFreePend() {  // inside a hold (+0x918 and the pool set held)
     if (RpBatch* b = g_rpLotsFreePend) g_rpLotsFreePend = NULL, RpBatchFree(b, true);
 }
@@ -3205,6 +3250,14 @@ static bool RpDrainBody(bool lock) {
     while (g_rpTail != RpLimit() || (RpGraveBusy() && !g_rpHoldAt) || g_rpLotsFreePend) {
         if (g_rpLotsUnlocked && !g_rpLotsFreePend && g_rpTail != RpLimit() && g_rpRing[g_rpTail & (kRpRing - 1)].type == RP_LOTS) {
             if (!RpLotsUnlocked()) return true;  // the pool set is busy: retry without our locks
+            continue;
+        }
+        if (g_rpRecsUnlocked && !g_rpLotsFreePend && g_rpTail != RpLimit() && RpUlType(g_rpRing[g_rpTail & (kRpRing - 1)].type)) {
+            if (!RpRecsUnlocked()) return true;  // the pool set is busy: retry without our locks
+            static DWORD s_ulGc;  // as the locked holds: the GC once per 16 rounds or when caught up (our heap only: no lock)
+            if (g_rpClone && (++s_ulGc % 16 == 0 || g_rpTail == RpLimit())) RpGc(g_rpClone);
+            Max(&k.rpLag, (LONG)(g_rpHead - g_rpTail));
+            if (!g_rpOn) break;
             continue;
         }
         const u8* world = *g_spWorldSlot;
@@ -3252,6 +3305,7 @@ static bool RpDrainBody(bool lock) {
             while (g_rpTail != RpLimit()) {
                 const RpRec& r = g_rpRing[g_rpTail & (kRpRing - 1)];
                 if (g_rpLotsUnlocked && r.type == RP_LOTS) break;  // applied outside the lock by the next round (0.35.23)
+                if (g_rpRecsUnlocked && RpUlType(r.type)) break;     // the same (0.36.34, RecsUnlocked)
                 g_rpPhase = 2 | (r.type & 0xFF) << 8;
                 LARGE_INTEGER ta;
                 QueryPerformanceCounter(&ta);
@@ -3340,6 +3394,8 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_rpLotsUnlocked = GetPrivateProfileIntW(L"RouteSnap", L"LotsUnlocked", 0, ini) != 0;
     g_rpLazyKeep = GetPrivateProfileIntW(L"RouteSnap", L"LazyKeep", 0, ini) != 0;
     g_rpInsFreeInPlace = GetPrivateProfileIntW(L"RouteSnap", L"InsFreeInPlace", 0, ini) != 0;
+    g_rpRecsUnlocked = GetPrivateProfileIntW(L"RouteSnap", L"RecsUnlocked", 0, ini) != 0;
+    k.ulMode = g_rpRecsUnlocked;
     g_rpRing = (RpRec*)VirtualAlloc(NULL, kRpRing * sizeof(RpRec), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_rpEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (!g_rpRing || !g_rpEvent) { Log("SKIP route snapshot replay: no ring"); return false; }
@@ -3351,8 +3407,8 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_spLot = &kSpLotReplay;
     g_rpOn = 1;
     k.rpReady = 1 | 4;
-    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d, ReplayQuietMs=%lu, LazyKeep=%ld, ReplaySigMs=%lu, LotsUnlocked=%ld, InsFreeInPlace=%ld",
+    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d, ReplayQuietMs=%lu, LazyKeep=%ld, ReplaySigMs=%lu, LotsUnlocked=%ld, InsFreeInPlace=%ld, RecsUnlocked=%ld",
         kRpRing, g_rpAuditEvery, g_rpAuditLots, g_rpCapBytes >> 20, g_rpPrebuild ? 1 : 0, g_rpQuietMs, g_rpLazyKeep, g_rpSigMs, g_rpLotsUnlocked,
-        g_rpInsFreeInPlace);
+        g_rpInsFreeInPlace, g_rpRecsUnlocked);
     return true;
 }

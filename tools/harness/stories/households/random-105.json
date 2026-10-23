@@ -1,0 +1,127 @@
+{
+  "id": "random-105",
+  "name": "Dunmore Household",
+  "archetype": null,
+  "seed": 105,
+  "structure": "couple",
+  "summary": "couple (random)",
+  "funds": 25000,
+  "balance": {
+    "up": 5,
+    "down": 2,
+    "neutral": 3
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Olive",
+      "last": "Dunmore",
+      "age": "YoungAdult",
+      "gender": "Female",
+      "traits": [
+        "FamilyOriented",
+        "Virtuoso",
+        "CouchPotato",
+        "LovesToSwim",
+        "Flirty"
+      ],
+      "wish": {
+        "id": 2220612846,
+        "name": "Raise N children from baby to Teen"
+      },
+      "food": "Cobbler",
+      "music": "IslandLife",
+      "color": "Violet",
+      "zodiac": "Libra",
+      "voice": "A",
+      "storyPersona": "family",
+      "persona": "Olive (YoungAdult): FamilyOriented, Virtuoso, CouchPotato, LovesToSwim, Flirty. Upside: better with kids, happy with family (moodlet), good parenting; music skills faster, better performances, sings. Downside: misses family when apart (Homesick), demanding wishes for babies; hates exercise, gains weight, low energy for jobs that need fitness.",
+      "expect": [
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "CouchPotato",
+          "plus": "big fun from TV, comfortable on couches",
+          "minus": "hates exercise, gains weight, low energy for jobs that need fitness"
+        },
+        {
+          "trait": "LovesToSwim",
+          "plus": "swimming fun, diving skill",
+          "minus": "restless away from water"
+        },
+        {
+          "trait": "Flirty",
+          "plus": "romance socials succeed, quick relationships",
+          "minus": "flirts autonomously with others: jealousy and breakups"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Nils",
+      "last": "Dunmore",
+      "age": "YoungAdult",
+      "gender": "Male",
+      "traits": [
+        "GreatKisser",
+        "FamilyOriented",
+        "BookWorm",
+        "Lucky",
+        "Insane"
+      ],
+      "wish": {
+        "id": 203586899,
+        "name": "Level 10 of Fortune Teller Career (Mystic Branch)"
+      },
+      "food": "KeyLimePie",
+      "music": "RnB",
+      "color": "Pink",
+      "zodiac": "Capricorn",
+      "voice": "A",
+      "storyPersona": "family",
+      "persona": "Nils (YoungAdult): GreatKisser, FamilyOriented, BookWorm, Lucky, Insane. Upside: kisses succeed and raise romance fast; better with kids, happy with family (moodlet), good parenting. Downside: misses family when apart (Homesick), demanding wishes for babies; erratic actions, talks to itself, scares others, bad social results.",
+      "expect": [
+        {
+          "trait": "GreatKisser",
+          "plus": "kisses succeed and raise romance fast",
+          "minus": "more romantic attention: jealousy in households"
+        },
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "BookWorm",
+          "plus": "reads faster, Writing skill faster, enjoys books (moodlet)",
+          "minus": "reads instead of eating or sleeping, buys many books (money)"
+        },
+        {
+          "trait": "Lucky",
+          "plus": "lucky events: better outcomes on risky actions, gambling wins",
+          "minus": "rare: luck runs out; overconfidence takes risks"
+        },
+        {
+          "trait": "Insane",
+          "plus": "strange fun socials, odd talk works with other Insane Sims",
+          "minus": "erratic actions, talks to itself, scares others, bad social results"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "spouse"
+    }
+  ]
+}

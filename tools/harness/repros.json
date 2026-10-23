@@ -13546,7 +13546,7 @@
       "steps": [
         { "cmd": "native_set", "setup": true, "args": {"plandeadline": "$on", "failmemo": "$on"}, "waitS": 1, "note": "arm (native)" },
         { "cmd": "patches", "setup": true, "args": {"stuckchecknear": "$on", "failrepeat": "$on", "safespotcap": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "strand_crowd", "setup": true, "args": {"x": 312.4, "z": 1496.7}, "waitS": 2, "note": "strand" },
+        { "cmd": "strand_crowd", "setup": true, "args": {"x": 312.4, "z": 1496.7, "tries": 240}, "waitS": 2, "note": "strand (240 tries: 60 found no spot on 2026-10-23 01:12 UTC, seed-dependent)" },
         { "cmd": "stuck_check_fire", "setup": false, "args": {"attempt": 3, "delay_min": 1, "x": 312.4, "z": 1496.7}, "waitS": 28, "note": "fire: 20 stuck checks x 10 plans, then 20 resets", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 28, "count": {"result": "armed"} }
       ],
       "arms": ["off", "on", "on", "off"],
@@ -13822,6 +13822,33 @@
     ]
   },
   {
+    "id": "ip-steer-pass-loop",
+    "bug": "IP natural play 2026-10-22 (asi.0332): 750 sim iterations >= 50 ms whose longest route-job wait is the steering obstacle query 0x85FE10 (57 of 255 iterations >= 200 ms, 6 of 7 'locomotion' freezes >= 300 ms); S2/AvoidRO/Gate0RO/DeferFootprint(2)/RouteToObjRO were all off in that set (docs/175)",
+    "fix": "lock-free locomotion pass while a route job runs (docs/152 B1 pass part): [SteerRO] + [AvoidRO] + [Gate0RO] + [Discourage] DeferFootprint / DeferFootprint2 + [RouteToObjRO], one native_set arm (all six together: a removed taker hands its wait to the next one in the same tick, docs/152 §1)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. Forced loop (docs/175 §4): 30 spawned Sims + the household Go Here to the farthest community lot (one destination, so they steer round each other and the lot's objects while the other plans' async jobs hold +0x918), fixed 45 s window on both arms (timing A/B: no arm-dependent stop), home leg as setup. Needs the six modules installed by the ini (Enabled=1); the arm flips their Mode switches. Gate0RO answers only while steerro and avoidro are on (G0_FB_PIECES otherwise), so the arm must flip all of them.",
+    "expect": "no crash, no tripwire line; on arms: steerTaken, avTakenMiss, g0Served, usfDeferred rise; key 0x85FE10 near 0 on, no shadow mismatch",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"steerro": "$on", "avoidro": "$on", "gate0ro": "$on", "deferfootprint": "$on", "deferfootprint2": "$on", "routetoobjro": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 45, "note": "fire: 30+ Sims walk to one lot while their jobs run" },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "back (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 4 },
+      "maxMinutes": 16
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
     "id": "winter-pond-loop",
     "bug": "rare-winter-pond ran once per job (plain, minutes)",
     "fix": "[WaterJps] (native_set waterjps arms)",
@@ -14001,6 +14028,810 @@
     "cleanup": [
       { "cmd": "patches", "args": {"replandefer": false, "replanspread": false} },
       { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "ip-placement-crowd-loop",
+    "bug": "gate-12 F-G placement waits (key 0x631F40, ~110 ms each, 4 of the 32 freezes >= 300 ms in natural-play-2026-10-22-ip-natural-30): the placement test 0x634F10 -> FootprintsNearPoint 0x631F10 waits at LotTable_Contains for the running async route job (docs/174 §1)",
+    "fix": "[PlacementRO] (native_set placementro arms), docs/174",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. Forced loop: per firing 30 spawned Sims + the household Go Here to the farthest community lot (30+ async route jobs), and while those jobs run 8 objects are placed on the home lot (place_objects: FindGoodLocationNearby per object = IC_World_FindGoodLocation -> 0xB470C0 -> 0x634F10 -> 0x631F10, several placement tests each [inferred count]) and removed again, twice; then everyone home (fixed). Off arms: the placement tests wait at key 0x631F40 for the job; on arms: fgTaken rises and the key stays near 0, unless a fallback (fgFb) or the next +0x918 taker in the tick absorbs the wait (docs/152 §1 conservation, docs/174 §5).",
+    "expect": "no crash; on arms: fgTaken rises, fgShadowMismatch 0, fgFb_4 (tripwire) small; wait key 0x631F40 near 0 in the on windows",
+    "steps": [
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
+      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+    ],
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"placementro": "$on"}, "waitS": 1, "note": "arm" },
+        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 2, "note": "start: 30+ Go Here plans (async jobs)" },
+        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 8}, "waitS": 3, "note": "fire: placement tests while jobs run" },
+        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 2 },
+        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 8}, "waitS": 3, "note": "fire: second batch (jobs still running)" },
+        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 4000}, "minS": 5, "maxS": 40 },
+        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "home (fixed)" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 2 },
+      "maxMinutes": 14
+    },
+    "cleanup": [
+      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+    ]
+  },
+  {
+    "id": "ip-foreign-replan-loop",
+    "bug": "docs/176: Isla Paradiso visible freezes of 300-450 ms from synchronous ReplanFromPosition plans on the sim thread (natural-play 2026-10-22 ip-natural-30: 8 of 8 'route search' freezes; A10 runs 2026-10-18: all 100 RFP sync plans >= 150 ms were NoStart = not the route's own Sim task, so A10 never moved them)",
+    "fix": "ts3native [RouteAsync] ForeignKinds=4 (A10 job for a ReplanFromPosition from a yielding task that is not the route's Sim; native switch a10foreign per arm) + ts3fixes asyncreplanforeign (default on, sends the foreign START)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. The active Sim plans a long route to the farthest community lot with water + boat planning (not followed, kept as @route); each firing replans it 3 times from the Sim's position with Route.ReplanFromPoint in a one-shot task (route_replan: a yielding task that is not the route's Sim, the context of the foreign plans). Off arms: 3 sync plans on the sim thread (one freeze each, sync lines 'IC ReplanFromPosition, reason Foreign'); on arms: 3 worker jobs, the task sleeps a tick at a time. Each loop ends with route_replan {result} rows: plan, paths, ms, sig (the same sig on both arms = the same route). 10 firings per arm ABBA.",
+    "steps": [
+      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 },
+      { "cmd": "sim_route_to", "args": {"to": "far", "options": ["EnableWaterPlanning"], "options2": ["EnablePlanningAsBoat"]}, "waitS": 5, "note": "long route kept as @route" },
+      { "cmd": "route_replan", "args": {"result": true}, "waitS": 1, "note": "clear rows" }
+    ],
+    "expect": "no crash, no 'A10 foreign job's route being followed' trip line (afActiveTrip 0), arMismatch / arOrphan 0; off arms: afSeen_2 +3 per firing, sync lines 'IC ReplanFromPosition, reason Foreign' with route_replan ms ~ the freeze; on arms: afStarted_2 = afCollected_2 +3 per firing, a10foreign_started +3, no sim freeze >= 100 ms from the plan; route_replan rows: the same plan type and sig on every row of both arms",
+    "loop": {
+      "steps": [
+        { "cmd": "native_set", "setup": true, "args": {"a10foreign": "$on"}, "waitS": 1, "note": "arm (native)" },
+        { "cmd": "route_replan", "setup": false, "args": {"count": 3}, "waitS": 12, "note": "fire: 3 foreign ReplanFromPosition plans", "waitUntil": {"quiet": 2000}, "minS": 2, "maxS": 12, "count": {"result": "queued"} },
+        { "cmd": "route_replan", "setup": true, "args": {"result": true}, "waitS": 1, "note": "rows: plan, paths, ms, sig" }
+      ],
+      "arms": ["off", "on", "on", "off"],
+      "until": { "perArm": 10 },
+      "maxMinutes": 12
+    },
+    "cleanup": [
+      { "cmd": "native_set", "args": {"a10foreign": 0} }
+    ]
+  },
+  {
+    "id": "ip-locktaker-loop",
+    "bug": "IP/SV 1-2 s freezes from +0x918 lock takers on the sim thread while async route jobs run: steering 0x85FE10 (docs/175), avoidance 0x846D21, gate 0, UpdateSimFootprint 0x833593 / 0x8334CC, route-to-object 0x83156D, gate-12 F-G placement 0x631F40 (docs/174), foreign ReplanFromPosition sync plans (docs/176). One taker removed hands its wait to the next (docs/152 conservation).",
+    "fix": "combined lock-taker arm: native_set steerro, avoidro, gate0ro, deferfootprint, deferfootprint2, routetoobjro, placementro, a10foreign flipped together per firing (ini enables each piece); docs/175 + docs/174 + docs/176",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. Union of ip-steer-pass-loop, ip-placement-crowd-loop and ip-foreign-replan-loop in one firing: 30 spawned Sims + the household Go Here to the farthest community lot (30+ async jobs, steering and avoidance), two placement batches while the jobs run (F-G), 3 foreign ReplanFromPosition plans of the kept @route (water + boat). Setup marked: arm, row read, home leg.",
+    "expect": "no crash, no tripwire line (afActiveTrip 0, fgFb_4 small); on arms: steerTaken, avTakenMiss, g0Served, usfDeferred, fgTaken, afStarted_2 = afCollected_2 rise; keys 0x85FE10, 0x846D21, 0x631F40, 0x833593, 0x8334CC, 0x83156D near 0 in on windows; off arms: afSeen_2 +3 per firing; route_replan rows same plan type and sig on both arms",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnableWaterPlanning"
+          ],
+          "options2": [
+            "EnablePlanningAsBoat"
+          ]
+        },
+        "waitS": 5,
+        "note": "long route kept as @route"
+      },
+      {
+        "cmd": "route_replan",
+        "args": {
+          "result": true
+        },
+        "waitS": 1,
+        "note": "clear rows"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "steerro": "$on",
+            "avoidro": "$on",
+            "gate0ro": "$on",
+            "deferfootprint": "$on",
+            "deferfootprint2": "$on",
+            "routetoobjro": "$on",
+            "placementro": "$on",
+            "a10foreign": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 2,
+          "note": "start: 30+ Go Here plans (async jobs)"
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 8
+          },
+          "waitS": 3,
+          "note": "fire: placement tests while jobs run"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 2
+        },
+        {
+          "cmd": "route_replan",
+          "setup": false,
+          "args": {
+            "count": 3
+          },
+          "waitS": 12,
+          "note": "fire: 3 foreign ReplanFromPosition plans",
+          "waitUntil": {
+            "quiet": 2000
+          },
+          "minS": 2,
+          "maxS": 12
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 8
+          },
+          "waitS": 3,
+          "note": "fire: second batch (crowd still steering)"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 5,
+          "maxS": 40
+        },
+        {
+          "cmd": "route_replan",
+          "setup": true,
+          "args": {
+            "result": true
+          },
+          "waitS": 1,
+          "note": "rows: plan, paths, ms, sig"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "home (fixed)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10,
+        "minFirings": 10
+      },
+      "maxMinutes": 60
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "steerro": 0,
+          "avoidro": 0,
+          "gate0ro": 0,
+          "deferfootprint": 0,
+          "deferfootprint2": 0,
+          "routetoobjro": 0,
+          "placementro": 0,
+          "a10foreign": 0
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
+    ]
+  },
+  {
+    "id": "ip-goal-ring-loop",
+    "bug": "docs/177: a radius route (max radius <= min) builds and validates its goal ring twice (34 validations + 1 where 18 do, ~0.3-1 ms per radius job or sim plan), and the script ICs GetObstructionAtPoint / GetDestinationObstruction / IsPointObstructedBySim / FindObstaclesForSimAlongRoute / SetAGS / Insert*PathAtIndex write footprint refcounts [fp+4] without a lock after their query, while a job that starts in that gap writes the same counts (use-after-free or leak; rare)",
+    "fix": "ts3native [GoalGen] SameRing (D1: the duplicate ring skipped; native switch goalgen) + [RouteAsync] H2Ic (no job starts while one of those ICs runs on the sim thread; native switch h2ic), flipped together per firing",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. 20 spawned Sims and the household Go Here to the farthest community lot (async jobs, steering, blocked routes that ask the obstruction ICs), then 6 radius plans to the home lot (sim_route_to target home, radius 1 / 2 / 3 twice: PlanToPointRadius, sync plans on the sim thread that go through the radial generator 0x75BE60, inferred) while the crowd walks; back home between firings (fixed). Off arms: ggDup rises, hxCalls rise with no hold; on arms: ggSkipped rises with ggDup, hxCalls and hxHeld rise. 10 firings per arm ABBA.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines (g0wWatchdog 0), hxStale 0, ggArgMismatch 0; on arms: ggSkipped = the on arms' ggDup, hxHeld >= 1 over the run; off arms: ggSkipped flat; the radius plans give the same sim_route_to plan type on both arms",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "goalgen": "$on",
+            "h2ic": "$on"
+          },
+          "waitS": 1,
+          "note": "arm (native)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 2,
+          "note": "start: 20+ Go Here plans (async jobs)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 1
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 1 m"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 2
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 2 m"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 3
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 3 m"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": false,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 15,
+          "note": "fire: crowd walks (obstruction ICs, jobs)",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 5,
+          "maxS": 25
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 1
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 1 m (crowd moved)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 2
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 2 m (crowd moved)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 3
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 3 m (crowd moved)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "home (fixed)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10,
+        "minFirings": 10
+      },
+      "maxMinutes": 45
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "goalgen": 0,
+          "h2ic": 0
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
+    ]
+  },
+  {
+    "id": "ip-refcount-ring-loop",
+    "bug": "docs/177 §4 / §7: after the obstacle query 0x82EDB0 or the goal footprint gather 0x82F0B0 releases +0x918, its 12 callers (RouteFollow_A / _B, Locomotion_ObstacleCheck, EditPath, GoalPoint_Validate, Route_GoalStep, the obstruction ICs) bump and drop footprint refcounts [fp+4] with plain read-modify-writes on the sim thread while a job that starts in that gap (or gets a TailUnlock / P5b lend back) writes the same counts: a lost +1 frees a footprint still in use, a lost -1 leaks it (rare, no crash on record)",
+    "fix": "ts3native [RouteAsync] RefcountGuard (rcguard.cpp): on the sim thread the query keeps its +0x918 level until its caller returns (native switch refcountguard, flipped per firing)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. Same firing as ip-goal-ring-loop (20 spawned Sims and the household Go Here to the farthest community lot, 6 radius plans to the home lot while the crowd walks: steering, obstruction ICs, sync goal validation, async jobs), only the refcount guard flipped. Off arms (Mode 0): rcWould rises, rcDeferred flat; on arms: rcDeferred, rcFrames, rcLeaves rise, rcBusyAtOpen > 0 when jobs ran. 10 firings per arm ABBA.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines (g0wWatchdog 0), rcPass_4 0, rcDropped_1 0; on arms: rcDeferred > 0 and rcLeaves = rcFrames; off arms: rcWould rises, rcDeferred flat",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "refcountguard": "$on"
+          },
+          "waitS": 1,
+          "note": "arm (native)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 2,
+          "note": "start: 20+ Go Here plans (async jobs)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 1
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 1 m"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 2
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 2 m"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 3
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 3 m"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": false,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 15,
+          "note": "fire: crowd walks (obstruction ICs, jobs)",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 5,
+          "maxS": 25
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 1
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 1 m (crowd moved)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 2
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 2 m (crowd moved)"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "radius": 3
+          },
+          "waitS": 1,
+          "note": "fire: radius plan 3 m (crowd moved)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "home (fixed)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10,
+        "minFirings": 10
+      },
+      "maxMinutes": 45
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "refcountguard": 0
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
+    ]
+  },
+  {
+    "id": "pet-toddler-crash",
+    "bug": "story-smoke 2026-10-23 BP (chain148, asi.0332): ACCESS_VIOLATION reading 0x30 at 0x575651 (EA SetBodyShape render message 0x7334B554 handler 0x950DD0 without its null check) 2 s after make_sim {species: Dog} with the old default age Toddler (docs/171 §14, ledger §293)",
+    "fix": "ts3agent make_sim: pets only Child/Adult/Elder (default Adult); templates name the age",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): calls the game's own Sim.MakePet with a Toddler Dog through reflect_call (the vanilla path the old make_sim took), in live mode. Crash at 0x575651 within ~30 s = toddler-pet cause verified; no crash = run pet-in-build-mode next. Our build crashed = run it on the tested build too.",
+    "steps": [
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Sims3.Gameplay.Actors.Sim.MakePet",
+          "args": [
+            "@sim.Position",
+            "Toddler",
+            "Female",
+            "Dog"
+          ]
+        },
+        "waitS": 30
+      }
+    ],
+    "expect": "crash at 0x575651 (cause verified) or a toddler-aged Dog and no crash (cause refuted)"
+  },
+  {
+    "id": "pet-in-build-mode",
+    "bug": "same crash (docs/171 §14): the second candidate, a pet made while the game is in or leaving build mode (the between build_mode switch 10-20 s before the crash left the game in BuildModeState)",
+    "fix": "ts3agent RequireLive on Sim and object commands; story-fuzzer holds every call until the game is back in live mode",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): Sim.MakePet (Adult Dog, a valid age) through reflect_call in build mode, then build_mode off and a second one while the switch to live runs. Run only after pet-toddler-crash.",
+    "steps": [
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Sims3.Gameplay.Actors.Sim.MakePet",
+          "args": [
+            "@sim.Position",
+            "Adult",
+            "Female",
+            "Dog"
+          ]
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 0
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Sims3.Gameplay.Actors.Sim.MakePet",
+          "args": [
+            "@sim.Position",
+            "Adult",
+            "Male",
+            "Cat"
+          ]
+        },
+        "waitS": 30
+      }
+    ],
+    "expect": "no crash = build mode is not the cause"
+  },
+  {
+    "id": "sv-crowd-foreign-loop",
+    "bug": "docs/178 §3: in SV crowds a foreign Route.Plan job (FallbackAsync: a plan from another Sim's task, e.g. the stuck-check alarm) ran 2.08 s on the worker, almost all of it in cell A*, and the sim waited 2069 ms behind it at steering 0x85FE10; FbJobCapMs=300 never fired (capAt -1: only the world A* cost stubs read the deadline)",
+    "fix": "ts3native [RouteAsync] FbJobDeadline (docs/178 T1, native switch fbjobdeadline): the foreign job's FbJobCapMs deadline also cuts its cell A* / water searches (plan-deadline no-path exits on the worker)",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-23): never run. 30 spawned Sims + the household go to the farthest community lot (async jobs, crowd contention), then the game's own stuck check is armed for every spawned Sim off the household lot (stuck_check_fire attempt 1: 10 plans to random lot points each from the alarm task = foreign Route.Plan jobs with stuckcheckasync / FallbackAsync; attempt 1 = no reset), then everyone home (fixed). Arms flip fbjobdeadline only; FbJobCapMs, RouteJobPhases and the rest come from the job ini (both arms).",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines; per firing ~30 stuck checks armed and foreign jobs started (fbForeignStarted rises); on arms: fbjdSkip_0 rises once a foreign job passes 300 ms, every 'route async: long job ... foreign' line on an on arm is capped with capAt ~300 ms and its 'route phases: foreign job' line shows cut cell > 0; off arms: fbjdSkip flat, capAt -1 as in docs/178 §3. Stuck-check plans that a cut failed are the behaviour to watch (more failed checks; attempt 1 = no reset).",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "fbjobdeadline": "$on"
+          },
+          "waitS": 1,
+          "note": "arm (native)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 60,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 20,
+          "maxS": 60,
+          "note": "fire: crowd to the far lot (30+ async plans)"
+        },
+        {
+          "cmd": "stuck_check_fire",
+          "setup": false,
+          "args": {
+            "attempt": 1,
+            "delay_min": 1,
+            "lot": "any"
+          },
+          "waitS": 30,
+          "waitUntil": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 4000
+            }
+          ],
+          "minS": 6,
+          "maxS": 30,
+          "note": "fire: one stuck check per spawned Sim (10 plans each: foreign jobs)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 10,
+          "maxS": 40,
+          "note": "home (fixed)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10
+      },
+      "maxMinutes": 45
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "fbjobdeadline": 0
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   }
 ]

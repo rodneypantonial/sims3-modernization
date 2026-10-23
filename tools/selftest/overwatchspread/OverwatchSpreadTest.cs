@@ -120,6 +120,9 @@ static class OverwatchSpreadTest
     {
         WorldScanSlices();
         OverwatchSpreadCore.Mode ours = OverwatchSpreadCore.Mode.Ours, theirs = OverwatchSpreadCore.Mode.Theirs, up = OverwatchSpreadCore.Mode.Upstream;
+        // overwatchstuck: our per-plan yield stands down only for an Overwatch that sleeps after each check (marker >= 2)
+        Check(OverwatchSpreadCore.OurStuckYield(0) && OverwatchSpreadCore.OurStuckYield(1) && OverwatchSpreadCore.OurStuckYield(-1), "no marker, v1, faked -> our stuck yield");
+        Check(!OverwatchSpreadCore.OurStuckYield(2) && !OverwatchSpreadCore.OurStuckYield(3), "marker v2+ -> theirs");
         // yield path: the marker (real or faked) wins over everything, also over a switch that is on
         Check(OverwatchSpreadCore.Decide(true, true, true, false) == up, "marker present, switch on -> upstream");
         Check(OverwatchSpreadCore.Decide(true, true, false, true) == up, "faked marker, switch on -> upstream");
@@ -134,6 +137,15 @@ static class OverwatchSpreadTest
         Check(OverwatchSpreadCore.WithChain(theirs, true, false) == theirs, "chain on, hook missing -> theirs");
         Check(OverwatchSpreadCore.WithChain(ours, true, true) == ours, "spread and chain on -> spread");
         Check(OverwatchSpreadCore.WithChain(up, true, true) == up, "marker, chain on -> upstream");
+        // chain inside Overwatch's own loop (docs/145 §11): a tick before every type but the first, only where a yield is allowed
+        Check(!OverwatchSpreadCore.SleepBefore(0, true), "first type: no tick before it");
+        Check(OverwatchSpreadCore.SleepBefore(1, true) && OverwatchSpreadCore.SleepBefore(20, true), "later types: a tick before each");
+        Check(!OverwatchSpreadCore.SleepBefore(5, false), "no yield allowed: Overwatch's one-tick loop");
+        Check(OverwatchSpreadCore.ChainType(false, true, true) == OverwatchSpreadCore.TypeRun.Theirs, "other types: Overwatch's own code");
+        Check(OverwatchSpreadCore.ChainType(false, false, false) == OverwatchSpreadCore.TypeRun.Theirs, "other types, no yield: Overwatch's own code");
+        Check(OverwatchSpreadCore.ChainType(true, true, true) == OverwatchSpreadCore.TypeRun.OursInventory, "inventory, setting on: our sliced pass");
+        Check(OverwatchSpreadCore.ChainType(true, true, false) == OverwatchSpreadCore.TypeRun.Theirs, "inventory, no yield: Overwatch's own cleanup");
+        Check(OverwatchSpreadCore.ChainType(true, false, true) == OverwatchSpreadCore.TypeRun.Nothing, "inventory, setting off: nothing");
 
         Check(OverwatchSpreadCore.HasMarker(typeof(OverwatchWithMarker)), "public static int marker found");
         Check(!OverwatchSpreadCore.HasMarker(typeof(OverwatchWithoutMarker)), "no marker");

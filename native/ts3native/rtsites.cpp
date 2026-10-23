@@ -78,14 +78,17 @@ static bool RtWaitJob(volatile LONG* us, DWORD key) {
     if (g_async.state != A_RUNNING || !g_async.lock || RgIsWorker(tid) || (ts3native_counters.rgOwnerTid == (LONG)tid && !P5cLent(tid)))
         return true;
     if (tid == g_async.owner && g_inInvoke) return false;
+    RcDrop();  // docs/177 §7: a lent lock kept by the refcount guard goes back before the wait
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     const bool fb = g_jobFb != 0;  // docs/134 §11: the job waited for is a foreign one (A_RUNNING checked above)
+    const bool own = g_jobOwn != 0;  // docs/178 T4: an own one
+    const DWORD handle = g_async.handle;
     if (tid == g_async.owner) WaitAsyncDone();
     else while (g_async.state == A_RUNNING) Sleep(1);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(us, waited);
-    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb);
+    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb), OwSimWait(waited, own, handle);
     return true;
 }
 

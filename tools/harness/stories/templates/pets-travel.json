@@ -1,0 +1,70 @@
+[
+  { "id": "pet-adopt", "category": "normal", "realism": "cheat", "weight": 0.6,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "Pets", "prepare": false }],
+    "steps": [
+      { "cmd": "household_funds", "args": { "add": 2000 } },
+      { "cmd": "make_sim", "args": { "species": "Dog", "age": "Adult" }, "waitS": 20 },
+      { "cmd": "make_sim", "args": { "species": "Cat", "age": "Child" }, "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "gap: adoption-center flow (rabbit hole dialog) not driven; make_sim stands in" },
+
+  { "id": "pet-train-play", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "owner", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "pet", "value": "Dog", "prepare": true }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "owner", "target": { "find": "pet", "value": "Dog" }, "waitS": 30 },
+      { "cmd": "interact", "actor": "owner", "target": { "find": "pet", "value": "Dog" }, "label": "Train", "waitS": 40, "optional": true },
+      { "cmd": "interact", "actor": "owner", "target": { "find": "pet", "value": "Dog" }, "label": "Walk", "waitS": 60, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "pet walk: off-lot paired routing" },
+
+  { "id": "pet-horse-ride", "category": "normal", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "rider", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "pet", "value": "Horse", "prepare": true }],
+    "steps": [
+      { "cmd": "ride", "args": {}, "waitS": 90 },
+      { "cmd": "unseen_horse_ride", "args": {}, "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "horse locomotion off-screen (docs/143)" },
+
+  { "id": "pet-stray-strays", "category": "normal", "realism": "natural", "weight": 0.3,
+    "actors": [],
+    "needs": [{ "kind": "ep", "value": "Pets", "prepare": false }],
+    "steps": [
+      { "cmd": "camera_jumps", "args": { "order": "populated", "lots": 4, "loops": 1 }, "waitS": 20 },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 90 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "pet pool alarm, strays and wild horses (docs/147 easpreadpets)" },
+
+  { "id": "travel-vacation", "category": "normal", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "tourist", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "WorldAdventures", "prepare": false }],
+    "steps": [
+      { "cmd": "household_funds", "args": { "add": 5000 } },
+      { "cmd": "travel_vacation", "actor": "tourist", "args": { "world": "france", "days": 1 }, "waitS": 120 },
+      { "cmd": "camera_jumps", "args": { "order": "populated", "lots": 4, "loops": 1 }, "waitS": 30, "optional": true },
+      { "cmd": "travel_home", "args": {}, "waitS": 120 }
+    ],
+    "cooldownMin": 1440, "maxConcurrent": 1, "note": "world unload/load, Traveler (docs/77)" },
+
+  { "id": "travel-university", "category": "normal", "realism": "natural", "weight": 0.3,
+    "actors": [{ "role": "student", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "UniversityLife", "prepare": false }],
+    "steps": [
+      { "cmd": "travel_university", "actor": "student", "args": { "terms": 1 }, "waitS": 150 },
+      { "cmd": "uni_move_in", "args": {}, "waitS": 60, "optional": true },
+      { "cmd": "travel_home", "args": {}, "waitS": 120 }
+    ],
+    "cooldownMin": 1440, "maxConcurrent": 1 },
+
+  { "id": "travel-future", "category": "normal", "realism": "natural", "weight": 0.2,
+    "actors": [{ "role": "traveller", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "IntoTheFuture", "prepare": false }],
+    "steps": [
+      { "cmd": "travel_future", "actor": "traveller", "args": { "prepare": true }, "waitS": 150 },
+      { "cmd": "travel_home", "args": {}, "waitS": 120 }
+    ],
+    "cooldownMin": 1440, "maxConcurrent": 1, "note": "Oasis Landing load; hover car routing" }
+]

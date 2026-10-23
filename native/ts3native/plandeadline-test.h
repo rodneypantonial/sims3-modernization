@@ -41,14 +41,61 @@ static u8* __cdecl PdtIc(u8* out, DWORD) {
     return out;
 }
 
+// docs/178 T1: one cell and one water call on a fresh thread acting as the route worker inside a foreign job (g_pdWkTid = its
+// id, its own t_fbDeadline = dl, t_jobT0 set); what came back and what the job's thread-locals say afterwards
+struct PdtWk {
+    u8 *cell, *water;
+    LONGLONG dl;
+    u8 rc, rw;
+    bool bad;
+    LONG cut[3], runs;
+    LONGLONG capAt;
+    DWORD self24, vecBegin, vecEnd;
+};
+static DWORD WINAPI PdtWorker(LPVOID p) {
+    PdtWk& w = *(PdtWk*)p;
+    InterlockedExchange((volatile LONG*)&g_pdWkTid, (LONG)GetCurrentThreadId());
+    t_fbDeadline = w.dl, t_jobT0 = 1, t_jobCapAt = 0;
+    t_fbjdCut[0] = t_fbjdCut[1] = t_fbjdCut[2] = 0;
+    u8 self[0x40];
+    memset(self, 0x77, sizeof(self));
+    DWORD vec[3] = {0x1000, 0x1040, 0x1080};
+    DWORD ca[6] = {}, wa[9] = {};
+    wa[8] = (DWORD)(uintptr_t)vec;
+    const LONG r0 = g_pdtRuns[0] + g_pdtRuns[1];
+    bool b1, b2;
+    w.rc = PdtCall(w.cell, self, 6, ca, &b1);
+    w.rw = PdtCall(w.water, self, 9, wa, &b2);
+    w.runs = g_pdtRuns[0] + g_pdtRuns[1] - r0;
+    w.bad = b1 || b2;
+    w.self24 = *(DWORD*)(self + 0x24);
+    w.vecBegin = vec[0], w.vecEnd = vec[1];
+    memcpy(w.cut, t_fbjdCut, sizeof(w.cut));
+    w.capAt = t_jobCapAt;
+    InterlockedExchange((volatile LONG*)&g_pdWkTid, 0);
+    t_fbDeadline = t_jobT0 = t_jobCapAt = 0;
+    return 0;
+}
+static void PdtRunWorker(PdtWk& w) {
+    HANDLE h = CreateThread(NULL, 0, PdtWorker, &w, 0, NULL);
+    assert(h);
+    WaitForSingleObject(h, INFINITE);
+    CloseHandle(h);
+}
+
 static void TestPlanDeadline() {
+    static_assert(offsetof(Ts3nCounters, fbjdMode) == 0x440C && offsetof(Ts3nCounters, fbjdCapped) == 0x441C &&
+                      offsetof(Ts3nCounters, fbjdLines) == 0x4438 && offsetof(Ts3nCounters, owReady) == 0x443C &&
+                      offsetof(Ts3nCounters, owWaitHist) == 0x444C && offsetof(Ts3nCounters, gsReady) == 0x4468 &&
+                      offsetof(Ts3nCounters, gsMaxUs) == 0x44AC && offsetof(Ts3nCounters, gsLong) == 0x44D0,
+                  "counters v103 layout after v102 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, pdMode) == 0x4244 && offsetof(Ts3nCounters, pdSessions) == 0x4254 &&
                       offsetof(Ts3nCounters, pdLines) == 0x427C && offsetof(Ts3nCounters, fmMode) == 0x4280 &&
                       offsetof(Ts3nCounters, fmInval) == 0x4298 && offsetof(Ts3nCounters, fmServedUs) == 0x42C4 &&
-                      sizeof(Ts3nCounters) == 4274 * 4,
+                      sizeof(Ts3nCounters) == 4442 * 4,
                   "counters v99 layout after v98 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 99);
+    assert(k.version == 105);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     memset(&k.pdMode, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, pdMode));
     u8* code = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -200,6 +247,42 @@ static void TestPlanDeadline() {
     SyncIc(0, out, 0x25000001, NULL, RFB_NOSTART, "nojob", NULL);
     assert(g_rdtPlans == p0 + 5 && k.fmServed == 1);
     g_rdtType = 16;
+    // 11. docs/178 T1, the worker slot: on another thread (the "worker") with g_pdWkTid = its id and its own t_fbDeadline
+    //     past, both stubs take the no-path exits (fields, AL, stack), counted per search and per job (t_fbjdCut), the first
+    //     cut is the job's capAt; with fbjdMode 0 or the deadline ahead they run; this thread (not g_pdWkTid, no session) runs
+    //     them even with its own t_fbDeadline past
+    k.fbjdMode = 1;
+    PdtWk w = {cell, water, 1};
+    PdtRunWorker(w);
+    assert(!w.bad && w.rc == 0 && w.rw == 0 && w.cut[1] == 1 && w.cut[2] == 1 && w.cut[0] == 0 && w.capAt && w.runs == 0);
+    assert(w.self24 == 0 && w.vecEnd == w.vecBegin && k.fbjdSkip[0] == 1 && k.fbjdSkip[1] == 1 && !g_pdWkTid);
+    w.dl = PdNow() + g_qpf.QuadPart * 10;  // ahead
+    PdtRunWorker(w);
+    assert(!w.bad && w.rc == 1 && w.rw == 1 && w.runs == 2 && !w.cut[1] && !w.capAt && k.fbjdSkip[0] == 1);
+    w.dl = 1;
+    k.fbjdMode = 0;
+    PdtRunWorker(w);
+    assert(!w.bad && w.rc == 1 && w.rw == 1 && w.runs == 2 && k.fbjdSkip[0] == 1);
+    k.fbjdMode = 1;
+    g_pdWkTid = 1;  // another thread's slot; this thread has a deadline past but is not the worker
+    t_fbDeadline = 1;
+    both(1, 1);
+    t_fbDeadline = 0;
+    g_pdWkTid = 0;
+    //     job end: >= 300 / >= 1000 ms in either mode; a cut job by phase and its time past the deadline
+    t_fbjdCut[0] = 0, t_fbjdCut[1] = 3, t_fbjdCut[2] = 0;
+    FbjdJobEnd(400000, g_qpf.QuadPart * 3, g_qpf.QuadPart * 2);  // ended 1 s after its deadline
+    assert(k.fbjdLong[0] == 1 && k.fbjdLong[1] == 0 && k.fbjdCapped[1] == 1 && k.fbjdCapped[0] == 0 && k.fbjdLateMaxUs == 1000000);
+    t_fbjdCut[1] = 0;
+    FbjdJobEnd(1200000, g_qpf.QuadPart * 3, g_qpf.QuadPart * 2);  // not cut: long, nothing else
+    assert(k.fbjdLong[0] == 2 && k.fbjdLong[1] == 1 && k.fbjdCapped[1] == 1 && k.fbjdLateUs == 1000000);
+    // 12. docs/178 T4: sim waits behind an own job: counted with owReady only, buckets and max, >= 300 ms logged
+    OwSimWait(400000, true, 0x25000001);
+    assert(k.owWaits == 0);
+    k.owReady = 1;
+    OwSimWait(50000, true, 0x25000001), OwSimWait(400000, true, 0x25000001), OwSimWait(9000000, false, 0x25000002);
+    assert(k.owWaits == 2 && k.owWaitUs == 450000 && k.owWaitMaxUs == 400000 && k.owWaitHist[0] == 1 && k.owWaitHist[2] == 1 &&
+           k.owLines == 1);
     // restore
     g_fmOn = 0;
     g_orRmSlot = rmSlot, g_orRoute = route0, g_rdFollowerPos = pos0;
@@ -213,4 +296,7 @@ static void TestPlanDeadline() {
     printf("PlanDeadline / FailMemo (docs/164 §7): counters v99; cell / water entry stubs (pass outside a session, before the "
            "deadline, switch off, other thread; past it the game's no-path exits, stack right), non-IC session + world A* cap "
            "through the cost stub, IC sessions by reason (own task exempt), FailMemo observe / serve / not on worker calls ok\n");
+    printf("FbJobDeadline / OwnJobWait (docs/178 T1, T4): counters v103; worker slot of the cell / water stubs (cut past the "
+           "foreign job's deadline on its thread only, switch off and deadline ahead pass), per-job cuts, capAt, late time, "
+           ">= 300 / 1000 ms jobs; own-job sim waits ok\n");
 }

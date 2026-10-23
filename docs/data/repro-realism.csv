@@ -1,0 +1,149 @@
+id,realism,why,mode_violations
+bp-hogans-gohome,cheat,place_sim
+bp-waylons-gohome,cheat,place_sim
+ip-houseboat-gohome,natural,
+bp-virtualhome-fade,natural,
+bp-hogans-pileup,cheat,place_sim
+ip-underwater-lag,natural,
+bp-save-cleanup,cheat,reflect_call
+bp-lifeevent-trim,cheat,reflect_call set_skill
+bp-snapshot-cap,cheat,reflect_call
+bp-route-cache,natural,
+store-cas-browse,natural,
+cas-grid,stress,cas_bench
+bp-apartment-gohome,cheat,place_sim
+store-items-memory,stress,place_objects remove_objects wear_parts
+sims-memory,stress,spawn_sims
+camera-zoom-memory,natural,
+bp-overwatch-stuckcheck,cheat,reflect_call
+bp-idle-unroutable,stress,sim_strand
+bp-route-fail-active,stress,sim_strand
+s3pp-label-check,natural,
+ip-portal-leak,cheat,reflect_call
+bp-route-async,cheat,place_sim
+lotstream-pan,natural,
+verify-moodlets,cheat,moodlet
+verify-outfits,stress,outfit_change
+verify-cas,natural,
+verify-thumbs-save,stress,thumbnails
+verify-pan,natural,
+verify-sweep,stress,outfit_change thumbnails
+ui-motivebar-cache,cheat,set_motive
+ui-buffgrid-inplace,cheat,moodlet
+sim-name-cache,cheat,reflect_call
+verify-v22,stress,outfit_change thumbnails place_objects remove_objects
+jobqueue-shared,natural,
+thumbs-d3d-mt,stress,thumbnails
+alloc-dupfree,stress,spawn_sims place_objects remove_objects thumbnails
+lot-sincos,stress,spawn_sims
+object-id-cache,stress,spawn_sims place_objects remove_objects
+detail-priority-cache,natural,
+hours-memo,stress,spawn_sims
+cane-early-out,stress,spawn_sims
+tooltip-throttle,natural,
+safespotreuse-verify,natural,
+hotspots-verify,stress,spawn_sims
+rt-s2b-sweep,stress,spawn_sims place_objects remove_objects
+terrain-grave-pan,natural,
+make-spring-bp,cheat,test_env
+update-spring-bp,cheat,test_env
+make-spring-ip,cheat,test_env
+update-spring-ip,cheat,test_env
+make-spring-sv,cheat,test_env
+update-spring-sv,cheat,test_env
+make-spring-all,cheat,test_env
+clock-minimize-pause,natural,
+pet-guard-cancel,stress,spawn_sims
+steer-crowd,stress,spawn_sims
+avoid-crowd,stress,spawn_sims
+lot-front-door-burst,stress,spawn_sims
+wildflower-probe,natural,
+wildflower-drain,natural,
+wildflower-save-abort,natural,
+bp-build-levels,natural,
+bp-upstairs-route,cheat,reflect_call
+bp-door-lock,cheat,reflect_call
+make-snap-gohere-bp,natural,
+bp-door-lock-typepatch,cheat,reflect_call
+ip-houseboat-create,cheat,reflect_call
+f4b-inlot-route,natural,
+f4b-street-route,natural,
+rare-winter-pond,stress,spawn_sims crowd_go
+rare-thunderstorm,stress,spawn_sims crowd_go
+rare-fullmoon-werewolf,stress,spawn_sims crowd_go
+rare-route-bits,cheat,reflect_call
+rare-ghost-walk,cheat,reflect_call_async reflect_call
+rare-occult-walks,cheat,reflect_call_async reflect_call
+rare-ip-water,cheat,reflect_call_async reflect_call
+rare-death-walk,stress,spawn_sims crowd_go
+rare-big-crowd,stress,spawn_sims crowd_go
+rare-world-walk,stress,spawn_sims crowd_go
+rare-owned-vehicles,cheat,reflect_call
+rare-stroller,natural,
+rare-horse-ride,cheat,reflect_call
+rare-zombies,stress,zombies spawn_sims crowd_go
+rare-flight-broom,cheat,reflect_call_async set_skill
+uni-trip-home,natural,
+future-direct-lighting-uaf,natural,
+stuck-check-3am,cheat,test_env
+replan-buildbuy-crowd,stress,spawn_sims crowd_go
+candidate-loops,cheat,reflect_call
+bp-overwatch-spread-inventory,cheat,reflect_call
+bp-overwatch-spread-all,cheat,reflect_call
+bp-overwatch-spread-upstream-yield,cheat,reflect_call
+bp-easpread-lots,cheat,reflect_call
+bp-easpread-pets,cheat,reflect_call
+bp-easpread-decay,cheat,reflect_call
+bp-errortrap-spread-inventory,cheat,reflect_call
+bp-errortrap-spread-upstream-yield,cheat,reflect_call
+night-maintenance-clock,cheat,test_env
+unseen-crowd-far,stress,spawn_sims crowd_go
+unseen-traffic,stress,spawn_traffic
+unseen-snapback,stress,spawn_sims crowd_go unseen_snapback
+unseen-boats,stress,spawn_sims crowd_go
+unseen-water-cause,stress,spawn_sims crowd_go
+unseen-houseboat-move,stress,spawn_sims
+unseen-dock-edge,stress,spawn_sims
+unseen-horses,stress,spawn_sims crowd_go
+bp-nraas-upstream-verify,cheat,reflect_call
+scen-travel,natural,
+scen-lotswitch,natural,
+scen-buildbuy,natural,
+scen-cas,natural,
+scen-edittown,cheat,reflect_call_async
+scen-save,natural,
+bp-overwatch-ab-loop,cheat,reflect_call
+main-cas-builds,natural,
+main-lot-stream,natural,
+main-swarm-fx,stress,vfx_burst
+hitch-stuckcheck-loop,stress,strand_many
+hitch-stuckcheck-check,stress,strand_many
+hitch-easpread-lots-loop,cheat,reflect_call
+hitch-easpread-lots-check,cheat,reflect_call
+hitch-easpread-pets-loop,cheat,reflect_call
+hitch-easpread-pets-check,cheat,reflect_call
+hitch-easpread-decay-loop,cheat,reflect_call
+hitch-easpread-decay-check,cheat,reflect_call
+hitch-errortrap-loop,cheat,reflect_call
+hitch-errortrap-check,cheat,reflect_call
+route-stuckcheck-reset-loop,stress,spawn_sims strand_crowd stuck_check_fire
+route-queuefull-replan-loop,stress,spawn_sims crowd_go
+route-nopath-crowd-loop,stress,spawn_sims crowd_unreachable crowd_go
+route-sv-seacheck-freeze,stress,spawn_sims crowd_sea_lot stuck_check_fire
+bp-overwatch-ab-loop2,cheat,reflect_call
+route-gate-crowd-loop,stress,spawn_sims crowd_go place_objects remove_objects
+save-write-loop,natural,
+alloc-churn-loop,stress,spawn_sims place_objects remove_objects
+unseen-crowd-loop,stress,spawn_sims crowd_go
+ip-route-legs-loop,stress,spawn_sims crowd_go
+ip-steer-pass-loop,stress,spawn_sims crowd_go
+winter-pond-loop,stress,spawn_sims crowd_go
+pet-guard-loop,stress,spawn_sims crowd_go
+object-churn-loop,stress,spawn_sims place_objects crowd_go remove_objects
+diner-crowd-loop,stress,spawn_sims crowd_go
+candidate-loops-loop,cheat,reflect_call
+replan-buildbuy-loop,stress,spawn_sims crowd_go
+ip-placement-crowd-loop,stress,spawn_sims crowd_go place_objects remove_objects
+ip-foreign-replan-loop,stress,route_replan
+ip-locktaker-loop,stress,route_replan spawn_sims crowd_go place_objects remove_objects
+ip-goal-ring-loop,stress,spawn_sims crowd_go

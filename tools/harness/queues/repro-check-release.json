@@ -413,7 +413,7 @@
     },
     {
       "id": "sv-rcr-diner-crowd",
-      "note": "diner-crowd-loop (slotenabledro, avoidro): the crowd arrives at Hogan's diner per firing, ABBA on both. Pass: no crash, slTaken >= 1, slShadowMismatch 0, avTripAv 0, avSimWriteInRo 0. 2026-10-23: Hogan diner and its Sims are Sunset Valley (repro ran on the BP save); avTripAv dropped from the rule: T-AV counts worker entries into 0x81D090/0x85FF30 (the clone falls back, safe; 44144 in 4 min = AvoidRO mostly falls back).",
+      "note": "diner-crowd-loop (slotenabledro, avoidro): the crowd arrives at Hogan's diner per firing, ABBA on both. Pass: no crash, slTaken >= 1, slShadowMismatch 0, avTripAv 0, avSimWriteInRo 0. 2026-10-23: Hogan diner and its Sims are Sunset Valley (repro ran on the BP save); avTripAv dropped from the rule: T-AV counts worker entries into 0x81D090/0x85FF30 (44144 in 4 min = ~7 per job, every job tail; a clone drops only when one overlaps it: avFbTrip 1 in that run, AvoidRO answered ~160 of ~160 in-job calls, docs/175 §3).",
       "asi": "game-copy/ts3native.asi.0331",
       "save": "Baseline-SV-Spring",
       "minCounters": 98,

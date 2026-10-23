@@ -15,18 +15,24 @@ type Cfg = {
   p5b?: boolean; p5c?: boolean; tu?: boolean; h2?: boolean; h2wd?: boolean; rp?: boolean; main?: boolean;
   door?: boolean; mgd?: boolean; trip?: boolean; d2?: boolean; tthrow?: boolean; wm?: boolean; wmTrip?: boolean; simWm?: boolean;
   cap?: boolean;
+  rpu?: boolean;  // docs/182: [RouteSnap] RecsUnlocked: the consumer applies records holding g_rpUse + the pool set, not +0x918
+  rpuTrip?: boolean;  // ... and reaches a +0x918 acquire inside the round (ulLockTrip; expected never)
+  mutRpuNoUse?: boolean;  // mutation: the unlocked round without g_rpUse and the pool set (each alone excludes a clone run)
+  h2x?: boolean;  // docs/177 §4: H2 IC window (locowin.cpp HxEnter / HxLeave) around the script ICs' plain [fp+4] writes
+  rcg?: boolean;  // docs/177 §7: [RouteAsync] RefcountGuard (rcguard.cpp): the query's +0x918 level kept until its caller returns
+  mutRcEarly?: boolean; mutRcNoDrop?: boolean;  // mutations: the level released at the query (today's order) / no RcDrop before a wait
   fixNr?: boolean; fixHb?: boolean; fixWm?: boolean; mutGate?: boolean; mutNoDrop?: boolean;
   mutNoCloseRecheck?: boolean; mutNoBackstop?: boolean;  // undo fix A (CE-1) / fix D (CE-4), both in the code since docs/154 §7
   expect: string;  // 'clean' or a regex the outcome (violation text / 'deadlock: ...') must match
   why: string;
 };
 interface Sim { pc: string; n: number; stk: string[]; ac: string[]; hand: number; hand2: number; hbOff: number; mid: number; cb: number; bor: number;
-  k: number; parked: number; took: number; lt: number; closed: number; }
+  k: number; parked: number; took: number; lt: number; closed: number; rc: number; }
 interface Wk { pc: string; j: number; ph: string; exp: number; n: number; p5b: string; tu: number; rp: number; door: number;
   mgd: number; after: string; }
 interface St { lo: number; lc: number; win: number; inN: number; lendBy: number; p5cJob: number; p5cOff: number; off: number;
   as: number; g0Win: number; g0In: number; closing: number; busy: number; world: number; jobs: string; cut: number[];
-  ev: number; inv: number; wm: number; rp: number; snap: number; writes: number; hbJob: number; wd: number; viol: string;
+  ev: number; inv: number; wm: number; rp: number; op: number; snap: number; writes: number; hbJob: number; wd: number; viol: string;
   s: Sim; w: Wk; r: { pc: string; it: number }; m: { pc: string }; }
 type Succ = { st: St; lbl: string };
 
@@ -40,8 +46,8 @@ const setJob = (st: St, i: number, c: string) => { st.jobs = st.jobs.slice(0, i)
 
 function init(c: Cfg): St {
   return { lo: 0, lc: 0, win: 0, inN: 0, lendBy: 0, p5cJob: 0, p5cOff: 0, off: 0, as: 0, g0Win: 0, g0In: 0, closing: 0, busy: 0,
-    world: 1, jobs: 'FF', cut: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, viol: '',
-    s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0 },
+    world: 1, jobs: 'FF', cut: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, viol: '',
+    s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0, rc: 0 },
     w: { pc: 'idle', j: -1, ph: 'idle', exp: 0, n: 0, p5b: 'c', tu: 0, rp: 0, door: 0, mgd: 0, after: '' },
     r: { pc: c.rp ? 'r0' : 'done', it: 2 }, m: { pc: c.main ? 'm0' : 'done' } };
 }
@@ -92,6 +98,11 @@ function relS(st: St) {
   if (st.lo !== SIM) { bad(st, 'sim released +0x918 it does not own'); return; }
   if (--st.lc === 0) st.lo = 0;
 }
+// rcguard.cpp RcDrop: every sim wait for the worker releases the levels the refcount guard keeps (the job may need the lock)
+function rcDrop(st: St, c: Cfg) {
+  if (!c.rcg || c.mutRcNoDrop) return;
+  for (; st.s.rc; st.s.rc--) relS(st);
+}
 function handBack(st: St, c: Cfg, field: 'hand' | 'hand2') {  // p5c.cpp:210 P5cHandBegin
   if (c.p5c && st.win && st.lo === SIM) {
     st.s[field] = st.lc; st.lo = 0; st.lc = 0; st.p5cOff = 1; st.hbJob = 1;
@@ -131,6 +142,14 @@ function simSteps(st0: St, c: Cfg): Succ[] {
     case 'st1w': if (st0.wm === 0) go('steer: WM+0x228 taken', st => { st.wm = SIM; st.s.pc = 'st1x'; }); break;
     case 'st1x': go('steer: rebuild, WM released, query', st => { st.wm = 0; simWrite(st, 'cache'); st.s.pc = 'st2'; }); break;
     case 'st2': go('steer: release', st => { relS(st); ret(st.s); }); break;
+    // --- replay cut (replay.cpp RpCut / RpEpoch: sim under +0x918; a rebase or epoch build needs the pool set, by try only) ---
+    case 'cut': go('cut: acquire +0x918', st => acq(st.s, 'free', 'cu1')); break;
+    case 'cu1':
+      if (st0.op === 0) go('cut: pool set taken, rebase built', st => { st.op = SIM; simWrite(st, 'live'); st.s.pc = 'cu2'; });
+      else go('cut: pool set busy, rebase deferred', st => { st.s.pc = 'cu3'; });
+      break;
+    case 'cu2': go('cut: pool set released', st => { st.op = 0; st.s.pc = 'cu3'; }); break;
+    case 'cu3': go('cut: release', st => { relS(st); ret(st.s); }); break;
     case 'writer': go('writer: acquire +0x918', st => acq(st.s, 'free', 'wr1')); break;
     case 'wr1': go('writer: first half written', st => { simWrite(st, 'live'); st.s.mid = 1; st.s.pc = 'wr2'; }); break;
     case 'wr2':
@@ -188,6 +207,43 @@ function simSteps(st0: St, c: Cfg): Succ[] {
     case 'c2': go('close: unlocked teardown', st => { st.s.lt = 1; st.s.closed = 1; simWrite(st, 'life'); st.s.pc = 'c3'; }); break;
     case 'c3': go('close: locked teardown acquire', st => acq(st.s, 'gate', 'c4')); break;
     case 'c4': go('close: locked teardown, world gone', st => { simWrite(st, 'life'); relS(st); st.world = 0; ret(st.s); }); break;
+    // --- script IC with a footprint refcount write after its query (docs/177 §4: RouteFollow_A from GetObstructionAtPoint,
+    // EditPath from SetAGS); locowin.cpp HxEnter raises g_g0Win before the body, HxLeave drops it. The job's own [fp+4] writes
+    // (goal validation, EditPath) happen while it reads live state (ph 'live'); TailUnlock's lent passes touch no footprint
+    case 'icq': go('IC: entry (H2 IC window up)', st => { if (c.h2x) st.g0Win = 1; st.s.pc = 'iq1'; }); break;
+    case 'iq1': go('IC: obstacle query acquire', st => acq(st.s, 'steer', 'iq2')); break;
+    case 'iq2': go(c.rcg && !c.mutRcEarly ? 'IC: query, release kept (RcRel)' : 'IC: query, release', st => {
+      simWrite(st, 'cache');
+      if (c.rcg && !c.mutRcEarly) st.s.rc++; else relS(st);
+      st.s.pc = c.simWm ? 'iq2w' : 'iq3';
+    }); break;
+    case 'iq2w': if (st0.wm === 0) go('IC: caller needs WM+0x228 (lot lookup)', st => { st.wm = SIM; st.s.pc = 'iq2x'; }); break;
+    case 'iq2x': go('IC: WM+0x228 released', st => { st.wm = 0; st.s.pc = 'iq3'; }); break;
+    case 'iq3': go(st0.s.rc ? 'IC: plain [fp+4] add/sub (+0x918 kept)' : 'IC: plain [fp+4] add/sub (no lock)', st => {
+      if (st.as && st.w.ph === 'live') bad(st, 'sim plain [fp+4] refcount write beside a job body (refcount race)');
+      st.s.pc = 'iq4';
+    }); break;
+    case 'iq4': go('IC: return (kept levels released, window down)', st => {
+      for (; st.s.rc; st.s.rc--) relS(st);
+      if (c.h2x) st.g0Win = 0;
+      ret(st.s);
+    }); break;
+    // --- a caller that waits for a job between its query and its return (an event or callback reaching IcCollect) ---
+    case 'icw': go('ICW: obstacle query acquire', st => acq(st.s, 'steer', 'iw2')); break;
+    case 'iw2': go(c.rcg && !c.mutRcEarly ? 'ICW: query, release kept' : 'ICW: query, release', st => {
+      simWrite(st, 'cache');
+      if (c.rcg && !c.mutRcEarly) st.s.rc++; else relS(st);
+      st.s.pc = 'iw3';
+    }); break;
+    case 'iw3': go('ICW: plain [fp+4] add/sub', st => {
+      if (st.as && st.w.ph === 'live') bad(st, 'sim plain [fp+4] refcount write beside a job body (refcount race)');
+      st.s.pc = 'iw4';
+    }); break;
+    case 'iw4':
+      go('ICW: no wait', st => { st.s.pc = 'iw5'; });
+      for (let k = 0; k < 2; k++) if (st0.jobs[k] !== 'F') go('ICW: collect j' + k + ' inside the caller', st => { st.s.k = k; call(st.s, 'co0', 'iw5'); });
+      break;
+    case 'iw5': go('ICW: return (kept levels released)', st => { for (; st.s.rc; st.s.rc--) relS(st); ret(st.s); }); break;
     case 'pass':  // locowin.cpp:36-62
       go('pass: g_g0Win = 1', st => { if (c.h2) st.g0Win = 1; st.s.pc = 'p1'; });
       break;
@@ -205,10 +261,10 @@ function simSteps(st0: St, c: Cfg): Succ[] {
     case 'rtw':
       if (!st0.as || (st0.lo === SIM && !(st0.win && st0.lendBy))) go('RtWaitJob: no job / real owner', st => ret(st.s));
       else if (s.cb) go('RtWaitJob: inside a callback (no wait)', st => ret(st.s));
-      else go('RtWaitJob: WaitAsyncDone', st => { st.s.pc = 'wa0'; });
+      else go('RtWaitJob: RcDrop, WaitAsyncDone', st => { rcDrop(st, c); st.s.pc = 'wa0'; });
       break;
     // --- WaitAsyncDone ts3native.cpp:2424 ---
-    case 'wa0': go('WaitAsyncDone: P5cHandBegin', st => { handBack(st, c, 'hand'); st.s.pc = 'wa1'; }); break;
+    case 'wa0': go('WaitAsyncDone: RcDrop, P5cHandBegin', st => { rcDrop(st, c); handBack(st, c, 'hand'); st.s.pc = 'wa1'; }); break;
     case 'wa1':
       if (!st0.as) go('WaitAsyncDone: no job running', st => { st.s.pc = 'wa2'; });
       else if (st0.inv === 1 && !s.cb) go('WaitAsyncDone: serve managed call', st => call(st.s, 'cb0', 'wa1'));
@@ -218,8 +274,9 @@ function simSteps(st0: St, c: Cfg): Succ[] {
       else go('WaitAsyncDone: return', st => { if (st.s.hbOff) { st.off--; st.s.hbOff = 0; } ret(st.s); });
       break;
     // --- WaitJobDone ts3native.cpp:2440 ---
-    case 'wj0': go('WaitJobDone: G0wDrop, P5cHandBegin', st => {
+    case 'wj0': go('WaitJobDone: G0wDrop, RcDrop, P5cHandBegin', st => {
       if (st.g0Win && st.g0In && !c.mutNoDrop) st.g0Win = 0;  // locowin.cpp:29 G0wDrop
+      rcDrop(st, c);
       handBack(st, c, 'hand'); st.s.pc = 'wj1';
     }); break;
     case 'wj1':
@@ -227,7 +284,7 @@ function simSteps(st0: St, c: Cfg): Succ[] {
       else if (st0.inv === 1 && !s.cb) go('WaitJobDone: serve managed call', st => call(st.s, 'cb0', 'wj1'));
       break;
     // --- P5cNrEnter p5c.cpp:233 / P4NrEnter p4.cpp:325 ---
-    case 'n0': go('P5cNrEnter: hand back if lent', st => { if (st.snap) handBack(st, c, 'hand2'); st.s.pc = 'n1'; }); break;
+    case 'n0': go('P5cNrEnter: hand back if lent', st => { if (st.snap) { rcDrop(st, c); handBack(st, c, 'hand2'); } st.s.pc = 'n1'; }); break;
     case 'n1':
       if (!st0.snap) go('P4NrEnter: no clone run', st => { st.s.pc = 'n2'; });
       else if (c.fixNr && st0.inv === 1 && !s.cb) go('P4NrEnter: serve managed call (FIX)', st => call(st.s, 'cb0', 'n1'));
@@ -320,7 +377,7 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
     case 'b0':
       if (!c.rp) go('clone acquire', st => { st.w.pc = 'b1'; });
       else {
-        if (st0.rp === 0) go('PcAcquire takes g_rpUse', st => { st.rp = WRK; st.w.rp = 1; st.w.pc = 'b1'; });
+        if (st0.rp === 0 && (!c.rpu || st0.op === 0)) go('PcAcquire takes g_rpUse (and the pool set)', st => { st.rp = WRK; if (c.rpu) st.op = WRK; st.w.rp = 1; st.w.pc = 'b1'; });
         else go('PcAcquire: g_rpUse busy until deadline (mat)', st => { st.w.pc = 'l3'; });
       }
       break;
@@ -361,7 +418,7 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
     case 'b5':
       go('P5cStale / answer', st => {
         st.p5cJob = 0; st.snap = 0; st.w.p5b = 'c';
-        if (st.w.rp) { st.rp = 0; st.w.rp = 0; }
+        if (st.w.rp) { st.rp = 0; if (c.rpu) st.op = 0; st.w.rp = 0; }
         const stale = st.writes !== st.cut[w.j] || w.mgd;
         if (c.fixHb && st.hbJob) { st.w.ph = 'priv'; st.w.pc = 'l5'; return; }  // FIX: a hand-back fails the job (no live read)
         st.w.ph = 'live'; st.w.pc = stale ? 'l3' : 'l4';
@@ -426,8 +483,32 @@ function rpSteps(st0: St, c: Cfg): Succ[] {
     case 'done': break;
     case 'r0':
       if (!st0.r.it) go('done', st => { st.r.pc = 'done'; });
-      else if (st0.rp === 0) go('g_rpUse exclusive', st => { st.rp = RPC; st.r.it--; st.r.pc = 'r1'; });
+      else if (c.rpu && c.mutRpuNoUse) go('MUTATION: unlocked round without g_rpUse and the pool set', st => { st.r.it--; st.r.pc = 'u2'; });
+      else if (st0.rp === 0) go('g_rpUse exclusive', st => { st.rp = RPC; st.r.it--; st.r.pc = c.rpu ? 'u1' : 'r1'; });
       break;
+    // --- RecsUnlocked round (replay.cpp RpRecsUnlocked): the pool set by try, records applied without +0x918 ---
+    case 'u1':
+      if (st0.op === 0) go('RpOpTry ok', st => { st.op = RPC; st.r.pc = 'u2'; });
+      else go('pool set busy: release g_rpUse, retry', st => { if (st.rp === RPC) st.rp = 0; st.r.pc = 'r0'; st.r.it++; });
+      break;
+    case 'u2':
+      go('apply INS/REM/NOQ/STALE/SYNC (clone only)', st => {
+        if (st.w.ph === 'clone' || st.w.rp) bad(st, 'replay consumer writes the clone during a clone run');
+        st.r.pc = c.rpuTrip ? 't0' : 'u3';
+      });
+      break;
+    case 't0':  // a +0x918 acquire inside the round (game code): the game's Lock_Acquire through P5bLock, holding g_rpUse + op
+      if (!lendOn(c)) { if (canTake(st0, RPC)) go('trip: Lock_Acquire', st => { take(st, RPC, c); st.r.pc = 't3'; }); }
+      else go('trip: P5bLock g_p5bIn++', st => { st.inN++; st.r.pc = 't1'; });
+      break;
+    case 't1':
+      if (st0.win) go('trip: window open, g_p5bIn--, wait', st => { st.inN--; st.r.pc = 'tw'; });
+      else go('trip: no window, blocking', st => { st.r.pc = 't2'; });
+      break;
+    case 'tw': if (!st0.win) go('trip: window closed', st => { st.r.pc = 't0'; }); break;
+    case 't2': if (canTake(st0, RPC)) go('trip: got +0x918, g_p5bIn--', st => { take(st, RPC, c); st.inN--; st.r.pc = 't3'; }); break;
+    case 't3': go('trip: release +0x918', st => { st.lc--; if (!st.lc) st.lo = 0; st.r.pc = 'u3'; }); break;
+    case 'u3': go('round done: pool set and g_rpUse released', st => { if (st.op === RPC) st.op = 0; if (st.rp === RPC) st.rp = 0; st.r.pc = 'r0'; }); break;
     case 'r1':
       go('try +0x918', st => {
         if ((!lendOn(c) || !st.win) && canTake(st, RPC)) { take(st, RPC, c); st.r.pc = 'r2'; } else { st.rp = 0; st.r.pc = 'r0'; }
@@ -465,7 +546,7 @@ type Result = { name: string; states: number; outcome: string; trace: string[] }
 function terminalCheck(st: St): string {
   if (/R/.test(st.jobs)) return 'job left RUNNING';
   if (/Q/.test(st.jobs) && st.w.pc === 'idle' && !st.ev) return 'lost job: QUEUED with the worker asleep (no g_asyncReady)';
-  if (st.lo || st.win || st.inN || st.off || st.p5cJob || st.wm || st.rp || st.lendBy) return `terminal state not clean (lo ${st.lo} win ${st.win} inN ${st.inN} off ${st.off} p5cJob ${st.p5cJob} wm ${st.wm} rp ${st.rp})`;
+  if (st.lo || st.win || st.inN || st.off || st.p5cJob || st.wm || st.rp || st.op || st.lendBy) return `terminal state not clean (lo ${st.lo} win ${st.win} inN ${st.inN} off ${st.off} p5cJob ${st.p5cJob} wm ${st.wm} rp ${st.rp})`;
   return '';
 }
 function explore(c: Cfg, limit = 3_000_000): Result {
@@ -518,12 +599,34 @@ const CFGS: Cfg[] = [
   { name: 'tu-wm-trip', ops: ['start', 'steer'], K: 2, tu: true, wm: true, wmTrip: true, simWm: true, expect: 'deadlock', why: 'tripwire retake inside a WM+0x228 scope while the sim\'s admitted steering waits for WM+0x228 (inverted order)' },
   { name: 'tu-wm-trip-fixed', ops: ['start', 'steer'], K: 2, tu: true, wm: true, wmTrip: true, simWm: true, fixWm: true, expect: 'clean', why: 'FIX E: with the lot index dirty the worker takes the hold back before WM+0x228' },
   { name: 'p5b-wm-trip', ops: ['start', 'steer'], K: 2, p5b: true, wm: true, wmTrip: true, simWm: true, expect: 'deadlock', why: 'same inversion in a P5b clone run (#5 stub keeps WM+0x228 in clone runs, docs/94 D1)' },
+  // docs/182: [RouteSnap] RecsUnlocked (the replay consumer applies records without +0x918)
+  { name: 'rpu-base', ops: [...BASE, 'cut'], K: 3, main: true, rp: true, rpu: true, expect: 'clean', why: 'unlocked rounds beside jobs, steering, gates, a main acquirer and the sim cut (pool set by try)' },
+  { name: 'rpu-p5c', ops: ['start', 'collect', 'steer', 'writer', 'cut'], K: 3, p5b: true, p5c: true, door: true, rp: true, rpu: true, expect: 'clean', why: 'P5b / P5c windows: rounds run during lent windows; never inside a clone run (g_rpUse)' },
+  { name: 'rpu-tu', ops: ['start', 'collect', 'steer', 'cut'], K: 3, tu: true, rp: true, rpu: true, expect: 'clean', why: 'TailUnlock lends while rounds run' },
+  { name: 'rpu-trip-p5c', ops: ['start', 'collect', 'steer', 'cut'], K: 3, p5b: true, p5c: true, rp: true, rpu: true, rpuTrip: true, expect: 'clean', why: 'a +0x918 acquire inside a round (holding g_rpUse + pool set): PcAcquire refuses by deadline (mat), the cut defers; no deadlock' },
+  { name: 'mut-rpu-nouse', ops: ['start', 'collect'], K: 2, p5b: true, rp: true, rpu: true, mutRpuNoUse: true, expect: 'clone run', why: 'MUTATION: an unlocked round without g_rpUse and the pool set writes the clone under a clone run' },
   // mutations: the checks must bite
   { name: 'mut-close-recheck', ops: ['start', 'collect', 'close'], K: 3, mutNoCloseRecheck: true, expect: 'during a save/destroy/close body|close body while a job body runs', why: 'MUTATION (CE-1, code before fix A): rtClosing checked only before the start handshake; RT_CLOSING has no g_rgOffSimOpen frame' },
   { name: 'mut-tu-nobackstop', ops: ['start', 'collect'], K: 2, tu: true, tthrow: true, mutNoBackstop: true, expect: 'lend not returned', why: 'MUTATION (CE-4, code before fix D): the release after the unwind is not the worker\'s' },
   { name: 'mut-gate-order', ops: ['start', 'gate'], K: 2, mutGate: true, expect: 'while the worker reads live', why: 'MUTATION: gate reads A_RUNNING before publishing g_rgOffSimOpen' },
   { name: 'mut-h2-nodrop', ops: ['start', 'collect', 'pass'], passOps: ['collect'], K: 3, h2: true, mutNoDrop: true, expect: 'deadlock: sim at wj1', why: 'MUTATION: WaitJobDone without G0wDrop (and no watchdog)' },
   { name: 'h2-watchdog', ops: ['start', 'collect', 'pass'], passOps: ['collect'], K: 3, h2: true, h2wd: true, mutNoDrop: true, expect: 'clean', why: 'the same with the 250 ms watchdog: no deadlock, a held start goes after the timeout' },
+  // docs/177 §4: the footprint refcount race and the H2 IC window
+  { name: 'ic-rc-today', ops: ['start', 'collect', 'icq'], K: 3, expect: 'refcount race', why: 'TODAY (no window): a job starts in the gap after the IC\'s query release and writes [fp+4] beside the sim' },
+  { name: 'h2x', ops: ['start', 'collect', 'icq'], K: 4, h2x: true, expect: 'clean', why: 'H2 IC window: no job starts between the IC\'s entry and return; a job running at entry ends before the IC\'s acquire' },
+  { name: 'h2-h2x', ops: ['start', 'collect', 'pass', 'icq'], passOps: ['steer', 'collect'], K: 4, h2: true, h2x: true, expect: 'clean', why: 'H2 pass window and the IC window together' },
+  { name: 'h2x-tu', ops: ['start', 'collect', 'icq'], K: 3, h2x: true, tu: true, expect: 'refcount race', why: 'OPEN (docs/177 §6): a job already running lends +0x918 to the IC\'s query (TailUnlock passes 16-19), retakes it and goes on to its live tail (EditPath [fp+4] writes) while the IC does its plain writes; the window only stops new starts' },
+  { name: 'h2x-watchdog', ops: ['start', 'icq'], K: 2, h2x: true, h2wd: true, expect: 'refcount race', why: 'the 250 ms watchdog lets a held start go inside the window: the window must stay short (an IC is microseconds)' },
+  // docs/177 §7: [RouteAsync] RefcountGuard (rcguard.cpp): the sim keeps the query's +0x918 level until the caller returns
+  { name: 'rc-guard', ops: ['start', 'collect', 'icq'], K: 4, rcg: true, expect: 'clean', why: "guard alone (no H2 / H2Ic): the caller's writes run under +0x918, a job cannot be in its body" },
+  { name: 'rc-guard-tu', ops: ['start', 'collect', 'icq'], K: 3, rcg: true, tu: true, expect: 'clean', why: 'closes h2x-tu: a lend to the query is kept until the caller returns, the job retakes after the writes' },
+  { name: 'rc-guard-all', ops: ['start', 'collect', 'pass', 'icq'], passOps: ['icq', 'collect'], K: 3, rcg: true, h2: true, h2x: true, tu: true, expect: 'clean', why: 'with H2, H2Ic and TailUnlock (the measurement set)' },
+  { name: 'rc-guard-watchdog', ops: ['start', 'icq'], K: 2, rcg: true, h2x: true, h2wd: true, expect: 'clean', why: 'a start the watchdog lets go inside the IC window still waits for the kept level' },
+  { name: 'rc-guard-p5b', ops: ['start', 'collect', 'icq'], K: 3, rcg: true, p5b: true, door: true, expect: 'clean', why: 'P5b lends to the query; the door-ask retake waits for the caller' },
+  { name: 'rc-guard-wm', ops: ['start', 'icq'], K: 2, rcg: true, tu: true, wm: true, simWm: true, wmTrip: true, fixWm: true, expect: 'clean', why: 'the caller needs WM+0x228 while it keeps the lent lock; the FIX E retake order holds' },
+  { name: 'rc-guard-wait', ops: ['start', 'collect', 'icw'], K: 3, rcg: true, tu: true, expect: 'clean', why: 'a caller that collects a job before it returns: RcDrop releases the kept level before WaitJobDone / WaitAsyncDone' },
+  { name: 'mut-rc-early', ops: ['start', 'collect', 'icq'], K: 3, rcg: true, tu: true, mutRcEarly: true, expect: 'refcount race', why: "MUTATION: the level released at the query (today's order): the race is back" },
+  { name: 'mut-rc-nodrop', ops: ['start', 'collect', 'icw'], K: 3, rcg: true, mutRcNoDrop: true, expect: 'deadlock', why: 'MUTATION: no RcDrop before the sim waits: the kept level blocks the job the caller waits for' },
 ];
 
 function main() {

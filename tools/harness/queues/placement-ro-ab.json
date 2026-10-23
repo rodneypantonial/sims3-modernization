@@ -1,0 +1,115 @@
+{
+  "note": "[PlacementRO] (docs/174): gate-12 F-G placement waits (key 0x631F40) answered read-only during async route jobs. Settings = freeze-measure.json's IP all-on set (docs/162) + PlacementRO on the asi built after chain143 (game-copy/ts3native.asi.0333-placementro, counters v100). Job 1 is a correctness check (shadow compares with no job, Mode 0; day ok, no timing read). Job 2 is the forced ABBA loop (>= 10 firings per arm) ip-placement-crowd-loop (native_set placementro), timing: clean night only. Read: node tools/harness/freeze-report.ts <tag> and node tools/harness/wait-ab.ts (key 0x631F40 by arm; absorbing keys 0x833593, 0x8334CC, steering, 0x83156D, gate 0; docs/152 §1 conservation).",
+  "jobs": [
+    {
+      "id": "ip-placementro-shadow",
+      "note": "Correctness: [PlacementRO] Shadow=1 Mode=0 on the forced loop (fgShadow stays 1 in every arm: each no-job placement test runs the game's call then the clone; the loop's native_set sets fgMode 1 on the on arms, so in-job answers are exercised too). Pass: no crash, fgShadowRuns >= 20, fgShadowMismatch 0, fgFb_3 (shape) small. Short verify: loop rule 2 firings per arm (one ABBA cycle), cap 14 min. Day job (no timing read).",
+      "asi": "game-copy/ts3native.asi.0333-placementro",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 100,
+      "nativeRequire": "fgReady>=1,fgShadowRuns>=20,fgShadowMismatch<=0",
+      "ini": {
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 0,
+        "PlacementRO.Shadow": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 14,
+          "repro": "ip-placement-crowd-loop",
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "loopRule": {
+            "until": {
+              "perArm": 2
+            },
+            "maxMinutes": 14
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 26
+    },
+    {
+      "id": "ip-placementro-ab",
+      "note": "Forced ABBA (off, on, on, off; 10 firings per arm, Rodney 2026-10-23: forced loops only, no natural-play jobs) of ip-placement-crowd-loop with native_set placementro, freeze-measure.json's IP all-on set + PlacementRO Enabled=1 (switch flipped per arm). Pass: no crash, fgTaken >= 20, fgShadowMismatch 0. Read by arm: key 0x631F40 waits (on ~0), the iteration's summed +0x918 wait and the publish gaps >= 100/300 ms (freeze-report.ts, wait-ab.ts); expect the wait to move to the next taker unless the bundle (B0 + DeferFootprint2) is on too (docs/174 §5). Timing: clean night only.",
+      "asi": "game-copy/ts3native.asi.0333-placementro",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 100,
+      "nativeRequire": "fgReady>=1,fgTaken>=20,fgShadowMismatch<=0",
+      "ini": {
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 60,
+          "repro": "ip-placement-crowd-loop",
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true,
+          "loopRule": {
+            "until": {
+              "perArm": 10
+            },
+            "maxMinutes": 60
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 75
+    }
+  ]
+}

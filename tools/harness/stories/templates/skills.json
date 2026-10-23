@@ -1,0 +1,128 @@
+[
+  { "id": "skill-read-book", "category": "normal", "realism": "natural", "weight": 1.0,
+    "actors": [{ "role": "reader", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "book", "prepare": true }],
+    "steps": [{ "cmd": "interact", "actor": "reader", "target": { "find": "object", "value": "book" }, "label": "Read", "waitS": 60 }],
+    "cooldownMin": 20, "maxConcurrent": 3 },
+
+  { "id": "skill-skill-book", "category": "normal", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "reader", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "skill book", "prepare": true }],
+    "steps": [{ "cmd": "interact", "actor": "reader", "target": { "find": "object", "value": "skill book" }, "label": "Read", "waitS": 90 }],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "skill gain ticks, skill journal UI" },
+
+  { "id": "skill-learn-recipe", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "cook", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["Bookstore", "ComboBookstoreDaySpa", "ComboBusinessBookstore"], "prepare": false }, { "kind": "object", "value": "stove", "prepare": true }, { "kind": "object", "value": "fridge" }],
+    "steps": [
+      { "cmd": "interact", "actor": "cook", "target": { "find": "rabbithole", "value": ["Bookstore", "ComboBookstoreDaySpa", "ComboBusinessBookstore"] }, "label": "Buy Recipes", "waitS": 40, "optional": true },
+      { "cmd": "interact", "actor": "cook", "target": { "find": "object", "value": "fridge" }, "label": "Have", "waitS": 60 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1 },
+
+  { "id": "skill-instrument", "category": "normal", "realism": "cheat", "weight": 0.8,
+    "actors": [{ "role": "player", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "instrument", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "player", "target": { "find": "object", "value": "instrument" }, "label": "Practice", "waitS": 60 },
+      { "cmd": "set_skill", "args": { "sim": "$actor.player", "skill": "Guitar", "level": 5 }, "optional": true },
+      { "cmd": "interact", "actor": "player", "target": { "find": "object", "value": "instrument" }, "label": "Play", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "music audio streams, audience reactions" },
+
+  { "id": "skill-painting", "category": "normal", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "painter", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "easel", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "painter", "target": { "find": "object", "value": "easel" }, "label": "Paint", "waitS": 120 },
+      { "cmd": "cancel_interactions", "args": { "sim": "$actor.painter" }, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "finished painting: new object + texture build" },
+
+  { "id": "skill-chess", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "a", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "chess", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "a", "target": { "find": "object", "value": "chess" }, "label": "Play Chess", "waitS": 10 },
+      { "cmd": "interact", "actor": "b", "target": { "find": "object", "value": "chess" }, "label": "Join", "waitS": 60, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 1 },
+
+  { "id": "skill-gym", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "athlete", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "gym", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "athlete", "target": { "find": "object", "value": "gym" }, "label": "Work Out", "waitS": 60 },
+      { "cmd": "any_interaction", "actor": "athlete", "target": { "find": "venue", "value": "Gym" }, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "athletic outfit change" },
+
+  { "id": "skill-garden", "category": "normal", "realism": "natural", "weight": 0.9,
+    "actors": [{ "role": "gardener", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "garden plot", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "gardener", "target": { "find": "object", "value": "garden plot" }, "label": "Plant", "waitS": 40, "optional": true },
+      { "cmd": "interact", "actor": "gardener", "target": { "find": "object", "value": "garden plot" }, "label": "Water", "waitS": 30 },
+      { "cmd": "interact", "actor": "gardener", "target": { "find": "object", "value": "garden plot" }, "label": "Harvest", "waitS": 30, "optional": true },
+      { "cmd": "interact", "actor": "gardener", "target": { "find": "object", "value": "garden plot" }, "label": "Weed", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "inventory adds, plant growth timers" },
+
+  { "id": "skill-fishing", "category": "normal", "realism": "natural", "weight": 0.9,
+    "actors": [{ "role": "angler", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "fishing spot", "prepare": false }],
+    "steps": [
+      { "cmd": "interact", "actor": "angler", "target": { "find": "object", "value": "fishing spot" }, "label": "Fish", "waitS": 120 }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "route to a far community lot, water edge routing" },
+
+  { "id": "skill-telescope", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "thinker", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "telescope", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "thinker", "target": { "find": "object", "value": "telescope" }, "label": "Stargaze", "waitS": 60 },
+      { "cmd": "interact", "actor": "thinker", "target": { "find": "object", "value": "telescope" }, "label": "Search the Galaxy", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 1, "note": "night only for some entries; meteor follow-up possible" },
+
+  { "id": "skill-homework", "category": "normal", "realism": "natural", "weight": 1.0,
+    "actors": [{ "role": "kid", "age": ["Child", "Teen"], "occult": null, "pick": "driven" },
+               { "role": "parent", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven", "family": "kid" }],
+    "needs": [{ "kind": "age", "value": "Child", "prepare": true }, { "kind": "object", "value": "homework" }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "kid", "target": { "find": "object", "value": "homework" }, "waitS": 40 },
+      { "cmd": "interact", "actor": "parent", "target": "$actor.kid", "label": "Help with Homework", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "homework object in inventory; paired interaction" },
+
+  { "id": "skill-class-rabbithole", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "student", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "interact", "actor": "student", "target": { "find": "skillclass", "value": "any" }, "label": "Take", "waitS": 120 }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 2, "note": "skill class at a rabbit hole (city hall, gym, bookstore ...)" },
+
+  { "id": "skill-logic-chess-park", "category": "normal", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "a", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" },
+               { "role": "b", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "townie" }],
+    "needs": [{ "kind": "venue", "value": ["SmallPark", "BigPark", "RecreationPark"], "prepare": false }, { "kind": "object", "value": "chess", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.a", "lot": "$target" }, "target": { "find": "venue", "value": ["SmallPark", "BigPark", "RecreationPark"] }, "waitS": 60 },
+      { "cmd": "interact", "actor": "a", "target": { "find": "object", "value": "chess" }, "label": "Play Chess", "waitS": 60, "optional": true },
+      { "cmd": "interact", "actor": "a", "target": "$actor.b", "label": "Chat", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "community lot visit; townies streamed in" },
+
+  { "id": "skill-max-cheat-burst", "category": "normal", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "sim", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "set_skill", "args": { "sim": "$actor.sim", "skill": "Cooking", "level": 10 } },
+      { "cmd": "set_skill", "args": { "sim": "$actor.sim", "skill": "Logic", "level": 10 } },
+      { "cmd": "set_skill", "args": { "sim": "$actor.sim", "skill": "Painting", "level": 10 } },
+      { "cmd": "set_skill", "args": { "sim": "$actor.sim", "skill": "Athletic", "level": 10 }, "waitS": 20 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "opportunities, wishes and skill-up TNS in one burst" }
+]

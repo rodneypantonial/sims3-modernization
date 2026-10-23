@@ -1,0 +1,144 @@
+[
+  { "id": "life-try-for-baby", "category": "lifestage", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "mom", "gender": "Female", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "dad", "gender": "Male", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "bed", "prepare": true }],
+    "steps": [
+      { "cmd": "modify_relationship", "args": { "sim": "$actor.mom", "other": "$actor.dad", "liking": 100, "state": "Partner" }, "optional": true },
+      { "cmd": "interact", "actor": "mom", "target": "$actor.dad", "label": "Try for Baby", "waitS": 60 }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1 },
+
+  { "id": "life-pregnancy-to-birth", "category": "lifestage", "realism": "cheat", "weight": 1.2,
+    "actors": [{ "role": "mom", "gender": "Female", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "dad", "gender": "Male", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "pregnancy_advance", "args": { "sim": "$actor.mom", "partner": "$actor.dad", "to": "pregnant" }, "waitS": 30 },
+      { "cmd": "pregnancy_advance", "args": { "sim": "$actor.mom", "to": "labor" }, "waitS": 30 },
+      { "cmd": "pregnancy_advance", "args": { "sim": "$actor.mom", "to": "birth" }, "waitS": 60 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "maternity outfits, birth: new Sim build, naming dialog, crib routing" },
+
+  { "id": "life-hospital-birth", "category": "lifestage", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "mom", "gender": "Female", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "dad", "gender": "Male", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["Hospital", "ComboHospitalScienceLab"], "prepare": false }],
+    "steps": [
+      { "cmd": "pregnancy_advance", "args": { "sim": "$actor.mom", "partner": "$actor.dad", "to": "labor" }, "waitS": 10 },
+      { "cmd": "interact", "actor": "mom", "target": { "find": "rabbithole", "value": ["Hospital", "ComboHospitalScienceLab"] }, "label": "Have Baby", "waitS": 120, "optional": true },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "taxi to hospital, baby spawn off-lot" },
+
+  { "id": "life-toddler-skills", "category": "lifestage", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "tot", "age": ["Toddler"], "occult": null, "pick": "new" },
+               { "role": "parent", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven", "family": "tot" }],
+    "needs": [{ "kind": "age", "value": "Toddler", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "parent", "target": "$actor.tot", "label": "Teach to Walk", "waitS": 40 },
+      { "cmd": "interact", "actor": "parent", "target": "$actor.tot", "label": "Teach to Talk", "waitS": 40, "optional": true },
+      { "cmd": "interact", "actor": "parent", "target": "$actor.tot", "label": "Potty Train", "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "carry/put-down, potty object" },
+
+  { "id": "life-baby-care", "category": "lifestage", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "baby", "age": ["Baby"], "occult": null, "pick": "new" },
+               { "role": "parent", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven", "family": "baby" }],
+    "needs": [{ "kind": "age", "value": "Baby", "prepare": true }, { "kind": "object", "value": "crib", "prepare": true }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "parent", "target": "$actor.baby", "waitS": 30 },
+      { "cmd": "any_interaction", "actor": "parent", "target": "$actor.baby", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1 },
+
+  { "id": "life-teen-prom-driving", "category": "lifestage", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "teen", "age": ["Teen"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "age", "value": "Teen", "prepare": true }, { "kind": "ep", "value": "Generations" }, { "kind": "rabbithole", "value": ["CityHall", "CityHallEP11", "CityHallNoClock", "ComboCityhallPoliceMilitary"] }],
+    "steps": [
+      { "cmd": "interact", "actor": "teen", "target": { "find": "rabbithole", "value": ["CityHall", "CityHallEP11", "CityHallNoClock", "ComboCityhallPoliceMilitary"] }, "label": "Take Driving Lessons", "waitS": 90 },
+      { "cmd": "interact", "actor": "teen", "target": { "find": "rabbithole", "value": ["SchoolRabbitHole", "ComboSchoolStadium", "ComboSchoolStadiumEP7"] }, "label": "Prom", "waitS": 90, "optional": true }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "Generations prom is an event; gap: no command to fire prom on demand" },
+
+  { "id": "life-age-up-cake", "category": "lifestage", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "age_up", "args": { "sim": "$actor.sim" }, "waitS": 40 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 2, "note": "age transition: new outfits, trait dialog" },
+
+  { "id": "life-elder-day", "category": "lifestage", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "elder", "age": ["Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "age", "value": "Elder", "prepare": true }],
+    "steps": [
+      { "cmd": "career", "args": { "sim": "$actor.elder", "action": "quit" }, "optional": true },
+      { "cmd": "any_interaction", "actor": "elder", "target": { "find": "object", "value": "any" }, "waitS": 60 }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1, "note": "retirement pension, elder autonomy" },
+
+  { "id": "life-old-age-death", "category": "lifestage", "realism": "cheat", "weight": 0.4,
+    "actors": [{ "role": "elder", "age": ["Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "age", "value": "Elder", "prepare": true }],
+    "steps": [
+      { "cmd": "age_up", "args": { "sim": "$actor.elder", "confirm_elder_death": true }, "waitS": 90 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "death": "elder", "cooldownMin": 480, "maxConcurrent": 1, "note": "Grim Reaper visit, urn/tombstone, household change; scratch save only" },
+
+  { "id": "life-ghost-haunt", "category": "lifestage", "realism": "natural", "weight": 0.3,
+    "actors": [{ "role": "ghost", "age": ["YoungAdult", "Adult", "Elder"], "occult": "Ghost", "pick": "new" }],
+    "needs": [{ "kind": "occult", "value": "Ghost", "prepare": true }],
+    "steps": [
+      { "cmd": "make_occult", "args": { "sim": "$actor.ghost", "type": "Ghost" } },
+      { "cmd": "set_speed", "args": { "speed": 2 }, "waitS": 90 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "night ghost: RouteAsGhost through walls, scares" },
+
+  { "id": "life-adoption", "category": "lifestage", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "parent", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "phone" }],
+    "steps": [
+      { "cmd": "interact", "actor": "parent", "target": { "find": "object", "value": "phone" }, "label": "Adopt", "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "waitS": 90, "optional": true }
+    ],
+    "cooldownMin": 480, "maxConcurrent": 1, "note": "social worker arrival, new Sim build" },
+
+  { "id": "life-make-family-member", "category": "lifestage", "realism": "natural", "weight": 0.4,
+    "actors": [],
+    "needs": [],
+    "steps": [
+      { "cmd": "make_sim", "args": { "age": "Child" }, "waitS": 20 },
+      { "cmd": "make_sim", "args": { "age": "Toddler" }, "waitS": 20 }
+    ],
+    "cooldownMin": 240, "maxConcurrent": 1, "note": "household grows mid-play: new Sim builds" },
+
+  { "id": "gen-short-lifespan-days", "category": "lifestage", "realism": "natural", "weight": 0.5,
+    "actors": [],
+    "needs": [],
+    "steps": [
+      { "cmd": "set_aging", "args": { "enabled": true, "lifespan": "short" } },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 300 },
+      { "cmd": "set_speed", "args": { "speed": 1 }, "waitS": 20 },
+      { "cmd": "set_aging", "args": { "enabled": true, "lifespan": "normal" } }
+    ],
+    "cooldownMin": 720, "maxConcurrent": 1, "note": "several jumped days: birthdays, deaths, story progression in town; scratch save" },
+
+  { "id": "gen-family-line", "category": "lifestage", "realism": "cheat", "weight": 0.3,
+    "actors": [{ "role": "mom", "gender": "Female", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" },
+               { "role": "dad", "gender": "Male", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "set_aging", "args": { "enabled": true, "lifespan": "short" } },
+      { "cmd": "pregnancy_advance", "args": { "sim": "$actor.mom", "partner": "$actor.dad", "to": "birth" }, "waitS": 60 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 240 },
+      { "cmd": "set_speed", "args": { "speed": 1 } },
+      { "cmd": "set_aging", "args": { "enabled": true, "lifespan": "normal" } }
+    ],
+    "cooldownMin": 1440, "maxConcurrent": 1, "note": "birth then fast aging: family tree growth, age-ups in a row" }
+]

@@ -1,0 +1,165 @@
+{
+  "note": "Combined lock-taker arm (PLAN target (a); docs/175 + docs/174 + docs/176): steerro, avoidro, gate0ro, deferfootprint, deferfootprint2, routetoobjro, placementro, a10foreign flipped together per firing of ip-locktaker-loop (ABBA in one load, native_set; ini enables every piece, ForeignKinds=4 with ForeignKindsMode 0 so the switch decides). Measurement settings = tool-check.json (freeze-measure set: HitchAttr + Holders, ForegroundRender, RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, noSamplers); camera pan off (the repro drives the crowd). asi game-copy/ts3native.asi.0333 = the lock-taker integration build (0.36.29, counters v101): copy it there from the integration worktree out-int first. Order: 1 day verify (shadows, mechanism; any FAIL stops), 2 clean-night A/B (fixed 10 firings per arm, docs/168). Read: node tools/harness/hitch-ab.ts --scenario <tag> (per-arm hitches with CIs + the moved-waits table: every cause that grows in the on arm is the next target, memory moved-waits-loop), freeze-report.ts <tag> --repro-causes, route_replan rows for result equality.",
+  "jobs": [
+    {
+      "id": "ip-locktaker-verify",
+      "note": "Day (mechanism, not timing): one ABBA cycle (1 firing per arm), every shadow on (SteerRO, AvoidRO, Gate0RO, RouteToObjRO, PlacementRO). Pass: no crash, 0 watchdog lines, the six OK lines, every shadow mismatch and in-job apply 0, afActiveTrip 0, each piece answered on the on arms. Any FAIL: stop, fix, do not run job 2.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0,steerShadowMismatch<=0,avShadowMismatch<=0,avShadowMismatchB<=0,g0Mismatch<=0,rtoShadowMismatch<=0,fgShadowMismatch<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 1,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 1,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 8,
+          "repro": "ip-locktaker-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 1,
+              "minFirings": 1
+            },
+            "maxMinutes": 6
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-locktaker-ab",
+      "note": "Clean night (timing): ABBA until 10 firings per arm (fixed before the run, docs/168), shadows off, cap 60 min. Pass: as verify without the shadow rows, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: iterations >= 100/300/1000 ms, p99/p99.9/max, visible freezes, rtMaxKey split (removed keys 0x85FE10, 0x846D21, 0x62EF7A, 0x833593, 0x8334CC, 0x83156D, 0x631F40 and the absorbers 0x62FB74, 0x760BFF, 0x2000003, 0x82D296, 0x82A0F6), it/s, asyncUs, m2DoorWaitUs; moved-waits table drives the next fix.",
+      "asi": "game-copy/ts3native.asi.0333",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-locktaker-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    }
+  ]
+}

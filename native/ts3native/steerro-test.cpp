@@ -4513,12 +4513,12 @@ int main(int argc, char** argv) {
         }
         int rjpSites = 0;
         if (g_k8Rjp) {
-            for (int i = 0; i < RJS_N; i++) rjpSites += RjpInstallAt(i, kRjpSites[i].at, NULL);
+            for (int i = 0; i < RJS_GS0; i++) rjpSites += RjpInstallAt(i, kRjpSites[i].at, NULL);  // P-GS (v103) not on K8
             ts3native_counters.rjpReady = 1;
             if (HcInstallDoor(P4_DOOR_AT, P4_DOOR_TARGET)) g_hcOn = 1, ts3native_counters.dmMode = 2;  // docs/159 door stub, shadow
         }
         if (g_k8Sp) {
-            for (int i = 0; i < RJS_N; i++)
+            for (int i = 0; i < RJS_GS0; i++)
                 rjpSites += RjpInstallAt(i, kRjpSites[i].at, i == RJS_WORLD ? (void**)&g_k8AsOrig : NULL);
             ts3native_counters.rfbLogMs = 0;  // no split lines from K8
         }
@@ -4620,7 +4620,7 @@ int main(int argc, char** argv) {
             printf("K8 [RouteJobPhases] SyncPlans (STEERRO_SYNCPHASES): %d of %d sites, %ld sessions (%ld us, phases %ld us); world "
                    "A* calls entry loop %ld, open ground %ld, pre-pass %ld, other caller %ld; self us cand %ld, lot leg %ld, cell %ld, "
                    "world %ld, insert %ld, post %ld; dropped (unwound) %ld; sessions opened %ld, K8 plans %ld\n",
-                   rjpSites, (int)RJS_N, plans, us, sum, rc.sypLoopN[0], rc.sypLoopN[1], rc.sypLoopN[2], rc.sypLoopN[3],
+                   rjpSites, (int)RJS_GS0, plans, us, sum, rc.sypLoopN[0], rc.sypLoopN[1], rc.sypLoopN[2], rc.sypLoopN[3],
                    rc.sypPhaseUs[RJP_CAND], rc.sypPhaseUs[RJP_LOTLEG], rc.sypPhaseUs[RJP_CELL], rc.sypPhaseUs[RJP_WORLD],
                    rc.sypPhaseUs[RJP_INSERT], rc.sypPhaseUs[RJP_POST], rc.rjpDropped, rc.sypEntry[0], (LONG)g_k8Plans);
             assert(plans >= g_k8Plans && rc.sypEntry[0] == plans && rc.sypLoopN[0] + rc.sypLoopN[1] > 0 && rc.sypLoopN[3] == 0 &&
@@ -4631,7 +4631,7 @@ int main(int argc, char** argv) {
             const Ts3nCounters& rc = ts3native_counters;
             printf("K8 [RouteJobPhases] (STEERRO_PHASES): %d of %d sites, %ld jobs; entries cand %ld, lot leg %ld, cell %ld, portal %ld, "
                    "insert %ld, post %ld, lot graph %ld, water %ld; dropped (unwound) %ld\n",
-                   rjpSites, (int)RJS_N, rc.rjpJobs[0], rc.rjpN[0][RJP_CAND], rc.rjpN[0][RJP_LOTLEG], rc.rjpN[0][RJP_CELL],
+                   rjpSites, (int)RJS_GS0, rc.rjpJobs[0], rc.rjpN[0][RJP_CAND], rc.rjpN[0][RJP_LOTLEG], rc.rjpN[0][RJP_CELL],
                    rc.rjpN[0][RJP_PORTAL], rc.rjpN[0][RJP_INSERT], rc.rjpN[0][RJP_POST], rc.rjpN[0][RJP_LOTGRAPH], rc.rjpN[0][RJP_WATER],
                    rc.rjpDropped);
             assert(rc.rjpJobs[0] >= g_k8Plans && rc.rjpN[0][RJP_CAND] > 0 && rc.rjpN[0][RJP_LOTLEG] > 0 && rc.rjpN[0][RJP_INSERT] > 0);

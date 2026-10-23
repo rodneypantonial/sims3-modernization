@@ -77,6 +77,7 @@ import { checkRequire, numericFields, parseRequire } from './fixes-require.ts';
 import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
 import { checkTag, parseRule } from './frame-lead.ts';
 import { isSetup, runLoop, runStep, stopLine, withRule } from './repro-loop.ts';
+import { loadStory } from './story-fuzzer.ts';
 import { counterSwitches, nativeNames, nativeValues } from './native-switches.ts';
 import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
@@ -85,7 +86,7 @@ import { mayBeStuck } from './stuck-rule.ts';
 import { watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
-const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'loop-rule': { type: 'string' } } });
+const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-env-guard': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'loop-rule': { type: 'string' }, story: { type: 'string' } } });
 if (!values.tag) throw new Error('--tag required');
 const profOpts = values['prof-opts'] ? JSON.parse(values['prof-opts']) : {}; // fail before the game is touched on bad JSON
 if (values['vres-dry'] !== undefined && !/^[1-9]\d*$/.test(values['vres-dry'])) throw new Error('--vres-dry must be a positive integer');
@@ -103,6 +104,12 @@ const reproSteps: any[] = sinceLoad ? leadInCut(reproEntry.steps ?? []) : reproE
 if (!reproEntry.steps && !reproEntry.loop) throw new Error(`--repro ${values.repro}: no steps and no loop`);
 // --loop-rule '{until?, maxMinutes?}' (queue.ts run.profile.loopRule, docs/168 §7): the A/B queue's stop rule over the repro's own
 const reproLoop = reproEntry.loop ? withRule(reproEntry.loop, values['loop-rule'] ? JSON.parse(values['loop-rule']) : undefined) : null;
+// --story CONFIG (JSON or file, docs/171 §7): the story fuzzer drives 8-12 Sims for the window after any --repro steps, into
+// <tag>-story.jsonl; config and templates checked here, before the game is touched. Stack samplers off (they suspend the sim
+// thread); --no-env and --no-env-guard keep season / moon prepares (no 30 s test_env guard).
+const story = values.story ? loadStory(values.story, { seed: values.seed, envFree: !!values['no-env'] || !!values['no-env-guard'] }) : null;
+if (story && reproLoop) throw new Error('--story: not with a loop repro');
+if (story) values['no-samplers'] = true;
 // one A/B mechanism per run; side probes (non-kept Frida sessions) would run on to the cap after an early end
 if (reproLoop && (values.ab || values['until-compares'] || values.inroom || values.watchstalk || values.livereads2 || values.f4b || values.vres || values['vres-dry'])) throw new Error(`--repro ${values.repro} has a loop: not with --ab, --until-compares or a side probe`);
 const mins = Number(values.minutes), secs = mins * 60, pre = join(OUT, `${values.tag}`);
@@ -145,6 +152,8 @@ if (!paused.ok) throw new Error(`pause before setup failed: ${paused.error}`);
 // world conditions that skew measurements (agent test_env, docs/TESTING.md): the save's season, weather and moon play out;
 // winter / extreme cold (Sims freeze solid) becomes spring and a near full moon becomes first quarter. Before seeding so
 // a correction does not shift the seeded draws; the clock guard below repeats it every 30 s. --no-env turns it off.
+// --no-env-guard (queue profile.envGuard: false, story runs over sim days, docs/171 §16): the start correction only, then
+// seasons, weather and moons pass as in play (R-EP-3); keep the guard for short timing jobs
 const env = values['no-env'] ? null : await ag('test_env', {});
 if (env && !env.ok) throw new Error(`test_env failed: ${env.error}`); // an agent without test_env would silently test another season
 if (env) console.log(`${stamp()} test_env: ${JSON.stringify(env.result)}`);
@@ -228,7 +237,7 @@ const clockGuard = (async () => {
   let last = rng.simMinutes.start, misses = 0;
   for (const end = Date.now() + secs * 1000; !stopped && Date.now() < end;) {
     await sleep(30000);
-    if (env) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
+    if (env && !values['no-env-guard']) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
       const g = (await ag('test_env', { min_days_to_full: 1 }).catch(() => null))?.result;
       if (g?.changed?.length) console.log(`${stamp()} test_env guard: ${g.changed.join(', ')} (season ${g.season}, moon ${g.moon_phase})`);
     }
@@ -239,6 +248,9 @@ const clockGuard = (async () => {
     // pause bits, game dt, speed and window state at the trip (docs/85 §6: minimize pause = bit 2, device pause = bit 4)
     const cs = await ag('clock_state');
     console.log(`${stamp()} clock_state at the trip: ${JSON.stringify(cs.ok ? cs.result : cs.error)}`);
+    // which modal holds the clock (title, buttons) and whether a world switch is under way (story-smoke 2026-10-23)
+    const pd = await ag('pending_dialogs').catch(() => null), gs = await ag('game_state').catch(() => null);
+    console.log(`${stamp()} at the trip: dialog ${JSON.stringify(pd?.ok ? pd.result : pd?.error).slice(0, 400)}; sub_state ${gs?.result?.sub_state ?? '?'}, world ${gs?.result?.load_file ?? '?'}`);
     prof?.kill();
     await restoreFixes();
     process.exit(1);
@@ -415,6 +427,7 @@ const reproStep = async (s: any) => {
 };
 const reproRun = (async () => {
   for (const s of reproSteps) await runStep(s, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) }); // fixed waitS or adaptive waitUntil (repro-loop.ts)
+  if (story) await story.run({ ag, sleep, halted: () => stopped || Date.now() >= at(secs), pre }).catch(e => reproFail(e.message)); // household creation failed: stop the job
   if (!reproLoop) return;
   // firings inside the first minute are excluded by the hitch classifier (bp-overwatch-ab-loop2 2026-10-23: all 20 fell in it)
   // shortcut: 65 s even in a reused session (whose start edge is only 15 s), upgrade when reuse measurement matters
@@ -455,7 +468,10 @@ const upkeep = (async () => {
     const k = await ag('keep_alive', { threshold: -50 }); await ag('decline_requests');
     const ap = await ag('autopilot');
     await checkStuck();
-    appendFileSync(`${pre}-upkeep.log`, `${stamp()} ${k.ok ? `topped ${k.result.topped_up.length} repaired ${k.result.repaired?.length ?? 0}` : k.error} ${ap.ok ? `speedfix ${ap.result.speed_fixes} dialogs ${ap.result.cleared.length}` : ''}\n`);
+    const cleared: string[] = ap.ok ? ap.result.cleared : [];
+    appendFileSync(`${pre}-upkeep.log`, `${stamp()} ${k.ok ? `topped ${k.result.topped_up.length} repaired ${k.result.repaired?.length ?? 0}` : k.error} ${ap.ok ? `speedfix ${ap.result.speed_fixes} dialogs ${cleared.length}${cleared.length ? ` (${cleared.join('; ')})` : ''}${ap.result.restarted ? ' autopilot restarted' : ''}` : ''}\n`);
+    // which game dialog the autopilot answered, beside the story steps (docs/171 §13)
+    if (story && cleared.length) appendFileSync(`${pre}-story.jsonl`, JSON.stringify({ kind: 'dialog', t: Date.now(), answered: cleared, ...(ap.result.restarted && { restarted: true }) }) + '\n');
     untilCheck();
     if (stopped) break;
     await sleep(30000);

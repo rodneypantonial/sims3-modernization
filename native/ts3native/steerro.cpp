@@ -296,6 +296,7 @@ static void __cdecl TwEnter(int i, DWORD* slot) {
 }
 static void TwEnterBody(int i, DWORD* slot) {
     if (t_snapRun) return;  // P4 clone run: pass through
+    if (t_rpUl) return;     // replay consumer outside +0x918 (docs/182): clone trees, private pools; S2 reads none of it
     Ts3nCounters& k = ts3native_counters;
     const DWORD tid = GetCurrentThreadId();
     if (RgIsSim(tid)) {  // the writers' own thread (T-S7 by design); the clone calls none of them
@@ -568,13 +569,15 @@ static int SrCmpPtr(const void* a, const void* b) {
 // Footprints of lot (lo, hi) near pt as 0x631F10 / 0x631E20 collect them (point: radius r, record rec, mode 0; segment:
 // NULL context, mode 1), sorted by sub-object pointer like 0x82EDB0 / 0x82F0B0 copy them out. mode1: a point query with
 // 0x82EDB0's mode 1 ([AvoidRO], RouteFollow_A / _B): QueryPoint 0x667480 then picks visitor 0x662DD0 (0x669CD0 flag 1)
-// instead of 0x662DB0 (flag 0), nothing else changes [verified 0x667493..0x6674A4]
-static int SrQuery(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt, bool point, float r, const u8* rec, bool mode1 = false) {
+// instead of 0x662DB0 (flag 0), nothing else changes [verified 0x667493..0x6674A4]. flagOr 2 ([PlacementRO], docs/174): the
+// record's +0x28 options object applies (SrCollect's bit 2)
+static int SrQuery(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt, bool point, float r, const u8* rec, bool mode1 = false,
+                   DWORD flagOr = 0) {
     c->n = 0;
     c->fail = SR_OK;
     c->over = 0;
     c->rec = point ? rec : NULL;
-    c->flag = point && !mode1 ? 0 : 1;
+    c->flag = (point && !mode1 ? 0 : 1) | flagOr;
     const u8* entry;
     int why = SrEntry(p, lo, hi, true, &entry);
     if (why || !entry) return why;

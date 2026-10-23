@@ -1,0 +1,170 @@
+{
+  "note": "Clean night Sat 2026-10-24 (v0.1.5 plan): forced ABBA A/Bs on the combined asi.0338: T1 FbJobDeadline (SV crowd foreign jobs), refcount guard (hitches must not rise), D1 + H2Ic (IP goal ring). 10 firings per arm each, read with hitch-ab --scenario (moved-waits table). No agents or builds during the run.",
+  "jobs": [
+    {
+      "id": "sv-crowd-t1-ab",
+      "note": "Forced repro A/B: sv-crowd-foreign-loop ABBA until 10 firings per arm (fixed before the run, docs/168), fbjobdeadline flipped (ini installs it, the arm step decides; FbJobCapMs 300 on both arms = today's world A* cap), cap 45 min. Pass: no crash, the OK line, 0 watchdog lines, fbjdSkip_0 >= 1 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario <tag>): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits), fbjcWaitHist / fbjcSimWaitMaxUs (sim waits behind foreign jobs), fbjdLong, 'route async: long job' capAt per arm; expected on arm: no foreign job much past ~300 ms + one in-flight cell A* frame, >= 1000 ms freezes behind foreign jobs gone (docs/178 T1 est. SV -3..-4 per 10 min).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "fbjdReady>=7,fbjdSkip_0>=1,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   foreign job deadline": 1
+      },
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "sv-crowd-foreign-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-refcount-guard-ab",
+      "note": "Bundle check (clean night, timing): ip-refcount-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), refcountguard flipped per firing (ini installs it with Mode 0, the switch decides), measurement settings of tool-check.json, cap 45 min. Pass: no crash, the OK line, rcPass_4 0, rcDropped_1 0, no watchdog line, rcDeferred > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Hitches must not rise: per arm (hitch-ab.ts) iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved-waits table: does the kept level move waits to the worker's acquire or to new keys), it/s, asyncUs, rcHoldUs per arm. Expected: hitch change ~0 (the extra hold is the callers' loops, microseconds; inferred, not measured).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "rcReady>=1,rcDeferred>=1,rcPass_4<=0,rcDropped_1<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   refcount guard": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-refcount-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-goal-ring-ab",
+      "note": "Forced repro A/B: ip-goal-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), goalgen + h2ic flipped together (ini installs both with start mode 0, the switch decides), cap 45 min. Pass: no crash, both OK lines, 0 watchdog lines (g0wWatchdog 0), hxStale 0, ggArgMismatch 0, ggSkipped > 0 and hxHeld > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (does the hold move waits to new keys: moved-waits table), it/s, asyncUs; expected change in hitches ~0 (D1 <= ~1 ms per radius plan, H2Ic is a correctness fix).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 104,
+      "nativeRequire": "hxReady>=7,ggSkipped>=1,hxHeld>=1,ggArgMismatch<=0,hxStale<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   goal gen D1": 1,
+        "OK   H2 IC window": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 0,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-goal-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

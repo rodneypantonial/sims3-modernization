@@ -1,0 +1,127 @@
+[
+  { "id": "shop-bookstore", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "buyer", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["Bookstore", "ComboBookstoreDaySpa", "ComboBusinessBookstore"], "prepare": false }],
+    "steps": [
+      { "cmd": "interact", "actor": "buyer", "target": { "find": "rabbithole", "value": ["Bookstore", "ComboBookstoreDaySpa", "ComboBusinessBookstore"] }, "label": "Buy Books", "waitS": 40 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1, "note": "shop UI lists every book (string/thumbnail loads)" },
+
+  { "id": "shop-grocery", "category": "normal", "realism": "natural", "weight": 0.7,
+    "actors": [{ "role": "buyer", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["Grocery", "ComboDinerGrocery", "ComboDinerGroceryEP10"], "prepare": false }],
+    "steps": [
+      { "cmd": "interact", "actor": "buyer", "target": { "find": "rabbithole", "value": ["Grocery", "ComboDinerGrocery", "ComboDinerGroceryEP10"] }, "label": "Buy Groceries", "waitS": 40 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1 },
+
+  { "id": "shop-consignment", "category": "normal", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "seller", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "venue", "value": ["ConsignmentStore", "PotionShopConsignmentStore"], "prepare": false }, { "kind": "shop", "value": "register" }],
+    "steps": [
+      { "cmd": "interact", "actor": "seller", "target": { "find": "shop", "value": "register" }, "label": "Consign", "waitS": 40 },
+      { "cmd": "interact", "actor": "seller", "target": { "find": "shop", "value": "register" }, "label": "Browse", "waitS": 30, "optional": true },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1 },
+
+  { "id": "shop-ip-stall", "category": "world", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "buyer", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "ep", "value": "IslandParadise", "prepare": false }, { "kind": "shop", "value": "stall", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.buyer", "lot": "$lot" }, "target": { "find": "shop", "value": "stall" }, "waitS": 60 },
+      { "cmd": "any_interaction", "actor": "buyer", "target": { "find": "shop", "value": "stall" }, "waitS": 30 },
+      { "cmd": "auto_dialog", "args": {}, "optional": true }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "shop register UI; also covers any register/stall shop elsewhere" },
+
+  { "id": "shop-buy-place-furniture", "category": "normal", "realism": "cheat", "weight": 0.8,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "buy_open", "args": {}, "waitS": 5 },
+      { "cmd": "buy_category", "args": {}, "waitS": 5, "optional": true },
+      { "cmd": "buy_object", "args": { "product": "random", "near": "$actor.owner" }, "optional": true },
+      { "cmd": "buy_object", "args": { "product": "random", "near": "$actor.owner" }, "optional": true },
+      { "cmd": "buy_close", "args": {}, "waitS": 20 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1, "note": "buy mode catalog thumbnails, placement footprints (UpdateSimFootprint, docs/89); bought in Buy mode with the household's own funds (docs/171 §16)" },
+
+  { "id": "build-mode-walls", "category": "normal", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "build_mode", "args": { "on": true }, "waitS": 5 },
+      { "cmd": "build_presets", "args": {}, "optional": true },
+      { "cmd": "auto_roof", "args": {}, "optional": true },
+      { "cmd": "build_mode", "args": { "on": false }, "waitS": 30 }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "build exit replans every route on the lot (docs/141)" },
+
+  { "id": "build-mode-flip", "category": "normal", "realism": "stress", "weight": 0.5,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "spawn_sims", "args": { "count": 6 } },
+      { "cmd": "build_mode", "args": { "on": true }, "waitS": 3 },
+      { "cmd": "build_mode", "args": { "on": false }, "waitS": 3 },
+      { "cmd": "buy_open", "args": {}, "waitS": 3 },
+      { "cmd": "buy_close", "args": {}, "waitS": 20 }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 1, "note": "build/buy in/out with Sims routing: replan-all spike" },
+
+  { "id": "build-sell-replace", "category": "normal", "realism": "natural", "weight": 0.3,
+    "actors": [{ "role": "owner", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "buy_open", "args": {} },
+      { "cmd": "sell_object", "target": { "find": "object", "value": "any" }, "optional": true },
+      { "cmd": "buy_object", "args": { "product": "random", "near": "$actor.owner" }, "optional": true },
+      { "cmd": "buy_close", "args": {}, "waitS": 20 }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "sell and buy in Buy mode, household funds (docs/171 §16)" },
+
+  { "id": "cas-plan-outfit", "category": "normal", "realism": "natural", "weight": 0.5,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "cas_open", "args": { "sim": "$actor.sim" }, "waitS": 10 },
+      { "cmd": "cas_category", "args": {}, "optional": true },
+      { "cmd": "cas_parts", "args": {}, "optional": true },
+      { "cmd": "cas_close", "args": {}, "waitS": 20 }
+    ],
+    "cooldownMin": 90, "maxConcurrent": 1, "note": "CAS enter/exit: thumbnails, outfit builds (docs/42)" },
+
+  { "id": "cas-outfit-swaps", "category": "normal", "realism": "stress", "weight": 0.5,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "outfit_change", "args": { "category": "formal", "count": 3 }, "waitS": 10 },
+      { "cmd": "outfit_change", "args": { "category": "athletic", "count": 3 }, "waitS": 10 },
+      { "cmd": "restore_outfit", "args": { "sim": "$actor.sim" }, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "sim-thread CAS builds on spin" },
+
+  { "id": "cam-far", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [],
+    "needs": [],
+    "steps": [{ "cmd": "camera_jumps", "args": { "order": "far", "lots": 8, "loops": 1 }, "waitS": 80 }],
+    "cooldownMin": 30, "maxConcurrent": 1, "note": "lot streaming hitches (docs/169 bp-main-lots)" },
+
+  { "id": "cam-populated", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [],
+    "needs": [],
+    "steps": [{ "cmd": "camera_jumps", "args": { "order": "populated", "lots": 6, "loops": 1, "spawn": 3, "outfits": 4 }, "waitS": 60 }],
+    "cooldownMin": 30, "maxConcurrent": 1, "note": "CAS builds + streaming on busy lots (docs/169 bp-main-cas)" },
+
+  { "id": "cam-pan-follow", "category": "normal", "realism": "natural", "weight": 0.4,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "venue", "value": "any", "prepare": false }],
+    "steps": [
+      { "cmd": "sim_visit_lot", "args": { "sim": "$actor.sim", "lot": "$target" }, "target": { "find": "venue", "value": "any" } },
+      { "cmd": "camera_pan", "args": {}, "waitS": 40, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 1, "note": "camera follows a driving Sim: streaming along the road" }
+]

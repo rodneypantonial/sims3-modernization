@@ -1,0 +1,4 @@
+{ "world": "Isla Paradiso",
+  "goodFor": "Island Paradise: diving spots, houseboats and boat travel, beach lots, market stalls and shops, mermaids, resorts; water routing and sea checks.",
+  "categoryBias": { "normal": 1.0, "world": 1.8, "lifestage": 0.8, "chaos": 1.1, "occult": 0.8 },
+  "templateBias": { "world-ip-": 3.0, "world-": 0.3, "shop-ip-": 2.5, "occult-mermaid": 3.0, "chaos-pool-drown": 0.6 } }

@@ -1,0 +1,174 @@
+{
+  "id": "random-106",
+  "name": "Brook Household",
+  "archetype": null,
+  "seed": 106,
+  "structure": "couple-kids",
+  "summary": "couple-kids (random)",
+  "funds": 27000,
+  "balance": {
+    "up": 7,
+    "down": 4,
+    "neutral": 2
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Ines",
+      "last": "Brook",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Virtuoso",
+        "Angler",
+        "Daredevil",
+        "Friendly",
+        "HotHeaded"
+      ],
+      "wish": {
+        "id": 3074810660,
+        "name": "Have N different perfect fish in bowls"
+      },
+      "food": "VegetarianDimSum",
+      "music": "FutureWorld",
+      "color": "Lilac",
+      "zodiac": "Pisces",
+      "voice": "A",
+      "storyPersona": "chaos-agent",
+      "persona": "Ines (Adult): Virtuoso, Angler, Daredevil, Friendly, HotHeaded. Upside: music skills faster, better performances, sings; catches fish faster and enjoys fishing (moodlet), better fish. Downside: loses temper (fights, Furious), relationship hits, punches.",
+      "expect": [
+        {
+          "trait": "Virtuoso",
+          "plus": "music skills faster, better performances, sings",
+          "minus": "plays music at all hours (noise), spends time on instruments"
+        },
+        {
+          "trait": "Angler",
+          "plus": "catches fish faster and enjoys fishing (moodlet), better fish",
+          "minus": "gets restless away from water, spends free time fishing instead of chores"
+        },
+        {
+          "trait": "Daredevil",
+          "plus": "enjoys thrill objects, fearless climbing, extra fun",
+          "minus": "takes risky interactions (fire, stunts), injuries and deaths more likely"
+        },
+        {
+          "trait": "Friendly",
+          "plus": "friendly socials succeed, quick friends, relationships decay slower",
+          "minus": "too nice to refuse; spends time chatting instead of needs"
+        },
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Omar",
+      "last": "Brook",
+      "age": "Adult",
+      "gender": "Male",
+      "traits": [
+        "Genius",
+        "Excitable",
+        "BookWorm",
+        "Clumsy",
+        "CouchPotato"
+      ],
+      "wish": {
+        "id": 2287246491,
+        "name": "Logic skill L10 and chess master rank"
+      },
+      "food": "SpaghettiWithVeggiSauce",
+      "music": "Latin",
+      "color": "Green",
+      "zodiac": "Capricorn",
+      "voice": "A",
+      "storyPersona": "chaos-agent",
+      "persona": "Omar (Adult): Genius, Excitable, BookWorm, Clumsy, CouchPotato. Upside: Logic skill faster, chess, science and invention success; big positive moodlets from good events. Downside: big swings: overreacts to bad events too; trips, spills food, falls, fails exercises; slower skill progress on some objects.",
+      "expect": [
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "BookWorm",
+          "plus": "reads faster, Writing skill faster, enjoys books (moodlet)",
+          "minus": "reads instead of eating or sleeping, buys many books (money)"
+        },
+        {
+          "trait": "Clumsy",
+          "plus": "comic relief; harmless trips can be funny",
+          "minus": "trips, spills food, falls, fails exercises; slower skill progress on some objects"
+        },
+        {
+          "trait": "CouchPotato",
+          "plus": "big fun from TV, comfortable on couches",
+          "minus": "hates exercise, gains weight, low energy for jobs that need fitness"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Ivan",
+      "last": "Brook",
+      "age": "Child",
+      "gender": "Male",
+      "traits": [
+        "NeverNude",
+        "Neat",
+        "HotHeaded"
+      ],
+      "wish": null,
+      "food": "FrogsLegs",
+      "music": "Disco",
+      "color": "Lilac",
+      "zodiac": "Libra",
+      "voice": "A",
+      "storyPersona": "student",
+      "persona": "Ivan (Child): NeverNude, Neat, HotHeaded. Upside: cleans autonomously, tidy home, cleaner lots. Downside: showers in a swimsuit, refuses nude activities and some saunas; loses temper (fights, Furious), relationship hits, punches.",
+      "expect": [
+        {
+          "trait": "NeverNude",
+          "plus": "modesty: no skinny dipping embarrassment",
+          "minus": "showers in a swimsuit, refuses nude activities and some saunas"
+        },
+        {
+          "trait": "Neat",
+          "plus": "cleans autonomously, tidy home, cleaner lots",
+          "minus": "negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting"
+        },
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "partner"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "parent"
+    }
+  ]
+}

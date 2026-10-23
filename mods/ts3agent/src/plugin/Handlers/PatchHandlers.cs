@@ -132,10 +132,10 @@ namespace Ts3Agent
             AppDomain d = AppDomain.CurrentDomain;
             Dictionary<string, object> r = Util.Obj();
             r["applied"] = d.GetData("ts3fixes.applied");
-            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[246];
+            int[] c = d.GetData("ts3fixes.counters") as int[] ?? new int[248];
             Dictionary<string, bool> sw = d.GetData("ts3fixes.switches") as Dictionary<string, bool>;
             if (sw == null) { sw = new Dictionary<string, bool>(); d.SetData("ts3fixes.switches", sw); }
-            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "stuckcheckasync", "safespotcap", "farthestsorted", "indoorcap", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask", "doormirror", "autshadow", "autshadowverify", "autledger", "replandefer", "replanspread", "unseenenv", "unseenmotives", "unseenbroadcast", "unseenprobe", "unseencars", "overwatchspread", "overwatchchain", "overwatchspreadverify", "overwatchspreadfakeupstream", "errortrapspread", "errortrapspreadverify", "errortrapspreadfakeupstream", "easpreadlots", "easpreadlotsverify", "easpreadpets", "easpreaddecay", "easpreaddecayverify", "routesrc", "legreplanskip", "bouncerskip", "idlememo", "stuckchecknear", "failrepeat" };
+            string[] names = { "gohome", "rabbithole", "visit", "visitlot", "gotolot", "gotocommunity", "broadcast", "virtualhome", "failreplan", "watchdog", "watchdogidle", "backoff", "stations", "spotspread", "savecleanup", "overwatchstuck", "asyncreplanforeign", "portaladaptorleak", "casgrid", "casmemo", "spatialcache", "routablecache", "stuckcheckbusy", "stuckcheckasync", "safespotcap", "farthestsorted", "indoorcap", "fastreftable", "cachedreflection", "motivebar", "buffgrid", "namecache", "detailprio", "detailprioverify", "hoursmemo", "hoursmemoverify", "caneearly", "tooltipthrottle", "safespotreuse", "safespotreuseverify", "wildflowerprobe", "wildflowertask", "doormirror", "autshadow", "autshadowverify", "autledger", "replandefer", "replanspread", "unseenenv", "unseenmotives", "unseenbroadcast", "unseenprobe", "unseencars", "overwatchspread", "overwatchchain", "overwatchspreadverify", "overwatchspreadfakeupstream", "errortrapspread", "errortrapspreadverify", "errortrapspreadfakeupstream", "easpreadlots", "easpreadlotsverify", "easpreadpets", "easpreaddecay", "easpreaddecayverify", "routesrc", "legreplanskip", "bouncerskip", "idlememo", "stuckchecknear", "failrepeat" };
             foreach (string n in names)
             {
                 if (a.Has(n)) sw[n] = a.Bool(n, true);
@@ -218,6 +218,7 @@ namespace Ts3Agent
                 r["failrepeat_recorded"] = c[241]; r["failrepeat_answered"] = c[242]; r["failrepeat_skipped_ms"] = c[243];
             }
             if (c.Length > 245) { r["owchain_alarms"] = c[244]; r["owchain_yields"] = c[245]; } // overwatchchain (OverwatchSpread.cs, docs/145 §10)
+            if (c.Length > 247) { r["a10foreign_sent"] = c[246]; r["a10foreign_started"] = c[247]; } // asyncreplanforeign (RouteBackoff.cs, docs/176)
             r["easpread_log"] = d.GetData("ts3fixes.easpread"); // one line per pass and path (ours / game's), verify censuses
             r["autshadow_reasons"] = d.GetData("ts3fixes.autshadow.reasons"); // A4 aborts per native reason index (row, pos, memo, rng, ... other)
             r["wildflower_log"] = d.GetData("ts3fixes.wildflower"); // one line per fire with wildflowerprobe or wildflowertask on

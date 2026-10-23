@@ -1,0 +1,94 @@
+[
+  { "id": "daily-work-day", "category": "normal", "realism": "cheat", "weight": 1.5,
+    "actors": [{ "role": "worker", "age": ["YoungAdult", "Adult"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["BusinessAndJournalismRabbitHole", "ComboBusinessBookstore", "ComboBusinessRestaurant"], "prepare": false }],
+    "steps": [
+      { "cmd": "career", "args": { "sim": "$actor.worker", "action": "join", "career": "Business" }, "optional": true },
+      { "cmd": "interact", "actor": "worker", "target": { "find": "rabbithole", "value": ["BusinessAndJournalismRabbitHole", "ComboBusinessBookstore", "ComboBusinessRestaurant"] }, "label": "Go To Work", "waitS": 90 },
+      { "cmd": "career", "args": { "sim": "$actor.worker", "action": "promote" }, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "rabbit-hole enter/exit, carpool, career UI refresh" },
+
+  { "id": "daily-school", "category": "normal", "realism": "cheat", "weight": 1.2,
+    "actors": [{ "role": "kid", "age": ["Child", "Teen"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "rabbithole", "value": ["SchoolRabbitHole", "ComboSchoolStadium", "ComboSchoolStadiumEP7"], "prepare": false }, { "kind": "age", "value": "Child", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "kid", "target": { "find": "rabbithole", "value": ["SchoolRabbitHole", "ComboSchoolStadium", "ComboSchoolStadiumEP7"] }, "label": "Go To School", "waitS": 90, "optional": true },
+      { "cmd": "set_motive", "args": { "sim": "$actor.kid", "motive": "Fun", "value": -50 } }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "school bus, rabbit hole" },
+
+  { "id": "daily-cook-family-meal", "category": "normal", "realism": "natural", "weight": 1.5,
+    "actors": [{ "role": "cook", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "stove", "prepare": true }, { "kind": "object", "value": "fridge", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "cook", "target": { "find": "object", "value": "fridge" }, "label": "Group Meal", "waitS": 60 },
+      { "cmd": "any_interaction", "actor": "cook", "target": { "find": "object", "value": "table" }, "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 45, "maxConcurrent": 2, "note": "group meal: plates for every household member, chair routing" },
+
+  { "id": "daily-quick-meal", "category": "normal", "realism": "natural", "weight": 1.0,
+    "actors": [{ "role": "eater", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "fridge", "prepare": true }],
+    "steps": [
+      { "cmd": "interact", "actor": "eater", "target": { "find": "object", "value": "fridge" }, "label": "Quick Meal", "waitS": 40 }
+    ],
+    "cooldownMin": 20, "maxConcurrent": 3 },
+
+  { "id": "daily-clean-house", "category": "normal", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "cleaner", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "sink" }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "cleaner", "target": { "find": "object", "value": "sink" }, "waitS": 20 },
+      { "cmd": "interact", "actor": "cleaner", "target": { "find": "object", "value": "toilet" }, "label": "Clean", "waitS": 30, "optional": true },
+      { "cmd": "interact", "actor": "cleaner", "target": { "find": "object", "value": "trash can" }, "label": "Empty", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 60, "maxConcurrent": 2, "note": "dirty-object scans, trash routing" },
+
+  { "id": "daily-pay-bills", "category": "normal", "realism": "natural", "weight": 0.6,
+    "actors": [{ "role": "payer", "age": ["YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "mailbox" }],
+    "steps": [
+      { "cmd": "interact", "actor": "payer", "target": { "find": "object", "value": "mailbox" }, "label": "Pay Bills", "waitS": 20 },
+      { "cmd": "interact", "actor": "payer", "target": { "find": "object", "value": "mailbox" }, "label": "Get Mail", "waitS": 20, "optional": true }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 1 },
+
+  { "id": "daily-sleep-night", "category": "normal", "realism": "cheat", "weight": 1.0,
+    "actors": [{ "role": "sleeper", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "bed", "prepare": true }],
+    "steps": [
+      { "cmd": "set_motive", "args": { "sim": "$actor.sleeper", "motive": "Energy", "value": -70 } },
+      { "cmd": "interact", "actor": "sleeper", "target": { "find": "object", "value": "bed" }, "label": "Sleep", "waitS": 90 },
+      { "cmd": "set_speed", "args": { "speed": 3 }, "waitS": 30 },
+      { "cmd": "set_speed", "args": { "speed": 1 } }
+    ],
+    "cooldownMin": 120, "maxConcurrent": 3, "note": "speed 3 overnight: dreams, nightly alarms (docs/145-147)" },
+
+  { "id": "daily-shower-bathroom", "category": "normal", "realism": "cheat", "weight": 0.8,
+    "actors": [{ "role": "sim", "age": ["Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "shower", "prepare": true }],
+    "steps": [
+      { "cmd": "set_motive", "args": { "sim": "$actor.sim", "motive": "Bladder", "value": -60 } },
+      { "cmd": "interact", "actor": "sim", "target": { "find": "object", "value": "shower" }, "label": "Take Shower", "waitS": 40 }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 3, "note": "outfit change into towel, routing to bathroom" },
+
+  { "id": "daily-autonomy-hour", "category": "normal", "realism": "cheat", "weight": 1.5,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [],
+    "steps": [
+      { "cmd": "set_motive", "args": { "sim": "$actor.sim", "motive": "Fun", "value": -40 } },
+      { "cmd": "set_motive", "args": { "sim": "$actor.sim", "motive": "Social", "value": -40 }, "waitS": 120 }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 4, "note": "free will with low motives: autonomy scoring cost (docs/59, 75)" },
+
+  { "id": "daily-tv-and-computer", "category": "normal", "realism": "natural", "weight": 0.8,
+    "actors": [{ "role": "sim", "age": ["Child", "Teen", "YoungAdult", "Adult", "Elder"], "occult": null, "pick": "driven" }],
+    "needs": [{ "kind": "object", "value": "computer", "prepare": true }],
+    "steps": [
+      { "cmd": "any_interaction", "actor": "sim", "target": { "find": "object", "value": "computer" }, "waitS": 40 },
+      { "cmd": "interact", "actor": "sim", "target": { "find": "object", "value": "tv" }, "label": "Watch", "waitS": 30, "optional": true }
+    ],
+    "cooldownMin": 30, "maxConcurrent": 2, "note": "computer menus open UI, TV channels stream audio" }
+]

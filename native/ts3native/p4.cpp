@@ -351,6 +351,7 @@ static void P4NrEnter() {
             return;
         }
         InterlockedDecrement(&g_snNrIn);
+        RcDrop();  // docs/177 §7: the clone run may need +0x918 back (door ask, tripwire) before it ends
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
         while (SnLive()) Sleep(0);

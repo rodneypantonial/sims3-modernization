@@ -1,0 +1,333 @@
+id,name,ep,group,ages,sets,cas,points,random_weight,desired_commodity,avoided_commodity,story_persona,positive,negative,refs,source
+AbsentMinded,AbsentMinded,BaseGame,Intellect,B P C T Y A E,301,human,-10,5,,,,"occasional bursts of insight, skill gain unaffected","forgets what it was doing (cancels own actions), forgets names, wanders off mid-task",MagicianCareer PerformanceArtistCareer SingerCareer AlienUtils,game data + community
+Ambitious,Ambitious,BaseGame,Lifestyle,C T Y A E,,human,10,20,,,career-climber,"faster job performance and promotions, more wishes for career",stressed and unhappy when not promoted for a while (Stressed moodlet),MagicianCareer PerformanceArtistCareer SingerCareer MidlifeCrisisManager,game data + community
+Angler,Angler,BaseGame,Lifestyle,C T Y A E,,human,10,20,,,,"catches fish faster and enjoys fishing (moodlet), better fish","gets restless away from water, spends free time fishing instead of chores",OccultMermaid FishHere Fishing FishTank,game data + community
+AntiTV,AntiTV,BaseGame,Lifestyle,C T Y A E,92 102 110,human,-10,5,,,,"skips TV for books, hobbies and skills",uncomfortable (moodlet) when made to watch TV; no TV fun source,GameObject ShowVenue SimUpdate BuffBeingStalked,game data + community
+Artistic,Artistic,BaseGame,Intellect,B P C T Y A E,108,human,10,20,,,,"paints, writes and plays music faster and better, sells art",autonomy pulls to easel/instruments over chores and needs,SculptureComponent ScientificSample BandSkill InfluenceSkillRebel,game data + community
+Athletic,Athletic,BaseGame,Physical,B P C T Y A E,2,human,10,20,,,,"skill Athletic faster, fitness, less fatigue from exercise",Couch Potato conflict; gets fidgety (moodlet) when sedentary for long,AthleticGameObject PerformanceArtistCareer Terrain SnowWaterFight,game data + community
+BookWorm,BookWorm,BaseGame,Intellect,C T Y A E,3 39,human,10,20,,,,"reads faster, Writing skill faster, enjoys books (moodlet)","reads instead of eating or sleeping, buys many books (money)",Book BookSkill ReadBook ReadWhileRocking,game data + community
+Brave,Brave,BaseGame,Physical,B P C T Y A E,7 8 50,human,10,20,,,,"firefighting, ghost and burglar encounters without fear, extinguishes fires",runs into fires and danger; risky interactions offered,SimUpdate BuffTerrified OccultFrankenstein OccultMummy,game data + community
+Burglar,Burglar,BaseGame,None,None,,hidden,,,,,,,,,game data
+CanApprehendBurglar,CanApprehendBurglar,BaseGame,None,None,,hidden,,,,,,,,,game data
+CanSalute,CanSalute,BaseGame,None,None,,hidden,,,,,,,,,game data
+CantStandArt,CantStandArt,BaseGame,Intellect,C T Y A E,108 173 901,human,-10,5,,,,"saves money on art, comedic reactions","negative moodlet near paintings and sculptures, mocks art",ViewObjects SculptureComponent Cane AbstractArtObject,game data + community
+Charismatic,Charismatic,BaseGame,Social,T Y A E,5 9 902,human,10,20,,,socialite,"Charisma skill faster, conversations succeed, more friends","socially demanding: wants company, Lonely sooner",BuffSnuckIn RoommateManager SueForSlander LoveLetter,game data + community
+Childish,Childish,BaseGame,Lifestyle,T Y A E,44 45,human,0,10,,,,"fun from toys, playful socials with kids",acts silly in serious moments; adults find it awkward,Door StaircaseSpiralWithRailing Windows SimUpdate,game data + community
+Clumsy,Clumsy,BaseGame,Physical,B P C T Y A E,800,human,0,20,,,chaos-agent,comic relief; harmless trips can be funny,"trips, spills food, falls, fails exercises; slower skill progress on some objects",MagicianCareer PerformanceArtistCareer PerformanceCareer SingerCareer,game data + community
+CommitmentIssues,CommitmentIssues,BaseGame,Social,T Y A E,107,human,-10,10,,,,"career switches without penalty, freedom","negative moodlet when going steady/engaged/married, wants to break up, job ties",MidlifeCrisisManager ChangeRelationship LoveTesterMachine,game data + community
+ComputerWhiz,ComputerWhiz,BaseGame,Intellect,C T Y A E,35 40 92,human,10,20,,,,"computer skills fast, hacks money, repairs computers",spends hours at the computer instead of needs,Snowman ScienceGeek InfluenceSkillNerd ChallengeDelegateFunctions,game data + community
+CouchPotato,CouchPotato,BaseGame,Physical,B P C T Y A E,2 110 130,human,-10,15,,,,"big fun from TV, comfortable on couches","hates exercise, gains weight, low energy for jobs that need fitness",AthleticGameObject BuffComfy WerewolfPlayFetchJig SleepStage,game data + community
+Coward,Coward,BaseGame,Physical,C T Y A E,7 13 801 701,human,-10,10,,,,"avoids danger, runs from fires (survives)","scared of ghosts, burglars and the dark (Scared moodlets), panics",Door MagicianCareer PerformanceArtistCareer SingerCareer,game data + community
+Daredevil,Daredevil,BaseGame,Lifestyle,C T Y A E,13,human,10,15,,,chaos-agent,"enjoys thrill objects, fearless climbing, extra fun","takes risky interactions (fire, stunts), injuries and deaths more likely",StaircaseSpiralWithRailing SimRoutingComponent SimUpdate BuffFear,game data + community
+DislikesChildren,DislikesChildren,BaseGame,Social,T Y A E,44 75 711,human,-10,5,,,,saves time and money without kids; quiet house,"negative moodlets around children, poor parent, refuses Try for Baby wishes",ReactionInteraction TraitFunctions CarryingChildPosture Cane,game data + community
+EasilyImpressed,EasilyImpressed,BaseGame,Social,B P C T Y A E,128 901,human,0,15,,,,"easy to befriend, enjoys everything",gullible; impressed by bad performances and scams,PerformanceCareer SimUpdate TraitFunctions FishHere,game data + community
+Evil,Evil,BaseGame,Lifestyle,B P C T Y A E,14,human,-10,2,,,chaos-agent,"fiendish laugh fun, mean socials succeed, Evil career boost","relationship hits (mean socials, pranks), Good Sims dislike it, unhappy around good deeds",AcademicCourse PerformanceCareer PrivateEyeInteractions SimUpdate,game data + community
+Excitable,Excitable,BaseGame,Intellect,B P C T Y A E,42 704,human,0,20,,,,big positive moodlets from good events,big swings: overreacts to bad events too,SimUpdate BuffExcited BuffHaunted BuffTerrified,game data + community
+FamilyOriented,FamilyOriented,BaseGame,Lifestyle,C T Y A E,75,human,0,20,,,family,"better with kids, happy with family (moodlet), good parenting","misses family when apart (Homesick), demanding wishes for babies",RoommateManager TeachToTalk TeachToWalk Autonomy,game data + community
+Flirty,Flirty,BaseGame,Social,T Y A E,30 31,human,10,15,Amorous,,socialite,"romance socials succeed, quick relationships",flirts autonomously with others: jealousy and breakups,ScientificSample StartSeatedCuddleA Pool Proprietor,game data + community
+Friendly,Friendly,BaseGame,Social,B P C T Y A E,47 48,human,10,20,Friendly,Insulting,,"friendly socials succeed, quick friends, relationships decay slower",too nice to refuse; spends time chatting instead of needs,SimUpdate LookAtManager OccultMermaid PetReinforcementManager,game data + community
+Frugal,Frugal,BaseGame,Lifestyle,C T Y A E,,human,10,15,,,,"bills cheaper feel, happy when saving (moodlet), shops cheap",refuses expensive objects; unhappy spending money,LightGameObject ShoppingRabbitHole PerformanceCareer LaundryManager,game data + community
+Genius,Genius,BaseGame,Intellect,B P C T Y A E,18,human,10,20,,,,"Logic skill faster, chess, science and invention success",boredom with simple tasks; socially awkward with non-geniuses,AlienUtils OccultTimeTraveler ContemplateSomethingAutonomous Terrain,game data + community
+Good,Good,BaseGame,Lifestyle,B P C T Y A E,14 37 49,human,10,20,,Insulting,,"charity, helps others, relationships rise, Good moodlets",negative moodlet when doing or seeing mean acts; refuses Evil options,AcademicCourse PerformanceCareer PrivateEyeInteractions BuffMummysCurse,game data + community
+GoodSenseOfHumor,GoodSenseOfHumor,BaseGame,Social,C T Y A E,29 34,human,10,20,Funny,,,"jokes succeed, laughs more, fun",jokes at the wrong time annoy No Sense Of Humor Sims,BoobyTrapComponent Pool GrimReaper Conversation,game data + community
+GreatKisser,GreatKisser,BaseGame,Social,T Y A E,,human,10,20,,,,kisses succeed and raise romance fast,more romantic attention: jealousy in households,StartSeatedCuddleA Dancer PromSituation SocialCallback,game data + community
+GreenThumb,GreenThumb,BaseGame,Intellect,T Y A E,,human,10,20,,,,"plants grow better, talk to plants, garden quality",garden-bound; plants need daily care,DoPlant ForbiddenFruitTree Plant CarTwizy,game data + community
+Grumpy,Grumpy,BaseGame,Social,B P C T Y A E,17 42 43,human,-10,5,,,,"fun from grumpy socials, unaffected by bad moods of others","others dislike it, gets upset when around happy Sims, relationship decay",ReactionInteraction RoommateManager ShooOff Cane,game data + community
+Handy,Handy,BaseGame,Intellect,T Y A E,,human,10,20,,,builder,"repairs and upgrades faster, fewer electrocutions",repairs everything itself instead of resting,RepairableComponent Firefighter Police Repairman,game data + community
+HatesOutdoors,HatesOutdoors,BaseGame,Lifestyle,B P C T Y A E,41 300 2001,human,-20,5,,,,"happy indoors, saves time","negative moodlet outside (Plagued By Nature), refuses outdoor jobs and travel",SimUpdate BuffPlaguedByNature HealthManager OccultMermaid,game data + community
+HeavySleeper,HeavySleeper,BaseGame,Physical,B P C T Y A E,20,human,0,10,,,,"sleeps through noise and alarms, rests well",sleeps through fires and burglars and the alarm clock,BuffHaunted BuffTerrified OccultWerewolf TraitFunctions,game data + community
+HopelessRomantic,HopelessRomantic,BaseGame,Social,T Y A E,107,human,0,20,,,,"romantic socials and dates succeed, romance moodlets",heartbreak hits harder (big negative moodlets),SimUpdate LoveLetter SocialTest Igloo,game data + community
+HotHeaded,HotHeaded,BaseGame,Lifestyle,C T Y A E,11 43,human,-10,5,,,chaos-agent,"gets things done when angry, wins fights more","loses temper (fights, Furious), relationship hits, punches",PrivateEyeInteractions BuffInstance BuffManager MoodManager,game data + community
+Hydrophobic,Hydrophobic,BaseGame,Physical,C T Y A E,2000,human,-10,3,,,,avoids drowning risks,"negative moodlets in pools, rain and showers; refuses swimming",OccultFrankenstein OccultMermaid Motive ComeAndSeeComponent,game data + community
+Inappropriate,Inappropriate,BaseGame,Social,C T Y A E,705,human,-10,5,,,,"fun from rude acts, comic socials","embarrasses others, relationship hits, social fails",PerformanceCareer BuffHasToPee LookAtManager OccultFrankenstein,game data + community
+ImmuneToFire,ImmuneToFire,BaseGame,None,None,,hidden,,,,,,,,,game data
+Insane,Insane,BaseGame,Intellect,B P C T Y A E,,human,-20,1,,,chaos-agent,"strange fun socials, odd talk works with other Insane Sims","erratic actions, talks to itself, scares others, bad social results",Windows PerformanceCareer PrivateEyeInteractions SimUpdate,game data + community
+Kleptomaniac,Kleptomaniac,BaseGame,Lifestyle,C T Y A E,,human,-10,1,,,chaos-agent,swipes objects for fun and money (sell),relationship hit and arrest risk when caught; household fills with junk,OccultTimeTraveler TraitFunctions Career LawEnforcement,game data + community
+LightSleeper,LightSleeper,BaseGame,Physical,B P C T Y A E,20,human,-10,10,,,,wakes for fires and burglars (safety),"woken by noise, less rest, cranky",TraitFunctions SleepAtWorkTone BurglarSituation BedDreamPod,game data + community
+Loner,Loner,BaseGame,Social,B P C T Y A E,23 24 333,human,0,15,,,,"fun alone, happy with solitude (moodlet), focuses on skills","uncomfortable in crowds and parties, hard to befriend",SimUpdate BuffEnjoyingSolitude BuffGoingWild LookAtManager,game data + community
+Loser,Loser,BaseGame,Social,C T Y A E,9 50,human,-20,5,,,,lower expectations: smaller negative moodlets from failure,"social fails, lower job performance, others think less of it",Door MagicianCareer PerformanceArtistCareer SingerCareer,game data + community
+LovesTheOutdoors,LovesTheOutdoors,BaseGame,Lifestyle,B P C T Y A E,41,human,10,20,,,,"happy outside (moodlet), outdoor skills",Stir Crazy (moodlet) when indoors too long,SimUpdate BuffBeautifulView BuffOneWithNature HealthManager,game data + community
+Lucky,Lucky,BaseGame,Physical,C T Y A E,38,human,10,20,,,,"lucky events: better outcomes on risky actions, gambling wins",rare: luck runs out; overconfidence takes risks,BuffFeelingLucky BuffSnuckIn BuffTerrified OccultTimeTraveler,game data + community
+MakesNoMesses,MakesNoMesses,BaseGame,None,None,,hidden,,,,,,,,,game data
+MeanSpirited,MeanSpirited,BaseGame,Social,C T Y A E,47,human,-10,5,Insulting,,,"mean socials succeed, fun from insults","relationship hits, enemies, family fights",PrivateEyeInteractions AlienUtils BuffEnemy BuffSnuckIn,game data + community
+Mooch,Mooch,BaseGame,Social,C T Y A E,,human,-10,10,,,,"gets free food, money and items from others",others dislike it; relationship hits when caught mooching,Dancer SocialTest Fridge_Have FutureFoodSynthesizer,game data + community
+NaturalCook,NaturalCook,BaseGame,Intellect,T Y A E,,human,10,20,,,,"cooks better, no cooking fires (immune, docs/179 R-LIFE-7), faster recipes",cooks constantly; eats into time for other needs,Recipe PizzaDelivery Cooking Fridge_Have,game data + community
+Neat,Neat,BaseGame,Physical,C T Y A E,25,human,10,20,,,,"cleans autonomously, tidy home, cleaner lots","negative moodlets with dirt (Disgusted), nags slobs, cleans instead of resting",GameObject MinorPet BuffDisgusted BuffTraumatizedByTrash,game data + community
+Neurotic,Neurotic,BaseGame,Intellect,B P C T Y A E,,human,-20,3,,,,notices problems early; checks locks and stoves,"stress moodlets, worry, compulsive checks, fear of germs",BuffHaunted BuffManager BuffTerrified LookAtManager,game data + community
+NeverNude,NeverNude,BaseGame,Physical,C T Y A E,,human,-10,1,,,,modesty: no skinny dipping embarrassment,"showers in a swimsuit, refuses nude activities and some saunas",AskToJoinSkinnyDipping JoinSkinnyDipping Pool CollegeOfArts,game data + community
+NoSenseOfHumor,NoSenseOfHumor,BaseGame,Social,C T Y A E,29,human,10,3,Boring,Funny,,"serious: business socials, unaffected by bad jokes","jokes fail, fun lower, others find it boring",Motive ImaginationHelper Punishment Pool,game data + community
+OverEmotional,OverEmotional,BaseGame,Lifestyle,C T Y A E,,human,-10,15,,,,big happy moodlets from good events,"big sad moodlets, cries, breaks down",BuffFirstKiss BuffHaunted BuffInstance BuffTerrified,game data + community
+PartyAnimal,PartyAnimal,BaseGame,Social,C T Y A E,24 27 32,human,10,20,,,party-animal,"great parties, fun at parties (moodlet), quick friends at events","throws and joins parties all night: energy, money, work performance",BuffGoingWild OccultFrankenstein OccultMummy Autonomy,game data + community
+Perfectionist,Perfectionist,BaseGame,Lifestyle,C T Y A E,,human,10,15,,,builder,"higher quality output (art, cooking, homework)","slower work, unhappy with anything less than perfect",Homework SocialWorker PaintingSkill Bed,game data + community
+PizzaAppreciator,PizzaAppreciator,BaseGame,None,None,,hidden,,,,,,,,,game data
+Pyromaniac,Pyromaniac,BaseGame,None,None,,hidden,,,,,,,,,game data
+Rocker,Rocker,BaseGame,None,None,,hidden,,,,,,,,,game data
+Schmoozer,Schmoozer,BaseGame,Social,T Y A E,666,human,10,10,,,career-climber,"suck up to boss works, promotions, influence",shallow friendships; others find it slimy,AcademicCourse RoommateManager Career HangWithCoworkersTone,game data + community
+Slob,Slob,BaseGame,Physical,B P C T Y A E,25 706,human,-10,5,,,,no need to clean; unaffected by mess,"dirty home, smelly (moodlets for others), household disgust, roaches",GameObject PrivateEyeInteractions BuffDisgusted BuffSmelly,game data + community
+Snob,Snob,BaseGame,Social,C T Y A E,128,human,-10,5,,,,"impressed by nice objects, Snob career bonus","dislikes cheap things, insults, relationship hits",GameObject PerformanceCareer BuffNewStuff BuffSnuckIn,game data + community
+Unflirty,Unflirty,BaseGame,Social,T Y A E,30 36,human,10,5,,Amorous,,"ignores flirting, stays loyal",romance slower; refuses flirty socials,MakeMoveSimA Pool PromSituation SocialTest,game data + community
+Unlucky,Unlucky,BaseGame,Physical,C T Y A E,38,human,-10,5,,,chaos-agent,lower expectations; funny mishaps,"bad events, failures, accidents (Feeling Unlucky), death risks",PerformanceArtistCareer BuffFeelingUnlucky BuffHaunted BuffSnuckIn,game data + community
+Vegetarian,Vegetarian,BaseGame,Lifestyle,C T Y A E,28,human,0,3,,,,"healthier food choices, recipe variety",nauseous (moodlet) when eating meat; fewer meal options,RecipeShoppingRabbitHole TraitFunctions ActiveDreamNode BookRecipe,game data + community
+Virtuoso,Virtuoso,BaseGame,Intellect,B P C T Y A E,,human,10,20,,,,"music skills faster, better performances, sings","plays music at all hours (noise), spends time on instruments",BandSkill XylophoneSkill MusicalInstrument CollectionDisplayMultiItem,game data + community
+Workaholic,Workaholic,BaseGame,Lifestyle,C T Y A E,,human,0,15,,,career-climber,"works hard, no work stress, promotions","unhappy on days off, works overtime, misses family time",SimUpdate AlienUtils Career Occupation,game data + community
+SteelBladder,SteelBladder,BaseGame,RewardMotive,C T Y A E,,reward,10000,,,,,,,,game data
+PermaClean,PermaClean,BaseGame,RewardMotive,C T Y A E,,reward,15000,,,,,,,,game data
+HardlyHungry,HardlyHungry,BaseGame,RewardMotive,C T Y A E,,reward,25000,,,,,,,,game data
+ProfessionalSlacker,ProfessionalSlacker,BaseGame,RewardWork,T Y A E,,reward,5000,,,,,,,,game data
+SpeedyCleaner,SpeedyCleaner,BaseGame,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+FastMetabolism,FastMetabolism,BaseGame,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+MultiTasker,MultiTasker,BaseGame,RewardWork,C T Y A E,,reward,10000,,,,,,,,game data
+ExtraCreative,ExtraCreative,BaseGame,RewardSkill,T Y A E,,reward,30000,,,,,,,,game data
+HighRoller,HighRoller,BaseGame,RewardSkill,T Y A E,,reward,30000,,,,,,,,game data
+SuperGreenThumb,SuperGreenThumb,BaseGame,RewardSkill,T Y A E,,reward,20000,,,,,,,,game data
+NeverDull,NeverDull,BaseGame,RewardSocial,C T Y A E,,reward,10000,,,,,,,,game data
+DiscountDiner,DiscountDiner,BaseGame,RewardShop,C T Y A E,,reward,5000,,,,,,,,game data
+ComplimentaryEntertainment,ComplimentaryEntertainment,BaseGame,RewardShop,C T Y A E,,reward,5000,,,,,,,,game data
+BookshopBargainer,BookshopBargainer,BaseGame,RewardShop,C T Y A E,,reward,10000,,,,,,,,game data
+OfficeHero,OfficeHero,BaseGame,RewardWork,Y A E,,reward,5000,,,,,,,,game data
+Vacationer,Vacationer,BaseGame,RewardWork,T Y A E,,reward,15000,,,,,,,,game data
+LegendaryHost,LegendaryHost,BaseGame,RewardSocial,T Y A E,,reward,5000,,,,,,,,game data
+Haggler,Haggler,BaseGame,RewardShop,T Y A E,,reward,15000,,,,,,,,game data
+LongDistanceFriend,LongDistanceFriend,BaseGame,RewardSocial,C T Y A E,,reward,20000,,,,,,,,game data
+FastLearner,FastLearner,BaseGame,RewardSkill,C T Y A E,,reward,15000,,,,,,,,game data
+Attractive,Attractive,BaseGame,RewardSocial,T Y A E,,reward,15000,,,,,,,,game data
+Observant,Observant,BaseGame,RewardSocial,C T Y A E,,reward,5000,,,,,,,,game data
+Opportunistic,Opportunistic,BaseGame,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+FertilityTreatment,FertilityTreatment,BaseGame,RewardMisc,Y A E,,reward,10000,,,,,,,,game data
+MidLifeCrisis,MidLifeCrisis,BaseGame,RewardMisc,Y A E,,reward,20000,,,,,,,,game data
+ChangeLifetimeWish,ChangeLifetimeWish,BaseGame,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+Teleporter,Teleporter,BaseGame,RewardMisc,C T Y A E,,reward,75000,,,,,,,,game data
+CollectionHelper,CollectionHelper,BaseGame,RewardMisc,C T Y A E,,reward,40000,,,,,,,,game data
+FoodReplicator,FoodReplicator,BaseGame,RewardMisc,C T Y A E,,reward,50000,,,,,,,,game data
+MoodModifier,MoodModifier,BaseGame,RewardMisc,C T Y A E,,reward,60000,,,,,,,,game data
+BodySculptor,BodySculptor,BaseGame,RewardMisc,T Y A E,,reward,30000,,,,,,,,game data
+CultureChina,AsianCulture,EP1,None,None,,hidden,,,,,,,,,game data
+CultureEgypt,EgyptianCulture,EP1,None,None,,hidden,,,,,,,,,game data
+CultureFrance,FrenchCulture,EP1,None,None,,hidden,,,,,,,,,game data
+Disciplined,Disciplined,EP1,Physical,B P C T Y A E,130,human,10,10,,,,"martial arts faster, focus",rigid: unhappy with chaos,SnowWaterFight MartialArts MurphyBed BoardBreaker,game data + community
+Carefree,Carefree,EP1,RewardMotive,C T Y A E,,reward,20000,,,,,,,,game data
+EyeCandy,EyeCandy,EP1,RewardMisc,Y A E,,reward,5000,,,,,,,,game data
+PreparedTraveler,PreparedTraveler,EP1,RewardMisc,T Y A E,,reward,10000,,,,,,,,game data
+LearnedRelicHunter,LearnedRelicHunter,EP1,RewardMisc,T Y A E,,reward,15000,,,,,,,,game data
+ChangeOfTaste,ChangeOfTaste,EP1,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+MeditativeTranceSleep,MeditativeTranceSleep,EP1,RewardMotive,C T Y A E,,reward,30000,,,,,,,,game data
+NoBillsEver,NoBillsEver,EP1,RewardMisc,C T Y A E,,reward,15000,,,,,,,,game data
+Jetsetter,Jetsetter,EP1,RewardShop,T Y A E,,reward,5000,,,,,,,,game data
+NoJealousy,NoJealousy,EP1,RewardSocial,T Y A E,,reward,10000,,,,,,,,game data
+InappropriateButInAGoodWay,InappropriateButInAGoodWay,EP1,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+Adventurous,Adventurous,EP1,Lifestyle,C T Y A E,,human,,10,,,traveler,"travel and tombs fun, visa faster",Stir Crazy moodlet when staying home too long,BuffStirCrazy BuffWentToLocation TombRoomManager WaterSlide,game data + community
+PhotographersEye,PhotographersEye,EP1,Intellect,C T Y A E,,human,,10,,,,"better photos, sells photos",snaps photos instead of chores,Photography,game data + community
+MummyHiddenTrait,Mummy,EP1,None,None,,hidden,,,,,,,,,game data
+StoneHearted,StoneHearted,EP1,RewardSocial,C T Y A E,,reward,10000,,,,,,,,game data
+FrankensteinHiddenTrait,Frankenstein,EP2,None,None,,hidden,,,,,,,,,game data
+SavvySculptor,SavvySculptor,EP2,Intellect,T Y A E,173,human,,5,,,,sculpting faster and better,sculpts instead of chores,SculptureComponent SculptingSkill CarvedPumpkin SculptingStation,game data + community
+EnvironmentallyConscious,EnvironmentallyConscious,EP2,Lifestyle,C T Y A E,300,human,,,,,,"saves money and power, eco moodlets","unhappy with waste (lights, water), nags",LightGameObject DoPlant Plant Vehicle,game data + community
+Perceptive,Perceptive,EP2,Intellect,B P C T Y A E,301,human,,,,,,"private eye success, learns traits faster",notices lies: social conflicts,PrivateEyeInteractions RewardsManager LogicSkill InformationLearnedAboutSim,game data + community
+BornSalesman,BornSalesman,EP2,Social,T Y A E,,human,,,,,,sells more in shops and registers,pushy: relationship hits with buyers,BotShopRegister ConsignmentRegister PotionShopConsignmentRegister FVShoppingRegister,game data + community
+Eccentric,Eccentric,EP2,Intellect,B P C T Y A E,,human,,,,,,"inventing faster, odd ideas","others find it odd, social fails",PromSituation InventingSkill InventionWorkbench,game data + community
+Dramatic,Dramatic,EP2,Social,T Y A E,,human,,,,,,"big moodlets, acting career","tantrums, drama in relationships",BuffBigDeal BuffLifesNotFair BuffTerrified Pregnancy,game data + community
+EntrepreneurialMind,EntrepreneurialMind,EP2,RewardMisc,T Y A E,,reward,10000,,,,,,,,game data
+CarefulCrafter,CarefulCrafter,EP2,RewardMisc,T Y A E,,reward,20000,,,,,,,,game data
+EfficientBuilder,EfficientBuilder,EP2,RewardMisc,T Y A E,,reward,10000,,,,,,,,game data
+SuaveSeller,SuaveSeller,EP2,RewardMisc,T Y A E,,reward,15000,,,,,,,,game data
+MyBestFriend,MyBestFriend,EP2,RewardMisc,C T Y A E,,reward,40000,,,,,,,,game data
+PrivateEye,PrivateEye,EP2,None,None,,hidden,,,,,,,,,game data
+FireproofLot,FireproofLot,EP2,RewardMisc,T Y A E,,reward,30000,,,,,,,,game data
+CareerCashBooster,CareerCashBooster,EP2,RewardMisc,T Y A E,,reward,10000,,,,,,,,game data
+VehicleEnthusiast,VehicleEnthusiast,BaseGame,Lifestyle,C T Y A E,,human,0,5,,,,enjoys cars and driving,spends money on vehicles,NameComponent Vehicle CarRelationship,game data + community
+Shy,Shy,EP3,Social,C T Y A E,31 32 334,human,,,,,,"calm alone, fewer social demands","nervous in social situations, slower friendships, awkward on stage",SimUpdate LookAtManager CelebrityManager MakeMoveSimA,game data + community
+VampireHiddenTrait,Vampire,BaseGame,None,None,,hidden,,,,,,,,,game data
+XFactor,Xfactor,EP3,Lifestyle,C T Y A E,,human,,,,,,celebrity rises faster,attracts paparazzi and attention,BuffSnuckIn CelebrityManager NameDrop Hypnotizer,game data + community
+AlwaysOnTheList,AlwaysOnTheList,EP3,RewardMisc,Y A E,,reward,17500,,,,,,,,game data
+WateringHoleRegular,WateringHoleRegular,EP3,RewardMisc,Y A E,,reward,7500,,,,,,,,game data
+BetterBartender,BetterBartender,EP3,RewardMisc,Y A E,,reward,15000,,,,,,,,game data
+MasterOfSeduction,MasterOfSeduction,EP3,RewardMisc,Y A E,,reward,15000,,,,,,,,game data
+TheHustler,TheHustler,EP3,RewardMisc,Y A E,,reward,5000,,,,,,,,game data
+ExcellentGroupie,ExcellentGroupie,EP3,RewardMisc,Y A E,,reward,10000,,,,,,,,game data
+MapToTheStars,MapToTheStars,EP3,RewardMisc,Y A E,,reward,20000,,,,,,,,game data
+NextBigThing,NextBigThing,EP3,RewardMisc,Y A E,,reward,10000,,,,,,,,game data
+MotiveMobile,MotiveMobile,EP4,RewardMisc,Y A E,,reward,45000,,,,,,,,game data
+Nurturing,Nurturing,EP4,Intellect,T Y A E,711,human,10,20,,,family,"raises children well, kids gain skills faster","worries about kids, demanding of time",RoommateManager Punishment SocialTest,game data + community
+YoungAgain,YoungAgain,EP4,RewardMisc,Y A E,,reward,70000,,,,,,,,game data
+Inheritance,Inheritance,EP4,RewardMisc,C T Y A E,,reward,30000,,,,,,,,game data
+HoverBed,HoverBed,EP4,RewardMisc,C T Y A E,,reward,20000,,,,,,,,game data
+CleanSlate,CleanSlate,BaseGame,RewardMotive,Y A E,,reward,25000,,,,,,,,game data
+AboveReproach,AboveReproach,BaseGame,RewardMotive,Y A E,,reward,35000,,,,,,,,game data
+SuperNanny,SuperNanny,EP4,RewardMotive,Y A E,,reward,25000,,,,,,,,game data
+Rebellious,Rebellious,EP4,Lifestyle,C T Y A E,666,human,,,,,,"rebel socials, fun breaking rules","gets in trouble (police, school), relationship hits with authority",Door BuffFightThePower BuffRebelRide BuffSellOut,game data + community
+ImaginaryFriendHiddenTrait,ImaginaryFriend,EP4,None,None,,hidden,,,,,,,,,game data
+ForeverYoung,ForeverYoung,EP4,RewardMotive,T Y A E,,reward,65000,,,,,,,,game data
+CloneMe,CloneMe,EP4,RewardMotive,Y A E,,reward,45000,,,,,,,,game data
+LazyPet,LazyPet,EP5,Physical,Cats AllDogs,1009,pet,-10,5,,,,,,,game data
+LazyHorse,LazyHorse,EP5,Physical,Horses,1006,pet,-10,5,,,,,,,game data
+AtomicGrazerPet,AtomicGrazerPet,EP5,RewardMisc,Horses,,reward,4000,,,,,,,,game data
+VomitImmunityPet,VomitImmunityPet,EP5,RewardMisc,AllDogs Cats,1666,reward,2500,,,,,,,,game data
+BestBehaviorPet,BestBehaviorPet,EP5,RewardMisc,AllDogs Cats,,reward,2500,,,,,,,,game data
+DesertPonyPet,DesertPonyPet,EP5,RewardMisc,Horses,,reward,5000,,,,,,,,game data
+VomitMachinePet,VomitMachinePet,EP5,RewardMisc,AL EL AD ED AC EC,1666,reward,1500,,,,,,,,game data
+SteelBladderPet,SteelBladderPet,EP5,RewardMisc,AllDogs Cats Horses,,reward,4000,,,,,,,,game data
+MidlifeCrisisPet,MidlifeCrisisPet,EP5,RewardMisc,AllDogs Cats Horses,,reward,7500,,,,,,,,game data
+CloneMePet,CloneMePet,EP5,RewardMisc,AD ED AL EL AC EC AH EH,,reward,15000,,,,,,,,game data
+YoungAgainPet,YoungAgainPet,EP5,RewardMisc,AllDogs Cats Horses,,reward,20000,,,,,,,,game data
+MeanPet,MeanPet,EP5,Social,Horses,1007,pet,-10,5,,,,,,,game data
+NoisyPet,NoisyPet,EP5,Social,AllDogs Cats Horses,1011,pet,,5,,,,,,,game data
+LoyalPet,LoyalPet,EP5,Social,AllDogs,,pet,10,5,,,,,,,game data
+HunterPet,HunterPet,EP5,Intellect,Cats AllDogs,,pet,10,5,,,,,,,game data
+NeatPet,NeatPet,EP5,Physical,Cats AllDogs Horses,1010,pet,10,5,,,,,,,game data
+NonDestructivePet,NonDestructivePet,EP5,Physical,Cats AllDogs,1005,pet,10,5,,,,,,,game data
+AdventurousPet,AdventurousPet,EP5,Intellect,Cats AllDogs,1001,pet,10,5,,,,,,,game data
+AggressivePet,AggressivePet,EP5,Social,Cats AllDogs Horses,1002,pet,-10,5,,,,,,,game data
+CluelessPet,CluelessPet,EP5,Intellect,Cats AllDogs Horses,,pet,-10,5,,,,,,,game data
+DestructivePet,DestructivePet,EP5,Physical,Cats AllDogs,1005,pet,-10,5,,,,,,,game data
+FriendlyPet,FriendlyPet,EP5,Social,Cats AllDogs Horses,1002,pet,10,5,,,,,,,game data
+GeniusPet,GeniusPet,EP5,Intellect,AllDogs Cats Horses,,pet,10,5,,,,,,,game data
+HyperPet,HyperPet,EP5,Physical,Cats AllDogs,1009,pet,10,5,,,,,,,game data
+IndependentPet,IndependentPet,EP5,Social,Cats AllDogs,,pet,10,5,,,,,,,game data
+PiggyPet,PiggyPet,EP5,Physical,Cats AllDogs Horses,1010,pet,-10,5,,,,,,,game data
+PlayfulPet,PlayfulPet,EP5,Social,Cats AllDogs Horses,,pet,10,5,,,,,,,game data
+ProudPet,ProudPet,EP5,Intellect,Cats AllDogs,,pet,10,5,,,,,,,game data
+QuietPet,QuietPet,EP5,Social,Cats AllDogs Horses,1011,pet,,5,,,,,,,game data
+ShyPet,ShyPet,EP5,Social,Cats AllDogs Horses,,pet,,,,,,,,,game data
+SkittishPet,SkittishPet,EP5,Intellect,Cats AllDogs,1001,pet,-10,5,,,,,,,game data
+HydrophobicPet,HydrophobicPet,EP5,Physical,AllDogs,1008,pet,-10,5,,,,,,,game data
+LikesSwimmingPet,LikesSwimmingPet,EP5,Physical,AllDogs,1008,pet,10,5,,,,,,,game data
+AlphaPet,AlphaPet,EP5,RewardMisc,Cats AllDogs,,reward,7500,,,,,,,,game data
+BelovedPet,BelovedPet,EP5,RewardMisc,Cats AllDogs Horses,,reward,5000,,,,,,,,game data
+AgilePet,AgilePet,EP5,Physical,Horses,1003,pet,10,5,,,,,,,game data
+BravePet,BravePet,EP5,Intellect,Horses,1004,pet,10,5,,,,,,,game data
+FastPet,FastPet,EP5,Physical,Horses,1006,pet,10,5,,,,,,,game data
+GentlePet,GentlePet,EP5,Social,Horses,1007,pet,10,5,,,,,,,game data
+NervousPet,NervousPet,EP5,Intellect,Horses,1004,pet,-10,5,,,,,,,game data
+HatesJumpingPet,HatesJumpingPet,EP5,Physical,Horses,1003,pet,-10,5,,,,,,,game data
+EquineZenPet,EquineZenPet,EP5,RewardMisc,Horses,,reward,6000,,,,,,,,game data
+LuckyMountPet,LuckyMountPet,EP5,RewardMisc,Horses,,reward,4000,,,,,,,,game data
+FertilityTreatmentPet,FertilityPet,EP5,RewardMisc,Cats AllDogs,,reward,5000,,,,,,,,game data
+FearlessFoalPet,FearlessFoalPet,EP5,RewardMisc,Horses,,reward,2500,,,,,,,,game data
+FriendOfTheHerdPet,FriendOfTheHerdPet,EP5,RewardMisc,Horses,,reward,4000,,,,,,,,game data
+GardenersDelightPet,GardenersDelightPet,EP5,RewardMisc,Horses,,reward,5000,,,,,,,,game data
+PetHygienatorPet,PetHygienatorPet,EP5,RewardMisc,Cats AllDogs,,reward,10000,,,,,,,,game data
+UnicornHiddenTrait,Unicorn,EP5,None,None,,hidden,,,,,,,,,game data
+AnimalLover,AnimalLover,EP5,Lifestyle,C T Y A E,12,human,,1,,,pet-owner,"pets befriend it fast, pet moodlets","adopts too many pets (household cap, cost)",SimUpdate OccultMermaid PetSingAlong Urnstone,game data + community
+CatPerson,CatPerson,EP5,Lifestyle,C T Y A E,12,human,,1,,,pet-owner,cats befriend it fast,dislikes dogs,SimUpdate PetSingAlong CatHuntingComponent Urnstone,game data + community
+DogPerson,DogPerson,EP5,Lifestyle,C T Y A E,12,human,,1,,,pet-owner,dogs befriend it fast,dislikes cats,SimUpdate PetSingAlong Urnstone BeSatOnByPet,game data + community
+Equestrian,Equestrian,EP5,Lifestyle,C T Y A E,12,human,,1,,,pet-owner,"horses befriend it fast, riding skill",spends time and money on horses,ShowVenue SimUpdate PetSingAlong Urnstone,game data + community
+AnimalExpert,AnimalExpert,EP5,RewardMisc,C T Y A E,,reward,25000,,,,,,,,game data
+RaisedbyWolves,RaisedbyWolves,EP5,RewardMisc,C T Y A E,,reward,15000,,,,,,,,game data
+BoxStallSuperPet,BoxStallSuperPet,EP5,RewardMisc,Horses,,reward,12500,,,,,,,,game data
+BottomlessPetBowlPet,BottomlessPetBowlPet,EP5,RewardMisc,Cats AllDogs,,reward,15000,,,,,,,,game data
+PetBedSuperPet,PetBedSuperPet,EP5,RewardMisc,Cats AllDogs,,reward,10000,,,,,,,,game data
+SuperSmartPet,SuperSmartPet,EP5,RewardMisc,Cats AllDogs Horses,,reward,7500,,,,,,,,game data
+SuperSaltLickPet,SuperSaltLickPet,EP5,RewardMisc,Horses,,reward,10000,,,,,,,,game data
+UntrainedHorse,UntrainedHorse,EP5,Intellect,Horses,,pet,-10,,,,,,,,game data
+Diva,Diva,EP6,Social,C T Y A E,,human,-10,5,,,,"stage performance bonus, demands get met","tantrums, relationship hits, demanding",SingerCareer RoommateManager TraitFunctions SnubManager,game data + community
+NaturalPerformer,NaturalPerformer,EP6,RewardMisc,T Y A E,,reward,15000,,,,,,,,game data
+BornToCook,BornToCook,EP6,RewardMotive,C T Y A E,,reward,20000,,,,,,,,game data
+Engaging,Engaging,EP6,RewardMotive,C T Y A E,,reward,10000,,,,,,,,game data
+Aromainator,Aromainator,EP6,RewardMisc,C T Y A E,,reward,20000,,,,,,,,game data
+GenieLamp,GenieLamp,EP6,RewardMisc,C T Y A E,,reward,30000,,,,,,,,game data
+FearlessVoyager,FearlessVoyager,EP6,RewardMotive,C T Y A E,,reward,20000,,,,,,,,game data
+PerfectHost,PerfectHost,EP6,RewardMotive,C T Y A E,,reward,20000,,,,,,,,game data
+WishedForBeauty,WishedForBeauty,EP6,None,None,,hidden,,,,,,,,,game data
+WishedForLongLife,WishedForLongLife,EP6,None,None,,hidden,,,,,,,,,game data
+WishedForLargeFamily,WishedForLargeFamily,EP6,None,None,,hidden,,,,,,,,,game data
+WishedWorldPeace,WishedWorldPeace,EP6,None,None,,hidden,,,,,,,,,game data
+WishedWorldMisery,WishedWorldMisery,EP6,None,None,,hidden,,,,,,,,,game data
+WishedForHappiness,WishedForHappiness,EP6,None,None,,hidden,,,,,,,,,game data
+SocialButterfly,SocialButterfly,EP6,Social,T Y A E,333 334,human,,5,,,socialite,"social needs met fast, many friends","Lonely sooner, uncomfortable alone",MagicianCareer SingerCareer Motive SocialComponent,game data + community
+NaturalBornPerformer,NaturalBornPerformer,EP6,Social,T Y A E,800 801,human,,5,,,,"performance careers faster, tips",performs at odd times,MagicianCareer SingerCareer TraitFunctions Terrain,game data + community
+GenieHiddenTrait,Genie,EP6,None,None,,hidden,,,,,,,,,game data
+LycanthropyHuman,LycanthropyHuman,EP7,None,None,,hidden,,,,,,,,,game data
+LycanthropyWerewolf,LycanthropyWerewolf,EP7,None,None,,hidden,,,,,,,,,game data
+FairyHiddenTrait,Fairy,EP7,None,None,,hidden,,,,,,,,,game data
+WitchHiddenTrait,SpellcastingTalent,EP7,None,None,700,hidden,15000,,,,,,,,game data
+NightOwlTrait,NightOwl,EP7,Lifestyle,C T Y A E,,human,,5,,,,"energy and fun at night, nightlife",grumpy and tired mornings: work and school,SimUpdate Book Bookshelf_ReadSomething ReadBook,game data + community
+GhostHiddenTrait,GhostHiddenTrait,BaseGame,None,None,,hidden,,,,,,,,,game data
+SupernaturalFanTrait,SupernaturalFan,EP7,Social,C T Y A E,701 702,human,,5,,,occult-household,"befriends occults, fun with supernaturals",fixated on occults,LunarCycleManager GypsyCaravan,game data + community
+PhilosophersStone,PhilosophersStone,EP7,RewardMisc,C T Y A E,,reward,40000,,,,,,,,game data
+FlyingVacuum,FlyingVacuum,EP7,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+SupernaturalSkeptic,SupernaturalSkeptic,EP7,Social,T Y A E,702,human,,5,,,,"resists magic, skeptic careers",relationship hits with occults,Autonomy Business Journalism LawEnforcement,game data + community
+BroodingTrait,Brooding,EP7,Social,T Y A E,704,human,,5,,,,"brooding: deep talks, artistic","mood swings, sad moodlets",Motive Urnstone LongTermRelationship Shower,game data + community
+GathererTrait,Gatherer,EP7,Intellect,T Y A E,,human,,5,,,,finds more collectibles,wanders gathering instead of chores,ObjectSpawner Terrain HarvestPlant Plant,game data + community
+Proper,Proper,EP7,Social,T Y A E,705 706,human,,5,,,,"likes nice decorated homes, polite",disgusted by dirty or rude surroundings and Sims,BuffBeautifullyDecorated BuffDecorated BuffDirtySurroundings BuffDisgusted,game data + community
+WerewolfAlphaDog,WerewolfAlphaDog,EP7,RewardMotive,None,,reward,20000,,,,,,,,game data
+WitchMagicHands,WitchMagicHands,EP7,RewardMisc,None,,reward,20000,,,,,,,,game data
+FairyQueen,FairyQueen,EP7,RewardMisc,Y A E,,reward,30000,,,,,,,,game data
+SuperVampire,SuperVampire,EP7,RewardMisc,Y A E,,reward,30000,,,,,,,,game data
+Simmunity,Simmunity,EP8,RewardMisc,C T Y A E,,reward,7500,,,,,,,,game data
+CompetitiveEater,CompetitiveEater,EP8,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+AllWeatherChampion,AllWeatherChampion,EP8,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+FestivalFrequenter,FestivalFrequenter,EP8,RewardMisc,C T Y A E,,reward,5000,,,,,,,,game data
+LovesTheCold,LovesTheCold,EP8,Physical,B P C T Y A E,,human,,,,,,"happy in winter, no cold moodlet",uncomfortable in heat,HealthManager Motive CloudRay WooHoo,game data + community
+LovesTheHeat,LovesTheHeat,EP8,Physical,B P C T Y A E,,human,,,,,,"happy in summer, no heat moodlet",uncomfortable in cold,HealthManager Motive SeasonsManager,game data + community
+ImmuneToCold,ImmuneToCold,EP8,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+ImmuneToHeat,ImmuneToHeat,EP8,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+CloudRayGun,CloudRayGun,EP8,RewardMisc,T Y A E,,reward,30000,,,,,,,,game data
+WeatherMachine,WeatherMachine,EP8,RewardMisc,T Y A E,,reward,40000,,,,,,,,game data
+InfluenceNerd,InfluenceNerd,EP9,None,None,,hidden,,,,,,,,,game data
+InfluenceRebel,InfluenceRebel,EP9,None,None,,hidden,,,,,,,,,game data
+InfluenceSocialite,InfluenceSocialite,EP9,None,None,,hidden,,,,,,,,,game data
+Irresistible,Irresistible,EP9,Social,T Y A E,,human,,5,,,,romance and social influence fast,unwanted attention: jealousy,GroupingSituation InfluenceSkillSocialite ShortTermContext SocialComponent,game data + community
+AvantGarde,AvantGarde,EP9,Intellect,T Y A E,901,human,,5,,,,street art and influence bonus,"odd tastes, others puzzled",TraitFunctions InfluenceSkillRebel StreetArtSkill Dumpster,game data + community
+PlantSim,PlantSim,EP9,None,None,,hidden,,,,,,,,,game data
+ThereAndBackAgain,ThereAndBackAgain,EP9,None,None,,hidden,,,,,,,,,game data
+SociallyAwkward,SociallyAwkward,EP9,Social,T Y A E,902,human,,5,,,,"science and logic focus, study bonus","social fails, awkward moments",Skill SocialCallback SocialTest,game data + community
+NerdInfluence,NerdInfluence,EP9,RewardMisc,T Y A E,,reward,2000,,,,,,,,game data
+SocialiteInfluence,SocialiteInfluence,EP9,RewardMisc,T Y A E,,reward,2000,,,,,,,,game data
+RebelInfluence,RebelInfluence,EP9,RewardMisc,T Y A E,,reward,2000,,,,,,,,game data
+HonoraryDegree,HonoraryDegree,EP9,RewardMisc,T Y A E,,reward,50000,,,,,,,,game data
+JuniorMascotHiddenTrait,JuniorMascotHiddenTrait,EP9,None,None,,hidden,,,,,,,,,game data
+AdvancedArtTraining1,AdvancedArtTraining1,EP9,RewardMisc,None,,reward,,,,,,,,,game data
+AdvancedArtTrainingBrilliant,AdvancedArtTrainingBrilliant,EP9,RewardMisc,None,,reward,,,,,,,,,game data
+AdvancedArtTrainingMasterPiece,AdvancedArtTrainingMasterPiece,EP9,RewardMisc,None,,reward,,,,,,,,,game data
+MermaidHiddenTrait,Mermaid,EP10,None,None,1101,hidden,,,,,,,,,game data
+LovesToSwim,LovesToSwim,EP10,Physical,C T Y A E,2000,human,,5,,,,"swimming fun, diving skill",restless away from water,Motive SwimmingInPool Shark MarineLifeSurfaceSpawner,game data + community
+Sailor,Sailor,EP10,Physical,B P C T Y A E,2001,human,,5,,,,"boats and fishing fun, no seasickness",restless on land,Pregnancy Seasickness KrakenManager Boat,game data + community
+StrongStomach,StrongStomach,EP10,RewardMisc,C T Y A E,,reward,2000,,,,,,,,game data
+FriendOfTheKraken,FriendOfTheKraken,EP10,RewardMisc,T Y A E,,reward,30000,,,,,,,,game data
+KrakenCooldownHiddenTrait,KrakenCooldownHiddenTrait,EP10,None,None,,hidden,,,,,,,,,game data
+MermadicKelp,MermadicKelp,EP10,RewardMisc,T Y A E,,reward,25000,,,,,,,,game data
+PermaMermaid,PermaMermaid,EP10,RewardMisc,T Y A E,,reward,5000,,,,,,,,game data
+HiddenIslandMap,HiddenIslandMap,EP10,RewardMisc,C T Y A E,,reward,25000,,,,,,,,game data
+LungsOfSteel,LungsOfSteel,EP10,RewardSkill,T Y A E,,reward,15000,,,,,,,,game data
+HotelMogul,HotelMogul,EP10,RewardMisc,T Y A E,,reward,15000,,,,,,,,game data
+FutureSim,FutureSimHidden,EP11,None,None,,hidden,0,,,,,,,,game data
+RobotHiddenTrait,ServoBot,EP11,None,None,,hidden,,,,,,,,,game data
+HoverBot,HoverBot,EP11,None,None,,hidden,,,,,,,,,game data
+BipedBot,BipedBot,EP11,None,None,,hidden,,,,,,,,,game data
+ArtisticAlgorithmsChip,ArtisticAlgorithmsChip,EP11,None,None,,hidden,,,,,,,,,game data
+ChefChip,ChefChip,EP11,None,None,,hidden,,,,,,,,,game data
+GardenerChip,GardenerChip,EP11,None,None,,hidden,,,,,,,,,game data
+HandiBotChip,HandiBotChip,EP11,None,None,,hidden,,,,,,,,,game data
+MusicianChip,MusicianChip,EP11,None,None,,hidden,,,,,,,,,game data
+FisherBotChip,FisherBotChip,EP11,None,None,,hidden,,,,,,,,,game data
+AbilityToLearnChip,AbilityToLearnChip,EP11,None,None,,hidden,,,,,,,,,game data
+CleanerChip,CleanerChip,EP11,None,None,,hidden,,,,,,,,,game data
+FriendlyChip,FriendlyChip,EP11,None,None,,hidden,,,,,,,,,game data
+RoboNannyChip,RoboNannyChip,EP11,None,None,,hidden,,,,,,,,,game data
+SentienceChip,SentienceChip,EP11,None,None,,hidden,,,,,,,,,game data
+ProfessionalChip,ProfessionalChip,EP11,None,None,,hidden,,,,,,,,,game data
+HumanEmotionChip,HumanEmotionChip,EP11,None,None,,hidden,,,,,,,,,game data
+EvilChip,EvilChip,EP11,None,None,,hidden,,,,,,,,,game data
+SolarPoweredChip,SolarPoweredChip,EP11,None,None,,hidden,,,,,,,,,game data
+CapacityToLoveChip,CapacityToLoveChip,EP11,None,None,,hidden,,,,,,,,,game data
+MoodAdjusterChip,MoodAdjusterChip,EP11,None,None,,hidden,,,,,,,,,game data
+EfficientChip,EfficientChip,EP11,None,None,,hidden,,,,,,,,,game data
+HoloProjectorChip,HoloProjectorChip,EP11,None,None,,hidden,,,,,,,,,game data
+HumorChip,HumorChip,EP11,None,None,,hidden,,,,,,,,,game data
+StinkySim,StinkySim,EP11,None,None,,hidden,,,,,,,,,game data
+BotFan,BotFan,EP11,Lifestyle,C T Y A E,102 1101,human,,5,,,,"likes robots, bot-making bonus",odd with humans,OccultMermaid MermadicKelp LongTermRelationship SocialTest,game data + community
+Unstable,Unstable,EP11,Intellect,C T Y A E,,human,,5,,,,time-travel and future fun,"erratic moods, unpredictable",BedSleep TimePortal,game data + community
+WonderlandSim,WonderlandSim,EP11,None,None,,hidden,,,,,,,,,game data
+PortalImmunity,PortalImmunity,EP11,RewardMotive,C T Y A E,,reward,5000,,,,,,,,game data
+MaintenanceMaster,MaintenanceMaster,EP11,RewardMotive,C T Y A E,,reward,15000,,,,,,,,game data
+BotChipBundle,BotChipBundle,EP11,RewardMisc,C T Y A E,,reward,10000,,,,,,,,game data
+FearOfHumansChip,FearOfHumansChip,EP11,None,None,,hidden,,,,,,,,,game data
+CERemoteControl,CERemoteControl,EP11,RewardMisc,T Y A E,,reward,30000,,,,,,,,game data
+TimeTravelerHiddenTrait,TimeTravelerHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+DreamPodHiddenTrait,DreamPodHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+BotHappyModeHiddenTrait,BotHappyModeHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+BotSadModeHiddenTrait,BotSadModeHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+BotAngryModeHiddenTrait,BotAngryModeHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+FutureSimLHR,FutureSim,EP11,RewardMisc,B P C T Y A E,,reward,10000,,,,,,,,game data
+RobotModeOnHiddenTrait,RobotModeOnHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data
+DescendantHiddenTrait,DescendantHiddenTrait,EP11,None,None,,hidden,,,,,,,,,game data

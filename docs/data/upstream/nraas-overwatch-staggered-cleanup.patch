@@ -1,227 +1,146 @@
-From ac2364e0e2660ec524f69c46d66d459e8a8b41f3 Mon Sep 17 00:00:00 2001
+From 923f8acd478b00da4d7f08f27e86c1d1072877c9 Mon Sep 17 00:00:00 2001
 From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
-Date: Wed, 21 Oct 2026 09:11:57 +0800
-Subject: [PATCH 1/3] Inventory cleanup: skip the name lookup for objects
- without an inventory
+Date: Fri, 23 Oct 2026 11:13:53 +0800
+Subject: [PATCH 1/2] Nightly alarm: one cleanup per frame without spacing
 
-CheckInventories looked up the localized catalog name of every object in the world before CheckInventory returned early for the ones without an inventory. The name is only used in log lines, and with lots of store content each lookup searches many string tables, so this lookup was most of Overwatch's nightly 'Cleanup Inventory' time (~400-500 ms in one frame in our profiles). Same objects checked, same results.
+With Set Alarm Spacing at 0 the nightly cleanups ran all in one frame. They now run one per frame: after each cleanup the alarm's task sleeps for one frame (only where sleeping is allowed; the alarm runs in its own FunctionTask, so it is) and the next cleanup starts. Same order, same settings, notices still collected into one message at the end, an exception still stops the rest.
+
+The default spacing is now 0: every cleanup still runs at the alarm hour (stereos and TVs are switched off at the same time as before), but their costs no longer add up in one frame. A spacing above 0 keeps the chained alarms of the previous commit.
 ---
- NRaas/Helpers/Inventories.cs | 3 +++
- 1 file changed, 3 insertions(+)
+ NRaasOverwatch/Overwatch.cs                   |  14 +++++++++++---
+ .../OverwatchSpace/PersistedSettings.cs       |   4 ++--
+ .../StringTables/StringTableEnglish.txt       | Bin 17244 -> 17248 bytes
+ 3 files changed, 13 insertions(+), 5 deletions(-)
 
-diff --git a/NRaas/Helpers/Inventories.cs b/NRaas/Helpers/Inventories.cs
-index 499c0c9..20f4b4b 100644
---- a/NRaas/Helpers/Inventories.cs
-+++ b/NRaas/Helpers/Inventories.cs
-@@ -177,6 +177,9 @@ namespace NRaas.CommonSpace.Helpers
-         {
-             foreach (GameObject parent in Sims3.Gameplay.Queries.GetObjects<GameObject>())
-             {
-+                // Skips the localized name lookup for the many objects without an inventory
-+                if (parent.Inventory == null) continue;
-+
-                 CheckInventory(log, debugLog, GetName(parent), parent.Inventory, checkDestroyed);
-             }
- 
-From d8f171795a2a2196185b05f6d49df5bc1fba38fd Mon Sep 17 00:00:00 2001
-From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
-Date: Wed, 21 Oct 2026 09:12:16 +0800
-Subject: [PATCH 2/3] Inventory cleanup: spread the nightly run over several
- frames
-
-The nightly alarm runs CheckInventories with a sleep after every 25 inventories, so the work is split over many frames instead of one. The menu action still runs in one go. Objects destroyed while sleeping are skipped, and the household list is copied since it can change meanwhile. The old three-argument overload keeps its behaviour for the other mods sharing this helper.
----
- NRaas/Helpers/Inventories.cs                   | 18 +++++++++++++++++-
- .../OverwatchSpace/Alarms/CleanupInventory.cs  |  3 ++-
- 2 files changed, 19 insertions(+), 2 deletions(-)
-
-diff --git a/NRaas/Helpers/Inventories.cs b/NRaas/Helpers/Inventories.cs
-index 20f4b4b..b650329 100644
---- a/NRaas/Helpers/Inventories.cs
-+++ b/NRaas/Helpers/Inventories.cs
-@@ -175,15 +175,31 @@ namespace NRaas.CommonSpace.Helpers
- 
-         public static void CheckInventories(Logger log, Logger debugLog, bool checkDestroyed)
-         {
-+            CheckInventories(log, debugLog, checkDestroyed, 0);
-+        }
-+        // yieldEvery > 0 : sleeps one tick after that many inventories, for callers running in their own task
-+        public static void CheckInventories(Logger log, Logger debugLog, bool checkDestroyed, int yieldEvery)
-+        {
-+            int count = 0;
-+
-             foreach (GameObject parent in Sims3.Gameplay.Queries.GetObjects<GameObject>())
-             {
-                 // Skips the localized name lookup for the many objects without an inventory
-                 if (parent.Inventory == null) continue;
- 
-+                // Objects can go away while we sleep
-+                if ((yieldEvery > 0) && (parent.HasBeenDestroyed)) continue;
-+
-                 CheckInventory(log, debugLog, GetName(parent), parent.Inventory, checkDestroyed);
-+
-+                count++;
-+                if ((yieldEvery > 0) && ((count % yieldEvery) == 0) && (Sims3.SimIFace.Simulator.CheckYieldingContext(false)))
-+                {
-+                    Sims3.SimIFace.Simulator.Sleep(0);
-+                }
-             }
- 
--            foreach (Household house in Household.sHouseholdList)
-+            foreach (Household house in new List<Household>(Household.sHouseholdList))
-             {
-                 if (house.SharedFamilyInventory != null)
-                 {
-diff --git a/NRaasOverwatch/OverwatchSpace/Alarms/CleanupInventory.cs b/NRaasOverwatch/OverwatchSpace/Alarms/CleanupInventory.cs
-index d950e5c..f96b6dd 100644
---- a/NRaasOverwatch/OverwatchSpace/Alarms/CleanupInventory.cs
-+++ b/NRaasOverwatch/OverwatchSpace/Alarms/CleanupInventory.cs
-@@ -54,7 +54,8 @@ namespace NRaas.OverwatchSpace.Alarms
-             {
-                 Overwatch.Log("Cleanup Inventory");
- 
--                Inventories.CheckInventories(Overwatch.Log, Overwatch.Log, true);
-+                // The nightly run sleeps every 25 inventories, so a large town does not stall a single frame
-+                Inventories.CheckInventories(Overwatch.Log, Overwatch.Log, true, prompt ? 0 : 25);
-                 /*
-                 foreach (GameObject obj in Sims3.Gameplay.Queries.GetObjects<GameObject>())
-                 {
-From a0157382ccdba982a5663699b1341e63bfd90a0a Mon Sep 17 00:00:00 2001
-From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
-Date: Wed, 21 Oct 2026 09:14:43 +0800
-Subject: [PATCH 3/3] Nightly alarm: give each cleanup its own time
-
-OnTimer ran every nightly cleanup in the same frame. With the new 'Set Alarm Spacing' setting (default 10 sim-minutes) each cleanup is scheduled as its own alarm task, spaced by that many sim-minutes from the alarm hour, so their costs no longer add up in one frame. Set it to 0 for the old all-at-once behaviour. Every cleanup keeps its own on/off setting and does the same work as before; with spacing, nightly notices show one by one instead of in one batch.
-
-StaggeredCleanupVersion is a public marker for other mods (for example performance mods that spread these cleanups themselves) to detect this behaviour and stay out of the way.
----
- NRaasOverwatch/NRaasOverwatch.csproj          |   1 +
- NRaasOverwatch/Overwatch.cs                   |  18 ++++++++--
- .../OverwatchSpace/PersistedSettings.cs       |   3 ++
- .../OverwatchSpace/Settings/AlarmSpacing.cs   |  34 ++++++++++++++++++
- .../StringTables/StringTableEnglish.txt       | Bin 16826 -> 17244 bytes
- 5 files changed, 54 insertions(+), 2 deletions(-)
- create mode 100644 NRaasOverwatch/OverwatchSpace/Settings/AlarmSpacing.cs
-
-diff --git a/NRaasOverwatch/NRaasOverwatch.csproj b/NRaasOverwatch/NRaasOverwatch.csproj
-index e8610e5..e4adbe5 100644
---- a/NRaasOverwatch/NRaasOverwatch.csproj
-+++ b/NRaasOverwatch/NRaasOverwatch.csproj
-@@ -425,6 +425,7 @@
-     <Compile Include="OverwatchSpace\Interfaces\ISettingOption.cs" />
-     <Compile Include="OverwatchSpace\Loadup\DelayedLoadupOption.cs" />
-     <Compile Include="OverwatchSpace\Settings\AlarmHour.cs" />
-+    <Compile Include="OverwatchSpace\Settings\AlarmSpacing.cs" />
-     <Compile Include="OverwatchSpace\Settings\BooleanOption.cs" />
-     <Compile Include="OverwatchSpace\Actions\ExportSettings.cs" />
-     <Compile Include="OverwatchSpace\Actions\ImportSettings.cs" />
 diff --git a/NRaasOverwatch/Overwatch.cs b/NRaasOverwatch/Overwatch.cs
-index 733457d..feacbb1 100644
+index e47f914..fea743d 100644
 --- a/NRaasOverwatch/Overwatch.cs
 +++ b/NRaasOverwatch/Overwatch.cs
-@@ -23,6 +23,9 @@ namespace NRaas
-         [PersistableStatic]
-         static PersistedSettings sSettings = null;
+@@ -156,8 +156,9 @@ namespace NRaas
+             RunAlarms(true);
+         }
  
-+        // Read by other mods that would otherwise spread the nightly cleanups themselves. Bump when that behaviour changes.
-+        public static readonly int StaggeredCleanupVersion = 1;
+-        // Runs the cleanups in order, as one batch like before. With spacing, each next one starts sSpacing sim-minutes after
+-        // the previous one finished, so their costs do not add up in one frame. The notices still show as one message at the end.
++        // Runs the cleanups in order, as one batch like before. Without spacing, each next one runs a frame after the previous
++        // one finished; with spacing, sSpacing sim-minutes after. Either way their costs do not add up in one frame. The notices
++        // still show as one message at the end.
+         static void RunAlarms(bool spaced)
+         {
+             List<IAlarmOption> items = sPendingAlarms;
+@@ -176,11 +177,18 @@ namespace NRaas
+                     // A newer run took over while this cleanup slept
+                     if (items != sPendingAlarms) return;
+ 
+-                    if ((spaced) && (sSpacing > 0) && (items.Count > 0))
++                    if (items.Count == 0) break;
 +
-         static AlarmTask sAlarm = null;
- 
-         static bool sCollectNotices = false;
-@@ -114,9 +117,20 @@ namespace NRaas
- 
-                 List<IAlarmOption> items = DerivativeSearch.Find<IAlarmOption>();
- 
--                foreach (IAlarmOption alarmed in items)
-+                if (Settings.mAlarmSpacing > 0)
-                 {
--                    alarmed.PerformAlarm();
-+                    // Each cleanup gets its own time, so their costs do not add up in one frame
-+                    for (int i = 0; i < items.Count; i++)
-+                    {
-+                        new AlarmTask(i * Settings.mAlarmSpacing, TimeUnit.Minutes, items[i].PerformAlarm);
-+                    }
-+                }
-+                else
-+                {
-+                    foreach (IAlarmOption alarmed in items)
-+                    {
-+                        alarmed.PerformAlarm();
-+                    }
++                    if ((spaced) && (sSpacing > 0))
+                     {
+                         sNextAlarm = new AlarmTask(sSpacing, TimeUnit.Minutes, OnNextAlarm);
+                         return;
+                     }
++
++                    // Without spacing each cleanup gets its own frame (the alarm runs in its own task, so it may sleep)
++                    Common.Sleep();
++
++                    if (items != sPendingAlarms) return;
                  }
              }
              catch (Exception e)
 diff --git a/NRaasOverwatch/OverwatchSpace/PersistedSettings.cs b/NRaasOverwatch/OverwatchSpace/PersistedSettings.cs
-index c9fc3eb..12a0466 100644
+index 12a0466..f675097 100644
 --- a/NRaasOverwatch/OverwatchSpace/PersistedSettings.cs
 +++ b/NRaasOverwatch/OverwatchSpace/PersistedSettings.cs
-@@ -74,6 +74,8 @@ namespace NRaas.OverwatchSpace
+@@ -74,8 +74,8 @@ namespace NRaas.OverwatchSpace
          public static string[] kAutoCommands = new string[0];
          [Tunable, TunableComment("Hour at which to run the nightly alarm")]
          public static float kAlarmHour = 3f;
-+        [Tunable, TunableComment("Sim-minutes between the nightly cleanups, 0 runs them all at once")]
-+        public static int kAlarmSpacing = 10;
+-        [Tunable, TunableComment("Sim-minutes between the nightly cleanups, 0 runs them all at once")]
+-        public static int kAlarmSpacing = 10;
++        [Tunable, TunableComment("Sim-minutes between the nightly cleanups, 0 runs them one per frame")]
++        public static int kAlarmSpacing = 0;
  
          [Tunable, TunableComment("Whether to check for stuck sims each night")]
          public static bool kStuckCheck = true;
-@@ -133,6 +135,7 @@ namespace NRaas.OverwatchSpace
-         public bool mShowNotices = kShowNotices;
-         private bool mLogging = kLogging;
-         public float mAlarmHour = kAlarmHour;
-+        public int mAlarmSpacing = kAlarmSpacing;
- 
-         public bool mStuckCheckV2 = kStuckCheck;
-         public bool mStuckCheckReset = kStuckCheckReset;
-diff --git a/NRaasOverwatch/OverwatchSpace/Settings/AlarmSpacing.cs b/NRaasOverwatch/OverwatchSpace/Settings/AlarmSpacing.cs
-new file mode 100644
-index 0000000..f2bf5f8
---- /dev/null
-+++ b/NRaasOverwatch/OverwatchSpace/Settings/AlarmSpacing.cs
-@@ -0,0 +1,34 @@
-+﻿using NRaas.CommonSpace.Options;
-+using NRaas.OverwatchSpace.Interfaces;
-+using Sims3.Gameplay.Abstracts;
-+using System;
-+using System.Collections.Generic;
-+using System.Text;
-+
-+namespace NRaas.OverwatchSpace.Settings
-+{
-+    public class AlarmSpacing : IntegerOption
-+    {
-+        public override string GetTitlePrefix()
-+        {
-+            return "AlarmSpacing";
-+        }
-+
-+        public override ITitlePrefixOption ParentListingOption
-+        {
-+            get { return new ListingOption(); }
-+        }
-+
-+        protected override int Value
-+        {
-+            get
-+            {
-+                return NRaas.Overwatch.Settings.mAlarmSpacing;
-+            }
-+            set
-+            {
-+                NRaas.Overwatch.Settings.mAlarmSpacing = value;
-+            }
-+        }
-+    }
-+}
 diff --git a/NRaasOverwatch/StringTables/StringTableEnglish.txt b/NRaasOverwatch/StringTables/StringTableEnglish.txt
-index 1d8ad0224dc7f3b22f05641376ff35a757475cab..8cf6d85f7fca52279477aefca9ed1b1f2dddbcab 100644
+index 8cf6d85f7fca52279477aefca9ed1b1f2dddbcab..a25819984307631bc9e6412ce81d98249049b22f 100644
 GIT binary patch
-delta 223
-zcmdnh%y_4baYK&!<O?iXlh3Ge@dh&#FeEZ0Gh{O4F{Dp66f>S&qsGS$6`kBKE{;Rx
-zMl;R&V4$vC23;Tq=`Lj`VMt{tW>8>A0@5W6<v=nOD6RlxX8>6WKz1fWI*?t$ki$?3
-z<R=5^RG{r3y#-*M8Vm+N@gg8U56p+?%ms=i0@db#=@KBB50p>l0BY7`uwqb{e2~|E
-J^DK1*DFBNuGLrxR
+delta 50
+zcmcc9#`vI(al<1G`Fw^vhExUxh5{g21f<h|WFkW@kf+ID#h@_xptkd72Td6%0CqVI
+A4*&oF
 
-delta 18
-Zcmcc9#<;7QaYK&!<OiY#o9#5^qyS7U2JZj>
+delta 34
+ncmaFR#(1ZVal<1G;Y5ZUAXH#TWGDfW`3!js$(w&_q)Pz+$dL+r
+
+-- 
+2.56.0.windows.2
+
+From eef5b67811c393056e18de09d5a956b8530716cd Mon Sep 17 00:00:00 2001
+From: Rodney Pantonial <rodneypantonial@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 11:14:05 +0800
+Subject: [PATCH 2/2] Stuck Check: one route check per frame;
+ StaggeredCleanupVersion 2
+
+Each Stuck Check route check plans a route from the Sim's spot (5-90 ms each in our profiles), and the nightly run did all of them in one frame. After a Sim that needed a route check, the run now sleeps one frame (only where sleeping is allowed: the nightly alarm's task or the menu interaction), after that Sim's reset decision, so the check and its decision still happen in the same frame. Sims destroyed while sleeping are skipped. The same Sims are checked with the same rules.
+
+StaggeredCleanupVersion is now 2, so other mods can tell that both the cleanups and the stuck checks are spread.
+---
+ NRaasOverwatch/Overwatch.cs                        |  3 ++-
+ NRaasOverwatch/OverwatchSpace/Alarms/StuckCheck.cs | 12 ++++++++++++
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/NRaasOverwatch/Overwatch.cs b/NRaasOverwatch/Overwatch.cs
+index fea743d..810221c 100644
+--- a/NRaasOverwatch/Overwatch.cs
++++ b/NRaasOverwatch/Overwatch.cs
+@@ -24,7 +24,8 @@ namespace NRaas
+         static PersistedSettings sSettings = null;
+ 
+         // Read by other mods that would otherwise spread the nightly cleanups themselves. Bump when that behaviour changes.
+-        public static readonly int StaggeredCleanupVersion = 1;
++        // 2: one cleanup per frame without spacing, Stuck Check one route check per frame
++        public static readonly int StaggeredCleanupVersion = 2;
+ 
+         static AlarmTask sAlarm = null;
+ 
+diff --git a/NRaasOverwatch/OverwatchSpace/Alarms/StuckCheck.cs b/NRaasOverwatch/OverwatchSpace/Alarms/StuckCheck.cs
+index dce9adf..eb9b35f 100644
+--- a/NRaasOverwatch/OverwatchSpace/Alarms/StuckCheck.cs
++++ b/NRaasOverwatch/OverwatchSpace/Alarms/StuckCheck.cs
+@@ -180,6 +180,11 @@ namespace NRaas.OverwatchSpace.Alarms
+ 
+             foreach (Sim createdSim in new List<Sim> (LotManager.Actors))
+             {
++                // Sims can go away while we sleep between route checks
++                if ((createdSim == null) || (createdSim.HasBeenDestroyed)) continue;
++
++                bool planned = false;
++
+                 StuckSimData other;
+                 if (!sData.TryGetValue(createdSim.SimDescription.SimDescriptionId, out other))
+                 {
+@@ -230,6 +235,7 @@ namespace NRaas.OverwatchSpace.Alarms
+                                 if ((interaction == null) || (sameInteraction))
+                                 {
+                                     bool success = false;
++                                    planned = true;
+ 
+                                     try
+                                     {
+@@ -287,6 +293,12 @@ namespace NRaas.OverwatchSpace.Alarms
+                 {
+                     Common.Exception(createdSim, e);
+                 }
++
++                // Each route check plans a route (tens of ms): one per frame, after this Sim's decision, where sleeping is allowed
++                if (planned)
++                {
++                    Common.Sleep();
++                }
+             }
+         }
+ 
+-- 
+2.56.0.windows.2
 

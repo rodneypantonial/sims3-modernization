@@ -21,6 +21,7 @@ namespace Ts3Agent
         static int sApGen;
         static volatile bool sApPoke;
         static int sApSpeedFixes;
+        static volatile int sApLastStep = int.MinValue / 2; // TickCount of the task's last step
         static readonly List<object> sApCleared = new List<object>();
 
         static void StartAutopilot()
@@ -56,7 +57,12 @@ namespace Ts3Agent
             if (a.Has("enabled")) c["enabled"] = a.Bool("enabled", false);
             if (a.Has("speed")) c["speed"] = a.Str("speed");
             if (a.Has("dialogs")) c["dialogs"] = a.Bool("dialogs", true);
+            // the task is a Simulator object: a world switch (travel, story-smoke 2026-10-23) can end it [inferred: the loader
+            // restarts its own PollTask on every world load], and then no dialog is answered in the new world. A task that has not stepped for 2 s while in a world is started again.
+            bool restarted = GameStates.IsInWorld() && System.Environment.TickCount - sApLastStep > 2000;
+            if (restarted) StartAutopilot();
             Dictionary<string, object> r = Util.Obj();
+            r["restarted"] = restarted;
             foreach (KeyValuePair<string, object> kv in c) r[kv.Key] = kv.Value;
             r["speed_fixes"] = sApSpeedFixes;
             r["cleared"] = new List<object>(sApCleared);
@@ -106,6 +112,7 @@ namespace Ts3Agent
                 int lastDialog = 0, lastSpeed = 0;
                 while (mGen == sApGen && object.Equals(AppDomain.CurrentDomain.GetData(kApGen), mGen))
                 {
+                    sApLastStep = System.Environment.TickCount;
                     try { AutopilotStep(ref lastDialog, ref lastSpeed); }
                     catch (Exception) { }
                     Simulator.Sleep(0);

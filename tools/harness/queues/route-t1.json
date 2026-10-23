@@ -1,0 +1,93 @@
+{
+  "note": "docs/178 §6 build (ts3native 0.36.31, counters v103, asi game-copy/ts3native.asi.0338 = out-t1/ts3native.asi.0335 of branch worktree-agent-a2d2d0ec1ce7b0636; copy it to game-copy first). Job 1 checks T1 ([RouteAsync] FbJobDeadline: FbJobCapMs also cuts a foreign job's cell A* / water searches) with the T3 probe P-GS ([RouteJobPhases] GoalStepSplit) and the T4 counters ([RouteAsync] OwnJobWait) on the sv-crowd-cause settings (correctness, not timing). Job 2 flips T1 alone (native switch fbjobdeadline) per firing of sv-crowd-foreign-loop (ABBA in one load, 10 firings per arm fixed before the run, docs/168) with the tool-check measurement settings; read hitch-ab.ts --scenario. Job 1 FAIL (crash, a watchdog line, an OK line missing): stop, fix, do not run job 2.",
+  "jobs": [
+    {
+      "id": "sv-crowd-t1-verify",
+      "note": "Day (correctness, not timing): sv-crowd-cause settings (rare-big-crowd, 10 min) + T1 on, P-G + P-GS, OwnJobWait. Log must show OK route worker: runtime_invoke. Pass: no crash, the two OK lines, fbjdReady 7, gsReady 255, g0wWatchdog 0. Read: every 'route async: long job ... foreign' line capped with capAt ~300 ms (was capAt -1, docs/178 §3) and its 'route phases: foreign job' line (where the time went, cut cell / water / world; I-178-4: cell >= 70%), fbjdSkip / fbjdCapped / fbjdLateMaxUs (work past the deadline no exit stops), fbjdLong_0 / _1, 'route phases: goal step' lines (P-GS split >= 80% of the step's own time, I-178-5), owWait* and 'sim waited N ms behind an own job' lines (T4), stuck log (more failed foreign plans is the behaviour to watch), freeze-report (rtLock gaps).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "fbjdReady>=7,gsReady>=255,owReady>=1,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   foreign job deadline": 1,
+        "OK   route phases goal step split": 1
+      },
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteJobPhases.GoalSplit": 1,
+        "RouteJobPhases.GoalStepSplit": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "rare-big-crowd",
+          "slice": 2,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-crowd-t1-ab",
+      "note": "Forced repro A/B: sv-crowd-foreign-loop ABBA until 10 firings per arm (fixed before the run, docs/168), fbjobdeadline flipped (ini installs it, the arm step decides; FbJobCapMs 300 on both arms = today's world A* cap), cap 45 min. Pass: no crash, the OK line, 0 watchdog lines, fbjdSkip_0 >= 1 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario <tag>): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits), fbjcWaitHist / fbjcSimWaitMaxUs (sim waits behind foreign jobs), fbjdLong, 'route async: long job' capAt per arm; expected on arm: no foreign job much past ~300 ms + one in-flight cell A* frame, >= 1000 ms freezes behind foreign jobs gone (docs/178 T1 est. SV -3..-4 per 10 min).",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "nativeRequire": "fbjdReady>=7,fbjdSkip_0>=1,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   foreign job deadline": 1
+      },
+      "ini": {
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "sv-crowd-foreign-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

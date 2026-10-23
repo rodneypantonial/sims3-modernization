@@ -130,7 +130,9 @@ static bool ApplyCellMemoProbe(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     if (!k.rjpReady || !g_rjpJmp[RJS_CELL]) { Log("SKIP cell memo probe: needs [RouteJobPhases] Enabled=1 with its cell A* site"); return true; }
     for (int i = 0; i < CMS_N; i++)
-        if (!CmInstallAt(i, kCmSites[i].at, i == CMS_QRESET ? &g_rgTramp[6] : NULL)) k.cmSkipped++;
+        // Q reset: [RouteGate]'s stub, else P-GS's own detour (docs/178 T3, installed just before) when GoalStepSplit is on
+        if (!CmInstallAt(i, kCmSites[i].at, i != CMS_QRESET ? NULL : g_rgTramp[6] ? &g_rgTramp[6] : g_rjpJmp[RJS_GS0 + 3] ? &g_rjpJmp[RJS_GS0 + 3] : NULL))
+            k.cmSkipped++;
     k.cmReady = k.cmSkipped ? 0 : 1;  // without every site the plan boundaries or the keys are wrong: count nothing
     Log("%s cell memo probe: %d of %d sites (worker plans only)", k.cmReady ? "OK  " : "FAIL", CMS_N - (int)k.cmSkipped, CMS_N);
     return true;

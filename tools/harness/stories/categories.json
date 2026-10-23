@@ -1,0 +1,27 @@
+{
+  "note": "Default category weights for the story scheduler (docs/171 §2, §8). normal + world = everyday play (~55%), lifestage ~25%, chaos + occult ~20%. Per-world files in worlds/ multiply these; personas multiply template ids by prefix.",
+  "biasMatching": "templateBias keys are template id prefixes; the longest matching prefix wins (so world-sv- 3.0 beats world- 0.3). Persona, world and category factors multiply.",
+  "weights": {
+    "normal": 0.45,
+    "world": 0.10,
+    "lifestage": 0.25,
+    "chaos": 0.10,
+    "occult": 0.10
+  },
+  "groups": {
+    "daily-": "normal: work, school, homework, cooking, eating, cleaning, bills, sleep",
+    "skill-": "normal: books, instruments, painting, chess, gym, garden, fishing, logic, classes",
+    "social-": "normal: chat, flirt, dates, WooHoo, proposal, wedding, parties, fights, phone, invite",
+    "shop-": "normal: bookstore, grocery, consignment, stalls, buy and place furniture",
+    "build-": "normal: build/buy mode episodes",
+    "cas-": "normal: CAS episodes and outfit changes",
+    "cam-": "normal: camera storms over far and populated lots",
+    "travel-": "normal: vacation worlds, university, future",
+    "pet-": "normal: adopt, train, ride",
+    "world-": "world: venue and world-specific stories (diving, houseboats, celebrity, nightlife, occult venues, parks)",
+    "life-": "lifestage: baby, pregnancy, birth, toddler, child, teen, age up, elder, death, ghost, adoption",
+    "gen-": "lifestage: generations on short lifespan over several days",
+    "chaos-": "chaos: drowning, fire, burglar, lightning, starvation, electrocution, fights, meteor",
+    "occult-": "occult: transforms, bites, full moon, spells, wishes, curses, hauntings, mermaids"
+  }
+}

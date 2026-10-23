@@ -22,7 +22,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { keyName } from './hitch-attr-report.ts';
-import { baseWins, cause, exclAdd, exclTable, exclusion, firingWins, queueEvents, reproSteps, runContext, STEP_POST_MS, type ExclRow, type RunCtx } from './worst-hitches.ts';
+import { baseWins, cause, exclAdd, exclTable, exclusion, firingWins, queueEvents, reproSteps, rowLongest, runContext, STEP_POST_MS, type ExclRow, type RunCtx } from './worst-hitches.ts';
 import { load as loadFreeze, reproCauses, reproFires } from './freeze-report.ts';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
@@ -55,7 +55,7 @@ export function rowArms(n: number, slices?: Slice[]): (string | null)[] {
 // by its own window or its row's; an excluded hitch in a kept row also leaves the iteration count, so p99 is over real ones
 export function splitRun(rows: Row[], hitches: H[], slices?: Slice[], ctx: Pick<RunCtx, 'wins' | 'foreground'> = { wins: baseWins(rows), foreground: false }, freezes: Fz[] = []): Record<string, Arm> {
   const arms = rowArms(rows.length, slices), out: Record<string, Arm> = {};
-  const rowWhy = rows.map((r, i) => exclusion({ a: i ? rows[i - 1].t : r.t - 1000, b: r.t }, ctx)?.why ?? null);
+  const rl = rowLongest(rows, hitches), rowWhy = rows.map((r, i) => exclusion({ a: i ? rows[i - 1].t : r.t - 1000, b: r.t, iter: rl[i] }, ctx)?.why ?? null);
   rows.forEach((r, i) => {
     const a = arms[i]; if (!a) return;
     const x = out[a] ??= { iters: 0, secs: 0, hitches: [], excl: new Map() };
@@ -65,7 +65,7 @@ export function splitRun(rows: Row[], hitches: H[], slices?: Slice[], ctx: Pick<
   for (const h of [...hitches].sort((a, b) => a.t - b.t)) {
     while (i < rows.length && rows[i].t < h.t) i++;
     const a = arms[i], x = a ? out[a] : undefined; if (!x) continue;
-    const why = exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps }, ctx)?.why ?? rowWhy[i];
+    const why = exclusion({ a: h.t - h.wallMs, b: h.t, wallMs: h.wallMs, steps: h.steps, iter: h }, ctx)?.why ?? (rowWhy[i] === 'probe call' ? null : rowWhy[i]); // own check judged the calls (docs/178 T2)
     if (!why) { x.hitches.push(h); continue; }
     exclAdd(x.excl, why, h.wallMs);
     if (!rowWhy[i]) x.iters--;
@@ -73,9 +73,9 @@ export function splitRun(rows: Row[], hitches: H[], slices?: Slice[], ctx: Pick<
   // publish gaps (visible freezes) as freeze-report.ts: real unless exclusion() with the longest iteration inside, or its row, says not
   if (freezes.length) for (const x of Object.values(out)) x.freezes = [];
   for (const f of freezes) {
-    const j = rows.findIndex(r => r.t >= f.t1), a = j < 0 ? null : arms[j], x = a ? out[a] : undefined; if (!x || rowWhy[j]) continue;
-    const longest = Math.max(0, ...hitches.filter(h => h.t - h.wallMs < f.t1 && h.t > f.t0).map(h => h.wallMs));
-    if (!exclusion({ a: f.t0, b: f.t1, gap: { longestIterMs: longest, iters: f.iters } }, ctx)) x.freezes!.push(f.gapMs);
+    const j = rows.findIndex(r => r.t >= f.t1), a = j < 0 ? null : arms[j], x = a ? out[a] : undefined; if (!x || (rowWhy[j] && rowWhy[j] !== 'probe call')) continue;
+    const main = hitches.filter(h => h.t - h.wallMs < f.t1 && h.t > f.t0).sort((p, q) => q.wallMs - p.wallMs)[0];
+    if (!exclusion({ a: f.t0, b: f.t1, gap: { longestIterMs: main?.wallMs ?? 0, iters: f.iters }, iter: main }, ctx)) x.freezes!.push(f.gapMs);
   }
   return out;
 }

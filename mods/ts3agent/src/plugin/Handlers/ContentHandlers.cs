@@ -76,9 +76,11 @@ namespace Ts3Agent
             return f;
         }
 
+        // Sims and objects change only in live mode (Create A Sim and the game's own build/buy placement are the game's flows):
+        // see docs/171 §14 (native fault 0x575651 after a make_sim 10 s past a build-mode switch)
         static void RequireLive()
         {
-            if (SubState() != "LiveModeState") throw new McpException("not in live mode (state " + SubState() + ")");
+            if (SubState() != "LiveModeState") throw new McpException("not available: " + SubState() + " (LiveModeState only)");
         }
 
         // Buy catalog sorted by key, so filter+max picks the same items every run.
@@ -208,6 +210,7 @@ namespace Ts3Agent
         // any other id is refused. An object a Sim is using is left alone and reported; retry it later.
         static object RemoveObjects(Args a)
         {
+            RequireLive();
             List<ulong> created = CreatedObjects();
             List<ulong> ids = new List<ulong>();
             if (a.Has("ids")) foreach (object o in a.List("ids")) ids.Add(Convert.ToUInt64(o, System.Globalization.CultureInfo.InvariantCulture));
@@ -554,7 +557,8 @@ namespace Ts3Agent
                 SimDescription sd = SimDescription.Find(id);
                 if (sd == null) { rec.Remove(id); continue; }
                 int[] before;
-                if (!rec.TryGetValue(id, out before)) throw new McpException(sd.FullName + " wears no agent parts");
+                // nothing of ours to take off (wear_parts never dressed this Sim, or it was already restored): done, no-op
+                if (!rec.TryGetValue(id, out before)) { done.Add(sd.FullName + " (wears no agent parts: nothing to restore)"); continue; }
                 Sim s = sd.CreatedSim;
                 int ours = sd.HasSpecialOutfit(kWearOutfit) ? sd.GetSpecialOutfitIndexFromKey(ResourceUtils.HashString32(kWearOutfit)) : -1;
                 bool switched = false;

@@ -1451,6 +1451,36 @@ rpc.exports = {
         'pdLateMaxUs', 'pdSkipCell', 'pdSkipWater', 'pdWorldCapped', 'pdOwnExempt', 'pdLines', 'fmMode', 'fmReady', 'fmCalls',
         'fmNoKey', 'fmFails', 'fmRep', ...n('fmInval', 4), ...n('fmWould', 2), ...n('fmWouldSame', 2), ...n('fmWouldDiff', 2),
         'fmServed', 'fmServedUs');
+      // v100 (docs/174, fgro.cpp): [PlacementRO] at +0x42C8; fgFb_<r> 0 state, 1 QL busy, 2 lot/deferred, 3 shape, 4 tripwire,
+      // 5 job ended
+      if (c.readS32() >= 100) f.push('fgReady', 'fgMode', 'fgShadow', 'fgCalls', 'fgTaken', 'fgHits', 'fgUs', 'fgMaxUs', ...n('fgFb', 6),
+        'fgShadowRuns', 'fgShadowMismatch');
+      // v101 (docs/176, a10.cpp): [RouteAsync] ForeignKinds at +0x4308; af*_<k> by A10 kind - 1 (0 Replan, 1 PlanFromPoint,
+      // 2 ReplanFromPosition)
+      if (c.readS32() >= 101) f.push('afMode', 'afKinds', ...n('afSeen', 3), ...n('afStarted', 3), ...n('afActive', 3),
+        ...n('afNoYield', 3), ...n('afCollected', 3), ...n('afJobUs', 3), 'afJobMaxUs', 'afActiveTrip');
+      // v102 (docs/177): probe P-G at +0x4360 (pg*_<p>: 0 goal gen, 1 goal step, 2 EditPathForRoute, 3 GoalPoint_Validate;
+      // pgValHist_<b>: 0, 1-18, 19-35, 36-70, 71-200, > 200 validations per job), [GoalGen] D1 (gg*), H2 IC window (hx*;
+      // hxCalls_<i>: 0 GetDestinationObstruction, 1 GetObstructionAtPoint, 2 IsPointObstructedBySim,
+      // 3 FindObstaclesForSimAlongRoute, 4 SetAGS, 5 InsertRouteSubPathsAtIndex, 6 InsertCustomPathAtIndex)
+      if (c.readS32() >= 102) f.push('pgReady', ...n('pgN', 4), ...n('pgUs', 4), ...n('pgMaxUs', 4), ...n('pgValHist', 6), 'pgValMax',
+        'pgLongRest', 'ggMode', 'ggReady', 'ggRings', 'ggDup', 'ggSkipped', 'ggArgMismatch', 'ggValCmp', 'ggValMismatch', 'ggValDup',
+        'hxMode', 'hxReady', ...n('hxCalls', 7), 'hxOffSim', 'hxHeld', 'hxRunningAtEntry', 'hxStale');
+      // v103 (docs/178): T1 FbJobDeadline at +0x440C (fbjdSkip_<i>: 0 cell A*, 1 water; fbjdCapped_<i>: 0 world A*, 1 cell, 2 water;
+      // fbjdLong_<i>: 0 >= 300 ms, 1 >= 1000 ms), T4 own-job sim waits (owWaitHist_<b>: <100, <300, <500, <1000, <2000, >=2000 ms),
+      // T3 P-GS (gs*_<i>: 0 lot planner, 1 room graph, 2 LotPortalSearch, 3 Q reset, 4 obstacle query, 5 gather, 6 range query,
+      // 7 lot index rebuild)
+      if (c.readS32() >= 103) f.push('fbjdMode', 'fbjdReady', ...n('fbjdSkip', 2), ...n('fbjdCapped', 3), 'fbjdLateUs', 'fbjdLateMaxUs',
+        ...n('fbjdLong', 2), 'fbjdLines', 'owReady', 'owWaits', 'owWaitUs', 'owWaitMaxUs', ...n('owWaitHist', 6), 'owLines', 'gsReady',
+        ...n('gsN', 8), ...n('gsUs', 8), ...n('gsMaxUs', 8), 'gsSteps', 'gsLong');
+      // v104 (docs/177 §7): [RouteAsync] RefcountGuard at +0x44D4 (rcByFn_<i>: 0 RouteObstructionAtPoint, 1 IsPointObstructedBySim,
+      // 2 IsOkToIdle, 3 0x755EA0, 4 GoalPoint_Validate, 5 Route_GoalStep, 6 0x8243E0, 7 0x830340, 8 RouteFollow_A, 9 RouteFollow_B,
+      // 10 RouteFollow_EditPath, 11 Locomotion_ObstacleCheck; rcPass_<i>: 0 no hits, 1 caller not listed, 2 serving a callback,
+      // 3 frame stack full, 4 frame check; rcDropped_<i>: 0 before a sim wait, 1 unwound frame)
+      if (c.readS32() >= 104) f.push('rcMode', 'rcReady', 'rcDeferred', ...n('rcByFn', 12), ...n('rcPass', 5), 'rcOffSim', 'rcFrames',
+        'rcLeaves', ...n('rcDropped', 2), 'rcHoldUs', 'rcHoldMaxUs', 'rcBusyAtOpen', 'rcWould');
+      // v105 (docs/182): [RouteSnap] RecsUnlocked at +0x4548 (replay consumer rounds outside +0x918)
+      if (c.readS32() >= 105) f.push('ulMode', 'ulRounds', 'ulRecs', 'ulUs', 'ulMaxUs', 'ulOpBusy', 'ulLockTrip', 'ulFaults');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

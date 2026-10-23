@@ -1,0 +1,119 @@
+{
+  "note": "docs/177 build (ts3native 0.36.30, counters v102, asi game-copy/ts3native.asi.0334 = out-goal of branch route-goal-bundle): job 1 checks probe P-G ([RouteJobPhases] GoalSplit) and D1's shadow on natural IP play; job 2 flips D1 ([GoalGen] SameRing, native switch goalgen) and the H2 IC window ([RouteAsync] H2Ic, switch h2ic) together per firing of ip-goal-ring-loop (ABBA in one load, 10 firings per arm fixed before the run, docs/168). Measurement settings = tool-check.json (HitchAttr + Holders, ForegroundRender, RouteJobPhases + SyncPlans, LogFallbackMs 20 / stack 16, noSamplers). Copy out-goal/ts3native.asi.0334 to game-copy first. Job 1 FAIL (crash, ggArgMismatch > 0, a watchdog line): stop, fix, do not run job 2.",
+  "jobs": [
+    {
+      "id": "ip-goal-split-verify",
+      "note": "Day (correctness, not timing), 8 min natural IP play: P-G on (GoalSplit), D1 in shadow (Mode 2: both rings run, arguments and validation answers compared), H2Ic off. Pass: no crash, both OK lines, pgReady 15, validations counted (pgN_3 > 0), duplicates seen (ggDup > 0) with ggArgMismatch 0; read ggValMismatch / ggValCmp (answers that changed between the rings: the sim moved something; not a failure), pgValHist, pgLongRest and the 'route phases: long rest' lines (which phase the IP 200+ ms rest is, I-177-3).",
+      "asi": "game-copy/ts3native.asi.0334",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 102,
+      "nativeRequire": ",pgN_3>=1,ggDup>=1,ggArgMismatch<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   goal gen D1": 1,
+        "OK   route phases goal split": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.GoalSplit": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 2
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 8,
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "cameraPan": true,
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-goal-ring-ab",
+      "note": "Forced repro A/B: ip-goal-ring-loop ABBA until 10 firings per arm (fixed before the run, docs/168), goalgen + h2ic flipped together (ini installs both with start mode 0, the switch decides), cap 45 min. Pass: no crash, both OK lines, 0 watchdog lines (g0wWatchdog 0), hxStale 0, ggArgMismatch 0, ggSkipped > 0 and hxHeld > 0 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (does the hold move waits to new keys: moved-waits table), it/s, asyncUs; expected change in hitches ~0 (D1 <= ~1 ms per radius plan, H2Ic is a correctness fix).",
+      "asi": "game-copy/ts3native.asi.0334",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 102,
+      "nativeRequire": ",hxReady>=7,ggSkipped>=1,hxHeld>=1,ggArgMismatch<=0,hxStale<=0,g0wWatchdog<=0",
+      "logRequire": {
+        "OK   goal gen D1": 1,
+        "OK   H2 IC window": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 0,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "ip-goal-ring-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

@@ -430,7 +430,7 @@ namespace Ts3Agent
             return r;
         }
 
-        // travel_future {prepare?, direct?}: the active Sim alone through the time portal (TravelWith, the group version, is not
+        // travel_future {sim?, prepare?, direct?}: the Sim (default the active Sim) alone through the time portal (TravelWith, the group version, is not
         // wired). prepare: true runs portal_prepare first (test saves without a summoned traveler or an active portal).
         // direct: true skips the queued interaction (confirm dialog, walk, animations) and starts the switch from a fresh
         // one-shot task in the order of docs/77 §4.2 (FutureDirect). Default: the queued portal Travel interaction.
@@ -438,7 +438,7 @@ namespace Ts3Agent
         {
             CheckCanLeave();
             object prepared = a.Bool("prepare", false) ? PortalPrepare(a) : null;
-            Sim s = Util.ActiveSim();
+            Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();  // the story's traveller role (docs/171 §16)
             GreyedOutTooltipCallback why = null;
             if (!TravelUtil.CanSimTriggerTravelToFutureWorld(s, ref why))
                 throw new McpException(s.FullName + " cannot travel to the future now" + (why != null ? ": " + why() : ""));
