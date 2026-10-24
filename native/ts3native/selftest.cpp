@@ -647,7 +647,7 @@ static void __fastcall TpPassChecked(void* self, void* edx, float dt) {
 }
 static void TestH2Threaded() {
     static_assert(offsetof(Ts3nCounters, h2Released) == 0x364C && offsetof(Ts3nCounters, h2PassLockN) == 0x3650 &&
-                  offsetof(Ts3nCounters, h2PassLockUs) == 0x3658 && offsetof(Ts3nCounters, h2ReleaseMaxUs) == 0x3660 && sizeof(Ts3nCounters) == 4442 * 4, "v85 layout after v84 (docs/registry.md)");
+                  offsetof(Ts3nCounters, h2PassLockUs) == 0x3658 && offsetof(Ts3nCounters, h2ReleaseMaxUs) == 0x3660 && sizeof(Ts3nCounters) == 4467 * 4, "v85 layout after v84 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const LONG wd0 = k.watchdogs;
     QueryPerformanceFrequency(&g_qpf);
@@ -1258,7 +1258,7 @@ static void TestFallback() {
     // 4c. docs/134 §11: the job cap is a deadline from the job's start, read every 4th cost call of either kind
     {
         static_assert(offsetof(Ts3nCounters, fbjcCapAtMaxUs) == 0x3604 && offsetof(Ts3nCounters, fbjcWaitHist) == 0x3634 &&
-                          sizeof(Ts3nCounters) == 4442 * 4, "counters v84 layout after v83 (docs/registry.md)");
+                          sizeof(Ts3nCounters) == 4467 * 4, "counters v84 layout after v83 (docs/registry.md)");
         const PlanLockedFn planSave = g_planOrig;
         const LONG readySave = k.budgetReady;
         g_planOrig = FbSlowSearch;
@@ -3649,6 +3649,19 @@ static void TestRouteSites() {
     assert(k.rgUnlocked2[2] == 1 && k.rgJob2[2] == 1);
     g_callerTid = 0;
     reset();
+    // gate site 16 (index 15, IC_World_FindPlacesOnShoreline, crash K) counts in v108, not in the v25 arrays
+    static_assert(offsetof(Ts3nCounters, rgUnlocked3) == 0x45C4 && offsetof(Ts3nCounters, rgJob3) == 0x45C8 &&
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v108 layout after v107 (docs/registry.md)");
+    assert(kRgSites[15].addr == 0x0078C440 && kRgSites[15].len == 6);
+    k.rgUnlocked3 = k.rgJob3 = 0;
+    RgEnter(15, &stack[20]);
+    assert(k.rgUnlocked3 == 1 && k.rgJob3 == 0 && t_rg.n == 1 && k.rgUnlocked2[2] == 1);
+    reset();
+    g_callerTid = 1234;
+    RgEnter(15, &stack[20]);
+    assert(k.rgUnlocked3 == 2 && k.rgJob3 == 1 && k.rgJob2[2] == 1);
+    g_callerTid = 0;
+    reset();
 
     // G11: plan, then a gate entry closes the window (min(plan, gap) <= both); a second touch adds nothing
     assert(G11PlanBegin());
@@ -3905,6 +3918,17 @@ static void TestRouteEnforce() {
     g_async.state = A_IDLE;
     RgEnter(0, &stack[20]);
     assert(count == 0 && t_rg.f[0].rel == RG_REL_OFFSIM && k.rgGateWaits == 1);
+    reset();
+    // gate site 16 (crash K, IC_World_FindPlacesOnShoreline): during a job the IC waits and holds +0x918 for the whole call;
+    // with no job its frame keeps job starts out (g_rgOffSimOpen) until it returns
+    w = EnfStartWorker();
+    stack[20] = 0x666;
+    RgEnter(15, &stack[20]);
+    assert(k.rgGateWaits == 2 && count == 1 && t_rg.n == 1 && t_rg.f[0].rel == (RG_REL_LOCK | RG_REL_OFFSIM));
+    assert(RgLeave() == 0x666 && count == 0 && t_rg.n == 0 && g_rgOffSimOpen == 0);
+    EnfJoin(w);
+    RgEnter(15, &stack[20]);
+    assert(count == 0 && t_rg.f[0].rel == RG_REL_OFFSIM && g_rgOffSimOpen == 1 && k.rgGateWaits == 2);
     reset();
 
     // destroy and save during a job wait for it; the save refuses START until it returns
@@ -4444,7 +4468,7 @@ static u8 __fastcall FakeUsfShould(void*, void*, void* obj) { assert(obj); retur
 static void TestFootprintDefer() {
     static_assert(offsetof(Ts3nCounters, usfReady) == 0x3174 && offsetof(Ts3nCounters, usfMode) == 0x3178 &&
                   offsetof(Ts3nCounters, usfApplied) == 0x31A4 && offsetof(Ts3nCounters, usfApplyInJob) == 0x31C4 &&
-                  sizeof(Ts3nCounters) == 4442 * 4, "v74 layout (without v52, v58)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "v74 layout (without v52, v58)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -4679,7 +4703,7 @@ static DWORD WINAPI F2JobEnd(void*) {  // the running job ends a little later (a
 static void TestFootprintDefer2() {
     static_assert(offsetof(Ts3nCounters, fp2Mode) == 0x3FB4 && offsetof(Ts3nCounters, fp2Deferred) == 0x3FBC &&
                   offsetof(Ts3nCounters, fp2Forced) == 0x3FDC && offsetof(Ts3nCounters, fp2ApplyInJob) == 0x3FE8 &&
-                  sizeof(Ts3nCounters) == 4442 * 4, "counters v94 layout after v92 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v94 layout after v92 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -4897,6 +4921,212 @@ static void TestFootprintDefer2() {
     DeleteCriticalSection(&g_rgFakeCs);
 }
 
+// --- [Discourage] PlanDrain (docs/89 §13, counters v107 sd*): a sim-thread sync plan through PlanLockedHook applies D's queue
+// first. The fake plan records the queue length and the apply log length it saw; log letters as in TestFootprintDefer2 ---
+static int g_pdSeenCount, g_pdSeenLog, g_pdPlans;
+static u8 g_pdRet = 1;
+static bool g_pdNest;
+static u8* g_pdNestObj;
+static u8 __fastcall PdFakePlan(void* world, void*, int*, int*, int*, DWORD, DWORD, u8*, int*, int*, DWORD, DWORD) {
+    g_pdPlans++;
+    g_pdSeenCount = g_discCount;
+    g_pdSeenLog = g_xLogN;
+    if (g_pdNest) {  // the game's plan holds +0x918; a footprint call made inside it passes through (usfPass)
+        g_pdNest = false;
+        ts3native_counters.rgOwnerTid = (LONG)GetCurrentThreadId();
+        UsfHook((u8*)world, NULL, g_pdNestObj, 1, 1, 7);
+        ts3native_counters.rgOwnerTid = 0;
+    }
+    return g_pdRet;
+}
+
+static void TestPlanDrain() {
+    static_assert(offsetof(Ts3nCounters, sdReady) == 0x4588 && offsetof(Ts3nCounters, sdMode) == 0x458C &&
+                  offsetof(Ts3nCounters, sdSkip) == 0x45A8 && offsetof(Ts3nCounters, sdFail) == 0x45BC &&
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v107 layout after v106 (docs/registry.md)");
+    Ts3nCounters& k = ts3native_counters;
+    memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
+    memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
+    memset(&k.usfReady, 0, offsetof(Ts3nCounters, usfApplyInJob) + 4 - offsetof(Ts3nCounters, usfReady));
+    memset(&k.fp2Mode, 0, offsetof(Ts3nCounters, fp2ApplyInJob) + 4 - offsetof(Ts3nCounters, fp2Mode));
+    memset(&k.sdReady, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, sdReady));
+    const DWORD me = GetCurrentThreadId();
+    const LockAcquireFn savedLock = g_lockOrig;
+    g_lockOrig = RgTryAcquire;
+    g_rgRelOrig = RgFakeRelease;
+    InitializeCriticalSection(&g_rgFakeCs);
+    const HANDLE savedDone = g_asyncDone, savedInv = g_invReady;
+    g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_invReady = CreateEventW(NULL, FALSE, FALSE, NULL);
+    const auto planSave = g_planOrig;
+    CacheEntry* const tabSave = g_tab;
+    const LONG workerSave = k.workerMode, workerReadySave = k.workerReady, rgReadySave = k.rgReady;
+    g_tab = NULL;  // no negative cache: every plan reaches the fake
+    k.workerMode = 0;
+    k.workerReady = 0;
+    k.rgReady = 0;
+    g_planOrig = PdFakePlan;
+    g_discAddOrig = XAdd;
+    g_discRemoveOrig = XRemove;
+    g_usfOrig = FakeUsf;
+    g_usfShould = FakeUsfShould;
+    g_ftOrig = FakeFt;
+    g_uolOrig = FakeUol;
+    g_objSvc = FakeSvc;
+    g_findRef = XFindRef;
+    g_objRelease = FakeObjRelease;
+    g_lotRemove = XLotRemove;
+    g_keyFind = XKeyFind;
+    static u8 world[0xA00];
+    static u8 planner[0x200];
+    static DWORD buckets[2] = {0, 0x5E5E5E5E};
+    g_f2World = world;
+    world[0x974] = 1;
+    *(u8**)(world + 0x95C) = planner;
+    *(DWORD**)(world + 0x8BC) = buckets;
+    *(DWORD*)(world + 0x8C0) = 1;
+    *(DWORD*)(world + 0x8C4) = 0;
+    g_xKeyHit = false;
+    g_uShould = true;
+    g_rgLock = world + 0x918;
+    for (int i = 0; i < 3; i++) { *(DWORD*)(g_xObj[i] + 8) = 0xA + i; *(DWORD*)(g_xObj[i] + 0xC) = 0; g_xLive[i] = g_xObj[i]; }
+    u8* const A = g_xObj[0], * const B = g_xObj[1], * const C = g_xObj[2];
+    k.discMode = 1;
+    k.discDestroyMode = 1;
+    k.discSweepMode = 1;
+    k.usfMode = 1;
+    k.fp2Mode = 1;
+    k.sdReady = 1;
+    k.sdMode = 1;
+    g_async.owner = me;
+    g_async.state = A_IDLE;
+    static float pts[3][16] = {{1, 0, 1}, {5, 0, 5}, {9, 0, 9}};  // 64-byte route points
+    int starts[2] = {(int)(uintptr_t)pts[0], (int)(uintptr_t)pts[1]};
+    int goals[2] = {(int)(uintptr_t)pts[1], (int)(uintptr_t)pts[2]};
+    u8 opts[0x38] = {0};
+    int list[2];
+    DWORD guid = 0x500;
+    auto plan = [&]() {
+        list[0] = list[1] = (int)(uintptr_t)list;
+        g_pdSeenCount = g_pdSeenLog = -1;
+        return PlanLockedHook(world, NULL, list, starts, goals, 0x100, 1, opts, NULL, NULL, guid++, 0);
+    };
+    auto log = [](const char* s) { return g_xLogN == (int)strlen(s) && memcmp(g_xLog, s, g_xLogN) == 0; };
+    auto queue4 = [&]() {  // 3 U records and 1 phase 2 record while a job runs
+        g_async.state = A_RUNNING;
+        UsfHook(world, NULL, A, 0, 0, 7);
+        UsfHook(world, NULL, B, 0, 0, 7);
+        UsfHook(world, NULL, C, 0, 0, 7);
+        UolHook(world, NULL, A);
+        assert(g_discCount == 4);
+    };
+
+    // 1. job running, 4 records queued: the drain waits for the job, applies all in order, then the plan runs with none left
+    g_xLogN = 0;
+    queue4();
+    CloseHandle(CreateThread(NULL, 0, F2JobEnd, NULL, 0, NULL));
+    g_pdRet = 1;
+    assert(plan() == 1 && g_pdPlans == 1);
+    assert(g_pdSeenCount == 0 && g_pdSeenLog == 4 && log("pqrL") && g_async.state == A_IDLE);
+    assert(k.sdChecks == 1 && k.sdDrains == 1 && k.sdRecs == 4 && k.sdJobRan == 1 && k.usfApplyInJob == 0 && k.fp2ApplyInJob == 0);
+    // 2. no job running: drained with no wait; 9a. the plan fails after a drain
+    g_xLogN = 0;
+    queue4();
+    g_async.state = A_IDLE;
+    g_pdRet = 0;
+    const LONG forced0 = k.discForced;
+    assert(plan() == 0 && g_pdSeenCount == 0 && g_pdSeenLog == 4 && log("pqrL"));
+    assert(k.sdDrains == 2 && k.sdRecs == 8 && k.sdJobRan == 1 && k.discForced == forced0 && k.sdFail[0] == 1 && k.sdFail[1] == 0);
+    // 3. an Add queued: nothing applied (World_FireEvent 0x11 only at IC points); 9b. the plan fails after a skip
+    g_xLogN = 0;
+    g_async.state = A_RUNNING;
+    __declspec(align(16)) float fp[3][4] = {{1.5f}, {2}, {3}};
+    u8* vec[3] = {(u8*)fp, (u8*)fp + 48, (u8*)fp + 48};
+    DiscAddHook(world, NULL, A, vec, 0, 0, 0);
+    UsfHook(world, NULL, B, 0, 0, 7);
+    g_async.state = A_IDLE;
+    assert(plan() == 0 && g_pdSeenCount == 2 && g_pdSeenLog == 0 && k.sdSkip[0] == 1 && k.sdDrains == 2 && k.sdFail[1] == 1);
+    DiscPoll();
+    assert(log("Aq") && g_discCount == 0);
+    g_pdRet = 1;
+    // 4. inside a job callback: skipped, no job wait (the job still runs; RunPlan sends the plan on as before)
+    g_xLogN = 0;
+    queue4();
+    g_inInvoke = 1;
+    assert(plan() == 1 && g_pdSeenCount == 4 && k.sdSkip[1] == 1 && g_async.state == A_RUNNING && k.discForced == forced0);
+    g_inInvoke = 0;
+    // 5. +0x918 already owned by this thread: skipped
+    g_async.state = A_IDLE;
+    k.rgOwnerTid = (LONG)me;
+    assert(plan() == 1 && g_pdSeenCount == 4 && k.sdSkip[2] == 1);
+    k.rgOwnerTid = 0;
+    // 6. the P5c lent lock: skipped, no hand-over (the plan runs here under the lent hold, as RunPlan does)
+    CRITICAL_SECTION lent = {};
+    lent.OwningThread = (HANDLE)(uintptr_t)me;
+    void* const p5bLockSave = g_p5bLock;
+    g_p5bLock = &lent;
+    g_p5bWin = 1;
+    g_async.state = A_RUNNING;
+    const LONG hand0 = k.p5cHandOver;
+    assert(plan() == 1 && g_pdSeenCount == 4 && k.sdSkip[3] == 1 && k.p5cHandOver == hand0 && g_async.state == A_RUNNING);
+    g_p5bWin = 0;
+    g_p5bLock = p5bLockSave;
+    g_async.state = A_IDLE;
+    //    draining (a plan inside an apply): skipped
+    g_discDraining = true;
+    assert(plan() == 1 && g_pdSeenCount == 4 && k.sdSkip[4] == 1);
+    g_discDraining = false;
+    // 7. another thread (the worker's own plans) and a P4 clone run: not counted at all
+    const LONG checks0 = k.sdChecks;
+    g_async.owner = me + 1;
+    assert(plan() == 1 && g_pdSeenCount == 4);
+    g_async.owner = me;
+    t_snapRun = 1;
+    assert(plan() == 1 && g_pdSeenCount == 4);
+    t_snapRun = 0;
+    // 8. switch off with records queued, or on with nothing queued: nothing
+    k.sdMode = 0;
+    assert(plan() == 1 && g_pdSeenCount == 4 && k.sdChecks == checks0);
+    k.sdMode = 1;
+    g_xLogN = 0;
+    DiscPoll();
+    assert(log("pqrL") && g_discCount == 0);
+    assert(plan() == 1 && g_pdSeenCount == 0 && k.sdChecks == checks0 && k.sdDrains == 2);
+    // 10. order: a footprint call made inside the plan (+0x918 held) runs at once, after the drained records
+    g_xLogN = 0;
+    queue4();
+    g_async.state = A_IDLE;
+    g_pdNest = true;
+    g_pdNestObj = B;
+    const LONG pass0 = k.usfPass;
+    assert(plan() == 1 && g_pdSeenCount == 0 && log("pqrLQ") && k.usfPass == pass0 + 1 && g_discCount == 0);
+    assert(k.sdChecks == checks0 + 1 && k.sdDrains == 3 && k.sdRecs == 12 && k.sdMaxUs >= 0 && k.sdUs >= k.sdMaxUs);
+    // tripwires
+    assert(k.usfApplyInJob == 0 && k.fp2ApplyInJob == 0 && k.rgOwnerTid == 0);
+
+    g_async.owner = 0;
+    g_async.state = A_IDLE;
+    g_rgLock = NULL;
+    k.discMode = 0;
+    k.usfMode = 0;
+    k.fp2Mode = 0;
+    k.sdMode = 0;
+    k.sdReady = 0;
+    k.rgOwnerTid = 0;
+    k.rgAcquires = 0;
+    k.workerMode = workerSave;
+    k.workerReady = workerReadySave;
+    k.rgReady = rgReadySave;
+    g_tab = tabSave;
+    g_planOrig = planSave;
+    g_lockOrig = savedLock;
+    CloseHandle(g_asyncDone);
+    CloseHandle(g_invReady);
+    g_asyncDone = savedDone;
+    g_invReady = savedInv;
+    DeleteCriticalSection(&g_rgFakeCs);
+}
+
 // --- design G standalone ([Discourage] DestroyPark, counters v76; p5c.cpp P5cPark / P5cFlush outside a P5c window; docs/88
 // §10): fake objects with the game's layout where the park reads it (count +4). The fake release frees (poisons the canary,
 // logs the order) when the count reaches 0, as 0x7460F0's deleting destructor would; GDestroy is DestroyById's net effect
@@ -4936,7 +5166,7 @@ static DWORD WINAPI GFlushOther(void*) { P5cFlush(); return 0; }
 static void TestDestroyPark() {
     static_assert(offsetof(Ts3nCounters, dpReady) == 0x31DC && offsetof(Ts3nCounters, dpMode) == 0x31E0 &&
                   offsetof(Ts3nCounters, dpParked) == 0x31E4 && offsetof(Ts3nCounters, dpKeptWait) == 0x31E8 &&
-                  sizeof(Ts3nCounters) == 4442 * 4, "v76 layout after v75 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "v76 layout after v75 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     k.dpReady = k.dpMode = k.dpParked = k.dpKeptWait = 0;
     k.vfRtDestroyWaitUs = 0;
@@ -6826,7 +7056,7 @@ static void TestAvoidRO() {
                       offsetof(Ts3nCounters, avShadow) == 0x31F4 && offsetof(Ts3nCounters, avSiteSkip) == 0x3204 &&
                       offsetof(Ts3nCounters, avFb) == 0x3208 && offsetof(Ts3nCounters, avUs) == 0x3230 &&
                       offsetof(Ts3nCounters, avTwSite) == 0x323C && offsetof(Ts3nCounters, avShadowRuns) == 0x3244 &&
-                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 4442 * 4,
+                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 4467 * 4,
                   "counters v74 layout (docs/registry.md)");
     using namespace av;
     Ts3nCounters& k = ts3native_counters;
@@ -11036,10 +11266,10 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, m2Ready) == 0x2F70 && offsetof(Ts3nCounters, m2Take) == 0x2F74 &&
                   offsetof(Ts3nCounters, m2Fb) == 0x2F90 && offsetof(Ts3nCounters, m2VerM) == 0x2FDC &&
                   offsetof(Ts3nCounters, m2DoorHist) == 0x3000 && offsetof(Ts3nCounters, m2Guard) == 0x3024 &&
-                  sizeof(Ts3nCounters) == 4442 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4QCut) == 0x30EC && offsetof(Ts3nCounters, p4QCutMiss) == 0x30F0 &&
                   offsetof(Ts3nCounters, p4WaitExt) == 0x30F4 && offsetof(Ts3nCounters, oiClone) == 0x30F8 &&
-                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 4442 * 4,
+                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 4467 * 4,
                   "counters v67 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpOldAsk) == 0x310C && offsetof(Ts3nCounters, p4AcqBad) == 0x3110, "counters v68 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4Obst) == 0x3114 && offsetof(Ts3nCounters, p4ObstBusy) == 0x3118,
@@ -11049,7 +11279,7 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, p4Borrow) == 0x313C && offsetof(Ts3nCounters, p4BorrowMiss) == 0x3140 &&
                   offsetof(Ts3nCounters, p4BorrowDirty) == 0x3144, "counters v71 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpKidsKept) == 0x3148, "counters v72 layout (docs/registry.md)");
-    assert(k.version == 105);
+    assert(k.version == 108);
     PlanLockedFn planSave = g_planOrig;
     CacheEntry* tab = g_tab;
     const LONG workerMode = k.workerMode, budgetMode = k.budgetMode;
@@ -11686,7 +11916,7 @@ static void TestInsFreeInPlace() {
 static void TestRecsUnlocked() {
     Ts3nCounters& k = ts3native_counters;
     static_assert(offsetof(Ts3nCounters, ulMode) == 0x4548 && offsetof(Ts3nCounters, ulFaults) == 0x4564 &&
-                  sizeof(Ts3nCounters) == 4442 * 4, "counters v105 layout after v104 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v105 layout after v104 (docs/registry.md)");
     static DWORD simTid;
     const DWORD* savedSim = g_rtSimTidSlot;
     simTid = GetCurrentThreadId();
@@ -11960,6 +12190,7 @@ int main() {
     TestDiscourageDX();
     TestFootprintDefer();
     TestFootprintDefer2();
+    TestPlanDrain();
     TestDestroyPark();
     TestSteerRO();
     TestSteerTrip();

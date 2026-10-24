@@ -39,7 +39,7 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSpatialCache value="False" />
     <kRoutableCache value="False" />
     <kStuckCheckBusy value="False" />
-    <kStuckCheckAsync value="False" />
+    <kStuckCheckAsync value="True" />
     <kSafeSpotCap value="False" />
     <kFarthestLotSorted value="False" />
     <kIndoorPositionCap value="False" />
@@ -67,8 +67,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kUnseenCarThrottle value="False" />
     <kUnseenCarEvery value="4" />
     <kOverwatchSpread value="False" />
-    <kOverwatchChain value="False" />
-    <kErrorTrapSpread value="False" />
+    <kOverwatchChain value="True" />
+    <kErrorTrapSpread value="True" />
     <kEaSpreadLots value="False" />
     <kEaSpreadPets value="False" />
     <kEaSpreadDecay value="False" />

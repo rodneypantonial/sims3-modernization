@@ -22,6 +22,7 @@
       },
       "run": {
         "profile": {
+          "profOpts": { "tasks": false },
           "minutes": 10,
           "seed": 12345,
           "repro": "rare-big-crowd",

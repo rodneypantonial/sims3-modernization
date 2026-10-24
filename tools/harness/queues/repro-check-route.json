@@ -201,6 +201,7 @@
       },
       "run": {
         "profile": {
+          "profOpts": { "tasks": false },
           "seed": 12345,
           "minutes": 6,
           "repro": "route-sv-seacheck-freeze",

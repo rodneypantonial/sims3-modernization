@@ -30,6 +30,7 @@ export const FEATURES: Record<string, Feature> = {
   fbjobcap: { ini: { 'RouteAsync.FbJobCapMs': ['300', '0'] }, needs: ['fallbackasync'], doc: 'docs/134 §10 (ts3native 0.36.16)' },
   slotenabledro: { ini: { 'SlotEnabledRO.Enabled': ['1', '0'], 'SlotEnabledRO.Mode': ['1', '1'], 'SlotEnabledRO.Shadow': ['0', '0'] }, doc: 'docs/90, docs/136 (decided ship)' },
   deferfootprint: { ini: { 'Discourage.DeferFootprint': ['1', '0'] }, doc: 'docs/89 design U' },
+  refcountguard: { ini: { 'RouteAsync.RefcountGuard': ['1', '0'], 'RouteAsync.RefcountGuardMode': ['1', '1'] }, doc: 'docs/177 §7' },
   destroypark: { ini: { 'Discourage.DestroyPark': ['1', '0'] }, doc: 'docs/88 §10 design G' },
   avoidro: { ini: { 'AvoidRO.Enabled': ['1', '0'], 'AvoidRO.Mode': ['1', '1'], 'AvoidRO.Shadow': ['0', '0'] }, doc: 'docs/137' },
   unseenthrottle: { ini: { 'UnseenThrottle.Enabled': ['1', '0'] }, doc: 'docs/143 (needs ts3fixes from the same release: household positions)' },
@@ -40,6 +41,7 @@ export const FEATURES: Record<string, Feature> = {
   farthestsorted: { tuning: ['kFarthestLotSorted'], doc: 'docs/141 §7' },
   indoorcap: { tuning: ['kIndoorPositionCap'], doc: 'docs/141 §7' },
   overwatchspread: { tuning: ['kOverwatchSpread'], doc: 'docs/145' },
+  overwatchchain: { tuning: ['kOverwatchChain'], doc: 'docs/145 §10 (Overwatch v2; overwatchspread must stay off: it wins over the chain, OverwatchSpreadCore.WithChain)' },
   easpreadlots: { tuning: ['kEaSpreadLots'], doc: 'docs/147 §2' },
   easpreadpets: { tuning: ['kEaSpreadPets'], doc: 'docs/147 §3' },
   easpreaddecay: { tuning: ['kEaSpreadDecay'], doc: 'docs/147 §4' },
@@ -53,6 +55,7 @@ export function parseChosen(arg: string): Set<string> {
   const ids = arg === 'none' ? [] : arg.split(',').map(s => s.trim()).filter(Boolean);
   for (const id of ids) if (!FEATURES[id]) throw new Error(`unknown feature "${id}" (--list shows the candidates)`);
   for (const id of ids) for (const n of FEATURES[id].needs ?? []) if (!ids.includes(n)) throw new Error(`${id} needs ${n}`);
+  if (ids.includes('overwatchchain') && ids.includes('overwatchspread')) throw new Error('overwatchchain and overwatchspread together: spread wins, the chain never runs');
   return new Set(ids);
 }
 
@@ -128,7 +131,7 @@ function ciAllowed(): string[] {
 
 function selfCheck(): void {
   const ok = (c: boolean, what: string) => { if (!c) { console.error(`self-check FAILED: ${what}`); process.exit(1); } };
-  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
+  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
     '[Discourage]\nDeferFootprint=0\nDestroyPark=0\n[AvoidRO]\nEnabled=0\nMode=1\nShadow=0\n[UnseenThrottle]\nEnabled=0\n';
   const tun = Object.values(FEATURES).flatMap(f => f.tuning ?? []).map(t => `<${t} value="False" />`).join('\n') + '\n<kGoHomeShortcut value="True" />';
   const log: string[] = [];
@@ -140,6 +143,7 @@ function selfCheck(): void {
   ok(status(a.ini, a.tuning).join() === 'fallbackasync,m1retry,stuckcheckasync', `status reads back (${status(a.ini, a.tuning).join()})`);
   const b = apply(parseChosen('none'), a.ini, a.tuning, []);
   ok(b.ini === ini && b.tuning === tun, 'none = back to all off');
+  let t2 = ''; try { parseChosen('overwatchchain,overwatchspread'); } catch (e: any) { t2 = e.message; } ok(/spread wins/.test(t2), 'chain vs spread refused');
   let threw = ''; try { parseChosen('m1retry'); } catch (e: any) { threw = e.message; } ok(/needs fallbackasync/.test(threw), 'needs checked');
   threw = ''; try { parseChosen('nope'); } catch (e: any) { threw = e.message; } ok(/unknown/.test(threw), 'unknown id refused');
   threw = ''; try { setIni(ini, 'AvoidRO.Missing', '1', []); } catch (e: any) { threw = e.message; } ok(/no AvoidRO.Missing/.test(threw), 'missing key refused');

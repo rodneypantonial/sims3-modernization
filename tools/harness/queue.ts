@@ -394,12 +394,30 @@ export function flatDelta(a: any, b: any): Record<string, number> {
 export function logFails(text: string, req: Record<string, number>): string[] {
   return Object.entries(req).flatMap(([re, min]) => { const n = text.split(/\r?\n/).filter(l => new RegExp(re).test(l)).length; return n >= min ? [] : [`log /${re}/ ${n} lines (want >= ${min})`]; });
 }
-// [RouteAsync] Enabled=1 but the route worker hook failed (ts3native "FAIL route worker:"): plans stay on the sim thread, so every
-// async arm in the run is void (2026-10-22/23: 4 runs PASSed that way, Frida prologue on the runtime_invoke slot); '' when fine
-export function routeWorkerVoid(log: string, ini: string): string {
-  const sec = ini.split(/^\s*\[/m).find(b => /^RouteAsync\]/i.test(b)) ?? '';
-  if (!/^\s*Enabled\s*=\s*1\b/im.test(sec) || !/FAIL route worker:/.test(log)) return '';
-  return `route worker hook failed: async off, run void (${log.match(/FAIL route worker:[^\r\n]*/)![0].slice(0, 160)})`;
+// ts3native.ini value of [sec] key (number), NaN when absent
+export function iniNum(ini: string, sec: string, key: string): number {
+  const b = ini.split(/^\s*\[/m).find(x => x.toLowerCase().startsWith(sec.toLowerCase() + ']')) ?? '';
+  return Number(b.match(new RegExp(`^\\s*${key}\\s*=\\s*(-?\\d+)\\b`, 'im'))?.[1] ?? NaN);
+}
+// pre-run self check: any "FAIL ..." hook line ts3native wrote so far means a feature the job relies on is off, run void
+// (2026-10-22/23: 4 runs PASSed with "FAIL route worker:", Frida prologue on the runtime_invoke slot); '' when fine
+export function hookFailLine(log: string): string {
+  const m = log.match(/^FAIL [^\r\n]*/m);
+  return m ? `self check: ts3native hook failed, run void (${m[0].slice(0, 160)})` : '';
+}
+// route worker hook state from /native invokeHook: it installs at the first worker plan, not at start-up (2026-10-23 sv-soak-v014 /
+// ip-rvb-v014: asi.rel0360 hooked after the Frida profiler had rewritten 0xE5A600, invokeHook -1, all plans sync, both PASSed);
+// 'wait' until a plan ran, '' when hooked or not asked for
+export function routeHookState(ini: string, n: any): string {
+  if (iniNum(ini, 'RouteAsync', 'Enabled') !== 1 || iniNum(ini, 'RouteAsync', 'Mode') < 1 || !n || !('invokeHook' in n)) return '';
+  const v = Number(n.invokeHook);
+  return v > 0 ? '' : v < 0 ? 'self check: route worker hook failed (invokeHook -1): async off, run void' : 'wait';
+}
+// post-run self check: [RouteAsync] on but no async job started = the async arm never ran ('' when fine)
+export function asyncIdle(ini: string, c0: any, c1: any): string {
+  if (iniNum(ini, 'RouteAsync', 'Enabled') !== 1 || iniNum(ini, 'RouteAsync', 'Mode') < 1 || !c1 || !('asyncStarted' in c1)) return '';
+  const d = Number(c1.asyncStarted) - Number(c0?.asyncStarted ?? 0);
+  return d > 0 ? '' : `self check: [RouteAsync] on but ${d} async route jobs started (invokeHook ${c1.invokeHook ?? '?'}): async off, run void`;
 }
 const delta = (a: any, b: any) => (a && b ?Object.fromEntries(Object.keys(b).filter(k => typeof b[k] === 'number' && typeof a[k] === 'number' && b[k] !== a[k]).map(k => [k, b[k] - a[k]])) : null);
 
@@ -579,12 +597,18 @@ if (values['self-check']) {
   assert.deepEqual(checkRequire('sypPlans.1>=5,a==3', flatDelta({ a: 1, sypPlans: [0, 0] }, { a: 4, sypPlans: [9, 5] })), []);
   assert.deepEqual(logFails('route async: sync plan 50 ms, IC Plan, reason NoStart\nx\nroute async: sync plan 9 ms, IC Plan, reason QueueFull', { 'reason NoStart': 1, 'reason QueueFull': 2 }), ['log /reason QueueFull/ 1 lines (want >= 2)']);
   assert.throws(() => parseQueue([{ id: 'v', asi: 'x', save: 'S', logRequire: { x: 0 }, run: { soak: { minutes: 1 } } }]), /logRequire/);
-  // route worker hook FAIL with [RouteAsync] on = void run; off, or no FAIL line = fine
+  // self checks: start-up FAIL lines, lazy route worker hook, async jobs actually started
   const rwLog = 'OK   x\r\nFAIL route worker: runtime_invoke slot 0x00F95000 holds 0x1, expected 0x2 with its prologue; plans stay on the calling thread\r\n';
-  assert.match(routeWorkerVoid(rwLog, '[A]\nEnabled=0\n[RouteAsync]\n; c\nEnabled=1\n'), /^route worker hook failed: async off, run void \(FAIL route worker: runtime_invoke.*thread\)$/);
-  assert.equal(routeWorkerVoid(rwLog, '[RouteAsync]\nEnabled=0\n[B]\nEnabled=1\n'), '');
-  assert.equal(routeWorkerVoid(rwLog, '[RouteAsync]\nEnabled=10\n'), '');
-  assert.equal(routeWorkerVoid('OK route worker\n', '[RouteAsync]\nEnabled=1\n'), '');
+  assert.match(hookFailLine(rwLog), /^self check: ts3native hook failed, run void \(FAIL route worker: runtime_invoke.*thread\)$/);
+  assert.equal(hookFailLine('OK   x\nroute FAIL later\n'), '');
+  const raOn = '[GC]\nEnabled=1\n[RouteAsync]\n; c\nEnabled=1\nMode=1\n';
+  assert.equal(iniNum(raOn, 'RouteAsync', 'Mode'), 1); assert.equal(iniNum('[RouteAsync]\nEnabled=10\n', 'RouteAsync', 'Enabled'), 10);
+  assert.ok(Number.isNaN(iniNum(raOn, 'RouteAsync', 'Sites')));
+  assert.equal(routeHookState(raOn, { invokeHook: 0 }), 'wait'); assert.equal(routeHookState(raOn, { invokeHook: 1 }), '');
+  assert.match(routeHookState(raOn, { invokeHook: -1 }), /invokeHook -1/);
+  assert.equal(routeHookState('[RouteAsync]\nEnabled=0\nMode=1\n', { invokeHook: -1 }), ''); assert.equal(routeHookState(raOn, {}), ''); // old asi: no field
+  assert.match(asyncIdle(raOn, { asyncStarted: 0 }, { asyncStarted: 0, invokeHook: -1 }), /0 async route jobs started \(invokeHook -1\)/);
+  assert.equal(asyncIdle(raOn, { asyncStarted: 3 }, { asyncStarted: 90 }), ''); assert.equal(asyncIdle('[RouteAsync]\nEnabled=1\nMode=0\n', {}, { asyncStarted: 0 }), '');
   assert.throws(() => parseQueue([{ id: 'v', asi: 'x', save: 'S', nativeRequire: 'a=>1', run: { soak: { minutes: 1 } } }]), /not name/);
   // saveMatrix: release mode reaches save-matrix.ts; the release queue's rel-matrix jobs use it
   assert.equal(parseQueue([{ id: 'm', asi: 'x', save: 'S', run: { matrix: [] }, saveMatrix: { fixes: 'shipped' } }])[0].saveMatrix?.fixes, 'shipped'); // -> --fixes shipped (--dry-run shows it)
@@ -1021,7 +1045,8 @@ const startProbe = (j: Job) => {
   const pf = createWriteStream(join(OUT, `${queueName}-${date}-${j.id}-probe.log`), { flags: 'a' });
   const pr = probe = spawn('python', [join(ROOT, 'tools', 'probe', 'ts3probe.py'), 'serve', '--launch', '--port', values.port!, ...(j.gameArgs?.length ? ['--', ...j.gameArgs] : [])], { cwd: ROOT });
   pr.stdout?.pipe(pf); pr.stderr?.pipe(pf); launched = true;
-  jobGuard = () => pr.exitCode !== null || pr.signalCode !== null ? `probe server exited (${pr.exitCode ?? pr.signalCode})` : !gameRunning() ? 'TS3W.exe process gone' : '';
+  jobGuard = () => pr.exitCode !== null || pr.signalCode !== null ? `probe server exited (${pr.exitCode ?? pr.signalCode})` : !gameRunning() ? 'TS3W.exe process gone'
+    : existsSync(LOG) ? hookFailLine(readFileSync(LOG, 'latin1')) : ''; // a hook refused mid-run (lazy route worker hook) voids the run
 };
 // a fresh load of the job's game start (asi, ini, configs and fixes already in place): one Sess per load
 const loaded = (j: Job): Sess => (sess = { key: keyOf(j), reuse: reuseOf(j), load: ++loads, windows: 0, logOff: logSize(), base: null,
@@ -1184,13 +1209,17 @@ for (const [n, j] of jobs.entries()) {
       row.rngDraws = [];
       for (let i = 0; i < j.run.menuMemory.draws; i++) row.rngDraws.push((await agent('reflect_call', { path: 'Sims3.SimIFace.RandomGen.NextDouble' }))?.result ?? null);
     }
+    const jobIniText = readFileSync(join(BIN, 'ts3native.ini'), 'utf8');
+    // self check before any arm runs (fail fast): no ts3native hook FAIL line, route worker hook not refused. The hook installs at the
+    // first worker plan, which comes only after profile-world's paused setup and profiler attach, so 'wait' is normal here: the run
+    // guard (hookFailLine every GUARD_MS) and the post-run asyncIdle check catch a later refusal
+    const why0 = hookFailLine(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '') || routeHookState(jobIniText, await get('native'));
+    if (why0 && why0 !== 'wait') throw new Error(why0);
     row.memory.before = await get('memory');
     const resetMax = !!j.ini?.['Verify.Enabled'];
     const c0 = await get(resetMax ? 'native?vfresetmax=1' : 'native'); // read first, then the [Verify] maxima start again
     const gate = counterGate(c0, j.minCounters);
     if (gate) throw new Error(`${gate}; refused, nothing run`);
-    const rwVoid = routeWorkerVoid(existsSync(LOG) ? readFileSync(LOG, 'latin1') : '', readFileSync(join(BIN, 'ts3native.ini'), 'utf8'));
-    if (rwVoid) throw new Error(rwVoid); // fail fast: the hook line is written at start-up, before any arm runs
     const items = itemsOf(j), args = j.run.profile && !items ? profileArgs(j, j.run.profile, profileTag(j), sessionFlags(j)) : runArgs(j);
     let afterRun: { mem: any; native: any } | null = null;
     if (items) {
@@ -1323,6 +1352,8 @@ for (const [n, j] of jobs.entries()) {
     row.memory.after = afterRun?.mem ?? await get('memory');
     const c1 = afterRun?.native ?? await get('native');
     if (j.nativeRequire) row.nativeDelta = flatDelta(c0, c1);
+    const idle = j.run.menuMemory ? '' : asyncIdle(jobIniText, c0, c1); // the hook can still fail after the check: plans prove it ran
+    if (idle) { row.verdict.push(`FAIL: ${idle}`); row.selfCheckFail = idle; }
     if (j.minCounters !== undefined) { row.nativeDump = join(OUT, `${queueName}-${date}-${j.id}-native.json`); writeFileSync(row.nativeDump, JSON.stringify({ before: c0, after: c1, maxReset: resetMax && Number(c0?.vfMaxReset) > 0 }, null, 1)); }
     if (c1?.autshadow?.ledger) {  // [AutShadow] Ledger=1: one line per docs/51 item
       const lr = ledgerReport(c0, c1, j.run?.profile?.minutes ?? 10);
@@ -1343,7 +1374,7 @@ for (const [n, j] of jobs.entries()) {
   row.crashed = launched && !gameRunning() || row.verdict.some((v: string) => /game died/.test(v));
   if (row.crashed) { row.crash = triage(); log(`${j.id}: game crashed\n${row.crash}`); }
   try { row.hangCapture = hangCaptureLine(readFileSync(logFile).subarray(logOff).toString()); } catch { /* no job log */ }
-  row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut;
+  row.pass = row.exitCode === 0 && !row.crashed && !row.error && !row.timedOut && !row.selfCheckFail;
   // docs/170 §2: the next job may take this game over (reuse on for both, same game start); else it closes now, as always
   const next = jobs[n + 1];
   const mayKeep = !!sess?.reuse && !reuseBlock(j) && !row.crashed && !stopWhy && canTakeOver(sess.key, next);

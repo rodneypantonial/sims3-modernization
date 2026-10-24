@@ -140,6 +140,7 @@ Not changed, already bounded or covered: `cycle.ts` game closed (60 s), settle (
 ## 6. Rules and gotchas
 
 - Change one thing at a time. Stop a run on an obvious error or when the code it measures changed, fix, then rerun.
+- **Static triage before a bisect.** When an A/B shows a regression, read the data the runs already wrote before queuing live bisects or reruns: per-slice counter deltas (`<tag>-ab-native.jsonl`), the hitch records (entry, route phases, wait key, task from/to), the `ts3native.log` lines and the switches' design docs. Clear what the data clears (a switch that never acted, one that only answers read-only queries the failing path never asks), then bisect only the suspects left. A bisect step costs ~30 min of clean machine time; the read costs minutes and can run during timing runs.
 - Do not edit `mods/` or `tools/setup/` while a `cycle.ts --restart` or installer step can run: the restart rebuilds the mods from source. Keep `mods/ts3fixes/src` unchanged during a run that compares builds.
 - The installed `ts3native.asi` is locked while the game runs: close the game before `install --only native-patches`.
 - **Two Frida agents:** each Python host injects its own frida-agent. The one loaded last must detach first; detaching in load order kills the game. `tests-be.ts` loads the frame hook first and lets the profiler detach first.
