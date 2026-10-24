@@ -49,6 +49,10 @@ const CSC = { why: 'Windows .NET Framework csc' };
 const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
   'tools/harness/machine-load.ts': { why: 'Windows PowerShell counters' },
   'tools/harness/night-run.ts': { why: 'Windows session lock query' },
+  // shortcut: fixtures use Windows paths / the real Documents folder (first Linux CI run 2026-10-24): local-only until made portable
+  'tools/harness/queue.ts': { why: 'one parseQueue fixture expects a Windows-path error (Linux CI 2026-10-24)' },
+  'tools/harness/status.ts': { why: 'worktree fixture uses backslash log paths (Linux CI 2026-10-24)' },
+  'tools/install-lot.ts': { why: 'reads the real Documents/Electronic Arts/The Sims 3 installs' },
   'tools/offload-override-scan.ts': { why: 'game script assemblies', needs: 'game-copy/assemblies/ScriptCore.dll' },
   'tools/selftest/autshadow/run.ts': CSC,
   'tools/selftest/doormirror/run.ts': CSC,
