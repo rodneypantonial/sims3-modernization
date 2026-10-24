@@ -6,13 +6,36 @@ Target: The Sims 3 **Steam** edition, patch 1.67, all expansion and stuff packs,
 
 **Just want to play with the fixes?** Download the latest [release](https://github.com/rodneypantonial/sims3-modernization/releases) and follow [docs/PLAYERS.md](docs/PLAYERS.md): what's switched on, and how to install it in a few steps.
 
-**Status:** research project. Latest release: **v0.1.3** (2026-10-16): faster saves, a lighter Sim panel, and the stutter fixes from v0.1.0-v0.1.1. Results are measured on one laptop (i7-11800H, 32 GB, RTX 3070 Laptop GPU). They are not yet confirmed on other machines; that is one of the things contributors can help with.
+**Status:** research project. Latest release: **v0.1.5** (2026-10-24): fewer freezes in specific situations (Sims getting off boats, crowds, the 3 AM stuck-Sim check, NRaas Overwatch's nightly clean-up, NRaas ErrorTrap's after-load check) and a crash fix near water, on top of v0.1.4's background route planning and the earlier save and stutter fixes. Results are measured on one laptop (i7-11800H, 32 GB, RTX 3070 Laptop GPU). They are not yet confirmed on other machines; that is one of the things contributors can help with.
 
 `PLAN.md` is the source of truth for what is done, what is open and what comes next.
 
 ## Results so far
 
 Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play at speed 3, on aged 14-day test saves. **Baseline** = the community fixes layer (DXVK, S3SS, NRaas, Smooth Patch, routing fixes, ...; see `tools/setup/fixes.json`) without our mods. The unmodified game cannot reliably load a save on this machine at all: it runs out of address space while loading (docs/05).
+
+**Release v0.1.5 vs v0.1.4 vs no fixes of ours, freezes in normal play:** a freeze here is a sim step of 300 ms (about a third of a second) or longer, the hitches you notice. Each cell is one 10-minute seeded run per town (one load each), so small differences are within noise. Cells: no fixes -> v0.1.4 -> **v0.1.5**.
+
+| | Bridgeport | Sunset Valley | Isla Paradiso |
+|---|---|---|---|
+| freezes of 300 ms or longer, per 10 minutes | 4.8 -> 5.8 -> **5.0** | 13.7 -> 4.8 -> **4.3** | 93.9 -> 23.1 -> **20.0** |
+| worst freeze | 441 -> 308 -> **324 ms** | 437 -> 323 -> **520 ms** | 895 -> 405 -> **573 ms** |
+| p99 sim step (99% of steps are shorter) | 79 -> 76 -> **79 ms** | 59 -> n/a -> **67 ms** | 168 -> 78 -> **105 ms** |
+
+The Sunset Valley v0.1.4 value comes from one run with other programs using the machine, and has no p99.
+
+Read it as: in normal play v0.1.5 is about the same as v0.1.4, and both are far smoother than no fixes of ours in Isla Paradiso (about 94 freezes per 10 minutes without, 20-23 with). v0.1.5's gains are in specific situations, measured in forced test scenarios (the same situation set up on purpose, fix off vs on):
+
+- Sims getting off a boat in Isla Paradiso: one 8.3 s freeze -> none.
+- Crowds: fewer freezes of 300 ms or longer (7 -> 2 in one test, 6 -> 5 in the release test: small, within noise).
+- 3 AM stuck-Sim check: worst freeze 1.2 s -> 0.14 s.
+- NRaas Overwatch nightly clean-up: worst freeze 0.3 s -> 0.1 s.
+- NRaas ErrorTrap check after loading a save: worst freeze 0.28 s -> 0.06 s.
+- Plus a crash fix: the game could crash when a Sim looked for a spot on the shore while routes were being planned in the background.
+
+**Long play (45 minutes on v0.1.5):** Bridgeport had no freeze longer than 0.5 s. Sunset Valley had 4 freezes of 1 s or longer, the worst 3.6 s; they come from route plans the game still runs on its main thread when one Sim plans for another. v0.1.4 has the same kind on the same save and seed (3 of 1 s or longer, worst 1.7 s). This is the main target for the next release.
+
+**Release check for v0.1.5:** 22 of 22 tests passed, 0 crashes: smoke play in all three towns, the save matrix plus reload in Bridgeport, a trip to France, each new fix forced on, the whole fix set off vs on in forced scenarios, two water scenarios, and a 45-minute Bridgeport soak.
 
 **Release v0.1.4 (`ts3native` 0.36.0 + `ts3fixes`, as shipped) vs no fixes of ours, 2026-10-20/21:** same machine and saves, seeded (12345), ABBA order, 4 runs per side on Bridgeport and Sunset Valley, 2 on Isla Paradiso. "No fixes" = the same `ts3native.asi` with every section we ship switched off and every `ts3fixes` switch off (only the walk-style comparer stays, it has no switch). Queues `release-vs-baseline*.json`, report `node tools/release-vs-baseline-report.ts`.
 
@@ -24,21 +47,7 @@ Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play
 | route planning on the sim thread | 129 -> **53 ms/s** (-59%) | 79 -> **24 ms/s** (-70%) | 282 -> **92 ms/s** (-67%) |
 | game time per real second | 10.2 -> 10.2 min (0%) | 13.1 -> 13.1 min (0%) | 11.0 -> **12.4 min** (+13%) |
 
-Read it as: smoother everywhere, faster only where the game was falling behind. Bridgeport and Sunset Valley already run at the speed-3 cap without our fixes, so game time per second cannot rise there; Isla Paradiso was lagging and gains 13%. The worse worst frames on Bridgeport and Sunset Valley are single route plans of about 1 s that the background planner refuses and runs on the main thread (`NoStart`); that is the next fix. Several runs had other programs at 10-18% of the game's CPU cores, so treat differences under ~5% as noise.
-
-<!-- v0.1.5 template: fill after the release-vs-baseline runs on the v0.1.5 build (queues release-vs-baseline*.json with a third arm on game-copy/ts3native.asi.rel020), then move it above the v0.1.4 table and update "Latest release" -->
-**Release v0.1.5 vs v0.1.4 vs no fixes of ours, [to fill date]:** same machine and saves, seeded (12345), ABBA order, [to fill] runs per side. Cells: no fixes -> v0.1.4 -> **v0.1.5** (change v0.1.5 vs v0.1.4). "No fixes" as above.
-
-| | Bridgeport | Sunset Valley | Isla Paradiso |
-|---|---|---|---|
-| stutters per minute (sim iterations >= 50 ms) | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
-| p99 iteration | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
-| worst iteration | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
-| route planning on the sim thread | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
-| game time per real second | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** | [to measure] -> [to measure] -> **[to measure]** |
-
-[to fill: one paragraph on how to read it, as for v0.1.4; worst iteration is the number the freeze fix should move.]
-<!-- end v0.1.5 template -->
+Read it as: smoother everywhere, faster only where the game was falling behind. Bridgeport and Sunset Valley already run at the speed-3 cap without our fixes, so game time per second cannot rise there; Isla Paradiso was lagging and gains 13%. The worse worst frames on Bridgeport and Sunset Valley are single route plans of about 1 s that the background planner refuses and runs on the main thread (`NoStart`). v0.1.5 does not change them yet; they are the next release's main target. Several runs had other programs at 10-18% of the game's CPU cores, so treat differences under ~5% as noise.
 
 **Earlier result, `ts3fixes` only (2026-10-12, build 62c39f6, docs/04 F13), 3 runs per world:**
 
@@ -70,7 +79,7 @@ Repeat Bridgeport runs on later builds land at 37.8-41 iterations/s (+25-30%) an
 - **Heavy store content:** CC + store repacks add ~29 s to a cold load and ~100 MB address space; load time is the main cost, not stutter (docs/17 §6).
 - **Online features:** with our settings the game makes no network calls while playing (docs/16).
 - **Faster saving (v0.1.2/v0.1.3):** Bridgeport 12.7 -> 10.3 s (-19%), Sunset Valley -17% to -24%, Isla Paradiso -14% to -23%; same save file; 27 of 28 save tests PASS, 1 test-tool fail (fixed) ([CHANGELOG.md](CHANGELOG.md)).
-- **Routing off the sim thread (in development, off by default):** route planning on a worker thread halves the sim thread's own routing time (about 116 -> 57 ms per second in Bridgeport). Whether that makes the whole game faster is not settled yet: the daytime runs on 2026-10-17 had outside load and are being redone on a clean machine ([docs/84](docs/84-async-wait-sites.md), `PLAN.md`).
+- **Routing off the sim thread (on by default since v0.1.4):** route planning on a worker thread halves the sim thread's own routing time (about 116 -> 57 ms per second in Bridgeport). Measured results per release are under Results so far ([docs/84](docs/84-async-wait-sites.md), `PLAN.md`).
 
 All numbers come from one machine and one set of saves. Treat percentages as "this is what we saw", not as a promise.
 
@@ -105,8 +114,8 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Water route search (`[WaterJps]`) | `ts3native` | **on by default** (stable build, release v0.1.0), verified in game: 5.4M searches compared with the game's own code in Isla Paradiso, 0 mismatches |
 | Allocator cache (`[Alloc]`) | `ts3native` | **experimental**: +19% and +9% in two A/Bs, but worse worst-case iterations and route fails; crash suspect, needs a long stability run |
 | Route worker, synchronous (`[RouteWorker]`) | `ts3native` | **experimental**: stable in game, no speed gain on its own |
-| Async route plan (`[RouteAsync]`, job queue, `[RouteGate]`) | `ts3native` | **in development, off by default** (0.12.4): stable in game (2 clean runs), sim-thread routing time halved; speed gain not confirmed yet ([docs/84](docs/84-async-wait-sites.md)) |
-| Waits left while routing runs off-thread: discourage footprints (`[Discourage]`, design D), read-only steering (`[SteerRO]`, S2), footprint rebuild race fix (`[FpRebuildLock]`, C-A), read-only lot front door (`[LotFrontDoorRO]`, L1) | `ts3native` | **built, off by default** (0.13.0-0.14.0): proven offline against the game's own code; live shadow and on runs queued ([docs/84](docs/84-async-wait-sites.md)) |
+| Async route plan (`[RouteAsync]`, job queue, `[RouteGate]`) | `ts3native` | **on by default since release v0.1.4**: route plans asked by a Sim's own task run on a worker thread; plans for another Sim's task still run on the sim thread (the remaining 1 s+ freezes in Sunset Valley, next release's target) ([docs/84](docs/84-async-wait-sites.md)) |
+| Waits left while routing runs off-thread: discourage footprints (`[Discourage]`, design D), read-only steering (`[SteerRO]`, S2), footprint rebuild race fix (`[FpRebuildLock]`, C-A), read-only lot front door (`[LotFrontDoorRO]`, L1) | `ts3native` | `[Discourage]` on by default (v0.1.4; footprint deferral `DeferFootprint=1` since v0.1.5); the others **built, off by default** (0.13.0-0.14.0): proven offline against the game's own code; live shadow and on runs queued ([docs/84](docs/84-async-wait-sites.md)) |
 | Route search budget (`[RouteBudget]`) | `ts3native` | **paused**: stranded Sims (41 stuck vs 0) |
 | Faster RefPack decoder (`[Decompress]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: 0 mismatches over a full load, ~144k decodes in 4 sessions |
 | Save write (`[SaveWrite]`) | `ts3native` | **on by default** (release v0.1.1), verified in game: old-save backup copied by a worker thread, saves reload |
@@ -114,6 +123,12 @@ All numbers come from one machine and one set of saves. Treat percentages as "th
 | Faster save object table (`kFastRefTable`) | `ts3fixes` | **on by default** (release v0.1.3): saves 14-24% faster, same save file, save tests PASS |
 | Lighter Sim panel (`kMotiveBarImageCache`, `kBuffGridInPlace`, `kSimNameCache`) | `ts3fixes` | **on by default** (release v0.1.3): UI only, nothing in the save changes |
 | Save footprint index, delayed flush, compression timing (`[FootprintIndex]`, `[SaveFlush]`, `[SaveCompress]`) | `ts3native` | **off, opt-in** (release v0.1.2): no gain above save-to-save variation on an NVMe SSD |
+| Crash fix: a Sim looking for a spot on the shore while routes plan in the background (`[RouteGate]`) | `ts3native` | **on by default** (release v0.1.5): Isla Paradiso boat-exit scenario, 2 runs of 20 firings each, no crash |
+| Moving Sims and objects no longer wait for background route plans (`[Discourage]` `DeferFootprint=1`) | `ts3native` | **on by default** (release v0.1.5): Isla Paradiso boat exit, one 8.3 s freeze -> none |
+| Fewer short freezes in crowds (`[RouteAsync]` `RefcountGuard=1`) | `ts3native` | **on by default** (release v0.1.5): crowd scenario: fewer freezes of 300 ms or longer (7 -> 2 and 6 -> 5 in two tests) |
+| NRaas Overwatch nightly clean-up in steps (`kOverwatchChain`) | `ts3fixes` | **on by default** (release v0.1.5): worst freeze 0.3 -> 0.1 s |
+| 3 AM stuck-Sim check in its own task (`kStuckCheckAsync`) | `ts3fixes` | **on by default** (release v0.1.5): worst freeze 1.2 -> 0.14 s |
+| NRaas ErrorTrap after-load check spread out (`kErrorTrapSpread`) | `ts3fixes` | **on by default** (release v0.1.5): worst freeze 0.28 -> 0.06 s |
 
 ## Quick start: players
 

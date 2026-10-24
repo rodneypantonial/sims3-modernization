@@ -2,180 +2,39 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
-## v0.1.5 (unreleased)
+## v0.1.5 (2026-10-24)
 
-<!-- DRAFT (2026-10-21). Every candidate is in a feature block: `node tools/release-features.ts <chosen ids> --write --docs`
-keeps the "on" text of the chosen ones and the "off" line of the rest, and removes the markers. Then replace every
-[to measure] with the clean-night numbers (tools/harness/queues/clean-night-0.2.0.json) or drop the claim, fill the tests
-table from release-validate.json, set the date in the heading and remove this comment. -->
+Fewer freezes in the situations that caused the worst ones: Sims getting off boats, crowds, the game's 3 AM stuck-Sim check, NRaas Overwatch's nightly clean-up and NRaas ErrorTrap right after loading. Plus a crash fix. In everyday play it feels about the same as v0.1.4, which already had far fewer hitches than the unmodded game (in Isla Paradiso about 20 instead of about 94 freezes of a third of a second or longer per 10 minutes).
 
-The routing release: fewer multi-second route freezes, less waiting on the background route planner, less work for Sims you cannot see, and the game's and NRaas' nightly jobs spread over many frames.
+**You don't need to change any settings.** Install the two files below and play. The `ts3native.ini` file comes set up; its settings are for testers and developers only (technical notes: [v0.1.5 developer notes](https://github.com/rodneypantonial/sims3-modernization/blob/HEAD/docs/release-notes/v0.1.5-dev.md)).
 
 ### Download
 
-- `ts3native-v0.1.5.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` (replace the v0.1.4 files; **use the new `ts3native.ini`**, the old one keeps the new fixes off). Needs an ASI loader, as before. Built as ts3native [to fill: 0.36.14 or later].
-- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` (replace the v0.1.4 file). The new `ts3native` features need this package from the same release.
+- `ts3native-v0.1.5.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` and replace the old ones. **Use the new `ts3native.ini`**: the old one keeps the new fixes off. You still need an ASI loader, as before (see "How to install" below).
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one. Both files must come from this release.
 
-### New in `ts3native` (on by default)
+### What's better
 
-<!-- feature:fallbackasync on -->
-- **Fewer multi-second route freezes (`[RouteAsync] FallbackAsync=1`, `SyncCapMs=1000`, docs/134).** Route plans the background planner used to refuse (`NoStart`: asked by a task that is not the route's Sim, such as an alarm or another Sim's interaction) now run on the worker too; pending lot updates a plan needs are applied under one lock try instead of forcing a main-thread plan; the job queue is 32 deep instead of 8. A plan that still runs on the main thread has its world search capped at 1 s and fails like any route with no path. Before: sync fallback plans up to 2.1-7.4 s in the freeze-data runs (route bits, Sunset Valley crowd). Measured: worst iteration [to measure], sync plans >= 200 ms per 10 min [to measure], `fbCapped` [to measure] (0 in all 7 freeze-fix-ab pairs).
-<!-- /feature -->
-<!-- feature:m1retry on -->
-- **Plans that must apply lot changes first wait their turn (`[RouteAsync] M1Retry=1`, docs/134 §2.6).** When that one lock try fails because a job holds the routing lock, the Sim's task waits tick by tick (at most 30) and retries, instead of planning on the main thread. Measured: M1Pending sync plans [to measure].
-<!-- /feature -->
-<!-- feature:slotenabledro on -->
-- **Read-only slot position checks (`[SlotEnabledRO]`, docs/90, docs/136).** While a background job holds the routing lock, the slot position helper runs the game's own code under a shared read lock instead of waiting. Bridgeport (wait-reducers-ab): gate-12 wait 12.5 -> 0.0 ms/s, keyed waits -14.3 ms/s; Isla Paradiso and Sunset Valley [to measure]; iterations/s [to measure].
-<!-- /feature -->
-<!-- feature:avoidro on -->
-- **Read-only avoidance checks (`[AvoidRO]`, docs/137).** The avoidance obstruction check (`RouteFollow_A` / `_B`, wait key `0x846D21`) answers from a read-only clone while a job runs; anything it cannot answer runs the game's code as before. Gain [to measure].
-<!-- /feature -->
-<!-- feature:deferfootprint on -->
-- **Footprint updates queued during jobs (`[Discourage] DeferFootprint=1`, design U, docs/89).** A Sim's or object's footprint update during a background job is queued and applied in order with the discourage records after the job, instead of waiting (key `0x833593`). Gain [to measure].
-<!-- /feature -->
-<!-- feature:destroypark on -->
-- **Destroys without the job wait (`[Discourage] DestroyPark=1`, design G, docs/88 §10).** An object destroyed during a background job parks one reference and is destroyed at once; the reference is released at the next point with no job (next destroy, plan poll, save, travel, quit). Gain [to measure] (key `0x2000003`, ~7-11 ms/s Bridgeport estimated).
-<!-- /feature -->
-<!-- feature:unseenthrottle on -->
-- **Unseen walking Sims look for obstacles less often (`[UnseenThrottle]`, docs/143).** For walking Sims far from the camera and the household, the steering obstacle list runs on one locomotion pass in four (staggered); near the goal, a door or a viewer every pass. Needs `ts3fixes` from this release (household positions). Steering wait (key `0x85FE10`) [to measure]; stuck Sims [to measure].
-<!-- /feature -->
+- **No more 8-second freeze when Sims get off boats in Isla Paradiso.** When a Sim or an object moved while the game was planning a route in the background, the game sometimes stood still until the plan was done. In our boat test that was one freeze of 8.3 seconds; now there is none.
+- **Fewer short freezes in crowds.** When many Sims look around them while a route is being planned, the game waits less.
+- **The 3 AM stuck-Sim check no longer freezes the game.** Every night the game checks which Sims are stuck and plans new routes for them, all at once. That now happens one Sim at a time. In our test the worst freeze went from 1.2 seconds to under 0.15 seconds.
+- **NRaas Overwatch: the nightly clean-up freeze is gone.** If you use Overwatch, its nightly clean-up now runs its jobs one after another instead of all in the same moment. In our test the worst freeze went from 0.3 seconds to 0.1 seconds.
+- **NRaas ErrorTrap: no hitch right after loading a save.** If you use ErrorTrap, the check it runs a moment after every load is spread out (worst freeze 0.28 seconds down to 0.06 in our test).
 
-### New in `ts3fixes` (on by default)
+### Fixed
 
-<!-- feature:stuckcheckasync on -->
-- **3 AM stuck check in its own task (`kStuckCheckAsync`, switch `stuckcheckasync`, docs/134 §8).** `LotManager.RunStuckCheckHelper` plans up to 10 routes per still Sim inside a world alarm (sync plans up to 483 ms); it now runs one Sim per tick in our task, its plans as background plans. Gain [to measure].
-<!-- /feature -->
-<!-- feature:replandefer on -->
-- **Door and elevator replans from the Sim's own task (`kReplanDefer`, switch `replandefer`, docs/141 §6).** `PortalRouteThroughAction.ForceReplan` replans through the Sim's own replan interrupt instead of synchronously inside the portal callback. Gain [to measure].
-<!-- /feature -->
-<!-- feature:replanspread on -->
-- **Build/buy exit replans spread (`kReplanSpread`, switch `replanspread`, docs/141 §6).** `OnBuildBuyExit` / `OnRoutingDataChanged` replans are queued and replayed a few per tick. Gain [to measure].
-<!-- /feature -->
-<!-- feature:safespotcap on -->
-- **Safe-spot search capped (`kSafeSpotCap`, switch `safespotcap`, docs/141 §7).** A reset's safe-location search uses EA's own `IsPointSafelyRoutable` limit (5 per call). Gain [to measure] (345/456 ms stalls seen).
-<!-- /feature -->
-<!-- feature:farthestsorted on -->
-- **Farthest lot planned first (`kFarthestLotSorted`, switch `farthestsorted`, docs/141 §7).** `LotManager.GetFarthestLot` with routing plans by distance and stops at the first success: same answer, fewer plans. Gain [to measure].
-<!-- /feature -->
-<!-- feature:indoorcap on -->
-- **Indoor position search capped (`kIndoorPositionCap`, switch `indoorcap`, docs/141 §7).** Gives up on a room after a few failed route tests. Gain [to measure].
-<!-- /feature -->
-<!-- feature:overwatchspread on -->
-- **NRaas Overwatch nightly cleanup spread (`kOverwatchSpread`, switch `overwatchspread`, docs/145).** Our inventory pass without the per-object name lookup, the other cleanup types in their own one-shot tasks; stands down when Overwatch has the upstream spreading (`NRaas.Overwatch.StaggeredCleanupVersion`). Class B bursts [to measure].
-<!-- /feature -->
-<!-- feature:errortrapspread on -->
-- **NRaas ErrorTrap load-up scan spread (`kErrorTrapSpread`, switch `errortrapspread`, docs/146).** The inventory check a sim-minute after every load (0.5-0.9 s frame, 7 of 7 loads) runs sliced through ErrorTrap's own per-inventory check; stands down on the upstream marker (`SpreadScanVersion`, Chain-Reaction/NRaas#46). Load hitch [to measure].
-<!-- /feature -->
-<!-- feature:easpreadlots on -->
-- **3 AM venue cleanup spread (`kEaSpreadLots`, switch `easpreadlots`, docs/147 §2).** `LotManager.CleanUpLotsAndInventories` runs at most 4 lots / 16 Sims or 2 ms per tick. 3 AM bursts [to measure].
-<!-- /feature -->
-<!-- feature:easpreadpets on -->
-- **Pet pool alarm in a task (`kEaSpreadPets`, switch `easpreadpets`, docs/147 §3).** The alarm's own code in our task, so EA's own sleep points split the pet build. Gain [to measure].
-<!-- /feature -->
-<!-- feature:easpreaddecay on -->
-- **Midnight relationship decay sliced (`kEaSpreadDecay`, switch `easpreaddecay`, docs/147 §4).** One step per pair per day, at most 64 Sims or 2 ms per tick. Gain [to measure].
-<!-- /feature -->
-<!-- feature:unseenenv on -->
-- **Environment score for unseen Sims one call in 4 (`kUnseenEnvThrottle`, switch `unseenenv`, docs/144).** Only high-LOD Sims not on screen; estimated 0.7-2.7 ms/s; measured [to measure].
-<!-- /feature -->
-<!-- feature:unseenmotives on -->
-- **Motive updates for unseen Sims every 4 sim-minutes (`kUnseenMotiveThrottle`, switch `unseenmotives`, docs/144).** Integrates the elapsed time, so totals match (at most 3 sim-minutes late at a threshold); estimated 1.2-4.8 ms/s; measured [to measure].
-<!-- /feature -->
-<!-- feature:unseenbroadcast on -->
-- **Reaction broadcaster pulses skip unseen Sims more often (`kUnseenBroadcastThrottle`, switch `unseenbroadcast`, docs/144).** 1 pulse in 16 per broadcaster for unseen Sims; estimated 4-8 ms/s Bridgeport; measured [to measure].
-<!-- /feature -->
+- **A rare crash near water.** With background route planning on, the game could crash when it looked for a spot on the shore (for example a Sim getting off a boat in Isla Paradiso) at the same moment a route was being planned. Fixed and checked in two long test runs without a crash.
 
-### Shipped but off (switches for testers)
+### Good to know
 
-<!-- feature:fallbackasync off -->
-- `[RouteAsync] FallbackAsync` / `SyncCapMs` (docs/134): foreign-task plans on the worker and a 1 s cap on main-thread plans. Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:m1retry off -->
-- `[RouteAsync] M1Retry` (docs/134 §2.6). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:slotenabledro off -->
-- `[SlotEnabledRO]` (docs/90). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:avoidro off -->
-- `[AvoidRO]` (docs/137). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:deferfootprint off -->
-- `[Discourage] DeferFootprint` (design U, docs/89). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:destroypark off -->
-- `[Discourage] DestroyPark` (design G, docs/88). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:unseenthrottle off -->
-- `[UnseenThrottle]` (docs/143). Off: [reason from the A/B].
-<!-- /feature -->
-<!-- feature:stuckcheckasync off -->
-- `stuckcheckasync` (`kStuckCheckAsync`). Off: [reason].
-<!-- /feature -->
-<!-- feature:replandefer off -->
-- `replandefer` (`kReplanDefer`). Off: [reason].
-<!-- /feature -->
-<!-- feature:replanspread off -->
-- `replanspread` (`kReplanSpread`). Off: [reason].
-<!-- /feature -->
-<!-- feature:safespotcap off -->
-- `safespotcap` (`kSafeSpotCap`). Off: [reason].
-<!-- /feature -->
-<!-- feature:farthestsorted off -->
-- `farthestsorted` (`kFarthestLotSorted`). Off: [reason].
-<!-- /feature -->
-<!-- feature:indoorcap off -->
-- `indoorcap` (`kIndoorPositionCap`). Off: [reason].
-<!-- /feature -->
-<!-- feature:overwatchspread off -->
-- `overwatchspread` (`kOverwatchSpread`). Off: [reason].
-<!-- /feature -->
-<!-- feature:errortrapspread off -->
-- `errortrapspread` (`kErrorTrapSpread`). Off: [reason].
-<!-- /feature -->
-<!-- feature:easpreadlots off -->
-- `easpreadlots` (`kEaSpreadLots`). Off: [reason].
-<!-- /feature -->
-<!-- feature:easpreadpets off -->
-- `easpreadpets` (`kEaSpreadPets`). Off: [reason].
-<!-- /feature -->
-<!-- feature:easpreaddecay off -->
-- `easpreaddecay` (`kEaSpreadDecay`). Off: [reason].
-<!-- /feature -->
-<!-- feature:unseenenv off -->
-- `unseenenv` (`kUnseenEnvThrottle`). Off: [reason].
-<!-- /feature -->
-<!-- feature:unseenmotives off -->
-- `unseenmotives` (`kUnseenMotiveThrottle`). Off: [reason].
-<!-- /feature -->
-<!-- feature:unseenbroadcast off -->
-- `unseenbroadcast` (`kUnseenBroadcastThrottle`). Off: [reason].
-<!-- /feature -->
-- Every experiment that was off in v0.1.4 stays off: `[RouteSnap]`, `[SteerRO]`, `[LotFrontDoorRO]`, `[ObstructedRO]`, `[LocoWindow]`, `[RouteEarlyOut]`, `[UnseenProbe]`, `[AutShadow]`, `[MonoThread]`, `[WorldImage]`, `[CrashReport]` and the rest. Mono offload work is not in this release.
+- The game does slightly fewer simulation steps per second than without mods, the same as v0.1.4. You won't see this: the clock runs at the speed you pick, and what you see is fewer and shorter hitches.
+- Your saves are not changed by installing or removing this release. As always, back up your saves first.
 
-### Measured (clean night 2026-10-22, `tools/harness/queues/clean-night-0.2.0.json`)
+### Tested
 
-| Feature | World | Result (on vs off, mean of the off-first and on-first jobs) |
-|---|---|---|
-| FallbackAsync + M1Retry | BP / SV / IP play | it/s [to measure], worst iteration [to measure], sync plans >= 200 ms [to measure] |
-| FallbackAsync + M1Retry | SV big crowd, BP route bits | worst iteration [to measure], longest sync plan [to measure] |
-| SlotEnabledRO | IP / SV / BP | key `0x62F782` [to measure], keyed total [to measure], it/s [to measure] |
-| UnseenThrottle | BP / IP play, BP crowd | key `0x85FE10` [to measure], it/s [to measure] |
-| Unseen script throttle | BP / SV / IP play, BP crowd | sim ms/s [to measure], it/s [to measure] |
-| Nightly spreads (EA + Overwatch) | BP / SV | >= 300 ms iterations at midnight / 3 AM [to measure] |
-| ErrorTrap load scan | BP | first-minute worst iteration [to measure] |
+On the final build: play in Bridgeport, Isla Paradiso and Sunset Valley; saving in many situations and reloading the saves; a trip to France and back; each new fix forced on in its test scenario; all fixes off versus on in the same scenarios; water and boat scenarios; and two 45-minute play sessions. 27 of 27 tests passed, no crashes.
 
-### Tests (release validation, `tools/harness/queues/release-validate.json`)
-
-Results: `docs/data/results/[to fill]-queue-release-validate.md`. All jobs on the release build (sha256 in `docs/RELEASE.md`) with the release `ts3native.ini`, no per-job overrides; the save matrix runs the fixes as shipped.
-
-| Group | Jobs | Cases | Result |
-|---|---|---|---|
-| Play, crash-free (12 min seeded) | 3 | Bridgeport, Isla Paradiso, Sunset Valley | [to fill] (`fbCapped`, route fails vs v0.1.4) |
-| Unseen stuck-Sim check (15 min) | 1 | Bridgeport | [to fill] |
-| Saves | 3 | Bridgeport, Sunset Valley, Isla Paradiso: full save matrix | [to fill] |
-| Travel round trips + travel save | 6 | France, China, Egypt, University, Future (queued and direct start) | [to fill] |
-| Rare routing scenarios (docs/117) | 21 | as v0.1.4 | [to fill] |
-| Feature repros | 12 | stuck check 3 AM, steer crowd, avoid crowd, pet guard cancel, object churn, build/buy replan crowd, candidate loops, Overwatch spread, EA lots / pets / decay, ErrorTrap scan | [to fill] |
+Still to do: in Sunset Valley the game can still freeze for a second or more now and then (in our 45-minute test: 4 times, the longest 3.6 seconds). v0.1.4 does the same; it comes from route plans the game still makes on its main loop for one Sim on behalf of another. That is the main target of the next release.
 
 ## v0.1.4 (2026-10-20)
 

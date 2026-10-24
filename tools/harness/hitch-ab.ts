@@ -258,6 +258,10 @@ export function poolReport(label: string, args: string[], armsWanted: string[]):
 // repro-triggered windows (each labelled by its step's agent command), plus 0-step iterations >= 1 s, are the scenario's own cost;
 // the load minute stays out (a step's window that ends inside it is the lead-in, not the scenario)
 // steps / firings: worst-hitches.ts firingWins
+// an iteration led by our test agent's own command (Ts3Agent.PollTask runs the step in a script task) is harness cost, not the
+// fix's: it leaves the arm (own row), the confidence rows and the moved-waits table
+export const AGENT_ROW = 'agent command (harness cost)';
+export const agentCost = (h: H) => { const t = (h.tasks ?? []).reduce((m: any, x: any) => (x.ms > (m?.ms ?? -1) ? x : m), null); return !!t && t.name.startsWith('Ts3Agent.') && t.ms >= h.wallMs / 2; };
 type ScenRun = { tag: string; rows: Row[]; hitches: H[]; freezes: Fz[]; ctx: Pick<RunCtx, 'wins'>; arms: Record<string, Arm>; invalid: string | null; steps?: string[] };
 export function scenarioRows(r: ScenRun) {
   const first = r.rows[Math.min(59, r.rows.length - 1)]?.t ?? 0, wins = r.ctx.wins.filter(w => w.why === 'repro-triggered');
@@ -270,7 +274,10 @@ export function scenarioRows(r: ScenRun) {
   const by = new Map<string, { it: number[]; fz: number[] }>(), at = (k: string) => by.get(k) ?? by.set(k, { it: [], fz: [] }).get(k)!;
   // an iteration (gap) goes to the piece it starts in: an agent call's iteration starts inside its step (2026-10-22: the 1698 ms
   // strand_many iteration ended 0 ms past its setup piece on the coarse clock)
-  for (const h of r.hitches) { const g = h.t > first && fire(h.t - h.wallMs); if (g) { arms[g.arm].hitches.push(h); continue; } const k = label(h.t - h.wallMs, h.t, h.wallMs, h.steps); if (k) at(k).it.push(h.wallMs); }
+  for (const h of r.hitches) {
+    if (h.t > first && agentCost(h)) { at(AGENT_ROW).it.push(h.wallMs); continue; }
+    const g = h.t > first && fire(h.t - h.wallMs); if (g) { arms[g.arm].hitches.push(h); continue; } const k = label(h.t - h.wallMs, h.t, h.wallMs, h.steps); if (k) at(k).it.push(h.wallMs);
+  }
   for (const f of r.freezes) { const g = f.t1 > first && fire(f.t0); if (g) { arms[g.arm].freezes!.push(f.gapMs); continue; } const k = label(f.t0, f.t1); if (k) at(k).fz.push(f.gapMs); }
   const nat = r.arms.all ? armStats(r.arms.all) : null, c = (xs: number[], t: number) => xs.filter(x => x >= t).length, name = r.invalid ? `${r.tag} (INVALID)` : r.tag;
   const rows = [...by].map(([k, v]) => `| ${name} | ${k} | ${wins.filter(w => w.what === k && w.b > first).length} | ${c(v.it, 100)} | ${c(v.it, 300)} | ${c(v.it, 1000)} | ${f0(Math.max(0, ...v.it))} | ${f0(v.it.reduce((s, x) => s + x, 0))} | ${c(v.fz, 300)} | ${c(v.fz, 1000)} | ${f0(Math.max(0, ...v.fz))} | ${nat ? f1(nat.per10[1]) : '-'} |`);
@@ -311,7 +318,7 @@ export function movedWaits(runs: MwRun[]): string {
     // shortcut: of reproCauses' exclusions only the 0-step save/load one applies here; reuse exclusion() if counts drift from its table
     for (const h of r.hitches) {
       const s0 = h.t - h.wallMs, arm = r.fires.find(f => f.a <= s0 && s0 < f.b)?.arm;
-      if (h.wallMs < 100 || (h.steps === 0 && h.wallMs >= 1000) || (arm !== 'off' && arm !== 'on')) continue;
+      if (h.wallMs < 100 || (h.steps === 0 && h.wallMs >= 1000) || (arm !== 'off' && arm !== 'on') || agentCost(h)) continue;
       const c = cause(h as any, (h.t - r.t0) / 1000, null), svc = r.frames?.filter(f => f.q >= s0 && f.q <= h.t + 100).sort((x, y) => y.ms - x.ms)[0]?.svc?.[0]?.name;
       const k = h.rtMaxKey ? `wait ${keyName(h.rtMaxKey)}` : `${c.cls} / ${c.topTask || svc || '-'}`;
       const e = (by.get(k) ?? by.set(k, { off: { n100: 0, n300: 0, ms: 0 }, on: { n100: 0, n300: 0, ms: 0 } }).get(k)!)[arm];
@@ -502,6 +509,13 @@ function selfCheck() {
   assert.match(mwOut.find(l => l.includes('steering obstacle query'))!, /\| 3 \| 2 \| 9000 \| 0 \| 0 \| 0 \| -9000 \| GONE \|$/);
   assert.match(mwOut.find(l => l.includes('A.Run'))!, /\| 1 \| 0 \| 2000 \| 1 \| 0 \| 2000 \| \+0 \|  \|$/);
   assert.equal(mwOut.at(-1), 'next targets: wait gate 12 LotTable_Contains');
+  // agent cost: an iteration led by Ts3Agent.PollTask leaves the arm and the moved-waits table; a game task does not
+  const ag = (t: number, wallMs: number, name: string) => ({ t, wallMs, taskObjects: wallMs - 10, tasks: [{ stage: 'taskObjects', name, ms: wallMs - 20 }] });
+  assert.ok(agentCost(ag(0, 1500, 'Ts3Agent.PollTask')) && !agentCost(ag(0, 1500, 'NRaas.Overwatch.Run')) && !agentCost({ t: 0, wallMs: 400 }), 'agentCost');
+  const la2 = scenarioRows({ ...lr, hitches: [...lh, ag(150_000, 1600, 'Ts3Agent.PollTask')], steps: lsteps });
+  assert.deepEqual(la2.armRows, la.armRows, 'agent hitch stays out of the arm rows');
+  assert.ok(la2.rows.some(r => r.includes(`| ${AGENT_ROW} | `) && r.includes('| 1600 |')), 'agent row');
+  assert.ok(!movedWaits([{ t0: 0, fires: [{ a: 60_000, b: 120_000, arm: 'off' }, { a: 120_000, b: 180_000, arm: 'on' }], hitches: [ag(70_000, 900, 'Ts3Agent.PollTask'), ag(130_000, 900, 'Ts3Agent.PollTask')] }]).includes('Ts3Agent'), 'agent out of moved waits');
   console.log('hitch-ab self-check ok');
 }
 
@@ -512,8 +526,13 @@ if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   else if (args.includes('--scenario')) { args.splice(args.indexOf('--scenario'), 1); console.log(scenarioReport(args)); }
   else if (args.includes('--causes')) {
     args.splice(args.indexOf('--causes'), 1);
-    const wh = opt('--wh'), arms = (opt('--arms') ?? 'off,all').split(',');
-    console.log(causeReport(args, arms, wh));
+    const wh = opt('--wh'), arms = opt('--arms');
+    // default: the baseline (off + no-ab runs) table, plus the on arm's own table when any run has one (one table per arm, never mixed)
+    if (arms) console.log(causeReport(args, arms.split(','), wh));
+    else {
+      console.log(causeReport(args, ['off', 'all'], wh));
+      if (expandTags(args).some(t => loadRun(t).arms.on)) console.log(`\n### On arm\n${causeReport(args, ['on'], wh)}`);
+    }
   } else if (args.includes('--pool')) {
     const label = opt('--pool')!, arms = (opt('--arms') ?? 'off,all').split(',');
     if (opt('--wh')) console.log('--wh is not used by --pool any more: exclusion() decides (docs/161 §6)');

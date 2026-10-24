@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.34"
+#define TS3NATIVE_VERSION "0.36.37"
 
 typedef unsigned char u8;
 
@@ -203,7 +203,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 4442 int32 (v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 4467 int32 (v108 gate site 16 after v107, version field 108; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -1700,8 +1700,38 @@ struct Ts3nCounters {
     LONG ulOpBusy;                    // +0x455C, rounds refused because the pool set was busy (a P4 run or the sim's cut owns it)
     LONG ulLockTrip;                  // +0x4560, routing-lock acquires reached on the consumer inside a round (expected 0)
     LONG ulFaults;                    // +0x4564, faults in a round (clone dropped, rebuilt at the next cut)
+    // v106 (0.36.35, docs/157 §4, docs/156 F1): P5 steps 2-4 (built without v105 on its branch; placed after v105's fields at
+    // the 2026-10-23 merge). Lock-key writer cover (replay.cpp RpLockKeyEnter at 0x82B3A1, the
+    // Footprint_SetLockKeyObject call site in RouteManager_FootprintLockKeyApply), replayed-insert answer check (RpInsCheck),
+    // P5b retake watchdog escalation (p5b.cpp) and the Mode=2 refusal-storm breaker (p5.cpp)
+    // (PlanDrain branch: the v106 layout of merge eaef8a1b kept as is so v107 sits at its final offset; nothing writes these
+    // fields in a build without that merge, they read 0)
+    LONG rpLockKeyForce;              // +0x4568, lock-key set swaps on an inserted footprint whose lots were forced to rebase
+    LONG rpLockKeyNoLot;              // +0x456C, swaps on a footprint with no lot Q (Q-less nodes refreshed at the next cut)
+    LONG rpInsDiff;                   // +0x4570, replayed inserts whose clone copy answered other bounds than live at the record
+    LONG rpInsForced;                 // +0x4574, of those, lots forced to rebase (a difference over 0.01 or flat on one side)
+    LONG p5bWdEscalate;               // +0x4578, retakes past EscalateMs: lending (P5b and P5c) off for the session
+    LONG p5StormTrips;                // +0x457C, refusal storms: StormRefusals tried refusals in a row paused Mode=2 for StormPauseMs
+    LONG p5StormSkips;                // +0x4580, Mode=2 plans answered by the game's plan with no acquire during a storm pause
+    LONG p5StormRunMax;               // +0x4584, longest run of tried refusals in a row
+    // v107 (0.36.36, docs/89 §13): [Discourage] PlanDrain (discourage.cpp DiscDrainForPlan). A sim-thread sync plan applies D's
+    // deferred footprint records first (DiscDrain), so it sees the world DeferFootprint=0 would give it
+    LONG sdReady;                     // +0x4588, 1 = installed (needs design U)
+    volatile LONG sdMode;             // +0x458C, switch (native_set plandrain / --ab plandrain): 1 = drain before the plan
+    LONG sdChecks;                    // +0x4590, owner-thread sync plans that reached Route_PlanLocked with records pending
+    LONG sdDrains;                    // +0x4594, drains run before the plan
+    LONG sdRecs;                      // +0x4598, records queued at those drains (summed)
+    LONG sdJobRan;                    // +0x459C, drains that waited for a running job (the plan would have waited too)
+    LONG sdUs;                        // +0x45A0, summed drain time including the job wait (us)
+    LONG sdMaxUs;                     // +0x45A4, the longest
+    LONG sdSkip[5];                   // +0x45A8, skipped: 0 Add queued, 1 job callback, 2 +0x918 already owned, 3 P5c lent, 4 draining
+    LONG sdFail[2];                   // +0x45BC, plans that failed: 0 after a drain, 1 after a skip
+    // v108 (0.36.37, docs/67 §13 crash K): [RouteGate] gate site 16 IC_World_FindPlacesOnShoreline 0x78C440 (routegate.cpp
+    // index 15), counted as rgUnlocked / rgJob are for sites 0-14
+    LONG rgUnlocked3;                 // +0x45C4, outermost entries without +0x918 at gate site 16
+    LONG rgJob3;                      // +0x45C8, of those, entries while a route job ran
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {105,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {108,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -2743,6 +2773,7 @@ static void G11PlanEnd(bool begun);
 
 static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent,
                          DWORD doPlan, u8* opts, int* out1, int* out2, DWORD guidLo, DWORD guidHi);
+static int DiscDrainForPlan();  // discourage.cpp (docs/89 §13 PlanDrain)
 static DWORD P10PlanBegin(const DWORD* slot, LARGE_INTEGER* t0);  // p10.cpp
 static void P10PlanEnd(DWORD tag, LARGE_INTEGER t0);
 static void __cdecl P10Enter(int ic, DWORD* slot);
@@ -2783,6 +2814,7 @@ static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int*
     const Ts3nCounters& c = ts3native_counters;
     const bool on = (c.workerMode == 1 && c.workerReady) || (c.asyncMode == 1 && c.asyncReady);
     InterlockedIncrement(on ? &ts3native_counters.planOnCalls : &ts3native_counters.planOffCalls);
+    const int sd = DiscDrainForPlan();  // docs/89 §13: deferred footprints applied first (1 drained, -1 skipped, 0 not asked)
     const bool g11 = G11PlanBegin();
     PrTok pr;
     const bool prOn = PrBegin(pr, world, starts, goals, agent, doPlan, opts, guidLo, guidHi);
@@ -2790,6 +2822,7 @@ static u8 PlanLockedBody(void* world, void* edx, int* outList, int* starts, int*
     PrEnd(prOn, pr, outList, r);
     G11PlanEnd(g11);
     if (!r) InterlockedIncrement(on ? &ts3native_counters.planOnFails : &ts3native_counters.planOffFails);
+    if (!r && sd) InterlockedIncrement(&ts3native_counters.sdFail[sd > 0 ? 0 : 1]);
     return r;
 }
 

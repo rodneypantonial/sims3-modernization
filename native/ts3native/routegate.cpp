@@ -8,7 +8,7 @@
 // rgOwnerTid on every successful acquire of that lock (it returns the recursion count [lock+0x20], > 0); Lock_Release
 // 0x4E17B0 clears it before the outermost release (count 1), so a thread that takes the lock right after is not clobbered.
 // Gate sites: the 12 S0 sites (docs/18 "Gate-site list") plus sites 13-15 of docs/60 §2.2 (#3 LotTable_Contains, #7 the
-// two coarse gates) get pass-through stubs. An entry counts in rgUnlocked[site] when it is outermost on its thread (no
+// two coarse gates) and site 16, the coarse IC_World_FindPlacesOnShoreline gate (docs/67 §13, crash K), get pass-through stubs. An entry counts in rgUnlocked[site] when it is outermost on its thread (no
 // other gate frame open) and the thread does not own +0x918; while a route-worker job (g_callerTid set) or an async job
 // runs it also counts in rgJob[site]. Outermost needs the leave: the stub swaps the return address for RgLeaveThunk and
 // keeps the real one on a per-thread stack (Frida's onLeave does the same). A frame left without returning (exception
@@ -23,7 +23,7 @@
 // so this module reads the real caller through VfRealRet.
 // shortcut: entries are counted, not P/Q reads that skip the leaves.
 
-static const int RG_SITES = 15;
+static const int RG_SITES = 16;
 struct RgSite { DWORD addr; u8 len; u8 pro[10]; const char* name; };
 // prologues verified on the Steam 1.67 exe (docs/18 S0 table, docs/60 §2.2); site 10 moves to Route_PlanCommon with G10-C
 static RgSite kRgSites[RG_SITES] = {
@@ -43,6 +43,9 @@ static RgSite kRgSites[RG_SITES] = {
     {0x00628A90, 8, {0x83, 0xEC, 0x08, 0x53, 0x8B, 0x5C, 0x24, 0x14}, "LotTable_Contains"},
     {0x00835240, 10, {0x56, 0x8B, 0xF1, 0x80, 0xBE, 0x7B, 0x09, 0x00, 0x00, 0x00}, "RoutingSystem_OnExitBuildBuy (coarse)"},
     {0x00835110, 10, {0x56, 0x8B, 0xF1, 0x80, 0xBE, 0x74, 0x09, 0x00, 0x00, 0x00}, "RoutingSystem_RebuildLotRouting (coarse)"},
+    // docs/67 §13 (crash K): the IC reaches LotSearch_Entry 0x640E00 -> in-room A* 0x61E500 on live P+0xBC with no +0x918
+    // (0x78C54A -> 0xC75920, call 0xC7630A); coarse like 0x7929F0: a job running = wait for +0x918, else no job starts
+    {0x0078C440, 6, {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0}, "IC_World_FindPlacesOnShoreline (coarse)"},
 };
 static const DWORD LOCK_RELEASE = 0x004E17B0;
 static const u8 kLockReleasePrologue[] = {0x83, 0x41, 0x20, 0xFF, 0x80, 0x79, 0x24, 0x00};  // add [ecx+20h],-1; cmp byte [ecx+24h],0
@@ -102,8 +105,13 @@ static void RgUndo(const RgFrame& f) {
     if (f.rel & RG_REL_STEER) t_steerRet = (DWORD)(uintptr_t)f.lock;
 }
 
-static inline volatile LONG* RgUnl(int s) { return s < 12 ? &ts3native_counters.rgUnlocked[s] : &ts3native_counters.rgUnlocked2[s - 12]; }
-static inline volatile LONG* RgJob(int s) { return s < 12 ? &ts3native_counters.rgJob[s] : &ts3native_counters.rgJob2[s - 12]; }
+// sites 0-11 v16, 12-14 v25, 15 v108
+static inline volatile LONG* RgUnl(int s) {
+    return s < 12 ? &ts3native_counters.rgUnlocked[s] : s < 15 ? &ts3native_counters.rgUnlocked2[s - 12] : &ts3native_counters.rgUnlocked3;
+}
+static inline volatile LONG* RgJob(int s) {
+    return s < 12 ? &ts3native_counters.rgJob[s] : s < 15 ? &ts3native_counters.rgJob2[s - 12] : &ts3native_counters.rgJob3;
+}
 static inline bool RgJobLive() { return g_callerTid || g_async.state == A_RUNNING; }
 static inline bool RgIsSim(DWORD tid) { return *g_rtSimTidSlot && tid == *g_rtSimTidSlot; }
 static inline bool RgIsWorker(DWORD tid) { return g_workerTid && tid == g_workerTid; }
@@ -151,7 +159,7 @@ static LONG __fastcall LockReleaseHook(void* lock, void* edx) {
     return g_rgRelOrig(lock, edx);
 }
 
-// first 48 distinct site/caller pairs (gate sites 0-14, rtsites.cpp sites 32+) with a line in ts3native.log
+// first 48 distinct site/caller pairs (gate sites 0-15, rtsites.cpp sites 32+) with a line in ts3native.log
 static void RgNoteAs(int site, const char* name, DWORD at, const char* what, DWORD ret, LONG tid) {
     if (g_rgNoted >= 48) return;
     const DWORD key = (DWORD)site << 24 | (ret & 0xFFFFFF);
@@ -268,7 +276,7 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
     RgDrop(t, slot);
     // P4 D2 (§17.4): the two coarse rebuild gates wait for a running clone run and keep the next one out until they return;
     // a reader-marked frame, so the outermost-gate test below is unchanged
-    if (g_p4On && site >= 13 && !RgIsWorker(GetCurrentThreadId())) {
+    if (g_p4On && (site == 13 || site == 14) && !RgIsWorker(GetCurrentThreadId())) {
         P5cNrEnter();  // P4NrEnter; P5c: never with the lent lock held
         if (!RgPush(t, slot, 1, RG_REL_NR)) InterlockedDecrement(&g_snNrIn);
     }
@@ -361,11 +369,11 @@ static __declspec(naked) void __cdecl RgLeaveThunk() {
 #define RG_STUB(i) static __declspec(naked) void RgStub##i() { __asm pushad __asm pushfd __asm lea eax, [esp + 36] \
     __asm push eax __asm push i __asm call RgEnter __asm add esp, 8 __asm popfd __asm popad __asm jmp dword ptr [g_rgTramp + i * 4] }
 RG_STUB(0) RG_STUB(1) RG_STUB(2) RG_STUB(3) RG_STUB(4) RG_STUB(5) RG_STUB(6) RG_STUB(7) RG_STUB(8) RG_STUB(9) RG_STUB(10) RG_STUB(11)
-RG_STUB(12) RG_STUB(13) RG_STUB(14)
+RG_STUB(12) RG_STUB(13) RG_STUB(14) RG_STUB(15)
 static void (*const kRgStubs[RG_SITES])() = {RgStub0, RgStub1, RgStub2, RgStub3, RgStub4, RgStub5, RgStub6, RgStub7, RgStub8,
-                                             RgStub9, RgStub10, RgStub11, RgStub12, RgStub13, RgStub14};
+                                             RgStub9, RgStub10, RgStub11, RgStub12, RgStub13, RgStub14, RgStub15};
 
-// [RouteGate] Enabled=1: true when every byte the gate will patch matches (15 sites, Lock_Acquire, Lock_Release); the
+// [RouteGate] Enabled=1: true when every byte the gate will patch matches (16 sites, Lock_Acquire, Lock_Release); the
 // Route_PlanLocked prologue is checked by its own InstallDetour. One mismatch: nothing of the gate is installed.
 static bool ReadRouteGate(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"RouteGate", L"Enabled", 0, ini)) { Log("route gate disabled (Enabled=0)"); return false; }

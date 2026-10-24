@@ -1481,6 +1481,16 @@ rpc.exports = {
         'rcLeaves', ...n('rcDropped', 2), 'rcHoldUs', 'rcHoldMaxUs', 'rcBusyAtOpen', 'rcWould');
       // v105 (docs/182): [RouteSnap] RecsUnlocked at +0x4548 (replay consumer rounds outside +0x918)
       if (c.readS32() >= 105) f.push('ulMode', 'ulRounds', 'ulRecs', 'ulUs', 'ulMaxUs', 'ulOpBusy', 'ulLockTrip', 'ulFaults');
+      // v106 (docs/157 §4, docs/156 F1): lock-key writer cover, replayed-insert answer check, P5b retake escalation, Mode=2
+      // refusal-storm breaker at +0x4568 (after v105's fields)
+      if (c.readS32() >= 106) f.push('rpLockKeyForce', 'rpLockKeyNoLot', 'rpInsDiff', 'rpInsForced', 'p5bWdEscalate', 'p5StormTrips',
+          'p5StormSkips', 'p5StormRunMax');
+      // v107 (docs/89 §13): [Discourage] PlanDrain at +0x4588 (sdSkip_<i>: 0 Add queued, 1 job callback, 2 +0x918 owned, 3 P5c
+      // lent, 4 draining; sdFail_<i>: 0 after a drain, 1 after a skip)
+      if (c.readS32() >= 107) f.push('sdReady', 'sdMode', 'sdChecks', 'sdDrains', 'sdRecs', 'sdJobRan', 'sdUs', 'sdMaxUs',
+        ...n('sdSkip', 5), ...n('sdFail', 2));
+      // v108 (docs/67 §13 crash K): [RouteGate] gate site 16 IC_World_FindPlacesOnShoreline 0x78C440 at +0x45C4
+      if (c.readS32() >= 108) f.push('rgUnlocked_findPlacesOnShoreline', 'rgJob_findPlacesOnShoreline');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

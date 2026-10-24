@@ -241,6 +241,36 @@ static void DiscPoll() {
     DiscDrain(GetTickCount() - g_disc[g_discHead].t >= kDiscMaxAgeMs);
 }
 
+// PlanDrain (docs/89 §13; counters v107, [Discourage] PlanDrain=1, runtime switch sdMode, --ab plandrain): before a sim-thread
+// sync plan (PlanLockedBody, after the original's early outs) every deferred record is applied, so the plan sees the world it
+// would see with DeferFootprint=0. Skipped (today's defer-on behaviour) inside a job callback (WaitAsyncDone would wait for the
+// job that waits on us), with +0x918 already owned here (no nested drain), with the P5c lent lock (the drain's job wait would
+// hand it back and switch P5c off), while draining, and with an Add queued (may fire World_FireEvent 0x11: IC points only).
+// Returns 1 = drained, -1 = skipped, 0 = not asked (off, nothing queued, another thread, P4 clone run).
+static int DiscDrainForPlan() {
+    Ts3nCounters& k = ts3native_counters;
+    if (k.sdMode != 1 || !g_discCount) return 0;
+    const DWORD me = GetCurrentThreadId();
+    if (me != g_async.owner || t_snapRun) return 0;
+    InterlockedIncrement(&k.sdChecks);
+    int why = g_inInvoke ? 1 : k.rgOwnerTid == (LONG)me ? 2 : P5cLent(me) ? 3 : g_discDraining ? 4 : -1;
+    for (int i = 0; why < 0 && i < g_discCount; i++)
+        if (g_disc[(g_discHead + i) % kDiscCap].add) why = 0;
+    if (why >= 0) { InterlockedIncrement(&k.sdSkip[why]); return -1; }
+    const int n = g_discCount;
+    const bool ran = g_async.state == A_RUNNING;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    DiscDrain(true);
+    const LONG us = UsSince(t0);
+    InterlockedIncrement(&k.sdDrains);
+    InterlockedExchangeAdd(&k.sdRecs, n);
+    if (ran) InterlockedIncrement(&k.sdJobRan);
+    InterlockedExchangeAdd(&k.sdUs, us);
+    Max(&k.sdMaxUs, us);
+    return 1;
+}
+
 // D-X 1, from rtsites.cpp RT_DESTROY before ObjectService_DestroyById(idLo, idHi) runs; canWait = its job wait returned (no
 // job runs now), false inside a job callback. Applies the object's Remove records in order under +0x918 (managed-free,
 // docs/84 §7.1, so safe at every native destroy caller), drops its Add records, keeps the other records in their order.
@@ -493,6 +523,13 @@ static void InstallFootprintDefer(const wchar_t* ini) {
     ts3native_counters.usfReady = 1;
     ts3native_counters.usfMode = 1;
     Log("OK   footprint deferral (design U, docs/89)");
+    if (GetPrivateProfileIntW(L"Discourage", L"PlanDrain", 0, ini)) {
+        ts3native_counters.sdReady = 1;
+        ts3native_counters.sdMode = 1;
+        Log("OK   plan drain: deferred footprints applied before every sim-thread sync plan (docs/89 §13)");
+    } else {
+        Log("plan drain off (PlanDrain=0)");
+    }
 }
 
 static void InstallDiscourage(const wchar_t* ini) {

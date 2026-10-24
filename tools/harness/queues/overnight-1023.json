@@ -1,5 +1,5 @@
 {
-  "note": "Overnight Fri->Sat 2026-10-23/24 (v0.1.5 release plan, Tue 10-27): ONE clean-machine queue, 25 jobs, timeout sum 736 min (12.3 h); expected wall time ~8 h (10-min profile jobs take ~12 min, loop jobs stop at their firing count). START (Rodney, 18:00 PHT, from the main checkout after merging this branch): set TS3_NIGHT=1 so a failed job does not stop the queue, then node tools/harness/queue.ts tools/harness/queues/overnight-1023.json (PowerShell: $env:TS3_NIGHT=1; node tools/harness/queue.ts tools/harness/queues/overnight-1023.json). Expected end ~02:00-03:00 PHT; worst case (every job at its timeout) ~06:30 PHT, before the 08:00 PHT end of the quiet window. NOTHING ELSE may run while it goes: no agents, no builds, no other queue, no use of the PC (timing runs; machine-load line must stay < 10% other CPU). Resume after a stop: same command with --from <job id>. Order: (1) clean-night-1023 (Overwatch v2 confirm, lock-taker A/B; moved to asi.0338), (2) clean-night-1024 (T1, refcount guard, D1+H2Ic), (3) DoorMemo verify + 4 A/B jobs on 0338, (4) provisional v0.1.5 bundle A/B BP/IP/SV both orders, natural play, (5) README vanilla vs v0.1.4 vs candidate, 1 load per side per world. Read each job with the reader named in its note (hitch-ab.ts --scenario for loop jobs, hitch-ab.ts pair means for --ab jobs, release-vs-baseline-report.ts for part 5).",
+  "note": "Overnight Fri->Sat 2026-10-23/24 (v0.1.5 release plan, Tue 10-27): ONE clean-machine queue, 25 jobs, timeout sum 736 min (12.3 h); expected wall time ~8 h (10-min profile jobs take ~12 min, loop jobs stop at their firing count). START (Rodney, 18:00 PHT, from the main checkout after merging this branch): set TS3_NIGHT=1 so a failed job does not stop the queue, then node tools/harness/queue.ts tools/harness/queues/overnight-1023.json (PowerShell: $env:TS3_NIGHT=1; node tools/harness/queue.ts tools/harness/queues/overnight-1023.json). Expected end ~02:00-03:00 PHT; worst case (every job at its timeout) ~06:30 PHT, before the 08:00 PHT end of the quiet window. NOTHING ELSE may run while it goes: no agents, no builds, no other queue, no use of the PC (timing runs; machine-load line must stay < 10% other CPU). Resume after a stop: same command with --from <job id>. Order: (1) clean-night-1023 (Overwatch v2 confirm, lock-taker A/B; moved to asi.0338), (2) clean-night-1024 (T1, refcount guard, D1+H2Ic), (3) DoorMemo verify + 4 A/B jobs on 0338, (4) provisional v0.1.5 bundle A/B BP/IP/SV both orders, natural play, (5) README vanilla vs v0.1.4 vs candidate, 1 load per side per world. Read each job with the reader named in its note (hitch-ab.ts --scenario for loop jobs, hitch-ab.ts pair means for --ab jobs, release-vs-baseline-report.ts for part 5). Last two jobs (added 2026-10-23 evening): P5 step 5 redirect check on asi.0341.",
   "jobs": [
     {
       "id": "bp-overwatch-ab-loop4-clean",
@@ -331,98 +331,66 @@
       }
     },
     {
-      "id": "bp-doormemo-offfirst-0338",
-      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed) (docs/TESTING.md clean-night rules: machine-load line < 10% other CPU, else rerun). BP play, release defaults + [RouteAsync] DoorMemo=1 alone (no HostSplit: its stamps are overhead); --ab doormemo toggles dmMode (+0x408C; 0 = every repeat asked as today). Off-first (warm-up on, then off,on,on,off). Pass: no crash, game alive, 0 watchdog lines, the switch line in the log at every slice, dmMismatch 0. Read per arm with node tools/harness/hitch-ab.ts <tag> (pair mean with bp-doormemo-onfirst): p99, p99.9 and max iteration ms, iterations >= 100 / 300 / 500 / 1000 ms; then wait-ab.ts: the sim's +0x918 waits for the job (docs/159 §4 expects -2.5..-6.9 ms/s), all keyed; per slice dmHits / dmMisses. Gate: no hitch metric worse in both orders beyond its null band, >= 300 ms counts not up, 0 crashes; a wait cut alone is not a reason to ship (target = player-noticeable hitches).",
-      "asi": "game-copy/ts3native.asi.0338",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 104,
-      "ini": {
-        "RouteAsync.DoorMemo": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "ab": "doormemo",
-          "slice": 2
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "timeoutMin": 22,
-      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
-    },
-    {
-      "id": "bp-doormemo-onfirst-0338",
-      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). The on-first half of the BP pair (abOnFirst: warm-up on, then on,off,off,on). Everything else as bp-doormemo-offfirst (ini, pass, hitch-ab.ts reads).",
-      "asi": "game-copy/ts3native.asi.0338",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 104,
-      "ini": {
-        "RouteAsync.DoorMemo": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "abOnFirst": true,
-          "ab": "doormemo",
-          "slice": 2
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "timeoutMin": 22,
-      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
-    },
-    {
-      "id": "ip-doormemo-offfirst-0338",
-      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). IP play, as bp-doormemo-offfirst (docs/159 §4 expects sim wait -1.5..-4.1 ms/s). Read with hitch-ab.ts (pair mean with ip-doormemo-onfirst).",
+      "id": "ip-doormemo-loop-ab",
+      "note": "Forced repro A/B for DoorMemo (replaces the 4 natural-play doormemo A/Bs, 2026-10-23 evening): ip-doormemo-loop ABBA until 10 firings per arm, doormemo flipped per firing (ini DoorMemo=1, switch decides), GoalGen + H2Ic on in both arms, cap 45 min. Pass: no crash, OK door stub + OK door memo lines, dmMismatch 0, dmHits > 0, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario): iterations >= 100/300/1000 ms, p99/p99.9/max, goal-step spikes, moved-waits table; per arm dmHits / hcDoorWaitUs.",
       "asi": "game-copy/ts3native.asi.0338",
       "save": "Baseline-IP-Spring",
       "minCounters": 104,
+      "nativeRequire": "dmMismatch<=0,dmHits>=1",
+      "logRequire": {
+        "OK   door stub": 1,
+        "OK   door memo": 1
+      },
       "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
         "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
-          "minutes": 10,
           "seed": 12345,
-          "ab": "doormemo",
-          "slice": 2
+          "minutes": 47,
+          "repro": "ip-doormemo-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
         }
       },
       "gameArgs": [
         "-disablestoryprogression"
       ],
-      "timeoutMin": 22,
-      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
-    },
-    {
-      "id": "ip-doormemo-onfirst-0338",
-      "note": "Night, clean only, asi.0338 (moved from 0327; valid only if bp-doormemo-verify-0338 passed). The on-first half of the IP pair. Everything else as ip-doormemo-offfirst.",
-      "asi": "game-copy/ts3native.asi.0338",
-      "save": "Baseline-IP-Spring",
-      "minCounters": 104,
-      "ini": {
-        "RouteAsync.DoorMemo": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "abOnFirst": true,
-          "ab": "doormemo",
-          "slice": 2
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "timeoutMin": 22,
-      "nativeRequire": "dmMismatch<=0,g0wWatchdog<=0"
+      "timeoutMin": 65
     },
     {
       "id": "bp-v015bundle-offfirst-0338",
@@ -480,13 +448,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
           "noSamplers": true,
@@ -554,13 +523,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "abOnFirst": true,
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
@@ -629,13 +599,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
           "noSamplers": true,
@@ -703,13 +674,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "abOnFirst": true,
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
@@ -778,13 +750,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
           "noSamplers": true,
@@ -852,13 +825,14 @@
         "HitchAttr.Holders": 1,
         "Harness.ForegroundRender": 1,
         "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
           "minutes": 10,
           "seed": 12345,
-          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay",
+          "ab": "earlyout,fallbackasync,m1retry,fbjobcap,fbjobdeadline,tailunlock,replandedupe,h2,slotenabledro,unseenthrottle,steerro,avoidro,gate0ro,deferfootprint,deferfootprint2,routetoobjro,placementro,a10foreign,goalgen,h2ic,refcountguard,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay,doormemo",
           "abOnFirst": true,
           "slice": 2,
           "fixesOn": "stuckcheckasync,errortrapspread",
@@ -982,7 +956,8 @@
         "RouteAsync.H2Ic": 1,
         "RouteAsync.H2IcMode": 1,
         "RouteAsync.RefcountGuard": 1,
-        "RouteAsync.RefcountGuardMode": 1
+        "RouteAsync.RefcountGuardMode": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
@@ -1047,6 +1022,7 @@
       "save": "Baseline-IP-Spring",
       "run": {
         "profile": {
+          "profOpts": { "tasks": false },
           "minutes": 10,
           "seed": 12345
         }
@@ -1107,7 +1083,8 @@
         "RouteAsync.H2Ic": 1,
         "RouteAsync.H2IcMode": 1,
         "RouteAsync.RefcountGuard": 1,
-        "RouteAsync.RefcountGuardMode": 1
+        "RouteAsync.RefcountGuardMode": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
@@ -1232,7 +1209,8 @@
         "RouteAsync.H2Ic": 1,
         "RouteAsync.H2IcMode": 1,
         "RouteAsync.RefcountGuard": 1,
-        "RouteAsync.RefcountGuardMode": 1
+        "RouteAsync.RefcountGuardMode": 1,
+        "RouteAsync.DoorMemo": 1
       },
       "run": {
         "profile": {
@@ -1245,6 +1223,688 @@
         "-disablestoryprogression"
       ],
       "timeoutMin": 22
+    },
+    {
+      "id": "bp-p5c-recs-verify-redirect-0341",
+      "note": "P5 step 5 lot-table redirect check (Fable branch e96a4aea, ts3native 0.36.35, counters v106): expect ulLockTrip 0 and no RpUlGate line in the log; mismatches back to the P5c baseline. Correctness, not timing. Job 2 + FreeLock=1: every plain sim +0x918 acquire is admitted in the window, destroys park one reference (with DestroyPark=1 also outside windows), a recorded write after the cut makes the record time skew (M5, stale true) instead of a refusal. PASS: job 2's, plus p5cJobs > 0, p5cAcq > 0, p5cParked = p5cFlushed + parked still pending at the end (<= p5cPendMax), p5cStale_0 + p5cStale_1 counted (> 0 expected on BP), 'P5c T-G1 / hand-over' 0 / 0, p5cFlushRefused allowed, no 'FreeLock off' or 'P5c: thread' line. steerSimTreeWrite / steerSimCacheWrite rise here by design (the sim writes under the lent lock while A_RUNNING).",
+      "asi": "game-copy/ts3native.asi.0341",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 106,
+      "ini": {
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "LocoWindow.Enabled": 1,
+        "LocoWindow.Mode": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 8,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.AuditEvery": 4,
+        "RouteSnap.ReplayAuditEvery": 4,
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.ShadowWorld": "BP",
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.VerifyEvery": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.RecsUnlocked": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-p5c-recs-verify-redirect-0341",
+      "note": "P5 step 5 lot-table redirect check (Fable branch e96a4aea, ts3native 0.36.35, counters v106): expect ulLockTrip 0 and no RpUlGate line in the log; mismatches back to the P5c baseline. Correctness, not timing. Job 2 + FreeLock=1: every plain sim +0x918 acquire is admitted in the window, destroys park one reference (with DestroyPark=1 also outside windows), a recorded write after the cut makes the record time skew (M5, stale true) instead of a refusal. PASS: job 2's, plus p5cJobs > 0, p5cAcq > 0, p5cParked = p5cFlushed + parked still pending at the end (<= p5cPendMax), p5cStale_0 + p5cStale_1 counted (> 0 expected on BP), 'P5c T-G1 / hand-over' 0 / 0, p5cFlushRefused allowed, no 'FreeLock off' or 'P5c: thread' line. steerSimTreeWrite / steerSimCacheWrite rise here by design (the sim writes under the lent lock while A_RUNNING).",
+      "asi": "game-copy/ts3native.asi.0341",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 106,
+      "ini": {
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DestroyPark": 1,
+        "SlotEnabledRO.Enabled": 1,
+        "AvoidRO.Enabled": 1,
+        "UnseenThrottle.Enabled": 1,
+        "LocoWindow.Enabled": 1,
+        "LocoWindow.Mode": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 8,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.AuditEvery": 4,
+        "RouteSnap.ReplayAuditEvery": 4,
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.ShadowWorld": "BP",
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.VerifyEvery": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.RecsUnlocked": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-locktaker-defer-ab",
+      "note": "Targeted check after static triage (replaces the plain rerun): ip-locktaker-defer-loop flips only DeferFootprint + DeferFootprint2 per firing, the other six lock-taker fixes on in both arms (ForeignKindsMode=1). Question: do the on-arm failing Replan loops / 3.4 s plans (first run: 4 >= 1 s on, 0 off, after Boat.GetOut) follow the deferral pair? If they persist with deferral off, flip placementro alone next. LogFallbackMs 200 so phase lines are not dropped. Read: hitch-ab --scenario (agent hitches excluded), per firing rdRepN_*_0, sypUs_1, sypPhaseUs_1.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 200,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-locktaker-defer-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "ip-boat-exit-defer-ab",
+      "note": "Exact-scenario repro for the on-arm failing Replan loops (both events followed a boat exit): ip-boat-exit-defer-loop = ip-locktaker-defer-loop + two IP houseboat residents (Linda Scott, Mylee Arias) leave via the gangplank each firing while the crowd jobs run, back home in setup; flips only DeferFootprint + DeferFootprint2. UNVERIFIED first run: check the sim_visit_lot steps fired (step results in the log). Read: hitch-ab --scenario; failing Route_Replan per arm (byEntry fail); per firing rdRepN_*_0, usfDeferred.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 101,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 200,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-boat-exit-defer-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "ip-boat-exit-plandrain-ab",
+      "note": "PlanDrain fix A/B (asi.0342, ts3native 0.36.36, counters v107): ip-boat-exit-plandrain-loop flips only plandrain per firing; DeferFootprint(2) and the other six lock-taker fixes on in both arms. Pass: no crash, sdDrains >= 1, on arm no failing Route_Replan loop / no >= 1 s routing freeze where off has them. Read: hitch-ab --scenario (fixed tool), byEntry Route_Replan fail per arm, sdDrains/sdRecs/sdFail_0/sdFail_1 per firing.",
+      "asi": "game-copy/ts3native.asi.0342",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 107,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0,sdDrains>=1",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 200,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "Discourage.PlanDrain": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-boat-exit-plandrain-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "bp-soak-cand",
+      "note": "Soak (rule natural-ab-only-where-hitches, 2026-10-23): v0.1.5 candidate (asi.0338, candidate ini, ts3fixes candidates on), 45 min natural play, seeded, no A/B. Pass: no crash, 0 iterations >= 1 s outside excluded windows, p99/p99.9 and >= 100/300 ms per 10 min not worse than the v0.1.4 README side (bp-rvb-v014 / docs/161) beyond the noise band. Read: hitch-ab.ts <tag> and --causes.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 104,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckasync,errortrapspread,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "sv-soak-cand",
+      "note": "Soak (rule natural-ab-only-where-hitches, 2026-10-23): v0.1.5 candidate (asi.0338, candidate ini, ts3fixes candidates on), 45 min natural play, seeded, no A/B. Pass: no crash, 0 iterations >= 1 s outside excluded windows, p99/p99.9 and >= 100/300 ms per 10 min not worse than the v0.1.4 README side (sv-rvb-v014 / docs/161) beyond the noise band. Read: hitch-ab.ts <tag> and --causes.",
+      "asi": "game-copy/ts3native.asi.0338",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 104,
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "GoalGen.SameRing": 1,
+        "GoalGen.Mode": 1,
+        "RouteAsync.H2Ic": 1,
+        "RouteAsync.H2IcMode": 1,
+        "RouteAsync.RefcountGuard": 1,
+        "RouteAsync.RefcountGuardMode": 1,
+        "RouteAsync.DoorMemo": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckasync,errortrapspread,legreplanskip,bouncerskip,idlememo,overwatchspread,overwatchchain,easpreadlots,easpreadpets,easpreaddecay"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "ip-crashk-verify-1",
+      "note": "Crash K verify 1 of 2 (asi.0343, ts3native 0.36.37, counters v108): RouteGate site 16 at IC_World_FindPlacesOnShoreline 0x78C440 (docs/67 crash K). Same boat-exit scenario as ip-boat-exit-defer-ab (the crash came after boat exits on the shoreline search). Pass: no crash, log OK   route gate: 16 of 16 gate sites, rest as the base job. Info only: rgJob_findPlacesOnShoreline / rgUnlocked_findPlacesOnShoreline in the native counters. 2 clean runs = fixed (rule crash-cause-before-fix).",
+      "asi": "game-copy/ts3native.asi.0343",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 108,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1,
+        "OK   route gate: 16 of 16 gate sites": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 200,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-boat-exit-defer-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "ip-crashk-verify-2",
+      "note": "Crash K verify 2 of 2 (asi.0343, ts3native 0.36.37, counters v108): RouteGate site 16 at IC_World_FindPlacesOnShoreline 0x78C440 (docs/67 crash K). Same boat-exit scenario as ip-boat-exit-defer-ab (the crash came after boat exits on the shoreline search). Pass: no crash, log OK   route gate: 16 of 16 gate sites, rest as the base job. Info only: rgJob_findPlacesOnShoreline / rgUnlocked_findPlacesOnShoreline in the native counters. 2 clean runs = fixed (rule crash-cause-before-fix).",
+      "asi": "game-copy/ts3native.asi.0343",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 108,
+      "nativeRequire": "steerTaken>=1,avTakenMiss>=1,g0Served>=1,usfDeferred>=1,fgTaken>=1,afStarted_2>=1,usfApplyInJob<=0,fp2ApplyInJob<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1,
+        "OK   route gate: 16 of 16 gate sites": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 200,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 0,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 0,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 0,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 0,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 62,
+          "repro": "ip-boat-exit-defer-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 60
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 76
+    },
+    {
+      "id": "sv-soak-v014",
+      "note": "Soak regression guard for sv-soak-cand (3 >= 1 s, max 2273 ms = own-START route jobs 816-2281 ms with the sim in WaitAsyncDone/WaitJobDone, native log): v0.1.4 = asi.rel0360 + shipped ini, same 45 min seeded natural play. Read: hitch-ab.ts sv-soak-v014 vs sv-soak-cand; if v0.1.4 shows the same >= 1 s count, the own-job waits are pre-existing (post-release: own-job cap), not a v0.1.5 regression.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "SaveWrite.Enabled": 1,
+        "Decompress.Enabled": 1,
+        "WaterJps.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.Mode": 1,
+        "LotRemoveGuard.Enabled": 1,
+        "OptsInit.Enabled": 1
+      },
+      "save": "Baseline-SV-Spring",
+      "run": {
+        "profile": {
+          "profOpts": { "tasks": false },
+          "minutes": 45,
+          "seed": 12345
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
     }
   ]
 }

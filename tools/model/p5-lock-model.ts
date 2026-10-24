@@ -21,13 +21,14 @@ type Cfg = {
   h2x?: boolean;  // docs/177 §4: H2 IC window (locowin.cpp HxEnter / HxLeave) around the script ICs' plain [fp+4] writes
   rcg?: boolean;  // docs/177 §7: [RouteAsync] RefcountGuard (rcguard.cpp): the query's +0x918 level kept until its caller returns
   mutRcEarly?: boolean; mutRcNoDrop?: boolean;  // mutations: the level released at the query (today's order) / no RcDrop before a wait
+  mutPdNoLentSkip?: boolean;  // docs/89 §13 mutation: [Discourage] PlanDrain drains under the P5c lent lock (rule 5 skip removed)
   fixNr?: boolean; fixHb?: boolean; fixWm?: boolean; mutGate?: boolean; mutNoDrop?: boolean;
   mutNoCloseRecheck?: boolean; mutNoBackstop?: boolean;  // undo fix A (CE-1) / fix D (CE-4), both in the code since docs/154 §7
   expect: string;  // 'clean' or a regex the outcome (violation text / 'deadlock: ...') must match
   why: string;
 };
 interface Sim { pc: string; n: number; stk: string[]; ac: string[]; hand: number; hand2: number; hbOff: number; mid: number; cb: number; bor: number;
-  k: number; parked: number; took: number; lt: number; closed: number; rc: number; }
+  k: number; parked: number; took: number; lt: number; closed: number; rc: number; pd: number; }
 interface Wk { pc: string; j: number; ph: string; exp: number; n: number; p5b: string; tu: number; rp: number; door: number;
   mgd: number; after: string; }
 interface St { lo: number; lc: number; win: number; inN: number; lendBy: number; p5cJob: number; p5cOff: number; off: number;
@@ -47,7 +48,7 @@ const setJob = (st: St, i: number, c: string) => { st.jobs = st.jobs.slice(0, i)
 function init(c: Cfg): St {
   return { lo: 0, lc: 0, win: 0, inN: 0, lendBy: 0, p5cJob: 0, p5cOff: 0, off: 0, as: 0, g0Win: 0, g0In: 0, closing: 0, busy: 0,
     world: 1, jobs: 'FF', cut: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, viol: '',
-    s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0, rc: 0 },
+    s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0, rc: 0, pd: 0 },
     w: { pc: 'idle', j: -1, ph: 'idle', exp: 0, n: 0, p5b: 'c', tu: 0, rp: 0, door: 0, mgd: 0, after: '' },
     r: { pc: c.rp ? 'r0' : 'done', it: 2 }, m: { pc: c.main ? 'm0' : 'done' } };
 }
@@ -185,6 +186,26 @@ function simSteps(st0: St, c: Cfg): Succ[] {
     case 'sp1': go('sync plan: Route_PlanLocked acquire', st => acq(st.s, 'free', 'sp2')); break;
     case 'sp2': go('sync plan: plan (live)', st => { simWrite(st, 'live'); st.s.pc = 'sp3'; }); break;
     case 'sp3': go('sync plan: release', st => { relS(st); ret(st.s); }); break;
+    // --- docs/89 §13 [Discourage] PlanDrain (discourage.cpp DiscDrainForPlan -> DiscDrain): before the sync plan, with this
+    // thread owning +0x918 (rules 4 and 5: own hold or the P5c lent lock) the drain is skipped; else the save-drain shape:
+    // g_rgOffSimOpen++, WaitAsyncDone, apply under +0x918 (sim write), leave; then the plan (sp0)
+    case 'pdrain':  // top level: the sim holds nothing
+      go('plan drain: g_rgOffSimOpen++', st => { st.off++; st.s.pd = st.p5cOff ? 2 : 1; call(st.s, 'wa0', 'pd1'); });
+      break;
+    case 'pdw': go('plan drain (nested): acquire +0x918', st => acq(st.s, 'free', 'pw1')); break;  // a plan inside a sim hold
+    case 'pw1':
+      if (st0.lo === SIM && !(c.mutPdNoLentSkip && st0.win)) go('plan drain: skipped (+0x918 owned here)', st => { st.s.pc = 'pw2'; });
+      else go('plan drain: g_rgOffSimOpen++ (MUTATION: under the lent lock)', st => { st.off++; st.s.pd = st.p5cOff ? 4 : 3; call(st.s, 'wa0', 'pd1'); });
+      break;
+    // pd: 1 / 2 top level, 3 / 4 nested; even = P5c already off at the drain's entry
+    case 'pd1': go('plan drain: acquire +0x918', st => acq(st.s, 'free', 'pd2')); break;
+    case 'pd2': go('plan drain: apply records (sim write)', st => {
+      if (st.s.pd % 2 === 1 && st.p5cOff) bad(st, 'plan drain handed the P5c lent lock back (FreeLock off)');
+      simWrite(st, 'live'); st.s.pc = 'pd3';
+    }); break;
+    case 'pd3': go('plan drain: release, g_rgOffSimOpen--', st => { relS(st); st.off--; st.s.pc = st.s.pd >= 3 ? 'pw2' : 'sp0'; st.s.pd = 0; }); break;
+    case 'pw2': go('plan drain (nested): sync plan', st => call(st.s, 'sp0', 'pw3')); break;
+    case 'pw3': go('plan drain (nested): release', st => { relS(st); ret(st.s); }); break;
     case 'save':  // rtsites.cpp:258-264
       go('save: rtBusy++, g_rgOffSimOpen++', st => { st.busy++; st.off++; if (c.p5b) call(st.s, 'n0', 'sv1'); else st.s.pc = 'sv1'; });
       break;
@@ -605,6 +626,10 @@ const CFGS: Cfg[] = [
   { name: 'rpu-tu', ops: ['start', 'collect', 'steer', 'cut'], K: 3, tu: true, rp: true, rpu: true, expect: 'clean', why: 'TailUnlock lends while rounds run' },
   { name: 'rpu-trip-p5c', ops: ['start', 'collect', 'steer', 'cut'], K: 3, p5b: true, p5c: true, rp: true, rpu: true, rpuTrip: true, expect: 'clean', why: 'a +0x918 acquire inside a round (holding g_rpUse + pool set): PcAcquire refuses by deadline (mat), the cut defers; no deadlock' },
   { name: 'mut-rpu-nouse', ops: ['start', 'collect'], K: 2, p5b: true, rp: true, rpu: true, mutRpuNoUse: true, expect: 'clone run', why: 'MUTATION: an unlocked round without g_rpUse and the pool set writes the clone under a clone run' },
+  // docs/89 §13: [Discourage] PlanDrain (deferred footprints applied before a sim-thread sync plan)
+  { name: 'pd-base', ops: [...BASE, 'pdrain', 'pdw'], K: 3, expect: 'clean', why: 'drain before sync plans beside jobs, steering and gates; skipped under an own +0x918 hold' },
+  { name: 'pd-p5c', ops: ['start', 'collect', 'steer', 'pdrain', 'pdw'], K: 3, p5b: true, p5c: true, door: true, expect: 'clean', why: 'P5b / P5c windows: a plan under the lent lock skips the drain and plans without a wait (P5cPlanHere)' },
+  { name: 'mut-pd-nolentskip', ops: ['start', 'pdw'], K: 2, p5b: true, p5c: true, mutPdNoLentSkip: true, expect: 'plan drain handed', why: 'MUTATION: no rule-5 skip: the drain\'s WaitAsyncDone hands the lent lock back and switches P5c off' },
   // mutations: the checks must bite
   { name: 'mut-close-recheck', ops: ['start', 'collect', 'close'], K: 3, mutNoCloseRecheck: true, expect: 'during a save/destroy/close body|close body while a job body runs', why: 'MUTATION (CE-1, code before fix A): rtClosing checked only before the start handshake; RT_CLOSING has no g_rgOffSimOpen frame' },
   { name: 'mut-tu-nobackstop', ops: ['start', 'collect'], K: 2, tu: true, tthrow: true, mutNoBackstop: true, expect: 'lend not returned', why: 'MUTATION (CE-4, code before fix D): the release after the unwind is not the worker\'s' },

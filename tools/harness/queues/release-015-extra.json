@@ -1,0 +1,112 @@
+{
+  "jobs": [
+    {
+      "id": "bp-rvb-rel015",
+      "note": "README comparison, release side (BP): v0.1.5 release build asi.rel015 with the repo (release) ts3native.ini and the built ts3fixes.package as shipped, no switch overrides. 10 min seeded (12345). Read with hitch-ab.ts against bp-rvb-vanilla / bp-rvb-v014.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rvb-rel015",
+      "note": "README comparison, release side (IP): v0.1.5 release build asi.rel015 with the repo (release) ts3native.ini and the built ts3fixes.package as shipped, no switch overrides. 10 min seeded (12345). Read with hitch-ab.ts against ip-rvb-vanilla / ip-rvb-v014.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-rvb-rel015",
+      "note": "README comparison, release side (SV): v0.1.5 release build asi.rel015 with the repo (release) ts3native.ini and the built ts3fixes.package as shipped, no switch overrides. 10 min seeded (12345). Read with hitch-ab.ts against sv-rvb-vanilla / sv-rvb-v014.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    },
+    {
+      "id": "sv-soak-rel015",
+      "note": "SV soak on the v0.1.5 release build (asi.rel015, release ini, shipped ts3fixes), 45 min seeded natural play; compare with sv-soak-v014 (3 >= 1 s, max 1719 ms, 97-105 it/s).",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "ip-rvb-v014",
+      "note": "README comparison, side 2 of 3 (IP): v0.1.4 = asi.rel0360 with the shipped release ini pinned (release-vs-baseline.json rel side), ts3fixes shipped tuning. 10 min seeded (12345). 2026-10-24: v0.1.5 tuning ships kStuckCheckAsync/kOverwatchChain/kErrorTrapSpread True, so this v0.1.4 side switches them off at runtime.",
+      "asi": "game-copy/ts3native.asi.rel0360",
+      "ini": {
+        "GC.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteAsync.Mode": 1,
+        "SaveWrite.Enabled": 1,
+        "Decompress.Enabled": 1,
+        "WaterJps.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "Discourage.Enabled": 1,
+        "Discourage.Mode": 1,
+        "LotRemoveGuard.Enabled": 1,
+        "OptsInit.Enabled": 1
+      },
+      "save": "Baseline-IP-Spring",
+      "run": {
+        "profile": {
+          "profOpts": {
+            "tasks": false
+          },
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOff": "stuckcheckasync,overwatchchain,errortrapspread"
+        }
+      },
+      "minCounters": 72,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 22
+    }
+  ]
+}

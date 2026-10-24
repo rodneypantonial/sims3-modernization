@@ -14,11 +14,13 @@ Release `ts3native.ini` defaults: on = `[GC]`, `[WaterJps]`, `[Decompress]`, `[S
 
 Rebuild check: a rebuild from the release commit must give the same ini hash; the asi hash can differ only if the toolchain changed. Selftest note: one build of 0.36.0 failed once at `selftest.cpp:8441` (`W6b lots: nDirty -1`, threaded replay test), then passed 3 times in a row and in the next full build; a flaky threaded test, unrelated to the ini change, not yet investigated.
 
-## v0.1.5 (in preparation: release-validate Thursday night 2026-10-22, publish Friday 2026-10-23)
+## v0.1.5 (released 2026-10-24)
 
 The routing release. Each candidate ships on only if its A/B passes (`tools/harness/queues/clean-night-0.2.0.json`, ~7 h, plus the existing per-feature queues for the ones not in it: `defer-footprint-ab`, `destroy-park-ab`, `candidate-loop-ab`, `replan-defer-ab`, `avoid` jobs). Mono features are not in this release.
 
-### Decisions (fill from the A/B results)
+### Decisions
+
+**Decided 2026-10-24** (ship rule: positive forced-repro A/B and no crash; docs/release-notes/v0.1.5-dev.md): `node tools/release-features.ts overwatchchain,refcountguard,deferfootprint,stuckcheckasync,errortrapspread --write`, plus the crash K gate site 16 (code). Every other candidate in the table below ships off; reasons per candidate in the dev notes ("Not shipped, and why"). The table is the 2026-10-22 suggestion record.
 
 Suggestions 2026-10-22 from the clean-night pair means (off-first + on-first, both orders and all numbers in `docs/data/results/2026-10-22-v015-decisions.md`). Every entry marked "suggested" is open until Rodney decides. Suggested set: `node tools/release-features.ts slotenabledro,unseenthrottle,stuckcheckasync,errortrapspread` (dry run only; `--write --docs` after his OK, on the release branch).
 
@@ -42,7 +44,7 @@ Suggestions 2026-10-22 from the clean-night pair means (off-first + on-first, bo
 
 ### Release defaults in one step
 
-`node tools/release-features.ts <ids from the table, comma-separated> --write --docs` sets every candidate's `ts3native.ini` keys and `ts3fixes` tunables (`tools/setup/build-fixes.ts`) to on or off, refuses a feature without what it needs (`m1retry` needs `fallbackasync`), warns when CI's stable list in `.github/workflows/build.yml` lacks an enabled section, and resolves the feature blocks in `docs/PLAYERS.md` and the CHANGELOG `## v0.1.5` section (on text for chosen ones, the "shipped but off" line for the rest). Without `--write` it only prints the edits; `--list` shows the table, `--status` what the repo has on now; `none` is the v0.1.4 state. `--docs` is one way (the markers go), so run it once, on the release branch. Then: build (`native/ts3native/build.cmd`, `node tools/setup/build-fixes.ts`), fill the hashes below, copy the asi to `game-copy/ts3native.asi.rel020`, run `release-validate.json`.
+`node tools/release-features.ts <ids from the table, comma-separated> --write --docs` sets every candidate's `ts3native.ini` keys and `ts3fixes` tunables (`tools/setup/build-fixes.ts`) to on or off, refuses a feature without what it needs (`m1retry` needs `fallbackasync`), warns when CI's stable list in `.github/workflows/build.yml` lacks an enabled section, and resolves the feature blocks in `docs/PLAYERS.md` and the CHANGELOG `## v0.1.5` section (on text for chosen ones, the "shipped but off" line for the rest). Without `--write` it only prints the edits; `--list` shows the table, `--status` what the repo has on now; `none` is the v0.1.4 state. `--docs` is one way (the markers go), so run it once, on the release branch. Then: build (`native/ts3native/build.cmd`, `node tools/setup/build-fixes.ts`), fill the hashes below, copy the asi to `game-copy/ts3native.asi.rel015`, run `release-validate.json`.
 
 CI's stable list now also accepts `[SlotEnabledRO]`, `[AvoidRO]` and `[UnseenThrottle]` as `Enabled=1`; drop the ones not shipped from the list before tagging.
 
@@ -50,11 +52,13 @@ CI's stable list now also accepts `[SlotEnabledRO]`, `[AvoidRO]` and `[UnseenThr
 
 | File | Version | sha256 |
 |---|---|---|
-| `native/ts3native/out/ts3native.asi` | ts3native [to fill] | `[to fill]` |
-| `native/ts3native/out/ts3native.ini` | release defaults from `release-features.ts [ids]` | `[to fill]` |
-| `build/ts3fixes.package` | v0.1.4 defaults + [chosen ts3fixes features] (shortcuts kGoHome, kBuildingTrip, kLotTrip, kVirtualHome True) | `[to fill]` |
+| `native/ts3native/out/ts3native.asi` | ts3native 0.36.37 (commit f5054207, `out-rel015`, selftest ok; parked as `game-copy/ts3native.asi.rel015`) | `7582da7881727292cc74622e62cb3dc1d4819a5aa378db584146f0f90fbe730d` |
+| `native/ts3native/out/ts3native.ini` | release defaults from `release-features.ts overwatchchain,refcountguard,deferfootprint,stuckcheckasync,errortrapspread --write` (= repo ini) | `eacb06112367fdfa826b3c7af2aab1e4da5069fa569e515c1f4c7a905ac58446` |
+| `build/ts3fixes.package` | v0.1.4 defaults + kStuckCheckAsync, kOverwatchChain, kErrorTrapSpread True, kOverwatchSpread False (shortcuts kGoHome, kBuildingTrip, kLotTrip, kVirtualHome True; built 2026-10-24 from f5054207 by the release queue, tunables checked) | `949dac596eda91470baa4b31e6697ad73288cf1563b684f83944b53c4e131bc6` |
 
-Release `ts3native.ini` defaults: as v0.1.4 (`[GC]`, `[WaterJps]`, `[Decompress]`, `[SaveWrite]`, `[LotRemoveGuard]`, `[OptsInit]`, `[RouteAsync]` `Mode=1` `Kinds=0`, `[RouteGate]`, `[Discourage]`) plus [to fill from the decisions]. Validation: the generated release check (below; replaces the fixed 46-job `release-validate.json`, which stays as the source of the old jobs and the fallback), results `docs/data/results/[date]-queue-release-check.md`; pass rules as below plus `fbCapped` per job and route fails not above v0.1.4's.
+Release `ts3native.ini` defaults: as v0.1.4 (`[GC]`, `[WaterJps]`, `[Decompress]`, `[SaveWrite]`, `[LotRemoveGuard]`, `[OptsInit]`, `[RouteAsync]` `Mode=1` `Kinds=0`, `[RouteGate]`, `[Discourage]`) plus `[RouteAsync] RefcountGuard=1` and `[Discourage] DeferFootprint=1`; crash K gate site 16 is code under `[RouteGate] Sites=1`. Validation: the generated release check (below; replaces the fixed 46-job `release-validate.json`, which stays as the source of the old jobs and the fallback), results `docs/data/results/2026-10-24-queue-release-check.md`; pass rules as below plus `fbCapped` per job and route fails not above v0.1.4's.
+
+Result 2026-10-24: **22 of 22 PASS, 0 crashes** (a smoke 3, b BP save matrix 9 of 9 cases + France trip, c fix-on repros 9, d bundle A/Bs 5, e rare water jobs 2, f BP soak 45 min: 0 >= 500 ms, worst 498 ms), plus 5 extra jobs PASS (`2026-10-24-queue-release-015-extra.md`: README comparison runs per world, SV soak on v0.1.5, IP v0.1.4 rerun). Per-part numbers, the part d off -> on table and natural play vs v0.1.4 and vanilla: docs/release-notes/v0.1.5-dev.md.
 
 ### Release check: queue from what changed (docs/170 §4)
 
@@ -65,6 +69,10 @@ After `release-features.ts <ids> --write`, the build and the asi copy:
 3. `node tools/harness/queue.ts tools/harness/queues/release-check.json`. Parts: a smoke (BP/IP/SV 6 min), b BP save matrix + france trip, c forced repro per new/changed shipped feature with the fix on only (fixed event count), d bundle A/B on those loop repros (ABBA, 10 firings per arm; clean night), e the release-validate.json rare jobs of shipped features whose code changed (incl. SV/IP matrices and the other trips when save code changed), f 45 min BP soak.
 
 Estimate for the suggested v0.1.5 set (slotenabledro, unseenthrottle, stuckcheckasync, errortrapspread): 41 jobs, ~6.7 h, of which a-d + f ~2.9 h and e ~3.8 h (routegate.cpp and savewrite.cpp changed since v0.1.4, so the route and save rare jobs come back). A release with unchanged shipped code: a + b + f ~1.5 h plus c + d for its new features.
+
+## Release wrap-up in parallel (Rodney 2026-10-24)
+
+Once the last test of the release check is green: compute the numbers once (hitch tables per run, soak, test table), then write in parallel (agents for the README table and the test/dev-notes tables, the main session for the player notes and the public-copy prep), then one read-through for plain wording and matching numbers before the commit. Never start this while a timing run is still going (the number crunching adds load); text-only work may start earlier. Release ETAs count the wrap-up at its parallel length (~20 min after the last green test: ~5 min numbers, ~10 min parallel writing, ~5 min read-through), not the serial sum.
 
 ## Before publishing (Rodney OKs each)
 

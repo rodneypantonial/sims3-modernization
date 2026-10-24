@@ -244,6 +244,7 @@
       },
       "run": {
         "profile": {
+          "profOpts": { "tasks": false },
           "seed": 12345,
           "minutes": 16,
           "repro": "ip-route-legs-loop",
