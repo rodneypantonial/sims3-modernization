@@ -81,6 +81,7 @@ function selfCheck(): void {
   if (pureReadGuess('return RandomUtil.CoinFlip();') !== 'W' || pureReadGuess('return a.LotCurrent == t;') !== 'H' || pureReadGuess('return true;') !== 'M') throw new Error('selfcheck: guess');
 }
 selfCheck();
+if (process.argv.includes('--self-check')) { console.log('autonomy-entry-list self-check ok'); process.exit(0); }
 
 // ---- index
 const byKey = new Map<string, Cls[]>();

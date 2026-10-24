@@ -18,10 +18,13 @@ type Cfg = {
   rpu?: boolean;  // docs/182: [RouteSnap] RecsUnlocked: the consumer applies records holding g_rpUse + the pool set, not +0x918
   rpuTrip?: boolean;  // ... and reaches a +0x918 acquire inside the round (ulLockTrip; expected never)
   mutRpuNoUse?: boolean;  // mutation: the unlocked round without g_rpUse and the pool set (each alone excludes a clone run)
+  esc?: boolean;  // docs/157 §4.3: P5b retake watchdog escalation (p5b.cpp P5bEscalate): while a retake waits, lending turns off for the session
   h2x?: boolean;  // docs/177 §4: H2 IC window (locowin.cpp HxEnter / HxLeave) around the script ICs' plain [fp+4] writes
   rcg?: boolean;  // docs/177 §7: [RouteAsync] RefcountGuard (rcguard.cpp): the query's +0x918 level kept until its caller returns
   mutRcEarly?: boolean; mutRcNoDrop?: boolean;  // mutations: the level released at the query (today's order) / no RcDrop before a wait
-  mutPdNoLentSkip?: boolean;  // docs/89 §13 mutation: [Discourage] PlanDrain drains under the P5c lent lock (rule 5 skip removed)
+  mutPdNoLentSkip?: boolean;
+  share?: boolean;  // docs/94 §24 (P6): [RouteSnap] ShareCuts: a START while a job is queued or running borrows that job's pending cut
+  mutShareNoW?: boolean;  // mutation: PcBorrow without the "no recorded write since the cut" test  // docs/89 §13 mutation: [Discourage] PlanDrain drains under the P5c lent lock (rule 5 skip removed)
   fixNr?: boolean; fixHb?: boolean; fixWm?: boolean; mutGate?: boolean; mutNoDrop?: boolean;
   mutNoCloseRecheck?: boolean; mutNoBackstop?: boolean;  // undo fix A (CE-1) / fix D (CE-4), both in the code since docs/154 §7
   expect: string;  // 'clean' or a regex the outcome (violation text / 'deadlock: ...') must match
@@ -32,13 +35,13 @@ interface Sim { pc: string; n: number; stk: string[]; ac: string[]; hand: number
 interface Wk { pc: string; j: number; ph: string; exp: number; n: number; p5b: string; tu: number; rp: number; door: number;
   mgd: number; after: string; }
 interface St { lo: number; lc: number; win: number; inN: number; lendBy: number; p5cJob: number; p5cOff: number; off: number;
-  as: number; g0Win: number; g0In: number; closing: number; busy: number; world: number; jobs: string; cut: number[];
-  ev: number; inv: number; wm: number; rp: number; op: number; snap: number; writes: number; hbJob: number; wd: number; viol: string;
+  as: number; g0Win: number; g0In: number; closing: number; busy: number; world: number; jobs: string; cut: number[]; sw: number[];
+  ev: number; inv: number; wm: number; rp: number; op: number; snap: number; writes: number; hbJob: number; wd: number; relOff: number; viol: string;
   s: Sim; w: Wk; r: { pc: string; it: number }; m: { pc: string }; }
 type Succ = { st: St; lbl: string };
 
 const SIM = 1, WRK = 2, RPC = 3, MAIN = 4;
-const cl = (x: St): St => ({ ...x, cut: x.cut.slice(), s: { ...x.s, stk: x.s.stk.slice(), ac: x.s.ac.slice() }, w: { ...x.w },
+const cl = (x: St): St => ({ ...x, cut: x.cut.slice(), sw: x.sw.slice(), s: { ...x.s, stk: x.s.stk.slice(), ac: x.s.ac.slice() }, w: { ...x.w },
   r: { ...x.r }, m: { ...x.m } });
 const bad = (st: St, msg: string) => { if (!st.viol) st.viol = msg; };
 const canTake = (st: St, who: number) => st.lo === 0 || st.lo === who;
@@ -47,7 +50,7 @@ const setJob = (st: St, i: number, c: string) => { st.jobs = st.jobs.slice(0, i)
 
 function init(c: Cfg): St {
   return { lo: 0, lc: 0, win: 0, inN: 0, lendBy: 0, p5cJob: 0, p5cOff: 0, off: 0, as: 0, g0Win: 0, g0In: 0, closing: 0, busy: 0,
-    world: 1, jobs: 'FF', cut: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, viol: '',
+    world: 1, jobs: 'FF', cut: [0, 0], sw: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, relOff: 0, viol: '',
     s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0, rc: 0, pd: 0 },
     w: { pc: 'idle', j: -1, ph: 'idle', exp: 0, n: 0, p5b: 'c', tu: 0, rp: 0, door: 0, mgd: 0, after: '' },
     r: { pc: c.rp ? 'r0' : 'done', it: 2 }, m: { pc: c.main ? 'm0' : 'done' } };
@@ -127,7 +130,21 @@ function simSteps(st0: St, c: Cfg): Succ[] {
         if (op === 'start') {
           const i = st0.jobs.indexOf('F');
           if (i < 0 || st0.closing || !st0.world || st0.busy || st0.lo === SIM) continue;
-          go('START j' + i, st => { setJob(st, i, 'Q'); st.cut[i] = st.writes; st.ev = 1; st.s.n++; });  // ts3native.cpp:2786
+          if (!c.share) {
+            go('START j' + i, st => { setJob(st, i, 'Q'); st.cut[i] = st.writes; st.ev = 1; st.s.n++; });  // ts3native.cpp:2786
+            continue;
+          }
+          // P6 (p4clone.cpp PcCutFn / PcBorrow): no job queued or running = a fresh cut under +0x918 on the sim; else borrow the
+          // other job's pending cut when no recorded write landed since it (-1 = no cut: the job plans with the game)
+          const k = 1 - i;
+          if (!asyncBusy(st0)) {
+            if (canTake(st0, SIM)) go('START j' + i + ' (fresh cut)', st => { setJob(st, i, 'Q'); st.cut[i] = st.sw[i] = st.writes; st.ev = 1; st.s.n++; });
+          } else go('START j' + i + ' behind j' + k + ' (PcBorrow)', st => {
+            const pend = /[QR]/.test(st.jobs[k]) && st.cut[k] >= 0;
+            st.cut[i] = pend && (c.mutShareNoW || st.writes === st.cut[k]) ? st.cut[k] : -1;
+            st.sw[i] = st.writes;
+            setJob(st, i, 'Q'); st.ev = 1; st.s.n++;
+          });
         } else if (op === 'collect') {
           for (let k = 0; k < 2; k++) if (st0.jobs[k] !== 'F') go('collect j' + k, st => { st.s.n++; st.s.k = k; call(st.s, 'co0', 'top'); });
         } else go(op, st => { st.s.n++; call(st.s, op, 'top'); });
@@ -396,13 +413,16 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
       break;
     // --- P5 clone run with P5b / P5c (p5.cpp:179, p5b.cpp, p5c.cpp) ---
     case 'b0':
+      if (st0.cut[w.j] < 0) { go('no cut (borrow missed): P5Plan refuses, the game plans', st => { st.w.pc = 'l3'; }); break; }
       if (!c.rp) go('clone acquire', st => { st.w.pc = 'b1'; });
       else {
         if (st0.rp === 0 && (!c.rpu || st0.op === 0)) go('PcAcquire takes g_rpUse (and the pool set)', st => { st.rp = WRK; if (c.rpu) st.op = WRK; st.w.rp = 1; st.w.pc = 'b1'; });
         else go('PcAcquire: g_rpUse busy until deadline (mat)', st => { st.w.pc = 'l3'; });
       }
       break;
-    case 'b1': go('P5cLend / P5bOpen: g_p5bWin = 1', st => {
+    case 'b1':
+      if (st0.relOff) { go('P5bOpen refused: p5bRelease 0 (escalated)', st => { st.w.p5b = 'd'; st.snap = 1; st.w.ph = 'hold'; st.w.pc = 'b3'; }); break; }
+      go('P5cLend / P5bOpen: g_p5bWin = 1', st => {
       if (c.p5c && !st.p5cOff) st.p5cJob = 1;
       st.win = 1; st.w.pc = 'b2';
     }); break;
@@ -441,6 +461,8 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
         st.p5cJob = 0; st.snap = 0; st.w.p5b = 'c';
         if (st.w.rp) { st.rp = 0; if (c.rpu) st.op = 0; st.w.rp = 0; }
         const stale = st.writes !== st.cut[w.j] || w.mgd;
+        // P6: the clone answers its cut; a taken answer must answer the world its own START saw (P5b alone has no stale test)
+        if (c.share && !w.mgd && !(c.p5c && stale) && st.cut[w.j] !== st.sw[w.j]) bad(st, 'taken answer from a borrowed cut older than its START');
         if (c.fixHb && st.hbJob) { st.w.ph = 'priv'; st.w.pc = 'l5'; return; }  // FIX: a hand-back fails the job (no live read)
         st.w.ph = 'live'; st.w.pc = stale ? 'l3' : 'l4';
       });
@@ -468,6 +490,7 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
     case 'wmh': if (st0.wm === 0) go('FIX: hold back first, then WM+0x228', st => { st.wm = WRK; st.w.pc = 'wm2'; }); break;
     // --- retake loop (P5bRetake p5b.cpp:148, TuClose tailunlock.cpp:66) ---
     case 'rt':
+      if (c.esc && !st0.relOff && !canTake(st0, WRK)) go('retake watchdog escalation: p5bRelease 0, p5cOff 1', st => { st.relOff = 1; st.p5cOff = 1; });
       if (canTake(st0, WRK)) go('retake +0x918 (all levels), g_p5bWin = 0', st => {
         st.lo = WRK; st.lc = st.w.n; st.win = 0; st.lendBy = 0;
         if (st.w.p5b === 'o') st.w.p5b = 'd';
@@ -612,6 +635,7 @@ const CFGS: Cfg[] = [
   { name: 'p5b-mgd-d2', ops: ['start', 'destroy'], K: 2, p5b: true, mgd: true, expect: 'deadlock: sim at n1', why: 'managed-call tripwire proxies to the sim while the run stays armed; a D2 entry spins on SnLive without serving it' },
   { name: 'p5b-mgd-d2-fixed', ops: ['start', 'destroy', 'collect'], K: 3, p5b: true, mgd: true, fixNr: true, expect: 'clean', why: 'FIX B: P4NrEnter serves the job\'s managed calls on the owner thread' },
   { name: 'p5c', ops: ['start', 'collect', 'steer', 'writer', 'destroy'], K: 3, p5b: true, p5c: true, door: true, expect: 'clean', why: 'P5c admits plain writers; destroys park; stale answers refused' },
+  { name: 'p5c-escalate', ops: ['start', 'collect', 'steer', 'writer', 'destroy'], K: 3, p5b: true, p5c: true, door: true, esc: true, expect: 'clean', why: 'docs/157 §4.3: the retake watchdog escalation (lending off while a retake waits) mid-window and between jobs: the waiting retake still completes, later jobs keep the hold' },
   { name: 'p5c-handback', ops: ['start', 'writer'], K: 2, p5b: true, p5c: true, d2: true, expect: 'torn', why: 'a writer under the lent lock reaches a D2 entry: P5cHandBegin hands the lock back mid-write' },
   { name: 'p5c-handback-fixed', ops: ['start', 'writer', 'collect'], K: 3, p5b: true, p5c: true, d2: true, fixHb: true, expect: 'clean', why: 'FIX C: a hand-back fails the job (no live read after the retake) and holds g_rgOffSimOpen until the levels are back' },
   { name: 'tu', ops: [...BASE, 'destroy'], K: 3, tu: true, wm: true, cap: true, expect: 'clean', why: 'TailUnlock lends to steering; WM+0x228 in the window; FbJobCap' },
@@ -624,6 +648,9 @@ const CFGS: Cfg[] = [
   { name: 'rpu-base', ops: [...BASE, 'cut'], K: 3, main: true, rp: true, rpu: true, expect: 'clean', why: 'unlocked rounds beside jobs, steering, gates, a main acquirer and the sim cut (pool set by try)' },
   { name: 'rpu-p5c', ops: ['start', 'collect', 'steer', 'writer', 'cut'], K: 3, p5b: true, p5c: true, door: true, rp: true, rpu: true, expect: 'clean', why: 'P5b / P5c windows: rounds run during lent windows; never inside a clone run (g_rpUse)' },
   { name: 'rpu-tu', ops: ['start', 'collect', 'steer', 'cut'], K: 3, tu: true, rp: true, rpu: true, expect: 'clean', why: 'TailUnlock lends while rounds run' },
+  // live 2026-10-23 (p5c-recs-0339, docs/182 §8): the trip happened, 4 per run, from gate sites 12 / 0 (the apply's lot-table ask
+  // on the live planner) inside the round; since the ask goes to the clone's own table (RpGetIfPresent) and RgEnter passes those
+  // sites through under t_rpUl, the trip is gone by design; this config keeps the proof that it never deadlocked (ulLockTrip = 0 expected)
   { name: 'rpu-trip-p5c', ops: ['start', 'collect', 'steer', 'cut'], K: 3, p5b: true, p5c: true, rp: true, rpu: true, rpuTrip: true, expect: 'clean', why: 'a +0x918 acquire inside a round (holding g_rpUse + pool set): PcAcquire refuses by deadline (mat), the cut defers; no deadlock' },
   { name: 'mut-rpu-nouse', ops: ['start', 'collect'], K: 2, p5b: true, rp: true, rpu: true, mutRpuNoUse: true, expect: 'clone run', why: 'MUTATION: an unlocked round without g_rpUse and the pool set writes the clone under a clone run' },
   // docs/89 §13: [Discourage] PlanDrain (deferred footprints applied before a sim-thread sync plan)
@@ -652,6 +679,11 @@ const CFGS: Cfg[] = [
   { name: 'rc-guard-wait', ops: ['start', 'collect', 'icw'], K: 3, rcg: true, tu: true, expect: 'clean', why: 'a caller that collects a job before it returns: RcDrop releases the kept level before WaitJobDone / WaitAsyncDone' },
   { name: 'mut-rc-early', ops: ['start', 'collect', 'icq'], K: 3, rcg: true, tu: true, mutRcEarly: true, expect: 'refcount race', why: "MUTATION: the level released at the query (today's order): the race is back" },
   { name: 'mut-rc-nodrop', ops: ['start', 'collect', 'icw'], K: 3, rcg: true, mutRcNoDrop: true, expect: 'deadlock', why: 'MUTATION: no RcDrop before the sim waits: the kept level blocks the job the caller waits for' },
+  // docs/94 §24 (P6): Mode=2 cut sharing for own Route.Plan STARTs behind a busy job
+  { name: 'p6-share-p5c', ops: ['start', 'collect', 'steer', 'writer'], K: 4, p5b: true, p5c: true, door: true, share: true, expect: 'clean', why: 'ShareCuts with P5c: borrowed cuts only with no write since; the clone run lends, the retake and stale test as P5' },
+  { name: 'p6-share-p5b', ops: ['start', 'collect', 'steer', 'writer'], K: 4, p5b: true, door: true, share: true, expect: 'clean', why: 'ShareCuts with P5b only (no P5c stale test): the borrow-time write test alone keeps answers at their START world' },
+  { name: 'p6-share-rp', ops: ['start', 'collect', 'steer', 'writer', 'cut'], K: 3, p5b: true, p5c: true, rp: true, rpu: true, share: true, expect: 'clean', why: 'ShareCuts with the replay consumer and RecsUnlocked: two jobs on one cut acquire g_rpUse in turn, no deadlock' },
+  { name: 'mut-p6-share-now', ops: ['start', 'collect', 'writer'], K: 4, p5b: true, share: true, mutShareNoW: true, expect: 'older than its START', why: 'MUTATION: PcBorrow without the write test: a borrowed job answers a world older than its START (P5b alone)' },
 ];
 
 function main() {

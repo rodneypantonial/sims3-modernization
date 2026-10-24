@@ -29,9 +29,9 @@ static volatile LONG g_p5cLog;
 // the START cut's recorded-write count, by job sequence number (sim at START, worker at the retake; 64 > kJobs)
 struct P5cCut { volatile LONG seq, w; };
 static P5cCut g_p5cCut[64];
-static void P5cOnStart(const AsyncJob* j) {  // P5OnStart, right after the cut (this thread wrote nothing since)
+static void P5cOnStart(const AsyncJob* j) {  // P5OnStart, right after the cut: its write count (0.36.41: a borrowed cut's own, p4W)
     P5cCut& e = g_p5cCut[j->seq & 63];
-    e.w = g_spWrites;
+    e.w = j->p4W;
     InterlockedExchange(&e.seq, (LONG)j->seq);
 }
 

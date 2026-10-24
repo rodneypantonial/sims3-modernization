@@ -53,6 +53,8 @@ export const leadStage = (st: Record<string, number>) => Object.entries(st).sort
 export type Run = { tag: string; secs: number; rows: R[]; hitches: R[]; freezes: Freeze[]; frames: Frame[]; nlog: { t: number; line: string }[]; managed: string[][]; ctx?: RunCtx };
 
 // nearest-rank percentile when only the values >= LOG_MS are known: null = below LOG_MS
+// Math.max(...xs) puts every element on the stack: a 45-min soak's ~160k frame times overflow it (RangeError, 2026-10-24)
+const maxOf = (xs: number[]) => xs.reduce((m, x) => (x > m ? x : m), -Infinity);
 export function tailPct(tail: number[], total: number, p: number): number | null {
   if (!total) return null;
   const s = [...tail].sort((a, b) => a - b), i = Math.max(0, Math.ceil(p * total) - 1), lo = total - s.length;
@@ -143,15 +145,15 @@ export function analyze(r: Run, minMs = 300) {
   const over100 = detail.filter(d => d.f.gapMs >= 100);
   return {
     tag: r.tag, t0, mins, minMs, excl, frameExcl, invalid: ctx.invalid, foreground: ctx.foreground, freezes: per10(gaps, mins, FREEZE_MS), hasPub, pubs, iters,
-    gap: { p99: hasPub ? tailPct(gaps, pubs, 0.99) : NaN, p999: hasPub ? tailPct(gaps, pubs, 0.999) : NaN, max: gaps.length ? Math.max(...gaps) : 0 },
-    frames: { n: frames.length, fps: fms.length ? fms.length / (fms.reduce((a, b) => a + b, 0) / 1000) : 0, p99: nearest(fms, 0.99), p999: nearest(fms, 0.999), max: fms.length ? Math.max(...fms) : NaN,
+    gap: { p99: hasPub ? tailPct(gaps, pubs, 0.99) : NaN, p999: hasPub ? tailPct(gaps, pubs, 0.999) : NaN, max: gaps.length ? maxOf(gaps) : 0 },
+    frames: { n: frames.length, fps: fms.length ? fms.length / (fms.reduce((a, b) => a + b, 0) / 1000) : 0, p99: nearest(fms, 0.99), p999: nearest(fms, 0.999), max: fms.length ? maxOf(fms) : NaN,
       over: per10(fms, mins, FRAME_MS, true), focused: frames.length ? frames.filter(f => f.fg).length / frames.length : 0 }, stages, services,
     // gap vs iteration (docs/162 §2): how much longer the screen holds than the longest sim iteration inside
     vsIter: { n: over100.length, extraP50: nearest(over100.map(d => d.f.gapMs - d.longestIterMs), 0.5), extraP90: nearest(over100.map(d => d.f.gapMs - d.longestIterMs), 0.9),
       noLongIter: over100.filter(d => !d.main).length, multiIter: over100.filter(d => d.f.iters >= 2).length, prevGapP50: nearest(fz.map(f => f.prevGapMs), 0.5) },
     causes: [...causes].map(([cls, ds]) => {
       const top = (k: (d: typeof ds[number]) => string) => { const m = new Map<string, number>(); ds.forEach(d => { const v = k(d); if (v) m.set(v, (m.get(v) ?? 0) + 1); }); return [...m].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([v, n]) => `${v} (${n})`).join('; '); };
-      return { cls, n: ds.length, ms: ds.reduce((s, d) => s + d.f.gapMs, 0), med: nearest(ds.map(d => d.f.gapMs), 0.5), max: Math.max(...ds.map(d => d.f.gapMs)),
+      return { cls, n: ds.length, ms: ds.reduce((s, d) => s + d.f.gapMs, 0), med: nearest(ds.map(d => d.f.gapMs), 0.5), max: maxOf(ds.map(d => d.f.gapMs)),
         lead: top(d => d.lead), wait: top(d => d.wait.replace(/ \d+ ms$/, '')), reason: top(d => d.plan ? `${d.plan.reason} ${d.plan.ic}` : ''), managed: top(d => d.managed), task: top(d => d.topTask) };
     }).sort((a, b) => b.ms - a.ms),
     worst: [...big].sort((a, b) => b.f.gapMs - a.f.gapMs),
@@ -244,7 +246,7 @@ export function reproCauses(r: Pick<Run, 'tag' | 'rows' | 'hitches' | 'frames' |
       // the two most frequent values of a column in this class
       const t = (k: (d: R) => string) => { const m = new Map<string, number>(); xs.forEach(d => { const v = k(d); if (v) m.set(v, (m.get(v) ?? 0) + 1); }); return [...m].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([v, n]) => `${v} (${n})`).join('; '); };
       const ms = xs.map(d => d.h.wallMs as number);
-      L.push(`| ${arm} | ${cls} | ${xs.length} | ${Math.round(ms.reduce((s, x) => s + x, 0))} | ${Math.round(nearest(ms, 0.5))} | ${Math.round(Math.max(...ms))} | ${t(d => d.lead)} | ${t(d => d.wait.replace(/ \d+ ms$/, ''))} | ${t(d => d.holder.replace(/^(\w+) waited \d+ ms on /, '$1 on ').replace(/ \d+ from /, ' from '))} | ${t(d => d.planKey)} | ${t(d => d.topTask)} | ${t(d => d.svc)} |`);
+      L.push(`| ${arm} | ${cls} | ${xs.length} | ${Math.round(ms.reduce((s, x) => s + x, 0))} | ${Math.round(nearest(ms, 0.5))} | ${Math.round(maxOf(ms))} | ${t(d => d.lead)} | ${t(d => d.wait.replace(/ \d+ ms$/, ''))} | ${t(d => d.holder.replace(/^(\w+) waited \d+ ms on /, '$1 on ').replace(/ \d+ from /, ' from '))} | ${t(d => d.planKey)} | ${t(d => d.topTask)} | ${t(d => d.svc)} |`);
     }
     for (const d of ds.slice(0, topN)) W.push(`| ${arm} | ${Math.round((d.h.t - t0) / 1000)} | ${Math.round(d.h.wallMs)} | ${d.cls} | ${d.lead} | ${d.wait} | ${d.holder} | ${d.plans} | ${d.plan} | ${d.tasks} | ${d.frame} |`);
   }

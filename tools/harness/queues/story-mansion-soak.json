@@ -1,0 +1,33 @@
+{
+  "jobs": [
+    {
+      "id": "bp-story-mansion-soak",
+      "note": "Long story soak (Rodney 2026-10-24, next release tests): 150 min story days on Story-BP-Mansion with the generated mansion-eight household moved into the mansion (householdLot), release build asi.rel015 + shipped ts3fixes. Read: hitches (hitch-ab.ts, freeze-report.ts), 1 s+ classes, memory growth (/memory before/after), stuck Sims, story-report.ts. Night run (timing-grade machine).",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Story-BP-Mansion",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 150,
+          "noSamplers": true,
+          "envGuard": false,
+          "story": {
+            "seed": 1,
+            "days": {
+              "tickS": 5,
+              "nightSkip": true,
+              "rotate": 0
+            },
+            "household": "mansion-eight",
+            "householdFunds": 240000,
+            "householdLot": "17694643161334620688"
+          }
+        }
+      },
+      "timeoutMin": 200,
+      "noiseCheck": true
+    }
+  ]
+}

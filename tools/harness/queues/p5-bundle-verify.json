@@ -20,6 +20,8 @@
     "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
     "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 0, "RouteSnap.ReleaseLock": 0, "RouteSnap.FreeLock": 0
    },
+   "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
+
    "run": { "profile": { "minutes": 5, "seed": 12345 } },
    "gameArgs": ["-disablestoryprogression"],
    "timeoutMin": 20
@@ -43,6 +45,8 @@
     "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
     "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 0
    },
+   "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
+
    "run": { "profile": { "minutes": 5, "seed": 12345 } },
    "gameArgs": ["-disablestoryprogression"],
    "timeoutMin": 20
@@ -66,6 +70,8 @@
     "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
     "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1
    },
+   "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
+
    "run": { "profile": { "minutes": 5, "seed": 12345 } },
    "gameArgs": ["-disablestoryprogression"],
    "timeoutMin": 20
@@ -89,6 +95,8 @@
     "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1,
     "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 0, "RouteSnap.ReleaseLock": 0, "RouteSnap.FreeLock": 0
    },
+   "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
+
    "run": { "profile": { "minutes": 5, "seed": 12345 } },
    "gameArgs": ["-disablestoryprogression"],
    "timeoutMin": 20

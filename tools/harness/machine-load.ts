@@ -12,15 +12,18 @@
 // The sampler runs on the non-game CPUs and ends on its own once the node process that started it is gone.
 //   node tools/harness/machine-load.ts [seconds]   self-check: samples every 5 s for N s (default 15) and prints the summary
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { cpuMask, gameCpus, maskCpus } from './pin.ts';
 
 const OTHER_MAX = 10, PERF_DROP = 0.8;
-// noise verdict (job means): high = other apps take >= 10% of the game CPUs, the clock dropped or the machine was busy (the
+// noise verdict (job means): high = other apps take >= 10% of the game CPUs (with other CPU >= OG_OTHER_MIN), the clock dropped or the machine was busy (the
 // NOT comparable rule), or another app keeps the GPU 3D engine >= 30% busy; medium = >= 3% of the game CPUs, other CPUs >= 50%
 // busy, other CPU >= 10% of the machine, GPU 3D (not TS3W) or video decode >= 10%; else low
 const NOISE = { highOg: 10, highG3d: 30, medOg: 3, medOo: 50, medGpu: 10 };
+// "others on game CPUs" (og) is busy time minus TS3W's share, so it also holds kernel/driver time no process owns: vanilla IP
+// read og >= 10% twice with other CPU ~2% (2026-10-24). og alone makes a run high/invalid only when processes also used >= 5%
+export const OG_OTHER_MIN = 5;
 
 const script = (file: string, everyS: number, cpus: string | null) => {
   const game = cpus ? cpuMask(cpus) : 0n, rest = ((1n << BigInt(availableParallelism())) - 1n) & ~game;
@@ -83,8 +86,19 @@ export function startMachineLoad(file: string, everyS = 30, cpus: string | null 
   return () => { try { p.kill(); } catch { /* gone */ } };
 }
 
-export function summarize(file: string): { line: string; ok: boolean; noise: string; short: string } {
-  const rows = existsSync(file) ? readFileSync(file, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(l => JSON.parse(l)) : [];
+// rows of a machine file; a line the sampler is still writing is skipped (queue.ts reads the file mid-run)
+const rowsOf = (file: string): any[] => (existsSync(file) ? readFileSync(file, 'utf8').trim().split(/\r?\n/).filter(Boolean)
+  .flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } }) : []);
+export const summarize = (file: string) => summarizeRows(rowsOf(file));
+// early verdict (queue.ts, timing jobs): the NOT comparable rule below over the samples from `from` + 60 s (profiler start-up
+// skipped); null until `min` samples exist (ask again), '' when fine, else why the run is void
+export function earlyNoise(file: string, from: number, min = 3): string | null {
+  const rows = rowsOf(file).filter(r => r.t >= from + 60000);
+  if (rows.length < min) return null;
+  const s = summarizeRows(rows);
+  return s.ok ? '' : `noisy machine early: ${s.line}`;
+}
+export function summarizeRows(rows: any[]): { line: string; ok: boolean; noise: string; short: string } {
   if (!rows.length) return { line: 'machine load: no samples', ok: false, noise: 'unknown', short: 'noise: unknown (no samples)' };
   const mean = (k: string) => rows.reduce((s, r) => s + (r[k] ?? 0), 0) / rows.length;
   const perfs = rows.map(r => r.perf).filter((x: number | null) => x != null);
@@ -105,7 +119,7 @@ export function noise(rows: any[], notComparable: boolean): { level: string; tex
   const mhz = rows.map(r => r.mhz).filter((x: unknown) => typeof x === 'number') as number[], gc = rows.find(r => r.gc)?.gc ?? '?';
   const pinned = rows.filter(r => r.pin === true).length, withGame = rows.filter(r => typeof r.pin === 'boolean').length;
   const f = (x: number | null) => (x === null ? '-' : x.toFixed(1));
-  const high = [og !== null && og >= NOISE.highOg && `other apps ${f(og)}% of game CPUs`, notComparable && 'NOT comparable (load or clock)',
+  const high = [og !== null && og >= NOISE.highOg && other >= OG_OTHER_MIN && `other apps ${f(og)}% of game CPUs`, notComparable && 'NOT comparable (load or clock)',
     g3o !== null && g3o >= NOISE.highG3d && `GPU 3D others ${f(g3o)}%`].filter(Boolean);
   const med = [og !== null && og >= NOISE.medOg && `other apps ${f(og)}% of game CPUs`, oo !== null && oo >= NOISE.medOo && `other CPUs ${f(oo)}% busy`,
     other >= OTHER_MAX && `other CPU ${other.toFixed(1)}%`, g3o !== null && g3o >= NOISE.medGpu && `GPU 3D others ${f(g3o)}%`,
@@ -122,7 +136,18 @@ if (import.meta.main) {
   const check = (ok: boolean, what: string) => { if (!ok) { console.log(`self-check FAIL: ${what}`); process.exit(1); } };
   check(lv([{ other: 2, og: 0.5, oo: 10, g3dOther: 1, gdec: 0 }]) === 'low', 'noise low');
   check(lv([{ other: 2, og: 4, oo: 10 }]) === 'medium' && lv([{ other: 2, og: 0, gdec: 15 }]) === 'medium', 'noise medium');
-  check(lv([{ other: 2, og: 12 }]) === 'high' && lv([{ other: 2, og: 0 }], true) === 'high', 'noise high');
+  check(lv([{ other: 6, og: 12 }]) === 'high' && lv([{ other: 2, og: 0 }], true) === 'high', 'noise high');
+  check(lv([{ other: 2, og: 12 }]) === 'medium', 'og alone (kernel/driver time) is not high');
+  { // early verdict: null before 3 samples past the first minute, '' when fine, the reason when not comparable
+    const f = `${process.env.TEMP ?? '.'}/machine-load-early-${process.pid}.jsonl`, w = (rs: object[]) => writeFileSync(f, rs.map(r => JSON.stringify(r)).join('\n') + '\n{"t":');
+    const r = (t: number, o: object = {}) => ({ t, other: 2, perf: 100, top: [], ...o });
+    w([r(0, { other: 50 }), r(70000), r(100000)]); check(earlyNoise(f, 0) === null, 'early: too few samples (first minute skipped)');
+    w([r(70000), r(100000), r(130000)]); check(earlyNoise(f, 0) === '', 'early: fine');
+    w([r(70000, { other: 14 }), r(100000, { other: 12 }), r(130000)]); check(earlyNoise(f, 0) === '', 'early: mean 9.3% < 10%');
+    w([r(70000, { other: 20 }), r(100000, { other: 12 }), r(130000)]); check(/^noisy machine early: .*NOT comparable: other CPU 11\.3% >= 10%/.test(earlyNoise(f, 0) ?? ''), 'early: noisy');
+    w([r(70000), r(100000), r(130000, { perf: 70 })]); check(/clock fell to 70% from 100%/.test(earlyNoise(f, 0) ?? ''), 'early: clock drop');
+    rmSync(f);
+  }
   check(lv([{ other: 2, perf: 100 }]) === 'low', 'old rows without the new fields');
   if (process.argv.includes('--verdict-only')) { console.log('self-check PASS (verdict only)'); process.exit(0); }
   const secs = Number(process.argv[2] ?? 15), file = `${process.env.TEMP ?? '.'}/machine-load-selfcheck-${Date.now()}.jsonl`;

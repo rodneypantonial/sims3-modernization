@@ -87,4 +87,10 @@ Once the last test of the release check is green: compute the numbers once (hitc
 
 Via the scrubbed public copy only (Rodney): sync the tree into a clone of the public repo with `<user>` -> `<user>` and the machine name -> `<pc>` replaced, run `node tools/check-docs-code.ts`, open a PR, squash-merge, tag `v0.1.4`. The tag's CI run builds ts3native, checks the stable list and PLAYERS.md, and drafts the release from the CHANGELOG section; attach `ts3fixes.package` to the draft by hand (CI cannot build it: EA assemblies), then publish the draft. Never push local `master` to the public repo.
 
+**Scripted:** `tools/publish-public.ts` runs these steps. Dry run by default (prints every step, does the clone, scrub, `check-docs-code`, secret scan and commit in a temp clone, stops before the push); `--yes` pushes, opens the PR, watches checks and squash-merges with `--admin`. With `GH_TOKEN="$PERSONAL_GITHUB_TOKEN"` set:
+- `node tools/publish-public.ts sync --message-file msg.txt [--yes]`: public sync up to the merged PR.
+- `node tools/publish-public.ts release v0.1.6 --native-version 0.36.40 --message-file msg.txt --ini <tested ts3native.ini> --package build/ts3fixes.package [--yes]`: sync, then tag the merge commit, watch the tag's build.yml run, check the draft's zip (asi `ts3native X.Y.Z`, ini sha256 = tested ini, enabled sections), check the package tuning (four shortcuts True, `tools/release-features.ts` tunables), attach it and publish the draft as latest.
+- `node tools/publish-public.ts --self-check`: offline checks plus a full `sync` dry run against a local bare repo.
+The manual steps above stay as the fallback.
+
 From v0.1.5 also on ModTheSims, right after the GitHub release and with the same three files: `release/mts/CHECKLIST.md`.

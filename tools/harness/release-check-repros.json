@@ -1018,6 +1018,7 @@
       "steps": [
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "errortrapspread": true
           },
@@ -1026,6 +1027,7 @@
         },
         {
           "cmd": "reflect_call",
+          "setup": false,
           "args": {
             "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
             "args": [
@@ -1196,6 +1198,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "deferfootprint": "$on"
           },
@@ -1204,6 +1207,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on",
@@ -1398,6 +1402,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on"
           },
@@ -1406,6 +1411,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on",
@@ -1536,6 +1542,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -1545,6 +1552,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "overwatchchain": "$on",
             "errortrapspread": "$on"
@@ -1648,6 +1656,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -1657,6 +1666,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "errortrapspread": "$on"
@@ -1753,6 +1763,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -1762,6 +1773,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on"
@@ -1771,6 +1783,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "errortrapspread": "$on"
           },
@@ -1779,6 +1792,7 @@
         },
         {
           "cmd": "reflect_call",
+          "setup": false,
           "args": {
             "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
             "args": [

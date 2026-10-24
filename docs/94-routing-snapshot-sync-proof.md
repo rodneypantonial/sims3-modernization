@@ -1375,6 +1375,8 @@ Nothing else from docs/104 is a P5 prerequisite: not L3 (method integrity), L4, 
 
 ## 20. P6 release checklist (2026-10-18)
 
+> **Update 2026-10-24 (superseded in part):** the generic jobs below (matrices, travel, soak, crowd/sweep repros) now come from `node tools/release-check.ts <prev tag> --features routesnap --min-counters 110` (feature `routesnap` in `tools/release-features.ts` and `tools/harness/feature-repros.json`, real keys of 0.36.39 / counters v110: `RouteSnap.Mode=2`, `RouteSnap.Kinds=8`, `RouteAsync.Kinds=4`, `Lots=replay` and the P5b/P5c/docs/182 switches). `snap-release.json` keeps only jobs 14-20 of §20.2 (door lock, houseboat, the 3 mod jobs, the 2 G5 A/Bs) with those keys. Remaining game runs and times: docs/116 §L.
+
 Draft queue `tools/harness/queues/snap-release.json` for gate G6 (§5), modelled on `queues/async-release.json`. **DRAFT, not run**: every job note says so. Nothing in it can run before P5 (`Mode=2`, §19) and the P6 widening are built. `node tools/harness/queue.ts tools/harness/queues/snap-release.json --dry-run` parses all 20 jobs; it flags `game-copy/ts3native.asi.snapp5` as missing on every job (the P5/P6 build, not built yet; copy the build there under that name).
 
 ### 20.1 Settings shared by every job
@@ -3951,3 +3953,121 @@ Both were fixed in the tests in 0.35.11 (§22.14: the P4 M1 = `RfStep`'s unrecor
 `tools/harness/queues/p5-bundle-verify.json`: `bp-p5-mode2-verify` (Mode=2, VerifyEvery=1, no lend), `bp-p5b-verify` (+ ReleaseLock, ReleaseGates, VerifyLend), `bp-p5c-verify` (+ FreeLock), `ip-p5-mode2-verify`; 5 min each, day jobs, correctness only. Every job carries the bundle (FallbackAsync + SyncCapMs + M1Retry + FbJobCapMs, SlotEnabledRO, DeferFootprint, DestroyPark, AvoidRO, UnseenThrottle, LocoWindow Mode 1, OptsInit, HitchAttr, the snap-p5c replay settings). Pass rules per job in the queue notes: 0 verify M1-M3 (M5 allowed), refusals by kind, no crash / trip / Mode=2 off; P5b: windows and steering grants inside them > 0; P5c: + plain grants, parked = released (+ pending), `p5cStale` counted, T-G1 / hand-over 0 / 0.
 
 **Effort (hours, Claude):** audit ~1.0, fixes + tests ~0.7, flake loops + steerro ~0.5 (wall), queue + docs ~0.5: **~2.7 h**. Left: 4 day jobs (~10 min each).
+
+## 23. Measuring the sim-thread record cost live (G1 check 3; 2026-10-24, static note, nothing run)
+
+PLAN "After the release" item 3 (e). G1 check 3 (§11.5) asks for the sim thread's record cost (records x per-record time on the sim) to stay <= 1 ms/s. It was left "needs P1b" and is still not measured. What exists today and what is missing [verified in source, ts3native 0.36.38]:
+
+| what | where | thread | gives |
+|---|---|---|---|
+| records per kind, records per 1-s bucket, max per second | `snRec[]`, `snRecSec[8]`, `snRecMaxSec` (`routesnap.cpp` `SnRecord`) | all writers | the record *rate* (G1 check 2) |
+| P1 record bookkeeping time | `snRecUs` (+0x241C) | **all threads summed** | lock + bucket only, not the copy |
+| INS-record footprint copies (and clone builds) | `rpCopyUs` (+0x27B4), `rpFps`, `rpCopyFail`; cycles `g_cyCopy` | **all threads summed** (the writing thread: sim, route worker, loader) | copy time, mixed with build copies |
+| rebases | `rpRebaseUs` (+0x2804), `g_cyRebase` | sim | rebase copy time |
+| cut | `spCutUs`, `spCutMaxUs`, log `snap cut split` / `snap replay cut split` every 300 s | sim | cut cost by part (records/noq inside the cut, signatures, rebases, audit) |
+| stage-1 sum | log `snap cut cost (300 s): wall cut + sim (copies + rebases) ... ; thread CPU ... cyc-ms/s` | sim + whoever copied | an upper bound: `copies` include the worker's |
+| audit hashing | `rpAuditUs` (subtracted from the cut) | sim | correctness tool cost (PLAN rule (iii)) |
+| whole sim iteration | `sim-budget.json` + `tools/harness/sim-budget-report.ts` (docs/160) | sim | ms/s per bucket; a replay on/off pair gives the total |
+
+**Missing P1b piece:** a sim-thread-only split of the record path. `rpCopyUs` / `g_cyCopy` and `snRecUs` add every thread's records, and the route worker writes W1/W2 too (its own job's footprint work, P5c recorded writes), so the "sim (copies + rebases)" number in `snap cut cost` is an upper bound. The writer-side push itself (`RpPush` ring spin, `RpAlloc` of the payload, `RpRemLiveTake` for REM bounds) is not timed apart from the copy. To build it: per-record time on the sim only (`RgIsSim(tid)`, as the P1 leaf hook already asks) for `SnRecord` + `RpFpCopy` + `RpPush` / `RpRemLiveTake`, as a microsecond sum, a count and a cycle sum (the cycle sum because the machine is noisy). That needs a counter slot reserved in docs/registry.md and a counters version bump with the `k.version ==` asserts (about 30-45 min, one selftest).
+
+**How to read it from a run with no new code (approximation):** one cost pair, same save / seed / build, `[RouteSnap] Lots=replay` vs `Lots=none` (Mode=0, so no P4 or P5 work in either arm), ABBA, `sim-budget.json`. Δ sim ms/s (on - off) = cut + records + rebases + audit on the sim. Take off `snap cut split`'s cut and rebase parts and `rpAuditUs`; what is left is the record path on the sim plus noise. Cross-check with `snap cut cost`'s cycle line (`sim` cyc-ms/s minus rebases = the copies' upper bound) and `rpCopyUs / (rpFps + rpCopyFail)` (mean per copy, all threads). If the upper bound is already <= 1 ms/s, G1 check 3 passes without the split. Turn audits off (`ReplayAuditEvery=0`) for the cost arms (PLAN rule (iii)).
+
+## 24. P6 widening: own Route.Plan answers and Mode=2 cut sharing (0.36.41, counters v112; built, not run)
+
+§22.30.4 steps 3 (b) and 4. Off by default; nothing changes unless `[RouteSnap] TakeKinds` has bit 1 or `ShareCuts=1`. Gain model: docs/158 §3-§4 (own START Route.Plan jobs are 86-100% of the release hold; the widening pays only if Plan jobs reach dT <= 0). Prerequisites unchanged: G0 (IP clone-run fault, fixed 0.36.2, §22.31) and G1 (Route.Plan shadow compares on both worlds) must pass before any P6 run is read for gain. Sources: our source; no game run.
+
+### 24.1 The take path [verified source + selftest]
+
+| step | before (P5, Kinds=8) | P6 |
+|---|---|---|
+| `P5OnStart` (sim, START) | arms kind 3 only | arms kind 0 and/or 3 by `TakeKinds & Kinds`: bit 8 = ReplanFromPosition (INI), bit 1 = Route.Plan (runtime switch `p6Plan`, `--ab routesnapplan`). A FallbackAsync foreign Route.Plan START (`j->fb`) is never armed: it keeps its `FbJobCapMs` path, so §22.32.3's "no Mode=2 job has a deadline" still holds |
+| START cut | `PcCutFn`: a Mode=2 START with a job queued or running gets no cut (`PS_BUSY`, the job then plans with the game) | with `ShareCuts=1` (`p6Share`, `--ab routesnapshare`) it borrows the newest pending cut (`PcBorrow`), but only if the cut's write count equals `g_spWrites` now (no recorded routing write since it) and the live P has no lot updates pending (`P[0x10E]`, which a fresh cut's `PcPrepare` would apply first); else no cut, counted `p6BorrowMiss[0..2]` |
+| the job's write count | `P5cOnStart` stored `g_spWrites` read after the cut | stores `j->p4W` (the cut's own count; for a fresh cut the same value, for a borrowed one the borrowed cut's) |
+| `P5Plan`, window, stale test, door proxy, answer move | kind-independent already (the same `Route_PlanLocked` capture the Mode=1 Route.Plan shadow compares used: 10,075 compares, M2 0, M3 0 on 0.35.24 BP, §22.30.4 G1) | unchanged; per-kind counters only. Only the first `Route_PlanLocked` of a job is captured (`t_p4Cap`): an IC that plans again (goal candidates) runs those plans live, as kind 3 did |
+| M2-1 site guard | P4 sites, `0x82C6E0`, `0x765550` | + `0x765160` (IC_Route_Plan, the async START detour) when `p6Plan` is on at install |
+
+Why the borrow test keeps an answer correct: a borrowed cut with no recorded write since it and no pending lot update describes the same routing world as a fresh cut at this START would (the replay consumer is held at that cut for every job on it, `pend` counts them). From there the job is a plain Mode=2 job: with P5c, any recorded write after the cut refuses the answer (`P5cStaleEarly` before the acquire, `P5cStale` at the retake); without P5c, writes after the START are accepted as for every P5 job since 0.33.0 (the answer is the START-time world). The lock model shows the write test is what makes P5b-only sharing correct (`mut-p6-share-now`).
+
+### 24.2 Cut sharing and the dT condition
+
+Copy per job. `PcAcquire` copies only what changed since the worker's last acquire: R, the high-cost tiles and the blockedNodeMap are keyed by the P3 image pointer (`PcR`, `PcHighCost`, `PcBnm`), so a second job on the same cut copies none of them and re-applies only the world bytes, P bytes and the lock-key table. Its acquire is also `PcAcquireOwnOnly` (same R image, W' and A* object exist), so since 0.35.26 it runs inside the lent window, not under the job's hold. Sharing therefore cuts two costs at once: the sim's START cut (9-10 ms each under `+0x918`, §22.30.2 item 4) is made only by a START with no job queued or running, and the copy of every job behind it is the small same-cut copy. Measured by `p6ReAcq` / `p6ReAcqUs` (same-cut acquires and their copy time) against `snPcAcquired` / `snPcMatUs` (all). Not built: skipping the lock-key re-apply for a same-cut acquire (only worth it if `p6ReAcqUs / p6ReAcq` stays above ~1 ms).
+
+dT for Route.Plan jobs (docs/158 §3.1: the whole hold change of an eligible job), read from one on-run, kind 0 split `[0]`:
+
+- T_p6 = `p6PlanUs[0] / p6Plans[0]`: the job's `Route_PlanLocked` with P5 (acquire + clone run + retakes + the game's plan when refused);
+- g = `p6GameUs[0] / (p6Plans[0] - p6Taken[0])`: the game's plan where it ran (fallbacks and verify jobs; VerifyEvery=10 keeps g defined even at a full take rate);
+- dT = T_p6 - g. **Ship condition: dT <= 0 on BP and IP**, with the cut cost `snPcCutUs` <= ~5 ms/s on BP at P6 job rates (§22.30.4 G2). The held part (dT minus the lent window `p5bWinUs` per plan) is what the sim waits through; docs/158 §3 gives the wait change s x (N dT - q L).
+
+Inputs today [measured, §22.30.1]: copy 5.7 ms per acquire (a fresh cut, BP), Plan job ~5 ms, clone run ~7 ms per RFP plan with ~20 door-ask retakes. So a Plan job with a fresh-cut copy can not reach dT <= 0; a same-cut copy plus a high take rate can [inferred]. That is the measurement the first run must make.
+
+### 24.3 Failure modes added (docs/157 §1 style)
+
+| # | Failure mode | Detection point | Recovery | Test before | Test after |
+|---|---|---|---|---|---|
+| P6-1 | A borrowed cut older than the START's world (a recorded routing write between the borrowed cut and this START) | `PcBorrow` (p4clone.cpp) compares the cut's `w` with `g_spWrites` under `g_pcCutLock` | no borrow, no cut (`p6BorrowMiss[1]`); the job plans with the game | `TestP6` (f2); lock model `mut-p6-share-now` (the test removed: violation) | `p6-share-p5b` / `p6-share-p5c` clean |
+| P6-2 | Lot updates queued on the live world after the borrowed cut (a fresh cut applies them in `PcPrepare`) | `PcBorrow` reads `P[0x10E]` (unlocked byte: a stale 1 only misses) | no borrow (`p6BorrowMiss[2]`) | `TestP6` (f2) | same |
+| P6-3 | An unrecorded input change between the borrowed cut and the START (non-routing state, a portal or polygon cache refill without a record): the clone answers an older world | none at the take; verify jobs compare | the game's answer only on verify jobs; counted `p6BorrowVerBad` (also `m2VerBad`). Rule: `p6BorrowVerBad` > 0 turns `ShareCuts` off until named. Same class as a fresh cut's queue-time skew, accepted since P5, but the window is up to `kPcPendMs` (1 s) instead of the queue time [inferred] | `TestP6` counts only | correctness run with VerifyEvery=1 |
+| P6-4 | The first job on a shared cut wrote clone lots (lazy stop, dirty lots), the second reads them half-written | `PcAcquire`: `dirtied` -> `PS_STALE` (`p4BorrowDirty`), as Mode=1 sharing since 0.35.6 | the game's plan | P4 lane D (Mode=1) | `TestP6` (3 jobs on one cut, all taken: no false refusal) |
+| P6-5 | The consumer is held at a shared cut while every borrower runs: replay backlog, `mat/timeout` refusals behind it | `PcHoldPick` drops a pending cut after `kPcPendMs`; `PcHoldEnd` per job (release, refusal, drop, unseen job) | records apply when the last borrower ends; acquires past the deadline refuse `mat` (storm breaker `StormRefusals` applies across kinds) | `TestP6` (`!g_rpHoldAt` after the three releases and after a stale refusal) | `p6-share-rp` (RecsUnlocked) clean |
+| P6-6 | A Route.Plan IC that plans more than once, or a list shape kind 3 never had | only the first `Route_PlanLocked` is captured (`t_p4Cap`); `P5Plan` refuses a non-empty out list (`m2FbList`) | later plans of the IC run live; refusal = the game's plan | Mode=1 Route.Plan shadow compares (G1) | verify M2 / M3 0 per kind |
+| P6-7 | A FallbackAsync foreign Route.Plan job armed with its `FbJobCapMs` deadline | `P5OnStart` skips `j->fb` | n/a (never armed) | `TestP6` (f1) | same |
+| P6-8 | The sim's START cut cost at Route.Plan rates (~20 STARTs/s BP) | `snPcCutUs`, `snPcRefused[0]` | `--ab routesnapshare 0` / `--ab routesnapplan 0`; the `PcCutFn` split log (§22.30.4 3a) is not built: build it only if `snPcCutUs` misses the gate | - | first BP run |
+
+The M2-2 tripwires, the fault switch-off, the storm breaker and the M2-1 site guard cover both kinds unchanged (one session-wide Mode=2).
+
+### 24.4 Counters v112 (docs/registry.md)
+
+At +0x4660 (after master's v111 watchpoint / rebase-hold range 0x4648-0x465F), 55 int32, total 4559 (the phase split of §24.7 at +0x46B0-0x473B): `p6Plan`, `p6Share` (switches), `p6Armed[2]`, `p6Plans[2]`, `p6Taken[2]`, `p6Borrowed[2]` ([0] Route.Plan, [1] ReplanFromPosition), `p6BorrowMiss[3]` (no pending cut / write since / lot updates pending), `p6PlanUs[2]`, `p6GameUs[2]`, `p6BorrowVerBad`, `p6ReAcq`, `p6ReAcqUs`. `p4Borrow` / `p4BorrowMiss` now count Mode=2 borrows too. agent.js `>= 112`; `native-switches.ts` `routesnapplan` (+0x4660), `routesnapshare` (+0x4664).
+
+### 24.5 Checks [offline]
+
+`build.cmd out-p6` (all targets, `/W4 /WX`) and its selftest ok: `TestP6` inside `TestPcMode2`'s clone life: (f1) a Route.Plan START is not armed with `p6Plan` 0, armed and taken with 1; a FallbackAsync foreign START and a `Kinds` without bit 1 are not armed; (f2) `ShareCuts` 0: a START behind a running job gets no cut; 1: a Route.Plan and a ReplanFromPosition START borrow the pending cut (same version, same write count), a recorded write since the cut or `P[0x10E]` set refuses the borrow, three jobs on the one cut are all taken with two same-cut acquires and the hold ends; no pending cut = miss 0; (f3) a write between a borrowed job's borrow and its plan refuses it as stale before the acquire (P5c), the hold ends, the next fresh cut is taken. `node tools/model/p5-lock-model.ts --self-check` ok with `p6-share-p5c`, `p6-share-p5b`, `p6-share-rp` clean and `mut-p6-share-now` (borrow without the write test) violating. `release-features.ts`, `release-check.ts`, `native-switches.ts` self-checks ok; `check-docs-code.ts` ok. Not run: steerro-test (game image), any game run.
+
+### 24.6 Run (not queued)
+
+Feature `routesnapplan` (needs `routesnap`) in `release-features.ts` / `feature-repros.json`, forced repro `route-queuefull-replan-loop` (30+ own Go Here STARTs per firing, back to back: arms and borrows). After G0 / G1:
+
+1. Correctness, BP then IP, 5-10 min, the routesnap stack + `TakeKinds=9 ShareCuts=1 VerifyEvery=1 VerifyLend=1`: pass = `p6Armed_0`, `p6Taken_0`, `p6Borrowed_0` > 0; `m2VerBad` 0, `p6BorrowVerBad` 0, `m2Off` 0, `m2Trips` <= 2; no "P4 FAULT" / "fault applying record"; `p6BorrowMiss` split logged.
+2. Cost read on the same run (VerifyEvery back to 10 for the numbers): `snPcCutUs` <= ~5 ms/s (BP), `p6ReAcqUs / p6ReAcq` vs `snPcMatUs / snPcAcquired`, dT (§24.2) for kind 0. dT > 0 = stop: the widening does not pay (docs/158 §4).
+3. Only then the A/B (`--ab routesnapplan` with `routesnapshare` on both arms, or `native_set` both), clean night, hitch metrics.
+
+**Effort (Claude, wall clock):** reading ~0.5 h, code + counters ~0.7 h, selftest + model ~0.6 h, release wiring + docs ~0.5 h: **~2.3 h**. Left: the 2 correctness jobs (~10 min each), the A/B on a clean night.
+
+### 24.7 Per-job phase split of Route.Plan jobs (0.36.41, counters v112 part 2; count / log only)
+
+So that a dT > 0 result names the phase that lost. Every armed Route.Plan job (Mode=2, `p6Plan` on) gets one record on the worker from `P4LiveBegin` to `P4LiveEnd` (p5.cpp `P6JobBegin` / `P6JobEnd`), summed into slot 0 (the clone answer was taken) or slot 1 (the game's plan answered: fallback, stale refusal, verify). No behaviour change: timestamps and counts only.
+
+| counter (`p6j*[2]`) | what | in the sum |
+|---|---|---|
+| `TotUs` | START (sim, `P5OnStart`) to the job's end | = the sum |
+| `QueueUs` | START to worker pickup (`P5PreLock` entry) | yes |
+| `StartUs` | pickup to the IC call: H2 hold, the `+0x918` acquire, back-offs (less `P5PreLock`'s wait) | yes |
+| `RpWaitUs` | waits for the replay consumer / `g_rpUse`: `P5PreLock` + the acquire minus its copy | yes |
+| `CopyUs` | the acquire's copy (`g_pcLastCopyUs`) | yes |
+| `CloneUs` | the clone run (`c.jobUs`: search + its door asks) | yes |
+| `GameUs` | the game's plan inside `P5Plan` | yes |
+| `OtherUs` | the rest: the IC outside `Route_PlanLocked`, other planner calls of the IC, retakes, bookkeeping | remainder |
+| `CutAgeUs` | the cut's age at `P5Plan` entry (borrowed cuts are older) | no |
+| `DoorN` / `DoorUs` | door asks of the clone run (`P4DoorEnter`) + host calls of the job's game plans (`Proxy`), counted once | no (inside clone / game / other) |
+| `LazyN` / `LazyUs` | `LotGraph_Build` entries and self time in the job (the `[RouteJobPhases]` row `RJP_LOTGRAPH`; 0 when that probe is off) | no |
+| `Plans` | `Route_PlanLocked` entries (planner calls per job) | no |
+
+`p6jOut[4]`: taken, stale-refused (P5c, before the acquire or at the retake), verify M2 / M3, other fallback (any other refusal, or an IC that never reached `Route_PlanLocked`). Borrow misses stay in `p6BorrowMiss`. `[RouteSnap] P6LogMs` (default 20, 0 = off): one line per job at least that slow, 20 a minute at most (as `JobLongNote`): `P6 job N us (outcome): queue, start, rpwait, copy, clone, game, other; cut age; door asks us; lazy builds us; plans`.
+
+Not split: the W6 polygon-cache fills (no per-call timer exists; they fall in clone / game / other), and the `+0x918` acquire apart from the H2 hold (both in `StartUs`).
+
+**Read-out: which phase to fix when it dominates dT** (per job = counter / `p6jN`, slot 0 against slot 1 and against the off arm's plain Route.Plan job):
+
+| dominant phase | fix |
+|---|---|
+| `CopyUs` | skip unchanged lots and the lock-key re-apply on a same-cut acquire (§24.2) |
+| `DoorUs` (clone side) | door answers without the round trip: DoorMemo / the within-job answer memo (docs/159 H2, docs/105 native answers) |
+| `RpWaitUs` | the consumer behind the cut: RecsUnlocked / LotsUnlocked (docs/182), fewer forced rebases |
+| `QueueUs` or `StartUs` | not P6's: job queue depth and H2 holds (the plain arm has the same) |
+| `CutAgeUs` large with `p6jOut[1]` high | stale refusals from sharing: share less (shorter borrow window than `kPcPendMs`, or `ShareCuts=0`) |
+| `snPcCutUs` (the sim's cut, outside the job) | the `PcCutFn` timing split (§22.30.4 3a), then the part it names |
+| `LazyUs` | warm the clone at the cut (first use of the lot graphs before the run, as `Prebuild` does for live) |
+| `CloneUs` > the game's plan with few door asks | the clone search itself is slower (cache misses on the copy): compare `Plans` per job; not fixable by P6 wiring |
+
+Check [offline]: selftest `TestP6` runs one taken Route.Plan job with `P6LogMs` forced to 1 us: one slot-0 record, outcome taken, queue + start + rpWait + copy + clone + game + other = total exactly, other >= -50 us, planner entries >= 1, clone time > 0, one log line.

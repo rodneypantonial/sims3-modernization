@@ -19,7 +19,7 @@ import { loadFunctions, lookup, split } from './sample-split.ts';
 import { alignRun, category, rootOf } from './stall-split.ts';
 import { split as budgetSplit, STEER } from './sim-budget-report.ts';
 import { keyName } from './hitch-attr-report.ts';
-import { summarize } from './machine-load.ts';
+import { OG_OTHER_MIN, summarize } from './machine-load.ts';
 import { isSetup } from './repro-loop.ts';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
@@ -255,7 +255,7 @@ export const reproSteps = (tag: string, secs: number) => {
 };
 
 // whole run invalid: profiler cut short, noisy machine (machine-load.ts: other >= 10% of the machine or clock drop = not
-// comparable, or other apps >= 10% of the game CPUs), crash or abort (no 'done; game alive' after the profile window)
+// comparable, or other apps >= 10% of the game CPUs with other CPU >= 5%), crash or abort (no 'done; game alive' after the profile window)
 export function runInvalid(mf: string, nRows: number, secs: number, q: { start: number | null; events: Ev[] }): string | null {
   const why: string[] = [];
   if (nRows < 0.8 * secs) why.push(`profiler cut short (${nRows} of ${secs} s)`);
@@ -264,7 +264,8 @@ export function runInvalid(mf: string, nRows: number, secs: number, q: { start: 
   const m = summarize(mf), all = jsonl(mf).filter((r: any) => typeof r.og === 'number');
   const rows = q.start !== null && all.some((r: any) => r.t >= q.start! + 60000) ? all.filter((r: any) => r.t >= q.start! + 60000) : all;
   const og = rows.length ? rows.reduce((s: number, r: any) => s + r.og, 0) / rows.length : 0;
-  if (!m.ok || og >= 10) why.push(`noisy machine (${m.ok ? `others ${og.toFixed(1)}% of game CPUs` : m.line.replace(/^.*NOT comparable: /, '').replace(/;.*$/, '')})`);
+  const other = rows.length ? rows.reduce((s: number, r: any) => s + (r.other ?? 0), 0) / rows.length : 0; // og alone can be kernel/driver time (machine-load.ts OG_OTHER_MIN)
+  if (!m.ok || (og >= 10 && other >= OG_OTHER_MIN)) why.push(`noisy machine (${m.ok ? `others ${og.toFixed(1)}% of game CPUs` : m.line.replace(/^.*NOT comparable: /, '').replace(/;.*$/, '')})`);
   if (q.start !== null && !q.events.some(e => /^done; game alive/.test(e.text))) why.push('crash or abort (no "done; game alive")');
   return why.length ? why.join('; ') : null; // every reason named
 }
@@ -531,7 +532,8 @@ function selfCheck() {
   const tmp = join(tmpdir(), `wh-selfcheck-${process.pid}.jsonl`), mrow = (o: object) => JSON.stringify({ t: 0, other: 2, ts3w: 13, top: [], perf: 180, og: 4, ...o });
   const qok = { start: 0, events: [{ at: 1, text: 'done; game alive' }] }, inv = (lines: object[], n = 600, q: any = qok) => { writeFileSync(tmp, lines.map(mrow).join('\n') + '\n'); return runInvalid(tmp, n, 600, q); };
   assert(inv([{}], 400)?.startsWith('profiler cut short') === true, 'cut');
-  assert(inv([{ og: 18.8 }])?.startsWith('noisy machine (others 18.8%') === true && inv([{ other: 12 }])?.startsWith('noisy machine') === true && inv([{}, { perf: 100 }])?.startsWith('noisy machine') === true, 'noisy');
+  assert(inv([{ og: 18.8 }]) === null, 'og alone with other CPU 2% (kernel/driver time) is valid');
+  assert(inv([{ og: 18.8, other: 6 }])?.startsWith('noisy machine (others 18.8%') === true && inv([{ other: 12 }])?.startsWith('noisy machine') === true && inv([{}, { perf: 100 }])?.startsWith('noisy machine') === true, 'noisy');
   assert(inv([{}], 600, { start: 0, events: [] })?.startsWith('crash') === true && inv([{}]) === null, 'crash / valid');
   rmSync(tmp);
   const et = new Map<string, ExclRow>(); exclAdd(et, 'sampler', 400, 180); exclAdd(et, 'sampler', 1200); exclAdd(et, 'render-paced', 60);

@@ -19,6 +19,8 @@
 
 // P5 ([RouteSnap] Mode=2, p5.cpp; docs/94 §19, §22): the job's Route_PlanLocked takes the clone run's answer
 static void P5OnStart(struct AsyncJob* j);
+static void P6JobBegin(const struct AsyncJob* j);  // p5.cpp: P6 phase split (docs/94 §24.7), worker
+static void P6JobEnd();
 static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts, int* out1,
                  int* out2, DWORD guidLo, DWORD guidHi);
 static void ApplyP5(const wchar_t* ini);
@@ -226,6 +228,7 @@ static const int kP4DdLots = 256;
 struct P4Job {
     LONG armed, seen;  // armed at START and claimed by the worker; seen = the live Route_PlanLocked was captured
     int kind, abort;   // abort: first P4_AB_* that voids the compare, -1 = none
+    LONG borrow;       // P6 (0.36.41): the job's Mode=2 cut was borrowed (AsyncJob::p6Borrow)
     int sub;           // PS_* detail of the refusal (0.33.1)
     LONG w0; bool stale;  // g_spWrites at the cut; routing writes landed between the cut and the live plan (0.33.2)
     LONG wPlan;           // g_spWrites when the live plan began (0.35.4: the obstacle record's liveW)
@@ -442,8 +445,12 @@ static int __cdecl P4DoorEnter(DWORD* slot) {
         t_p4Read = 0;
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
+        t_p6.inDoor = true;  // P6 split: the ask's Proxy wait counts here once
         const DWORD r = ((P4DoorFn)g_p4DoorJmp)(slot[1], slot[2], slot[3], slot[4], slot[5], slot[6], slot[7], slot[8], slot[9]);
-        InterlockedExchangeAdd(&k.m2DoorWaitUs, UsSince(t0));
+        t_p6.inDoor = false;
+        const LONG askUs = UsSince(t0);
+        InterlockedExchangeAdd(&k.m2DoorWaitUs, askUs);
+        if (t_p6.act) t_p6.doorN++, t_p6.doorUs += askUs;
         InterlockedIncrement(&k.m2DoorAsk);
         c.nAsk++;
         P4Arm(ctx, false);
@@ -679,6 +686,8 @@ static void P4OnStart(AsyncJob* j) {
     j->p4 = 0;
     j->p4Ver = 0;
     j->p4Why = PS_NONE;
+    j->p6Borrow = 0;
+    j->p6T0 = j->p6CutQpc = 0;
     if (!(ts3native_counters.snP4Ready & 1)) return;
     if (ts3native_counters.snP4Mode == 2) { P5OnStart(j); return; }
     if (++g_p4StartN % (DWORD)g_p4Every) return;
@@ -694,6 +703,7 @@ static void P4OnStart(AsyncJob* j) {
 
 // worker, before the job's IC call
 static void P4LiveBegin(AsyncJob* j) {
+    P6JobBegin(j);
     if (!j->p4) return;
     P4Job& c = g_p4Job;
     P4JobFree(c);
@@ -704,6 +714,7 @@ static void P4LiveBegin(AsyncJob* j) {
     c.nAsk = 0;
     c.abort = -1;
     c.sub = j->p4Why;
+    c.borrow = j->p6Borrow;
     c.w0 = j->p4W, c.stale = false;
     c.seq = j->seq;
     c.ver = j->p4Ver;
@@ -717,6 +728,7 @@ static void P4LiveBegin(AsyncJob* j) {
 }
 // worker, after the IC call and before J_DONE (the slot is the sim's again after that)
 static void P4LiveEnd(AsyncJob*) {
+    P6JobEnd();
     t_p4Cap = 0;
     g_p4Job.liveRead = t_p4Read;
     t_p4Read = 0;

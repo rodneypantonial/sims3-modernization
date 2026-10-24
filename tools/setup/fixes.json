@@ -591,24 +591,24 @@
     "name": "NRaas Saver",
     "author": "NRaas",
     "category": "script",
-    "version": null,
+    "version": "V22",
     "source": {
       "kind": "manual",
       "url": null,
-      "asset": null,
+      "asset": "NRaas_Saver.package",
       "page": "https://www.nraas.net/community/Saver"
     },
-    "sha256": null,
+    "sha256": "86150063bcf7339a469f872407a3a65d0900cdebf21d1eda43ea3d9f4ffd2ed5",
     "install": {
       "target": "mods",
       "files": [
-        "NRaasSaver*.package"
+        "NRaas_Saver.package"
       ]
     },
     "conflictsWith": [],
     "requires": [],
     "default": false,
-    "notes": "Timed autosave, pause on load. Optional. Manual download; keep all NRaas files from the same period."
+    "notes": "Timed autosave, pause on load. Optional. Manual download (the package from the Saver zip, put in the downloads folder as NRaas_Saver.package; sha256 is the V22 package's, recorded only: manual sources are not hash-checked); keep all NRaas files from the same period. Used by the saver-check queue (docs/25 §8)."
   },
   {
     "id": "nraas-traveler",

@@ -46,6 +46,20 @@ static const LONG kP5bInWaitUs = 200;  // a try in flight ends in microseconds; 
 static volatile LONG g_p5bWdLog;
 
 static inline LONG P5bOwner(const void* lock) { return (LONG)(uintptr_t)((const CRITICAL_SECTION*)lock)->OwningThread; }
+// 0.36.35 (docs/157 §4.3, risk 1): retake watchdog escalation. A retake still waiting after EscalateMs ([RouteSnap]
+// RetakeEscalateMs, default 4000, 0 = off) means an admitted holder blocks on something the job holds through a wait site
+// P5cHandBegin does not cover. The current retake cannot give up (the clone run's frame and the game's call stack are the
+// worker's), so it keeps waiting; the escalation stops the next ones: P5b (p5bRelease, every later P5bOpen refuses with why 0)
+// and P5c (p5cOff) off for the session, counted and logged once with the owner thread.
+static LONG g_p5bEscMs = 4000;
+static void P5bEscalate(void* lock, LONG ms) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!InterlockedExchange(&k.p5bRelease, 0)) return;  // once per session
+    k.p5cOff = 1;
+    InterlockedIncrement(&k.p5bWdEscalate);
+    Log("P5b: retake watchdog escalation: the worker waited %ld ms to take +0x918 %p back (owner thread %ld, sim %lu): lending "
+        "(P5b and P5c) off for this session; this retake keeps waiting", ms, lock, P5bOwner(lock), g_async.owner);
+}
 
 enum { P5B_NO, P5B_STEER, P5B_G12, P5B_G0, P5B_FREE };  // P5B_FREE: P5c (p5c.cpp), any plain sim acquire
 static const DWORD kP5bPfoRet = 0x0062F782, kP5bSlotRet = 0x0076F15D;  // F-B: PortalsForObject's key, its caller 0x76F0A0
@@ -170,6 +184,7 @@ static void P5bRetake(int next) {
                     P5bOwner(lock), g_async.owner);
             next2 += 2000;
         }
+        if (g_p5bEscMs && k.p5bRelease && UsSince(t0) / 1000 >= g_p5bEscMs) P5bEscalate(lock, UsSince(t0) / 1000);
     }
     for (LONG i = 1; i < g_p5bN; i++) g_lockOrig(lock, NULL, &kInf);  // recursive: ours already
     k.rgOwnerTid = (LONG)GetCurrentThreadId();
@@ -227,6 +242,7 @@ static void ApplyP5b(const wchar_t* ini) {
     }
     k.p5bRelease = 1;
     k.p5bGates = GetPrivateProfileIntW(L"RouteSnap", L"ReleaseGates", 0, ini) ? 1 : 0;
+    g_p5bEscMs = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"RetakeEscalateMs", 4000, ini), 0, 600000);
     k.p5bReady = 1;
     g_p5bOn = 1;
     Log("OK   route snapshot P5b (ReleaseLock=1): +0x918 lent to the sim's steering%s while a P5 clone run runs; taken back "

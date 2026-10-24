@@ -1491,6 +1491,23 @@ rpc.exports = {
         ...n('sdSkip', 5), ...n('sdFail', 2));
       // v108 (docs/67 §13 crash K): [RouteGate] gate site 16 IC_World_FindPlacesOnShoreline 0x78C440 at +0x45C4
       if (c.readS32() >= 108) f.push('rgUnlocked_findPlacesOnShoreline', 'rgJob_findPlacesOnShoreline');
+      // v109 (docs/183): [RouteAsync] JobYield at +0x45CC; sim job waits by site (swN_<i> etc.: 0 runplan, 1 rtwait, 2 disc,
+      // 3 collect, 4 drop, 5 other)
+      if (c.readS32() >= 109) f.push('jyMode', 'jyAsks', 'jyBusy', ...n('swN', 6), ...n('swUs', 6), 'swMaxUs', ...n('swYieldable', 6),
+          'swLines');
+      // v110 (docs/157 §8.1): [Watchpoint] Lot= arms / hits at +0x4628; writer probes wrZ_<i> / wrP30_<i> (0 all, 1 during a
+      // route job, 2 on a footprint inserted on the watched lot)
+      if (c.readS32() >= 110) f.push('wpArms', 'wpHits', ...n('wrZ', 3), ...n('wrP30', 3));
+      // v111 (docs/157 §10): watchpoint constructor-pair hits, Follow (0 disarmed at the remove, 1 re-armed), replay audit
+      // rebase holds rpHold_<i> (0 held, 1 released by the diff, 2 by timeout)
+      if (c.readS32() >= 111) f.push('wpCtor', ...n('wpFollow', 2), ...n('rpHold', 3));
+      // v112 (docs/94 §24): P6 switches p6Plan / p6Share at +0x4660; splits _0 Route.Plan, _1 ReplanFromPosition;
+      // p6BorrowMiss_<i>: 0 no pending cut, 1 a recorded write since it, 2 lot updates pending
+      if (c.readS32() >= 112) f.push('p6Plan', 'p6Share', ...n('p6Armed', 2), ...n('p6Plans', 2), ...n('p6Taken', 2), ...n('p6Borrowed', 2),
+          ...n('p6BorrowMiss', 3), ...n('p6PlanUs', 2), ...n('p6GameUs', 2), 'p6BorrowVerBad', 'p6ReAcq', 'p6ReAcqUs',
+          // phase split (docs/94 §24.7): slots _0 clone answer taken, _1 the game's plan; p6jOut_<i>: 0 taken, 1 stale, 2 verify bad, 3 other
+          ...['p6jN', 'p6jTotUs', 'p6jQueueUs', 'p6jStartUs', 'p6jRpWaitUs', 'p6jCutAgeUs', 'p6jCopyUs', 'p6jCloneUs', 'p6jGameUs',
+            'p6jOtherUs', 'p6jDoorN', 'p6jDoorUs', 'p6jLazyN', 'p6jLazyUs', 'p6jPlans'].flatMap(x => n(x, 2)), ...n('p6jOut', 4), 'p6jLines');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

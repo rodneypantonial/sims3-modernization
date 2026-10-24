@@ -9,7 +9,9 @@
 //   f  one soak: 45 min natural play (real-hitch metrics, VAS growth from the queue's /memory before/after)
 // Usage:
 //   node tools/release-check.ts <prev tag|commit> [--features id,id] [--asi game-copy/ts3native.asi.rel020] [--min-counters 98]
-//        [--out tools/harness/queues/release-check.json] [--write] [--install-repros]
+//        [--fixes-build ts3fixes.vX.Y.Z] [--out tools/harness/queues/release-check.json] [--write] [--install-repros]
+//   --fixes-build (required with --write): the release ts3fixes.package entry in docs/data/builds.json (tools/builds.ts); every job
+//   gets it as fixesBuild, so queue.ts refuses a job whose installed package does not have that tuning (2026-10-24 stale package).
 //   node tools/release-check.ts --self-check
 // Without --write it prints the plan, the time estimate per part and the coverage table against release-validate.json.
 // --write writes the queue and tools/harness/release-check-repros.json (the derived rc-* loop repros). profile-world.ts reads
@@ -26,7 +28,8 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
 import { FEATURES as RF, setIni, setTuning } from './release-features.ts';
-import { checkLoop } from './harness/repro-loop.ts';
+import { checkLoop, isSetup } from './harness/repro-loop.ts';
+import { loadDb, sha256, tuningXmlOf } from './builds.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const H = (f: string) => join(ROOT, 'tools', 'harness', f);
@@ -37,7 +40,7 @@ export type Feature = Req & { what: string; on?: { ini?: Record<string, string>;
   paths: string[]; match?: string; repro?: { id: string; minutes?: number; noEnv?: boolean; save?: string; onEvents?: number; bundlePerArm?: number };
   needsRepro?: string; task?: string; rare: string[]; rareWhy?: string; replaces?: string[]; replacesWhy?: string };
 export type FeatureMap = { releases: Record<string, string>; shared: string[]; groups: Record<string, string[]>; features: Record<string, Feature> };
-type Step = { cmd: string; args?: any; waitS?: number; note?: string; optional?: boolean; waitUntil?: unknown; minS?: number; maxS?: number };
+type Step = { cmd: string; args?: any; waitS?: number; note?: string; setup?: boolean; optional?: boolean; waitUntil?: unknown; minS?: number; maxS?: number };
 type Repro = { id: string; save?: string; bug?: string; fix?: string; note?: string; steps?: Step[]; loop?: { steps: Step[]; arms: string[]; until: any; maxMinutes?: number }; cleanup?: Step[] };
 type Job = Record<string, any> & { id: string };
 
@@ -145,7 +148,8 @@ export function derive(r: Repro, mode: { kind: 'on'; target: string; events: num
   }
   const firings = mode.kind === 'on' ? mode.events : Math.ceil(2 * mode.perArm / 4) * 4;
   const capS = secs(fi.prefix) + firings * secs(body), expectS = estSecs(fi.prefix) + firings * estSecs(body);
-  const loop = { steps: body, arms: mode.kind === 'on' ? ['on'] : ['off', 'on', 'on', 'off'], until: mode.kind === 'on' ? { events: mode.events } : { perArm: mode.perArm },
+  // every loop step marked setup: true/false explicitly (repro-loop.ts self-check rule for repros.json, docs/168 §7)
+  const loop = { steps: body.map(s => ({ ...s, setup: isSetup(s) })), arms: mode.kind === 'on' ? ['on'] : ['off', 'on', 'on', 'off'], until: mode.kind === 'on' ? { events: mode.events } : { perArm: mode.perArm },
     maxMinutes: Math.ceil(capS * 1.5 / 60) };
   checkLoop(loop);
   const id = mode.kind === 'on' ? `rc-on-${mode.target}` : `rc-ab-${r.id}`;
@@ -179,12 +183,12 @@ export function measuredTimes(validate: Job[]): Times {
 
 // ---------------------------------------------------------------- queue
 export function build(o: { map: FeatureMap; repros: Repro[]; validate: Job[]; ship: Set<string>; prevShip: Set<string>; changed: Map<string, string>;
-  asi: string; minCounters: number; iniOverride: Record<string, unknown>; fixesOn: string; times: Times; warn: (m: string) => void }) {
+  asi: string; minCounters: number; iniOverride: Record<string, unknown>; fixesOn: string; times: Times; warn: (m: string) => void; fixesBuild?: string }) {
   const { map, repros, validate, ship, prevShip, changed, times } = o;
   const own = owners(map), newShip = new Set([...ship].filter(id => !prevShip.has(id)));
   const touched = [...ship].filter(id => newShip.has(id) || changed.has(id));
   const jobs: (Job & { part: string; estMin: number; est: string })[] = [], derived: Repro[] = [], needs: string[] = [];
-  const base = (id: string, save: string, run: any, timeoutMin: number, note: string, extra: Record<string, unknown> = {}) => ({ id, note, asi: o.asi, save, minCounters: o.minCounters,
+  const base = (id: string, save: string, run: any, timeoutMin: number, note: string, extra: Record<string, unknown> = {}) => ({ id, note, asi: o.asi, ...(o.fixesBuild && { fixesBuild: o.fixesBuild }), save, minCounters: o.minCounters,
     ini: { ...MEASURE_INI, ...o.iniOverride }, run, gameArgs: ['-disablestoryprogression'], timeoutMin, ...extra });
   const profile = (p: Record<string, unknown>) => ({ profile: { seed: 12345, noSamplers: true, ...(o.fixesOn && { fixesOn: o.fixesOn }), ...p } });
   const old = (id: string) => validate.find(j => j.id === id);
@@ -192,7 +196,7 @@ export function build(o: { map: FeatureMap; repros: Repro[]; validate: Job[]; sh
     const j = old(id)!;
     const est = times.byId.get(id), m = j.run.profile?.minutes;
     const run = j.run.profile && o.fixesOn ? { profile: { ...j.run.profile, fixesOn: o.fixesOn } } : j.run;
-    jobs.push({ ...j, asi: o.asi, minCounters: o.minCounters, ...(Object.keys(o.iniOverride).length && { ini: { ...o.iniOverride } }), run, part,
+    jobs.push({ ...j, asi: o.asi, ...(o.fixesBuild && { fixesBuild: o.fixesBuild }), minCounters: o.minCounters, ...(Object.keys(o.iniOverride).length && { ini: { ...o.iniOverride } }), run, part,
       estMin: est ?? (j.run.matrix ? matrixMin : (m ?? 5) + times.overhead), est: est ? 'measured (v0.1.4 release-validate)' : '[inferred]' });
   };
   const matrixMin = times.overhead + times.matrixCases + 2 * times.reload;
@@ -326,7 +330,8 @@ function selfCheck() {
   assert.deepEqual(ab.loop!.steps[1].args, { c: '$on', b: false, z: true });
   assert.deepEqual(ab.loop!.arms, ['off', 'on', 'on', 'off']); assert.deepEqual(ab.loop!.until, { perArm: 10 });
   const ab2 = derive({ ...r, id: 'r2', steps: [...fire('off', 1), ...fire('on', 2)].map(s => s.cmd === 'patches' ? { ...s, args: { z: true } } : s) }, { kind: 'ab', bundle: new Set(['a', 'c']), perArm: 10 }, new Set(['a', 'c']), owners(map), map, () => {})!;
-  assert.deepEqual(ab2.loop!.steps[0], { cmd: 'patches', args: { c: '$on' }, waitS: 1, note: 'bundle arm' }, 'missing bundle switch added');
+  assert.deepEqual(ab2.loop!.steps[0], { cmd: 'patches', args: { c: '$on' }, waitS: 1, note: 'bundle arm', setup: true }, 'missing bundle switch added');
+  assert.ok(ab2.loop!.steps.every(s => typeof s.setup === 'boolean'), 'every loop step marked setup: true/false');
   // loop-format source
   const lf: Repro = { id: 'lf', steps: [{ cmd: 'set_speed', waitS: 2 }], loop: { steps: [{ cmd: 'patches', args: { c: '$on' }, waitS: 1, note: 'arm' }, { cmd: 'reflect_call', waitS: 44 }], arms: ['off', 'on', 'on', 'off'], until: { perArm: 10 } } };
   const lfOn = derive(lf, { kind: 'on', target: 'c', events: 4 }, new Set(['c']), owners(map), map, () => {})!;
@@ -342,6 +347,11 @@ function selfCheck() {
   assert.equal(b.jobs.find(j => j.id === 'rc-on-a')!.run.profile.fixesRequire, `a_run>=${ON_EVENTS}`);
   assert.equal(b.jobs.find(j => j.id === 'old-rare')!.estMin, 7.6);
   assert.deepEqual(coverage(validate, b.jobs, b.want), ['| other-rare | not mapped |']);
+  // build verification: --fixes-build goes on every job (queue.ts refuses a job whose installed ts3fixes.package is not that build)
+  assert.ok(b.jobs.every(j => !('fixesBuild' in j)));
+  const bf = build({ map, repros: [r], validate, ship: new Set(['a', 'c']), prevShip: new Set(['c']), changed: new Map([['a', 'src/a.cpp']]), asi: 'A', minCounters: 1,
+    iniOverride: {}, fixesOn: '', times, warn: () => {}, fixesBuild: 'ts3fixes.vX' });
+  assert.ok(bf.jobs.length === b.jobs.length && bf.jobs.every(j => (j as any).fixesBuild === 'ts3fixes.vX'), 'fixesBuild on every job, old jobs too');
   // docs/170 §5: replaces (old job stood in for, not run, listed), {n} in nativeRequire, part d only on new features' loops,
   // adaptive steps estimated at mid minS..maxS, session reuse saving per save
   const map2: FeatureMap = { ...map, groups: { ...map.groups, h: ['other-rare'] }, features: { ...map.features,
@@ -396,12 +406,12 @@ export function installRepros(text: string, derived: Repro[]): string {
 
 const args = process.argv.slice(2);
 const opt = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
-const VALUED = new Set(['--features', '--asi', '--min-counters', '--out']);
+const VALUED = new Set(['--features', '--asi', '--min-counters', '--out', '--fixes-build']);
 if (import.meta.filename === resolve(process.argv[1] ?? '')) {
   if (args.includes('--self-check')) selfCheck();
   else {
     const prev = args.find((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1]));
-    if (!prev) { console.error('usage: node tools/release-check.ts <prev tag|commit> [--features id,id] [--asi path] [--min-counters n] [--out file] [--write] [--install-repros] | --self-check'); process.exit(2); }
+    if (!prev) { console.error('usage: node tools/release-check.ts <prev tag|commit> [--features id,id] [--asi path] [--min-counters n] [--fixes-build name] [--out file] [--write] [--install-repros] | --self-check'); process.exit(2); }
     const { map, repros, validate } = load();
     const rev = resolveRev(prev, map);
     const ini = readFileSync(join(ROOT, INI_PATH), 'utf8'), tuning = readFileSync(join(ROOT, TUNING_PATH), 'utf8');
@@ -417,7 +427,7 @@ if (import.meta.filename === resolve(process.argv[1] ?? '')) {
     const iniOverride: Record<string, unknown> = {}, fixesOn: string[] = [];
     if (listArg) for (const id of ship) {
       const f = map.features[id], on = f.on ?? { ini: Object.fromEntries(Object.entries(RF[id]?.ini ?? {}).map(([k, [v]]) => [k, v])), tuning: RF[id]?.tuning };
-      for (const [k, v] of Object.entries(on.ini ?? {})) if (!repoShip.has(id)) iniOverride[k] = Number(v);
+      for (const [k, v] of Object.entries(on.ini ?? {})) if (!repoShip.has(id)) iniOverride[k] = /^-?\d+$/.test(v) ? Number(v) : v;  // RouteSnap.Lots=replay stays a string
       if ((on.tuning ?? []).length && !repoShip.has(id)) fixesOn.push(...(f.fixes ?? []));
     }
     const files = git('diff', '--name-only', rev, 'HEAD').split('\n').filter(Boolean);
@@ -425,7 +435,12 @@ if (import.meta.filename === resolve(process.argv[1] ?? '')) {
     const changed = changedFeatures(map, files, sharedLines);
     const warns: string[] = [];
     const times = measuredTimes(validate);
-    const b = build({ map, repros, validate, ship, prevShip, changed, asi: opt('asi', 'game-copy/ts3native.asi.rel020'), minCounters: Number(opt('min-counters', '98')),
+    // the release package (docs/data/builds.json): every job refuses unless the installed ts3fixes.package has its tuning
+    const fixesBuild = opt('fixes-build', '') || undefined, fb = loadDb().find(x => x.name === fixesBuild);
+    if (args.includes('--write') && !fixesBuild) { console.error('--write needs --fixes-build <ts3fixes name in docs/data/builds.json> (node tools/builds.ts add build/ts3fixes.package --name ts3fixes.vX.Y.Z)'); process.exit(2); }
+    if (fixesBuild && fb?.kind !== 'ts3fixes') { console.error(`--fixes-build ${fixesBuild}: no ts3fixes entry in docs/data/builds.json (node tools/builds.ts list)`); process.exit(2); }
+    if (fb?.kind === 'ts3fixes' && fb.tuningDigest !== sha256(Buffer.from(tuningXmlOf(tuning), 'utf8'))) warns.push(`${fixesBuild} tuning differs from this checkout's build-fixes.ts: cycle.ts installs build/ts3fixes.package, so every job will refuse until they match`);
+    const b = build({ map, repros, validate, ship, prevShip, changed, asi: opt('asi', 'game-copy/ts3native.asi.rel020'), minCounters: Number(opt('min-counters', '98')), fixesBuild,
       iniOverride, fixesOn: fixesOn.join(','), times, warn: m => warns.push(m) });
     const out = opt('out', H('queues/release-check.json'));
     console.log(`release check: ${prev} = ${rev.slice(0, 8)}, ${files.length} files changed; ship set ${[...ship].join(', ')}`);

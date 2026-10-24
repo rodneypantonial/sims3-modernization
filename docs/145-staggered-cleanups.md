@@ -299,3 +299,43 @@ Queue `tools/harness/queues/overwatch-loop4.json` (`bp-overwatch-ab-loop4`, repr
 B has the same per-plan floor as A, so it only helps if A's yields fail. No other type reached 50 ms in the loop3 chain arm [measured], so nothing else needs slicing now.
 
 Ledger docs/51 §290: I-145-10 .. I-145-13.
+
+## 12. 2026-10-24: what Overwatch's timer costs per call, and `overwatchstuckslice` (built, not run)
+
+Question (after the v0.1.5 soaks, `docs/data/results/2026-10-24-v015-hitch-causes.md`): the BP soak shows 85 runs of `FunctionTask>OverwatchSpreadHook.OnTimer` (17 of 250-463 ms), the SV soak 89 (2 >= 250 ms, 39 >= 100 ms), while `overwatchchain` counters from a live run look right (`owchain_alarms` 14, `owchain_yields` 280, `owspread_max_type_us` 57,458, applied log "StuckCheck (Overwatch's own code) took 57.5 ms in one tick"). Is there per-call work in `OnTimer` that the chain does not split?
+
+### 12.1 What `OnTimer` does on every call [verified, NRaas master + call graph of the installed V123]
+
+- `OnTimer` has no work of its own: set the notice-batching flag, `DerivativeSearch.Find<IAlarmOption>()` (cached after the first call: copies a 21-item list), call `PerformAlarm` on each, clear the flag, show the batched notice. No per-Sim or per-object loop, no name lookup, no route check outside the types.
+- It is called **once per sim-day**: `RestartAlarm` (world load, settings change) makes one `Common.AlarmTask(mAlarmHour, DaysOfTheWeek.All, OnTimer)` = `AddAlarmDay`; each firing runs it in a new `Common.FunctionTask`. Nothing else in Overwatch calls it (our trigger `OverwatchSpreadNow` does, in repros only).
+- So the 85 / 89 "runs" are **task runs** (resume to next yield) of ~17 BP / ~25 SV nightly firings [measured: the >= 250 ms BP runs come every 140-182 s real, one per sim-day at the soak's speed; SV every 100-120 s]. Per firing: one fresh run (every type up to StuckCheck's first route check, or from `ResetSimTask`'s Sleep to it), then one run per StuckCheck route check (overwatchstuck's yield).
+
+### 12.2 Why the soaks show Overwatch's one-tick path [measured]
+
+- Every Overwatch run in both soaks is the alarm's own `FunctionTask>OverwatchSpreadHook.OnTimer`; 0 runs of `OwChainTheirs` (the chain's task). In chain mode `TimerHook` only queues `OwChainTheirs`, so the mode at those alarms was `Theirs` (switch off).
+- The installed `ts3fixes.package` in both soaks has sha256 prefix `93b16bb8ffbd` (`docs/data/change-ledger.jsonl`, change set `a12d9a4b7cd8`; that hash was installed from 2026-10-23 07:14Z to 2026-10-24 06:22Z). The v0.1.5 package (`docs/RELEASE.md`: `949dac596eda...`, `kOverwatchChain`/`kStuckCheckAsync`/`kErrorTrapSpread` True) is **in no ledger row**. So the soaks ran an older dev build whose tuning had the chain off [inferred from task names + hashes; the old package's tuning XML was not read]. Same for `stuckcheckasync` (the soak's stuck-check stacks run `RunOrig` under `AlarmTimerCallback.Invoke`). The results doc's "shipped switches never engage" is a test-setup finding, not a package bug, until a soak on `949dac596eda` says otherwise.
+- The 17 BP freezes are the chain-off shape of §10.1 / §11.1 (the whole type loop up to the first route check in one tick); the live chain counters above fit the chain working when on.
+
+### 12.3 What the chain does not split: the Stuck Check's Sim walk [measured + inferred]
+
+- SV soak: 20 runs of 100-336 ms **from one `IsPointInLotSafelyRoutable` yield to the next** (both ends in `StuckCheck.PrivatePerformAction`), each with 1 route plan of 0.6-12 ms (`byEntry.Route_PlanFromPoint`), `rtLock`/`rtPlanWait`/`rtWaits` 0, `gcMark` 0, `taskObjects` = the run [measured, `-2700-hitches.jsonl`]. BP soak plan-to-plan runs stay < 100 ms. The live chain run's StuckCheck took 57.5 ms in one tick, i.e. with no route check at all [measured, counter 223].
+- Between two route checks StuckCheck walks `new List<Sim>(LotManager.Actors)` (63-112 Sims in these worlds, `-activity.jsonl`): per Sim a dictionary record, `InWorld`, `Proxy`, Overwatch's `SimTypes.IsSelectable(Sim)`, parent is a bed, robot shutdown, current interaction, `LotCurrent.IsRoomHidden(RoomId)`, position compares, `ResetTask.Perform` (an `AlarmManager` alarm) for hidden-room / stationary Sims; and for an unmoved Sim with the same interaction `SimEx.IsPointInLotSafelyRoutable` (route setup `CreateRouteAsAdult` + `SetRouteOptions`: vehicle, stroller, situation and mermaid checks; then one `PlanFromPoint` with 8 radial goals) [verified, call graph of the installed `NRaasOverwatch.dll`]. Which of these carries the 100-336 ms is **not known** (no managed samples inside these runs: the SV soak has 2 Overwatch samples, both CleanupInventory). The walk is the only part that runs per Sim with no yield, so it is the target [inferred].
+- `overwatchchain` cannot help: it only puts ticks between types, and StuckCheck is one type. `overwatchstuck` yields after each route check only.
+
+### 12.4 Fix: `overwatchstuckslice` (ts3fixes, tuning `kOverwatchStuckSlice`, default **off**)
+
+- `OverwatchStuck.cs`: a body swap on Overwatch's own `NRaas.CommonSpace.Helpers.SimTypes.IsSelectable(Sim)` (its copy of NRaas Common; the walk's first call per Sim, after `InWorld` and `Proxy`). Outside a Stuck Check run it is the original.
+- The `AlarmOption.PerformAlarm` hook (`OverwatchSpread.cs`, already in place for the chain) marks StuckCheck as running around Overwatch's own `PerformAlarm` in **both** paths (chain and Overwatch's own loop) and starts a stretch watch; overwatchstuck's route-check yield ends a stretch and starts the next.
+- In the hook, when the stretch has reached `kStuckSliceUs` = 8 ms, the switch is on, no upstream marker >= 3 (§12.5) and `MayYield()`: `Simulator.Sleep(0)`; then if the Sim was destroyed, left the world or lost its proxy during that tick, answer "selectable" so Overwatch's loop takes the same branch it takes for a Sim not in the world (record dropped, nothing else); otherwise Overwatch's own `IsSelectable` and the rest of that Sim's checks run after the tick, on fresh state.
+- Differences from Overwatch's own walk: later Sims are looked at a few ticks later (as with overwatchstuck's yields today); a Sim that left the world during our tick is treated as not in the world. Same Sims, same order, same decisions.
+- Floor: one Sim's checks plus at most 8 ms; a route check (0.6-88 ms seen) stays as before.
+- Counters (registry 255-259): [255] ticks taken, [256] Sims walked, [257] longest stretch without a tick (µs), [258] Stuck Check runs, [259] stretch time summed (ms); agent `owstuck_slices`, `owstuck_sims`, `owstuck_max_stretch_us`, `owstuck_runs`, `owstuck_ms`. [256]-[259] count with the switch off too, so any run with this build attributes the walk ([257] = worst stretch). Array `int[260]`.
+- Selftest `node tools/selftest/overwatchspread/run.ts`: PASS (adds `SliceDue`, `SkipAfterSlice`, `OurStuckSlice`). Compile: ts3fixes and the agent plugin compile (csc, C# 5, against the main checkout's `game-copy/assemblies`). Not run in game.
+- Repro draft `bp-overwatch-stuckslice-loop` (repros.json): release set held (`overwatchchain` on, `overwatchspread` off, `overwatchstuck` on), ABBA flip of `overwatchstuckslice`, `OverwatchSpreadNow("all", 1)`, 10 firings per arm. Pass: on arms `owstuck_slices` > 0 and no `OwChainTheirs` run >= 50 ms inside StuckCheck except one route check; same resets in both arms. Read the off arms' `owstuck_max_stretch_us` first: if the walk stays < 50 ms in BP, the SV soak's 100-336 ms runs need an SV run with this build before the switch is worth turning on.
+- Before any of this: run one natural soak (BP or SV) with the actual v0.1.5 package (`949dac596eda`) installed and check `owchain_alarms` > 0 (§12.2); that alone should remove the 250-463 ms BP freezes.
+
+### 12.5 Upstream (NRaas PR #45)
+
+The v3 commits sleep between cleanups and after each Stuck Check route check (§5.2), not inside the walk. Proposed third v3 commit (not written, not pushed): `Stuck Check: sleep in the Sim walk by time; StaggeredCleanupVersion 3`: a `SleepWatch` (their Common helper: `Common.Sleep()` once its interval has passed, so only where yielding is allowed) created at the start of `StuckCheck.PrivatePerformAction` with a 10 ms interval (their default is 100), `watch.Sleep()` at the top of each Sim's iteration before v3 commit 2's destroyed-Sim skip, marker 2 -> 3. ts3fixes stands down at marker >= 3 (`OverwatchSpreadCore.OurStuckSlice`; its counters keep measuring). Add it after an in-game result from `bp-overwatch-stuckslice-loop`.
+
+Ledger docs/51 §315: I-145-14 .. I-145-16.

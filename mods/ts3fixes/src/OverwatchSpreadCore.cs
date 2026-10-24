@@ -64,5 +64,19 @@ namespace Ts3Fixes
             return mayYield ? TypeRun.OursInventory : TypeRun.Theirs;
         }
 
+        // "overwatchstuckslice" (docs/145 §12): Overwatch's Stuck Check walks every Sim in one go between two route checks;
+        // a tick is taken at a Sim's start once the current stretch (since the check's start or its last tick) reached this.
+        public const int kStuckSliceUs = 8000;
+        public static bool SliceDue(long stretchUs) { return stretchUs >= kStuckSliceUs; }
+
+        // Marker version from which Overwatch's Stuck Check sleeps inside its Sim walk itself (proposed upstream commit,
+        // docs/145 §12.5): then overwatchstuckslice only measures.
+        public const int kStuckSliceVersion = 3;
+        public static bool OurStuckSlice(int upstreamVersion) { return upstreamVersion < kStuckSliceVersion; }
+
+        // After our tick, before Overwatch looks at the Sim: one that left the world meanwhile gets the answer that sends
+        // Overwatch's loop into the same branch as a Sim not in the world (its record dropped, nothing else done).
+        public static bool SkipAfterSlice(bool gone, bool inWorld, bool hasProxy) { return gone || !inWorld || !hasProxy; }
+
     }
 }

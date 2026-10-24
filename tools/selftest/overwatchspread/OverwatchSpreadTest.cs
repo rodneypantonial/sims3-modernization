@@ -146,6 +146,16 @@ static class OverwatchSpreadTest
         Check(OverwatchSpreadCore.ChainType(true, true, true) == OverwatchSpreadCore.TypeRun.OursInventory, "inventory, setting on: our sliced pass");
         Check(OverwatchSpreadCore.ChainType(true, true, false) == OverwatchSpreadCore.TypeRun.Theirs, "inventory, no yield: Overwatch's own cleanup");
         Check(OverwatchSpreadCore.ChainType(true, false, true) == OverwatchSpreadCore.TypeRun.Nothing, "inventory, setting off: nothing");
+        // Stuck Check slices (docs/145 §12): a tick once the stretch reaches the budget; a Sim gone meanwhile takes Overwatch's not-in-world branch
+        Check(!OverwatchSpreadCore.SliceDue(0) && !OverwatchSpreadCore.SliceDue(OverwatchSpreadCore.kStuckSliceUs - 1), "stretch under budget: no tick");
+        Check(OverwatchSpreadCore.SliceDue(OverwatchSpreadCore.kStuckSliceUs) && OverwatchSpreadCore.SliceDue(300000), "stretch at or over budget: tick");
+        Check(OverwatchSpreadCore.kStuckSliceUs < 50000, "budget well under the 50 ms slow-type line");
+        Check(!OverwatchSpreadCore.SkipAfterSlice(false, true, true), "Sim still in the world: Overwatch decides");
+        Check(OverwatchSpreadCore.SkipAfterSlice(true, true, true), "Sim destroyed during the tick: skipped");
+        Check(OverwatchSpreadCore.SkipAfterSlice(false, false, true), "Sim out of the world: skipped");
+        Check(OverwatchSpreadCore.SkipAfterSlice(false, true, false), "Sim without proxy: skipped");
+        Check(OverwatchSpreadCore.OurStuckSlice(0) && OverwatchSpreadCore.OurStuckSlice(-1) && OverwatchSpreadCore.OurStuckSlice(2), "no marker, faked or v1-v2: our walk ticks");
+        Check(!OverwatchSpreadCore.OurStuckSlice(3) && !OverwatchSpreadCore.OurStuckSlice(4), "marker v3+: Overwatch sleeps in its walk, ours only measures");
 
         Check(OverwatchSpreadCore.HasMarker(typeof(OverwatchWithMarker)), "public static int marker found");
         Check(!OverwatchSpreadCore.HasMarker(typeof(OverwatchWithoutMarker)), "no marker");

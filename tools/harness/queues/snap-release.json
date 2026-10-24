@@ -1,618 +1,89 @@
-[
-  {
-    "id": "bp-snap-matrix",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). full save matrix (all cases + reload) with the snapshot answering plans. Pass: every case passes (save-change test matrix rule). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
+{
+  "note": "P6 gate G6 extras (docs/94 §20, docs/116 §L), NOT RUN. Since 2026-10-24 the generic part of the P6 release check comes from tools/release-check.ts: `node tools/release-check.ts v0.1.4 --features routesnap --min-counters 110 --asi game-copy/ts3native.asi.<build>` gives smoke, BP matrix + France, the forced loop with the snapshot on (rc-on-routesnap), the bundle A/B, the @save matrices and trips, IP water / winter pond and the 45-min soak. This file keeps only what the generator cannot express: the door proxy and houseboat lot checks, the three mod guard runs (I-94-114, I-94-115) and the G5 natural-play A/B (--ab routesnap, wait-ab.ts per site; CLEAN NIGHT ONLY). ini = tools/release-features.ts routesnap (its self-check keeps them equal; ts3native 0.36.39, counters v110). Pass (every job): 0 crashes, 0 watchdog lines, stuck Sims logged only, snapshot audit 0 mismatches (snap-audit-report.ts), no 'RouteSnap: Mode=2 off' line (except job bp-snap-mod-s3pp), m2Trips < 3, m2VerBad 0. Run after the release-check queue passed; the asi name is the release candidate build.",
+  "jobs": [
+    {
+      "id": "bp-snap-door-lock",
+      "note": "DRAFT, not run. Home door locked for non-household Sims; household and visitors plan through it (repro bp-door-lock, PASS in snap-probe2 2026-10-18). Clone-run door asks go through the host-call proxy (docs/94 §19.1). Pass: locked-out Sims stop at the door, the household passes, m2DoorAsk rises.",
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "BP" },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "bp-door-lock" } },
+      "nativeRequire": "m2DoorAsk>=1,m2Taken>=1,m2Off<=0,m2VerBad<=0",
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20,
+      "minCounters": 110
     },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": []
+    {
+      "id": "ip-snap-houseboat",
+      "note": "DRAFT, not run. A houseboat lot created and deleted twice in a running world (lot-table miss, LotGraph_dtor, lot index rebuild): the replay clone must follow a lot that appears and goes (repro ip-houseboat-create, UNVERIFIED: its first run here is also its verify run).",
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "IP" },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 5, "seed": 12345, "repro": "ip-houseboat-create" } },
+      "nativeRequire": "m2Off<=0,m2VerBad<=0",
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20,
+      "minCounters": 110
     },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 60,
-    "minCounters": 61
-  },
-  {
-    "id": "sv-snap-matrix",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). full save matrix (all cases + reload) with the snapshot answering plans. Pass: every case passes (save-change test matrix rule). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
+    {
+      "id": "bp-snap-mod-gohere",
+      "note": "DRAFT, not run. NRaas GoHere door filters on the home front door (save Snap-GoHere-BP: queues/snap-gohere-save.json, then the door settings by hand). Pass: door behaviour as with RouteSnap off on the same save; no M2-2 trip from GoHere's lot handler (I-94-114).",
+      "fixes": { "install": ["nraas-gohere"] },
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "BP" },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Snap-GoHere-BP",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "bp-door-lock" } },
+      "nativeRequire": "m2DoorAsk>=1,m2Trips<=2,m2Off<=0,m2VerBad<=0",
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30,
+      "minCounters": 110
     },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-SV-Spring",
-    "run": {
-      "matrix": []
+    {
+      "id": "bp-snap-mod-monopatcher",
+      "note": "DRAFT, not run. MonoPatcher [TypePatch] on Lot.OnPortalPathPlan (fixes portalplan-typepatch-test pulls in monopatcher; first run of the test mod in game). Pass: the handler runs for clone-run asks (PortalPlanCounts calls and locked rise between the first and last repro step), a 'ModGuard:' L2 line, no M2-2 trip (I-94-114).",
+      "fixes": { "install": ["portalplan-typepatch-test"] },
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "BP" },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "bp-door-lock-typepatch" } },
+      "nativeRequire": "m2DoorAsk>=1,m2Trips<=0,m2Off<=0,m2VerBad<=0",
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30,
+      "minCounters": 110
     },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 60,
-    "minCounters": 61
-  },
-  {
-    "id": "ip-snap-matrix",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). full save matrix (all cases + reload) with the snapshot answering plans. Pass: every case passes (save-change test matrix rule). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
+    {
+      "id": "bp-snap-mod-s3pp",
+      "note": "DRAFT, not run. Sims 3 Performance Patch installed (manual download). Pass (replaces the Mode=2-on rule): M2-1 keeps Mode=2 on, or turns it off naming a site owner listed in the docs/68 table, never 'owned by unknown hook' (I-94-115).",
+      "fixes": { "install": ["s3pp"] },
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "BP" },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 10, "seed": 12345 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30,
+      "minCounters": 110
     },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-IP-Spring",
-    "run": {
-      "matrix": []
+    {
+      "id": "bp-snap-ab",
+      "note": "DRAFT, not run. CLEAN NIGHT ONLY. G5 no-regression in natural play: --ab routesnap (m2Take; on = taken answers with the lock lent, off = Mode=2 jobs plan as A10), 2-min slices ABBA after a warm-up. Pass: it/s on >= off - 2%, sim keyed waits on <= off (wait-ab.ts per site), 0 new sim-thread waits; valid only with the machine load line ok.",
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "BP", "HitchAttr.Enabled": 1 },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "routesnap", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30,
+      "minCounters": 110
     },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 60,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-france",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to france and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "france"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-china",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to china and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "china"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-egypt",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to egypt and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "egypt"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-university",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to university and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "university"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-future",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to future and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "future"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-travel-future-direct",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). travel save case to future-direct (direct switch, docs/77 order) and back, as travel-all.json. Pass: travel case passes, audit 0 after each world load (images rebuilt on arrival and return). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "matrix": [
-        "--travel",
-        "--cases",
-        "travel",
-        "--to",
-        "future",
-        "--direct"
-      ]
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 45,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-soak",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). 45 min at ultra speed (watchdog: crashes, stuck Sims, memory). Pass: also largest free block not falling over the run, snapshot image memory under CapMB. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "soak": {
-        "minutes": 45,
-        "speed": "ultra"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 70,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-rt-s2b-sweep",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). object churn + buy mode twice (repro rt-s2b-sweep, world-agnostic, ~7 min of steps) while Sims route: footprint and quadtree writes land while clone runs are in flight. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "repro": "rt-s2b-sweep"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "ip-snap-rt-s2b-sweep",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). object churn + buy mode twice (repro rt-s2b-sweep, world-agnostic, ~7 min of steps) while Sims route: footprint and quadtree writes land while clone runs are in flight. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-IP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "repro": "rt-s2b-sweep"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-steer-crowd",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). crowd steering near each other while route jobs run (repro steer-crowd; UNVERIFIED repro, never run: verify it in a daytime run first). Pass: also steering waits not above the A10 level. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 5,
-        "seed": 12345,
-        "repro": "steer-crowd"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 20,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-door-lock",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). home door locked for non-household; household Sim and visitors plan through it (repro bp-door-lock, PASS in snap-probe2 2026-10-18). Door asks go through the (b) proxy (docs/94 §19.1). Pass: also locked-out Sims stop at the door, the household passes, snM2DoorAsk > 0. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 5,
-        "seed": 12345,
-        "repro": "bp-door-lock"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 20,
-    "minCounters": 61
-  },
-  {
-    "id": "ip-snap-houseboat",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). houseboat lot created and deleted twice at a port gangway (repro ip-houseboat-create; UNVERIFIED repro, never run: verify first): lot-table miss, LotGraph_dtor and lot index rebuild under the snapshot. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-IP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 5,
-        "seed": 12345,
-        "repro": "ip-houseboat-create"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 20,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-mod-gohere",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). mod run (docs/94 §19.2, I-94-114): NRaas GoHere with door settings. GoHere installed for the job (fixes.json nraas-gohere, manual download, uninstalled after the job); save Snap-GoHere-BP made by queues/snap-gohere-save.json (door filters set by hand, docs/94 §20.4). Pass: also door behaviour as in the same save with RouteSnap off, no M2-2 trips from GoHere's lot handler. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "fixes": {
-      "install": [
-        "nraas-gohere"
-      ]
-    },
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Snap-GoHere-BP",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "repro": "bp-door-lock"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-mod-monopatcher",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). mod run (docs/94 §19.2, I-94-114): the test mod portalplan-typepatch-test (mods/portalplan-test: [TypePatch] on Lot.OnPortalPathPlan, same behaviour plus call counts; uninstalled after the job) with MonoPatcher (fixes.json monopatcher, installed through requires and left installed: it is in the default set, and listing it would uninstall it after the job); repro bp-door-lock-typepatch = bp-door-lock with the counts read before and after (in <tag>-repro.jsonl). Pass: also the patched handler runs for clone-run asks, a ModGuard: L2 info line, no M2-2 trips. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "fixes": {
-      "install": [
-        "portalplan-typepatch-test"
-      ]
-    },
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "repro": "bp-door-lock-typepatch"
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-mod-s3pp",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). mod run (docs/94 §19.2, I-94-115, guard M2-1): S3PP installed (fixes.json s3pp, manual download). Pass: Mode=2 stays on, or turns off naming a site owner listed in the docs/68 table (hook-sites.ts --check), never 'owned by unknown hook' (this job replaces the Mode=2-on pass rule). Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "fixes": {
-      "install": [
-        "s3pp"
-      ]
-    },
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "bp-snap-ab",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). G5 no-regression A/B, CLEAN NIGHT ONLY (skip in daytime runs with --only): snapshot Mode=2 on/off every 2 min in one load (warm-up, then ABBA). PLACEHOLDER switch: 'routesnap' is not in profile-world.ts yet (P5 adds it to nativeNames or counterSwitches; until then the toggler would send it as a C# patch name). Pass: it/s on >= off - 2%, sim keyed waits on <= off (wait-ab.ts per site), 0 new sim-thread waits; compare only if the machine load line is ok. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-BP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "ab": "routesnap",
-        "slice": 2
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  },
-  {
-    "id": "ip-snap-ab",
-    "note": "DRAFT, not run (docs/94 §20, P6 gate G6): needs the P5/P6 build (asi snapp5, not built) and its counter version (minCounters 49 is a floor: raise it to P5's reserved version); RouteSnap.Mode=2 and RouteSnap.Kinds=7 are PLACEHOLDER keys for the names P5/P6 define (docs/94 §19.1; Kinds mirrors RouteAsync.Kinds: 1 Replan, 2 PlanFromPoint, 4 ReplanFromPosition). G5 no-regression A/B, CLEAN NIGHT ONLY (skip in daytime runs with --only): snapshot Mode=2 on/off every 2 min in one load (warm-up, then ABBA). PLACEHOLDER switch: 'routesnap' is not in profile-world.ts yet (P5 adds it to nativeNames or counterSwitches; until then the toggler would send it as a C# patch name). Pass: it/s on >= off - 2%, sim keyed waits on <= off (wait-ab.ts per site), 0 new sim-thread waits; compare only if the machine load line is ok. Pass (every job): 0 crashes, 0 watchdog lines, 0 stuck Sims, snapshot audit 0 mismatches (snap-audit-report.ts), Mode=2 still on at the end (no 'RouteSnap: Mode=2 off' line), M2-2 J_SKIPPED trips < 3.",
-    "ini": {
-      "RouteAsync.Enabled": 1,
-      "RouteAsync.Mode": 1,
-      "RouteAsync.Kinds": 7,
-      "RouteGate.Enabled": 1,
-      "RouteGate.Sites": 1,
-      "RouteGate.Enforce": 1,
-      "Discourage.Enabled": 1,
-      "RouteSnap.Enabled": 1,
-      "RouteSnap.Mode": 2,
-      "RouteSnap.Kinds": 15
-    },
-    "asi": "game-copy/ts3native.asi.snapp5",
-    "save": "Baseline-IP-Spring",
-    "run": {
-      "profile": {
-        "minutes": 10,
-        "seed": 12345,
-        "ab": "routesnap",
-        "slice": 2
-      }
-    },
-    "gameArgs": [
-      "-disablestoryprogression"
-    ],
-    "timeoutMin": 30,
-    "minCounters": 61
-  }
-]
+    {
+      "id": "ip-snap-ab",
+      "note": "DRAFT, not run. CLEAN NIGHT ONLY. As bp-snap-ab on IP.",
+      "ini": { "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 8, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.ShadowWorld": "IP", "HitchAttr.Enabled": 1 },
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-IP-Spring",
+      "run": { "profile": { "minutes": 10, "seed": 12345, "ab": "routesnap", "slice": 2 } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 30,
+      "minCounters": 110
+    }
+  ]
+}

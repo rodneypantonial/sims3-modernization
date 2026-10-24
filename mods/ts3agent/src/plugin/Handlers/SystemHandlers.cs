@@ -13,6 +13,7 @@ namespace Ts3Agent
             RegisterSims();
             RegisterControl();
             RegisterBuild();
+            RegisterSaver();
             RegisterHarness();
         }
 

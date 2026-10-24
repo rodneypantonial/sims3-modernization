@@ -18,6 +18,7 @@
 // means, on - off), <base>-off[-N] + <base>-on[-N] (two loads: on - off).
 // Import hitchReport(tags) from queue result notes. Set TS3_REPO=<main checkout> when running from a git worktree.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -205,6 +206,79 @@ export function ciPoolRows(arms: Arm[]) {
   }))].join('\n');
 }
 
+// Measurement cost rule (iv), PLAN.md 2026-10-24 / docs/168 §9: which measurement tools a run had on, from its queue row (ini
+// overrides + run.profile), and the cost docs/data/tool-costs.json knows for them.
+// The ini is the one the job ran with: queue.ts writes Bin/ts3native.ini = repo ini + job ini, so toolLines() lays the row's
+// overrides over the repo ini at the row's build (withBaseIni), and a tool the repo ini turns on is listed too.
+// shortcut: the repo ini is read at the committed build; uncommitted ini edits at queue start are missed, upgrade by storing
+// the merged ini in the queue row if that ever bites.
+export function toolsOn(row: { ini?: Record<string, unknown> | null; run?: { profile?: Record<string, any> } }): string[] {
+  const ini = row.ini ?? {}, p = row.run?.profile ?? {}, n = (k: string) => Number(ini[k] ?? 0), out: string[] = [];
+  if (!p.noProf && !n('ProbeSnap.Enabled')) {
+    out.push(p.profOpts?.stages === false ? 'prof-lean' : 'prof-stages');
+    if (p.profOpts?.stages !== false && p.profOpts?.tasks !== false) out.push('prof-tasks');
+    if (!p.noFrames && !p.watchstalk) out.push('frames');
+  }
+  // the stack samplers run only in a plain window (profile-world.ts `window`)
+  if (!p.noSamplers && !(p.ab || p.taskstall || p.repro || p.inroom || p.watchstalk || p.livereads2 || p.f4b || p.vres || p.vresDry || p.story)) out.push('samplers');
+  for (const k of ['mainstack', 'taskstall', 'inroom', 'watchstalk', 'livereads2', 'f4b', 'vres', 'story']) if (p[k]) out.push(k);
+  for (const s of ['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify'])
+    if (n(`${s}.Enabled`)) out.push(s);
+  if (n('HitchAttr.Enabled') && n('HitchAttr.Holders')) out.push('HitchAttr.Holders');
+  if (n('RouteJobPhases.Enabled')) for (const k of ['SyncPlans', 'HostSplit', 'GoalSplit', 'GoalStepSplit']) if (n(`RouteJobPhases.${k}`)) out.push(`RouteJobPhases.${k}`);
+  if (ini['RouteAsync.LogFallbackMs'] !== undefined && n('RouteAsync.LogFallbackMs') > 0 && n('RouteAsync.LogFallbackMs') < 200) out.push('LogFallbackMs<200');
+  if (n('RouteAsync.LogFallbackStack')) out.push('LogFallbackStack');
+  if (n('RouteAsync.OwnJobWait')) out.push('OwnJobWait');
+  if (n('RouteEarlyOut.Enabled') && !n('RouteEarlyOut.Act')) out.push(String(p.ab ?? '').split(',').includes('earlyout') ? 'RouteEarlyOut.observe (on arm)' : 'RouteEarlyOut.observe');
+  if (n('RouteSnap.Enabled') && (ini['RouteSnap.AuditEvery'] === undefined || n('RouteSnap.AuditEvery'))) out.push('RouteSnap.audits');
+  return out;
+}
+type ToolCosts = { tools: Record<string, { class: string; msPerS: number | null }>; bundles: { name: string; tools: string[]; msPerS: number }[] };
+export function toolCostLine(tools: string[], costs: ToolCosts): string {
+  const base = (t: string) => t.replace(/ \(on arm\)$/, ''), left = new Set(tools.map(base)), taken: string[] = [];
+  let ms = 0;
+  for (const b of costs.bundles) if (b.tools.every(t => left.has(t))) { ms += b.msPerS; taken.push(b.name); b.tools.forEach(t => left.delete(t)); }
+  for (const t of [...left]) { const c = costs.tools[t]?.msPerS; if (typeof c === 'number') { ms += c; taken.push(t); left.delete(t); } }
+  const heavy = [...left].filter(t => costs.tools[t]?.class === 'heavy'), unknown = [...left].filter(t => !costs.tools[t]);
+  const nm = [...left].filter(t => costs.tools[t] && !heavy.includes(t));
+  return `tools on: ${tools.join(', ') || 'none'}; cost taken off: ${taken.length ? `${ms.toFixed(1)} ms/s (${taken.join(', ')})` : '0 ms/s'}`
+    + (nm.length ? `; not measured: ${nm.join(', ')}` : '') + (heavy.length ? `; HEAVY (correctness only, no timing): ${heavy.join(', ')}` : '')
+    + (unknown.length ? `; not in tool-costs.json: ${unknown.join(', ')}` : '');
+}
+// ts3native.ini text -> { 'Section.Key': value } (comments and trailing '; ...' dropped)
+export function flatIni(text: string): Record<string, string> {
+  const o: Record<string, string> = {};
+  let sec = '';
+  for (const l of text.split(/\r?\n/)) {
+    const h = /^\s*\[([^\]]+)\]/.exec(l), kv = /^\s*([^;=\s][^=]*?)\s*=\s*(.*)$/.exec(l);
+    if (h) sec = h[1]; else if (kv && sec) o[`${sec}.${kv[1]}`] = kv[2].replace(/\s*;.*$/, '').trim();
+  }
+  return o;
+}
+// the row's ini overrides on top of the repo ini text at its build; base null (build unknown or not in git) = overrides only
+export const withBaseIni = <R extends { ini?: Record<string, unknown> | null }>(row: R, base: string | null): R => ({ ...row, ini: { ...(base ? flatIni(base) : {}), ...(row.ini ?? {}) } });
+function repoIniAt(build: unknown): string | null {
+  if (typeof build !== 'string' || !/^[0-9a-f]{4,40}$/.test(build)) return null;
+  try { return execFileSync('git', ['-C', ROOT, 'show', `${build}:native/ts3native/ts3native.ini`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }).toString(); } catch { return null; }
+}
+const TOOL_COSTS = resolve(import.meta.dirname, '..', '..', 'docs', 'data', 'tool-costs.json');
+// the queue row of a profile tag (probe-out/queue/<queue>-<date>.jsonl, row.profileTag), newest row wins; null = run outside a queue
+function queueRow(tag: string): any {
+  if (!existsSync(QUEUE)) return null;
+  let found: any = null;
+  for (const f of readdirSync(QUEUE).filter(f => f.endsWith('.jsonl') && tag.startsWith(f.slice(0, -6) + '-')))
+    for (const l of readFileSync(join(QUEUE, f), 'utf8').split('\n')) if (l.includes(`"profileTag":"${tag}"`)) { try { found = JSON.parse(l); } catch { /* torn line */ } }
+  return found;
+}
+function toolLines(tags: string[]): string[] {
+  const costs: ToolCosts = JSON.parse(readFileSync(TOOL_COSTS, 'utf8'));
+  return tags.map(t => {
+    const r = queueRow(t); if (!r) return `- ${t}: tools on: unknown (no queue row)`;
+    const base = repoIniAt(r.build);
+    return `- ${t}: ${toolCostLine(toolsOn(withBaseIni(r, base)), costs)}${base ? '' : ` (repo ini at build ${r.build} not readable: job overrides only)`}`;
+  });
+}
+
 export function hitchReport(args: string[]): string {
   const loaded = expandTags(args).map(loadRun), bad = loaded.filter(r => r.invalid).map(r => `${r.tag} (${r.invalid})`);
   const runs = new Map(loaded.filter(r => !r.invalid).map(r => [r.tag, r])), tags = [...runs.keys()];
@@ -232,6 +306,7 @@ export function hitchReport(args: string[]): string {
     '', `Confidence (docs/168 §1: exact Poisson per arm, exact conditional on/off ratio, Wald difference; fewer than ${MIN_EVENTS} events in both arms = not enough events)`, '', CI_HEAD, ...cis);
   out.push('', exclTable(mergeExcl(shown)));
   if (bad.length) out.push('', `invalid runs (shown, left out of pairs and of the excluded table): ${bad.join(', ')}`);
+  out.push('', 'Measurement tools per run (docs/168 §9, docs/data/tool-costs.json):', ...toolLines(loaded.map(r => r.tag)));
   out.push('', `p99 / p99.9 over every iteration (seconds.csv iters); '<${HITCH_MS}' = that rank lies below the profiler's ${HITCH_MS} ms hitch threshold, so only bounded.`);
   return out.join('\n');
 }
@@ -516,6 +591,30 @@ function selfCheck() {
   assert.deepEqual(la2.armRows, la.armRows, 'agent hitch stays out of the arm rows');
   assert.ok(la2.rows.some(r => r.includes(`| ${AGENT_ROW} | `) && r.includes('| 1600 |')), 'agent row');
   assert.ok(!movedWaits([{ t0: 0, fires: [{ a: 60_000, b: 120_000, arm: 'off' }, { a: 120_000, b: 180_000, arm: 'on' }], hitches: [ag(70_000, 900, 'Ts3Agent.PollTask'), ag(130_000, 900, 'Ts3Agent.PollTask')] }]).includes('Ts3Agent'), 'agent out of moved waits');
+  // tools on (docs/168 §9): the profiler-cost full job takes the bundle off; the lean job has only prof-lean + frames; an --ab
+  // earlyout observe job marks the on arm; every name toolsOn() prints is in tool-costs.json
+  const tc: ToolCosts = JSON.parse(readFileSync(TOOL_COSTS, 'utf8'));
+  const full = { ini: { 'HitchAttr.Enabled': 1, 'RouteJobPhases.Enabled': 1, 'RouteJobPhases.SyncPlans': 1, 'RouteAsync.LogFallbackMs': 20, 'RouteAsync.LogFallbackStack': 16 }, run: { profile: { noSamplers: true } } };
+  assert.deepEqual(toolsOn(full), ['prof-stages', 'prof-tasks', 'frames', 'HitchAttr', 'RouteJobPhases', 'RouteJobPhases.SyncPlans', 'LogFallbackMs<200', 'LogFallbackStack']);
+  assert.equal(toolCostLine(toolsOn(full), tc), 'tools on: prof-stages, prof-tasks, frames, HitchAttr, RouteJobPhases, RouteJobPhases.SyncPlans, LogFallbackMs<200, LogFallbackStack; cost taken off: 17.9 ms/s (full measurement); not measured: frames, LogFallbackMs<200, LogFallbackStack');
+  assert.deepEqual(toolsOn({ ini: { 'HitchAttr.Enabled': 0, 'RouteAsync.LogFallbackMs': 200 }, run: { profile: { noSamplers: true, profOpts: { stages: false } } } }), ['prof-lean', 'frames']);
+  assert.deepEqual(toolsOn({ ini: {}, run: { profile: {} } }), ['prof-stages', 'prof-tasks', 'frames', 'samplers']);
+  const eo = toolsOn({ ini: { 'RouteEarlyOut.Enabled': 1, 'RouteEarlyOut.Act': 0 }, run: { profile: { ab: 'earlyout', profOpts: { stages: false } } } });
+  assert.deepEqual(eo, ['prof-lean', 'frames', 'RouteEarlyOut.observe (on arm)']);
+  assert.match(toolCostLine(['prof-lean', 'samplers', 'ProbeSnap'], tc), /cost taken off: 0 ms\/s; not measured: prof-lean; HEAVY \(correctness only, no timing\): samplers, ProbeSnap$/);
+  const all = toolsOn({ ini: Object.fromEntries(['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'RouteSnap', 'RouteEarlyOut']
+    .map(s => [`${s}.Enabled`, 1]).concat(['HitchAttr.Holders', 'RouteJobPhases.SyncPlans', 'RouteJobPhases.HostSplit', 'RouteJobPhases.GoalSplit', 'RouteJobPhases.GoalStepSplit', 'RouteAsync.OwnJobWait', 'RouteAsync.LogFallbackStack'].map(k => [k, 1]), [['RouteAsync.LogFallbackMs', 20]])),
+  run: { profile: { mainstack: 'main', taskstall: 250, inroom: true, watchstalk: true, livereads2: true, f4b: true, vres: true, story: {} } } });
+  assert.deepEqual(all.filter(t => !tc.tools[t]), [], 'every toolsOn name has a tool-costs.json row');
+  // base ini: a tool the repo ini turns on is listed; the job's override wins; trailing comments do not hide a value
+  const baseTxt = '; head\n[HitchAttr]\nEnabled=1 ; probe on\n[RouteAsync]\nLogFallbackMs=200\n[RouteJobPhases]\nEnabled=0\n';
+  assert.deepEqual(flatIni(baseTxt), { 'HitchAttr.Enabled': '1', 'RouteAsync.LogFallbackMs': '200', 'RouteJobPhases.Enabled': '0' });
+  const nf = { noSamplers: true, profOpts: { stages: false } };
+  assert.deepEqual(toolsOn(withBaseIni({ ini: {}, run: { profile: nf } }, baseTxt)), ['prof-lean', 'frames', 'HitchAttr']);
+  assert.deepEqual(toolsOn(withBaseIni({ ini: { 'HitchAttr.Enabled': 0, 'RouteJobPhases.Enabled': 1 }, run: { profile: nf } }, baseTxt)), ['prof-lean', 'frames', 'RouteJobPhases']);
+  assert.deepEqual(toolsOn(withBaseIni({ ini: null, run: { profile: nf } }, null)), ['prof-lean', 'frames']);
+  // the repo ini as committed turns no measurement tool on (release defaults)
+  assert.deepEqual(toolsOn(withBaseIni({ ini: {}, run: { profile: nf } }, readFileSync(join(ROOT, 'native', 'ts3native', 'ts3native.ini'), 'utf8'))), ['prof-lean', 'frames']);
   console.log('hitch-ab self-check ok');
 }
 

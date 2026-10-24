@@ -1123,18 +1123,18 @@ static void RpAskEpoch(LONG line) {
 static HANDLE g_rpEvent, g_rpThread;
 static bool g_rpThreaded = true;  // selftest drains on its own thread
 static void RpPayloadFree(const RpRec& r);
-static void RpPush(DWORD type, DWORD a, DWORD b, DWORD c, void* p) {
+static void RpPush(DWORD type, DWORD a, DWORD b, DWORD c, void* p, DWORD pad = 0) {  // pad: an INS record's RpInsLive (0.36.35)
     Ts3nCounters& k = ts3native_counters;
     while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
     const bool full = g_rpHead - g_rpTail >= kRpRing;
     if (!full) {
         RpRec& r = g_rpRing[g_rpHead & (kRpRing - 1)];
-        r.type = type, r.a = a, r.b = b, r.c = c, r.p = p, r.pad = 0;
+        r.type = type, r.a = a, r.b = b, r.c = c, r.p = p, r.pad = pad;
         g_rpHead++;
     }
     InterlockedExchange(&g_rpRingLock, 0);
     if (full) {
-        RpRec r = {type, a, b, c, p, 0};
+        RpRec r = {type, a, b, c, p, pad};
         RpPayloadFree(r);
         InterlockedIncrement(&k.rpDrop);
         RP_NEED_EPOCH();
@@ -1156,7 +1156,7 @@ struct RpBatch {
     DWORD* order; DWORD nOrder, mapN, policy[3];
     u64* lotKeys; int nLotKeys;  // the live lot table at the cut in chain order: the consumer re-links its table to it
 };
-struct RpAuditRec { int n; u64* keys; u64* hash; DWORD* ents; DWORD mapN, mapCount; int nAll; DWORD* perQ; };  // perQ: 16 per lot  // nAll: live lots (n may be a subset)
+struct RpAuditRec { int n; u64* keys; u64* hash; DWORD* ents; DWORD mapN, mapCount; int nAll; DWORD* perQ; DWORD seq; LONG cut; };  // perQ: 16 per lot  // nAll: live lots (n may be a subset)  // seq: ring position of this record (docs/157 §7)
 struct RpSyncRec { DWORD mapN, mapCount, lots; };
 static void RpBatchFree(RpBatch* b, bool owned) {  // owned: lots / FMEs not taken by the clone (needs +0x918)
     if (!b) return;
@@ -1192,7 +1192,7 @@ static void RpNoQFree(RpNoQRec* r) {
 static void RpPayloadFree(const RpRec& r) {
     switch (r.type) {
         case RP_NOQ: RpNoQFree((RpNoQRec*)r.p); break;
-        case RP_INS: RpFpFree((u8*)r.p); break;
+        case RP_INS: RpFpFree((u8*)r.p); RpFree((void*)(uintptr_t)r.pad); break;
         case RP_LOTS: RpBatchFree((RpBatch*)r.p, true); break;  // dropped before the clone took it (the sim's cut, +0x918 held)
         case RP_EPOCH: RpFreeClone((RpClone*)r.p); break;
         case RP_AUDIT: RpAuditFree((RpAuditRec*)r.p); break;
@@ -1309,6 +1309,13 @@ static bool g_rpHave;                // an epoch clone was pushed
 static u64 g_rpForce[64];            // W3 / W4 lots: rebase at the next cut (any thread, under the ring lock)
 static int g_rpNForce;
 static LONG g_rpForceAll;
+// docs/157 §10 ([RouteSnap] AuditHoldRebase=1, default 0, I-157-11): an audit mismatch whose diff is pending holds that
+// lot's rebase (forced, signature or shell) until the diff has run on the drifted clone, at most one cut; then the cut
+// releases it (timeout). One hold per lot in a row (g_rpHoldLast), so the hold's own repeat mismatch rebases at once.
+// Ring lock for all three
+static LONG g_rpAuditHold;
+static u64 g_rpHoldKey, g_rpHoldLast;
+static LONG g_rpHoldCuts;
 // 0.35.17 (docs/94 §22.20, I-94-476): W4 lots (LotGraph_Build). The build rewrites the lot node, rooms and portals; its
 // quadtree changes go through W1 / W2 (0x635700 removes, 0x666C50 queues inserts) and are replayed, and a new Q is a W3
 // build (a full force). So the cut refreshes only the shell while the lot's Q list is unchanged (BP 0.35.16: 389 of 446
@@ -1325,6 +1332,12 @@ static LONG g_rpLogged;
 // insert counters, polygon transform state) are refreshed from live at the next cut: their keys and ~keys are kept here
 // (any writing thread under the ring lock; the writers and the cut both hold +0x918, so the table does not move under them)
 static RpTab g_rpKnownQ;
+// [Watchpoint] Lot= (watchpt.cpp, docs/157 §8.1): that lot's Qs, noted at each mirror pass; W1 inserts on them go to WpLotInsert
+static u64 g_wpLot;
+static DWORD g_wpLotQ[16];
+static void WpLotNoteQ(DWORD q);
+static void WpLotInsert(DWORD q, u8* fp);
+static void WpLotRemove(DWORD lo, DWORD hi);
 static u64 g_rpUnk[256];
 static int g_rpNUnk;
 static LONG g_rpUnkAll;
@@ -1390,7 +1403,10 @@ static void RpMirrorSet(const RpLiveLot* live, int n, const RpLiveLot* keepA = N
         __try {
             const u8* g = live[i].node + 0x10;
             for (const u8* qp = RpP(g + 0x74); qp && qp < RpP(g + 0x78) && qp < RpP(g + 0x74) + 64; qp += 4)
-                if (RpD(qp)) RpTabPut(g_rpKnownQ, RpD(qp), 1);
+                if (RpD(qp)) {
+                    RpTabPut(g_rpKnownQ, RpD(qp), 1);
+                    if (g_wpLot && live[i].key == g_wpLot) WpLotNoteQ(RpD(qp));
+                }
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 }
@@ -1784,6 +1800,114 @@ static RpRemLive* RpRemLiveTake(u8* q, DWORD lo, DWORD hi) {
     if (p) memcpy(p, &t, sizeof(t));
     return p;
 }
+static void RpForceLot(u64 key) {  // the lot rebases at the next cut (any thread)
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    int j = 0;
+    while (j < g_rpNForce && g_rpForce[j] != key) j++;
+    if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = key; else g_rpForceAll = 1; }
+    InterlockedExchange(&g_rpRingLock, 0);
+}
+
+// 0.36.35 (docs/157 §4.2, docs/156 F1, I-156-1): replayed-insert answer check. The INS record copies the footprint at the
+// game's ApplyInsert entry, but the replay inserts whichever copy RpFpUse picks (an older copy refreshed in place keeps a
+// child's parent pointer; an own-block child answers through its pinned parent copy), and the leaf insert 0x6653A0 uses that
+// copy's +0x2C answer. BP 0.36.13 / 0.36.33 audits found clone Q 1 trees short of live by 30-603 full-mask entries of child
+// footprints 0xFEBF90 while the whole map counts matched (FMEs present, fewer leaves) [measured, logs]: a copy answering a
+// smaller rect than live at its insert [inferred, I-157-6]. The record now carries live's answers (the footprint and its
+// list children, levels 0..3, asked here just before the game asks them itself); the consumer compares them with the
+// answers of the FMEs that insert made and forces the lot on a difference (logged with both rects).
+// [RouteSnap] InsCheck: 0 off, 1 log only (default: the record's live answer is asked before the game's insert, which may
+// transform a first-inserted footprint's points, W6d via 0x80E0E0; a difference there would be ours, not the copy's), 2 log + force
+static LONG g_rpInsCheck = 1;
+struct RpInsLiveE { DWORD live, lvl; float b[4]; };
+struct RpInsLive { int n; RpInsLiveE e[kRpRemLiveMax]; };
+static void RpInsLiveOne(RpInsLive& t, u8* fp) {
+    const RpCls* c = RpClass(RpD(fp));
+    if (!c) return;
+    const DWORD nl = c->cache ? RpLevels(fp) : 1;  // slot +0 is the level count only on the cache classes
+    for (DWORD l = 0; l < nl && l < 4 && t.n < kRpRemLiveMax; l++) {
+        RpInsLiveE& e = t.e[t.n];
+        memset(e.b, 0, sizeof(e.b));
+        const float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(fp) + 0x2C))(fp, NULL, e.b, l, 0.0f);
+        if (!r) continue;
+        if (r != e.b) memcpy(e.b, r, sizeof(e.b));
+        e.live = (DWORD)(uintptr_t)fp, e.lvl = l;
+        t.n++;
+    }
+}
+static RpInsLive* RpInsLiveTake(u8* fp) {
+    RpInsLive t;
+    t.n = 0;
+    __try {
+        RpInsLiveOne(t, fp);
+        if (RpHasList(fp))
+            for (u8* l = RpP(fp + 0x24); l && l != fp + 0x24 && t.n < kRpRemLiveMax; l = RpP(l)) if (u8* ch = RpP(l + 8)) RpInsLiveOne(t, ch);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return NULL; }
+    if (!t.n) return NULL;
+    RpInsLive* p = (RpInsLive*)RpAlloc(sizeof(RpInsLive));
+    if (p) memcpy(p, &t, sizeof(t));
+    return p;
+}
+
+// 0.36.35 (docs/157 §4.1, docs/156 F1, U1): Footprint_SetLockKeyObject 0x807110 swaps fp+0x20 of an inserted footprint with
+// no W1/W2 record, so the clone kept the set it had at the INS (NULL: "no keys") until a re-insert, rebase or epoch [verified,
+// docs/156 §1]. 0x807110 is T-S7's site (steerro.cpp, one owner per docs/68), so the cover hooks its only IC caller instead:
+// the call site in RouteManager_FootprintLockKeyApply 0x82B2B0, `mov edx,[edi]; mov eax,[edx+0x8C]` at 0x82B3A1 (8 bytes,
+// no relative operand; the only branch to the range is 0x82B349's jne to 0x82B3A1 itself [verified, capstone + raw scan of
+// .text]). There edi = the routing footprint, ebp = the new set, ebx = the routing world. A change on an inserted footprint
+// forces every live lot that holds an FME of its key / ~key (sim thread, +0x918 not needed: only the sim writes the live map)
+// and counts as a routing write (P5c's stale test); Q-less FMEs are refreshed through the cut's Q-less pass. The other writer
+// of fp+0x20, slot +0xA8 0x80C8C0 from the lot rebuild path, ends in a W3/W4 (I-156-6, open).
+static const DWORD kRpLkAt = 0x0082B3A1;
+static void* g_rpLkTramp;
+static volatile LONG g_rpLkLog;
+static void __cdecl RpLockKeyEnter(DWORD* slot) {
+    if (!g_rpOn || !g_rpHave || t_rpReplay || !RgIsSim(GetCurrentThreadId())) return;
+    Ts3nCounters& k = ts3native_counters;
+    const u8* fp = (const u8*)(uintptr_t)slot[-8];
+    const DWORD set = slot[-6];
+    const u8* world = (const u8*)(uintptr_t)slot[-4];
+    u64 lots[8];
+    int n = 0;
+    bool noq = false, over = false;
+    u64 key = 0;
+    __try {
+        if (!fp || RpD(fp + 0x20) == set || !(RpD(fp + 0x34) & 0x7C000000u) || !RpFpKey(fp, &key)) return;
+        const u8* m = RpP(RpP(world + 0x95C) + 0x24);
+        const DWORD nb = m ? RpD(m + 8) : 0;
+        const DWORD* bk = nb > 1 ? (const DWORD*)RpP(m + 4) : NULL;
+        for (int pass = 0; bk && pass < 2; pass++) {
+            const u64 kk = pass ? ~key : key;
+            for (const u8* nd = (const u8*)(uintptr_t)bk[(DWORD)kk % nb]; nd; nd = RpP(nd + 0x10)) {
+                if (RpD(nd) != (DWORD)kk || RpD(nd + 4) != (DWORD)(kk >> 32) || !RpP(nd + 8)) continue;
+                const u8* q = RpP(RpP(nd + 8) + 0xC);
+                if (!q) { noq = true; continue; }
+                const u64 lot = ((u64)RpD(q + 0x1C) << 32) | RpD(q + 0x18);
+                int i = 0;
+                while (i < n && lots[i] != lot) i++;
+                if (i == n) { if (n < 8) lots[n++] = lot; else over = true; }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { over = true; }
+    InterlockedIncrement(&g_spWrites);  // a routing input changed: a P5c answer cut before it is stale
+    if (over) { while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor(); g_rpForceAll = 1; InterlockedExchange(&g_rpRingLock, 0); }
+    for (int i = 0; i < n; i++) RpForceLot(lots[i]);
+    if (noq || (!n && !over)) { RpNoQNote(key, false); RpNoQNote(~key, false); InterlockedIncrement(&k.rpLockKeyNoLot); }
+    if (n || over) InterlockedIncrement(&k.rpLockKeyForce);
+    const LONG c = InterlockedIncrement(&g_rpLkLog);
+    if (c <= 8 || !(c & (c - 1)))
+        Log("snap replay: lock-key set of footprint 0x%08lX%08lX (class 0x%08lX) changed in place: %d lots forced%s%s (%ld so far)",
+            (DWORD)(key >> 32), (DWORD)key, RpD(fp), n, over ? ", all lots" : "", noq ? ", Q-less nodes refreshed" : "", c);
+}
+static __declspec(naked) void RpLockKeyStub() {
+    __asm pushad __asm pushfd __asm lea eax, [esp + 36] __asm push eax __asm call RpLockKeyEnter __asm add esp, 4
+    __asm popfd __asm popad __asm jmp dword ptr [g_rpLkTramp]
+}
+static void RpLockKeyInstall() {
+    static const u8 kPro[] = {0x8B, 0x17, 0x8B, 0x82, 0x8C, 0x00, 0x00, 0x00};  // mov edx,[edi]; mov eax,[edx+0x8C]
+    g_rpLkTramp = InstallDetour("RouteManager_FootprintLockKeyApply set call (lock-key cover)", kRpLkAt, kPro, sizeof(kPro), (void*)RpLockKeyStub);
+    if (!g_rpLkTramp) Log("route snapshot replay: lock-key cover not installed: P5 answers may read a stale lock-key set (docs/156 U1)");
+}
 static void RpPreBody(int site, const DWORD* slot);
 static void RpPre(int site, const DWORD* slot) {
     if (!g_rpOn) return;
@@ -1810,6 +1934,8 @@ static void RpPreBody(int site, const DWORD* slot) {
     if (!g_rpHave) return;
     switch (s.leaf) {
         case SL_W1: case SL_W2: {
+            if (s.leaf == SL_W1 && g_wpLot) WpLotInsert(slot[-2], (u8*)(uintptr_t)slot[1]);  // children too (their own W1 call)
+            if (s.leaf == SL_W2 && g_wpLot) WpLotRemove(slot[1], slot[2]);  // [Watchpoint] Follow: a watched child's remove
             if (s.leaf == SL_W1 && slot[0] == kRpRet665F87) return;  // W1's own child recursion: the replayed parent inserts them
             u8* fp = s.leaf == SL_W1 ? (u8*)(uintptr_t)slot[1] : NULL;
             if (!RpTabFind(g_rpKnownQ, slot[-2])) {  // the consumer will skip it: refresh what it touches at the next cut
@@ -1828,7 +1954,7 @@ static void RpPreBody(int site, const DWORD* slot) {
                     if (i == g_rpNBadQ) { if (g_rpNBadQ < 16) g_rpBadQ[g_rpNBadQ++] = slot[-2]; else g_rpForceAll = 1; }
                     InterlockedExchange(&g_rpRingLock, 0);
                 }
-                RpPush(RP_INS, slot[-2], slot[1], slot[2], cp);
+                RpPush(RP_INS, slot[-2], slot[1], slot[2], cp, cp && g_rpInsCheck ? (DWORD)(uintptr_t)RpInsLiveTake(fp) : 0);
             }
             else RpPush(RP_REM, slot[-2], slot[1], slot[2], RpRemLiveTake((u8*)(uintptr_t)slot[-2], slot[1], slot[2]));
             break;
@@ -2029,7 +2155,15 @@ static void RpCutBody(const u8* world) {
         const int nBad = g_rpNBadQ;
         memcpy(badQ, g_rpBadQ, nBad * 4);
         g_rpNForce = 0, g_rpForceAll = 0, g_rpNShellF = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNBadQ = 0;
+        u64 held = g_rpHoldKey;  // AuditHoldRebase: this lot is not rebased in this cut, at most one cut
+        if (held && g_rpHoldCuts++ >= 1) g_rpHoldLast = held, g_rpHoldKey = 0, k.rpHold[2]++;
+        const u64 heldOut = held && !g_rpHoldKey ? held : 0;
+        if (heldOut) held = 0;
         InterlockedExchange(&g_rpRingLock, 0);
+        if (heldOut)
+            Log("snap replay audit: lot 0x%08lX%08lX rebase hold released by timeout (the diff did not run within one cut; %ld so far)",
+                (DWORD)(heldOut >> 32), (DWORD)heldOut, k.rpHold[2]);
+        bool heldSkip = false;
         if (pruned && g_rpSoftPruned <= 16)
             Log("snap replay: %d soft-forced lot(s) left out of the clone or gone dropped from the pending forces (%ld so far, I-94-452)",
                 pruned, g_rpSoftPruned);
@@ -2088,6 +2222,7 @@ static void RpCutBody(const u8* world) {
                 if (sig && qsame) k.rpRebaseQSame++;
                 sh = qsame;
             }
+            if (f && held && !all && m && g_rpLive[i].key == held) f = false, heldSkip = true;  // kept drifted for the diff
             if (f && sh) shl[nsh++] = g_rpLive[i], k.rpRebaseWhy[why]++;
             else if (f) set[ns++] = g_rpLive[i], k.rpRebaseWhy[why]++;
         }
@@ -2095,6 +2230,13 @@ static void RpCutBody(const u8* world) {
             int j = 0;
             while (j < n && g_rpLive[j].key != g_rpMir[i].key) j++;
             if (j == n) gone[ng++] = g_rpMir[i].key, k.rpRebaseWhy[3]++;
+        }
+        if (heldSkip) {  // the held lot's force stays for the cut after the release
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            int j = 0;
+            while (j < g_rpNForce && g_rpForce[j] != held) j++;
+            if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = held; else g_rpForceAll = 1; }
+            InterlockedExchange(&g_rpRingLock, 0);
         }
         RcMark(RC_SIG);
         // 0.35.12 (docs/94 §22.15, I-94-459): one LOTS batch in flight. Each batch carries the whole live map order (BP: 126k
@@ -2204,6 +2346,7 @@ static void RpCutBody(const u8* world) {
                     a->n++;
                 }
                 a->mapN = RpD(M + 8), a->mapCount = RpD(M + 0xC) - exNodes;
+                a->seq = g_rpHead, a->cut = k.spCuts;  // the slot RpPush takes; records before it are what the clone saw
                 RpPush(RP_AUDIT, 0, 0, 0, a);
             } else RpAuditFree(a);
             const LONG us = UsSince(t0);
@@ -2237,6 +2380,33 @@ static RpLot* RpFindLot(RpClone* c, u64 key) {
     for (int i = 0; i < c->nLots; i++) if (c->lots[i].key == key) return &c->lots[i];
     return NULL;
 }
+// 0.36.35 (docs/182 §8, live p5c-site-0340): ApplyInsert 0x665C50 (call at 0x665D1E) and ApplyRemove 0x666750 (at 0x666796)
+// ask LotTable_GetIfPresent 0x62FB60 (thiscall P, lot key lo / hi: LotTable_Contains 0x628A90, then GetOrInsert 0x62EAB0 on
+// the hit) for the Q's lot node (Q+0x20 = the planner P, Q+0x18 / +0x1C = the key) and skip the whole record on 0; the node
+// is read at +0xA0 (insert, footprint slot +0x68) and +0xE0 (remove, slot +0x6C) [verified disassembly]. On a clone Q that
+// P is the LIVE planner: gate sites 12 and 0 (RgEnter), the table's window-slot write on every hit and, inside a
+// RecsUnlocked round, a +0x918 wait when a job runs (ulLockTrip 4 per run, copy mismatches 7 / 30). Both call sites go to
+// RpGetIfPresent: outside a round the game's call on the caller's P, unchanged; inside one the same game body on the
+// clone's P copy (c->p: its own bucket array c->lotBk of the clone's lot node copies, RpTableLink / RpTableUnlink, the
+// table the P4 clone runs already plan on), so the answer is the clone's node and nothing live is read or written (the
+// active-lot id pair Contains reads through 0xC88FD0 excepted: the sim writes it at a lot switch only; a torn read skips
+// the record and forces the lot). A miss on the clone table (the lot left since the cut) forces the lot and lets the
+// game's body skip the record, as the locked path's no-copy branch does. RgEnter passes sites 0 / 12 through under t_rpUl.
+typedef u8*(__fastcall* RpGetIfPresentFn)(const u8* p, void*, DWORD lo, DWORD hi);  // 0x62FB60, ret 8
+static RpGetIfPresentFn g_rpGetIfPresent = (RpGetIfPresentFn)(uintptr_t)0x0062FB60;
+static LONG g_rpUlLotMiss;  // misses on the clone table inside a round (log + force; no counter slot reserved)
+static u8* __fastcall RpGetIfPresent(const u8* p, void* edx, DWORD lo, DWORD hi) {
+    RpClone* c = t_rpUl ? g_rpClone : NULL;
+    if (!c) return g_rpGetIfPresent(p, edx, lo, hi);
+    u8* r = g_rpGetIfPresent(c->p, edx, lo, hi);
+    if (!r) {
+        if (InterlockedIncrement(&g_rpUlLotMiss) <= 8)
+            Log("snap replay: lot 0x%08lX%08lX not in the clone's lot table inside a RecsUnlocked round: record skipped, lot forced", hi, lo);
+        RpForceLot(((u64)hi << 32) | lo);
+    }
+    return r;
+}
+static const CallSite kRpGetIfPresentSites[2] = {{0x00665D1E, 0x0062FB60, (void*)RpGetIfPresent}, {0x00666796, 0x0062FB60, (void*)RpGetIfPresent}};
 // 0.35.21 (docs/94 §22.24.2): the lots of a clone footprint, for a W6b (Footprint_EnsureAllPolygons, ecx = the footprint) in a
 // clone run, which made every release rebase all lots (BP 0303: 2 force-all batches, ~180 ms each). The clone map's nodes with
 // the footprint's key whose FME holds it name its Qs (lot id Q+0x18/+0x1C). Worker, g_rpUse held (the clone is stable).
@@ -2859,6 +3029,70 @@ static void RpRemForce(u64 key, const u8* q, DWORD lo, DWORD hi) {
         Log("snap replay: lot 0x%08lX%08lX forced to rebase at the next cut (remove of 0x%08lX%08lX on Q 0x%08lX kept leaves or copy bounds not live's)",
             (DWORD)(key >> 32), (DWORD)key, hi, lo, (DWORD)(uintptr_t)q);
 }
+// replayed-insert answer check (0.36.35, RpInsLiveTake above): the FMEs of the footprint's key / ~key on q, before the insert
+static int RpInsFmes(const RpClone* c, const u8* q, const u8* fp, DWORD* out, int cap) {
+    int n = 0;
+    __try {
+        u64 key;
+        const u8* m = c->m;
+        const DWORD nb = m ? RpD(m + 8) : 0;
+        const DWORD* bk = nb > 1 ? (const DWORD*)RpP(m + 4) : NULL;
+        if (!bk || !RpFpKey(fp, &key)) return -1;
+        for (int pass = 0; pass < 2; pass++) {
+            const u64 kk = pass ? ~key : key;
+            for (const u8* nd = (const u8*)(uintptr_t)bk[(DWORD)kk % nb]; nd; nd = RpP(nd + 0x10))
+                if (RpD(nd) == (DWORD)kk && RpD(nd + 4) == (DWORD)(kk >> 32) && RpP(nd + 8) && RpP(RpP(nd + 8) + 0xC) == q) {
+                    if (n == cap) return -1;  // shortcut: past 64 FMEs of one key on one Q the insert goes unchecked
+                    out[n++] = RpD(nd + 8);
+                }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
+    return n;
+}
+// the live footprint a clone copy stands for: an in-block child through its parent's list (node +12), else the block header
+static DWORD RpCopyLive(const u8* cp) {
+    if (RpIsChild(cp)) {
+        const u8* par = RpP(cp + 0xC);
+        if (par && RpHasList(par))
+            for (const u8* l = RpP(par + 0x24); l && l != par + 0x24; l = RpP(l)) if (RpP(l + 8) == cp) return RpD(l + 12);
+    }
+    return (DWORD)(uintptr_t)((const RpFpHdr*)(cp - 16))->live;
+}
+static void RpInsCheck(const RpClone* c, u64 lot, const u8* q, const u8* fp, const DWORD* pre, int nPre, const RpInsLive* lv) {
+    Ts3nCounters& k = ts3native_counters;
+    DWORD now[64];
+    const int n = RpInsFmes(c, q, fp, now, 64);
+    bool forced = false;
+    for (int i = 0; i < n && lv; i++) {
+        int j = 0;
+        while (j < nPre && pre[j] != now[i]) j++;
+        if (j < nPre) continue;  // an FME from before this insert
+        __try {
+            const u8* f = (const u8*)(uintptr_t)now[i];
+            u8* cp = RpP(f + 8);
+            if (!cp) continue;
+            const DWORD live = RpCopyLive(cp), lvl = f[0x10];
+            const RpInsLiveE* e = NULL;
+            for (int x = 0; x < lv->n && !e; x++) if (lv->e[x].live == live && lv->e[x].lvl == lvl) e = &lv->e[x];
+            if (!e) continue;  // a level or child the record did not ask (over kRpRemLiveMax): unchecked
+            float b[4] = {};
+            const float* r = ((RpBoundsFn)(uintptr_t)RpD(RpP(cp) + 0x2C))(cp, NULL, b, lvl, 0.0f);
+            if (!r) continue;
+            const bool fc = r[0] == r[2] || r[1] == r[3], fl = e->b[0] == e->b[2] || e->b[1] == e->b[3];
+            float d = 0.f;
+            for (int x = 0; x < 4; x++) { const float a = r[x] - e->b[x]; d = a > d ? a : -a > d ? -a : d; }
+            if (fc == fl && d == 0.f) continue;
+            const LONG cnt = InterlockedIncrement(&k.rpInsDiff);
+            const bool force = g_rpInsCheck >= 2 && (fc != fl || d > 0.01f);
+            if (cnt <= 8 || !(cnt & (cnt - 1)))
+                Log("snap replay: replayed insert on Q 0x%08lX: copy of footprint 0x%08lX (class 0x%08lX, %s) level %lu answers %.3f %.3f %.3f %.3f, "
+                    "live answered %.3f %.3f %.3f %.3f at the record (%s; %ld so far)", (DWORD)(uintptr_t)q, live, RpD(cp),
+                    !RpIsChild(cp) ? "parent" : RpCopyLive(cp) == (DWORD)(uintptr_t)((const RpFpHdr*)(cp - 16))->live ? "own-block child" : "child in its parent's list", lvl,
+                    r[0], r[1], r[2], r[3], e->b[0], e->b[1], e->b[2], e->b[3], force ? "lot forced" : g_rpInsCheck >= 2 ? "within 0.01" : "log only", cnt);
+            if (force && !forced) { forced = true; RpForceLot(lot); InterlockedIncrement(&k.rpInsForced); }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+}
 struct RpDiffEnt { DWORD lo, hi, fl, w4, w8, cls, fme; };
 static void RpTreeList(const u8* n, int depth, RpDiffEnt* v, DWORD cap, DWORD* nv) {  // RpTreeHash's walk
     if (!n || depth > 40) return;
@@ -2880,6 +3114,7 @@ static void RpTreeList(const u8* n, int depth, RpDiffEnt* v, DWORD cap, DWORD* n
 }
 static int __cdecl RpDiffCmp(const void* x, const void* y) { return memcmp(x, y, 5 * 4); }  // cls is not compared (the hash's class word is)
 static u64 g_rpDiffLot;
+static DWORD g_rpDiffSeq;  // ring position of the audit that asked for the diff (docs/157 §7)
 static volatile int g_rpDiffQ = -1;
 static LONG g_rpDiffN, g_rpDiffOnly[2];  // done; entries only live / only in the clone (selftest)
 // 0.36.23 (docs/94 §22.32, I-94-510): a clone-only leaf entry whose FME no clone map node holds (id or ~id) names an FME the
@@ -2898,7 +3133,19 @@ static bool RpMapHoldsFme(const RpClone* c, DWORD lo, DWORD hi, DWORD fme) {
     }
     return false;
 }
+static void RpAuditDiffBody(RpClone* c);
 static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
+    const u64 lot = g_rpDiffLot;
+    RpAuditDiffBody(c);
+    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+    const bool held = g_rpHoldKey && g_rpHoldKey == lot;
+    if (held) g_rpHoldLast = lot, g_rpHoldKey = 0, ts3native_counters.rpHold[1]++;
+    InterlockedExchange(&g_rpRingLock, 0);
+    if (held && ts3native_counters.rpHold[1] <= 16)
+        Log("snap replay audit diff lot 0x%08lX%08lX: ran on the drifted clone, the lot's rebase held until now (AuditHoldRebase; %ld so far)",
+            (DWORD)(lot >> 32), (DWORD)lot, ts3native_counters.rpHold[1]);
+}
+static void RpAuditDiffBody(RpClone* c) {
     const int qd = g_rpDiffQ;
     g_rpDiffQ = -1;
     g_rpDiffN++;
@@ -2913,6 +3160,22 @@ static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
             RpTreeList(RpP(l->q[qd] + 0x24), 0, v[1], cap, &n[1]);
         } __except (EXCEPTION_EXECUTE_HANDLER) { n[0] = n[1] = 0; }
         qsort(v[0], n[0], sizeof(RpDiffEnt), RpDiffCmp), qsort(v[1], n[1], sizeof(RpDiffEnt), RpDiffCmp);
+        // 0.36.35 (docs/157 §5.3, I-157-6): the live map's FMEs (the consumer holds +0x918: the live map is stable). A live
+        // leaf entry on an FME no live map node holds is the game's own leftover: ApplyRemove erases leaves only inside the
+        // footprint's rect at the remove; cells its insert-time rect covered keep entries on the freed (pooled) FME. The 0.36.2
+        // cover erases every leaf of such a remove in the clone, so those entries are "only live" by design
+        RpTab liveF = {};
+        bool liveOk = true;
+        __try {
+            const u8* m = RpP(RpP((const u8*)(uintptr_t)l->liveQ[qd] + 0x20) + 0x24);
+            const DWORD nb = m ? RpD(m + 8) : 0;
+            const DWORD* bk = nb > 1 ? (const DWORD*)RpP(m + 4) : NULL;
+            for (DWORD b = 0; bk && b < nb && liveOk; b++)
+                for (const u8* nd = (const u8*)(uintptr_t)bk[b]; nd && liveOk; nd = RpP(nd + 0x10))
+                    if (RpD(nd + 8) > 1 && !RpTabPut(liveF, RpD(nd + 8), 1)) liveOk = false;
+            if (!bk) liveOk = false;
+        } __except (EXCEPTION_EXECUTE_HANDLER) { liveOk = false; }
+        LONG leftover = 0;
         DWORD i = 0, j = 0;
         int logged = 0;
         LONG only[2] = {0, 0}, orphans = 0;
@@ -2921,6 +3184,7 @@ static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
             if (!s) { i++, j++; continue; }
             const RpDiffEnt& d = s < 0 ? v[0][i++] : v[1][j++];
             only[s < 0 ? 0 : 1]++;
+            if (s < 0 && liveOk && !RpTabFind(liveF, d.fme)) leftover++;
             if (s > 0) {
                 bool held = true;
                 __try { held = RpMapHoldsFme(c, d.lo, d.hi, d.fme); } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -2933,11 +3197,23 @@ static void RpAuditDiff(RpClone* c) {  // consumer, inside its hold
         g_rpDiffOnly[0] += only[0], g_rpDiffOnly[1] += only[1];
         g_rpDiffOrphan += orphans;
         Log("snap replay audit diff lot 0x%08lX%08lX Q %d: live %lu entries, clone %lu; only live %ld, only in the clone %ld "
-            "(%ld of them on an FME no clone map node holds: I-94-510 shape; %ld removes covered so far)",
-            (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, n[0], n[1], only[0], only[1], orphans, g_rpRemCover);
+            "(%ld of them on an FME no clone map node holds: I-94-510 shape; %ld removes covered so far; audit at ring %lu, now %lu)",
+            (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, n[0], n[1], only[0], only[1], orphans, g_rpRemCover, g_rpDiffSeq, g_rpTail);
+        if (liveOk)
+            Log("snap replay audit diff lot 0x%08lX%08lX Q %d: %ld of the %ld only-live entries are on an FME no live map node holds "
+                "(the game's own leftover leaves of a remove whose rect moved; the 0.36.2 cover erases them in the clone)%s",
+                (DWORD)(g_rpDiffLot >> 32), (DWORD)g_rpDiffLot, qd, leftover, only[0],
+                only[0] && leftover == only[0] && !only[1] ? ": explained, game leftovers only" : "");
+        RpTabFree(liveF);
     }
     RpFree(v[0]), RpFree(v[1]);
 }
+// docs/157 §7: each lot's last equal audit (ring position), so a mismatch line names the window of records in which the
+// clone drifted: (last equal, this audit]. Lossy: a slot keeps the latest lot hashed into it (0 = none known).
+struct RpAuditOk { u64 key; DWORD seq; };
+static RpAuditOk g_rpAuditOk[256];
+static DWORD g_rpMisSeq, g_rpMisOkSeq;  // the last mismatch's ring position and its lot's last equal one (selftest)
+static RpAuditOk& RpAuditOkSlot(u64 key) { return g_rpAuditOk[(DWORD)(key ^ (key >> 32)) * 2654435761u >> 24]; }
 static void RpAudit(RpClone* c, const RpAuditRec* a) {
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER t0;
@@ -2950,25 +3226,36 @@ static void RpAudit(RpClone* c, const RpAuditRec* a) {
         const u64 h = l ? RpLotHash(l->node, &ents, perQ) : 0;
         if (l) seen++;
         k.rpAudits++;
-        if (l && h == a->hash[i]) continue;
+        RpAuditOk& ok = RpAuditOkSlot(a->keys[i]);
+        if (l && h == a->hash[i]) { ok.key = a->keys[i], ok.seq = a->seq; continue; }
         k.rpMis++;
+        int qd = -1;  // first Q whose tree entry count differs (0.32.8)
+        for (int j = 0; l && a->perQ && j < 16 && qd < 0; j++) if (perQ[j] != a->perQ[i * 16 + j]) qd = j;
+        const bool diff = qd >= 0 && g_rpDiffQ < 0 && g_rpDiffN < 4;
+        if (diff && g_rpAuditHold) {  // before the force: no cut may take the force without the hold
+            while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+            if (!g_rpHoldKey && g_rpHoldLast != a->keys[i]) g_rpHoldKey = a->keys[i], g_rpHoldCuts = 0, k.rpHold[0]++;
+            InterlockedExchange(&g_rpRingLock, 0);
+        }
         RpAuditForce(a->keys[i]);
+        g_rpMisSeq = a->seq, g_rpMisOkSeq = ok.key == a->keys[i] ? ok.seq : 0;
+        char tag[96];  // ring window of the drift (docs/157 §7; tools/p5-mismatch-report.ts reads it)
+        if (g_rpMisOkSeq) sprintf_s(tag, " (ring %lu, cut %ld, last equal ring %lu, %lu records)", a->seq, a->cut, g_rpMisOkSeq, a->seq - g_rpMisOkSeq);
+        else sprintf_s(tag, " (ring %lu, cut %ld, last equal ring none)", a->seq, a->cut);
         {
-            int qd = -1;  // first Q whose tree entry count differs (0.32.8)
-            for (int j = 0; l && a->perQ && j < 16 && qd < 0; j++) if (perQ[j] != a->perQ[i * 16 + j]) qd = j;
-            if (qd >= 0 && g_rpDiffQ < 0 && g_rpDiffN < 4) g_rpDiffLot = a->keys[i], g_rpDiffQ = qd;  // named at the next hold
+            if (diff) g_rpDiffLot = a->keys[i], g_rpDiffSeq = a->seq, g_rpDiffQ = qd;  // named at the next hold
             if (InterlockedIncrement(&g_rpLogged) <= (LONG)g_rpLogMis && l && qd >= 0)
-                Log("snap replay audit MISMATCH lot 0x%08lX%08lX: Q %d (level index) entries live %lu clone %lu", (DWORD)(a->keys[i] >> 32), (DWORD)a->keys[i],
-                    qd, a->perQ[i * 16 + qd], perQ[qd]);
+                Log("snap replay audit MISMATCH lot 0x%08lX%08lX: Q %d (level index) entries live %lu clone %lu%s", (DWORD)(a->keys[i] >> 32), (DWORD)a->keys[i],
+                    qd, a->perQ[i * 16 + qd], perQ[qd], tag);
         }
         if (InterlockedIncrement(&g_rpLogged) <= (LONG)g_rpLogMis)
-            Log("snap replay audit MISMATCH lot 0x%08lX%08lX: %s, entries live %lu clone %lu (clone %d lots, map %lu / live %lu)",
+            Log("snap replay audit MISMATCH lot 0x%08lX%08lX: %s, entries live %lu clone %lu (clone %d lots, map %lu / live %lu)%s",
                 (DWORD)(a->keys[i] >> 32), (DWORD)a->keys[i], l ? "hash differs" : "not in the clone", a->ents[i], ents, c->nLots,
-                RpD(c->m + 0xC), a->mapCount);
+                RpD(c->m + 0xC), a->mapCount, tag);
     }
     if (a->nAll != c->nLots || seen != a->n) {
         k.rpAudits++, k.rpMis++;
-        if (InterlockedIncrement(&g_rpLogged) <= (LONG)g_rpLogMis) Log("snap replay audit MISMATCH: clone has %d lots, live %d", c->nLots, a->n);
+        if (InterlockedIncrement(&g_rpLogged) <= (LONG)g_rpLogMis) Log("snap replay audit MISMATCH: clone has %d lots, live %d (ring %lu, cut %ld)", c->nLots, a->n, a->seq, a->cut);
     }
     k.rpAuditWorkerUs += UsSince(t0);
 }
@@ -3046,7 +3333,7 @@ static bool RpApply(const RpRec& r) {
                     Log("snap replay: %s on a Q the clone does not have: Q 0x%08lX, lot 0x%08lX%08lX (clone has that lot: %s)",
                         r.type == RP_INS ? "insert" : "remove", r.a, (DWORD)(key >> 32), (DWORD)key, RpFindLot(c, key) ? "yes" : "no");
                 }
-                if (r.type == RP_INS) RpFpFree((u8*)r.p); else RpFree(r.p);
+                if (r.type == RP_INS) RpFpFree((u8*)r.p), RpFree((void*)(uintptr_t)r.pad); else RpFree(r.p);
                 return true;
             }
             if (l->stale) k.rpSkip[RPS_STALE]++;  // applied anyway: its footprints are shared with other lots (the rebase replaces the lot)
@@ -3060,9 +3347,14 @@ static bool RpApply(const RpRec& r) {
                     while (i < g_rpNForce && g_rpForce[i] != l->key) i++;
                     if (i == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = l->key; else g_rpForceAll = 1; }
                     InterlockedExchange(&g_rpRingLock, 0);
+                    RpFree((void*)(uintptr_t)r.pad);
                     return true;
                 }
+                DWORD pre[64];
+                const int nPre = r.pad && g_rpInsCheck ? RpInsFmes(c, q, fp, pre, 64) : -1;
                 g_rpIns(q, NULL, fp, r.c);
+                if (nPre >= 0) RpInsCheck(c, l->key, q, fp, pre, nPre, (const RpInsLive*)(uintptr_t)r.pad);
+                RpFree((void*)(uintptr_t)r.pad);
             } else {
                 u8* cov[kRpRemLiveMax];
                 int nCov = 0;
@@ -3395,7 +3687,14 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_rpLazyKeep = GetPrivateProfileIntW(L"RouteSnap", L"LazyKeep", 0, ini) != 0;
     g_rpInsFreeInPlace = GetPrivateProfileIntW(L"RouteSnap", L"InsFreeInPlace", 0, ini) != 0;
     g_rpRecsUnlocked = GetPrivateProfileIntW(L"RouteSnap", L"RecsUnlocked", 0, ini) != 0;
+    g_rpAuditHold = GetPrivateProfileIntW(L"RouteSnap", L"AuditHoldRebase", 0, ini) != 0;
+    // docs/182 §8: the apply's lot-table ask answered from the clone's table inside a round (both call sites, else off)
+    if (g_rpRecsUnlocked && !PatchCalls("replay lot table on the clone (RecsUnlocked)", kRpGetIfPresentSites, 2)) {
+        Log("SKIP route snapshot RecsUnlocked: the lot-table call sites are not as expected (another hook?)");
+        g_rpRecsUnlocked = 0;
+    }
     k.ulMode = g_rpRecsUnlocked;
+    g_rpInsCheck = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"InsCheck", 1, ini), 0, 2);
     g_rpRing = (RpRec*)VirtualAlloc(NULL, kRpRing * sizeof(RpRec), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_rpEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (!g_rpRing || !g_rpEvent) { Log("SKIP route snapshot replay: no ring"); return false; }
@@ -3405,10 +3704,11 @@ static bool ApplyReplay(const wchar_t* ini) {
     g_rpThread = CreateThread(NULL, 1 << 20, RpThread, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (!g_rpThread) { Log("SKIP route snapshot replay: no thread"); return false; }
     g_spLot = &kSpLotReplay;
+    RpLockKeyInstall();
     g_rpOn = 1;
     k.rpReady = 1 | 4;
-    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d, ReplayQuietMs=%lu, LazyKeep=%ld, ReplaySigMs=%lu, LotsUnlocked=%ld, InsFreeInPlace=%ld, RecsUnlocked=%ld",
+    Log("OK   route snapshot lots: replay (docs/94 §11 B, audit only): ring %lu records, ReplayAuditEvery=%lu, ReplayAuditLots=%lu, ReplayCapMB=%ld, Prebuild=%d, ReplayQuietMs=%lu, LazyKeep=%ld, ReplaySigMs=%lu, LotsUnlocked=%ld, InsFreeInPlace=%ld, RecsUnlocked=%ld, InsCheck=%ld, AuditHoldRebase=%ld",
         kRpRing, g_rpAuditEvery, g_rpAuditLots, g_rpCapBytes >> 20, g_rpPrebuild ? 1 : 0, g_rpQuietMs, g_rpLazyKeep, g_rpSigMs, g_rpLotsUnlocked,
-        g_rpInsFreeInPlace, g_rpRecsUnlocked);
+        g_rpInsFreeInPlace, g_rpRecsUnlocked, g_rpInsCheck, g_rpAuditHold);
     return true;
 }

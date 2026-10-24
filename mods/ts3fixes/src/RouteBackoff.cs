@@ -139,9 +139,13 @@ namespace Ts3Fixes
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
                 bool started = AsyncEligible(sim, "asyncroute") ? GetOption(kAsyncStart)
+                    : OwnerTaskStart() ? true
                     : ForeignEligible() && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
                 if (!started)
+                {
+                    StepAside();
                     return PlanOrig();
+                }
                 try
                 {
                     AsyncWait();
@@ -160,6 +164,41 @@ namespace Ts3Fixes
                     && Simulator.CheckYieldingContext(false);
             }
 
+            // docs/163 §7: foreign plans whose task is the only one that drives the follower, so the own START (bit 58) is as safe
+            // as a Sim's own plan with [RouteAsync] FallbackAsync=0 (dropped from v0.1.5). Only that task sleeps; the follower
+            // does not move meanwhile. Switch "drivertaskasync" (default off): a traffic car's route planned in its own
+            // CarNpcWithNoDriver+LiteDriver task (the task's only plan is its car's, IL of LiteDriver.Simulate), and a vehicle's
+            // route planned in the task of the Sim riding it (Boat.RouteBoatNearHouseboat from GetOutOfBoat.Run; Sim.Parent ==
+            // vehicle inferred). Switch "stuckcheckown" (default off, needs stuckcheckasync): the stuck check's throwaway routes
+            // planned in our drain task (never followed; a Sim that moves meanwhile is not stuck anyway). ts3native still
+            // refuses NoYield / Active / M1 / QueueFull as for any own START. Counters: [251] car STARTs sent, [252] ridden
+            // vehicle STARTs sent, [253] stuck check STARTs sent, [254] of those started by ts3native.
+            bool OwnerTaskStart()
+            {
+                int slot = OwnerTaskSlot();
+                if (slot < 0 || !ForeignEligible()) return false;
+                int[] c = PatchCounters();
+                c[slot]++;
+                if (!GetOption(kAsyncStart)) return false;
+                c[254]++;
+                return true;
+            }
+
+            int OwnerTaskSlot()
+            {
+                if (ShortcutOn("stuckcheckown") && sStuckTask.IsValid && Simulator.CurrentTask == sStuckTask) return 253;
+                if (!ShortcutOn("drivertaskasync")) return -1;
+                IScriptProxy proxy = Follower;
+                Sims3.Gameplay.Objects.Vehicles.Vehicle v = proxy != null ? proxy.Target as Sims3.Gameplay.Objects.Vehicles.Vehicle : null;
+                if (v == null) return -1;
+                IScriptProxy task = Simulator.GetProxy(Simulator.CurrentTask);
+                object owner = task != null ? task.Target : null;
+                if (owner != null && owner.GetType().FullName == kLiteDriver && v is Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver) return 251;
+                Sims3.Gameplay.Actors.Sim rider = owner as Sims3.Gameplay.Actors.Sim;
+                return rider != null && rider.Parent == v ? 252 : -1;
+            }
+            const string kLiteDriver = "Sims3.Gameplay.Objects.Vehicles.CarNpcWithNoDriver+LiteDriver"; // private nested task class
+
             // any running script task that may yield here; ts3native still refuses a nested native->managed call (NoYield) and a
             // route being followed (Active)
             static bool ForeignEligible()
@@ -177,7 +216,7 @@ namespace Ts3Fixes
                 {
                     // shortcut: a fixed cap (~10-20 s real time); past it the plan waits natively and is then made
                     // again synchronously. Upgrade to a time-based cap if long searches ever reach it.
-                    if (i >= kAsyncMaxPolls) { c[58]++; break; }
+                    if (i >= kAsyncMaxPolls) { c[58]++; StepAside(); break; }
                     c[57]++;
                     Simulator.Sleep(0);
                 }
@@ -253,8 +292,32 @@ namespace Ts3Fixes
                     c[246]++;
                     if (started) c[247]++;
                 }
+                if (!started) StepAside();  // the kind's sync plan follows
                 return started;
             }
+
+            // docs/183 JobYield: a plan about to run here (START refused, or the READY poll cap) would wait natively for the
+            // route job the worker runs, blocking the whole sim thread for the rest of it. Instead this task sleeps a tick at a
+            // time while ts3native answers JOBBUSY (a job runs, this is the sim thread at the task's root state), then plans
+            // with no job left to wait for. Off: one switch read. Without ts3native's [RouteAsync] JobYield the game answers
+            // false (bit 63 has no name) and nothing changes. Switch "jobyield" (default off). Counters: [248] step-asides,
+            // [249] ticks slept, [250] gave up at the cap (the plan then waits natively, as before).
+            static void StepAside()
+            {
+                if (!ShortcutOn("jobyield") || !MayYield() || !sYieldProbe.GetOption2(kJobBusy)) return;
+                int[] c = PatchCounters();
+                c[248]++;
+                int t0 = System.Environment.TickCount;
+                do
+                {
+                    c[249]++;
+                    Simulator.Sleep(0);
+                    // shortcut: a fixed real-time cap; a job queue that stays busy longer than this gets the old native wait
+                    if (unchecked(System.Environment.TickCount - t0) >= kStepAsideMaxMs) { c[250]++; return; }
+                } while (sYieldProbe.GetOption2(kJobBusy));
+            }
+            const int kStepAsideMaxMs = 10000;
+            static readonly Sims3.SimIFace.Route.RouteOption2 kJobBusy = unchecked((Sims3.SimIFace.Route.RouteOption2)0x8500000000000000UL);
             void AsyncPoint(int i, float f)
             {
                 FloatBits b = default(FloatBits);
