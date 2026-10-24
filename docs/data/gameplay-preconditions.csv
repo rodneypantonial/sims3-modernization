@@ -153,3 +153,5 @@ portal_prepare,TravelHandlers,Live,none (places the portal),cheat,,handler,live
 travel_home,TravelHandlers,Travel;Live,phone > Return Home,natural,on vacation / university / future,handler + R-TRAV-1,none
 travel_state,TravelHandlers,Any,none (read),harness,,handler,none
 uni_move_in,TravelHandlers,Travel,moving into the dorm on arrival,natural,University world,handler,none
+saver_like_save,SaverHandlers,Live,a mod autosave (NRaas Saver style: script task while unpaused) - Save / Save As,natural,not while traveling to or from another world; refuses Baseline-/Story-/ApexTest names,none,none
+save_watch,SaverHandlers,Live,none (observes the game save-in-progress flag),natural,-,handler,none

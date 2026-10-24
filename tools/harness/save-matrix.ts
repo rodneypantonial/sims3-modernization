@@ -121,7 +121,7 @@ export function parseLog(text: string): SaveEv[] {
       fp = { verify: m[1].split(' ')[0], mismatches: Number(m[2] ?? 0), mode: Number(m[3]), fallbacks: Number(m[4]) };
     else if (/^save compress MISMATCH/.test(line)) mm++;
     else if ((m = line.match(/^save compress: \d+ records.* mismatches (\d+)/))) cm = Number(m[1]);
-    else if ((m = line.match(/^save: result (\d+) travel (\d+\/\d+) total (\d+) ms: .*backup \d+ \(([^,]+),(?:.*flushes deferred (\d+))?/))) {
+    else if ((m = line.match(/^save: result (\d+) travel (\d+\/\d+) total (\d+) ms: .*backup (?:\d+|not measured) \(([^,]+),(?:.*flushes deferred (\d+))?/))) {
       evs.push({ result: Number(m[1]), travel: m[2], totalMs: Number(m[3]), backup: m[4], deferred: Number(m[5] ?? 0), footprint: fp, compressMismatches: cm, mismatchLines: mm });
       fp = undefined; cm = undefined; mm = 0;
     } else if ((m = line.match(/^save flush: (\d+) calls, (\d+) files flushed on the worker, (\d+) fails, (\d+) ms/)) && evs.length)
@@ -192,6 +192,8 @@ if (values['self-check']) {
   assert.deepEqual(e[0].footprint, { verify: 'ok', mismatches: 0, mode: 1, fallbacks: 0 });
   assert.equal(e[0].compressMismatches, 1); assert.equal(e[0].mismatchLines, 1); assert.equal(e[0].backup, 'worker copy');
   assert.deepEqual(e[0].flush, { calls: 2, files: 31, fails: 0, ms: 410 });
+  // docs/25 §10: write method marks and 'not measured' phases
+  assert.equal(parseLog('save: result 0 travel 0/0 total 18000 ms: info 10, write ~15000 (gate span), backup not measured (game, worker 0, wait 0), copy 5, final 2 ms, flushes deferred 1')[0].deferred, 1);
   assert.equal(e[1].result, 5); assert.equal(e[1].travel, '1/1'); assert.equal(e[1].footprint, undefined); assert.equal(e[1].flush, undefined);
   assert.equal(parseLog('footprint: levels 1 entries 1 matched 0 calls 1 ms 0 verify mismatches 3 (mode 1 fallbacks 2 worldSave ms 1)\nsave: result 0 travel 0/0 total 1 ms: info 0, write 0, backup 0 (game, worker 0, wait 0), copy 0, final 0 ms, flushes deferred 0')[0].footprint!.mismatches, 3);
   const snap = (o: Record<string, Record<string, string>>): Snap => new Map(Object.entries(o).map(([f, r]) => [f, new Map(Object.entries(r))]));

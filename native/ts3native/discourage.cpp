@@ -204,7 +204,7 @@ static void DiscDrain(bool force) {
     InterlockedIncrement(&g_rgOffSimOpen);  // the worker starts no job until the drain is done
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
-    WaitAsyncDone();
+    WaitAsyncDone(SW_DISC);
     static const DWORD kInfinite = 0xFFFFFFFF;
     if (lock) LockAcquireHook(lock, NULL, &kInfinite);  // uncontended: no job runs and none can start
     const LONG waited = UsSince(t0);

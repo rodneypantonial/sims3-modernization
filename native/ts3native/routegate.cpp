@@ -260,8 +260,26 @@ static void G11Touch(int kind, DWORD key) {
 }
 
 // Stub side: slot = the caller's return-address slot ([esp] at the site's entry).
+// docs/182 §8 live finding (p5c-recs-0339, BP and IP: ulLockTrip 4 per run, copy mismatches 7 / 30 with RecsUnlocked=1; the
+// site named by p5c-site-0340): the game's ApplyInsert / ApplyRemove on a clone Q ask LotTable_GetIfPresent 0x62FB60 (sites 12
+// LotTable_Contains and 0 lot table find-or-insert) for the Q's lot node, on the LIVE planner's table, and this entry then
+// took the live +0x918 when a job ran (the acquire counts ulLockTrip; with no job the site ran on the consumer unlocked).
+// Fix (replay.cpp RpGetIfPresent): inside a round the ask goes to the clone's own P copy and lot table, so sites 0 and 12 are
+// clone-private there and pass through here (no frame, no lock). Any other site inside a round is still unexpected: the
+// first 8 entries name the site, the caller and the record type, and the entry goes on as any unlocked entry (lock model
+// rpu-trip-p5c: no deadlock).
+static bool RpUlGate(int site, const DWORD* slot) {  // true = pass through
+    if (site == 0 || site == 12) return true;
+    static LONG n;
+    if (InterlockedIncrement(&n) <= 8)
+        Log("snap replay: RecsUnlocked round reached gate site %d (%s 0x%08lX) from 0x%08lX, record type %ld, job %s", site,
+            kRgSites[site].name, kRgSites[site].addr, VfRealRet(slot), (g_rpPhase >> 8) & 0xFF, g_async.state == A_RUNNING ? "running" : "none");
+    return false;
+}
+
 static void __cdecl RgEnter(int site, DWORD* slot) {
     if (t_tuOpen) TuTrip(1);  // TailUnlock: no gate leaf in passes 16-19 (docs/150 §11)
+    if (t_rpUl && RpUlGate(site, slot)) return;  // docs/182 §8: the clone's lot table inside a RecsUnlocked round: no gate
     if (g_snRg[site]) SnEnter(g_snRg[site] - 1, slot);  // first: reads the caller's return address before a probe swaps it
     if (g_rgVf[site]) VfEnter(g_rgVf[site] - 1, slot);
     if (g_pvRg[site]) PvEnter(g_pvRg[site] - 1, slot);  // count only: no frame, *slot unchanged

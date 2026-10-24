@@ -1,0 +1,29 @@
+{
+  "jobs": [
+    {
+      "id": "sv-cause-run",
+      "note": "v0.1.6 cause run (docs/183 §, PLAN post-release item 4): SV 45 min seeded natural play on the release defaults (master build 0.36.39) with script stacks on every sync plan >= 20 ms (LogFallbackStack=16), own-job sim wait lines (OwnJobWait=1) and HitchAttr holders, to name the callers of the Foreign/NoStart sync plans behind the >= 1 s hitches (v0.1.5 SV soak: 3,600 ms worst) and to check whether any >= 1 s hitch is an own-job wait (JobYield). Correctness/attribution run, not a timing comparison (noiseCheck off). Read: nostart-report.ts, freeze-report.ts, hitch-ab.ts --causes.",
+      "asi": "game-copy/ts3native.asi.p5drift",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 110,
+      "ini": {
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60,
+      "noiseCheck": false
+    }
+  ]
+}

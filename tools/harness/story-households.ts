@@ -154,6 +154,11 @@ export const ARCHETYPES: Archetype[] = [
       { age: 'Adult', gender: 'Female', prefer: ['Nurturing', 'HotHeaded'] }, { age: 'Teen', prefer: ['Athletic', 'CouchPotato'] }, { age: 'Teen', prefer: ['Artistic', 'Loner'] }, { age: 'Child', prefer: ['Excitable', 'Slob'] }, { age: 'Toddler', prefer: ['Clumsy'] }],
     relations: [{ a: 'm0', b: 'm1', type: 'spouse' }, { a: 'm0', b: 'm2', type: 'parent' }, { a: 'm1', b: 'm2', type: 'parent' }, { a: 'm2', b: 'm3', type: 'spouse' },
       ...[4, 5, 6, 7].flatMap(k => [{ a: 'm2', b: `m${k}`, type: 'parent' as const }, { a: 'm3', b: `m${k}`, type: 'parent' as const }])] },
+  { id: 'mansion-eight', name: 'Ashworth Eight', summary: 'Eight under one roof for a furnished mansion with no crib (Story-BP-Mansion): grandparents, parents, two teens, two children; noise, chores and birthdays.',
+    members: [{ age: 'Elder', gender: 'Male', prefer: ['Good', 'Angler'] }, { age: 'Elder', gender: 'Female', prefer: ['NaturalCook', 'Neurotic'] }, { age: 'Adult', gender: 'Male', prefer: ['Workaholic', 'FamilyOriented'] },
+      { age: 'Adult', gender: 'Female', prefer: ['Nurturing', 'HotHeaded'] }, { age: 'Teen', prefer: ['Athletic', 'CouchPotato'] }, { age: 'Teen', prefer: ['Artistic', 'Loner'] }, { age: 'Child', prefer: ['Excitable', 'Slob'] }, { age: 'Child', prefer: ['Clumsy'] }],
+    relations: [{ a: 'm0', b: 'm1', type: 'spouse' }, { a: 'm0', b: 'm2', type: 'parent' }, { a: 'm1', b: 'm2', type: 'parent' }, { a: 'm2', b: 'm3', type: 'spouse' },
+      ...[4, 5, 6, 7].flatMap(k => [{ a: 'm2', b: `m${k}`, type: 'parent' as const }, { a: 'm3', b: `m${k}`, type: 'parent' as const }])] }
 ];
 
 // random structures: couple, couple with kids, single parent, multi-generation, roommates, siblings; 2..8 humans
@@ -257,7 +262,8 @@ export const agentArgs = (h: Household) => ({ name: h.name, relations: h.relatio
 // household; a named household fails. `funds` (story.householdFunds): the familyfunds cheat's effect, set after creation and
 // before the lot pick; the household line carries realism cheat (story-fuzzer parseConfig allows it only with realism cheat).
 type IO = { ag: (cmd: string, args?: any, timeoutMs?: number) => Promise<any>; log: (l: any) => void; print?: (l: string) => void; now: () => number; sleep?: (ms: number) => Promise<void> };
-export async function createHousehold(io: IO, spec: string, seed: number, funds?: number): Promise<Record<string, string>> {
+// lot (story.householdLot): the move-in lot id (list_lots `id`), e.g. a furnished mansion placed for story runs; else the game's pick
+export async function createHousehold(io: IO, spec: string, seed: number, funds?: number, lot?: string): Promise<Record<string, string>> {
   const all = loadHouseholds(), first = spec === 'generated' ? rng(seed).pick(all) : all.find(x => x.id === spec);
   const tries = !first ? [] : spec === 'generated' ? [first, ...all.filter(x => x.sims.length < first.sims.length).sort((a, b) => b.sims.length - a.sims.length || a.id.localeCompare(b.id))] : [first];
   const t = io.now();
@@ -269,7 +275,7 @@ export async function createHousehold(io: IO, spec: string, seed: number, funds?
   let h: Household | undefined, made: any;
   for (const c of tries) {
     h = c;
-    made = await io.ag('make_household', { ...agentArgs(c), ...(funds !== undefined && { funds }) }, 60000);
+    made = await io.ag('make_household', { ...agentArgs(c), ...(funds !== undefined && { funds }), ...(lot && { lot }) }, 60000);
     if (made?.ok) break;
     const err = String(made?.error ?? 'no answer').slice(0, 300);
     if (!/^(funds|fit):/.test(err) || c === tries.at(-1)) fail(c, `${c.id}: ${err}`);
@@ -298,6 +304,8 @@ export async function createHousehold(io: IO, spec: string, seed: number, funds?
         if (errs.length === 1 + (b.alternates?.length ?? 0)) fail(hh, `buy ${b.need} (${errs.join('; ')})`, { lot: m.lot, bought });
       }
     } finally { await io.ag('buy_close', {}, 200000); }
+    // stories start in Live: buy_close returns before the game leaves Buy mode (2026-10-24 world_census failed in BuyModeState)
+    for (let i = 0; (await io.ag('game_state'))?.result?.sub_state !== 'LiveModeState'; i++) { if (i >= 30) fail(hh, 'not back in Live after Buy mode (30 s)'); await io.sleep?.(1000); }
   }
   line(hh, true, { household_id: m.household_id, cas_funds: m.cas_funds, fit_skipped: m.fit_skipped, lot: m.lot, lot_cost: m.lot_cost, furnished: m.furnished ?? true, funds: m.starting_funds, buy_cost: m.buy_cost ?? 0, bought, funds_after: bought.at(-1)?.funds ?? null });
   io.print?.(`story: household ${hh.name} (${hh.id}) made on ${m.lot} (${m.furnished === false ? 'unfurnished' : 'furnished'} ${m.lot_cost}${bought.length ? `, bought ${bought.map(b => b.need).join(', ')}` : ''}${funds !== undefined ? `, funds ${funds} by the familyfunds cheat (CAS ${m.cas_funds ?? '?'})` : ''}), now active`);
@@ -376,6 +384,10 @@ async function hookCheck() {
   assert.equal(fundCalls[0].args.funds, 30000);
   assert.ok(fundLog.at(-1).ok && fundLog.at(-1).realism === 'cheat' && fundLog.at(-1).funds_cheat === 30000 && fundLog.at(-1).cas_funds === 20000);
   assert.ok(!('funds' in calls[0].args) && logged[0].realism === 'natural', 'no override: CAS funds, natural');
+  // story.householdLot: make_household gets the lot id; without it the game picks (no lot arg)
+  const lotCalls: any[] = [];
+  await createHousehold({ log: () => {}, now: () => 0, ag: async (cmd: string, args?: any) => { if (cmd === 'make_household') lotCalls.push(args); return shop(cmd, args); } }, 'lonely-genius', 1, undefined, '123');
+  assert.ok(lotCalls[0].lot === '123' && !('lot' in calls[0].args), 'householdLot reaches make_household only when set');
   // agent source (no game here): crib only from Kids > Furniture / Beds by class, never Kids > Misc; in-house placement; lot fallback
   const src = (f: string) => readFileSync(join(import.meta.dirname, '..', '..', 'mods', 'ts3agent', 'src', 'plugin', 'Handlers', f), 'utf8');
   const hs = src('HouseholdHandlers.cs'), kinds = /static string\[\] KindsFor[\s\S]*?\n {8}\}/.exec(hs)?.[0] ?? '';

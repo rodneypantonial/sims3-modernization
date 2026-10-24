@@ -1,0 +1,33 @@
+{
+  "jobs": [
+    {
+      "id": "bp-story-mansion-check",
+      "note": "Story check on Story-BP-Mansion (Rodney 2026-10-24: Bridgeport + MTS \"Luxurious European Mansion\", base game, no CC, 40x30, built for 8, placed empty). The harness generates the 8-Sim mansion-eight household (full-house with the toddler as a child: the mansion has no crib and no room for one, 2026-10-24 rerun) and moves it in the player's way (the move-in targets the mansion by lot id (story.householdLot, list_lots: 64 Applewood Lane; the 2026-10-24 first try without it picked Sugar Cube - Loft); funds 240000 cover the 228,022 furnished price). Release build asi.rel015 + shipped ts3fixes. 25 min story-days. Pass: household made on the mansion lot, stories run, no crash; then a 2-3 h long story soak can follow on the next release build.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Story-BP-Mansion",
+      "minCounters": 108,
+      "ini": {},
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 25,
+          "noSamplers": true,
+          "envGuard": false,
+          "story": {
+            "seed": 1,
+            "days": {
+              "tickS": 5,
+              "nightSkip": true,
+              "rotate": 0
+            },
+            "household": "mansion-eight",
+            "householdFunds": 240000,
+            "householdLot": "17694643161334620688"
+          }
+        }
+      },
+      "timeoutMin": 45,
+      "noiseCheck": false
+    }
+  ]
+}

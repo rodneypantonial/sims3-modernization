@@ -88,7 +88,32 @@ Other tools: `travel-trip.ts` (travel legs), `save-stats.ts` / `save-sources.ts`
 - **Change ledger:** every `cycle.ts --save` appends the active change set (git hash, dirty flag, installed fixes, note) to `docs/data/change-ledger.jsonl` (`crash-ledger.ts snapshot --note "why"` by hand).
 - **Fail-fast guards:** see below; no wait sits for long when nothing is happening.
 - **Clock guard** (`profile-world.ts`): game minutes unchanged at 2 checks 30 s apart while not paused = `FAIL`; on the trip it logs `clock_state` (pause bits: 2 = window minimized, 4 = device; `window.iconic`) to the run log (docs/85). The probe also logs `game window minimized` / `restored` events with UTC to `events.jsonl`, and the stutter profiler writes `simPaused` / `stepAcc` per second.
+- **Build verification:** see below; a queue job never runs a build other than the one it names.
+- **Baseline save guard** (`queue.ts`): the `Baseline-*` / `Story-*` save a job loads and `ApexTest-Town` are hashed before and after every job (`row.saveHashes`); a change fails the job and stops the queue (2026-10-24 a manual Save overwrote `Baseline-BP-Spring`). Put the save back from its `.backup` before the next run.
+- **Noisy rerun** (`queue.ts`): a timing job stopped by the early noise check or with a `high` noise verdict runs once more at the end of the same run as `<id>-rerun`; both rows stay, the results note says which one counts.
 - **Crash triage:** `node tools/harness/crash-ledger.ts triage` maps each game crash report (`xcpt*.txt`) to the change set active then and what changed just before. Triage every crash before the next run. Keep notable crash reports in `docs/data/crashes/` (strip personal paths).
+
+### Build verification
+
+On 2026-10-24 the whole v0.1.5 release check ran with an old `ts3fixes.package` (sha256 `93b16bb8`, three release tunables off) because `cycle.ts` kept a stale install, and nothing checked what a job actually ran. Now every `queue.ts` job checks, before the game starts (job `FAIL` with the reason, nothing run):
+
+1. `Bin/ts3native.asi` sha256 equals the job's `asi` file; when `docs/data/builds.json` knows that sha256, the entry's version must equal the `ts3native X.Y.Z` string in the binary, and a parked file whose name is in the DB must still have the recorded hash.
+2. The installed `Mods/Packages/ts3fixes.package` tuning digest equals the job's `fixesBuild` (a DB name, job or queue level), or by default `build/ts3fixes.package`'s (which `cycle.ts` just built and installed; also byte-equal), so a stale install fails.
+3. After start-up the first line of `Bin/ts3native.log` (rewritten by this start) names that version.
+
+The row keeps the hashes, digests and matched DB names (`row.buildCheck`), the results page note shows `build: asi ... ts3native ... (log ok); ts3fixes tuning ...`, and `--dry-run` prints the same checks. `release-check.ts --write` needs `--fixes-build <name>` and puts it on every job.
+
+The DB (`docs/data/builds.json`, one entry per line): asi entries `{ name, kind: "asi", sha256, version, commit?, created, note? }`; package entries `{ name, kind: "ts3fixes", sha256, tuningDigest, srcDigest, commit, created, note?, tuning: { kName: true/false/number } }`. csc builds are not byte-reproducible (PE timestamp, MVID and the `<PrivateImplementationDetails>` GUID change every build: 47 bytes between two builds of the same source), so a package is identified by `tuningDigest` = sha256 of its tuning XML resource (the release defaults); `srcDigest` = sha256 of `git ls-tree -r <commit> -- mods/ts3fixes/src` records the source it came from (provenance only; it cannot be read back from a package).
+
+Add a build when you park it:
+
+```
+node tools/builds.ts add game-copy/ts3native.asi.rel016 --name ts3native.asi.rel016 --commit <c> --note "v0.1.6 release asi"
+node tools/builds.ts add build/ts3fixes.package --name ts3fixes.v0.1.6 --commit <c>
+node tools/builds.ts add - --kind ts3fixes --sha256 <published hash> --commit <c> --name ts3fixes.vX   (file not local: tuning from build-fixes.ts at <c>)
+node tools/builds.ts check <file> --expect <name>    (exit 1 on mismatch)
+node tools/builds.ts list
+```
 
 ### Fail-fast guards
 
@@ -170,6 +195,16 @@ Post results (in a PR or issue) as a table against your own baseline:
 - mark each conclusion `[measured]`, `[verified]` or `[inferred]`.
 
 Use the tables in `docs/04-re-findings.md` (F13, F15, F16) as the pattern. Never attach saves, game files or crash dumps with personal paths.
+
+### Reading runs without AI
+
+Three read-only tools answer the usual questions about queue runs from the files in `probe-out/` (set `TS3_REPO=<main checkout>` when running from a git worktree):
+
+- `node tools/harness/status.ts [--queue <name>] [--chain probe-out/queue/<chain>.log] [--root <dir>]`: what runs now and what is left. Finished jobs with PASS / FAIL / VOID, the running job with its start, expected end (profile minutes + the overhead measured on the run, else `timeoutMin`) and machine-load verdict, jobs left, and `done ~HH:MM PHT`. With `--chain`, every queue the chain started plus the queues its `.sh`/`.ps1` still runs.
+- `node tools/harness/run-verdict.ts <queue name> [--date YYYY-MM-DD] [--baseline <tag>]`: one markdown table per queue run: job, PASS / FAIL / VOID with the reason (self checks, feature/fix activity, noise, crash, `runInvalid`), and for profile jobs >= 300 / >= 1000 ms per 10 min, max, p99, it/s (A/B runs: off / on), plus a column against a baseline tag.
+- `node tools/harness/release-numbers.ts --vanilla <tags> --prev <tags> --rel <tags> [--soak <tags>]`: the README / CHANGELOG release tables per town (>= 300 ms per 10 min, worst, p99, it/s; soaks: >= 1 s count, worst, it/s), INVALID runs and single-run caveats marked. It reproduces the v0.1.5 table in `README.md` from the 2026-10-24 tags.
+
+Each has `--self-check`.
 
 ## Test world conditions (2026-10-17)
 

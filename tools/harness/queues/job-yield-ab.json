@@ -1,0 +1,61 @@
+{
+  "note": "docs/183 build (ts3native 0.36.38, counters v109; ts3fixes + ts3agent with the jobyield switch, counters [248]-[250]). DRAFT, NOT RUN. Before: copy native/ts3native/out-jy/ts3native.asi of branch worktree-agent-aafe085db2a5c430d to game-copy/ts3native.asi.jobyield, build and install ts3fixes and ts3agent from that branch (node tools/setup/build-fixes.ts; node tools/harness/build-agent.ts). Job 1 (day, correctness) names where the sim waits behind long own-START jobs (the cand-1721 'other' bucket) and checks JobYield does not break plans; job 2 (clean night) is the forced ABBA on route-ownjob-yield-loop. Job 1 FAIL (crash, watchdog line, jobyield_capped > 0, a Sim left stuck): stop, fix, do not run job 2.",
+  "jobs": [
+    {
+      "id": "sv-jobyield-verify",
+      "note": "Day (correctness, not timing), 10 min, SV, forced repro route-ownjob-yield-loop with both switches ON for the whole run (arms ignored: fixesOn + JobYield=1). Pass: no crash, game alive, 0 watchdog lines, jyBusy >= 1, jobyield_steps >= 1, jobyield_capped 0, ownJobLong >= 1, no Sim stuck at the end. Read: 'route jobs sim waits' minute line and every 'route jobs: sim waited N ms for a job at <site>' line (which site, own/foreign, task could yield) next to the hitch records of the same seconds (freeze-report.ts --min 300, rtMaxKey): a >= 1 s hitch with no sw line = the stall is outside our job waits (docs/183 §2 open question O1); 'route jobs: sim waited N ms behind an own job' (T4) for the gate/pump waits.",
+      "asi": "game-copy/ts3native.asi.jobyield",
+      "minCounters": 109,
+      "save": "Baseline-SV-Spring",
+      "nativeRequire": "jyBusy>=1,watchdogs<=0",
+      "fixesRequire": "jobyield_steps>=1,jobyield_capped<=0",
+      "ini": {
+        "RouteAsync.JobYield": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.HostSplit": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "route-ownjob-yield-loop",
+          "fixesOn": "jobyield"
+        }
+      },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-jobyield-ab",
+      "note": "Clean night, forced repro A/B: route-ownjob-yield-loop ABBA until 50 no-path Go Here plans per arm (fixed before the run, docs/168), jobyield flipped per firing (native_set + patches in the loop; ini installs it off). Pass: no crash, 0 watchdog lines, jobyield_capped 0, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario <tag>): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits: rtwait / collect / drop rise when runplan falls), swUs per site; expected on arm: the sync plans behind a running long job (runplan site) no longer freeze, >= 1 s count down by the share the runplan site held in job 1.",
+      "asi": "game-copy/ts3native.asi.jobyield",
+      "minCounters": 109,
+      "save": "Baseline-SV-Spring",
+      "nativeRequire": "watchdogs<=0",
+      "fixesRequire": "jobyield_capped<=0",
+      "ini": {
+        "RouteAsync.JobYield": 0,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "route-ownjob-yield-loop",
+          "loopRule": { "until": { "perArm": 50 }, "maxMinutes": 45 },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    }
+  ]
+}

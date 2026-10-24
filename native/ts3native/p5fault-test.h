@@ -118,6 +118,53 @@ static void TestP5Fault(void* lock, int* list) {
         const LONG wd = k.p5bWatchdog, taken = k.m2Taken, live = g_p5bLivePlans;
         P5fJob(lock, list, seq++, 2300);
         assert(k.p5bWatchdog == wd + 1 && k.m2Taken == taken + 1 && g_p5bLivePlans == live && k.p5bRetakeMaxUs >= 2000000);
+        assert(k.p5bWdEscalate == 0 && k.p5bRelease == 1);  // under RetakeEscalateMs (4000): no escalation
+    }
+    // F6 (0.36.35, docs/157 §4.3): the holder keeps it past RetakeEscalateMs (1000 here): escalation once (P5b + P5c off for
+    // the session), the retake still waits it out and the answer is taken; the next job opens no window and is answered
+    {
+        const LONG escSave = g_p5bEscMs;
+        g_p5bEscMs = 1000, g_fiMask = 0, k.p5cFree = 0;
+        const LONG esc = k.p5bWdEscalate, taken = k.m2Taken, wins = k.p5bWins, ref0 = k.p5bRefused[0];
+        P5fJob(lock, list, seq++, 1500);
+        assert(k.p5bWdEscalate == esc + 1 && k.p5bRelease == 0 && k.p5cOff == 1 && k.m2Taken == taken + 1 && k.p5bWins == wins + 1);
+        P5fJob(lock, list, seq++);
+        assert(k.p5bWins == wins + 1 && k.p5bRefused[0] > ref0 && k.m2Taken == taken + 2 && k.p5bWdEscalate == esc + 1);
+        g_p5bEscMs = escSave, k.p5bRelease = 1, k.p5cOff = 0;
+    }
+    // F7 (0.36.35, docs/157 §4.4): a refusal storm. StormRefusals 4 here: four FI_OOM refusals in a row pause Mode=2 (the
+    // next job answers with no acquire, p5StormSkips); a taken job resets the run; the third storm turns Mode=2 off (m2Off 4)
+    {
+        const LONG nSave = g_p5StormN, pSave = g_p5StormPauseMs;
+        g_p5StormN = 4, g_p5StormPauseMs = 60000, g_p5StormRun = 0, g_p5StormUntil = 0;
+        const LONG trips = k.p5StormTrips, skips = k.p5StormSkips;
+        for (int storm = 1; storm <= 3; storm++) {
+            g_fiMask = FI_OOM;
+            for (int i = 0; i < 3; i++) P5fJob(lock, list, seq++);
+            assert(k.p5StormTrips == trips + storm - 1 && g_p5StormRun == 3);
+            g_fiMask = 0;
+            if (storm == 1) {  // a taken job in the middle ends the run
+                const LONG taken = k.m2Taken;
+                P5fJob(lock, list, seq++);
+                assert(k.m2Taken == taken + 1 && g_p5StormRun == 0);
+                g_fiMask = FI_OOM;
+                for (int i = 0; i < 3; i++) P5fJob(lock, list, seq++);
+                g_fiMask = 0;
+            }
+            g_fiMask = FI_OOM;
+            P5fJob(lock, list, seq++);  // the 4th in a row: the storm
+            g_fiMask = 0;
+            assert(k.p5StormTrips == trips + storm && g_p5StormUntil != 0 && k.p5StormRunMax >= 4);
+            if (storm < 3) {
+                const LONG taken = k.m2Taken;
+                P5fJob(lock, list, seq++);  // paused: the game's plan, no acquire
+                assert(k.p5StormSkips == skips + storm && k.m2Taken == taken && g_p5On);
+                g_p5StormUntil = 1;  // the pause ends (tick 1 is long past)
+            }
+        }
+        assert(!g_p5On && k.m2Off == 4);
+        g_p5StormN = nSave, g_p5StormPauseMs = pSave, g_p5StormRun = 0, g_p5StormUntil = 0;
+        P5fOn();
     }
     assert(g_p5bBad == bad0);
 

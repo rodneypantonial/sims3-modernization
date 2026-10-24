@@ -8935,14 +8935,70 @@
     "save": "Baseline-IP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Needs ts3native with viewer codes 19-23 (this branch, docs/143 §8.16) and --ab unseenthrottle,unseenavoid,unseenfootprint,unseenrate. Isla Paradiso, normal speed (Rate skips only at normal speed, §8.13): 12 spawned Sims alternate legs across the sea (island lot), 10 m into the sea, home, sea again, all unseen; the cause watch samples every 5 ticks.",
     "steps": [
-      { "cmd": "spawn_sims", "args": { "count": 12 }, "waitS": 20 },
-      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 }, "note": "per-Sim water entries with support, intent, edge, support movement, ts3native skip record and --ab side" },
-      { "cmd": "crowd_go", "args": { "to": "island" }, "waitS": 150, "note": "leg 1: across the sea (boat, water taxi or swim)" },
-      { "cmd": "crowd_go", "args": { "to": "ocean" }, "waitS": 100, "note": "leg 2: swim 10 m into the sea (intended entries)" },
-      { "cmd": "crowd_go", "args": { "target": "home" }, "waitS": 150, "note": "leg 3: back across the water" },
-      { "cmd": "crowd_go", "args": { "to": "ocean" }, "waitS": 100, "note": "leg 4: into the sea again, so both --ab sides see swims" },
-      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": true, "min_entries": 3, "slack": 1, "stop": true }, "note": "FAILS unless native answers, >= 3 entries, no unknown side, support_moved on == 0 and unexplained on <= unexplained off x (exposure on / off) + 1" },
-      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 12
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "start": true,
+          "every": 5
+        },
+        "note": "per-Sim water entries with support, intent, edge, support movement, ts3native skip record and --ab side"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "island"
+        },
+        "waitS": 150,
+        "note": "leg 1: across the sea (boat, water taxi or swim)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 100,
+        "note": "leg 2: swim 10 m into the sea (intended entries)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 150,
+        "note": "leg 3: back across the water"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "ocean"
+        },
+        "waitS": 100,
+        "note": "leg 4: into the sea again, so both --ab sides see swims"
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "result": true,
+          "require": true,
+          "ab": true,
+          "min_entries": 3,
+          "slack": 1,
+          "stop": true
+        },
+        "note": "FAILS unless native answers, >= 3 entries, no unknown side, support_moved on == 0 and unexplained on <= unexplained off x (exposure on / off) + 1"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 40
+      }
     ],
     "expect": "no crash; unseen_water_cause {result, require, ab} ok: sides.on.support_moved 0, sides.on.unexplained <= sides.off.unexplained x exposure ratio + 1, entries >= 3 (most intended: swims); no stuck Sims"
   },
@@ -8953,16 +9009,81 @@
     "save": "Baseline-IP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run; needs a houseboat with a houseboat lot in the save (houseboat_move setup fails otherwise: then pick or make a save with one). 6 spawned Sims placed on the deck by Houseboat.PlaceSimAtEntrance and kept walking between the entrance and the lot centre; the camera goes to the community lot farthest from the boat; the boat autopilots 80 m out (Houseboat.RequestAutopilotToLocation, what the helm's Cruise Here on Autopilot calls) and back to port.",
     "steps": [
-      { "cmd": "spawn_sims", "args": { "count": 6 }, "waitS": 20 },
-      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 } },
-      { "cmd": "houseboat_move", "args": { "setup": "deck", "count": 6 }, "waitS": 40 },
-      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 150 },
-      { "cmd": "houseboat_move", "args": { "check": true }, "note": "snapshot at sea" },
-      { "cmd": "houseboat_move", "args": { "return": true }, "waitS": 180 },
-      { "cmd": "houseboat_move", "args": { "check": true, "require": true }, "note": "FAILS on a Sim that stood on the deck (dry) at move start and is in water now or at a walk sample with no water intent since the move; Sims that walked off dry are listed (left_deck_dry), not failed (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim" },
-      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": false, "min_entries": 0, "max_unexplained": 0, "stop": true }, "note": "FAILS on any support moved or unexplained entry" },
-      { "cmd": "houseboat_move", "args": { "stop": true } },
-      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "start": true,
+          "every": 5
+        }
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "setup": "deck",
+          "count": 6
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "move": true,
+          "dist": 80
+        },
+        "waitS": 150
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "check": true
+        },
+        "note": "snapshot at sea"
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "return": true
+        },
+        "waitS": 180
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "check": true,
+          "require": true
+        },
+        "note": "FAILS on a Sim that stood on the deck (dry) at move start and is in water now or at a walk sample with no water intent since the move; Sims that walked off dry are listed (left_deck_dry), not failed (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim"
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "result": true,
+          "require": true,
+          "ab": false,
+          "min_entries": 0,
+          "max_unexplained": 0,
+          "stop": true
+        },
+        "note": "FAILS on any support moved or unexplained entry"
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "stop": true
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 40
+      }
     ],
     "expect": "no crash; both require steps ok: no watched deck Sim in water without a water intent, boat_moved_max_m >= 20; unseen_water_cause support_moved 0 and unexplained 0"
   },
@@ -8973,16 +9094,81 @@
     "save": "Baseline-IP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run; needs a houseboat docked at a port gangway. 6 spawned Sims placed along the gangway's forward line and kept walking 2-8 m along it; the camera goes away; the houseboat leaves port (80 m out), returns to the same gangway, leaves again.",
     "steps": [
-      { "cmd": "spawn_sims", "args": { "count": 6 }, "waitS": 20 },
-      { "cmd": "unseen_water_cause", "args": { "start": true, "every": 5 } },
-      { "cmd": "houseboat_move", "args": { "setup": "dock", "count": 6 }, "waitS": 40 },
-      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 120 },
-      { "cmd": "houseboat_move", "args": { "return": true }, "waitS": 180 },
-      { "cmd": "houseboat_move", "args": { "move": true, "dist": 80 }, "waitS": 120 },
-      { "cmd": "houseboat_move", "args": { "check": true, "require": true }, "note": "FAILS on a Sim that stood on the dock (dry) at move start and is in water now or at a walk sample with no water intent since the move (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim" },
-      { "cmd": "unseen_water_cause", "args": { "result": true, "require": true, "ab": false, "min_entries": 0, "max_unexplained": 0, "stop": true } },
-      { "cmd": "houseboat_move", "args": { "stop": true } },
-      { "cmd": "remove_sims", "args": {}, "waitS": 40 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 6
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "start": true,
+          "every": 5
+        }
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "setup": "dock",
+          "count": 6
+        },
+        "waitS": 40
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "move": true,
+          "dist": 80
+        },
+        "waitS": 120
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "return": true
+        },
+        "waitS": 180
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "move": true,
+          "dist": 80
+        },
+        "waitS": 120
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "check": true,
+          "require": true
+        },
+        "note": "FAILS on a Sim that stood on the dock (dry) at move start and is in water now or at a walk sample with no water intent since the move (docs/143 §8.17); also needs boat moved >= 20 m and >= 1 watched Sim"
+      },
+      {
+        "cmd": "unseen_water_cause",
+        "args": {
+          "result": true,
+          "require": true,
+          "ab": false,
+          "min_entries": 0,
+          "max_unexplained": 0,
+          "stop": true
+        }
+      },
+      {
+        "cmd": "houseboat_move",
+        "args": {
+          "stop": true
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 40
+      }
     ],
     "expect": "no crash; both require steps ok: no watched dock Sim in water without a water intent, boat_moved_max_m >= 20; unseen_water_cause support_moved 0 and unexplained 0"
   },
@@ -9473,32 +9659,463 @@
     "fix": "ts3fixes overwatchspread (default off): each cleanup type in its own task; A/B in one load: 12 firings of the whole nightly cleanup, ABBA x3, 45 s apart at normal speed, arm per firing in the step note",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 2 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #1" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #1", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #2" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #2", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #3" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #3", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #4" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #4", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #5" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #5", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #6" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #6", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #7" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #7", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #8" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #8", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #9" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #9", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #10" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #10", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": true }, "waitS": 1, "note": "arm on #11" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire on #11", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false }, "waitS": 1, "note": "arm off #12" },
-      { "cmd": "reflect_call", "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire off #12", "waitUntil": {"on": {"counter": "owspread_types_run", "of": "owspread_types_scheduled", "slack": 1}, "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 },
-      { "cmd": "patches", "args": { "overwatchspread": false } }
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #1",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #2",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #3",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #4",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #5"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #5",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #6"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #6",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #7"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #7",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #8"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #8",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #9"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #9",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #10"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #10",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": true
+        },
+        "waitS": 1,
+        "note": "arm on #11"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire on #11",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        },
+        "waitS": 1,
+        "note": "arm off #12"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+          "args": [
+            "all",
+            1
+          ]
+        },
+        "waitS": 45,
+        "note": "fire off #12",
+        "waitUntil": {
+          "on": {
+            "counter": "owspread_types_run",
+            "of": "owspread_types_scheduled",
+            "slack": 1
+          },
+          "off": [
+            {
+              "counter": "owspread_theirs"
+            },
+            {
+              "quiet": 2000
+            }
+          ]
+        },
+        "minS": 3,
+        "maxS": 45
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false
+        }
+      }
     ]
   },
   {
@@ -9663,22 +10280,97 @@
     "save": "Baseline-BP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. docs/169 script causes. 20 firings ABBA (10 per arm), arm in each step's note, ~26 s apart at normal speed after a 75 s lead-in: ~595 s of a 10-min window. Every actor's stuck check armed due in 1 sim-minute, all in one alarm tick (StuckCheckNow spread 0), attempt 3 = the final round (all points fail -> the game's reset, no re-armed alarm left behind). Not the clock: test_env hour jumps by SimClock.AddOneHour in one agent call, so a jump to the next 2:57 fires every alarm skipped in those 24 h (midnight decay, pet pool, Overwatch, hourly alarms) in the same few ticks [inferred], and the real arming is 20-60 sim-minutes after 3:00. Overwatch's own nightly Stuck Check is not in this loop: OverwatchSpreadNow('StuckCheck', 0) fires it alone, bp-overwatch-ab-loop covers the whole alarm. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 20 hand-written firings); 12 stranded townies per firing (was 8; a world after a long session), count = Sims stranded (strand_many stranded), stop at 120 per arm = 10 firings per arm (unchanged firing count). [inferred] the off arm runs all its checks in one alarm tick, so a firing is one hitch there and more Sims per firing make that hitch bigger, not more hitches: the docs/168 confidence rule needs 10 firings per arm, so this timing A/B is not shortened.",
     "steps": [
-      { "cmd": "time", "waitS": 75, "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it" },
-      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+      {
+        "cmd": "time",
+        "waitS": 75,
+        "note": "lead-in: the first 60 s of the window are the load minute (excluded); the loop starts after it"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
     ],
     "expect": "10 firings per arm; off arm: each firing one hitch line whose slowest script run is the world lot task (ScriptProxy>...WorldLot) >= 50 ms; on arm: the same firings with StuckCheckDrain runs and no such hitch. Read: hitch-ab.ts --scenario <tag> (reflect_call windows, in step order) and hitch-ab.ts --causes",
     "loop": {
       "steps": [
-        { "cmd": "patches", "setup": true, "args": {"stuckcheckbusy": false, "stuckcheckasync": "$on", "stuckchecknear": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "strand_many", "setup": true, "args": {"count": 12}, "waitS": 3, "note": "state: 12 townies on unroutable spots of 12 lots (re-created each firing: the previous round reset them)", "count": {"result": "stranded"} },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "Ts3Fixes.Fixes.StuckCheckNow", "args": [0, 3]}, "waitS": 20, "note": "fire", "waitUntil": {"on": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 3000}], "off": {"quiet": 3000}}, "minS": 4, "maxS": 20 }
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "stuckcheckbusy": false,
+            "stuckcheckasync": "$on",
+            "stuckchecknear": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "strand_many",
+          "setup": true,
+          "args": {
+            "count": 12
+          },
+          "waitS": 3,
+          "note": "state: 12 townies on unroutable spots of 12 lots (re-created each firing: the previous round reset them)",
+          "count": {
+            "result": "stranded"
+          }
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.StuckCheckNow",
+            "args": [
+              0,
+              3
+            ]
+          },
+          "waitS": 20,
+          "note": "fire",
+          "waitUntil": {
+            "on": [
+              {
+                "counter": [
+                  "stuckcheckasync_run",
+                  "stuckcheckasync_dropped"
+                ],
+                "of": "stuckcheckasync_queued"
+              },
+              {
+                "quiet": 3000
+              }
+            ],
+            "off": {
+              "quiet": 3000
+            }
+          },
+          "minS": 4,
+          "maxS": 20
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 120 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 120
+      },
       "maxMinutes": 14
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"stuckcheckasync": false, "stuckchecknear": false} }
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckasync": false,
+          "stuckchecknear": false
+        }
+      }
     ]
   },
   {
@@ -13537,24 +14229,113 @@
     "save": "Baseline-BP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. 20 spawned Sims are stood on unroutable spots of Hogan's diner lot (not the active lot: the game's check skips that one), then the game's own RunStuckCheckHelper alarm is armed for each with attempt 3 and a 1 sim-minute delay (stuck_check_fire): the game's alarm body plans its 10 random points per Sim (all fail from the enclosed spot), then resets each Sim (the game's safe-location search). Re-stranded every loop, 8 loops ABBA; arms flip stuckchecknear, failrepeat, safespotcap together. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 8 hand-written firings); count = stuck checks armed (stuck_check_fire armed, 20 per firing), stop at 40 per arm = one ABBA cycle (4 firings). 20 stranded Sims per firing kept: more on one lot is not a real world.",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "expect": "no crash; every stuck_check_fire armed 20; ts3native: failed sim-thread plans (sypPlans failed) and \"IC PlanFromPoint, reason NoStart\" lines from the resets, script stacks with RunStuckCheckHelper / AttemptToFindSafeLocation; stuckcheckasync_run grows by ~20 a loop; on arms: stuckchecknear_checks and safespotcap_limited > 0",
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"plandeadline": "$on", "failmemo": "$on"}, "waitS": 1, "note": "arm (native)" },
-        { "cmd": "patches", "setup": true, "args": {"stuckchecknear": "$on", "failrepeat": "$on", "safespotcap": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "strand_crowd", "setup": true, "args": {"x": 312.4, "z": 1496.7, "tries": 240}, "waitS": 2, "note": "strand (240 tries: 60 found no spot on 2026-10-23 01:12 UTC, seed-dependent)" },
-        { "cmd": "stuck_check_fire", "setup": false, "args": {"attempt": 3, "delay_min": 1, "x": 312.4, "z": 1496.7}, "waitS": 28, "note": "fire: 20 stuck checks x 10 plans, then 20 resets", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 28, "count": {"result": "armed"} }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "plandeadline": "$on",
+            "failmemo": "$on"
+          },
+          "waitS": 1,
+          "note": "arm (native)"
+        },
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "stuckchecknear": "$on",
+            "failrepeat": "$on",
+            "safespotcap": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "strand_crowd",
+          "setup": true,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "tries": 240
+          },
+          "waitS": 2,
+          "note": "strand (240 tries: 60 found no spot on 2026-10-23 01:12 UTC, seed-dependent)"
+        },
+        {
+          "cmd": "stuck_check_fire",
+          "setup": false,
+          "args": {
+            "attempt": 3,
+            "delay_min": 1,
+            "x": 312.4,
+            "z": 1496.7
+          },
+          "waitS": 28,
+          "note": "fire: 20 stuck checks x 10 plans, then 20 resets",
+          "waitUntil": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 4000
+            }
+          ],
+          "minS": 4,
+          "maxS": 28,
+          "count": {
+            "result": "armed"
+          }
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 40 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 40
+      },
       "maxMinutes": 10
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false, "safespotcap": false} }
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckchecknear": false,
+          "failrepeat": false,
+          "safespotcap": false
+        }
+      }
     ]
   },
   {
@@ -13564,26 +14345,131 @@
     "save": "Baseline-BP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. 30 spawned Sims plus the household; per loop: everyone Go Here to the far lot, build mode in/out while they route, everyone home (through the home lot doors), build mode in/out again. 6 loops ABBA on fallbackasync (native_set, profile-world only). 2026-10-23 (docs/170 §6, instances per firing): loop form (was 6 hand-written firings); 30+ Go Here starts per firing, one ABBA cycle (perArm 2 firings). Counted in firings: crowd_go has no numeric count.",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "expect": "no crash; asyncQueueFull grows every loop (more in off arms); \"reason QueueFull\" and \"IC ReplanFromPosition, reason NoStart\" sync plan lines right after the starts and exits; no Sim stuck at the end",
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"fallbackasync": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 5, "note": "start: 30+ Go Here plans in one tick" },
-        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "note": "exit: replan of every routing Sim", "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10 },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
-        { "cmd": "crowd_go", "setup": false, "args": {"target": "home", "household": true}, "waitS": 5, "note": "everyone home, through the doors" },
-        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10 },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "fallbackasync": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 5,
+          "note": "start: 30+ Go Here plans in one tick"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": true,
+          "args": {
+            "on": true
+          },
+          "waitS": 4
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 10,
+          "note": "exit: replan of every routing Sim",
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 10
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 5,
+          "note": "everyone home, through the doors"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": true,
+          "args": {
+            "on": true
+          },
+          "waitS": 4
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 10
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 1
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 10
     }
   },
@@ -13594,25 +14480,214 @@
     "save": "Baseline-BP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. The goal is a spot of Hogan's diner lot that fails the game's IsPointInLotSafelyRoutable (found once, a plan per sample in the agent's task, then reused). Per loop: everyone Go Here to it (every plan fails), then everyone home so the next loop starts from the open world. 7 loops ABBA; eoMode 0 also stops the eo* counters, so read failures per arm from the on arms and the sync plan lines. 2026-10-23 (docs/170 §6, instances per firing): loop form (was 7 hand-written firings); count = no-path Go Here plans sent (crowd_unreachable sent, 30 spawned + household per firing), stop at 50 per arm = one ABBA cycle (4 firings).",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "expect": "no crash; crowd_unreachable sent 30+ each loop; eoAsFail grows by >= 30 per on loop; route early-out lines for the slow ones; sync plan lines with reason QueueFull for the plans past the job slots; Sims show the route-fail reaction and walk home",
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"earlyout": "$on", "plandeadline": "$on", "failmemo": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "patches", "setup": true, "args": {"failrepeat": "$on"}, "waitS": 1 },
-        { "cmd": "crowd_unreachable", "setup": false, "args": {"x": 312.4, "z": 1496.7, "household": true}, "waitS": 18, "note": "fire: 30+ no-path Go Here plans", "waitUntil": {"quiet": 4000}, "minS": 6, "maxS": 18, "count": {"result": "sent"} },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 12 }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "earlyout": "$on",
+            "plandeadline": "$on",
+            "failmemo": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "failrepeat": "$on"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": true
+          },
+          "waitS": 18,
+          "note": "fire: 30+ no-path Go Here plans",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 18,
+          "count": {
+            "result": "sent"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 12
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 50 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 50
+      },
       "maxMinutes": 10
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"failrepeat": false} }
+      {
+        "cmd": "patches",
+        "args": {
+          "failrepeat": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "route-ownjob-yield-loop",
+    "bug": "docs/183 (PLAN.md after-release item 4): SV soak cand-1721 had seven own-START route jobs of 816-2,281 ms (worker, no path) one-to-one with its >= 1 s freezes; the sim thread blocks for the rest of a running job whenever a plan or IC on it needs the job done (sync fallback plans: QueueFull / M1Pending / Foreign / NoStart, gate sites, collect / CANCEL)",
+    "fix": "native [RouteAsync] JobYield (jobyield, JOBBUSY answers) + ts3fixes jobyield (StepAside before the sync plan) per loop; the sim job waits by site (sw*) count in both arms",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. 30 spawned Sims plus the household get the game's Go Here (own task, own START) to an unroutable spot of the home lot (crowd_unreachable lot home, found once): every job floods the reachable SV world and fails (the cand-1721 no-path shape), 8 job slots fill (FallbackAsync=0) and the rest plan sync as QueueFull right behind a running long job: the waits JobYield moves into a sleeping task. Then everyone home. 4 loops ABBA, count = no-path Go Here plans sent, stop at 50 per arm. If crowd_unreachable finds no spot on the SV home lot, pick a lot with a closed room (lot x,z) and record it here.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; crowd_unreachable sent 30+ each loop; ownJobLong grows every loop; on arms: jyBusy and jobyield_steps grow, swUs[runplan] and the 'sim waited N ms for a job at runplan' lines drop vs off arms, jobyield_capped 0; 'route jobs: sim waited' lines name the sites left (rtwait / collect / drop / other) in both arms; Sims show the route-fail reaction and walk home",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "jobyield": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "jobyield": "$on"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "lot": "home",
+            "household": true
+          },
+          "waitS": 18,
+          "note": "fire: 30+ own-START no-path Go Here plans",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 18,
+          "count": {
+            "result": "sent"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 12
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 50
+      },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "jobyield": false
+        }
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "jobyield": 0
+        }
+      }
     ]
   },
   {
@@ -13622,29 +14697,250 @@
     "save": "Baseline-SV-Spring",
     "note": "UNVERIFIED (static only, 2026-10-22): never run. 30 spawned Sims Go Here to the community lot with the most sea inside its area (crowd_sea_lot), wait till they stand, then the game's own stuck check is armed for those on that lot (attempt 1, 1 sim-minute: no reset, the game re-arms its next attempt itself). The clock is put at 2 AM first so the game's own 3 AM venue cleanup also arms its checks during the run. 4 loops ABBA: off = no caps, on = SyncCapMs 1000 + FbJobCapMs 300 + stuckchecknear + failrepeat. Tests the inferred caller: if no >= 1 s failed plan comes from RunStuckCheck here, the 7 s caller is something else (16-frame stacks name it).",
     "steps": [
-      { "cmd": "test_env", "args": {"hour": 2}, "waitS": 2, "note": "the game's own 3 AM venue cleanup fires during the run" },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 },
-      { "cmd": "native_set", "args": {"synccapus": 0, "fbjobcapus": 0, "plandeadline": 0, "failmemo": 0}, "waitS": 1, "note": "arm off #1" },
-      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false}, "waitS": 1 },
-      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
-      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire off #1: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
-      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000, "plandeadline": 1, "failmemo": 1}, "waitS": 1, "note": "arm on #2" },
-      { "cmd": "patches", "args": {"stuckchecknear": true, "failrepeat": true}, "waitS": 1 },
-      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
-      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire on #2: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
-      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000, "plandeadline": 1, "failmemo": 1}, "waitS": 1, "note": "arm on #3" },
-      { "cmd": "patches", "args": {"stuckchecknear": true, "failrepeat": true}, "waitS": 1 },
-      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
-      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire on #3: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
-      { "cmd": "native_set", "args": {"synccapus": 0, "fbjobcapus": 0, "plandeadline": 0, "failmemo": 0}, "waitS": 1, "note": "arm off #4" },
-      { "cmd": "patches", "args": {"stuckchecknear": false, "failrepeat": false}, "waitS": 1 },
-      { "cmd": "crowd_sea_lot", "args": {}, "waitS": 40, "note": "walk there and stand" },
-      { "cmd": "stuck_check_fire", "args": {"lot": "sea", "attempt": 1, "delay_min": 1}, "waitS": 30, "note": "fire off #4: 10 plans per standing Sim, sea points fail", "waitUntil": [{"counter": ["stuckcheckasync_run", "stuckcheckasync_dropped"], "of": "stuckcheckasync_queued"}, {"quiet": 4000}], "minS": 4, "maxS": 30 },
-      { "cmd": "native_set", "args": {"synccapus": 1000000, "fbjobcapus": 300000} },
-      { "cmd": "patches", "args": {}, "note": "stuckcheckasync_* / stuckchecknear_* / failrepeat_* counters" }
+      {
+        "cmd": "test_env",
+        "args": {
+          "hour": 2
+        },
+        "waitS": 2,
+        "note": "the game's own 3 AM venue cleanup fires during the run"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "synccapus": 0,
+          "fbjobcapus": 0,
+          "plandeadline": 0,
+          "failmemo": 0
+        },
+        "waitS": 1,
+        "note": "arm off #1"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckchecknear": false,
+          "failrepeat": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "crowd_sea_lot",
+        "args": {},
+        "waitS": 40,
+        "note": "walk there and stand"
+      },
+      {
+        "cmd": "stuck_check_fire",
+        "args": {
+          "lot": "sea",
+          "attempt": 1,
+          "delay_min": 1
+        },
+        "waitS": 30,
+        "note": "fire off #1: 10 plans per standing Sim, sea points fail",
+        "waitUntil": [
+          {
+            "counter": [
+              "stuckcheckasync_run",
+              "stuckcheckasync_dropped"
+            ],
+            "of": "stuckcheckasync_queued"
+          },
+          {
+            "quiet": 4000
+          }
+        ],
+        "minS": 4,
+        "maxS": 30
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "synccapus": 1000000,
+          "fbjobcapus": 300000,
+          "plandeadline": 1,
+          "failmemo": 1
+        },
+        "waitS": 1,
+        "note": "arm on #2"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckchecknear": true,
+          "failrepeat": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "crowd_sea_lot",
+        "args": {},
+        "waitS": 40,
+        "note": "walk there and stand"
+      },
+      {
+        "cmd": "stuck_check_fire",
+        "args": {
+          "lot": "sea",
+          "attempt": 1,
+          "delay_min": 1
+        },
+        "waitS": 30,
+        "note": "fire on #2: 10 plans per standing Sim, sea points fail",
+        "waitUntil": [
+          {
+            "counter": [
+              "stuckcheckasync_run",
+              "stuckcheckasync_dropped"
+            ],
+            "of": "stuckcheckasync_queued"
+          },
+          {
+            "quiet": 4000
+          }
+        ],
+        "minS": 4,
+        "maxS": 30
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "synccapus": 1000000,
+          "fbjobcapus": 300000,
+          "plandeadline": 1,
+          "failmemo": 1
+        },
+        "waitS": 1,
+        "note": "arm on #3"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckchecknear": true,
+          "failrepeat": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "crowd_sea_lot",
+        "args": {},
+        "waitS": 40,
+        "note": "walk there and stand"
+      },
+      {
+        "cmd": "stuck_check_fire",
+        "args": {
+          "lot": "sea",
+          "attempt": 1,
+          "delay_min": 1
+        },
+        "waitS": 30,
+        "note": "fire on #3: 10 plans per standing Sim, sea points fail",
+        "waitUntil": [
+          {
+            "counter": [
+              "stuckcheckasync_run",
+              "stuckcheckasync_dropped"
+            ],
+            "of": "stuckcheckasync_queued"
+          },
+          {
+            "quiet": 4000
+          }
+        ],
+        "minS": 4,
+        "maxS": 30
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "synccapus": 0,
+          "fbjobcapus": 0,
+          "plandeadline": 0,
+          "failmemo": 0
+        },
+        "waitS": 1,
+        "note": "arm off #4"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckchecknear": false,
+          "failrepeat": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "crowd_sea_lot",
+        "args": {},
+        "waitS": 40,
+        "note": "walk there and stand"
+      },
+      {
+        "cmd": "stuck_check_fire",
+        "args": {
+          "lot": "sea",
+          "attempt": 1,
+          "delay_min": 1
+        },
+        "waitS": 30,
+        "note": "fire off #4: 10 plans per standing Sim, sea points fail",
+        "waitUntil": [
+          {
+            "counter": [
+              "stuckcheckasync_run",
+              "stuckcheckasync_dropped"
+            ],
+            "of": "stuckcheckasync_queued"
+          },
+          {
+            "quiet": 4000
+          }
+        ],
+        "minS": 4,
+        "maxS": 30
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "synccapus": 1000000,
+          "fbjobcapus": 300000
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "stuckcheckasync_* / stuckchecknear_* / failrepeat_* counters"
+      }
     ],
     "expect": "no crash; every stuck_check_fire armed > 0; failed plans >= 1 s with RunStuckCheckHelper in the 16-frame stack (sync fallback lines or route phases lines with world A* / water share), more and longer in off arms; on arms: capped (SyncCapMs) lines, fbjcCapped > 0"
   },
@@ -13655,19 +14951,164 @@
     "expect": "no crash, no 'overwatchspread: ... failed' line; off arms: one TaskObjects run of 250-380 ms per firing (OverwatchSpreadNow task, fresh or from ResetSimTask's Sleep to the first IsPointInLotSafelyRoutable); on arms: owchain_alarms +1 and owchain_yields +21 per firing, one inventory pass line per firing, no Overwatch task run >= 50 ms except a single stuck-check plan or a Sim re-instantiated after ResetSimTask's own Sleep (each named by owspread_slow_types / overwatchspread_log when >= 50 ms)",
     "save": "Baseline-BP",
     "steps": [
-      { "cmd": "set_speed", "args": { "speed": "normal" }, "waitS": 2 }
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "patches", "setup": true, "args": { "overwatchspread": false, "overwatchchain": "$on" }, "waitS": 1, "note": "arm" },
-        { "cmd": "reflect_call", "setup": false, "args": { "path": "Ts3Fixes.Fixes.OverwatchSpreadNow", "args": ["all", 1] }, "waitS": 45, "note": "fire", "waitUntil": {"on": [{"counter": "owchain_alarms"}, {"quiet": 2000}], "off": [{"counter": "owspread_theirs"}, {"quiet": 2000}]}, "minS": 3, "maxS": 45 }
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "overwatchspread": false,
+            "overwatchchain": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+            "args": [
+              "all",
+              1
+            ]
+          },
+          "waitS": 45,
+          "note": "fire",
+          "waitUntil": {
+            "on": [
+              {
+                "counter": "owchain_alarms"
+              },
+              {
+                "quiet": 2000
+              }
+            ],
+            "off": [
+              {
+                "counter": "owspread_theirs"
+              },
+              {
+                "quiet": 2000
+              }
+            ]
+          },
+          "minS": 3,
+          "maxS": 45
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 10 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10
+      },
       "maxMinutes": 20
     },
     "cleanup": [
-      { "cmd": "patches", "args": { "overwatchspread": false, "overwatchchain": false } }
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false,
+          "overwatchchain": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "bp-overwatch-stuckslice-loop",
+    "bug": "NRaas Overwatch Stuck Check: its walk over every Sim runs in one tick between two route checks (57 ms with no plan in a live chain run; SV soak 2026-10-24: 20 runs of 100-336 ms from one IsPointInLotSafelyRoutable to the next with 0.6-12 ms of route search, no lock wait, no GC; docs/145 §12)",
+    "fix": "ts3fixes overwatchstuckslice (default off, docs/145 §12): a tick at a Sim's start once the Stuck Check's stretch reached 8 ms. Arms flip it with the release set held (overwatchchain on, overwatchspread off, overwatchstuck on), so off = v0.1.5 behaviour. Loop form of bp-overwatch-ab-loop2: ABBA until 10 firings per arm; maxMinutes caps it. Draft, not run",
+    "expect": "no crash, no 'overwatchspread: ... failed' line, no new NRaas script error; both arms: owstuck_runs +1 and owstuck_sims ~ the actor count per firing; off arms: owstuck_slices +0, owstuck_max_stretch_us = the walk's longest stretch (attribution); on arms: owstuck_slices > 0, no OwChainTheirs task run >= 50 ms inside StuckCheck except a single route check (the stretch counter caps near 8 ms plus one Sim); same resets (Stuck Check notices / ResetTask count) in both arms within noise",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "overwatchspread": false,
+            "overwatchchain": true,
+            "overwatchstuck": true,
+            "overwatchstuckslice": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.OverwatchSpreadNow",
+            "args": [
+              "all",
+              1
+            ]
+          },
+          "waitS": 45,
+          "note": "fire",
+          "waitUntil": {
+            "on": [
+              {
+                "counter": "owstuck_runs"
+              },
+              {
+                "quiet": 2000
+              }
+            ],
+            "off": [
+              {
+                "counter": "owstuck_runs"
+              },
+              {
+                "quiet": 2000
+              }
+            ]
+          },
+          "minS": 3,
+          "maxS": 45
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10
+      },
+      "maxMinutes": 20
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "overwatchspread": false,
+          "overwatchchain": false,
+          "overwatchstuckslice": false
+        }
+      }
     ]
   },
   {
@@ -13678,42 +15119,287 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing 30+ Go Here plans start in one tick (async jobs), and while they run: 5 objects placed and destroyed (quadtree adds, ObjectService destroy gate), six route-mode plans + Replan of the active Sim (ghost through walls, car only, leading a horse, stroller, flier, direct/no avoidance: the old @route rare modes at plan level), a short camera pan (lot index rebuilds), build/buy enter (gate 15) and exit (gate 14 + replan of every routing Sim), then everyone home. World-neutral (far = farthest community lot). 2026-10-23 (docs/170 §6, instances per firing): each firing already starts 30+ Go Here plans (the 30 spawned Sims + household), so one ABBA cycle (2 firings per arm, 60+ plans per arm) is the stop rule: perArm 2 firings (was 4). Counted in firings: crowd_go answers a list, no numeric count for count: {result}.",
     "expect": "no crash, no tripwire line, asyncStarted >= 20, rgEntries >= 1; on arms tuWins and h2Released rise, tuTrip_0-2 stay 0",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 15 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"tailunlock": "$on", "h2": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 5, "note": "start: 30+ Go Here plans in one tick" },
-        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 5}, "waitS": 10, "note": "quadtree adds while jobs run" },
-        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 5, "note": "destroys while jobs run" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsGhost", "PassThroughWalls", "PassThroughObjects"]}, "waitS": 2, "note": "ghost through walls" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["EnablePlanningAsCar", "DisablePlanningAsPedestrian", "BeginAsCar", "EndAsCar"]}, "waitS": 2, "note": "car only (mode 2)" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsSimLeadingHorse"]}, "waitS": 2, "note": "leading a horse" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["PlanUsingStroller", "BeginAsStroller", "EndAsStroller"]}, "waitS": 2, "note": "stroller" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["RouteAsFlier"]}, "waitS": 2, "note": "flier" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "far", "options": ["UseMostDirectPath", "DisableAvoidance", "BlockedByPeople"]}, "waitS": 2, "note": "direct / no avoidance" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1, "note": "replan of the used route object" },
-        { "cmd": "camera_pan", "setup": false, "args": {"lots": 4, "height": 25, "seconds": 10, "passes": 1}, "waitS": 12, "note": "lot streaming while jobs run" },
-        { "cmd": "camera_pan", "setup": true, "args": {"stop": true} },
-        { "cmd": "build_mode", "setup": false, "args": {"on": true}, "waitS": 4, "note": "gate 15" },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10, "note": "fire: gate 14 + replan of every routing Sim" },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 12, "note": "everyone home (fixed: next firing starts from home)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "tailunlock": "$on",
+            "h2": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 5,
+          "note": "start: 30+ Go Here plans in one tick"
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 5
+          },
+          "waitS": 10,
+          "note": "quadtree adds while jobs run"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 5,
+          "note": "destroys while jobs run"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "RouteAsGhost",
+              "PassThroughWalls",
+              "PassThroughObjects"
+            ]
+          },
+          "waitS": 2,
+          "note": "ghost through walls"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "EnablePlanningAsCar",
+              "DisablePlanningAsPedestrian",
+              "BeginAsCar",
+              "EndAsCar"
+            ]
+          },
+          "waitS": 2,
+          "note": "car only (mode 2)"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "RouteAsSimLeadingHorse"
+            ]
+          },
+          "waitS": 2,
+          "note": "leading a horse"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "PlanUsingStroller",
+              "BeginAsStroller",
+              "EndAsStroller"
+            ]
+          },
+          "waitS": 2,
+          "note": "stroller"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "RouteAsFlier"
+            ]
+          },
+          "waitS": 2,
+          "note": "flier"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "options": [
+              "UseMostDirectPath",
+              "DisableAvoidance",
+              "BlockedByPeople"
+            ]
+          },
+          "waitS": 2,
+          "note": "direct / no avoidance"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1,
+          "note": "replan of the used route object"
+        },
+        {
+          "cmd": "camera_pan",
+          "setup": false,
+          "args": {
+            "lots": 4,
+            "height": 25,
+            "seconds": 10,
+            "passes": 1
+          },
+          "waitS": 12,
+          "note": "lot streaming while jobs run"
+        },
+        {
+          "cmd": "camera_pan",
+          "setup": true,
+          "args": {
+            "stop": true
+          }
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": true
+          },
+          "waitS": 4,
+          "note": "gate 15"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 10,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 10,
+          "note": "fire: gate 14 + replan of every routing Sim"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 12,
+          "note": "everyone home (fixed: next firing starts from home)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 14
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13724,19 +15410,84 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing CAS open/close and build/buy open/close (package resource reads through the RefPack decoder [inferred: CAS and catalog read compressed resources]) then a real save to the scratch name RC-SaveLoop (never the loaded Baseline save). The same name every firing, so from the second save on the old save exists and [SaveWrite] backs it up on its worker. The save end is the first 3 s with no sim iteration >= 500 ms after the save step (the sim thread is inside the native save until it returns). The load half of the save matrix is not here: each job load reads through [Decompress], and part b runs the matrix reload case. 2026-10-23 (docs/170 §6, instances per firing): one save per firing (a save is one instance); 4 saves cover the backup path (from the second save) and the job requirement saveCount >= 3 (was 6).",
     "expect": "no crash, saveCount rises by the firings, decompressCalls > 0, decompressFails 0, decompressMismatches 0",
     "steps": [
-      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "cas_open", "setup": true, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30, "note": "CAS model build: CAS part resources" },
-        { "cmd": "cas_category", "setup": true, "args": {"category": "hair"}, "waitS": 15, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 15 },
-        { "cmd": "cas_close", "setup": true, "timeoutS": 30, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
-        { "cmd": "buy_open", "setup": true, "waitS": 4, "note": "catalog thumbnails" },
-        { "cmd": "buy_close", "setup": true, "waitS": 4 },
-        { "cmd": "save_game", "setup": false, "args": {"name": "RC-SaveLoop"}, "waitS": 90, "waitUntil": {"quiet": 3000, "iterMs": 500}, "minS": 8, "maxS": 90, "note": "fire: real save, same scratch name (backup path from the second save)" }
+        {
+          "cmd": "cas_open",
+          "setup": true,
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30,
+          "note": "CAS model build: CAS part resources"
+        },
+        {
+          "cmd": "cas_category",
+          "setup": true,
+          "args": {
+            "category": "hair"
+          },
+          "waitS": 15,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 15
+        },
+        {
+          "cmd": "cas_close",
+          "setup": true,
+          "timeoutS": 30,
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 20
+        },
+        {
+          "cmd": "buy_open",
+          "setup": true,
+          "waitS": 4,
+          "note": "catalog thumbnails"
+        },
+        {
+          "cmd": "buy_close",
+          "setup": true,
+          "waitS": 4
+        },
+        {
+          "cmd": "save_game",
+          "setup": false,
+          "args": {
+            "name": "RC-SaveLoop"
+          },
+          "waitS": 90,
+          "waitUntil": {
+            "quiet": 3000,
+            "iterMs": 500
+          },
+          "minS": 8,
+          "maxS": 90,
+          "note": "fire: real save, same scratch name (backup path from the second save)"
+        }
       ],
-      "arms": ["on"],
-      "until": { "events": 4 },
+      "arms": [
+        "on"
+      ],
+      "until": {
+        "events": 4
+      },
       "maxMinutes": 12
     }
   },
@@ -13748,19 +15499,96 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): per firing Sim, object and CAS create/destroy churn through the GC and EA heaps (alloc-dupfree in loop form): 5 Sims spawned and removed, 20 EA objects placed and removed, CAS open/close. Ends on quiet (no sim iteration >= 100 ms for 3 s). 2026-10-23 (docs/170 §6, instances per firing): 8 Sims and 30 EA objects per firing (a household of 8 and a big build session), count = objects placed (place_objects tracked), stop at 90 objects = 3 firings (was 6 firings of 5 Sims + 20 objects).",
     "expect": "no crash, gcForeignAllocs 0 (when the GC thread check is in the build), commit growth flat across firings (read the row's VAS before -> after)",
     "steps": [
-      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 }
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "spawn_sims", "setup": false, "args": {"count": 8}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30 },
-        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 30}, "waitS": 40, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 40, "count": {"result": "tracked"} },
-        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 20 },
-        { "cmd": "cas_open", "setup": false, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30 },
-        { "cmd": "cas_close", "setup": false, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
-        { "cmd": "remove_sims", "setup": false, "args": {}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 30, "note": "fire: Sims and their objects released" }
+        {
+          "cmd": "spawn_sims",
+          "setup": false,
+          "args": {
+            "count": 8
+          },
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 30
+          },
+          "waitS": 40,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 40,
+          "count": {
+            "result": "tracked"
+          }
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 20
+        },
+        {
+          "cmd": "cas_open",
+          "setup": false,
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30
+        },
+        {
+          "cmd": "cas_close",
+          "setup": false,
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 20
+        },
+        {
+          "cmd": "remove_sims",
+          "setup": false,
+          "args": {},
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 30,
+          "note": "fire: Sims and their objects released"
+        }
       ],
-      "arms": ["on"],
-      "until": { "events": 90 },
+      "arms": [
+        "on"
+      ],
+      "until": {
+        "events": 90
+      },
       "maxMinutes": 15
     }
   },
@@ -13772,25 +15600,115 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of unseen-crowd-far: 20 spawned Sims walk from the home lot to the farthest community lot while the household and the camera stay home (unseen walkers for [UnseenThrottle]; Sims leaving the active lot keep high LOD for a while [inferred, docs/144 §2], so the script throttles see unseen high-LOD Sims), then walk back into view (snap-back). The out leg ends on the on arm once the three skip counters rose 10 in sum (min 20 s, so the walk is under way), on the off arm on 2 s quiet or 45 s; the home leg is fixed. Keep profile cameraPan off. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned walkers (was 20), one ABBA cycle (perArm 2 firings, was 4: 60 unseen walkers per arm). Counted in firings: the only per-walker counters rise on the on arm only (unseen_*_skipped) or need unseenprobe in the off arm, and crowd_go has no numeric count.",
     "expect": "no crash; on arms: utSkipped and unseen_*_skipped rise, unseen_motive_critical stays 0",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"unseenthrottle": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "patches", "setup": true, "args": {"unseenenv": "$on", "unseenmotives": "$on", "unseenbroadcast": "$on"}, "waitS": 1 },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far"}, "waitS": 45, "waitUntil": {"on": {"counter": ["unseen_env_skipped", "unseen_motive_skipped", "unseen_broadcast_skipped"], "rises": 10}, "off": {"quiet": 2000}}, "minS": 20, "maxS": 45, "note": "fire: unseen walk out" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 30, "note": "back into view (fixed)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "unseenthrottle": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "unseenenv": "$on",
+            "unseenmotives": "$on",
+            "unseenbroadcast": "$on"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 45,
+          "waitUntil": {
+            "on": {
+              "counter": [
+                "unseen_env_skipped",
+                "unseen_motive_skipped",
+                "unseen_broadcast_skipped"
+              ],
+              "rises": 10
+            },
+            "off": {
+              "quiet": 2000
+            }
+          },
+          "minS": 20,
+          "maxS": 45,
+          "note": "fire: unseen walk out"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home"
+          },
+          "waitS": 30,
+          "note": "back into view (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 12
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"unseenenv": false, "unseenmotives": false, "unseenbroadcast": false} },
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenenv": false,
+          "unseenmotives": false,
+          "unseenbroadcast": false
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13801,24 +15719,106 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): IP: 20 spawned Sims plus the household Go Here to the farthest community lot and back; IP routes cross water by boat and water taxi, and every boat exit sets ReplanWhenFinished (docs/151 §2, the D1 case [inferred: which Sims take a boat is the planner's choice]); Sims that planned successfully and stand still are what D5 memoizes (watchdog pass every 10 sim-minutes, ~10 s at ultra). The out leg ends on the on arm when legreplanskip_skipped + idlememo_skipped rose (min 30 s), on the off arm on 4 s quiet or 90 s; the home leg is fixed. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned Sims + household cross the water per firing (was 20), one ABBA cycle (perArm 2 firings, was 4). legreplanskip_skipped / idlememo_skipped rise on the on arm only, so they cannot count both arms: firings.",
     "expect": "no crash; on arms: legreplanskip_skipped and idlememo_skipped rise; stuck Sims not above the off arms",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "patches", "setup": true, "args": {"legreplanskip": "$on", "idlememo": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 90, "waitUntil": {"on": {"counter": ["legreplanskip_skipped", "idlememo_skipped"], "rises": 2}, "off": {"quiet": 4000}}, "minS": 30, "maxS": 90, "note": "fire: crowd across the water" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "back (fixed)" }
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "legreplanskip": "$on",
+            "idlememo": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 90,
+          "waitUntil": {
+            "on": {
+              "counter": [
+                "legreplanskip_skipped",
+                "idlememo_skipped"
+              ],
+              "rises": 2
+            },
+            "off": {
+              "quiet": 4000
+            }
+          },
+          "minS": 30,
+          "maxS": 90,
+          "note": "fire: crowd across the water"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "back (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 16
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"legreplanskip": false, "idlememo": false} },
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "patches",
+        "args": {
+          "legreplanskip": false,
+          "idlememo": false
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13829,23 +15829,89 @@
     "note": "UNVERIFIED (static only, 2026-10-23): never run. Forced loop (docs/175 §4): 30 spawned Sims + the household Go Here to the farthest community lot (one destination, so they steer round each other and the lot's objects while the other plans' async jobs hold +0x918), fixed 45 s window on both arms (timing A/B: no arm-dependent stop), home leg as setup. Needs the six modules installed by the ini (Enabled=1); the arm flips their Mode switches. Gate0RO answers only while steerro and avoidro are on (G0_FB_PIECES otherwise), so the arm must flip all of them.",
     "expect": "no crash, no tripwire line; on arms: steerTaken, avTakenMiss, g0Served, usfDeferred rise; key 0x85FE10 near 0 on, no shadow mismatch",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"steerro": "$on", "avoidro": "$on", "gate0ro": "$on", "deferfootprint": "$on", "deferfootprint2": "$on", "routetoobjro": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 45, "note": "fire: 30+ Sims walk to one lot while their jobs run" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "back (fixed)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "steerro": "$on",
+            "avoidro": "$on",
+            "gate0ro": "$on",
+            "deferfootprint": "$on",
+            "deferfootprint2": "$on",
+            "routetoobjro": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 45,
+          "note": "fire: 30+ Sims walk to one lot while their jobs run"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "back (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 4 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 4
+      },
       "maxMinutes": 16
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13856,25 +15922,116 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of rare-winter-pond (needs profile.noEnv): winter, frozen ponds (freeze level 100, -15 C), 6 spawned Sims cross the ice to the nearest pond and back per firing, plus a pond plan + Replan of the active Sim with EnablePondPlanning. 2026-10-23 (docs/170 §6, instances per firing): 12 Sims cross the ice per firing (was 6), one ABBA cycle (perArm 2 firings, was 4).",
     "expect": "no crash, waterJpsMismatches 0",
     "steps": [
-      { "cmd": "test_env", "args": {"mode": "fixed", "season": "winter", "weather": "snow", "intensity": "Heavy", "weather_hours": 24, "temperature": -15, "snow_level": "Deep", "freeze_ponds": true, "moon_phase": 4}, "waitS": 5 },
-      { "cmd": "test_env", "args": {"mode": "read"}, "waitS": 1, "note": "log: season, weather, temperature, snow level, pond state" },
-      { "cmd": "spawn_sims", "args": {"count": 12}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "winter",
+          "weather": "snow",
+          "intensity": "Heavy",
+          "weather_hours": 24,
+          "temperature": -15,
+          "snow_level": "Deep",
+          "freeze_ponds": true,
+          "moon_phase": 4
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: season, weather, temperature, snow level, pond state"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 12
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"waterjps": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "sim_route_to", "setup": false, "args": {"to": "pond", "options": ["EnablePondPlanning"]}, "waitS": 2, "note": "pond plan" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "@route.Replan"}, "waitS": 1 },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "pond"}, "waitS": 60, "waitUntil": {"quiet": 4000}, "minS": 20, "maxS": 60, "note": "fire: 12 Sims cross the ice" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 30, "note": "back across the snow (fixed)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "waterjps": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "sim_route_to",
+          "setup": false,
+          "args": {
+            "to": "pond",
+            "options": [
+              "EnablePondPlanning"
+            ]
+          },
+          "waitS": 2,
+          "note": "pond plan"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "@route.Replan"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "pond"
+          },
+          "waitS": 60,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 20,
+          "maxS": 60,
+          "note": "fire: 12 Sims cross the ice"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home"
+          },
+          "waitS": 30,
+          "note": "back across the snow (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 14
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 10 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      }
     ]
   },
   {
@@ -13885,31 +16042,150 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of pet-guard-cancel: per firing the pet guards an object (discourage footprint add while route jobs run), the guard is cancelled (footprint remove + slot destroy in one call), one routing spawned Sim is killed (Sim.Kill: dead-Sim sweep of its footprints) and one is spawned to keep the crowd at 5. 2026-10-23 (docs/170 §6, instances per firing): why 6 firings gave discDeadSweep 0: a dead-id sweep runs only for a Remove record that was deferred (an async route job running at the cancel) and whose object is gone when D drains it; with [Discourage] DestroyApply=1 the destroy gate applies the Remove at ObjectService_DestroyById while the slot still exists (discDestroyApplied), so the sweep never runs (discourage.cpp DiscOnDestroy / DiscApplyOne; ledger I-84-7-12: sweep counters \"with the destroy gate off\"), and kill_sim never destroys the Sim object. Now per firing 10 spawned Sims start Go Here plans 2 s before the cancel and discdestroy is 0 around the cancel (both arms), so each firing makes one dead-id sweep; a plain one-off guard/cancel first keeps the destroy gate covered. One guard per firing: pet_guard drives the household's first pet only (no count arg); perArm 2 firings (was 4).",
     "expect": "no crash, discApplied > 0, discDeadSweep >= 1 per firing, discDestroyApplied >= 1 (the plain one-off), discIdMismatch 0",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 5 },
-      { "cmd": "pet_guard", "args": {"action": "start"}, "waitS": 30, "note": "once: destroy gate check (DestroyApply on)" },
-      { "cmd": "crowd_go", "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the cancel" },
-      { "cmd": "pet_guard", "args": {"action": "cancel"}, "waitS": 5, "note": "once: Remove deferred, the destroy gate applies it (discDestroyApplied)" },
-      { "cmd": "crowd_go", "args": {"target": "home"}, "waitS": 10 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "start"
+        },
+        "waitS": 30,
+        "note": "once: destroy gate check (DestroyApply on)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 2,
+        "note": "route jobs running for the cancel"
+      },
+      {
+        "cmd": "pet_guard",
+        "args": {
+          "action": "cancel"
+        },
+        "waitS": 5,
+        "note": "once: Remove deferred, the destroy gate applies it (discDestroyApplied)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home"
+        },
+        "waitS": 10
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"deferfootprint": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "pet_guard", "setup": true, "args": {"action": "start"}, "waitS": 30, "note": "pet routes to the object, discourage footprint added" },
-        { "cmd": "crowd_go", "setup": true, "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the cancel" },
-        { "cmd": "native_set", "setup": true, "args": {"discdestroy": 0}, "note": "destroy gate off: the deferred Remove outlives its slot" },
-        { "cmd": "pet_guard", "setup": false, "args": {"action": "cancel"}, "waitS": 3, "note": "fire: footprint remove deferred + slot destroy, dead-id sweep at the drain" },
-        { "cmd": "native_set", "setup": true, "args": {"discdestroy": 1}, "waitS": 1 },
-        { "cmd": "kill_sim", "setup": false, "args": {"pick": "routing"}, "waitS": 5, "note": "a routing Sim dies (lifecycle; not the dead-id sweep: a dead Sim is not destroyed)" },
-        { "cmd": "spawn_sims", "setup": true, "args": {"count": 1}, "waitS": 8 },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 10, "note": "crowd home for the next firing" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "deferfootprint": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "pet_guard",
+          "setup": true,
+          "args": {
+            "action": "start"
+          },
+          "waitS": 30,
+          "note": "pet routes to the object, discourage footprint added"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 2,
+          "note": "route jobs running for the cancel"
+        },
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "discdestroy": 0
+          },
+          "note": "destroy gate off: the deferred Remove outlives its slot"
+        },
+        {
+          "cmd": "pet_guard",
+          "setup": false,
+          "args": {
+            "action": "cancel"
+          },
+          "waitS": 3,
+          "note": "fire: footprint remove deferred + slot destroy, dead-id sweep at the drain"
+        },
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "discdestroy": 1
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "kill_sim",
+          "setup": false,
+          "args": {
+            "pick": "routing"
+          },
+          "waitS": 5,
+          "note": "a routing Sim dies (lifecycle; not the dead-id sweep: a dead Sim is not destroyed)"
+        },
+        {
+          "cmd": "spawn_sims",
+          "setup": true,
+          "args": {
+            "count": 1
+          },
+          "waitS": 8
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home"
+          },
+          "waitS": 10,
+          "note": "crowd home for the next firing"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 10
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13920,26 +16196,125 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of rt-s2b-sweep: 5 routing Sims at ultra; per firing 10 EA objects placed (quadtree adds) and destroyed while route jobs run (ObjectService_DestroyById: the park path), then build/buy enter/exit (gates 15/14). 2026-10-23 (docs/170 §6, instances per firing): 20 EA objects per firing (was 10) destroyed 2 s after 10 spawned Sims (was 5) start Go Here plans, so the destroys meet running jobs; count = objects placed (place_objects tracked), stop at 30 per arm = one ABBA cycle (was perArm 4 firings).",
     "expect": "no crash; on arms: dpParked rises",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 30 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 5 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"destroypark": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "place_objects", "setup": true, "args": {"filter": "ea", "count": 20}, "waitS": 30, "waitUntil": {"quiet": 3000}, "minS": 5, "maxS": 30, "count": {"result": "tracked"} },
-        { "cmd": "crowd_go", "setup": true, "args": {"to": "far"}, "waitS": 2, "note": "route jobs running for the destroys" },
-        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 2, "maxS": 20, "note": "fire: destroys while jobs run" },
-        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 4 },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 10, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 10 },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 1 },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home"}, "waitS": 5 }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "destroypark": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "place_objects",
+          "setup": true,
+          "args": {
+            "filter": "ea",
+            "count": 20
+          },
+          "waitS": 30,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30,
+          "count": {
+            "result": "tracked"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 2,
+          "note": "route jobs running for the destroys"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 20,
+          "note": "fire: destroys while jobs run"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": true,
+          "args": {
+            "on": true
+          },
+          "waitS": 4
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 10,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 10
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home"
+          },
+          "waitS": 5
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 30 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 30
+      },
       "maxMinutes": 10
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13950,29 +16325,139 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of steer-crowd / avoid-crowd: 6 named townies visit Hogan's Deep-Fried Diner once (optional: a missing townie does not fail), then per firing the 10 spawned Sims and the household walk onto the diner lot at once (arrivals steer and run the avoidance check near their path ends while route jobs run) and back home. 2026-10-23 (docs/170 §6, instances per firing): on the SV save 15 spawned Sims + household arrive per firing (was 10; a busy diner), one ABBA cycle (perArm 2 firings, was 4). Counted in firings: crowd_go has no numeric count.",
     "expect": "no crash; on arms: slTaken rises, slShadowMismatch 0, avShadowMismatch 0 (avTripAv counts foreign entries: the safety fallback, not a failure), avSimWriteInRo 0",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
-      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
-      { "cmd": "spawn_sims", "args": {"count": 5}, "waitS": 30 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Wogan Hemlock", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Johnny Jones", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Paul Hogue", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Lilly-Bo Chique", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Marie Desmarais", "lot": "Hogan's Deep-Fried Diner"}, "optional": true },
-      { "cmd": "sim_visit_lot", "args": {"sim": "Wayne Bumble", "lot": "Hogan's Deep-Fried Diner"}, "optional": true }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 30
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wogan Hemlock",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Johnny Jones",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Paul Hogue",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Lilly-Bo Chique",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Marie Desmarais",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      },
+      {
+        "cmd": "sim_visit_lot",
+        "args": {
+          "sim": "Wayne Bumble",
+          "lot": "Hogan's Deep-Fried Diner"
+        },
+        "optional": true
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"slotenabledro": "$on", "avoidro": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"x": 312.4, "z": 1496.7, "household": true}, "waitS": 60, "waitUntil": {"quiet": 4000}, "minS": 20, "maxS": 60, "note": "fire: crowd arrives at the diner" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 30, "note": "home (fixed)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "slotenabledro": "$on",
+            "avoidro": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": true
+          },
+          "waitS": 60,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 20,
+          "maxS": 60,
+          "note": "fire: crowd arrives at the diner"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 30,
+          "note": "home (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 12
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -13985,15 +16470,47 @@
     "steps": [],
     "loop": {
       "steps": [
-        { "cmd": "patches", "setup": true, "args": {"farthestsorted": "$on", "indoorcap": "$on", "safespotcap": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "reflect_call", "setup": false, "args": {"path": "Ts3Fixes.Fixes.CandidateLoopProbe"}, "waitS": 2, "note": "fire: frontdoor ok/ms, farthest lot id/ms, indoor count/ms" }
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "farthestsorted": "$on",
+            "indoorcap": "$on",
+            "safespotcap": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.CandidateLoopProbe"
+          },
+          "waitS": 2,
+          "note": "fire: frontdoor ok/ms, farthest lot id/ms, indoor count/ms"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 10 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10
+      },
       "maxMinutes": 3
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"farthestsorted": false, "indoorcap": false, "safespotcap": false} }
+      {
+        "cmd": "patches",
+        "args": {
+          "farthestsorted": false,
+          "indoorcap": false,
+          "safespotcap": false
+        }
+      }
     ]
   },
   {
@@ -14004,30 +16521,151 @@
     "note": "UNVERIFIED (static only, 2026-10-22): never run. Release-check forced loop (docs/170 §5): loop form of replan-buildbuy-crowd: 20 spawned Sims plus the household; per firing a wave onto the home lot (through its doors) with a build/buy enter/exit while they route (OnBuildBuyExit replan of every Sim), then a far-lot wave with another enter/exit. 2026-10-23 (docs/170 §6, instances per firing): 30 spawned Sims + household (was 20), two build/buy exits per firing replan every routing Sim; one ABBA cycle (perArm 2 firings, was 4). replanspread_held / replandefer_deferred rise on the on arm only: firings.",
     "expect": "no crash, replanspread_exceptions 0; on arms: replanspread_held or replandefer_deferred rise",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "patches", "setup": true, "args": {"replandefer": "$on", "replanspread": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 6, "note": "wave onto the home lot" },
-        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 8 },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20, "note": "fire: replan of every routing Sim" },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 2 },
-        { "cmd": "crowd_go", "setup": true, "args": {"to": "far", "household": true}, "waitS": 6, "note": "far wave: long routes followed at the exit" },
-        { "cmd": "build_mode", "setup": true, "args": {"on": true}, "waitS": 8 },
-        { "cmd": "build_mode", "setup": false, "args": {"on": false}, "waitS": 20, "waitUntil": {"quiet": 3000}, "minS": 3, "maxS": 20 },
-        { "cmd": "set_speed", "setup": true, "args": {"speed": "ultra"}, "waitS": 2 }
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "replandefer": "$on",
+            "replanspread": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 6,
+          "note": "wave onto the home lot"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": true,
+          "args": {
+            "on": true
+          },
+          "waitS": 8
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 20,
+          "note": "fire: replan of every routing Sim"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 2
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 6,
+          "note": "far wave: long routes followed at the exit"
+        },
+        {
+          "cmd": "build_mode",
+          "setup": true,
+          "args": {
+            "on": true
+          },
+          "waitS": 8
+        },
+        {
+          "cmd": "build_mode",
+          "setup": false,
+          "args": {
+            "on": false
+          },
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 3,
+          "maxS": 20
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 2
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 10
     },
     "cleanup": [
-      { "cmd": "patches", "args": {"replandefer": false, "replanspread": false} },
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "patches",
+        "args": {
+          "replandefer": false,
+          "replanspread": false
+        }
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -14038,27 +16676,121 @@
     "note": "UNVERIFIED (static only, 2026-10-23): never run. Forced loop: per firing 30 spawned Sims + the household Go Here to the farthest community lot (30+ async route jobs), and while those jobs run 8 objects are placed on the home lot (place_objects: FindGoodLocationNearby per object = IC_World_FindGoodLocation -> 0xB470C0 -> 0x634F10 -> 0x631F10, several placement tests each [inferred count]) and removed again, twice; then everyone home (fixed). Off arms: the placement tests wait at key 0x631F40 for the job; on arms: fgTaken rises and the key stays near 0, unless a fallback (fgFb) or the next +0x918 taker in the tick absorbs the wait (docs/152 §1 conservation, docs/174 §5).",
     "expect": "no crash; on arms: fgTaken rises, fgShadowMismatch 0, fgFb_4 (tripwire) small; wait key 0x631F40 near 0 in the on windows",
     "steps": [
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "spawn_sims", "args": {"count": 10}, "waitS": 20 },
-      { "cmd": "set_speed", "args": {"speed": "ultra"}, "waitS": 2 }
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
     ],
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"placementro": "$on"}, "waitS": 1, "note": "arm" },
-        { "cmd": "crowd_go", "setup": false, "args": {"to": "far", "household": true}, "waitS": 2, "note": "start: 30+ Go Here plans (async jobs)" },
-        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 8}, "waitS": 3, "note": "fire: placement tests while jobs run" },
-        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 2 },
-        { "cmd": "place_objects", "setup": false, "args": {"filter": "ea", "count": 8}, "waitS": 3, "note": "fire: second batch (jobs still running)" },
-        { "cmd": "remove_objects", "setup": false, "args": {}, "waitS": 20, "waitUntil": {"quiet": 4000}, "minS": 5, "maxS": 40 },
-        { "cmd": "crowd_go", "setup": true, "args": {"target": "home", "household": true}, "waitS": 40, "note": "home (fixed)" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "placementro": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 2,
+          "note": "start: 30+ Go Here plans (async jobs)"
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 8
+          },
+          "waitS": 3,
+          "note": "fire: placement tests while jobs run"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 2
+        },
+        {
+          "cmd": "place_objects",
+          "setup": false,
+          "args": {
+            "filter": "ea",
+            "count": 8
+          },
+          "waitS": 3,
+          "note": "fire: second batch (jobs still running)"
+        },
+        {
+          "cmd": "remove_objects",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 5,
+          "maxS": 40
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 40,
+          "note": "home (fixed)"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 2 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
       "maxMinutes": 14
     },
     "cleanup": [
-      { "cmd": "remove_sims", "args": {}, "waitS": 20 }
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      }
     ]
   },
   {
@@ -14068,23 +16800,93 @@
     "save": "Baseline-IP-Spring",
     "note": "UNVERIFIED (static only, 2026-10-23): never run. The active Sim plans a long route to the farthest community lot with water + boat planning (not followed, kept as @route); each firing replans it 3 times from the Sim's position with Route.ReplanFromPoint in a one-shot task (route_replan: a yielding task that is not the route's Sim, the context of the foreign plans). Off arms: 3 sync plans on the sim thread (one freeze each, sync lines 'IC ReplanFromPosition, reason Foreign'); on arms: 3 worker jobs, the task sleeps a tick at a time. Each loop ends with route_replan {result} rows: plan, paths, ms, sig (the same sig on both arms = the same route). 10 firings per arm ABBA.",
     "steps": [
-      { "cmd": "set_speed", "args": {"speed": "normal"}, "waitS": 2 },
-      { "cmd": "sim_route_to", "args": {"to": "far", "options": ["EnableWaterPlanning"], "options2": ["EnablePlanningAsBoat"]}, "waitS": 5, "note": "long route kept as @route" },
-      { "cmd": "route_replan", "args": {"result": true}, "waitS": 1, "note": "clear rows" }
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "sim_route_to",
+        "args": {
+          "to": "far",
+          "options": [
+            "EnableWaterPlanning"
+          ],
+          "options2": [
+            "EnablePlanningAsBoat"
+          ]
+        },
+        "waitS": 5,
+        "note": "long route kept as @route"
+      },
+      {
+        "cmd": "route_replan",
+        "args": {
+          "result": true
+        },
+        "waitS": 1,
+        "note": "clear rows"
+      }
     ],
     "expect": "no crash, no 'A10 foreign job's route being followed' trip line (afActiveTrip 0), arMismatch / arOrphan 0; off arms: afSeen_2 +3 per firing, sync lines 'IC ReplanFromPosition, reason Foreign' with route_replan ms ~ the freeze; on arms: afStarted_2 = afCollected_2 +3 per firing, a10foreign_started +3, no sim freeze >= 100 ms from the plan; route_replan rows: the same plan type and sig on every row of both arms",
     "loop": {
       "steps": [
-        { "cmd": "native_set", "setup": true, "args": {"a10foreign": "$on"}, "waitS": 1, "note": "arm (native)" },
-        { "cmd": "route_replan", "setup": false, "args": {"count": 3}, "waitS": 12, "note": "fire: 3 foreign ReplanFromPosition plans", "waitUntil": {"quiet": 2000}, "minS": 2, "maxS": 12, "count": {"result": "queued"} },
-        { "cmd": "route_replan", "setup": true, "args": {"result": true}, "waitS": 1, "note": "rows: plan, paths, ms, sig" }
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "a10foreign": "$on"
+          },
+          "waitS": 1,
+          "note": "arm (native)"
+        },
+        {
+          "cmd": "route_replan",
+          "setup": false,
+          "args": {
+            "count": 3
+          },
+          "waitS": 12,
+          "note": "fire: 3 foreign ReplanFromPosition plans",
+          "waitUntil": {
+            "quiet": 2000
+          },
+          "minS": 2,
+          "maxS": 12,
+          "count": {
+            "result": "queued"
+          }
+        },
+        {
+          "cmd": "route_replan",
+          "setup": true,
+          "args": {
+            "result": true
+          },
+          "waitS": 1,
+          "note": "rows: plan, paths, ms, sig"
+        }
       ],
-      "arms": ["off", "on", "on", "off"],
-      "until": { "perArm": 10 },
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 10
+      },
       "maxMinutes": 12
     },
     "cleanup": [
-      { "cmd": "native_set", "args": {"a10foreign": 0} }
+      {
+        "cmd": "native_set",
+        "args": {
+          "a10foreign": 0
+        }
+      }
     ]
   },
   {
@@ -16706,6 +19508,7 @@
       "steps": [
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "errortrapspread": true
           },
@@ -16714,6 +19517,7 @@
         },
         {
           "cmd": "reflect_call",
+          "setup": false,
           "args": {
             "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
             "args": [
@@ -16884,6 +19688,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "deferfootprint": "$on"
           },
@@ -16892,6 +19697,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on",
@@ -17086,6 +19892,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on"
           },
@@ -17094,6 +19901,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on",
@@ -17224,6 +20032,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -17233,6 +20042,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "overwatchchain": "$on",
             "errortrapspread": "$on"
@@ -17336,6 +20146,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -17345,6 +20156,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "errortrapspread": "$on"
@@ -17441,6 +20253,7 @@
       "steps": [
         {
           "cmd": "native_set",
+          "setup": true,
           "args": {
             "refcountguard": "$on",
             "deferfootprint": "$on"
@@ -17450,6 +20263,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "stuckcheckasync": "$on",
             "overwatchchain": "$on"
@@ -17459,6 +20273,7 @@
         },
         {
           "cmd": "patches",
+          "setup": true,
           "args": {
             "errortrapspread": "$on"
           },
@@ -17467,6 +20282,7 @@
         },
         {
           "cmd": "reflect_call",
+          "setup": false,
           "args": {
             "path": "Ts3Fixes.Fixes.ErrorTrapSpreadNow",
             "args": [
@@ -17495,6 +20311,840 @@
         "perArm": 10
       },
       "maxMinutes": 15
+    }
+  },
+  {
+    "id": "route-traffic-car-loop",
+    "bug": "docs/163 §7: traffic cars (CarNpcWithNoDriver+LiteDriver.Simulate, the car's own driving task) plan PlanToPoint for a car follower; ts3fixes sends a foreign START (follower is not a Sim), ts3native refuses it as Foreign with FallbackAsync=0, so every car plan runs sync on the sim thread (2026-10-24 logs: 120 plans, max 224 ms, BP)",
+    "fix": "ts3fixes drivertaskasync (RouteBackoff.cs OwnerTaskStart): own START from the LiteDriver task",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. 20 driverless cars placed out of view (spawn_traffic, as unseen-traffic); their LiteDriver tasks pick a new spot every kCarWaitingTimeRange sim-minutes, so ultra speed gives many plans. Arms flip drivertaskasync; unseencars stays off (it parks cars instead of planning).",
+    "steps": [
+      {
+        "cmd": "spawn_traffic",
+        "args": {
+          "count": 20
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseencars": false
+        },
+        "waitS": 1
+      }
+    ],
+    "expect": "no crash; on arms: drivertask_car_sent and ownertask_started grow, no 'reason Foreign' sync plan lines with a LiteDriver.Simulate stack; off arms: those lines as before; cars still drive (no car parked for the whole run)",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "drivertaskasync": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": false,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 60,
+          "note": "car rounds"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "normal"
+          },
+          "waitS": 2
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
+      "maxMinutes": 8
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "drivertaskasync": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "ip-boat-houseboat-return-loop",
+    "bug": "docs/163 §7: a Sim coming home to a houseboat by boat (GetOutOfBoat.Run -> Boat.RouteBoatNearHouseboat) plans the boat's route in the Sim's task; the follower is the boat, so the START is foreign and refused as Foreign with FallbackAsync=0 (2026-10-24 logs: 21 plans, max 243 ms, IP)",
+    "fix": "ts3fixes drivertaskasync (RouteBackoff.cs OwnerTaskStart): own START when the asking task's Sim rides the vehicle (Sim.Parent == boat, inferred)",
+    "save": "Baseline-IP",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Linda Scott and Mylee Arias live on the houseboat (ip-houseboat-gohome): per firing both visit the farthest lot, then go home; the way home by boat ends at the houseboat. If drivertask_rider_sent stays 0 on the on arms, Sim.Parent is not the boat while it moves: read the rider test from a live stack.",
+    "steps": [
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; on arms: drivertask_rider_sent and ownertask_started grow, no 'reason Foreign' sync plan lines with a RouteBoatNearHouseboat stack; both Sims end on the houseboat",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "drivertaskasync": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "sim_visit_lot",
+          "setup": true,
+          "args": {
+            "sim": "Linda Scott",
+            "lot": "far"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "sim_visit_lot",
+          "setup": true,
+          "args": {
+            "sim": "Mylee Arias",
+            "lot": "far"
+          },
+          "waitS": 60
+        },
+        {
+          "cmd": "sim_go_home",
+          "setup": false,
+          "args": {
+            "sim": "Linda Scott"
+          },
+          "waitS": 1,
+          "note": "fire: boat back to the houseboat"
+        },
+        {
+          "cmd": "sim_go_home",
+          "setup": false,
+          "args": {
+            "sim": "Mylee Arias"
+          },
+          "waitS": 60
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 2
+      },
+      "maxMinutes": 12
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "drivertaskasync": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "route-stuckcheck-own-loop",
+    "bug": "docs/163 §7: with stuckcheckasync the 3 AM stuck check's plans run in our drain task, a task that is not the Sim's: foreign START, refused as Foreign with FallbackAsync=0, so up to 10 sync plans per Sim per tick (2026-10-24 logs: 130 plans, max 6,870 ms)",
+    "fix": "ts3fixes stuckcheckown (RouteBackoff.cs OwnerTaskStart): own START from the stuckcheckasync drain task",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Same stranding as route-stuckcheck-reset-loop (20 Sims on unroutable spots of Hogan's diner lot, the game's stuck check alarm armed at attempt 3); stuckcheckasync on in both arms, only stuckcheckown flips.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckasync": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash; on arms: stuckcheckown_sent ~10 per checked Sim and ownertask_started grow, no 'reason Foreign' lines with a RunStuckCheckHelper stack; resets as in the off arms (stuckcheckasync_run ~20 a loop)",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "stuckcheckown": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "strand_crowd",
+          "setup": true,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "tries": 240
+          },
+          "waitS": 2,
+          "note": "strand"
+        },
+        {
+          "cmd": "stuck_check_fire",
+          "setup": false,
+          "args": {
+            "attempt": 3,
+            "delay_min": 1,
+            "x": 312.4,
+            "z": 1496.7
+          },
+          "waitS": 28,
+          "note": "fire: 20 stuck checks x 10 plans",
+          "waitUntil": [
+            {
+              "counter": [
+                "stuckcheckasync_run",
+                "stuckcheckasync_dropped"
+              ],
+              "of": "stuckcheckasync_queued"
+            },
+            {
+              "quiet": 4000
+            }
+          ],
+          "minS": 4,
+          "maxS": 28,
+          "count": {
+            "result": "armed"
+          }
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 40
+      },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "stuckcheckown": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "ip-world-dispose-loop",
+    "bug": "docs/74 §11 (a): every object Dispose on the world lot runs GameObject.Dispose(bool) -> LotCurrent.GetObjects<SeasonalLotMarker>() -> WorldLot.GetObjects<T> -> Queries.GetGlobalObjects(typeof(SeasonalLotMarker)) (Query_GetGlobalObjects, a whole-world walk): ~100-115 ms ScriptProxy.Dispose ticks in IP (off-lot Sims leaving, traffic cars, jigs)",
+    "fix": "ts3fixes seasonmarkercache (SeasonMarkerCache.cs, tuning kSeasonMarkerCache, default off): the marker query answered from a live list (OnStartup / Dispose postfixes, seeded once per world load), every 8th answer checked against the game",
+    "save": "Baseline-IP",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Per firing 10 tracked Sims spawned (spawn_sims puts them near their home lot corner; those standing on the street or a lot edge have the world lot as LotCurrent) and 10 driverless cars, then remove_sims disposes the Sims (the 'off-lot Sims leaving the world' owner). Arms flip seasonmarkercache; judge with hitch-ab.ts (ScriptProxy.Dispose ticks >= 100 ms per arm) and the counters.",
+    "steps": [
+      {
+        "cmd": "spawn_traffic",
+        "args": {
+          "count": 10
+        },
+        "waitS": 10,
+        "note": "traffic cars: their despawn is the other big Dispose owner"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "seasonmarkercache": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "spawn_sims",
+          "setup": true,
+          "args": {
+            "count": 10
+          },
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 20
+        },
+        {
+          "cmd": "remove_sims",
+          "setup": false,
+          "args": {},
+          "waitS": 20,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 2,
+          "maxS": 20,
+          "note": "fire: Sims and their inventories disposed"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 40
+      },
+      "maxMinutes": 10
+    },
+    "expect": "no crash, no script errors; on arms: seasonmarkercache_seeds 1, seasonmarkercache_hits grows (about 7 of 8 marker queries), seasonmarkercache_verifies about hits / 7, seasonmarkercache_mismatches 0 (one mismatch turns the cache off for the session: read the applied log line); fewer ScriptProxy.Dispose ticks >= 100 ms than the off arms",
+    "cleanup": [
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 20
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "seasonmarkercache": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "ip-school-run-safespot-loop",
+    "bug": "docs/74 §11 (b), docs/95 §5.1: the rabbit hole shortcut (switch rabbithole, on) places an unseen school child through SafeSpot, up to 5 FindGoodLocation searches in one run of the child's task (sampled IP 287 ms DoInteraction -> AsyncWait run)",
+    "fix": "ts3fixes safespotyield (Fixes.cs SafeSpotYield, tuning kSafeSpotYield, default off): Simulator.Sleep(0) after each FindGoodLocation in the Sim's own task when MayYield(); after the yield the Sim must still be unseen, else the game's trip runs",
+    "save": "Baseline-IP",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Uses the save's own school run: go_to_work {school: true} queues GoToSchoolInRabbitHole (as Career.RegularWorkDayGoToWorkHandle does) and only works in the school-hours window (ShouldBeAtWork or IsAllowedToWork): start from a weekday-morning save or let the clock reach it at ultra before the loop; outside the window the optional steps fail and the firing counts no event. Child names are the save's school-age townies: fill `sims` from list_sims before the first run (the placeholders below make the step fail fast if left). Camera stays where the save puts it, so the children and the school must be off screen for the shortcut to fire (rabbithole_shortcuts grows).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "rabbithole": true,
+          "safespotreuse": false
+        },
+        "waitS": 1,
+        "note": "the shortcut under test on, reuse off so every try searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 5
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "safespotyield": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "go_to_work",
+          "setup": false,
+          "args": {
+            "sim": "<school child 1>",
+            "school": true
+          },
+          "waitS": 1,
+          "optional": true,
+          "note": "fire: school trips queued in the same minute"
+        },
+        {
+          "cmd": "go_to_work",
+          "setup": false,
+          "args": {
+            "sim": "<school child 2>",
+            "school": true
+          },
+          "waitS": 1,
+          "optional": true
+        },
+        {
+          "cmd": "go_to_work",
+          "setup": false,
+          "args": {
+            "sim": "<school child 3>",
+            "school": true
+          },
+          "waitS": 1,
+          "optional": true
+        },
+        {
+          "cmd": "go_to_work",
+          "setup": false,
+          "args": {
+            "sim": "<school child 4>",
+            "school": true
+          },
+          "waitS": 30,
+          "optional": true,
+          "waitUntil": {
+            "quiet": 3000
+          },
+          "minS": 5,
+          "maxS": 30,
+          "count": {
+            "counter": "rabbithole_calls"
+          }
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 8
+      },
+      "maxMinutes": 10
+    },
+    "expect": "no crash, no 'interp.c:3595' abort, no script errors, 0 stuck Sims; on arms: safespotyield_yields grows (about safespotreuse_searches), safespotyield_not_yielded about 0 for school trips, safespotyield_given_up small; rabbithole_shortcuts per call as in the off arms; DoInteraction -> AsyncWait task runs >= 250 ms fewer than off",
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "safespotyield": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "bp-disposespread-burst-loop",
+    "bug": "docs/74 §11 (a): ScriptProxy.Dispose of world-lot objects costs ~100 ms each (world-wide SeasonalLotMarker query); Sims leaving the world and traffic cars at despawn are destroyed in bursts, so several Disposes land in one tick (BP 148 + 139 ms, SV 497 ms)",
+    "fix": "ts3fixes disposespread (DisposeSpread.cs, tuning kDisposeSpread, default off): FadeOut-destroy of a Sim, Sim.DestroyMyself (service Sims) and CarNpcWithNoDriver.DriveOffscreenAndRelease queue the object; our task destroys one per tick; flushed at save/travel/build-buy (docs/74 §12)",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Stress-labelled: 'fade' forces 6 unseen homeless NPC Sims to fade out and be destroyed in one alarm tick (a burst the game makes when visitors leave together); 'cars' sets the drive-off flag of 4 traffic cars (their own cleanup alarm's flag; they leave as their LiteDriver tasks wake). Needs /taskstall or [HitchAttr] for the Dispose lines.",
+    "expect": "no crash, no visible pop-in; off arms: the 6 Sim Disposes in 1-2 iterations ('ScriptCore.ScriptProxy: Dispose' lines in the same iteration); on arms: disposespread_queued and disposespread_destroyed +6..10 per loop, disposespread_max_wait_ticks <= 16, disposespread_full 0, one Sim Dispose per iteration; disposespread_skipped counts Sims near the camera (game path). A save during an on arm: disposespread_flushed > 0, no faded Sim left in the save",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "disposespread": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.DisposeSpreadNow",
+            "args": [
+              "fade",
+              6
+            ]
+          },
+          "waitS": 20,
+          "note": "burst: 6 fades end in one alarm tick"
+        },
+        {
+          "cmd": "reflect_call",
+          "setup": false,
+          "args": {
+            "path": "Ts3Fixes.Fixes.DisposeSpreadNow",
+            "args": [
+              "cars",
+              4
+            ]
+          },
+          "waitS": 30,
+          "note": "traffic cars drive off and despawn"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 6
+      },
+      "maxMinutes": 10
+    },
+    "cleanup": [
+      {
+        "cmd": "patches",
+        "args": {
+          "disposespread": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "saver-autosave-crowd-loop",
+    "bug": "Player report 2026-10-24 (Discord): \"save is stuck\" with v0.1.5 + NRaas Saver. Saver V22 autosaves from its own task while the game runs: in Live mode optional map view (Camera.ToggleMapView + SpeedTrap.Sleep), optional pause (mPauseOnSave, default off), then Common.FunctionTask.Perform(OnSave) -> OptionsModel.SaveGame(true, true, saveAs) under base + cycle count; our async route jobs are running then and the save write takes the routing lock (world+0x918, infinite deadline) in Lot_SaveRouting 0xAB1E60 (docs/25 §8)",
+    "fix": "none (check of the shipped v0.1.5 with Saver's save path emulated: agent saver_like_save)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. 30 spawned Sims + household routing (route-queuefull-replan-loop crowd); per firing: crowd to the far lot, one saver_like_save with mapView on, pause off while they route (game running), save_watch check, crowd home. 9 saves (until events 9, counted by save_watch new_saves), cap 22 min. Pass: every save finishes within 120 s (save_watch fails the step and the job otherwise), no crash, no hang (run guard progress checks), ts3native.log has no FAIL lines (logForbid). Per save in <tag>-repro.jsonl (save_watch results): ms, max_gap_ms (the native write), call_ms, modal, file, async_5s_before / async_during (ts3fixes asyncroute_started [56]: route jobs starting around the save). Scratch saves SaverChk-* cycle through 5 names (overwritten each run; delete by hand if wanted).",
+    "expect": "no crash; 9-10 saves recorded, each ms < 120000, returned true, file SaverChk-E-<n>.sims3; save_watch never fails; ts3native.log no FAIL lines",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "setup": true,
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "save_watch",
+        "args": {
+          "reset": true
+        },
+        "waitS": 1,
+        "note": "start the save watch task"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "SaverChk-E-0"
+        },
+        "waitS": 120,
+        "waitUntil": {
+          "quiet": 3000,
+          "iterMs": 500
+        },
+        "minS": 8,
+        "maxS": 120,
+        "note": "scratch save name first (never the loaded Baseline save): the next saves are SaverChk-E-1..4, cycling as Saver does"
+      },
+      {
+        "cmd": "save_watch",
+        "setup": true,
+        "args": {
+          "maxS": 120
+        },
+        "timeoutS": 30,
+        "waitS": 1,
+        "note": "check: every recorded save finished within 120 s (fails the job otherwise)"
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 20,
+          "note": "crowd: 30+ Go Here plans, async route jobs running"
+        },
+        {
+          "cmd": "saver_like_save",
+          "setup": false,
+          "args": {
+            "mapView": true,
+            "pause": false,
+            "timeoutS": 120
+          },
+          "waitS": 120,
+          "waitUntil": {
+            "quiet": 3000,
+            "iterMs": 500
+          },
+          "minS": 8,
+          "maxS": 120,
+          "note": "fire: Saver-style save (map view, not paused) while the crowd routes"
+        },
+        {
+          "cmd": "save_watch",
+          "setup": true,
+          "args": {
+            "maxS": 120
+          },
+          "timeoutS": 30,
+          "waitS": 1,
+          "count": {
+            "result": "new_saves"
+          },
+          "note": "check: every recorded save finished within 120 s (fails the job otherwise)"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 1
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 20,
+          "note": "crowd home, through the doors"
+        }
+      ],
+      "arms": [
+        "on"
+      ],
+      "until": {
+        "events": 9
+      },
+      "maxMinutes": 22
+    }
+  },
+  {
+    "id": "saver-real-autosave-crowd",
+    "bug": "Player report 2026-10-24 (Discord): \"save is stuck\" with v0.1.5 + NRaas Saver. Saver V22 autosaves from its own task while the game runs: in Live mode optional map view (Camera.ToggleMapView + SpeedTrap.Sleep), optional pause (mPauseOnSave, default off), then Common.FunctionTask.Perform(OnSave) -> OptionsModel.SaveGame(true, true, saveAs) under base + cycle count; our async route jobs are running then and the save write takes the routing lock (world+0x918, infinite deadline) in Lot_SaveRouting 0xAB1E60 (docs/25 §8)",
+    "fix": "none (check of the shipped v0.1.5 with the real NRaas Saver V22 installed: queue job fixes.install nraas-saver)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-24): never run. Needs NRaas_Saver.package (V22, sha256 86150063...) installed (queue fixes.install nraas-saver; fixes.json source: put it in ~/Downloads/ts3-fixes). Saver configured at runtime: mPauseOnLoad off (its load alarm may still pause once: the loop sets ultra), mRealMinutesBetweenSaves 2, then NRaas.Saver.RestartTimers (what its RealTimeSaveMinutes option does after a change); mPauseOnSave and mSwitchToMapView stay at their defaults (off). Saver saves on its own real-time timer; the loop keeps 30+ Sims routing and counts Saver's completed saves (save_watch new_saves) until 8, cap 22 min. Saver version: save_watch saver_version (NRaas.VersionStamp.sVersion of the assembly that holds NRaas.Saver; 22 expected). Pass: every save finishes within 120 s (save_watch fails the step and the job otherwise), no crash, no hang (run guard progress checks), ts3native.log has no FAIL lines (logForbid). Per save in <tag>-repro.jsonl (save_watch results): ms, max_gap_ms (the native write), call_ms, modal, file, async_5s_before / async_during (ts3fixes asyncroute_started [56]: route jobs starting around the save). Scratch saves SaverChk-* cycle through 5 names (overwritten each run; delete by hand if wanted).",
+    "expect": "no crash; >= 8 Saver saves recorded (via watch), each ms < 120000, file SaverChk-R-<1..4>.sims3; save_watch never fails; ts3native.log no FAIL lines",
+    "steps": [
+      {
+        "cmd": "reflect_set",
+        "args": {
+          "path": "NRaas.Saver.Settings.mPauseOnLoad",
+          "value": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_set",
+        "args": {
+          "path": "NRaas.Saver.Settings.mPauseOnSave",
+          "value": false
+        },
+        "waitS": 1,
+        "note": "default, set for certainty"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "setup": true,
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "save_watch",
+        "args": {
+          "reset": true
+        },
+        "waitS": 1,
+        "note": "start the save watch task"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "SaverChk-R-0"
+        },
+        "waitS": 120,
+        "waitUntil": {
+          "quiet": 3000,
+          "iterMs": 500
+        },
+        "minS": 8,
+        "maxS": 120,
+        "note": "scratch save name first (never the loaded Baseline save): the next saves are SaverChk-R-1..4, cycling as Saver does"
+      },
+      {
+        "cmd": "save_watch",
+        "setup": true,
+        "args": {
+          "maxS": 120
+        },
+        "timeoutS": 30,
+        "waitS": 1,
+        "note": "check: every recorded save finished within 120 s (fails the job otherwise)"
+      },
+      {
+        "cmd": "reflect_set",
+        "args": {
+          "path": "NRaas.Saver.Settings.mRealMinutesBetweenSaves",
+          "value": 2
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "NRaas.Saver.RestartTimers",
+          "args": []
+        },
+        "waitS": 1,
+        "note": "Saver re-arms its AutoSave timer with the new interval"
+      },
+      {
+        "cmd": "set_speed",
+        "setup": true,
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 1
+      }
+    ],
+    "loop": {
+      "steps": [
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "household": true
+          },
+          "waitS": 20,
+          "note": "crowd: 30+ Go Here plans, async route jobs running"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 25
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": true
+          },
+          "waitS": 20,
+          "note": "crowd home, through the doors"
+        },
+        {
+          "cmd": "set_speed",
+          "setup": true,
+          "args": {
+            "speed": "ultra"
+          },
+          "waitS": 25
+        },
+        {
+          "cmd": "save_watch",
+          "setup": false,
+          "args": {
+            "maxS": 120
+          },
+          "timeoutS": 30,
+          "waitS": 1,
+          "count": {
+            "result": "new_saves"
+          },
+          "note": "fire: count Saver's completed saves; fails when one took > 120 s or is open > 120 s"
+        }
+      ],
+      "arms": [
+        "on"
+      ],
+      "until": {
+        "events": 8
+      },
+      "maxMinutes": 22
     }
   }
 ]

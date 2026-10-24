@@ -1,0 +1,446 @@
+{
+  "id": "mansion-eight",
+  "name": "Ashworth Eight",
+  "archetype": "mansion-eight",
+  "seed": 1,
+  "structure": "archetype",
+  "summary": "Eight under one roof for a furnished mansion with no crib (Story-BP-Mansion): grandparents, parents, two teens, two children; noise, chores and birthdays.",
+  "funds": 45000,
+  "balance": {
+    "up": 14,
+    "down": 10,
+    "neutral": 10
+  },
+  "sims": [
+    {
+      "key": "m0",
+      "first": "Marco",
+      "last": "Northcott",
+      "age": "Elder",
+      "gender": "Male",
+      "traits": [
+        "Good",
+        "Angler",
+        "GoodSenseOfHumor",
+        "GreatKisser",
+        "Grumpy"
+      ],
+      "wish": {
+        "id": 2844103135,
+        "name": "Charisma and Guitar L10"
+      },
+      "food": "VeggiRolls",
+      "music": "Electronica",
+      "color": "Lime",
+      "zodiac": "Pisces",
+      "voice": "A",
+      "storyPersona": "retiree",
+      "persona": "Marco (Elder): Good, Angler, GoodSenseOfHumor, GreatKisser, Grumpy. Upside: charity, helps others, relationships rise, Good moodlets; catches fish faster and enjoys fishing (moodlet), better fish. Downside: others dislike it, gets upset when around happy Sims, relationship decay.",
+      "expect": [
+        {
+          "trait": "Good",
+          "plus": "charity, helps others, relationships rise, Good moodlets",
+          "minus": "negative moodlet when doing or seeing mean acts; refuses Evil options"
+        },
+        {
+          "trait": "Angler",
+          "plus": "catches fish faster and enjoys fishing (moodlet), better fish",
+          "minus": "gets restless away from water, spends free time fishing instead of chores"
+        },
+        {
+          "trait": "GoodSenseOfHumor",
+          "plus": "jokes succeed, laughs more, fun",
+          "minus": "jokes at the wrong time annoy No Sense Of Humor Sims"
+        },
+        {
+          "trait": "GreatKisser",
+          "plus": "kisses succeed and raise romance fast",
+          "minus": "more romantic attention: jealousy in households"
+        },
+        {
+          "trait": "Grumpy",
+          "plus": "fun from grumpy socials, unaffected by bad moods of others",
+          "minus": "others dislike it, gets upset when around happy Sims, relationship decay"
+        }
+      ]
+    },
+    {
+      "key": "m1",
+      "first": "Olive",
+      "last": "Northcott",
+      "age": "Elder",
+      "gender": "Female",
+      "traits": [
+        "NaturalCook",
+        "Neurotic",
+        "FamilyOriented",
+        "Brave",
+        "Perfectionist"
+      ],
+      "wish": {
+        "id": 153251928,
+        "name": "Save N Sims from death in the firefighter career"
+      },
+      "food": "Cobbler",
+      "music": "IslandLife",
+      "color": "White",
+      "zodiac": "Scorpio",
+      "voice": "C",
+      "storyPersona": "family",
+      "persona": "Olive (Elder): NaturalCook, Neurotic, FamilyOriented, Brave, Perfectionist. Upside: cooks better, no cooking fires (immune, docs/179 R-LIFE-7), faster recipes; better with kids, happy with family (moodlet), good parenting. Downside: stress moodlets, worry, compulsive checks, fear of germs; misses family when apart (Homesick), demanding wishes for babies.",
+      "expect": [
+        {
+          "trait": "NaturalCook",
+          "plus": "cooks better, no cooking fires (immune, docs/179 R-LIFE-7), faster recipes",
+          "minus": "cooks constantly; eats into time for other needs"
+        },
+        {
+          "trait": "Neurotic",
+          "plus": "notices problems early; checks locks and stoves",
+          "minus": "stress moodlets, worry, compulsive checks, fear of germs"
+        },
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Brave",
+          "plus": "firefighting, ghost and burglar encounters without fear, extinguishes fires",
+          "minus": "runs into fires and danger; risky interactions offered"
+        },
+        {
+          "trait": "Perfectionist",
+          "plus": "higher quality output (art, cooking, homework)",
+          "minus": "slower work, unhappy with anything less than perfect"
+        }
+      ]
+    },
+    {
+      "key": "m2",
+      "first": "Leo",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Male",
+      "traits": [
+        "Workaholic",
+        "FamilyOriented",
+        "Excitable",
+        "CouchPotato",
+        "Nurturing"
+      ],
+      "wish": {
+        "id": 2220612846,
+        "name": "Raise N children from baby to Teen"
+      },
+      "food": "VegetarianFishAndChips",
+      "music": "Songwriter",
+      "color": "Pink",
+      "zodiac": "Leo",
+      "voice": "C",
+      "storyPersona": "career-climber",
+      "persona": "Leo (Adult): Workaholic, FamilyOriented, Excitable, CouchPotato, Nurturing. Upside: works hard, no work stress, promotions; better with kids, happy with family (moodlet), good parenting. Downside: unhappy on days off, works overtime, misses family time; misses family when apart (Homesick), demanding wishes for babies.",
+      "expect": [
+        {
+          "trait": "Workaholic",
+          "plus": "works hard, no work stress, promotions",
+          "minus": "unhappy on days off, works overtime, misses family time"
+        },
+        {
+          "trait": "FamilyOriented",
+          "plus": "better with kids, happy with family (moodlet), good parenting",
+          "minus": "misses family when apart (Homesick), demanding wishes for babies"
+        },
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "CouchPotato",
+          "plus": "big fun from TV, comfortable on couches",
+          "minus": "hates exercise, gains weight, low energy for jobs that need fitness"
+        },
+        {
+          "trait": "Nurturing",
+          "plus": "raises children well, kids gain skills faster",
+          "minus": "worries about kids, demanding of time"
+        }
+      ]
+    },
+    {
+      "key": "m3",
+      "first": "Hana",
+      "last": "Northcott",
+      "age": "Adult",
+      "gender": "Female",
+      "traits": [
+        "Nurturing",
+        "HotHeaded",
+        "OverEmotional",
+        "AnimalLover",
+        "AntiTV"
+      ],
+      "wish": {
+        "id": 191068914,
+        "name": "Ark Builder"
+      },
+      "food": "FrogsLegs",
+      "music": "Country",
+      "color": "Lilac",
+      "zodiac": "Libra",
+      "voice": "B",
+      "storyPersona": "family",
+      "persona": "Hana (Adult): Nurturing, HotHeaded, OverEmotional, AnimalLover, AntiTV. Upside: raises children well, kids gain skills faster; pets befriend it fast, pet moodlets. Downside: loses temper (fights, Furious), relationship hits, punches; big sad moodlets, cries, breaks down.",
+      "expect": [
+        {
+          "trait": "Nurturing",
+          "plus": "raises children well, kids gain skills faster",
+          "minus": "worries about kids, demanding of time"
+        },
+        {
+          "trait": "HotHeaded",
+          "plus": "gets things done when angry, wins fights more",
+          "minus": "loses temper (fights, Furious), relationship hits, punches"
+        },
+        {
+          "trait": "OverEmotional",
+          "plus": "big happy moodlets from good events",
+          "minus": "big sad moodlets, cries, breaks down"
+        },
+        {
+          "trait": "AnimalLover",
+          "plus": "pets befriend it fast, pet moodlets",
+          "minus": "adopts too many pets (household cap, cost)"
+        },
+        {
+          "trait": "AntiTV",
+          "plus": "skips TV for books, hobbies and skills",
+          "minus": "uncomfortable (moodlet) when made to watch TV; no TV fun source"
+        }
+      ]
+    },
+    {
+      "key": "m4",
+      "first": "Freya",
+      "last": "Northcott",
+      "age": "Teen",
+      "gender": "Female",
+      "traits": [
+        "Athletic",
+        "Loner",
+        "Excitable",
+        "CommitmentIssues"
+      ],
+      "wish": null,
+      "food": "Cobbler",
+      "music": "France",
+      "color": "White",
+      "zodiac": "Virgo",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Freya (Teen): Athletic, Loner, Excitable, CommitmentIssues. Upside: skill Athletic faster, fitness, less fatigue from exercise; fun alone, happy with solitude (moodlet), focuses on skills. Downside: uncomfortable in crowds and parties, hard to befriend; big swings: overreacts to bad events too.",
+      "expect": [
+        {
+          "trait": "Athletic",
+          "plus": "skill Athletic faster, fitness, less fatigue from exercise",
+          "minus": "Couch Potato conflict; gets fidgety (moodlet) when sedentary for long"
+        },
+        {
+          "trait": "Loner",
+          "plus": "fun alone, happy with solitude (moodlet), focuses on skills",
+          "minus": "uncomfortable in crowds and parties, hard to befriend"
+        },
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "CommitmentIssues",
+          "plus": "career switches without penalty, freedom",
+          "minus": "negative moodlet when going steady/engaged/married, wants to break up, job ties"
+        }
+      ]
+    },
+    {
+      "key": "m5",
+      "first": "Rosa",
+      "last": "Northcott",
+      "age": "Teen",
+      "gender": "Female",
+      "traits": [
+        "Artistic",
+        "Loner",
+        "NaturalCook",
+        "Coward"
+      ],
+      "wish": null,
+      "food": "BellagianWaffles",
+      "music": "Disco",
+      "color": "Grey",
+      "zodiac": "Capricorn",
+      "voice": "B",
+      "storyPersona": "student",
+      "persona": "Rosa (Teen): Artistic, Loner, NaturalCook, Coward. Upside: paints, writes and plays music faster and better, sells art; fun alone, happy with solitude (moodlet), focuses on skills. Downside: uncomfortable in crowds and parties, hard to befriend; scared of ghosts, burglars and the dark (Scared moodlets), panics.",
+      "expect": [
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        },
+        {
+          "trait": "Loner",
+          "plus": "fun alone, happy with solitude (moodlet), focuses on skills",
+          "minus": "uncomfortable in crowds and parties, hard to befriend"
+        },
+        {
+          "trait": "NaturalCook",
+          "plus": "cooks better, no cooking fires (immune, docs/179 R-LIFE-7), faster recipes",
+          "minus": "cooks constantly; eats into time for other needs"
+        },
+        {
+          "trait": "Coward",
+          "plus": "avoids danger, runs from fires (survives)",
+          "minus": "scared of ghosts, burglars and the dark (Scared moodlets), panics"
+        }
+      ]
+    },
+    {
+      "key": "m6",
+      "first": "Kira",
+      "last": "Northcott",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Excitable",
+        "Slob",
+        "Artistic"
+      ],
+      "wish": null,
+      "food": "BellagianWaffles",
+      "music": "Indie",
+      "color": "HotPink",
+      "zodiac": "Libra",
+      "voice": "A",
+      "storyPersona": "student",
+      "persona": "Kira (Child): Excitable, Slob, Artistic. Upside: big positive moodlets from good events; paints, writes and plays music faster and better, sells art. Downside: big swings: overreacts to bad events too; dirty home, smelly (moodlets for others), household disgust, roaches.",
+      "expect": [
+        {
+          "trait": "Excitable",
+          "plus": "big positive moodlets from good events",
+          "minus": "big swings: overreacts to bad events too"
+        },
+        {
+          "trait": "Slob",
+          "plus": "no need to clean; unaffected by mess",
+          "minus": "dirty home, smelly (moodlets for others), household disgust, roaches"
+        },
+        {
+          "trait": "Artistic",
+          "plus": "paints, writes and plays music faster and better, sells art",
+          "minus": "autonomy pulls to easel/instruments over chores and needs"
+        }
+      ]
+    },
+    {
+      "key": "m7",
+      "first": "Nora",
+      "last": "Northcott",
+      "age": "Child",
+      "gender": "Female",
+      "traits": [
+        "Clumsy",
+        "Genius",
+        "CantStandArt"
+      ],
+      "wish": null,
+      "food": "FirecrackerShrimp",
+      "music": "BeachParty",
+      "color": "Blue",
+      "zodiac": "Pisces",
+      "voice": "C",
+      "storyPersona": "student",
+      "persona": "Nora (Child): Clumsy, Genius, CantStandArt. Upside: comic relief; harmless trips can be funny; Logic skill faster, chess, science and invention success. Downside: trips, spills food, falls, fails exercises; slower skill progress on some objects; negative moodlet near paintings and sculptures, mocks art.",
+      "expect": [
+        {
+          "trait": "Clumsy",
+          "plus": "comic relief; harmless trips can be funny",
+          "minus": "trips, spills food, falls, fails exercises; slower skill progress on some objects"
+        },
+        {
+          "trait": "Genius",
+          "plus": "Logic skill faster, chess, science and invention success",
+          "minus": "boredom with simple tasks; socially awkward with non-geniuses"
+        },
+        {
+          "trait": "CantStandArt",
+          "plus": "saves money on art, comedic reactions",
+          "minus": "negative moodlet near paintings and sculptures, mocks art"
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "a": "m0",
+      "b": "m1",
+      "type": "spouse"
+    },
+    {
+      "a": "m0",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m1",
+      "b": "m2",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m3",
+      "type": "spouse"
+    },
+    {
+      "a": "m2",
+      "b": "m4",
+      "type": "parent"
+    },
+    {
+      "a": "m3",
+      "b": "m4",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m5",
+      "type": "parent"
+    },
+    {
+      "a": "m3",
+      "b": "m5",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m6",
+      "type": "parent"
+    },
+    {
+      "a": "m3",
+      "b": "m6",
+      "type": "parent"
+    },
+    {
+      "a": "m2",
+      "b": "m7",
+      "type": "parent"
+    },
+    {
+      "a": "m3",
+      "b": "m7",
+      "type": "parent"
+    }
+  ]
+}

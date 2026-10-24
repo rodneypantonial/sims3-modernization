@@ -34,17 +34,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18'
-      - name: Syntax check every script (TypeScript via type stripping)
-        run: git ls-files '*.ts' '*.js' '*.mjs' | xargs -n1 node --check
-      - name: Self-checks
-        run: |
-          node tools/harness/tests-be.ts --self-check
-          node tools/harness/milestone.ts --self-check
-          node tools/setup/content-health.ts --self-test
-          node tools/github/create-issues.ts --dry-run > /dev/null
-          node tools/report-crash.ts --self-check
-          node tools/release-features.ts --self-check
-          node tools/release-check.ts --self-check
+      # compile check of every script under tools/ and mods/ + every self-check that needs no local data (CONTRIBUTING.md)
+      - name: Compile and self-check every script
+        run: node tools/selftest-all.ts --ci
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

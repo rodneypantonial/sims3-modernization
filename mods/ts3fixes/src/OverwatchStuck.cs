@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using Sims3.Gameplay.Actors;
 using Sims3.Gameplay.Core;
+using Sims3.Gameplay.Utilities;
 using Sims3.SimIFace;
 
 namespace Ts3Fixes
@@ -16,9 +17,44 @@ namespace Ts3Fixes
     // Overwatch is a separate assembly, maybe loaded after us: tried at startup, again at world load (the check only
     // runs from the nightly alarm, which starts after world load, so the method is not compiled yet).
     // Switch "overwatchstuck" (default on). Counters: [44] checks seen, [45] yields.
+    // Switch "overwatchstuckslice" (tuning kOverwatchStuckSlice, default off; docs/145 §12): the Stuck Check's walk over
+    // every Sim between two route checks is one tick too (57 ms with no plan, 100-336 ms between two plans in SV). A hook
+    // on Overwatch's SimTypes.IsSelectable(Sim), the first call the walk makes per Sim, takes a tick there once the
+    // stretch reached OverwatchSpreadCore.kStuckSliceUs, only while the PerformAlarm hook (OverwatchSpread.cs) marks the
+    // Stuck Check as running and a yield is allowed. A Sim that left the world during the tick gets the answer that puts
+    // it in Overwatch's not-in-world branch. The stretches are measured with the switch off too.
+    // Counters: [255] ticks taken, [256] Sims walked, [257] longest stretch without a tick (us), [258] Stuck Check runs,
+    // [259] stretch time summed (ms).
     public static partial class Fixes
     {
         static bool sOverwatchDone, sOwNoYieldLogged;
+        static bool sOwInStuck;          // Overwatch's Stuck Check is running (PerformAlarm hook)
+        static StopWatch sOwStuckWatch;  // its current stretch: since its start or the last tick taken inside it
+        static long sOwStuckUs;          // [259] source
+
+        internal static void OwStuckBegin()
+        {
+            if (sOwStuckWatch == null) sOwStuckWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds);
+            sOwStuckWatch.Restart();
+            sOwInStuck = true;
+            PatchCounters()[258]++;
+        }
+
+        internal static void OwStuckEnd()
+        {
+            if (!sOwInStuck) return;
+            OwStuckStretch();
+            sOwInStuck = false;
+        }
+
+        static void OwStuckStretch()
+        {
+            long us = sOwStuckWatch.GetElapsedTime();
+            int[] c = PatchCounters();
+            if (us > c[257]) c[257] = (int)Math.Min(us, int.MaxValue);
+            sOwStuckUs += us;
+            c[259] = (int)Math.Min(sOwStuckUs / 1000, int.MaxValue);
+        }
 
         internal static void ApplyOverwatchStuck(bool lastTry)
         {
@@ -36,6 +72,35 @@ namespace Ts3Fixes
                 new Type[] { typeof(Sim), typeof(Lot), typeof(Vector3) }, null);
             if (m == null || m.ReturnType != typeof(bool)) { AppliedLog().Add("Overwatch SimEx: signature differs, skipped"); return; }
             Patch(simEx, "IsPointInLotSafelyRoutable", typeof(OverwatchStuckHook), "RoutableHook", "RoutableOrig");
+            Type simTypes = simEx.Assembly.GetType("NRaas.CommonSpace.Helpers.SimTypes");
+            MethodInfo sel = simTypes == null ? null : simTypes.GetMethod("IsSelectable", BindingFlags.Static | BindingFlags.Public, null, new Type[] { typeof(Sim) }, null);
+            if (sel == null || sel.ReturnType != typeof(bool)) AppliedLog().Add("Overwatch SimTypes.IsSelectable: signature differs, overwatchstuckslice off");
+            else Patch(simTypes, "IsSelectable", new Type[] { typeof(Sim) }, typeof(OverwatchSelectHook), "SelectHook", "SelectOrig");
+        }
+
+        // Overwatch's own SimTypes.IsSelectable(Sim) (its copy of NRaas Common; other NRaas mods have their own). Outside a
+        // Stuck Check run it is the original.
+        public static class OverwatchSelectHook
+        {
+            public static bool SelectHook(Sim sim)
+            {
+                if (sOwInStuck)
+                {
+                    int[] c = PatchCounters();
+                    c[256]++;
+                    if (OverwatchSpreadCore.SliceDue(sOwStuckWatch.GetElapsedTime()) && ShortcutOn("overwatchstuckslice")
+                        && OverwatchSpreadCore.OurStuckSlice(sOwUpstreamVersion) && MayYield())
+                    {
+                        OwStuckStretch();
+                        Simulator.Sleep(0);
+                        c[255]++;
+                        sOwStuckWatch.Restart();
+                        if (OverwatchSpreadCore.SkipAfterSlice(sim == null || sim.HasBeenDestroyed, sim != null && sim.InWorld, sim != null && sim.Proxy != null)) return true;
+                    }
+                }
+                return SelectOrig(sim);
+            }
+            public static bool SelectOrig(Sim sim) { return false; } // receives SimTypes.IsSelectable(Sim)'s original header
         }
 
         public static class OverwatchStuckHook
@@ -52,7 +117,9 @@ namespace Ts3Fixes
                 if (MayYield()) // not inside a native->managed call (RouteBackoff.cs MayYield)
                 {
                     c[45]++;
+                    if (sOwInStuck) OwStuckStretch();
                     Simulator.Sleep(0);
+                    if (sOwInStuck) sOwStuckWatch.Restart();
                 }
                 else if (!sOwNoYieldLogged)
                 {

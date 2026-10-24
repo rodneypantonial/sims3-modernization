@@ -66,15 +66,22 @@ namespace Ts3Fixes
         [Tunable] public static bool kLegReplanSkip = false;       // opt-in until measured: no replan after a boat/vehicle get-out when the planned rest of the route starts within 0.5 m of the Sim (RouteSources.cs, docs/151 D1)
         [Tunable] public static bool kBouncerSlotSkip = false;     // opt-in until measured: a velvet-rope bouncer standing on its spot does not re-route to it every 5 s (RouteSources.cs, docs/151 D3)
         [Tunable] public static bool kStuckCheckNear = false;      // opt-in until measured: the 3 AM stuck check plans its random lot points nearest first (same points, same verdict), so fewer failed plans before the first success (FewerPlans.cs, docs/163 §3)
-        [Tunable] public static bool kFailRepeat = false;          // opt-in until measured: a Sim's plan that repeats its own no-path failure (same goal, same spot) within 500 ms returns that failure without searching again (RouteBackoff.cs, docs/163 §4)
+        [Tunable] public static bool kJobYield = false;            // opt-in until measured: a route plan that would wait natively for a running route job sleeps its task a tick at a time instead (needs ts3native [RouteAsync] JobYield; RouteBackoff.cs StepAside, docs/183)
+        [Tunable] public static bool kDriverTaskAsync = false;     // opt-in until measured: a traffic car's plan in its LiteDriver task and a ridden vehicle's plan in its rider's task go async as own-task plans (RouteBackoff.cs OwnerTaskStart, docs/163 §7)
+        [Tunable] public static bool kOverwatchStuckSlice = false; // opt-in until measured: NRaas Overwatch's Stuck Check takes a sim tick inside its walk over every Sim once 8 ms have passed since its last tick (OverwatchStuck.cs, docs/145 §12)
+        [Tunable] public static bool kStuckCheckOwn = false;      // opt-in until measured: with stuckcheckasync, the stuck check's plans in our drain task go async as own-task plans (RouteBackoff.cs OwnerTaskStart, docs/163 §7)
+        [Tunable] public static bool kFailRepeat = false;         // opt-in until measured: a Sim's plan that repeats its own no-path failure (same goal, same spot) within 500 ms returns that failure without searching again (RouteBackoff.cs, docs/163 §4)
+        [Tunable] public static bool kDisposeSpread = false;       // opt-in until measured: Sims leaving the world, service Sims and traffic cars at despawn are destroyed one per sim tick by our task instead of in one tick (DisposeSpread.cs, docs/74 §12)
         [Tunable] public static bool kIdlePlanMemo = false;        // opt-in until measured: the idle watchdog skips Sims that planned a route from their spot since they went still, at most 4 checks a pass (RouteFixes.cs, docs/151 D5)
+        [Tunable] public static bool kSeasonMarkerCache = false;   // opt-in until measured: Queries.GetGlobalObjects(typeof(SeasonalLotMarker)) (every world-lot object Dispose) answered from a live marker list, 1 in 8 checked against the game (SeasonMarkerCache.cs, docs/74 §11 (a))
+        [Tunable] public static bool kSafeSpotYield = false;       // opt-in until measured: SafeSpot sleeps one tick after each FindGoodLocation in the Sim's own task (Fixes.cs SafeSpotYield, docs/74 §11 (b))
 
         public const string Version = "0.1.0";
 
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); };
         }
     }
 }
