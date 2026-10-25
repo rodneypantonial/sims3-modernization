@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.41"
+#define TS3NATIVE_VERSION "0.36.64"
 
 typedef unsigned char u8;
 
@@ -149,6 +149,7 @@ static void XcptRefs(const CONTEXT* c, char* refs, int cap, int max) {
     }
 }
 static DWORD P5cRelMatch(const CONTEXT* c);  // p5c.cpp: registers in an object our graveyard flush released (crash I)
+static void CfOnFault(const EXCEPTION_POINTERS* x);  // crashfx.cpp: [CrashForensics] dump (off unless Enabled=1)
 static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const EXCEPTION_RECORD* r = e->ExceptionRecord;
     const DWORD code = r->ExceptionCode;
@@ -156,6 +157,8 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == DBG_CONTROL_C || code == 0xE0503401)
         return EXCEPTION_CONTINUE_SEARCH;
     if (code == 0xE06D7363 && InterlockedIncrement(&g_xcptCpp) > 2) return EXCEPTION_CONTINUE_SEARCH;
+    // [CrashForensics] dump before the 16-line cap; not for our own probes' guarded reads (caught in ts3native)
+    if (code == EXCEPTION_ACCESS_VIOLATION && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
     if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     const CONTEXT* c = e->ContextRecord;
     char refs[128];
@@ -203,7 +206,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 4559 int32 (v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5215 int32 (v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -1789,8 +1792,246 @@ struct Ts3nCounters {
     LONG p6jPlans[2];                 // +0x4720, Route_PlanLocked entries (planner calls per job)
     LONG p6jOut[4];                   // +0x4728, outcomes: 0 taken, 1 stale-refused, 2 verify M2 / M3, 3 other fallback
     LONG p6jLines;                    // +0x4738, "P6 job" log lines written (P6LogMs)
+    // v113 (0.36.42, docs/89 §14): [Discourage] DeferPrivateFp, off by default. IC RouteManager_RemovePrivateFootprint's call
+    // 0x75465E -> RemoveFootprintLocked 0x82A0C0 (key 0x82A0F6) deferred into design D/U's FIFO while a job runs
+    LONG pfReady;                     // +0x473C, 1 = the IC call sites are patched and DeferPrivateFp=1
+    volatile LONG pfMode;             // +0x4740, switch (--ab deferprivatefp): 1 = defer while a job runs (order rule in any mode)
+    LONG pfCalls;                     // +0x4744, IC calls on the owner thread
+    LONG pfInJob;                     // +0x4748, of them while a job ran (today's waits)
+    LONG pfDeferred;                  // +0x474C, records made (answered 1)
+    LONG pfApplied;                   // +0x4750, applied by the original at a drain or destroy
+    LONG pfSwept;                     // +0x4754, object gone at apply: id key swept from every lot (DeadSweep)
+    LONG pfDropped;                   // +0x4758, reused id, gone with DeadSweep off, or another world
+    LONG pfDup;                       // +0x475C, a remove right behind the object's queued remove: dropped
+    LONG pfPass;                      // +0x4760, pass-throughs (own +0x918, job callback, draining, another world, closing)
+    LONG pfAddFlush;                  // +0x4764, AddPrivateFootprint of an object with queued records: flushed first (waits)
+    LONG pfFullPass;                  // +0x4768, queue full with an Add queued: the call ran now, out of order (expect 0)
+    LONG pfApplyInJob;                // +0x476C, tripwire: applied while a job ran (expect 0)
+    // v114 (0.36.43, docs/157 §11.7): [CrashForensics] (crashfx.h / crashfx.cpp), default off
+    LONG cfReady;                     // +0x4770, bits: 1 ring, 2 audio erase guard 0x5EE1E0, 4 array clear guard 0x7B0A00, 8 heap check
+    LONG cfRecs;                      // +0x4774, ring events recorded (P5 EA news / frees, g_rpUse holds)
+    LONG cfCalls[2];                  // +0x4778, guarded site calls (approximate, plain increments): 0 audio erase, 1 array clear
+    LONG cfBad[2];                    // +0x4780, bad pointer seen before the game used it: 0 node object vtable, 1 array unreadable
+    LONG cfRingHit;                   // +0x4788, bad pointers / fault addresses found inside a ring block
+    LONG cfHeapBad;                   // +0x478C, our free of a chunk the heap says is not in use (double free; expect 0)
+    LONG cfDumps;                     // +0x4790, crash dumps written (access violations outside ts3native)
+    // v115 (0.36.44, docs/186 §8): [CrashForensics] DrawGuards / OurEvents (crashev.h, crashfx.cpp), default off
+    LONG cdReady;                     // +0x4794, bits: 1 model 0x6F6B5B, 2 resource 0x6FA2DB, 4 effect 0x71D562, 8 binding 0x68FDA4, 16 our-events ring
+    LONG cdBad[4];                    // +0x4798, bad pointer seen before the draw used it (same split, index 0-3)
+    LONG ceRecs;                      // +0x47A8, our-events ring: newest sequence number
+    // v116 (0.36.45, docs/186 §9): [CrashForensics] EffectLog (crashfx.cpp), default off
+    LONG fxReady;                     // +0x47AC, bits: vtable slot hooks 1 add 0xFFC850, 2 remove 0xFFC854, 4 gather 0xFFC290, 8 draw 0xFFC260
+    LONG fxRecs;                      // +0x47B0, effect ring: newest sequence number
+    LONG fxRem;                       // +0x47B4, Swarm render list removes (0x71FF10 calls)
+    LONG fxRemOffMain;                // +0x47B8, of those not on the main thread
+    LONG fxStaleDraw;                 // +0x47BC, draw calls (0x71D660) with removes since the last gather (stale bucket lists)
+    LONG fxGatherGapMaxMs;            // +0x47C0, longest time between two gathers with a draw in between (ms)
+    // v117 (0.36.46, docs/186 §10): [CrashForensics] ObjResLog (crashfx.cpp), default off
+    LONG mhReady;                     // +0x47C4, bits: call-site hooks 1 unload 0x6F734E, 2 load request 0x6F7331, 4 full release (4 sites), 8 node update 0x6F7B5D
+    LONG mhRecs;                      // +0x47C8, model handle ring: newest sequence number
+    LONG mhUnload;                    // +0x47CC, LOD unloads 0x6DBCE0 (slot +8 emptied, model kept unless a key is set)
+    LONG mhRelease;                   // +0x47D0, full releases 0x6DBB50 (the four call sites + unloads with a key)
+    LONG mhLodSet;                    // +0x47D4, node updates that changed slot +8 (LOD swap-in or emptied)
+    LONG mhFxQueued;                  // +0x47D8, Swarm stale-list draws (first per gather) with the drawable still queued for a drain
+    // v118 (0.36.47, docs/178 §7 T6, gvro.cpp): [GoalValidRO] GoalPoint_Validate's steering query 0x75A647 read-only (empty answers)
+    LONG gvReady;                     // +0x47DC, 1 = call site 0x75A647 retargeted
+    volatile LONG gvMode;             // +0x47E0, switch (--ab goalvalidro): 1 = while a job runs, an empty answer from the clone
+    volatile LONG gvShadow;           // +0x47E4, switch (--ab goalvalidroshadow): 1 = with no job, the game's call then the clone, compared
+    LONG gvCalls;                     // +0x47E8, sim calls with a switch on
+    LONG gvTaken;                     // +0x47EC, answered read-only during a job (no +0x918 wait at key 0x75A64C)
+    LONG gvNoLot;                     // +0x47F0, of those, no lot at the point (al 0)
+    LONG gvUs;                        // +0x47F4, their clone time (us)
+    LONG gvMaxUs;                     // +0x47F8, the longest
+    LONG gvFb[7];                     // +0x47FC, the game's call instead: state (owner, callback, gate frame, QL nested, mode, vec), QL busy, lot/deferred flush, shape, tripwire, job ended, footprints found
+    LONG gvShadowRuns;                // +0x4818, shadow compares (no job)
+    LONG gvShadowMismatch;            // +0x481C, of those, a different al or footprint count (must stay 0)
+    LONG gvShadowEmpty;               // +0x4820, of those, the game's answer was empty (al 0 or no footprints): Mode 1's share
+    // v119 (0.36.48, docs/178 §8, idlero.cpp): [IdleCheckRO] IsOkToIdleAtCurrentLocation's gate-12 GetIfPresent (key 0x62FB74) read-only during jobs
+    LONG ikReady;                     // +0x4824, 1 = call sites 0x7558D7 and 0x755916 retargeted
+    volatile LONG ikMode;             // +0x4828, switch (--ab idlecheckro): 1 = while a job runs, answer from the lot table read-only
+    volatile LONG ikShadow;           // +0x482C, switch (--ab idlecheckroshadow): 1 = with no job, the game's lookup then the clone's, compared
+    LONG ikCalls;                     // +0x4830, sim lookups with a switch on
+    LONG ikTaken;                     // +0x4834, lookups answered read-only during a job (no gate-12 / gate-0 wait)
+    LONG ikHits;                      // +0x4838, of those, the lot was in the table (0x625140 runs next, under QL shared)
+    LONG ikPass;                      // +0x483C, 0x625140 answered 1 read-only: the IC returns 0x40 with no further routing touch
+    LONG ikOnward;                    // +0x4840, read-only answers that send the IC on to the obstacle query 0x82EDB0 (next +0x918 taker, key 0x755990)
+    LONG ikUs;                        // +0x4844, read-only time (us), lookups and 0x625140 runs
+    LONG ikMaxUs;                     // +0x4848, the longest single part
+    LONG ikFb[6];                     // +0x484C, the game's call instead: state (owner, callback, gate frame, QL nested), QL busy, lot table shape, tripwire / writer, job ended, redo at 0x625140 (the game's lookup + 0x625140)
+    LONG ikShadowRuns;                // +0x4864, shadow compares (no job)
+    LONG ikShadowMismatch;            // +0x4868, of those, a different entry (must stay 0)
+    // v120 (0.36.49, docs/178 §9, movedwait.cpp): [MovedWaits] where a read-only answer's skipped wait goes. Per switch [9]
+    // (MW_*: 0 GoalValidRO, 1 IdleCheckRO, 2 SlotEnabledRO, 3 AvoidRO, 4 Gate0RO, 5 RouteToObjRO, 6 PlacementRO,
+    // 7 ObstructedRO, 8 SteerRO): a skip opens a record for the running job (first skip per job); the sim thread's next
+    // job wait (+0x918 pump, gate RtWaitJob, RunPlan) behind that same job closes it as "moved"; the job's end closes it too.
+    LONG mwReady;                     // +0x486C, 1 = [MovedWaits] Enabled
+    LONG mwSkips[9];                  // +0x4870, read-only answers given while a route job ran (each one a skipped wait)
+    LONG mwJobs[9];                   // +0x4894, distinct jobs with >= 1 skip (records opened)
+    LONG mwMoved[9];                  // +0x48B8, of those, a later sim wait behind the same job (the wait moved)
+    LONG mwMovedUs[9];                // +0x48DC, their wait time (us)
+    LONG mwMovedMaxUs[9];             // +0x4900, the longest
+    LONG mwDelayUs[9];                // +0x4924, summed time from the first skip to the moved wait's start (us)
+    LONG mwAvoidUs[9];                // +0x4948, summed time from the first skip to the job's end (us): the skipped wait's upper bound
+    LONG mwMaxKey[9];                 // +0x496C, key of the longest moved wait
+    LONG mwKey[12];                   // +0x4990, moved waits by key (all switches, first come; key = return address as WaitNote)
+    LONG mwKeyN[12];                  // +0x49C0
+    LONG mwKeyUs[12];                 // +0x49F0
+    LONG mwKeyOther;                  // +0x4A20, moved waits after the 12 key slots filled
+    // next-taker log points (docs/178 §9.3): every sim job wait at the ranked keys (seeded, kNtKeys), with or without a skip
+    LONG ntKey[10];                   // +0x4A24
+    LONG ntN[10];                     // +0x4A4C
+    LONG ntUs[10];                    // +0x4A74
+    LONG ntMaxUs[10];                 // +0x4A9C
+    LONG ntFb[10];                    // +0x4AC4, of ntN, behind a foreign job (else own or A10 kind)
+    LONG ntGv[10];                    // +0x4AEC, of ntN, with gvMode on (T6 switch)
+    LONG ntIk[10];                    // +0x4B14, of ntN, with ikMode on (IdleCheckRO switch)
+    // v121 (0.36.50, docs/94 §24.8.4, p4lotdump.h): [RouteSnap] M2LotDump / M2Box (off by default, log-only) and the obstacle
+    // set's frame fix (I-94-521: footprints listed through the world box or the start lot's box)
+    LONG ldDumps;                     // +0x4B3C, lot dumps written (M2/M3 or box)
+    LONG ldBox;                       // +0x4B40, of those, M2Box hits (matched or not)
+    LONG ldBusy;                      // +0x4B44, live side not read: the one +0x918 try failed
+    LONG ldNoLot;                     // +0x4B48, a side found no lot holding the start point
+    LONG ldEnts;                      // +0x4B4C, leaf entries dumped (both sides)
+    LONG ldDiff;                      // +0x4B50, entries that differ (unpaired or any bit)
+    LONG ldKeyDiff;                   // +0x4B54, of those, lock-key set fp+0x20 differs (NULL vs set, counts, ids)
+    LONG ldKeyOrigin;                 // +0x4B58, of those, the clone's set copy stands for another live set (docs/156 U1)
+    LONG ldObW;                       // +0x4B5C, "obst" footprints listed through the world box (every capture, ShadowObst)
+    LONG ldObL;                       // +0x4B60, "obst" footprints listed only through the lot-frame box
+    LONG ldSpare[6];                  // +0x4B64, reserved with native-v121 (16 int32)
+    // v122 (0.36.56, docs/94 §24.14, p5.cpp): [RouteSnap] P6EarlyCopy. An armed Mode=2 job's own-only acquire (the copy) runs
+    // on the worker before ServeAsync takes the job's +0x918, so the job's A_RUNNING span no longer holds the copy
+    volatile LONG p6Early;            // +0x4B7C, switch (--ab routesnapearly): 1 = early copy on
+    LONG p6eCopies;                   // +0x4B80, early acquires that gave a clone (held until the job's plan or its end)
+    LONG p6eRefused;                  // +0x4B84, early acquires the provider refused (the plan takes the refusal, no second try)
+    LONG p6eUsed;                     // +0x4B88, early clones the job's P5Plan ran (in place of its own acquire)
+    LONG p6eRel[3];                   // +0x4B8C, early clones released unrun: 0 the plan refused before the acquire (capture,
+                                      //   stale, cold, storm), 1 the plan-entry recheck (epoch, active lot, clone flags), 2 unused
+                                      //   (the IC never reached Route_PlanLocked, or the job backed out)
+    LONG p6eSkip[3];                  // +0x4B98, armed jobs not copied early: 0 not own-only (game calls: the plan acquires under
+                                      //   the hold as before), 1 already stale or storm pause, 2 no cut / provider / Mode=2 off
+    LONG p6eUs;                       // +0x4BA4, early acquire time (consumer wait + copy), not under +0x918
+    LONG p6eCopyUs;                   // +0x4BA8, of it, the copy
+    LONG p6eSpare[4];                 // +0x4BAC, reserved with native-v122 (16 int32)
+    // v123 (0.36.57, docs/189 phase 0, p6wait.cpp): [P6Waits] the sim thread's job waits split by the job's outcome and the
+    // waiter class, per arm (log only, default on). Arm = the P6 switch (p6Plan, --ab routesnapplan) at the job's start (a
+    // wait with no running job: at the wait's start). Outcome P6O_*: 0 plain live (not armed), 1 P6 taken, 2 taken on a
+    // borrowed cut, 3 stale-refused, 4 other refusal or verify (armed: nr, cold, capture, epoch, no plan), 5 no running job
+    // (waits only). Class P6W_*: 0 +0x918 pump, 1 A_RUNNING gate (RgEnter), 2 RtWaitJob (destroy / drains / saves), 3 result
+    // (RunPlan, collect), 4 +0x918 pump that served the job's host calls. Index [arm * 30 + out * 5 + cls]
+    LONG p6wReady;                    // +0x4BBC, 1 = [P6Waits] Enabled (default 1)
+    LONG p6wN[60];                    // +0x4BC0, waits
+    LONG p6wUs[60];                   // +0x4CB0, their time (us)
+    LONG p6wJobN[10];                 // +0x4DA0, jobs [arm * 5 + outcome] (worker, at the job's end)
+    LONG p6wSpanUs[10];               // +0x4DC8, their A_RUNNING span (us, IC call to release)
+    LONG p6wGateUs[32];               // +0x4DF0, gate waits [arm * 16 + RgEnter site] (kRgSites index), time (us)
+    LONG p6wLost;                     // +0x4E70, waits dropped: outcome ring overrun or pending ring full
+    LONG p6wServeN;                   // +0x4E74, host calls the sim served inside a +0x918 pump wait
+    LONG p6wServeUs;                  // +0x4E78, their time (inside the waits above); end of native-v123 (176 int32)
+    // v124 (0.36.58, docs/189 phase 1, p5b.cpp): [RouteGate] HoldKeyed. Inside a P5c window (the worker has the job's +0x918
+    // lent out) the sim's gate waits of the re-keyed sites (kHgSites: 0, 3, 4, 6-9) take the lent lock, so they wait for the
+    // worker's hold (A_RUNNING and no window), not for the whole job. Latched per job at the lend (g_hgJob)
+    volatile LONG hgOn;               // +0x4E7C, switch (--ab holdkeyed): 1 = re-keyed gate waits admitted in P5c windows; 2 (0.36.63, docs/189 §10) = and sites 1, 2, 10, 11, 15
+    volatile LONG hgReady;            // +0x4E80, 1 = P5c installed (the switch can act); 0 again after a tripwire
+    LONG hgAdmit[16];                 // +0x4E84, per gate site: admitted outermost acquires inside a window
+    LONG hgJobs;                      // +0x4EC4, P5c windows (jobs) with at least one admitted gate entry
+    LONG hgStaleAfter;                // +0x4EC8, of those, a recorded routing write landed inside the window (refused by P5cStale)
+    LONG hgTrip;                      // +0x4ECC, retakes that found an admitted gate frame still open (switch off for the session)
+    LONG hgLongHold;                  // +0x4ED0, retakes that waited RetakeEscalateMs on an admitted gate frame (HoldKeyed off for the session, lending kept; 0.36.63)
+    LONG hgSpare[26];                 // +0x4ED4, reserved with native-v124 (48 int32)
+    // v125 (0.36.59, docs/189 phase 2, stalelot.cpp): [RouteSnap] StaleLot, per-lot staleness in place of "any recorded write
+    // since the cut". Arms: [0] shadow (both verdicts, the global one acts), [1] acting (a job stale only by lot-keyed writes
+    // to lots its clone run did not read is taken)
+    volatile LONG stlMode;             // +0x4F3C, switch (--ab routesnapstalelot): 0 off, 1 acting, 2 shadow (ini StaleLot != 0 installs)
+    LONG stlReady;                     // +0x4F40, bit 0 write ring, bit 1 LotTable_Find read-set detour
+    LONG stlJobs;                      // +0x4F44, jobs with both verdicts (a clone run happened)
+    LONG stlMat[2][4];                 // +0x4F48, [arm][0 both clean, 1 global stale + lot clean (per-lot-only), 2 both stale,
+                                      //   3 global clean + lot stale (must stay 0)]
+    LONG stlWhy[6];                    // +0x4F68, lot-stale reason (first found): 0 a read lot written, 1 world-level write,
+                                      //   2 unknown seq (an increment outside the ring, or in flight), 3 window over the ring,
+                                      //   4 read set over its cap, 5 no read set (detour missing)
+    LONG stlWorld[12];                 // +0x4F80, of why 1: the first world-level kind (SLW_* 1..11; [0] unused)
+    LONG stlWrites[2];                 // +0x4FB0, ring writes: 0 lot-keyed, 1 world-level
+    LONG stlReadHist[8];               // +0x4FB8, read lots per clone run: 0, 1, 2, 3-4, 5-8, 9-16, 17-32, over
+    LONG stlVer[3];                    // +0x4FD8, per-lot-only verify jobs (clean run, nr 0): 0 answer equal, 1 differs (a
+                                      //   wrong take: acting off for the session), 2 not comparable
+    LONG stlNoRun;                     // +0x4FE4, armed plans with no clone run (refused before it): no shadow verdict
+    LONG stlFinds;                     // +0x4FE8, LotTable_Find calls recorded in clone runs
+    LONG stlFaults;                    // +0x4FEC, read-set or ring reads that faulted (job stale)
+    LONG stlActTaken;                  // +0x4FF0, answers acting took that the global rule refused
+    LONG stlActOff;                    // +0x4FF4, acting off for the session: 1 a per-lot-only verify mismatch
+    LONG stlSpare[1];                  // +0x4FF8, reserved with native-v125 (48 int32)
+    // v126 (0.36.60, docs/189 phase 3, p5b.cpp / hostcalls.cpp): [RouteSnap] AskLent and DoorMemoX
+    volatile LONG auMode;             // +0x4FFC, switch (--ab asklent): 1 = a P5c clone job's door ask keeps +0x918 lent (no retake)
+    LONG auAsks;                      // +0x5000, door asks posted with the lock lent
+    LONG auAcq;                       // +0x5004, +0x918 acquires inside such an ask's callback that took the lent lock (no borrow)
+    LONG auPlanHere;                  // +0x5008, plans nested in such a callback run on the sim (not sent back to the worker)
+    LONG auStaleAfter;                // +0x500C, jobs with a lent ask whose answer P5cStale refused
+    LONG auSkip;                      // +0x5010, asks with auMode 1 retaken as before (no P5c window: P5b alone, refused open)
+    volatile LONG dmxMode;            // +0x5014, switch (--ab doormemox): 0 off, 1 cross-job memo answers, 2 shadow (ask, compare)
+    LONG dmxHit;                      // +0x5018, asks answered from another job's answer (mode 1)
+    LONG dmxMiss;                     // +0x501C, asks with no valid row (asked, row stored)
+    LONG dmxInval;                    // +0x5020, rows found but dropped: door generation changed or older than DoorMemoXMs
+    LONG dmxShadow;                   // +0x5024, mode 2: valid rows asked anyway and compared
+    LONG dmxMismatch;                 // +0x5028, of those, a different answer (must stay 0)
+    LONG dmxClear;                    // +0x502C, table clears (mode flips)
+    LONG auSpare[3];                  // +0x5030, reserved with native-v126 (16 int32)
+    // v127 (docs/189 phase 2c, p5.cpp): [RouteSnap] TakeKindsAll. P5 also arms and takes the own-task A10 Replan (kind 1) and
+    // PlanFromPoint (kind 2) jobs; arrays by job kind 0 Route.Plan, 1 Replan, 2 PlanFromPoint, 3 ReplanFromPosition
+    volatile LONG p6All;              // +0x503C, switch (--ab routesnapkinds): 1 = own kinds 1-2 armed too (decided at each START)
+    LONG pkArmed[4];                  // +0x5040, Mode=2 jobs armed (take or verify)
+    LONG pkPlans[4];                  // +0x5050, armed jobs that reached Route_PlanLocked (P5Plan)
+    LONG pkTaken[4];                  // +0x5060, answers taken from the clone run
+    LONG pkStale[4];                  // +0x5070, refused for a recorded routing write since the cut (P5c, early or at the retake)
+    LONG pkVerify[4];                 // +0x5080, verify jobs (clone run compared, the game's answer kept)
+    LONG pkFb[4];                     // +0x5090, other refusals (the game's plan ran: capture, cold, epoch, mat, nr, storm, ...)
+    LONG pkPlanUs[4];                 // +0x50A0, P5Plan time (acquire + clone run + the game's plan where it ran)
+    LONG pkGameUs[4];                 // +0x50B0, of it, the game's plan
+    LONG pkUntaken[4];                // +0x50C0, own STARTs of a kind in Kinds that the take mask left unarmed (what the switch adds)
+    LONG pkAfSkip[2];                 // +0x50D0, foreign-task (af) Replan / PlanFromPoint STARTs never armed (phase 4's)
+    LONG pkSpare[1];                  // +0x50D8, reserved with native-v127 (40 int32)
+    // v123-v127 (0x4BBC-0x50DB) are reserved by the other docs/189 phase branches (p6p0 v123, p6p1 v124, p6p2 v125, p6p3 v126,
+    // p6pk v127). Integration: replace this pad with their fields (the offsets below stay)
+    // v128 (docs/189 §4 phase 4, p5.cpp): [RouteSnap] TakeForeign. FallbackAsync foreign Route.Plan STARTs (j->fb) are armed as
+    // take jobs (never verify) and keep their FbJobCapMs deadline in the clone run (world A* cost stubs; cell A* / water exits)
+    volatile LONG p6fbOn;             // +0x50DC, switch (--ab routesnapforeign): 1 = arm foreign STARTs, read at each START
+    LONG p6fbArmed;                   // +0x50E0, foreign STARTs armed (also counted in p6Armed[0])
+    LONG p6fbTaken;                   // +0x50E4, of their plans, the clone answer taken (also in p6Taken[0])
+    LONG p6fbGame;                    // +0x50E8, the game's plan answered (refused, stale, nr), under the job's deadline as before
+    LONG p6fbCloneDl;                 // +0x50EC, clone runs with the job's deadline on the world A* cost stubs
+    LONG p6fbCloneCapped;             // +0x50F0, of them, cut by it (answer = the planner's no-path; counts in fbjcCapped too)
+    LONG p6fbSpare[2];                // +0x50F4, reserved with native-v128 (8 int32)
+    // v126 / v127 / v128 reserved by other branches (native-v126 p6p3, native-v127 p6pk, native-v128): replaced at merge
+    // v129 (0.36.62, docs/189 §9, snap.cpp / stalelot.cpp): [RouteSnap] StaleLotFp, footprint and polygon-cache writes judged
+    // by their nested leaves' lot keys (covered ring entries) instead of world-level
+    volatile LONG fplMode;             // +0x50FC, switch (--ab routesnapstalelotfp): 1 = the per-lot verdict skips covered entries
+    LONG fplReady;                     // +0x5100, bit 0 installed (ini StaleLotFp=1 with StaleLot 1 or 2)
+    LONG fplCov[4];                    // +0x5104, ring entries stored covered: 0 W6, 1 FPCORE, 2 PRIVATE, 3 FPREMOVE
+    LONG fplGrid[3];                   // +0x5114, grid removes 0x62D9F0: 0 no-op (covered), 1 real (key in the set), 2 not judged
+    LONG fplMat[4];                    // +0x5120, jobs: 0 both per-lot verdicts clean, 1 phase-2 stale + fp clean (fp-only),
+                                      //   2 both stale, 3 phase-2 clean + fp stale (must stay 0)
+    LONG fplVer[3];                    // +0x5130, fp-only verify jobs (clean run): 0 answer equal, 1 differs (fpl off), 2 n.c.
+    LONG fplFb[3];                     // +0x513C, grid check fallbacks: 0 set over its cap, 1 walk fault / no planner, 2 tripped off
+    LONG fplGridReads;                 // +0x5148, grid set re-reads (walks of P+0xDC)
+    LONG fplGridRecs;                  // +0x514C, records in the last walk
+    LONG fplGridTrip;                  // +0x5150, no-op-judged removes that reached 0x670510 (grid check off for the session)
+    LONG fplOff;                       // +0x5154, fp keys off for the session: an fp-only verify mismatch
+    LONG fplSpare[9];                  // +0x5158, reserved with native-v129 (32 int32)
+    // v130 (0.36.64, docs/133 §7, vcall.cpp): [ProbeSnap] CallSites, passive self-disarming call-site coverage on the
+    // vcallsites5.h table (hits, pairs, armed in the vc* fields above); trap cost = hits x cpTrapNs + measured handler time
+    LONG cpOn;                         // +0x517C, 1 = table built, 2 = sites armed (DelaySec after start-up)
+    LONG cpDone;                       // +0x5180, sites disarmed by the rule (resolved enough or at the cap)
+    LONG cpPoly;                       // +0x5184, sites that reached CallSitesPoly targets (sampled on to the cap)
+    LONG cpTrapNs;                     // +0x5188, calibrated ns per int3 round trip (private int3 page, 256 traps)
+    LONG cpTrapUs;                     // +0x518C, trap time since arming, us (hits x cpTrapNs + cpHandlerUs)
+    LONG cpHandlerUs;                  // +0x5190, of it, measured inside the vectored handler
+    LONG cpLastMinUs;                  // +0x5194, trap us in the last whole minute
+    LONG cpMaxMinUs;                   // +0x5198, worst minute
+    LONG cpMinutes;                    // +0x519C, whole minutes since arming
+    LONG cpLateUs;                     // +0x51A0, trap us from minute CallSitesWarmMin on (the after-warm-up cost)
+    LONG cpLateMin;                    // +0x51A4, minutes in cpLateUs (ms/s = cpLateUs / cpLateMin / 60000)
+    LONG cpSpare[5];                   // +0x51A8, reserved with native-v130 (16 int32)
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {112,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {130,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1874,6 +2115,8 @@ static volatile LONG64 g_nextLog;
 
 static void PrLog();  // planrepeat.cpp
 static void EoLogCounters();  // earlyout.cpp
+static void MwLogCounters();  // movedwait.cpp
+static void P6wLogCounters();  // p6wait.cpp
 
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
@@ -1900,6 +2143,10 @@ static void MaybeLogCounters(ULONGLONG now) {
         Log("footprint defer 2: mode %ld deferred %ld/%ld applied %ld/%ld dropped %ld/%ld dup %ld pass %ld forced %ld fullPass %ld ageMax %ld ms applyInJob %ld",
             c.fp2Mode, c.fp2Deferred[0], c.fp2Deferred[1], c.fp2Applied[0], c.fp2Applied[1], c.fp2Dropped[0], c.fp2Dropped[1],
             c.fp2Dup, c.fp2Pass, c.fp2Forced, c.fp2FullPass, c.fp2AgeMaxMs, c.fp2ApplyInJob);
+    if (c.pfReady)  // docs/89 §14 private footprint remove
+        Log("private footprint defer: mode %ld calls %ld inJob %ld deferred %ld applied %ld swept %ld dropped %ld dup %ld pass %ld addFlush %ld fullPass %ld applyInJob %ld",
+            c.pfMode, c.pfCalls, c.pfInJob, c.pfDeferred, c.pfApplied, c.pfSwept, c.pfDropped, c.pfDup, c.pfPass, c.pfAddFlush,
+            c.pfFullPass, c.pfApplyInJob);
     if (c.asyncReady && (c.fbRetryMode || c.fbRetryParked))  // docs/134 §2.6
         Log("route fallback retry: mode %ld parked %ld queued %ld gave up %ld max ticks %ld", c.fbRetryMode, c.fbRetryParked,
             c.fbRetryQueued, c.fbRetryGaveUp, c.fbRetryTicksMax);
@@ -1931,6 +2178,8 @@ static void MaybeLogCounters(ULONGLONG now) {
             c.avFb[7], c.avFb[8], c.avFb[9], c.avTripAv, c.avShadowRuns, c.avShadowMismatch, c.avShadowMismatchB,
             c.avShadowQueryMismatch, c.avShadowOrder, c.avShadowSimScan, c.avSimWriteInRo);
     if (c.eoReady) EoLogCounters();
+    if (c.mwReady || c.gvReady || c.ikReady) MwLogCounters();  // docs/178 §9
+    if (c.p6wReady) P6wLogCounters();  // docs/189 phase 0
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
 }
@@ -2008,6 +2257,8 @@ static __declspec(thread) LONG t_fbCapUs, t_fbCapHit;
 // for its world A* nodes), when the cap fired, and the job's Route_PlanLocked / managed-call time. t_jobT0 0 = no foreign job
 static __declspec(thread) LONGLONG t_fbDeadline, t_jobT0, t_jobCapAt;
 static __declspec(thread) LONG t_jobPlanUs, t_jobHostUs;
+// docs/163 §10 (stuckcheckcap): the worker runs a stuck-check probe job, cut at PlanDeadlineMs like a foreign sync plan
+static __declspec(thread) LONG t_scProbe;
 // P6 phase split (docs/94 §24.7, p5.cpp P6JobBegin / P6JobEnd), worker: the armed Route.Plan job running on this thread
 struct P6Job {
     bool act, inDoor;
@@ -2208,6 +2459,8 @@ struct AsyncJob {
     LONG p6Borrow;     // P6 (docs/94 §24): 1 = the Mode=2 cut was borrowed from an earlier START (ShareCuts)
     LONGLONG p6T0, p6CutQpc;  // P6 phase split (§24.7): QPC at an armed Route.Plan START and at its cut (0 = none)
     LONG pend;        // docs/134 §2.6: READY ticks this J_PEND slot has waited
+    LONG probe;       // docs/163 §10: 1 = a stuck-check probe (PROBE mark on this route right before its own START)
+    LONG sc;          // docs/163 §10.1: stuck-check tag of an own START (ScTagText), 0 = no mark
 };
 // docs/134: 32 slots; with [RouteAsync] FallbackAsync off only the first kJobsBase are handed out (QueueFull as before)
 static const int kJobs = 32, kJobsBase = 8;
@@ -2215,6 +2468,7 @@ static const DWORD kDoneKeepMs = 5000;  // a Sim collects within a tick or two; 
 static AsyncSlot g_async;
 static AsyncJob g_jobs[kJobs];
 static DWORD g_jobSeq;  // sim thread only
+#include "crashev.h"  // docs/186 §8: [CrashForensics] OurEvents ring (CeRec), recorded by the feature files below
 // routegate.cpp / rtsites.cpp: guarded routing calls open now on threads other than the worker (gate leaves, quadtree
 // mutators, destroys, saves). The worker does not start a job while > 0: it sets A_RUNNING, then reads this, and backs
 // off if set; those callers add 1, then read A_RUNNING (Dekker order, both interlocked).
@@ -2243,6 +2497,7 @@ static __declspec(thread) DWORD t_steerRet;  // rtsites.cpp: caller of 0x82EDB0 
 static __declspec(thread) bool t_avSite;     // avoidro.cpp: AvSite calls 0x82EDB0 for the retargeted 0x846D1C (key 0x846D21)
 static __declspec(thread) DWORD t_rtoKey;    // rtoro.cpp: the late +0x918 take of a given-up clone, keyed 0x83156D as the original
 static __declspec(thread) DWORD t_waitKey;   // routegate.cpp: set around a gate's +0x918 wait (probe P0)
+static __declspec(thread) int t_p5bSite;     // routegate.cpp / p5b.cpp (0.34.2): site + 1 of the gate waiting for +0x918 here, 0 none
 // P0: one owner-thread wait of `us` for `key` (only the owner thread waits for jobs, so no interlocked insert)
 enum { HA_LOCK, HA_OTHERLOCK, HA_JOB, HA_PLANWAIT, HA_N };
 static void HaNote(DWORD key, LONG us, int cls);  // hitchattr.cpp ([HitchAttr], per-frame sim waits)
@@ -2250,9 +2505,23 @@ static void HaNote(DWORD key, LONG us, int cls);  // hitchattr.cpp ([HitchAttr],
 static bool g_unOn;
 static void UnWait(DWORD key, LONG us);
 static void UnAcq(DWORD key);
-static void WaitNote(DWORD key, LONG us) {
+// [MovedWaits] (movedwait.cpp, docs/178 §9): RO switches' skips and the sim's next job wait behind the same job
+enum { MW_GV, MW_IK, MW_SL, MW_AV, MW_G0, MW_RTO, MW_PL, MW_OR, MW_S2, MW_N };
+static void MwSkip(int sw);
+static DWORD MwSeqNow();  // the job a wait is behind, read at its start (passed to WaitNote)
+static void MwWait(DWORD key, LONG us, DWORD tok);
+static void MwJobEnd(DWORD seq);
+// [P6Waits] (p6wait.cpp, docs/189 phase 0): the same waits by job outcome and waiter class; outcome set by P5Plan (worker)
+enum { P6O_PLAIN, P6O_TAKEN, P6O_BORROWED, P6O_STALE, P6O_REFUSED, P6O_NONE, P6O_N };
+enum { P6W_LOCK, P6W_GATE, P6W_RTWAIT, P6W_RESULT, P6W_HOST, P6W_N };
+static __declspec(thread) int t_p6wOut, t_p6wArm;
+static void P6wWait(DWORD tok, int cls, int site, LONG us);  // sim thread: tok = MwSeqNow() at the wait's start, site 1 + gate
+static void P6wJobEnd(DWORD seq, LONG spanUs);                // worker, at the job's +0x918 release
+static volatile DWORD g_asyncSeq;  // the running job's seq (worker, before A_RUNNING)
+static void WaitNote(DWORD key, LONG us, DWORD mwTok = 0) {
     Ts3nCounters& k = ts3native_counters;
     if (g_unOn) UnWait(key, us);
+    MwWait(key, us, mwTok);
     int i = 0;
     while (i < 32 && k.blockKey[i] && k.blockKey[i] != (LONG)key) i++;
     if (i == 32) { InterlockedIncrement(&k.blockOther); return; }
@@ -2316,9 +2585,14 @@ static void P4Shadow();                // after J_DONE: the clone run, compare, 
 static void P4ShadowIdle();            // nothing queued: a parked shadow (p4.cpp, 0.34.1)
 static void P4OnStart(AsyncJob* j);    // sim, START: sampling and the clone cut
 static void P5PreLock(const AsyncJob* j);  // p5.cpp: worker, before a Mode=2 job takes +0x918
+static void P5EarlyEnd();                  // p5.cpp: worker, an early clone (P6EarlyCopy) the job never ran goes back
 static LONG __fastcall LockAcquireHook(void* lock, void* edx, const DWORD* deadline);
 static LONG __fastcall LockReleaseHook(void* lock, void* edx);  // routegate.cpp
 static int g_inInvoke;  // > 0 while the caller/owner thread runs a managed call for the worker (ServeInvoke)
+// docs/189 phase 3 ([RouteSnap] AskLent, p5b.cpp P5bAsk): 1 while the worker waits in a door ask of a P5c clone job with
+// +0x918 still lent out (worker writes it before the ask is posted, clears it after g_invDone). The ask's callback on the sim
+// then takes the real lock (P5bAllowed admits it) instead of borrowing a hold nobody has, and its nested plans run on the sim
+static volatile LONG g_auAsk;
 
 // Managed calls (docs/18 "Crash 2026-10-13"): the planner can call script code through mono_runtime_invoke, and the worker
 // is no Mono thread (no domain in TLS 0x11959DC, not in Boehm's thread table, which only holds the GC_init thread).
@@ -2543,6 +2817,13 @@ static void G0wStarted(const G0wHold& h, bool inPass) {
 // docs/134 §11: split of a foreign job (capAt/tail -1 = the cap did not fire): plan = Route_PlanLocked, host = waits for the sim
 // thread to run the job's managed calls, other = the rest of the IC (start points, goal step 0x75C2D0, result mapping)
 struct JobSplit { LONG capAtUs, tailUs, planUs, hostUs; };
+// docs/163 §10.1: the stuck-check round of an own job for its log lines (sc = AsyncJob::sc: 0 no mark, bit 16 marked,
+// bits 0-7 round = mAttempt + 1 (0 = old ts3fixes, round unknown), bit 9 the last round)
+static void ScTagText(char* b, size_t n, LONG sc) {
+    if (!sc) _snprintf_s(b, n, _TRUNCATE, ", no stuck-check mark");
+    else if (!(sc & 0xFF)) _snprintf_s(b, n, _TRUNCATE, ", stuck-check round ?");
+    else _snprintf_s(b, n, _TRUNCATE, ", stuck-check round %ld%s", sc & 0xFF, sc & 0x200 ? " (last)" : "");
+}
 static void JobLongNote(const AsyncJob* j, LONG us, bool capped, const JobSplit* s = NULL) {
     static DWORD minute, lines;
     InterlockedIncrement(j->fb ? &ts3native_counters.fbjcLong : &ts3native_counters.ownJobLong);
@@ -2550,8 +2831,10 @@ static void JobLongNote(const AsyncJob* j, LONG us, bool capped, const JobSplit*
     if (now - minute >= 60000) minute = now, lines = 0;
     if (lines++ >= 20) return;
     if (!s) {
-        Log("route async: long job %ld ms, %s START, IC kind %d, route %08lX%s", us / 1000, j->fb ? "foreign" : j->af ? "A10 foreign" : "own", j->kind,
-            j->handle, capped ? ", capped (FbJobCapMs)" : "");
+        char sc[48] = "";
+        if (!j->fb && !j->af) ScTagText(sc, sizeof(sc), j->sc);
+        Log("route async: long job %ld ms, %s START, IC kind %d, route %08lX%s%s", us / 1000, j->fb ? "foreign" : j->af ? "A10 foreign" : "own", j->kind,
+            j->handle, !capped ? "" : j->probe ? ", capped (stuck-check probe, PlanDeadlineMs)" : ", capped (FbJobCapMs)", sc);
         return;
     }
     Log("route async: long job %ld ms, foreign START, IC kind %d, route %08lX%s, capAt %ld ms tail %ld ms, plan %ld ms host %ld ms "
@@ -2569,6 +2852,11 @@ static void FbjcHist(LONG* h, LONG us) {
 // running job is a foreign one (worker publishes it with A_RUNNING)
 static volatile LONG g_jobFb;
 static volatile LONG g_jobOwn;  // docs/178 T4: the running job is an own one (neither foreign nor an A10 foreign kind)
+// docs/163 §10.1: route and stuck-check tag of the last own job the worker started (kept after it ends: the waits behind it
+// are logged when they end, often after the job). shortcut: two plain words, a wait can read a newer job's tag in between
+// (log text only); pack them if a reader ever acts on it
+static volatile DWORD g_lastOwnH;
+static volatile LONG g_lastOwnSc;
 // a sim-thread wait (LockAcquireAsync pump, RtWaitJob) that had a foreign job running at its start or end
 static void FbjcSimWait(LONG us, bool fb) {
     if (!fb) return;
@@ -2590,7 +2878,9 @@ static void OwSimWait(LONG us, bool own, DWORD handle) {
     if (now - minute >= 60000) minute = now, lines = 0;
     if (lines++ >= 20) return;
     InterlockedIncrement(&k.owLines);
-    Log("route jobs: sim waited %ld ms behind an own job (route %08lX)", us / 1000, handle);
+    char sc[48];
+    ScTagText(sc, sizeof(sc), handle && handle == g_lastOwnH ? g_lastOwnSc : 0);
+    Log("route jobs: sim waited %ld ms behind an own job (route %08lX%s)", us / 1000, handle, sc);
 }
 static void FbjdJobEnd(LONG us, LONGLONG end, LONGLONG dl);  // plandeadline.cpp (docs/178 T1)
 
@@ -2626,6 +2916,7 @@ static void ServeAsync() {
         TwArm(true);
         g_jobFb = j->fb;  // docs/134 §11: read with A_RUNNING by the sim thread's waits
         g_jobOwn = !j->fb && !j->af;
+        if (g_jobOwn) g_lastOwnSc = j->sc, g_lastOwnH = j->handle;
         G0wHold h = {};  // H2: the sim's locomotion window holds the start too (locowin.cpp)
         bool inPass = false, late = false;
         for (;;) {
@@ -2633,6 +2924,7 @@ static void ServeAsync() {
             LockAcquireHook(j->lock, NULL, &kInfinite);
             g_async.handle = j->handle;
             g_async.lock = j->lock;
+            g_asyncSeq = j->seq;  // [MovedWaits]: which job a skip and a wait were behind
             InterlockedExchange(&g_async.state, A_RUNNING);
             inPass = g_g0wIn != 0;  // before the window check (G0wStarted)
             // CE-1 (docs/154): travel / quit (RT_CLOSING) sets rtClosing, then reads A_RUNNING in RtWaitJob, with no
@@ -2648,6 +2940,7 @@ static void ServeAsync() {
         if (late) {  // backed out as the early refusal above: J_SKIPPED, the collect plans synchronously
             InterlockedExchange(&g_async.state, A_IDLE);
             LockReleaseHook(j->lock, NULL);
+            P5EarlyEnd();  // P6EarlyCopy (docs/94 §24.14): its clone and the cut's hold go back
             g_jobFb = g_jobOwn = 0;
             TwArm(false);
             InterlockedIncrement(&k.asyncSkipped);
@@ -2657,6 +2950,7 @@ static void ServeAsync() {
             continue;
         }
         G0wStarted(h, inPass);
+        CeRec(CE_JOB_START, j->handle, (DWORD)j->kind, (DWORD)(uintptr_t)j->lock);
         const unsigned short cw = GetX87();
         const unsigned int csr = _mm_getcsr();
         SetX87(j->x87);
@@ -2668,22 +2962,29 @@ static void ServeAsync() {
         // docs/134 §10 FbJobCapMs: the sim thread waits out a long job at its next +0x918 acquire (steering, destroy), so a
         // foreign job gets a world A* cap like a sync plan's SyncCapMs (nested plans the job's managed calls send back too).
         // §11: the cap is a deadline from t0 (the job's start), not a clock from its first world A* node
-        t_fbCapUs = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : 0;
+        // docs/163 §10: a stuck-check probe job (own START, PROBE mark) gets PlanDeadlineMs from its start, as a foreign sync plan
+        t_scProbe = j->probe && !j->fb && k.pdUs > 0 ? 1 : 0;
+        t_fbCapUs = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : t_scProbe ? k.pdUs : 0;
         t_fbDeadline = t_fbCapUs ? t0.QuadPart + (LONGLONG)t_fbCapUs * g_qpf.QuadPart / 1000000 : 0;
-        t_jobT0 = j->fb ? t0.QuadPart : 0;
+        t_jobT0 = j->fb || t_scProbe ? t0.QuadPart : 0;
         t_jobCapAt = 0;
         t_jobPlanUs = t_jobHostUs = 0;
         t_fbCapHit = 0;
         t_fbjdCut[0] = t_fbjdCut[1] = t_fbjdCut[2] = 0;
         // docs/178 T1: the cell A* / water deadline exits (plandeadline.cpp) also answer this thread while the job has a
         // deadline; PdSkip reads fbjdMode per call (runtime switch)
-        if (t_fbDeadline && (k.fbjdReady & 3)) InterlockedExchange((volatile LONG*)&g_pdWkTid, (LONG)GetCurrentThreadId());
+        if (t_fbDeadline && ((k.fbjdReady & 3) || (t_scProbe && (k.pdReady & 6))))
+            InterlockedExchange((volatile LONG*)&g_pdWkTid, (LONG)GetCurrentThreadId());
         RjpJobBegin(j->fb ? 2 : j->kind ? 1 : 0);  // [RouteJobPhases] (routephases.cpp): own START, own A10, foreign
         t_hcJob = ++g_hcJobSeq;                     // hostcalls.cpp: door keys and the memo are per job
+        t_p6wOut = j->p4 >= 2 ? P6O_REFUSED : P6O_PLAIN;  // [P6Waits]: armed until P5Plan says taken / stale
+        t_p6wArm = k.p6Plan != 0;                          // [P6Waits]: the arm = the P6 switch at the job's start
         CallIc(j->kind, j->result, j->handle, j->pt);
         t_hcJob = 0;
         LendBackstop();  // CE-4 (docs/154): a lend window an unwind left open is closed before the release below
+        P5EarlyEnd();    // P6EarlyCopy (docs/94 §24.14): an early clone the IC never planned with (no Route_PlanLocked)
         InterlockedExchange((volatile LONG*)&g_pdWkTid, 0);
+        t_scProbe = 0;
         const LONGLONG dl = t_fbDeadline;
         t_fbCapUs = 0;
         t_fbDeadline = 0;
@@ -2704,12 +3005,15 @@ static void ServeAsync() {
         SetX87(cw);
         _mm_setcsr(csr);
         LockReleaseHook(j->lock, NULL);
+        MwJobEnd(j->seq);
+        P6wJobEnd(j->seq, us);
+        CeRec(CE_JOB_END, j->handle, (DWORD)us, (DWORD)(uintptr_t)j->lock);
         InterlockedExchange(&g_async.state, A_IDLE);
         g_jobFb = g_jobOwn = 0;
         TwArm(false);
         InterlockedExchangeAdd(&k.asyncUs, us);
         Max(&k.asyncMaxUs, us);
-        if (capped) InterlockedIncrement(&k.fbjcCapped);
+        if (capped && !j->probe) InterlockedIncrement(&k.fbjcCapped);  // docs/163 §10: a cut probe shows in its long-job line
         Max(j->fb ? &k.fbjcMaxUs : &k.ownJobMaxUs, us);
         if (j->af) Max(&k.afJobMaxUs, us);
         if (j->fb) {  // docs/134 §11
@@ -2766,15 +3070,20 @@ static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals,
     // run). A plan made inside such a managed call is nested in the job's search, as it would be without us: it goes to the
     // worker, which waits in InvokeHook. Any other plan waits here for the job, running its managed calls, then goes on.
     if (g_async.state == A_RUNNING && me == g_async.owner) {
-        if (g_inInvoke) viaWorker = true;
+        if (g_inInvoke && g_auAsk) {  // AskLent: the worker waits in the ask holding nothing; plan here under a real acquire
+            viaWorker = false;
+            InterlockedIncrement(&ts3native_counters.auPlanHere);
+        } else if (g_inInvoke) viaWorker = true;
         else if (P5cPlanHere()) viaWorker = false;  // P5c: this thread owns the lent lock; the job searches its clone
         else {
             LARGE_INTEGER w0;
             QueryPerformanceCounter(&w0);
+            const DWORD mwTok = MwSeqNow();
             WaitAsyncDone(SW_RUNPLAN);
             const LONG w = UsSince(w0);
-            WaitNote(0x05000000, w);
+            WaitNote(0x05000000, w, mwTok);
             HaNote(0x05000000, w, HA_PLANWAIT);
+            P6wWait(mwTok, P6W_RESULT, 0, w);
         }
     }
     if (t_g10cOpen && !g_inInvoke) viaWorker = false;  // G10-C: no job can run now, and a worker in ServeAsync waits for us
@@ -3019,7 +3328,10 @@ static void WaitJobDone(AsyncJob* j, int site) {
         }
     }
     P5cHandEnd(hand);
-    if (waits) SwNote(site, UsSince(t0), yieldable, j->handle, !j->fb && !j->af);
+    if (!waits) return;
+    const LONG us = UsSince(t0);
+    SwNote(site, us, yieldable, j->handle, !j->fb && !j->af);
+    if (site == SW_COLLECT) P6wWait(j->seq, P6W_RESULT, 0, us);  // [P6Waits]: the collected job's own outcome
 }
 
 static AsyncJob* JobFor(DWORD handle) {
@@ -3294,8 +3606,14 @@ static bool JobQueue(AsyncJob* j, DWORD handle, int kind, const float* pt, bool 
 // kind 0 = Route.Plan's START; kinds 1-3 (A10) also need their collect detour and a route nobody follows; pt = kinds 2-3.
 // foreign (docs/134, fbMode 1): a kind-0 START from a yielding task that is not the route's Sim; also needs a route nobody follows.
 // foreign with kind 1-3 (docs/176, afMode 1): the same for an A10 IC (job flag af, not fb: no FbJobCapMs cap, the result stays the IC's)
+static DWORD g_scProbeH;  // docs/163 §10: route handle of the last PROBE mark (sim thread only), taken by its next START
+static DWORD g_scTagH;    // docs/163 §10.1: route handle and tag of the last stuck-check mark (cut or not), same rule
+static LONG g_scTag;
 static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool foreign = false) {
     g_collect = 0;
+    const LONG probe = handle && g_scProbeH == handle && !kind && !foreign ? 1 : 0;  // a mark is good for one START only
+    const LONG sc = handle && g_scTagH == handle && !kind && !foreign ? g_scTag : 0;
+    g_scProbeH = g_scTagH = 0;
     g_rfbHandle = 0;
     Ts3nCounters& k = ts3native_counters;
     if (k.asyncMode != 1 || !k.asyncReady) return 0;  // asyncMode is writable at runtime
@@ -3339,6 +3657,8 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool fo
             j = &g_jobs[i];
         }
     if (!j) { InterlockedIncrement(&k.asyncQueueFull); return AsyncRefuse(handle, RFB_QFULL, kind); }
+    j->probe = probe;  // before J_PEND / J_QUEUED: the worker reads it once it claims the slot
+    j->sc = sc;
     if (park) {  // the slot is this route's; READY (FbRetry) queues it once the pending updates are applied
         g_async.owner = GetCurrentThreadId();
         j->handle = handle;
@@ -3434,10 +3754,30 @@ static int g_arOwnKinds = 7;        // [RouteAsync] Kinds: kinds whose own-task 
 
 static u8 SpDoorMsg(DWORD lo, DWORD hi);  // snap.cpp: door mirror channel (RouteOption bits 63 + 58)
 static u8 UtViewerMsg(DWORD lo, DWORD hi);  // unseen.cpp: active-household viewer channel (RouteOption bits 63 + 57)
+// docs/163 §10 PROBE (ts3fixes stuckcheckcap, GetOption2 with optHi 0x86000000 = bits 63 + 58 + 57, no name; the game and
+// older builds answer false): the next own START of this route is a stuck-check probe, a throwaway plan whose failure only
+// re-arms the check, so its job gets the deadline a foreign sync plan gets (PlanDeadlineMs). true = marked (deadline on).
+// §10.1 tagged form (ts3fixes from 0.36.62's commit, every stuck-check START with stuckcheckown): optLo bit 16 set, bits 0-7
+// round (mAttempt + 1), bit 8 = cut wanted (stuckcheckcap, the old optLo 0 form), bit 9 = last round; the tag only labels
+// the job's log lines. optLo 0 = the old cut mark, round unknown.
+static const DWORD kProbeHi = 0x86000000;
+static u8 ScProbeMark(DWORD handle, DWORD lo = 0) {
+    const Ts3nCounters& k = ts3native_counters;
+    const bool tagged = lo >> 16 == 1;
+    g_scProbeH = 0;
+    g_scTagH = handle;
+    g_scTag = 0x10000 | (tagged ? (LONG)(lo & 0x2FF) : 0);
+    if (!handle || (tagged && !(lo & 0x100)) || !k.pdUs || !(k.pdReady & 7)) return 0;
+    g_scProbeH = handle;
+    return 1;
+}
+static u8 UdTextMsg(DWORD lo, DWORD hi);   // userdiag.cpp: ts3fixes text channel (optHi top byte 0x87 = bits 63 + 58 + 57 + 56, docs/188)
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
     if ((u8)options2 && optHi == kJobBusyHi && !optLo) return JyBusy();  // docs/183
+    if ((u8)options2 && optHi == kProbeHi && (!optLo || optLo >> 16 == 1)) return ScProbeMark(handle, optLo);  // docs/163 §10
     if ((u8)options2 && (optHi & 0xFF000000) == 0x84000000) return SpDoorMsg(optLo, optHi);
     if ((u8)options2 && (optHi & 0xFF000000) == 0x82000000) return UtViewerMsg(optLo, optHi);
+    if ((u8)options2 && (optHi & 0xFF000000) == 0x87000000) return UdTextMsg(optLo, optHi);  // docs/188
     if ((u8)options2 && (optHi & ~(kArKindHi | kArPtHi | kArFgnHi)) == (kAsyncOptHi | kArHi) &&
         !((optHi & kArFgnHi) && ((optHi & kArPtHi) || !(optHi & kArKindHi)))) {  // foreign bit: kind 1-3 STARTs only
         const int idx = (int)(optHi >> 24) & 3;
@@ -3543,7 +3883,8 @@ static __declspec(noinline) LONG LockAcquireFull(void* lock, void* edx, const DW
     }
     // H6 borrow rule: the owner runs a callback for the job while the worker, holding the job's lock, waits in it; an acquire
     // of that lock here is nested in the job, as it was when the plan ran on this thread. Waiting would deadlock.
-    if (lock == g_async.lock && g_inInvoke && g_async.state == A_RUNNING && GetCurrentThreadId() == g_async.owner) {
+    // AskLent (g_auAsk): the worker lent the lock out for the ask, so there is no hold to borrow; the acquire goes on below
+    if (lock == g_async.lock && g_inInvoke && !g_auAsk && g_async.state == A_RUNNING && GetCurrentThreadId() == g_async.owner) {
         t_borrow++;
         InterlockedIncrement(&ts3native_counters.rgBorrows);
         return 2;
@@ -3596,10 +3937,13 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
         H2LockWait(false, UsSince(t0));
         return r;
     }
+    const int p6wSite = t_p5bSite;  // [P6Waits]: before P5bLock, which clears it on a gate-0 miss
     LONG r = P5bLock(lock, edx, &kTry);
     if (r != -2) return r;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    const DWORD mwTok = MwSeqNow();
+    LONG serveN = 0, serveUs = 0;  // [P6Waits]: the job's host calls served inside this wait
     const bool h2Running = g_async.state == A_RUNNING;  // v85 split: a running job vs one queued / held by the window
     InterlockedIncrement(&ts3native_counters.asyncPumpWaits);
     // waiting for the routing lock: the worker starts no further job until this thread has had it (g_rgOffSimOpen)
@@ -3612,7 +3956,16 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
         if (!own && g_async.state == A_RUNNING && g_jobOwn) own = true, ownHandle = g_async.handle;
         if (!AsyncBusy()) { r = P5bLock(lock, edx, deadline); break; }  // no job left: wait as the game would
         HANDLE h[2] = {g_invReady, g_asyncDone};
-        if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) ServeInvoke(hold ? HC_PUMP918 : HC_PUMPOTHER);
+        if (WaitForMultipleObjects(2, h, FALSE, 1) == WAIT_OBJECT_0) {
+            if (ts3native_counters.p6wReady) {  // [P6Waits] off: no timer pair around the serve
+                LARGE_INTEGER s0;
+                QueryPerformanceCounter(&s0);
+                ServeInvoke(hold ? HC_PUMP918 : HC_PUMPOTHER);
+                serveN++, serveUs += UsSince(s0);
+            } else {
+                ServeInvoke(hold ? HC_PUMP918 : HC_PUMPOTHER);
+            }
+        }
         if ((r = P5bLock(lock, edx, &kTry)) != -2) break;
         if (*deadline != 0xFFFFFFFF && (LONG)(GetTickCount() - *deadline) >= 0) { r = P5bLock(lock, edx, deadline); break; }
         if (GetTickCount() - start >= next) {
@@ -3629,8 +3982,10 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
     if (hold) InterlockedDecrement(&g_rgOffSimOpen);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, waited);
-    WaitNote(key, waited);
+    WaitNote(key, waited, mwTok);
     HaNote(key, waited, hold ? HA_LOCK : HA_OTHERLOCK);
+    if (hold && serveN) InterlockedExchangeAdd(&ts3native_counters.p6wServeN, serveN), InterlockedExchangeAdd(&ts3native_counters.p6wServeUs, serveUs);
+    if (hold) P6wWait(mwTok, p6wSite ? P6W_GATE : serveN ? P6W_HOST : P6W_LOCK, p6wSite, waited);  // other locks: not job waits
     FbjcSimWait(waited, fb);
     OwSimWait(waited, own, ownHandle);
     if (hold && H2InPass()) H2LockWait(h2Running, waited);
@@ -3732,6 +4087,12 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
     return true;
 }
 
+// userdiag.cpp (docs/188, [UserDiag]): save trail markers for the save watchdog; no-ops unless this thread runs a save
+static void UdPhase(const char* phase);  // a save phase starts (NULL = the save is over): "save: > / <" lines
+static void UdWait(const char* what);    // a wait inside the phase starts (NULL = it ended): watchdog text, long-wait line
+static void UdSaveStart(int travelSave, int traveling);
+static void UdSaveEnd(DWORD r);
+static void UdInfoDir(const unsigned char* info);  // the save folder from the save info (sized after the save)
 #include "apex.cpp"
 #include "savewrite.cpp"
 #include "decompress.cpp"
@@ -3766,6 +4127,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "verify.cpp"
 #include "vcall.cpp"
 #include "values.cpp"
+#include "crashfx.h"  // docs/157 §11.7: [CrashForensics] ring core (CfRec / CfFree / CfUse, used by replay.cpp and p4clone.cpp)
 #include "routesnap.cpp"
 #include "autshadow.cpp"
 #include "snap.cpp"
@@ -3776,18 +4138,24 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "p5.cpp"
 #include "p5b.cpp"
 #include "p5c.cpp"
+#include "stalelot.cpp"  // docs/189 phase 2: [RouteSnap] StaleLot (after p5c.cpp: P5c, PcActiveLot, the snap.cpp ring)
 #include "tailunlock.cpp"
 #include "rtoro.cpp"
 #include "fgro.cpp"  // docs/174: [PlacementRO] (after rtoro.cpp: S2's QL and SrQuery, AvMayRun, PatchCalls)
+#include "gvro.cpp"  // docs/178 §7 T6: [GoalValidRO] (after fgro.cpp: same S2 pieces)
+#include "idlero.cpp"  // docs/178 §8: [IdleCheckRO] (after fgro.cpp: S2's QL and SrEntry, AvMayRun, PatchCalls)
 #include "loadprof.cpp"
 #include "planrepeat.cpp"
 #include "replandedupe.cpp"
 #include "optsinit.cpp"
 #include "hitchattr.cpp"
+#include "movedwait.cpp"  // docs/178 §9: [MovedWaits] (after hitchattr.cpp: HaFrame)
+#include "p6wait.cpp"  // docs/189 phase 0: [P6Waits] (after movedwait.cpp)
 #include "unseen.cpp"
 #include "worldimage.cpp"
 #include "crashreport.cpp"
 #include "watchpt.cpp"  // docs/157 §8: [Watchpoint] hardware data watchpoints (default off)
+#include "crashfx.cpp"  // docs/157 §11.7: [CrashForensics] guarded sites + crash dump (default off)
 #include "earlyout.cpp"
 #include "plandeadline.cpp"  // docs/164 §7: [RouteAsync] PlanDeadlineMs / FailMemo (routephases.cpp takes its trampolines)
 #include "routephases.cpp"
@@ -3795,6 +4163,7 @@ static bool InstallPlanDetour(bool cache, bool worker, bool budget, bool gate) {
 #include "cellmemo.cpp"
 #include "hostcalls.cpp"
 #include "fgrender.cpp"  // docs/162 §7: [Harness] ForegroundRender (TEST ONLY)
+#include "userdiag.cpp"  // docs/188: [UserDiag] player-report lines (header, world load, save trail)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -3833,8 +4202,8 @@ static void Run(HMODULE self) {
     Log("ts3native " TS3NATIVE_VERSION " %04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     GetModuleFileNameW(NULL, exe, MAX_PATH);
     HMODULE base = GetModuleHandleW(NULL);
-    Log("host %ls base 0x%p", exe, base);
     const wchar_t* name = wcsrchr(exe, L'\\');
+    Log("host %ls base 0x%p", name ? name + 1 : exe, base);  // file name only: players send this log (docs/188 privacy)
     if (base != (HMODULE)0x400000 || _wcsicmp(name ? name + 1 : exe, L"TS3W.exe") != 0) {
         Log("SKIP all: host is not TS3W.exe at 0x400000");
     } else {
@@ -3874,11 +4243,16 @@ static void Run(HMODULE self) {
         InstallTailUnlock(ini);  // docs/150 §11: after the steering frames (InstallRtSites)
         InstallRouteToObjRO(ini);  // docs/140 §12: after [SteerRO] (QL, W1-W6) and [SlotEnabledRO] (SH)
         InstallPlacementRO(ini);   // docs/174: S2's writer set, like [RouteToObjRO]
+        InstallGoalValidRO(ini);   // docs/178 §7 T6: S2's writer set, like [PlacementRO]
+        InstallIdleCheckRO(ini);    // docs/178 §8: S2's writer set, like [PlacementRO]
+        InstallMovedWaits(ini);     // docs/178 §9: observe only
+        InstallP6Waits(ini);        // docs/189 phase 0: observe only, default on
         InstallP10(ini);
         InstallReplanDedupe(ini);  // docs/150 §13: after A10 (its collect detours) and P10 (probe stubs keep their ICs)
         InstallPlanDeadline();     // docs/164 §7: after the plan detour, the cost stubs and InstallAsync (SyncIc); before [RouteJobPhases]
         keepLog = ApplySaveWrite(ini) || keepLog;
         ApplySaveFlush(ini);
+        keepLog = ApplyUserDiag(ini) || keepLog;  // docs/188: after [SaveWrite] (its save phase sites need the save hooks)
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
         if (!g_getOptOrig)
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
@@ -3891,6 +4265,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyGcThreadCheck(ini) || keepLog;
         keepLog = ApplyThreadStack(ini) || keepLog;  // docs/66 §6: exe IAT CreateThread/_beginthreadex (default off)
         keepLog = ApplyWatchpoint(ini) || keepLog;  // docs/157 §8: vectored handler for WpArm (default off)
+        keepLog = ApplyCrashForensics(ini) || keepLog;  // docs/157 §11.7: after [Alloc] (reads its Free detour for the heap check)
         keepLog = ApplyIcLockCheck(ini) || keepLog;
         keepLog = ApplyMonoThread(ini) || keepLog;
         keepLog = ApplyWorldImage(ini) || keepLog;  // after [MonoThread]: second callback on the Simulate loop-back hook
@@ -3931,6 +4306,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         // Patch now: the ASI loader runs before the exe's entry point, so before GC_init (lazy, first GC use).
         Run(inst);
     } else if (reason == DLL_PROCESS_DETACH) {
+        UdExit();
         CrCleanExit();
         FgRevert();  // [Harness] ForegroundRender: original bytes back
     }

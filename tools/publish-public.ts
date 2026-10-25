@@ -40,6 +40,18 @@ const sha256 = (b: Buffer | string) => createHash('sha256').update(b).digest('he
 
 // --- pure checks (self-checked) ---
 
+// poll ready() every intervalMs until it returns true, at most timeoutMs; a throw counts as not ready (gh errors right after
+// the PR); returns the polls made, throws with the last error when the time runs out
+export function waitUntil(ready: () => boolean, what: string, timeoutMs: number, intervalMs: number, sleepFn: (ms: number) => void, now = Date.now): number {
+  const end = now() + timeoutMs;
+  let last = '';
+  for (let polls = 1; ; polls++) {
+    try { if (ready()) return polls; last = ''; } catch (e: any) { last = String(e?.message ?? e).split('\n')[0]; }
+    if (now() >= end) throw new Error(`${what}: not after ${Math.round(timeoutMs / 1000)} s${last ? ` (last error: ${last})` : ''}`);
+    sleepFn(intervalMs);
+  }
+}
+
 // latin1 keeps every byte as is; the replacements are ASCII
 export function scrub(text: string): string { return SCRUB.reduce((t, [re, to]) => t.replace(re, to), text); }
 export const isText = (b: Buffer) => !b.subarray(0, 8000).includes(0);
@@ -72,7 +84,7 @@ export function verifyZip(z: Buffer, nativeVersion: string, testedIni: Buffer): 
   const files = unzip(z);
   const asi = files.get('ts3native.asi'), ini = files.get('ts3native.ini');
   if (!asi || !ini) throw new Error(`zip holds ${[...files.keys()].join(', ')}, want ts3native.asi + ts3native.ini`);
-  const versions = new Set([...asi.toString('latin1').matchAll(/ts3native (\d+\.\d+\.\d+)/g)].map(m => m[1]));
+  const versions = new Set([...asi.toString('latin1').matchAll(/ts3native (\d+\.\d+\.\d+[a-z]?)\b/g)].map(m => m[1]));
   if (versions.size !== 1 || !versions.has(nativeVersion)) throw new Error(`asi version ${[...versions].join(', ') || 'none'}, want ts3native ${nativeVersion}`);
   if (sha256(ini) !== sha256(testedIni)) throw new Error(`zip ini sha256 ${sha256(ini)} != tested ini ${sha256(testedIni)}`);
   return enabledSections(ini.toString('latin1'));
@@ -187,10 +199,12 @@ export function publish(o: Opts): { clone: string; commit: string } {
   const [title, ...body] = o.message.split('\n');
   const pr = remote('gh pr create', () => run('gh', ['pr', 'create', ...R, '--head', o.branch, '--title', title, '--body', body.join('\n').trim() || title]), '<pr url>');
   remote(`gh pr checks ${pr} --watch`, () => {
-    for (let i = 0; ; i++) {  // checks show up a few seconds after the PR
-      try { execFileSync('gh', ['pr', 'checks', pr, ...R, '--watch', '--interval', '20'], { stdio: 'inherit' }); return; }
-      catch (e: any) { if (e.status === 1 || i >= 12) throw new Error(`gh pr checks ${pr}: failed or never reported`); sleep(10_000); }
-    }
+    // checks show up seconds to minutes after the PR, and `gh pr checks` exits 1 ("no checks reported") until then, the same
+    // code as a failed check: wait for the rollup to list any, then watch
+    waitUntil(() => Number(run('gh', ['pr', 'view', pr, ...R, '--json', 'statusCheckRollup', '-q', '.statusCheckRollup | length'])) > 0,
+      `checks on ${pr}`, 180_000, 10_000, sleep);
+    try { execFileSync('gh', ['pr', 'checks', pr, ...R, '--watch', '--interval', '20'], { stdio: 'inherit' }); }
+    catch { throw new Error(`gh pr checks ${pr}: a check failed`); }
   }, undefined);
   remote(`gh pr merge ${pr} --squash --admin`, () => run('gh', ['pr', 'merge', pr, ...R, '--squash', '--admin']), '');
   const sha = remote('merge commit', () => run('gh', ['pr', 'view', pr, ...R, '--json', 'mergeCommit', '-q', '.mergeCommit.oid']), '<merge sha>');
@@ -223,6 +237,17 @@ function selfCheck(): void {
   const user = 'rod' + 'ne', pc = 'LAPTOP' + '-M15';
   assert.equal(scrub(`C:\\Users\\${user}\\x ${pc} ${user}y`), `C:\\Users\\<user>\\x <pc> ${user}y`, 'scrub');
   assert.deepEqual(leftovers(scrub(`/home/${user}/ ${pc}`)), [], 'nothing left after scrub');
+  { // waitUntil on a fake clock: checks appear on poll 4 after two gh errors; never = throws at the timeout with the last error
+    let t = 0, n = 0;
+    const clock = () => t, tick = (ms: number) => { t += ms; };
+    const seq = [() => { throw new Error('no checks reported\nmore'); }, () => { throw new Error('x'); }, () => false, () => true];
+    assert.equal(waitUntil(() => seq[n++](), 'c', 180_000, 10_000, tick, clock), 4, 'ready on poll 4');
+    assert.equal(t, 30_000, 'slept 3 intervals');
+    t = 0; n = 0;
+    assert.throws(() => waitUntil(() => { n++; throw new Error('gh: no checks reported'); }, 'checks on #1', 180_000, 10_000, tick, clock),
+      /checks on #1: not after 180 s \(last error: gh: no checks reported\)/, 'timeout names the last error');
+    assert.equal(n, 19, '19 polls in 3 min at 10 s');
+  }
   assert.equal(leftovers(`${pc}`).length, 1, 'leftover found');
   assert.ok(!isText(Buffer.from([65, 0, 66])) && isText(Buffer.from('abc')), 'binary detection');
 
@@ -236,6 +261,8 @@ function selfCheck(): void {
   const z = (v: string, i = ini) => zip([['ts3native.asi', asi(v)], ['ts3native.ini', i]]);
   assert.deepEqual(verifyZip(z('0.36.40'), '0.36.40', ini), ['[GC]', '[RouteAsync]'], 'zip ok');
   assert.throws(() => verifyZip(z('0.36.39'), '0.36.40', ini), /asi version 0.36.39/, 'wrong version refused');
+  assert.deepEqual(verifyZip(z('0.36.37a'), '0.36.37a', ini), ['[GC]', '[RouteAsync]'], 'hotfix letter suffix ok');
+  assert.throws(() => verifyZip(z('0.36.37a'), '0.36.37', ini), /asi version 0.36.37a/, 'hotfix asi is not the base release');
   assert.throws(() => verifyZip(z('0.36.40', Buffer.from('[GC]\nEnabled=0\n')), '0.36.40', ini), /ini sha256/, 'other ini refused');
 
   const tunables = Object.values(FEATURES).flatMap(f => f.tuning ?? []);

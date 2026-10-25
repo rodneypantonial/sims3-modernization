@@ -1,0 +1,171 @@
+{
+  "note": "P6 fixes (docs/94 §24.14 + docs/189 phase 0, 0.36.57, counters v123, asi game-copy/ts3native.asi.p6fix = native/ts3native/out-p6p0 on branch p6/phase0: P6EarlyCopy + [P6Waits] counters). Built: B = [RouteSnap] P6EarlyCopy (own-only copy before the job takes +0x918; runtime switch routesnapearly). Not built: A = rebase-and-rerun of stale P6 jobs (static stop, §24.14.2). Jobs 1-2 correctness (night-1024-p6-fix settings + P6EarlyCopy=1, VerifyEvery=2: every other armed job verifies the clone it would have taken, early-copied ones included). Job 3 = the docs/189 §5 phase-0 baseline: timing, IP, in-load ABBA on the P6 pair (routesnapplan + routesnapearly) via repro route-queuefull-p6-loop, VerifyEvery=0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, DoorMemo 0 in both arms: clean machine only (machine-load line < 10% other CPU, else rerun).",
+  "jobs": [
+    {
+      "id": "bp-p6fix-verify",
+      "note": "§24.14 correctness, BP: night-1024-p6-fix bp-p6-verify2 settings + RouteSnap.P6EarlyCopy=1. Pass (nativeRequire + logForbid): p6Armed_0, p6Taken_0, p6Borrowed_0, p6eCopies, p6eUsed > 0; m2VerBad 0, p6BorrowVerBad 0, m2Off 0, m2Trips <= 2; no P4 FAULT / fault applying record; no crash. Read: take rate p6Taken_0 / (p6Plans_0 - m2Verify share), refusals by reason (m2Fb_*, p5cStale_0/1, snPcRefused_*), p6eSkip_0/1/2 (not own-only / stale-storm / no cut), p6eRel_0/1/2 (plan refused / recheck / unused), p6eRefused; hold split from the p6j* phase counters (copy now outside start..end: p6jCopyUs vs p6jStartUs) and P6 job lines; compare with night-1024-p6-fix §24.11.2.",
+      "asi": "game-copy/ts3native.asi.p6fix",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 123,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,p6eCopies>=1,p6eUsed>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 2,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.ShadowWorld": "BP",
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteSnap.P6EarlyCopy": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-p6fix-verify",
+      "note": "§24.14 correctness, IP: same settings and pass rule as bp-p6fix-verify on Baseline-IP-Spring. p6Armed_0 0 = the STARTs were not async or the loop did not fire on IP (read asyncStarted and the repro log first).",
+      "asi": "game-copy/ts3native.asi.p6fix",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 123,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,p6eCopies>=1,p6eUsed>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 2,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.ShadowWorld": "IP",
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteSnap.P6EarlyCopy": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-p6fix-ab",
+      "note": "docs/189 phase-0 baseline (§5 job 1) + §24.14 timing, IP, one load: in-load ABBA (off,on,on,off) on routesnapplan + routesnapearly via route-queuefull-p6-loop (off arms: P6 off = ReplanFromPosition takes only, own Route.Plan jobs plan with the game, no early copy; on arms: P6 on = own Route.Plan jobs taken + P6EarlyCopy). No third arm (P6 without early copy): the loop toggles one pair, a third arm needs another load (~25 min); night-1024-p6-fix has P6 alone. VerifyEvery=0 (release), ShareCuts 1, TakeKinds 9, DoorMemo 0 in both arms (docs/189 Q4), [MovedWaits] on, [P6Waits] on (counters v123, split by arm = the P6 switch at each job start), [HitchAttr] Enabled + Holders, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY: machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun. Pass: no crash, game alive, m2Off 0, p6Taken_0 >= 1, p6eUsed >= 1, log lines \"OK   p6 waits\" and \"p6 waits arm 1 taken: jobs >= 1\" (logRequire: the probe agent on master reads v123 counters only once tools/probe/agent.js from p6/phase0 is merged; until then read the log lines), no P4 FAULT. Read: node tools/harness/wait-ab.ts <tag> (sim +0x918 wait ms/s by arm; keys 0x760BFF gate 10, 0x62EF7A gate 0, 0x631F40 F-G, job / collect waits), node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per 10 min); the phase-0 split from the stats-block lines \"p6 waits arm <a> <outcome>: jobs .. span .. ms; lock/gate/rtwait/result/host n/ms\" and \"p6 waits arm <a> gates (site ms)\" (counters p6wN_/p6wUs_<arm*30+out*5+cls>, p6wJobN_/p6wSpanUs_<arm*5+out>, p6wGateUs_<arm*16+site>; out 0 plain 1 taken 2 borrowed 3 stale 4 refused/verify 5 no job; cls 0 lock 1 gate 2 rtwait 3 result 4 host), moved waits lines, p5bHeldOut, p6j* split. Decides (docs/189 §5): phase 1 (A_HOLD waiters) first if gate + rtwait >= 30% of the on-arm wait behind taken jobs (out 1-2) and the taken span <= the plain span; phase 2 (per-lot staleness) first if stale > 50% of armed jobs and gate + rtwait < 30%. Expected [inferred, docs/189 §2]: on arm lower sim +0x918 wait; gate / rtwait waits about unchanged.",
+      "asi": "game-copy/ts3native.asi.p6fix",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 123,
+      "nativeRequire": "p6Taken_0>=1,p6eUsed>=1,m2Off<=0,m2Trips<=2",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "RouteAsync.Kinds": 4,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 0,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.ShadowWorld": "IP",
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "MovedWaits.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "P6Waits.Enabled": 1,
+        "RouteAsync.DoorMemo": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 22,
+          "seed": 12345,
+          "repro": "route-queuefull-p6-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 16
+            },
+            "maxMinutes": 22
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": true,
+      "timeoutMin": 40,
+      "logRequire": {
+        "OK   p6 waits": 1,
+        "p6 waits arm 1 taken: jobs [1-9]": 1
+      }
+    }
+  ]
+}

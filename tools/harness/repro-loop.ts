@@ -29,6 +29,8 @@
 //            sim tick, so a ping's round trip spans the iteration in progress); counted from the step's return, so set minS
 //            past any alarm delay (1 sim-minute ~ 1 s at normal [inferred])
 //          | {taskDone: name}  the stutter profiler's task records (io.taskDone; not wired in profile-world yet)
+//          | {simMinutes: n}  agent `time` minutes_total rose >= n since just before the step (a wall-clock waitS at a fast
+//            speed overshoots: 45 s at triple ran 475 sim-minutes, not ~35, on 2026-10-25)
 //   minS (floor, default 0), maxS (cap, required). The step ends at the first poll with every cond met and minS passed
 //   ("signal"), or at maxS ("cap": the effect may run into the next firing; hitch-ab.ts --scenario lists capped firings).
 //   between: "normal" | "fast": the step's wait (fixed or adaptive) runs at ultra, then this speed is set back; only for steps
@@ -40,7 +42,7 @@ import assert from 'node:assert/strict';
 
 export type Arm = 'on' | 'off';
 export type Until = ({ perArm: number } | { events: number }) & { minFirings?: number };
-export type WaitCond = { counter: string | string[]; rises?: number; of?: string; slack?: number } | { quiet: number; iterMs?: number } | { taskDone: string };
+export type WaitCond = { counter: string | string[]; rises?: number; of?: string; slack?: number } | { quiet: number; iterMs?: number } | { taskDone: string } | { simMinutes: number };
 type Conds = WaitCond | WaitCond[];
 export type WaitUntil = Conds | { on: Conds; off: Conds };
 export type LoopStep = {
@@ -73,8 +75,9 @@ export function checkStep(s: any, inLoop = false): LoopStep {
       'counter' in c ? [c.counter].flat().every((n: any) => typeof n === 'string' && n) && (c.rises === undefined || Number.isInteger(c.rises) && c.rises >= 0)
         && (c.of === undefined || typeof c.of === 'string') && (c.slack === undefined || Number.isInteger(c.slack) && c.slack >= 0)
       : 'quiet' in c ? Number(c.quiet) > 0 && (c.iterMs === undefined || Number(c.iterMs) > 0)
-      : 'taskDone' in c ? typeof c.taskDone === 'string' && !!c.taskDone : false);
-    if (!ok) throw new Error(`${where}: bad waitUntil cond ${JSON.stringify(c)} ({counter, rises?, of?, slack?} | {quiet, iterMs?} | {taskDone})`);
+      : 'taskDone' in c ? typeof c.taskDone === 'string' && !!c.taskDone
+      : 'simMinutes' in c ? Number(c.simMinutes) > 0 : false);
+    if (!ok) throw new Error(`${where}: bad waitUntil cond ${JSON.stringify(c)} ({counter, rises?, of?, slack?} | {quiet, iterMs?} | {taskDone} | {simMinutes})`);
   }
   if (isArmed(w) && !inLoop && !/\b(on|off) #\d+/.test(s.note ?? '')) throw new Error(`${where}: waitUntil {on, off} needs an arm in the note`);
   return s;
@@ -102,7 +105,8 @@ export async function runStep(s: LoopStep, io: StepIO, read: string[] = []): Pro
       return [n, res[n]];
     }));
   };
-  const before = names.length ? await patches() : {};
+  const simMin = async () => Number((await io.ag('time'))?.result?.minutes_total);
+  const before = names.length ? await patches() : {}, min0 = conds.some(c => 'simMinutes' in c) ? await simMin() : NaN;
   const r = await io.step(s);
   const t0 = io.now();
   if (s.between) await io.ag('set_speed', { speed: 'ultra' });
@@ -128,6 +132,8 @@ export async function runStep(s: LoopStep, io: StepIO, read: string[] = []): Pro
           } else if ('taskDone' in c) {
             if (!io.taskDone) throw new Error(`waitUntil {taskDone: ${c.taskDone}} needs the profiler's task records (io.taskDone), not wired here`);
             if (await io.taskDone(c.taskDone, t0)) met.add(c);
+          } else if ('simMinutes' in c) {
+            if (await simMin() - min0 >= c.simMinutes) met.add(c);
           }
         }
       }
@@ -167,9 +173,12 @@ export function checkLoop(l: any): Loop {
   return l as Loop;
 }
 
-// "$on" -> arm === 'on', anywhere in the args (nested objects and lists too)
+// "$on" -> arm === 'on', anywhere in the args (nested objects and lists too); "$on:<onValue>:<offValue>" -> that integer per arm
+// (a ladder rung whose base already has the switch at 1 and the arm raises it to 2, e.g. holdkeyed "$on:2:1")
+const ON_VALUES = /^\$on:(-?\d+):(-?\d+)$/;
 export const subst = (v: unknown, arm: Arm): unknown =>
-  v === '$on' ? arm === 'on' : Array.isArray(v) ? v.map(x => subst(x, arm)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, subst(x, arm)])) : v;
+  v === '$on' ? arm === 'on' : typeof v === 'string' && ON_VALUES.test(v) ? Number(ON_VALUES.exec(v)![arm === 'on' ? 1 : 2])
+  : Array.isArray(v) ? v.map(x => subst(x, arm)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, subst(x, arm)])) : v;
 
 // fired: firings so far of each arm the loop uses (minFirings)
 export const ruleMet = (u: Until, ev: Record<Arm, number>, fired: Partial<Record<Arm, number>> = {}) =>
@@ -271,6 +280,8 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.throws(() => checkLoop({ steps: [{ cmd: 'x', count: { counter: 1 } }], arms: ['off', 'on'], until: { events: 2 } }), /count/);
   assert.throws(() => checkLoop({ steps: steps(), arms: ['off', 'on'], until: { events: 2 }, maxMinutes: 0 }), /maxMinutes/);
   assert.deepEqual(subst({ a: '$on', b: ['$on', 'x'], c: 1 }, 'off'), { a: false, b: [false, 'x'], c: 1 });
+  assert.deepEqual(subst({ h: '$on:2:1', s: '$on:1:0' }, 'on'), { h: 2, s: 1 });
+  assert.deepEqual(subst({ h: '$on:2:1', s: '$on:1:0' }, 'off'), { h: 1, s: 0 });
   // minFirings (docs/168 §7): on firings count 30 instances, off 10 -> perArm 20 alone stops after one cycle (2 firings per
   // arm); minFirings 10 holds it to 5 cycles = 10 firings per arm
   r = await runLoop(L({ perArm: 20 }, { counter: 'owspread_alarms' }), 60 * 60000, sim(on => on ? 30 : 10).io);
@@ -303,7 +314,8 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
       ag: async (cmd, args) => {
         calls.push(cmd === 'set_speed' ? `set_speed ${(args as any).speed}` : cmd);
         if (cmd === 'ping') { const s = slow.find(([a, b]) => t - t0 >= a * 1000 && t - t0 < b * 1000); t = s ? t0 + s[1] * 1000 : t + 20; return { ok: true }; }
-        return { ok: true, result: cmd === 'patches' ? Object.fromEntries(Object.entries(ctr).map(([k, f]) => [k, f((t - t0) / 1000)])) : {} };
+        return { ok: true, result: cmd === 'patches' ? Object.fromEntries(Object.entries(ctr).map(([k, f]) => [k, f((t - t0) / 1000)]))
+          : cmd === 'time' && ctr.minutes_total ? { minutes_total: ctr.minutes_total((t - t0) / 1000) } : {} };
       },
       step: async () => { t0 = t; return { ok: true, result: {} }; },
     };
@@ -314,6 +326,10 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   let g = game({ easpread_lots_passes: s => s >= 7 ? 1 : 0 }), d = await runStep(fire({ waitUntil: { counter: 'easpread_lots_passes' }, minS: 3, maxS: 23 }), g.io);
   assert.deepEqual([d.why, d.secs, d.rises], ['signal', 7, { easpread_lots_passes: 1 }]);
   assert.deepEqual(g.lines, ['firing #3 done after 7.0 s (signal) [fire off #3]']);
+  // simMinutes: 10 sim-minutes per wall second from 1000 -> 35 minutes reached at 4 s
+  g = game({ minutes_total: s => 1000 + 10 * Math.max(0, s) }); d = await runStep(fire({ waitUntil: { simMinutes: 35 }, maxS: 45 }), g.io);
+  assert.deepEqual([d.why, d.secs], ['signal', 4]);
+  assert.throws(() => fire({ waitUntil: { simMinutes: 0 } as any, maxS: 5 }), /bad waitUntil cond/);
   // minS floor: done at 1 s, ends at 4 s
   g = game({ c: s => s >= 1 ? 1 : 0 }); d = await runStep(fire({ waitUntil: { counter: 'c' }, minS: 4, maxS: 23 }), g.io);
   assert.deepEqual([d.why, d.secs], ['signal', 4]);

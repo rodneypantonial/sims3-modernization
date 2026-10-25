@@ -4,10 +4,13 @@
 // UI callback, native callback, static constructor).
 // Usage: node tools/route-plan-callers.ts --asm game-copy/assemblies --index game-copy/analysis/callgraph/index.json [--csv out.csv]
 //        [--why <caller id prefix>]   (prints one shortest chain per context class for that caller)
+//        Mods (docs/141 §8): build the index with the mod assemblies (`managed-callgraph.ts build --mods <dir>`), pass the same
+//        `--mods <dir>` here; `--only-asm <regex>` keeps rows whose method or chain is in a mod assembly matching it (`^NRaas`), `--source-map
+//        docs/data/nraas-source-map.csv` adds a `source` column (repo path of the row's mod types, tools/nraas-source-map.ts).
 // Static only. Inferred parts: delegates not handed to a known registration API are taken as called synchronously by their
 // creator; the own/foreign and plan-size columns are name heuristics (docs/141 §2).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { typeModel, overrideIds } from './managed-callgraph.ts';
+import { typeModel, overrideIds, modAsms } from './managed-callgraph.ts';
 
 const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
 const ix: { kinds: string[]; methods: { k: string; c: number[] }[] } = JSON.parse(readFileSync(arg('--index', 'game-copy/analysis/callgraph/index.json'), 'utf8'));
@@ -31,7 +34,10 @@ const callees = (i: number) => { const s = new Set<string>(); for (let k = 0; k 
 // Base/interface declarations a method overrides: their callers reach it through virtual dispatch.
 const ovCount = new Map<number, number>();
 const nOv = (d: number) => ovCount.get(d) ?? ovCount.set(d, overrideIds(d).length).get(d)!;
-const bases = (i: number) => rawBases(i).filter((d) => nOv(d) <= MAX_OV);
+// A mod's own framework declaration (NRaas AlarmOption.PrivatePerformAction: 22 overrides, one caller) is climbed whatever
+// its override count: the cap is for EA's shared interfaces.
+const inMod = (k: string) => modAsms.has(byId.get(k)?.asm.name ?? '');
+const bases = (i: number) => rawBases(i).filter((d) => nOv(d) <= MAX_OV || inMod(M[d].k));
 function rawBases(i: number): number[] {
   const m = byId.get(M[i].k); if (!m || !(m.flags & tm.VIRT)) return [];
   const out: number[] = [];
@@ -52,6 +58,10 @@ const REG: [string, RegExp][] = [
   ['oneshot-task', /^Sims3\.(Gameplay|UI)\.OneShotFunction(Task|WithParams)::\.ctor/],
   ['oneshot', /^Sims3\.Gameplay\.OneShotFunction::\.ctor/],
   ['ui', /^Sims3\.(UI|Gameplay\.UI)\..*::add_/],
+  // NRaas Common (each mod's own copy, NRaas/Common.cs): AlarmTask's timer only starts a FunctionTask (docs/184 §2), so the
+  // delegate runs in its own task; FunctionTask.Perform starts one directly.
+  ['nraas-alarm', /^NRaas\.Common\+AlarmTask::\.ctor/],
+  ['nraas-task', /^NRaas\.Common\+FunctionTask::(Perform|\.ctor)/],
 ];
 const regOf = (creator: number) => { const cs = [...callees(creator)]; for (const [c, re] of REG) if (cs.some((x) => re.test(x))) return c; return undefined; };
 
@@ -65,6 +75,10 @@ function entry(i: number): string | undefined {
   else if (m && (name === 'Run' || name === 'RunFromInventory') && isA(m.type, 'Sims3.Gameplay.Interactions.InteractionInstance')) e = 'interaction';
   else if (name === 'Simulate' && m && isA(m.type, 'Sims3.Gameplay.Actors.Sim')) e = 'sim-task';
   else if (name === 'Simulate' && m && !rev[i].length) e = 'object-task';
+  // NRaas Common's one-shot task (each mod's own copy): its OnPerform body runs in that task's Simulate (docs/184 §2).
+  else if (m && name === 'OnPerform' && isA(m.type, 'NRaas.Common+FunctionTask')) e = 'nraas-task';
+  // ... and an AlarmTask subclass's OnPerform runs in the FunctionTask its timer starts.
+  else if (m && name === 'OnPerform' && isA(m.type, 'NRaas.Common+AlarmTask')) e = 'nraas-alarm';
   // Hubs that would reach every root (docs/141 §2): their own context instead of a walk through all their callers.
   else if (m && name === 'Cleanup' && isA(m.type, 'Sims3.Gameplay.Interactions.InteractionInstance')) e = 'interaction-cleanup';
   else if (name === 'ProcessEvent' || (m && isA(m.type, 'Sims3.Gameplay.EventSystem.EventListener'))) e = 'event';
@@ -94,7 +108,7 @@ const preds = (i: number) => [...rev[i], ...bases(i), ...(dlgRev[i].some((c) => 
 // social interaction's Run (a) [inferred].
 export const CLASS: Record<string, string> = {
   'interaction': 'a', 'sim-task': 'a', 'interaction-cleanup': 'a', 'social-callback': 'a', 'definition-test': 'ac',
-  'object-task': 'b', 'oneshot-task': 'b', 'oneshot': 'b', 'alarm': 'b',
+  'object-task': 'b', 'oneshot-task': 'b', 'oneshot': 'b', 'alarm': 'b', 'nraas-alarm': 'b', 'nraas-task': 'b',
   'event': 'c', 'ui': 'c', 'reset': 'c', 'dispose': 'c', 'load': 'c', 'native-callback': 'c', 'cctor': 'c',
   'interaction-setup': 'x', 'buff-callback': 'x', 'situation-state': 'x', 'object-init': 'x', 'virtual-hub': 'x', 'depth-limit': 'x',
   'no-managed-caller': 'u',
@@ -131,7 +145,17 @@ const why = arg('--why', '');
 // kind=caller: one row per direct caller (contexts its callers reach; hub = the walk passed 40k methods, i.e. a shared
 // routing helper reachable from every context). kind=entry: one row per entry point that reaches a planner, with the
 // shortest chain (entry > ... > direct caller > plan API).
-const rows: string[] = ['kind,method,assembly,context,class,plan_api,chain,foreign_hint,plan_size,note'];
+const onlyAsm = arg('--only-asm', ''), ONLY = onlyAsm ? new RegExp(onlyAsm) : undefined;
+const srcMap = new Map<string, string[]>();
+const smap = arg('--source-map', '');
+if (smap) for (const l of readFileSync(smap, 'utf8').trim().split(/\r?\n/).slice(1)) { const [t, p] = l.split(/,(.*)/); (srcMap.get(t) ?? srcMap.set(t, []).get(t)!).push(p.replace(/^"|"$/g, '')); }
+// Repo paths of the mod types named in a method id or chain (outer type, generic arity dropped), first file per type.
+const sources = (s: string) => [...new Set([...s.matchAll(/(NRaas[\w.]*?)(?:`\d+)?(?:\+[\w`]+)*::/g)].map((m) => srcMap.get(m[1])?.[0]).filter(Boolean))].join('|');
+const wanted = (asm: string) => modAsms.has(asm) && ONLY!.test(asm);
+const modTypeOf = (x: string) => { const t = tm.typeByFull.get(x.slice(0, x.indexOf('::'))); return !!t && wanted(t.asm.name); };
+const modRow = (k: string, ch: string) => wanted(asmOf(k)) || ch.split(' > ').some(modTypeOf);
+const rows: string[] = ['kind,method,assembly,context,class,plan_api,chain,foreign_hint,plan_size,note' + (smap ? ',source' : '')];
+const push = (r: string[], k: string, ch: string) => { if (ONLY && !modRow(k, ch)) return; if (smap) r.push(q(sources(k + ' > ' + ch))); rows.push(r.join(',')); };
 const asmOf = (k: string) => byId.get(k)?.asm.name ?? '';
 const q = (s: string) => JSON.stringify(s ?? '');
 const size = (s: string, api: string) => (WORLD.test(s) ? 'world' : LOCAL.test(s) || /Radial|Radius|Slot/.test(api) ? 'local-or-object' : 'any');
@@ -144,8 +168,11 @@ for (const [c, apis] of [...direct].sort((x, y) => M[x[0]].k.localeCompare(M[y[0
   counts['caller:' + cls] = (counts['caller:' + cls] ?? 0) + 1;
   const cRoot = ctx.filter((e) => CLASS[e].includes('c')).map((e) => w.roots.get(e)![0])[0];
   const k = M[c].k, apiStr = [...apis].join('|');
-  rows.push(['caller', q(k), asmOf(k), q(ctx.join('|')), cls, q(apiStr), q(cRoot !== undefined ? chain(w.par, cRoot) : ''),
-    FOREIGN.test(k) ? 'foreign' : '', size(k, apiStr), q((w.capped ? 'hub; ' : '') + ctx.map((e) => `${e}:${w.roots.get(e)!.length}`).join('|'))].join(','));
+  const cChain = cRoot !== undefined ? chain(w.par, cRoot) : '';
+  // Mod rows: one chain per context (the shortest), so a mod caller's b path is visible even without a c path.
+  const allCh = [...w.roots.values()].map((rs) => chain(w.par, rs[0])).join(' > ');
+  push(['caller', q(k), asmOf(k), q(ctx.join('|')), cls, q(apiStr), q(cChain),
+    FOREIGN.test(k) ? 'foreign' : '', size(k, apiStr), q((w.capped ? 'hub; ' : '') + ctx.map((e) => `${e}:${w.roots.get(e)!.length}`).join('|'))], k, allCh);
 }
 // One upward BFS from every direct caller at once: each entry point once, with its shortest chain.
 {
@@ -165,7 +192,7 @@ for (const [c, apis] of [...direct].sort((x, y) => M[x[0]].k.localeCompare(M[y[0
     const e = entry(i)!; const ch = chain(par, i); let d = i; while (par.get(d)! >= 0) d = par.get(d)!;
     const apiStr = [...direct.get(d)!].join('|');
     counts['entry:' + e] = (counts['entry:' + e] ?? 0) + 1;
-    rows.push(['entry', q(M[i].k), asmOf(M[i].k), e, CLASS[e], q(apiStr), q(ch), FOREIGN.test(ch) ? 'foreign' : '', size(ch, apiStr), ''].join(','));
+    push(['entry', q(M[i].k), asmOf(M[i].k), e, CLASS[e], q(apiStr), q(ch), FOREIGN.test(ch) ? 'foreign' : '', size(ch, apiStr), ''], M[i].k, ch);
   }
 }
 const out = arg('--csv', '');

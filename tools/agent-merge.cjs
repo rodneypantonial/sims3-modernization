@@ -2,7 +2,7 @@
 // Also the known agent-branch shapes, in any conflicted file: counters array size `int[N]` (max N), string-name lists `{ "a", ... }` (union, order kept),
 // `n != "x" && ...` default-exclusion chains (union), tuning XML `<kName value=".." />` lines (union), PatchHandlers.cs counter-name lines (keep both),
 // docs/registry.md rows (keep both, next-free rows recomputed by tools/registry.ts fix-next, collisions printed), docs/51 ledger sections with a § number
-// ours already has (incoming ones renumbered after ours; `ledger §N` / `docs/51 §N` fixed in the incoming branch's own lines). Anything else stays a conflict.
+// ours already has (incoming ones renumbered after ours, skipping § numbers reserved with `registry.ts reserve ledger`; `ledger §N` / `docs/51 §N` fixed in the incoming branch's own lines). Anything else stays a conflict.
 // Fully resolved files are `git add`ed.   node tools/agent-merge.cjs [--self-check]
 const fs=require('fs'),path=require('path'),os=require('os'),{execSync,execFileSync}=require('child_process');
 function res(f,fn){if(!fs.existsSync(f))return 0;const t=fs.readFileSync(f,'utf8'),eol=t.includes('\r\n')?'\r\n':'\n';const L=t.split(/\r?\n/);let n=0,from=0;for(;;){const s=L.findIndex((l,i)=>i>=from&&l.startsWith('<<<<<<<'));if(s<0)break;const m=L.findIndex((l,i)=>i>s&&l==='=======');const e=L.findIndex((l,i)=>i>m&&l.startsWith('>>>>>>>'));if(m<0||e<0)break;let a=L.slice(s+1,m);const p=a.findIndex(l=>l.startsWith('|||||||'));if(p>=0)a=a.slice(0,p);const out=fn(a,L.slice(m+1,e),L,m,e);if(out){L.splice(s,e-s+1,...out);n++;from=s+out.length}else from=e+1}if(n){fs.writeFileSync(f,L.join(eol));console.log(f,'resolved',n)}return n}
@@ -41,11 +41,14 @@ function mergeLines(f,a,b){
 // ---- docs/51 ledger: both sides appended `## N.` sections
 const LEDGER='docs/51-inference-ledger.md',ren=new Map();
 const head=l=>(l.match(/^## (\d+)\./)||[])[1];
+// § numbers other agents reserved (tools/registry.ts reserve ledger; machine file in the main checkout): renumbering skips them
+function reservedLedger(){try{const c=path.resolve(execFileSync('git',['rev-parse','--git-common-dir'],{encoding:'utf8'}).trim()),main=path.basename(c)==='.git'?path.dirname(c):process.cwd();
+  return new Set(JSON.parse(fs.readFileSync(path.join(main,'docs','data','registry-reservations.json'),'utf8')).reservations.filter(r=>r.kind==='ledger').map(r=>r.from))}catch{return new Set()}}
 const fixRefs=l=>l.replace(/\b(ledger|docs\/51) §(\d+)/g,(m,w,n)=>ren.has(+n)?`${w} §${ren.get(+n)}`:m);
 function ledger(a,b,L,m,e){
   const first=x=>x.find(l=>l.trim());if(!head(first(a)||'')||!head(first(b)||''))return null;
   const used=L.filter((l,i)=>(i<=m||i>=e)&&head(l)).map(l=>+head(l));
-  if(b.some(l=>head(l)&&used.includes(+head(l)))){let nx=Math.max(...used);for(const l of b)if(head(l))ren.set(+head(l),++nx)}
+  if(b.some(l=>head(l)&&used.includes(+head(l)))){const rs=reservedLedger();let nx=Math.max(...used);for(const l of b)if(head(l)){do nx++;while(rs.has(nx));ren.set(+head(l),nx)}}
   const b2=b.map(l=>head(l)&&ren.has(+head(l))?l.replace(/^## \d+\./,`## ${ren.get(+head(l))}.`):fixRefs(l));
   return [...a,...(a[a.length-1]?.trim()?['']:[]),...b2];
 }
@@ -103,6 +106,8 @@ function selfCheck(){
     w('docs/shared.md',shared('','theirs: ledger §316, docs/51 §317, docs/51 §50\n'));w('docs/theirs-note.md','new: ledger §317\n');w('other.txt','z\n');
     g('add','-A');g('commit','-qm','theirs');g('checkout','-q','master');
     try{g('merge','-q','theirs');}catch{}
+    // a third agent holds §318 (registry.ts reserve ledger, untracked machine file): the renumbering skips it
+    w('docs/data/registry-reservations.json',JSON.stringify({reservations:[{id:'ledger-318',kind:'ledger',from:318,to:318,by:'x',what:'y'}]}));
     const out=execFileSync(process.execPath,[__filename],{cwd:d,encoding:'utf8'});
     const p=r(PH),R=r('docs/registry.md'),l=r(LEDGER);
     ok(p.includes('new int[280]')&&r('mods/ts3fixes/src/Fixes.cs').includes('new int[280]')&&!r('mods/ts3fixes/src/Fixes.cs').includes('<<<'),`${style}: counters array size -> max (280)`);
@@ -112,9 +117,9 @@ function selfCheck(){
     ok(['kJobYield','kOverwatchStuckSlice','kSeasonMarkerCache','kSafeSpotYield'].every(k=>r('tools/setup/build-fixes.ts').includes(k)),`${style}: tuning XML union`);
     ok(R.includes('| 255-259 | ows')&&R.includes('| 270-279 | smc')&&R.indexOf('255-259')<R.indexOf('270-279')&&R.includes('| **280+** | next free')&&R.includes('`int[280]`')&&!R.includes('<<<'),`${style}: registry slot rows both kept, next free 280+, heading int[280]`);
     ok(R.includes('| ours |')&&R.includes('| theirs |')&&R.includes('| **v112** | next | after v111 (+0x4660)')&&/COLLISION: ts3native v111 taken 2 times/.test(out),`${style}: registry v111 collision kept both, reported, next v112`);
-    ok(/## 316\. Additions ours[\s\S]*## 317\. Additions theirs[\s\S]*see ledger §317 and §316 here[\s\S]*## 318\. More theirs/.test(l)&&!l.includes('<<<'),`${style}: ledger incoming sections renumbered 317, 318`);
-    ok(r('docs/shared.md').includes('ours: ledger §316')&&r('docs/shared.md').includes('theirs: ledger §317, docs/51 §318, docs/51 §50'),`${style}: refs fixed only in the incoming branch's lines`);
-    ok(r('docs/theirs-note.md')==='new: ledger §318\n',`${style}: refs fixed in an incoming-only file`);
+    ok(/## 316\. Additions ours[\s\S]*## 317\. Additions theirs[\s\S]*see ledger §317 and §316 here[\s\S]*## 319\. More theirs/.test(l)&&!l.includes('<<<'),`${style}: ledger incoming sections renumbered 317, 319 (318 reserved)`);
+    ok(r('docs/shared.md').includes('ours: ledger §316')&&r('docs/shared.md').includes('theirs: ledger §317, docs/51 §319, docs/51 §50'),`${style}: refs fixed only in the incoming branch's lines`);
+    ok(r('docs/theirs-note.md')==='new: ledger §319\n',`${style}: refs fixed in an incoming-only file`);
     ok(r('other.txt').includes('<<<<<<<')&&/STILL CONFLICTED: other\.txt$/m.test(out.trim()),`${style}: unknown conflict left alone, only it still conflicted`);
     fs.rmSync(d,{recursive:true,force:true});
   }

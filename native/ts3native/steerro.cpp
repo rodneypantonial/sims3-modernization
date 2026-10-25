@@ -830,6 +830,7 @@ static void __fastcall LocoHook(u8* agent, void* edx, u8* ids, const void* ign1,
             for (int i = 0; i < out.nIds; i++) g_srIdPush(ids, NULL, out.ids[i]);
             const LONG us = UsSince(t0);
             InterlockedIncrement(&k.steerTaken);
+            MwSkip(MW_S2);
             InterlockedExchangeAdd(&k.steerUs, us);
             Max(&k.steerMaxUs, us);
             S2Time(S2T_ENTRY, tEntry);

@@ -42,11 +42,12 @@ export const gameCpus = (env = process.env, n = N) => env.TS3_GAME_CPUS ?? defau
 
 export function pinConfig(job?: false | PinOpts, env: NodeJS.ProcessEnv = process.env, n = N): PinCfg | null {
   if (job === false || env.TS3_PIN === 'off') return null;
+  // priority checked before the small-machine exit: a bad queue fails on every machine (CI runners have <= 8 CPUs)
+  const priority = job?.priority ?? env.TS3_GAME_PRIORITY ?? 'High';
+  if (priority !== 'off' && !PRIORITIES.includes(priority)) throw new Error(`pin priority "${priority}": use ${PRIORITIES.join(', ')} or off`);
   const cpus = job?.cpus ?? gameCpus(env, n);
   if (!cpus) return null;
   const fullMask = (1n << BigInt(n)) - 1n, gameMask = cpuMask(cpus, n), otherMask = fullMask & ~gameMask;
-  const priority = job?.priority ?? env.TS3_GAME_PRIORITY ?? 'High';
-  if (priority !== 'off' && !PRIORITIES.includes(priority)) throw new Error(`pin priority "${priority}": use ${PRIORITIES.join(', ')} or off`);
   const others = !otherMask || job?.others === false || env.TS3_PIN_OTHERS === 'off' ? []
     : Array.isArray(job?.others) ? job.others : env.TS3_PIN_NAMES ? env.TS3_PIN_NAMES.split(',').map(s => s.trim()).filter(Boolean) : DEFAULT_APPS;
   if (others.some(x => !/^[\w.-]+$/.test(x))) throw new Error(`pin others: process names only (no .exe, no paths): ${others.join(',')}`);
@@ -131,6 +132,7 @@ if (import.meta.main && process.argv.includes('--self-check')) {
   eq(pinConfig(undefined, {}, 8), null, 'small machine: off by default');
   eq(pinConfig({ cpus: '8-15', others: ['vlc'] }, {}, 16)!.otherMask, 0xFFn, 'job cpus');
   let threw = false; try { pinConfig({ priority: 'RealTime' }, {}, 16); } catch { threw = true; } eq(threw, true, 'rejects RealTime');
+  threw = false; try { pinConfig({ priority: 'RealTime' }, {}, 8); } catch { threw = true; } eq(threw, true, 'rejects RealTime on a small machine');
   if (process.platform === 'win32') for (const [what, s] of [['pinner', pinnerScript(c)], ['restore', restoreScript(c)], ['restore (state only)', restoreScript(null)]]) {
     // parse only, nothing runs: PowerShell's own parser on the generated script
     const errs = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',

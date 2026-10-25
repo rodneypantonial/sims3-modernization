@@ -1,0 +1,105 @@
+{
+  "note": "Re-run of night-1024-p6 jobs 2-3 (docs/94 §24.6 step 1, fix §24.8). Night 2026-10-24 both verify jobs FAILed p6Taken_0=0 by construction: VerifyEvery=1 makes every armed START a verify job (P5OnStart j->p4 = 3), and P5Plan never takes a verify job's answer (taken needs !verify). Counters proved the rest: BP p6Armed_0 4059 / p6Plans_0 3820 / m2Verify 4171 = m2Plans, IP 2017 / 1894 / 2203 of 2204; m2VerBad 0, p6BorrowVerBad 0 (679 + 254 borrowed), m2Off 0, m2Trips 0. Here VerifyEvery=2: odd armed STARTs take the clone answer, even ones verify, so one run checks take and verify. Same asi (game-copy/ts3native.asi.p6f, 0.36.43), same pass rule, same repro.",
+  "jobs": [
+    {
+      "id": "bp-p6-verify2",
+      "note": "§24.6 step 1, BP: routesnap stack (release-features.ts routesnap) + RouteSnap.Kinds=9 TakeKinds=9 ShareCuts=1 VerifyEvery=2 VerifyLend=1 P6LogMs=20, forced repro route-queuefull-replan-loop (30+ own Go Here STARTs per firing; its arms flip fallbackasync, P6 stays on), 10 min. Pass (nativeRequire + logForbid): p6Armed_0, p6Taken_0, p6Borrowed_0 > 0; m2VerBad 0, p6BorrowVerBad 0, m2Off 0, m2Trips <= 2; no 'P4 FAULT' / 'fault applying record'. Read: p6BorrowMiss split, 'P6 job' lines (phase split), snPcCutUs and dT (§24.2) for step 2.",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 2,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.ShadowWorld": "BP",
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-p6-verify2",
+      "note": "§24.6 step 1, IP: same settings and pass rule as bp-p6-verify on Baseline-IP-Spring (route-queuefull-replan-loop was written for BP: crowd_go far lot / home are world-agnostic, but p6Armed_0 0 here = the STARTs were not async or the loop did not fire on IP: read asyncStarted and the repro log before calling it a P6 fault).",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 2,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.ShadowWorld": "IP",
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    }
+  ]
+}

@@ -33,6 +33,9 @@
 // water search takes the exit above; the job's IC continues through the game's own failure handling and its failed result
 // is collected like any failed job (IcCollect copies j->result), as with the world A* cap. Own and A10 jobs: no deadline.
 //
+// docs/163 §10 (ts3fixes stuckcheckcap): a stuck-check probe job (own START right after a PROBE mark, ts3native.cpp
+// ScProbeMark) takes the same worker slot with PlanDeadlineMs as its deadline (t_scProbe), whatever fbjdMode says.
+//
 // D5 FailMemo: replandedupe.cpp's RdRun with kind 0 on SyncIc's Plan call (CallIc, t_fmSync): a repeat of a FAILED plan within
 // 500 ms with the same follower, goal, start within 10 cm, route state as that plan left it and no routing write since is
 // answered with that plan's result bytes.
@@ -141,12 +144,12 @@ static int g_pdSkipMask = 3;  // bit 0 cell, bit 1 water (steerro-test cuts one 
 // (t_fbjdCut, ServeAsync -> FbjdJobEnd) and per search; the first cut is the job's capAt (as BudgetCap's)
 static int PdWorkerSkip(int which) {
     Ts3nCounters& k = ts3native_counters;
-    if (k.fbjdMode != 1 || !t_fbDeadline || GetCurrentThreadId() != g_pdWkTid || !(g_pdSkipMask >> which & 1)) return 0;
+    if ((k.fbjdMode != 1 && !t_scProbe) || !t_fbDeadline || GetCurrentThreadId() != g_pdWkTid || !(g_pdSkipMask >> which & 1)) return 0;
     const LONGLONG now = PdNow();
     if (now < t_fbDeadline) return 0;
     if (t_jobT0 && !t_jobCapAt) t_jobCapAt = now;
     t_fbjdCut[1 + which]++;
-    InterlockedIncrement(&k.fbjdSkip[which]);
+    if (!t_scProbe) InterlockedIncrement(&k.fbjdSkip[which]);  // docs/163 §10: probe cuts show in the job's long-job line only
     return 1;
 }
 // the entry stubs' question (sim thread inside a session, or the worker in a foreign job): 1 = answer "no path" without searching

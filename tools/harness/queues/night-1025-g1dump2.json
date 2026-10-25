@@ -1,0 +1,59 @@
+{
+  "note": "G1 dump round 2 (docs/94 §24.10, ledger docs/51 §335): same job as night-1024-g1dump with ts3native 0.36.51 (game-copy/ts3native.asi.g1dump2 = 0.36.50 + P4 lot lookup why-log). night-1024-g1dump: all 37 lot dumps said nolot on both sides, also for in-room starts. Correctness run, not timing. Pass: no crash, no P4 FAULT / fault applying record. Read: 'P4 lot lookup plan N clone|live: no lot ...' lines (lots walked, with Q, nearest lot, lot-frame point, Q bounds, side, lots holding the point in world-frame bounds) next to the 'P4 lot dump plan' lines; shadow jsonl via node tools/harness/shadow-compare-report.ts.",
+  "jobs": [
+    {
+      "id": "bp-g1-m2dump2",
+      "note": "G1 BP compares as bp-p6-g1-compares (Mode=1, Kinds=1, ShadowEvery=1, LazyKeep, ReplaySigMs 250, LotsUnlocked, seed 12345, same fixes off) + M2LotDump=1, M2Box=1250.0,1731.3,1251.0,1734.0 (start or goal in it: matched compares of the request are dumped too), M2LotDumpMax=64. Pass: no crash, no 'P4 FAULT' / 'fault applying record'; the dump armed ('route snapshot P4 M2 lot dump on'). Read: the M2 dump lines and the 'P4 lot lookup plan' why lines (0.36.51).",
+      "asi": "game-copy/ts3native.asi.g1dump2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 121,
+      "logRequire": {
+        "route snapshot P4 M2 lot dump on": 1
+      },
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "RouteAsync.Mode": 1,
+        "Discourage.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 1,
+        "RouteSnap.AuditEvery": 4,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.ReplayAuditEvery": 4,
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.ShadowEvery": 1,
+        "RouteSnap.Kinds": 1,
+        "RouteSnap.ShadowWorld": "BP",
+        "OptsInit.Enabled": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.ShadowObst": 1,
+        "RouteSnap.M2LotDump": 1,
+        "RouteSnap.M2LotDumpMax": 64,
+        "RouteSnap.M2Box": "1250.0,1731.3,1251.0,1734.0"
+      },
+      "run": {
+        "profile": {
+          "minutes": 20,
+          "seed": 12345,
+          "untilCompares": 10000,
+          "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 45
+    }
+  ]
+}

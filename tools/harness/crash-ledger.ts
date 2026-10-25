@@ -1,7 +1,7 @@
 // Ties crashes to our changes. Every test start records the active change set; triage maps each game crash
 // report (xcpt*.txt) to the change set that was active then and to what changed just before it.
 //   node tools/harness/crash-ledger.ts snapshot [--note "why"]   append the current change set (only if it changed)
-//   node tools/harness/crash-ledger.ts triage                    list every crash report with its change set
+//   node tools/harness/crash-ledger.ts triage [--since <iso>]    list every crash report (written at or after --since) with its change set
 // cycle.ts --save calls snapshot, so every harness run is covered.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -64,10 +64,10 @@ function snapshot(note?: string) {
   console.log(`change set ${e.key} recorded; since last: ${diff(last, e).join('; ') || 'nothing (note only)'}`);
 }
 
-function triage() {
+function triage(since?: string) {
   const ledger = readLedger();
-  const reports = readdirSync(USER).filter(n => /^xcpt .*\.txt$/i.test(n)).sort();
-  if (!reports.length) { console.log('no crash reports'); return; }
+  const reports = readdirSync(USER).filter(n => /^xcpt .*\.txt$/i.test(n) && (!since || statSync(join(USER, n)).mtime >= new Date(since))).sort();
+  if (!reports.length) { console.log(since ? `no crash report written since ${since}` : 'no crash reports'); return; }
   for (const n of reports) {
     const t = readFileSync(join(USER, n), 'latin1');
     const [d, tm] = [t.match(/^date: (\S+)/m)?.[1], t.match(/^time: (\S+)/m)?.[1]];
@@ -86,7 +86,7 @@ function triage() {
   }
 }
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { note: { type: 'string' } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { note: { type: 'string' }, since: { type: 'string' } } });
 if (positionals[0] === 'snapshot') snapshot(values.note);
-else if (positionals[0] === 'triage') triage();
-else { console.error('usage: node tools/harness/crash-ledger.ts snapshot [--note "why"] | triage'); process.exit(2); }
+else if (positionals[0] === 'triage') triage(values.since);
+else { console.error('usage: node tools/harness/crash-ledger.ts snapshot [--note "why"] | triage [--since <iso>]'); process.exit(2); }

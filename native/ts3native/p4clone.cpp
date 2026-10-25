@@ -375,6 +375,7 @@ static void PcDrop(DWORD ver) { PcHoldEnd(ver); }
 static bool g_pcBorrowed;  // sim: the last PcCutFn result was a borrowed cut
 static LONGLONG g_pcCutQpc;  // sim: QPC of the cut the last PcCutFn returned (P6 phase split)
 static LONG g_pcLastCopyUs;  // worker: the copy time of the last PcAcquire (0 = no copy; P6 phase split)
+static u64 g_pcLastActive;   // worker: the active lot id of the cut the last successful PcAcquire copied (P6EarlyCopy recheck)
 static DWORD PcBorrow() {
     Ts3nCounters& k = ts3native_counters;
     const bool m2 = k.snP4Mode == 2 && k.p6Share;
@@ -531,6 +532,7 @@ static bool PcAstar(PcWork& w) {
     if (w.astar || !g_pcAstarCtor) return true;
     u8* a = (u8*)g_rpNew(0x9C90, 0x00FEC594, 0, 0, 0, 0);  // as the P init 0x62E9F1
     if (!a) return false;
+    CfRec(CF_ASTAR_NEW, a, 0x9C90);
     __try { g_pcAstarCtor(a, NULL); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     *(LONG*)(a + 4) = RP_BIAS;  // ours: no game release deletes it
     w.astar = a;
@@ -738,9 +740,9 @@ static void PcWpDrop(PcWork& w) {
         if (g_pcClrC0) g_pcClrC0(W + 0xC0, NULL, RpD(W + 0xC4), RpD(W + 0xC8));
         if (g_pcClrFC) g_pcClrFC(W + 0xFC, NULL, RpD(W + 0x100), RpD(W + 0x104));
         if (g_pcGameFree) {
-            if (RpD(W + 0xC8) > 1) g_pcGameFree(RpP(W + 0xC4));
-            if (RpD(W + 0x104) > 1) g_pcGameFree(RpP(W + 0x100));
-            g_pcGameFree(RpP(W + 0x128)), g_pcGameFree(RpP(W + 0x160));
+            if (RpD(W + 0xC8) > 1) CfFree(CF_WP_FREE, RpP(W + 0xC4)), g_pcGameFree(RpP(W + 0xC4));
+            if (RpD(W + 0x104) > 1) CfFree(CF_WP_FREE, RpP(W + 0x100)), g_pcGameFree(RpP(W + 0x100));
+            CfFree(CF_WP_FREE, RpP(W + 0x128)), g_pcGameFree(RpP(W + 0x128)), CfFree(CF_WP_FREE, RpP(W + 0x160)), g_pcGameFree(RpP(W + 0x160));
         }
         if (g_pcCtrClear) g_pcCtrClear(W + 0x18, NULL);
     } __except (EXCEPTION_EXECUTE_HANDLER) { ts3native_counters.snPcFaults++; }  // leaked, never freed twice
@@ -869,9 +871,11 @@ static int PcAcquireBody(DWORD ver, P4Clone* out) {
         Sleep(0);
     }
     w.held = true;
+    CfUse(true);
     while (!TryAcquireSRWLockShared(&g_pcCutLock)) {
         if (GetTickCount64() > until) {
             w.held = false;
+            CfUse(false);
             ReleaseSRWLockExclusive(&g_rpUse);
             k.snPcRefused[4]++, g_pcAcqWhy = PS_LOCK;
             PcHoldEnd(ver);
@@ -973,6 +977,7 @@ static int PcAcquireBody(DWORD ver, P4Clone* out) {
         SpVerRef(w.v);
         w.ver = ver;
         out->world = w.world, out->ver = ver, out->epoch = (DWORD)c.epoch, out->fresh = w.fresh;
+        g_pcLastActive = c.active;
         if (w.fresh) g_p4Work.stamp = c.stamp;  // a new A* object has no node with any stamp: start where the game is
         w.fresh = 0;
         k.snPcAcquired++;
@@ -980,6 +985,7 @@ static int PcAcquireBody(DWORD ver, P4Clone* out) {
     ReleaseSRWLockShared(&g_pcCutLock);
     if (why >= 0) {
         w.held = false;
+        CfUse(false);
         ReleaseSRWLockExclusive(&g_rpUse);
         PcHoldEnd(ver);
     }
@@ -1047,6 +1053,7 @@ static void PcRelease(const P4Clone* cl, LONG flags, const unsigned __int64* dir
     if (flags & P4REL_DISCARD) { g_rpEpochWhy = -__LINE__, g_rpNeedEpoch = 1, g_rpBad = 1; PcAstarDrop(w); PcWpDrop(w); k.snPcDiscard++; }  // the clone (and W') may hold half-done writes
     else if (flags & P4REL_WRAP) { PcAstarDrop(w); w.fresh = 1; }  // stamps wrapped: a new A* object, fresh stamps
     w.held = false;
+    CfUse(false);
     ReleaseSRWLockExclusive(&g_rpUse);
     PcHoldEnd(cl->ver);
 }

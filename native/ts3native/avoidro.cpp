@@ -394,6 +394,7 @@ static u64 __cdecl AvAHook(u8* path, u8* agent, const float* goal, const void* i
             const LONG us = UsSince(t0);
             InterlockedExchangeAdd(&k.avUs, us);
             Max(&k.avMaxUs, us);
+            MwSkip(MW_AV);
             if (id) { InterlockedIncrement(&k.avTakenHit); return id; }
             InterlockedIncrement(&k.avTakenMiss);
             return AvBodyNoQuery(path, agent, goal, ign, n, 1);
@@ -428,6 +429,7 @@ static u8 __cdecl AvBHook(u8* wm, u8* world, u8* pB, const float* raw, DWORD opt
             InterlockedExchangeAdd(&k.avUs, us);
             Max(&k.avMaxUs, us);
             InterlockedIncrement(&k.avTakenB);
+            MwSkip(MW_AV);
             return res;
         }
     }

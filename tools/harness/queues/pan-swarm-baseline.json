@@ -1,0 +1,59 @@
+{
+ "note": "Baseline for Apex issue #37: Swarm stale-list draws without Apex, same camera pan (docs/186).",
+ "jobs": [
+  {
+   "id": "sv-pan-swarm-baseline-1",
+   "note": "No Apex. Our logging build 0.36.46 with release settings + [CrashForensics] all rounds. Read: stale-list and DRAW BAD counts vs the Apex loads (docs/186).",
+   "asi": "game-copy/ts3native.asi.objres",
+   "save": "ApexTest-Town",
+   "minCounters": 117,
+   "noiseCheck": false,
+   "timeoutMin": 20,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "ini": {
+    "CrashForensics.Enabled": 1,
+    "CrashForensics.DrawGuards": 1,
+    "CrashForensics.OurEvents": 1,
+    "CrashForensics.EffectLog": 1,
+    "CrashForensics.ObjResLog": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 6,
+     "repro": "pan-swarm-baseline",
+     "noSamplers": true
+    }
+   }
+  },
+  {
+   "id": "sv-pan-swarm-baseline-2",
+   "note": "No Apex. Our logging build 0.36.46 with release settings + [CrashForensics] all rounds. Read: stale-list and DRAW BAD counts vs the Apex loads (docs/186).",
+   "asi": "game-copy/ts3native.asi.objres",
+   "save": "ApexTest-Town",
+   "minCounters": 117,
+   "noiseCheck": false,
+   "timeoutMin": 20,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "ini": {
+    "CrashForensics.Enabled": 1,
+    "CrashForensics.DrawGuards": 1,
+    "CrashForensics.OurEvents": 1,
+    "CrashForensics.EffectLog": 1,
+    "CrashForensics.ObjResLog": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 6,
+     "repro": "pan-swarm-baseline",
+     "noSamplers": true
+    }
+   }
+  }
+ ]
+}

@@ -331,3 +331,16 @@ Static only (2026-10-23): EA's report `xcpt <machine> 26-10-23 23.30.43.txt`, `p
 | Tests (offline, not built yet) | selftest `TestRouteSites` (site 16 counts in v108, `rgJob3` during a job), `TestRouteEnforce` (site 16 waits for the job's hold and holds `+0x918`; no job = off-sim frame), the stub loop in `TestRouteGate`; `hook-sites --check` |
 | Verify | build (`build.cmd out-crashh`), selftest ok, then repro `ip-boat-exit-defer-loop` 2 clean runs on the new build with release defaults; pass = no crash and `rgUnlocked_findPlacesOnShoreline` > 0 (the site is reached; `rgJob_findPlacesOnShoreline` > 0 also shows a wait happened), and `rgGateWaitMaxUs` not above the job cap. Fixed = 2 clean runs (crash-cause-before-fix rule) |
 | Effort | ~1 h analysis + ~45 min fix; live: build ~10 min, 2 runs of ~13 min |
+
+## 14. Crash L (2026-10-24 18:35-19:26 PHT, 5 crashes in 6 loads): main-thread draw pass with Apex Radiance 2.15.3, camera pan over streaming lots
+
+Full triage in docs/186. Job: Apex runner file-list-cache camera pan over 8 lots on a copy of an SV save; four crashes on ts3native 0.36.8 + P5 ini, one on 0.36.37 + release ini (`probe-out/apex/triage-B-noprof-ts3native.log`).
+
+| | Crash L |
+|---|---|
+| Faults | `0x68EEF0` read `0xE0` (`this = 0x20` in the model part draw `0x6F6250`); `0x6C93D0` read `0x44` (NULL resource of member `+0x210` in object draw `0x6FA0B0`); `0x71D56E` write `0x2AC` twice (Swarm effect list draw `0x71D440`, entry instance `+4` = 0); `0x68FDB4` read `0xF` (`0x68FD80`, shader binding table `+0x50` = `0xFFFFFFFF`) [verified disassembly + reports] |
+| Path | frame loop -> `Renderer_DrawMainRenderSets 0x6F0DB0` -> draw list `0x6EE5E0` (virtual call `0x6EE872`) or the effect list `0x71D440` [verified] |
+| Apex frame | `asi+0x292BE4` = `RigTracker::ModelDrawHook` (pass-through detour of `0x6F6250`), live in 2 of 5, stack residue in 3 [verified] |
+| Our code on the path | none: no enabled 0.36.37 hook in the renderer, scene graph, effects or materials; none frees or parks objects (`DestroyPark=0`) [verified log + `hook-sites.ts`] |
+| Verdict | Apex side or a game race exposed by Apex's camera-motion features (`SceneNodeBudget`, `LotLightingMotion`), not ours [inferred]; the running "Apex alone" job and one-switch runs (docs/186 §5) decide |
+| Fix | none from us; draft issue for Apex in docs/186 §6 (not sent) |

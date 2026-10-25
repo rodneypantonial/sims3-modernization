@@ -1,0 +1,88 @@
+{
+  "note": "Night 2026-10-24: first runs of the sync plan deadline [RouteAsync] PlanDeadlineMs + FailMemo (docs/164 §7 D1-D5, ledger §270; built 0.36.27, never run). Build: game-copy/ts3native.asi.p6f (0.36.43, counters v114, has v99 pd*/fm*); master build/ts3fixes.package at release tuning (no fixesOn). Repro: route-caronly-deadline-loop (BP, new): its only earlier repro route-sv-seacheck-freeze cannot build its scene (no SV lot with sea, PLAN.md), and the stuck-check / no-path loops (route-stuckcheck-reset-loop, route-stuckcheck-own-loop's stranding, route-nopath-crowd-loop) never logged a sync plan >= 300 ms (14 runs in probe-out/queue, max 189 ms). The car-only plan of rare-route-bits is the one repro step with a multi-second failing NoStart/Foreign sync plan in every BP run (5 of 5: 1,815-4,095 ms; SV 1,313-2,134 ms) [measured, ts3native.log 'sync plan' lines]. ip-boat-exit-defer-loop has more >= 300 ms plans (non-IC Route_PlanLocked, cell A*) but mostly on its DeferFootprint on arm, not at release defaults. BEHAVIOUR CHANGE: a cut plan fails where the game might have found a path after seconds (a Sim fails a route it would have taken); both jobs must count route failures per arm: the control sim_route_to 'plan' result and the route_replan rows (plan type per replan) per arm from the job log, plus pdHit - pdHitOk; more failures on the on arm than the off arm (beyond the car-only plan, which fails on both) = behaviour change to read before any default (docs/164 §7.4, I-164-8). PlanDeadlineMs=300 (task value; docs/164 gives no default, repro-check-route used 1000). ~10 + ~25 min = ~35 min with loads.",
+  "jobs": [
+    {
+      "id": "bp-plandeadline-verify",
+      "note": "CORRECTNESS (noise OK, fail fast). route-caronly-deadline-loop, short rule (2 firings per arm, ABBA = 4 firings), deadline + memo flipped per firing. Pass: no crash, game alive, 0 watchdog lines (nativeRequire), 'OK   route deadline' + 'OK   fail memo' install lines, >= 1 'route deadline: sync plan N ms failed' line (cut plans end as ordinary failures: the control and car-only 'plan' results are FailedBecause*/Succeeded types, no exception in the step results), pdHit >= 1; no Sim stuck at the end (stuck list / stranded-Sim check as docs/134: the active Sim and household stand and route normally after the loop; read the end of the job log). Read: pdSessions[0] (IC) / [1] (non-IC), pdHit, pdHitOk, pdHitUs, pdLateMaxUs (how far past 300 ms a running cell A* goes), pdSkipCell, pdSkipWater, pdWorldCapped, pdOwnExempt (own-task plans never cut), fmCalls / fmFails / fmServed (served may be 0: no 500 ms repeat in this repro); route failures per arm (control plan result, route_replan rows).",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "pdHit>=1,watchdogs<=0",
+      "logRequire": {
+        "OK   route deadline": 1,
+        "OK   fail memo": 1,
+        "route deadline: sync plan": 1
+      },
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FailMemo": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 8,
+          "repro": "route-caronly-deadline-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 2
+            },
+            "maxMinutes": 6
+          },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-plandeadline-ab",
+      "note": "TIMING, clean machine (docs/168 §10: noise low, >= 4 firings per arm). In-load ABBA on route-caronly-deadline-loop, fixed rule 8 firings per arm (16 firings, 4 cycles, fixed before the run), cap 20 min; plandeadline + failmemo flipped together per firing, everything else at release defaults. Void if bp-plandeadline-verify FAILed. Pass: no crash, 0 watchdog lines, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read: node tools/harness/hitch-ab.ts --scenario <tag> (TS3_REPO=<main checkout> from a worktree): per arm iterations >= 300/1000/2000 ms, p99/p99.9/max, causes (sync plan entry/reason, top phase); expected off = one 2-4 s freeze per car-only plan + replans, on = ~300 ms + a running cell A* (pdLateMaxUs). BEHAVIOUR: count route failures per arm (control sim_route_to 'plan' result per firing, route_replan rows plan type per arm, pdHit - pdHitOk); any control plan or replan that succeeds only on the off arm = a cut that changed the outcome: raise the deadline or keep cuts to failing tails before any default (docs/164 §7.4).",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "pdHit>=1,watchdogs<=0",
+      "logRequire": {
+        "OK   route deadline": 1,
+        "OK   fail memo": 1
+      },
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FailMemo": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 22,
+          "repro": "route-caronly-deadline-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 8
+            },
+            "maxMinutes": 20
+          },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    }
+  ]
+}

@@ -8,6 +8,11 @@
 //                                                                  and job logs in a worktree's probe-out/queue count for that worktree
 //   node tools/harness/status.ts --all                            every queue run today (UTC date) in the main checkout and
 //                                                                  .claude/worktrees/*
+//   node tools/harness/status.ts --apex [<tag>]                   an apex-run.ts run (probe-out/apex/<tag>/, default the newest):
+//                                                                  loads ok / CRASH / FAIL / running / left, min left for the
+//                                                                  current load and the run (mean finished load, else 12 min),
+//                                                                  TS3W.exe running or not; live apex runs also show in the default
+//                                                                  view and today's in --all
 //   [--root <dir>]...  also search <dir>/probe-out/queue (a worktree's runs); default root = TS3_REPO or this checkout
 //   node tools/harness/status.ts --self-check
 // Per queue: finished jobs with PASS / FAIL / VOID (run-verdict.ts classify; queue rows only, no profile files), the running job
@@ -87,7 +92,7 @@ export function render(q: QStatus): string {
 // also gives that run's dir and its root's queue files (a worktree's own queue), else the dir is looked up by the caller.
 export type Run = { name: string; date: string; dir?: string; defs?: string };
 export function runOfLog(file: string, defs = DEFS): Run | null {
-  const m = RUN_LOG.exec(basename(file)), f = file.replace(/\\/g, '/'), r = /^(.*)\/probe-out\/queue\/[^/]+$/.exec(f)?.[1];
+  const f = file.replace(/\\/g, '/'), m = RUN_LOG.exec(basename(f)), r = /^(.*)\/probe-out\/queue\/[^/]+$/.exec(f)?.[1];
   if (!m) return null;
   const own = r ? join(r, 'tools', 'harness', 'queues') : null;
   if (own && existsSync(join(own, `${m[1]}.json`))) return { name: m[1], date: m[2], dir: dirname(f), defs: own };
@@ -192,6 +197,44 @@ export function runsOn(roots: string[], date: string): Required<Run>[] {
   return out;
 }
 
+// apex-run.ts runs: probe-out/apex/<tag>/run.json (plan, pid, current load) + runs.jsonl (one row per finished load) +
+// summary.txt ('...Z done' line at the end). Per-load estimate = mean of the finished loads, else APEX_LOAD_MIN.
+const APEX_LOAD_MIN = 12;
+export type ApexLoad = { n: number; arm: string; state: 'ok' | 'CRASH' | 'FAIL' | 'running' | 'stopped' | 'left'; start?: number; end?: number; min?: number; why?: string };
+export type AStatus = { tag: string; dir: string; loads: ApexLoad[]; alive: boolean; done: boolean; perLoad: number; eta: number | null };
+const pidAlive = (p: number) => { try { process.kill(p, 0); return true; } catch (e: any) { return e.code === 'EPERM'; } };
+export function apexStatus(dir: string, now = Date.now(), isAlive = pidAlive): AStatus {
+  const run = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')), jl = join(dir, 'runs.jsonl'), sf = join(dir, 'summary.txt');
+  const rows: any[] = existsSync(jl) ? readFileSync(jl, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
+  const done = existsSync(sf) && /Z done\b/.test(readFileSync(sf, 'utf8')), alive = !done && isAlive(run.pid);
+  const fin = rows.map(r => r.minutes).filter((m): m is number => typeof m === 'number' && m > 0);
+  const perLoad = fin.length ? fin.reduce((a, b) => a + b, 0) / fin.length : APEX_LOAD_MIN;
+  const loads: ApexLoad[] = (run.plan as string[]).map((arm, i) => {
+    const n = i + 1, r = rows.find(x => x.load === n);
+    if (r) return { n, arm, state: r.crashed ? 'CRASH' : r.exit === 0 ? 'ok' : 'FAIL', start: Date.parse(r.start), end: Date.parse(r.end), min: r.minutes,
+      why: [r.xcpt, r.gameExit ? `game exit ${r.gameExit}` : '', r.pending ? 'Apex restore pending' : '', r.forensics ? `${r.forensics} forensic lines` : ''].filter(Boolean).join('; ') };
+    if (run.current?.load === n) { const s = Date.parse(run.current.start); return { n, arm, state: alive ? 'running' : 'stopped', start: s, end: s + perLoad * 60000 }; }
+    return { n, arm, state: 'left' };
+  });
+  let eta: number | null = null;
+  if (alive) {
+    eta = Math.max(now, ...loads.filter(l => l.state === 'running').map(l => l.end!));
+    for (const l of loads) if (l.state === 'left') { l.start = eta; eta += perLoad * 60000; l.end = eta; }
+  }
+  return { tag: run.tag, dir, loads, alive, done, perLoad, eta };
+}
+export function renderApex(a: AStatus, now = Date.now(), game?: boolean): string {
+  const n = (s: string) => a.loads.filter(l => l.state === s).length, cur = a.loads.find(l => l.state === 'running');
+  const out = [`### apex ${a.tag}: ${n('ok')} ok, ${n('CRASH')} CRASH, ${n('FAIL')} FAIL, ${n('running')} running, ${n('left')} left${n('stopped') ? `, ${n('stopped')} stopped` : ''} (~${a.perLoad.toFixed(1)} min/load${game === undefined ? '' : `; TS3W.exe ${game ? 'running' : 'not running'}`})`, '',
+    '| Load | Arm | State | Start PHT | End PHT | min | Note |', '|---|---|---|---|---|---|---|'];
+  for (const l of a.loads) out.push(`| ${l.n} | ${l.arm} | ${l.state === 'ok' || l.state === 'left' ? l.state : `**${l.state}**`} | ${l.start ? pht(l.start) : ''} | ${l.end ? `${l.min === undefined ? '~' : ''}${pht(l.end)}` : ''} | ${l.min ?? ''} | ${cell(l.why)} |`);
+  out.push('', a.alive ? `${cur ? `load ${cur.n}: ~${Math.max(0, Math.round((cur.end! - now) / 60000))} min left; ` : ''}run done ~${pht(a.eta!)} PHT (~${Math.max(0, Math.round((a.eta! - now) / 60000))} min left)`
+    : a.done ? `finished (${join(a.dir, 'summary.txt')})` : `not running, no done line: killed? check ${join(a.dir, 'summary.txt')}; node tools/harness/apex-run.ts --restore puts Bin back`);
+  return out.join('\n');
+}
+export const apexDirs = (root: string) => { const d = join(root, 'probe-out', 'apex'); return existsSync(d) ? readdirSync(d).map(x => join(d, x)).filter(x => existsSync(join(x, 'run.json'))).sort((x, y) => mtime(join(x, 'run.json')) - mtime(join(y, 'run.json'))) : []; };
+const ts3wRunning = () => { if (process.platform !== 'win32') return undefined; try { return /^TS3W\.exe/im.test(execFileSync('tasklist', ['/NH', '/FI', 'IMAGENAME eq TS3W.exe'], { timeout: 15000 }).toString()); } catch { return undefined; } };
+
 function selfCheck() {
   const tmp = mkdtempSync(join(tmpdir(), 'ts3-status-')), dir = join(tmp, 'q'), defs = join(tmp, 'defs');
   try {
@@ -245,6 +288,21 @@ function selfCheck() {
     writeFileSync(join(tmp, 'main', 'probe-out', 'queue', 'demo-q-2026-10-24.jsonl'), '');
     writeFileSync(join(tmp, 'main', 'probe-out', 'queue', 'demo-q-2026-10-23.jsonl'), '');
     assert.deepEqual(runsOn(roots, '2026-10-24').map(r => `${r.name}:${basename(dirname(dirname(r.dir)))}:${r.defs === wd ? 'own' : 'main'}`), ['demo-q:main:main', 'wt-q:v015:own']);
+    // apex-run: load 1 finished (10 min), load 2 running since 05:00Z, load 3 left; then the same run finished
+    const ad = join(tmp, 'main', 'probe-out', 'apex', 't1'); mkdirSync(ad, { recursive: true });
+    writeFileSync(join(ad, 'run.json'), JSON.stringify({ tag: 't1', pid: 4242, plan: ['with', 'with', 'with'], current: { load: 2, arm: 'with', start: '2026-10-24T05:00:00.000Z' } }));
+    writeFileSync(join(ad, 'runs.jsonl'), JSON.stringify({ load: 1, arm: 'with', start: '2026-10-24T04:50:00.000Z', end: '2026-10-24T05:00:00.000Z', minutes: 10, exit: 1, gameExit: -1073741819, crashed: true, xcpt: 'xcpt 1.txt', pending: false, forensics: 3 }) + '\n');
+    writeFileSync(join(ad, 'summary.txt'), '2026-10-24T04:50:00Z start t1\n');
+    const anow = Date.parse('2026-10-24T05:04:00Z'), as = apexStatus(ad, anow, () => true);
+    assert.deepEqual(as.loads.map(l => l.state), ['CRASH', 'running', 'left']);
+    assert.equal(as.perLoad, 10); assert.equal(as.eta, Date.parse('2026-10-24T05:20:00Z'));
+    assert.match(renderApex(as, anow, true), /load 2: ~6 min left; run done ~13:20 PHT \(~16 min left\)$/);
+    assert.match(renderApex(as, anow), /\| 1 \| with \| \*\*CRASH\*\* \|.*xcpt 1\.txt; game exit -1073741819; 3 forensic lines/);
+    assert.equal(apexStatus(ad, anow, () => false).loads[1].state, 'stopped');
+    writeFileSync(join(ad, 'summary.txt'), '2026-10-24T04:50:00Z start t1\n2026-10-24T05:10:00Z done; 1 crash(es)\n');
+    const af = apexStatus(ad, anow, () => true);
+    assert.ok(!af.alive && af.done && af.eta === null && /finished/.test(renderApex(af)));
+    assert.deepEqual(apexDirs(join(tmp, 'main')), [ad]);
     console.log('status self-check ok');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
@@ -253,9 +311,17 @@ if (import.meta.main) {
   const args = process.argv.slice(2), opt = (k: string) => { const i = args.indexOf(k); return i < 0 ? undefined : args.splice(i, 2)[1]; };
   if (args.includes('--self-check')) { selfCheck(); process.exit(0); }
   const roots = [ROOT]; for (let r; (r = opt('--root')); ) roots.push(resolve(r));
+  const apexAll = () => [...new Set([...allRoots(), ...roots])].flatMap(apexDirs);
+  const ai = args.indexOf('--apex');
+  if (ai >= 0) {
+    const want = args[ai + 1] && !args[ai + 1].startsWith('--') ? args[ai + 1] : undefined, d = want ? apexAll().find(x => basename(x) === want) : apexAll().at(-1);
+    console.log(d ? renderApex(apexStatus(d), Date.now(), ts3wRunning()) : `no apex-run run${want ? ` ${want}` : ''} under probe-out/apex`);
+    process.exit(d ? 0 : 1);
+  }
   if (args.includes('--all')) {
     const date = opt('--date') ?? new Date().toISOString().slice(0, 10), runs = runsOn([...new Set([...allRoots(), ...roots])], date);
-    console.log(runs.length ? runs.map(r => `${r.dir}\n${render(queueStatus(r.name, r.date, r.dir, Date.now(), r.defs))}`).join('\n\n') : `no queue run on ${date}`);
+    const ax = apexAll().filter(d => String(JSON.parse(readFileSync(join(d, 'run.json'), 'utf8')).start ?? '').startsWith(date)).map(d => renderApex(apexStatus(d)));
+    console.log(runs.length || ax.length ? [...runs.map(r => `${r.dir}\n${render(queueStatus(r.name, r.date, r.dir, Date.now(), r.defs))}`), ...ax].join('\n\n') : `no queue or apex run on ${date}`);
     process.exit(0);
   }
   const dirs = qDirs(roots), chain = opt('--chain'), name = opt('--queue'), date = opt('--date');
@@ -289,8 +355,11 @@ if (import.meta.main) {
     }
   } else {
     const run = name && date ? (() => { const d = dirOf(name, date); return d ? { name, date, dir: d } : null; })() : newestRun(dirs, name, date);
-    if (!run) { console.log(`no queue run found${name ? ` for ${name}` : ''} under ${dirs.join(', ')} (set TS3_REPO from a worktree)`); process.exit(1); }
-    blocks.push(render(queueStatus(run.name, run.date, run.dir)));
+    if (run) blocks.push(render(queueStatus(run.name, run.date, run.dir)));
+    else blocks.push(`no queue run found${name ? ` for ${name}` : ''} under ${dirs.join(', ')} (set TS3_REPO from a worktree)`);
   }
+  // apex-run.ts runs that are alive (default view only)
+  if (!chain && !name && !date) for (const d of apexAll()) { const a = apexStatus(d); if (a.alive) blocks.push(renderApex(a, Date.now(), ts3wRunning())); }
   console.log(blocks.join('\n\n'));
+  if (blocks.length === 1 && blocks[0].startsWith('no queue run found')) process.exit(1);
 }

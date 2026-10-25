@@ -1,0 +1,44 @@
+{
+  "note": "docs/133 §6/§7: first collection run of the passive call-site coverage (CallSites=1). One BP job, release ini defaults plus [ProbeSnap] CallSites=1 on the 2115 sites of vcallsites5.h (541 Mono glue rows, 1721 routing rows, 147 in both), armed 90 s after start, each site self-disarming after 32 hits (to 256 hits / 16 targets when it has >= 4 targets). asi game-copy/ts3native.asi.callsites = ts3native 0.36.64 (normal build, no /D flag; builds.json). Six route repros back to back in one load (~26 min of windows, ~32 min with load). The job also reports the trap cost: callsites min lines and /native cpTrapNs, cpTrapUs, cpLastMinUs, cpMaxMinUs, cpLateUs / cpLateMin (after minute 10; light-tool budget ~2-3% = 20-30 ms/s). After: queue.ts merges the log into probe-out/callsites/db.json; node tools/virtual-resolution-report.ts --db [--sites-out probe-out/queue/vres2-sites.tsv] (per group glue / routing: armed, fired, % resolved, never-fired sites, trap cost per run). The windowed /DTS3N_VCSITES5 probe build (game-copy/ts3native.asi.vres2) stays parked.",
+  "jobs": [
+    {
+      "id": "bp-vres2-routing",
+      "note": "Correctness collection run, not a timing run (noiseCheck false; noProf: no stutter profiler, so no second Frida agent attaches while sites still trap, docs/67 §7; samplers off). Repros pick routing call types: rare-route-bits (Go Here, RouteOption bits, upstairs, Replan), rare-owned-vehicles (car drive to a community lot), bp-door-lock (locked door, portal checks), bp-upstairs-route (stairs portal, plan + Replan of a route with paths), replan-buildbuy-crowd (20-Sim crowd through doors, build/buy replans, footprint writers), stuck-check-3am (venue cleanup alarm -> stuck checks). Pass: no crash, no FAIL line, 0 watchdog lines; OK call sites line, >= 1 callsites min line, no vcall window line with faults; /native after: vcReady 1, vcSites 2115, cpOn 2, vcFaults 0 (vcSkipped > 0 = a site some patch rewrote after start: vcall skip lines, not a fail). Cost read: cpLateUs / cpLateMin / 60000 = ms per s after warm-up.",
+      "asi": "game-copy/ts3native.asi.callsites",
+      "save": "Baseline-BP-Spring",
+      "ini": {
+        "ProbeSnap.CallSites": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repros": [
+            { "id": "rare-route-bits", "minutes": 4 },
+            { "id": "rare-owned-vehicles", "minutes": 6 },
+            { "id": "bp-door-lock", "minutes": 3 },
+            { "id": "bp-upstairs-route", "minutes": 3 },
+            { "id": "replan-buildbuy-crowd", "minutes": 5 },
+            { "id": "stuck-check-3am", "minutes": 5 }
+          ],
+          "noProf": true
+        }
+      },
+      "noiseCheck": false,
+      "minCounters": 130,
+      "logRequire": {
+        "OK   call sites": 1,
+        "callsites min": 1
+      },
+      "logForbid": {
+        "vcall window .*faults [1-9]": 0,
+        "FAIL call sites": 0
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 55
+    }
+  ]
+}

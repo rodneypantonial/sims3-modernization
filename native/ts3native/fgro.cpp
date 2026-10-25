@@ -119,6 +119,7 @@ static DWORD __fastcall FgStub(u8* p, void* edx, const u8* ctx, const float* pt,
         if (!why) {
             const LONG us = UsSince(t0);
             InterlockedIncrement(&k.fgTaken);
+            MwSkip(MW_PL);
             if (hit) InterlockedIncrement(&k.fgHits);
             InterlockedExchangeAdd(&k.fgUs, us);
             Max(&k.fgMaxUs, us);

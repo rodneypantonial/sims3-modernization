@@ -4028,7 +4028,7 @@ At +0x4660 (after master's v111 watchpoint / rebase-hold range 0x4648-0x465F), 5
 
 Feature `routesnapplan` (needs `routesnap`) in `release-features.ts` / `feature-repros.json`, forced repro `route-queuefull-replan-loop` (30+ own Go Here STARTs per firing, back to back: arms and borrows). After G0 / G1:
 
-1. Correctness, BP then IP, 5-10 min, the routesnap stack + `TakeKinds=9 ShareCuts=1 VerifyEvery=1 VerifyLend=1`: pass = `p6Armed_0`, `p6Taken_0`, `p6Borrowed_0` > 0; `m2VerBad` 0, `p6BorrowVerBad` 0, `m2Off` 0, `m2Trips` <= 2; no "P4 FAULT" / "fault applying record"; `p6BorrowMiss` split logged.
+1. Correctness, BP then IP, 5-10 min, the routesnap stack + `TakeKinds=9 ShareCuts=1 VerifyEvery=2 VerifyLend=1` (not 1: VerifyEvery=1 verifies every job and takes none, §24.8): pass = `p6Armed_0`, `p6Taken_0`, `p6Borrowed_0` > 0; `m2VerBad` 0, `p6BorrowVerBad` 0, `m2Off` 0, `m2Trips` <= 2; no "P4 FAULT" / "fault applying record"; `p6BorrowMiss` split logged.
 2. Cost read on the same run (VerifyEvery back to 10 for the numbers): `snPcCutUs` <= ~5 ms/s (BP), `p6ReAcqUs / p6ReAcq` vs `snPcMatUs / snPcAcquired`, dT (§24.2) for kind 0. dT > 0 = stop: the widening does not pay (docs/158 §4).
 3. Only then the A/B (`--ab routesnapplan` with `routesnapshare` on both arms, or `native_set` both), clean night, hitch metrics.
 
@@ -4071,3 +4071,310 @@ Not split: the W6 polygon-cache fills (no per-call timer exists; they fall in cl
 | `CloneUs` > the game's plan with few door asks | the clone search itself is slower (cache misses on the copy): compare `Plans` per job; not fixable by P6 wiring |
 
 Check [offline]: selftest `TestP6` runs one taken Route.Plan job with `P6LogMs` forced to 1 us: one slot-0 record, outcome taken, queue + start + rpWait + copy + clone + game + other = total exactly, other >= -50 us, planner entries >= 1, clone time > 0, one log line.
+
+### 24.8 G1 BP on 0.36.43: the one M2 is the recurring in-room pair of plan 2337, not staleness (static triage, no code change)
+
+Inputs: `bp-p6-g1-compares` (queue `night-1024-p6.json`, asi `game-copy/ts3native.asi.p6f` 0.36.43, Mode=1, Kinds=1, ShadowEvery=1, LazyKeep=1, ReplaySigMs=250, LotsUnlocked=1, seed 12345): shadow jsonl (10,299 records: M0 10,176, M2 1, M4 107, M5 15), its ts3native log and `-native.json`; every other `*-shadow.jsonl` in `probe-out/queue` (612 files) searched for the same request; our source (`p4.cpp`, `replay.cpp`, `shadow-compare-report.ts`). No game run. Ledger docs/51 §332.
+
+#### 24.8.1 What the record says [measured]
+
+Plan 5849, `Plan`, search G, epoch 2, ver 39947, start (1250.48047, 69.6178, 1731.79663), goal (1250.58398, 69.6178, 1733.54614), tie set [0, 1], both answers goal index 1, one subpath each (`0xC6600B67`, object 0: in-room, no portal, no door), `stale` false, `nr` 0, `m2` 0. Game 19 nodes, length 2.45990; copy 17 nodes, length 2.59120. The M2 is real, not a report artifact: path 0 is the whole route, `len` equals both the sum of the node `+0x20` fields and the xz polyline length on each side, the end points agree within the report's tolerance, and the class comes from cost (5.3% apart) and node count, not from a field mix-up [verified: recomputed from the record].
+
+`liveW` 10 counts recorded writes from the **start of the live plan** to the obstacle read after the shadow (`g_p4ObW = g_spWrites - c.wPlan`, p4.cpp). The live plan holds `+0x918` from `wPlan` on, so these writes cannot have changed what it read; they only make the live obstacle set newer than the plan. The cut-to-plan window is `stale` (`c.stale = c.wPlan != c.w0`): false, so no recorded routing write landed between the cut and the live plan [verified source].
+
+#### 24.8.2 The same request in every run that has it [measured]
+
+| run | plan | class | `stale` / `nr` | game | copy |
+|---|---|---|---|---|---|
+| `snap-p4-optsinit` 2026-10-19 0731 (0.35.x) | 2337 | M2 | false / 0 | 2.4599, 19 nodes | 2.5912, 17 nodes |
+| `snap-p4-03524` 2026-10-20 0643 | 9073 | M0 | true / 0 | 2.4599, 19 | 2.4599, 19 |
+| `snap-p4-long` 2026-10-20 0102 | 9478 | M0 | false / 0 | 2.5912, 17 | 2.5912, 17 |
+| `night-1024-p6` G1 2026-10-24 1445 (0.36.43) | 5849 | M2 | false / 0 | 2.4599, 19 | 2.5912, 17 |
+
+So this request has exactly two answers, A = 2.4599 / 19 nodes and B = 2.5912 / 17 nodes, bit-identical across runs five days and many builds apart, and **both are the game's own answers** in some run (0643 live A, 0102 live B). Both M2s are live A against copy B, with the same first nodes (game (1250.210, 1731.831), copy (1250.191, 1731.743)) and the shared vertex (1249.797, 1732.359) of §21.19.2. B is the route around a larger or extra obstacle near the start and the goal (I-94-392).
+
+#### 24.8.3 Verdicts on the three candidates
+
+- **(a) Snapshot staleness: rejected** [measured + verified source]. `stale` false (no recorded write between cut and plan), `nr` 0 (no non-routing writer family changed inside the window the plan read), `liveW` is after the plan (§24.8.1). Time skew from moving Sims would not give the same two float-exact answers in two runs. The `ReplaySigMs` 250 window (§22.26.4, hook-less lot changes reach the clone up to 250 ms late without marking `stale`) is not it either: the 0731 M2 ran before `ReplaySigMs` existed (0.35.23), and the G1 run's second 300-s window, where record 4,827 of 10,299 falls (the first window has 4,199 cuts), logged "lots rebased late by signature 0". The design accepts stale answers only as M5 (`stale` or `nr` set); this record is neither, so G1 counts it.
+- **(c) Compare-tool artifact: rejected for the M2, confirmed for the obstacle block** [measured]. The class is right (§24.8.1). But the `obst` block's "clone 0, live 0" says nothing: all 17 `obst` blocks ever written by live runs (8 shadow files, 2026-10-19 to 10-24, including 9- to 16-subpath routes across furnished lots) have 0 footprints on both sides, `cloneMore` 0, while the same walk found 48 in `TestP4Obst`'s fake world. The walk sees nothing in the game. Cause not verified: the walk's world-xz box against polygon points held in another frame (lot-local, as the in-room search's points are, docs/98 §2) is the likely one [inferred, I-94-521]. The §21.19 diagnostic has never worked live; I-94-391 and I-94-392 stayed open because of it.
+- **(b) Clone defect: the remaining class** [inferred from the above]. A persistent clone/live difference in some input of this in-room search near (1250.2, 1731.8) and (1250.2, 1733.1) that no recorded write and no lot audit sees. Candidates, in order:
+  1. **Lock-key set pointer `fp+0x20` (docs/156 U1).** A footprint with a set can be passable for the routing Sim (`0x807090` allow/deny lists, docs/98 §5.1); a clone copy that kept NULL blocks it, giving the longer B on the copy side, the observed direction. 0.36.35's F1 cover hooks the IC path at `0x82B3A1` on the sim thread only; the other writer, slot `+0xA8` `0x80C8C0` from the lot rebuild path (I-156-6), is not covered, and `PcKeysApply` skips NULL sets. In this run the lock-key IC slot 1 ran 197 times during play with 0 forced rebases and 0 no-lot notes (`snIc_1` 672 -> 869, `rpLockKeyForce` 672 -> 672), so either every in-play call kept the set or the change came another way [measured counts; reading inferred].
+  2. **Q-leaf entries the clone lacks.** The run logged 9 lot audit mismatches on 5 lots (`rpMis` 9), all "only live" (lot `0x6C11003475C24E60` Q 1: 603 child entries `0xFEBF90` of key `0xFFFFFFFF00000000`, never equal, three forced rebases did not clear it; lot `0x6C1100342B1C14A0` Q 1: 30, incl. object footprints `0x1401605`, `0x6911605`). Fewer obstacles in the clone would make the copy shorter, not longer, so as blockers they fit the wrong direction; as cell subdivision they could change an in-room quadtree path either way (docs/98 §3.1-§3.2, §5.2) [inferred]. Which lot holds the route is not in the record.
+  3. **Polygon cache refill (I-94-391):** docs/156 §1 found no static caller of `0x80E0B0` on an inserted footprint, so last [verified there].
+
+Not decided: the existing data names no footprint, flag or cell. **G1 BP: not passed** (M1 + M2 + M3 = 1). The M2 is the known open pair (I-94-381 / I-94-392), not a P6 regression: the same pair predates P5/P6 by five days.
+
+#### 24.8.4 What the next G1 run needs to decide it (design; built in 0.36.50, §24.8.5)
+
+`[RouteSnap] M2LotDump=1` (log-only, off by default), plus `M2Box=x0,z0,x1,z1` in the style of `DoorBox` (§22.27.2) so matched compares of the same request are dumped too (for this one `1250.0,1731.3,1251.0,1734.0`; the request came in 4 of the searched runs, 2 of them M2, so one BP run on seed 12345 is ~50% to show it):
+
+1. **Fix or prove the obstacle frame first.** In `P4ObWalk`, also log, once per dump, the total footprints walked and the bounds of the 4 nearest by centre (no box filter). Lot-local bounds there confirm I-94-521; then transform the box with the start lot's world-to-lot transform (lot graph `+0xA0`, the one `0x62ECD0` inverts) before the filter.
+2. **Per-entry dump of the start lot's Q** (clone and live, live under one `+0x918` try as now): for every leaf entry whose cell touches the box, FME, footprint id, class, `+0x34`, FME `+0x10`, entry masks, `fp+0x20` (NULL or the set pointer and its key count), the point hash of each valid level, and the leaf cell rectangle. A diff line per entry that differs. This names U1 (pointer NULL vs set), a missing entry (Q-leaf), or a cell split difference in one run.
+3. The record keeps v3; a `"lotdump"` key after `"obst"`. Counters: none (log-only), so no registry slot.
+
+Effort (Claude, wall clock): code ~1-1.5 h (the walk exists twice already: `P4ObWalk` and the audit diff in replay.cpp), selftest on replay-fake.h ~0.5 h, docs ~15 min: **~2-2.5 h**, then one BP job (~25 min, the G1 settings plus the two switches). If the dump shows U1: extend F1 to `0x80C8C0`'s write and make `PcKeysApply` apply NULL-to-set (docs/156 F1 second half), then G1 again on BP and IP.
+
+#### 24.8.5 Built: `M2LotDump`, `M2Box`, the obstacle frame fix and `fp+0x20` per footprint (0.36.50, counters v121, offline, not run)
+
+Branch `worktree-agent-a131b4dc80c22a225` (master 0.36.49 merged: P6, T6, IdleCheckRO, MovedWaits, CrashForensics), built as `native/ts3native/out-g1dump` for `game-copy/ts3native.asi.g1dump`. Log-only: nothing hooked, no lock order change (the new live reads take `+0x918` with the same single try, no wait, as `obst` and the door dump do). Ledger docs/51 §334.
+
+- **Obstacle frame (step 1, I-94-521).** `P4ObWalk` now lists a footprint when its polygon points reach the world box (`"w"`) **or** the same box taken into the frame of the lot that holds the box centre (`"l"`). `P4LotAt` picks the lot whose level-0 quadtree bounds hold the point deepest (world-to-lot rows `g+0xA0`, translation row `g+0xD0`, as `0x62ED40`); `P4BoxToLot` maps the 4 corners. The walk finds the obstacles whichever frame the polygon cache uses, and each entry says which one listed it. Added to `obst` (appended, nothing replaced): per entry the frame and the lock-key set (below); `walkC` / `walkL` = footprints walked, the lot, its box, and the 4 nearest footprints by centre with no box filter. One `P4 obst plan N:` log line per capture (walked, frames) plus up to 4 nearest per side (first 16 captures). Counters `ldObW` / `ldObL` count listed entries by frame on every capture (`ShadowObst` is on by default). Read: `ldObL > 0` with `ldObW = 0` confirms lot-local polygon caches; `walked = 0` would be a map-walk bug instead.
+- **`fp+0x20` per footprint (I-94-522).** `P4KeyOf`: set pointer, its origin (our copy's 16-byte header names the live set it stood for at the cut, `kPcKeyMagic`), key counts of both id lists (`+0x08`, `+0x1C`) and a hash of the ids. In `obst` and in every lot-dump entry, clone and live.
+- **`[RouteSnap] M2LotDump=1`** (`p4lotdump.h`, default 0, `M2LotDumpMax` 16): on an M2/M3 (P4 shadow and P5 verify), the start lot (by the start point) and each of its Qs (`g+0x74`, up to 8) walked from the root (bounds `Q+4..+0x10`, root side `+0x38`, children `+0xC + 4k`, dx = k & 1, dz = k >> 1) into the cells that touch the route box (both answers' nodes + 1 m, in the lot's frame). Per leaf entry: FME, footprint id, class, `+0x34`, FME `+0x10`, entry masks `+4` / `+8`, the lock-key set, the point hash of each valid level and the leaf cell rectangle; clone first, then live under one `+0x918` try. Entries pair by (Q, id, class, FME `+0x10`, cell). Diff bits: 1 lock keys (NULL vs set, counts, ids), 2 key origin (the clone's copy stands for another live set than live holds now: U1 by a writer F1 does not cover), 4 masks, 8 points, 16 `+0x34`; unpaired = only live / only clone (Q-leaf candidate; when both sides list the footprint in other cells, a cell split). Record key `"lotdump"` after `"obst"` (v3 kept); log `P4 lot dump plan N (m2|box): ...` plus one line per differing entry (first 12). `shadow-compare-report.ts` prints the lot-dump diff and the key / frame on `obst` lines.
+- **`M2Box=x0,z0,x1,z1`**: also dumps compares (matched or not) whose start or goal (x, z) is in the box, as `DoorBox` does. For plan 5849: `1250.0,1731.3,1251.0,1734.0`.
+- Counters v121 (`ld*`, 16 int32 at `0x4B3C`, 6 spare): `ldDumps`, `ldBox`, `ldBusy`, `ldNoLot`, `ldEnts`, `ldDiff`, `ldKeyDiff`, `ldKeyOrigin`, `ldObW`, `ldObL`.
+- **Check [offline]:** selftest `TestP4LotDump` builds one lot at world (1200, 1700) whose footprint polygons are lot-local near world (1250.2, 1731.8), as the request. The world box misses the points (what 0.35.4 compared: the block stayed empty); the lot box lists the footprint as `"l"`, walked 2, nearest first; live set vs clone NULL in `obst`. The lot dump finds the entry in cell [30, 62]² on both sides with one diff, bit 1; a clone copy standing for an older live set with the same ids gives bit 2 only; a clone leaf without the entry gives "only live"; box mode dumps a matched compare in the box and not one outside; the cap holds; a broken lot table is a `fault` state. `shadow-compare-report.ts --self-check` covers the new fields.
+- **Not verified:** the world-to-lot rows' rotation terms. Only translation is exercised (K8 and this selftest use axis-aligned lots); a rotated lot would give a wrong lot box, while the world box is still checked [inferred from `0x62ED40`'s use, docs/98 §10.2].
+- **Queue:** `tools/harness/queues/night-1024-g1dump.json`, job `bp-g1-m2dump` (bp-p6-g1-compares settings + `M2LotDump=1`, `M2LotDumpMax=64`, `M2Box` above). Pass: no crash or fault, dump armed. Read: the `P4 lot dump` / `P4 obst` lines. ~50% to meet the request on seed 12345 (§24.8.4).
+
+### 24.9 Night 2026-10-24: both verify jobs took nothing by construction (static triage of the run data)
+
+`bp-p6-verify` and `ip-p6-verify` (queue `night-1024-p6.json`, asi `ts3native.asi.p6f` = 0.36.43) FAILed `p6Taken_0=0`. Cause [verified, source + counters]: the queue set `VerifyEvery=1` as §24.6 step 1 said, so `P5OnStart` gave every armed START `j->p4 = 3` (`++g_p5N % 1 == 0`), and `P5Plan` takes an answer only when `!verify`. The ini was right (log: `Kinds=0x9`, "Route.Plan (own) and ReplanFromPosition jobs take the clone answer; ShareCuts=1; VerifyEvery=1"); P5 armed (`m2Off` 0, M2-1 91 sites, provider registered); the repro's STARTs were own and armed.
+
+| counter (after) | BP | IP |
+|---|---|---|
+| `p6Armed_0` / `p6Armed_1` | 4,059 / 355 | 2,017 / 424 |
+| `p6Plans_0` / `p6Plans_1` | 3,820 / 351 | 1,894 / 310 |
+| `m2Plans` / `m2Verify` | 4,171 / 4,171 | 2,204 / 2,203 |
+| `m2VerM` 0 / 4 / 5, `m2VerBad` | 3,175 / 982 / 14, 0 | 1,844 / 346 / 13, 0 |
+| `p6Borrowed_0`, `p6BorrowVerBad` | 679, 0 | 254, 0 |
+| `p6BorrowMiss` 0 / 1 / 2 | 74 / 967 / 1 | 39 / 363 / 0 |
+| `m2Fb` NOVER (1), `m2Trips` | 979, 0 | 344, 0 |
+| `p6jOut` taken / game's plan | 0 / 4,018 | 0 / 1,991 |
+
+So the verify half of step 1 passed on both worlds (6,374 compares, M1-M3 0, borrowed cuts included); only the take half was never exercised. Fix: queue `night-1024-p6-fix.json` (`bp-p6-verify2`, `ip-p6-verify2`), same asi, ini, repro and pass rule with `VerifyEvery=2` (odd armed STARTs take, even ones verify). No native change. Ledger docs/51 §333.
+
+### 24.10 G1 dump run (`night-1024-g1dump`, 0.36.50): every lot dump says "no lot" (run data, static check, logging round 2 built)
+
+Run `night-1024-g1dump` / job `bp-g1-m2dump` (asi `ts3native.asi.g1dump` = 0.36.50, seed 12345, §24.8.5 settings) PASS: no crash, no `P4 FAULT` / `fault applying record`, dump armed. Log `night-1024-g1dump-2026-10-24-bp-g1-m2dump-1746-ts3native.log` and its shadow jsonl.
+
+- **Lot dumps [measured]:** 37 `P4 lot dump plan` lines, all `lot 0x0000000000000000 ... nolot` on both clone and live, including the `M2Box` dumps of in-room starts at (1250.48, 1731.80) that are certainly on a lot. So `P4LotAt` returned no lot for every point; the lot dump and the `"l"` frame of the obstacle walk (§24.8.5) have not run on real data yet, and I-94-524 to I-94-526 stay open.
+- **The recurring in-room pair [measured]:** the request of plan 2337 / 5849 (§24.8.2) came up and matched (M0) this run.
+- **The one M2 [measured]:** another request, plan 12979, open ground: start (294.7, 1249.5), goal (311.2, 1267.2), copy cost 32.91 vs game 31.15. Its `P4 obst` line: clone walked 81,909 footprints, live busy (the one `+0x918` try failed), lot 0 (no lot), nothing listed in the box; the nearest clone footprints have bounds in world coordinates (68.5 m and 94.3 m away). So at least these polygon caches are world-frame [measured on 2 entries], which weakens the I-94-521 cause (lot-local caches) for open-ground routes; the in-room case is still unread.
+- **Replay audit [measured]:** one MISMATCH, lot `0x6C11003475223B90` Q1 live 12,575 vs clone 12,245 entries (clone short by 330, 725 records since the last equal ring), the same class as the `unknown` P6 audit mismatches (clone has fewer entries than live, diff list empty; PLAN.md, `night-1024-p6-fix`).
+- **Static check [verified, Ghidra]:** the game's lot lookup (`0x62ED40`, world-to-lot rows, and the lot-table walk at `0x62EAB0`) matches `P4LotAt`'s walk: lot table from the routing world's lot set, lot graph at node `+0x10`, rows `g+0xA0` / `g+0xC0` / `g+0xD0`. So the table layout is not the obvious fault. Open suspects: (a) the Q bounds `q+4..+0x10` are world-frame, not lot-frame as docs/98 §15.7 says, so the lot-frame point is tested against world bounds and never fits; (b) the lot table (or every lot's Q vector `g+0x74`/`+0x78`) is empty on these worlds when the dump runs.
+- **Logging round 2 built (0.36.51, log only, no counter change):** `P4LotAt` records why it found no lot (`g_p4LaWhy`): status (1 no lot table, 2 no buckets, 3 no lot holds the point), lots walked, lots with a Q, the nearest lot by the lot-frame test with its signed inside distance, the lot-frame point, its Q bounds and root side `+0x38`, and how many lots would hold the point if the Q bounds were world coordinates. `p4lotdump.h` keeps it per side and logs `P4 lot lookup plan N clone|live: no lot (why S): ...`. Built as `native/ts3native/out-g1dump2` (selftest PASS) for `game-copy/ts3native.asi.g1dump2`.
+- **Next:** queue `tools/harness/queues/night-1025-g1dump2.json` (job `bp-g1-m2dump2`, same settings as `bp-g1-m2dump`), chained after `night-1025-jobyield`. Read the `P4 lot lookup` lines: why 1/2 = table pointer wrong for this world state; why 3 with world hits > 0 = suspect (a), fix `P4LotAt` to test world-frame bounds (and the lot dump's cell walk with it); why 3 with lots walked > 0, world hits 0 and lot-frame point far outside = another frame or wrong rows. Ledger docs/51 §335.
+- **Round 2 result (`night-1025-g1dump2`, 0.36.51, PASS in 15.7 min, no crash or fault) [measured]:** all 32 lot dumps still `nolot`; all 57 `P4 lot lookup` lines (32 clone, 25 live) say why 3 with lots walked 82, lots with a Q 26, world-frame hits 0. The Q bounds read `[-2, -2, 42, 42]`, root side 64: lot-frame, as docs/98 §15.7 says, so suspect (a) is refuted (I-94-527). For the in-room start (1250.480, 1731.797) the nearest lot with a Q is always `0xF590003344965800`, and the start lands 58.7 m outside it (lot-frame point (-60.742, -11.342)). New suspect: the lot that holds the start is one of the 56 whose Q vector `g+0x74`/`+0x78` reads empty (Q kept elsewhere, built lazily, another node layout, or another table). 20 replay-audit MISMATCH lines of the same clone-short class, e.g. lot `0xF5900033BA9E8C60` Q1 live 7,441 / clone 7,387 and lot `0xF5900033449658C0` Q1 live 5,817 / clone 5,559, both "last equal ring none"; the logs do not say whether those lots are among the 26 with a Q (round 3 logs it).
+
+### 24.11 Does a P6-taken job still hold `+0x918`? Parts only, and its `A_RUNNING` span stays (static + `night-1024-p6-fix` run data)
+
+Question: P6's gain path needs taken jobs to stop holding the live routing lock `world+0x918`. Each live async job holds it for its whole search, and covering single takers read-only only moved the wait (IdleCheckRO's skips moved to `0x755990`, T6 net ~0, docs/178 §8-§9). Sources: `ts3native.cpp` (ServeAsync), `p5.cpp` (P5PreLock, P5Plan), `p5b.cpp`, `p5c.cpp`, `p4clone.cpp` (`PcAcquireOwnOnly`), `p4.cpp` (P4DoorEnter). Run data: counters of `night-1024-p6-fix` (`bp-p6-verify2`, `ip-p6-verify2`; 0.36.43; `TakeKinds=9 ShareCuts=1 VerifyEvery=2 VerifyLend=1`; ReleaseLock, ReleaseGates and FreeLock on). The no-take arm is `night-1024-p6` (`bp-p6-verify`, `ip-p6-verify`): same asi, ini and repro, but `VerifyEvery=1`, so every armed job ran the clone in the lent window and then the game's plan. No run exists with P6 off and the routesnap stack on for `route-queuefull-replan-loop`: the `route-hitch-loops` and `repro-check-route` runs use other asis and settings.
+
+#### 24.11.1 Lock timeline of a taken job [verified source]
+
+| # | where (file:line) | thread | `+0x918` | `g_async.state` | what |
+|---|---|---|---|---|---|
+| 1 | `ts3native.cpp:2749` P5PreLock | worker | not held | idle | waits (bounded by `kPcWaitMs`) for the replay consumer to reach the job's cut |
+| 2 | `ts3native.cpp:2757` `LockAcquireHook(j->lock)` | worker | **acquired**: the job hold, one level (`p5bRecMax` 1 in both runs) | `A_RUNNING` from `:2761` | back-off loop: on `g_rgOffSimOpen` or H2 it releases and retries (`:2769`) |
+| 3 | `ts3native.cpp:2809` CallIc: the Route.Plan IC body before and after `Route_PlanLocked` | worker | held | `A_RUNNING` | live IC code (part of `p6jOtherUs`) |
+| 4 | `p5.cpp:270-271` early lend, only if `PcAcquireOwnOnly` (`p4clone.cpp:799`: same R image, W' and A* already made, so the acquire calls no game code) | worker | **released** (`p5b.cpp:162`: every recursion level, `g_rgRelOrig`) | `A_RUNNING` | the acquire's consumer wait and copy (`p5.cpp:277`) run lent |
+| 5 | `p5.cpp:293-294` lend (if step 4 did not), then P4RunClone | worker | lent | `A_RUNNING` | the clone search |
+| 6 | `p4.cpp:442` / `:458` P5bAsk (`p5b.cpp:214` retake, `:216` reopen) | worker | **retaken** for each door ask, lent again after it | `A_RUNNING` | the event-59 door ask runs on the sim (host call `0xD75FA0`) under the job's hold, as in A10 |
+| 7 | `p5.cpp:295` P5cTake (`p5b.cpp:169` retake loop) | worker | **retaken** | `A_RUNNING` | before the answer is moved or any game plan runs |
+| 8 | `p5.cpp:300-313` stale test, then the answer move (taken) or `PlanLockedBody` at `:335` (refused or verify) | worker | held | `A_RUNNING` | a refused or verify job runs the game's whole plan here, under the hold |
+| 9 | `ts3native.cpp:2811-2832` LendBackstop, P4LiveEnd, `LockReleaseHook` | worker | **released** | `A_IDLE` after | job end |
+
+**Sim side while the lock is lent** [verified source: `p5b.cpp` header, `p5c.cpp:1-24`]. These get the lent lock:
+- steering frames (`0x82EDB0` / `0x82F0B0`);
+- the read-only gate leaves (with ReleaseGates: gate-12 F-B / F-C, gate-0 hits);
+- with FreeLock, every plain sim acquire outside a gate wait and outside a job callback. That includes the IC-level `0x82EDB0` call at `0x75598B` (key `0x755990`).
+
+Destroys park a reference and run. These still wait **for the whole job**, because they wait on `A_RUNNING`, not on the lock:
+- gate waits at sites 1-11 (lot planner, Q, goal step: gate 10 `0x760BFF`), the coarse gates 13-14 and gate-0 misses;
+- the gate-12 writer families (F-A, F-D, F-E, F-F, and F-G placement `0x631F40`, counted in `p5bFgHeldOut`);
+- saves, BuildRoutingData, closing, D drains, collects, and the job waits of sync plans (RtWaitJob / WaitAsyncDone).
+
+The run counts these as `p5bHeldOut` (BP 3,518, IP 5,042 in verify2).
+
+**So (a):** a taken job holds `+0x918` for **parts** of its life:
+- the IC body before and after the planner, and the bookkeeping;
+- every door ask (retake, ask, reopen);
+- the final retake;
+- the acquire, but only when it is not own-only.
+
+The search and, usually, the copy run lent. But the job stays `A_RUNNING` from step 2 to step 9, and every waiter in the list above also waits through the lent parts.
+
+#### 24.11.2 Measured hold per job [measured counters; attribution inferred]
+
+Per-job means from `p6j*`, in ms. Slot 0 = taken. Slot 1 = the game's plan answered (verify, stale refusal, fallback).
+
+| | BP taken (311) | BP game's plan (4,113) | IP taken (308) | IP game's plan (1,783) |
+|---|---|---|---|---|
+| total (START to end) | 17.96 | 29.09 | 13.70 | 38.92 |
+| queue | 3.02 | 12.00 | 2.51 | 15.27 |
+| start (H2, the `+0x918` acquire) | 0.63 | 0.17 | 0.29 | 0.69 |
+| rpwait (P5PreLock + acquire wait) | 5.27 | 3.96 | 1.88 | 2.03 |
+| copy | 5.84 | 3.86 | 3.83 | 3.00 |
+| clone run (its door asks) | 2.07 (0.78, 6.7 asks) | 2.82 | 3.57 (0.83, 8.6 asks) | 6.93 |
+| game's plan | 0 | 4.24 | 0 | 7.59 |
+| other (IC outside the planner, retakes, bookkeeping) | 1.12 | 2.04 | 1.61 | 3.42 |
+
+- **The copy is mostly lent [inferred from sums].** On BP the lent time `p5bWinUs` is 26.49 s. Take away the clone time without door asks (6.49 s) and 20.0 s remain for lent acquires, against 17.7 s of copy plus the acquire waits. IP: 22.84 - 10.86 = 12.0 s, against 6.5 s of copy and 4.2 s of waits. So nearly all acquires were own-only. Caveat: `p6jDoorUs` also counts the host calls of game plans, which makes this an upper bound on the copy's lent share. `PcAcquireOwnOnly` is false after any R image change, because a fresh R copy needs a game call; the copy is then held.
+- **Held part of a taken job:** other + door asks = **~1.9 ms BP, ~2.4 ms IP**. Add the copy (5.8 / 3.8 ms) when the acquire is not own-only.
+- **Held part of the same job without P5** (the game's plan inside the IC): g + other = 4.49 + 1.12 = **~5.6 ms BP**, 8.10 + 1.61 = **~9.7 ms IP**, with g = `p6GameUs[0] / (p6Plans[0] - p6Taken[0])`.
+- **`A_RUNNING` span of a taken job** (acquire to release, without the queue and P5PreLock): ~9-14 ms BP (copy + acquire waits + clone + other), ~9-11 ms IP. A plain job's span equals its hold, ~5.6 / ~9.7 ms. On BP, the taken job's span is **longer** than the plain job's.
+- **Take rate on this repro [measured].** BP: of ~2,212 non-verify Route.Plan jobs, 311 were taken (14%) and P5c refused 1,480 as stale (67%; `p5cStale` 2,048 early + 961 at the retake, both kinds). IP: 308 of ~1,046 taken (29%), 524 stale (50%). A stale-refused job holds what a plain job holds: its game plan runs under the hold after the lent clone run.
+- **Sim `+0x918` waits** (`haUs[0]`): BP 24.79 s (verify2) vs 22.08 s (verify, no take); IP 26.02 vs 27.14 s. The 311 / 308 taken jobs should save only ~0.75 / ~1.9 s, which is inside the noise of one short loop run (2.6-2.8 min, noise medium, timing marked invalid by the harness). 0.36.43 cannot attribute waits per job: `haUs` has no split by job outcome, and `[MovedWaits]` (0.36.49, docs/178 §9) was not in this build.
+
+#### 24.11.3 Expected reduction with release settings (VerifyEvery off) [inferred]
+
+- **Per taken job:** held time drops by 3.7 ms on BP (5.6 -> 1.9) and 7.3 ms on IP (9.7 -> 2.4). The measured sim wait per held ms is `haUs[0]` / (`asyncUs` - `p5bWinUs`): BP 24.79 / 38.02 = 0.65, IP 26.02 / 31.10 = 0.84. That gives **~2.4 ms (BP) and ~6.1 ms (IP) less sim `+0x918` wait per taken job**, before moved waits.
+- **Per second at the measured take rate:** with VerifyEvery off, the non-verify jobs double, so ~620 jobs per loop run are taken on either world. Over the ~3-4 min counter window that is **~2.5-3.5 taken/s, ~6-8 ms/s less wait on BP and ~16-21 ms/s on IP, gross**. That is about 6% (BP) and 15% (IP) of the runs' sim `+0x918` wait. Stale refusals cap it: at a 100% take rate the same arithmetic gives ~7x that on BP and ~3x on IP.
+- **Net after moved waits: probably less [inferred].** Waiters on `A_RUNNING` still wait for the whole span, and on BP a taken job makes that span longer: copy + clone take ~8-11 ms, against ~4.5 ms for the game's plan.
+
+#### 24.11.4 What takes the wait next, and the design changes (c)
+
+Ranked by expected size [inferred; measure first with `[MovedWaits]` on a P6 run]:
+
+1. **`A_RUNNING` waiters:** gate 10 `0x760BFF`, gate-0 misses, the gate-12 writers incl. F-G `0x631F40`, the coarse gates, sync-plan job waits and collects. They ignore the lent lock, and on BP the span they wait for gets longer. Two designs:
+   - (i) Move the own-only acquire and copy before step 2, into P5PreLock time (no hold, no `A_RUNNING`). This shrinks the span to clone + other. It needs `PcAcquireOwnOnly` judged before the IC and the cut known at pickup; both are true today.
+   - (ii) For a taken job, admit gate waits whose shared state the suspended IC frame does not read after `Route_PlanLocked`. This needs docs/87's gate-10 state list per IC and is not safe before that closure is read.
+2. **Stale refusals** (67% of take attempts on BP, 50% on IP). Each one runs the game's plan under the hold after a wasted lent clone run. Design: rebase the clone to the newest cut and rerun once (cheap with the same-cut copy) instead of refusing, or make every stale refusal an early one.
+3. **Door-ask retakes** (~0.8 ms in 7-9 asks per job, held while the sim serves them). docs/159 H2 (the within-job memo) or H4 (native answers) removes the retake.
+4. **IC body outside the planner** (~1.1-1.6 ms per job). It stays held; only a clone answer for the whole IC (not planned) removes it.
+5. **Acquires that are not own-only** (4-6 ms of copy held after an R change). Rare in these runs. Fix: warm W' and A* at the cut, so the next acquire is own-only.
+
+#### 24.11.5 Confidence (d)
+
+- **Lock timeline: high.** From source; every site above was read.
+- **Held split per job: medium.** Counter means from one short run per world; the lent share of the copy is inferred from sums, not counted per job.
+- **Sim-wait gain: low.** One run, too few taken jobs to stand out of the noise, no moved-wait data.
+
+Next run to settle it: the same repro with VerifyEvery off and `[MovedWaits] Enabled=1` (0.36.49 or later) against `--ab routesnapplan 0` in one load. Read `haUs[0]`, the `ntKey` list and `p5bHeldOut`. Ledger docs/51 §336.
+
+### 24.12 Why 56 of 82 lots had "no Q": the Q vector is indexed by level (static, fix + lot table log built in 0.36.54, not run)
+
+- **How the planner gets a lot's Q [verified, Ghidra on `0x6320D0`, `0x62EAB0`, `0x630CF0`, `0x835110`, `0x62E680`]:** the in-room code is handed the lot key (it does not look the lot up by point in this table). `RoomGraph_NodeFor 0x6320D0` checks the lot has routing (`0x628A90`), takes the lot graph from the lot table (`0x62EAB0`), then indexes the Q vector `g+0x74`/`+0x78` by **level − `g+0x40`**, bounds-checks the index and skips a NULL slot. `0x62EAB0` inserts a missing key (the hash insert `0x62E680`, chain `+0x190`), and `0x630CF0` (from `RoutingSystem_RebuildLotRouting 0x835110`) fills the lot graph's matrices `g+0xA0..+0x11C`; the translation scale constant at `0x107A538` is 1.0. So the vector holds one slot per level from the lot's lowest level, and a slot can be NULL.
+- **Cause of the 0.36.51 "no lot" [inferred]:** `P4LotAt` took slot 0 only. A lot whose lowest slot (`g+0x40` < 0, a level with no tree, e.g. no basement) is NULL read as "no Q" and was skipped, so 56 of 82 lots never got the bounds test and the in-room start's lot was among them. Support: the replay-audit mismatches of both G1 runs are on "Q 1 (level index)", so those lots have a tree in slot 1; whether their slot 0 is NULL is not in the logs (the lot table below answers it).
+- **Fix (0.36.54, `P4LotQ`):** `P4LotAt` takes the slot for level 0 (index −`g+0x40`, as `0x6320D0`), else the first non-NULL slot. The lot dump already walks every slot (NULL ones skipped), and the obstacle walk's lot box uses `P4LotAt`, so both follow. The why line gains "lots with slot 0 NULL".
+- **Lot table log (0.36.54):** once per side, `P4 lot table plan N clone|live` plus one line per lot: key, base `g+0x40`, slots, non-NULL mask, raw `+0x74`/`+0x78`, byte `+0x8C`, world-to-lot translation `g+0xD0`/`+0xD8` and the start point in that lot's frame. Joining the replay-audit MISMATCH keys with it says whether clone-short lots are base-shifted lots (a level tree that appeared after the cut would explain clone-short).
+- **Check [offline]:** `TestP4LotDump` adds a lot with base −1, slot 0 NULL and the tree in slot 1: found, slot 1 picked, `slot0Null` 1, lot table base −1 / 2 slots / mask 2. Build `out-g1dump3` (master 0.36.53 + this), selftest PASS.
+- **Queue:** `tools/harness/queues/night-1025-g1dump3.json` (job `bp-g1-m2dump3`, round 2 settings). Pass: no crash or fault. Read: the lot dumps should now name a lot for the in-room starts, with entries and diffs for the recurring pair (I-94-524 to I-94-526 finally testable). Ledger docs/51 §338.
+
+### 24.13 G1 gate v2 (tiered) and the re-score of the three G1 runs (rule change 2026-10-25, report only, no native change)
+
+Decision (Rodney, 2026-10-25): G1 (§22.30.4 step 2) changes from "M1 + M2 + M3 = 0" to three tiers. Rationale: the game itself is not deterministic for some requests. The in-room request of plans 2337 / 5849 has two game answers, A and B, bit-identical across runs five days apart (§24.8.2); a copy that answers B where the live plan answered A gives a route the game also takes, not a clone defect. Under the old rule that pair would fail G1 forever. Ledger docs/51 §339.
+
+#### 24.13.1 The rule
+
+| tier | verdict | condition |
+|---|---|---|
+| 1 | PASS, "known alternative" | an M2 (or a path tie) whose copy answer equals, node for node and float-exact (all six node fields, same subpath types and objects, same result), an answer the **game** produced for the same request (same IC, world, search kind, start and goal float-exact) in any shadow file of any run. The report names the run and plan |
+| 2 | PASS-FLAGGED | not tier 1, but: same path / no-path status (an M2 has it by definition), copy route valid against the live world at compare time (no copy segment crosses a live obstacle footprint), copy cost within 10% of the game's, and tier-2 count <= 1 per 10,000 compares. Logged for investigation. If the record lacks the data to decide validity, the verdict is **undecided = FAIL** until the native check of §24.13.4 exists |
+| 3 | FAIL | M3, a real M1 (not a tie), a copy route crossing a live obstacle or undecided, cost over 10%, tier 2 over the rate cap, or replay-audit drift not repaired at the next cut |
+
+Unchanged: >= 10,000 compares per run, goal ties pass (as in G4), M4 / M5 are not compares.
+
+#### 24.13.2 Tool: `shadow-compare-report.ts --g1 [--history <glob>]`
+
+Output without the flag is unchanged. With it, the report:
+
+- builds a request index over every shadow file (default `probe-out/**/*-shadow.jsonl`, plus the inputs). Only the requests of the inputs' M2s and path ties are wanted: each line's request is read from its head with one regex, and only matching lines are parsed. 652 files (5.2 GB) take ~20 s;
+- scores each input file as one run, with that run's `<run>-ts3native.log` for the audit check;
+- decides tier-2 validity from the `obst` block. The record holds footprint bounds, not polygons, so it can prove "crosses nothing" (no copy segment meets any live bounds box) but never "crosses one". Undecided when: no `obst`, live read not `ok`, walk before 0.36.50 (its sets were always empty, §24.8.3 (c)), no lot frame (`walkL.lot` 0, §24.10-§24.12), truncated live list, a live entry in the lot frame (no transform in the record), or a copy segment meets a live bounds box;
+- checks replay-audit drift. The native log has **no per-lot "rebased" line** (`RpAuditForce` only schedules the rebase; equal audits are not logged) [verified source, `replay.cpp`]. So a MISMATCH of lot X counts as repaired only when a later MISMATCH line of X names a "last equal ring" after it; "recurred" = a later line of X names none or an older ring; "timeout" = the AuditHoldRebase hold of X released by timeout; else "unconfirmed". Anything but repaired fails, as the rule says (parse what exists). The per-lot equal slots are lossy (one lot per hash slot), so "recurred" can also be a lost equal record [inferred].
+
+Self-check: one fixture history file and records for each tier (tier 1 hit, tier 2 valid, undecided busy, cost over 10%, M3, real M1, segment in a live bounds box, old walk), the rate cap (1 in 10,000 = PASS-FLAGGED, 1 in 9,999 = FAIL) and the four audit fates.
+
+#### 24.13.3 Re-score [measured, `--g1` over all 652 shadow files]
+
+| run (asi) | compares | M2 | tier 1 | tier 2 | tier 3 | audit MISMATCH events (lots): repaired / recurred / unconfirmed | G1 v2 |
+|---|---|---|---|---|---|---|---|
+| `night-1024-p6` `bp-p6-g1-compares` (0.36.43) | 10,177 | 1 | 1 (plan 5849) | 0 | 0 | 9 (5): 1 / 3 / 5 | FAIL (audit only) |
+| `night-1024-g1dump` `bp-g1-m2dump` (0.36.50) | 10,196 | 1 | 0 | 0 | 1 (plan 12979, undecided) | 7 (5): 1 / 1 / 5 | FAIL |
+| `night-1025-g1dump2` `bp-g1-m2dump2` (0.36.51) | 10,296 | 0 | 0 | 0 | 0 | 10 (5): 0 / 5 / 5 | FAIL (audit only) |
+
+- **Plan 5849 = tier 1** [verified by the tool]: its copy answer (B, 2.5912, 17 nodes) equals the game's answer of `snap-p4-long-2026-10-20-bp-snap-p4-long-0102` plan 9478 node for node, as §24.8.2 said from the costs.
+- **Plan 12979 = tier 3; tier 1 does not apply** [measured]. The request (`Plan`, G, start (294.701355, 15.8745117, 1249.53662), goal (311.196045, 15.1245117, 1267.18066)) is in 11 shadow files (8 `night-1024-ab` jobs, `night-1024-g1dump`, 2 `night-1025-jobyield` jobs), always as plan 12979, and is an **M2 in all 11**: game 31.1497 every time, copy 32.9114 every time. The game is deterministic here; the copy's answer was never a game answer. Cost is within 10% (5.7%), but validity is undecided (live read `busy`). It is not open ground, as §24.10 read it: subpaths 0-1 go through portal object `0x6C110033BAC40790`, the answers part in the in-room subpath 2 (game 5 nodes, 1.45 m to (295.68, 1247.54); copy 10 nodes, 3.42 m to (296.20, 1246.98)) and meet the next portal (`0x50660D52`, object `0x9F630035CF44E4B0`) at another point; subpath 4 is equal. Same direction as plan 5849: the copy's in-room leg is longer. Reproducible on seed 12345 in every run, it is the better debug target for the clone input difference (§24.8.3 (b)): next lot-dump run with `M2Box=294.0,1246.0,297.5,1250.0` (I-94-538).
+- **The audit check fails every run** because repair is not visible in the log, not because drift is shown to persist: 15 of the 26 events have no later line for their lot at all. The clone-short class (§24.10) does recur on the same lots (e.g. `0xF5900033BA9E8C60` in `g1dump2`). Fix the evidence first: §24.13.5.
+
+#### 24.13.4 Design: native live-validity check for tier 2 (not built)
+
+Goal: the record says whether the copy route crosses a live obstacle, decided by the game's own blocker logic against the live quadtree, so tier 2 never depends on bounds boxes.
+
+- **Where:** only on a final M2 / path tie / M3 (rare: ~1 per 10,000 compares), on the worker. P5 verify jobs (Mode=2: clone first, then the live plan): right after the live `Route_PlanLocked` returns, still inside the job's `+0x918` hold, before the answer collect. P4 Mode=1 (the clone runs after the live job, in `P4ShadowRun`): the copy answer exists only after the hold ended, so queue one small check job on the A10 channel (kind "validity", the same acquire as a normal job, no new lock order); the result goes into the record at the next collect. Today's single try (`liveState` busy in `g1dump`) is why the data is missing; a job-style acquire waits like any job.
+- **What:** for each copy subpath of type `0xC6600B67` (in-room / open ground) and each segment from node i to node i+1, run the segment gather `0x631E20` with BlockerCheck2d `0x82E340`'s record (option word, the routing Sim as ignore id, option bit 4 forced as `0x81C810` sets it on the copy) and its per-footprint rules (the pure helpers docs/140 §3.1 lists), against the **live** world, as the `[RouteToObjRO]` clone design does (docs/140 step 7 and build steps 4-5). Not `0x82E340` itself: its tail reads the physics world, which the sim writes without `+0x918` (docs/140 state table), so calling it off the sim thread is a race [inferred from docs/140]. Portal subpaths (`0x50660D52`, `0x443F45CE`) are skipped: their geometry is the portal's own.
+- **Record:** `"valid": { "state": "ok" | "busy" | "skip", "segs": n, "us": n, "hit": [[path, seg, "0xFOOTPRINT"]] }` after `"obst"` (v3 kept). `liveValidity` reads it first: `ok` with no hit = valid, any hit = crossing (tier 3), else undecided.
+- **Files:** the `p4.cpp` / `p5.cpp` collect paths (another agent works on the p4 files now: build after that lands), the gather clone shared with `[RouteToObjRO]` if that is built first, selftest on the fake world of `TestP4Obst` (a footprint on a copy segment = hit; off the route = none; held lock = busy).
+- **Effort (Claude, wall clock):** ~3-5 h code + selftest (less if the `[RouteToObjRO]` gather clone exists), ~15 min report change, then one BP G1 job (~25 min) on seed 12345, which meets plan 12979 in every run.
+
+#### 24.13.5 Design: per-lot rebase evidence for the audit check (log lines built in 0.36.55, no counter)
+
+One log line in `replay.cpp` when a lot that `RpAuditForce` marked is rebased at a cut (lot, cut, ring) and one counter of forced rebases done (registry slot first). Then "repaired" = a rebase line of X after the MISMATCH and no MISMATCH of X with the same entry deficit at its next audit; the report change is one regex. Optional: log the first equal audit of a lot after a forced rebase, so repair is shown, not inferred. ~30-45 min + selftest; not in the p4 files.
+
+**Built (0.36.55, `replay.cpp`, log only):** `RpAuditForce` keeps the lot in a 32-entry list (ring lock). When a cut pushes the rebase batch that holds it: `snap replay audit: lot X rebased at cut N (ring R, full|shell), entries live E (the clone copies them)`; an epoch build repairs every pending one: `snap replay audit: K audit-forced lot(s) rebuilt by an epoch build at cut N`; the first equal audit after that: `snap replay audit: lot X equal again at ring R, cut N (first audit after its forced rebase), entries E` (entry dropped). At most 128 such lines. No counter slot taken (the registry slot of the design stays open). Selftest: the replay audit negative control now also asserts rebased then equal again. Rides in `game-copy/ts3native.asi.g1dump3` (queue `night-1025-g1dump3.json`, `M2Box` moved to plan 12979: `294.0,1246.0,297.5,1250.0`).
+
+### 24.14 The two §24.11.4 fixes: early copy built (0.36.56, counters v122), rebase-and-rerun stopped statically
+
+§24.11 found two costs on taken P6 jobs: (1) stale refusals are 67% (BP) / 50% (IP) of take attempts, each a wasted lent clone run followed by the game's plan under the hold; (2) the job's `A_RUNNING` span (what gate 10 `0x760BFF`, gate-0 misses, the gate-12 writers incl. F-G `0x631F40`, the coarse gates and job / collect waits wait on) holds the copy, so on BP a taken job's span (~9-14 ms) is longer than a live job's (~5.6 ms). Rodney approved building both fixes (A rebase-and-rerun, B early copy) behind switches, safety first. Sources: `p5.cpp`, `p5c.cpp`, `p4clone.cpp`, `p4.cpp`, `replay.cpp` (consumer), `snap.cpp` (write count), `ts3native.cpp` (ServeAsync). Ledger docs/51 §340.
+
+#### 24.14.1 B: the own-only copy before the job's `+0x918` (`[RouteSnap] P6EarlyCopy`, built)
+
+| step | before | with `P6EarlyCopy=1` |
+|---|---|---|
+| pickup (`ts3native.cpp:2767` `P5PreLock`) | consumer wait only | consumer wait, then `P5EarlyCopy` (`p5.cpp:207`): for an armed Mode=2 job (any kind, verify jobs too) on the replay provider, not already stale (`P5cStaleNow`, the P5c test without its count), no storm pause, and `PcAcquireOwnOnly`: `P4CloneAcquire` here, holding no game lock. Its result (clone held, or a refusal) is kept for this job (`g_p5e`, worker only) |
+| `LockAcquireHook` + `A_RUNNING` (`:2775`) | unchanged | unchanged (the worker now holds `g_rpUse` while it waits) |
+| `P5Plan` acquire (`p5.cpp:333`) | own-only acquire inside the lent window, else under the hold | claims the early result: a held clone is re-checked under the job's hold (`P5EarlyRecheck`: the cut epoch and active lot against live, and `g_rpClone` / `g_rpNeedEpoch` / `g_rpBad` / `g_rpStale`), then run as if just acquired; an early refusal is the acquire's refusal (no second try, no `P4CloneDrop`: the hold ended in `PcAcquire`). A job P5Plan refuses before the acquire (capture, rtClosing / rtBusy, cold, P5c stale, storm) releases the early clone instead of dropping the cut |
+| IC end (`ts3native.cpp:2834`) and the back-out path (`:2794`) | - | `P5EarlyEnd`: an early clone no plan claimed (the IC never reached `Route_PlanLocked`, or the job backed out) is released: `g_rpUse` and the cut's hold |
+| not own-only (a new R image, no A* object or W', a W' for another world) | under the hold | unchanged (`p6eSkip_0`): game calls stay under `+0x918` |
+
+The phase split books the early copy as `copy` and its waits as `rpwait` (`P6JobBegin`), so `p6jStartUs` stays pickup to the IC call. Runtime switch `p6Early` (`native_set routesnapearly`, `--ab routesnapearly`, +0x4B7C); ini `[RouteSnap] P6EarlyCopy` (default 0).
+
+#### 24.14.2 Safety of B [verified source unless marked]
+
+1. **What the early copy reads and writes.** `PcAcquireOwnOnly` is true only when the acquire makes no game call (same R image, A* object and W' made for this live W, closed list for this R). Then `PcAcquireBody` reads the cut slot (private copies made under `+0x918` at the cut: world / P / W bytes, grid, key tables, wx), the P3 images (refcounted versions), the clone (private memory) and one live value, `PcActiveLot` (fault-guarded); it writes `g_pcWork` and the clone (P bytes, Q `+0x28`, footprint `+0x20` key pointers) under `g_rpUse`. `PcWp` on the own-only path copies only from `c.wb` / `c.wx`, never from the live W. This is the same work 0.35.26 already runs in the lent window, where the sim is as free as before the hold.
+2. **What can change between the copy and the acquire, and who checks it.**
+   - The clone: only the consumer applies to it or frees it (`RpDrainBody`, `RpLotsUnlocked`, `RpRecsUnlocked`, the switch-off drop), always holding `g_rpUse`; the sim's epoch builds a new clone and hands it over as a record (`RpEpoch`), it never frees `g_rpClone`. So the clone stays at the cut position until the job's release.
+   - The cut slot: a Mode=2 fresh cut (the only writer that resets slots) needs `!AsyncBusy()`, and the job is `J_RUNNING` from pickup; after the acquire nothing reads the slot except `PcHoldEnd` at release.
+   - The live world: the job answers its cut, as every P5 job (§22.11). Recorded routing writes after the cut are caught exactly as before: `P5cStaleEarly` at plan entry (the early clone is then released) and `P5cStale` at the retake; the epoch after the run (`c.epoch` vs `g_spEpoch`, unchanged).
+   - The live-state tests `PcAcquire` made at copy time (epoch, active lot, clone flags) run again at plan entry under the job's hold, where today's held acquire would run them, so no test is made earlier than before. Today's lent acquire already made them before a lent run; the recheck is stricter than that.
+3. **No new lock-order cycle.** New: the worker waits for `+0x918` (and the H2 / `g_rgOffSimOpen` back-offs) holding `g_rpUse`. `g_rpUse` takers: `PcAcquire` (worker) and the consumer. The consumer never blocks on `g_rpUse` while holding `+0x918`, and never on `+0x918` while holding `g_rpUse` (`replay.cpp:3610`: try, else release `g_rpUse`, wait `+0x918`, try `g_rpUse`, else release `+0x918` and wait `g_rpUse` holding nothing). The sim never takes `g_rpUse` (grep of every `g_rpUse` site), and no sim path waits for the consumer (no loop on `g_rpTail` outside `P5PreLock`). The cut lock `g_pcCutLock` is shared only inside the acquire. The pool set is taken by the clone run, not the acquire. So every chain ends at a thread that holds nothing of ours.
+4. **Lifetime.** One record, worker only; claimed by `P5Plan` (keyed by job seq and cut version) or released by `P5EarlyEnd` before `LockReleaseHook` / on the back-out; a refusal record owns nothing. Travel / quit (CE-1): the early copy reads only private memory, so a teardown in the pickup gap (the gap `P5PreLock` already has) reaches nothing it reads; the job then backs out (`late`) and releases.
+5. **Cost moved, not added.** The consumer is blocked from the early copy to the job's release instead of from the in-plan acquire; it is held at this cut by `g_rpHoldAt` for the job anyway (only idle `RpGc` / grave steps wait longer) [inferred].
+6. **Not covered by the P5 fault harness.** `p5fault-test.h` drives a fake provider with no own-only acquire, so the early path cannot run there. `FI_OOM` is applied to a claimed early clone in `P5Plan` (as `P4CloneAcquire` applies it) and tested in `TestP6Early` (g7).
+
+#### 24.14.3 A: rebase-and-rerun of a stale job: not built (static stop)
+
+Design asked: when the take check finds the clone stale, bring it up to date and run the job on it, within a hold budget no larger than the live plan's. Every way to do that fails a rule, so per the brief it is reported, not built:
+
+- **Records only is not a rebase.** A recorded write (`snap.cpp` `SpNote`) also changes cut-side state the clone does not hold: R (`SL_APPLYLOT` / `SL_RESTORE`), the footprint grid and blockedNodeMap (`SL_GRIDADD` / `SL_GRIDREMOVE`), the high-cost tiles (`SL_HIGHCOST`), and world events 5/7/9/0x0A/0x0D-0x10. Applying the ring past the cut to the clone leaves the job's world bytes, P bytes, grid copy, key tables and P3 images at the old cut: an answer from a mixed world, which P5c exists to prevent.
+- **A real rebase is a new cut, and a cut belongs to the sim.** `PcCutFn` runs `PcPrepare` (game writers), `SpCut` / `RpCut` (publishes the ring position) and the snapshot under `+0x918`, and writes sim-only globals (`g_pcCutW`, `g_pcCutQpc`, `g_pcBorrowed`, `g_pcGridLast`, `g_pcKeysLast`). The sim writes the same globals in `PcBorrow` **without** `+0x918` (it runs exactly when a job is busy), so a worker cut would race a START's write count: a job armed with a newer `w` than its cut would take a stale answer. Fixable only by moving those globals per caller (a cut-path refactor).
+- **The consumer cannot catch up inside the job's hold.** It applies EPOCH, AUDIT, the grave and (without `LotsUnlocked`) RP_LOTS under `+0x918`; a stale job's rebase batch (dirty lots of earlier runs) is RP_LOTS / forced lots. With the job holding `+0x918` the drain waits (that is why `P5PreLock` exists); lending the lock to the consumer is a new admission rule in P5b / P5c (today: sim acquires only), i.e. a lock-protocol change the lock model (`tools/model/p5-lock-model.ts`) has not checked.
+- **It cannot fit the budget [inferred from measured means].** A cut costs 9.1 ms on the sim (§22.30, `snPcCutUs / snPcCuts`, split unmeasured), plus the drain, plus a copy that is not own-only when the rebase brings a new R image (4-6 ms held). The budget is the game's plan: g = 4.24 ms (BP) / 7.59 ms (IP) (§24.11.2). So on BP the fallback would fire on nearly every attempt; on IP only cheap cuts could pass.
+
+What would make A possible (next steps, not started): (1) the `PcCutFn` split (§22.30.4 3a, log only) to see whether a cut after a few lot writes is cheap; (2) a worker-owned cut that keeps the sim-only globals untouched and returns its own write count; (3) consumer admission into the lent window, proved in the lock model; (4) only then the rerun, behind `P6Rebase=0`. The cheap half of §24.11.4 item 2 (every stale refusal early) is already true for writes before the plan (`P5cStaleEarly`); B does not change the take rate.
+
+#### 24.14.4 Counters v122, checks, run
+
+Counters v122 (+0x4B7C, 16 int32, docs/registry.md): `p6Early` (switch), `p6eCopies`, `p6eRefused`, `p6eUsed`, `p6eRel[3]` (0 plan refused before the acquire, 1 plan-entry recheck, 2 unused), `p6eSkip[3]` (0 not own-only, 1 stale / storm, 2 no cut / provider / Mode=2 off), `p6eUs`, `p6eCopyUs`, `p6eSpare[4]`. agent.js `>= 122`; `native-switches.ts` `routesnapearly`.
+
+Checks [offline]: `build.cmd out-p6fix` (all targets, `/W4 /WX`) and its selftest pass. `TestP6Early` on the TestPcMode2 clone life: (g1) fresh-cut job copied early, its plan runs that clone (no in-plan acquire, `snPcAcquired` +1), taken, phase split adds up, hold and `g_rpUse` free after; (g2) a Route.Plan and a ReplanFromPosition job on one shared cut, both early, both taken, one same-cut copy; (g3) copy then a recorded write before the hold: stale refusal before the acquire, early clone released (`p6eRel_0`), hold ended, next job taken; (g4) write before the copy: no copy (`p6eSkip_1`), stale as before; (g5) copy then `g_rpBad` before the hold: recheck refuses (mat, `p6eRel_1`); (g6) IC never plans: `P5EarlyEnd` releases once (`p6eRel_2`); (g7) `FI_OOM` on the early clone: refused mat, released; (g8) switch off: the plan's lent acquire as before. `selftest-all.ts`, `hook-sites.ts --check` (no new site) ok.
+
+Run: queue `tools/harness/queues/p6fix-verify.json` (asi `game-copy/ts3native.asi.p6fix`, not run). Jobs 1-2 correctness, BP then IP, `night-1024-p6-fix` settings + `P6EarlyCopy=1`, `VerifyEvery=2` (verify jobs take the early path too, so `m2VerBad` checks early clones), 10 min each; pass = no crash, `p6eCopies` / `p6eUsed` / `p6Taken_0` > 0, `m2VerBad` 0, `p6BorrowVerBad` 0, no P4 FAULT. Job 3 timing, IP, one load, in-load ABBA on `routesnapplan` + `routesnapearly` via repro `route-queuefull-p6-loop` (new: the replan loop with the arm switch moved to the P6 pair), `VerifyEvery=0`, `[MovedWaits]` on, 16 firings per arm, cap 22 min. Read `wait-ab.ts` and `hitch-ab.ts`. Total ~55 min with loads.
+
+Expected [inferred]: B leaves the take rate as it is (14% BP / 29% IP of non-verify jobs on this repro) and shortens every early-copied job's `A_RUNNING` span by its copy plus the acquire's waits: ~5.8 ms + part of 5.3 ms (BP) and ~3.8 ms + part of 1.9 ms (IP) per taken job (§24.11.2), and the same for stale and verify jobs that copied. The `+0x918` hold does not change (the copy was already lent), so the sim `+0x918` wait gain stays §24.11.3's ~6-8 ms/s (BP) / ~16-21 ms/s (IP) gross; the new part is the `A_RUNNING`-keyed waits (gate 10, gate-0 misses, gate-12 writers, job waits), not measured per job yet: the ABBA reads them by key. Risk: `g_rpUse` held across the `+0x918` wait delays the consumer's idle work; a long H2 back-off with many queued jobs could push later acquires to `mat/timeout` (watch `snPcRefused_4`).
+
+**Effort (Claude, wall clock):** reading ~1 h, code + counters ~40 min, selftest ~30 min, queue + repro + docs ~40 min: ~3 h. Left: the queue (~55 min, job 3 on a clean machine).
+
+### 24.15 Phase 1 of docs/189: re-keyed gate waits admitted to the lent lock (0.36.58, counters v124, built, not run)
+
+`[RouteGate] HoldKeyed` (runtime `holdkeyed`, needs FreeLock=1, latched per job) lets the sim's gate waits of sites 0, 3, 4 and 6-9 take the P5c-lent `+0x918` (`P5bAllowed` class `P5B_HOLD`), so they wait for the worker's hold (A_RUNNING outside a window: IC prefix / tail, door asks, retakes, a refused job's game plan), not for the whole job. Sites 1, 2, 10, 11, 15 stay on A_RUNNING until the lazy room-record fill under `0x63D2F0` is closed (docs/189 §8.2 Q1); 5, 12's writer families, F-G, 13 and 14 stay. Safety: the admitted entry holds the real lock, the clone reads only private copies (§12, §16.6, H20b), recorded writes in the window are refused by `P5cStale`, the fallback is a fresh `Route_PlanLocked` (§22.11.6 R3); retake tripwire `hgTrip`. Selftest `TestP5cIn` phase 3. Per-site table and the `p5bHeldOut` per-try note: docs/189 §9. Ledger docs/51 §342.
+### 24.16 Per-lot staleness: `[RouteSnap] StaleLot` built (0.36.59, counters v125, docs/189 phase 2), read set not proven
+
+Record (design and evidence plan in docs/189 §8; ledger docs/51 §343). P5c refuses any answer with a recorded write since its cut (`g_spWrites`). StaleLot judges the same window per lot:
+
+- **Write ring [verified source + selftest].** Every `SpNote` increment (always under `SpLockD`) stores (seq, lot key or world kind) in a 1024-slot seqlock ring. Lot-keyed only where the lot is an argument or the Q's own key: W1 / W2 (Q `+0x18/+0x1C`, as `RpQKey`), W3 (args 1-2), W4 (lot graph key), LOTREMOVEFP. World-level: epoch events 5/7/9/0x0A, lot events 0x0D-0x10, R (APPLYLOT / RESTORE), grid and blocked-node map, high-cost tiles, G build / blend, footprint objects (FPCORE / PRIVATE / FPREMOVE), W6 polygon caches, lot table (W5, REMOVELOT), lot key 0. Any increment outside `SpNote` (replay.cpp lock-key cover, fault injection) has no ring entry and reads as "unknown" = stale.
+- **Read set [verified hook, completeness NOT proven].** Keys passed to `LotTable_Find 0x627E00` on the route worker during P5Plan's clone run (entry detour, 5-byte prologue `83 EC 08 53 56`, raw branch scan: nothing jumps into `0x627E01..04`; its 4 callers are `LotTable_Contains` (2), `LotGraph_Reset`, `LotTable_GetOrInsert` [verified, raw call scan]), plus the active lot always. Not seen: lots reached without a key lookup (portal / R hub lot graph pointers, Qs through the footprint map `world+0x95C`, inline table walks). So the acting arm is guarded, not proven.
+- **Arms (runtime `stlMode`, `--ab routesnapstalelot`, read once per plan):** 2 shadow: both verdicts counted (`stlMat[0][*]`), the global rule acts; 1 acting: lot-keyed-only windows skip P5c's early refusal and are judged after the run; a job whose written lots miss the read set is taken (`stlActTaken`); world / unknown / ring overflow / set cap / no detour stay stale. A deferred job whose P5c window did not open is judged by the per-lot verdict, never taken unjudged.
+- **Tripwire:** a verify job that is per-lot-only and whose clone answer is M2 / M3 against the game's (raw class, tie counter untouched) sets `stlActOff`: acting runs as shadow for the session.
+- **Hook-less lot changes** (`ReplaySigMs` window, §22.26.4) raise no write under either rule: exposure unchanged.
+
+Checks [offline]: `build.cmd out-p6p2` (all targets, `/W4 /WX`) and selftest pass: `TestStaleLot` (unit: unread lot clean, read and active lot stale, window edges, world kinds, lot 0, unknown, in-flight slot, ring overflow, set cap, no set, ring off, classifier on fake slots, `SpNote` wiring, read-set note; P5 fake world: acting takes an unread-lot write, refuses world / unknown / no set, shadow acts as the global rule, verify per-lot-only equal, tripwire to shadow, off = no verdicts). `hook-sites.ts --check` ok.
+### 24.17 Door asks with the lock lent and a cross-job door memo (docs/189 phase 3, 0.36.60, counters v126, NOT run)
+
+Short record; the design, the Q2 proof and the tests are in docs/189 §8. `[RouteSnap] AskLent` (`--ab asklent`): in a P5c window, a clone job's door ask goes out with `+0x918` still lent (no retake / reopen pair). The ask's callback takes the real lock (no borrow) and plans nested in it plan on the sim. Every recorded routing write meanwhile refuses the answer at the final retake (`auStaleAfter`). `[RouteSnap] DoorMemoX` (`--ab doormemox`, 0 / 1 / 2 shadow): "unlocked" answers reused across jobs while no portal IC, epoch / lot world event or event 59 delegate change happened and the row is younger than `DoorMemoXMs` (250). Both are runtime switches, off. Lock model `ask-unheld` clean, `mut-ask-unheld-noadmit` deadlocks; selftest `TestAskLent`. Ledger §344.
+
+### 24.18 docs/189 integration build (2026-10-25, 0.36.63, counters v129, branch `p6/integration`, NOT run)
+
+Every docs/189 phase (P6Waits, HoldKeyed 1 / 2, StaleLot, StaleLotFp, AskLent, DoorMemoX, TakeKindsAll, TakeForeign) in one build on top of §24.14 P6EarlyCopy, every switch default off and runtime-flippable; review findings, the final switch and counter map and the combined queue `p6-integration.json` are in docs/189 §15. Fixes made while merging: HoldKeyed latch re-read after the acquire (TOCTOU across a job end), a retake that waits `RetakeEscalateMs` on an admitted gate frame turns HoldKeyed off instead of lending (`hgLongHold`), DoorMemoX needs routesnap's event hook + IC slots and self-checks mode 1 every 8th hit, StaleLotFp keeps W6g (`DoorRouting_AddDoorPortals`) world-level and its grid tripwire cannot be blinded by a nested leaf, a foreign job verifies when `FbJobCapMs=0`. Counters: v123-v129 at +0x4BBC-+0x517B (5215 int32).

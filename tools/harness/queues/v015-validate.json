@@ -1,0 +1,152 @@
+{
+  "jobs": [
+    {
+      "id": "bp-rc-smoke-v015pkg",
+      "note": "Release check part a (smoke): 6 min play, release ini + measurement logging. Pass: 0 crashes, 0 watchdog lines, ts3native version as docs/RELEASE.md, asyncStarted > 0, every tripwire of docs/RELEASE.md 0, route fails per minute not above v0.1.4 (2026-10-20 release-validate *-rel-play) by > 10%. Read: freeze-report.ts and hitch-ab.ts <tag>.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 6,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "ip-rc-smoke-v015pkg",
+      "note": "Release check part a (smoke): 6 min play, release ini + measurement logging. Pass: 0 crashes, 0 watchdog lines, ts3native version as docs/RELEASE.md, asyncStarted > 0, every tripwire of docs/RELEASE.md 0, route fails per minute not above v0.1.4 (2026-10-20 release-validate *-rel-play) by > 10%. Read: freeze-report.ts and hitch-ab.ts <tag>.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 6,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "sv-rc-smoke-v015pkg",
+      "note": "Release check part a (smoke): 6 min play, release ini + measurement logging. Pass: 0 crashes, 0 watchdog lines, ts3native version as docs/RELEASE.md, asyncStarted > 0, every tripwire of docs/RELEASE.md 0, route fails per minute not above v0.1.4 (2026-10-20 release-validate *-rel-play) by > 10%. Read: freeze-report.ts and hitch-ab.ts <tag>.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 6,
+          "cameraPan": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-matrix-v015pkg",
+      "note": "Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Full save matrix in release mode (saveMatrix.fixes shipped: save fixes as the release ini/ts3fixes defaults set them, not switched; fix-on vs fix-off cases compare [RouteAsync] + [Discourage] on vs off, [RouteGate] has no runtime switch), all cases + reload. Pass: every case PASS (save-change test matrix rule); CHANGELOG lists case count, cases and results. v0.2.0: the full matrix is required (save-change rule): destroypark releases parked references at save and travel, errortrapspread/easpread* drop or finish a pending pass at a save; every case PASS on all three worlds.",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": []
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    },
+    {
+      "id": "bp-rel-travel-france-v015pkg",
+      "note": "Release v0.2.0 validation (ts3native release build parked as game-copy/ts3native.asi.rel020, sha256 in docs/RELEASE.md v0.2.0; release ini = the repo ini after node tools/release-features.ts <chosen> --write; no job ini overrides). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native <version in docs/RELEASE.md v0.2.0>\", stuck Sims within docs/TESTING.md (no more than the same world without our mods), asyncStarted > 0; fbCapped reported per job (/native at the end; each capped plan listed with its sync plan line: > 0 is not a fail by itself, but a capped plan whose Sim never routed again is); route fails (stutter profile routeFails per minute) not above the same job in the v0.1.4 run (docs/data/results/2026-10-20-queue-release-validate.md, probe-out/queue/release-validate-2026-10-20.jsonl) by more than 10%; for every feature on in the release ini, its tripwires stay 0: fallbackasync fbActiveTrip; slotenabledro slShadowMismatch; avoidro avTripAv, avSimWriteInRo, avSiteSkip = avTakenMiss; deferfootprint usfApplyInJob, usfAgeMaxMs < 300, usfSwept = usfGoneEnable0; destroypark p5cCountLow; errortrapspread/easpread*/overwatchspread no failed or stopped line. Travel round trip Bridgeport -> france -> home with the travel save case (as async-release.json bp-async-travel-france). Pass: travel case PASS (left, arrived, saved, back home, save loads). v0.2.0: with destroypark on, dpParked is 0 after the trip (released at travel).",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france"
+        ]
+      },
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-rc-soak-v015pkg",
+      "note": "Release check part f (soak): 45 min natural play, no repro. Pass: no crash, 0 watchdog lines, stuck Sims within docs/TESTING.md. Read: hitch-ab.ts <tag> (docs/161 real-hitch counts, p99, max), freeze-report.ts <tag>, VAS growth = the row's commit/private/largest free MB before -> after (v0.1.4 bp-rel-play as reference). TODO(session reuse): save at the end in the same load and record the save folder MB (today: the matrix saves give save size, not after 45 min of play).",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 45
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 60
+    }
+  ]
+}

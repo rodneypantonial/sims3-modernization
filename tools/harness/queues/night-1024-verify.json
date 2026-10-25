@@ -1,0 +1,97 @@
+{
+  "note": "Night 2026-10-24, list item 1 (docs/data/results/2026-10-24-night-plan.md): first verify runs of today's ts3fixes switches (all default off): switch on in the repro's on arms, counters must rise, no crash. Correctness only (noiseCheck off), fail fast: short loop rules. Builds: asi game-copy/ts3native.asi.0344 (0.36.38, counters v109, has native JobYield) + master build/ts3fixes.package (no fixesBuild pin; package of 2026-10-24 16:54 PHT has every switch below). stuckcheckown first (SV cause run 2026-10-24: every >= 500 ms freeze is the stuck check planning sync in StuckCheckDrain). safespotyield is left out: ip-school-run-safespot-loop has <school child N> placeholders, no saved list_sims data names the IP school children, and the harness cannot fill them at runtime. A FAIL here voids the same switch's A/B in night-1024-ab.json (no per-job dependency in queue.ts).",
+  "jobs": [
+    {
+      "id": "bp-stuckcheckown-verify",
+      "note": "Verify stuckcheckown (docs/163 §7, RouteBackoff.cs OwnerTaskStart): route-stuckcheck-own-loop on its own rule (ABBA, 40 armed stuck checks per arm, cap 10 min). Pass: no crash, stuckcheckown_sent and ownertask_started rise, 0 watchdog lines. Read: on arms no 'sync plan ... reason Foreign' lines with a RunStuckCheckHelper stack; resets as in the off arms.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "RouteJobPhases.Enabled": 1, "RouteJobPhases.SyncPlans": 1, "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16 },
+      "run": { "profile": { "seed": 12345, "minutes": 11, "repro": "route-stuckcheck-own-loop", "fixesRequire": "stuckcheckown_sent>=1,ownertask_started>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-jobyield-verify",
+      "note": "job-yield-ab.json job 1 (docs/183) on asi.0344 (same sha256 as asi.jobyield) and master's ts3fixes (jobyield merged). Pass: no crash, 0 watchdog lines, jyBusy >= 1, jobyield_steps >= 1, jobyield_capped 0, no Sim stuck at the end. Read: 'route jobs: sim waited N ms ...' lines by site next to the hitch records (freeze-report.ts --min 300).",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "nativeRequire": "jyBusy>=1,watchdogs<=0",
+      "ini": { "RouteAsync.JobYield": 1, "RouteAsync.OwnJobWait": 1, "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16, "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "RouteJobPhases.Enabled": 1, "RouteJobPhases.HostSplit": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 10, "repro": "route-ownjob-yield-loop", "fixesOn": "jobyield", "fixesRequire": "jobyield_steps>=1,jobyield_capped<=0" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-seasonmarkercache-verify",
+      "note": "Verify seasonmarkercache (docs/74 §11 a): ip-world-dispose-loop, ABBA, 3 firings per arm, cap 8 min. Pass: no crash, no script errors, seasonmarkercache_seeds and _hits rise, _mismatches 0 (one mismatch turns the cache off: read its applied line).",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-IP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "seed": 12345, "minutes": 9, "repro": "ip-world-dispose-loop", "loopRule": { "until": { "perArm": 3 }, "maxMinutes": 8 }, "fixesRequire": "seasonmarkercache_seeds>=1,seasonmarkercache_hits>=1,seasonmarkercache_mismatches<=0" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-overwatchstuckslice-verify",
+      "note": "Verify overwatchstuckslice (docs/145 §12): bp-overwatch-stuckslice-loop, ABBA, 2 firings per arm, cap 10 min (release set held: overwatchchain on, overwatchspread off). Pass: no crash, no 'overwatchspread: ... failed' line, owstuck_runs and owstuck_slices rise.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "logForbid": { "overwatchspread: .* failed": 0 },
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "seed": 12345, "minutes": 11, "repro": "bp-overwatch-stuckslice-loop", "loopRule": { "until": { "perArm": 2 }, "maxMinutes": 10 }, "fixesRequire": "owstuck_runs>=1,owstuck_slices>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-drivertask-car-verify",
+      "note": "Verify drivertaskasync, car side (docs/163 §7): route-traffic-car-loop on its own rule (ABBA, 2 per arm, cap 8 min). Pass: no crash, drivertask_car_sent and ownertask_started rise. Read: on arms no 'reason Foreign' sync plan lines with a LiteDriver.Simulate stack; cars still drive.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16 },
+      "run": { "profile": { "seed": 12345, "minutes": 9, "repro": "route-traffic-car-loop", "fixesRequire": "drivertask_car_sent>=1,ownertask_started>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-drivertask-boat-verify",
+      "note": "Verify drivertaskasync, rider side: ip-boat-houseboat-return-loop on its own rule (ABBA, 2 per arm, cap 12 min). Pass: no crash, drivertask_rider_sent rises. drivertask_rider_sent 0 = the Sim.Parent == boat test is wrong (inferred in the source): read a live stack, do not A/B. Both Sims end on the houseboat.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-IP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16 },
+      "run": { "profile": { "seed": 12345, "minutes": 13, "repro": "ip-boat-houseboat-return-loop", "fixesRequire": "drivertask_rider_sent>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-disposespread-verify",
+      "note": "Verify disposespread (docs/74 §12): bp-disposespread-burst-loop (stress-labelled), ABBA, 2 firings per arm, cap 8 min. Pass: no crash, disposespread_queued and _destroyed rise, _full 0. Read: max_wait_ticks <= 16, one Sim Dispose per iteration on arms (HitchAttr lines), no visible pop-in.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "seed": 12345, "minutes": 9, "repro": "bp-disposespread-burst-loop", "loopRule": { "until": { "perArm": 2 }, "maxMinutes": 8 }, "fixesRequire": "disposespread_queued>=1,disposespread_destroyed>=1,disposespread_full<=0" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    }
+  ]
+}

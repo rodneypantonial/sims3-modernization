@@ -40,6 +40,10 @@ static SaveFinalFn g_saveFinalOrig = (SaveFinalFn)(uintptr_t)SAVE_FINAL;
 static bool Join(wchar_t* out, const wchar_t* dir, const wchar_t* name) {
     return swprintf_s(out, MAX_PATH, L"%s\\%s", dir, name) > 0;
 }
+static const wchar_t* Tail(const wchar_t* p) {  // last path part: log lines carry no user folders (docs/188)
+    const wchar_t* s = p ? wcsrchr(p, L'\\') : NULL;
+    return s ? s + 1 : p;
+}
 static bool IsDots(const wchar_t* n) { return !wcscmp(n, L".") || !wcscmp(n, L".."); }
 
 static bool RemoveTree(const wchar_t* dir) {
@@ -90,6 +94,8 @@ static bool FlushPath(const wchar_t* path) {  // as the game's FUN_00AAF4B0 does
     return ok;
 }
 
+static volatile LONG g_sjFiles, g_sjKb;  // the backup worker's copy so far (read by the [UserDiag] save watchdog)
+
 // CopyFileW keeps the write time, so a good copy hashes like its source.
 static bool CopyTree(const wchar_t* src, const wchar_t* dst) {
     wchar_t pat[MAX_PATH], s[MAX_PATH], d[MAX_PATH];
@@ -102,7 +108,11 @@ static bool CopyTree(const wchar_t* src, const wchar_t* dst) {
         if (IsDots(fd.cFileName)) continue;
         if (!Join(s, src, fd.cFileName) || !Join(d, dst, fd.cFileName)) { ok = false; break; }
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ok = CopyTree(s, d);
-        else ok = CopyFileW(s, d, TRUE) && FlushPath(d);
+        else {
+            ok = CopyFileW(s, d, TRUE) && FlushPath(d);
+            InterlockedIncrement(&g_sjFiles);  // [UserDiag] watchdog progress
+            InterlockedExchangeAdd(&g_sjKb, (LONG)((((u64)fd.nFileSizeHigh << 32) | fd.nFileSizeLow) >> 10));
+        }
     } while (ok && FindNextFileW(h, &fd));
     FindClose(h);
     return ok;
@@ -134,7 +144,10 @@ static void SaveTimesReset() {
 
 // rtsites.cpp RT_SAVE entry: the first Save_WritePackage entry on the saving thread during a save
 static void SaveGateEnter(DWORD tid) {
-    if (g_saveTid && (DWORD)g_saveTid == tid && g_st.gateIn < 0) g_st.gateIn = UsSince(g_st.t0);
+    if (g_saveTid && (DWORD)g_saveTid == tid && g_st.gateIn < 0) {
+        g_st.gateIn = UsSince(g_st.t0);
+        UdPhase("write: route gate (deferred footprints, running route job), header");
+    }
 }
 static void SaveSpanEnd() {  // entry of backup, copy or final: the package write is over
     if (g_st.spanEnd < 0) g_st.spanEnd = UsSince(g_st.t0);
@@ -168,6 +181,7 @@ static bool TreeHashOf(const wchar_t* dir, u64* h, u64* bytes) {
 }
 
 static DWORD WINAPI SaveJobMain(LPVOID) {
+    CeRec(CE_SAVE, 0);  // docs/186 §8
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     u64 h1, b1, h2, b2;
@@ -176,6 +190,7 @@ static DWORD WINAPI SaveJobMain(LPVOID) {
               TreeHashOf(g_sj.tmp, &h2, &b2) && h2 == g_sj.hash && b2 == g_sj.bytes;
     g_sj.us = UsSince(t0);
     InterlockedExchange(&g_sj.ok, ok ? 1 : 0);
+    CeRec(CE_SAVE, 1, ok);
     return 0;
 }
 
@@ -209,7 +224,9 @@ static bool SaveJobPaths(const u8* info) {
 
 static void SaveJobDiscard() {  // wait for the worker and drop its copy
     if (!g_sjActive) return;
+    UdWait("the backup worker (copy not used)");
     WaitForSingleObject(g_sj.thread, INFINITE);
+    UdWait(NULL);
     CloseHandle(g_sj.thread);
     g_sjActive = false;
     RemoveTree(g_sj.tmp);
@@ -219,6 +236,7 @@ static void SaveJobStart(const u8* info) {
     SaveJobDiscard();
     if (!SaveJobPaths(info) || !TreeHashOf(g_sj.src, &g_sj.hash, &g_sj.bytes)) return;
     g_sj.ok = 0;
+    g_sjFiles = g_sjKb = 0;
     g_sj.thread = CreateThread(NULL, 256 * 1024, SaveJobMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (!g_sj.thread) return;
     g_sjActive = true;
@@ -229,7 +247,9 @@ static void SaveJobStart(const u8* info) {
 static bool SaveJobPromote(const wchar_t* name) {
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    UdWait("the backup worker's copy of the old save");
     WaitForSingleObject(g_sj.thread, INFINITE);
+    UdWait(NULL);
     g_st.wait = UsSince(t0);
     CloseHandle(g_sj.thread);
     g_sjActive = false;
@@ -249,8 +269,9 @@ static bool SaveJobPromote(const wchar_t* name) {
     if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) DeleteFileW(g_sj.bak);
     for (int i = 0; i < 10 && GetFileAttributesW(g_sj.bak) != INVALID_FILE_ATTRIBUTES; i++)
         if (!RemoveTree(g_sj.bak) && i < 9) Sleep(500);
+    CeRec(CE_SAVE, 4);
     if (GetFileAttributesW(g_sj.bak) != INVALID_FILE_ATTRIBUTES || !MoveFileExW(g_sj.tmp, g_sj.bak, MOVEFILE_WRITE_THROUGH)) {
-        Log("save backup: rename to %ls failed (err %lu), game copies", g_sj.bak, GetLastError());
+        Log("save backup: rename to %ls failed (err %lu), game copies", Tail(g_sj.bak), GetLastError());
         RemoveTree(g_sj.tmp);
         return false;
     }
@@ -284,7 +305,7 @@ static void __cdecl SaveFlushHook(const wchar_t* path) {
 }
 
 static void FlushFail(const wchar_t* path, const char* step) {  // worker thread; first few per save only
-    if (g_fj.fails++ < 4) Log("save flush FAIL %s (err %lu): %ls", step, GetLastError(), path);
+    if (g_fj.fails++ < 4) Log("save flush FAIL %s (err %lu): %ls", step, GetLastError(), Tail(path));
 }
 
 static void FlushTree(const wchar_t* path) {  // as FUN_00AAF4B0, but shared so readers are not refused
@@ -318,6 +339,7 @@ static void FlushTree(const wchar_t* path) {  // as FUN_00AAF4B0, but shared so 
 
 static DWORD WINAPI FlushMain(LPVOID) {
     FlushJob& f = g_fj;
+    CeRec(CE_SAVE, 2);  // docs/186 §8
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     for (int i = 0; i < f.n; i++) FlushTree(f.path[i]);
@@ -325,6 +347,7 @@ static DWORD WINAPI FlushMain(LPVOID) {
     Ts3nCounters& k = ts3native_counters;
     k.flushLastMs = f.us / 1000;
     k.flushFails += f.fails;
+    CeRec(CE_SAVE, 3, (DWORD)f.files);
     Log("save flush: %d calls, %ld files flushed on the worker, %ld fails, %ld ms", f.n, f.files, f.fails, f.us / 1000);
     return 0;
 }
@@ -335,7 +358,9 @@ static void FlushWait() {  // sim thread: before anything that deletes, copies o
     if (WaitForSingleObject(f.thread, 0) == WAIT_TIMEOUT) {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
+        UdWait("the previous save's flush worker");
         WaitForSingleObject(f.thread, INFINITE);
+        UdWait(NULL);
         Ts3nCounters& k = ts3native_counters;
         InterlockedIncrement(&k.flushWaits);
         k.flushWaitMs += UsSince(t0) / 1000;
@@ -362,6 +387,7 @@ static DWORD __fastcall LoadCopyHook(void* lsm, void*, const wchar_t* name, int 
 
 // --- call-site hooks (sim thread) ---
 static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSave, int traveling) {
+    UdSaveStart(travelSave, traveling);  // [UserDiag] "save: start" + watchdog, before anything here can wait
     FlushWait();  // the previous save's flushes, before this save touches any save folder
     SaveTimesReset();
     g_fj.n = 0;
@@ -372,6 +398,7 @@ static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSav
     const LONG dc0 = k.compressDirectCalls, dms0 = k.compressDirectMs, dmb0 = k.compressDirectMB, cm0 = k.compressCommits;
     const LONG ch0 = k.cacheHits, cmi0 = k.cacheMisses, chm0 = k.cacheHitMB, cx0 = k.cacheMismatches, chs0 = k.cacheHashMs;
     const DWORD r = g_saveGameOrig(lsm, NULL, info, travelSave, traveling);
+    UdPhase("after the game's save (our flush and log)");
     InterlockedExchange(&g_saveTid, outerTid);
     SaveWriteResolve(g_st);
     if (k.compressReady)
@@ -397,14 +424,18 @@ static DWORD __fastcall SaveGameHook(void* lsm, void*, void* info, int travelSav
         r, travelSave, traveling, total / 1000, SavePhaseText(bi, 16, g_st.infoEnd), SaveWriteText(bw, 40, g_st),
         SavePhaseText(bb, 16, g_st.backup), g_st.job > 0 ? "worker copy" : g_st.job < 0 ? "fallback" : "game",
         g_st.job ? g_sj.us / 1000 : 0, g_st.wait / 1000, SavePhaseText(bc, 16, g_st.copy), SavePhaseText(bf, 16, g_st.final), deferred);
+    UdSaveEnd(r);
     return r;
 }
 
 static bool FlushDeferOn() { return ts3native_counters.flushReady && ts3native_counters.flushMode == 1; }
 
 static DWORD __fastcall SaveInfoHook(void* lsm, void*, u8* info, int keepId, int travelSave) {
+    UdPhase("info (save paths)");
     const DWORD r = g_saveInfoOrig(lsm, NULL, info, keepId, travelSave);
     g_st.infoEnd = UsSince(g_st.t0);
+    UdInfoDir(info);
+    UdPhase("write (package)");
     if (r == 0 && !(travelSave & 0xFF) && ts3native_counters.saveMode == 1) SaveJobStart(info);
     return r;
 }
@@ -420,6 +451,7 @@ static DWORD __fastcall SaveWriteHook(void* lsm, void*, void* pkg, int flag) {
 
 static DWORD __fastcall SaveBackupHook(void* lsm, void*, const wchar_t* name) {
     SaveSpanEnd();
+    UdPhase("backup (old save to .backup)");
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     DWORD r;
@@ -438,6 +470,7 @@ static DWORD __fastcall SaveBackupHook(void* lsm, void*, const wchar_t* name) {
 
 static DWORD __fastcall SaveCopyHook(void* lsm, void*, const wchar_t* name, int dir) {
     SaveSpanEnd();
+    UdPhase("copy (new save into place)");
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     g_fj.defer = FlushDeferOn();
@@ -449,6 +482,7 @@ static DWORD __fastcall SaveCopyHook(void* lsm, void*, const wchar_t* name, int 
 
 static DWORD __fastcall SaveFinalHook(void* info, void*) {
     SaveSpanEnd();
+    UdPhase("final (marker file, folder flush)");
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
     g_fj.defer = FlushDeferOn();

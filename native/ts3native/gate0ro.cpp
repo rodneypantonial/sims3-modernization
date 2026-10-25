@@ -77,6 +77,7 @@ static LONG G0Gate(const DWORD* slot, DWORD tid, bool job, const u8** pred) {
     }
     *pred = e;
     InterlockedIncrement(&k.g0Served);
+    MwSkip(MW_G0);
     return RG_REL_G0QL | RG_REL_G0CMP;
 }
 

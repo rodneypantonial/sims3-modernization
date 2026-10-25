@@ -68,6 +68,8 @@ function blankIter() {
            taskObjects: 0, oneShot: 0, threaded: 0, animSacs: 0, animPose: 0, locomotion: 0, publish: 0,
            // ts3native [HitchAttr] (docs/96 §9): sim waits for the route job, ms by class, count, longest and its key
            rtLock: 0, rtOtherLock: 0, rtJob: 0, rtPlanWait: 0, rtWaits: 0, rtMaxMs: 0, rtMaxKey: '',
+           // [MovedWaits] (docs/178 §9): waits a read-only skip moved (same job), MW_* switch mask, longest and its key
+           rtMovedMs: 0, rtMovedN: 0, rtMovedSw: 0, rtMovedMaxMs: 0, rtMovedKey: '',
            // [HitchAttr] Holders=1 (docs/165 §8): sim/main lock waits >= MinMs with the holder (lockHoldersFrame), longest first
            holders: [] };
 }
@@ -135,7 +137,7 @@ function lotStreamSecond() {
 // ts3native [HitchAttr] frame block `ts3native_hitchattr` (hitchattr.cpp HaFrame): version, enabled, us[4], n, maxUs, maxKey.
 // Read and zeroed at each iteration boundary on the sim thread, the only thread that writes it, so no clock fit is needed.
 let haBlock = null; // undefined once known absent
-const HA_ZERO = new ArrayBuffer(28);
+const HA_ZERO = new ArrayBuffer(28), HA_ZERO2 = new ArrayBuffer(48);
 function hitchAttrFrame() {
   if (haBlock === undefined) return;
   if (haBlock === null) {
@@ -145,11 +147,16 @@ function hitchAttrFrame() {
     console.log(`[ts3prof] ts3native hitch attribution ${haBlock ? 'read every iteration' : 'not active (rt* fields stay 0)'}`);
     if (haBlock === undefined) return;
   }
-  const v = new Int32Array(haBlock.add(8).readByteArray(28));
-  haBlock.add(8).writeByteArray(HA_ZERO);
+  const len = haBlock.readS32() >= 2 ? 48 : 28; // v2 (docs/178 §9 [MovedWaits]): mvUs, mvN, mvSw, mvMaxUs, mvKey
+  const v = new Int32Array(haBlock.add(8).readByteArray(len));
+  haBlock.add(8).writeByteArray(len === 48 ? HA_ZERO2 : HA_ZERO);
   iter.rtLock += v[0] / 1000; iter.rtOtherLock += v[1] / 1000; iter.rtJob += v[2] / 1000; iter.rtPlanWait += v[3] / 1000;
   iter.rtWaits += v[4];
   if (v[5] / 1000 > iter.rtMaxMs) { iter.rtMaxMs = v[5] / 1000; iter.rtMaxKey = '0x' + (v[6] >>> 0).toString(16).padStart(8, '0'); }
+  if (len === 48 && v[8]) {
+    iter.rtMovedMs += v[7] / 1000; iter.rtMovedN += v[8]; iter.rtMovedSw |= v[9];
+    if (v[10] / 1000 >= iter.rtMovedMaxMs) { iter.rtMovedMaxMs = v[10] / 1000; iter.rtMovedKey = '0x' + (v[11] >>> 0).toString(16).padStart(8, '0'); }
+  }
 }
 // ts3native [HitchAttr] Holders=1 ring `ts3native_lockholders` (hitchattr.cpp HoRing, docs/165 §8 gap #2): version, enabled,
 // minUs, head, 64 x 32-byte records {seq, waiter 0 sim / 1 main, lock, us, holderTid, holderRole, holderSite, waiterSite}.

@@ -1,0 +1,145 @@
+{
+  "note": "docs/189 §4 phase 4 (branch p6/phase4, counters v128, asi = native/ts3native/out-p6p4/ts3native.asi copied to game-copy/ts3native.asi.p6p4 first; NOT RUN, draft for the integration build). Phase 4 arm = [RouteSnap] TakeForeign (native routesnapforeign: FallbackAsync foreign Route.Plan STARTs armed take-only, FbJobCapMs kept in the clone run) + JobYield (native jobyield + ts3fixes patch jobyield). Job 1 FAIL (crash, watchdog, m2Off > 0, a foreign long-job line uncapped past ~400 ms): stop, fix, do not run job 2. VerifyEvery 0 in both: foreign jobs never verify anyway; own-job verify belongs to the P6 correctness jobs.",
+  "jobs": [
+    {
+      "id": "sv-p6fb-verify",
+      "note": "Day correctness, SV, sv-crowd-foreign-loop with the phase-4 trio forced on (TakeForeign=1, JobYield=1, fixes jobyield) for every firing. Pass: no crash, 0 watchdog lines, p6fbArmed >= 1, p6fbTaken >= 1, m2Off 0, fbjdReady 7. Read: p6fbTaken / p6fbArmed (take rate of foreign jobs), p6fbGame, p6fbCloneDl vs p6fbCloneCapped, every route async: long job ... foreign line capped near 300 ms, jyBusy / jobyield_steps, sw* lines, stuck log.",
+      "asi": "game-copy/ts3native.asi.p6p4",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 128,
+      "nativeRequire": "p6fbArmed>=1,p6fbTaken>=1,m2Off<=0,fbjdReady>=7,g0wWatchdog<=0",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 0,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteSnap.ShadowWorld": "SV",
+        "RouteSnap.TakeForeign": 1,
+        "RouteAsync.JobYield": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345,
+          "repro": "sv-crowd-foreign-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 4
+            },
+            "maxMinutes": 10
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread,jobyield",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-p6fb-ab",
+      "note": "Clean-night timing, SV, one load: sv-crowd-foreign-p6-loop ABBA (off,on,on,off) until 10 firings per arm (fixed before the run), arms flip routesnapforeign + jobyield + patch jobyield; ini installs both (TakeForeign=0 / JobYield=0 as start values, the arm step decides). Read hitch-ab.ts --scenario (>= 300 / >= 1000 ms counts, p99 / p99.9 / max per arm; go if >= 1 s counts on SV drop), wait-ab.ts (sim waits behind foreign jobs: fbjcWaitHist, fbjcSimWaitMaxUs), [MovedWaits] lines, p6fb* per arm. Machine load line must be ok.",
+      "asi": "game-copy/ts3native.asi.p6p4",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 128,
+      "nativeRequire": "fbjdReady>=7,g0wWatchdog<=0,m2Off<=0",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Kinds": 4,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 9,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 0,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteSnap.ShadowWorld": "SV",
+        "RouteSnap.TakeForeign": 0,
+        "RouteAsync.JobYield": 0,
+        "MovedWaits.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 47,
+          "repro": "sv-crowd-foreign-p6-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 10,
+              "minFirings": 10
+            },
+            "maxMinutes": 45
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

@@ -11,3 +11,5 @@ node tools/harness/night-run.ts --queue-list a.json,b.json --resume  # continue 
 ```
 
 Rules: timing queues only when the machine is quiet (Rodney says when he uses it); Spotify is stopped automatically; other apps close only with `--close` on Rodney's go (needs lock or idle). Correctness tests may run in the daytime when they unblock work. Check progress with the ts3-status skill.
+
+Main session: run this and decide only; hand log reads, triage and fixes to a sub-agent (AGENTS.md, "Main agent orchestrates").

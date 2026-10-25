@@ -2,6 +2,37 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.1.6 (2026-10-25)
+
+Hotfix: `ts3native.log` now tells us what we need to help you. No gameplay changes: same fixes, same settings as v0.1.5.
+
+**You don't need to change any settings.** Install the two files below and play. Technical notes: [v0.1.6 developer notes](https://github.com/rodneypantonial/sims3-modernization/blob/v0.1.6/docs/release-notes/v0.1.6-dev.md).
+
+### Download
+
+- `ts3native-v0.1.6.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` and replace the old ones. You still need an ASI loader, as before (see "How to install" below).
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one. Both files must come from this release.
+
+### What's new
+
+- **Better problem reports.** If something goes wrong (a save that never finishes, a freeze, a slowdown), close the game and send us `Game\Bin\ts3native.log` (GitHub issue or Discord) before you start the game again: every start writes a new one. The log now shows:
+  - which version you run and how the game is installed, which other plugins sit next to the game (for example DXVK or other ASI mods), your graphics card, and how many mods and script mods you have (file names only);
+  - how big your world is when it loads (lots, households, Sims, objects) and which of our settings are on;
+  - for every save, each step of the save as it happens, what it waits for, and a line every 5 seconds while a save is still running. A save that gets stuck now shows where.
+- **Privacy.** The log holds file names, never the folders they sit in, your Windows user name or your PC's name. Nothing is sent anywhere: you decide whether to send the file. Open it in Notepad to check before you send it.
+- **Logging only.** It writes a few lines at start, when a world loads and when you save; nothing per frame. To switch it off, set `Enabled=0` under `[UserDiag]` in `ts3native.ini`.
+
+### Good to know
+
+- Your saves are not changed by installing or removing this release. As always, back up your saves first.
+- Upgrading from v0.1.5: replace both files. The new `ts3native.ini` has the same settings as v0.1.5 plus the `[UserDiag]` section; a v0.1.5 `ts3native.ini` also works (the new log lines are then on by default).
+
+### Tested
+
+On the final build, because the new log lines sit on the save path: saving in many situations and reloading the saves in Bridgeport and Isla Paradiso (10 of 10 save tests passed; one earlier Isla Paradiso run failed its reload check on a game script error in a wedding clean-up that our mods do not touch, and the rerun passed); one save in an Isla Paradiso game 13 days in (passed); a trip to France and back with saves on the way (passed); saving twice, reloading and saving again with Apex Radiance v2.15.5 installed (passed, all saves finished in about 8 seconds); short play in Isla Paradiso (passed); the new log lines checked for content and privacy (passed). 8 of 9 test runs passed, no crashes.
+
+Not tested: autosaves with NRaas Saver. Our test could not make Saver autosave during the run, so this case says nothing either way; the fix of the test is in progress. v0.1.6 changes nothing in how saving works, only what the log writes about it.
+
 ## v0.1.5 (2026-10-24)
 
 Fewer freezes in the situations that caused the worst ones: Sims getting off boats, crowds, the game's 3 AM stuck-Sim check, NRaas Overwatch's nightly clean-up and NRaas ErrorTrap right after loading. Plus a crash fix. In everyday play it feels about the same as v0.1.4, which already had far fewer hitches than the unmodded game (in Isla Paradiso about 20 instead of about 94 freezes of a third of a second or longer per 10 minutes).

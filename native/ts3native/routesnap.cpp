@@ -494,7 +494,7 @@ static void SnLotRemovePending(DWORD lo, DWORD hi) {
             qs[i--] = qs[--n];
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
-    for (int i = 0; i < n; i++) { g_snFlushDeferred(qs[i], NULL); InterlockedIncrement(&k.lrPendFlush); }  // outside __try: the game's code
+    for (int i = 0; i < n; i++) { g_snFlushDeferred(qs[i], NULL); InterlockedIncrement(&k.lrPendFlush); CeRec(CE_LOTRM_FLUSH, (DWORD)(uintptr_t)qs[i], lo, hi); }  // outside __try: the game's code
 }
 
 // 0.31.5 [LotRemoveGuard] (docs/94 §21.12): the same guard without [RouteSnap]. The precondition is the game's own (a remove

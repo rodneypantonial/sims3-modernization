@@ -1,0 +1,41 @@
+{
+  "note": "[IdleCheckRO] (docs/178 §8): gate-12 GetIfPresent waits (key 0x62FB74) of IC_RouteManager_IsOkToIdleAtCurrentLocation answered read-only during async route jobs. asi.t6g12 = ts3native 0.36.49 (counters v120: T6 v118 + IdleCheckRO v119 + [MovedWaits] v120; built in native/ts3native/out-t6g12 on branch worktree-agent-a7c5e1e917a63be21), release ini defaults + the switch. Job 1 is a correctness check (shadow compares with no job, Mode 0 until the loop's native_set arms it; day ok, no timing read). Job 2 is the forced ABBA loop ip-idlecheck-crowd-loop (native_set idlecheckro), timing: clean night only. Read: node tools/harness/hitch-ab.ts and node tools/harness/wait-ab.ts (key 0x62FB74 by arm; absorbers 0x755990 = the IC's own obstacle query, steering 0x85FE10, gate 0 0x62EF7A, 0x62F782; docs/152 §1 conservation), ikOnward vs ikPass for the share that can move to 0x755990. The ABBA A/B (ip-idlecheckro-ab) was dropped 2026-10-24 for the in-place moved-wait log (docs/178 §9.4).",
+  "jobs": [
+    {
+      "id": "ip-idlecheckro-shadow",
+      "note": "Correctness: [IdleCheckRO] Shadow=1 Mode=0 on the forced loop (ikShadow stays 1 in every arm: each no-job idle-check lookup runs the game's 0x62FB60 then the read-only lookup, compared; the loop's native_set sets ikMode 1 on the on arms, so in-job answers and the 0x625140 runs under QL are exercised too). Pass: no crash, 0 watchdog lines, ikShadowRuns >= 20, ikShadowMismatch 0, ikTaken >= 1; ikFb_2 (table shape) small. ABBA until 3 firings per arm, cap 20 min. Day job (no timing read). In-place moved-wait read (docs/178 §9, [MovedWaits] on): per switch the \"moved waits <switch>\" line (skips, jobs, moved n/ms, delay, avoided <= = skip -> job end, net <= = avoided - moved) and \"next takers\" (keys 0x75AA16 gather, 0x75A64C, 0x755990, 0x62FB74, 0x760BFF, 0x05000000, 0x85FE10, 0x62EF7A, 0x755FDD, 0x833593 with fb / gv / ik shares); hitches.jsonl rtMovedMs / rtMovedKey per frame. These replace the separate A/B: net <= ~0 = the wait only moved (no A/B needed, cover the next taker); a clear net gain goes into the next IP bundle A/B (natural A/B only where hitches). IdleCheckRO first suspect [verified]: ikOnward answers go on to the IC's own obstacle query 0x82EDB0 at 0x75598B (key 0x755990), the only +0x918 taker left in the IC after the site.",
+      "asi": "game-copy/ts3native.asi.t6g12",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 120,
+      "nativeRequire": "ikReady>=1,ikShadowRuns>=20,ikShadowMismatch<=0,mwReady>=1,mwSkips_1>=1",
+      "ini": {
+        "IdleCheckRO.Enabled": 1,
+        "IdleCheckRO.Mode": 0,
+        "IdleCheckRO.Shadow": 1,
+        "HitchAttr.Enabled": 1,
+        "MovedWaits.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 20,
+          "repro": "ip-idlecheck-crowd-loop",
+          "noSamplers": true,
+          "loopRule": {
+            "until": {
+              "perArm": 3
+            },
+            "maxMinutes": 20
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 34,
+      "logRequire": {
+        "OK   moved waits": 1
+      }
+    }
+  ]
+}

@@ -571,6 +571,144 @@ static const double kCycHz = 2.3e9;  // i7-11800H base clock; the cycle count ti
 static inline LONG64 CycNow() { ULONG64 c = 0; QueryThreadCycleTime(GetCurrentThread(), &c); return (LONG64)c; }
 static double CycMsPerS(LONG64 cyc, double secs) { return secs > 0 ? cyc / (kCycHz / 1000.0) / secs : 0.0; }
 static volatile LONG64 g_cyCut, g_cyCopy, g_cyRebase, g_cyApply, g_cyRpAudit;  // sim cut, copies (any thread), rebases, consumer holds, replay audit
+// 0.36.59 (docs/189 phase 2, [RouteSnap] StaleLot, stalelot.cpp): the write ring. Every g_spWrites increment SpNote makes
+// (always under SpLockD, so ring writers are serialized) also stores (seq, lot key or world-level kind) in slot seq & mask.
+// Seqlock per slot: seq = 0, then the fields, then seq = s; a reader takes a slot only if seq reads s before and after the
+// fields. An increment anywhere else (replay.cpp lock-key cover, fault injection, tests) leaves its slot without its seq:
+// readers see "unknown" and treat the job as stale (conservative by construction).
+enum { SLW_LOT, SLW_EPOCH, SLW_LOTEV, SLW_R, SLW_GRID, SLW_TILES, SLW_GBUILD, SLW_FP, SLW_W6, SLW_TABLE, SLW_LOT0, SLW_NOKEY, SLW_N };
+// 0.36.62 (docs/189 §9, [RouteSnap] StaleLotFp): flag on a world-level kind = "covered": the entry changes no routing input
+// of its own, its effects are the nested leaves' own ring entries (W1 / W2 by Q lot, LOTREMOVEFP by lot, grid add, high-cost
+// marks): W6 polygon caches, the footprint-object leaves FPCORE / PRIVATE / FPREMOVE, and a grid remove whose key no live
+// grid record holds. The FpLots verdict skips covered entries; the phase-2 verdict (kind & 0xFF) keeps them world-level
+static const LONG SLW_COV = 0x100;
+static const LONG kStlRing = 1024;  // ~0.5 s at the measured ~1,600-1,900 writes/s; a wider window is stale (overflow)
+struct StlEnt { volatile LONG seq; LONG kind; DWORD lo, hi; };
+static StlEnt g_stlRing[kStlRing];
+static volatile LONG g_stlOn;  // ring kept ([RouteSnap] StaleLot != 0 at load)
+
+// [RouteSnap] StaleLotFp grid set (SpLockD held): the canonical keys min(k, ~k) of every record in the live footprint grid
+// P+0xDC (docs/107 §10: 32-byte cells, buckets +4, count +8, records chained at +0x48, key +0/+4), re-read at a grid remove
+// when a grid add, a matched remove, an epoch / lot event or another planner made it old. 0x62D9F0(lotId, key) erases only
+// records whose key is key or ~key (and whose lot id is lotId) [verified, docs/107 §10.2]; a remove whose canonical key is
+// not in the set finds nothing and writes nothing. Lot ids are ignored here: a superset, so never a missed remove. Every grid
+// insert is 0x636BF0 (docs/156 row 5), a hooked leaf, and every walk runs at a remove's entry under +0x918, so no grid writer
+// runs during it. Off (fallback world-level) on: set over its cap, a faulting walk, the tripwire below
+static const int kFplGrid = 8192;
+static u64 g_fplGrid[kFplGrid];
+static int g_fplGridN = -1;           // -1 = old: re-read at the next remove; -2 = over the cap until the next add
+static DWORD g_fplGridP;              // the planner the set was read from
+static volatile LONG g_fplOn;         // ini StaleLotFp: grid check on
+static volatile LONG g_fplGridOff;    // tripwire: a no-op-judged remove reached 0x670510
+static __declspec(thread) bool t_fplNoop;  // this thread's last leaf was a grid remove judged a no-op
+static int __cdecl FplCmp(const void* a, const void* b) { const u64 x = *(const u64*)a, y = *(const u64*)b; return x < y ? -1 : x > y; }
+static inline u64 FplCanon(u64 k) { return k < ~k ? k : ~k; }
+static bool FplGridRead(const u8* p) {
+    int n = 0;
+    __try {
+        const u8* cb = (const u8*)(uintptr_t)SpD(p + 0xDC);
+        const u8* ce = (const u8*)(uintptr_t)SpD(p + 0xE0);
+        const DWORD cells = cb && ce > cb ? (DWORD)(ce - cb) / 32 : 0;
+        if (cells > (1u << 20)) return false;
+        for (DWORD c = 0; c < cells; c++) {
+            const u8* cell = cb + c * 32;
+            const DWORD* bk = (const DWORD*)(uintptr_t)SpD(cell + 4);
+            const DWORD nb = SpD(cell + 8);
+            if (nb > (1u << 20) || (!bk && nb)) return false;  // a cell the walk cannot read: no set (fallback, world-level), never a subset
+            if (!bk) continue;
+            for (DWORD i = 0; i < nb; i++)
+                for (const u8* rec = (const u8*)(uintptr_t)bk[i]; rec; rec = (const u8*)(uintptr_t)SpD(rec + 0x48)) {
+                    if (n == kFplGrid) { g_fplGridN = -2; return true; }
+                    g_fplGrid[n++] = FplCanon(((u64)SpD(rec + 4) << 32) | SpD(rec));
+                }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    qsort(g_fplGrid, n, sizeof(u64), FplCmp);
+    g_fplGridN = n;
+    return true;
+}
+// grid remove 0x62D9F0 (thiscall P; args 1-2 lot id, 3-4 key): 0 = no live record has this key (covered), 1 = a real
+// remove, 2 = not judged (off, fallback: world-level)
+static int FplGridNoop(const DWORD* slot) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!g_fplOn) return 2;
+    if (g_fplGridOff) { k.fplFb[2]++; return 2; }
+    const DWORD p = slot[-2];  // ecx = P
+    if (!p) { k.fplFb[1]++; return 2; }
+    if (p != g_fplGridP && g_fplGridN != -2) g_fplGridN = -1;
+    if (g_fplGridN == -1) {
+        g_fplGridP = p;
+        k.fplGridReads++;
+        if (!FplGridRead((const u8*)(uintptr_t)p)) { g_fplGridN = -1; k.fplFb[1]++; return 2; }
+        if (g_fplGridN >= 0) k.fplGridRecs = g_fplGridN;
+    }
+    if (g_fplGridN < 0 || p != g_fplGridP) { k.fplFb[0]++; return 2; }
+    const u64 c = FplCanon(((u64)slot[4] << 32) | slot[3]);
+    if (bsearch(&c, g_fplGrid, g_fplGridN, sizeof(u64), FplCmp)) { g_fplGridN = -1; return 1; }  // a real remove: re-read next time
+    return 0;
+}
+
+static void SpWrite(int kind, unsigned __int64 key) {  // SpLockD held
+    const LONG s = InterlockedIncrement(&g_spWrites);
+    if (!g_stlOn) return;
+    if (kind == SLW_LOT && !key) kind = SLW_LOT0;  // open ground / lot 0: world-level (Q-less map nodes, no lot to name)
+    StlEnt& e = g_stlRing[s & (kStlRing - 1)];
+    InterlockedExchange(&e.seq, 0);
+    e.kind = kind, e.lo = (DWORD)key, e.hi = (DWORD)(key >> 32);
+    InterlockedExchange(&e.seq, s);
+    InterlockedIncrement(&ts3native_counters.stlWrites[kind == SLW_LOT ? 0 : 1]);
+}
+// a writer leaf's lot (lot-keyed kinds) or its world-level kind. Lot-keyed only where the lot is an argument or the Q's own
+// key: W1 / W2 Q+0x18/+0x1C (as replay.cpp RpQKey), W3 args 1-2, W4 the lot graph's key +0/+4, LOTREMOVEFP args 1-2.
+// Everything else changes state outside one lot's Q / graph (R, grid, blocked-node map, tiles, footprint objects and their
+// polygon caches, the lot table): world-level, as the global rule
+static int StlClassify(const SnSite& s, const DWORD* slot, unsigned __int64* key) {
+    *key = 0;
+    __try {
+        switch (s.leaf) {
+            case SL_W1: case SL_W2: {
+                const u8* q = (const u8*)(uintptr_t)slot[-2];
+                if (q) *key = ((unsigned __int64)SpD(q + 0x1C) << 32) | SpD(q + 0x18);
+                return SLW_LOT;
+            }
+            case SL_W3: *key = ((unsigned __int64)slot[2] << 32) | slot[1]; return SLW_LOT;
+            case SL_W4: {
+                const u8* g = (const u8*)(uintptr_t)slot[1];
+                if (g) *key = ((unsigned __int64)SpD(g + 4) << 32) | SpD(g);
+                return SLW_LOT;
+            }
+            case SL_LOTREMOVEFP: return SnLot(s, slot, key) ? SLW_LOT : SLW_NOKEY;
+            case SL_W5: case SL_REMOVELOT: return SLW_TABLE;
+            // covered (SLW_COV, docs/189 §9): no routing input of their own; nested leaves carry the lot or world kind
+            case SL_W6:
+                // integration review (0.36.63): W6g (0x80CB40 / 0x806770, DoorRouting_AddDoorPortals) creates door portal
+                // objects lazily [docs/105]: a routing input with no proven nested lot-keyed leaf, so it stays world-level
+                if (s.at == 0x0080CB40 || s.at == 0x00806770) return SLW_W6;
+                ts3native_counters.fplCov[0]++;
+                return SLW_W6 | SLW_COV;
+            case SL_FPCORE: case SL_PRIVATE: case SL_FPREMOVE:
+                ts3native_counters.fplCov[s.leaf == SL_FPCORE ? 1 : s.leaf == SL_PRIVATE ? 2 : 3]++;
+                return SLW_FP | SLW_COV;
+            case SL_APPLYLOT: case SL_RESTORE: return SLW_R;
+            case SL_GRIDADD: g_fplGridN = -1; return SLW_GRID;  // the set is old after an add (an over-cap set is re-tried)
+            case SL_GRIDREMOVE: {
+                const int g = FplGridNoop(slot);
+                t_fplNoop = g == 0;
+                ts3native_counters.fplGrid[g]++;
+                return g == 0 ? SLW_GRID | SLW_COV : SLW_GRID;
+            }
+            case SL_MARKREMOVE:  // inside 0x62D9F0 once per record it found: a no-op-judged remove got here = the key rule is wrong
+                if (t_fplNoop && !InterlockedExchange(&g_fplGridOff, 1)) {
+                    ts3native_counters.fplGridTrip++;
+                    Log("RouteSnap StaleLotFp: a grid remove judged a no-op reached 0x670510: grid check off for the session (docs/189 §9)");
+                }
+                return SLW_TILES;
+            case SL_HIGHCOST: return SLW_TILES;
+            case SL_GBUILD: case SL_BLEND: return SLW_GBUILD;
+            default: return SLW_NOKEY;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { *key = 0; return SLW_NOKEY; }
+}
 // from SnEnter (routesnap.cpp), every thread, before P1's own counting returns
 static void SpNote(int i, const DWORD* slot) {
     if (!g_spOn) return;
@@ -580,10 +718,18 @@ static void SpNote(int i, const DWORD* slot) {
     __try {
         if (i == SN_WEV) {
             const DWORD id = slot[2];
-            if (id == 5 || id == 7 || id == 9 || id == 0x0A) g_spD.flags |= SPD_EPOCH, InterlockedIncrement(&g_spWrites);
-            else if (id >= 0x0D && id <= 0x10) g_spD.flags |= SPD_LOTS | SPD_GRID, InterlockedIncrement(&g_spWrites);
+            if (id == 5 || id == 7 || id == 9 || id == 0x0A) g_spD.flags |= SPD_EPOCH, SpWrite(SLW_EPOCH, 0);
+            else if (id >= 0x0D && id <= 0x10) g_spD.flags |= SPD_LOTS | SPD_GRID, SpWrite(SLW_LOTEV, 0);
+            if ((id == 5 || id == 7 || id == 9 || (id >= 0x0A && id <= 0x10))) g_fplGridN = -1;
         } else if (i != SN_FPEN) {
-            if (s.leaf != SL_SRC) InterlockedIncrement(&g_spWrites);
+            if (s.leaf != SL_SRC) {
+                // the no-op flag lives from the grid remove to the next grid add / remove: a nested leaf inside 0x62D9F0
+                // (high cost, a W6 fill) before its 0x670510 must not blind the tripwire (integration review, 0.36.63)
+                if (s.leaf == SL_GRIDADD) t_fplNoop = false;
+                unsigned __int64 lk;
+                const int kind = StlClassify(s, slot, &lk);
+                SpWrite(kind, lk);
+            }
             unsigned __int64 key;
             switch (s.leaf) {
                 case SL_W1: case SL_W2: case SL_W3: case SL_W4: case SL_W5: case SL_W6: case SL_FPCORE: case SL_PRIVATE:

@@ -1,0 +1,19 @@
+{
+ "_doc": "Known EA script errors that fire without our code (ScriptError_*.xml / ErrorTrap). Matched by exception type + the top stack frames in order (suffix of 'Namespace.Type:Method'); a stack with any frame outside EA game script (Sims3.Gameplay*, Sims3.SimIFace, Sims3.UI, ScriptCore, System) never matches. Matched errors are reported as 'known EA error <id> (ignored)' and counted, never dropped. Loader + matcher: tools/harness/known-script-errors.ts.",
+ "errors": [
+  {
+   "id": "ea-wedding-cleanup-nre",
+   "exception": "System.NullReferenceException",
+   "frames": ["WeddingCeremony:CleanUp", "Situation:Exit", "WeddingCeremony+RouteToWeddingArch:OnRouteFailed"],
+   "why": "EA WeddingCeremony.CleanUp dereferences null when the route to the wedding arch fails (InteractionQueue DeQueue -> CleanupInteraction -> OnRouteFailed -> Situation.Exit), lot Sparkling Sands in the Baseline-IP save; fires at random after load, with and without our fixes [verified: 27 probe-out runs from 2026-10-12, before the v0.1.6 hotfix; all frames EA]",
+   "first_seen": "2026-10-12",
+   "evidence": [
+    "probe-out/20261012-174026/events.jsonl",
+    "probe-out/20261025-034427/events.jsonl",
+    "<Documents>/Electronic Arts/The Sims 3/ScriptError_*__10-25-2026__08-31-19__FED401E4.xml",
+    "<Documents>/Electronic Arts/The Sims 3/ScriptError_*__10-25-2026__03-46-48__BB72BED7.xml",
+    "hotfix gate job ip-hf-matrix reload case, 2026-10-25"
+   ]
+  }
+ ]
+}
