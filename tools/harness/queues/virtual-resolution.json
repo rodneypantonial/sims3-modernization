@@ -1,10 +1,10 @@
 {
-  "note": "docs/133: one probe job that checks the static virtual-call resolution live (Mono confidence after the release). Before running: build ts3native with the docs/131 glue site table (set CL=/DTS3N_VCSITES4, native\\ts3native\\build.cmd out\\vres, clear CL) and copy out\\vres\\ts3native.asi to game-copy/ts3native.asi.vres in the main checkout; release ini defaults from the repo ini, only [ProbeSnap] on. After: generate the static edges once (node tools/autonomy-virtual-closure.ts --asm game-copy/assemblies --edges probe-out/vres-edges.json > probe-out/vres-closure.csv), then node tools/virtual-resolution-report.ts --vres probe-out/profile/<tag>-vres.json --edges probe-out/vres-edges.json --log <row.nativeLog>.",
+  "note": "docs/133: one probe job that checks the static virtual-call resolution live (Mono confidence after the release). asi: game-copy/ts3native.asi.vres4 = master 0.36.62 built with /DTS3N_VCSITES4 (510 glue sites after the 2026-10-25 hook-rule regen, builds.json; the 0.36.3 ts3native.asi.vres stays parked for the 2026-10-20 record); release ini defaults from the repo ini, only [ProbeSnap] on. After: generate the static edges once (node tools/autonomy-virtual-closure.ts --asm game-copy/assemblies --edges probe-out/vres-edges.json > probe-out/vres-closure.csv), then node tools/virtual-resolution-report.ts --vres probe-out/profile/<tag>-vres.json --edges probe-out/vres-edges.json --log <row.nativeLog> --table native/ts3native/vcallsites4.h.",
   "jobs": [
     {
       "id": "bp-vres-native-only",
-      "note": "docs/133 §5 bisect step 1 / docs/51 §189: the int3 half of bp-vres alone. Same asi, save, seed and ini as bp-vres ([ProbeSnap] on, 514 vcallsites4 sites), no /vcache snapshot, stack samplers off (noSamplers, as --vres did) and no stutter profiler session (ProbeSnap implies --no-prof). Pass: no crash, no FAIL line, 0 watchdog lines; ts3native.log 'vcall window' lines up to the end of the run with faults 0, skipped 0; /native after the run vcReady 1, vcSites 514, vcFaults 0, vcSkipped 0. A crash here is the sampler's (triage the fault site against vcallsites4.h).",
-      "asi": "game-copy/ts3native.asi.vres",
+      "note": "docs/133 §5 bisect step 1 / docs/51 §189: the int3 half of bp-vres alone. Same asi, save, seed and ini as bp-vres ([ProbeSnap] on, 510 vcallsites4 sites), no /vcache snapshot, stack samplers off (noSamplers, as --vres did) and no stutter profiler session (ProbeSnap implies --no-prof). Pass: no crash, no FAIL line, 0 watchdog lines; ts3native.log 'vcall window' lines up to the end of the run with faults 0, skipped 0; /native after the run vcReady 1, vcSites 510, vcFaults 0, vcSkipped 0. A crash here is the sampler's (triage the fault site against vcallsites4.h).",
+      "asi": "game-copy/ts3native.asi.vres4",
       "save": "Baseline-BP-Spring",
       "ini": {
         "ProbeSnap.Enabled": 1
@@ -25,7 +25,7 @@
     {
       "id": "bp-vres-snapshot-dry",
       "note": "docs/133 §5 bisect step 2 / docs/51 §189: the agent half alone, in dry mode. Same asi and save, [ProbeSnap] off (no int3 site armed), profile vresDry 500: every 60 s one /vcache snapshot of at most 500 methods (class caches of corlib + SimIFace, no call / target following), in tick-aligned slices of <= 20 ms per call; no stutter profiler session (noProf), samplers off. Pass: no crash, no FAIL line; 9 '[vres] snapshot' lines plus the last one that wrote <tag>-vres.json, each 'done' with 'slowest call' < 1000 ms, 'tick-aligned' > 0 and no 'budget hit'; the agent heartbeat never stalls (game-alive quiet). Then the full snapshot (drop vresDry, set vres) before bp-vres again.",
-      "asi": "game-copy/ts3native.asi.vres",
+      "asi": "game-copy/ts3native.asi.vres4",
       "save": "Baseline-BP-Spring",
       "ini": {
         "ProbeSnap.Enabled": 0
@@ -46,8 +46,8 @@
     },
     {
       "id": "bp-vres",
-      "note": "Run only after bp-vres-native-only and bp-vres-snapshot-dry pass (docs/133 §5). docs/133 / docs/51 §186.Release defaults (repo ts3native.ini, no experiment switched on) plus two read-only probes for one 10 min seeded profile: (1) managed: the probe agent snapshots every mint callvirt inline cache it can reach (/vcache, profile.vres) every 60 s and once at the end into <tag>-vres.json, no hook; (2) native: [ProbeSnap] int3 sampler (16 hits per site per 30 s window, armed after 90 s) on the 514 docs/131 glue sites that are unresolved, partial or caller-typed (vcallsites4.h, asi built with /DTS3N_VCSITES4). Stutter profiler and stack samplers off (--no-prof for ProbeSnap, --vres skips the samplers). ~15 min with load. Pass: no crash, 0 watchdog lines; /native counters after the run vcReady 1, vcSites 514, vcFaults 0, vcSkipped 0 (and 'vcall window' lines in ts3native.log); profile log shows 9 [vres] snapshots and the last one wrote <tag>-vres.json, no FAIL line, no 'budget hit' snapshot; the report prints > 0 live sites in closure methods and > 0 armed glue sites fired. Verdicts (not pass/fail of the run): managed soundness gaps = typed-miss + cha-miss pairs (expected 0; each one is a closure miss to fix in managed-callgraph.ts); I-131-12 = 0 new pairs at fired caller-typed sites.",
-      "asi": "game-copy/ts3native.asi.vres",
+      "note": "Run only after bp-vres-native-only and bp-vres-snapshot-dry pass (docs/133 §5). docs/133 / docs/51 §186.Release defaults (repo ts3native.ini, no experiment switched on) plus two read-only probes for one 10 min seeded profile: (1) managed: the probe agent snapshots every mint callvirt inline cache it can reach (/vcache, profile.vres) every 60 s and once at the end into <tag>-vres.json, no hook; (2) native: [ProbeSnap] int3 sampler (16 hits per site per 30 s window, armed after 90 s) on the 510 docs/131 glue sites that are unresolved, partial or caller-typed (vcallsites4.h, asi built with /DTS3N_VCSITES4). Stutter profiler and stack samplers off (--no-prof for ProbeSnap, --vres skips the samplers). ~15 min with load. Pass: no crash, 0 watchdog lines; /native counters after the run vcReady 1, vcSites 510, vcFaults 0, vcSkipped 0 (and 'vcall window' lines in ts3native.log); profile log shows 9 [vres] snapshots and the last one wrote <tag>-vres.json, no FAIL line, no 'budget hit' snapshot; the report prints > 0 live sites in closure methods and > 0 armed glue sites fired. Verdicts (not pass/fail of the run): managed soundness gaps = typed-miss + cha-miss pairs (expected 0; each one is a closure miss to fix in managed-callgraph.ts); I-131-12 = 0 new pairs at fired caller-typed sites.",
+      "asi": "game-copy/ts3native.asi.vres4",
       "save": "Baseline-BP-Spring",
       "ini": {
         "ProbeSnap.Enabled": 1

@@ -43,6 +43,7 @@ static void __cdecl RcLeaveThunk();
 
 static void RcRelease(RcFrame& f, int why) {  // why: -1 the caller returned, 0 before a wait, 1 stale
     if (!f.owed) return;
+    CeRec(CE_RC_REL, (DWORD)(uintptr_t)f.lock, (DWORD)f.owed, (DWORD)why);  // docs/186 §8
     Ts3nCounters& k = ts3native_counters;
     if (why >= 0) InterlockedExchangeAdd(&k.rcDropped[why], f.owed);
     for (; f.owed; f.owed--) g_rcRel(f.lock, NULL);
@@ -96,6 +97,7 @@ static int __cdecl RcRel(const DWORD* ebpQ, void* lock) {
         if (AsyncBusy()) InterlockedIncrement(&k.rcBusyAtOpen);
     }
     t.f[i].owed++;
+    CeRec(CE_RC_HOLD, (DWORD)(uintptr_t)lock, (DWORD)(uintptr_t)slot, (DWORD)t.f[i].owed);  // docs/186 §8
     InterlockedIncrement(&k.rcDeferred);
     InterlockedIncrement(&k.rcByFn[fn]);
     return 1;

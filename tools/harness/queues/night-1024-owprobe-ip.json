@@ -1,0 +1,29 @@
+{
+ "note": "owprobeplans repro on Isla Paradiso (SV failed: no sea lot).",
+ "jobs": [
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 25,
+   "id": "ip-owprobeplans-ab",
+   "note": "Rerun of sv-owprobeplans-ab on IP (SV has no sea lot). owprobeplans (docs/163 §8-9): EA stuck-check probe plans hidden from NRaas Overwatch Stuck Check V2. Needs Overwatch installed with V2 on and the log line StuckCheck.OnPostPlan: ok. Pass: no crash; on arm: Overwatch resets from probe plans 0, owprobeplans_hidden >= 1; off arm shows the Overwatch counting (reset or rising count).",
+   "save": "Baseline-IP-Spring",
+   "ini": {
+    "CrashForensics.Enabled": 1,
+    "HitchAttr.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 15,
+     "repro": "owprobeplans-stuckcheck-ab",
+     "fixesRequire": "owprobeplans_runs>=1"
+    }
+   }
+  }
+ ]
+}

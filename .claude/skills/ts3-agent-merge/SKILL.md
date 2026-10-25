@@ -8,13 +8,14 @@ Before an agent adds counters (tell agents to do this in their brief):
 ```
 node tools/registry.ts reserve native <n-int32> --by <who> --what <text>   # ts3native counters version + offsets
 node tools/registry.ts reserve fixes <n-slots> --by <who> --what <text>    # ts3fixes counter slots
+node tools/registry.ts reserve ledger --for "<topic>"                     # next docs/51 `## N.` section, before writing one
 ```
 
 Merge an agent branch into master:
 ```
 git merge-tree --write-tree --quiet HEAD <branch> >/dev/null && echo clean
 git merge --no-edit <branch>        # on conflict:
-node tools/agent-merge.cjs          # resolves counters arrays, switch lists, tuning lines, registry rows, ledger §
+node tools/agent-merge.cjs          # resolves counters arrays, switch lists, tuning lines, registry rows, ledger § (incoming renumbered past reserved §, refs fixed)
 ```
 Rebuild what changed (native: build.cmd + selftest; ts3fixes: node tools/setup/build-fixes.ts; agent: node tools/harness/build-agent.ts) before committing the merge. Never merge tools/harness/*.ts while a queue job is starting.
 

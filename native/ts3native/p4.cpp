@@ -951,14 +951,14 @@ static int P4TieN(const DWORD* starts, const DWORD* goals) {
 // --- compare (docs/94 §13 rules, exact under G) ---
 static bool P4Eq(float a, float b) { return *(const DWORD*)&a == *(const DWORD*)&b; }
 // tieN: P4TieN of the job; a goal index that differs inside the tie set is M1 goal-tie (nothing else compared, §13)
-static int P4Classify(const P4Ans& g, const P4Ans& c, LONG nr, int tieN, bool stale = false) {
+static int P4Classify(const P4Ans& g, const P4Ans& c, LONG nr, int tieN, bool stale = false, bool count = true) {
     const int mg = P4MType(g), mc = P4MType(c);
     const DWORD sg = g.nPaths ? g.p[0].status : 0, sc = c.nPaths ? c.p[0].status : 0;
     int cls;
     if (mg != mc || sg != sc) cls = 3;
     else if (mg != 1) cls = 0;
     else if (g.out2 != c.out2 && tieN && g.out2 >= 0 && c.out2 >= 0 && g.out2 < tieN && c.out2 < tieN) {
-        if (!nr && !stale) InterlockedIncrement(&ts3native_counters.snM1Tie);  // with nr / stale it is M5 below
+        if (!nr && !stale && count) InterlockedIncrement(&ts3native_counters.snM1Tie);  // with nr / stale it is M5 below
         cls = 1;
     } else {
         bool m2 = g.out1 != c.out1 || g.out2 != c.out2 || g.nPaths != c.nPaths, m1 = false;
@@ -1042,22 +1042,200 @@ static void P4PutAns(const P4Ans& a) {
 // points and their xz bounds. Taken from the clone (still held) and from the live map under one +0x918 try, so the next live
 // M2 names the obstacle the two sides disagree on. Off the sim thread; only on a final M2/M3 (rare).
 static const int kP4ObMax = 48;
-struct P4Ob { unsigned __int64 id, h; DWORD vt, f34, fme, lv, inv; float b[4]; };
-struct P4ObSet { int n, more; P4Ob o[kP4ObMax]; };  // more: entries past kP4ObMax; -1 no map, -2 fault in the walk
+// 0.36.50 (docs/94 §24.8.4): a footprint's polygon points (hash of every valid level h, per level lh, invalid-level mask, xz
+// bounds as stored) and its lock-key set fp+0x20 (docs/156 U1), shared by the obstacle sets and the M2 lot dump
+struct P4Fp { unsigned __int64 h, lh[8]; DWORD inv; float b[4]; };
+static void P4FpPoints(const u8* fp, DWORD lv, P4Fp& o) {
+    o.h = 0xCBF29CE484222325ull, o.inv = 0;
+    o.b[0] = o.b[1] = 1e30f, o.b[2] = o.b[3] = -1e30f;
+    const u8* lc = RpP(fp + 0x38);
+    for (DWORD l = 0; l < lv && l < 8; l++) {
+        o.lh[l] = 0;
+        const u8* e = lc + l * 0x24;
+        if (!e[0x20]) { o.inv |= 1u << l; continue; }
+        o.lh[l] = 0xCBF29CE484222325ull;
+        const u8* pe = RpP(e + 4);
+        for (const u8* r = RpP(e); r && r < pe && r < RpP(e) + 16 * 4096; r += 16) {
+            const float* v = (const float*)RpP(r);
+            const float* ve = (const float*)RpP(r + 4);
+            o.h = RpMix(RpMix(o.h, l), (DWORD)(ve - v));
+            for (int j = 0; v && v + 2 <= ve && j < 4096; v += 2, j++) {
+                o.h = RpMix(RpMix(o.h, *(const DWORD*)v), *(const DWORD*)(v + 1));
+                o.lh[l] = RpMix(RpMix(o.lh[l], *(const DWORD*)v), *(const DWORD*)(v + 1));
+                if (v[0] < o.b[0]) o.b[0] = v[0];
+                if (v[1] < o.b[1]) o.b[1] = v[1];
+                if (v[0] > o.b[2]) o.b[2] = v[0];
+                if (v[1] > o.b[3]) o.b[3] = v[1];
+            }
+        }
+    }
+}
+// lock-key set (0x30 bytes: id lists +0x08/+0x0C and +0x1C/+0x20, 8-byte ids; p4clone.cpp PcKeyCopy). A clone footprint holds
+// our copy, whose 16-byte header names the live set it stood for at the cut (origin): clone origin != live set = the live
+// footprint got another set after the cut (docs/156 U1). na: the child class has no +0x20
+static const DWORD kP4KeyMagic = 0x4B455953;  // = kPcKeyMagic (p4clone.cpp is included after this file)
+struct P4Key { DWORD set, origin, nA, nB; unsigned __int64 h; bool na; };
+static void P4KeyOf(const u8* fp, const RpCls* c, P4Key& k) {
+    memset(&k, 0, sizeof(k));
+    if (c->child) { k.na = true; return; }
+    const u8* set = RpP(fp + 0x20);
+    k.set = k.origin = (DWORD)(uintptr_t)set;
+    if (!set) return;
+    if (RpD(set - 12) == kP4KeyMagic) k.origin = RpD(set - 16);
+    k.h = 0xCBF29CE484222325ull;
+    for (DWORD off = 8; off <= 0x1C; off += 0x14) {
+        const u8* b = RpP(set + off);
+        const u8* e = RpP(set + off + 4);
+        const DWORD n = b && e > b && (DWORD)(e - b) <= 4096 * 8 ? (DWORD)(e - b) / 8 : 0;
+        (off == 8 ? k.nA : k.nB) = n;
+        k.h = RpMix(k.h, n);
+        for (DWORD i = 0; i < n; i++) k.h = RpMix(RpMix(k.h, RpD(b + 8 * i)), RpD(b + 8 * i + 4));
+    }
+}
+static bool P4KeyDiff(const P4Key& c, const P4Key& l) { return c.na != l.na || !c.set != !l.set || c.nA != l.nA || c.nB != l.nB || c.h != l.h; }
+static void P4PutKey(const P4Key& k) {
+    if (k.na) P4Put("null");
+    else P4Put("[\"0x%08lX\",\"0x%08lX\",%lu,%lu,\"0x%016llX\"]", k.set, k.origin, k.nA, k.nB, k.h);
+}
+// I-94-521 (docs/94 §24.8.4): the lot whose level-0 quadtree bounds hold world (x, z) deepest (the lots' 2 m skirts overlap).
+// Lot table P+0x4C/+0x50 as P4DdWalk; lot graph g = node + 0x10, world -> lot rows g+0xA0 (translation row g+0xD0, as
+// 0x62ED40; 0x62ECD0 is the inverse at g+0xE0), Q vector g+0x74/+0x78, Q bounds +4..+0x10 lot-local (docs/98 §15.7).
+// Callers hold a __try.
+// g_p4LaWhy: why the last P4LotAt found no lot (0.36.51, docs/94 §24.10: g1dump found no lot for an in-room start): lots
+// walked, lots with a Q, the nearest lot by the lot-frame test (its signed inside distance, lot-frame point, Q bounds and
+// side +0x38), and how many lots hold the point when the Q bounds are read as world coordinates instead.
+// 0.36.54 (docs/94 §24.12): the Q vector is indexed by level - g+0x40 and a slot may be NULL (RoomGraph_NodeFor 0x6320D0
+// checks both); 0.36.51 took slot 0 only, so a lot with g+0x40 < 0 and no Q at that lowest level read as "no Q" (g1dump2:
+// 56 of 82 lots, the in-room start's lot among them [inferred]). P4LotAt now takes the level-0 slot, else the first
+// non-NULL one; slot0Null counts the lots the old rule missed. lot[]: every lot walked (key, g+0x40, slots, non-NULL mask,
+// raw +0x74/+0x78, byte +0x8C, world -> lot translation g+0xD0/+0xD8, the point in its frame), logged once per side.
+static const int kLaLots = 128;
+struct P4LaLot { unsigned __int64 key; int base, nSlots; DWORD mask, v74, v78; BYTE f8c, used; float tx, tz, lx, lz; };
+struct P4LaWhy { int st, lots, withQ, worldHits, slot0Null, qSlot; float bestD, lx, lz, qb[4], side; unsigned __int64 key; P4LaLot lot[kLaLots]; };
+static const u8* P4LotQ(const u8* g, int* slot, bool* slot0Null) {  // the level-0 Q of lot graph g (as 0x6320D0), else the first set
+    const u8* b = RpP(g + 0x74);
+    const u8* e = RpP(g + 0x78);
+    const int n = b && e > b ? (int)((e - b) / 4) : 0, i0 = -(int)RpD(g + 0x40);
+    *slot0Null = n > 0 && !RpP(b);
+    if (i0 >= 0 && i0 < n && RpP(b + 4 * i0)) return *slot = i0, RpP(b + 4 * i0);
+    for (int i = 0; i < n && i < 64; i++)
+        if (RpP(b + 4 * i)) return *slot = i, RpP(b + 4 * i);
+    return NULL;
+}
+static P4LaWhy g_p4LaWhy;
+static const u8* P4LotAt(const u8* world, float x, float z, unsigned __int64* key) {
+    P4LaWhy& w = g_p4LaWhy;
+    memset(&w, 0, sizeof(w));
+    w.bestD = -1e30f;
+    const u8* P = world ? RpP(world + 0x95C) : NULL;
+    const DWORD* bk = P ? (const DWORD*)(uintptr_t)RpD(P + 0x4C) : NULL;
+    const DWORD nb = P ? RpD(P + 0x50) : 0;
+    if (!bk || nb > (1u << 20)) { w.st = !P ? 1 : 2; return NULL; }  // 1 no lot table, 2 no buckets
+    const DWORD sentinel = bk[nb];
+    const u8* best = NULL;
+    float bestD = -1.0f;
+    int n = 0;
+    for (DWORD i = 0; i < nb; i++)
+        for (const u8* nd = (const u8*)(uintptr_t)bk[i]; nd && (DWORD)(uintptr_t)nd != sentinel && n < 4096; nd = RpP(nd + 0x190), n++) {
+            w.lots++;
+            const u8* g = nd + 0x10;
+            const float* m = (const float*)(g + 0xA0);
+            const float lx = x * m[0] + z * m[8] + m[12], lz = x * m[2] + z * m[10] + m[14];
+            int slot = -1;
+            bool s0 = false;
+            const u8* q = P4LotQ(g, &slot, &s0);
+            if (w.lots <= kLaLots) {
+                P4LaLot& r = w.lot[w.lots - 1];
+                const u8* b = RpP(g + 0x74);
+                const u8* e = RpP(g + 0x78);
+                r.key = (unsigned __int64)RpD(nd + 4) << 32 | RpD(nd), r.base = (int)RpD(g + 0x40);
+                r.nSlots = b && e > b ? (int)((e - b) / 4) : 0, r.v74 = (DWORD)(uintptr_t)b, r.v78 = (DWORD)(uintptr_t)e, r.mask = 0;
+                for (int j = 0; j < r.nSlots && j < 32; j++) r.mask |= RpP(b + 4 * j) ? 1u << j : 0;
+                r.f8c = g[0x8C], r.used = 1, r.tx = m[12], r.tz = m[14], r.lx = lx, r.lz = lz;
+            }
+            if (!q) continue;
+            w.withQ++;
+            if (s0) w.slot0Null++;
+            const float* qb = (const float*)(q + 4);
+            float d = lx - qb[0];
+            if (qb[2] - lx < d) d = qb[2] - lx;
+            if (lz - qb[1] < d) d = lz - qb[1];
+            if (qb[3] - lz < d) d = qb[3] - lz;
+            if (x >= qb[0] && x <= qb[2] && z >= qb[1] && z <= qb[3]) w.worldHits++;
+            if (d > w.bestD) {
+                w.bestD = d, w.lx = lx, w.lz = lz, w.side = *(const float*)(q + 0x38);
+                memcpy(w.qb, qb, sizeof(w.qb));
+                w.key = (unsigned __int64)RpD(nd + 4) << 32 | RpD(nd);
+            }
+            if (d >= 0 && d > bestD) bestD = d, best = g, w.qSlot = slot, *key =(unsigned __int64)RpD(nd + 4) << 32 | RpD(nd);
+        }
+    w.st = best ? 0 : 3;  // 3 no lot holds the point
+    return best;
+}
+static void P4LaLog(unsigned long seq, const char* side) {
+    const P4LaWhy& w = g_p4LaWhy;
+    Log("P4 lot lookup plan %lu %s: no lot (why %d): lots %d, with Q %d, nearest 0x%016llX inside %.3f, lot-frame point (%.3f, %.3f), "
+        "Q bounds [%.3f,%.3f,%.3f,%.3f] side %.3f; lots holding the point in world-frame bounds %d; lots with slot 0 NULL %d",
+        seq, side, w.st, w.lots, w.withQ, w.key, w.bestD, w.lx, w.lz, w.qb[0], w.qb[1], w.qb[2], w.qb[3], w.side, w.worldHits, w.slot0Null);
+}
+static void P4LaTableLog(unsigned long seq, const char* side, const P4LaWhy& w) {  // once per side (the caller gates it)
+    Log("P4 lot table plan %lu %s: lots %d, with Q %d (slot 0 NULL %d), picked slot %d", seq, side, w.lots, w.withQ, w.slot0Null, w.qSlot);
+    for (int i = 0; i < w.lots && i < kLaLots; i++) {
+        const P4LaLot& r = w.lot[i];
+        Log("P4 lot table %s: 0x%016llX base %d slots %d mask 0x%lX v74 0x%08lX v78 0x%08lX f8c 0x%02X t (%.3f, %.3f) point (%.3f, %.3f)",
+            side, r.key, r.base, r.nSlots, r.mask, r.v74, r.v78, r.f8c, r.tx, r.tz, r.lx, r.lz);
+    }
+}
+static void P4BoxToLot(const u8* g, const float* w, float* l) {  // the world box's 4 corners through g+0xA0, then their bounds
+    const float* m = (const float*)(g + 0xA0);
+    for (int i = 0; i < 4; i++) {
+        const float x = w[i & 1 ? 2 : 0], z = w[i & 2 ? 3 : 1];
+        const float lx = x * m[0] + z * m[8] + m[12], lz = x * m[2] + z * m[10] + m[14];
+        if (!i || lx < l[0]) l[0] = lx;
+        if (!i || lz < l[1]) l[1] = lz;
+        if (!i || lx > l[2]) l[2] = lx;
+        if (!i || lz > l[3]) l[3] = lz;
+    }
+}
+static bool P4BoxHit(const float* b, const float* bx) { return !(b[0] > bx[2] || b[2] < bx[0] || b[1] > bx[3] || b[3] < bx[1]); }
+struct P4Ob { unsigned __int64 id, h; DWORD vt, f34, fme, lv, inv; float b[4]; char fr; P4Key k; };  // fr: 'w' world box, 'l' lot box
+struct P4ObSet {
+    int n, more;  // more: entries past kP4ObMax; -1 no map, -2 fault in the walk
+    P4Ob o[kP4ObMax];
+    int walked, nNear;  // 0.36.50 (docs/94 §24.8.4 step 1): footprints walked, and the 4 nearest by centre with no box filter
+    bool haveL;         // a lot holds the box centre: the box in its frame is lb
+    unsigned __int64 lot;
+    float lb[4], nearD[4];
+    P4Ob nearO[4];
+};
 static P4ObSet g_p4ObC, g_p4ObL;
 static float g_p4ObBox[4];        // x0, z0, x1, z1
 static int g_p4ObLive;            // 1 read under +0x918, 2 lock busy (no live set), 3 no live world
 static LONG g_p4ObW, g_p4ObUs;    // recorded writes since the live plan began; capture time
 static bool g_p4ObOn;             // the next P4Record carries "obst"
 static bool g_p4ObsOn = true;     // [RouteSnap] ShadowObst (default 1)
+static void P4ObNear(P4ObSet& s, const P4Ob& o, float d) {  // keeps the 4 smallest d, ascending
+    if (s.nNear == 4 && d >= s.nearD[3]) return;
+    int i = s.nNear < 4 ? s.nNear++ : 3;
+    for (; i > 0 && s.nearD[i - 1] > d; i--) s.nearO[i] = s.nearO[i - 1], s.nearD[i] = s.nearD[i - 1];
+    s.nearO[i] = o, s.nearD[i] = d;
+}
+// 0.36.50 (I-94-521, docs/94 §24.8.4): the 17 live "obst" blocks were all empty: the world box was compared with polygon
+// points held in another frame. A footprint is now listed when its points reach the world box ('w') or the box in the frame
+// of the lot that holds the box centre ('l'), so whichever frame the cache uses, the obstacles are found and the record says
+// which (TestP4LotDump: lot-local points, world box)
 static void P4ObWalk(const u8* world, P4ObSet& s) {  // world: a routing world (planner P at +0x95C)
-    s.n = s.more = 0;
+    s.n = s.more = s.walked = s.nNear = 0;
+    s.haveL = false, s.lot = 0;
     const float* bx = g_p4ObBox;
     __try {
         const u8* P = world ? RpP(world + 0x95C) : NULL;
         const u8* M = P ? RpP(P + 0x24) : NULL;
         const u8* const* lb = M ? (const u8* const*)(uintptr_t)RpD(M + 4) : NULL;
         if (!lb) { s.more = -1; return; }
+        const float cw[2] = {(bx[0] + bx[2]) * 0.5f, (bx[1] + bx[3]) * 0.5f};
+        if (const u8* g = P4LotAt(world, cw[0], cw[1], &s.lot)) P4BoxToLot(g, bx, s.lb), s.haveL = true;
+        const float cl[2] = {(s.lb[0] + s.lb[2]) * 0.5f, (s.lb[1] + s.lb[3]) * 0.5f};
         const DWORD mb = RpD(M + 8);
         DWORD seen = 0;
         for (DWORD i = 0; i < mb && i < (1u << 20); i++)
@@ -1069,26 +1247,22 @@ static void P4ObWalk(const u8* world, P4ObSet& s) {  // world: a routing world (
                 const DWORD lv = RpLevels(fp);
                 const u8* lc = RpP(fp + 0x38);
                 if (!lc || !lv || lv > 8) continue;
-                P4Ob o = {RpD(fp + 0x14) | (unsigned __int64)RpD(fp + 0x18) << 32, 0xCBF29CE484222325ull, RpD(fp),
-                          c->size > 0x34 ? RpD(fp + 0x34) : 0, RpD(f + 0x10), lv, 0, {1e30f, 1e30f, -1e30f, -1e30f}};
-                for (DWORD l = 0; l < lv; l++) {
-                    const u8* e = lc + l * 0x24;
-                    if (!e[0x20]) { o.inv |= 1u << l; continue; }
-                    const u8* pe = RpP(e + 4);
-                    for (const u8* r = RpP(e); r && r < pe && r < RpP(e) + 16 * 4096; r += 16) {
-                        const float* v = (const float*)RpP(r);
-                        const float* ve = (const float*)RpP(r + 4);
-                        o.h = RpMix(RpMix(o.h, l), (DWORD)(ve - v));
-                        for (int j = 0; v && v + 2 <= ve && j < 4096; v += 2, j++) {
-                            o.h = RpMix(RpMix(o.h, *(const DWORD*)v), *(const DWORD*)(v + 1));
-                            if (v[0] < o.b[0]) o.b[0] = v[0];
-                            if (v[1] < o.b[1]) o.b[1] = v[1];
-                            if (v[0] > o.b[2]) o.b[2] = v[0];
-                            if (v[1] > o.b[3]) o.b[3] = v[1];
-                        }
-                    }
+                P4Fp pt;
+                P4FpPoints(fp, lv, pt);
+                P4Ob o = {RpD(fp + 0x14) | (unsigned __int64)RpD(fp + 0x18) << 32, pt.h, RpD(fp), c->size > 0x34 ? RpD(fp + 0x34) : 0,
+                          RpD(f + 0x10), lv, pt.inv, {pt.b[0], pt.b[1], pt.b[2], pt.b[3]}, 0, {}};
+                s.walked++;
+                if (o.b[0] <= o.b[2]) {
+                    const float mx = (o.b[0] + o.b[2]) * 0.5f, mz = (o.b[1] + o.b[3]) * 0.5f;
+                    const float dw = (mx - cw[0]) * (mx - cw[0]) + (mz - cw[1]) * (mz - cw[1]);
+                    const float dl = s.haveL ? (mx - cl[0]) * (mx - cl[0]) + (mz - cl[1]) * (mz - cl[1]) : 1e30f;
+                    o.fr = dl < dw ? 'l' : 'w';
+                    P4ObNear(s, o, dl < dw ? dl : dw);
                 }
-                if (o.b[0] > bx[2] || o.b[2] < bx[0] || o.b[1] > bx[3] || o.b[3] < bx[1]) continue;  // no valid point near: skipped
+                const bool inW = P4BoxHit(o.b, bx), inL = s.haveL && P4BoxHit(o.b, s.lb);
+                if (!inW && !inL) continue;  // no valid point near in either frame: skipped
+                o.fr = inW ? 'w' : 'l';
+                P4KeyOf(fp, c, o.k);
                 bool dup = false;  // the same footprint through several FMEs (lots)
                 for (int j = 0; j < s.n && !dup; j++) dup = s.o[j].id == o.id && s.o[j].h == o.h && s.o[j].vt == o.vt;
                 if (dup) continue;
@@ -1135,6 +1309,29 @@ static void P4ObCapture(const P4Job& c, const void* cloneWorld) {
     g_p4ObUs = UsSince(t0);
     g_p4ObOn = true;
     InterlockedIncrement(&ts3native_counters.p4Obst);
+    // docs/94 §24.8.4 step 1: once per capture, how many footprints each side walked, which frame listed them, the 4 nearest
+    int fr[2][2] = {};
+    for (int s = 0; s < 2; s++) {
+        const P4ObSet& o = s ? g_p4ObL : g_p4ObC;
+        for (int i = 0; i < o.n; i++) fr[s][o.o[i].fr == 'l']++;
+    }
+    InterlockedExchangeAdd(&ts3native_counters.ldObW, fr[0][0] + fr[1][0]);
+    InterlockedExchangeAdd(&ts3native_counters.ldObL, fr[0][1] + fr[1][1]);
+    static volatile LONG logs;
+    if (InterlockedIncrement(&logs) > 16) return;
+    Log("P4 obst plan %lu: walked clone %d, live %d (%s); lot 0x%016llX, box [%.2f,%.2f,%.2f,%.2f] lot frame [%.2f,%.2f,%.2f,%.2f]; "
+        "listed clone %d (world %d, lot %d), live %d (world %d, lot %d)",
+        c.seq, g_p4ObC.walked, g_p4ObL.walked, g_p4ObLive == 1 ? "ok" : g_p4ObLive == 2 ? "busy" : "noworld", g_p4ObC.lot, g_p4ObBox[0],
+        g_p4ObBox[1], g_p4ObBox[2], g_p4ObBox[3], g_p4ObC.lb[0], g_p4ObC.lb[1], g_p4ObC.lb[2], g_p4ObC.lb[3], g_p4ObC.n, fr[0][0],
+        fr[0][1], g_p4ObL.n, fr[1][0], fr[1][1]);
+    for (int s = 0; s < 2; s++) {
+        const P4ObSet& o = s ? g_p4ObL : g_p4ObC;
+        for (int i = 0; i < o.nNear; i++) {
+            const P4Ob& n = o.nearO[i];
+            Log("P4 obst plan %lu: %s nearest %d: footprint 0x%llX vt 0x%08lX, %c-frame distance %.2f, bounds [%.3f,%.3f,%.3f,%.3f]",
+                c.seq, s ? "live" : "clone", i, n.id, n.vt, n.fr, sqrtf(o.nearD[i]), n.b[0], n.b[1], n.b[2], n.b[3]);
+        }
+    }
 }
 static void P4PutObSet(const P4ObSet& s) {
     P4Put("[");
@@ -1142,9 +1339,25 @@ static void P4PutObSet(const P4ObSet& s) {
         const P4Ob& o = s.o[i];
         P4Put("%s[\"0x%llX\",\"0x%08lX\",%lu,%lu,%lu,%lu,\"0x%016llX\",", i ? "," : "", o.id, o.vt, o.f34, o.fme, o.lv, o.inv, o.h);
         for (int j = 0; j < 4; j++) { if (j) P4Put(","); P4PutF(o.b[j]); }
+        P4Put(",\"%c\",", o.fr);  // 0.36.50: the frame that listed it, then fp+0x20 (docs/94 §24.8.4)
+        P4PutKey(o.k);
         P4Put("]");
     }
     P4Put("]");
+}
+static void P4PutObNear(const P4ObSet& s) {
+    P4Put("{\"walked\":%d,\"lot\":\"0x%016llX\",\"lbox\":", s.walked, s.lot);
+    if (!s.haveL) P4Put("null");
+    else { P4Put("["); for (int j = 0; j < 4; j++) { if (j) P4Put(","); P4PutF(s.lb[j]); } P4Put("]"); }
+    P4Put(",\"near\":[");
+    for (int i = 0; i < s.nNear; i++) {
+        const P4Ob& o = s.nearO[i];
+        P4Put("%s[\"0x%llX\",\"0x%08lX\",\"%c\",", i ? "," : "", o.id, o.vt, o.fr);
+        P4PutF(sqrtf(s.nearD[i]));
+        for (int j = 0; j < 4; j++) { P4Put(","); P4PutF(o.b[j]); }
+        P4Put("]");
+    }
+    P4Put("]}");
 }
 static void P4PutOb() {
     static const char* const kLive[4] = {"none", "ok", "busy", "noworld"};
@@ -1155,10 +1368,15 @@ static void P4PutOb() {
     P4PutObSet(g_p4ObC);
     P4Put(",\"live\":");
     P4PutObSet(g_p4ObL);
+    P4Put(",\"walkC\":");  // 0.36.50 (docs/94 §24.8.4 step 1)
+    P4PutObNear(g_p4ObC);
+    P4Put(",\"walkL\":");
+    P4PutObNear(g_p4ObL);
     P4Put("}");
 }
 
 #include "p4door.h"
+#include "p4lotdump.h"
 
 static void P4Record(const P4Job& c, const char* refused, LONG nr) {
     g_p4Len = 0;
@@ -1180,6 +1398,8 @@ static void P4Record(const P4Job& c, const char* refused, LONG nr) {
     if (refused) P4Put("null"); else P4PutAns(g_p4Copy);
     if (g_p4ObOn) P4PutOb();
     g_p4ObOn = false;
+    if (g_p4LdRec) P4PutLd();
+    g_p4LdRec = false;
     if (g_p4DdRec) P4PutDd(c);
     g_p4DdRec = false;
     P4Put("}\n");
@@ -1331,6 +1551,7 @@ static bool P4ShadowRun() {
     InterlockedIncrement(&k.snShadow);
     if (have && (cls == 2 || cls == 3) && g_p4ObsOn) P4ObCapture(c, cl.world);  // before the clone goes back
     if (have && cls < 4) P4DdCapture(c, cl.world, cls);
+    if (have && cls < 4) P4LdCapture(c, cl.world, cls);
     P4Record(c, why >= 0 ? kP4Ab[why] : NULL, nr);
     if (have) P4CloneRelease(&cl, rel, c.dirty, c.nDirty);
     if (rel & P4REL_WRAP) g_p4Work.wrap = 0;
@@ -1365,6 +1586,7 @@ static bool ApplyP4(const wchar_t* ini) {
     g_p4Kinds = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"Kinds", 15, ini), 0, 15);
     g_p4ObsOn = GetPrivateProfileIntW(L"RouteSnap", L"ShadowObst", 1, ini) != 0;
     ApplyP4Dd(ini);
+    ApplyP4Ld(ini);
     wchar_t tag[16];
     GetPrivateProfileStringW(L"RouteSnap", L"ShadowWorld", L"?", tag, 16, ini);
     for (int i = 0; i < 15; i++) {

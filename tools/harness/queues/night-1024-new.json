@@ -1,0 +1,150 @@
+{
+ "note": "Night 2026-10-24 add-on: first in-game runs of the fixes built this evening (all repros UNVERIFIED until this run). asi.p6f = ts3native 0.36.43 (master incl. DeferFootprint2 + DeferPrivateFp, [CrashForensics] on as a light tool, docs/157 §11.7); ts3fixes = master build (owprobeplans on by default). Correctness first; sv-deferfp2-alone-ab is the only timing job. sv-private-fp-loop left out: the private footprint is only the turn helper of horses, large animals and boats (docs/89 §15), so the SV Sim crowd does not exercise it. + sv-crowd-t1-ab (T1 FbJobDeadline hitch A/B, from clean-night-1024.json, never run).",
+ "jobs": [
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 25,
+   "id": "sv-owprobeplans-ab",
+   "note": "owprobeplans (docs/163 §8-9): EA stuck-check probe plans hidden from NRaas Overwatch Stuck Check V2. Needs Overwatch installed with V2 on and the log line StuckCheck.OnPostPlan: ok. Pass: no crash; on arm: Overwatch resets from probe plans 0, owprobeplans_hidden >= 1; off arm shows the Overwatch counting (reset or rising count).",
+   "save": "Baseline-SV-Spring",
+   "ini": {
+    "CrashForensics.Enabled": 1,
+    "HitchAttr.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 15,
+     "repro": "owprobeplans-stuckcheck-ab",
+     "fixesRequire": "owprobeplans_runs>=1"
+    }
+   }
+  },
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 25,
+   "id": "bp-owstucknotice-summary",
+   "note": "overwatchstucknotice (docs/145 §13): one summary notice instead of per-Sim Overwatch stuck notices. Pass: owstucknotice_held 4, owstucknotice_summaries 1, the 4 Sims reset or moved as with the switch off.",
+   "save": "Baseline-BP",
+   "ini": {
+    "CrashForensics.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 8,
+     "repro": "owstucknotice-summary",
+     "fixesOn": "overwatchstucknotice",
+     "fixesRequire": "owstucknotice_summaries>=1"
+    }
+   }
+  },
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 25,
+   "id": "bp-preplancb-order",
+   "note": "preplancb (docs/185 §5): AboutToPlanCallback before the async START, locked-door list kept. Arms: A routeasync 0 (vanilla order), B routeasync 1, C routeasync 1 + preplancb. Pass: no crash, preplancb_precalls >= 1; read each visitor at the locked door: A and C walk to the door and show the locked-door reaction, B may fail in place.",
+   "save": "Baseline-BP-Spring",
+   "ini": {
+    "CrashForensics.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 12,
+     "repro": "route-aboutplan-order",
+     "fixesRequire": "preplancb_precalls>=1"
+    }
+   }
+  },
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 45,
+   "id": "sv-deferfp2-alone-ab",
+   "note": "DeferFootprint2 alone (docs/89 §11): fixed-window ABBA, 4 firings per arm, timing A/B (timing verdict per docs/168 §10). Pass: no crash, 0 watchdog lines, fp2ApplyInJob 0, fp2FullPass 0, fp2AgeMaxMs < 300. Read with hitch-ab.ts and wait-ab.ts (does the wait move to 0x82D296 / destroy / gate 0?).",
+   "save": "Baseline-SV-Spring",
+   "ini": {
+    "Discourage.Enabled": 1,
+    "Discourage.DeferFootprint": 1,
+    "Discourage.DeferFootprint2": 1,
+    "Discourage.DeferPrivateFp": 0,
+    "HitchAttr.Enabled": 1,
+    "CrashForensics.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 32,
+     "repro": "sv-deferfp2-alone-loop",
+     "noSamplers": true
+    }
+   }
+  },
+  {
+   "id": "sv-crowd-t1-ab",
+   "note": "Forced repro A/B: sv-crowd-foreign-loop ABBA until 10 firings per arm (fixed before the run, docs/168), fbjobdeadline flipped (ini installs it, the arm step decides; FbJobCapMs 300 on both arms = today's world A* cap), cap 45 min. Pass: no crash, the OK line, 0 watchdog lines, fbjdSkip_0 >= 1 over the run, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm (hitch-ab.ts --scenario <tag>): iterations >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits), fbjcWaitHist / fbjcSimWaitMaxUs (sim waits behind foreign jobs), fbjdLong, 'route async: long job' capAt per arm; expected on arm: no foreign job much past ~300 ms + one in-flight cell A* frame, >= 1000 ms freezes behind foreign jobs gone (docs/178 T1 est. SV -3..-4 per 10 min).",
+   "asi": "game-copy/ts3native.asi.0338",
+   "save": "Baseline-SV-Spring",
+   "minCounters": 104,
+   "nativeRequire": "fbjdReady>=7,fbjdSkip_0>=1,g0wWatchdog<=0",
+   "logRequire": {
+    "OK   foreign job deadline": 1
+   },
+   "ini": {
+    "RouteAsync.FallbackAsync": 1,
+    "RouteAsync.M1Retry": 1,
+    "RouteAsync.SyncCapMs": 1000,
+    "RouteAsync.FbJobCapMs": 300,
+    "RouteAsync.FbJobDeadline": 1,
+    "RouteAsync.OwnJobWait": 1,
+    "RouteAsync.LogFallbackMs": 20,
+    "RouteAsync.LogFallbackStack": 16,
+    "HitchAttr.Enabled": 1,
+    "HitchAttr.Holders": 1,
+    "Harness.ForegroundRender": 1,
+    "RouteJobPhases.Enabled": 1,
+    "RouteJobPhases.SyncPlans": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 47,
+     "repro": "sv-crowd-foreign-loop",
+     "loopRule": {
+      "until": {
+       "perArm": 10,
+       "minFirings": 10
+      },
+      "maxMinutes": 45
+     },
+     "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+     "noSamplers": true
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 65
+  }
+ ]
+}

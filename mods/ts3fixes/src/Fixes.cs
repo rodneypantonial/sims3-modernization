@@ -50,6 +50,8 @@ namespace Ts3Fixes
             ApplyRouteBackoff();
             ApplyOverwatchStuck(false);
             ApplyOverwatchSpread(false);
+            ApplyOverwatchNotice(false);
+            ApplyOverwatchProbe(false);
             ApplyErrorTrapSpread(false);
             ApplyPortalAdaptorLeak();
             ApplyCasGrid();
@@ -120,12 +122,18 @@ namespace Ts3Fixes
         // [280-289] disposespread (DisposeSpread.cs, docs/74 §12): destroys queued / destroyed by our task / destroyed at once by a flush
         // (save, travel, build/buy) / game path taken (unsafe or not live) / most waiting / longest slice us / already destroyed at
         // their turn / queue full (game path) / dropped (world unload, Destroy threw) / longest wait in ticks.
+        // [290-292] overwatchstucknotice (OverwatchNotice.cs, docs/145 §13): Overwatch stuck notices held / summaries shown / Sims named.
+        // [293-294] owprobeplans (OverwatchProbe.cs, docs/163 §9): EA stuck-check plans hidden from Overwatch's Stuck Check V2 / stuck-check runs flagged.
+        // [295-296] preplancb (RouteBackoff.cs, docs/185 §5): AboutToPlanCallback pre-calls before a START / door lists restored after the original plan.
+        // [297-301] stuck-check outcomes (FewerPlans.cs StuckCheckRun, docs/163 §10, counted with any switch): [297] stuckcheckcap PROBE marks
+        // ts3native accepted, then per check: [298] no plan (moved / early return), [299] a probe succeeded (not stuck), [300] every probe
+        // failed before the last round (re-armed), [301] every probe failed in the last round (reset).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[290]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[302]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -208,6 +216,10 @@ namespace Ts3Fixes
                 case "seasonmarkercache": return Instantiator.kSeasonMarkerCache;
                 case "safespotyield": return Instantiator.kSafeSpotYield;
                 case "disposespread": return Instantiator.kDisposeSpread;
+                case "overwatchstucknotice": return Instantiator.kOverwatchStuckNoticeSummary;
+                case "preplancb": return Instantiator.kPrePlanCallback;
+                case "stuckcheckcap": return Instantiator.kStuckCheckCap;
+                case "owprobeplans": return Instantiator.kOverwatchIgnoreStuckProbes;
                 case "spotspread": return true;
                 default: return true;
             }

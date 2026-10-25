@@ -1222,7 +1222,7 @@ rpc.exports = {
     if (c.readS32() >= 40) f.push('arReady', 'arMode', ...['Started', 'Collected', 'Refused', 'Dropped', 'Shadow', 'Active', 'JobUs',
       'SyncUs', 'SyncN'].flatMap(n => ['Replan', 'PlanFromPoint', 'ReplanFromPosition'].map(ic => `ar${n}${ic}`)), 'arMismatch',
       'arOrphan', 'arReserved'); // 0.22.0: design A10 (+0x14A4..0x1523)
-    if (c.readS32() >= 41) f.push('orReady', 'orMode', 'orShadow', 'orCalls', 'orTaken', ...['State', 'Try', 'Lot', 'Cache', 'Shape',
+    if (c.readS32() >= 41) f.push('mhReady', 'orMode', 'orShadow', 'orCalls', 'orTaken', ...['State', 'Try', 'Lot', 'Cache', 'Shape',
       'Trip'].map(n => `orFb${n}`), 'orUs', 'orMaxUs', 'orShadowRuns', 'orShadowMismatch', 'orHits'); // 0.22.1: read-only IsPointObstructedBySim (+0x1524..)
     if (c.readS32() >= 42) f.push('slReady', 'slMode', 'slShadow', 'slCalls', 'slTaken', 'slUs', 'slMaxUs', 'slPass12', 'slPass0',
       ...['Gate', 'Miss', 'Portal', 'Lock', 'Managed', 'Table'].map(n => `slDrop${n}`),
@@ -1508,6 +1508,69 @@ rpc.exports = {
           // phase split (docs/94 §24.7): slots _0 clone answer taken, _1 the game's plan; p6jOut_<i>: 0 taken, 1 stale, 2 verify bad, 3 other
           ...['p6jN', 'p6jTotUs', 'p6jQueueUs', 'p6jStartUs', 'p6jRpWaitUs', 'p6jCutAgeUs', 'p6jCopyUs', 'p6jCloneUs', 'p6jGameUs',
             'p6jOtherUs', 'p6jDoorN', 'p6jDoorUs', 'p6jLazyN', 'p6jLazyUs', 'p6jPlans'].flatMap(x => n(x, 2)), ...n('p6jOut', 4), 'p6jLines');
+      // v113 (docs/89 §14): [Discourage] DeferPrivateFp, switch pfMode at +0x4740 (--ab deferprivatefp)
+      if (c.readS32() >= 113) f.push('pfReady', 'pfMode', 'pfCalls', 'pfInJob', 'pfDeferred', 'pfApplied', 'pfSwept', 'pfDropped', 'pfDup',
+          'pfPass', 'pfAddFlush', 'pfFullPass', 'pfApplyInJob');
+      // v114 (docs/157 §11.7): [CrashForensics]; cfCalls_<i> / cfBad_<i>: 0 map erase 0x5EE1E0, 1 array clear 0x7B0A00
+      if (c.readS32() >= 114) f.push('cfReady', 'cfRecs', ...n('cfCalls', 2), ...n('cfBad', 2), 'cfRingHit', 'cfHeapBad', 'cfDumps');
+      // v115 (docs/186 §8): [CrashForensics] DrawGuards / OurEvents; cdBad_<i>: 0 model 0x6F6B5B, 1 resource 0x6FA2DB, 2 effect 0x71D562, 3 binding 0x68FDA4
+      if (c.readS32() >= 115) f.push('cdReady', ...n('cdBad', 4), 'ceRecs');
+      // v116 (docs/186 §9): [CrashForensics] EffectLog, the Swarm render list ring
+      if (c.readS32() >= 116) f.push('fxReady', 'fxRecs', 'fxRem', 'fxRemOffMain', 'fxStaleDraw', 'fxGatherGapMaxMs');
+      // v117 (docs/186 §10): [CrashForensics] ObjResLog, the SceneModel model handle ring
+      if (c.readS32() >= 117) f.push('mhReady', 'mhRecs', 'mhUnload', 'mhRelease', 'mhLodSet', 'mhFxQueued');
+      // v118 (docs/178 §7 T6, gvro.cpp): [GoalValidRO] at +0x47DC; gvFb_<r> 0 state, 1 QL busy, 2 lot/deferred, 3 shape, 4 tripwire,
+      // 5 job ended, 6 footprints found (the game's call)
+      if (c.readS32() >= 118) f.push('gvReady', 'gvMode', 'gvShadow', 'gvCalls', 'gvTaken', 'gvNoLot', 'gvUs', 'gvMaxUs', ...n('gvFb', 7),
+        'gvShadowRuns', 'gvShadowMismatch', 'gvShadowEmpty');
+      // v119 (docs/178 §8): [IdleCheckRO]; ikFb_<i>: 0 state, 1 QL busy, 2 table shape, 3 tripwire, 4 job end, 5 redo at 0x625140
+      if (c.readS32() >= 119) f.push('ikReady', 'ikMode', 'ikShadow', 'ikCalls', 'ikTaken', 'ikHits', 'ikPass', 'ikOnward', 'ikUs',
+          'ikMaxUs', ...n('ikFb', 6), 'ikShadowRuns', 'ikShadowMismatch');
+      // v120 (docs/178 §9, movedwait.cpp): [MovedWaits]; mw*_<s> by switch 0 goalvalid, 1 idlecheck, 2 slot, 3 avoid, 4 gate0,
+      // 5 routetoobj, 6 placement, 7 obstructed, 8 steer; mwKey*_<i> moved waits by key; nt*_<i> next-taker keys (ntKey_<i>)
+      if (c.readS32() >= 120) f.push('mwReady', ...n('mwSkips', 9), ...n('mwJobs', 9), ...n('mwMoved', 9), ...n('mwMovedUs', 9),
+          ...n('mwMovedMaxUs', 9), ...n('mwDelayUs', 9), ...n('mwAvoidUs', 9), ...n('mwMaxKey', 9), ...n('mwKey', 12),
+          ...n('mwKeyN', 12), ...n('mwKeyUs', 12), 'mwKeyOther', ...n('ntKey', 10), ...n('ntN', 10), ...n('ntUs', 10),
+          ...n('ntMaxUs', 10), ...n('ntFb', 10), ...n('ntGv', 10), ...n('ntIk', 10));
+      // v121 (docs/94 §24.8.4, p4lotdump.h): [RouteSnap] M2LotDump / M2Box and the "obst" frame fix (ldObW / ldObL)
+      if (c.readS32() >= 121) f.push('ldDumps', 'ldBox', 'ldBusy', 'ldNoLot', 'ldEnts', 'ldDiff', 'ldKeyDiff', 'ldKeyOrigin', 'ldObW',
+          'ldObL', ...n('ldSpare', 6));
+      // v122 (docs/94 §24.14, p5.cpp): [RouteSnap] P6EarlyCopy, the own-only copy before the job's +0x918 (p6eRel_<i>: 0 plan refused
+      // before the acquire, 1 plan-entry recheck, 2 unused; p6eSkip_<i>: 0 not own-only, 1 stale / storm, 2 no cut / provider)
+      if (c.readS32() >= 122) f.push('p6Early', 'p6eCopies', 'p6eRefused', 'p6eUsed', ...n('p6eRel', 3), ...n('p6eSkip', 3), 'p6eUs',
+          'p6eCopyUs', ...n('p6eSpare', 4));
+      // v123 (docs/189 phase 0, p6wait.cpp): [P6Waits]; p6wN/p6wUs_<arm*30+out*5+cls> (arm = P6 switch at job start; out 0 plain,
+      // 1 taken, 2 borrowed, 3 stale, 4 refused/verify, 5 no job; cls 0 lock, 1 gate, 2 rtwait, 3 result, 4 host); p6wJobN/p6wSpanUs_<arm*5+out>;
+      // p6wGateUs_<arm*16+site>
+      if (c.readS32() >= 123) f.push('p6wReady', ...n('p6wN', 60), ...n('p6wUs', 60), ...n('p6wJobN', 10), ...n('p6wSpanUs', 10),
+          ...n('p6wGateUs', 32), 'p6wLost', 'p6wServeN', 'p6wServeUs');
+      // v124 (docs/189 phase 1, p5b.cpp): [RouteGate] HoldKeyed, re-keyed gate waits admitted in P5c windows (hgAdmit_<site>)
+      if (c.readS32() >= 124) f.push('hgOn', 'hgReady', ...n('hgAdmit', 16), 'hgJobs', 'hgStaleAfter', 'hgTrip', 'hgLongHold', ...n('hgSpare', 26));
+      // v125 (docs/189 phase 2, stalelot.cpp): [RouteSnap] StaleLot. stlMat_<arm*4+i>: arm 0 shadow, 1 acting; i 0 both clean,
+      // 1 per-lot-only, 2 both stale, 3 global clean + lot stale; stlWhy_<i>: 0 read lot, 1 world, 2 unknown, 3 ring, 4 set cap,
+      // 5 no set; stlWorld_<SLW_*>; stlVer_<i>: per-lot-only verify 0 equal, 1 differs, 2 n/c
+      if (c.readS32() >= 125) f.push('stlMode', 'stlReady', 'stlJobs', ...n('stlMat', 8), ...n('stlWhy', 6), ...n('stlWorld', 12),
+          ...n('stlWrites', 2), ...n('stlReadHist', 8), ...n('stlVer', 3), 'stlNoRun', 'stlFinds', 'stlFaults', 'stlActTaken', 'stlActOff',
+          ...n('stlSpare', 1));
+      // v126 (docs/189 phase 3, p5b.cpp / hostcalls.cpp): [RouteSnap] AskLent (au*: asks posted with +0x918 lent) and DoorMemoX
+      // (dmx*: cross-job door memo; dmxMode 0 off, 1 answers, 2 shadow; dmxMismatch must stay 0)
+      if (c.readS32() >= 126) f.push('auMode', 'auAsks', 'auAcq', 'auPlanHere', 'auStaleAfter', 'auSkip', 'dmxMode', 'dmxHit', 'dmxMiss',
+          'dmxInval', 'dmxShadow', 'dmxMismatch', 'dmxClear', ...n('auSpare', 3));
+      // v127 (docs/189 phase 2c, p5.cpp): [RouteSnap] TakeKindsAll; pk*_<k> by job kind 0 Plan, 1 Replan, 2 PlanFromPoint,
+      if (c.readS32() >= 127) f.push('p6All', ...n('pkArmed', 4), ...n('pkPlans', 4), ...n('pkTaken', 4),
+          ...n('pkStale', 4), ...n('pkVerify', 4), ...n('pkFb', 4), ...n('pkPlanUs', 4), ...n('pkGameUs', 4), ...n('pkUntaken', 4),
+          ...n('pkAfSkip', 2), ...n('pkSpare', 1));
+      // v128 (docs/189 §4.1 phase 4, p5.cpp): [RouteSnap] TakeForeign, FallbackAsync foreign Route.Plan jobs armed for the clone answer
+      if (c.readS32() >= 128) f.push('p6fbOn', 'p6fbArmed', 'p6fbTaken', 'p6fbGame', 'p6fbCloneDl', 'p6fbCloneCapped', ...n('p6fbSpare', 2));
+      // v126 / v127 / v128 reserved (other branches; their names replace these at merge)
+      // v129 (docs/189 §9, snap.cpp / stalelot.cpp): [RouteSnap] StaleLotFp. fplCov_<i>: 0 W6, 1 FPCORE, 2 PRIVATE, 3 FPREMOVE;
+      // fplGrid_<i>: grid removes 0 no-op, 1 real, 2 not judged; fplMat_<i>: 0 both clean, 1 fp-only, 2 both stale, 3 must be 0;
+      // fplVer_<i>: fp-only verify 0 equal, 1 differs, 2 n/c; fplFb_<i>: 0 set cap, 1 walk fault, 2 tripped off
+      if (c.readS32() >= 129) f.push('fplMode', 'fplReady', ...n('fplCov', 4), ...n('fplGrid', 3), ...n('fplMat', 4), ...n('fplVer', 3),
+          ...n('fplFb', 3), 'fplGridReads', 'fplGridRecs', 'fplGridTrip', 'fplOff', ...n('fplSpare', 9));
+      // v130 (docs/133 §7, vcall.cpp): [ProbeSnap] CallSites coverage; trap cost cpTrapUs = vcHits x cpTrapNs + cpHandlerUs
+      if (c.readS32() >= 130) f.push('cpOn', 'cpDone', 'cpPoly', 'cpTrapNs', 'cpTrapUs', 'cpHandlerUs', 'cpLastMinUs', 'cpMaxMinUs',
+          'cpMinutes', 'cpLateUs', 'cpLateMin', ...n('cpSpare', 5));
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

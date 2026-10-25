@@ -645,6 +645,7 @@ static DWORD* __fastcall RtoCallStub(u8* world, void* edx, DWORD* out, u8* sim, 
         InterlockedExchangeAdd(&k.rtoUs, us);
         Max(&k.rtoMaxUs, us);
         InterlockedIncrement(&k.rtoTaken);
+        MwSkip(MW_RTO);
         if (c[0] < 9) InterlockedIncrement(&k.rtoCode[c[0]]);
         if (t_rtoWait[lvl]) InterlockedIncrement(&k.rtoWaitAvoided);
         out[0] = c[0], out[2] = c[2], out[3] = c[3];  // out[1]: 0x831530 never reads it (docs/140 §6)

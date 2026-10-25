@@ -24,8 +24,11 @@ namespace Ts3Agent
     // save_watch {reset?, maxS?: 120}: a game task watches OptionsModel.SaveGameInProgress every tick and records each save
     //   (start/end ms, longest tick gap = the native write, modal window seen, file name after, ts3fixes asyncroute_started [56]
     //   in the 5 s before and during). Fails (ok:false) when a save took longer than maxS, one is still open after maxS, or a
-    //   saver_like_save call returned false or threw. new_saves = saves completed since the previous save_watch call;
-    //   saver_version = NRaas Saver's VersionStamp.sVersion when it is installed.
+    //   saver_like_save call returned false or threw. new_saves = Saver-made saves (SaverCount.IsSaverMade: a game save none of
+    //   our commands started that ended on a new file) since the previous save_watch call, saver_saved = new_saves > 0 (for
+    //   stepsRequire), new_records = every save recorded since then; saver_version = NRaas Saver's VersionStamp.sVersion;
+    //   saver = Saver's timer state (SaverState). saverArm: true fails unless Saver's real-time AutoSave task is armed and its
+    //   IsValidState() holds, with the reasons (use it right after reflect_call NRaas.Saver.RestartTimers).
     public static partial class Handlers
     {
         static void RegisterSaver()
@@ -37,7 +40,8 @@ namespace Ts3Agent
         static readonly List<Dictionary<string, object>> sSaves = new List<Dictionary<string, object>>();
         static Dictionary<string, object> sOpenSave, sLikeSave;
         static int sWatchGen, sSavesReported, sWatchT0;
-        static bool sWatchOn;
+        static bool sWatchOn, sAgentSavePending;
+        static int sAgentSaveAt; // save_game marks its save so the watch labels it "agent", not a Saver save
         static readonly int[] sAsyncRing = new int[6]; // asyncroute_started once a second, newest at sAsyncAt
 
         static int AsyncStarted()
@@ -58,6 +62,7 @@ namespace Ts3Agent
             r["async_5s_before"] = now - sAsyncRing[0]; // oldest sample = ~5 s ago: > 0 means route jobs were starting
             r["max_gap_ms"] = 0;
             r["modal"] = false;
+            r["file_before"] = GameStates.LoadFileName;
             return r;
         }
 
@@ -69,6 +74,7 @@ namespace Ts3Agent
             r["file"] = GameStates.LoadFileName;
             r["save_name"] = Responder.Instance.OptionsModel.SaveName;
             r["async_during"] = AsyncStarted() - (int)r["async_at_start"];
+            r["saver_made"] = SaverCount.IsSaverMade((string)r["via"], r["file_before"] as string, r["file"] as string);
             sSaves.Add(r);
         }
 
@@ -102,7 +108,12 @@ namespace Ts3Agent
                             if (gap > (int)open["max_gap_ms"]) open["max_gap_ms"] = gap;
                             if (UIManager.GetModalWindow() != null) open["modal"] = true;
                         }
-                        if (busy && sOpenSave == null && sLikeSave == null) sOpenSave = NewSaveRec("watch");
+                        if (busy && sOpenSave == null && sLikeSave == null)
+                        {
+                            bool agent = sAgentSavePending && now - sAgentSaveAt < 10000;
+                            sAgentSavePending = false;
+                            sOpenSave = NewSaveRec(agent ? "agent" : "watch");
+                        }
                         else if (!busy && sOpenSave != null) { CloseSaveRec(sOpenSave); sOpenSave = null; }
                         Simulator.Sleep(0);
                     }
@@ -208,15 +219,24 @@ namespace Ts3Agent
             int maxMs = (int)(a.Double("maxS", 120) * 1000);
             Dictionary<string, object> r = Util.Obj();
             r["saves"] = new List<Dictionary<string, object>>(sSaves);
-            r["new_saves"] = sSaves.Count - sSavesReported;
+            int newSaver = SaverCount.SaverMadeSince(sSaves, sSavesReported);
+            r["new_saves"] = newSaver;
+            r["saver_saved"] = newSaver > 0;
+            r["new_records"] = sSaves.Count - Math.Min(sSavesReported, sSaves.Count);
             sSavesReported = sSaves.Count;
             r["save_in_progress"] = Responder.Instance.OptionsModel.SaveGameInProgress;
             r["saver_version"] = null; // every NRaas mod has its own NRaas.VersionStamp: read the one next to NRaas.Saver
-            foreach (System.Reflection.Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            Type saver = SaverType();
+            Type vs = saver != null ? saver.Assembly.GetType("NRaas.VersionStamp") : null;
+            System.Reflection.FieldInfo vf = vs != null ? vs.GetField("sVersion") : null;
+            if (vf != null) r["saver_version"] = vf.GetValue(null);
+            List<string> why = new List<string>();
+            if (saver != null) r["saver"] = SaverState(saver, why);
+            if (a.Bool("saverArm", false))
             {
-                Type vs = asm.GetType("NRaas.Saver") != null ? asm.GetType("NRaas.VersionStamp") : null;
-                System.Reflection.FieldInfo f = vs != null ? vs.GetField("sVersion") : null;
-                if (f != null) { r["saver_version"] = f.GetValue(null); break; }
+                if (saver == null) why.Add("NRaas.Saver not installed");
+                if (why.Count > 0) throw new McpException("save_watch saverArm: " + string.Join("; ", why.ToArray()));
+                r["saver_armed"] = true;
             }
             List<string> fails = new List<string>();
             foreach (Dictionary<string, object> s in sSaves)
@@ -236,6 +256,77 @@ namespace Ts3Agent
             }
             if (fails.Count > 0) throw new McpException("save_watch: " + string.Join("; ", fails.ToArray()) + " (" + sSaves.Count + " saves recorded)");
             return r;
+        }
+
+        static Type SaverType()
+        {
+            foreach (System.Reflection.Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type t = asm.GetType("NRaas.Saver");
+                if (t != null) return t;
+            }
+            return null;
+        }
+
+        const System.Reflection.BindingFlags kStatic = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+        const System.Reflection.BindingFlags kInst = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+
+        static object Field(Type t, object o, string name)
+        {
+            System.Reflection.FieldInfo f = t.GetField(name, o == null ? kStatic : kInst);
+            return f != null ? f.GetValue(o) : null;
+        }
+
+        // NRaas Saver V22's real-time timer (NRaasSaver/Saver.cs: sTimer = AutoSave task, armed by RestartTimers, stopped by
+        // OnPreSave in live mode, re-armed by OnPostSave) and why AutoSave.IsValidState() would hold a save back. Adds every
+        // reason the timer cannot save to `why`.
+        static Dictionary<string, object> SaverState(Type saver, List<string> why)
+        {
+            Dictionary<string, object> s = Util.Obj();
+            try
+            {
+                object settings = saver.GetProperty("Settings", kStatic).GetValue(null, null);
+                string style = settings.GetType().GetProperty("SaveStyle").GetValue(settings, null).ToString();
+                s["save_style"] = style;
+                s["real_minutes"] = Field(settings.GetType(), settings, "mRealMinutesBetweenSaves");
+                if (style != "RealTime") why.Add("SaveStyle " + style + " (real-time timer not used)");
+                s["count"] = Field(saver, null, "sCount");
+                s["save_requested"] = Field(saver, null, "sSaveWasRequested");
+                s["save_performed"] = Field(saver, null, "sSaveWasPerformed");
+                object timer = Field(saver, null, "sTimer");
+                s["timer_armed"] = timer != null;
+                if (timer == null) why.Add("sTimer is null (no AutoSave task)");
+                else
+                {
+                    Type at = timer.GetType();
+                    bool exit = (bool)Field(at, timer, "mExit");
+                    s["timer_exit"] = exit;
+                    s["interval_min"] = Field(at, timer, "mSaveInterval");
+                    object sw = Field(at, timer, "mTimer");
+                    s["stopwatch"] = sw != null; // null until the task's first Simulate tick
+                    if (sw != null) s["elapsed_min"] = sw.GetType().GetMethod("GetElapsedTime").Invoke(sw, null);
+                    if (exit) why.Add("AutoSave task stopping (mExit)");
+                }
+                Type autoSave = saver.GetNestedType("AutoSave", kStatic);
+                System.Reflection.MethodInfo valid = autoSave != null ? autoSave.GetMethod("IsValidState", kStatic) : null;
+                bool ok = valid != null && (bool)valid.Invoke(null, null);
+                s["valid_state"] = ok;
+                if (!ok)
+                {
+                    List<string> v = new List<string>();
+                    if (valid == null) v.Add("IsValidState not found");
+                    WindowBase modal = UIManager.GetModalWindow();
+                    if (modal != null) v.Add("modal window " + modal.GetType().Name);
+                    if (Sims3.SimIFace.Gameflow.SaveIsDisabled) v.Add("saving disabled (Gameflow.SaveIsDisabled)");
+                    string sub = SubState();
+                    if (sub != "LiveModeState") v.Add("sub state " + sub + " (build/buy only with mPromptInBuildBuy)");
+                    if (v.Count == 0) v.Add("video recording running");
+                    s["invalid_because"] = string.Join("; ", v.ToArray());
+                    why.Add("IsValidState() false: " + s["invalid_because"]);
+                }
+            }
+            catch (Exception e) { s["error"] = DescribeError(e); why.Add("Saver state unreadable: " + s["error"]); }
+            return s;
         }
     }
 }

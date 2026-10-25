@@ -230,7 +230,7 @@ address,apex_name,apex_source,class,verdict
 0x6E97B0,RootGetter,framework/game_addresses.cpp,,
 0x6EBB70,,features/frame_profiler.cpp,,
 0x6EBC49,SceneDrainCall,features/frame_profiler.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,,
-0x6F6250,ModelDraw,framework/game_addresses.cpp,,
+0x6F6250,ModelDraw,framework/game_addresses.cpp,C0,RigTracker Detours the entry (12-byte prologue); ours ([CrashForensics] DrawGuards) only names it in a log line and retargets the call 0x6F6B5B inside the body (not patched by Apex): both compose (docs/186 §8)
 0x6F68C5,BinderCall,framework/game_addresses.cpp,,
 0x6F7905,RigCtorCall0,framework/game_addresses.cpp,,
 0x6F795C,RigCtorCall1,framework/game_addresses.cpp,,

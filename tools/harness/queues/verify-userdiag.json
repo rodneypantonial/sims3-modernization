@@ -1,0 +1,32 @@
+{
+  "jobs": [
+    {
+      "id": "bp-verify-userdiag",
+      "note": "docs/188 [UserDiag] verify (correctness, logging only): one Bridgeport load + one agent save (repro userdiag-save, scratch name). Needs the main checkout's build/ts3fixes.package rebuilt after the merge (node tools/setup/build-fixes.ts, UserDiag.cs) and game-copy/ts3native.asi.userdiag (0.36.53). Pass: header (diag: edition, Bin add-ons, Mods Packages count, header done), world lines (ts3fixes: ts3fixes ..., ts3fixes: world:, diag: world load #1), save trail (save: start, at start, > info, > write: pre-save listeners, > write: world save, > copy, end, folder size), no crash, no FAIL line, no unscrubbed user folder in the log.",
+      "asi": "game-copy/ts3native.asi.userdiag",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "logRequire": {
+        "^diag: edition ": 1,
+        "^diag: Bin add-ons: ": 1,
+        "^diag: Mods.Packages \\d+ \\.package files": 1,
+        "^diag: header done in ": 1,
+        "^ts3fixes: ts3fixes ": 1,
+        "^ts3fixes: world: ": 1,
+        "^diag: world load #1": 1,
+        "^save: start #1": 1,
+        "^save: at start route job ": 1,
+        "^save: > info \\(save paths\\)": 1,
+        "^save: > write: pre-save listeners": 1,
+        "^save: > write: world save": 1,
+        "^save: > copy \\(new save into place\\)": 1,
+        "^save: end #1 result ": 1,
+        "^save: folder now ": 1
+      },
+      "logForbid": { "^FAIL\\b": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 5, "seed": 12345, "noSamplers": true, "repro": "userdiag-save" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    }
+  ]
+}

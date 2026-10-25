@@ -8,7 +8,7 @@
 //   node tools/managed-callgraph.ts callers <method> [--index ...]
 //   node tools/managed-callgraph.ts subtypes <Type>... [--asm ...]   (every derived class, abstract flagged)
 //   node tools/managed-callgraph.ts --self-check [--asm ...]
-//   --mods <dir> (docs/127): mod assemblies loaded after the game ones for the class hierarchy only; not with build.
+//   --mods <dir> (docs/127): mod assemblies loaded after the game ones for the class hierarchy; with build, their methods are indexed after the game's (docs/141 §8).
 // Library (docs/127): virtualTargets / familyTargets (overrides per receiver class), receiverTypes (receiver static type
 // per call site from the IL), instanceTypeOf, onChain, isA; closure(..., ovHops) follows overrides near the roots.
 // A root or method is a method id ("Ns.Type+Nested::Name(params)") or a prefix of one ("Ns.Type::Name" = all overloads).
@@ -200,7 +200,7 @@ function methodSig(a: Asm, p: number): { params: string; ret: string; arity: num
 function fieldSigType(a: Asm, blobIdx: number): string { const [p] = blob(a, blobIdx); return sigType(a, p + 1)[0]; }
 
 // --mods <dir>: mod assemblies (docs/127) loaded after the game ones, so game method ids keep the index's numbering.
-// Used for the class hierarchy only (overridesOf); they are not in index.json. A mod's own copy of an EA assembly is skipped.
+// Used for the class hierarchy (overridesOf); in index.json only when build ran with --mods (docs/141 §8: route-plan-callers over\n// mods; keep that index apart from the game-only one). A mod's own copy of an EA assembly is skipped.
 const MOD_DIR = arg('--mods', '');
 export const modAsms = new Set<string>();
 function loadAll(dir: string, skipped?: string[]): void {
@@ -311,7 +311,9 @@ function ifaceImpls(m: Method): Method[] | undefined {
   if (!implementors) {
     implementors = new Map();
     for (const t of asms.flatMap((a) => a.types)) {
-      if (isIface(t) || t.flags & 0x80) continue;
+      // Abstract classes count: their subclasses inherit the interface without listing it (NRaas AlarmOption : IAlarmOption,
+      // docs/141 §8); an abstract (non-final) implementation makes the site plain `iface` below.
+      if (isIface(t)) continue;
       for (const ci of t.ifaces) { const [it, ii] = decodeCi('TypeDefOrRef', ci); const i = resolveTdor(t.asm, it, ii); if (i) implementors.set(i, [...(implementors.get(i) ?? []), t]); }
     }
   }

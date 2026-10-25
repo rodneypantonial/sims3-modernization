@@ -1,9 +1,9 @@
 {
-  "note": "Measurement tool cost jobs (PLAN.md Measurement cost rule 2026-10-24, docs/168 §9): one cost job per light tool without a measured cost, cheapest tool first so the queue can stop at any tool boundary (--from bp-tc-<tool>-off-1 resumes). Same save (Baseline-BP-Spring), seed 12345, release build asi.rel015 with the release ini; base = lean profiler (stages:false), no stack samplers; only the tool differs between the arms. Tools without a runtime switch: ABBA as two-load pairs (off-1, on-1, on-2, off-2); RouteEarlyOut observe: --ab earlyout in one load. Read per tool: node tools/harness/hitch-ab.ts tool-cost-<date>-bp-tc-<tool> (it/s per run, pooled two-load pairs with CIs); cost ms/s = 1000 x (1 - on it/s / off it/s); write it into docs/data/tool-costs.json msPerS and the docs/168 §9 table. Timing: clean night only (noise check on). ~12 min per job.",
+  "note": "Measurement tool cost jobs (PLAN.md Measurement cost rule 2026-10-24, docs/168 §9): one cost job set per light tool without a measured cost, cheapest tool first so the queue can stop at any tool boundary (--from bp-tc-<tool>-off-1 or bp-tc-<tool>-ab resumes). Same save (Baseline-BP-Spring), seed 12345, release build asi.rel015 with the release ini; base = lean profiler (stages:false), no stack samplers; only the tool differs between the arms. Runtime-switchable tools (OwnJobWait = --ab ownjobwait, RouteEarlyOut observe = --ab earlyout): one in-load ABBA job each, 13.5 min, 1.5-min slices, 4 kept slices per arm (timing verdict valid alone). Start-time-only tools (HitchAttr, LogFallback, Holders, PlanRepeat, RouteJobPhases + SyncPlans, UnseenProbe, frames, mainstack, prof-tasks, prof-stages): one off/on two-load pair (off-1, on-1), each run valid-single, the pair a cross-run comparison (weaker evidence, labelled); a later opposite-order pair (on-2, off-2, same ids, asi and ini) pools to ABBA in hitch-ab.ts. Read per tool: node tools/harness/hitch-ab.ts tool-cost-<date>-bp-tc-<tool> (it/s per run or arm); cost ms/s = 1000 x (1 - on it/s / off it/s); write it into docs/data/tool-costs.json msPerS and the docs/168 §9 table. Timing: clean night only (noise check on). 22 jobs: 20 pair jobs ~12 min + 2 in-load jobs ~16 min = ~4.5 h.",
   "jobs": [
     {
       "id": "bp-tc-hitchattr-off-1",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
+      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-hitchattr-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -26,7 +26,7 @@
     },
     {
       "id": "bp-tc-hitchattr-on-1",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
+      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-hitchattr-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -50,79 +50,8 @@
       "timeoutMin": 22
     },
     {
-      "id": "bp-tc-hitchattr-on-2",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "HitchAttr.Enabled": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-hitchattr-off-2",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Enabled=1 (no hook; per-frame wait sums); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-hitchattr.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-ownjobwait-off-1",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] OwnJobWait=1 (sim waits behind own jobs, docs/178 T4); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-ownjobwait.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-ownjobwait-on-1",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] OwnJobWait=1 (sim waits behind own jobs, docs/178 T4); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-ownjobwait.",
+      "id": "bp-tc-ownjobwait-ab",
+      "note": "Tool cost (docs/168 §9): [RouteAsync] OwnJobWait=1 (sim waits behind own jobs, docs/178 T4), runtime switch ownjobwait (Ts3nCounters owReady +0x443C, read per wait in asi.rel015): ABBA in one load. Warm-up slice (on), then off,on,on,off,off,on,on,off 1.5-min slices = 4 per arm: timing verdict valid on its own (docs/168 §10). Read: hitch-ab.ts tool-cost-<date>-bp-tc-ownjobwait-ab (on/off arms).",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -131,71 +60,25 @@
       },
       "run": {
         "profile": {
-          "minutes": 10,
+          "minutes": 13.5,
           "seed": 12345,
           "noSamplers": true,
           "profOpts": {
             "stages": false
-          }
+          },
+          "ab": "ownjobwait",
+          "slice": 1.5
         }
       },
       "gameArgs": [
         "-disablestoryprogression"
       ],
       "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-ownjobwait-on-2",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] OwnJobWait=1 (sim waits behind own jobs, docs/178 T4); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-ownjobwait.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "RouteAsync.OwnJobWait": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-ownjobwait-off-2",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] OwnJobWait=1 (sim waits behind own jobs, docs/178 T4); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-ownjobwait.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
+      "timeoutMin": 26
     },
     {
       "id": "bp-tc-logfallback-off-1",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
+      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-logfallback-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -218,7 +101,7 @@
     },
     {
       "id": "bp-tc-logfallback-on-1",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
+      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-logfallback-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -226,55 +109,6 @@
         "RouteAsync.LogFallbackMs": 20,
         "RouteAsync.LogFallbackStack": 16
       },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-logfallback-on-2",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "RouteAsync.LogFallbackMs": 20,
-        "RouteAsync.LogFallbackStack": 16
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-logfallback-off-2",
-      "note": "Tool cost (docs/168 §9): [RouteAsync] LogFallbackMs=20 + LogFallbackStack=16 (release: 200 / 0); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-logfallback.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
       "run": {
         "profile": {
           "minutes": 10,
@@ -293,7 +127,7 @@
     },
     {
       "id": "bp-tc-holders-off-1",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
+      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-holders-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -318,7 +152,7 @@
     },
     {
       "id": "bp-tc-holders-on-1",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
+      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-holders-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -326,58 +160,6 @@
         "HitchAttr.Enabled": 1,
         "HitchAttr.Holders": 1,
         "HitchAttr.HoldersMinMs": 20
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-holders-on-2",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "HitchAttr.Enabled": 1,
-        "HitchAttr.Holders": 1,
-        "HitchAttr.HoldersMinMs": 20
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-holders-off-2",
-      "note": "Tool cost (docs/168 §9): [HitchAttr] Holders=1 on top of HitchAttr Enabled=1 (both arms HitchAttr on); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-holders.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "HitchAttr.Enabled": 1
       },
       "run": {
         "profile": {
@@ -397,7 +179,7 @@
     },
     {
       "id": "bp-tc-planrepeat-off-1",
-      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
+      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-planrepeat-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -420,61 +202,13 @@
     },
     {
       "id": "bp-tc-planrepeat-on-1",
-      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
+      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-planrepeat-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
       "ini": {
         "PlanRepeat.Enabled": 1
       },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-planrepeat-on-2",
-      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "PlanRepeat.Enabled": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-planrepeat-off-2",
-      "note": "Tool cost (docs/168 §9): [PlanRepeat] Enabled=1 (key hash + ring per plan); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-planrepeat.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
       "run": {
         "profile": {
           "minutes": 10,
@@ -493,7 +227,7 @@
     },
     {
       "id": "bp-tc-routejobphases-off-1",
-      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
+      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-routejobphases-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -516,7 +250,7 @@
     },
     {
       "id": "bp-tc-routejobphases-on-1",
-      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
+      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-routejobphases-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -524,55 +258,6 @@
         "RouteJobPhases.Enabled": 1,
         "RouteJobPhases.SyncPlans": 1
       },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-routejobphases-on-2",
-      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "RouteJobPhases.Enabled": 1,
-        "RouteJobPhases.SyncPlans": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-routejobphases-off-2",
-      "note": "Tool cost (docs/168 §9): [RouteJobPhases] Enabled=1 SyncPlans=1 (worker + sim sync plan timers); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-routejobphases.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
       "run": {
         "profile": {
           "minutes": 10,
@@ -591,7 +276,7 @@
     },
     {
       "id": "bp-tc-unseenprobe-off-1",
-      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
+      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-unseenprobe-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -614,61 +299,13 @@
     },
     {
       "id": "bp-tc-unseenprobe-on-1",
-      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
+      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-unseenprobe-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
       "ini": {
         "UnseenProbe.Enabled": 1
       },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-unseenprobe-on-2",
-      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {
-        "UnseenProbe.Enabled": 1
-      },
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-unseenprobe-off-2",
-      "note": "Tool cost (docs/168 §9): [UnseenProbe] Enabled=1 (per agent per tick classification); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-unseenprobe.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
       "run": {
         "profile": {
           "minutes": 10,
@@ -687,7 +324,7 @@
     },
     {
       "id": "bp-tc-earlyout-ab",
-      "note": "Tool cost (docs/168 §9): [RouteEarlyOut] observe (Enabled=1 Mode=1 Act=0), runtime switch earlyout: ABBA in one load. Warm-up slice (on), then off,on,on,off 2-min slices. Read: hitch-ab.ts tool-cost-<date>-bp-tc-earlyout-ab (on/off arms).",
+      "note": "Tool cost (docs/168 §9): [RouteEarlyOut] observe (Enabled=1 Mode=1 Act=0), runtime switch earlyout: ABBA in one load. Warm-up slice (on), then off,on,on,off,off,on,on,off 1.5-min slices = 4 per arm: timing verdict valid on its own (docs/168 §10). Read: hitch-ab.ts tool-cost-<date>-bp-tc-earlyout-ab (on/off arms).",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -698,25 +335,25 @@
       },
       "run": {
         "profile": {
-          "minutes": 10,
+          "minutes": 13.5,
           "seed": 12345,
           "noSamplers": true,
           "profOpts": {
             "stages": false
           },
           "ab": "earlyout",
-          "slice": 2
+          "slice": 1.5
         }
       },
       "gameArgs": [
         "-disablestoryprogression"
       ],
       "noiseCheck": true,
-      "timeoutMin": 22
+      "timeoutMin": 26
     },
     {
       "id": "bp-tc-frames-off-1",
-      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
+      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-frames-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -740,7 +377,7 @@
     },
     {
       "id": "bp-tc-frames-on-1",
-      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
+      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-frames-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -753,53 +390,6 @@
           "profOpts": {
             "stages": false
           }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-frames-on-2",
-      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-frames-off-2",
-      "note": "Tool cost (docs/168 §9): frame-times.js session (off arm --no-frames); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-frames.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          },
-          "noFrames": true
         }
       },
       "gameArgs": [
@@ -810,7 +400,7 @@
     },
     {
       "id": "bp-tc-mainstack-off-1",
-      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
+      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-mainstack-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -833,7 +423,7 @@
     },
     {
       "id": "bp-tc-mainstack-on-1",
-      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
+      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-mainstack-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -847,53 +437,6 @@
             "stages": false
           },
           "mainstack": "main"
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-mainstack-on-2",
-      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          },
-          "mainstack": "main"
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-mainstack-off-2",
-      "note": "Tool cost (docs/168 §9): main-thread stack sampler for the whole window (--mainstack main); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-mainstack.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
-          }
         }
       },
       "gameArgs": [
@@ -904,7 +447,7 @@
     },
     {
       "id": "bp-tc-proftasks-off-1",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
+      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-proftasks-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -927,7 +470,7 @@
     },
     {
       "id": "bp-tc-proftasks-on-1",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
+      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-proftasks-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -937,49 +480,6 @@
           "minutes": 10,
           "seed": 12345,
           "noSamplers": true
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-proftasks-on-2",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-proftasks-off-2",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js task attribution (both arms stage hooks on: off tasks:false, on default); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-proftasks.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "tasks": false
-          }
         }
       },
       "gameArgs": [
@@ -990,7 +490,7 @@
     },
     {
       "id": "bp-tc-profstages-off-1",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); off arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
+      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); off arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-profstages-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -1013,7 +513,7 @@
     },
     {
       "id": "bp-tc-profstages-on-1",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); on arm, ABBA two-load pair 1. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
+      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); on arm of a two-load pair (start-time only: no runtime switch in asi.rel015). Each run is valid-single; off-1 + on-1 = one cross-run pair (weaker evidence, labelled); a later opposite-order pair bp-tc-profstages-on-2, -off-2 (same asi sha256 and ini) completes ABBA. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
       "asi": "game-copy/ts3native.asi.rel015",
       "save": "Baseline-BP-Spring",
       "minCounters": 108,
@@ -1025,52 +525,6 @@
           "noSamplers": true,
           "profOpts": {
             "tasks": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-profstages-on-2",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); on arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "tasks": false
-          }
-        }
-      },
-      "gameArgs": [
-        "-disablestoryprogression"
-      ],
-      "noiseCheck": true,
-      "timeoutMin": 22
-    },
-    {
-      "id": "bp-tc-profstages-off-2",
-      "note": "Tool cost (docs/168 §9): stutter-profile.js stage/GC/route hooks (off stages:false, on stages with tasks:false); off arm, ABBA two-load pair 2. Read: hitch-ab.ts tool-cost-<date>-bp-tc-profstages.",
-      "asi": "game-copy/ts3native.asi.rel015",
-      "save": "Baseline-BP-Spring",
-      "minCounters": 108,
-      "ini": {},
-      "run": {
-        "profile": {
-          "minutes": 10,
-          "seed": 12345,
-          "noSamplers": true,
-          "profOpts": {
-            "stages": false
           }
         }
       },

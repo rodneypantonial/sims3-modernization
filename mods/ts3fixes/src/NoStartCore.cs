@@ -19,6 +19,23 @@ namespace Ts3Fixes
             return order;
         }
 
+        // stuckcheckcap (FewerPlans.cs StuckCheckRun, docs/163 §10): a check's outcome counter slot from its plans, successful
+        // plans and round: 298 no plan, 299 not stuck, 300 all failed before the last round (re-arm), 301 last round (reset)
+        public static int StuckOutcome(int plans, int ok, bool last)
+        {
+            return plans == 0 ? 298 : ok > 0 ? 299 : last ? 301 : 300;
+        }
+
+        // stuckcheckcap: probes may be cut only before the last round (attempt < 3), so a reset always follows full searches
+        public static bool StuckMayCut(uint attempt) { return attempt < 3; }
+
+        // docs/163 §10.1: low word of the tagged PROBE mark (ts3native ScProbeMark): bit 16 = tagged form, bits 0-7 round
+        // (mAttempt + 1, 0 = unknown), bit 8 = cut (stuckcheckcap), bit 9 = last round
+        public static ulong StuckTag(int round, bool cut, bool last)
+        {
+            return 0x10000UL | (cut ? 0x100UL : 0UL) | (last ? 0x200UL : 0UL) | (uint)round & 0xFFUL;
+        }
+
         // failrepeat: whether a failure that ended at thenTick (Environment.TickCount) is still within windowMs at nowTick;
         // TickCount wraps every ~49.7 days, the unchecked difference handles that, a clock that went back answers false.
         public static bool Within(int nowTick, int thenTick, int windowMs)

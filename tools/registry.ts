@@ -1,21 +1,25 @@
 // Atomic reservations for the shared numbers in docs/registry.md: ts3native counters versions + offsets and
-// ts3fixes counter slots. Parallel worktrees see each other through docs/data/registry-reservations.json in the
+// ts3fixes counter slots, plus docs/51 inference-ledger section numbers. Parallel worktrees see each other through docs/data/registry-reservations.json in the
 // MAIN checkout (found via `git rev-parse --git-common-dir`), guarded by an O_EXCL lock file next to its registry.md.
 //   node tools/registry.ts reserve native <n-int32> --by <who> --what <text>
 //   node tools/registry.ts reserve fixes <n-slots> --by <who> --what <text>
+//   node tools/registry.ts reserve ledger --for <topic> [--by <who>]      next free docs/51 `## N.` section (max of the
+//        headings in this worktree's and the main checkout's docs/51 and of every ledger reservation, + 1); docs/51 not touched
 //   node tools/registry.ts list | release <id> | fix-next <file> | --self-check
 // Options: --root <dir> uses <dir> as both worktree and main checkout (tests).
 import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
-type Kind = 'fixes' | 'native';
+type Kind = 'fixes' | 'native' | 'ledger';
 interface Res { id: string; kind: Kind; from: number; to: number; version?: number; by: string; what: string; at: string; worktree: string }
 interface Used { fixesMax: number; nativeVer: number; nativeEnd: number }
 
 const FIX_HEAD = '## ts3fixes counters';
 const NAT_HEAD = '## ts3native counters (';
+const LEDGER = join('docs', '51-inference-ledger.md');
+export const ledgerMax = (text: string) => Math.max(0, ...[...text.matchAll(/^## (\d+)\./gm)].map(m => +m[1]));
 const hex = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
 
 // Lines of a `## ` section that starts with head: [start, end) indices.
@@ -102,7 +106,21 @@ function saveRes(main: string, r: Res[]) {
 }
 const opt = (args: string[], k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 
+function reserveLedger(args: string[]) {
+  const what = opt(args, '--for'), { wt, main } = roots(args), by = opt(args, '--by') ?? basename(wt);
+  if (!what) throw new Error('usage: reserve ledger --for <topic> [--by <who>]');
+  return withLock(join(main, 'docs', 'registry.md.lock'), () => {
+    const res = loadRes(main), docs = [...new Set([join(wt, LEDGER), join(main, LEDGER)])].filter(existsSync);
+    const n = Math.max(0, ...docs.map(d => ledgerMax(readFileSync(d, 'utf8'))), ...res.filter(r => r.kind === 'ledger').map(r => r.to)) + 1;
+    const r: Res = { id: `ledger-${n}`, kind: 'ledger', from: n, to: n, by, what, at: new Date().toISOString(), worktree: wt };
+    saveRes(main, [...res, r]);
+    console.log(`reserved docs/51 §${n} id=${r.id}: write it as "## ${n}. ..." (unused: node tools/registry.ts release ${r.id})`);
+    return r;
+  });
+}
+
 function reserve(args: string[]) {
+  if (args[1] === 'ledger') return reserveLedger(args);
   const kind = args[1] as Kind, n = Number(args[2]), by = opt(args, '--by'), what = opt(args, '--what');
   if (!['fixes', 'native'].includes(kind) || !(n >= 1 && Number.isInteger(n)) || !by || !what) throw new Error('usage: reserve fixes|native <n> --by <who> --what <text>');
   const { wt, main } = roots(args);
@@ -112,7 +130,7 @@ function reserve(args: string[]) {
     const res = loadRes(main);
     const u = docs.map(d => scanDoc(readFileSync(d, 'utf8')));
     let fixesMax = Math.max(...u.map(x => x.fixesMax)), nativeVer = Math.max(...u.map(x => x.nativeVer)), nativeEnd = Math.max(...u.map(x => x.nativeEnd));
-    for (const r of res) if (r.kind === 'fixes') fixesMax = Math.max(fixesMax, r.to); else { nativeVer = Math.max(nativeVer, r.version!); nativeEnd = Math.max(nativeEnd, r.to); }
+    for (const r of res) if (r.kind === 'fixes') fixesMax = Math.max(fixesMax, r.to); else if (r.kind === 'native') { nativeVer = Math.max(nativeVer, r.version!); nativeEnd = Math.max(nativeEnd, r.to); }
     const at = new Date().toISOString();
     let r: Res, row: string;
     if (kind === 'fixes') {
@@ -152,7 +170,7 @@ function release(args: string[]) {
 function list(args: string[]) {
   const { wt, main } = roots(args), u = scanDoc(readFileSync(join(wt, 'docs', 'registry.md'), 'utf8'));
   console.log(`doc: ts3fixes highest slot ${u.fixesMax}, ts3native v${u.nativeVer} ends ${hex(u.nativeEnd)}`);
-  for (const r of loadRes(main)) console.log(`${r.id}\t${r.kind === 'fixes' ? `${r.from}-${r.to}` : `v${r.version} ${hex(r.from)}-${hex(r.to)}`}\t${r.by}\t${r.at}\t${r.what}`);
+  for (const r of loadRes(main)) console.log(`${r.id}\t${r.kind === 'fixes' ? `${r.from}-${r.to}` : r.kind === 'ledger' ? `docs/51 §${r.from}` : `v${r.version} ${hex(r.from)}-${hex(r.to)}`}\t${r.by}\t${r.at}\t${r.what}`);
   for (const c of u.collisions) console.log(`COLLISION: ${c}`);
 }
 
@@ -170,12 +188,19 @@ async function selfCheck() {
     // today's collisions: another worktree already took v111 at +0x4648 and slots 255-259, not merged into this doc
     saveRes(d, [
       { id: 'native-v111', kind: 'native', version: 111, from: 0x4648, to: 0x465F, by: 'other', what: 'other branch', at: '', worktree: 'w2' },
-      { id: 'fixes-255', kind: 'fixes', from: 255, to: 259, by: 'other', what: 'other branch', at: '', worktree: 'w2' }]);
+      { id: 'fixes-255', kind: 'fixes', from: 255, to: 259, by: 'other', what: 'other branch', at: '', worktree: 'w2' },
+      { id: 'ledger-316', kind: 'ledger', from: 316, to: 316, by: 'other', what: 'other branch', at: '', worktree: 'w2' }]);
+    const ledgerText = '# 51. Ledger\n\n## 314. a\n\n## 315. b, see ledger §9\n\ntext ## 400. not a heading\n';
+    writeFileSync(join(d, LEDGER), ledgerText);
     const self = import.meta.filename;
     const run = (a: string[]) => new Promise<number>(res => spawn(process.execPath, [self, ...a, '--root', d], { stdio: ['ignore', 'ignore', 'inherit'] }).on('exit', c => res(c ?? 1)));
     const codes = await Promise.all([...Array(6)].flatMap((_, i) => [
-      run(['reserve', 'native', '6', '--by', `n${i}`, '--what', `native ${i}`]), run(['reserve', 'fixes', '5', '--by', `f${i}`, '--what', `fixes ${i}`])]));
-    ok(codes.every(c => c === 0), '12 concurrent reserves all exit 0');
+      run(['reserve', 'native', '6', '--by', `n${i}`, '--what', `native ${i}`]), run(['reserve', 'fixes', '5', '--by', `f${i}`, '--what', `fixes ${i}`]),
+      run(['reserve', 'ledger', '--for', `topic ${i}`])]));
+    ok(codes.every(c => c === 0), '18 concurrent reserves all exit 0');
+    const lg = loadRes(d).filter(r => r.kind === 'ledger').map(r => r.from).sort((a, b) => a - b);
+    ok(lg.join() === '316,317,318,319,320,321,322', `ledger sections 317-322 handed out once each after the reserved 316 (${lg.join()})`);
+    ok(readFileSync(join(d, LEDGER), 'utf8') === ledgerText, 'docs/51 itself untouched');
     const res = loadRes(d), fx = res.filter(r => r.kind === 'fixes').sort((a, b) => a.from - b.from), nt = res.filter(r => r.kind === 'native').sort((a, b) => a.from - b.from);
     ok(fx.length === 7 && nt.length === 7, '7 + 7 reservations in the machine file');
     ok(fx.every((r, i) => !i || r.from > fx[i - 1].to) && fx[1].from === 260, `fixes ranges disjoint, first new one 260 (${fx.map(r => r.from + '-' + r.to).join(' ')})`);
@@ -202,5 +227,5 @@ try {
     const t = readFileSync(args[1], 'utf8'), out = fixNext(t);
     if (out !== t) writeFileSync(args[1], out);
     for (const c of scanDoc(out).collisions) console.log(`COLLISION: ${c}`);
-  } else { console.error('usage: node tools/registry.ts reserve fixes|native <n> --by <who> --what <text> | list | release <id> | fix-next <file> | --self-check'); process.exit(2); }
+  } else { console.error('usage: node tools/registry.ts reserve fixes|native <n> --by <who> --what <text> | reserve ledger --for <topic> [--by <who>] | list | release <id> | fix-next <file> | --self-check'); process.exit(2); }
 } catch (e: any) { console.error(e.message); process.exit(1); }

@@ -1,0 +1,95 @@
+{
+  "note": "docs/163 §10 stuckcheckcap correctness verify (not an A/B for gain): ts3native 0.36.52 (out-sccap -> game-copy/ts3native.asi.sccap, PROBE channel) + master build/ts3fixes.package with stuckcheckcap. PlanDeadlineMs=300 (ship-on value) and OwnJobWait=1 in every job. Pass per job: no crash, run not INVALID, machine load line ok. Read: 'sim waited >= 1000 ms behind an own job' lines (on: only last-round checks, ~0), long-job lines 'capped (stuck-check probe, PlanDeadlineMs)', outcome counters stuck_check_noplan / _notstuck / _rearmed / _reset per arm or run (resets equal, rearmed may rise slightly on).",
+  "jobs": [
+    {
+      "id": "bp-stuckcheckcap-loop",
+      "note": "Forced ABBA on route-stuckcheck-cap-loop (stranded crowd, check armed at attempt 1, stuckcheckasync + stuckcheckown on in both arms, stuckcheckcap flipped) until 40 armed checks per arm and >= 4 firings per arm, cap 20 min. Off arms keep their multi-second own probe jobs (watchdog lines expected there, so no watchdogs rule). Each firing ends with a 'verdicts' patches step: compare the outcome counter rises per arm. Re-armed attempt-2/3 checks fire later in whatever arm runs; attempt-3 rounds plan uncut in both arms.",
+      "asi": "game-copy/ts3native.asi.sccap",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 109,
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 22,
+          "repro": "route-stuckcheck-cap-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 40,
+              "minFirings": 4
+            },
+            "maxMinutes": 20
+          },
+          "noSamplers": true,
+          "fixesRequire": "stuckcheckcap_marked>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    },
+    {
+      "id": "sv-sccap-nat-off",
+      "note": "SV natural run, stuckcheckown ON, stuckcheckcap OFF (45 min seeded 12345 from Baseline-SV-Spring, as sv-scown-nat-*-on): the reference for the outcome counters and the own-job waits (night-1024-ab: 6 / 16 waits >= 1 s behind own jobs).",
+      "asi": "game-copy/ts3native.asi.sccap",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckown",
+          "fixesRequire": "stuckcheckown_sent>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "sv-sccap-nat-on",
+      "note": "Same as sv-sccap-nat-off with stuckcheckcap ON. Expected: stuckcheckcap_marked rises at each 3 AM, long probe jobs capped near 300 ms (+ tail), 'sim waited >= 1000 ms behind an own job' ~0 (only last-round checks), stuck_check_reset equal to the off run within the run spread.",
+      "asi": "game-copy/ts3native.asi.sccap",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckown,stuckcheckcap",
+          "fixesRequire": "stuckcheckcap_marked>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

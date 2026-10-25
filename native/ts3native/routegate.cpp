@@ -65,8 +65,12 @@ static DWORD VfRealRet(const DWORD* slot);          // verify.cpp: the caller be
 static volatile LONG g_p1bOn;                                     // lotfd.cpp: probe P1b
 static void P1bNote(int site, DWORD key, const DWORD* slot, LONG us);  // lotfd.cpp
 static bool SlGate(int site, DWORD* slot);                             // slotro.cpp
-static __declspec(thread) int t_p5bSite;       // p5b.cpp (0.34.2): site + 1 of the gate waiting for +0x918 here, 0 none
+// t_p5bSite (p5b.cpp, 0.34.2: site + 1 of the gate waiting for +0x918 here, 0 none) is declared in ts3native.cpp (LockAcquireAsync reads it)
 static __declspec(thread) DWORD* t_p5bSlot;    //   and its return slot (P5bGate: read-only gate leaves may take a lent lock)
+// docs/189 phase 1 (p5b.cpp HoldKeyed): this thread holds +0x918 through an admitted re-keyed gate wait (set at the outer
+// acquire); g_hgOpen = such holds open now. Cleared at the outermost release, before the lock goes, so a retake never sees one
+static __declspec(thread) bool t_hgHeld;
+static volatile LONG g_hgOpen;
 
 // rel: what the leave undoes (S3b): RG_REL_LOCK releases `lock`, RG_REL_QT leaves g_qtCs, RG_REL_BUSY drops rtBusy,
 // RG_REL_OFFSIM drops g_rgOffSimOpen
@@ -75,7 +79,8 @@ static __declspec(thread) DWORD* t_p5bSlot;    //   and its return slot (P5bGate
 // in `lock`); RG_REL_G10C ends a G10-C frame (t_g10cOpen, hold-time log); RG_REL_NR ends a P4 D2 writer window (g_snNrIn);
 // RG_REL_G0QL releases [Gate0RO]'s QL shared hold, RG_REL_G0CMP compares its predicted entry (in `lock`) with eax (gate0ro.cpp)
 enum { RG_REL_LOCK = 1, RG_REL_QT = 2, RG_REL_BUSY = 4, RG_REL_OFFSIM = 8, RG_REL_STEER = 16, RG_REL_QL = 32, RG_REL_TRIP = 64,
-       RG_REL_P10 = 128, RG_REL_G10C = 256, RG_REL_NR = 512, RG_REL_G0QL = 1024, RG_REL_G0CMP = 2048 };
+       RG_REL_P10 = 128, RG_REL_G10C = 256, RG_REL_NR = 512, RG_REL_G0QL = 1024, RG_REL_G0CMP = 2048,
+       RG_REL_CE = 4096 };  // RG_REL_CE: our-events ring destroy-out (crashev.h, docs/186 §8; the object pointer in `lock`)
 struct RgFrame { DWORD* slot; DWORD ret; LONG reader; LONG rel; void* lock; };
 struct RgThread { int n; LONG readers; RgFrame f[16]; };
 static __declspec(thread) RgThread t_rg;
@@ -102,6 +107,7 @@ static void RgUndo(const RgFrame& f) {
     if (f.rel & RG_REL_QT) LeaveCriticalSection(&g_qtCs);
     if (f.rel & RG_REL_BUSY) InterlockedDecrement(&ts3native_counters.rtBusy);
     if (f.rel & RG_REL_OFFSIM) InterlockedDecrement(&g_rgOffSimOpen);
+    if (f.rel & RG_REL_CE) CeRec(CE_DESTROY_OUT, (DWORD)(uintptr_t)f.lock);  // DestroyById returned
     if (f.rel & RG_REL_STEER) t_steerRet = (DWORD)(uintptr_t)f.lock;
 }
 
@@ -154,8 +160,10 @@ static LONG __fastcall LockReleaseHook(void* lock, void* edx) {
     // Route_PlanLocked): every level back first, so the release is its own
     if (t_tuOpen && lock == g_async.lock) LendBackstop();
     if (t_borrow && lock == g_async.lock) { t_borrow--; return 1; }  // a borrowed acquire (LockAcquireHook)
-    if (lock == g_rgLock && *(const LONG*)((const u8*)lock + 0x20) == 1)
+    if (lock == g_rgLock && *(const LONG*)((const u8*)lock + 0x20) == 1) {
+        if (t_hgHeld) t_hgHeld = false, InterlockedDecrement(&g_hgOpen);
         InterlockedCompareExchange(&ts3native_counters.rgOwnerTid, 0, (LONG)GetCurrentThreadId());
+    }
     return g_rgRelOrig(lock, edx);
 }
 

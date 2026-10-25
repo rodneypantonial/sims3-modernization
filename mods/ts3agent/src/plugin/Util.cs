@@ -26,13 +26,25 @@ namespace Ts3Agent
             return s;
         }
 
+        // Sims chosen by the last pick_sims (SimDescriptionIds, in pick order): "picked:N" (1-based) in any Sim arg.
+        public static readonly List<ulong> Picked = new List<ulong>();
+
         // Resolve a sim from args[key]: SimDescriptionId (number or numeric string),
-        // full name, or unique first name. Missing => the selected sim.
+        // full name, unique first name, or "picked:N" (pick_sims). Missing => the selected sim.
         public static SimDescription FindSimDescription(Args a, string key)
         {
             if (!a.Has(key)) return ActiveSim().SimDescription;
             string q = a.Str(key).Trim();
             if (q == "active") return ActiveSim().SimDescription;  // lets repro entries filter by the active Sim
+            if (q.StartsWith("picked:", StringComparison.OrdinalIgnoreCase))  // repro steps naming Sims chosen at runtime
+            {
+                int n;
+                if (!int.TryParse(q.Substring(7), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) || n < 1 || n > Picked.Count)
+                    throw new McpException("no Sim " + q + " (" + Picked.Count + " picked; run pick_sims first)");
+                SimDescription p = SimDescription.Find(Picked[n - 1]);
+                if (p == null) throw new McpException(q + " is no longer in the world");
+                return p;
+            }
             ulong id;
             if (ulong.TryParse(q, NumberStyles.Integer, CultureInfo.InvariantCulture, out id))
             {

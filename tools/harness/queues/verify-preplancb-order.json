@@ -1,0 +1,28 @@
+{
+ "note": "Correctness only, no timing (docs/185 §6.1): rerun of night-1024-new bp-preplancb-order, which passed on counters but was invalid (all 6 VisitLot visits queued:false, the door-order case never ran). Visits now player-directed (sim_visit_lot autonomous: false); the repro's stepsRequire sim_visit_lot.queued>=6 fails the job unless every visit queues, and a refused visit logs test + why. asi.p6f = ts3native 0.36.43 as in night-1024-new; ts3fixes and ts3agent = master build.",
+ "jobs": [
+  {
+   "asi": "game-copy/ts3native.asi.p6f",
+   "minCounters": 114,
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": false,
+   "timeoutMin": 25,
+   "id": "bp-preplancb-order-verify",
+   "note": "preplancb (docs/185 §5, §6.1): AboutToPlanCallback before the async START, locked-door list kept. Arms: A routeasync 0 (vanilla order), B routeasync 1, C routeasync 1 + preplancb. Pass: no crash, all 6 visits queued (repro stepsRequire), preplancb_precalls >= 1; read each visitor at the locked door: A and C walk to the door and show the locked-door reaction, B may fail in place.",
+   "save": "Baseline-BP-Spring",
+   "ini": {
+    "CrashForensics.Enabled": 1
+   },
+   "run": {
+    "profile": {
+     "seed": 12345,
+     "minutes": 12,
+     "repro": "route-aboutplan-order",
+     "fixesRequire": "preplancb_precalls>=1"
+    }
+   }
+  }
+ ]
+}

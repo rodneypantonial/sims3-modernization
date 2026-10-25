@@ -6,6 +6,8 @@
 //     per arm (or step) the top causes and worst 10 of the iterations >= 300 ms inside them (freeze-report.ts reproCauses); setup
 //     steps (repro-loop.ts isSetup) go to '<arm> setup' rows, out of the arm and its confidence rows (docs/168 §7)
 //   node tools/harness/hitch-ab.ts --power [--reduction 0.3] [--arm-min 3.5]   runs needed to see a reduction, from the docs/161 baseline rates
+//   node tools/harness/hitch-ab.ts --reuse <job id, repro id or tag> [--since YYYY-MM-DD]   past runs whose timing verdict (docs/168 §10)
+//     is valid (in-load A/B) or valid-single (paired older -> newer per job, build differences flagged; cross-run = weaker evidence)
 //   node tools/harness/hitch-ab.ts --self-check
 // Pairs and pools also print 95% confidence intervals (exact Poisson per arm, exact conditional on/off ratio, docs/168 §1) for
 // iterations >= 300/500/1000/2000 ms and visible freezes (<tag>-<secs>-freezes.jsonl, real publish gaps as in freeze-report.ts).
@@ -25,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { keyName } from './hitch-attr-report.ts';
 import { baseWins, cause, exclAdd, exclTable, exclusion, firingWins, queueEvents, reproSteps, rowLongest, runContext, STEP_POST_MS, type ExclRow, type RunCtx } from './worst-hitches.ts';
 import { load as loadFreeze, reproCauses, reproFires } from './freeze-report.ts';
+import { jsonlRows, rowTiming } from './run-verdict.ts'; // cycle with run-verdict.ts: both use the other only inside functions
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
 const PROFILE = join(ROOT, 'probe-out', 'profile'), QUEUE = join(ROOT, 'probe-out', 'queue');
@@ -41,10 +44,26 @@ type Pct = { ms: number; bounded: boolean };
 
 // arm of each seconds row (row i ~ second i of the run); without slices every row is 'all' (the first minute goes out as an
 // excluded window in splitRun, so its hitches are listed)
+// which --ab slices count: slice 0 (warm-up) out, a last slice under half length out
+const sliceKeep = (n: number, slices: Slice[]) => {
+  const len = slices.length > 1 ? slices[1].from - slices[0].from : Infinity;
+  return slices.map((sl, i) => i > 0 && (i < slices.length - 1 || n - sl.from >= len / 2));
+};
+// A/B iterations per arm of one load (timing verdict, docs/168 §10): repro firings by their '[arm|fire on|off #n]' step lines
+// (repro-loop --ab), else the kept --ab slices; null = no A/B in this run
+export function armIters(steps: string[] | undefined, slices: Slice[] | undefined, nRows: number): { on: number; off: number; src: 'repro' | 'slices' } | null {
+  const it = { on: new Set<number>(), off: new Set<number>() };
+  for (const s of steps ?? []) { const m = /\[[^\]]*\b(on|off) #(\d+)\]/.exec(s); if (m) it[m[1] as 'on' | 'off'].add(+m[2]); }
+  if (it.on.size || it.off.size) return { on: it.on.size, off: it.off.size, src: 'repro' };
+  if (!slices) return null;
+  const keep = sliceKeep(nRows, slices);
+  return { on: slices.filter((s, i) => keep[i] && s.on).length, off: slices.filter((s, i) => keep[i] && !s.on).length, src: 'slices' };
+}
+export const runIters = (r: { tag: string; secs: number; rows: unknown[]; slices?: Slice[] }) => armIters(reproSteps(r.tag, r.secs), r.slices, r.rows.length);
+
 export function rowArms(n: number, slices?: Slice[]): (string | null)[] {
   if (!slices) return Array.from({ length: n }, () => 'all');
-  const len = slices.length > 1 ? slices[1].from - slices[0].from : Infinity;
-  const keep = slices.map((sl, i) => i > 0 && (i < slices.length - 1 || n - sl.from >= len / 2));
+  const keep = sliceKeep(n, slices);
   return Array.from({ length: n }, (_, i) => {
     let cur = -1; slices.forEach((sl, k) => { if (i >= sl.from) cur = k; });
     return cur >= 0 && keep[cur] && i - slices[cur].from >= SETTLE_S ? (slices[cur].on ? 'on' : 'off') : null;
@@ -222,18 +241,19 @@ export function toolsOn(row: { ini?: Record<string, unknown> | null; run?: { pro
   // the stack samplers run only in a plain window (profile-world.ts `window`)
   if (!p.noSamplers && !(p.ab || p.taskstall || p.repro || p.inroom || p.watchstalk || p.livereads2 || p.f4b || p.vres || p.vresDry || p.story)) out.push('samplers');
   for (const k of ['mainstack', 'taskstall', 'inroom', 'watchstalk', 'livereads2', 'f4b', 'vres', 'story']) if (p[k]) out.push(k);
-  for (const s of ['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify'])
+  for (const s of ['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'CrashForensics', 'MovedWaits'])
     if (n(`${s}.Enabled`)) out.push(s);
+  if (n('ProbeSnap.CallSites') && !n('ProbeSnap.Enabled')) out.push('ProbeSnap.CallSites'); // docs/133 §7 coverage (Enabled wins)
   if (n('HitchAttr.Enabled') && n('HitchAttr.Holders')) out.push('HitchAttr.Holders');
   if (n('RouteJobPhases.Enabled')) for (const k of ['SyncPlans', 'HostSplit', 'GoalSplit', 'GoalStepSplit']) if (n(`RouteJobPhases.${k}`)) out.push(`RouteJobPhases.${k}`);
   if (ini['RouteAsync.LogFallbackMs'] !== undefined && n('RouteAsync.LogFallbackMs') > 0 && n('RouteAsync.LogFallbackMs') < 200) out.push('LogFallbackMs<200');
   if (n('RouteAsync.LogFallbackStack')) out.push('LogFallbackStack');
-  if (n('RouteAsync.OwnJobWait')) out.push('OwnJobWait');
+  if (n('RouteAsync.OwnJobWait')) out.push(String(p.ab ?? '').split(',').includes('ownjobwait') ? 'OwnJobWait (on arm)' : 'OwnJobWait');
   if (n('RouteEarlyOut.Enabled') && !n('RouteEarlyOut.Act')) out.push(String(p.ab ?? '').split(',').includes('earlyout') ? 'RouteEarlyOut.observe (on arm)' : 'RouteEarlyOut.observe');
   if (n('RouteSnap.Enabled') && (ini['RouteSnap.AuditEvery'] === undefined || n('RouteSnap.AuditEvery'))) out.push('RouteSnap.audits');
   return out;
 }
-type ToolCosts = { tools: Record<string, { class: string; msPerS: number | null }>; bundles: { name: string; tools: string[]; msPerS: number }[] };
+export type ToolCosts = { tools: Record<string, { class: string; msPerS: number | null; timing?: string }>; bundles: { name: string; tools: string[]; msPerS: number }[] };
 export function toolCostLine(tools: string[], costs: ToolCosts): string {
   const base = (t: string) => t.replace(/ \(on arm\)$/, ''), left = new Set(tools.map(base)), taken: string[] = [];
   let ms = 0;
@@ -257,11 +277,14 @@ export function flatIni(text: string): Record<string, string> {
 }
 // the row's ini overrides on top of the repo ini text at its build; base null (build unknown or not in git) = overrides only
 export const withBaseIni = <R extends { ini?: Record<string, unknown> | null }>(row: R, base: string | null): R => ({ ...row, ini: { ...(base ? flatIni(base) : {}), ...(row.ini ?? {}) } });
-function repoIniAt(build: unknown): string | null {
+const iniAt = new Map<string, string | null>();
+export function repoIniAt(build: unknown): string | null {
   if (typeof build !== 'string' || !/^[0-9a-f]{4,40}$/.test(build)) return null;
-  try { return execFileSync('git', ['-C', ROOT, 'show', `${build}:native/ts3native/ts3native.ini`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }).toString(); } catch { return null; }
+  if (!iniAt.has(build)) try { iniAt.set(build, execFileSync('git', ['-C', ROOT, 'show', `${build}:native/ts3native/ts3native.ini`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000 }).toString()); } catch { iniAt.set(build, null); }
+  return iniAt.get(build)!;
 }
 const TOOL_COSTS = resolve(import.meta.dirname, '..', '..', 'docs', 'data', 'tool-costs.json');
+export const toolCosts = (): ToolCosts => JSON.parse(readFileSync(TOOL_COSTS, 'utf8'));
 // the queue row of a profile tag (probe-out/queue/<queue>-<date>.jsonl, row.profileTag), newest row wins; null = run outside a queue
 function queueRow(tag: string): any {
   if (!existsSync(QUEUE)) return null;
@@ -279,7 +302,8 @@ function toolLines(tags: string[]): string[] {
   });
 }
 
-export function hitchReport(args: string[]): string {
+// cross: extra pairs of two separate runs (--reuse valid-single pairs), shown as older / newer in the off / on columns
+export function hitchReport(args: string[], cross: { title: string; older: string; newer: string }[] = []): string {
   const loaded = expandTags(args).map(loadRun), bad = loaded.filter(r => r.invalid).map(r => `${r.tag} (${r.invalid})`);
   const runs = new Map(loaded.filter(r => !r.invalid).map(r => [r.tag, r])), tags = [...runs.keys()];
   const out = [HEAD], shown: Arm[] = [];
@@ -302,6 +326,7 @@ export function hitchReport(args: string[]): string {
     const xs = twoLoads.filter(x => x[0] === base);
     if (xs.length > 1) pair(`${base} (${xs.length} two-load pairs, pooled)`, xs.map(x => x[1]), xs.map(x => x[2]));
   }
+  for (const c of cross) { const a = runs.get(c.older)?.arms.all, b = runs.get(c.newer)?.arms.all; if (a && b) pair(c.title, [b], [a]); }
   if (pairs.length) out.push('', `| Pair | p99 off / on | p99.9 off / on | max off / on | ${THRESH.map(t => `>=${t} per 10 min off / on`).join(' | ')} |\n|${'---|'.repeat(4 + THRESH.length)}`, ...pairs,
     '', `Confidence (docs/168 §1: exact Poisson per arm, exact conditional on/off ratio, Wald difference; fewer than ${MIN_EVENTS} events in both arms = not enough events)`, '', CI_HEAD, ...cis);
   out.push('', exclTable(mergeExcl(shown)));
@@ -309,6 +334,56 @@ export function hitchReport(args: string[]): string {
   out.push('', 'Measurement tools per run (docs/168 §9, docs/data/tool-costs.json):', ...toolLines(loaded.map(r => r.tag)));
   out.push('', `p99 / p99.9 over every iteration (seconds.csv iters); '<${HITCH_MS}' = that rank lies below the profiler's ${HITCH_MS} ms hitch threshold, so only bounded.`);
   return out.join('\n');
+}
+
+// ---- --reuse (docs/168 §10): past runs whose timing verdict lets them count as evidence without a new timing run
+export type ReuseCand = { tag: string; job: string; time: string; timing: string; why: string; asiSha?: string; tuning?: string; ini: string };
+// queue rows -> runs of <id> (job id, profile.repro id, repro window id or profile tag) with their timing verdict: the stored one
+// (queue.ts rows since 2026-10-24) or computed now (run-verdict.ts rowTiming); a repros job gives one run per window
+export function reuseCands(rows: any[], id: string, since?: string, timingOf: (r: any) => { timing: string; why: string; windows?: Record<string, { timing: string; why: string }> } = rowTiming): ReuseCand[] {
+  const out: ReuseCand[] = [];
+  for (const r of rows) {
+    if (since && String(r.time ?? '') < since) continue;
+    const wins = (r.repros ?? []).filter((w: any) => w.id === id || r.job === id);
+    const whole = !r.repros?.length && (r.job === id || bothOrdersBase(String(r.job)) === id || r.run?.profile?.repro === id || r.profileTag === id);
+    if (!whole && !wins.length) continue;
+    let t: ReturnType<typeof timingOf> | null = null;
+    const got = () => t ??= timingOf(r);
+    const base = { time: String(r.time ?? ''), asiSha: r.buildCheck?.asiSha ?? r.asiSha, tuning: r.buildCheck?.fixesTuning, ini: JSON.stringify(r.ini ?? {}) };
+    if (whole) { const v = r.timing ? { timing: r.timing, why: r.timingWhy ?? '' } : got(); out.push({ ...base, tag: r.profileTag ?? `${r.queue}/${r.job} (no profile data)`, job: r.job, timing: v.timing, why: v.why }); }
+    for (const w of wins) { const v = w.timing ? { timing: w.timing, why: w.timingWhy ?? '' } : got().windows?.[w.id] ?? { timing: 'invalid', why: 'window timing unknown' }; out.push({ ...base, tag: w.tag, job: `${r.job} / ${w.id}`, timing: v.timing, why: v.why }); }
+  }
+  return out;
+}
+// <base>-offfirst / <base>-onfirst -> <base> (the both-orders pair of one in-load A/B); other ids unchanged
+const bothOrdersBase = (s: string) => s.replace(/-(off|on)first$/, '');
+// in-load A/B runs with timing valid, plus valid-half runs pooled with the opposite-order run of the same job (or window) and the
+// same asi + tuning (4 slices per arm together; in-load evidence, hitchReport's 'both orders, pair mean' row); unpaired valid-half
+// runs are listed but not used. valid-single runs of one job (or window) paired older -> newer, a build or job ini
+// difference flagged. Cross-run pairs are weaker evidence: two loads, and world state and machine drift between them
+export function pickReuse(cands: ReuseCand[]) {
+  const groups = new Map<string, ReuseCand[]>();
+  for (const c of cands.filter(c => c.timing === 'valid-single').sort((a, b) => a.time.localeCompare(b.time))) groups.set(c.job, [...(groups.get(c.job) ?? []), c]);
+  const h = (x?: string) => x?.slice(0, 12) ?? '?';
+  const pairs = [...groups.values()].flatMap(g => g.slice(1).map((b, i) => {
+    const a = g[i], flags = [a.asiSha !== b.asiSha && `asi ${h(a.asiSha)} vs ${h(b.asiSha)}`, a.tuning !== b.tuning && `ts3fixes tuning ${h(a.tuning)} vs ${h(b.tuning)}`, a.ini !== b.ini && 'job ini'].filter(Boolean);
+    return { older: a.tag, newer: b.tag, title: `${b.job}: ${a.tag} -> ${b.tag} (cross-run, WEAKER evidence: two loads; ${flags.length ? `BUILD DIFFERS: ${flags.join(', ')}` : 'same build'})` };
+  }));
+  const halves = cands.filter(c => c.timing === 'valid-half'), pooled: string[] = [];
+  for (const a of halves.filter(c => /-offfirst$/.test(c.tag))) {
+    const b = halves.find(c => c.tag === a.tag.replace(/-offfirst$/, '-onfirst') && bothOrdersBase(c.job) === bothOrdersBase(a.job) && c.asiSha === a.asiSha && c.tuning === a.tuning);
+    if (b) pooled.push(a.tag, b.tag);
+  }
+  return { ab: cands.filter(c => c.timing === 'valid').map(c => c.tag), pooled, unpaired: halves.map(c => c.tag).filter(t => !pooled.includes(t)), singles: [...groups.values()].flat().map(c => c.tag), pairs };
+}
+export function reuseReport(id: string, since?: string): string {
+  const rows = existsSync(QUEUE) ? readdirSync(QUEUE).filter(f => /-\d{4}-\d\d-\d\d\.jsonl$/.test(f)).flatMap(f => jsonlRows(join(QUEUE, f))) : [];
+  const cands = reuseCands(rows, id, since), p = pickReuse(cands), tags = [...p.ab, ...p.pooled, ...p.singles].filter(t => !t.includes(' '));
+  return [`### Reusable timing runs for ${id}${since ? ` since ${since}` : ''} (docs/168 §10)`, '',
+    `${p.ab.length} in-load A/B valid, ${p.pooled.length / 2} both-orders pairs of valid-half runs (pooled: in-load A/B evidence, the 'both orders, pair mean' rows)${p.unpaired.length ? `, unpaired valid-half not used: ${p.unpaired.join(', ')}` : ''}, ${p.singles.length} valid-single, ${p.pairs.length} cross-run pairs (WEAKER evidence than in-load A/B; their pair rows read older / newer in the off / on columns)`, '',
+    '| Run | Start UTC | Timing | asi | ts3fixes tuning |', '|---|---|---|---|---|',
+    ...cands.map(c => `| ${c.tag} | ${c.time.slice(0, 16)} | ${c.timing}${c.why ? ` (${c.why.replace(/\|/g, '/')})` : ''} | ${c.asiSha?.slice(0, 12) ?? '?'} | ${c.tuning?.slice(0, 12) ?? '?'} |`),
+    '', tags.length ? hitchReport(tags, p.pairs) : 'no reusable runs (none valid, paired valid-half or valid-single)'].join('\n');
 }
 
 // worst-hitches.ts --json records by '<tag>|<hitch t>' (only iterations >= its --min)
@@ -592,7 +667,7 @@ function selfCheck() {
   assert.ok(la2.rows.some(r => r.includes(`| ${AGENT_ROW} | `) && r.includes('| 1600 |')), 'agent row');
   assert.ok(!movedWaits([{ t0: 0, fires: [{ a: 60_000, b: 120_000, arm: 'off' }, { a: 120_000, b: 180_000, arm: 'on' }], hitches: [ag(70_000, 900, 'Ts3Agent.PollTask'), ag(130_000, 900, 'Ts3Agent.PollTask')] }]).includes('Ts3Agent'), 'agent out of moved waits');
   // tools on (docs/168 §9): the profiler-cost full job takes the bundle off; the lean job has only prof-lean + frames; an --ab
-  // earlyout observe job marks the on arm; every name toolsOn() prints is in tool-costs.json
+  // earlyout observe job (and --ab ownjobwait) marks the on arm; every name toolsOn() prints is in tool-costs.json
   const tc: ToolCosts = JSON.parse(readFileSync(TOOL_COSTS, 'utf8'));
   const full = { ini: { 'HitchAttr.Enabled': 1, 'RouteJobPhases.Enabled': 1, 'RouteJobPhases.SyncPlans': 1, 'RouteAsync.LogFallbackMs': 20, 'RouteAsync.LogFallbackStack': 16 }, run: { profile: { noSamplers: true } } };
   assert.deepEqual(toolsOn(full), ['prof-stages', 'prof-tasks', 'frames', 'HitchAttr', 'RouteJobPhases', 'RouteJobPhases.SyncPlans', 'LogFallbackMs<200', 'LogFallbackStack']);
@@ -601,11 +676,15 @@ function selfCheck() {
   assert.deepEqual(toolsOn({ ini: {}, run: { profile: {} } }), ['prof-stages', 'prof-tasks', 'frames', 'samplers']);
   const eo = toolsOn({ ini: { 'RouteEarlyOut.Enabled': 1, 'RouteEarlyOut.Act': 0 }, run: { profile: { ab: 'earlyout', profOpts: { stages: false } } } });
   assert.deepEqual(eo, ['prof-lean', 'frames', 'RouteEarlyOut.observe (on arm)']);
+  assert.deepEqual(toolsOn({ ini: { 'RouteAsync.OwnJobWait': 1 }, run: { profile: { ab: 'ownjobwait', profOpts: { stages: false } } } }), ['prof-lean', 'frames', 'OwnJobWait (on arm)']);
   assert.match(toolCostLine(['prof-lean', 'samplers', 'ProbeSnap'], tc), /cost taken off: 0 ms\/s; not measured: prof-lean; HEAVY \(correctness only, no timing\): samplers, ProbeSnap$/);
-  const all = toolsOn({ ini: Object.fromEntries(['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'RouteSnap', 'RouteEarlyOut']
+  const all = toolsOn({ ini: Object.fromEntries(['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'CrashForensics', 'RouteSnap', 'RouteEarlyOut']
     .map(s => [`${s}.Enabled`, 1]).concat(['HitchAttr.Holders', 'RouteJobPhases.SyncPlans', 'RouteJobPhases.HostSplit', 'RouteJobPhases.GoalSplit', 'RouteJobPhases.GoalStepSplit', 'RouteAsync.OwnJobWait', 'RouteAsync.LogFallbackStack'].map(k => [k, 1]), [['RouteAsync.LogFallbackMs', 20]])),
   run: { profile: { mainstack: 'main', taskstall: 250, inroom: true, watchstalk: true, livereads2: true, f4b: true, vres: true, story: {} } } });
   assert.deepEqual(all.filter(t => !tc.tools[t]), [], 'every toolsOn name has a tool-costs.json row');
+  const cs = toolsOn({ ini: { 'ProbeSnap.CallSites': 1 }, run: { profile: { noProf: true } } });
+  assert.deepEqual(cs, ['samplers', 'ProbeSnap.CallSites']); assert.equal(tc.tools[cs[1]].timing, 'no');
+  assert.ok(!toolsOn({ ini: { 'ProbeSnap.CallSites': 1, 'ProbeSnap.Enabled': 1 } }).includes('ProbeSnap.CallSites'));
   // base ini: a tool the repo ini turns on is listed; the job's override wins; trailing comments do not hide a value
   const baseTxt = '; head\n[HitchAttr]\nEnabled=1 ; probe on\n[RouteAsync]\nLogFallbackMs=200\n[RouteJobPhases]\nEnabled=0\n';
   assert.deepEqual(flatIni(baseTxt), { 'HitchAttr.Enabled': '1', 'RouteAsync.LogFallbackMs': '200', 'RouteJobPhases.Enabled': '0' });
@@ -615,12 +694,41 @@ function selfCheck() {
   assert.deepEqual(toolsOn(withBaseIni({ ini: null, run: { profile: nf } }, null)), ['prof-lean', 'frames']);
   // the repo ini as committed turns no measurement tool on (release defaults)
   assert.deepEqual(toolsOn(withBaseIni({ ini: {}, run: { profile: nf } }, readFileSync(join(ROOT, 'native', 'ts3native', 'ts3native.ini'), 'utf8'))), ['prof-lean', 'frames']);
+  // timing verdict helpers (docs/168 §10): A/B iterations per arm from repro step lines, else kept --ab slices (ABBA 10 min: 2 + 2)
+  assert.deepEqual(armIters(['repro x step patches [arm off #1]: {}', 'repro x step reflect_call [fire off #1]: {}', 'repro x step patches [arm on #2]: {}', 'repro x step patches [arm on #3]: {}'], undefined, 0), { on: 2, off: 1, src: 'repro' });
+  const abba = [{ from: 0, on: true }, { from: 120, on: false }, { from: 240, on: true }, { from: 360, on: true }, { from: 480, on: false }];
+  assert.deepEqual(armIters([], abba, 600), { on: 2, off: 2, src: 'slices' });
+  assert.deepEqual(armIters(undefined, abba, 500), { on: 2, off: 1, src: 'slices' }, 'a last slice under half length is out');
+  assert.equal(armIters(['save_game'], undefined, 600), null);
+  // --reuse: stored verdicts used as is, windows of a repros job, valid-single pairs older -> newer with build flags
+  const rr = (job: string, time: string, timing: string, asiSha = 'a1', extra: object = {}) => ({ job, time, timing, timingWhy: '', asiSha, ini: {}, profileTag: `q-${time.slice(0, 10)}-${job}`, run: { profile: {} }, ...extra });
+  const qrows = [rr('j', '2026-10-20T01:00', 'valid-single'), rr('j', '2026-10-22T01:00', 'valid-single', 'b2'), rr('j', '2026-10-21T01:00', 'invalid'), rr('k', '2026-10-21T01:00', 'valid'),
+    { job: 'w', time: '2026-10-21T02:00', repros: [{ id: 'r1', tag: 't-r1', timing: 'valid' }, { id: 'r2', tag: 't-r2', timing: 'invalid', timingWhy: 'noise high' }] }];
+  const never = () => { throw new Error('stored verdicts must not be recomputed'); };
+  const cj = reuseCands(qrows, 'j', undefined, never);
+  assert.deepEqual(cj.map(c => c.timing), ['valid-single', 'valid-single', 'invalid']);
+  const pj = pickReuse(cj);
+  assert.deepEqual([pj.ab, pj.singles, pj.pairs.map(x => [x.older, x.newer])], [[], ['q-2026-10-20-j', 'q-2026-10-22-j'], [['q-2026-10-20-j', 'q-2026-10-22-j']]]);
+  // valid-half: off-first + on-first of one job and build pool into in-load evidence; a lone or other-build half is listed only
+  const hrows = [rr('h-offfirst', '2026-10-21T01:00', 'valid-half'), rr('h-onfirst', '2026-10-21T02:00', 'valid-half'), rr('g-offfirst', '2026-10-21T03:00', 'valid-half'),
+    rr('g-onfirst', '2026-10-21T04:00', 'valid-half', 'zz'), rr('e-offfirst', '2026-10-21T05:00', 'valid-half')];
+  const ph = pickReuse(reuseCands(hrows, 'h', undefined, never));
+  assert.deepEqual([ph.pooled, ph.unpaired, ph.pairs], [['q-2026-10-21-h-offfirst', 'q-2026-10-21-h-onfirst'], [], []]);
+  assert.deepEqual(pickReuse(reuseCands(hrows, 'g', undefined, never)).unpaired, ['q-2026-10-21-g-offfirst', 'q-2026-10-21-g-onfirst'], 'different asi: not pooled');
+  assert.deepEqual(pickReuse(reuseCands(hrows, 'e', undefined, never)).pooled, []);
+  assert.match(pj.pairs[0].title, /WEAKER evidence: two loads; BUILD DIFFERS: asi a1 vs b2\)$/);
+  assert.match(pickReuse(reuseCands(qrows.slice(0, 2).map(r => ({ ...r, asiSha: 'a1' })), 'j', undefined, never)).pairs[0].title, /same build\)$/);
+  assert.equal(reuseCands(qrows, 'j', '2026-10-21', never).length, 2, '--since');
+  assert.deepEqual(pickReuse(reuseCands(qrows, 'k', undefined, never)).ab, ['q-2026-10-21-k']);
+  assert.deepEqual(reuseCands(qrows, 'r1', undefined, never).map(c => [c.tag, c.job, c.timing]), [['t-r1', 'w / r1', 'valid']]);
+  assert.equal(reuseCands(qrows, 'w', undefined, never).length, 2, 'job id = every window');
   console.log('hitch-ab self-check ok');
 }
 
 if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2), opt = (k: string) => { const i = args.indexOf(k); return i < 0 ? undefined : args.splice(i, 2)[1]; };
   if (args.includes('--self-check')) selfCheck();
+  else if (args.includes('--reuse')) { const id = opt('--reuse')!, since = opt('--since'); console.log(reuseReport(id, since)); }
   else if (args.includes('--power')) console.log(powerReport(Number(opt('--reduction') ?? 0.3), Number(opt('--arm-min') ?? 3.5)));
   else if (args.includes('--scenario')) { args.splice(args.indexOf('--scenario'), 1); console.log(scenarioReport(args)); }
   else if (args.includes('--causes')) {

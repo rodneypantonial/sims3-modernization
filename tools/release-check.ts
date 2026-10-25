@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
-import { FEATURES as RF, setIni, setTuning } from './release-features.ts';
+import { FEATURES as RF, isOn, setIni, setTuning } from './release-features.ts';
 import { checkLoop, isSetup } from './harness/repro-loop.ts';
 import { loadDb, sha256, tuningXmlOf } from './builds.ts';
 
@@ -56,7 +56,8 @@ const SMOKE = [['bp', 'Baseline-BP-Spring'], ['ip', 'Baseline-IP-Spring'], ['sv'
 // a feature is on when every one of its on-keys already has its on value (setIni/setTuning log no edit); a key missing in an
 // older ini means off
 export function onIn(f: Feature, id: string, ini: string, tuning: string): boolean {
-  const on = f.on ?? (RF[id] ? { ini: Object.fromEntries(Object.entries(RF[id].ini ?? {}).map(([k, [v]]) => [k, v])), tuning: RF[id].tuning } : undefined);
+  if (!f.on && RF[id]) { try { return isOn(id, ini, tuning); } catch { return false; } }
+  const on = f.on;
   if (!on) return false;
   const log: string[] = [];
   try {
@@ -425,7 +426,9 @@ if (import.meta.filename === resolve(process.argv[1] ?? '')) {
     const prevShip = new Set(ids.filter(id => onIn(map.features[id], id, prevIni, prevTuning)));
     const ship = listArg ? new Set([...prevShip, ...listArg.split(',').filter(Boolean)]) : repoShip;
     const iniOverride: Record<string, unknown> = {}, fixesOn: string[] = [];
-    if (listArg) for (const id of ship) {
+    // release-features.ts order, so a later feature's on value wins a shared key (routesnapplan's RouteSnap.Kinds=9)
+    const rfOrder = (id: string) => Object.keys(RF).indexOf(id);
+    if (listArg) for (const id of [...ship].sort((a, b) => rfOrder(a) - rfOrder(b))) {
       const f = map.features[id], on = f.on ?? { ini: Object.fromEntries(Object.entries(RF[id]?.ini ?? {}).map(([k, [v]]) => [k, v])), tuning: RF[id]?.tuning };
       for (const [k, v] of Object.entries(on.ini ?? {})) if (!repoShip.has(id)) iniOverride[k] = /^-?\d+$/.test(v) ? Number(v) : v;  // RouteSnap.Lots=replay stays a string
       if ((on.tuning ?? []).length && !repoShip.has(id)) fixesOn.push(...(f.fixes ?? []));

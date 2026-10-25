@@ -259,11 +259,12 @@ static u8* RpGameCopy(const u8* src, DWORD n, bool* ok) {  // a polygon or verte
     if (!n) return NULL;
     u8* d = (u8*)g_rpNew(n, *g_rpNewFlags, 0, 0, 0xF98980, 0xE7);
     if (!d) { *ok = false; return NULL; }
+    CfRec(CF_COPY_NEW, d, n);
     memcpy(d, src, n);
     InterlockedExchangeAdd(&g_rpBytes, (LONG)n);  // counted with ours (ReplayCapMB)
     return d;
 }
-static void RpGameFree(u8* b, u8* e) { if (b) { InterlockedExchangeAdd(&g_rpBytes, -(LONG)(e - b)); g_rpDel(b); } }
+static void RpGameFree(u8* b, u8* e) { if (b) { InterlockedExchangeAdd(&g_rpBytes, -(LONG)(e - b)); CfFree(CF_COPY_FREE, b); g_rpDel(b); } }
 static void RpFpArrays(u8* g) {  // frees the game-allocated arrays of one copied footprint (not its children)
     const RpCls* c = RpClass(*(const DWORD*)g);
     u8* nc = c && c->cache ? *(u8**)(g + 0x38) : NULL;
@@ -474,7 +475,7 @@ static bool RpVecCopyEA(u8* g, DWORD off, DWORD elem) {
     const DWORD n = b && e > b && (DWORD)(e - b) <= elem * 65536 ? (DWORD)(e - b) : 0;
     u8* c = n ? (u8*)g_rpNew(n, RpD(g + off + 0xC), 0, 0, 0xF98980, 0xE7) : NULL;
     if (n && !c) return false;
-    if (n) memcpy(c, b, n);
+    if (n) CfRec(CF_VEC_NEW, c, n), memcpy(c, b, n);
     *(u8**)(g + off) = c, *(u8**)(g + off + 4) = c + n, *(u8**)(g + off + 8) = c + n;
     return true;
 }
@@ -490,8 +491,8 @@ static bool RpRoomListsCopy(u8* r) {
     return true;
 }
 static void RpRoomListsFree(u8* r) {
-    for (u8* e = RpP(r + 0x34); e && e < RpP(r + 0x38); e += 16) g_rpDel(RpP(e));
-    g_rpDel(RpP(r + 0x34)), g_rpDel(RpP(r + 0x24));
+    for (u8* e = RpP(r + 0x34); e && e < RpP(r + 0x38); e += 16) CfFree(CF_ROOM_FREE, RpP(e)), g_rpDel(RpP(e));
+    CfFree(CF_ROOM_FREE, RpP(r + 0x34)), g_rpDel(RpP(r + 0x34)), CfFree(CF_ROOM_FREE, RpP(r + 0x24)), g_rpDel(RpP(r + 0x24));
 }
 // I-94-321 (0.33.4, steerro-test K8, docs/94 §13.3): the lot graph's two hashes g+0x120 (lot-edge waypoint key -> exit portal
 // index: LotEdge_WaypointPosition 0x653020, the closest-waypoint gather 0x654C04) and g+0x140 (0x63C326) are 0x20-byte EASTL
@@ -507,6 +508,7 @@ static bool RpHashCopyEA(u8* h) {
     if (!n || n > (1u << 20)) return false;
     DWORD* c = (DWORD*)g_rpNew((n + 1) * 4, RpD(h + 0x1C), 0x400000, 0, 0xF98980, 0xE7);
     if (!c) return false;
+    CfRec(CF_HASH_NEW, c, (n + 1) * 4);
     memset(c, 0, n * 4);
     c[n] = bk[n];
     *(DWORD**)(h + 4) = c;
@@ -515,6 +517,7 @@ static bool RpHashCopyEA(u8* h) {
         for (const u8* nd = (const u8*)(uintptr_t)bk[i]; nd; nd = RpP(nd + 8)) {
             u8* m = (u8*)g_rpNew(12, RpD(h + 0x1C), 0, 0, 0xF98980, 0xE7);
             if (!m) return false;  // the chain ends here: private, short (the caller fails the build)
+            CfRec(CF_HNODE_NEW, m, 12);
             memcpy(m, nd, 8);
             *(DWORD*)(m + 8) = 0;
             *link = (DWORD)(uintptr_t)m;
@@ -527,8 +530,8 @@ static void RpHashFreeEA(u8* h) {
     DWORD* bk = (DWORD*)RpP(h + 4);
     if (!bk) return;
     for (DWORD i = 0; i < RpD(h + 8); i++)
-        for (u8* nd = (u8*)(uintptr_t)bk[i]; nd;) { u8* nx = RpP(nd + 8); g_rpDel(nd); nd = nx; }
-    g_rpDel(bk);
+        for (u8* nd = (u8*)(uintptr_t)bk[i]; nd;) { u8* nx = RpP(nd + 8); CfFree(CF_HASH_FREE, nd), g_rpDel(nd); nd = nx; }
+    CfFree(CF_HASH_FREE, bk), g_rpDel(bk);
 }
 
 // build context: an epoch build (whole clone) or a rebase batch (some lots against the clone's P)
@@ -665,6 +668,7 @@ static u8* RpTree(RpCtx& x, const u8* n, int depth, u8* parent = NULL) {
             if (cnt > 65536) { RpFailW(x, RW_LEAFCNT, x.lot, cnt); return m; }
             u8* arr = (u8*)g_rpNew(cnt * 12, *g_rpNewFlags, 0, 0, 0xF98980, 0xE7);
             if (!arr) { *(DWORD*)(m + 8) = 1, *(DWORD*)(m + 0xC) = 0; RpFailW(x, RW_ALLOC, x.lot, 3); return m; }
+            CfRec(CF_LEAF_NEW, arr, cnt * 12);
             for (DWORD j = 0; j < cnt; j++) {
                 memcpy(arr + j * 12, src + j * 12, 12);
                 const u8* f = RpP(src + j * 12);
@@ -1309,6 +1313,16 @@ static bool g_rpHave;                // an epoch clone was pushed
 static u64 g_rpForce[64];            // W3 / W4 lots: rebase at the next cut (any thread, under the ring lock)
 static int g_rpNForce;
 static LONG g_rpForceAll;
+// 0.36.55 (docs/94 §24.13.5): audit-forced lots, so the log shows their repair: state 1 = forced by an audit MISMATCH, 2 =
+// rebased at a cut ("rebased at cut N" line), then "equal again" at its first equal audit (entry dropped). Ring lock.
+static u64 g_rpAudF[32];
+static BYTE g_rpAudFSt[32];
+static int g_rpNAudF;
+static LONG g_rpAudFLog, g_rpAudFReb, g_rpAudFRep;  // log lines; audit-forced lots rebased, then equal again (selftest)
+static int RpAudFFind(u64 key) {  // under the ring lock; -1 none
+    for (int i = 0; i < g_rpNAudF; i++) if (g_rpAudF[i] == key) return i;
+    return -1;
+}
 // docs/157 §10 ([RouteSnap] AuditHoldRebase=1, default 0, I-157-11): an audit mismatch whose diff is pending holds that
 // lot's rebase (forced, signature or shell) until the diff has run on the drifted clone, at most one cut; then the cut
 // releases it (timeout). One hold per lot in a row (g_rpHoldLast), so the hold's own repeat mismatch rebases at once.
@@ -1527,7 +1541,12 @@ static void RpEpochBody(const u8* world) {
     RpMirrorSet(g_rpLive, n < 0 ? 0 : n);
     while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
     g_rpNForce = 0, g_rpForceAll = 0, g_rpNShellF = 0, g_rpNUnk = 0, g_rpUnkAll = 0, g_rpNNoQ = 0, g_rpNoQAll = 0;
+    int nAudEp = 0;  // 0.36.55: audit-forced lots repaired by this full build (their "equal again" line follows)
+    for (int i = 0; i < g_rpNAudF; i++) if (g_rpAudFSt[i] == 1) g_rpAudFSt[i] = 2, g_rpAudFReb++, nAudEp++;
     InterlockedExchange(&g_rpRingLock, 0);
+    if (nAudEp && InterlockedIncrement(&g_rpAudFLog) <= 128)
+        Log("snap replay audit: %d audit-forced lot(s) rebuilt by an epoch build at cut %ld (first 0x%08lX%08lX)", nAudEp,
+            ts3native_counters.spCuts, (DWORD)(g_rpAudF[0] >> 32), (DWORD)g_rpAudF[0]);
     RpPush(RP_EPOCH, 0, 0, 0, c);
     g_rpEpochAt = g_rpHead;
     g_rpLotsPend = false;  // older batches go to the old clone
@@ -2302,6 +2321,19 @@ static void RpCutBody(const u8* world) {
             if (b) {  // the in-flight rule follows map batches only (0.35.23): a shells batch never makes a later map batch wait
                 RpPush(RP_LOTS, 0, 0, 0, b);
                 if (mapNeed) g_rpLotsAt = g_rpHead, g_rpLotsPend = true;
+                for (int i = 0; g_rpNAudF && i < ns + nsh; i++) {  // 0.36.55 (docs/94 §24.13.5): audit-forced lots in this batch
+                    const RpLiveLot& r = i < ns ? set[i] : shl[i - ns];
+                    while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+                    const int f = RpAudFFind(r.key);
+                    const bool hit = f >= 0 && g_rpAudFSt[f] == 1;
+                    if (hit) g_rpAudFSt[f] = 2, g_rpAudFReb++;
+                    InterlockedExchange(&g_rpRingLock, 0);
+                    if (!hit || InterlockedIncrement(&g_rpAudFLog) > 128) continue;
+                    DWORD ents = 0;
+                    RpLotHash(r.node, &ents);
+                    Log("snap replay audit: lot 0x%08lX%08lX rebased at cut %ld (ring %lu, %s), entries live %lu (the clone copies them)",
+                        (DWORD)(r.key >> 32), (DWORD)r.key, k.spCuts, g_rpHead, i < ns ? "full" : "shell", ents);
+                }
             }
             if (mapNeed) RpOpLeave(op);  // taken only for map work (a shells-only cut never took the set)
             if (!b) { RpTabFree(exLive); RC_REBUILD(RC_REBASE) }
@@ -2896,6 +2928,9 @@ static void RpAuditForce(u64 key) {
     int j = 0;
     while (j < g_rpNForce && g_rpForce[j] != key) j++;
     if (j == g_rpNForce) { if (g_rpNForce < 64) g_rpForce[g_rpNForce++] = key; else g_rpForceAll = 1; }
+    const int f = RpAudFFind(key);
+    if (f >= 0) g_rpAudFSt[f] = 1;
+    else if (g_rpNAudF < 32) g_rpAudF[g_rpNAudF] = key, g_rpAudFSt[g_rpNAudF++] = 1;
     InterlockedExchange(&g_rpRingLock, 0);
     if (InterlockedIncrement(&g_rpAuditForced) <= 16)
         Log("snap replay audit: lot 0x%08lX%08lX forced to rebase at the next cut (%ld so far)", (DWORD)(key >> 32), (DWORD)key, g_rpAuditForced);
@@ -3227,7 +3262,20 @@ static void RpAudit(RpClone* c, const RpAuditRec* a) {
         if (l) seen++;
         k.rpAudits++;
         RpAuditOk& ok = RpAuditOkSlot(a->keys[i]);
-        if (l && h == a->hash[i]) { ok.key = a->keys[i], ok.seq = a->seq; continue; }
+        if (l && h == a->hash[i]) {
+            ok.key = a->keys[i], ok.seq = a->seq;
+            if (g_rpNAudF) {  // 0.36.55: the first equal audit after a forced rebase shows the repair
+                while (InterlockedExchange(&g_rpRingLock, 1)) YieldProcessor();
+                const int f = RpAudFFind(a->keys[i]);
+                const bool rep = f >= 0 && g_rpAudFSt[f] == 2;
+                if (rep) g_rpAudF[f] = g_rpAudF[--g_rpNAudF], g_rpAudFSt[f] = g_rpAudFSt[g_rpNAudF], g_rpAudFRep++;
+                InterlockedExchange(&g_rpRingLock, 0);
+                if (rep && InterlockedIncrement(&g_rpAudFLog) <= 128)
+                    Log("snap replay audit: lot 0x%08lX%08lX equal again at ring %lu, cut %ld (first audit after its forced rebase), entries %lu",
+                        (DWORD)(a->keys[i] >> 32), (DWORD)a->keys[i], a->seq, a->cut, ents);
+            }
+            continue;
+        }
         k.rpMis++;
         int qd = -1;  // first Q whose tree entry count differs (0.32.8)
         for (int j = 0; l && a->perQ && j < 16 && qd < 0; j++) if (perQ[j] != a->perQ[i * 16 + j]) qd = j;
@@ -3432,6 +3480,7 @@ static volatile LONG g_rpLongLog;
 static void RpDrain(bool lock) {  // exclusive with a P4 clone run (g_rpUse)
     for (;;) {
         AcquireSRWLockExclusive(&g_rpUse);
+        CfUse(true);
         g_rpPhase = 1;
         // the replay's own ApplyInsert / ApplyRemove on clone Qs enter P1's W1/W2 stubs too: not records (0.32.1; before, each
         // applied record came back as one on an unknown Q: BP 34,086 skips, a refresh batch at nearly every cut, resync failures)
@@ -3439,6 +3488,7 @@ static void RpDrain(bool lock) {  // exclusive with a P4 clone run (g_rpUse)
         const bool busy = RpDrainBody(lock);
         t_rpReplay--;
         g_rpPhase = 0;
+        CfUse(false);
         ReleaseSRWLockExclusive(&g_rpUse);
         if (!busy || g_rpStop) return;
         Sleep(1);  // the routing lock is busy: wait for it without g_rpUse (0.33.2)
@@ -3559,15 +3609,18 @@ static bool RpDrainBody(bool lock) {
         if (lock && !lk) return false;
         if (lock && g_spAcq(lk, NULL, &kTry) <= 0) {
             g_rpPhase = 4;  // waiting for +0x918, g_rpUse released
+            CfUse(false);
             ReleaseSRWLockExclusive(&g_rpUse);
             const LONG r = g_spAcq(lk, NULL, &kInf);
             if (r <= 0 || !TryAcquireSRWLockExclusive(&g_rpUse)) {
                 if (r > 0) g_spRel(lk, NULL);
                 AcquireSRWLockExclusive(&g_rpUse);  // holding nothing else: a clone run's end
+                CfUse(true);
                 g_rpPhase = 1;
                 k.rpLockWaitUs += UsSince(tw);
                 continue;  // the limit again: that run may have moved the hold
             }
+            CfUse(true);
             g_rpPhase = 1;
         }
         LONG op;  // inside the hold: this thread's tree pool pops are private (pools.cpp)

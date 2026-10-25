@@ -84,11 +84,14 @@ static bool RtWaitJob(volatile LONG* us, DWORD key) {
     const bool fb = g_jobFb != 0;  // docs/134 §11: the job waited for is a foreign one (A_RUNNING checked above)
     const bool own = g_jobOwn != 0;  // docs/178 T4: an own one
     const DWORD handle = g_async.handle;
+    const DWORD mwTok = MwSeqNow();  // [MovedWaits]
+    UdWait("the running route job");  // [UserDiag]: no-op unless this thread is saving
     if (tid == g_async.owner) WaitAsyncDone(SW_RTWAIT);
     else while (g_async.state == A_RUNNING) Sleep(1);
+    UdWait(NULL);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(us, waited);
-    if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb), OwSimWait(waited, own, handle);
+    if (tid == g_async.owner) WaitNote(key, waited, mwTok), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb), OwSimWait(waited, own, handle), P6wWait(mwTok, P6W_RTWAIT, 0, waited);
     return true;
 }
 
@@ -136,6 +139,7 @@ static bool RtM1Allows(void** lock, int* whyOut) {
 
 static void DiscDrain(bool force);  // discourage.cpp
 static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait);
+static DWORD CeDestroyObj(DWORD idLo, DWORD idHi);  // discourage.cpp: docs/186 §8 our-events ring
 static bool P5cPark(DWORD idLo, DWORD idHi);  // p5c.cpp: a destroy in a FreeLock window parks one reference and runs
 static void P5cFlush();                       // p5c.cpp: parked references released (no job running)
 
@@ -204,19 +208,25 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
                 if (!RgPush(t, slot, 1, rel)) RgUndo(RgFrame{NULL, 0, 0, rel, NULL});
             }
             break;
-        case RT_DESTROY:
+        case RT_DESTROY: {
             if (job) InterlockedIncrement(&k.vfRtDestroyInJob);
             if (!RgIsSim(tid)) { InterlockedIncrement(&k.vfRtDestroyOffSim); note = "destroy off the sim thread"; }
             G11Touch(G11_DESTROY, 0x02000000);
+            // docs/186 §8: our-events ring (the object looked up on the sim thread only, as P5cPark does)
+            const DWORD ceObj = g_ceOn && RgIsSim(tid) ? CeDestroyObj(slot[1], slot[2]) : 0;
+            CeRec(CE_DESTROY_IN, ceObj, slot[1], slot[2]);
             if (enforce && !worker) {  // published first (no job starts during the destroy), then wait for a running one
                 InterlockedIncrement(&g_rgOffSimOpen);
-                if (!RgPush(t, slot, 1, RG_REL_OFFSIM)) InterlockedDecrement(&g_rgOffSimOpen);
+                if (!RgPush(t, slot, 1, RG_REL_OFFSIM | (g_ceOn ? RG_REL_CE : 0), (void*)(uintptr_t)ceObj)) InterlockedDecrement(&g_rgOffSimOpen);
+                const LONG w0 = k.vfRtDestroyWaitUs;
                 const bool waited = parked || RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY);
+                CeRec(CE_DESTROY_RUN, ceObj, slot[1], (DWORD)(k.vfRtDestroyWaitUs - w0));
                 if (!waited) { InterlockedIncrement(&k.vfRtDestroyInInvoke); note = "destroy inside a job callback"; }
                 // D-X (docs/84 §7.2): thiscall(svc; idLo, idHi), ret 8 [verified 0x939420..0x939506]: slot[1], slot[2]
                 DiscOnDestroy(slot[1], slot[2], waited);
             }
             break;
+        }
         case RT_LOTGRID:
             if (worker) InterlockedIncrement(&k.vfRtLotGridWorker);
             break;

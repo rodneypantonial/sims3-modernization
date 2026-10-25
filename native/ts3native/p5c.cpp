@@ -50,6 +50,7 @@ static void P5cTake() {
     P5bEnd();  // the worker owns +0x918 again: no sim holder is left
     InterlockedExchange(&g_p5cJob, 0);
 }
+static bool P5cRan() { return t_p5cRan; }  // P5Plan, before P5cStale (which clears it)
 // P5Plan after the run: true = a recorded routing write landed after the START cut, so the clone answer is never taken
 static bool P5cStale(DWORD seq) {
     if (!t_p5cRan) return false;
@@ -59,18 +60,22 @@ static bool P5cStale(DWORD seq) {
     const bool known = e.seq == (LONG)seq;
     if (known && now == e.w) return false;
     InterlockedIncrement(&ts3native_counters.p5cStale[known && now == t_p5cW1 ? 0 : 1]);  // 0: all before the window
+    if (t_auJob) InterlockedIncrement(&ts3native_counters.auStaleAfter);  // AskLent: a lent ask in this job (p5b.cpp)
     return true;
 }
 
 // 0.35.26 (docs/94 §22.30), P5Plan before the acquire: a recorded routing write since the START cut already means P5cStale
 // refuses the answer at the retake whatever the run finds, so the job skips the acquire and the clone run and the game's plan
 // answers at once (counted as stale before the window). A window P5bOpen would refuse could have taken it: conservative
-static bool P5cStaleEarly(DWORD seq, bool verify) {
-    Ts3nCounters& k = ts3native_counters;
+static bool P5cStaleNow(DWORD seq, bool verify) {
+    const Ts3nCounters& k = ts3native_counters;
     if (!g_p5cOn || !k.p5cFree || k.p5cOff || verify) return false;
     const P5cCut& e = g_p5cCut[seq & 63];
-    if (e.seq != (LONG)seq || g_spWrites == e.w) return false;
-    InterlockedIncrement(&k.p5cStale[0]);
+    return e.seq == (LONG)seq && g_spWrites != e.w;
+}
+static bool P5cStaleEarly(DWORD seq, bool verify) {
+    if (!P5cStaleNow(seq, verify)) return false;
+    InterlockedIncrement(&ts3native_counters.p5cStale[0]);
     return true;
 }
 

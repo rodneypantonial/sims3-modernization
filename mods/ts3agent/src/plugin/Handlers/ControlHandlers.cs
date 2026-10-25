@@ -690,6 +690,8 @@ namespace Ts3Agent
                 throw new McpException("this game has no save name yet; pass name=\"...\"");
             // forceUseSaveName: without it the game ignores SaveName and overwrites the currently loaded file.
             bool asNew = a.Has("name");
+            sAgentSavePending = true; // save_watch labels this save "agent" (SaverHandlers.cs), never a Saver save
+            sAgentSaveAt = System.Environment.TickCount;
             RunAsync("save " + om.SaveName, delegate { om.SaveGame(false, asNew, false); });
             Dictionary<string, object> r = Util.Obj();
             r["saving"] = om.SaveName;

@@ -1,0 +1,98 @@
+{
+  "note": "Night 2026-10-24, list item 3: timing A/Bs (clean machine, timing-grade), read with hitch-ab.ts (--scenario for loops; per-arm >= 100/300/500/1000/2000 ms counts, p99/p99.9/max, causes). Runs after night-1024-verify.json in the same --queue-list; a switch whose verify job FAILed makes its rows here void (queue.ts has no per-job dependency). Builds: asi game-copy/ts3native.asi.0344 (0.36.38, v109) + master build/ts3fixes.package. Order: stuckcheckown first (SV cause run 2026-10-24: all >= 500 ms freezes are the stuck check's sync plans in StuckCheckDrain, docs/data/results/2026-10-24-sv-cause-run-analysis.md): BP forced ABBA, then the SV natural-play pair off -> on; then jobyield, seasonmarkercache, overwatchstuckslice; the second SV pair (on -> off, the other order) last, if time allows.",
+  "jobs": [
+    {
+      "id": "bp-stuckcheckown-ab",
+      "note": "Forced ABBA on route-stuckcheck-own-loop until 120 armed stuck checks per arm and >= 6 firings per arm (fixed before the run, docs/168 §7), cap 30 min; stuckcheckasync on in both arms, stuckcheckown flipped per firing. Pass: no crash, 0 watchdog lines, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: iterations >= 300/1000 ms, p99/p99.9/max, 'sync plan ... reason Foreign' lines with RunStuckCheckHelper (on: ~0), stuckcheckown_sent / ownertask_started, resets equal across arms.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "Harness.ForegroundRender": 1, "RouteJobPhases.Enabled": 1, "RouteJobPhases.SyncPlans": 1, "RouteAsync.LogFallbackMs": 20, "RouteAsync.LogFallbackStack": 16 },
+      "run": { "profile": { "seed": 12345, "minutes": 32, "repro": "route-stuckcheck-own-loop", "loopRule": { "until": { "perArm": 120, "minFirings": 6 }, "maxMinutes": 30 }, "noSamplers": true, "fixesRequire": "stuckcheckown_sent>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 50
+    },
+    {
+      "id": "sv-scown-nat-1-off",
+      "note": "SV natural-play pair, order 1 (off first): sv-cause-run settings (45 min seeded 12345 from Baseline-SV-Spring, LogFallbackStack 16, LogFallbackMs 20, OwnJobWait, HitchAttr holders), release defaults (stuckcheckasync on), stuckcheckown OFF (its tuning default). The 3 AM stuck checks land at the same sim times in both runs of the pair, so the pair compares like for like (an --ab in one load would put each 3 AM in one arm only). Read with hitch-ab.ts on the two rows (and --causes): >= 500 / >= 1000 ms counts, max, p99/p99.9; nostart-report.ts: StuckCheckDrain Foreign plans (sv-cause-run: 59 plans, 20.2 s, 11 >= 1 s).",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": { "RouteAsync.LogFallbackStack": 16, "RouteAsync.LogFallbackMs": 20, "RouteAsync.OwnJobWait": 1, "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1 },
+      "run": { "profile": { "minutes": 45, "seed": 12345, "fixesOff": "stuckcheckown" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    },
+    {
+      "id": "sv-scown-nat-1-on",
+      "note": "SV natural-play pair, order 1, on run: same as sv-scown-nat-1-off with stuckcheckown ON for the whole run. Expected: no StuckCheckDrain Foreign sync plans, stuckcheckown_sent rises at each 3 AM, the 9 natural >= 500 ms freezes of sv-cause-run gone [inferred], resets as in the off run.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": { "RouteAsync.LogFallbackStack": 16, "RouteAsync.LogFallbackMs": 20, "RouteAsync.OwnJobWait": 1, "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1 },
+      "run": { "profile": { "minutes": 45, "seed": 12345, "fixesOn": "stuckcheckown", "fixesRequire": "stuckcheckown_sent>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    },
+    {
+      "id": "sv-jobyield-ab",
+      "note": "job-yield-ab.json job 2 (docs/183) on asi.0344: forced ABBA on route-ownjob-yield-loop until 50 no-path Go Here plans per arm, cap 45 min, jobyield flipped per firing (native_set + patches; ini installs it off). Pass: no crash, 0 watchdog lines, jobyield_capped 0, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: >= 100/300/1000 ms, p99/p99.9/max, rtMaxKey split (moved waits), swUs per site.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "RouteAsync.JobYield": 0, "RouteAsync.OwnJobWait": 1, "RouteAsync.LogFallbackMs": 20, "HitchAttr.Enabled": 1, "Harness.ForegroundRender": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 47, "repro": "route-ownjob-yield-loop", "loopRule": { "until": { "perArm": 50 }, "maxMinutes": 45 }, "noSamplers": true, "fixesRequire": "jobyield_capped<=0" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-seasonmarkercache-ab",
+      "note": "Forced ABBA on ip-world-dispose-loop until 20 firings per arm, cap 25 min, seasonmarkercache flipped per firing. Pass: no crash, seasonmarkercache_mismatches 0, run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: ScriptProxy.Dispose ticks >= 100 ms (off ~100-115 ms each in IP), >= 100/300 ms counts, p99/max.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-IP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "Harness.ForegroundRender": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "seed": 12345, "minutes": 27, "repro": "ip-world-dispose-loop", "loopRule": { "until": { "perArm": 20 }, "maxMinutes": 25 }, "noSamplers": true, "fixesRequire": "seasonmarkercache_hits>=1,seasonmarkercache_mismatches<=0" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-overwatchstuckslice-ab",
+      "note": "Forced ABBA on bp-overwatch-stuckslice-loop on its own rule (10 firings per arm, cap 20 min), overwatchstuckslice flipped with the release set held. Pass: no crash, no 'overwatchspread: ... failed', run not INVALID in hitch-ab.ts --scenario, machine load line ok. Read per arm: OwChainTheirs task runs >= 50 ms inside StuckCheck (on: only single route checks), owstuck_max_stretch_us, >= 100/300 ms counts, resets equal.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-BP",
+      "minCounters": 109,
+      "nativeRequire": "watchdogs<=0",
+      "logForbid": { "overwatchspread: .* failed": 0 },
+      "ini": { "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1, "Harness.ForegroundRender": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "seed": 12345, "minutes": 22, "repro": "bp-overwatch-stuckslice-loop", "noSamplers": true, "fixesRequire": "owstuck_runs>=1,owstuck_slices>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    },
+    {
+      "id": "sv-scown-nat-2-on",
+      "note": "SV natural-play pair, order 2 (on first), same settings as sv-scown-nat-1-on: together with order 1 the pair is ABBA over runs (off, on, on, off) so drift across the night cancels. Last in the list: drop it when the night runs late.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": { "RouteAsync.LogFallbackStack": 16, "RouteAsync.LogFallbackMs": 20, "RouteAsync.OwnJobWait": 1, "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1 },
+      "run": { "profile": { "minutes": 45, "seed": 12345, "fixesOn": "stuckcheckown", "fixesRequire": "stuckcheckown_sent>=1" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    },
+    {
+      "id": "sv-scown-nat-2-off",
+      "note": "SV natural-play pair, order 2, off run: same settings as sv-scown-nat-1-off.",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": { "RouteAsync.LogFallbackStack": 16, "RouteAsync.LogFallbackMs": 20, "RouteAsync.OwnJobWait": 1, "HitchAttr.Enabled": 1, "HitchAttr.Holders": 1 },
+      "run": { "profile": { "minutes": 45, "seed": 12345, "fixesOff": "stuckcheckown" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 65
+    }
+  ]
+}

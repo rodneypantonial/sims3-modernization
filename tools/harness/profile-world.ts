@@ -73,7 +73,7 @@ import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, op
 import { join, resolve } from 'node:path';
 import { classify } from './shadow-compare-report.ts';
 import { parseArgs } from 'node:util';
-import { checkRequire, numericFields, parseRequire } from './fixes-require.ts';
+import { checkRequire, numericFields, parseRequire, stepTally } from './fixes-require.ts';
 import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
 import { checkTag, parseRule } from './frame-lead.ts';
 import { isSetup, runLoop, runStep, stopLine, withRule } from './repro-loop.ts';
@@ -159,6 +159,8 @@ if (env && !env.ok) throw new Error(`test_env failed: ${env.error}`); // an agen
 if (env) console.log(`${stamp()} test_env: ${JSON.stringify(env.result)}`);
 // --fixes-off / --fixes-on: patches switches (same agent command as --ab) off / on for the whole run; read back, restored in restoreFixes
 if (values['fixes-require']) parseRequire(values['fixes-require']); // a bad rule fails before the run
+if (reproEntry.stepsRequire) parseRequire(reproEntry.stepsRequire);
+const stepAnswers: { cmd: string; r: any }[] = []; // repro step answers, for the repro's stepsRequire
 const hitchTasks: string[] = values['hitch-tasks'] ? JSON.parse(values['hitch-tasks']) : [];
 parseHitchTasks(hitchTasks);
 if (values['frame-lead']) parseRule(values['frame-lead']);
@@ -420,6 +422,7 @@ const reproStep = async (s: any) => {
   const r = s.cmd === 'native_set' ? await nativeSet(s.args) : await ag(s.cmd, s.args, s.timeoutS ? s.timeoutS * 1000 : undefined);
   console.log(`${stamp()} repro ${values.repro} step ${s.cmd}${s.note ? ` [${s.note}]` : ''}${isSetup(s) ? ' (setup)' : ''}: ${JSON.stringify(r).slice(0, 200)}`);
   appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, note: s.note, r }) + '\n'); // full result: the log line is cut
+  stepAnswers.push({ cmd: s.cmd, r });
   // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
   // ended PASS after wildflower_drain failed); "optional": true steps may fail. The queue closes the game after the job.
   if (!r.ok && !s.optional) await reproFail(`repro step ${s.cmd} failed: ${String(r.error).split('\n')[0].slice(0, 300)}`);
@@ -540,6 +543,11 @@ if (abNames.length) await ag('patches').then(r => appendFileSync(`${pre}-ab-fixe
 if (values['fixes-require']) {
   const fails = checkRequire(values['fixes-require'], (await ag('patches')).result);
   console.log(`${stamp()} ${fails.length ? `FAIL: fixes counters: ${fails.join('; ')}` : `PASS: fixes counters ${values['fixes-require']}`}`);
+  if (fails.length) process.exitCode = 1;
+}
+if (reproEntry.stepsRequire) { // repro step answers (fixes-require.ts stepTally): the repro's case fired, not only a counter moved
+  const fails = checkRequire(reproEntry.stepsRequire, stepTally(stepAnswers));
+  console.log(`${stamp()} ${fails.length ? `FAIL: repro steps: ${fails.join('; ')}` : `PASS: repro steps ${reproEntry.stepsRequire}`}`);
   if (fails.length) process.exitCode = 1;
 }
 if (values['frame-lead']) { // main-thread repro pass rule (frame-lead.ts, docs/169): frames led by the target service, lot adds

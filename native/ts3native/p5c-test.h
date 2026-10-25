@@ -79,7 +79,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                   offsetof(Ts3nCounters, p5cAcq) == 0x3084 && offsetof(Ts3nCounters, p5cStale) == 0x3088 &&
                   offsetof(Ts3nCounters, p5cParked) == 0x3090 && offsetof(Ts3nCounters, p5cKeptWait) == 0x3094 &&
                   offsetof(Ts3nCounters, p5cFlushed) == 0x30A4 && offsetof(Ts3nCounters, p5cCountLow) == 0x30B4 &&
-                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 4559 * 4,
+                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 5231 * 4,
                   "counters v65 layout (docs/registry.md)");
     const DWORD me = GetCurrentThreadId();
     g_p5cSimTid = me;
@@ -141,12 +141,26 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
     g_p5bTStop = 0;
     g_p5bVariant = 0;
     HANDLE work = CreateThread(NULL, 0, P5bWorker, NULL, 0, NULL);
-    enum { C_STEER, C_G12R, C_G0H, C_G0M, C_GX, C_WR, C_PLAN, C_SAVE, C_DES, C_N };
-    static const char* const kCls[C_N] = {"steering", "gate-12 reads", "gate-0 hits", "gate-0 misses", "gates kept out (3, 10)",
-                                          "writers", "sync plan acquires", "saves", "destroys of the frame's object"};
+    enum { C_STEER, C_G12R, C_G0H, C_G0M, C_GX, C_HK, C_WR, C_PLAN, C_SAVE, C_DES, C_N };
+    static const char* const kCls[C_N] = {"steering", "gate-12 reads", "gate-0 hits", "gate-0 misses", "gates kept (F-G, 10)",
+                                          "gates re-keyed (3, 4)", "writers", "sync plan acquires", "saves",
+                                          "destroys of the frame's object"};
+    // docs/189 phase 1 (HoldKeyed): the retake tripwire on its own first (an admitted frame counted open at a retake)
+    {
+        const LONG trip0 = k.hgTrip;
+        g_hgOpen = 1, k.hgReady = 1, k.p5cOff = 1;
+        HgRetakeCheck();  // a hand-over turned P5c off first: not a trip
+        assert(k.hgTrip == trip0 && k.hgReady == 1);
+        k.p5cOff = 0;
+        HgRetakeCheck();
+        assert(k.hgTrip == trip0 + 1 && k.hgReady == 0);
+        g_hgOpen = 0, k.hgTrip = trip0, k.hgReady = 1;
+    }
     // per phase: started during a job body; got the lock (or, destroys and saves, finished) inside the job; wait time
-    LONG all[3][C_N] = {}, inJ[3][C_N] = {}, jobs[3] = {}, skew[3] = {}, taken[3] = {}, recW[3] = {};
-    LONGLONG waitUs[3][C_N] = {}, bodyUs[3] = {}, lentUs[3] = {};
+    LONG all[4][C_N] = {}, inJ[4][C_N] = {}, jobs[4] = {}, skew[4] = {}, taken[4] = {}, recW[4] = {}, hkW = 0;
+    LONGLONG waitUs[4][C_N] = {}, bodyUs[4] = {}, lentUs[4] = {};
+    const LONG hgJobs0 = k.hgJobs, hgStale0 = k.hgStaleAfter, hgTrip0 = k.hgTrip, hgA3 = k.hgAdmit[3], hgA4 = k.hgAdmit[4];
+    const LONG hgA10 = k.hgAdmit[10], hgLong0 = k.hgLongHold;
     // 0.35.11: the hand-over needs a lent window seen while the body runs; under CPU load none came in jobs 380-389 (hand at
     // -1, hand-overs +0: the old line-316 failure, no P5c fault), so jobs go on until it happens and one job after it ran
     const int kN = 390, kHand = 380, kMax = 1000;
@@ -157,9 +171,9 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
     LONG jobsAfterHand = -1;
     int handAt = -1;
     for (int i = 0; i < kMax && (i < kN || handAt < 0 || i <= handAt + 1); i++) {
-        const int ph = i < 30 ? 0 : i < 150 ? 1 : 2;
-        k.p5bRelease = ph > 0, k.p5bGates = ph > 0, k.p5cFree = ph == 2;
-        const bool freeLock = ph == 2 && !k.p5cOff;  // this job admits writers
+        const int ph = i < 30 ? 0 : i < 150 ? 1 : i < 270 ? 2 : 3;  // 3: FreeLock + HoldKeyed (docs/189 phase 1; 1 and 2 alternate, §10)
+        k.p5bRelease = ph > 0, k.p5bGates = ph > 0, k.p5cFree = ph >= 2, k.hgOn = ph == 3 ? 1 + (i & 1) : 0;
+        const bool freeLock = ph >= 2 && !k.p5cOff;  // this job admits writers
         DWORD* fo = P5cNewObj();
         g_p5bFrame = fo;
         AsyncJob& j = g_jobs[0];
@@ -244,9 +258,12 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                 } else if (act == 17) {
                     c = C_G0M;
                     r = P5bGateWait(0, 0x0062EF7A, 0, missKey);
-                } else if (act < 20) {  // a sync plan's goal-step gate (site 10), the lazy lot build gate (site 3)
-                    c = C_GX;
-                    r = act & 1 ? P5bGateWait(10, 0x00760BFF, 0, hitKey) : P5bGateWait(3, 0x0063F5A1, 0, hitKey);
+                } else if (act < 20) {  // the lot rebuild gate (site 4), the lazy lot build gate (site 3): re-keyed
+                    c = C_HK;
+                    r = act & 1 ? P5bGateWait(4, 0x0082B8A0, 0, hitKey) : P5bGateWait(3, 0x0063F5A1, 0, hitKey);
+                } else if ((act == 20 || act == 21) && (k.hgOn >= 2 || RfRnd(4) == 0)) {  // a sync plan's goal-step gate (site 10): re-keyed with HoldKeyed=2 only (§10)
+                    c = k.hgOn >= 2 ? C_HK : C_GX;
+                    r = P5bGateWait(10, 0x00760BFF, 0, hitKey);
                 } else if (act < 30) {
                     c = C_WR;
                     r = LockAcquireHook(lock, NULL, &kP5bInf);
@@ -257,7 +274,8 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                 assert(r > 0 && P5bMine());
                 got = g_p5bBody != 0;
                 // only a lent lock can be ours during a job, and only for a class its phase admits
-                const bool may = c == C_STEER || c == C_G12R || c == C_G0H ? ph > 0 : (c == C_WR || c == C_PLAN) && freeLock;
+                const bool may = c == C_STEER || c == C_G12R || c == C_G0H ? ph > 0
+                                 : c == C_WR || c == C_PLAN ? freeLock : (c == C_HK || c == C_G0M) && ph == 3 && freeLock;
                 if (got && (!g_p5bWin || !may)) P5cBadAt(8);
                 if (c == C_STEER) {
                     assert(LockAcquireHook(lock, NULL, &kP5bInf) == r + 1);
@@ -269,6 +287,9 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                     // those are 4x rarer, to keep enough P5c windows for the in-window checks below
                     if (RfRnd(16) == 0 && (got || RfRnd(4) == 0)) InterlockedIncrement(&g_spWrites), recW[ph]++;
                 }
+                // an admitted re-keyed gate (lot rebuild, lazy build) that writes a world input: a recorded write in the window,
+                // which P5cStale must refuse (the skew check below)
+                if (c == C_HK && got && g_p5bWin && RfRnd(4) == 0) InterlockedIncrement(&g_spWrites), recW[ph]++, hkW++;
                 if (c == C_PLAN && got) {  // RunPlan on the owner, job running, lent lock held: plans here, no job wait
                     int l2[4] = {0, 0, 0, 0}, o1 = -1, o2 = -1;
                     l2[0] = l2[1] = (int)(uintptr_t)l2;
@@ -328,7 +349,15 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                k.p5cHandOver - hand0, handAt, jobsAfterHand);
     assert(k.p5cCountLow == low0 && k.p5cHandOver == hand0 + 1 && handAt >= kHand && jobsAfterHand == 0);
     // held and P5b: no writer, kept gate, miss, save or destroy inside a job; P5c: writers, sync plans and destroys inside too
-    for (int p = 0; p < 3; p++) assert(inJ[p][C_GX] == 0 && inJ[p][C_G0M] == 0 && inJ[p][C_SAVE] == 0);
+    for (int p = 0; p < 4; p++) assert(inJ[p][C_GX] == 0 && inJ[p][C_SAVE] == 0);
+    for (int p = 0; p < 3; p++) assert(inJ[p][C_G0M] == 0 && inJ[p][C_HK] == 0);
+    // HoldKeyed: re-keyed gates got the lent lock inside jobs, their writes were refused (skew check), no frame open at a retake
+    if (inJ[3][C_HK] == 0 || k.hgTrip != hgTrip0 || g_hgOpen || k.hgJobs == hgJobs0 || k.hgAdmit[3] + k.hgAdmit[4] == hgA3 + hgA4)
+        printf("P5c HoldKeyed FAIL: re-keyed in job %ld, trips +%ld, open %ld, hg jobs +%ld, admits +%ld\n", inJ[3][C_HK],
+               k.hgTrip - hgTrip0, g_hgOpen, k.hgJobs - hgJobs0, k.hgAdmit[3] + k.hgAdmit[4] - hgA3 - hgA4);
+    assert(inJ[3][C_HK] > 0 && k.hgTrip == hgTrip0 && g_hgOpen == 0 && !g_hgJob && k.hgJobs > hgJobs0);
+    assert(k.hgAdmit[3] + k.hgAdmit[4] > hgA3 + hgA4 && k.hgStaleAfter >= hgStale0);
+    k.hgOn = 0, k.hgReady = 0;
     for (int c = 0; c < C_N; c++) assert(inJ[0][c] == 0);
     assert(inJ[1][C_WR] == 0 && inJ[1][C_PLAN] == 0 && inJ[1][C_DES] == 0 && inJ[1][C_STEER] > 0);
     assert(inJ[2][C_WR] > 0 && inJ[2][C_DES] > 0 && inJ[2][C_STEER] > 0 && inJ[2][C_G12R] > 0);
@@ -347,6 +376,15 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
         return a ? 100.0 * in / a : 0.0;
     };
     assert(share(2) > share(1) && mean(2, C_WR) < mean(1, C_WR) && mean(2, C_DES) < mean(1, C_DES));
+    printf("P5c HoldKeyed (docs/189 phase 1): %ld jobs, re-keyed gates (3, 4) in a job %ld/%ld (mean wait %.2f ms, FreeLock "
+           "alone %.2f), gate-0 misses %ld/%ld, kept (F-G, 10) 0/%ld; %ld gate writes in windows, %ld windows with an admitted "
+           "gate (%ld with a write: refused), retake tripwire 0\n", jobs[3], inJ[3][C_HK], all[3][C_HK],
+           all[3][C_HK] ? waitUs[3][C_HK] / 1000.0 / all[3][C_HK] : 0.0, all[2][C_HK] ? waitUs[2][C_HK] / 1000.0 / all[2][C_HK] : 0.0,
+           inJ[3][C_G0M], all[3][C_G0M], all[3][C_GX], hkW, k.hgJobs - hgJobs0, k.hgStaleAfter - hgStale0);
+    // HoldKeyed=2 (§10): site 10 got in on the odd jobs (hgOn 2); with hgOn 1 it was a waiting gate (C_GX above: never inside)
+    printf("P5c HoldKeyed=2 (docs/189 §10): site 10 admitted %ld times in hgOn=2 jobs, long holds +%ld\n", k.hgAdmit[10] - hgA10,
+           k.hgLongHold - hgLong0);
+    assert(k.hgAdmit[10] > hgA10 && k.hgLongHold == hgLong0);
     printf("P5c (FreeLock=1): counters v65; park rules (callback, D-X record, full, not found), flush refused in a job and "
            "released after it, T-G1 count low kept; threaded (sim + worker, real +0x918), %ld held / %ld P5b+gates / %ld FreeLock "
            "jobs (lent %.1f%% / %.1f%% of job time), sim calls started during a job body, got the lock (destroys, saves: done) "

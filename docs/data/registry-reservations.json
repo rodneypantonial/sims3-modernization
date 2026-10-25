@@ -1,0 +1,452 @@
+{
+  "note": "written by tools/registry.ts; see docs/registry.md",
+  "reservations": [
+    {
+      "id": "native-v113",
+      "kind": "native",
+      "version": 113,
+      "from": 18236,
+      "to": 18287,
+      "by": "agent-abb285388a0192ba4",
+      "what": "docs/89 §14 [Discourage] DeferPrivateFp (pf*): RemovePrivateFootprint 0x82A0C0 deferral from IC site 0x75465E",
+      "at": "2026-10-24T10:00:35.182Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-abb285388a0192ba4"
+    },
+    {
+      "id": "fixes-290",
+      "kind": "fixes",
+      "from": 290,
+      "to": 292,
+      "by": "overwatchstucknotice",
+      "what": "overwatchstucknotice: Overwatch stuck notices held, summaries shown, Sims named",
+      "at": "2026-10-24T11:11:41.583Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-ab0856511fbd1c793"
+    },
+    {
+      "id": "native-v114",
+      "kind": "native",
+      "version": 114,
+      "from": 18288,
+      "to": 18323,
+      "by": "agent-ae63bc454a51ea96d",
+      "what": "docs/157 §11.7 [CrashForensics] (cf*): free ring, guarded sites 0x5EE1E0/0x7B0A00, heap check, crash dump",
+      "at": "2026-10-24T11:29:11.747Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-ae63bc454a51ea96d"
+    },
+    {
+      "id": "fixes-293",
+      "kind": "fixes",
+      "from": 293,
+      "to": 294,
+      "by": "owprobeplans",
+      "what": "owprobeplans: stuck-check probe plans hidden from Overwatch StuckCheck V2, stuck-check runs flagged",
+      "at": "2026-10-24T11:41:33.184Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a3d3511e007f3fea2"
+    },
+    {
+      "id": "fixes-295",
+      "kind": "fixes",
+      "from": 295,
+      "to": 296,
+      "by": "preplancb",
+      "what": "preplancb: AboutToPlanCallback pre-calls before START, LockedDoorsDuringPlan lists restored",
+      "at": "2026-10-24T11:44:14.238Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-aa70b5325b9fd94b7"
+    },
+    {
+      "id": "native-v115",
+      "kind": "native",
+      "version": 115,
+      "from": 18324,
+      "to": 18347,
+      "by": "agent-a22647d1ebb9cc740",
+      "what": "docs/186 §8 [CrashForensics] DrawGuards + OurEvents (cd*/ce*): draw guards 0x6F6250/0x6FA0B0/0x71D440/0x6F4D40, our-events ring",
+      "at": "2026-10-24T12:16:03.241Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a22647d1ebb9cc740"
+    },
+    {
+      "id": "native-v116",
+      "kind": "native",
+      "version": 116,
+      "from": 18348,
+      "to": 18371,
+      "by": "worktree-agent-a827b66c09c73be3c",
+      "what": "docs/186 §9 [CrashForensics] EffectLog (Swarm render list add/remove ring)",
+      "at": "2026-10-24T12:49:56.091Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a827b66c09c73be3c"
+    },
+    {
+      "id": "native-v117",
+      "kind": "native",
+      "version": 117,
+      "from": 18372,
+      "to": 18395,
+      "by": "worktree-agent-af794ebdd82d2c528",
+      "what": "docs/186 §10 CrashForensics ObjResLog (0.36.46)",
+      "at": "2026-10-24T13:30:36.167Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-af794ebdd82d2c528"
+    },
+    {
+      "id": "ledger-327",
+      "kind": "ledger",
+      "from": 327,
+      "to": 327,
+      "by": "worktree-agent-af794ebdd82d2c528",
+      "what": "docs/186 §10 fur model LOD handle crash, ObjResLog",
+      "at": "2026-10-24T13:30:36.357Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-af794ebdd82d2c528"
+    },
+    {
+      "id": "ledger-328",
+      "kind": "ledger",
+      "from": 328,
+      "to": 328,
+      "by": "agent-ae6d9b88eae98e9a5",
+      "what": "docs/187 Apex compat map",
+      "at": "2026-10-24T13:41:40.192Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-ae6d9b88eae98e9a5"
+    },
+    {
+      "id": "native-v118",
+      "kind": "native",
+      "version": 118,
+      "from": 18396,
+      "to": 18467,
+      "by": "worktree-agent-ae0454ab099a027e6",
+      "what": "docs/178 §7 T6 [GoalValidRO] (gv*): GoalPoint_Validate steering query 0x75A647 read-only, empty answers only",
+      "at": "2026-10-24T14:39:05.389Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-ae0454ab099a027e6"
+    },
+    {
+      "id": "ledger-329",
+      "kind": "ledger",
+      "from": 329,
+      "to": 329,
+      "by": "worktree-agent-ae0454ab099a027e6",
+      "what": "docs/178 §7 T6 GoalValidRO",
+      "at": "2026-10-24T14:39:06.783Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-ae0454ab099a027e6"
+    },
+    {
+      "id": "native-v119",
+      "kind": "native",
+      "version": 119,
+      "from": 18468,
+      "to": 18539,
+      "by": "worktree-agent-adec82d480e4cc7d3",
+      "what": "docs/178 §8 [IdleCheckRO] (ic*): IsOkToIdleAtCurrentLocation gate-12 GetIfPresent 0x7558D7 + 0x625140 0x755916 read-only",
+      "at": "2026-10-24T14:41:16.058Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-adec82d480e4cc7d3"
+    },
+    {
+      "id": "ledger-330",
+      "kind": "ledger",
+      "from": 330,
+      "to": 330,
+      "by": "worktree-agent-adec82d480e4cc7d3",
+      "what": "docs/178 §8 gate-12 GetIfPresent 0x62FB74 IdleCheckRO",
+      "at": "2026-10-24T14:41:16.276Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-adec82d480e4cc7d3"
+    },
+    {
+      "id": "native-v120",
+      "kind": "native",
+      "version": 120,
+      "from": 18540,
+      "to": 19259,
+      "by": "agent-a7c5e1e917a63be21",
+      "what": "v120 [MovedWaits] moved-wait log + next-taker keys (docs/178 §9, movedwait.cpp)",
+      "at": "2026-10-24T15:03:35.144Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a7c5e1e917a63be21"
+    },
+    {
+      "id": "ledger-331",
+      "kind": "ledger",
+      "from": 331,
+      "to": 331,
+      "by": "agent-a7c5e1e917a63be21",
+      "what": "docs/178 §9 moved-wait logging and next-taker ranking",
+      "at": "2026-10-24T15:03:35.364Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a7c5e1e917a63be21"
+    },
+    {
+      "id": "ledger-332",
+      "kind": "ledger",
+      "from": 332,
+      "to": 332,
+      "by": "agent-a6eb0a4a",
+      "what": "docs/94 §24.8 G1 BP M2 plan 5849 (recurring in-room pair, obst walk blind)",
+      "at": "2026-10-24T15:15:33.035Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a6eb0a4aa949b50f1"
+    },
+    {
+      "id": "ledger-333",
+      "kind": "ledger",
+      "from": 333,
+      "to": 333,
+      "by": "agent-adce7c0f922369b78",
+      "what": "P6 verify jobs: VerifyEvery=1 takes nothing",
+      "at": "2026-10-24T15:19:33.192Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-adce7c0f922369b78"
+    },
+    {
+      "id": "native-v121",
+      "kind": "native",
+      "version": 121,
+      "from": 19260,
+      "to": 19323,
+      "by": "worktree-agent-a131b4dc80c22a225",
+      "what": "docs/94 §24.8.4 [RouteSnap] M2LotDump/M2Box (ld*): start-lot Q leaf dump, obst frame fix, fp+0x20 live vs clone",
+      "at": "2026-10-24T15:22:05.472Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a131b4dc80c22a225"
+    },
+    {
+      "id": "ledger-334",
+      "kind": "ledger",
+      "from": 334,
+      "to": 334,
+      "by": "worktree-agent-a131b4dc80c22a225",
+      "what": "docs/94 §24.8.4 M2LotDump build (obst frame fix, lock-key per entry)",
+      "at": "2026-10-24T15:22:05.689Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a131b4dc80c22a225"
+    },
+    {
+      "id": "ledger-335",
+      "kind": "ledger",
+      "from": 335,
+      "to": 335,
+      "by": "sims-3-modernization",
+      "what": "G1 dump nolot",
+      "at": "2026-10-24T21:23:53.316Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-336",
+      "kind": "ledger",
+      "from": 336,
+      "to": 336,
+      "by": "sims-3-modernization",
+      "what": "P6 lock hold",
+      "at": "2026-10-24T21:40:16.943Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "fixes-297",
+      "kind": "fixes",
+      "from": 297,
+      "to": 301,
+      "by": "stuckcheck-cap",
+      "what": "stuckcheckcap: capped probe marks, stuck-check verdicts (no plan / not stuck / re-arm / reset)",
+      "at": "2026-10-24T21:48:13.359Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-337",
+      "kind": "ledger",
+      "from": 337,
+      "to": 337,
+      "by": "stuckcheck-cap",
+      "what": "stuckcheckcap: stuck-check own jobs hold +0x918, sim waits at steering 0x85FE10",
+      "at": "2026-10-24T21:48:13.554Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-338",
+      "kind": "ledger",
+      "from": 338,
+      "to": 338,
+      "by": "sims-3-modernization",
+      "what": "G1 dump Q slot by level",
+      "at": "2026-10-24T22:25:23.015Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-339",
+      "kind": "ledger",
+      "from": 339,
+      "to": 339,
+      "by": "sims-3-modernization",
+      "what": "G1 gate v2",
+      "at": "2026-10-24T22:44:25.172Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v122",
+      "kind": "native",
+      "version": 122,
+      "from": 19324,
+      "to": 19387,
+      "by": "p6fix",
+      "what": "docs/94 §24.14 P6 early copy before the job's +0x918 ([RouteSnap] P6EarlyCopy, p6e*); P6Rebase not built",
+      "at": "2026-10-24T23:20:42.816Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\p6fix"
+    },
+    {
+      "id": "ledger-340",
+      "kind": "ledger",
+      "from": 340,
+      "to": 340,
+      "by": "p6fix",
+      "what": "P6 early copy / rebase (docs/94 §24.14)",
+      "at": "2026-10-24T23:20:43.049Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\p6fix"
+    },
+    {
+      "id": "native-v123",
+      "kind": "native",
+      "version": 123,
+      "from": 19388,
+      "to": 20091,
+      "by": "p6p0 agent",
+      "what": "P6 phase 0 waiter classes (docs/189 phase 0)",
+      "at": "2026-10-24T23:41:54.268Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-341",
+      "kind": "ledger",
+      "from": 341,
+      "to": 341,
+      "by": "p6p0 agent",
+      "what": "docs/189 P6 phase 0 + Q1 gate writers",
+      "at": "2026-10-24T23:41:54.478Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v124",
+      "kind": "native",
+      "version": 124,
+      "from": 20092,
+      "to": 20283,
+      "by": "p6p1",
+      "what": "P6 phase 1 A_HOLD: gate waits keyed on the worker's +0x918 hold ([RouteGate] HoldKeyed, hg*)",
+      "at": "2026-10-24T23:48:48.934Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-342",
+      "kind": "ledger",
+      "from": 342,
+      "to": 342,
+      "by": "p6p1",
+      "what": "docs/189 phase 1 A_HOLD gate re-key",
+      "at": "2026-10-24T23:48:49.137Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v125",
+      "kind": "native",
+      "version": 125,
+      "from": 20284,
+      "to": 20475,
+      "by": "p6p2 agent",
+      "what": "P6 phase 2 per-lot stale (docs/189 phase 2, [RouteSnap] StaleLot, sl*)",
+      "at": "2026-10-24T23:49:19.397Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-343",
+      "kind": "ledger",
+      "from": 343,
+      "to": 343,
+      "by": "p6p2 agent",
+      "what": "P6 phase 2 per-lot stale",
+      "at": "2026-10-24T23:49:19.616Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-344",
+      "kind": "ledger",
+      "from": 344,
+      "to": 344,
+      "by": "p6p3",
+      "what": "P6 phase 3 ask lent / door memo x",
+      "at": "2026-10-24T23:51:22.670Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v126",
+      "kind": "native",
+      "version": 126,
+      "from": 20476,
+      "to": 20539,
+      "by": "p6p3",
+      "what": "P6 phase 3 ask lent / door memo x ([RouteSnap] AskLent, DoorMemoX; au*, dmx*)",
+      "at": "2026-10-24T23:51:26.570Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v127",
+      "kind": "native",
+      "version": 127,
+      "from": 20540,
+      "to": 20699,
+      "by": "p6pk",
+      "what": "P6 all own kinds: TakeKinds bits 2/4 (Replan, PlanFromPoint) via [RouteSnap] TakeKindsAll (p6All, pk*)",
+      "at": "2026-10-24T23:58:09.055Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-345",
+      "kind": "ledger",
+      "from": 345,
+      "to": 345,
+      "by": "p6pk",
+      "what": "P6 all own kinds (docs/189 phase 2c)",
+      "at": "2026-10-24T23:58:09.254Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v128",
+      "kind": "native",
+      "version": 128,
+      "from": 20700,
+      "to": 20731,
+      "by": "p6-phase4",
+      "what": "P6 phase 4: FallbackAsync foreign Route.Plan STARTs armed for the clone answer with FbJobCapMs kept ([RouteSnap] TakeForeign, p6fb*), docs/189 §4",
+      "at": "2026-10-24T23:58:57.761Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-p6-phase4"
+    },
+    {
+      "id": "ledger-346",
+      "kind": "ledger",
+      "from": 346,
+      "to": 346,
+      "by": "p6-phase4",
+      "what": "docs/189 P6 phase 4 (foreign jobs armed, JobYield arm)",
+      "at": "2026-10-24T23:58:57.963Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-p6-phase4"
+    },
+    {
+      "id": "ledger-347",
+      "kind": "ledger",
+      "from": 347,
+      "to": 347,
+      "by": "p6roomrec",
+      "what": "docs/189 §10 room record fill under 0x63D2F0 vs the stale rule (p6/roomrec)",
+      "at": "2026-10-25T00:15:17.663Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-348",
+      "kind": "ledger",
+      "from": 348,
+      "to": 348,
+      "by": "p6fl",
+      "what": "P6 footprint per-lot keys (docs/189 phase 2b)",
+      "at": "2026-10-25T00:18:56.845Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\p6fl"
+    },
+    {
+      "id": "native-v129",
+      "kind": "native",
+      "version": 129,
+      "from": 20732,
+      "to": 20859,
+      "by": "p6/fplots",
+      "what": "P6 footprint per-lot keys (StaleLot FpLots, docs/189 phase 2b)",
+      "at": "2026-10-25T00:19:08.223Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\p6fl"
+    }
+  ]
+}

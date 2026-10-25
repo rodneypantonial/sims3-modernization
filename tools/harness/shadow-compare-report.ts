@@ -2,6 +2,11 @@
 // compare into M0-M5, prints the gate G4 verdict per world, a per-IC class table and the first mismatches with diffs.
 //   node tools/harness/shadow-compare-report.ts <shadow.jsonl> [...] [--first 10]
 //   node tools/harness/shadow-compare-report.ts --self-check
+//   node tools/harness/shadow-compare-report.ts <shadow.jsonl> [...] --g1 [--history <glob> ...]
+//     adds the G1 v2 tiered verdict (docs/94 §24.13): tier 1 = the copy's answer is a game answer to the same request in any
+//     shadow file (default history probe-out/**/*-shadow.jsonl), tier 2 = flagged (route valid against the live obstacles in
+//     the record, cost within 10%, <= 1 per 10,000 compares), tier 3 = FAIL; plus the replay-audit drift check of each input's
+//     <run>-ts3native.log (every MISMATCH lot must show an equal audit later)
 //
 // Record (one JSON line per compare, written by the native side at collect; spec = docs/94 §13, keep both in step):
 //   { "v": 2, "plan": 1234, "ic": "Plan" | "Replan" | "PlanFromPoint" | "ReplanFromPosition", "world": "BP",
@@ -32,8 +37,14 @@
 //       began: > 0 = the live set may be newer than what the live plan saw), "us": n, "cloneMore" / "liveMore": entries past
 //       48 (-1 no map, -2 fault), "clone": [Ob], "live": [Ob] }
 //     Ob = ["0xID", "0xVT", f34, fmeFlags, levels, invalidLevelMask, "0xHASH", x0, z0, x1, z1]   hash of every valid level's points
+//     0.36.50 (docs/94 §24.8.4): Ob + [frame "w" | "l" (world box or the start lot's box), key ["0xSET", "0xORIGIN", nA, nB,
+//       "0xKEYHASH"] | null (fp+0x20; ORIGIN = the live set a clone copy stands for)], and "walkC" / "walkL" {walked, lot,
+//       lbox, near}. "lotdump" (M2LotDump=1): the start lot's Q leaf entries near the route, clone and live, with "diffs"
+//       [[bits, cloneIndex, liveIndex]] (bits 1 lock keys, 2 key origin, 4 masks, 8 points, 16 +0x34; 0 = one side only)
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type Node = [number, number, number, number, number, number];
@@ -42,16 +53,41 @@ type Answer = { mType: number; status: number; startIdx: number; goalIdx: number
 export type Rec = {
   v: number; plan: number; ic: string; world: string; search: 'G' | 'R'; epoch?: number; ver?: number;
   start?: number[] | null; goal?: number[] | null; tie?: number[]; refused?: string | null; sub?: string; stale?: boolean; nr?: number; m2?: number;
-  gameUs: number; jobUs: number; game: Answer; copy: Answer | null; obst?: Obst;
+  gameUs: number; jobUs: number; game: Answer; copy: Answer | null; obst?: Obst; lotdump?: LotDump;
+  src?: string;  // the shadow file it came from (set by the loader, not by the native side)
 };
-type Ob = [string, string, number, number, number, number, string, number, number, number, number];
-export type Obst = { box: number[]; liveState: string; liveW: number; us: number; cloneMore: number; liveMore: number; clone: Ob[]; live: Ob[] };
+type Key = [string, string, number, number, string] | null;
+type Ob = [string, string, number, number, number, number, string, number, number, number, number, string?, Key?];
+// "lotdump" entry: [q, "0xFME", "0xID", "0xVT", f34, fmeFlags, mask4, mask8, levels, invalid, "0xHASH", levelHashes, cell, bounds, key]
+type LdEnt = [number, string, string, string, number, number, number, number, number, number, string, string[], number[], number[], Key];
+type LdSide = { state: string; lot: string; lbox: number[]; qs: number[][]; more: number; ents: LdEnt[] };
+export type LotDump = { why: string; pt: number[]; box: number[]; clone: LdSide; live: LdSide; diffs: [number, number, number][] };
+const keyTxt = (k: Key | undefined) => k === undefined ? '' : k === null ? ' keys n/a' :
+  ` keys ${k[0]}${k[1] !== k[0] ? ` (origin ${k[1]})` : ''} ${k[2]}/${k[3]} ${k[4]}`;
+// the lot dump's diff lines (docs/94 §24.8.4): one per entry that differs
+export function lotDumpDiff(d: LotDump, max = 8): string[] {
+  const ent = (e: LdEnt) => `Q ${e[0]} ${e[2]} vt ${e[3]} FME+0x10 ${e[5]} cell [${e[12].join(',')}] masks ${e[6]}/${e[7]} points ${e[10]}${keyTxt(e[14])}`;
+  const bitTxt = (b: number) => ['lock keys', 'key origin', 'masks', 'points', '+0x34'].filter((_, i) => (b >> i) & 1).join(', ');
+  const lines = [`lot dump (${d.why}) lot ${d.clone.lot}: clone ${d.clone.state} ${d.clone.ents.length}, live ${d.live.state} ${d.live.ents.length}, ${d.diffs.length} differ`];
+  for (const [bits, c, l] of d.diffs.slice(0, max)) {
+    if (c < 0) lines.push(`  only live: ${ent(d.live.ents[l])}`);
+    else if (l < 0) lines.push(`  only clone: ${ent(d.clone.ents[c])}`);
+    else lines.push(`  differs (bits ${bits}: ${bitTxt(bits)}): clone ${ent(d.clone.ents[c])} vs live ${ent(d.live.ents[l])}`);
+  }
+  return lines;
+}
+type Walk = { walked: number; lot: string; lbox: number[] | null; near: unknown[] };
+export type Obst = { box: number[]; liveState: string; liveW: number; us: number; cloneMore: number; liveMore: number; clone: Ob[]; live: Ob[];
+  walkC?: Walk; walkL?: Walk };
 
 // the obstacle diff of an M2/M3 record (docs/94 §21.19): footprints only one side has, and footprints whose points differ
 export function obstDiff(o: Obst, max = 8): string[] {
   const key = (b: Ob) => `${b[0]}/${b[1]}`;
-  const fmt = (b: Ob) => `${b[0]} vt ${b[1]} xz [${b.slice(7).map(v => +(+v).toFixed(3)).join(',')}]` +
-    `${b[5] ? ` invalid levels 0x${b[5].toString(16)}` : ''}`;
+  const fmt = (b: Ob) => `${b[0]} vt ${b[1]} xz [${b.slice(7, 11).map(v => +(+(v as number)).toFixed(3)).join(',')}]` +
+    `${b[5] ? ` invalid levels 0x${b[5].toString(16)}` : ''}${b[11] ? ` (${b[11]} frame)` : ''}${keyTxt(b[12])}`;
+  // 0.36.50: fp+0x20 differs (NULL vs set, counts, ids), or a clone copy stands for another live set than live holds
+  const keyDiff = (c: Ob, l: Ob) => c[12] !== undefined && l[12] !== undefined && (!c[12] !== !l[12] ||
+    JSON.stringify(c[12]?.slice(2)) !== JSON.stringify(l[12]?.slice(2)) || (!!c[12] && c[12][0] !== '0x00000000' && c[12][1] !== l[12]?.[0]));
   const live = new Map(o.live.map(b => [key(b), b])), clone = new Map(o.clone.map(b => [key(b), b]));
   const lines = [`obstacles in box [${o.box.join(',')}]: clone ${o.clone.length}${o.cloneMore ? ` (more ${o.cloneMore})` : ''}, ` +
     `live ${o.liveState === 'ok' ? o.live.length : o.liveState}${o.liveMore ? ` (more ${o.liveMore})` : ''}, ` +
@@ -62,7 +98,7 @@ export function obstDiff(o: Obst, max = 8): string[] {
   for (const [k, c] of clone) {
     const l = live.get(k);
     if (!l) diff.push(`only clone: ${fmt(c)}`);
-    else if (l[6] !== c[6] || l[5] !== c[5]) diff.push(`differs: ${fmt(c)} (clone) vs ${fmt(l)} (live)`);
+    else if (l[6] !== c[6] || l[5] !== c[5] || keyDiff(c, l)) diff.push(`differs: ${fmt(c)} (clone) vs ${fmt(l)} (live)`);
     else same++;
   }
   for (const [k, l] of live) if (!clone.has(k)) diff.push(`only live: ${fmt(l)}`);
@@ -221,6 +257,140 @@ export function report(recs: Rec[], first = 10, minCompares = 10000) {
     out(`  ${cls} plan ${r.plan} ${r.ic} ${r.world} epoch ${r.epoch ?? '?'} ver ${r.ver ?? '?'} start ${r.start ?? '?'} goal ${r.goal ?? '?'}`);
     for (const w of why) out(`    ${w}`);
     if (r.obst) for (const w of obstDiff(r.obst)) out(`    ${w}`);
+    if (r.lotdump) for (const w of lotDumpDiff(r.lotdump)) out(`    ${w}`);
+  }
+  return { lines, verdicts };
+}
+
+// ---- G1 v2 (docs/94 §24.13, Rodney 2026-10-25): tiered rule. The game itself gives two answers to some requests (§24.8.2), so a
+// copy answer that equals a game answer to the same request in any run is a known alternative (tier 1), not a clone defect.
+export type G1Hit = { file: string; plan: number };
+export type GameIndex = Map<string, Map<string, G1Hit[]>>;  // request key -> answer signature -> where the game gave it
+// request = same IC, world, search kind, start and goal float-exact (numbers as parsed, so 1204.50 and 1204.5 are one key)
+export const reqKey = (r: Pick<Rec, 'ic' | 'world' | 'search' | 'start' | 'goal'>) =>
+  `${r.ic}|${r.world}|${r.search}|${r.start?.join(',') ?? 'null'}|${r.goal?.join(',') ?? 'null'}`;
+// node for node float-exact, same subpath types and objects, same result
+const ansSig = (a: Answer) => JSON.stringify([a.mType, a.status, a.paths.map(p => [p.type, p.obj, p.nodes])]);
+// the request fields come first in every v2/v3 line: read only the head, parse the line only for a wanted request
+const HEAD = /"ic":"([^"]*)","world":"([^"]*)","search":"([^"]*)"[^[]*?"start":(null|\[[^\]]*\]),"goal":(null|\[[^\]]*\])/;
+
+export function indexGameAnswers(files: string[], want: Set<string>): GameIndex {
+  const idx: GameIndex = new Map();
+  if (!want.size) return idx;
+  for (const f of files) for (const l of readFileSync(f, 'utf8').split('\n')) {
+    const m = HEAD.exec(l.slice(0, 512));
+    if (!m) continue;
+    const key = reqKey({ ic: m[1], world: m[2], search: m[3] as 'G', start: JSON.parse(m[4]), goal: JSON.parse(m[5]) });
+    if (!want.has(key)) continue;
+    const r = JSON.parse(l) as Rec;
+    if (!r.game) continue;
+    const bySig = idx.get(key) ?? new Map<string, G1Hit[]>();
+    const sig = ansSig(r.game), hits = bySig.get(sig) ?? [];
+    hits.push({ file: basename(f), plan: r.plan }); bySig.set(sig, hits); idx.set(key, bySig);
+  }
+  return idx;
+}
+
+// a copy segment meets an axis-aligned box (Liang-Barsky clip on xz)
+function segHitsBox(ax: number, az: number, bx: number, bz: number, x0: number, z0: number, x1: number, z1: number) {
+  let t0 = 0, t1 = 1;
+  const dx = bx - ax, dz = bz - az;
+  for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dz, az - z0], [dz, z1 - az]]) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+
+// tier 2 validity from what the record holds: true = no copy segment meets a live footprint's bounds (so it crosses none);
+// null = undecided (counts as FAIL until the native live check exists, §24.13.3). The record has bounds, not polygons, so it
+// can prove "crosses nothing" but never "crosses one".
+export function liveValidity(r: Rec): { ok: true | null; why: string } {
+  const o = r.obst;
+  if (!o) return { ok: null, why: 'no obst block' };
+  if (o.liveState !== 'ok') return { ok: null, why: `live obstacle read ${o.liveState}` };
+  if (!o.walkL) return { ok: null, why: 'obstacle walk before 0.36.50 (its live sets were always empty, §24.8.3 (c))' };
+  if (/^0x0+$/.test(o.walkL.lot)) return { ok: null, why: 'no lot frame (lot lookup found no lot, §24.10-§24.12)' };
+  if (o.liveMore) return { ok: null, why: `live list truncated (more ${o.liveMore})` };
+  if (o.live.some(b => b[11] === 'l')) return { ok: null, why: 'live footprint in the lot frame (no transform in the record)' };
+  for (const p of r.copy?.paths ?? []) for (let i = 1; i < p.nodes.length; i++) {
+    const a = p.nodes[i - 1], b = p.nodes[i];
+    const hit = o.live.find(f => segHitsBox(a[0], a[2], b[0], b[2], f[7], f[8], f[9], f[10]));
+    if (hit) return { ok: null, why: `copy segment ${i} meets the bounds of live footprint ${hit[0]} (polygon not in the record)` };
+  }
+  return { ok: true, why: `${o.live.length} live footprints, no copy segment meets their bounds` };
+}
+
+// replay-audit drift (ts3native log): every "snap replay audit MISMATCH lot X" must be repaired by the forced rebase. The log
+// has no per-lot "rebased" line, so repaired = a later MISMATCH line of X names a last equal ring after this one; recurred =
+// a later line of X names none or an older one; timeout = the AuditHoldRebase hold of X released by timeout; else unconfirmed.
+export type AuditEv = { lot: string; ring: number; fate: 'repaired' | 'recurred' | 'timeout' | 'unconfirmed' };
+export function auditDrift(log: string): AuditEv[] {
+  const evs: (AuditEv & { lastEq: number })[] = [];
+  for (const l of log.split(/\r?\n/)) {
+    let m = /snap replay audit MISMATCH lot (0x[0-9A-Fa-f]+): .*\(ring (\d+), cut -?\d+, last equal ring (none|\d+)/.exec(l);
+    if (m) {
+      const ring = +m[2], lastEq = m[3] === 'none' ? 0 : +m[3];
+      for (const e of evs) if (e.lot === m[1] && e.ring < ring && e.fate === 'unconfirmed') e.fate = lastEq > e.ring ? 'repaired' : 'recurred';
+      if (!evs.some(e => e.lot === m![1] && e.ring === ring)) evs.push({ lot: m[1], ring, lastEq, fate: 'unconfirmed' });  // Q line + hash line
+      continue;
+    }
+    m = /snap replay audit: lot (0x[0-9A-Fa-f]+) rebase hold released by timeout/.exec(l);
+    if (m) for (const e of evs) if (e.lot === m[1] && e.fate === 'unconfirmed') e.fate = 'timeout';
+  }
+  return evs.map(({ lastEq: _, ...e }) => e);
+}
+
+export type G1Row = { plan: number; src?: string; cls: Cls; tier: 1 | 2 | 3; why: string };
+export type G1 = { world: string; compares: number; tiers: [number, number, number]; rows: G1Row[]; audit: AuditEv[] | null;
+  verdict: 'PASS' | 'PASS-FLAGGED' | 'FAIL'; reasons: string[] };
+const TIER2_LEN = 0.10, TIER2_RATE = 1 / 10000;
+
+export function g1(world: string, recs: Rec[], idx: GameIndex, audit: AuditEv[] | null, minCompares = 10000): G1 {
+  const rows: G1Row[] = [];
+  let compares = 0;
+  for (const r of recs) {
+    const k = classify(r);
+    if (k.cls === 'M4' || k.cls === 'M5') continue;
+    compares++;
+    if (k.cls === 'M0' || (k.cls === 'M1' && k.tie === 'goal')) continue;  // goal ties pass as in G4
+    const row = (tier: 1 | 2 | 3, why: string) => rows.push({ plan: r.plan, src: r.src, cls: k.cls, tier, why });
+    if (k.cls === 'M3') { row(3, `M3: ${k.why[0]}`); continue; }
+    if (k.cls === 'M1' && k.tie === 'none') { row(3, `real M1: ${k.why[0]}`); continue; }
+    // M2 and path ties: another route to the same request
+    const seen = idx.get(reqKey(r));
+    const hits = seen?.get(ansSig(r.copy!))?.filter(h => !(h.file === (r.src && basename(r.src)) && h.plan === r.plan));
+    if (hits?.length) { row(1, `copy = game answer of ${hits.slice(0, 3).map(h => `${h.file} plan ${h.plan}`).join(', ')}${hits.length > 3 ? ` (+${hits.length - 3})` : ''}`); continue; }
+    const hist = `request in history: ${[...(seen?.values() ?? [])].reduce((s, h) => s + h.length, 0)} game answers, ${seen?.size ?? 0} distinct`;
+    const cg = cost(r.game), cc = cost(r.copy!);
+    if (Math.abs(cc - cg) > TIER2_LEN * cg) { row(3, `cost game ${cg.toFixed(4)} copy ${cc.toFixed(4)}: over 10%; ${hist}`); continue; }
+    const v = liveValidity(r);
+    row(v.ok ? 2 : 3, `${v.ok ? 'valid' : 'undecided'}: ${v.why}; cost game ${cg.toFixed(4)} copy ${cc.toFixed(4)}; ${hist}`);
+  }
+  const tiers: [number, number, number] = [1, 2, 3].map(t => rows.filter(x => x.tier === t).length) as [number, number, number];
+  const fails: string[] = [];
+  if (compares < minCompares) fails.push(`${compares} compares < ${minCompares}`);
+  if (tiers[2]) fails.push(`tier 3 = ${tiers[2]}`);
+  if (tiers[1] > TIER2_RATE * compares) fails.push(`tier 2 = ${tiers[1]} > 1 per 10,000 compares`);
+  if (!audit) fails.push('no ts3native log: replay audit unchecked');
+  else {
+    const bad = audit.filter(e => e.fate !== 'repaired');
+    if (bad.length) fails.push(`replay-audit drift not shown repaired: ${bad.length} of ${audit.length} on ` +
+      `${new Set(bad.map(e => e.lot)).size} lots (${(['recurred', 'timeout', 'unconfirmed'] as const).map(f => `${f} ${bad.filter(e => e.fate === f).length}`).join(', ')})`);
+  }
+  return { world, compares, tiers, rows, audit, reasons: fails, verdict: fails.length ? 'FAIL' : tiers[1] ? 'PASS-FLAGGED' : 'PASS' };
+}
+
+export function g1Report(recs: Rec[], idx: GameIndex, audit: AuditEv[] | null, minCompares = 10000) {
+  const lines: string[] = [], verdicts: G1[] = [];
+  for (const w of [...new Set(recs.map(r => r.world))]) {
+    const v = g1(w, recs.filter(r => r.world === w), idx, audit, minCompares);
+    verdicts.push(v);
+    lines.push(`G1 v2 ${w}: ${v.compares} compares; tier 1 ${v.tiers[0]}, tier 2 ${v.tiers[1]}, tier 3 ${v.tiers[2]}; replay audit ` +
+      (audit ? `${audit.length} mismatches, repaired ${audit.filter(e => e.fate === 'repaired').length}` : 'no log'));
+    lines.push(`  G1 ${v.verdict}${v.reasons.length ? ': ' + v.reasons.join('; ') : ''}`);
+    for (const r of v.rows) lines.push(`  plan ${r.plan} ${r.cls} tier ${r.tier}: ${r.why}`);
   }
   return { lines, verdicts };
 }
@@ -340,6 +510,72 @@ function selfCheck() {
   assert.match(od, /only clone: 0x3 /); assert.match(od, /only live: 0x4 /);
   assert.deepEqual(obstDiff({ ...obst, liveState: 'busy', liveW: 2 }), ['obstacles in box [0,1,5,6]: clone 3, live busy, writes since the live plan 2 (live set may be newer)']);
   assert.match(report([rec({ copy: ans({ goalIdx: 1 }), obst })], 5, 1).lines.join('\n'), /M2 plan 1[^\n]*\n    goal[^\n]*\n    obstacles in box/);
+  // 0.36.50 (docs/94 §24.8.4): frame + lock key on each Ob; a NULL clone set vs a live set differs with equal points
+  const k2: Key = ['0x0ABC0000', '0x0ABC0000', 2, 0, '0x1'], k0: Key = ['0x00000000', '0x00000000', 0, 0, '0x0'];
+  const ok = (k: Key): Ob => ['0x5', '0x00FEBBC0', 3, 0, 1, 0, '0xF', 50.5, 32, 51, 32.5, 'l', k];
+  const od2 = obstDiff({ ...obst, clone: [ok(k0)], live: [ok(k2)] }).join('\n');
+  assert.match(od2, /0 equal, 1 differ\n  differs: 0x5 vt 0x00FEBBC0 xz \[50.5,32,51,32.5\] \(l frame\) keys 0x00000000 0\/0 0x0 \(clone\) vs .* keys 0x0ABC0000 2\/0 0x1 \(live\)/);
+  assert.match(obstDiff({ ...obst, clone: [ok(k2)], live: [ok(k2)] }).join('\n'), /1 equal, 0 differ/);
+  const le = (k: Key): LdEnt => [0, '0x100', '0x6C11003401401605', '0x00FEBBC0', 3, 65537, 65280, 3, 1, 0, '0xF', ['0xF'], [30, 30, 62, 62], [50.5, 32, 51, 32.5], k];
+  const side = (ents: LdEnt[]): LdSide => ({ state: 'ok', lot: '0x6C1100342B1C14A0', lbox: [], qs: [], more: 0, ents });
+  const ld: LotDump = { why: 'm2', pt: [1250.5, 1731.8], box: [0, 0, 1, 1], clone: side([le(k0)]), live: side([le(k2), le(k2)]), diffs: [[1, 0, 0], [0, -1, 1]] };
+  assert.match(lotDumpDiff(ld).join('\n'), /^lot dump \(m2\) lot 0x6C1100342B1C14A0: clone ok 1, live ok 2, 2 differ\n  differs \(bits 1: lock keys\): clone Q 0 0x6C11003401401605 .*cell \[30,30,62,62\].* keys 0x00000000 0\/0 0x0 vs live .* keys 0x0ABC0000 2\/0 0x1\n  only live: Q 0 /);
+
+  // G1 v2 (docs/94 §24.13): tiers from a fixture history file, live validity from obst, audit drift from a log
+  const req = (i: number): Partial<Rec> => ({ start: [i + 0.5, 1, 2.25], goal: [i + 3, 1, 4] });
+  const altB = withNodes([base[0], node(1.5), base[2]], { len: 2.1 });  // another route, 5% longer: M2
+  const wOb = (x0: number, x1: number): Ob => ['0x9', '0x00FEBBC0', 3, 0, 1, 0, '0xA', x0, -1, x1, 1, 'w', null];
+  const okObst: Obst = { box: [-1, -1, 3, 1], liveState: 'ok', liveW: 0, us: 1, cloneMore: 0, liveMore: 0, clone: [], live: [wOb(10, 11)],
+    walkC: { walked: 9, lot: '0x6C11', lbox: [0, 0, 64, 64], near: [] }, walkL: { walked: 9, lot: '0x6C11', lbox: [0, 0, 64, 64], near: [] } };
+  const dir = mkdtempSync(join(tmpdir(), 'g1v2-'));
+  try {
+    // history: run H's game gave answer B to request 1; request 2 only answer A
+    const hist = join(dir, 'runH-shadow.jsonl');
+    writeFileSync(hist, [rec({ plan: 41, ...req(1), game: altB, copy: altB }), rec({ plan: 42, ...req(2) }), rec({ plan: 43, ...req(1), search: 'R', game: ans(), copy: ans() })]
+      .map(x => JSON.stringify({ v: x.v, plan: x.plan, ic: x.ic, world: x.world, search: x.search, start: x.start, goal: x.goal, ...x }))  // native key order
+      .join('\n') + '\n');
+    const ins: Rec[] = [
+      rec({ plan: 1, ...req(1), copy: altB, src: 'run1-shadow.jsonl' }),                                   // tier 1: copy = run H plan 41
+      rec({ plan: 2, ...req(2), copy: altB, obst: okObst }),                                               // tier 2: valid, 5%
+      rec({ plan: 3, ...req(3), copy: altB, obst: { ...okObst, liveState: 'busy' } }),                     // tier 3: undecided
+      rec({ plan: 4, ...req(4), copy: withNodes([base[0], node(1.5), base[2]], { len: 3 }), obst: okObst }), // tier 3: cost 50%
+      rec({ plan: 5, ...req(5), copy: ans({ mType: 16, status: 8 }) }),                                    // tier 3: M3
+      rec({ plan: 6, ...req(6), copy: withNodes([base[0], node(1, 0), base[2]]) }),                         // tier 3: real M1
+      rec({ plan: 7, ...req(7), copy: altB, obst: { ...okObst, live: [wOb(0.5, 0.7)] } }),                 // tier 3: segment in a live bbox
+      rec({ plan: 8, ...req(8), copy: altB, obst: { ...okObst, walkL: undefined } }),                      // tier 3: old walk
+    ];
+    const idx = indexGameAnswers([hist], new Set(ins.map(reqKey)));
+    assert.equal(idx.get(reqKey(ins[0]))?.size, 1);  // the search R record of the same points is another request
+    const v1 = g1('BP', [...ins, ...many(10)], idx, [], 1);
+    const tierOf = (p: number) => v1.rows.find(x => x.plan === p)?.tier;
+    assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map(tierOf), [1, 2, 3, 3, 3, 3, 3, 3]);
+    assert.match(v1.rows[0].why, /copy = game answer of runH-shadow\.jsonl plan 41/);
+    assert.match(v1.rows.find(x => x.plan === 3)!.why, /^undecided: live obstacle read busy/);
+    assert.match(v1.rows.find(x => x.plan === 7)!.why, /meets the bounds of live footprint 0x9/);
+    assert.equal(v1.verdict, 'FAIL'); assert.deepEqual(v1.tiers, [1, 1, 6]);
+    assert.match(v1.reasons.join(';'), /tier 3 = 6;tier 2 = 1 > 1 per 10,000 compares/);
+    // tier 1 alone passes; one tier 2 in 10,000 compares is PASS-FLAGGED, in fewer it fails the rate cap
+    assert.equal(g1('BP', [ins[0], ...many(5)], idx, [], 1).verdict, 'PASS');
+    assert.equal(g1('BP', [ins[1], ...many(9999)], idx, [], 10000).verdict, 'PASS-FLAGGED');
+    assert.equal(g1('BP', [ins[1], ...many(9998)], idx, [], 1).verdict, 'FAIL');
+    assert.match(g1('BP', many(5), idx, null, 1).reasons[0], /no ts3native log/);
+    // audit drift: A repaired (a later line names an equal audit after it), B recurred, C hold timeout, D unconfirmed
+    const log = [
+      'snap replay audit MISMATCH lot 0xA: Q 1 (level index) entries live 5 clone 4 (ring 100, cut 10, last equal ring none)',
+      'snap replay audit MISMATCH lot 0xA: hash differs, entries live 5 clone 4 (clone 2 lots, map 9 / live 9) (ring 100, cut 10, last equal ring none)',
+      'snap replay audit MISMATCH lot 0xB: hash differs, entries live 5 clone 4 (clone 2 lots, map 9 / live 9) (ring 300, cut 30, last equal ring none)',
+      'snap replay audit MISMATCH lot 0xA: hash differs, entries live 6 clone 5 (clone 2 lots, map 9 / live 9) (ring 200, cut 20, last equal ring 150, 50 records)',
+      'snap replay audit MISMATCH lot 0xB: hash differs, entries live 5 clone 4 (clone 2 lots, map 9 / live 9) (ring 400, cut 40, last equal ring none)',
+      'snap replay audit MISMATCH lot 0xC: hash differs, entries live 5 clone 4 (clone 2 lots, map 9 / live 9) (ring 500, cut 50, last equal ring none)',
+      'snap replay audit: lot 0xC rebase hold released by timeout (the diff did not run within one cut; 1 so far)',
+      'snap replay audit MISMATCH lot 0xD: hash differs, entries live 5 clone 4 (clone 2 lots, map 9 / live 9) (ring 600, cut 60, last equal ring none)',
+    ].join('\n');
+    const ev = auditDrift(log);
+    assert.deepEqual(ev.map(e => `${e.lot}@${e.ring}:${e.fate}`), ['0xA@100:repaired', '0xB@300:recurred', '0xA@200:unconfirmed', '0xB@400:unconfirmed', '0xC@500:timeout', '0xD@600:unconfirmed']);
+    assert.match(g1('BP', many(5), idx, ev, 1).reasons[0], /not shown repaired: 5 of 6 on 4 lots \(recurred 1, timeout 1, unconfirmed 3\)/);
+    assert.equal(g1('BP', many(5), idx, ev.slice(0, 1), 1).verdict, 'PASS');
+    assert.match(g1Report([...ins.slice(0, 2), ...many(3)], idx, [], 1).lines.join('\n'), /^G1 v2 BP: 5 compares; tier 1 1, tier 2 1, tier 3 0;[^\n]*\n  G1 FAIL: tier 2 = 1 > 1 per 10,000/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
   console.log('shadow-compare-report self-check ok');
 }
 
@@ -349,9 +585,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   else {
     const fi = args.indexOf('--first');
     const first = fi >= 0 ? Number(args[fi + 1]) : 10;
-    const files = args.filter((a, i) => !a.startsWith('--') && !(fi >= 0 && i === fi + 1));
+    const hist = args.flatMap((a, i) => a === '--history' ? [args[i + 1]] : []);
+    const files = args.filter((a, i) => !a.startsWith('--') && !(fi >= 0 && i === fi + 1) && args[i - 1] !== '--history');
     if (!files.length) {
-      console.log('usage: node tools/harness/shadow-compare-report.ts <shadow.jsonl> [...] [--first 10] | --self-check');
+      console.log('usage: node tools/harness/shadow-compare-report.ts <shadow.jsonl> [...] [--first 10] [--g1 [--history <glob>]] | --self-check');
       process.exitCode = 2;
     } else {
       const recs: Rec[] = [];
@@ -359,11 +596,28 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         if (!l.trim()) continue;
         const r = JSON.parse(l);
         if (r.v !== 1 && r.v !== 2 && r.v !== 3) throw new Error(`${f}:${i + 1}: record v${r.v}, this report reads v1-v3 (docs/94 §13)`);
+        r.src = f;
         recs.push(r);
       }
       const { lines, verdicts } = report(recs, first);
       console.log(lines.join('\n'));
       if (verdicts.some(v => v.verdict === 'FAIL')) process.exitCode = 1;
+      if (args.includes('--g1')) {
+        const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+        const histFiles = new Set([...files.map(f => resolve(f)),
+          ...(hist.length ? hist : ['probe-out/**/*-shadow.jsonl']).flatMap(g => globSync(g, { cwd: root }).map(f => resolve(root, f)))]);
+        // only the requests of the inputs' M2s and path ties are looked up, so the history read stays one pass
+        const want = new Set(recs.filter(r => { const k = classify(r); return k.cls === 'M2' || k.tie === 'path'; }).map(reqKey));
+        const idx = indexGameAnswers([...histFiles], want);
+        console.log(`\nG1 v2 (docs/94 §24.13): history ${histFiles.size} shadow files, ${want.size} requests looked up`);
+        for (const f of files) {  // one run per file: its own ts3native log for the audit check
+          const log = f.replace(/-shadow\.jsonl$/, '-ts3native.log');
+          const audit = log !== f && existsSync(log) ? auditDrift(readFileSync(log, 'utf8')) : null;
+          const g = g1Report(recs.filter(r => r.src === f), idx, audit);
+          console.log(`${basename(f)}\n${g.lines.join('\n')}`);
+          if (g.verdicts.some(v => v.verdict === 'FAIL')) process.exitCode = 1;
+        }
+      }
     }
   }
 }

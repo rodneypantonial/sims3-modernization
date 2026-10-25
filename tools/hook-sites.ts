@@ -31,12 +31,30 @@ export function scan(text: string, module: string): Hit[] {
     return hits;
 }
 
+const apexHooksCsv = join(repo, "docs", "data", "apex-hooks.csv");
+// one CSV row: plain or double-quoted fields ("" = a quote)
+export function csvRow(line: string): string[] {
+    const out: string[] = [];
+    let f = "", q = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (q) { if (ch !== '"') f += ch; else if (line[i + 1] === '"') { f += '"'; i++; } else q = false; }
+        else if (ch === '"') q = true;
+        else if (ch === ",") { out.push(f); f = ""; }
+        else f += ch;
+    }
+    out.push(f);
+    return out;
+}
+
 const hex = (a: number) => "0x" + a.toString(16).toUpperCase().padStart(8, "0");
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     // self-check: code literal found, comment and data-range literals ignored
     const t = scan('static const DWORD A_B = 0x004E16F0; // 0x00ABCDEF\nx = 0x011F30D0;', "t");
     if (t.length !== 1 || t[0].addr !== 0x4e16f0 || t[0].label !== "A_B") throw new Error("hook-sites self-check failed");
+    const r = csvRow('0x6EBC49,SceneDrainCall,call,"a, ""b""",x,');
+    if (r.length !== 6 || r[3] !== 'a, "b"' || r[5] !== "") throw new Error("hook-sites csvRow self-check failed");
 
     const files = readdirSync(src).filter((f) => f.endsWith(".cpp") && !/test/.test(f));
     const hits = files.flatMap((f) => scan(readFileSync(join(src, f), "utf8"), f.replace(/\.cpp$/, "")));
@@ -56,5 +74,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         const open = addrs.filter((a) => apex.has(a) && !apex.get(a));
         console.log(`${addrs.filter((a) => apex.has(a)).length} addresses also named by Apex Radiance, ${open.length} without a class${open.length ? ": " + open.map(hex).join(" ") : ""}`);
         if (open.length) process.exitCode = 1;
+
+        // docs/187: same address in docs/data/apex-hooks.csv (Apex v2.15.3 hook surface), with its kind, switch and default
+        const hooks = readFileSync(apexHooksCsv, "utf8").trim().split(/\r?\n/).slice(1).map(csvRow);
+        const byAddr = new Map(hooks.map((c) => [parseInt(c[0], 16), c] as [number, string[]]));
+        const both = addrs.filter((a) => byAddr.has(a));
+        console.log(`${both.length} addresses also in docs/data/apex-hooks.csv (docs/187 §3):`);
+        for (const a of both) { const c = byAddr.get(a)!; console.log(`  ${hex(a)}  ours ${[...new Set(seen.get(a)!.map((h) => h.module))].join("+")} | apex ${c[1] || "-"} ${c[2]} ${c[4]} (${c[5]})`); }
     }
 }

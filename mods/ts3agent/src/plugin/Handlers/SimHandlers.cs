@@ -21,6 +21,7 @@ namespace Ts3Agent
         {
             Dispatcher.Register("list_households", ListHouseholds);
             Dispatcher.Register("list_sims", ListSims);
+            Dispatcher.Register("pick_sims", PickSims);
             Dispatcher.Register("sim_details", SimDetails);
             Dispatcher.Register("set_active_sim", SetActiveSim);
             Dispatcher.Register("household_funds", HouseholdFunds);
@@ -91,6 +92,39 @@ namespace Ts3Agent
                 if (list.Count >= 500) break;
             }
             return list;
+        }
+
+        // pick_sims {age?: "child,teen", count?: 4, school?: false, townies?: true, noPets?: false}: instantiated human Sims in
+        // the world that match (age names as CASAgeGenderFlags: toddler, child, teen, youngadult, adult, elder; school = has a
+        // school; townies = not in the active household; noPets = household without pets), in world order, up to count.
+        // Stored for later repro steps: {sim: "picked:N"} (1-based) names the N-th pick (Util.FindSimDescription), so repros
+        // need no save-specific names. Fewer matches than count: the picks found (short: true); none: error.
+        static object PickSims(Args a)
+        {
+            List<string> ages = new List<string>();
+            foreach (string s in a.Str("age", "").Split(',')) if (s.Trim().Length > 0) ages.Add(s.Trim().Replace(" ", "").ToLowerInvariant());
+            int count = (int)a.Long("count", 4);
+            bool school = a.Bool("school", false), townies = a.Bool("townies", true), noPets = a.Bool("noPets", false);
+            Household active = Household.ActiveHousehold;
+            Util.Picked.Clear();
+            List<object> names = new List<object>();
+            foreach (SimDescription sd in SimDescription.GetSimDescriptionsInWorld())
+            {
+                if (Util.Picked.Count >= count) break;
+                if (sd == null || sd.CreatedSim == null || sd.IsPet) continue;
+                if (ages.Count > 0 && !ages.Contains(sd.Age.ToString().ToLowerInvariant())) continue;
+                if (townies && active != null && sd.Household == active) continue;
+                if (school && (sd.CareerManager == null || sd.CareerManager.School == null)) continue;
+                if (noPets && sd.Household != null && sd.Household.Pets.Count > 0) continue;
+                Util.Picked.Add(sd.SimDescriptionId);
+                names.Add(sd.FullName);
+            }
+            if (names.Count == 0) throw new McpException("pick_sims: no instantiated Sim matches");
+            Dictionary<string, object> r = Util.Obj();
+            r["picked"] = names;
+            r["count"] = names.Count;
+            r["short"] = names.Count < count;
+            return r;
         }
 
         static object SimDetails(Args a)
