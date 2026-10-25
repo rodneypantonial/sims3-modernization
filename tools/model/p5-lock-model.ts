@@ -23,6 +23,8 @@ type Cfg = {
   rcg?: boolean;  // docs/177 §7: [RouteAsync] RefcountGuard (rcguard.cpp): the query's +0x918 level kept until its caller returns
   mutRcEarly?: boolean; mutRcNoDrop?: boolean;  // mutations: the level released at the query (today's order) / no RcDrop before a wait
   mutPdNoLentSkip?: boolean;
+  au?: boolean;  // docs/189 phase 3: [RouteSnap] AskLent: a P5c door ask keeps the lock lent; the callback takes it for real (no borrow)
+  mutAuNoAdmit?: boolean;  // mutation: the callback's acquire is held out by the open window (P5bAllowed without P5B_AU)
   share?: boolean;  // docs/94 §24 (P6): [RouteSnap] ShareCuts: a START while a job is queued or running borrows that job's pending cut
   mutShareNoW?: boolean;  // mutation: PcBorrow without the "no recorded write since the cut" test  // docs/89 §13 mutation: [Discourage] PlanDrain drains under the P5c lent lock (rule 5 skip removed)
   fixNr?: boolean; fixHb?: boolean; fixWm?: boolean; mutGate?: boolean; mutNoDrop?: boolean;
@@ -36,7 +38,7 @@ interface Wk { pc: string; j: number; ph: string; exp: number; n: number; p5b: s
   mgd: number; after: string; }
 interface St { lo: number; lc: number; win: number; inN: number; lendBy: number; p5cJob: number; p5cOff: number; off: number;
   as: number; g0Win: number; g0In: number; closing: number; busy: number; world: number; jobs: string; cut: number[]; sw: number[];
-  ev: number; inv: number; wm: number; rp: number; op: number; snap: number; writes: number; hbJob: number; wd: number; relOff: number; viol: string;
+  ev: number; inv: number; au: number; wm: number; rp: number; op: number; snap: number; writes: number; hbJob: number; wd: number; relOff: number; viol: string;
   s: Sim; w: Wk; r: { pc: string; it: number }; m: { pc: string }; }
 type Succ = { st: St; lbl: string };
 
@@ -50,7 +52,7 @@ const setJob = (st: St, i: number, c: string) => { st.jobs = st.jobs.slice(0, i)
 
 function init(c: Cfg): St {
   return { lo: 0, lc: 0, win: 0, inN: 0, lendBy: 0, p5cJob: 0, p5cOff: 0, off: 0, as: 0, g0Win: 0, g0In: 0, closing: 0, busy: 0,
-    world: 1, jobs: 'FF', cut: [0, 0], sw: [0, 0], ev: 0, inv: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, relOff: 0, viol: '',
+    world: 1, jobs: 'FF', cut: [0, 0], sw: [0, 0], ev: 0, inv: 0, au: 0, wm: 0, rp: 0, op: 0, snap: 0, writes: 0, hbJob: 0, wd: 0, relOff: 0, viol: '',
     s: { pc: 'top', n: 0, stk: [], ac: [], hand: 0, hand2: 0, hbOff: 0, mid: 0, cb: 0, bor: 0, k: -1, parked: 0, took: 0, lt: 0, closed: 0, rc: 0, pd: 0 },
     w: { pc: 'idle', j: -1, ph: 'idle', exp: 0, n: 0, p5b: 'c', tu: 0, rp: 0, door: 0, mgd: 0, after: '' },
     r: { pc: c.rp ? 'r0' : 'done', it: 2 }, m: { pc: c.main ? 'm0' : 'done' } };
@@ -85,10 +87,12 @@ function wRead(st: St) {  // the worker reads live routing state
 
 // ---------------- sim thread ----------------
 const lendOn = (c: Cfg) => !!(c.p5b || c.tu);
-function admitted(st: St, cls: string) {  // p5b.cpp:69 P5bAllowed (ReleaseGates off)
-  return st.lo === SIM || (!st.s.cb && (cls === 'steer' || (st.p5cJob === 1 && cls === 'free')));
+function admitted(st: St, cls: string, c?: Cfg) {  // p5b.cpp:69 P5bAllowed (ReleaseGates off); P5B_AU inside a lent ask's callback
+  if (st.lo === SIM) return true;
+  if (st.s.cb) return st.au === 1 && !c?.mutAuNoAdmit;
+  return cls === 'steer' || (st.p5cJob === 1 && cls === 'free');
 }
-const trySucc = (st: St, c: Cfg, cls: string) => (!lendOn(c) || !st.win || admitted(st, cls)) && canTake(st, SIM);
+const trySucc = (st: St, c: Cfg, cls: string) => (!lendOn(c) || !st.win || admitted(st, cls, c)) && canTake(st, SIM);
 const call = (s: Sim, sub: string, ret: string) => { s.stk.push(ret); s.pc = sub; };
 const ret = (s: Sim) => { s.pc = s.stk.pop()!; };
 const acq = (s: Sim, cls: string, retPc: string) => { s.ac.push(cls); call(s, 'a0', retPc); };
@@ -337,13 +341,13 @@ function simSteps(st0: St, c: Cfg): Succ[] {
     case 'cb2': go('callback: release, g_invDone', st => { relS(st); st.s.cb = 0; st.inv = 2; ret(st.s); }); break;
     // --- LockAcquireHook / LockAcquireAsync / P5bLock ts3native.cpp:2901, 2940; p5b.cpp:80 ---
     case 'a0':
-      if (s.cb && st0.as) go('acquire: borrow (callback)', st => { st.s.bor++; finishAcq(st); });
+      if (s.cb && st0.as && !st0.au) go('acquire: borrow (callback)', st => { st.s.bor++; finishAcq(st); });
       else if (st0.lo === SIM) go('acquire: recursive', st => { st.lc++; finishAcq(st); });
       else if (!asyncBusy(st0)) go('acquire: no job, blocking', st => { st.s.pc = 'ab'; });
       else go('acquire: job busy, pump try', st => { st.s.pc = 'at'; });
       break;
     case 'ab':
-      if (!lendOn(c) || admitted(st0, cls)) { if (canTake(st0, SIM)) go('acquire: got +0x918', st => { take(st, SIM, c); finishAcq(st); }); }
+      if (!lendOn(c) || admitted(st0, cls, c)) { if (canTake(st0, SIM)) go('acquire: got +0x918', st => { take(st, SIM, c); finishAcq(st); }); }
       else go('P5bLock: g_p5bIn++', st => { st.inN++; st.s.pc = 'ab1'; });
       break;
     case 'ab1':
@@ -434,7 +438,11 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
       break;
     case 'b3':
       go('clone run ends', st => { st.w.pc = 'b4'; });
-      if (c.door && !w.door) go('door ask: P5bRetake (P5B_ASK)', st => { st.w.door = 1; if (st.w.p5b === 'o') retake(st, 'bd1'); else st.w.pc = 'bd1'; });
+      if (c.door && !w.door) go('door ask: P5bRetake (P5B_ASK)', st => {
+        st.w.door = 1;
+        if (c.au && st.w.p5b === 'o' && st.p5cJob === 1) { st.au = 1; st.w.pc = 'bd1'; return; }  // AskLent: g_auAsk = 1, no retake
+        if (st.w.p5b === 'o') retake(st, 'bd1'); else st.w.pc = 'bd1';
+      });
       if (c.mgd && !w.mgd) go('managed call in the clone run: P4Abort -> P5bAbort', st => {
         st.w.mgd = 1; if (st.w.p5b === 'o') retake(st, 'bm1'); else st.w.pc = 'bm1';
       });
@@ -447,6 +455,7 @@ function wrkSteps(st0: St, c: Cfg): Succ[] {
     case 'bd1': go('door ask: P4Disarm, proxied to the sim', st => { st.snap = 0; proxy(st, 'bd2'); }); break;
     case 'bd2': go('door ask answered: P4Arm, P5bOpen again', st => {
       st.snap = 1;
+      if (st.au) { st.au = 0; st.w.ph = 'clone'; st.w.pc = 'b3'; return; }  // AskLent: g_auAsk = 0, the window never closed
       if (st.w.p5b === 'd') { st.w.ph = 'hold'; st.w.pc = 'b3'; return; }
       st.win = 1; st.w.pc = 'b2';
     }); break;
@@ -680,6 +689,10 @@ const CFGS: Cfg[] = [
   { name: 'mut-rc-early', ops: ['start', 'collect', 'icq'], K: 3, rcg: true, tu: true, mutRcEarly: true, expect: 'refcount race', why: "MUTATION: the level released at the query (today's order): the race is back" },
   { name: 'mut-rc-nodrop', ops: ['start', 'collect', 'icw'], K: 3, rcg: true, mutRcNoDrop: true, expect: 'deadlock', why: 'MUTATION: no RcDrop before the sim waits: the kept level blocks the job the caller waits for' },
   // docs/94 §24 (P6): Mode=2 cut sharing for own Route.Plan STARTs behind a busy job
+  // docs/189 phase 3: [RouteSnap] AskLent (door asks of a P5c clone job posted with +0x918 still lent)
+  { name: 'ask-unheld', ops: ['start', 'collect', 'steer', 'writer', 'destroy'], K: 3, p5b: true, p5c: true, door: true, au: true, expect: 'clean', why: 'AskLent: no retake around the ask; the callback takes the lent lock for real, admitted writers keep the window rules, stale answers refused' },
+  { name: 'ask-unheld-share-rp', ops: ['start', 'collect', 'steer', 'writer', 'cut'], K: 3, p5b: true, p5c: true, door: true, au: true, rp: true, rpu: true, share: true, expect: 'clean', why: 'AskLent with ShareCuts, the replay consumer and RecsUnlocked' },
+  { name: 'mut-ask-unheld-noadmit', ops: ['start', 'steer'], K: 2, p5b: true, p5c: true, door: true, au: true, mutAuNoAdmit: true, expect: 'deadlock', why: 'MUTATION: the callback is held out by the open window while the worker waits for it' },
   { name: 'p6-share-p5c', ops: ['start', 'collect', 'steer', 'writer'], K: 4, p5b: true, p5c: true, door: true, share: true, expect: 'clean', why: 'ShareCuts with P5c: borrowed cuts only with no write since; the clone run lends, the retake and stale test as P5' },
   { name: 'p6-share-p5b', ops: ['start', 'collect', 'steer', 'writer'], K: 4, p5b: true, door: true, share: true, expect: 'clean', why: 'ShareCuts with P5b only (no P5c stale test): the borrow-time write test alone keeps answers at their START world' },
   { name: 'p6-share-rp', ops: ['start', 'collect', 'steer', 'writer', 'cut'], K: 3, p5b: true, p5c: true, rp: true, rpu: true, share: true, expect: 'clean', why: 'ShareCuts with the replay consumer and RecsUnlocked: two jobs on one cut acquire g_rpUse in turn, no deadlock' },

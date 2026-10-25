@@ -1,0 +1,58 @@
+mod,source,line,type,method,plan_api,context,class,foreign_hint,installed,evidence,note
+Common (Overwatch),NRaas/Helpers/SimEx.cs,87,NRaas.CommonSpace.Helpers.SimEx,IsPointInLotSafelyRoutable,PlanFromPoint,nraas-alarm|nraas-task|interaction,ab,,yes,il,Overwatch StuckCheck nightly alarm (FunctionTask) or the Overwatch menu (CommonInteraction Run / option task); docs/184 §5
+Common,NRaas/Interactions/RouteToObject.cs,35,NRaas.CommonSpace.Interactions.RouteToObject,Run,PlanToSlot,interaction,a,,no,source,not compiled into the installed ErrorTrap/Overwatch
+Career,NRaasCareer/CareerSpace/Interactions/GoToSchoolInRabbitHoleEx.cs,142,NRaas.CareerSpace.Interactions.GoToSchoolInRabbitHoleEx,RouteNearEntranceAndEnterRabbitHole,PlanToSlot,interaction,a,,no,source,from Run
+Career,NRaasCareer/CareerSpace/Interactions/Kill.cs,212,NRaas.CareerSpace.Interactions.Kill,Run,PlanToPointRadialRange,interaction,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,109,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,PlanToSlot,plan-callback,x,,no,source,inherits the outer plan's class; see docs/184 §2 (not re-analysed here)
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,120,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,122,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,155,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,186,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,PlanToPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,202,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,PlanToPointFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,220,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,222,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/AncientPortalRoutingHelper.cs,239,NRaas.GoHereSpace.Helpers.AncientPortalRoutingHelper,Reroute,ReplanFromPoint,plan-callback,x,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/ObstacleEncounteredRouteInterruptActionEx.cs,45,NRaas.GoHereSpace.Helpers.ObstacleEncounteredRouteInterruptActionEx,PerformAction,Replan,route-action,a,,no,source,route interrupt action in the follower's route loop (as EA's; docs/04a #4)
+GoHere,NRaasGoHere/GoHereSpace/Helpers/RoutingComponentEx.cs,117,NRaas.GoHereSpace.Helpers.RoutingComponentEx,DoRoute,Replan,route-loop,a,,no,source,replaces RoutingComponent.DoRoute: the follower's own route loop
+GoHere,NRaasGoHere/GoHereSpace/Helpers/RoutingComponentEx.cs,366,NRaas.GoHereSpace.Helpers.RoutingComponentEx,DoRoute,ReplanFromPoint,route-loop,a,,no,source,ContinueAndPopPathAndReplan branch of the loop
+GoHere,NRaasGoHere/GoHereSpace/Helpers/RoutingComponentEx.cs,385,NRaas.GoHereSpace.Helpers.RoutingComponentEx,DoRoute,ReplanFromPoint,route-loop,a,,no,source,as above
+GoHere,NRaasGoHere/GoHereSpace/Helpers/SimRoutingComponentEx.cs,63,NRaas.GoHereSpace.Helpers.SimRoutingComponentEx,CreateGoHereWithInteractionInstance,Replan,route-loop,a,foreign,no,source,leader's route replanned from the follower list (DoRouteWithFollowers in the routing Sim's task): foreign plan
+GoHere,NRaasGoHere/GoHereSpace/Helpers/SimRoutingComponentEx.cs,336,NRaas.GoHereSpace.Helpers.SimRoutingComponentEx,DoRoute,Replan,route-loop,a,,no,source,replaces SimRoutingComponent.DoRoute (I-103-6)
+GoHere,NRaasGoHere/GoHereSpace/Helpers/SimRoutingComponentEx.cs,369,NRaas.GoHereSpace.Helpers.SimRoutingComponentEx,DoRoute,Replan,route-loop,a,,no,source,blocked-by-Sim replan inside DoRoute
+GoHere,NRaasGoHere/GoHereSpace/Helpers/SimRoutingComponentEx.cs,460,NRaas.GoHereSpace.Helpers.SimRoutingComponentEx,DoRouteWithFollowers,Replan,route-loop,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Interactions/GoJoggingEx.cs,122,NRaas.GoHereSpace.Interactions.GoJoggingEx,Run,PlanToLot,interaction,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Interactions/GoJoggingEx.cs,132,NRaas.GoHereSpace.Interactions.GoJoggingEx,Run,PlanToLot,interaction,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Interactions/RouteStrayToLot.cs,34,NRaas.GoHereSpace.Interactions.StrayRouteToLot,Run,PlanToLotEx,interaction,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Interactions/VisitCommunityLotEx.cs,248,NRaas.GoHereSpace.Interactions.VisitCommunityLotEx,Run,PlanToLotEx,interaction,a,,no,source,
+GoHere,NRaasGoHere/GoHereSpace/Options/DoorFilters/ListSimsAllowedOption.cs,55,NRaas.GoHereSpace.Options.DoorFilters.ListSimsAllowedOption+SimSelection,Allow,Plan,menu-option,a,foreign,no,source,one Plan per Sim on the door's lot while the list is built; NRaas options run from the menu interaction (CommonInteraction Run) or an option task as in Overwatch's IL [inferred for GoHere]: a yielding task, foreign plans (docs/184 §2 said c)
+Hybrid,NRaasHybrid/HybridSpace/Interactions/AutonomousSplashInPuddleEx.cs,68,NRaas.HybridSpace.Interactions.AutonomousSplashInPuddleEx,Run,PlanToPoint,interaction,a,,no,source,
+Hybrid,NRaasHybrid/HybridSpace/Interactions/CastFireBlastTerrainEx.cs,82,NRaas.HybridSpace.Interactions.CastFireBlastTerrainEx+Proxy,InitialPrep,PlanToPointRadius,interaction,a,,no,source,spell interaction prep (from Run)
+Hybrid,NRaasHybrid/HybridSpace/Interactions/CastIceBlastPlumbingEx.cs,81,NRaas.HybridSpace.Interactions.CastIceBlastPlumbingEx+Proxy,InitialPrep,PlanToPointRadialRange,interaction,a,,no,source,as above
+Hybrid,NRaasHybrid/HybridSpace/Interactions/CastUpgradeEx.cs,89,NRaas.HybridSpace.Interactions.CastUpgradeEx+Proxy,InitialPrep,PlanToPointRadialRange,interaction,a,,no,source,as above
+Hybrid,NRaasHybrid/HybridSpace/Interactions/SummonWeatherWithEx.cs,59,NRaas.HybridSpace.Interactions.SummonWeatherWithEx,Run,PlanToLot,interaction,a,,no,source,
+Hybrid,NRaasHybrid/HybridSpace/Interactions/WakeUpSimEx.cs,78,NRaas.HybridSpace.Interactions.WakeUpSimEx,Run,PlanToSlot,interaction,a,,no,source,
+Hybrid,NRaasHybrid/HybridSpace/Interactions/WakeUpSimEx.cs,112,NRaas.HybridSpace.Interactions.WakeUpSimEx,Run,PlanToSlot,interaction,a,,no,source,
+Mover,NRaasMover/MoverSpace/Interactions/RubLampEx.cs,75,NRaas.MoverSpace.Interactions.RubLampEx,Run,PlanToSlot,interaction,a,,no,source,
+Shooless,NRaasShooless/ShoolessSpace/Interactions/UseToiletEx.cs,60,NRaas.ShoolessSpace.Interactions.UseToiletEx,Run,PlanToSlot,interaction,a,,no,source,
+StoryProgressionCareer,NRaasStoryProgressionCareer/StoryProgressionSpace/Interactions/GoToSchoolInRabbitHoleEx.cs,173,NRaas.StoryProgressionSpace.Interactions.GoToSchoolInRabbitHoleEx,RouteNearEntranceAndEnterRabbitHole,PlanToSlot,interaction,a,,no,source,from Run
+StoryProgressionMoney,NRaasStoryProgressionMoney/StoryProgressionSpace/Interactions/MusicalInstrumentWatchBase.cs,54,NRaas.StoryProgressionSpace.Interactions.MusicalInstrumentWatchBase,GiveTip,Plan,interaction,a,,no,source,tipper = the watching actor
+StoryProgressionMoney,NRaasStoryProgressionMoney/StoryProgressionSpace/Interactions/MusicalInstrumentWatchBase.cs,96,NRaas.StoryProgressionSpace.Interactions.MusicalInstrumentWatchBase,GiveTip,Plan,interaction,a,,no,source,
+StoryProgressionMoney,NRaasStoryProgressionMoney/StoryProgressionSpace/Interactions/MusicalInstrumentWatchBase.cs,166,NRaas.StoryProgressionSpace.Interactions.MusicalInstrumentWatchBase,AnimateSim,PlanToPoint,interaction,a,,no,source,
+StoryProgressionMoney,NRaasStoryProgressionMoney/StoryProgressionSpace/Interactions/WatchDJForTipsEx.cs,62,NRaas.StoryProgressionSpace.Interactions.WatchDJForTipsEx,GiveTipEx,Plan,interaction,a,,no,source,
+StoryProgressionMoney,NRaasStoryProgressionMoney/StoryProgressionSpace/Interactions/WatchPerformForTipsEx.cs,62,NRaas.StoryProgressionSpace.Interactions.WatchPerformForTipsEx,GiveTip,Plan,interaction,a,,no,source,
+StoryProgressionSkill,NRaasStoryProgressionSkill/StoryProgressionSpace/Interactions/CatchInsectEx.cs,41,NRaas.StoryProgressionSpace.Interactions.CatchInsectEx,Run,PlanToPointRadialRange,interaction,a,,no,source,
+Traffic,NRaasTraffic/TrafficSpace/Helpers/FoodTruckEx.cs,103,NRaas.TrafficSpace.Helpers.FoodTruckEx,OneShotRouteToLot,PlanToMatrixFromPoint,oneshot,b,foreign,no,source,OneShotFunction (truck route); car plan like docs/141 CarNpcWithNoDriver
+Traveler,NRaasTraveler/TravelerSpace/Interactions/PerformEarlyDepartureToHomeWorldEx.cs,93,NRaas.TravelerSpace.Interactions.PerformEarlyDepartureToHomeWorldEx,Run,PlanToLot,interaction,a,,no,source,travel start (docs/77)
+Traveler,NRaasTraveler/TravelerSpace/Interactions/SitInCarToTriggerMoveEx.cs,86,NRaas.TravelerSpace.Interactions.SitInCarToTriggerMoveEx,Run,PlanToLot,interaction,a,,no,source,
+Traveler,NRaasTraveler/TravelerSpace/Interactions/SitInCarToTriggerTravelEx.cs,157,NRaas.TravelerSpace.Interactions.SitInCarToTriggerTravelEx,Run,PlanToLot,interaction,a,,no,source,
+Traveler,NRaasTraveler/TravelerSpace/Interactions/SitInMovingVanToTriggerTravelHomeEx.cs,78,NRaas.TravelerSpace.Interactions.SitInMovingVanToTriggerTravelHomeEx,Run,PlanToLot,interaction,a,,no,source,
+Traveler,NRaasTraveler/TravelerSpace/Interactions/SitInMovingVanToTriggerTravelToUniversityEx.cs,117,NRaas.TravelerSpace.Interactions.SitInMovingVanToTriggerTravelToUniversityEx,Run,PlanToLot,interaction,a,,no,source,
+Traveler,NRaasTraveler/TravelerSpace/Interactions/TimePortalActivateDeactivateEx.cs,64,NRaas.TravelerSpace.Interactions.TimePortalActivateDeactivateEx,Run,PlanToSlot,interaction,a,,no,source,
+Woohooer,NRaasWoohooer/WoohooerSpace/Interactions/AncientPortalWooHoo.cs,124,NRaas.WoohooerSpace.Interactions.AncientPortalWooHoo,Run,PlanToSlot,interaction,a,,no,source,
+Woohooer,NRaasWoohooer/WoohooerSpace/Interactions/BoxOfMysteryWooHoo.cs,76,NRaas.WoohooerSpace.Interactions.BoxOfMysteryWooHoo,Run,PlanToSlot,interaction,a,,no,source,
+Woohooer,NRaasWoohooer/WoohooerSpace/Interactions/FairyHouseGetOutEx.cs,70,NRaas.WoohooerSpace.Interactions.FairyHouseGetOutEx,Run,PlanToSlot,interaction,a,,no,source,
+Woohooer,NRaasWoohooer/WoohooerSpace/Interactions/WardrobeWoohooAEx.cs,77,NRaas.WoohooerSpace.Interactions.WardrobeWoohooAEx,Run,PlanToSlot,interaction,a,,no,source,
+Woohooer,NRaasWoohooer/WoohooerSpace/Interactions/WooHooInCaveEx.cs,115,NRaas.WoohooerSpace.Interactions.WooHooInCave,AnimateSim,PlanToSlot,interaction,a,,no,source,
+WoohooerHotAirBalloon,NRaasWoohooerHotAirBalloon/WoohooerSpace/Interactions/HotAirBalloonSit.cs,94,NRaas.WoohooerSpace.Interactions.HotAirBalloonSit,Run,PlanToSlot,interaction,a,,no,source,
+WoohooerHotAirBalloon,NRaasWoohooerHotAirBalloon/WoohooerSpace/Interactions/HotAirBalloonSit.cs,129,NRaas.WoohooerSpace.Interactions.HotAirBalloonSit,Run,PlanToSlot,interaction,a,,no,source,
+WoohooerHotAirBalloon,NRaasWoohooerHotAirBalloon/WoohooerSpace/Interactions/HotAirBalloonSit.cs,132,NRaas.WoohooerSpace.Interactions.HotAirBalloonSit,Run,PlanToSlot,interaction,a,,no,source,

@@ -1,7 +1,8 @@
 // Installs a CC-free lot .Sims3Pack the way the launcher does, so the lot shows in Edit Town's lot bin without the launcher.
 // Usage: node tools/install-lot.ts <file.Sims3Pack> [--docs <The Sims 3 Documents dir>] [--dry-run] [--force]
-//        node tools/install-lot.ts --self-check [--docs <dir>]   (read-only on <dir>: rebuilds every launcher-installed lot
-//        found in <dir>\Downloads into a temp dir and compares it with the launcher's Library\ebf_*.package and DCBackup copy)
+//        node tools/install-lot.ts --self-check [--docs <dir>]   (synthetic transform check; with --docs also read-only on <dir>:
+//        rebuilds every launcher-installed lot found in <dir>\Downloads into a temp dir and compares it with the launcher's
+//        Library\ebf_*.package and DCBackup copy. Without --docs it reads no Documents folder, so it runs on CI)
 // Writes Library\ebf_0x<id>.package (embedded lot package + the launcher's 0x0679B9B8 marker) and DCBackup\0x<PackageId>.package
 // (byte copy of the embedded package). Does not touch DCCache\dcdb0.dbc (launcher's installed-content list). See docs/181 §6.
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -104,10 +105,10 @@ export function compareEbf(ours: Buffer, theirs: Buffer) {
   return r;
 }
 
-function selfCheck(docs: string) {
+function selfCheck(docs: string | undefined) {
   const tmp = mkdtempSync(join(tmpdir(), 'install-lot-'));
   let checked = 0, failed = 0;
-  try {
+  if (docs) try {
     const ebfs = readdirSync(join(docs, 'Library')).filter(n => /^ebf_0x[0-9a-f]+\.package$/i.test(n))
       .map(n => ({ n, b: readFileSync(join(docs, 'Library', n)) }));
     for (const f of readdirSync(join(docs, 'Downloads')).filter(n => n.toLowerCase().endsWith('.sims3pack'))) {
@@ -138,8 +139,8 @@ function selfCheck(docs: string) {
   lot.writeUInt32LE(TYPE_LOT, 104); lot.writeUInt32LE(0x11223344, 112); lot.writeUInt32LE(0x55667788, 116); lot.writeUInt32LE(96, 120);
   lot.writeUInt32LE(0x80000004, 124); lot.writeUInt32LE(4, 128); lot.writeUInt16LE(1, 134);
   const out = readIndex(buildEbf(lot));
-  console.assert(out.length === 2 && out[1].type === TYPE_MARKER && out[1].inst === 0x1122334455667788n && out[0].offset === 96, 'synthetic transform');
-  console.log(`self-check: ${checked} installs compared, ${failed} failed; synthetic transform ok`);
+  if (!(out.length === 2 && out[1].type === TYPE_MARKER && out[1].inst === 0x1122334455667788n && out[0].offset === 96)) { failed++; console.log('FAIL synthetic transform'); }
+  console.log(`self-check: ${docs ? `${checked} installs compared` : 'no --docs, no installs compared'}, ${failed} failed; synthetic transform ${failed ? 'checked' : 'ok'}`);
   if (failed) process.exitCode = 1;
 }
 
@@ -147,10 +148,10 @@ if (process.argv[1]?.endsWith('install-lot.ts')) {
   const args = process.argv.slice(2);
   const opt = (n: string) => { const i = args.indexOf(n); return i >= 0 ? args.splice(i, 2)[1] : undefined; };
   const flag = (n: string) => { const i = args.indexOf(n); return i >= 0 && !!args.splice(i, 1); };
-  const docs = opt('--docs') ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
+  const docsArg = opt('--docs'), docs = docsArg ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
   const dry = flag('--dry-run'), force = flag('--force');
   try {
-    if (flag('--self-check')) selfCheck(docs);
+    if (flag('--self-check')) selfCheck(docsArg);
     else if (args.length === 1) install(args[0], docs, dry, force);
     else { console.error('usage: node tools/install-lot.ts <file.Sims3Pack> [--docs <dir>] [--dry-run] [--force] | --self-check [--docs <dir>]'); process.exitCode = 2; }
   } catch (e) { console.error(`${basename(args[0] ?? 'install-lot')}: ${(e as Error).message}`); process.exitCode = 1; }

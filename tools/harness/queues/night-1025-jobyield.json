@@ -1,0 +1,61 @@
+{
+  "note": "Reruns: sv-jobyield-verify (agent lacked the jobyield switch, fixed a67b8993) and ip-owprobeplans-ab (35 sim-minute waits by simMinutes, 2026-10-25).",
+  "jobs": [
+    {
+      "id": "sv-jobyield-verify",
+      "note": "job-yield-ab.json job 1 (docs/183) on asi.0344 (same sha256 as asi.jobyield) and master's ts3fixes (jobyield merged). Pass: no crash, 0 watchdog lines, jyBusy >= 1, jobyield_steps >= 1, jobyield_capped 0, no Sim stuck at the end. Read: 'route jobs: sim waited N ms ...' lines by site next to the hitch records (freeze-report.ts --min 300).",
+      "asi": "game-copy/ts3native.asi.0344",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "nativeRequire": "jyBusy>=1,watchdogs<=0",
+      "ini": {
+        "RouteAsync.JobYield": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.HostSplit": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "route-ownjob-yield-loop",
+          "fixesOn": "jobyield",
+          "fixesRequire": "jobyield_steps>=1,jobyield_capped<=0"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "asi": "game-copy/ts3native.asi.p6f",
+      "minCounters": 114,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 25,
+      "id": "ip-owprobeplans-ab",
+      "note": "Rerun of sv-owprobeplans-ab on IP (SV has no sea lot). owprobeplans (docs/163 §8-9): EA stuck-check probe plans hidden from NRaas Overwatch Stuck Check V2. Needs Overwatch installed with V2 on and the log line StuckCheck.OnPostPlan: ok. Pass: no crash; on arm: Overwatch resets from probe plans 0, owprobeplans_hidden >= 1; off arm shows the Overwatch counting (reset or rising count).",
+      "save": "Baseline-IP-Spring",
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 15,
+          "repro": "owprobeplans-stuckcheck-ab",
+          "fixesRequire": "owprobeplans_runs>=1"
+        }
+      }
+    }
+  ]
+}

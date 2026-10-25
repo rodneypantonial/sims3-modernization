@@ -146,6 +146,7 @@ static DWORD __cdecl SlHook(float* point, const u8* obj, DWORD ags, DWORD a4) {
     if (kept) {
         const LONG us = UsSince(t0);
         InterlockedIncrement(&k.slTaken);
+        MwSkip(MW_SL);
         InterlockedExchangeAdd(&k.slUs, us);
         Max(&k.slMaxUs, us);
     }

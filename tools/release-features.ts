@@ -42,8 +42,10 @@ export const FEATURES: Record<string, Feature> = {
     'RouteSnap.ReleaseLock': ['1', '0'], 'RouteSnap.ReleaseGates': ['1', '0'], 'RouteSnap.FreeLock': ['1', '0'] },
     doc: 'docs/94 §19-§22, §20 (P6 gate G6), docs/182; opt-in: CI keeps [RouteSnap] out of the release defaults' },
   // P6 widening (docs/94 §24, ts3native 0.36.41): the Sims' own Route.Plan jobs take the clone answer too, and Mode=2 STARTs
-  // behind a busy job share the pending cut. A separate id so routesnap (RFP only) can ship without it
-  routesnapplan: { ini: { 'RouteSnap.TakeKinds': ['9', '8'], 'RouteSnap.ShareCuts': ['1', '0'] }, needs: ['routesnap'], doc: 'docs/94 §24 (P6 widening; gates G0-G2 of §22.30.4 first)' },
+  // behind a busy job share the pending cut. A separate id so routesnap (RFP only) can ship without it. p5.cpp takes
+  // TakeKinds & Kinds, so Kinds=9 (bit 1 Route.Plan + bit 8 ReplanFromPosition) overrides routesnap's 8 (apply: a chosen
+  // feature's value wins over an unchosen one's, so unchosen it leaves Kinds to routesnap)
+  routesnapplan: { ini: { 'RouteSnap.Kinds': ['9', '8'], 'RouteSnap.TakeKinds': ['9', '8'], 'RouteSnap.ShareCuts': ['1', '0'] }, needs: ['routesnap'], doc: 'docs/94 §24 (P6 widening; gates G0-G2 of §22.30.4 first)' },
   stuckcheckasync: { tuning: ['kStuckCheckAsync'], doc: 'docs/134 §8' },
   replandefer: { tuning: ['kReplanDefer'], doc: 'docs/141 §6' },
   replanspread: { tuning: ['kReplanSpread'], doc: 'docs/141 §6' },
@@ -115,22 +117,39 @@ export function resolveBlocks(text: string, chosen: Set<string>, log: string[], 
   return out.join(eol);
 }
 
+// a key set by several features (RouteSnap.Kinds): the last chosen feature's on value, else the first feature's off value
+export function iniValues(chosen: Set<string>): Record<string, string> {
+  const vals: Record<string, string> = {};
+  for (const [id, f] of Object.entries(FEATURES)) for (const [key, [on, off]] of Object.entries(f.ini ?? {}))
+    if (chosen.has(id)) vals[key] = on; else if (!(key in vals)) vals[key] = off;
+  return vals;
+}
+
 export function apply(chosen: Set<string>, ini: string, tuning: string, log: string[]): { ini: string; tuning: string } {
+  const vals = iniValues(chosen);
   for (const [id, f] of Object.entries(FEATURES)) {
-    for (const [key, [on, off]] of Object.entries(f.ini ?? {})) ini = setIni(ini, key, chosen.has(id) ? on : off, log);
+    for (const key of Object.keys(f.ini ?? {})) ini = setIni(ini, key, vals[key], log);
     for (const t of f.tuning ?? []) tuning = setTuning(tuning, t, chosen.has(id), log);
   }
   return { ini, tuning };
 }
 
-// which candidates the given ini/tuning have on (every key at its "on" value)
+// id is on when every key is at its "on" value, or at the on value of a feature that needs id and sets the same key
+// (routesnap with routesnapplan's Kinds=9)
+export function isOn(id: string, ini: string, tuning: string): boolean {
+  const f = FEATURES[id];
+  for (const [key, [on]] of Object.entries(f.ini ?? {})) {
+    const vals = [on, ...Object.values(FEATURES).filter(g => g.needs?.includes(id) && g.ini?.[key]).map(g => g.ini![key][0])];
+    if (!vals.some(v => { const l: string[] = []; setIni(ini, key, v, l); return l.length === 0; })) return false;
+  }
+  const log: string[] = [];
+  for (const t of f.tuning ?? []) setTuning(tuning, t, true, log);
+  return log.length === 0;
+}
+
+// which candidates the given ini/tuning have on
 export function status(ini: string, tuning: string): string[] {
-  return Object.entries(FEATURES).filter(([, f]) => {
-    const log: string[] = [];
-    for (const [key, [on]] of Object.entries(f.ini ?? {})) setIni(ini, key, on, log);
-    for (const t of f.tuning ?? []) setTuning(tuning, t, true, log);
-    return log.length === 0;  // already at every "on" value
-  }).map(([id]) => id);
+  return Object.keys(FEATURES).filter(id => isOn(id, ini, tuning));
 }
 
 // sections the CI release step accepts as Enabled=1 (build.yml "Not stable" check)
@@ -143,7 +162,7 @@ function selfCheck(): void {
   const ok = (c: boolean, what: string) => { if (!c) { console.error(`self-check FAILED: ${what}`); process.exit(1); } };
   const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nKinds=0\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
     '[Discourage]\nDeferFootprint=0\nDestroyPark=0\n[AvoidRO]\nEnabled=0\nMode=1\nShadow=0\n[UnseenThrottle]\nEnabled=0\n' +
-    '[RouteSnap]\n' + Object.entries({ ...FEATURES.routesnap.ini!, ...FEATURES.routesnapplan.ini! }).filter(([k]) => k.startsWith('RouteSnap.')).map(([k, [, off]]) => `${k.slice(10)}=${off}\n`).join('');
+    '[RouteSnap]\n' + Object.entries(iniValues(new Set())).filter(([k]) => k.startsWith('RouteSnap.')).map(([k, off]) => `${k.slice(10)}=${off}\n`).join('');
   const tun = Object.values(FEATURES).flatMap(f => f.tuning ?? []).map(t => `<${t} value="False" />`).join('\n') + '\n<kGoHomeShortcut value="True" />';
   const log: string[] = [];
   const a = apply(parseChosen('fallbackasync,m1retry,stuckcheckasync'), ini, tun, log);
@@ -158,6 +177,8 @@ function selfCheck(): void {
   ok(s.ini.includes('\nLots=replay\n') && s.ini.includes('\nKinds=4\n') && s.ini.includes('\nTakeKinds=8\n') && status(s.ini, s.tuning).join() === 'routesnap', 'routesnap on reads back');
   const p6 = apply(parseChosen('routesnap,routesnapplan'), ini, tun, []);
   ok(p6.ini.includes('\nTakeKinds=9\n') && p6.ini.includes('\nShareCuts=1\n') && status(p6.ini, p6.tuning).join() === 'routesnap,routesnapplan', 'routesnapplan on reads back');
+  ok(apply(parseChosen('none'), p6.ini, p6.tuning, []).ini === ini, 'routesnapplan off = Kinds back to routesnap off (15)');
+  ok(iniValues(new Set(['routesnapplan', 'routesnap']))['RouteSnap.Kinds'] === '9', 'Kinds=9 whatever the list order');
   let t6 = ''; try { parseChosen('routesnapplan'); } catch (e: any) { t6 = e.message; } ok(/needs routesnap/.test(t6), 'routesnapplan needs routesnap');
   let t2 = ''; try { parseChosen('overwatchchain,overwatchspread'); } catch (e: any) { t2 = e.message; } ok(/spread wins/.test(t2), 'chain vs spread refused');
   let threw = ''; try { parseChosen('m1retry'); } catch (e: any) { threw = e.message; } ok(/needs fallbackasync/.test(threw), 'needs checked');
@@ -174,6 +195,9 @@ function selfCheck(): void {
   // the P6 extras queue (docs/94 §20) runs the same snapshot stack as this feature
   for (const j of JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'queues', 'snap-release.json'), 'utf8')).jobs)
     for (const [k, [on]] of Object.entries(FEATURES.routesnap.ini!)) ok(String(j.ini?.[k]) === on, `snap-release.json ${j.id}: ${k}=${on}`);
+  // the P6 night queue runs routesnap + routesnapplan: TakeKinds is ANDed with Kinds (p5.cpp), so both must say 9
+  for (const j of JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'queues', 'night-1024-p6.json'), 'utf8')).jobs)
+    if (j.ini?.['RouteSnap.TakeKinds'] !== undefined) for (const [k, [on]] of Object.entries(FEATURES.routesnapplan.ini!)) ok(String(j.ini[k]) === on, `night-1024-p6.json ${j.id}: ${k}=${on}`);
   console.log('release-features self-check ok');
 }
 

@@ -285,3 +285,118 @@ Same skeleton as §10.1; differences only:
 - **H2, lost update** [inferred]: the record that matters (the exit transition, the boat's re-home) is dropped or wrongly collapsed (`usfGoneEnable1`, `usfIdMismatch`, `usfCollapsed` across a parent change, `fp2Dropped`). A drain cannot fix H2: the loop persists with `sdDrains` rising and those counters move in the loop window. Flat counters with the loop unchanged = H3, the deferral is not the cause.
 
 **Offline checks.** Selftest `TestPlanDrain` (10 cases through `PlanLockedHook` with a fake plan: job running and idle drains, Add / callback / own hold / P5c lent / draining skips, other thread / clone run / switch off / empty queue untouched, failed plans after drain and skip, a footprint call inside the plan passes through after the drained records). **Live verify (not run):** `ip-boat-exit-defer-loop` with `DeferFootprint=1`, `DeferFootprint2=1`, `PlanDrain=1`, `LogFallbackStack=16`, `--ab plandrain` ABBA in one load: fired = `sdDrains`, `sdRecs` > 0 on, flat off; worked = no >= 3 failing Replans of one Sim within 5 s after the boat exit in the on slices, `sdFail[0]` small next to `sdDrains`, hitch counts not higher on; safety = `usfApplyInJob`, `fp2ApplyInJob`, `fp2FullPass` 0, `p5cHandOver` unchanged, `sdSkip[0..3]` ~0.
+
+## 14. DeferPrivateFp: the private footprint remove (2026-10-24, built 0.36.42 as `out-privfp`, offline; no game run)
+
+**Why.** SV cause run 2026-10-24 (`docs/data/results/2026-10-24-sv-cause-run-analysis.md`, cause #3, release defaults with `DeferFootprint=1`, `DeferFootprint2=0`): sim-thread waits on `+0x918` behind our async route jobs at two footprint keys, 4 frames >= 300 ms, 1,297 ms. Over the whole 45-min HitchAttr record (`probe-out/profile/sv-cause-run-2026-10-24-sv-cause-run-2700-hitches.jsonl`, longest wait per frame) [measured]: `0x82A0F6` 62 frames, 4.1 s, max 257 ms, 3 frames >= 300 ms; `0x8334CC` (§12, phase 2 FromTool) 139 frames, 5.5 s, max 314 ms; `0x831BF4` (AddPrivateFootprint) 14 frames, 0.5 s, max 168 ms. The analysis's "RemovePrivateFootprint" is the hitch-attr-report name of key `0x82A0F6`.
+
+### 14.1 Functions [verified disassembly unless marked]
+
+| What | Address | Proof |
+|---|---|---|
+| wait key | `0x82A0F6` = return of `call Lock_Acquire 0x4E16F0` at `0x82A0F1` in `RoutingWorld_RemoveFootprintLocked 0x82A0C0` | `0x82A0E2..0x82A0F6` |
+| body | `0x82A0C0 thiscall(world; obj, flag)`, `ret 8`, `al`: early out (`+0x974` clear or `obj` NULL: 0, no lock), lock, lot of the object `0x8297C0(obj)` (component, else `0x68EC50`), key `0x7CFA30(2, 0x19, id)` (cdecl, pure shifts and ors), world `+0x994 = 0`, `0x635700(P; lot, key)` removes that one footprint from the lot quadtree; if removed and `flag`: the routing component's private footprint `C+0x38` freed by `0x947880(0)`; unlock; `al` = removed | `0x82A0C0..0x82A183`, `0x7CFA30..0x7CFA6B`, `0x947880..0x9478B2` |
+| caller (waits) | `IC_RouteManager_RemovePrivateFootprint 0x754610`: `FindById`, AddRef, routing world `0x8292D0`, `call 0x82A0C0` at `0x75465E` with `flag = 1`, release, `al` returned | `0x754610..0x754673` |
+| caller (no wait) | `LockedLotUpdate` `0x82B551`, already under `+0x918` | §12.1 |
+| script | `Route.RemovePrivateFootprint` <- `DynamicSimFootprint.set_Enabled(false)` <- `SimScriptAdaptor.OnAboutToStartFollowingRoute` (`ScriptAdaptor.PreRoute`, `FollowRouteAction.PerformRoute`): the Sim drops its standing footprint as its route starts | stacks of the `0x82A0F6` frames >= 100 ms (most name `OnAboutToStartFollowingRoute`, the rest `PerformRoute`) [measured] |
+| result use | EA `DynamicSimFootprint.set_Enabled` `IL_014e: pop`; simler90's replaced `Sims3GameplaySystems` (UPDATE242) the same `IL_0149` / `IL_014e: pop`; ErrorTrap's own `ScriptCore` only wraps the IC; no other installed assembly names `RemovePrivateFootprint` (81 assemblies scanned) | ilspycmd IL [verified 2026-10-24 on this install] |
+| add | `IC_RouteManager_AddPrivateFootprint 0x75DCF0` -> `0x831BA0` at `0x75DE1A`, key `0x831BF4`; ~0x640 bytes with string and lot lookups | entry `0x831BA0..0x831C9F` read, rest not; whole body audited in §15.2 |
+
+### 14.2 What it does
+
+`[Discourage] DeferPrivateFp=1` (default 0), runtime switch `pfMode` (+0x4740, `--ab deferprivatefp`), counters **v113** (`pf*`, registry `native-v113`). No new patch: phase 2's two call sites (`0x75465E`, `0x75DE1A`, now patched once for both features by `PfSitesInstall`) do the work. Needs phase 2 installed: its detours keep an object's later FromTool / UpdateObjectLot calls behind its queued remove (order rule). New `DeferFootprint2=2` installs phase 2 with `fp2Mode = 0` (order rule only), so the private remove can be A/B'd without phase 2's own deferral.
+
+Remove site (`PfRemoveSite` -> `PfRemoveDefer`), same skeleton as phase 2:
+
+1. **Pass through** (`pfPass`; today's call after a flush of the object's records): not the owner thread, P4 clone run, `obj` NULL, `+0x918` owned, job callback, draining, world not ready or not the learned lock, closing.
+2. **Order rule:** the object has any queued record (D, U, phase 2, private): queue in any mode; else queue only with `pfMode = 1` while a job runs; else today's call.
+3. **Duplicate:** the object's newest record is the same private remove (same pointer, flag): dropped (`pfDup`); the second remove would find nothing (`0x635700` no, the flag branch skipped).
+4. **Queue full:** drain (no Add queued) then today's call; with an Add queued the call runs now, out of order (`pfFullPass`, expect 0).
+5. **Record** `{pf, id, flag, object pointer (no reference), world, tick}`, answer **1** (`pfDeferred`).
+
+**Apply** at D's drain points (next D call with no job, START / READY / CANCEL polls, save, travel / quit, D-X destroy) holding `+0x918` with no job: find by id + pointer check, then the original `0x82A0C0` with the recorded flag (`pfApplied`; tripwire `pfApplyInJob`). **Gone** (destroyed inside a job callback, left queued): with `DeadSweep=1` the private key `0x7CFA30(2, 0x19, id)` is removed from every lot (`0x635700` lot 0, world `+0x994 = 0` as the body does; `pfSwept`); the record never touches the object or its component (the component went with the object); with `DeadSweep=0` dropped. **Reused id:** dropped (`pfDropped`). A U record before a private record of the same object is not collapsed into it (the U collapse only looks at U records). Ledger: `pfDeferred = pfApplied + pfSwept + pfDropped` after every drain.
+
+**Add site** (`PfAddSite`): not deferred (shortcut: the body is long and not audited). An object with a queued record is flushed first (`DiscDrain(true)`, waits for the job as today; `pfAddFlush`), so the add always follows the remove.
+
+### 14.3 Safety
+
+| Question | Answer | Tag |
+|---|---|---|
+| Can the body run during a job? | No: every apply is inside `DiscDrain` / `DiscOnDestroy` holding `+0x918` with no job (tripwire `pfApplyInJob`) | verified code + selftest |
+| What does the route job see? | The private footprint present, as today (today the remove waits for the job's end) | verified (the record moves the call to after the job, where it ran anyway) |
+| Order with the same object's footprint writes | One FIFO with D, U and phase 2 records; the order rule queues every later U / FromTool / lot / private call of the object; Add flushes first; D's non-deferred Add/Remove drain first | verified code + selftest |
+| Freed memory | The record keeps the pointer only for the pointer check (never dereferenced); FindById + AddRef at apply; destroy applies first (D-X, `0x939420` gate); design G (`P5cDiscHas`, docs/88) sees the queued id and keeps its wait, unchanged; gone = sweep by id key, no object access | verified code + selftest |
+| Script reads the result | Popped by every installed caller | verified IL |
+| Sim-thread readers between record and apply | Sync plans, steering `0x85FE10` / S2, gates, slot checks see the Sim's standing footprint until the drain: stale for at most one drain window (no timed drain: §13 "Why"). The Sim's own route: route queries skip the routing object's own footprints [inferred, not checked for key type 0x19]. Other Sims route round a footprint that is empty. **Corrected in §15.4:** the private footprint is the turn helper of horses and boats and counts only for its owner's route search (walkable class 1, cost x35 or x200), never for other Sims or steering; the stale window costs only the owner's own sync replans | refuted in part (§15.4, verified disassembly) |
+| `C+0x38` readers | Freed later than today; nothing needs it gone before the apply [inferred: the setter `0x947880` is the only writer found; readers not enumerated]. **§15.3:** the only reader is the private footprint rebuild in `UpdateObjectFootprintCore` (`0x832494`, sim thread, under `+0x918`, not in the job closure); the object's U / FromTool calls are queued behind the record | verified (displacement scan, §15.3) |
+| Managed reach of an apply | none: `0x82A0C0` calls `0x8297C0`, `0x7CFA30`, `0x635700`, `0x935770`, `0x947880` (destructor `0x628E60` + free) | verified direct callees; `0x628E60` not followed |
+
+PlanDrain (§13) is not used or extended (it crashed in game; no drain inside `PlanLockedBody`).
+
+### 14.4 Offline checks
+
+`build.cmd out-privfp`: selftest ok. `TestPrivateFpDefer` (phase 2 with `fp2Mode 0`): no-job call with its result; in-job record answered 1, the object's FromTool and U calls queued behind it, another object's FromTool runs now, nothing applied while the job runs, call order at the poll (`gXfP`); duplicate dropped, not across another record (`XpX`); mode 0 with and without a queued record; pass-throughs (own `+0x918`, job callback, another world); Add after a queued remove flushes (waits for the job) then adds, Add with nothing queued untouched; destroy while queued (applied first, other object kept); gone at apply (key sweep on lot 0 with the `0x7CFA30` key, `+0x994` cleared), reused id dropped, DeadSweep off drops; queue full with and without an Add; ledger and tripwires 0. `hook-sites.ts --check` ok (`0x7CFA30` row in docs/68). `p5-lock-model.ts --self-check` ok (no new lock order: the drain is D's).
+
+### 14.5 Live jobs (drafts, not run)
+
+`tools/harness/repros.json`: `sv-private-fp-loop` (SV, 30 spawned Sims + household go far and home, ini `DeferFootprint2=2`, `DeferPrivateFp=1`, ABBA on `deferprivatefp` only) and `sv-deferfp2-alone-loop` (same crowd, `DeferFootprint2=1`, `DeferPrivateFp=0`, ABBA on `deferfootprint2` only: phase 2 was never measured outside the lock-taker bundle). Read with `hitch-ab.ts` and `wait-ab.ts`.
+
+**Expected [inferred].** Key `0x82A0F6` ~0 in the on slices (SV: ~4.1 s of sim wait and 2 freezes >= 300 ms per 45 min, ~0.5 s of cause #3's 1.3 s freeze time; phase 2 alone the other ~0.6 s through `0x8334CC`). **Risk:** §11's conservation: the next `+0x918` taker in the same tick (the Sim's first steering pass `0x85FE10`, `0x833593` of its own U calls now queued behind the record, gate 0) may wait out the same job, so the net gain can be ~0; the A/B decides. Other risks: `pfAddFlush` moves a wait to the Add when a Sim stops within one drain window; a stale standing footprint for one window in a crowd. Ledger docs/51 §317.
+
+## 15. AddPrivateFootprint audit and the private footprint's readers (2026-10-24, static; no build, no game run)
+
+Question from §14: can `IC_RouteManager_AddPrivateFootprint` (key `0x831BF4`) be deferred like the remove, and who reads the routing component's private polygon `C+0x38` and the footprint it inserts. **Verdict: not deferred** (§15.5). Two §14.3 claims are corrected (§15.4).
+
+### 15.1 What the private footprint is [verified IL]
+
+`Route.AddPrivateFootprint` has one game caller, `DynamicSimFootprint.set_Enabled` (`managed-callgraph.ts callers`). Add (`IL_00e8`, result popped at `IL_00ed`) and remove (`IL_0149` / `IL_014e: pop`) run only when `sim.IsLargeAnimal` or `boat.UsesTurnHelperFootprint()`: the private footprint is the **turn helper** (12 vertices from `UpdateTurnHelperFootprintShape`) of horses and other large animals and of boats. Every Sim's 4-vertex standing footprint is the discourage footprint (D), not this one. The IC's bool argument is `boat != null`. Add runs when `Enabled` goes true (the animal stops), remove when it goes false (`OnAboutToStartFollowingRoute`).
+
+### 15.2 IC and body [verified disassembly]
+
+| Step | What | Where |
+|---|---|---|
+| IC | `0x75DCF0`: `ScriptHost_GetWorld`, `ObjectService_FindById` + AddRef, `RoutingWorld_Get`; the script world's vtable `+0x78` marshals the managed `Vector3[]` into a temp buffer; the IC copies the given count into a 16-byte point vector; `call 0x831BA0(obj, &points, flag)` at `0x75DE1A`; `EA_Free` the vector; Release; `al` returned. No world, object service, object or routing world: 0, no call | `0x75DCF0..0x75DE83` |
+| early out | `thiscall(world; obj, points*, flag)`, `ret 0xC`; 0 without the lock when `+0x974` is clear, `obj` NULL or fewer than 3 points | `0x831BAC..0x831BD8` |
+| lock | `+0x918` acquire `0x831BEF`, key `0x831BF4` | |
+| lot | world manager `[0x11ECBC4]` NULL: 0. Object's lot id `0xB03750(obj, 0, &out)`; lot id 0, or equal to `+0x48/+0x4C` of the lot `0xC88FD0` returns, with `flag` 0: 0. `WorldManager_FindLotByIdTyped 0xC62D40`; NULL with `flag` 0: 0 | `0x831BF9..0x831C8C` |
+| polygons | temp world polygon (`0x6298B0`, tags "Routing/RoutingFootprintPolygon", "Routing/FootprintPoly"), x/z of every point; object transform `0x74B9B0` -> `0x958EE0` **read now**, inverse `0x82AAE0`; with a footprint component (`0x749680`): `EA_AllocTagged(0x24, "Routing/PrivateFootprintPoly")`, every point to object-local space by `0x82A610`, `0x947880(new)` stores it at `C+0x38` (old one destroyed and freed) | `0x831C8E..0x831F7E` |
+| old footprint out | key `0x7CFA30(2, 0x19, id)`; `LotRouting_RemoveObjectFootprints 0x635700` on `world+0x95C` (lot id, or 0 without a lot) | `0x831F83..0x831FC1` |
+| new footprint | `EA_AllocTagged(0x48, "Routing/PrivateFootprint")`, `Footprint_MidCtor 0x80EED0`, vtable `0xFEBBC0`; AddRef `+0x90`; key `+0xB4`; owner id `+0x40/+0x44` = object id; lot id `+0xC/+0x10`; `+0xD0` -> byte `+0x36` (lot lookup's out, 0 without a lot); `+0xB0` -> type byte `+0x35 = 0x19`; `+0xCC` -> class byte `+0x34 = 1`; steering component (`0x935770`, `0x953690 & 0xCF00`, `0x55DA60`) picks the multiplier `+0x1C` (`+0xC8`) = 35.0 (`[0x1166100]`) or 200.0 (`[0x1166104]`); `+0x4C(0)`, `+0x54`; `Footprint_SetLevelPolygons 0x80F6A0` with the **world** polygon | `0x831FC6..0x8320E8`; setters `0x620CD0` (`+0x1C`), `0x620CE0` (`+0x34`), `0x620CF0` (`+0x36`), `0x620D10` (`+0x35`) |
+| insert | lock-key map (`world+0x8C4` non-zero and `RoutingWorld_LockKeyFind 0x82AD60` finds the lot in `+0x8B8`): parked in the node's list (`0x8295E0`, `0x82DC70`), node `+0x14 = 1`, `LockedLotUpdate` inserts it later; else `PathPlanner_AddFootprint 0x6376D0` (lot quadtree, map M, water grid: docs/84 §2, docs/100, docs/156) and world `+0x994 = 0` | `0x8320ED..0x8321A4` |
+| end | Release `+0x94`, temp polygon `0x628E60`, unlock, 1 | `0x8321AB..0x8321D4` |
+
+Writes: `C+0x38` (alloc + free), lot quadtree / map M / water grid through `0x6376D0`, the lock-key map node list, world `+0x994`, the new footprint object. The direct callees in the steps above fire no event and reach no managed code [verified direct; `0x6376D0` clean per docs/84 §7]. Same structure as the private footprint rebuild in `UpdateObjectFootprintCore` (`0x832646..0x83284D`).
+
+### 15.3 Readers of `C+0x38` [verified displacement scan]
+
+Scan of every function that loads the footprint component bit `[0x11E8FA8]` (incl. `Object_GetFootprintComponent 0x749680`), of the functions around its 6 call sites, and of the component's methods `0x945000..0x949000`, for `[reg+0x38]` on a non-stack register; each hit checked by hand:
+
+| Function | Access | Thread |
+|---|---|---|
+| `UpdateObjectFootprintCore 0x8321F0` | read `0x832494`: with a transform component, rebuilds the key-0x19 footprint from `C+0x38` x the **current** transform (remove by key `0x635700`, new `0xFEBBC0` footprint, insert or park) | sim, under `+0x918`; not in the job closure (§3.2) |
+| `0x947880` | setter (frees the old polygon); callers `0x82A15B` (remove), `0x831F7E` (add) | sim, under `+0x918` |
+| `0x946FB0` | component ctor, `+0x38 = 0` | sim |
+| `0x9478C0` | component dtor, frees `+0x38` | sim (object destroy) |
+
+Other hits (`0x806784`, `0xB58092`, `0xB6DB28`, `0xB74D1D`, `0xD44C2A`, `0xABF287`, `0xAC5D12`) are other objects (footprint arrays, the object service's hash table). Not excluded: reads through a stored component pointer in a function that never loads the bit [inferred none]. The route worker never reads `C+0x38`.
+
+### 15.4 Readers of the inserted footprint, and corrections to §14.3
+
+The footprint class `0xFEBBC0` answers the route search's class and multiplier slots with `0x80F840` / `0x80F7D0` [verified disassembly, matches docs/98 §15.3]: class byte `+0x34` and multiplier `+0x1C` **only when the routing agent's object id equals the owner id `+0x40/+0x44`** and RouteOption `IgnorePrivateFootprints` is clear; otherwise class 0 and 1.0; with no agent 0 and 1.0. Class 1 is walkable (docs/98 §1).
+
+| Reader | Sees the private footprint | Tag |
+|---|---|---|
+| Owner's route plans (sync on the sim thread, async on the worker) | yes: walkable, cost x35 (x200 with the steering flags) inside the turn-helper strips | verified |
+| Other Sims' route plans | no (class 0, multiplier 1.0) | verified |
+| Steering / avoidance (`0x82EDB0` visitor: the frame clears the option-object word, docs/84), S2 clone | no: no agent gives class 0 | verified (slot bodies; agent NULL per docs/84) |
+| Other quadtree visitors (placement F-G, slot checks, LOS, `IC_Query_GetSimsOverlappingFootprint`) | not enumerated; those that use slot `+8` see class 0 without an agent | open |
+
+So §14.3 is wrong on two points: the owner is the **only** Sim that sees its private footprint, and other Sims never route round it. Effect on `DeferPrivateFp=1`: during one drain window the moving animal's own sync replans pay x35 / x200 over its old turn-helper strips (walkable, so no "no path", only a costlier first leg); its async plans see the remove applied (START drains first). I-89-14-3 still holds (the late remove does not block the walker), now for this reason. `C+0x38` freed late: the only reader is the rebuild in §15.3, and the object's U / FromTool calls queue behind the record (order rule); an unhooked event-9 rebuild in the window re-inserts the turn helper at the new position, which the deferred remove then takes out by key: end state as today [inferred from the bodies].
+
+### 15.5 Defer the Add? No
+
+1. **Gain too small.** Key `0x831BF4` in the 45-min SV cause run: 14 frames, 0.5 s, max 168 ms, **0 frames >= 300 ms** [measured, §14]; only horses and boats call it. The hitch target (>= 300 ms) gets nothing, and §11's conservation applies on top.
+2. **Not exact.** The body reads the object's transform and lot at apply time. Deferred, `C+0x38` would be the call-time world points in the apply-time object frame; if the animal turned or moved in the window (idle turns, slot snaps), every later rebuild by `0x8321F0` would place the turn helper rotated or shifted by that delta until the next Add [inferred from the body]. An exact deferral needs the call-time transform: a copy of the 0x640-byte body (both polygon classes, the `C+0x38` allocation) or a temporary transform swap on a live object. Neither is "clearly safe".
+3. **Owner's next sync plan** in the window would miss the turn helper (the animal may turn on the spot); async plans would see it (START drain).
+
+**If `pfAddFlush` shows up** (I-89-14-5, read from `sv-private-fp-loop`): the cheap option is an order-only Add (queue it only when the object already has a queued record, so the flush stops waiting for the job), accepting point 2 for the owner's own cost map. About 1-2 h + 1 game run. Not built. Ledger docs/51 §320.

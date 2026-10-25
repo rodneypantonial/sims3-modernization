@@ -83,17 +83,35 @@ typedef u8(__fastcall* PfRemoveFn)(void* world, void* edx, void* obj, DWORD flag
 typedef u8(__fastcall* PfAddFn)(void* world, void* edx, void* obj, void* points, DWORD flag);
 static PfRemoveFn g_pfRemove = (PfRemoveFn)(uintptr_t)PFR_FN;
 static PfAddFn g_pfAdd = (PfAddFn)(uintptr_t)PFA_FN;
+// docs/89 §14: the private footprint's lot key, 0x7CFA30 cdecl(2, 0x19, idLo, idHi) -> edx:eax, pure shifts and ors [verified
+// 0x7CFA30..0x7CFA6B]; 0x82A0C0 removes it from the object's lot with 0x635700 [verified 0x82A0F6..0x82A133]
+typedef unsigned __int64(__cdecl* PfKeyFn)(int kind, int type, DWORD idLo, DWORD idHi);
+static PfKeyFn g_pfKey = (PfKeyFn)(uintptr_t)0x007CFA30;
 
 // flags kept as whole dwords; lock: the world it was made in; obj: the object at defer time (D-X pointer check, no reference)
 // usf: a design U record (high = enable byte, allow = arg); fp2: a phase 2 record (1 FromTool, high = world +0x978 at the
-// call; 2 UpdateObjectLot); else add says Add or Remove
-struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; bool usf; u8 fp2; };
+// call; 2 UpdateObjectLot); pf: a private footprint remove (high = the IC's flag, docs/89 §14); else add says Add or Remove
+struct DiscRec { bool add; DWORD high, allow, placement, idLo, idHi, t; int n; u8* pts; void* lock; void* obj; bool usf; u8 fp2; bool pf; };
 static const int kDiscCap = 256;
 static const DWORD kDiscMaxAgeMs = 250;  // older records are applied even if that means waiting for the running job
 static DiscRec g_disc[kDiscCap];
 static int g_discHead, g_discCount;  // owner (sim) thread only
 static bool g_discDraining;
 
+// docs/186 §8: the object DestroyById(idLo, idHi) is about to destroy, for the our-events ring (sim thread; the lookup and
+// reference P5cPark takes, given back at once); 0 = not found
+static DWORD CeDestroyObj(DWORD idLo, DWORD idHi) {
+    void* svc = g_objSvc();
+    void* obj = NULL;
+    if (!svc || !g_findRef(svc, NULL, idLo, idHi, &obj) || !obj) return 0;
+    const DWORD p = (DWORD)(uintptr_t)obj;
+    g_objRelease(&obj, NULL);
+    return p;
+}
+// docs/186 §8: our-events ring entry for a queued record
+static void CeDiscQ(const DiscRec& r) {
+    CeRec(CE_FP_QUEUE, (DWORD)(uintptr_t)r.obj, r.idLo, r.usf ? 1 : r.fp2 ? 2 + r.fp2 : r.pf ? 5 : r.add ? 0x10 : 0);
+}
 static bool DiscWorldOk(void* world) { return world && *((const u8*)world + 0x974) != 0; }
 
 // the id is in the lock-key map (a parked object). The map is written on the sim thread only and never by a job (docs/89
@@ -156,6 +174,21 @@ static bool DiscApplyOne(DiscRec& r, void* world) {
             InterlockedIncrement(&k.fp2Dropped[r.fp2 - 1]);
         }
         if (obj) g_objRelease(&obj, NULL);
+    } else if (r.pf) {  // private footprint remove: the original; gone: its lot key swept from every lot (the component went
+                        // with the object); reused id: dropped
+        if (applied) {
+            if (g_async.state == A_RUNNING) InterlockedIncrement(&k.pfApplyInJob);
+            g_pfRemove(world, NULL, obj, r.high);
+            InterlockedIncrement(&k.pfApplied);
+        } else if (!obj && k.discSweepMode && *(void**)((u8*)world + 0x95C)) {
+            const unsigned __int64 key = g_pfKey(2, 0x19, r.idLo, r.idHi);
+            ((u8*)world)[0x994] = 0;  // as 0x82A0C0 does before 0x635700
+            g_lotRemove(*(void**)((u8*)world + 0x95C), NULL, 0, 0, (DWORD)key, (DWORD)(key >> 32));
+            InterlockedIncrement(&k.pfSwept);
+        } else {
+            InterlockedIncrement(&k.pfDropped);
+        }
+        if (obj) g_objRelease(&obj, NULL);
     } else if (obj && obj != r.obj) {  // the id names another object now (reused id): not the one the call was made for
         InterlockedIncrement(&k.discIdMismatch);
         g_objRelease(&obj, NULL);
@@ -176,6 +209,7 @@ static bool DiscApplyOne(DiscRec& r, void* world) {
     }
     _aligned_free(r.pts);
     r.pts = NULL;
+    CeRec(CE_FP_APPLY, (DWORD)(uintptr_t)r.obj, r.idLo, (applied ? 1 : 0) | (g_async.state == A_RUNNING ? 2 : 0));  // docs/186 §8
     return applied;
 }
 
@@ -204,9 +238,12 @@ static void DiscDrain(bool force) {
     InterlockedIncrement(&g_rgOffSimOpen);  // the worker starts no job until the drain is done
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    UdWait("the running route job (deferred footprints)");  // [UserDiag]: no-op unless this thread is saving
     WaitAsyncDone(SW_DISC);
     static const DWORD kInfinite = 0xFFFFFFFF;
+    UdWait("+0x918 (deferred footprints)");
     if (lock) LockAcquireHook(lock, NULL, &kInfinite);  // uncontended: no job runs and none can start
+    UdWait(NULL);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&k.discDrainWaitUs, waited);
     HaNote(0x06000000, waited, HA_JOB);
@@ -225,6 +262,7 @@ static void DiscDrain(bool force) {
         else {
             InterlockedIncrement(&k.discDropped);
             if (r.fp2) InterlockedIncrement(&k.fp2Dropped[r.fp2 - 1]);
+            if (r.pf) InterlockedIncrement(&k.pfDropped);
             _aligned_free(r.pts);
         }
     }
@@ -297,7 +335,8 @@ static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait) {
         if (r.idLo != idLo || r.idHi != idHi || r.lock != lock) {
             if (w != i) { g_disc[(g_discHead + w) % kDiscCap] = r; r.pts = NULL; }
             w++;
-        } else if (r.usf || r.fp2) {  // design U and phase 2: applied in order like a Remove (destroy does not remove routing footprints)
+        } else if (r.usf || r.fp2 || r.pf) {  // design U, phase 2, private remove: applied in order like a Remove (destroy does
+                                              // not remove routing footprints)
             if (DiscApplyOne(r, world) && r.usf) InterlockedIncrement(&k.usfDestroyApplied);
         } else if (r.add) {
             InterlockedIncrement(&k.discDropAdd);
@@ -316,6 +355,7 @@ static void DiscOnDestroy(DWORD idLo, DWORD idHi, bool canWait) {
     g_discCount = w;
     LockReleaseHook(lock, NULL);
     g_discDraining = false;
+    CeRec(CE_DISC_DESTROY, (DWORD)(uintptr_t)world, idLo, (DWORD)(n0 - w));  // docs/186 §8
 }
 
 // true = recorded (the caller answers 1)
@@ -338,6 +378,7 @@ static bool DiscDefer(bool add, void* obj, const u8* begin, int n, int high, int
     r.obj = obj;
     r.usf = false;
     r.fp2 = 0;
+    r.pf = false;
     if (add) {
         // 16-byte aligned like the game's own vector: the original reads the points with movaps (0xAB88BD); a malloc'd
         // copy (8-byte aligned) crashed it in 0.12.2 (#GP reported as an access violation at 0xFFFFFFFF, 2026-10-17)
@@ -345,7 +386,7 @@ static bool DiscDefer(bool add, void* obj, const u8* begin, int n, int high, int
         if (!r.pts) { InterlockedIncrement(&k.discOverflow); return false; }
         memcpy(r.pts, begin, (size_t)n * 16);
     }
-    g_discCount++;
+    g_discCount++, CeDiscQ(r);
     if (g_discDraining) InterlockedIncrement(&k.discNested);
     InterlockedIncrement(add ? &k.discDeferredAdd : &k.discDeferredRemove);
     Max(&k.discPendingMax, g_discCount);
@@ -418,7 +459,7 @@ static void __fastcall UsfHook(u8* world, void* edx, u8* obj, DWORD enable, DWOR
     r.t = GetTickCount();
     r.lock = g_rgLock;
     r.obj = obj;
-    g_discCount++;
+    g_discCount++, CeDiscQ(r);
     InterlockedIncrement(&k.usfDeferred);
     if (!(k.usfMode == 1 && running)) InterlockedIncrement(&k.usfOrderDefer);
     Max(&k.discPendingMax, g_discCount);
@@ -479,40 +520,119 @@ static void Fp2Hook(int kind, u8* world, u8* obj) {
     r.t = GetTickCount();
     r.lock = g_rgLock;
     r.obj = obj;
-    g_discCount++;
+    g_discCount++, CeDiscQ(r);
     InterlockedIncrement(&k.fp2Deferred[kind - 1]);
     Max(&k.discPendingMax, g_discCount);
 }
 static void __fastcall FtHook(u8* world, void*, u8* obj) { Fp2Hook(1, world, obj); }
 static void __fastcall UolHook(u8* world, void*, u8* obj) { Fp2Hook(2, world, obj); }
 
-// flush before a reader that needs the object's fresh footprints (an IC point: managed code is on the stack)
-static void Fp2FlushFor(const u8* obj) {
+// flush before a reader that needs the object's fresh footprints (an IC point: managed code is on the stack); true = flushed
+static bool Fp2FlushFor(const u8* obj) {
     const DWORD me = GetCurrentThreadId();
-    if (!obj || !g_discCount || g_discDraining || me != g_async.owner || ts3native_counters.rgOwnerTid == (LONG)me) return;
-    if (DiscLastOf(*(const DWORD*)(obj + 8), *(const DWORD*)(obj + 0xC)) < 0) return;
+    if (!obj || !g_discCount || g_discDraining || me != g_async.owner || ts3native_counters.rgOwnerTid == (LONG)me) return false;
+    if (DiscLastOf(*(const DWORD*)(obj + 8), *(const DWORD*)(obj + 0xC)) < 0) return false;
     DiscDrain(true);
     InterlockedIncrement(&ts3native_counters.fp2Forced);
+    return true;
 }
-static u8 __fastcall PfRemoveSite(void* world, void*, u8* obj, DWORD flag) { Fp2FlushFor(obj); return g_pfRemove(world, NULL, obj, flag); }
+
+// docs/89 §14 ([Discourage] DeferPrivateFp=1, counters v113, switch pfMode, --ab deferprivatefp): the IC's RemoveFootprintLocked
+// call (0x75465E) on the sim thread while a job runs becomes a record in D's FIFO, answered 1 (both script callers, EA's and
+// simler90's DynamicSimFootprint.set_Enabled, pop the result [verified IL]). Same skeleton as Fp2Hook: pass-through rules, the
+// order rule (an object with any queued record queues in any mode), duplicate drop, queue full, apply at D's drain points and
+// D-X destroy. Returns -1 = not deferred (the caller runs the original), else the IC result.
+static int PfRemoveDefer(u8* world, u8* obj, DWORD flag) {
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD me = GetCurrentThreadId();
+    if (me != g_async.owner || t_snapRun || !obj) return -1;
+    InterlockedIncrement(&k.pfCalls);
+    const bool running = g_async.state == A_RUNNING;
+    if (running) InterlockedIncrement(&k.pfInJob);
+    if (k.rgOwnerTid == (LONG)me || g_inInvoke || g_discDraining || !DiscWorldOk(world) || (void*)(world + 0x918) != g_rgLock ||
+        k.rtClosing) {
+        InterlockedIncrement(&k.pfPass);
+        return -1;
+    }
+    const DWORD idLo = *(const DWORD*)(obj + 8), idHi = *(const DWORD*)(obj + 0xC);
+    const int last = DiscLastOf(idLo, idHi);
+    if (last < 0 && !(k.pfMode == 1 && running)) return -1;  // today's call
+    if (last >= 0) {  // the same remove right behind: the second finds nothing (0x635700 says no, the flag branch is skipped)
+        const DiscRec& p = g_disc[(g_discHead + last) % kDiscCap];
+        if (p.pf && p.obj == obj && p.high == flag) { InterlockedIncrement(&k.pfDup); return 1; }
+    }
+    if (g_discCount == kDiscCap) {  // as design U: drain unless an Add (World_FireEvent 0x11) is queued, then the call now
+        bool add = false;
+        for (int i = 0; i < g_discCount && !add; i++) add = g_disc[(g_discHead + i) % kDiscCap].add;
+        if (!add) DiscDrain(true);
+        else InterlockedIncrement(&k.pfFullPass);
+        return -1;
+    }
+    DiscRec& r = g_disc[(g_discHead + g_discCount) % kDiscCap];
+    r = DiscRec{};
+    r.pf = true;
+    r.high = flag;
+    r.idLo = idLo;
+    r.idHi = idHi;
+    r.t = GetTickCount();
+    r.lock = g_rgLock;
+    r.obj = obj;
+    g_discCount++, CeDiscQ(r);
+    InterlockedIncrement(&k.pfDeferred);
+    Max(&k.discPendingMax, g_discCount);
+    return 1;
+}
+
+static u8 __fastcall PfRemoveSite(void* world, void*, u8* obj, DWORD flag) {
+    if (ts3native_counters.pfReady) {
+        const int r = PfRemoveDefer((u8*)world, obj, flag);
+        if (r >= 0) return (u8)r;
+    }
+    Fp2FlushFor(obj);  // not deferred: the object's older records first (a deferred FromTool could re-insert after this remove)
+    return g_pfRemove(world, NULL, obj, flag);
+}
 static u8 __fastcall PfAddSite(void* world, void*, u8* obj, void* points, DWORD flag) {
-    Fp2FlushFor(obj);
+    // shortcut: Add is not deferred (0x831BA0 is ~0x640 bytes with string and lot lookups, not audited); a queued remove of the
+    // object is flushed first, so the add waits as today. Defer it too if pfAddFlush is large in the verify.
+    if (Fp2FlushFor(obj) && ts3native_counters.pfReady) InterlockedIncrement(&ts3native_counters.pfAddFlush);
     return g_pfAdd(world, NULL, obj, points, flag);
+}
+
+// the two private-footprint IC call sites, shared by phase 2 (flush) and DeferPrivateFp (defer); patched once
+static bool PfSitesInstall() {
+    static int done = 0;  // 1 ok, -1 failed
+    if (!done) {
+        static const CallSite kPf[] = {{PFR_SITE, PFR_FN, (void*)PfRemoveSite}, {PFA_SITE, PFA_FN, (void*)PfAddSite}};
+        done = PatchCalls("private footprint sites (docs/89 §12, §14)", kPf, 2) ? 1 : -1;
+    }
+    return done > 0;
+}
+
+static void InstallPrivateFpDefer(const wchar_t* ini) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!GetPrivateProfileIntW(L"Discourage", L"DeferPrivateFp", 0, ini)) { Log("private footprint deferral off (DeferPrivateFp=0)"); return; }
+    // phase 2's detours keep FromTool / UpdateObjectLot calls of the object behind its queued remove (order rule, also with
+    // fp2Mode 0: DeferFootprint2=2)
+    if (!k.fp2Ready) { Log("FAIL private footprint deferral: needs design U phase 2 ([Discourage] DeferFootprint2=1 or 2)"); return; }
+    if (!PfSitesInstall()) { Log("FAIL private footprint deferral: call sites"); return; }
+    k.pfReady = 1;
+    k.pfMode = 1;
+    Log("OK   private footprint deferral (IC RemovePrivateFootprint 0x75465E -> 0x82A0C0; docs/89 §14)");
 }
 
 static void InstallFootprintDefer2(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
-    if (!GetPrivateProfileIntW(L"Discourage", L"DeferFootprint2", 0, ini)) { Log("footprint deferral phase 2 off (DeferFootprint2=0)"); return; }
+    const int v = GetPrivateProfileIntW(L"Discourage", L"DeferFootprint2", 0, ini);  // 2 = installed, switch off (order rule only)
+    if (!v) { Log("footprint deferral phase 2 off (DeferFootprint2=0)"); return; }
     if (!k.usfReady) { Log("FAIL footprint deferral phase 2: needs design U ([Discourage] DeferFootprint=1)"); return; }
     // the flush sites first: without them a deferred record could land after a private-footprint change of its object
-    static const CallSite kPf[] = {{PFR_SITE, PFR_FN, (void*)PfRemoveSite}, {PFA_SITE, PFA_FN, (void*)PfAddSite}};
-    if (!PatchCalls("private footprint flush (design U phase 2)", kPf, 2)) { Log("FAIL footprint deferral phase 2: flush sites"); return; }
+    if (!PfSitesInstall()) { Log("FAIL footprint deferral phase 2: flush sites"); return; }
     g_ftOrig = (Fp2Fn)InstallDetour("RoutingWorld_ObjectFootprintFromTool", FT_FN, kFtPro, sizeof(kFtPro), (void*)FtHook);
     g_uolOrig = g_ftOrig ? (Fp2Fn)InstallDetour("RoutingWorld_UpdateObjectLot", UOL_FN, kUolPro, sizeof(kUolPro), (void*)UolHook) : NULL;
     if (!g_uolOrig) { Log("FAIL footprint deferral phase 2: detours incomplete"); return; }  // shortcut: a lone FromTool detour stays, mode 0
     k.fp2Ready = 1;
-    k.fp2Mode = 1;
-    Log("OK   footprint deferral phase 2 (0x8334A0 FromTool, 0x82D280 UpdateObjectLot; docs/89 §12)");
+    k.fp2Mode = v == 2 ? 0 : 1;
+    Log("OK   footprint deferral phase 2 (0x8334A0 FromTool, 0x82D280 UpdateObjectLot; docs/89 §12; mode %ld)", k.fp2Mode);
 }
 
 static void InstallFootprintDefer(const wchar_t* ini) {
@@ -555,4 +675,5 @@ static void InstallDiscourage(const wchar_t* ini) {
         ts3native_counters.discDestroyMode, ts3native_counters.discSweepMode);
     InstallFootprintDefer(ini);
     InstallFootprintDefer2(ini);
+    InstallPrivateFpDefer(ini);
 }

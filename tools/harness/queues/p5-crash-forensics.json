@@ -1,0 +1,82 @@
+{
+ "note": "P5 crash forensics (docs/157 §11.7): one job, the 2026-10-24 crashing config (ip-p5-drift-watch) + [CrashForensics] Enabled=1. Build: ts3native 0.36.43 counters v114 (branch worktree-agent-ae63bc454a51ea96d, folder native/ts3native/out-crashfx), copied by the main session to game-copy/ts3native.asi.p6f. Correctness only.",
+ "jobs": [
+  {
+   "id": "ip-p5-crash-forensics",
+   "note": "The crashing config of 2026-10-24 (ip-p5-drift-watch, docs/157 §11: EA audio thread 0x5EE23C + main thread 0x7B0A13) on 0.36.43 with [CrashForensics] on. Correctness only, not timing. PASS: no crash, no 'crash forensics: HEAP' line, and the start-up line 'crash forensics: on' with both guards and the heap check. If it crashes: read the 'crash forensics: DUMP' block (P5 state, fault and register addresses against the ring, ring tail), any earlier 'crash forensics: BAD' line (a guarded site saw a freed object first: its ring entry names the P5 free, thread, phase and age) or 'crash forensics: HEAP' line (a double free of a clone block); counters cfBad_0/1, cfRingHit, cfHeapBad, cfDumps.",
+   "asi": "game-copy/ts3native.asi.p6f",
+   "save": "Baseline-IP-Spring",
+   "minCounters": 114,
+   "noiseCheck": false,
+   "ini": {
+    "CrashForensics.Enabled": 1,
+    "RouteAsync.Enabled": 1,
+    "RouteAsync.Mode": 1,
+    "RouteAsync.Kinds": 4,
+    "RouteAsync.FallbackAsync": 1,
+    "RouteAsync.SyncCapMs": 1000,
+    "RouteAsync.M1Retry": 1,
+    "RouteAsync.FbJobCapMs": 300,
+    "RouteGate.Enabled": 1,
+    "RouteGate.Sites": 1,
+    "RouteGate.Enforce": 1,
+    "Discourage.Enabled": 1,
+    "Discourage.DeferFootprint": 1,
+    "Discourage.DestroyPark": 1,
+    "SlotEnabledRO.Enabled": 1,
+    "AvoidRO.Enabled": 1,
+    "UnseenThrottle.Enabled": 1,
+    "LocoWindow.Enabled": 1,
+    "LocoWindow.Mode": 1,
+    "OptsInit.Enabled": 1,
+    "HitchAttr.Enabled": 1,
+    "RouteSnap.Count": 1,
+    "RouteSnap.Enabled": 1,
+    "RouteSnap.Mode": 2,
+    "RouteSnap.Kinds": 8,
+    "RouteSnap.Lots": "replay",
+    "RouteSnap.AuditEvery": 4,
+    "RouteSnap.ReplayAuditEvery": 1,
+    "RouteSnap.Prebuild": 1,
+    "RouteSnap.ShadowWorld": "BP",
+    "RouteSnap.LazyKeep": 1,
+    "RouteSnap.ReplaySigMs": 250,
+    "RouteSnap.LotsUnlocked": 1,
+    "RouteSnap.InsFreeInPlace": 1,
+    "RouteSnap.VerifyEvery": 1,
+    "RouteSnap.VerifyLend": 1,
+    "RouteSnap.ReleaseLock": 1,
+    "RouteSnap.ReleaseGates": 1,
+    "RouteSnap.FreeLock": 1,
+    "RouteSnap.RecsUnlocked": 1,
+    "RouteSnap.AuditHoldRebase": 1,
+    "Watchpoint.Enabled": 1,
+    "Watchpoint.Lot": "0x08F3005353628460",
+    "Watchpoint.Arms": 4,
+    "Watchpoint.Writers": 1,
+    "Watchpoint.Follow": 1,
+    "Watchpoint.LogHits": 32
+   },
+   "run": {
+    "profile": {
+     "minutes": 25,
+     "seed": 12345
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "nativeRequire": "rpAudits>=1,wpArms>=0,wpHits>=0,wrZ_0>=0,wrZ_1>=0,wrZ_2>=0,wrP30_0>=0,wrP30_1>=0,wrP30_2>=0,rpMis>=0,wpCtor>=0,wpFollow_0>=0,wpFollow_1>=0,rpHold_0>=0,rpHold_1>=0,rpHold_2>=0,cfHeapBad<=0",
+   "logRequire": {
+    "route snapshot lots: replay .*ReplayAuditEvery=1,.*AuditHoldRebase=1": 1,
+    "watchpoint: Lot=0x08F3005353628460 Arms=4 Follow=1": 1,
+    "watchpoint: lot 0x08F3005353628460 child footprint 0x[0-9A-F]+ .* armed DR\\d at its insert": 1,
+    "snap replay audit diff lot 0x[0-9A-F]+: ran on the drifted clone": 1,
+    "OK   detour child z setter 0x626270": 1,
+    "OK   detour parent \\+0x30 setter 0x620D80": 1,
+    "crash forensics: on .*heap check on, guards erase clear": 1
+   },
+   "timeoutMin": 45
+  }
+ ]
+}

@@ -18,16 +18,33 @@
 // PerWindow budget; other hits disarm the site after VC_OTHER_MUL x PerWindow. Build with /DTS3N_VCSITES3 for the
 // four-site table of probe pass 3 (vcallsites3.h), with /DTS3N_VCSITES4 for the docs/133 table of the docs/131 Mono glue sites
 // that are unresolved, partial or caller-typed (vcallsites4.h, tools/snap-vcall-sites.py --only-sites).
+// /DTS3N_VCSITES5: docs/133 §6, those glue sites plus the routing sites of docs/102/106/107 that are still unresolved
+// or partial, and the docs/107 follow/steering rows (vcallsites5.h, --only-sites given both CSVs).
+// [ProbeSnap] CallSites=1 (docs/133 §7, 0.36.64, counters v130 cp*): passive coverage in every normal build, on the
+// vcallsites5.h table (no /D flag). Armed once DelaySec after start-up, never re-armed: a site restores its own byte once
+// it is resolved enough (CallSitesMinHits hits with fewer than CallSitesPoly targets) or, for a site with more targets, at
+// CallSitesMaxHits hits or VC_PAIRS targets. Cost lands early in a load, then ~0. Pairs are logged once a minute while
+// they change ("vcall ..." lines, as above) with a "callsites min" cost line; tools/callsite-db.ts merges them per run.
+// Enabled=1 (the windowed probe) wins when both are set.
 struct VcSiteDef { DWORD addr; u8 len; u8 bytes[7]; };
 #if defined(TS3N_VCSITES3)
 #include "vcallsites3.h"
 #elif defined(TS3N_VCSITES4)
 #include "vcallsites4.h"
+#elif defined(TS3N_VCSITES5)
+#include "vcallsites5.h"
 #else
 #include "vcallsites.h"
 #endif
+#if defined(TS3N_VCSITES5)
+#define kVcCovSites kVcSites
+#else
+#define kVcSites kVcCovSites  // the coverage table under its own name beside the probe table
+#include "vcallsites5.h"
+#undef kVcSites
+#endif
 
-static const int VC_PAIRS = 8;
+static const int VC_PAIRS = 16;
 enum { VC_JOB, VC_WORKER, VC_SIM, VC_OTHER, VC_CLS };
 struct VcPair { volatile LONG tgt, n; LONG logged; volatile LONG cls[VC_CLS]; };
 struct VcSite {
@@ -47,6 +64,11 @@ static const LONG VC_OTHER_MUL = 16;  // shortcut: fixed share for non-job hits,
 static DWORD g_vcImgLo, g_vcImgHi;
 static SRWLOCK g_vcPoke = SRWLOCK_INIT;
 static PVOID g_vcVeh;
+// CallSites coverage mode (0 = the windowed probe)
+static int g_cpOn;
+static LONG g_cpMin = 32, g_cpPoly = 4, g_cpMax = 256, g_cpWarmMin = 10;
+static volatile LONG64 g_cpTicks;  // QPC ticks spent inside the handler on table sites
+static DWORD g_cpCal;              // private calibration int3 (CC C3), answered first in the handler
 
 // FF /2 (call) or FF /4 (jmp) r/m32, no prefix; false for anything else or a length that differs from the table's
 static bool VcDecode(const u8* b, u8 len, VcSite& s) {
@@ -147,12 +169,25 @@ static void VcRecord(VcSite& s, DWORD t, int cls) {
     InterlockedIncrement(&k.vcOverflow);
 }
 
+// coverage rule: resolved enough (MinHits with fewer than Poly targets), or a many-target site at MaxHits or a full table
+static bool CpSpent(VcSite& s, LONG hits) {
+    int n = 0;
+    while (n < VC_PAIRS && s.p[n].tgt) n++;
+    if (n >= VC_PAIRS || s.over || hits >= g_cpMax) return true;
+    if (n < g_cpPoly) return hits >= g_cpMin;
+    if (hits == g_cpMin) InterlockedIncrement(&ts3native_counters.cpPoly);  // once per site: its MinHits-th hit
+    return false;
+}
+
 static LONG CALLBACK VcVeh(EXCEPTION_POINTERS* e) {
     const DWORD code = e->ExceptionRecord->ExceptionCode;
     if (code != EXCEPTION_BREAKPOINT && code != 0x4000001F) return EXCEPTION_CONTINUE_SEARCH;  // STATUS_WX86_BREAKPOINT
     const DWORD at = (DWORD)(uintptr_t)e->ExceptionRecord->ExceptionAddress;
+    if (at == g_cpCal && at) { e->ContextRecord->Eip = at + 1; return EXCEPTION_CONTINUE_EXECUTION; }
     VcSite* s = VcFind(at);
     if (!s) return EXCEPTION_CONTINUE_SEARCH;
+    LARGE_INTEGER q0 = {};
+    if (g_cpOn) QueryPerformanceCounter(&q0);
     Ts3nCounters& k = ts3native_counters;
     CONTEXT* c = e->ContextRecord;
     InterlockedIncrement(&k.vcHits);
@@ -168,11 +203,20 @@ static LONG CALLBACK VcVeh(EXCEPTION_POINTERS* e) {
     }
     const int cls = g_vcThreads ? VcClass() : -1;
     VcRecord(*s, t, cls);
-    const bool spent = cls < 0 || cls == VC_JOB ? InterlockedIncrement(&s->hits) >= g_vcPer
+    const bool spent = g_cpOn ? CpSpent(*s, InterlockedIncrement(&s->hits))
+                     : cls < 0 || cls == VC_JOB ? InterlockedIncrement(&s->hits) >= g_vcPer
                                                 : InterlockedIncrement(&s->other) >= g_vcPer * VC_OTHER_MUL;
+    // a hit that raced the disarm (byte already back) still lands here and is emulated: the table, not the byte, decides
     if (spent && s->armed && TryAcquireSRWLockExclusive(&g_vcPoke)) {
+        const bool was = s->armed != 0;
         VcPokeLocked(*s, false);  // busy lock: the next hit tries again (never block in here)
+        if (g_cpOn && was && !s->armed) InterlockedIncrement(&ts3native_counters.cpDone);
         ReleaseSRWLockExclusive(&g_vcPoke);
+    }
+    if (g_cpOn) {
+        LARGE_INTEGER q1;
+        QueryPerformanceCounter(&q1);
+        InterlockedExchangeAdd64(&g_cpTicks, q1.QuadPart - q0.QuadPart);
     }
     if (s->call) {
         c->Esp -= 4;
@@ -228,8 +272,9 @@ static void VcArmAll() {
     k.vcWindows++;
 }
 
-// pairs whose count changed since the last call (cumulative counts), with the module of targets outside the exe
-static int VcLogPairs() {
+// pairs whose count changed since the last call (cumulative counts), with the module of targets outside the exe;
+// summary = the "vcall window" line (always in the probe; coverage logs it only when a pair changed)
+static int VcLogPairs(bool summary = true) {
     Ts3nCounters& k = ts3native_counters;
     int lines = 0;
     for (int i = 0; i < g_vcN; i++) {
@@ -262,8 +307,9 @@ static int VcLogPairs() {
             lines++;
         }
     }
-    Log("vcall window %ld: hits %ld, pairs %ld, outside %ld, overflow %ld, faults %ld, skipped %ld, armed %ld", k.vcWindows,
-        k.vcHits, k.vcPairs, k.vcOutside, k.vcOverflow, k.vcFaults, k.vcSkipped, k.vcArmed);
+    if (summary || lines)
+        Log("vcall window %ld: hits %ld, pairs %ld, outside %ld, overflow %ld, faults %ld, skipped %ld, armed %ld", k.vcWindows,
+            k.vcHits, k.vcPairs, k.vcOutside, k.vcOverflow, k.vcFaults, k.vcSkipped, k.vcArmed);
     return lines;
 }
 
@@ -280,9 +326,95 @@ static DWORD WINAPI VcMain(void*) {
     }
 }
 
-// [ProbeSnap] Enabled=1: table built now, armed DelaySec later on its own thread
+// ns per int3 round trip through the vectored handler list (ours first), from a private CC C3 page; 0 when it cannot run
+static LONG CpCalibrate() {
+    u8* pg = (u8*)VirtualAlloc(NULL, 16, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!pg) return 0;
+    pg[0] = 0xCC;
+    pg[1] = 0xC3;
+    DWORD old;
+    VirtualProtect(pg, 16, PAGE_EXECUTE_READ, &old);
+    FlushInstructionCache(GetCurrentProcess(), pg, 16);
+    g_cpCal = (DWORD)(uintptr_t)pg;  // the page is kept: a late trap on it still finds its answer
+    void (*f)() = (void (*)())pg;
+    LARGE_INTEGER q0, q1, fq;
+    QueryPerformanceFrequency(&fq);
+    QueryPerformanceCounter(&q0);
+    for (int i = 0; i < 256; i++) f();
+    QueryPerformanceCounter(&q1);
+    return (LONG)((q1.QuadPart - q0.QuadPart) * 1000000000 / fq.QuadPart / 256);
+}
+
+// one coverage minute: trap cost of the hits and handler ticks since the last call into the cp* counters; returns its us
+static LONG CpMinute(LONG dh, LONG64 dTicks, LONG64 freq) {
+    Ts3nCounters& k = ts3native_counters;
+    const LONG64 hUs = dTicks * 1000000 / freq;
+    const LONG us = (LONG)(hUs + (LONG64)dh * k.cpTrapNs / 1000);
+    k.cpHandlerUs += (LONG)hUs;
+    k.cpTrapUs += us;
+    k.cpLastMinUs = us;
+    if (us > k.cpMaxMinUs) k.cpMaxMinUs = us;
+    if (++k.cpMinutes > g_cpWarmMin) { k.cpLateUs += us; k.cpLateMin++; }
+    return us;
+}
+
+// coverage: arm once, then a cost line and the changed pairs once a minute
+static DWORD WINAPI CpMain(void*) {
+    Ts3nCounters& k = ts3native_counters;
+    Sleep(g_vcDelayMs);
+    if (!(g_vcVeh = AddVectoredExceptionHandler(1, VcVeh))) { Log("FAIL call sites: AddVectoredExceptionHandler"); return 0; }
+    k.cpTrapNs = CpCalibrate();
+    VcArmAll();
+    k.vcReady = 1;
+    k.cpOn = 2;
+    Log("call sites: %ld of %d sites armed, %ld ns per trap; rule %ld hits under %ld targets, else to %ld hits or %d targets",
+        k.vcArmed, g_vcN, k.cpTrapNs, g_cpMin, g_cpPoly, g_cpMax, VC_PAIRS);
+    LARGE_INTEGER fq;
+    QueryPerformanceFrequency(&fq);
+    LONG lastHits = 0;
+    LONG64 lastTicks = 0;
+    for (;;) {
+        Sleep(60000);
+        const LONG hits = k.vcHits, dh = hits - lastHits;
+        const LONG64 ticks = g_cpTicks;
+        const LONG us = CpMinute(dh, ticks - lastTicks, fq.QuadPart);
+        lastHits = hits;
+        lastTicks = ticks;
+        if (!dh) continue;  // nothing fired: no lines
+        VcLogPairs(false);
+        Log("callsites min %ld: hits %ld, trap %ld.%03ld ms (%ld.%02ld%% of the minute), armed %ld, done %ld, poly %ld, total %ld ms",
+            k.cpMinutes, dh, us / 1000, us % 1000, us / 600000, us / 6000 % 100, k.vcArmed, k.cpDone, k.cpPoly, k.cpTrapUs / 1000);
+    }
+}
+
+// [ProbeSnap] CallSites=1: the coverage table built now, armed DelaySec later on its own thread
+static bool ApplyCallSites(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"ProbeSnap", L"CallSites", 0, ini)) return false;
+    g_cpMin = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"CallSitesMinHits", 32, ini), 1, 100000);
+    g_cpPoly = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"CallSitesPoly", 4, ini), 2, VC_PAIRS);
+    g_cpMax = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"CallSitesMaxHits", 256, ini), g_cpMin, 100000);
+    g_cpWarmMin = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"CallSitesWarmMin", 10, ini), 0, 600);
+    g_vcDelayMs = (DWORD)Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"DelaySec", 90, ini), 0, 3600) * 1000;
+    g_vcThreads = GetPrivateProfileIntW(L"ProbeSnap", L"Threads", 0, ini) != 0;
+    if (!VcSetup(kVcCovSites, (int)(sizeof(kVcCovSites) / sizeof(kVcCovSites[0])))) { Log("FAIL call sites: no site table"); return false; }
+    g_cpOn = 1;
+    ts3native_counters.cpOn = 1;
+    HANDLE th = CreateThread(NULL, 64 * 1024, CpMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+    if (!th) { Log("FAIL call sites: thread start (err %lu)", GetLastError()); g_cpOn = 0; ts3native_counters.cpOn = 0; return false; }
+    CloseHandle(th);
+    Log("OK   call sites: %d indirect call/jmp sites (vcallsites5.h, %ld rejected), armed in %lu s, self-disarming", g_vcN,
+        ts3native_counters.vcSkipped, g_vcDelayMs / 1000);
+    return true;
+}
+
+// [ProbeSnap] Enabled=1: table built now, armed DelaySec later on its own thread; else CallSites=1 (coverage)
 static bool ApplyProbeSnap(const wchar_t* ini) {
-    if (!GetPrivateProfileIntW(L"ProbeSnap", L"Enabled", 0, ini)) { Log("probe snap off (Enabled=0)"); return false; }
+    if (!GetPrivateProfileIntW(L"ProbeSnap", L"Enabled", 0, ini)) {
+        if (ApplyCallSites(ini)) return true;
+        Log("probe snap off (Enabled=0, CallSites=0)");
+        return false;
+    }
+    if (GetPrivateProfileIntW(L"ProbeSnap", L"CallSites", 0, ini)) Log("call sites: CallSites=1 ignored, Enabled=1 runs the probe");
     g_vcPer = Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"PerWindow", 16, ini), 1, 100000);
     g_vcWindowMs = (DWORD)Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"WindowSec", 30, ini), 5, 3600) * 1000;
     g_vcDelayMs = (DWORD)Clamp(GetPrivateProfileIntW(L"ProbeSnap", L"DelaySec", 90, ini), 0, 3600) * 1000;

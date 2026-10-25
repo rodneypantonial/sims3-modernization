@@ -32,6 +32,19 @@ export function numericFields(answer: Record<string, unknown> | null | undefined
   return Object.fromEntries(Object.entries(answer ?? {}).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean')) as Record<string, number | boolean>;
 }
 
+// Repro step pass rules (repros.json entry stepsRequire, same rule syntax): "<cmd>.<field>" = how many of that command's steps
+// answered ok with result[field] === true, e.g. "sim_visit_lot.queued>=4" (bp-preplancb-order 2026-10-24 passed on counters
+// with all 6 visits queued:false). A field no ok answer carried stays missing, so its rule fails.
+export function stepTally(steps: { cmd: string; r: { ok?: boolean; result?: unknown } }[]): Record<string, number> {
+  const t: Record<string, number> = {};
+  for (const { cmd, r } of steps) {
+    const res = r?.ok && r.result && typeof r.result === 'object' ? r.result as Record<string, unknown> : {};
+    for (const [k, v] of Object.entries(res)) if (typeof v === 'boolean') t[`${cmd}.${k}`] = (t[`${cmd}.${k}`] ?? 0) + (v ? 1 : 0);
+    t[cmd] = (t[cmd] ?? 0) + 1;
+  }
+  return t;
+}
+
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(/^\//, '')}`) {
   assert.deepEqual(checkRequire('a>=1,b<5000', { a: 2, b: 4999 }), []);
   assert.deepEqual(checkRequire('a>=1,b<5000', { a: 0, b: 5000 }), ['a=0 (want >=1)', 'b=5000 (want <5000)']);
@@ -39,5 +52,11 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.deepEqual(checkRequire('c==-1', { c: -1 }), []);
   assert.throws(() => parseRequire('a=>1'), /not name<op>number/);
   assert.deepEqual(numericFields({ a: 1, b: true, c: 'x', d: [1] }), { a: 1, b: true });
+  const tally = stepTally([{ cmd: 'v', r: { ok: true, result: { queued: false } } }, { cmd: 'v', r: { ok: true, result: { queued: true } } },
+    { cmd: 'v', r: { ok: false } }, { cmd: 'w', r: { ok: true, result: null } }]);
+  assert.deepEqual(tally, { 'v.queued': 1, v: 3, w: 1 });
+  assert.deepEqual(checkRequire('v.queued>=1', tally), []);
+  assert.deepEqual(checkRequire('v.queued>=2,w.queued>=1', tally), ['v.queued=1 (want >=2)', 'w.queued missing']);
+  assert.deepEqual(checkRequire('v.queued>=1', stepTally([{ cmd: 'v', r: { ok: true, result: { queued: false } } }])), ['v.queued=0 (want >=1)']);
   console.log('fixes-require selftest: PASS');
 }

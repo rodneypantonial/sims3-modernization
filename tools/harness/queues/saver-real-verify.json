@@ -1,0 +1,18 @@
+{
+  "fixesBuild": "ts3fixes.v0.1.5",
+  "jobs": [
+    {
+      "id": "bp-saver-real-verify",
+      "note": "Harness check of the save_watch fix after bp-hf-saver-real 2026-10-25 (Saver made no save in 12 min; the old save_watch counted 8 15-62 ms SaveGameInProgress flickers as Saver saves). Real NRaas Saver V22 installed for this job only (fixes.install nraas-saver), shipped v0.1.5 asi rel015. Repro saver-real-autosave-crowd: after RestartTimers the saverArm step fails with Saver's reason when its timer is not armed or IsValidState() is false; the loop counts only Saver-made saves (new file, not our save_game), until 8; stepsRequire save_watch.saver_armed>=1,save_watch.saver_saved>=1 fails the job when Saver made 0 saves. Read: <tag>-repro.jsonl save_watch results (saver: timer_armed, stopwatch, elapsed_min, count, valid_state, invalid_because; saves[].saver_made, file_before, file).",
+      "asi": "game-copy/ts3native.asi.rel015",
+      "save": "Baseline-BP-Spring",
+      "fixes": { "install": ["nraas-saver"] },
+      "minCounters": 108,
+      "noiseCheck": false,
+      "logForbid": { "^FAIL\\b": 0 },
+      "run": { "profile": { "minutes": 25, "seed": 12345, "noSamplers": true, "repro": "saver-real-autosave-crowd" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    }
+  ]
+}

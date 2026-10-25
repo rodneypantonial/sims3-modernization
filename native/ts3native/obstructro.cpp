@@ -202,6 +202,7 @@ static u64 __cdecl OrHook(DWORD handle, OrV3 p) {
         if (!why) {
             const LONG us = UsSince(t0);
             InterlockedIncrement(&k.orTaken);
+            MwSkip(MW_OR);
             if (r) InterlockedIncrement(&k.orHits);
             InterlockedExchangeAdd(&k.orUs, us);
             Max(&k.orMaxUs, us);

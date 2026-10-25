@@ -29,10 +29,24 @@ static void P5cLend(void* lock, bool verify);   // p5c.cpp: P5bBegin, with every
 static void P5cTake();                          // p5c.cpp: P5bEnd
 static bool P5cStale(DWORD seq);                // p5c.cpp: a recorded routing write since the cut: never take the answer
 static bool P5cStaleEarly(DWORD seq, bool verify);  // p5c.cpp: the same, known before the acquire (0.35.26)
+static bool P5cStaleNow(DWORD seq, bool verify);    // p5c.cpp: P5cStaleEarly's test without its count (P6EarlyCopy, 0.36.56)
+// stalelot.cpp (0.36.59, docs/189 phase 2): [RouteSnap] StaleLot arms, read set, verdicts
+static bool P5cRan();                           // p5c.cpp: this job's window opened with P5c admission
+static int StlModeNow();
+static void StlRunBegin(int slm);
+static void StlRunEnd();
+static bool StlActDefer(int slm, LONG w0);
+static bool StlJob(int slm, LONG w0, bool* globOut, bool* fpOnly = NULL);
+static void StlVerify(int slm, LONG w0, int eq);
+static void ApplySl(const wchar_t* ini);
 
 static volatile LONG g_p5On;   // Mode=2 installed and not turned off
 static LONG g_p5TakeRfp = 8;   // [RouteSnap] TakeKinds bit 8: ReplanFromPosition answers taken (P5's default)
-static LONG P5TakeMask() { return g_p5TakeRfp | (ts3native_counters.p6Plan ? 1 : 0); }  // P6: bit 1 = runtime switch p6Plan
+// P6: bit 1 = runtime switch p6Plan; docs/189 phase 2c: bits 2 and 4 (A10 Replan, PlanFromPoint) = runtime switch p6All
+static LONG P5TakeMask() {
+    const Ts3nCounters& k = ts3native_counters;
+    return g_p5TakeRfp | (k.p6Plan ? 1 : 0) | (k.p6All ? 6 : 0);
+}
 static LONG g_p5Verify = 10;   // VerifyEvery (0 = never)
 static LONG g_p5VerLend;       // VerifyLend=1 (0.36.23): verify jobs lend +0x918 (P5b / P5c window) like taken ones
 static DWORD g_p5N;            // sim thread: armed STARTs, for the verify sample
@@ -85,6 +99,10 @@ static void P5Snapshot() {
     for (int i = 0; i < SN_N; i++) if (g_snJmp[i]) P5SnapAt(kSn[i].at);
     for (int i = 0; i < 3; i++) if (g_p4DlJmp[i]) P5SnapAt(kP4Dl[i].at);
     if (k.p6Plan) P5SnapAt(0x00765160);  // P6: IC_Route_Plan, the async START detour of the taken Route.Plan jobs
+    if (k.p6All) {  // docs/189 phase 2c: the A10 collect detours of the taken Replan / PlanFromPoint jobs
+        if (k.arReady & 1) P5SnapAt(0x00765490);
+        if (k.arReady & 2) P5SnapAt(0x00765240);
+    }
     k.m2Sites = g_p5NSites;
     InterlockedOr(&k.m2Ready, 2);
     Log("route snapshot P5: M2-1 snapshot of %d code sites; clone provider %s", g_p5NSites,
@@ -123,11 +141,21 @@ static void P5ModGuard() {
 
 // sim thread, async START of a Mode=2 build (P4OnStart): arm the jobs of the taken kinds ([RouteSnap] TakeKinds & Kinds: bit 8
 // ReplanFromPosition, P6 bit 1 own Route.Plan STARTs; a FallbackAsync foreign Route.Plan job keeps its FbJobCapMs path and is
-// never armed), every VerifyEvery-th one to verify
+// armed only with [RouteSnap] TakeForeign, docs/189 phase 4: always a take job, never verify, its FbJobCapMs deadline kept in
+// the clone run through P6fbCloneBudget), every VerifyEvery-th one to verify. docs/189 phase 2c ([RouteSnap] TakeKindsAll, runtime p6All): own-task
+// Replan (1) and PlanFromPoint (2) jobs too. Their IC runs the same Route_PlanLocked below Route_PlanCommon as kinds 0 and 3
+// (docs/87 §5 as built, I-87-10), only its first call is captured, and P5Plan is kind-independent; a foreign-task one (af,
+// docs/176) is left to docs/189 phase 4. The switch is read here, once per job: the take decision is the arm
 static void P5OnStart(AsyncJob* j) {
     Ts3nCounters& k = ts3native_counters;
-    if (!g_p5On || !k.m2Take || (j->kind != 0 && j->kind != 3) || j->fb) return;
-    if (!(((P5TakeMask() & g_p4Kinds) >> j->kind) & 1)) return;
+    if (!g_p5On || !k.m2Take || (unsigned)j->kind > 3 || (j->fb && !k.p6fbOn)) return;
+    const bool newKind = j->kind == 1 || j->kind == 2;
+    if (newKind && j->af) {
+        if ((g_p4Kinds >> j->kind) & 1) InterlockedIncrement(&k.pkAfSkip[j->kind - 1]);
+        return;
+    }
+    if (!((g_p4Kinds >> j->kind) & 1)) return;
+    if (!((P5TakeMask() >> j->kind) & 1)) { InterlockedIncrement(&k.pkUntaken[j->kind]); return; }
     if (const DWORD at = P5SiteChanged()) {
         k.m2SiteAt = (LONG)at;
         P5Off(P5_OFF_SITE, at);
@@ -137,7 +165,10 @@ static void P5OnStart(AsyncJob* j) {
         g_p5GuardLock = g_rgLock;
         P5ModGuard();
     }
-    j->p4 = g_p5Verify && ++g_p5N % (DWORD)g_p5Verify == 0 ? 3 : 2;
+    // foreign: take only (its FbJobCapMs deadline makes the two answers time-dependent), own verify cadence unchanged; with
+    // FbJobCapMs=0 (a probe night) there is no deadline and foreign jobs verify on the same cadence (integration review)
+    j->p4 = (!j->fb || !k.fbjcCapUs) && g_p5Verify && ++g_p5N % (DWORD)g_p5Verify == 0 ? 3 : 2;
+    if (j->fb) InterlockedIncrement(&k.p6fbArmed);
     // 0.36.23 (docs/94 §22.32): the cut's write count, as P4OnStart keeps it. Before, Mode=2 left j->p4W as the slot's last
     // value, so c.stale (writes between the cut and the live plan) was noise and a verify job compared a newer live world as M2
     g_pcCutW = g_spWrites;
@@ -146,10 +177,11 @@ static void P5OnStart(AsyncJob* j) {
     j->p4W = j->p4Ver ? g_pcCutW : g_spWrites;
     j->p6Borrow = j->p4Ver && g_pcBorrowed;
     P5cOnStart(j);
+    InterlockedIncrement(&k.pkArmed[j->kind]);
     const int ki = j->kind == 3;
-    InterlockedIncrement(&k.p6Armed[ki]);
-    if (j->p6Borrow) InterlockedIncrement(&k.p6Borrowed[ki]);
-    if (!ki) {  // P6 phase split (§24.7): the START and its cut, for the worker's per-job record
+    if (!newKind) InterlockedIncrement(&k.p6Armed[ki]);  // the P6 [2] split stays Route.Plan / ReplanFromPosition
+    if (j->p6Borrow && !newKind) InterlockedIncrement(&k.p6Borrowed[ki]);
+    if (j->kind == 0) {  // P6 phase split (§24.7): the START and its cut, for the worker's per-job record
         LARGE_INTEGER q;
         QueryPerformanceCounter(&q);
         j->p6T0 = q.QuadPart;
@@ -167,13 +199,15 @@ static LONGLONG g_p6Pick;   // worker: QPC at this job's pickup (P6 phase split)
 static DWORD g_p6PickSeq;   // ... and the job it belongs to
 static LONG g_p6PreUs;      // ... and P5PreLock's wait
 static void P5PreLockBody(const AsyncJob* j);
+static void P5EarlyCopy(const AsyncJob* j);
 static void P5PreLock(const AsyncJob* j) {
-    if (!j->p6T0) { P5PreLockBody(j); return; }
+    if (!j->p6T0) { P5PreLockBody(j); P5EarlyCopy(j); return; }
     LARGE_INTEGER q;
     QueryPerformanceCounter(&q);
     g_p6Pick = q.QuadPart, g_p6PickSeq = j->seq;
     P5PreLockBody(j);
-    g_p6PreUs = UsSince(q);
+    P5EarlyCopy(j);
+    g_p6PreUs = UsSince(q);  // the early acquire included: P6JobBegin splits its copy off
 }
 static void P5PreLockBody(const AsyncJob* j) {
     if (j->p4 < 2 || !j->p4Ver || !g_rpThreaded || g_p4Clone != &kPcProvider) return;
@@ -183,6 +217,68 @@ static void P5PreLockBody(const AsyncJob* j) {
         SetEvent(g_rpEvent);
         Sleep(0);
     }
+}
+
+// 0.36.56 (docs/94 §24.14): [RouteSnap] P6EarlyCopy (runtime switch p6Early, --ab routesnapearly; default 0). The own-only
+// acquire P5Plan makes in the lent window (0.35.26) runs here instead, on the worker after P5PreLock and before ServeAsync
+// takes the job's +0x918, so the copy is outside the job's A_RUNNING span (§24.11.4 (c)1(i)). Why it answers the same world:
+//   - an own-only acquire reads only the cut's private copies, the P3 images and the clone, and writes only g_pcWork and the
+//     clone (PcAcquireOwnOnly; no game call, PcActiveLot fault-guarded), so it needs no game lock; the clone is held still
+//     by g_rpUse from here to the job's release (only the consumer frees or applies to it, and only holding g_rpUse);
+//   - no lock-order cycle: the worker then waits for +0x918 holding g_rpUse, and no +0x918 holder waits for g_rpUse (the
+//     consumer only tries it under +0x918 and lets go of +0x918 before it blocks on g_rpUse, RpDrainBody; the sim never takes
+//     g_rpUse; the cut lock is not held past the acquire);
+//   - the checks PcAcquire made against live state (epoch, active lot, clone flags) are made again by P5Plan under the job's
+//     hold (P5EarlyRecheck); every other P5Plan refusal (capture, rtClosing / rtBusy, cold, the P5c write test before and
+//     after the run, the epoch after the run, nr) runs unchanged on the early clone.
+// Kept as before: a non-own-only acquire (game calls) runs in P5Plan under the hold; an early refusal ended the cut's hold
+// already (PcHoldEnd), so P5Plan takes the refusal without a second acquire or a P4CloneDrop.
+struct P5Early { DWORD seq, ver; P4Clone cl; int r; bool live; LONG copyUs; u64 active; };
+static P5Early g_p5e;  // worker only: the early acquire of the job ServeAsync is starting (live until its plan or its end)
+static void P5EarlyCopy(const AsyncJob* j) {
+    Ts3nCounters& k = ts3native_counters;
+    g_p5e.live = false;
+    if (!k.p6Early || j->p4 < 2) return;
+    if (!j->p4Ver || !g_p5On || !k.m2Take || !(k.snP4Ready & 1) || g_p4Clone != &kPcProvider) { InterlockedIncrement(&k.p6eSkip[2]); return; }
+    // P5Plan would skip the acquire: a recorded write since the cut (non-verify, P5c) or a refusal-storm pause
+    if ((P5cStaleNow(j->seq, j->p4 == 3) && !StlActDefer(StlModeNow(), j->p4W)) || (g_p5StormUntil && GetTickCount64() < g_p5StormUntil)) { InterlockedIncrement(&k.p6eSkip[1]); return; }
+    if (!PcAcquireOwnOnly(j->p4Ver)) { InterlockedIncrement(&k.p6eSkip[0]); return; }
+    P5Early& x = g_p5e;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    x.cl = P4Clone();
+    x.r = P4CloneAcquire(j->p4Ver, &x.cl);
+    const LONG us = UsSince(t0);
+    x.copyUs = x.r < 0 ? g_pcLastCopyUs : 0;
+    x.active = g_pcLastActive;
+    x.seq = j->seq, x.ver = j->p4Ver, x.live = true;
+    InterlockedExchangeAdd(&k.snMatUs, us);
+    InterlockedExchangeAdd(&k.p6eUs, us);
+    InterlockedExchangeAdd(&k.p6eCopyUs, x.copyUs);
+    InterlockedIncrement(x.r < 0 ? &k.p6eCopies : &k.p6eRefused);
+}
+// P5Plan: claims this job's early acquire, if any (*r = its result: -1 = the clone in *cl, held)
+static bool P5EarlyClaim(const P4Job& c, P4Clone* cl, int* r) {
+    P5Early& x = g_p5e;
+    if (!x.live || x.seq != c.seq || x.ver != c.ver) return false;
+    x.live = false;
+    *cl = x.cl, *r = x.r;
+    return true;
+}
+// P5Plan under the job's +0x918: PcAcquire's live-state tests again (they ran at the copy, before the hold)
+static int P5EarlyRecheck(const P4Clone& cl) {
+    Ts3nCounters& k = ts3native_counters;
+    if (cl.epoch != (DWORD)g_spEpoch || PcActiveLot() != g_p5e.active) { k.snPcRefused[5]++, g_pcAcqWhy = PS_MOVED; return P4_AB_EPOCH; }
+    if (!g_rpClone || g_rpNeedEpoch || g_rpBad || g_rpStale) { k.snPcRefused[2]++, g_pcAcqWhy = PS_NOCLONE; return P4_AB_MAT; }
+    return -1;
+}
+// ServeAsync after the IC, and on its back-out: an early clone no plan claimed goes back (g_rpUse, the cut's hold)
+static void P5EarlyEnd() {
+    if (!g_p5e.live) return;
+    g_p5e.live = false;
+    if (g_p5e.r >= 0) return;  // a refusal: the hold ended at the acquire
+    P4CloneRelease(&g_p5e.cl, 0, NULL, 0);
+    InterlockedIncrement(&ts3native_counters.p6eRel[2]);
 }
 
 // the clone run's nodes into the route's out list (empty: P5Plan checks it at entry). Same EASTL list, same allocator words
@@ -226,6 +322,27 @@ static void P5Storm(bool refused) {  // worker, once per Mode=2 plan that reache
     if (n >= kP5StormOff) P5Off(P5_OFF_STORM, 0);
 }
 // worker, the armed job's Route_PlanLocked (P4LivePlan after the argument capture; the job holds +0x918)
+// docs/189 §4 phase 4, worker: an armed foreign job's clone run gets the job's FbJobCapMs deadline on the world A* cost stubs, as
+// CallPlanBudget0 gives the game's plan (the clone run calls g_planOrig directly, P4Guarded). Past it BudgetStep walls every edge
+// and the clone's A* leaves through its own "open list empty" exit: the answer is the planner's no-path, as the game's capped
+// plan. BudgetStep touches only this thread's t_budget, t_jobCapAt and counters; the cost stubs are code the clone run executes
+// anyway (with t_budget.on 0 they pass). false = no deadline (own job, cap off, cost stubs not installed): nothing changed
+static bool P6fbCloneBudget(Budget& outer) {
+    if (!g_jobFb || !t_fbDeadline || !ts3native_counters.budgetReady) return false;
+    outer = t_budget;
+    const Budget b = {1, 0, {}, 0, 0, 0, t_fbDeadline, 0};
+    t_budget = b;
+    InterlockedIncrement(&ts3native_counters.p6fbCloneDl);
+    return true;
+}
+static void P6fbCloneBudgetEnd(const Budget& outer) {
+    if (t_budget.capped) {  // counted as the job's cap (ServeAsync's fbjcCapped, the long-job line)
+        t_fbCapHit = 1;
+        InterlockedIncrement(&ts3native_counters.p6fbCloneCapped);
+    }
+    t_budget = outer;
+}
+
 static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts, int* out1,
                  int* out2, DWORD guidLo, DWORD guidHi) {
     Ts3nCounters& k = ts3native_counters;
@@ -233,10 +350,14 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     const bool verify = c.mode == 3;
     const bool noLend = verify && !g_p5VerLend;  // VerifyLend: the verify job's clone run also runs in the lent window
     const int ki = c.kind == 3;  // P6 split: 0 Route.Plan, 1 ReplanFromPosition
+    const int slm = StlModeNow();  // StaleLot arm, fixed for this plan (a flip between jobs takes effect at the next plan)
+    const int kk = c.kind & 3;   // docs/189 phase 2c: pk* by job kind
+    const bool p6k = kk == 0 || kk == 3;  // the P6 [2] split keeps Route.Plan / ReplanFromPosition only
     LARGE_INTEGER tPlan;
     QueryPerformanceCounter(&tPlan);
     InterlockedIncrement(&k.m2Plans);
-    InterlockedIncrement(&k.p6Plans[ki]);
+    if (p6k) InterlockedIncrement(&k.p6Plans[ki]);
+    InterlockedIncrement(&k.pkPlans[kk]);
 #ifdef TS3N_FAULTINJ
     g_fiPlan = 0;  // docs/157: every Nth plan injects the next FaultInject bit in turn
     if (const LONG turn = g_fiMask & FI_TURN)
@@ -257,14 +378,39 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     if (why < 0 && (k.rtClosing || k.rtBusy)) why = P4_AB_EPOCH;
     if (why < 0 && P4Cold()) why = P4_AB_COLD;
     // 0.35.26 (docs/94 §22.30): an answer P5c refuses anyway (a routing write since the START cut) skips the acquire and the run
-    if (why < 0 && P5cStaleEarly(c.seq, verify)) why = P4_AB_EPOCH, g_p5EarlyStale++, p6Stale = true;
+    // StaleLot acting: only lot-keyed writes since the cut = decided after the run against its read set (slDef)
+    const bool slDef = why < 0 && P5cStaleNow(c.seq, verify) && StlActDefer(slm, c.w0);
+    if (why < 0 && !slDef && P5cStaleEarly(c.seq, verify)) why = P4_AB_EPOCH, g_p5EarlyStale++, p6Stale = true;
     if (why < 0 && g_p5StormUntil) {
         if (GetTickCount64() < g_p5StormUntil) why = P4_AB_OTHER, InterlockedIncrement(&k.p5StormSkips);
         else g_p5StormUntil = 0;
     }
     P4Clone cl = {};
     bool have = false, ran = false, lent = false, tried = false;
-    if (why < 0) {
+    int er = -1;  // P6EarlyCopy (0.36.56): the early acquire's result, -1 = its clone is in cl, held
+    const bool early = P5EarlyClaim(c, &cl, &er);
+    bool eHeld = early && er < 0;
+#ifdef TS3N_FAULTINJ
+    if (eHeld && (g_fiPlan & FI_OOM)) {  // as P4CloneAcquire's: the copy failed after the hold (refused as mat)
+        g_fiPlan &= ~FI_OOM;
+        P4CloneRelease(&cl, 0, NULL, 0);
+        eHeld = false, er = P4_AB_MAT;
+        Log("FaultInject: OOM in the early clone build (acquire refused as mat)");
+    }
+#endif
+    if (why < 0 && early) {
+        tried = true;
+        if (eHeld && (why = P5EarlyRecheck(cl)) >= 0) {
+            P4CloneRelease(&cl, 0, NULL, 0);
+            eHeld = false;
+            InterlockedIncrement(&k.p6eRel[1]);
+        } else if (eHeld) {
+            have = true;
+            InterlockedIncrement(&k.p6eUsed);
+        } else why = er;
+    } else if (early) {
+        if (eHeld) P4CloneRelease(&cl, 0, NULL, 0), InterlockedIncrement(&k.p6eRel[0]);  // the cut's hold ends with it
+    } else if (why < 0) {
         tried = true;
         // 0.35.26: the copy (5-6 ms on BP) inside the lent window when it makes no game call; else under the hold as before
         if (!noLend && g_p4Clone == &kPcProvider && PcAcquireOwnOnly(c.ver)) {
@@ -291,7 +437,15 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     LONG rel = 0;
     const LONG read0 = t_p4Read;  // the IC's own reader bits so far (P4RunClone resets the thread's)
     if (have && !lent) P5cLend((u8*)world + 0x918, noLend);
-    if (have) rel = P4RunClone(c, cl, head, true);
+    if (have) StlRunBegin(slm);  // StaleLot: the clone run's LotTable_Find keys = its read set
+    if (have) {
+        Budget outer = {};
+        const bool dl = P6fbCloneBudget(outer);  // TakeForeign: the foreign job's FbJobCapMs deadline on the clone's world A*
+        rel = P4RunClone(c, cl, head, true);
+        if (dl) P6fbCloneBudgetEnd(outer);
+    }
+    StlRunEnd();
+    if (slm && !have) InterlockedIncrement(&k.stlNoRun);
     if (have || lent) P5cTake();  // also after a refused acquire in the window: +0x918 back before the game's plan
     if (have) {
         ran = true;
@@ -310,8 +464,20 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
     if (why < 0 && (k.rtClosing || k.rtBusy || c.epoch != (DWORD)g_spEpoch)) why = P4_AB_EPOCH;  // the world moved during the run
     // P5c: the lock was free; a routing write after the cut refuses the answer. A verify job (VerifyLend) is compared instead:
     // the game's plan below sees the write, the record classifies it as time skew (M5) through c.stale
+    const bool t_p5cWasRan = P5cRan();  // StaleLot: the P5c rule applies to this job (its window opened)
     const bool stale5c = P5cStale(c.seq);
-    if (why < 0 && stale5c && !verify) why = P4_AB_EPOCH, p6Stale = true;
+    // StaleLot (docs/189 phase 2): both verdicts on a clean-run non-verify job; the acting arm takes a job that only lot-keyed
+    // writes to lots the run did not read made stale (nr, the epoch test and every other refusal stay)
+    bool slTake = false;
+    if (slm && have && !verify && why < 0 && (t_p5cWasRan || slDef)) {
+        bool glob;
+        const bool lot = StlJob(slm, c.w0, &glob);
+        slTake = slm == 1 && stale5c && !lot;
+        if (slDef && glob && lot && !stale5c) why = P4_AB_EPOCH, p6Stale = true;  // deferred, no window: the per-lot verdict
+    }
+    if (slDef && !have && why < 0) why = P4_AB_EPOCH, p6Stale = true;  // deferred but never ran: stale as the global rule
+    if (why < 0 && stale5c && !verify && !slTake) why = P4_AB_EPOCH, p6Stale = true;
+    if (slTake && why < 0 && !nr) InterlockedIncrement(&k.stlActTaken);
     if (why < 0 && !g_p4Copy.valid) why = P4_AB_CAPTURE;
     if ((why == P4_AB_MANAGED || why == P4_AB_EVENT) && InterlockedIncrement(&k.m2Trips) >= kP5Trips) P5Off(P5_OFF_TRIPS, 0);
     if (why == P4_AB_FAULT) P5Off(P5_OFF_FAULT, 0);
@@ -323,18 +489,25 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
         if (out2) *out2 = g_p4Copy.out2;
         r = g_p4Copy.ok;
         InterlockedIncrement(&k.m2Taken);
-        InterlockedIncrement(&k.p6Taken[ki]);
+        if (p6k) InterlockedIncrement(&k.p6Taken[ki]);
+        InterlockedIncrement(&k.pkTaken[kk]);
+        if (g_jobFb) InterlockedIncrement(&k.p6fbTaken);  // the worker's own ServeAsync write: this job is a foreign one
         if (t_p6.act) t_p6.out = 0;
+        t_p6wOut = c.borrow ? P6O_BORROWED : P6O_TAKEN;  // [P6Waits] (p6wait.cpp): the job's outcome, last plan wins
     } else {
+        t_p6wOut = p6Stale && !verify ? P6O_STALE : P6O_REFUSED;
         // a lazy stop already released the list; a faulted run's list is left alone (half-built, the copy is discarded)
         if (ran && why != P4_AB_FAULT && !P4FreeList(head)) Log("P5: private path list of plan %lu not released", c.seq);
         if (why >= 0) InterlockedIncrement(&k.m2Fb[why]);
         else if (!verify) InterlockedIncrement(&k.m2FbNr);
+        InterlockedIncrement(verify ? &k.pkVerify[kk] : p6Stale ? &k.pkStale[kk] : &k.pkFb[kk]);
+        if (g_jobFb) InterlockedIncrement(&k.p6fbGame);  // under t_fbDeadline: CallPlanBudget cuts it as an unarmed foreign job
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
         r = PlanLockedBody(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi);
         c.gameUs = UsSince(t0);
-        InterlockedExchangeAdd(&k.p6GameUs[ki], c.gameUs);
+        if (p6k) InterlockedExchangeAdd(&k.p6GameUs[ki], c.gameUs);
+        InterlockedExchangeAdd(&k.pkGameUs[kk], c.gameUs);
         if (t_p6.act) t_p6.gameUs += c.gameUs, t_p6.out = p6Stale ? 1 : 3;
         if (verify) {
             // 0.36.23 (docs/94 §22.32): the live plan ran after the clone run, so its skew window ends here, not at nr1: the
@@ -344,10 +517,15 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
             nr = P4NrBits(c.nr0, nr1, t_p4Read | read0 | c.cloneRead);
             c.stale = g_spWrites != c.w0;
             int cls = 4;
-            if (P4CaptureAnswerRaw(outList, r, out1 ? *out1 : -1, out2 ? *out2 : -1, &g_p4Live) && why < 0 && g_p4Copy.valid)
-                cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals), c.stale);
+            const bool capOk = P4CaptureAnswerRaw(outList, r, out1 ? *out1 : -1, out2 ? *out2 : -1, &g_p4Live) && why < 0 && g_p4Copy.valid;
+            if (capOk) cls = P4Classify(g_p4Live, g_p4Copy, nr, P4TieN(c.starts, c.goals), c.stale);
             else if (why < 0) why = P4_AB_CAPTURE;
+            if (slm && have) {  // StaleLot evidence: the raw class (no skew folding, no tie count); M0 / M1 = equal
+                const int raw = capOk && !nr ? P4Classify(g_p4Live, g_p4Copy, 0, P4TieN(c.starts, c.goals), false, false) : -1;
+                StlVerify(slm, c.w0, raw < 0 ? 2 : raw <= 1 ? 0 : 1);
+            }
             if (have && (cls == 2 || cls == 3) && g_p4ObsOn) P4ObCapture(c, cl.world);  // I-94-381: name an in-room M2 live
+            if (have && cls < 4) P4LdCapture(c, cl.world, cls);  // docs/94 §24.8.4, [RouteSnap] M2LotDump (off by default)
             InterlockedIncrement(&k.m2Verify);
             InterlockedIncrement(&k.m2VerM[cls]);
             if (cls == 2 || cls == 3) {
@@ -368,7 +546,9 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
 #ifdef TS3N_FAULTINJ
     g_fiPlan = 0;  // a bit the plan never reached (refused before the acquire or the run) is not carried over
 #endif
-    InterlockedExchangeAdd(&k.p6PlanUs[ki], UsSince(tPlan));
+    const LONG planUs = UsSince(tPlan);
+    if (p6k) InterlockedExchangeAdd(&k.p6PlanUs[ki], planUs);
+    InterlockedExchangeAdd(&k.pkPlanUs[kk], planUs);
     P5Log5();
     return r;
 }
@@ -388,10 +568,12 @@ static void P6JobBegin(const AsyncJob* j) {
     const bool picked = g_p6PickSeq == j->seq && g_p6Pick >= j->p6T0 && g_p6Pick <= now;  // else (tests): all queue
     const LONGLONG pick = picked ? g_p6Pick : now;
     const LONG pre = picked ? g_p6PreUs : 0;
+    const LONG eCopy = picked && g_p5e.live && g_p5e.seq == j->seq ? g_p5e.copyUs : 0;  // P6EarlyCopy: its copy, inside pre
     t_p6 = P6Job();
     t_p6.t0 = j->p6T0, t_p6.cutQpc = j->p6CutQpc;
     t_p6.queueUs = P6Us(pick - j->p6T0);
-    t_p6.rpWaitUs = pre;
+    t_p6.rpWaitUs = pre - eCopy;
+    t_p6.copyUs = eCopy;
     t_p6.startUs = P6Us(now - pick) - pre;
     t_p6.out = 3;  // until P5Plan says otherwise (an IC that never reached Route_PlanLocked stays "other fallback")
     t_p6.lazyN0 = k.rjpN[0][kP6LazyPhase], t_p6.lazyUs0 = k.rjpUs[0][kP6LazyPhase];
@@ -448,24 +630,36 @@ static void ApplyP5(const wchar_t* ini) {
     // P6 (0.36.41, docs/94 §24): TakeKinds bit 1 = own Route.Plan jobs too (bits 2, 4 not built); ShareCuts defaults on with it
     const int tk = GetPrivateProfileIntW(L"RouteSnap", L"TakeKinds", 8, ini);
     g_p6LogUs = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"P6LogMs", 20, ini), 0, 600000) * 1000;
+    k.p6Early = GetPrivateProfileIntW(L"RouteSnap", L"P6EarlyCopy", 0, ini) ? 1 : 0;  // 0.36.56 (§24.14); runtime switch p6Early
+    k.p6fbOn = GetPrivateProfileIntW(L"RouteSnap", L"TakeForeign", 0, ini) ? 1 : 0;  // docs/189 §4 phase 4; runtime switch p6fbOn
     g_p5TakeRfp = tk & 8;
     k.p6Plan = tk & 1;
     k.p6Share = GetPrivateProfileIntW(L"RouteSnap", L"ShareCuts", tk & 1, ini) ? 1 : 0;
+    // docs/189 phase 2c (0.36.57): TakeKindsAll=1 (runtime switch p6All, --ab routesnapkinds) also takes the own-task A10 Replan
+    // and PlanFromPoint jobs; they exist only with [RouteAsync] Kinds bits 1 / 2 (A10 off in the release config)
+    k.p6All = GetPrivateProfileIntW(L"RouteSnap", L"TakeKindsAll", 0, ini) ? 1 : 0;
+    if (tk & 6) Log("route snapshot P5: TakeKinds bits 2 and 4 are ignored: Replan and PlanFromPoint are taken with TakeKindsAll=1");
     const LONG take = P5TakeMask() & g_p4Kinds;
     if (!take) Log("route snapshot P5: TakeKinds & Kinds is 0: no answer is taken");
-    if (g_p4Kinds & 6) Log("route snapshot P5: Kinds bits 2 and 4 (Replan, PlanFromPoint) are never taken");
+    if (k.p6All && (g_p4Kinds & 6) != 6) Log("route snapshot P5: TakeKindsAll=1 but Kinds lacks bit 2 or 4: those kinds are not taken");
+    if (k.p6All && (k.arReady & 3) != 3) Log("route snapshot P5: TakeKindsAll=1 but [RouteAsync] Kinds hooks no Replan or PlanFromPoint (bits 1 / 2): no such job starts");
     if ((take & 8) && !(k.arReady & 4)) Log("route snapshot P5: [RouteAsync] Kinds has no ReplanFromPosition (4): no Mode=2 job of it will start");
     if ((take & 1) && !k.p6Share) Log("route snapshot P5: Route.Plan taken without ShareCuts: a START behind a busy job gets no cut (docs/94 §22.30.4 G2)");
     k.m2Take = 1;
     k.m2Ready = 1;
     g_p5On = 1;
     Log("OK   route snapshot P5 (Mode=2): %s jobs take the clone answer; ShareCuts=%ld; VerifyEvery=%ld; door asks proxied to the "
-        "sim thread; fallback = the game's own plan%s", take == 9 ? "Route.Plan (own) and ReplanFromPosition" : take & 1 ? "Route.Plan (own)" :
-        "ReplanFromPosition", k.p6Share, g_p5Verify, g_p5VerLend ? "; VerifyLend=1 (verify jobs lend +0x918 too)" : "");
+        "sim thread; fallback = the game's own plan%s%s", take == 9 ? "Route.Plan (own) and ReplanFromPosition" : take & 1 ? "Route.Plan (own)" :
+        "ReplanFromPosition", k.p6Share, g_p5Verify, g_p5VerLend ? "; VerifyLend=1 (verify jobs lend +0x918 too)" : "",
+        k.p6Early ? "; P6EarlyCopy=1 (own-only copies before the job's +0x918)" : "");
+    if (k.p6All) Log("route snapshot P5: TakeKindsAll=1: own Replan and PlanFromPoint jobs take the clone answer too (docs/189 phase 2c)");
+    if (k.p6fbOn) Log("route snapshot P5: TakeForeign=1: FallbackAsync foreign Route.Plan jobs take the clone answer too (never verify; "
+                      "FbJobCapMs kept in the clone run)%s", take & 1 ? "" : " - inactive: TakeKinds has no Route.Plan bit 1");
 #ifdef TS3N_FAULTINJ
     g_fiMask = GetPrivateProfileIntW(L"RouteSnap", L"FaultInject", 0, ini) & FI_LIVE;
     g_fiEvery = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"FaultInjectEvery", 10, ini), 1, 100000);
     Log("route snapshot P5: FAULTINJ build (docs/157): FaultInject=0x%lX every %ld armed plans", g_fiMask, g_fiEvery);
 #endif
     ApplyP5b(ini);
+    ApplySl(ini);
 }

@@ -1,0 +1,91 @@
+{
+  "note": "Night 2026-10-24 add-on: T6 [GoalValidRO] (docs/178 §7) on the combined build asi.t6g12 (ts3native 0.36.49, counters v120: T6 v118 + [IdleCheckRO] v119 + [MovedWaits] v120; native/ts3native/out-t6g12 on branch worktree-agent-a7c5e1e917a63be21). Correctness (shadow) with the in-place moved-wait log; the separate ABBA A/B (ip-goalvalid-ab) was dropped 2026-10-24: the moved-wait counters measure the same thing in place (docs/178 §9.4). Stop on any FAIL.",
+  "jobs": [
+    {
+      "id": "ip-goalvalid-verify",
+      "note": "Day-style correctness first (mechanism, not timing): ip-goalvalid-loop, ABBA until 3 firings per arm (cap 12 min), only goalvalidro flipped by the arm step, the lock-taker bundle on in both arms with every shadow on, [GoalValidRO] Shadow=1 (compares the game's 0x82EDB0 answer with the clone whenever no job runs, both arms). Pass: no crash, 0 watchdog lines, the OK lines, gvShadowMismatch 0 and every other shadow mismatch / in-job apply 0, afActiveTrip 0, gvTaken >= 1 (answered on an on arm). Read: gvShadowEmpty / gvShadowRuns = the share of validations Mode 1 can answer (if small, T6 cannot cut much: say so before the A/B), gvFb_* split, gvMaxUs. Any FAIL: stop, do not run job 2. In-place moved-wait read (docs/178 §9, [MovedWaits] on): per switch the \"moved waits <switch>\" line (skips, jobs, moved n/ms, delay, avoided <= = skip -> job end, net <= = avoided - moved) and \"next takers\" (keys 0x75AA16 gather, 0x75A64C, 0x755990, 0x62FB74, 0x760BFF, 0x05000000, 0x85FE10, 0x62EF7A, 0x755FDD, 0x833593 with fb / gv / ik shares); hitches.jsonl rtMovedMs / rtMovedKey per frame. These replace the separate A/B: net <= ~0 = the wait only moved (no A/B needed, cover the next taker); a clear net gain goes into the next IP bundle A/B (natural A/B only where hitches). T6 first suspect [verified flow]: after an empty answer GoalPoint_Validate goes on to its goal footprint gather 0x82F0B0 at 0x75AA11 (route option 0x10000 set), which takes +0x918 behind the same job (key 0x75AA16).",
+      "asi": "game-copy/ts3native.asi.t6g12",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 120,
+      "nativeRequire": "gvReady>=1,gvShadowRuns>=1,gvShadowMismatch<=0,gvTaken>=1,steerShadowMismatch<=0,avShadowMismatch<=0,avShadowMismatchB<=0,g0Mismatch<=0,rtoShadowMismatch<=0,fgShadowMismatch<=0,steerSimWriteInRo<=0,avSimWriteInRo<=0,rtoSimWriteInRo<=0,afActiveTrip<=0,usfApplyInJob<=0,fp2ApplyInJob<=0,mwReady>=1,mwSkips_0>=1",
+      "logRequire": {
+        "OK   steer RO": 1,
+        "OK   avoid RO": 1,
+        "OK   gate0 RO": 1,
+        "OK   footprint deferral .design U": 1,
+        "OK   footprint deferral phase 2": 1,
+        "OK   route-to-object RO": 1,
+        "OK   goal validation RO": 1,
+        "OK   moved waits": 1
+      },
+      "ini": {
+        "SlotEnabledRO.Enabled": 1,
+        "SlotEnabledRO.Mode": 1,
+        "SlotEnabledRO.Shadow": 0,
+        "UnseenThrottle.Enabled": 1,
+        "UnseenThrottle.List": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.TailUnlock": 1,
+        "RouteAsync.ReplanDedupe": 1,
+        "RouteAsync.H2": 1,
+        "RouteEarlyOut.Enabled": 1,
+        "RouteEarlyOut.Mode": 2,
+        "RouteEarlyOut.Act": 1,
+        "RouteEarlyOut.LogMs": 200,
+        "HitchAttr.Enabled": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 0,
+        "SteerRO.Enabled": 1,
+        "SteerRO.Mode": 1,
+        "SteerRO.Shadow": 1,
+        "AvoidRO.Enabled": 1,
+        "AvoidRO.Mode": 1,
+        "AvoidRO.Shadow": 1,
+        "Gate0RO.Enabled": 1,
+        "Gate0RO.Mode": 1,
+        "Gate0RO.Shadow": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 1,
+        "RouteToObjRO.Enabled": 1,
+        "RouteToObjRO.Mode": 1,
+        "RouteToObjRO.Shadow": 1,
+        "PlacementRO.Enabled": 1,
+        "PlacementRO.Mode": 1,
+        "PlacementRO.Shadow": 1,
+        "GoalValidRO.Enabled": 1,
+        "GoalValidRO.Mode": 1,
+        "GoalValidRO.Shadow": 1,
+        "MovedWaits.Enabled": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 14,
+          "repro": "ip-goalvalid-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 3,
+              "minFirings": 3
+            },
+            "maxMinutes": 12
+          },
+          "fixesOn": "legreplanskip,bouncerskip,idlememo,stuckcheckasync,errortrapspread",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

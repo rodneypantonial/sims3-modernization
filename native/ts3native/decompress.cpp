@@ -246,6 +246,7 @@ static int __cdecl RefpackHook(u8* dst, DWORD cap, const u8* src, DWORD len) {
     const LONG64 f = g_dqpf.QuadPart ? g_dqpf.QuadPart : 1;
     InterlockedIncrement(&k.decompressCalls);
     if (!r) InterlockedIncrement(&k.decompressFails);
+    CeRec(CE_DECOMP, (DWORD)(uintptr_t)dst, r > 0 ? (DWORD)r : 0, cap);  // docs/186 §8
     k.decompressInMB = (LONG)(InterlockedAdd64(&c.inBytes, len) >> 20);
     k.decompressOutMB = (LONG)(InterlockedAdd64(&c.outBytes, r > 0 ? r : 0) >> 20);
     k.decompressMs = (LONG)(InterlockedAdd64(&c.ticks, dt) * 1000 / f);

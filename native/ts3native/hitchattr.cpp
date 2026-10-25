@@ -18,8 +18,14 @@ struct HaFrame {
     LONG n;            // +0x18, waits
     LONG maxUs;        // +0x1C, the longest of them
     LONG maxKey;       // +0x20, its key
+    // v2 (0.36.49, docs/178 §9, movedwait.cpp, [MovedWaits] on): waits a read-only skip moved (same job, a later wait)
+    LONG mvUs;         // +0x24, their wait us
+    LONG mvN;          // +0x28, how many
+    LONG mvSw;         // +0x2C, MW_* bit mask of the switches whose skip moved them
+    LONG mvMaxUs;      // +0x30, the longest
+    LONG mvKey;        // +0x34, its key
 };
-extern "C" __declspec(dllexport) HaFrame ts3native_hitchattr = {1, 0, {0, 0, 0, 0}, 0, 0, 0};
+extern "C" __declspec(dllexport) HaFrame ts3native_hitchattr = {2, 0, {0, 0, 0, 0}, 0, 0, 0, 0, 0, 0, 0, 0};
 
 static void HaNote(DWORD key, LONG us, int cls) {
     if (!ts3native_hitchattr.enabled || us <= 0 || GetCurrentThreadId() != g_async.owner) return;

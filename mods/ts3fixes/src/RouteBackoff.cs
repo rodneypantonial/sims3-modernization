@@ -35,6 +35,7 @@ namespace Ts3Fixes
                 RouteSrcCall src = RouteSrcBegin(this, 0, Vector3.Invalid); // routesrc: source of this plan (RouteSources.cs, docs/151)
                 RoutePlanResult r = PlanBackoff();
                 NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded, this); // the stuck watchdog's route-fail count and success memo (RouteFixes.cs)
+                StuckCheckPlanned(r.mType == RoutePlanResultType.Succeeded); // docs/163 §10 stuck-check outcome counters (FewerPlans.cs)
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
             }
@@ -138,9 +139,10 @@ namespace Ts3Fixes
             // it as "Foreign" otherwise; older ts3native and the game answer false, so the plan stays synchronous as before.
             RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
             {
-                bool started = AsyncEligible(sim, "asyncroute") ? GetOption(kAsyncStart)
-                    : OwnerTaskStart() ? true
-                    : ForeignEligible() && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
+                bool pre = false;
+                bool started = AsyncEligible(sim, "asyncroute") ? PreCb(0, ref pre) && GetOption(kAsyncStart)
+                    : OwnerTaskStart(ref pre) ? true
+                    : ForeignEligible() && PreCb(0, ref pre) && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
                 if (!started)
                 {
                     StepAside();
@@ -149,7 +151,10 @@ namespace Ts3Fixes
                 try
                 {
                     AsyncWait();
-                    return PlanOrig();
+                    List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
+                    RoutePlanResult r = PlanOrig();
+                    RestoreDoors(doors);
+                    return r;
                 }
                 finally
                 {
@@ -173,12 +178,17 @@ namespace Ts3Fixes
             // planned in our drain task (never followed; a Sim that moves meanwhile is not stuck anyway). ts3native still
             // refuses NoYield / Active / M1 / QueueFull as for any own START. Counters: [251] car STARTs sent, [252] ridden
             // vehicle STARTs sent, [253] stuck check STARTs sent, [254] of those started by ts3native.
-            bool OwnerTaskStart()
+            bool OwnerTaskStart(ref bool pre)
             {
                 int slot = OwnerTaskSlot();
                 if (slot < 0 || !ForeignEligible()) return false;
                 int[] c = PatchCounters();
                 c[slot]++;
+                PreCb(0, ref pre);
+                // docs/163 §10 stuckcheckcap (FewerPlans.cs StuckCheckRun); §10.1: every stuck-check START sends the tagged form (round,
+                // cut bit only with stuckcheckcap), so ts3native's own-job log lines name the round; ts3native answers true only for a cut
+                if (slot == 253 && GetOption2(kProbe | (Sims3.SimIFace.Route.RouteOption2)NoStartCore.StuckTag(sStuckIn ? sStuckRound : 0, sStuckIn && sStuckCap, sStuckIn && sStuckLast)) && sStuckCap)
+                    c[297]++;
                 if (!GetOption(kAsyncStart)) return false;
                 c[254]++;
                 return true;
@@ -222,6 +232,49 @@ namespace Ts3Fixes
                 }
             }
 
+            // docs/185 §5: the original Plan/Replan runs Route.AboutToPlanCallback only after the async job (it is called after
+            // AsyncWait), so the job planned without that plan's callback inputs (forbidden closed-venue / tomb / GoHere doors,
+            // ForceUseMainEntrance, RouteAsGhost, BeginAsCar/Boat, EnablePlanningAsCar), and EA's callback then clears the
+            // follower's LockedDoorsDuringPlan the job's door answers just filled. Switch "preplancb" (default off until its
+            // A/B): a plan about to send a START (own, owner-task or foreign) first runs the callback with the arguments the
+            // original passes (IL: "Plan" + destination point for Plan / PlanFromPoint, "Replan" / "ReplanFromPoint" +
+            // PlanResult.mDestination), skipped like the original when the destination object is gone; after the original
+            // returns, the job's door list is put back if the original's second callback emptied it. The second callback is
+            // kept: every known subscriber is idempotent per plan (options set, forbidden list cleared then refilled, ignore
+            // list adds; EA's own PlanToLotCore already calls it twice), and mods that add to the delegate keep running.
+            // Counters: [295] pre-calls made, [296] door lists restored.
+            bool PreCb(int kind, ref bool pre)
+            {
+                if (pre || !ShortcutOn("preplancb")) return true;
+                pre = true;
+                Sims3.SimIFace.Route.AboutToPlanDelegate cb = Sims3.SimIFace.Route.AboutToPlanCallback;
+                if (cb == null || DestObjectInvalid()) return true;
+                cb(this, PrePlanCbCore.Name(kind), kind == 0 || kind == 2 ? GetApproximateOriginalDestination() : PlanResult.mDestination);
+                PatchCounters()[295]++;
+                return true;
+            }
+
+            // the original's IsDestObjectInvalid (private; sets the same failed result the original sets right after)
+            bool DestObjectInvalid()
+            {
+                if (sDestInvalid == null)
+                    sDestInvalid = typeof(ScriptCore.Route).GetMethod("IsDestObjectInvalid", BindingFlags.Instance | BindingFlags.NonPublic);
+                return sDestInvalid != null && (bool)sDestInvalid.Invoke(this, null);
+            }
+            static MethodInfo sDestInvalid;
+
+            List<Door> LockedDoors()
+            {
+                IScriptProxy proxy = Follower;
+                Sims3.Gameplay.Actors.Sim sim = proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null;
+                return sim != null && sim.SimRoutingComponent != null ? sim.SimRoutingComponent.LockedDoorsDuringPlan : null;
+            }
+
+            void RestoreDoors(List<Door> doors)
+            {
+                if (doors != null && PrePlanCbCore.Restore(LockedDoors(), doors)) PatchCounters()[296]++;
+            }
+
             // A10 (docs/87 §5, ts3native [RouteAsync] Kinds): Replan (kind 1), PlanFromPoint (2) and ReplanFromPoint (3) the
             // same way. START is GetOption2 with bits 58 + 59 and the kind in bits 56-57; kinds 2-3 first send the point,
             // one component per call (bit 60, component in bits 56-57, float bits in the low dword). The game has no
@@ -237,8 +290,16 @@ namespace Ts3Fixes
             RoutePlanResult ReplanAsync()
             {
                 DoorMirror.SyncRoute(this, Vector3.Invalid);
-                if (!AsyncKindStart(1, Vector3.Origin)) return ReplanOrig();
-                try { AsyncWait(); return ReplanOrig(); }
+                bool pre = false;
+                if (!AsyncKindStart(1, Vector3.Origin, ref pre)) return ReplanOrig();
+                try
+                {
+                    AsyncWait();
+                    List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
+                    RoutePlanResult r = ReplanOrig();
+                    RestoreDoors(doors);
+                    return r;
+                }
                 finally { GetOption2(kAsyncCancel); }
             }
             public RoutePlanResult ReplanOrig() { return default(RoutePlanResult); }
@@ -253,8 +314,16 @@ namespace Ts3Fixes
             RoutePlanResult PlanFromPointAsync(Vector3 startPosition)
             {
                 DoorMirror.SyncRoute(this, startPosition);
-                if (!AsyncKindStart(2, startPosition)) return PlanFromPointOrig(startPosition);
-                try { AsyncWait(); return PlanFromPointOrig(startPosition); }
+                bool pre = false;
+                if (!AsyncKindStart(2, startPosition, ref pre)) return PlanFromPointOrig(startPosition);
+                try
+                {
+                    AsyncWait();
+                    List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
+                    RoutePlanResult r = PlanFromPointOrig(startPosition);
+                    RestoreDoors(doors);
+                    return r;
+                }
                 finally { GetOption2(kAsyncCancel); }
             }
             public RoutePlanResult PlanFromPointOrig(Vector3 startPosition) { return default(RoutePlanResult); }
@@ -269,13 +338,21 @@ namespace Ts3Fixes
             RoutePlanResult ReplanFromPointAsync(Vector3 fromPt)
             {
                 DoorMirror.SyncRoute(this, fromPt);
-                if (!AsyncKindStart(3, fromPt)) return ReplanFromPointOrig(fromPt);
-                try { AsyncWait(); return ReplanFromPointOrig(fromPt); }
+                bool pre = false;
+                if (!AsyncKindStart(3, fromPt, ref pre)) return ReplanFromPointOrig(fromPt);
+                try
+                {
+                    AsyncWait();
+                    List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
+                    RoutePlanResult r = ReplanFromPointOrig(fromPt);
+                    RestoreDoors(doors);
+                    return r;
+                }
                 finally { GetOption2(kAsyncCancel); }
             }
             public RoutePlanResult ReplanFromPointOrig(Vector3 fromPt) { return default(RoutePlanResult); }
 
-            bool AsyncKindStart(int kind, Vector3 p)
+            bool AsyncKindStart(int kind, Vector3 p, ref bool pre)
             {
                 IScriptProxy proxy = Follower;
                 // docs/176: not the route's own Sim task (a boat or car follower driven from its Sim's task, another Sim's or a
@@ -284,6 +361,7 @@ namespace Ts3Fixes
                 // Switch "asyncreplanforeign" (default on; ts3native decides). Counters: [246] foreign STARTs sent, [247] started.
                 bool own = AsyncEligible(proxy != null ? proxy.Target as Sims3.Gameplay.Actors.Sim : null, "asyncreplan");
                 if (!own && !(ShortcutOn("asyncreplan") && ShortcutOn("asyncreplanforeign") && ForeignEligible())) return false;
+                PreCb(kind, ref pre);
                 if (kind >= 2) { AsyncPoint(0, p.x); AsyncPoint(1, p.y); AsyncPoint(2, p.z); }
                 bool started = GetOption2((Sims3.SimIFace.Route.RouteOption2)((own ? kArStart : kArStart | kArForeign) | (ulong)kind << 56));
                 if (!own)
@@ -318,6 +396,8 @@ namespace Ts3Fixes
             }
             const int kStepAsideMaxMs = 10000;
             static readonly Sims3.SimIFace.Route.RouteOption2 kJobBusy = unchecked((Sims3.SimIFace.Route.RouteOption2)0x8500000000000000UL);
+            // docs/163 §10 PROBE mark (ts3native ScProbeMark): bits 63 + 58 + 57, no name; the game and older ts3native answer false
+            static readonly Sims3.SimIFace.Route.RouteOption2 kProbe = unchecked((Sims3.SimIFace.Route.RouteOption2)0x8600000000000000UL);
             void AsyncPoint(int i, float f)
             {
                 FloatBits b = default(FloatBits);

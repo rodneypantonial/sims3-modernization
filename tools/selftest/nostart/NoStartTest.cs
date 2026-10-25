@@ -53,6 +53,15 @@ static class NoStartTest
         Check(!NoStartCore.Within(500, 600, 500), "clock back");
         Check(NoStartCore.Within(int.MinValue + 100, int.MaxValue - 100, 500), "wrap");
 
+        // stuckcheckcap: outcome slots and the cut rule (a reset only after uncut searches)
+        Check(NoStartCore.StuckOutcome(0, 0, true) == 298, "no plan");
+        Check(NoStartCore.StuckOutcome(3, 1, true) == 299 && NoStartCore.StuckOutcome(1, 1, false) == 299, "not stuck");
+        Check(NoStartCore.StuckOutcome(10, 0, false) == 300, "re-arm");
+        Check(NoStartCore.StuckOutcome(10, 0, true) == 301, "reset");
+        Check(NoStartCore.StuckMayCut(1) && NoStartCore.StuckMayCut(2) && !NoStartCore.StuckMayCut(3) && !NoStartCore.StuckMayCut(4), "cut rounds");
+        // docs/163 §10.1 tag word (ts3native ScProbeMark reads the same bits; selftest.cpp checks 0x10204 / 0x10002)
+        Check(NoStartCore.StuckTag(4, false, true) == 0x10204UL && NoStartCore.StuckTag(2, true, false) == 0x10102UL && NoStartCore.StuckTag(0, false, false) == 0x10000UL, "stuck tag");
+
         if (fails > 0) { Console.WriteLine("nostart selftest FAILED: " + fails); Environment.Exit(1); }
         Console.WriteLine("nostart selftest ok");
     }

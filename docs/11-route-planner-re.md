@@ -173,7 +173,7 @@ Cache only results with status 7/8 (no path), never 5/6.
 
 **C# alternatives:**
 - A `Route.Plan` hook in `ScriptCore` through the F8 patch host can see who is routing (selectable, on-screen, townie). But the key would be built in the interpreter, and the stored `RoutePlanResult` lives in a private field.
-- `Sims3.SimIFace.Route.AboutToPlanCallback` / `PostPlanCallback` are public static delegates that nothing in the game sets [verified]. A script can observe every plan through them without a core mod. They cannot cancel a plan.
+- `Sims3.SimIFace.Route.AboutToPlanCallback` / `PostPlanCallback` are public static delegates. ~~Nothing in the game sets them~~ **Corrected (docs/93, docs/184, docs/185):** EA sets both (`SimRoutingComponent`, `CarRoutingComponent`, `TombRoomManager`, `BunkBedContainer`), and mods add to them (NRaas Overwatch; GoHere replaces EA's `PostPlanRouteCallback`) [verified]. A script can observe every plan through them without a core mod. They cannot cancel a plan, but `AboutToPlanCallback` sets route options and forbidden portals before the search (with `[RouteAsync]` it runs after the job: docs/185 §2).
 
 C# is the right place for **policy** (per-Sim backoff length, the unseen-townie budget flag). Native is the right place for the **cache**.
 

@@ -1,0 +1,46 @@
+{
+  "note": "Night 2026-10-24, list item 2: P6 widening correctness (docs/94 §24.6 step 1) on game-copy/ts3native.asi.p6 (0.36.41, counters v112; master source is 0.36.41), after its §22.30.4 prerequisites. G0 met: IP clone-run fault fixed in 0.36.2, ip-snap-p4-0362-1/-2 PASS 2026-10-20 (PLAN.md). G1 IP met: shadow-compare-report.ts on those two runs' shadow files = 10,696 Plan compares, M1/M2/M3 0, M4 320, M5 24 (read 2026-10-24). G1 BP open: the only BP Plan-compare run (10,075, M2/M3 0) was 0.35.24, before the IP fix; job 1 is that second BP run on the P6 build. A G1 FAIL (any M1-M3 in shadow-compare-report.ts) voids jobs 2-3. RouteSnap.Kinds=9 is required: TakeKinds is ANDed with Kinds (p5.cpp P5TakeMask() & g_p4Kinds; selftest 'TakeKinds 9 with Kinds 8 takes no Route.Plan'), and release-features.ts routesnap sets Kinds=8. OptsInit.Enabled=1 so verify M2s at open-ground goals are not the game's stack garbage (I-94-322). CrashForensics (2026-10-24, docs/157 §11.7): asi -> game-copy/ts3native.asi.p6f = ts3native 0.36.43 counters v114 (master 0.36.42 incl. P6 TakeKinds/ShareCuts and DeferPrivateFp, plus [CrashForensics]; branch worktree-agent-ae63bc454a51ea96d, out-crashfx), CrashForensics.Enabled=1 in every job (light ride-along: P5 heap-event ring, check-only guards at 0x5EE1E0 / 0x7B0A00, dump on a crash).",
+  "jobs": [
+    {
+      "id": "bp-p6-g1-compares",
+      "note": "G1 BP (§22.30.4 step 2): Mode=1 Route.Plan shadow compares (Kinds=1, ShadowEvery=1) until 10,000 compares or 20 min, snap-p4-long settings (LazyKeep, ReplaySigMs 250, LotsUnlocked), seed 12345, the same fixes off as snap-p4-long. Pass: no crash, no 'P4 FAULT' / 'fault applying record'; then node tools/harness/shadow-compare-report.ts <shadow.jsonl>: M1 + M2 + M3 = 0 over >= ~5,000 Plan compares.",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 114,
+      "logForbid": { "P4 FAULT": 0, "fault applying record": 0 },
+      "ini": { "CrashForensics.Enabled": 1, "RouteAsync.Enabled": 1, "RouteGate.Enabled": 1, "RouteGate.Sites": 1, "RouteGate.Enforce": 1, "RouteAsync.Mode": 1, "Discourage.Enabled": 1, "RouteSnap.Count": 1, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 1, "RouteSnap.AuditEvery": 4, "RouteSnap.Lots": "replay", "RouteSnap.ReplayAuditEvery": 4, "RouteSnap.Prebuild": 1, "RouteSnap.ShadowEvery": 1, "RouteSnap.Kinds": 1, "RouteSnap.ShadowWorld": "BP", "OptsInit.Enabled": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1 },
+      "run": { "profile": { "minutes": 20, "seed": 12345, "untilCompares": 10000, "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-p6-verify",
+      "note": "§24.6 step 1, BP: routesnap stack (release-features.ts routesnap) + RouteSnap.Kinds=9 TakeKinds=9 ShareCuts=1 VerifyEvery=1 VerifyLend=1 P6LogMs=20, forced repro route-queuefull-replan-loop (30+ own Go Here STARTs per firing; its arms flip fallbackasync, P6 stays on), 10 min. Pass (nativeRequire + logForbid): p6Armed_0, p6Taken_0, p6Borrowed_0 > 0; m2VerBad 0, p6BorrowVerBad 0, m2Off 0, m2Trips <= 2; no 'P4 FAULT' / 'fault applying record'. Read: p6BorrowMiss split, 'P6 job' lines (phase split), snPcCutUs and dT (§24.2) for step 2.",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": { "P4 FAULT": 0, "fault applying record": 0 },
+      "ini": { "CrashForensics.Enabled": 1, "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 9, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.TakeKinds": 9, "RouteSnap.ShareCuts": 1, "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.P6LogMs": 20, "RouteSnap.ShadowWorld": "BP", "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "route-queuefull-replan-loop" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    },
+    {
+      "id": "ip-p6-verify",
+      "note": "§24.6 step 1, IP: same settings and pass rule as bp-p6-verify on Baseline-IP-Spring (route-queuefull-replan-loop was written for BP: crowd_go far lot / home are world-agnostic, but p6Armed_0 0 here = the STARTs were not async or the loop did not fire on IP: read asyncStarted and the repro log before calling it a P6 fault).",
+      "asi": "game-copy/ts3native.asi.p6f",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 114,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2",
+      "logForbid": { "P4 FAULT": 0, "fault applying record": 0 },
+      "ini": { "CrashForensics.Enabled": 1, "RouteAsync.Kinds": 4, "RouteSnap.Enabled": 1, "RouteSnap.Mode": 2, "RouteSnap.Kinds": 9, "RouteSnap.Lots": "replay", "RouteSnap.Prebuild": 1, "RouteSnap.LazyKeep": 1, "RouteSnap.ReplaySigMs": 250, "RouteSnap.LotsUnlocked": 1, "RouteSnap.InsFreeInPlace": 1, "RouteSnap.RecsUnlocked": 1, "RouteSnap.ReleaseLock": 1, "RouteSnap.ReleaseGates": 1, "RouteSnap.FreeLock": 1, "RouteSnap.TakeKinds": 9, "RouteSnap.ShareCuts": 1, "RouteSnap.VerifyEvery": 1, "RouteSnap.VerifyLend": 1, "RouteSnap.P6LogMs": 20, "RouteSnap.ShadowWorld": "IP", "OptsInit.Enabled": 1, "HitchAttr.Enabled": 1, "RouteAsync.LogFallbackMs": 20 },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "repro": "route-queuefull-replan-loop" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "noiseCheck": false,
+      "timeoutMin": 25
+    }
+  ]
+}

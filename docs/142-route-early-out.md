@@ -169,3 +169,19 @@ asi `game-copy/ts3native.asi.0322` (0.36.22 merge build with H2, sha256 `ab2f6a7
 ### 9.5 Effort
 
 Build, tests and docs: ~3 h (agent, offline). Game: 1 day job (~10 min) + 6 night jobs (~1.5 h), then 2 clean runs before it ships on.
+
+## 10. Live result of the acting mode (queue `earlyout-ab`, 2026-10-22, 7 jobs; read 2026-10-24)
+
+Read from the ts3native logs of the 7 jobs (`probe-out/queue/earlyout-ab-2026-10-22-*-ts3native.log`, last `route early-out` dump of each run; asi `0322`, `Mode=2 Act=1`, `eoMode` toggled by `--ab earlyout` in the pairs) [measured]:
+
+| job | acted (car / memo) | shadows | `eoActDiff` | `eoWrong` | world A\* fails, ms | slow plans (>= 200 ms): ms, of which world A\* ms |
+|---|---|---|---|---|---|---|
+| bp-earlyout-verify (5 min) | 262 / 0 | 48 | 0 | 0 | 254 | 3: 9,119, A\* 0 |
+| bp routebits off-first | 84 / 0 | 36 | 0 | 0 | 121 | 2: 4,066, A\* 0 |
+| bp routebits on-first | 92 / 0 | 37 | 0 | 0 | 121 | 2: 3,807, A\* 0 |
+| sv crowd off / on-first | 0 / 0 | 2 / 1 | 0 | 0 | 2 / 1 | 4: 3,685, A\* 15 / 2: 498, A\* 12 |
+| ip play off / on-first | 0 / 0 | 4 / 4 | 0 | 0 | 4 / 4 | 13: 3,319, A\* 1,419 / 10: 2,306, A\* 513 |
+
+- **Correct:** 132 shadowed proofs, no difference; `eoWrong` 0 and no `act OFF` line in any job. I-227-6 holds live; I-227-7 has no counter-example (memo proofs never fired, so it is not exercised).
+- **Gain ~0:** `eoActSavedMs` 0 in every job. The BP 4,088 / 4,192 ms car-only plan made 237 / 252 world A\* calls that **all fail in 0 ms together**: the shadowed car floods average 1 node (36 nodes in 36 shadows), i.e. the start has no byte-3 street edge and the game's own search ends at once. The seconds are not in the world A\*; I-203-10 is refuted. In SV and IP the slow plans succeed or fail elsewhere (A\* 0-43% of the slow-plan time, none of it provable).
+- **Verdict:** the acting mode is exact but has nothing to cut. No new build (an "eo2" asi or a night A/B of this switch) is worth game time. The multi-second plans belong to docs/164's per-phase split (cell A\*, lot legs, candidate loops, goal step) and its wall-deadline design (§4 there); the per-candidate loop cost of the car-only plan is the candidate loop itself, not the flood. Keep `[RouteEarlyOut]` off (default).

@@ -88,10 +88,57 @@ namespace Ts3Fixes
         // number of RandomUtil draws differs (the game stops drawing at its first success). The world lot branch (4 plans
         // of 2 m) and any helper whose fields cannot be read run the game's body. Counters: [238] checks run here,
         // [239] plans, [240] checks where every point failed (re-arm or reset, as the game).
+        // Both bodies run marked as a stuck check, so Overwatch's StuckCheck V2 does not count their probe plans (owprobeplans,
+        // OverwatchProbe.cs).
+        // docs/163 §10: with stuckcheckown each probe plan is an own-task job that holds the routing lock (+0x918) for the whole
+        // search, and a failing probe floods the Sim's reachable area for seconds, so the sim thread's next steering query
+        // (0x85FE10, every walking Sim every tick) waits that long. Switch "stuckcheckcap" (default off, needs stuckcheckown and
+        // ts3native [RouteAsync] PlanDeadlineMs): in the rounds before the last (attempt < 3) each probe START first sends the
+        // PROBE mark, and ts3native cuts that job at PlanDeadlineMs as it cuts a foreign sync plan (failed result). A cut probe
+        // can only turn "not stuck" into a re-arm (one more round 20-60 sim-minutes later, ended by the game's own "moved"
+        // test), never into a reset: the last round, the only one that resets, plans uncut, so a reset still needs every point
+        // to fail a full search. Outcome counters per check (any switch): [298] no plan, [299] a probe succeeded, [300] all
+        // failed before the last round, [301] all failed in the last round; [297] marks ts3native accepted.
+        // shortcut: one check at a time (drain task, or the alarm when stuckcheckasync is off); a second check running beside
+        // a sleeping drain check would mix the outcome counts (never seen: both need the alarm path and the drain at once)
+        // §10.1: sStuckRound = mAttempt + 1 (0 = unknown), sent with every stuck-check START as the PROBE tag (RouteBackoff.cs
+        // OwnerTaskStart) so ts3native's own long-job and own-job wait lines name the round
+        static bool sStuckIn, sStuckCap, sStuckLast;
+        static int sStuckPlans, sStuckOk, sStuckRound;
+        static ObjectGuid sStuckRunTask = ObjectGuid.InvalidObjectGuid;
+
         static void StuckCheckRun(StuckCheckBusyHook helper, Sim sim)
         {
-            if (ShortcutOn("stuckchecknear") && StuckCheckNear(helper, sim)) return;
-            helper.RunOrig(sim);
+            ulong id, task;
+            OwProbeEnter(sim, out id, out task);
+            bool known = StuckNearReflect(helper.GetType());
+            uint attempt = known ? (uint)sStuckAttempt.GetValue(helper) : 0;
+            bool last = !known || !NoStartCore.StuckMayCut(attempt);
+            sStuckRound = known ? (int)attempt + 1 : 0;
+            sStuckLast = known && last;
+            sStuckPlans = sStuckOk = 0;
+            sStuckRunTask = Simulator.CurrentTask;
+            sStuckCap = !last && ShortcutOn("stuckcheckcap") && ShortcutOn("stuckcheckown");
+            sStuckIn = true;
+            try
+            {
+                if (ShortcutOn("stuckchecknear") && StuckCheckNear(helper, sim)) return;
+                helper.RunOrig(sim);
+            }
+            finally
+            {
+                sStuckIn = sStuckCap = false;
+                PatchCounters()[NoStartCore.StuckOutcome(sStuckPlans, sStuckOk, last)]++;
+                OwProbeExit(id, task);
+            }
+        }
+
+        // PlanHook: one plan's result while a check runs in this task
+        static void StuckCheckPlanned(bool ok)
+        {
+            if (!sStuckIn || Simulator.CurrentTask != sStuckRunTask) return;
+            sStuckPlans++;
+            if (ok) sStuckOk++;
         }
 
         static bool StuckCheckNear(object helper, Sim sim)

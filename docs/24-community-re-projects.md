@@ -52,6 +52,7 @@ License note: "none" means the repo has no license file. Then the default is all
   4. Their Frame Profiler is a second opinion on our `profile-world` numbers.
 - **Reuse:** MIT, so code can be copied with the notice. Note that `sigcheck.pl` and the Ghidra research tools are private (`game-versions.md`), and a PR (#17) mentions a private Ghidra analysis of Steam TS3W. [verified page; PR from snippet]
 - **Overlap:** high. It also detours the resource manager and allocator, so it may conflict with our ts3native hooks and S3SS: check overlapping bytes before running both (as docs/08 already says for S3MM).
+- **Compatibility map (2026-10-24, v2.15.3 = HEAD 2026-10-23):** docs/187 indexes every game address their feature code names (`docs/data/apex-hooks.csv`, 386 sites, 96% cited in their `docs/`), per switch what it defers/caches/reorders and on which thread, and where it meets ts3native; use their `docs/architecture.md` §4.6/§10 and `features/performance/*.md` as the field-level reference for their hooks. MIT; we cite, never copy code. [verified]
 
 ## 2. Sims3MonoModder (sims3fiend)
 
@@ -103,6 +104,7 @@ License note: "none" means the repo has no license file. Then the default is all
 
 - **URL:** https://github.com/Chain-Reaction/NRaas [verified]. No license file; last push 2026-07-29; 60 stars.
 - Already used in docs/03 §5.3 and docs/07. Nothing new, except that it is still maintained, so a question to the NRaas community (nraas.net forums) about Overwatch's stuck-Sim reset thresholds can still get an answer.
+- **Source clone (2026-10-24):** commit `2f57186` (2026-07-29) kept read-only and git-ignored under `game-copy/nraas-src`. **No license:** read and cite (repo path, class, method), never copy code into our repo; its `Sims3/` folder holds EA's script projects and ErrorTrap's modified `ScriptCore`: never read for docs, never copied or committed. Used for docs/184 (ErrorTrap fix catalog vs our findings, route plan contexts in NRaas mods, community-reported names for ledger claims, tooling ideas).
 
 ## 9. sims-3-bevy (Eamo5)
 
@@ -158,6 +160,23 @@ License note: "none" means the repo has no license file. Then the default is all
 | Sims 3 Performance Patch (Sonja92yu) | https://www.nexusmods.com/thesims3/mods/235 | Already in docs/01, 07, 20 | Nexus returned HTTP 403 to scripts today | No GitHub account found under that name [verified search] |
 
 Not found: a public Ghidra/IDA database or symbol map for TS3W.exe (same as docs/03 §8), a Simlogical/Pescado routing write-up, and any public Discord with a technical archive (searches returned only generic SEO pages) [snippet searches].
+
+---
+
+## EA terms and mod legal history (checked 2026-10-25, not legal advice)
+
+| Item | URL | What it says or what happened | Type |
+|---|---|---|---|
+| EA User Agreement §2 License | https://www.ea.com/legal/user-agreement | Personal, non-commercial, revocable licence; no copying, modifying, distributing or reverse engineering "unless expressly authorized by EA or permitted by law". No clause about "revival" games or server emulation [verified page text] | ToS clause |
+| EA User Agreement §7 | same | Tampering with anti-piracy measures ends the licence; "Unauthorized Third-Party Programs" (mods that bypass or modify the game in ways EA did not authorize) can lead to enforcement, aimed at cheating in online games [verified] | ToS clause |
+| The Sims 4 Policy on Mods | https://help.ea.com/en/articles/the-sims/the-sims-4/mods-policy/ | Mods allowed if free (time-limited early access, donations and ads on the creator's own site allowed); no EA/Maxis logos, Plumbob or key art; no implied endorsement; EA may act on mods that infringe, disrupt or break the User Agreement. No Sims 3 page found [verified] | Policy |
+| FreeSO / Simitone (The Sims Online, The Sims 1 engines) | https://simscommunity.info/2017/08/07/the-sims-1-for-mobile-fanmade-project-has-been-cancelled/ | 2017: EA contacted the team; they changed the logo, added disclaimers, took no donations; EA then asked them to stop the mobile port. The PC engine (loads the player's own game files) was allowed to continue [verified, team's statement] | Letter, no lawsuit |
+| Revive Network (Battlefield 2/2142/Heroes) | https://www.pcgamer.com/uk/ea-tells-battlefield-revive-team-to-stop-distributing-copies-of-our-game-clients | 2017: EA asked them to stop distributing copies of EA game clients and using EA trademarks/artwork; project closed [verified] | Letter, no lawsuit |
+| OpenSC2K (SimCity 2000 remake) | https://github.com/github/dmca/blob/master/2018/2018-07-25-EA-2.md | 2018 GitHub DMCA: the repo used SimCity 2000 art assets [verified notice] | DMCA |
+| The Sims 2 Ultimate Collection uploads | github/dmca 2025-02-10 notice (mirror seen, original path not confirmed) | 2025: repositories redistributing the full game files [snippet] | DMCA |
+| Command & Conquer source release | https://www.videogameschronicle.com/news/ea-says-it-will-release-the-command-conquer-source-code-in-a-key-moment-for-the-industry | 2025: EA published C&C engine source under GPLv3 and added Steam Workshop support; assets stay EA's [snippet] | EA support |
+
+Pattern [inferred from the cases above]: EA acted on redistribution of its game files or art, its trademarks and logos, ports to new platforms, and online service revivals; we found no lawsuit and no action against engine-hook or patch mods that ship no EA files (S3SS, Smooth Patch, NRaas, S3PP all public for years). Legal frame: US 17 U.S.C. 1201(f) (https://www.law.cornell.edu/uscode/text/17/1201) allows circumvention for interoperability only; EU Directive 2009/24/EC art. 5(1) (error correction by a lawful user) and art. 6 (decompilation for interoperability), with art. 8 voiding contract terms against art. 6 (https://eur-lex.europa.eu/eli/dir/2009/24/oj). US courts have enforced EULA reverse-engineering bans in some cases (Blizzard v. BnetD, server emulation, 2005).
 
 ---
 

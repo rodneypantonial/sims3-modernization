@@ -1,0 +1,59 @@
+{
+  "note": "G1 dump round 3 (docs/94 §24.12, ledger docs/51 §338): same job as night-1025-g1dump2 with ts3native 0.36.55 (game-copy/ts3native.asi.g1dump3 = master 0.36.53 + per-lot audit rebase / equal-again log lines (docs/94 §24.13.5) + P4LotAt takes the Q vector slot of level 0 (index -g+0x40, as RoomGraph_NodeFor 0x6320D0), else the first non-NULL slot, + a once-per-side P4 lot table log). night-1025-g1dump2: 57 of 57 lookups no lot, 26 of 82 lots with a slot-0 Q. Correctness run, not timing. Pass: no crash, no P4 FAULT / fault applying record. Read: P4 lot dump plan lines (lot found, entries, diffs) and P4 obst lines for the in-room pair; P4 lot table clone|live (key, base g+0x40, slots, non-NULL mask, raw +0x74/+0x78, byte +0x8C, translation, the start in each lot frame); join the replay audit MISMATCH lot keys with the table (base, mask). M2Box moved to plan 12979 (an M2 in all 11 runs with seed 12345, docs/94 §24.13): 294.0,1246.0,297.5,1250.0 (M2Box takes one box; the recurring 2337/5849 pair is still dumped when it is an M2). Audit repair: snap replay audit: lot X rebased at cut N / rebuilt by an epoch build / equal again at ring R lines after each MISMATCH.",
+  "jobs": [
+    {
+      "id": "bp-g1-m2dump3",
+      "note": "G1 BP compares as bp-p6-g1-compares (Mode=1, Kinds=1, ShadowEvery=1, LazyKeep, ReplaySigMs 250, LotsUnlocked, seed 12345, same fixes off) + M2LotDump=1, M2Box=294.0,1246.0,297.5,1250.0 (plan 12979) (start or goal in it: matched compares of the request are dumped too), M2LotDumpMax=64. Pass: no crash, no 'P4 FAULT' / 'fault applying record'; the dump armed ('route snapshot P4 M2 lot dump on'). Read: the M2 dump lines and the 'P4 lot lookup plan' why lines (0.36.51) and the P4 lot table lines (0.36.54).",
+      "asi": "game-copy/ts3native.asi.g1dump3",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 121,
+      "logRequire": {
+        "route snapshot P4 M2 lot dump on": 1
+      },
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0
+      },
+      "ini": {
+        "CrashForensics.Enabled": 1,
+        "RouteAsync.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "RouteAsync.Mode": 1,
+        "Discourage.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 1,
+        "RouteSnap.AuditEvery": 4,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.ReplayAuditEvery": 4,
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.ShadowEvery": 1,
+        "RouteSnap.Kinds": 1,
+        "RouteSnap.ShadowWorld": "BP",
+        "OptsInit.Enabled": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.ShadowObst": 1,
+        "RouteSnap.M2LotDump": 1,
+        "RouteSnap.M2LotDumpMax": 64,
+        "RouteSnap.M2Box": "294.0,1246.0,297.5,1250.0"
+      },
+      "run": {
+        "profile": {
+          "minutes": 20,
+          "seed": 12345,
+          "untilCompares": 10000,
+          "fixesOff": "gohome,rabbithole,visit,visitlot,gotolot,gotocommunity,virtualhome"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 45
+    }
+  ]
+}

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Sims3.Gameplay.Abstracts;
 using Sims3.Gameplay.Actors;
+using Sims3.Gameplay.Autonomy;
 using Sims3.Gameplay.CAS;
 using Sims3.Gameplay.Core;
 using Sims3.Gameplay.Interactions;
@@ -441,6 +442,20 @@ namespace Ts3Agent
                 if (far == null) throw new McpException("no community lot in this world");
                 return far;
             }
+            if (string.Equals(name, "farhome", StringComparison.OrdinalIgnoreCase))  // farthest other household's home from the active Sim
+            {
+                Sim me = Util.ActiveSim();
+                Lot best = null;
+                float bestD = -1f;
+                foreach (Lot l in LotManager.AllLots)
+                {
+                    if (l == null || l.IsWorldLot || l.IsCommunityLot || l.Household == null || l.Household == Household.ActiveHousehold) continue;
+                    float d = (l.GetCenterPosition() - me.Position).LengthSqr();
+                    if (d > bestD) { bestD = d; best = l; }
+                }
+                if (best == null) throw new McpException("no other household's home in this world");
+                return best;
+            }
             Lot partial = null;
             foreach (Lot l in LotManager.AllLots)
             {
@@ -452,15 +467,22 @@ namespace Ts3Agent
             return partial;
         }
 
-        // sim_visit_lot {sim, lot} (lot "home", "far" or a name): the game's own visit interaction (VisitCommunityLot for community lots, VisitLot for
-        // homes), autonomous priority like a townie's own choice; triggers the lot-visit shortcuts on demand.
+        // sim_visit_lot {sim, lot, how?: "visit"} (lot "home", "far", "farhome" or a name): the game's own visit interaction (VisitCommunityLot for community lots, VisitLot for
+        // homes), autonomous priority like a townie's own choice; triggers the lot-visit shortcuts on demand. how: "goto" = the plain
+        // lot trips GoToCommunityLot / GoToLot instead (shortcut switches gotocommunity / gotolot; visit / visitlot for "visit"). autonomous?: false = player-directed; on queued false, test + why say which Test gate refused.
         static object SimVisitLot(Args a)
         {
             Sim s = Util.FindSim(a, "sim");
             string ln = a.Str("lot");
             Lot lot = ln.StartsWith("lot:") ? FindLot(ln.Substring(4)) : FindLotByName(ln);  // "lot:<id>" = story fuzzer venue targets (docs/171 §7)
-            InteractionDefinition def = lot.IsCommunityLot ? VisitCommunityLot.Singleton : VisitLot.Singleton;
-            InteractionInstance i = def.CreateInstance(lot, s, new InteractionPriority(InteractionPriorityLevel.Autonomous), true, true);
+            bool go = string.Equals(a.Str("how", "visit"), "goto", StringComparison.OrdinalIgnoreCase);
+            InteractionDefinition def = go ? (lot.IsCommunityLot ? GoToCommunityLot.Singleton : GoToLot.Singleton)
+                : lot.IsCommunityLot ? VisitCommunityLot.Singleton : VisitLot.Singleton;
+            // autonomous: false = player-directed (UserDirected priority, isAutonomous false): skips Lot.CommonVisitTest's autonomous-only
+            // gates (visit frequency, LastVisitedSomeone < 1 day) and cancels the Sim's own queued autonomy, so a townie already visiting runs it now
+            bool auto = a.Bool("autonomous", true);
+            InteractionPriority pri = new InteractionPriority(auto ? InteractionPriorityLevel.Autonomous : InteractionPriorityLevel.UserDirected);
+            InteractionInstance i = def.CreateInstance(lot, s, pri, auto, true);
             Dictionary<string, object> r = Util.Obj();
             // vehicle: true reserves the own_vehicle object ("@vehicle"), as CarOwnable.VisitCommunityLot does before its visit
             if (a.Bool("vehicle", false))
@@ -470,7 +492,16 @@ namespace Ts3Agent
                 s.SetReservedVehicle(v);
                 r["vehicle"] = Util.ObjectName(v);
             }
-            r["queued"] = s.InteractionQueue.Add(i);
+            bool queued = s.InteractionQueue.Add(i);
+            r["queued"] = queued;
+            if (!queued) // why the definition's Test refused (InteractionQueue.InsertInteraction only returns false)
+            {
+                InteractionInstanceParameters ip = new InteractionInstanceParameters(new InteractionObjectPair(def, lot), s, pri, auto, true);
+                GreyedOutTooltipCallback cb = null;
+                try { r["test"] = def.Test(ref ip, ref cb).ToString(); if (cb != null) r["why"] = cb(); }
+                catch (ResetException) { throw; }
+                catch (Exception e) { r["test"] = "threw " + e.GetType().Name; }
+            }
             r["lot"] = lot.Name;
             r["interaction"] = def.GetType().DeclaringType != null ? def.GetType().DeclaringType.Name : def.GetType().Name;
             return r;
