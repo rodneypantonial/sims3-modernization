@@ -1,0 +1,230 @@
+{
+  "note": "Hotfix v0.1.6 gate, slim (Rodney 2026-10-25: essentials, ~1.3 h; correctness only; docs/188 §6, docs/release-notes/v0.1.6-dev.md): v0.1.5 + [UserDiag] = ts3native 0.36.37a + ts3fixes 0.1.6. Run from the hotfix worktree: node tools/harness/queue.ts tools/harness/queues/hotfix-016-gate.json. Apex Radiance case is outside this queue: tools/harness/apex-jobs/hotfix-016-save.json via apex-run.ts (command in the draft notes), right after this queue so the hotfix ts3fixes.package is still the installed one.",
+  "jobs": [
+    {
+      "id": "bp-hf-verify-userdiag",
+      "note": "Gate (a) userdiag verify (docs/188): one Bridgeport load, release ini, one agent save to UserDiag-Scratch (repro userdiag-save). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). Plus: header (diag: edition, Bin add-ons, Mods Packages count, header done), world lines (ts3fixes 0.1.6, world:, diag: world load #1), save trail (save: start, at start, > info, > write: pre-save listeners, > write: world save, > copy, end #1 result 0, folder size). Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "logRequire": {
+        "^diag: edition ": 1,
+        "^diag: Bin add-ons: ": 1,
+        "^diag: Mods.Packages \\d+ \\.package files": 1,
+        "^diag: header done in ": 1,
+        "^ts3fixes: ts3fixes 0\\.1\\.6 ": 1,
+        "^ts3fixes: world: ": 1,
+        "^diag: world load #1": 1,
+        "^save: start #1": 1,
+        "^save: at start route job ": 1,
+        "^save: > info \\(save paths\\)": 1,
+        "^save: > write: pre-save listeners": 1,
+        "^save: > write: world save": 1,
+        "^save: > copy \\(new save into place\\)": 1,
+        "^save: end #1 result 0 ": 1,
+        "^save: folder now ": 1,
+        "^save: result 0 ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "userdiag-save"
+        }
+      },
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-hf-matrix",
+      "note": "Gate (b) core save matrix in release mode (save-matrix.ts --fixes shipped --cases control,overwrite,back-to-back,unpaused,reload: save-as to new names, manual save over the same name with backup, two saves back to back, save while the game runs, save then reload). The save path changed (new [UserDiag] markers in the save hooks, call-site hooks 0xAAC2F3 / 0xAAC34A): save-change test matrix rule, every listed case PASS; CHANGELOG lists case count, cases and results. Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). The job's ts3native.log copy is the last game start's: read every matrix load's lines for save: end / FAIL by hand when a case fails. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "matrix": [
+          "--cases",
+          "control,overwrite,back-to-back,unpaused,reload"
+        ]
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "timeoutMin": 45
+    },
+    {
+      "id": "ip-hf-matrix",
+      "note": "Gate (b) core save matrix in release mode (save-matrix.ts --fixes shipped --cases control,overwrite,back-to-back,unpaused,reload: save-as to new names, manual save over the same name with backup, two saves back to back, save while the game runs, save then reload). The save path changed (new [UserDiag] markers in the save hooks, call-site hooks 0xAAC2F3 / 0xAAC34A): save-change test matrix rule, every listed case PASS; CHANGELOG lists case count, cases and results. Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). The job's ts3native.log copy is the last game start's: read every matrix load's lines for save: end / FAIL by hand when a case fails. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-IP-Spring",
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "matrix": [
+          "--cases",
+          "control,overwrite,back-to-back,unpaused,reload"
+        ]
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-hf-travel-france",
+      "note": "Gate (b) travel save: Bridgeport -> france -> home with saves at start, away and home (as release-validate bp-rel-travel-france). Pass: travel case PASS (left, arrived, saved, back home, save loads). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "matrix": [
+          "--travel",
+          "--cases",
+          "travel",
+          "--to",
+          "france"
+        ]
+      },
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-hf-saver-real",
+      "note": "Gate (b) NRaas Saver autosave: the real NRaas_Saver.package V22 installed for this job only (fixes.install nraas-saver), 2 real-minute timer, 30+ Sims routing, until 8 Saver saves (repro saver-real-autosave-crowd). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). Plus: every save_watch save < 120 s, save_watch saver_version 22. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1). Also the \"save with route jobs pending\" case (30+ Sims routing during every save).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "fixes": {
+        "install": [
+          "nraas-saver"
+        ]
+      },
+      "logRequire": {
+        "^save: end #8 result 0 ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 25,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "saver-real-autosave-crowd"
+        }
+      },
+      "timeoutMin": 40
+    },
+    {
+      "id": "ip-day13-hf-save",
+      "note": "Gate (b) large world, one save: save-matrix.ts --fixes shipped --cases unpaused (one save while the game runs) on Isla Paradiso 13 sim days in. The save path changed (new [UserDiag] markers in the save hooks, call-site hooks 0xAAC2F3 / 0xAAC34A): save-change test matrix rule, every case PASS; CHANGELOG lists case count, cases and results. Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). The job's ts3native.log copy is the last game start's: read every matrix load's lines for save: end / FAIL by hand when a case fails. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1). Large/aged world case: Isla Paradiso after 13 sim days.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-IP-day13",
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "matrix": [
+          "--cases",
+          "unpaused"
+        ]
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-hf-smoke",
+      "note": "Gate (c) smoke: 6 min play with camera pans, release ini + measurement logging (as v0.1.5 ip-rc-smoke-v015pkg). Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). Plus: asyncStarted > 0, header and world lines present. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-IP-Spring",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "logRequire": {
+        "^diag: edition ": 1,
+        "^diag: Bin add-ons: ": 1,
+        "^diag: Mods.Packages \\d+ \\.package files": 1,
+        "^diag: header done in ": 1,
+        "^ts3fixes: ts3fixes 0\\.1\\.6 ": 1,
+        "^ts3fixes: world: ": 1,
+        "^diag: world load #1": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 6,
+          "cameraPan": true
+        }
+      },
+      "timeoutMin": 20
+    }
+  ]
+}

@@ -110,7 +110,6 @@ License note: "none" means the repo has no license file. Then the default is all
 - **What it is:** a standalone Rust/Bevy reimplementation that reads an installed copy of the game. A baker converts all worlds (base, EPs, WA destinations) to a GPU-ready cache: terrain paint and shadow maps, roads, water, placed objects, SpeedTree billboards. [verified README]
 - **How it helps:** its decoders are a second, independent reading of world and terrain formats. Use it to check our parsers and as a reference for which resources a world load touches (docs/19 travel worlds). Not a source of engine behaviour (it re-implements gameplay).
 - **Reuse:** reference only (no license).
-- **Update 2026-10-24** [verified repo tree + files]: 732 commits in 16 days (commit messages credit an AI), 291 files, still no license. Most useful for us: `docs/formats/world.md` (`.world` resources with VERIFIED / WIKI / GUESS marks: roads `0x9063660E` laid out and verified on Sunset Valley, world routing graph `0x05CD4BB3` from the wiki, lot location + routing `0x046A7235`, WBND `0x05DA8AF6`, heightmap `0x2AD195F2`), `crates/s3formats/src/lot.rs` and `lotdesign.rs` (lot files: walls, floors, footprints; a second opinion for P5 lot-data checks), `docs/formats/gameplay.md` (tuning tables, careers, wishes, recipes, socials: story fuzzer content), `objects_rslt.md`, `sims.md`, `models.md`. Its pathfinding (`crates/game/src/nav.rs`) is its own grid search, not EA's planner: no help for the routing internals we patch.
 
 ## 10. SimsWiki and MTS wiki technical pages
 
@@ -123,20 +122,6 @@ License note: "none" means the repo has no license file. Then the default is all
 - **License:** wiki content; cite, do not copy pages.
 
 ---
-
-## Added 2026-10-24 (web and GitHub search)
-
-| Project / resource | URL | What | Activity / license | Use for us |
-|---|---|---|---|---|
-| OpenTS3 status update | https://opents3.com/ , Discord https://discord.gg/CCMmUbRtYb | Engine mod, now Vulkan + .NET 10; runs EA's C# gameplay DLLs and replaces TS3W.exe, so its route planner is new code; its roadmap lists "path queries, route splitting, obstacle handling and crowded town routes" as incomplete | private pre-alpha, source private (open source promised), no release date [verified site] | No code; ask on Discord how the routing graph was decoded; its script speed comes from modern .NET instead of Mono 1.2 (compare with our Mono plan) |
-| Sims3-MCP (Critical-Reynolds) | https://github.com/Critical-Reynolds/Sims3-MCP | MCP server + script mod that lets an AI play the game through a shared-memory mailbox (patch 1.67 / 1.69) | created 2026-10-07 [verified] | Same idea as our ts3agent mailbox; compare handlers if we extend ours |
-| RadioLeveler (thesammy58) | https://github.com/thesammy58/RadioLeveler | ASI mod: per-song loudness leveling for the radio; README says research, RE and code were produced with Claude | created 2026-10-20 [verified] | Small AI-built ASI example |
-| sims3-legacy-content-repair (murlock1000) | https://github.com/murlock1000/sims3-legacy-content-repair | Repairs old Store `.sims3pack` headers so legacy content installs again; documented evidence + synthetic tests | created 2026-10-17 [verified] | Sims3Pack header handling (next to our `tools/install-lot.ts`) |
-| Android / Switch / DS ports | github Lucaslllll/the-sims-ambitions, OlhaGatito/The-Sims-3-Android-port, barbaruiva25/TS3NX, luispolis124/OpenTS3-DS | Ports of other editions (mobile, Xbox 360 recompiled for Switch, DS decompilation) | 2026-09/10 | Not the PC game; ignore |
-| Game's own Sims3Pack installer | `.sims3pack` file association on a Steam install: `"...\Game\Bin\Sims3Launcher.exe" -file:"%1"` | EA's single-file install path (double-click) | [verified registry on this machine] | Launcher-free lot install candidate (untested); fallback `tools/install-lot.ts` (docs/181 §6) |
-| Delphy's Sims3Pack Multi Installer, S3P Extractor | MTS / community | Unpack Sims3Packs into `.package` files for Mods; lots come out as loose packages, not installed lots | community tools [reported] | CC only, not a lot installer |
-| ModTheSims lots for story runs | https://modthesims.info/d/354795/large-house-for-8-sims.html (in `Story-BP-Mansion`), https://modthesims.info/d/560390/ (Breezy Getaway: sloped lot, placement height problems) | CC-free furnished family homes | MTS uploads [verified pages] | Story run saves (docs/181) |
-| Lot install threads | https://forums.ea.com/discussions/the-sims-3-en/changing-sims3packs-to-packages/369285 , https://modthesims.info/t/498648 | Lots need the launcher; worlds can go into `Worlds` as `.world` | forum [reported] | Background for `tools/install-lot.ts` |
 
 ## Other projects found (lower value)
 

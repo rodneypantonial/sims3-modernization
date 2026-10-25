@@ -69,11 +69,9 @@ if (values.restart) {
     .map(n => { const st = statSync(join(dir, n)); return st.isFile() ? `${n}:${st.size}:${st.mtimeMs}` : ''; });
   const stamp = createHash('sha256').update(listing(join(ROOT, 'mods', 'ts3agent', 'src')).join('|'))
     .update(listing(join(ROOT, 'mods', 'ts3fixes', 'src')).join('|'))
-    .update(listing(join(USER_DIR, 'Mods')).filter(n => !/^Packages[\\/](ts3agent|ts3-nointro|ts3fixes)\.package/.test(n)).join('|'))
-    // the tuning XML (release defaults) lives in build-fixes.ts, not in mods/ts3fixes/src: on 2026-10-24 the whole v0.1.5
-    // release check ran with an old package because only build-fixes.ts had changed
-    .update(readFileSync(join(ROOT, 'tools', 'setup', 'build-fixes.ts'))).digest('hex');
-  // and the installed packages must be the built ones (never keep a stale copy): compare bytes, not only the stamp
+    .update(listing(join(USER_DIR, 'Mods')).filter(n => !/^Packages[\\/](ts3agent|ts3-nointro|ts3fixes)\.package/.test(n)).join('|')).digest('hex');
+  // installed packages must be this checkout's built ones, byte for byte (master's fix after the v0.1.5 release check ran an
+  // old ts3fixes.package; needed here because master and this hotfix worktree take turns installing their own build/)
   const same = (n: string) => existsSync(join(pkgs, n)) && readFileSync(join(pkgs, n)).equals(readFileSync(join(ROOT, 'build', n)));
   const unchanged = existsSync(stampFile) && readFileSync(stampFile, 'utf8') === stamp && same('ts3agent.package') && same('ts3fixes.package');
   if (!unchanged) {

@@ -204,9 +204,12 @@ static void DiscDrain(bool force) {
     InterlockedIncrement(&g_rgOffSimOpen);  // the worker starts no job until the drain is done
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
-    WaitAsyncDone(SW_DISC);
+    UdWait("the running route job (deferred footprints)");  // [UserDiag]: no-op unless this thread is saving
+    WaitAsyncDone();
     static const DWORD kInfinite = 0xFFFFFFFF;
+    UdWait("+0x918 (deferred footprints)");
     if (lock) LockAcquireHook(lock, NULL, &kInfinite);  // uncontended: no job runs and none can start
+    UdWait(NULL);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&k.discDrainWaitUs, waited);
     HaNote(0x06000000, waited, HA_JOB);

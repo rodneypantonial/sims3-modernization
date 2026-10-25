@@ -54,7 +54,7 @@ type Persona = Bias & { id: string; household?: { ages?: string[] } };
 export type Content = { templates: Template[]; personas: Persona[]; categories: Record<string, number>; worlds: Record<string, Bias> };
 // drive: household (default, docs/179 R-HH-4: a player orders only the active household; townies fill only roles that never
 // act) | world (stress: seeded townies are driven too, spawned when short; the pre-2026-10-23 behaviour)
-export type StoryConfig = { householdLot?: string; seed?: number; stories?: number; minutes?: number; driven?: [number, number]; parallel?: number; gapS?: [number, number]; cameraP?: number; modeP?: number; maxPrepares?: number; maxSpawns?: number; only?: string[]; categories?: Record<string, number>; persona?: string; content?: string; replay?: string; from?: number; to?: number; censusOnly?: boolean; days?: boolean | DaysConfig; travel?: boolean; realism?: string[]; drive?: 'household' | 'world'; household?: string; householdFunds?: number; personaOf?: Record<string, string> };
+export type StoryConfig = { seed?: number; stories?: number; minutes?: number; driven?: [number, number]; parallel?: number; gapS?: [number, number]; cameraP?: number; modeP?: number; maxPrepares?: number; maxSpawns?: number; only?: string[]; categories?: Record<string, number>; persona?: string; content?: string; replay?: string; from?: number; to?: number; censusOnly?: boolean; days?: boolean | DaysConfig; travel?: boolean; realism?: string[]; drive?: 'household' | 'world'; household?: string; householdFunds?: number; personaOf?: Record<string, string> };
 // the role a step orders (its actor, or $actor.<role> as the sim argument)
 export const actorOf = (s: TStep) => s.actor ?? /^\$actor\.([A-Za-z0-9_-]+)$/.exec(String(s.args?.sim ?? ''))?.[1];
 
@@ -650,7 +650,6 @@ export const parseConfig = (spec: string): StoryConfig => {
   // household: save (default) plays the save's active household; generated | <id> = a docs/181 household made in CAS first
   if (c.household !== undefined && (typeof c.household !== 'string' || !c.household)) throw new Error('story config: household must be save, generated or a stories/households id');
   // householdFunds: the familyfunds cheat on the generated household (docs/181 §3.1): only with a generated household and realism cheat
-  if (c.householdLot !== undefined && (!/^\d+$/.test(String(c.householdLot)) || !c.household || c.household === 'save')) throw new Error('story config: householdLot must be a lot id (list_lots) with a generated household');
   if (c.householdFunds !== undefined) {
     if (!(Number.isInteger(c.householdFunds) && c.householdFunds > 0)) throw new Error('story config: householdFunds must be an integer > 0');
     if (!c.household || c.household === 'save') throw new Error('story config: householdFunds needs household generated or a stories/households id');
@@ -683,7 +682,7 @@ export function loadStory(spec: string, o: { seed?: string; envFree?: boolean })
         if (replayLines) await replayStories(sio, cfg as any, replayLines);
         else {
           // throws "household creation failed: ..." (never the save's household silently): rethrown below, the job stops
-          if (cfg.household && cfg.household !== 'save') cfg.personaOf = await createHousehold(sio, cfg.household, cfg.seed!, cfg.householdFunds, cfg.householdLot);
+          if (cfg.household && cfg.household !== 'save') cfg.personaOf = await createHousehold(sio, cfg.household, cfg.seed!, cfg.householdFunds);
           await runStories(sio, cfg, content!);
         }
       } catch (x: any) {

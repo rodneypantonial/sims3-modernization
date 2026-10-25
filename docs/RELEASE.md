@@ -70,10 +70,6 @@ After `release-features.ts <ids> --write`, the build and the asi copy:
 
 Estimate for the suggested v0.1.5 set (slotenabledro, unseenthrottle, stuckcheckasync, errortrapspread): 41 jobs, ~6.7 h, of which a-d + f ~2.9 h and e ~3.8 h (routegate.cpp and savewrite.cpp changed since v0.1.4, so the route and save rare jobs come back). A release with unchanged shipped code: a + b + f ~1.5 h plus c + d for its new features.
 
-## Release wrap-up in parallel (Rodney 2026-10-24)
-
-Once the last test of the release check is green: compute the numbers once (hitch tables per run, soak, test table), then write in parallel (agents for the README table and the test/dev-notes tables, the main session for the player notes and the public-copy prep), then one read-through for plain wording and matching numbers before the commit. Never start this while a timing run is still going (the number crunching adds load); text-only work may start earlier. Release ETAs count the wrap-up at its parallel length (~20 min after the last green test: ~5 min numbers, ~10 min parallel writing, ~5 min read-through), not the serial sum.
-
 ## Before publishing (Rodney OKs each)
 
 1. **Validation queue passed** on a clean night: `node tools/harness/queue.ts tools/harness/queues/release-validate.json` (33 jobs, ~18 h of timeouts, about 10-12 h real; split with `--only`). Before it: copy `native/ts3native/out/ts3native.asi` to `game-copy/ts3native.asi.rel0360` (check the sha256 above), run from a checkout with the release ini merged (the queue writes `Bin/ts3native.ini` = repo ini; no job overrides it), install the release `ts3fixes.package`. Pass rules are in each job's note: 0 crashes, 0 watchdog lines, `ts3native 0.36.0` in the log, `asyncStarted > 0`, stuck Sims within docs/TESTING.md, every save matrix case PASS, travel cases PASS, rare repros ran with their Sims routing.
@@ -86,11 +82,5 @@ Once the last test of the release check is green: compute the numbers once (hitc
 ## Publishing (after the OKs; never from the private repo)
 
 Via the scrubbed public copy only (Rodney): sync the tree into a clone of the public repo with `<user>` -> `<user>` and the machine name -> `<pc>` replaced, run `node tools/check-docs-code.ts`, open a PR, squash-merge, tag `v0.1.4`. The tag's CI run builds ts3native, checks the stable list and PLAYERS.md, and drafts the release from the CHANGELOG section; attach `ts3fixes.package` to the draft by hand (CI cannot build it: EA assemblies), then publish the draft. Never push local `master` to the public repo.
-
-**Scripted:** `tools/publish-public.ts` runs these steps. Dry run by default (prints every step, does the clone, scrub, `check-docs-code`, secret scan and commit in a temp clone, stops before the push); `--yes` pushes, opens the PR, watches checks and squash-merges with `--admin`. With `GH_TOKEN="$PERSONAL_GITHUB_TOKEN"` set:
-- `node tools/publish-public.ts sync --message-file msg.txt [--yes]`: public sync up to the merged PR.
-- `node tools/publish-public.ts release v0.1.6 --native-version 0.36.40 --message-file msg.txt --ini <tested ts3native.ini> --package build/ts3fixes.package [--yes]`: sync, then tag the merge commit, watch the tag's build.yml run, check the draft's zip (asi `ts3native X.Y.Z`, ini sha256 = tested ini, enabled sections), check the package tuning (four shortcuts True, `tools/release-features.ts` tunables), attach it and publish the draft as latest.
-- `node tools/publish-public.ts --self-check`: offline checks plus a full `sync` dry run against a local bare repo.
-The manual steps above stay as the fallback.
 
 From v0.1.5 also on ModTheSims, right after the GitHub release and with the same three files: `release/mts/CHECKLIST.md`.

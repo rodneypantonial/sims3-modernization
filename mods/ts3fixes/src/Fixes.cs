@@ -66,9 +66,7 @@ namespace Ts3Fixes
             ApplyReplanDefer();
             ApplyUnseenThrottle();
             ApplyEaSpread();
-            ApplySeasonMarkerCache();
             ApplyRouteSources();
-            ApplyDisposeSpread();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -111,21 +109,13 @@ namespace Ts3Fixes
         // most ticks for one alarm / alarms left to the game (busy), decay passes / Sims queued / pairs stepped / pairs dropped /
         // ticks / longest tick us / passes finished early / decay steps that threw, [197-200] unseen traffic cars: LiteDriver spot asks / unseen car + spot / turned down (stays parked) / seen (UnseenThrottle.cs, docs/143 §8.5), [201-206] reserved, [207] extra pet pool alarm fires dropped (second chain), [208] most decay pairs stepped in one tick, [209] most venue-cleanup units (objects tested, cleaned or repaired, per-lot steps) in one tick, [210] most Overwatch inventory items checked in one tick (OverwatchSpread.cs), [211-212] ErrorTrap inventory check: largest inventory checked whole (items), most items checked in one tick (ErrorTrapSpread.cs), [213-222] other branches (registry), [223] longest Overwatch cleanup type run whole at its slot (us), [224] Overwatch types that took >= 50 ms at their slot (OverwatchSpread.cs), [225-227] unseen motive catch-ups: most in one sim tick, held a tick by the per-tick cap, longest catch-up call (us) (UnseenThrottle.cs, docs/144 §8), [228-237] route sources and redundant-plan cuts (RouteSources.cs, docs/151 §6): plans classified / classifier us / V3 leg-end replans D1 could skip / V4 houseboat leg plans / V5 bouncer at its slot / V7 watchdog checks a successful plan answered / D1 replans skipped / D3 bouncer routes skipped / D5 checks skipped by the memo / D5 Sims left by the cap; per-bucket data in AppDomain ts3fixes.routesrc (int[64]),
         // [238-243] docs/163 sync-plan callers: stuckchecknear checks run / plans / checks where every point failed (FewerPlans.cs), failrepeat failures recorded / repeats answered / ms of the recorded plans those repeats skipped (RouteBackoff.cs).
-        // [251-254] docs/163 §7 owner-task own STARTs: drivertaskasync traffic car / ridden vehicle STARTs sent, stuckcheckown STARTs sent, of those started by ts3native (RouteBackoff.cs).
         // [244-245] overwatchchain: Overwatch alarms run as a chain / ticks yielded between types (OverwatchSpread.cs, docs/145 §10).
-        // [255-259] overwatchstuckslice: ticks taken in the Stuck Check's Sim walk / Sims walked / longest stretch without a tick (us) /
-        // Stuck Check runs / stretch time summed (ms) (OverwatchStuck.cs, docs/145 §12; measured with the switch off too).
-        // [270-275] seasonmarkercache (SeasonMarkerCache.cs, docs/74 §11 (a)): answers from the list / marker queries passed (not eligible) / verify checks / verify mismatches / seeds / markers in the list;
-        // [276-278] safespotyield (SafeSpot, docs/74 §11 (b)): yields after a FindGoodLocation / placements given up after a yield (Sim seen or gone) / searches not yielded (no yield context or not the Sim's own task); [279] spare.
-        // [280-289] disposespread (DisposeSpread.cs, docs/74 §12): destroys queued / destroyed by our task / destroyed at once by a flush
-        // (save, travel, build/buy) / game path taken (unsafe or not live) / most waiting / longest slice us / already destroyed at
-        // their turn / queue full (game path) / dropped (world unload, Destroy threw) / longest wait in ticks.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[290]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[248]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -201,13 +191,6 @@ namespace Ts3Fixes
                 case "idlememo": return Instantiator.kIdlePlanMemo;
                 case "stuckchecknear": return Instantiator.kStuckCheckNear;
                 case "failrepeat": return Instantiator.kFailRepeat;
-                case "jobyield": return Instantiator.kJobYield;
-                case "drivertaskasync": return Instantiator.kDriverTaskAsync;
-                case "stuckcheckown": return Instantiator.kStuckCheckOwn;
-                case "overwatchstuckslice": return Instantiator.kOverwatchStuckSlice;
-                case "seasonmarkercache": return Instantiator.kSeasonMarkerCache;
-                case "safespotyield": return Instantiator.kSafeSpotYield;
-                case "disposespread": return Instantiator.kDisposeSpread;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -367,9 +350,7 @@ namespace Ts3Fixes
                     verify = true; // 1 in 8: also search, return the game's answer, count a different spot
                 }
                 c[91]++;
-                bool found = GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd);
-                if (ShortcutOn("safespotyield") && !SafeSpotYield(sim, near)) break;
-                if (!found) continue;
+                if (!GlobalFunctions.FindGoodLocation(sim, new World.FindGoodLocationParams(start), out pos, out fwd)) continue;
                 if (verify && (pos - start).Length() > 0.5f) c[92]++;
                 if (LotManager.GetLotAtPoint(pos) != lot || SpotVerdict(sim, lot, v, prof, pos, fresh, false, true) != true) continue;
                 if (reuse && prof.Ok && v.Fwds.Count < 64) v.Fwds[KeyOf(prof, pos)] = fwd;
@@ -378,20 +359,6 @@ namespace Ts3Fixes
             }
             pos = fwd = Sims3.SimIFace.Vector3.Invalid;
             return false;
-        }
-
-        // safespotyield (docs/74 §11 (b)): one native placement search per sim tick instead of up to 5 in one run. Yields
-        // only in the Sim's own task (both hook callers, RabbitHoleHook.EnterHook and GoHomeHook.Run, and the lot trips run
-        // in its interaction) and where a Sleep is safe (MayYield, RouteBackoff.cs). The Sim has not moved yet, so the yield
-        // changes no outcome; after it the Sim must still be there and unseen, else false = the caller runs the game's trip.
-        static bool SafeSpotYield(Sims3.Gameplay.Actors.Sim sim, Sims3.SimIFace.Vector3 near)
-        {
-            int[] c = PatchCounters();
-            if (Simulator.CurrentTask != sim.ObjectId || !MayYield()) { c[278]++; return true; }
-            c[276]++;
-            Simulator.Sleep(0);
-            if (sim.HasBeenDestroyed || !TownieUnseen(sim, null) || !FarFromViewers(near)) { c[277]++; return false; }
-            return true;
         }
 
         // Verdicts of the game's Sim.IsPointInLotSafelyRoutable for one lot (SafeSpot and the stuck watchdog). The check

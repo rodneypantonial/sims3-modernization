@@ -647,7 +647,7 @@ static void __fastcall TpPassChecked(void* self, void* edx, float dt) {
 }
 static void TestH2Threaded() {
     static_assert(offsetof(Ts3nCounters, h2Released) == 0x364C && offsetof(Ts3nCounters, h2PassLockN) == 0x3650 &&
-                  offsetof(Ts3nCounters, h2PassLockUs) == 0x3658 && offsetof(Ts3nCounters, h2ReleaseMaxUs) == 0x3660 && sizeof(Ts3nCounters) == 4559 * 4, "v85 layout after v84 (docs/registry.md)");
+                  offsetof(Ts3nCounters, h2PassLockUs) == 0x3658 && offsetof(Ts3nCounters, h2ReleaseMaxUs) == 0x3660 && sizeof(Ts3nCounters) == 4467 * 4, "v85 layout after v84 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const LONG wd0 = k.watchdogs;
     QueryPerformanceFrequency(&g_qpf);
@@ -749,7 +749,6 @@ static u8* __cdecl ArFakePt3D(u8* out, DWORD h, float x, float y, float z) { g_a
 
 #include "h2ic-test.h"  // TestH2Ic (docs/177 §4, H2 IC window)
 #include "rcguard-test.h"  // TestRcGuard (docs/177 §7, refcount guard)
-#include "jobyield-test.h"  // TestJobYield (docs/183, JOBBUSY step-aside + sim job waits by site)
 static void TestA10() {
     static_assert(offsetof(Ts3nCounters, arReady) == 0x14A4 && offsetof(Ts3nCounters, arMode) == 0x14A8 &&
                   offsetof(Ts3nCounters, arStarted) == 0x14AC && offsetof(Ts3nCounters, arCollected) == 0x14B8 &&
@@ -1259,7 +1258,7 @@ static void TestFallback() {
     // 4c. docs/134 §11: the job cap is a deadline from the job's start, read every 4th cost call of either kind
     {
         static_assert(offsetof(Ts3nCounters, fbjcCapAtMaxUs) == 0x3604 && offsetof(Ts3nCounters, fbjcWaitHist) == 0x3634 &&
-                          sizeof(Ts3nCounters) == 4559 * 4, "counters v84 layout after v83 (docs/registry.md)");
+                          sizeof(Ts3nCounters) == 4467 * 4, "counters v84 layout after v83 (docs/registry.md)");
         const PlanLockedFn planSave = g_planOrig;
         const LONG readySave = k.budgetReady;
         g_planOrig = FbSlowSearch;
@@ -1578,7 +1577,6 @@ static void TestRouteAsync() {
     TestH2Threaded();  // docs/149: threaded passes on the real lock
     TestH2Ic();        // docs/177 §4: the same hold around the listed script ICs
     TestRcGuard();     // docs/177 §7: the sim keeps the query's +0x918 level until its caller returns
-    TestJobYield();    // docs/183: JOBBUSY + sim job waits by site
     ts3native_counters.rgEnforce = 0;
     ts3native_counters.rgOwnerTid = 0;
     ts3native_counters.rgAcquires = 0;  // the worker took m1Lock as the learned lock
@@ -1591,7 +1589,6 @@ static void TestRouteAsync() {
 static wchar_t g_sv[MAX_PATH];         // <tmp>\User
 static const wchar_t* g_svName;        // name the fake game passes to the backup step
 static bool g_svTouch, g_svReachBackup;
-static int g_svWritePath;  // 0 = through SaveWriteHook (0xAB12AF ours), 1 = Apex owns the call + gate entry, 2 = no gate either
 static int g_svOrigBackups;
 static DWORD __fastcall FakeInfo(void*, void*, u8*, int, int) { return 0; }
 static DWORD __fastcall FakeWrite(void*, void*, void*, int) {
@@ -1619,12 +1616,7 @@ static DWORD __fastcall FakeFinal(void*, void*) { SvFlush(); return 1; }
 static DWORD __fastcall FakeLoadCopy(void*, void*, const wchar_t*, int) { g_svLoadCopies++; return 1; }
 static DWORD __fastcall FakeGame(void*, void*, void* info, int travel, int) {  // FUN_00AB1030's order of steps
     if (SaveInfoHook(NULL, NULL, (u8*)info, 0, travel)) return 2;
-    if (!g_svWritePath) SaveWriteHook(NULL, NULL, NULL, 1);
-    else {  // docs/148 §7a: the game's call; the [RouteGate] stub at 0xAAC110 reports the entry
-        Sleep(10);  // Apex's preparation before its call: in the info span, not in the gate span
-        if (g_svWritePath == 1) SaveGateEnter(GetCurrentThreadId());
-        g_saveWriteOrig(NULL, NULL, NULL, 1);
-    }
+    SaveWriteHook(NULL, NULL, NULL, 1);
     if (!travel && g_svReachBackup && SaveBackupHook(NULL, NULL, g_svName)) SaveCopyHook(NULL, NULL, g_svName, 0);
     SaveFinalHook(info, NULL);
     return 0;
@@ -1730,29 +1722,6 @@ static void TestSaveWrite() {
     DeleteFileW(p);
     SaveGameHook(NULL, NULL, info, 0, 0);
     assert(c.saveJobs == 5 && g_svOrigBackups == 4 && c.saveCount == 8);
-
-    // 7. write timing without the 0xAB12AF hook (Apex owns it): gate span, else info span, else not measured.
-    char b[48];
-    assert(g_st.writeHow == SW_CALL && strstr(SaveWriteText(b, sizeof(b), g_st), " (call)"));
-    SvReset(); g_svWritePath = 1;
-    SaveGameHook(NULL, NULL, info, 0, 0);
-    assert(g_st.writeHow == SW_GATE && g_st.gateIn >= 0 && g_st.write >= 20000 && g_st.write < g_st.spanEnd - g_st.infoEnd);
-    assert(c.saveLastWriteUs == g_st.write && SaveWriteText(b, sizeof(b), g_st)[0] == '~' && strstr(b, " (gate span)"));
-    SvReset(); g_svWritePath = 2;
-    SaveGameHook(NULL, NULL, info, 0, 0);
-    assert(g_st.writeHow == SW_INFO && g_st.gateIn < 0 && g_st.write >= 30000 && strstr(SaveWriteText(b, sizeof(b), g_st), " (info span)"));
-    SaveGateEnter(GetCurrentThreadId());  // outside a save: ignored
-    assert(g_st.gateIn < 0 && !g_saveTid);
-    g_svReachBackup = false;  // fails before the next step: the final hook still ends the span
-    SvReset();
-    SaveGameHook(NULL, NULL, info, 0, 0);
-    assert(g_st.writeHow == SW_INFO && g_st.backup < 0 && g_st.copy < 0 && g_st.final >= 0);
-    assert(!strcmp(SavePhaseText(b, sizeof(b), g_st.backup), "not measured") && !strcmp(SavePhaseText(b, sizeof(b), 0), "0"));
-    SaveTimes t = {};
-    t.write = t.gateIn = t.spanEnd = t.infoEnd = -1;  // nothing reached after the info step
-    SaveWriteResolve(t);
-    assert(t.writeHow == SW_NONE && !strcmp(SaveWriteText(b, sizeof(b), t), "not measured"));
-    g_svReachBackup = true; g_svWritePath = 0;
     assert(RemoveTree(g_sv));
 }
 
@@ -3682,7 +3651,7 @@ static void TestRouteSites() {
     reset();
     // gate site 16 (index 15, IC_World_FindPlacesOnShoreline, crash K) counts in v108, not in the v25 arrays
     static_assert(offsetof(Ts3nCounters, rgUnlocked3) == 0x45C4 && offsetof(Ts3nCounters, rgJob3) == 0x45C8 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v108 layout after v107 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v108 layout after v107 (docs/registry.md)");
     assert(kRgSites[15].addr == 0x0078C440 && kRgSites[15].len == 6);
     k.rgUnlocked3 = k.rgJob3 = 0;
     RgEnter(15, &stack[20]);
@@ -4499,7 +4468,7 @@ static u8 __fastcall FakeUsfShould(void*, void*, void* obj) { assert(obj); retur
 static void TestFootprintDefer() {
     static_assert(offsetof(Ts3nCounters, usfReady) == 0x3174 && offsetof(Ts3nCounters, usfMode) == 0x3178 &&
                   offsetof(Ts3nCounters, usfApplied) == 0x31A4 && offsetof(Ts3nCounters, usfApplyInJob) == 0x31C4 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "v74 layout (without v52, v58)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "v74 layout (without v52, v58)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -4734,7 +4703,7 @@ static DWORD WINAPI F2JobEnd(void*) {  // the running job ends a little later (a
 static void TestFootprintDefer2() {
     static_assert(offsetof(Ts3nCounters, fp2Mode) == 0x3FB4 && offsetof(Ts3nCounters, fp2Deferred) == 0x3FBC &&
                   offsetof(Ts3nCounters, fp2Forced) == 0x3FDC && offsetof(Ts3nCounters, fp2ApplyInJob) == 0x3FE8 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v94 layout after v92 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v94 layout after v92 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -4974,7 +4943,7 @@ static u8 __fastcall PdFakePlan(void* world, void*, int*, int*, int*, DWORD, DWO
 static void TestPlanDrain() {
     static_assert(offsetof(Ts3nCounters, sdReady) == 0x4588 && offsetof(Ts3nCounters, sdMode) == 0x458C &&
                   offsetof(Ts3nCounters, sdSkip) == 0x45A8 && offsetof(Ts3nCounters, sdFail) == 0x45BC &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v107 layout after v106 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v107 layout after v106 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     memset(&k.discReady, 0, offsetof(Ts3nCounters, discOverflow) + 4 - offsetof(Ts3nCounters, discReady));
     memset((void*)&k.discDestroyMode, 0, offsetof(Ts3nCounters, discIdMismatch) + 4 - offsetof(Ts3nCounters, discDestroyMode));
@@ -5197,7 +5166,7 @@ static DWORD WINAPI GFlushOther(void*) { P5cFlush(); return 0; }
 static void TestDestroyPark() {
     static_assert(offsetof(Ts3nCounters, dpReady) == 0x31DC && offsetof(Ts3nCounters, dpMode) == 0x31E0 &&
                   offsetof(Ts3nCounters, dpParked) == 0x31E4 && offsetof(Ts3nCounters, dpKeptWait) == 0x31E8 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "v76 layout after v75 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "v76 layout after v75 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     k.dpReady = k.dpMode = k.dpParked = k.dpKeptWait = 0;
     k.vfRtDestroyWaitUs = 0;
@@ -7087,7 +7056,7 @@ static void TestAvoidRO() {
                       offsetof(Ts3nCounters, avShadow) == 0x31F4 && offsetof(Ts3nCounters, avSiteSkip) == 0x3204 &&
                       offsetof(Ts3nCounters, avFb) == 0x3208 && offsetof(Ts3nCounters, avUs) == 0x3230 &&
                       offsetof(Ts3nCounters, avTwSite) == 0x323C && offsetof(Ts3nCounters, avShadowRuns) == 0x3244 &&
-                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 4559 * 4,
+                      offsetof(Ts3nCounters, avSimWriteInRo) == 0x325C && sizeof(Ts3nCounters) == 4467 * 4,
                   "counters v74 layout (docs/registry.md)");
     using namespace av;
     Ts3nCounters& k = ts3native_counters;
@@ -8762,9 +8731,6 @@ static void TestSnapReplay() {
         RfIns(RfQOf(0, 0), g_rf.fps[0], 1, false);  // negative control: an insert with no record
         RfCut();
         assert(k.rpMis > misN && g_rpAuditForced > forced0);
-        // docs/157 §7: the mismatch carries its ring position and the lot's last equal audit before it (the drift window)
-        if (!(g_rpMisSeq && g_rpMisOkSeq && g_rpMisOkSeq < g_rpMisSeq)) printf("replay seed %lu: mismatch ring %lu, last equal %lu\n", seed, g_rpMisSeq, g_rpMisOkSeq);
-        assert(g_rpMisSeq && g_rpMisOkSeq && g_rpMisOkSeq < g_rpMisSeq);
         // 0.35.13: the mismatched lot is named (the next hold lists the live-only entry) and rebased at the next cut: equal again
         const LONG mis1 = k.rpMis;
         RfCut();
@@ -8782,59 +8748,6 @@ static void TestSnapReplay() {
             assert(busy && !RpGraveBusy() && !g_rpGrave.lots);
             RfCut();
             assert(k.rpMis == mis1);
-        }
-        if (seed == 1) {  // docs/157 §10, AuditHoldRebase: the lot's rebase waits for its diff, at most one cut
-            // the drift: the 0.35.18 far-copy remove with the cover off (the clone keeps 3 leaf entries, maps equal: no epoch)
-            g_rpAuditHold = 1, g_rpRemCoverOff = true;
-            u8* q = RfQOf(0, 0);
-            u8* fp = NULL;
-            for (int j = 3; j < g_rf.nFps && !fp; j++)
-                if (*(DWORD*)g_rf.fps[j] == g_rfCls[2].vt) fp = g_rf.fps[j];
-            assert(fp);
-            const LONG h0[3] = {k.rpHold[0], k.rpHold[1], k.rpHold[2]}, onlyC = g_rpDiffOnly[1], epH = k.rpEpochs;
-            for (int pass = 0; pass < 2; pass++) {  // 0: the diff comes (released by it), 1: it does not (timeout)
-                g_rpDiffN = 0, g_rpHoldKey = g_rpHoldLast = 0;
-                RfRem(q, fp, true);
-                RfCut();
-                RfIns(q, fp, 0, true);
-                RfCut();
-                const DWORD* cp = RpTabFind(g_rpClone->fps, (DWORD)(uintptr_t)fp);
-                assert(cp);
-                g_rfFarFp = (const u8*)(uintptr_t)*cp;
-                RfRem(q, fp, true);
-                RfCut();  // replayed: the clone keeps 3 entries; the audit mismatches, the diff is pending, the lot held
-                g_rfFarFp = NULL;
-                assert(k.rpHold[0] == h0[0] + 1 + pass && g_rpHoldKey);
-                const u64 lot = g_rpHoldKey;
-                const LONG reb0 = k.rpRebaseLots, onlyP = g_rpDiffOnly[1];
-                RpCut(g_rf.world);  // the consumer is behind (I-157-11's order): this cut skips the lot, its force stays
-                int j = 0;
-                while (j < g_rpNForce && g_rpForce[j] != lot) j++;
-                if (g_rpHoldKey != lot || j == g_rpNForce || k.rpRebaseLots != reb0)
-                    printf("replay hold pass %d: key %d, force %d of %d, rebased +%ld, epochs +%ld\n", pass, g_rpHoldKey == lot, j, g_rpNForce,
-                           k.rpRebaseLots - reb0, k.rpEpochs - epH);
-                assert(g_rpHoldKey == lot && j < g_rpNForce && k.rpRebaseLots == reb0);
-                if (pass == 0) {
-                    RpDrain(false);  // the diff runs on the drifted clone (names the 3 entries), then the hold is released
-                    if (g_rpDiffOnly[1] < onlyP + 3 || k.rpHold[1] != h0[1] + 1 || g_rpHoldKey)
-                        printf("replay hold: clone-only +%ld, released %ld, key %d\n", g_rpDiffOnly[1] - onlyP, k.rpHold[1] - h0[1], g_rpHoldKey != 0);
-                    assert(g_rpDiffOnly[1] >= onlyP + 3 && k.rpHold[1] == h0[1] + 1 && !g_rpHoldKey);
-                } else {
-                    RpCut(g_rf.world);  // no diff yet: the second cut releases the hold and rebases the lot
-                    assert(!g_rpHoldKey && k.rpRebaseLots > reb0 && k.rpHold[2] == h0[2] + 1);
-                    RpDrain(false);
-                    assert(k.rpHold[1] == h0[1] + 1);  // the late diff found no hold to release
-                }
-                RfCut();  // rebased now (the held cut's repeat mismatch is not held again)
-                RfCut();
-                const LONG misH = k.rpMis;
-                RfCut();
-                RfCut();
-                assert(k.rpMis == misH && k.rpFaults == 0 && !g_rpHoldKey && k.rpRebaseLots > reb0 && k.rpEpochs == epH);
-            }
-            g_rpRemCoverOff = false, g_rpAuditHold = 0, g_rpHoldLast = 0;
-            printf("replay AuditHoldRebase: held 2, released by the diff 1 (clone-only +%ld named before the rebase), by timeout 1, equal after\n",
-                   g_rpDiffOnly[1] - onlyC);
         }
         RfTeardown();
         assert(g_rpBytes == 0 && k.rpFps == 0);
@@ -11353,10 +11266,10 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, m2Ready) == 0x2F70 && offsetof(Ts3nCounters, m2Take) == 0x2F74 &&
                   offsetof(Ts3nCounters, m2Fb) == 0x2F90 && offsetof(Ts3nCounters, m2VerM) == 0x2FDC &&
                   offsetof(Ts3nCounters, m2DoorHist) == 0x3000 && offsetof(Ts3nCounters, m2Guard) == 0x3024 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v61 layout + v62 + v63 + v65 + v66 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4QCut) == 0x30EC && offsetof(Ts3nCounters, p4QCutMiss) == 0x30F0 &&
                   offsetof(Ts3nCounters, p4WaitExt) == 0x30F4 && offsetof(Ts3nCounters, oiClone) == 0x30F8 &&
-                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 4559 * 4,
+                  offsetof(Ts3nCounters, rpHard) == 0x30FC && sizeof(Ts3nCounters) == 4467 * 4,
                   "counters v67 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpOldAsk) == 0x310C && offsetof(Ts3nCounters, p4AcqBad) == 0x3110, "counters v68 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, p4Obst) == 0x3114 && offsetof(Ts3nCounters, p4ObstBusy) == 0x3118,
@@ -11366,7 +11279,7 @@ static void TestP5() {
     static_assert(offsetof(Ts3nCounters, p4Borrow) == 0x313C && offsetof(Ts3nCounters, p4BorrowMiss) == 0x3140 &&
                   offsetof(Ts3nCounters, p4BorrowDirty) == 0x3144, "counters v71 layout (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, rpKidsKept) == 0x3148, "counters v72 layout (docs/registry.md)");
-    assert(k.version == 112);
+    assert(k.version == 108);
     PlanLockedFn planSave = g_planOrig;
     CacheEntry* tab = g_tab;
     const LONG workerMode = k.workerMode, budgetMode = k.budgetMode;
@@ -11574,8 +11487,8 @@ static void TestP5() {
 #include "p5fault-test.h"  // TestP5Fault (docs/157 fault injection), run from TestP5b
 #include "autshadow-test.h"  // TestAutShadow ([AutShadow] part 1, docs/122 §13: T1, T2, T4)
 #include "threadstack-test.h"  // TestThreadStack ([ThreadStack], docs/66 §6)
+#include "userdiag-test.h"  // TestUserDiag ([UserDiag], docs/188)
 #include "crashreport-test.h"  // TestCrashReport ([CrashReport], docs/135)
-#include "watchpt-test.h"  // TestWatchpoint ([Watchpoint], docs/157 §8)
 #include "apex-test.h"  // TestApex ([Compat] ApexStandDown, docs/148 §7)
 #include "earlyout-test.h"  // TestEarlyOut ([RouteEarlyOut] probe, docs/142)
 #include "routephases-test.h"  // TestRouteJobPhases ([RouteJobPhases], docs/150 §7)
@@ -11599,18 +11512,17 @@ static void TestP5() {
 // (c) a START while a job runs, with another cut pending: no shared cut in Mode=2 (lane D is Mode=1 only)
 // (d) a clone footprint whose lock-key origin no table has: kPcKeyFailMax refusals, then one rebuild, then taken again
 // (0.35.8 refused it for the rest of the session)
-static AsyncJob PcArmM2(DWORD seq, int kind = 3) {  // the sim's START (P4OnStart -> P5OnStart)
+static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts, bool writeAfterCut = false) {
+    void* const lock = g_rf.world + 0x918;
+    static const DWORD kInf = 0xFFFFFFFF;
     AsyncJob j = {};
-    j.kind = kind;
+    j.kind = 3;
     j.seq = seq;
     j.x87 = GetX87();
     j.mxcsr = _mm_getcsr();
     P4OnStart(&j);
-    return j;
-}
-static u8 PcPlanM2(AsyncJob& j, int* list, int* s, int* g, u8* opts) {  // the worker's run of an armed job
-    void* const lock = g_rf.world + 0x918;
-    static const DWORD kInf = 0xFFFFFFFF;
+    assert(j.p4 == 2 && j.p4Ver);
+    if (writeAfterCut) InterlockedIncrement(&g_spWrites);  // a recorded routing write between the START cut and the job
     P5bAcq(lock, NULL, &kInf);  // ServeAsync's hold for the job
     g_async.state = A_RUNNING;
     P4LiveBegin(&j);
@@ -11624,126 +11536,6 @@ static u8 PcPlanM2(AsyncJob& j, int* list, int* s, int* g, u8* opts) {  // the w
     assert(!g_p5bWin && !g_p5cJob);
     P4FakeListFree(list, NULL);
     return r;
-}
-static u8 PcRunM2(DWORD seq, int* list, int* s, int* g, u8* opts, bool writeAfterCut = false, int kind = 3) {
-    AsyncJob j = PcArmM2(seq, kind);
-    assert(j.p4 == 2 && j.p4Ver);
-    if (writeAfterCut) InterlockedIncrement(&g_spWrites);  // a recorded routing write between the START cut and the job
-    return PcPlanM2(j, list, s, g, opts);
-}
-// 0.36.41 (docs/94 §24, P6): TakeKinds and ShareCuts on the same clone life as TestPcMode2 (a)-(e)
-static void TestP6(int* list, int* s, int* g, u8* opts, DWORD& seq) {
-    static_assert(offsetof(Ts3nCounters, p6Plan) == 0x4660 && offsetof(Ts3nCounters, p6Share) == 0x4664 &&
-                  offsetof(Ts3nCounters, p6BorrowMiss) == 0x4688 && offsetof(Ts3nCounters, p6ReAcqUs) == 0x46AC &&
-                  offsetof(Ts3nCounters, p6jN) == 0x46B0 && offsetof(Ts3nCounters, p6jOut) == 0x4728 &&
-                  offsetof(Ts3nCounters, p6jLines) == 0x4738 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v112 layout after v111 (docs/registry.md)");
-    Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 112);
-    // (f1) TakeKinds 8 (default): a Route.Plan START is not armed; 9: it is, and its answer is the clone's
-    {
-        k.p6Plan = 0;
-        AsyncJob a = PcArmM2(seq++, 0);
-        assert(a.p4 == 0 && !a.p4Ver);
-        k.p6Plan = 1;
-        const LONG armed = k.p6Armed[0], plans = k.p6Plans[0], taken = k.p6Taken[0], t3 = k.p6Taken[1], m2 = k.m2Taken;
-        PcRunM2(seq++, list, s, g, opts, false, 0);
-        assert(k.p6Armed[0] == armed + 1 && k.p6Plans[0] == plans + 1 && k.p6Taken[0] == taken + 1 && k.p6Taken[1] == t3 &&
-               k.m2Taken == m2 + 1 && k.p6PlanUs[0] >= 0);
-        // §24.7 phase split: the taken job is one slot-0 record whose phases add up to its total (other >= 0 within 50 us of
-        // clock skew), planner entries >= 1, outcome taken; one log line with P6LogMs forced to 1 us
-        {
-            const LONG n0 = k.p6jN[0], out0 = k.p6jOut[0], lines0 = k.p6jLines, logUs = g_p6LogUs;
-            const LONG t0 = k.p6jTotUs[0], q0 = k.p6jQueueUs[0], s0 = k.p6jStartUs[0], w0 = k.p6jRpWaitUs[0], c0 = k.p6jCopyUs[0],
-                       r0 = k.p6jCloneUs[0], gm0 = k.p6jGameUs[0], o0 = k.p6jOtherUs[0], pl0 = k.p6jPlans[0];
-            g_p6LogUs = 1;
-            PcRunM2(seq++, list, s, g, opts, false, 0);
-            g_p6LogUs = logUs;
-            const LONG tot = k.p6jTotUs[0] - t0, other = k.p6jOtherUs[0] - o0;
-            const LONG parts = (k.p6jQueueUs[0] - q0) + (k.p6jStartUs[0] - s0) + (k.p6jRpWaitUs[0] - w0) + (k.p6jCopyUs[0] - c0) +
-                               (k.p6jCloneUs[0] - r0) + (k.p6jGameUs[0] - gm0);
-            if (!(k.p6jN[0] == n0 + 1 && k.p6jOut[0] == out0 + 1 && parts + other == tot && other >= -50 && parts <= tot + 50 &&
-                  k.p6jPlans[0] - pl0 >= 1 && k.p6jCloneUs[0] - r0 > 0 && k.p6jLines == lines0 + 1)) {
-                printf("P6 phase split: n %ld out %ld total %ld parts %ld other %ld plans %ld clone %ld lines %ld\n", k.p6jN[0] - n0,
-                       k.p6jOut[0] - out0, tot, parts, other, k.p6jPlans[0] - pl0, k.p6jCloneUs[0] - r0, k.p6jLines - lines0);
-                assert(false);
-            }
-        }
-        // a FallbackAsync foreign Route.Plan START keeps its own path: never armed
-        AsyncJob f = {};
-        f.kind = 0, f.seq = seq++, f.fb = 1;
-        P4OnStart(&f);
-        assert(f.p4 == 0 && !f.p4Ver && k.p6Armed[0] == armed + 2);  // + the phase-split job
-        // Kinds (the shadow mask) still gates: TakeKinds 9 with Kinds 8 takes no Route.Plan
-        g_p4Kinds = 8;
-        AsyncJob x = PcArmM2(seq++, 0);
-        assert(x.p4 == 0);
-        g_p4Kinds = 15;
-    }
-    // (f2) ShareCuts 0: a START behind a running job gets no cut (as (c)); 1: it borrows the pending one, with no write since it
-    {
-        k.p6Share = 0;
-        AsyncJob a = PcArmM2(seq++, 0);
-        assert(a.p4 == 2 && a.p4Ver && !a.p6Borrow);
-        g_async.state = A_RUNNING;
-        AsyncJob b0 = PcArmM2(seq++, 0);
-        assert(b0.p4 == 2 && !b0.p4Ver);
-        k.p6Share = 1;
-        const LONG bor = k.p6Borrowed[0], bor3 = k.p6Borrowed[1], p4b = k.p4Borrow, m0 = k.p6BorrowMiss[0], m1 = k.p6BorrowMiss[1],
-                   m2 = k.p6BorrowMiss[2];
-        AsyncJob b = PcArmM2(seq++, 0), c = PcArmM2(seq++, 3);
-        assert(b.p4Ver == a.p4Ver && b.p6Borrow && c.p4Ver == a.p4Ver && c.p6Borrow && b.p4W == a.p4W);
-        assert(k.p6Borrowed[0] == bor + 1 && k.p6Borrowed[1] == bor3 + 1 && k.p4Borrow == p4b + 2);
-        // a recorded routing write since the cut: no borrow (miss 1)
-        InterlockedIncrement(&g_spWrites);
-        AsyncJob d = PcArmM2(seq++, 0);
-        assert(d.p4 == 2 && !d.p4Ver && !d.p6Borrow && k.p6BorrowMiss[1] == m1 + 1);
-        InterlockedDecrement(&g_spWrites);  // test only: the cut's count again
-        // lot updates pending on the live world: no borrow (miss 2)
-        u8* P = (u8*)RpP((const u8*)*g_spWorldSlot + 0x95C);
-        assert(P);
-        const u8 pend = P[0x10E];
-        P[0x10E] = 1;
-        AsyncJob e = PcArmM2(seq++, 0);
-        P[0x10E] = pend;
-        assert(!e.p4Ver && k.p6BorrowMiss[2] == m2 + 1);
-        g_async.state = A_IDLE;
-        // the jobs run in queue order on the one cut: a (fresh), then b and c (borrowed): each taken, b and c re-acquire it
-        const LONG taken = k.p6Taken[0], taken3 = k.p6Taken[1], re = k.p6ReAcq;
-        PcPlanM2(a, list, s, g, opts);
-        PcPlanM2(b, list, s, g, opts);
-        PcPlanM2(c, list, s, g, opts);
-        assert(k.p6Taken[0] == taken + 2 && k.p6Taken[1] == taken3 + 1 && k.p6ReAcq == re + 2 && k.p6ReAcqUs >= 0);
-        assert(!g_rpHoldAt);  // all three released: the consumer moves on
-        // no cut pending at all: miss 0
-        g_async.state = A_RUNNING;
-        AsyncJob h = PcArmM2(seq++, 0);
-        g_async.state = A_IDLE;
-        assert(!h.p4Ver && k.p6BorrowMiss[0] == m0 + 1);
-        // b0, d, e, h hold no cut (p4Ver 0): their plans refuse before the acquire and the game answers
-        const LONG fb = k.m2Taken;
-        PcPlanM2(h, list, s, g, opts);
-        assert(k.m2Taken == fb);
-        // (f3) a borrowed job after a write landed between its borrow and its plan: P5c refuses it early (stale before the
-        // acquire), as for a fresh cut
-        AsyncJob a2 = PcArmM2(seq++, 0);
-        g_async.state = A_RUNNING;
-        AsyncJob b2 = PcArmM2(seq++, 0);
-        g_async.state = A_IDLE;
-        assert(b2.p6Borrow && b2.p4Ver == a2.p4Ver);
-        const LONG st0 = k.p5cStale[0], t0 = k.p6Taken[0];
-        PcPlanM2(a2, list, s, g, opts);
-        InterlockedIncrement(&g_spWrites);  // the sim wrote after a2 ran, before b2's plan
-        PcPlanM2(b2, list, s, g, opts);
-        assert(k.p6Taken[0] == t0 + 1 && k.p5cStale[0] == st0 + 1 && !g_rpHoldAt);
-        PcRunM2(seq++, list, s, g, opts, false, 0);  // a fresh cut again: taken
-        assert(k.p6Taken[0] == t0 + 2);
-    }
-    k.p6Plan = 0, k.p6Share = 0;
-    printf("P6 (docs/94 §24): Route.Plan jobs armed and taken only with TakeKinds bit 1 (own STARTs; FallbackAsync foreign and "
-           "Kinds-gated not); ShareCuts: STARTs behind a running job borrow the pending cut (Route.Plan and ReplanFromPosition), "
-           "none after a recorded write or with lot updates pending; 3 jobs on one cut all taken, 2 re-acquires; phase split adds up; a write before a "
-           "borrowed job's plan refuses it (stale)\n");
 }
 static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
     Ts3nCounters& k = ts3native_counters;
@@ -11760,7 +11552,7 @@ static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
     void* const guardLock = g_p5GuardLock;
     g_lockOrig = P5bAcq, g_rgRelOrig = P5bRel, g_rgLock = lock;
     g_async.lock = lock, g_async.state = A_IDLE;
-    k.snP4Mode = 2, g_p4Kinds = 15, k.p6Plan = 0, k.p6Share = 0;
+    k.snP4Mode = 2, g_p4Kinds = 15;
     g_p5On = 1, k.m2Take = 1, k.m2Ready = 1, k.m2Off = 0, g_p5Verify = 0, g_p5NSites = 0, g_p5GuardLock = lock;
     g_p5bOn = 1, k.p5bRelease = 1, k.p5bGates = 0;
     g_p5cOn = 1, k.p5cFree = 1, k.p5cOff = 0;
@@ -11834,7 +11626,6 @@ static void TestPcMode2(int* list, int* s, int* g, u8* opts) {
         PcRunM2(seq++, list, s, g, opts);  // the next job takes its answer again
         assert(k.m2Taken == taken + 1);
     }
-    TestP6(list, s, g, opts, seq);
     g_p5On = 0, k.m2Take = 0, g_p5bOn = 0, k.p5bRelease = 0, g_p5cOn = 0, k.p5cFree = 0;
     g_p5Verify = verify, g_p5NSites = nSites, g_p5GuardLock = guardLock;
     k.snP4Mode = mode, g_p4Kinds = kinds;
@@ -12126,7 +11917,7 @@ static void TestInsFreeInPlace() {
 static void TestRecsUnlocked() {
     Ts3nCounters& k = ts3native_counters;
     static_assert(offsetof(Ts3nCounters, ulMode) == 0x4548 && offsetof(Ts3nCounters, ulFaults) == 0x4564 &&
-                  sizeof(Ts3nCounters) == 4559 * 4, "counters v105 layout after v104 (docs/registry.md)");
+                  sizeof(Ts3nCounters) == 4467 * 4, "counters v105 layout after v104 (docs/registry.md)");
     static DWORD simTid;
     const DWORD* savedSim = g_rtSimTidSlot;
     simTid = GetCurrentThreadId();
@@ -12153,53 +11944,6 @@ static void TestRecsUnlocked() {
         assert(g_rpBytes == 0 && k.rpFps == 0);
     }
     g_rpRecsUnlocked = 0, g_rpInsFreeInPlace = 0;
-    // docs/182 §8: a gate entry inside a round: sites 0 / 12 (the lot table, on the clone's copy) pass through, every other
-    // site's row only logs (no frame, no lock)
-    {
-        DWORD fake[2] = {0, 0x00665D36};
-        const LONG lt = k.ulLockTrip;
-        t_rpUl = 1, g_rpPhase = 2 | RP_INS << 8 | 0x10000;
-        for (int s = 0; s < RG_SITES; s++) assert(RpUlGate(s, fake + 1) == (s == 0 || s == 12));
-        t_rpUl = 0, g_rpPhase = 0;
-        assert(k.ulLockTrip == lt && t_rg.n == 0);
-    }
-    // docs/182 §8: the apply's LotTable_GetIfPresent ask (RpGetIfPresent at 0x665D1E / 0x666796) inside a round is answered
-    // from the clone's own P copy and lot table (the clone's node), the live table is not read; outside a round the caller's
-    // table as before; a miss on the clone table answers 0 (the game's body skips the record) and forces the lot
-    {
-        static const u8* seenP;
-        static int calls;
-        struct Fk {
-            static u8* __fastcall Get(const u8* p, void*, DWORD lo, DWORD hi) {  // the game's table walk: buckets p+0x4C, chain +0x190
-                seenP = p, calls++;
-                const DWORD* bk = *(const DWORD* const*)(p + 0x4C);
-                const DWORD nb = *(const DWORD*)(p + 0x50);
-                for (const u8* nd = (const u8*)(uintptr_t)bk[lo % nb]; nd && (DWORD)(uintptr_t)nd != bk[nb]; nd = *(const u8* const*)(nd + 0x190))
-                    if (*(const DWORD*)nd == lo && *(const DWORD*)(nd + 4) == hi) return (u8*)nd;
-                return NULL;
-            }
-        };
-        RfSetup(31);
-        RfCut();
-        RpClone* c = g_rpClone;
-        assert(c && c->nLots > 0 && c->p != g_rf.p);
-        const RpGetIfPresentFn saved = g_rpGetIfPresent;
-        g_rpGetIfPresent = Fk::Get;
-        const RpLot& l = c->lots[0];
-        const DWORD lo = (DWORD)l.key, hi = (DWORD)(l.key >> 32);
-        u8* live = RpGetIfPresent(g_rf.p, NULL, lo, hi);
-        assert(live && live != l.node && seenP == g_rf.p);
-        const LONG lt = k.ulLockTrip, f0 = g_rpNForce;
-        t_rpUl = 1;
-        u8* clone = RpGetIfPresent(g_rf.p, NULL, lo, hi);
-        assert(clone == l.node && seenP == c->p);
-        u8* miss = RpGetIfPresent(g_rf.p, NULL, 0x7777, 0x8888);
-        assert(!miss && seenP == c->p && (g_rpNForce == f0 + 1 || g_rpForceAll));
-        t_rpUl = 0;
-        assert(k.ulLockTrip == lt && calls == 3);
-        g_rpGetIfPresent = saved;
-        RfTeardown();
-    }
     if (!(recs[0] == 0 && rounds[0] == 0 && insRem[1] > 0 && recs[1] >= insRem[1] && rounds[1] > 0 && fps[0] == fps[1] && insRem[0] == insRem[1]))
         printf("RecsUnlocked: recs %ld/%ld rounds %ld/%ld ins+rem %ld/%ld fps %ld/%ld\n", recs[0], recs[1], rounds[0], rounds[1], insRem[0],
                insRem[1], fps[0], fps[1]);
@@ -12367,119 +12111,6 @@ static void TestRemPatch() {
          "a copy parent with another child-list state is still forced");
 }
 
-// 0.36.35 (docs/157 §4.1-§4.2): the lock-key cover (RpLockKeyEnter, the 0x82B3A1 stub's body) on a fake live world, and the
-// replayed-insert answer check (RpInsLiveTake at the record, RpInsCheck after the insert) on a fake clone map, with
-// TestRemPatch's level-box / child stand-ins
-static void TestP5Covers() {
-    static_assert(offsetof(Ts3nCounters, rpLockKeyForce) == 0x4568 && offsetof(Ts3nCounters, p5bWdEscalate) == 0x4578 &&
-                  offsetof(Ts3nCounters, p5StormRunMax) == 0x4584 && sizeof(Ts3nCounters) == 4559 * 4,
-                  "counters v106 layout after v105 (docs/registry.md)");
-    Ts3nCounters& k = ts3native_counters;
-    // the fake replay worlds above (TestSnapReplay .. TestInsFreeInPlace) ran with InsCheck 1: their inserts' differences
-    printf("replayed-insert check over the earlier replay tests: %ld differences (InsCheck 1, log only)\n", k.rpInsDiff);
-    static DWORD parVt[0x80 / 4], kidVt[0x80 / 4];
-    parVt[0] = kidVt[0] = (DWORD)(uintptr_t)RfLevels1;
-    parVt[0x2C / 4] = (DWORD)(uintptr_t)StLevelBox, kidVt[0x2C / 4] = (DWORD)(uintptr_t)StChildBox;
-    parVt[0x7C / 4] = 0x00806FE0, kidVt[0x7C / 4] = 0x006262B0;  // RpFpKey: id slot / the child's ~parent id
-    RpCls cls[2] = {{(DWORD)(uintptr_t)parVt, 0x44, 1, 0}, {(DWORD)(uintptr_t)kidVt, 0x28, 0, 1}};
-    const RpCls* savedCls = g_rpCls;
-    const int savedN = g_rpNCls;
-    const DWORD savedBox = g_rpLevelBox;
-    g_rpCls = cls, g_rpNCls = 2, g_rpLevelBox = (DWORD)(uintptr_t)StLevelBox;
-    DWORD simTid = GetCurrentThreadId();
-    const DWORD* const savedSim = g_rtSimTidSlot;
-    g_rtSimTidSlot = &simTid;
-    const LONG savedOn = g_rpOn;
-    const bool savedHave = g_rpHave;
-    g_rpOn = 1, g_rpHave = true;
-    g_rpNForce = 0, g_rpForceAll = 0, g_rpNNoQ = 0, g_rpNoQAll = 0;
-    struct Fp { u8 hdr[16]; u8 b[0x50]; u8 lvl[0x24]; u8 node[16]; };
-    static Fp lp, lk, cp, ck;
-    auto mk = [](Fp& p, Fp& c, float z, const u8* live, const u8* liveKid) {  // a parent with one listed child (TestRemPatch's shape)
-        memset(&p, 0, sizeof(p)), memset(&c, 0, sizeof(c));
-        *(DWORD*)p.b = (DWORD)(uintptr_t)parVt, *(DWORD*)c.b = (DWORD)(uintptr_t)kidVt;
-        *(u8**)(p.b + 0x38) = p.lvl, p.lvl[0x20] = 1;
-        float* bx = (float*)(p.lvl + 0x10);
-        bx[0] = 2.f, bx[1] = 4.f, bx[2] = 25.f, bx[3] = 35.f;
-        *(float*)(p.b + 0x30) = 2.f, *(DWORD*)(p.b + 0x34) = 0x2000000 | 0x04000000;  // widened by z; inserted once
-        *(DWORD*)(p.b + 0x14) = 0x99;
-        *(u8**)(c.b + 0xC) = p.b, *(float*)(c.b + 0x10) = z;
-        *(u8**)p.node = p.b + 0x24, *(u8**)(p.node + 4) = p.b + 0x24, *(u8**)(p.node + 8) = c.b, *(const u8**)(p.node + 12) = liveKid;
-        *(u8**)(p.b + 0x24) = *(u8**)(p.b + 0x28) = p.node;
-        ((RpFpHdr*)p.hdr)->live = (u8*)live;
-    };
-    // --- A. lock-key cover. Live map (2 buckets): the parent's FME on a Q of lot 0x77; the set pointer changes NULL -> set
-    {
-        mk(lp, lk, 0.f, NULL, NULL);
-        u8 world[0x960] = {}, P[0x40] = {}, M[0x10] = {}, q[0x20] = {}, fme[0x14] = {}, nd[0x14] = {}, set[16] = {};
-        DWORD bk[2] = {};
-        *(u8**)(world + 0x95C) = P, *(u8**)(P + 0x24) = M, *(DWORD**)(M + 4) = bk, *(DWORD*)(M + 8) = 2;
-        *(DWORD*)(q + 0x18) = 0x77, *(DWORD*)(q + 0x1C) = 0;
-        *(u8**)(fme + 8) = lp.b, *(u8**)(fme + 0xC) = q;
-        *(DWORD*)nd = 0x99, *(DWORD*)(nd + 4) = 0, *(u8**)(nd + 8) = fme;
-        bk[0x99 % 2] = (DWORD)(uintptr_t)nd;
-        DWORD regs[16] = {};
-        DWORD* slot = &regs[8];
-        slot[-8] = (DWORD)(uintptr_t)lp.b, slot[-6] = (DWORD)(uintptr_t)set, slot[-4] = (DWORD)(uintptr_t)world;
-        const LONG f0 = k.rpLockKeyForce, nl0 = k.rpLockKeyNoLot, w0 = g_spWrites;
-        RpLockKeyEnter(slot);
-        assert(k.rpLockKeyForce == f0 + 1 && g_rpNForce == 1 && g_rpForce[0] == 0x77 && g_spWrites == w0 + 1);
-        *(u8**)(lp.b + 0x20) = set;  // the game's 0x807110 then stores it: the same set again is no change
-        RpLockKeyEnter(slot);
-        *(u8**)(lp.b + 0x20) = NULL, *(DWORD*)(lp.b + 0x34) = 0x2000000;  // not inserted: the next INS copies the new set
-        RpLockKeyEnter(slot);
-        assert(k.rpLockKeyForce == f0 + 1 && g_spWrites == w0 + 1);
-        *(DWORD*)(lp.b + 0x34) |= 0x04000000, *(u8**)(fme + 0xC) = NULL;  // a Q-less FME: refreshed through the cut's Q-less pass
-        RpLockKeyEnter(slot);
-        assert(k.rpLockKeyNoLot == nl0 + 1 && g_rpNNoQ == 2 && g_rpNForce == 1);
-        g_rpOn = 0;  // replay off: nothing
-        RpLockKeyEnter(slot);
-        assert(g_spWrites == w0 + 2);
-        g_rpOn = 1;
-        g_rpNForce = 0, g_rpNNoQ = 0;
-    }
-    // --- B. insert answer check. The record asks live (parent + its child, level 0); the clone map then holds the insert's
-    // two FMEs (parent key 0x99 and ~0x99) on Q q; the copies answer (1) equal, (2) a child +0x10 off by 2.0 (log only at
-    // InsCheck 1), (3) the same at InsCheck 2 (the lot forced once)
-    {
-        u8 q[0x20] = {}, fP[0x14] = {}, fK[0x14] = {}, nP[0x14] = {}, nK[0x14] = {}, m[0x10] = {};
-        DWORD bk[2] = {};
-        RpClone c = {};
-        c.m = m;
-        *(DWORD**)(m + 4) = bk, *(DWORD*)(m + 8) = 2;
-        const LONG d0 = k.rpInsDiff, fo0 = k.rpInsForced, chk = g_rpInsCheck;
-        for (int pass = 0; pass < 3; pass++) {
-            mk(lp, lk, 0.f, NULL, NULL);
-            mk(cp, ck, pass ? 2.f : 0.f, lp.b, lk.b);
-            RpInsLive* lv = RpInsLiveTake(lp.b);
-            assert(lv && lv->n == 2);
-            bk[0] = bk[1] = 0;
-            DWORD pre[4];
-            const int nPre = RpInsFmes(&c, q, cp.b, pre, 4);
-            assert(nPre == 0);
-            *(u8**)(fP + 8) = cp.b, *(u8**)(fP + 0xC) = q, *(DWORD*)(fP + 0x10) = 0x200;  // the replayed insert's FMEs
-            *(u8**)(fK + 8) = ck.b, *(u8**)(fK + 0xC) = q, *(DWORD*)(fK + 0x10) = 0x200;
-            *(DWORD*)nP = 0x99, *(DWORD*)(nP + 4) = 0, *(u8**)(nP + 8) = fP;
-            *(DWORD*)nK = ~0x99u, *(DWORD*)(nK + 4) = ~0u, *(u8**)(nK + 8) = fK;
-            bk[0x99 % 2] = (DWORD)(uintptr_t)nP, bk[~0x99u % 2] = (DWORD)(uintptr_t)nK;
-            g_rpInsCheck = pass == 2 ? 2 : 1;
-            RpInsCheck(&c, 0x55, q, cp.b, pre, nPre, lv);
-            RpFree(lv);
-            if (pass == 0) assert(k.rpInsDiff == d0 && k.rpInsForced == fo0);
-            if (pass == 1) assert(k.rpInsDiff == d0 + 1 && k.rpInsForced == fo0 && g_rpNForce == 0);
-            if (pass == 2) assert(k.rpInsDiff == d0 + 2 && k.rpInsForced == fo0 + 1 && g_rpNForce == 1 && g_rpForce[0] == 0x55);
-        }
-        g_rpInsCheck = chk;
-        g_rpNForce = 0;
-    }
-    g_rpOn = savedOn, g_rpHave = savedHave;
-    g_rtSimTidSlot = savedSim;
-    g_rpCls = savedCls, g_rpNCls = savedN, g_rpLevelBox = savedBox;
-    puts("P5 covers (0.36.35, docs/157 §4): a lock-key set swapped on an inserted footprint forces its lot and counts as a routing "
-         "write (same set, not inserted, replay off: nothing; Q-less FME: Q-less refresh); a replayed insert whose child copy "
-         "answers another rect than live at the record is logged (InsCheck 1) or forces its lot once (InsCheck 2)");
-}
-
 // 0.35.21 (docs/94 §22.24.4): thread CPU cycles -> cycle-ms/s at the nominal 2.3 GHz; the read itself is cheap enough per
 // section, and a busy section counts cycles at a plausible rate (a preempted thread counts fewer, never more)
 static void TestCycles() {
@@ -12585,7 +12216,6 @@ int main() {
     TestInsFreeInPlace();
     TestRecsUnlocked();
     TestRemPatch();
-    TestP5Covers();
     TestCycles();
     TestReplayLongRun();
     TestSoftPendPrune();
@@ -12610,7 +12240,7 @@ int main() {
     TestAutShadow();
     TestThreadStack();
     TestCrashReport();
-    TestWatchpoint();
+    TestUserDiag();
     TestApex();
     TestEarlyOut();
     TestRouteJobPhases();

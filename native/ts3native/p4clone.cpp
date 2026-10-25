@@ -57,7 +57,6 @@ struct PcCut {
     PcWx* wx;
     LONG w;               // g_spWrites at the cut (under its +0x918 hold)
     LONG dirtied;         // a shadow on this cut released with clone lots written: a second shadow on it is refused (0.35.6)
-    LONGLONG qpc;         // P6 phase split (0.36.41): QPC when the cut was made (the job's cut age)
     LONG pend; ULONGLONG tick; DWORD seq;  // seq: cut order (tick has 15 ms steps)        // pend: a Mode=1 job's cut its shadow has not ended yet (acquire + release, refusal, drop)
 };
 // Two slots (0.33.1, docs/94 §21.14): the next job's START used to replace the cut of a job whose shadow had not acquired yet
@@ -370,21 +369,9 @@ static void PcDrop(DWORD ver) { PcHoldEnd(ver); }
 // refusal: no sim wait and no new cut. The job's w0 is that cut's write count, so any recorded routing write after it (the
 // running job's own, the sim's) makes the record stale (M5), as for a cut behind queued jobs (0.35.2). The slot holds the
 // consumer until both shadows end (pend counts them); a shadow that wrote clone lots refuses the other one (PcAcquire)
-// 0.36.41 (docs/94 §24, P6): Mode=2 with ShareCuts borrows too, but only a cut no recorded routing write has followed and
-// only with no lot updates pending on the live world, so the clone answers the world this START sees (as a fresh cut would)
-static bool g_pcBorrowed;  // sim: the last PcCutFn result was a borrowed cut
-static LONGLONG g_pcCutQpc;  // sim: QPC of the cut the last PcCutFn returned (P6 phase split)
-static LONG g_pcLastCopyUs;  // worker: the copy time of the last PcAcquire (0 = no copy; P6 phase split)
 static DWORD PcBorrow() {
     Ts3nCounters& k = ts3native_counters;
-    const bool m2 = k.snP4Mode == 2 && k.p6Share;
-    if ((k.snP4Mode != 1 && !m2) || !g_rpOn || !g_spOn) return 0;
-    int miss = -1;  // p6BorrowMiss index, -1 = borrowed
-    if (m2) {
-        const u8* world = *g_spWorldSlot;
-        const u8* P = world ? RpP(world + 0x95C) : NULL;
-        if (!P || P[0x10E]) miss = 2;  // a fresh cut would apply them first (PcPrepare); unlocked byte read: a stale 1 only misses
-    }
+    if (k.snP4Mode != 1 || !g_rpOn || !g_spOn) return 0;
     AcquireSRWLockExclusive(&g_pcCutLock);
     const ULONGLONG now = GetTickCount64();
     int b = -1;
@@ -392,30 +379,23 @@ static DWORD PcBorrow() {
         const PcCut& h = g_pcCuts[i];
         if (h.pend > 0 && h.ok && h.ver && !h.dirtied && now - h.tick < kPcPendMs && (b < 0 || (LONG)(h.seq - g_pcCuts[b].seq) > 0)) b = i;
     }
-    if (miss < 0 && b < 0) miss = 0;
-    if (miss < 0 && m2 && g_pcCuts[b].w != g_spWrites) miss = 1;
     DWORD ver = 0;
-    if (miss < 0) g_pcCuts[b].pend++, ver = g_pcCuts[b].ver, g_pcCutW = g_pcCuts[b].w, g_pcCutQpc = g_pcCuts[b].qpc;
+    if (b >= 0) g_pcCuts[b].pend++, ver = g_pcCuts[b].ver, g_pcCutW = g_pcCuts[b].w;
     ReleaseSRWLockExclusive(&g_pcCutLock);
-    if (ver) k.p4Borrow++, g_pcCutWhy = PS_NONE, g_pcBorrowed = true;
-    else {
-        k.p4BorrowMiss++;
-        if (m2) k.p6BorrowMiss[miss]++;
-    }
+    if (ver) k.p4Borrow++, g_pcCutWhy = PS_NONE;
+    else k.p4BorrowMiss++;
     return ver;
 }
 
 static DWORD PcCutFn() {
     Ts3nCounters& k = ts3native_counters;
     g_pcCutWhy = PS_OFF;
-    g_pcBorrowed = false;
     if (!g_rpOn || !g_spOn) { k.snPcRefused[0]++; return 0; }
     // a job queued or running holds or will take +0x918: the cut would wait for it on the sim, and its own lazy writes
     // (first use, pending updates) would land between this START and its live plan (kept: docs/94 §21.14)
     // 0.35.2 (docs/94 §21.17): Mode=1 with jobs only queued (none running, so the worker holds no +0x918, e.g. it runs a
     // shadow): the lock is tried once, no sim wait. The queued jobs' writes before this job's live plan count in g_spWrites
     // after this cut, so such a record is stale (M5) instead of a refusal. A running job, or P5 (Mode=2), refuses as before
-    // (0.36.41: and borrows a pending cut, Mode=2 only with ShareCuts and no write since it; PcBorrow)
     bool qcut = false;
     if (AsyncBusy()) {
         bool running = g_async.state == A_RUNNING;
@@ -478,10 +458,7 @@ static DWORD PcCutFn() {
             c.v = SpVerRef(g_spCur);
             c.ver = g_rpPub;
             c.pend = 1, c.tick = now, c.seq = ++g_pcCutSeq;
-            c.w = g_pcCutW = g_spWrites, c.dirtied = 0;
-            LARGE_INTEGER q;
-            QueryPerformanceCounter(&q);
-            c.qpc = g_pcCutQpc = q.QuadPart;  // +0x918 still held: no write of a worker job lands before this read
+            c.w = g_pcCutW = g_spWrites, c.dirtied = 0;  // +0x918 still held: no write of a worker job lands before this read
             g_pcCutWhy = PS_NONE;
         }
     }
@@ -821,7 +798,6 @@ static int PcAcquire(DWORD ver, P4Clone* out) {  // the worker's phase marker ba
 }
 static int PcAcquireBody(DWORD ver, P4Clone* out) {
     Ts3nCounters& k = ts3native_counters;
-    g_pcLastCopyUs = 0;
     PcWork& w = g_pcWork;
     if (!g_rpOn || !g_rpHave) { k.snPcRefused[2]++; g_pcAcqWhy = PS_NOCLONE; PcHoldEnd(ver); return P4_AB_MAT; }
     // the consumer reaches the position (it stops there) and is idle; offline tests drain here. A shadow (Mode=1) waits up to
@@ -960,10 +936,7 @@ static int PcAcquireBody(DWORD ver, P4Clone* out) {
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; k.snPcFaults++; }
-        const LONG us = UsSince(t0);
-        InterlockedExchangeAdd(&k.snPcMatUs, us);
-        g_pcLastCopyUs = ok ? us : 0;
-        if (ok && w.ver == ver) { k.p6ReAcq++; InterlockedExchangeAdd(&k.p6ReAcqUs, us); }  // P6: a shared cut's second copy
+        InterlockedExchangeAdd(&k.snPcMatUs, UsSince(t0));
         if (!ok) why = P4_AB_MAT, k.snPcRefused[6]++, g_pcAcqWhy = PS_COPY;
     }
     if (why < 0) {

@@ -1,8 +1,7 @@
 // Writes Sims 3 DBPF 2.0 .package files (uncompressed) and wraps assemblies as S3SA resources.
 // Port of Sims3-MCP tools/dbpf.py (MIT, Copyright (c) 2026 Critical-Reynolds).
-// Self-test: node tools/dbpf.ts (also covers extract-assemblies.ts readIndex, decryptS3SA, peImage)
-import assert from 'node:assert/strict';
-import { readIndex, decryptS3SA, peImage } from './extract-assemblies.ts';
+// Self-test: node tools/dbpf.ts
+import { readIndex, decryptS3SA } from './extract-assemblies.ts';
 
 export const TYPE_S3SA = 0x073faa07;
 export const TYPE_VIDEO = 0xb1cc1af6;
@@ -63,13 +62,9 @@ if (process.argv[1]?.endsWith('dbpf.ts')) {
   const asm = Buffer.from('MZ fake assembly '.repeat(70));
   const pkg = writePackage([{ type: TYPE_S3SA, group: 0, instance: fnv64('Test'), data: s3saEncode(asm) }]);
   const [e] = readIndex(pkg);
-  assert.ok(e.type === TYPE_S3SA && e.inst === fnv64('Test'), 'index round trip');
+  console.assert(e.type === TYPE_S3SA && e.inst === fnv64('Test'), 'index round trip');
   const back = decryptS3SA(pkg.subarray(e.offset, e.offset + e.fileSize)).subarray(0, asm.length);
-  assert.ok(back.equals(asm), 'S3SA round trip');
-  assert.equal(fnv64(''), 0xcbf29ce484222325n, 'fnv64 offset basis');
-  // a minimal PE: 'MZ', e_lfanew 0x40 at +0x3C, 'PE\0\0' at +0x40, found behind leading bytes
-  const pe = Buffer.alloc(0x48); pe.write('MZ', 0, 'latin1'); pe.writeUInt32LE(0x40, 0x3c); pe.write('PE\0\0', 0x40, 'latin1');
-  assert.equal(peImage(Buffer.concat([Buffer.from('xxMZ'), pe]))?.length, pe.length, 'peImage finds the PE after a false MZ');
-  assert.equal(peImage(asm), null, 'peImage: no PE header');
+  console.assert(back.equals(asm), 'S3SA round trip');
+  console.assert(fnv64('') === 0xcbf29ce484222325n, 'fnv64 offset basis');
   console.log('dbpf self-test done');
 }

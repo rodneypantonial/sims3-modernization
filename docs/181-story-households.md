@@ -170,36 +170,3 @@ wish required/excluded, funds formula, 6 archetypes + 40 random seeds lint-clean
 Open: not run in game (`make_household` dry then real on a scratch save, then a story-days run with `household: generated`);
 whether `Lot.CanSupportPopulation` counts a double bed as two (I-181-1); trait effects marked [community] (I-181-2); store
 traits are not on this install (I-181-3).
-
-## 6. Installing a downloaded lot without the launcher (`tools/install-lot.ts`, 2026-10-24)
-
-Story worlds use downloaded lots (Breezy Getaway, Luxurious European Mansion). `node tools/install-lot.ts <file.Sims3Pack>
-[--docs <The Sims 3 Documents dir>] [--dry-run] [--force]` installs a CC-free lot the way the launcher does; `--self-check`
-(read-only on `--docs`) rebuilds every launcher-installed lot in `Downloads` into a temp dir and compares.
-
-What the launcher wrote (both lots, diffed resource by resource with RefPack decoded) [verified]:
-- `DCBackup\0x<PackageId>.package`: byte copy of the embedded `<PackageId>.package`.
-- `Library\ebf_0x<16 hex>.package`: the embedded package with one new resource `0x0679B9B8:0x02000000:<lot instance>` =
-  `01 00` (uncompressed; the instance is the lot record `0x34E5247C`'s). Everything else is the same content: `0x34E5247C`
-  (Breezy 94,381 -> 110,781 B, Mansion 60,359 -> 66,974 B) and Breezy's `0x04EE6ABB` (now stored uncompressed) decode to the
-  same bytes, only the launcher's own RefPack encoding differs; 12 (Breezy) / 27 (Mansion) `0x044AE110` material presets hold
-  the same `<value key=.. value=..>` lines in another order (re-serialized from a hash map: presets with the same key set
-  show many different orders, so the order is not a function of the data); data and index order are shuffled.
-- The ebf id (`0x4ded00f4a88ce110`, `0x4ded00f4a89f93a0`) appears nowhere in the pack, the package or `DCCache`: a fresh id,
-  file name only. The tool uses FNV-64 of the PackageId so reruns write the same file.
-- `DCCache\dcdb0.dbc` (DBPF, one RefPack resource `0x7672F0C5`) is the launcher's installed-content list: per pack the
-  PackageId, dependency (`0x050CFFE8...`, base game), every resource key of the lot package, display name and thumbnail keys.
-  `missingdeps.idx` holds 4 zero bytes. The tool writes neither. Inferred: the lot bin reads `Library\ebf_*` (`ebf_` and
-  `ExportBinSubdirName` sit next to `Library` in TS3W.exe's settings strings); the dbc entry serves the launcher's Installed
-  Content list and uninstall, and a CC-free lot needs nothing from it. Not checked in game.
-- TS3W.exe and TSLHost.dll carry the same DownloadContent ContentManager strings (`dcdb`, `DCBackup`, `ebf_`, `missingdeps.idx`),
-  so the install code is the engine's; `0x0679B9B8` appears as an immediate near `0x9A2E79`, `0x9A7C59` and `0x9ACA57` (not decompiled).
-
-Result: not byte-identical (a byte match needs EA's RefPack encoder and the presets' hash-map history). Our ebf is the
-embedded package plus the marker. Self-check on both installs: DCBackup byte-identical; every resource key on both sides;
-Breezy 2,747 of 2,761 resources same bytes, 2 same decoded data, 12 presets same lines reordered; Mansion 2,048 of 2,076, 1, 27;
-nothing else differs. Refused: non-lot packs, packs with more than one `.package` (bundled CC: use the launcher), packages
-whose index is not the game's flat layout, a PackageId already in `DCBackup` (unless `--force`).
-
-Open: a game run that shows the tool's ebf in Edit Town's lot bin (uninstall one lot in the launcher, run the tool, check the
-bin); whether the game also needs the dbc entry (I-181-12, inferred no).

@@ -30,7 +30,6 @@
 enum { RJP_PLAN, RJP_CELL, RJP_POST, RJP_INSERT, RJP_WORLD, RJP_LOTLEG, RJP_PORTAL, RJP_CAND, RJP_LOTGRAPH, RJP_PENDING, RJP_WATER,
        RJP_ALLOC, RJP_LOCK, RJP_HOST, RJP_OTHER, RJP_N };
 static_assert(RJP_N == 15, "rjpN/rjpUs/rjpMaxUs are [15] (counters v87)");
-static_assert(RJP_LOTGRAPH == kP6LazyPhase, "p5.cpp P6 phase split reads the LotGraph_Build row");
 // docs/177 §5 probe P-G ([RouteJobPhases] GoalSplit=1, counters v102 pg*): four more phases of the worker's job, outside v87's
 // rows (pgN/pgUs/pgMaxUs by phase - RJP_GGEN). Their self time used to be RJP_OTHER ("rest of job"); with GoalSplit on,
 // rest = RJP_OTHER + these four. Not timed in sim sync plan sessions (docs/164 rows stay as they were).

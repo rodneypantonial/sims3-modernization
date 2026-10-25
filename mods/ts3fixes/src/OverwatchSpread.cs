@@ -86,7 +86,6 @@ namespace Ts3Fixes
         internal static void OverwatchSpreadWorldLoad()
         {
             sOwChaining = false; // a chain task dropped with the last world never ran its finally
-            sOwInStuck = false;  // same for a Stuck Check run (OverwatchStuck.cs)
             if (!sOwUpstream || sOwType == null) return;
             int v = 0;
             try { v = (int)sOwType.GetField(OverwatchSpreadCore.MarkerField).GetValue(null); } catch (Exception) { }
@@ -128,16 +127,7 @@ namespace Ts3Fixes
         {
             public void PerformHook()
             {
-                // the Stuck Check marked as running for overwatchstuckslice (OverwatchStuck.cs, docs/145 §12); inline: this body
-                // runs with Overwatch's option as this, so no other instance method of the hook class is called
-                bool stuck = OwName(this) == "StuckCheck";
-                if (!sOwChaining)
-                {
-                    if (stuck) OwStuckBegin();
-                    try { PerformOrig(); }
-                    finally { if (stuck) OwStuckEnd(); }
-                    return;
-                }
+                if (!sOwChaining) { PerformOrig(); return; }
                 if (sOwChainStop) return;
                 bool may = MayYield();
                 if (OverwatchSpreadCore.SleepBefore(sOwChainIndex++, may))
@@ -159,9 +149,7 @@ namespace Ts3Fixes
                 if (sOwTypeWatch == null) sOwTypeWatch = StopWatch.Create(StopWatch.TickStyles.Microseconds);
                 sOwTypeWatch.Restart();
                 long tick = Simulator.TicksElapsed();
-                if (stuck) OwStuckBegin();
-                try { PerformOrig(); }
-                finally { if (stuck) OwStuckEnd(); }
+                PerformOrig();
                 OwTypeTime(option, tick, sOwTypeWatch.GetElapsedTime());
             }
             public void PerformOrig() { } // receives AlarmOption.PerformAlarm's original header

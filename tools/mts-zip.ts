@@ -152,8 +152,6 @@ function selfCheck() {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-// only as a script: tools/publish-public.ts imports unzip/zip
-if (import.meta.filename === resolve(process.argv[1] ?? '')) {
 const { values: o } = parseArgs({ options: {
   package: { type: 'string', default: join(ROOT, 'build', 'ts3fixes.package') },
   asi: { type: 'string', default: join(ROOT, 'native', 'ts3native', 'out', 'ts3native.asi') },
@@ -180,5 +178,4 @@ else {
   writeFileSync(outFile, z);
   console.log(`wrote ${outFile} (${z.length} B, sha256 ${sha256(z)})`);
   if (o.final && bad) { console.error(`--final: ${bad} file(s) not matching docs/RELEASE.md`); process.exit(1); }
-}
 }

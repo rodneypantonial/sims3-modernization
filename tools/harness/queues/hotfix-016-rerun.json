@@ -1,0 +1,31 @@
+{
+  "note": "Hotfix v0.1.6 gate, slim (Rodney 2026-10-25: essentials, ~1.3 h; correctness only; docs/188 §6, docs/release-notes/v0.1.6-dev.md): v0.1.5 + [UserDiag] = ts3native 0.36.37a + ts3fixes 0.1.6. Run from the hotfix worktree: node tools/harness/queue.ts tools/harness/queues/hotfix-016-gate.json. Apex Radiance case is outside this queue: tools/harness/apex-jobs/hotfix-016-save.json via apex-run.ts (command in the draft notes), right after this queue so the hotfix ts3fixes.package is still the installed one.",
+  "jobs": [
+    {
+      "id": "ip-hf-matrix-rerun",
+      "note": "Gate (b) core save matrix in release mode (save-matrix.ts --fixes shipped --cases control,overwrite,back-to-back,unpaused,reload: save-as to new names, manual save over the same name with backup, two saves back to back, save while the game runs, save then reload). The save path changed (new [UserDiag] markers in the save hooks, call-site hooks 0xAAC2F3 / 0xAAC34A): save-change test matrix rule, every listed case PASS; CHANGELOG lists case count, cases and results. Pass (every job): 0 crashes, 0 watchdog lines, ts3native.log first line \"ts3native 0.36.37a\", no FAIL line, no unscrubbed \\Users\\<name> path, no save that ends with a non-zero result, no \"save: still running after\" >= 120 s (shorter ones are normal for 8-20 s saves). The job's ts3native.log copy is the last game start's: read every matrix load's lines for save: end / FAIL by hand when a case fails. Run from the hotfix worktree (.claude/worktrees/hotfix-016: its harness, build/ts3fixes.package = ts3fixes 0.1.6, build/ts3agent.package; cycle.ts installs them, the next master job installs master's again), asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de...), release ini = the branch repo ini (v0.1.5 release defaults + [UserDiag] Enabled=1).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "minCounters": 108,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "save": "Baseline-IP-Spring",
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0,
+        "^save: end #\\d+ result [1-9]": 0,
+        "^save: still running after (1[2-9]\\d|[2-9]\\d\\d|\\d{4,}) s": 0
+      },
+      "run": {
+        "matrix": [
+          "--cases",
+          "control,overwrite,back-to-back,unpaused,reload"
+        ]
+      },
+      "saveMatrix": {
+        "fixes": "shipped"
+      },
+      "timeoutMin": 45
+    }
+  ]
+}

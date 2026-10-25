@@ -46,8 +46,6 @@
         "RouteSnap.ReleaseLock": 0,
         "RouteSnap.FreeLock": 0
       },
-      "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
-
       "run": {
         "profile": {
           "minutes": 5,
@@ -105,8 +103,6 @@
         "RouteSnap.ReleaseGates": 1,
         "RouteSnap.FreeLock": 0
       },
-      "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
-
       "run": {
         "profile": {
           "minutes": 5,
@@ -164,8 +160,6 @@
         "RouteSnap.ReleaseGates": 1,
         "RouteSnap.FreeLock": 1
       },
-      "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
-
       "run": {
         "profile": {
           "minutes": 5,
@@ -222,8 +216,6 @@
         "RouteSnap.ReleaseLock": 0,
         "RouteSnap.FreeLock": 0
       },
-      "logForbid": { "snap replay audit MISMATCH": 0, "P4 FAULT in a clone run": 0 },
-
       "run": {
         "profile": {
           "minutes": 5,

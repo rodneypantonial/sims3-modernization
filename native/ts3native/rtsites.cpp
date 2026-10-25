@@ -84,8 +84,10 @@ static bool RtWaitJob(volatile LONG* us, DWORD key) {
     const bool fb = g_jobFb != 0;  // docs/134 §11: the job waited for is a foreign one (A_RUNNING checked above)
     const bool own = g_jobOwn != 0;  // docs/178 T4: an own one
     const DWORD handle = g_async.handle;
-    if (tid == g_async.owner) WaitAsyncDone(SW_RTWAIT);
+    UdWait("the running route job");  // [UserDiag]: no-op unless this thread is saving
+    if (tid == g_async.owner) WaitAsyncDone();
     else while (g_async.state == A_RUNNING) Sleep(1);
+    UdWait(NULL);
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(us, waited);
     if (tid == g_async.owner) WaitNote(key, waited), HaNote(key, waited, HA_JOB), FbjcSimWait(waited, fb), OwSimWait(waited, own, handle);
@@ -229,10 +231,7 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
         case RT_IDXREBUILD:
             if (job) { InterlockedIncrement(&k.vfRtLotIdxRebuildInJob[RtRole(tid)]); note = "lot index rebuild during a job"; }
             break;
-        case RT_SAVE:
-            SaveGateEnter(tid);  // savewrite.cpp: write-phase start when Apex owns the call 0xAB12AF (docs/148 §7a)
-            if (job) { InterlockedIncrement(&k.vfRtDrainSave); note = "save during a job"; }
-            break;
+        case RT_SAVE: if (job) { InterlockedIncrement(&k.vfRtDrainSave); note = "save during a job"; } break;
         case RT_BRD: if (job) { InterlockedIncrement(&k.vfRtDrainBrd); note = "BuildRoutingData during a job"; } break;
         case RT_LOTSAVE: if (job) { InterlockedIncrement(&k.vfRtDrainLotSave); note = "lot save during a job"; } break;
         case RT_DEBUG:

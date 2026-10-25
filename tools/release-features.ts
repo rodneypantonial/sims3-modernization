@@ -34,16 +34,6 @@ export const FEATURES: Record<string, Feature> = {
   destroypark: { ini: { 'Discourage.DestroyPark': ['1', '0'] }, doc: 'docs/88 §10 design G' },
   avoidro: { ini: { 'AvoidRO.Enabled': ['1', '0'], 'AvoidRO.Mode': ['1', '1'], 'AvoidRO.Shadow': ['0', '0'] }, doc: 'docs/137' },
   unseenthrottle: { ini: { 'UnseenThrottle.Enabled': ['1', '0'] }, doc: 'docs/143 (needs ts3fixes from the same release: household positions)' },
-  // P5 + P5b/P5c lending + docs/182 consumer, as the 2026-10-23 night ran it (overnight-1023.json) minus verify/audit probes
-  // (VerifyEvery/AuditEvery stay at the ini defaults); takes ReplanFromPosition answers only, so [RouteAsync] Kinds = 4
-  routesnap: { ini: { 'RouteAsync.Kinds': ['4', '0'], 'RouteSnap.Enabled': ['1', '0'], 'RouteSnap.Mode': ['2', '0'], 'RouteSnap.Kinds': ['8', '15'],
-    'RouteSnap.Lots': ['replay', 'none'], 'RouteSnap.Prebuild': ['1', '0'], 'RouteSnap.LazyKeep': ['1', '0'], 'RouteSnap.ReplaySigMs': ['250', '0'],
-    'RouteSnap.LotsUnlocked': ['1', '0'], 'RouteSnap.InsFreeInPlace': ['1', '0'], 'RouteSnap.RecsUnlocked': ['1', '0'],
-    'RouteSnap.ReleaseLock': ['1', '0'], 'RouteSnap.ReleaseGates': ['1', '0'], 'RouteSnap.FreeLock': ['1', '0'] },
-    doc: 'docs/94 §19-§22, §20 (P6 gate G6), docs/182; opt-in: CI keeps [RouteSnap] out of the release defaults' },
-  // P6 widening (docs/94 §24, ts3native 0.36.41): the Sims' own Route.Plan jobs take the clone answer too, and Mode=2 STARTs
-  // behind a busy job share the pending cut. A separate id so routesnap (RFP only) can ship without it
-  routesnapplan: { ini: { 'RouteSnap.TakeKinds': ['9', '8'], 'RouteSnap.ShareCuts': ['1', '0'] }, needs: ['routesnap'], doc: 'docs/94 §24 (P6 widening; gates G0-G2 of §22.30.4 first)' },
   stuckcheckasync: { tuning: ['kStuckCheckAsync'], doc: 'docs/134 §8' },
   replandefer: { tuning: ['kReplanDefer'], doc: 'docs/141 §6' },
   replanspread: { tuning: ['kReplanSpread'], doc: 'docs/141 §6' },
@@ -141,9 +131,8 @@ function ciAllowed(): string[] {
 
 function selfCheck(): void {
   const ok = (c: boolean, what: string) => { if (!c) { console.error(`self-check FAILED: ${what}`); process.exit(1); } };
-  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nKinds=0\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
-    '[Discourage]\nDeferFootprint=0\nDestroyPark=0\n[AvoidRO]\nEnabled=0\nMode=1\nShadow=0\n[UnseenThrottle]\nEnabled=0\n' +
-    '[RouteSnap]\n' + Object.entries({ ...FEATURES.routesnap.ini!, ...FEATURES.routesnapplan.ini! }).filter(([k]) => k.startsWith('RouteSnap.')).map(([k, [, off]]) => `${k.slice(10)}=${off}\n`).join('');
+  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
+    '[Discourage]\nDeferFootprint=0\nDestroyPark=0\n[AvoidRO]\nEnabled=0\nMode=1\nShadow=0\n[UnseenThrottle]\nEnabled=0\n';
   const tun = Object.values(FEATURES).flatMap(f => f.tuning ?? []).map(t => `<${t} value="False" />`).join('\n') + '\n<kGoHomeShortcut value="True" />';
   const log: string[] = [];
   const a = apply(parseChosen('fallbackasync,m1retry,stuckcheckasync'), ini, tun, log);
@@ -154,11 +143,6 @@ function selfCheck(): void {
   ok(status(a.ini, a.tuning).join() === 'fallbackasync,m1retry,stuckcheckasync', `status reads back (${status(a.ini, a.tuning).join()})`);
   const b = apply(parseChosen('none'), a.ini, a.tuning, []);
   ok(b.ini === ini && b.tuning === tun, 'none = back to all off');
-  const s = apply(parseChosen('routesnap'), ini, tun, []);
-  ok(s.ini.includes('\nLots=replay\n') && s.ini.includes('\nKinds=4\n') && s.ini.includes('\nTakeKinds=8\n') && status(s.ini, s.tuning).join() === 'routesnap', 'routesnap on reads back');
-  const p6 = apply(parseChosen('routesnap,routesnapplan'), ini, tun, []);
-  ok(p6.ini.includes('\nTakeKinds=9\n') && p6.ini.includes('\nShareCuts=1\n') && status(p6.ini, p6.tuning).join() === 'routesnap,routesnapplan', 'routesnapplan on reads back');
-  let t6 = ''; try { parseChosen('routesnapplan'); } catch (e: any) { t6 = e.message; } ok(/needs routesnap/.test(t6), 'routesnapplan needs routesnap');
   let t2 = ''; try { parseChosen('overwatchchain,overwatchspread'); } catch (e: any) { t2 = e.message; } ok(/spread wins/.test(t2), 'chain vs spread refused');
   let threw = ''; try { parseChosen('m1retry'); } catch (e: any) { threw = e.message; } ok(/needs fallbackasync/.test(threw), 'needs checked');
   threw = ''; try { parseChosen('nope'); } catch (e: any) { threw = e.message; } ok(/unknown/.test(threw), 'unknown id refused');
@@ -171,9 +155,6 @@ function selfCheck(): void {
   const realIni = readFileSync(INI, 'utf8'), realTun = readFileSync(TUNING, 'utf8');
   apply(new Set(Object.keys(FEATURES)), realIni, realTun, []);
   for (const f of DOCS) resolveBlocks(readFileSync(f, 'utf8'), new Set(), [], f);
-  // the P6 extras queue (docs/94 §20) runs the same snapshot stack as this feature
-  for (const j of JSON.parse(readFileSync(join(ROOT, 'tools', 'harness', 'queues', 'snap-release.json'), 'utf8')).jobs)
-    for (const [k, [on]] of Object.entries(FEATURES.routesnap.ini!)) ok(String(j.ini?.[k]) === on, `snap-release.json ${j.id}: ${k}=${on}`);
   console.log('release-features self-check ok');
 }
 

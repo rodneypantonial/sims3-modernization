@@ -65,6 +65,10 @@ You need two downloads from the release page: **`ts3fixes.package`** and **`ts3n
 
 Close the game and delete what you added: `ts3fixes.package` from `Mods\Packages\`, and `ts3native.asi` and `ts3native.ini` from `Game\Bin` (plus `wininet.dll` if you added it only for this). Your saves are not changed by the install or the removal.
 
+### Reporting a problem (stuck save, freeze, slowdown): send ts3native.log
+
+Close the game first (a game that hangs: end it in Task Manager), then attach **`Game\Bin\ts3native.log`** to your report (GitHub issue or Discord). Do not start the game again before you copy it: every start rewrites the file. From v0.1.6 (ts3native 0.36.37a) on it already answers the first questions (docs/188): plugin and ts3fixes versions and settings, your game edition (only the Steam edition is supported), other plugins in `Game\Bin`, your mods (count, size, script mods, the first 200 file names), the world and its size, CPU, RAM, GPU and Windows version, and for every save each step with its time, plus a line every 5 seconds while a save is still running. It contains file names only: folder paths with your user name are replaced by `<user>` or `<home>`. Open it in Notepad to check before you send it.
+
 ### If the game crashes: sending a crash report
 
 This is **opt-in** and still being tested, so it is off in the release. Nothing is ever sent without you saying yes.
@@ -87,5 +91,5 @@ Tested together with DXVK, Sims 3 Settings Setter, NRaas (ErrorTrap, Overwatch),
 You don't need anything in this section to play. It maps the list above to the settings that are on in the shipped files, so testers can tell what is what. Technical notes per release: `docs/release-notes/`.
 
 - `ts3fixes.package` tunables set to True: `kGoHomeShortcut`, `kBuildingTripShortcut`, `kLotTripShortcut` (townies skip the walk), `kVirtualHomeShortcut` (homeless townies), `kNoRouteFailWalkOffscreen`, `kRouteFailureBackoff`, `kNoStationDetourOffscreen` (route retries), `kStuckWatchdog`, `kStuckWatchdogIdle` (stuck Sims), `kPortalAdaptorLeak` (swimming and houseboats), `kBroadcasterThrottle`, `kWalkStyleComparer` (background work), `kFastRefTable` (saving), `kMotiveBarImageCache`, `kBuffGridInPlace`, `kSimNameCache` (Sim panel), `kStuckCheckAsync` (3 AM check), `kOverwatchChain` (Overwatch), `kErrorTrapSpread` (ErrorTrap).
-- `ts3native.ini` sections with `Enabled=1`: `[GC]` (memory), `[WaterJps]` (water routes), `[Decompress]` (unpacking), `[SaveWrite]` (saving), `[RouteAsync]` with `[RouteGate]` and `[Discourage]` (background routing and its safety locks, which must stay on together; `[Discourage]` `DeferFootprint=1` = moving Sims and objects, `[RouteAsync]` `RefcountGuard=1` = crowds), `[LotRemoveGuard]` and `[OptsInit]` (crash guards).
+- `ts3native.ini` sections with `Enabled=1`: `[GC]` (memory), `[WaterJps]` (water routes), `[Decompress]` (unpacking), `[SaveWrite]` (saving), `[RouteAsync]` with `[RouteGate]` and `[Discourage]` (background routing and its safety locks, which must stay on together; `[Discourage]` `DeferFootprint=1` = moving Sims and objects, `[RouteAsync]` `RefcountGuard=1` = crowds), `[LotRemoveGuard]` and `[OptsInit]` (crash guards), `[UserDiag]` (problem-report lines in ts3native.log, logging only, since v0.1.6).
 - To switch background routing off: `Enabled=0` under `[RouteAsync]` in `ts3native.ini`; the game then plans every route itself as before.

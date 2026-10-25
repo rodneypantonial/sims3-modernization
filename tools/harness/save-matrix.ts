@@ -27,6 +27,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readIndex, refpack } from '../extract-assemblies.ts';
 import { GUARD_MS, stallGuard } from './game-alive.ts';
+import { matchKnown } from './known-script-errors.ts';
 
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
@@ -121,7 +122,7 @@ export function parseLog(text: string): SaveEv[] {
       fp = { verify: m[1].split(' ')[0], mismatches: Number(m[2] ?? 0), mode: Number(m[3]), fallbacks: Number(m[4]) };
     else if (/^save compress MISMATCH/.test(line)) mm++;
     else if ((m = line.match(/^save compress: \d+ records.* mismatches (\d+)/))) cm = Number(m[1]);
-    else if ((m = line.match(/^save: result (\d+) travel (\d+\/\d+) total (\d+) ms: .*backup (?:\d+|not measured) \(([^,]+),(?:.*flushes deferred (\d+))?/))) {
+    else if ((m = line.match(/^save: result (\d+) travel (\d+\/\d+) total (\d+) ms: .*backup \d+ \(([^,]+),(?:.*flushes deferred (\d+))?/))) {
       evs.push({ result: Number(m[1]), travel: m[2], totalMs: Number(m[3]), backup: m[4], deferred: Number(m[5] ?? 0), footprint: fp, compressMismatches: cm, mismatchLines: mm });
       fp = undefined; cm = undefined; mm = 0;
     } else if ((m = line.match(/^save flush: (\d+) calls, (\d+) files flushed on the worker, (\d+) fails, (\d+) ms/)) && evs.length)
@@ -165,13 +166,21 @@ export function errSig(xml: string): string {
   return body.split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 8).join(' | ');
 }
 // reload verdict: an error that also appears after loading the OFF save is the game's, not ours (2026-10-14 ReadBook)
-export type ReloadSide = { save: string; households: string[]; files: string[]; sigs: string[] };
+// known: ids of known EA errors (known-script-errors.json) found on this side; their files are left out of sigs
+export type ReloadSide = { save: string; households: string[]; files: string[]; sigs: string[]; known?: string[] };
+export function reloadErrors(xmls: string[]): { sigs: string[]; known: string[] } {
+  const sigs: string[] = [], known: string[] = [];
+  for (const x of xmls) { const k = matchKnown(x); if (k) known.push(k.id); else sigs.push(errSig(x)); }
+  return { sigs, known };
+}
+const countIds = (ids: string[]) => [...new Set(ids)].map(id => `${id} x${ids.filter(x => x === id).length}`).join(', ');
 export function compareReload(on: ReloadSide, off: ReloadSide): Check[] {
   const offSigs = new Set(off.sigs), fresh = [...new Set(on.sigs.filter(x => !offSigs.has(x)))];
   const same = JSON.stringify(on.households) === JSON.stringify(off.households);
   return [
     { name: 'ON and OFF households', status: same ? 'pass' : 'fail', why: same ? `${on.households.length} households in both` : `ON only ${on.households.filter(h => !off.households.includes(h)).join(', ') || '-'}; OFF only ${off.households.filter(h => !on.households.includes(h)).join(', ') || '-'}` },
     { name: 'ScriptError files per save', status: 'info', why: `ON ${on.files.length}, OFF ${off.files.length}` },
+    ...(on.known?.length || off.known?.length ? [{ name: 'known EA errors', status: 'info' as const, why: `known EA error ${countIds([...(on.known ?? []), ...(off.known ?? [])])} (ignored): ON ${on.known?.length ?? 0}, OFF ${off.known?.length ?? 0}` }] : []),
     { name: 'new errors with fixes on', status: fresh.length ? 'fail' : 'pass', why: fresh.length ? `${fresh.length} not seen with OFF: ${fresh.map(x => x.slice(0, 150)).join('; ')}` : `0 (ON ${new Set(on.sigs).size} distinct, all also with OFF)` },
   ];
 }
@@ -192,8 +201,6 @@ if (values['self-check']) {
   assert.deepEqual(e[0].footprint, { verify: 'ok', mismatches: 0, mode: 1, fallbacks: 0 });
   assert.equal(e[0].compressMismatches, 1); assert.equal(e[0].mismatchLines, 1); assert.equal(e[0].backup, 'worker copy');
   assert.deepEqual(e[0].flush, { calls: 2, files: 31, fails: 0, ms: 410 });
-  // docs/25 §10: write method marks and 'not measured' phases
-  assert.equal(parseLog('save: result 0 travel 0/0 total 18000 ms: info 10, write ~15000 (gate span), backup not measured (game, worker 0, wait 0), copy 5, final 2 ms, flushes deferred 1')[0].deferred, 1);
   assert.equal(e[1].result, 5); assert.equal(e[1].travel, '1/1'); assert.equal(e[1].footprint, undefined); assert.equal(e[1].flush, undefined);
   assert.equal(parseLog('footprint: levels 1 entries 1 matched 0 calls 1 ms 0 verify mismatches 3 (mode 1 fallbacks 2 worldSave ms 1)\nsave: result 0 travel 0/0 total 1 ms: info 0, write 0, backup 0 (game, worker 0, wait 0), copy 0, final 0 ms, flushes deferred 0')[0].footprint!.mismatches, 3);
   const snap = (o: Record<string, Record<string, string>>): Snap => new Map(Object.entries(o).map(([f, r]) => [f, new Map(Object.entries(r))]));
@@ -212,6 +219,14 @@ if (values['self-check']) {
   assert.equal(v(compareReload(side([book]), side([book, book])), 'new errors with fixes on'), 'pass');
   assert.equal(v(compareReload(side([book, ours]), side([book])), 'new errors with fixes on'), 'fail');
   assert.equal(v(compareReload(side([]), side([], ['B:1'])), 'ON and OFF households'), 'fail');
+  // known EA error (wedding NRE, all-EA stack): ignored and reported; same stack with a ts3fixes frame stays new
+  const wedFrames = ['Sims3.Gameplay.Situations.Sims3.Gameplay.Situations.WeddingCeremony:CleanUp', 'Sims3.Gameplay.Autonomy.Sims3.Gameplay.Autonomy.Situation:Exit', 'Sims3.Gameplay.Situations.Sims3.Gameplay.Situations.WeddingCeremony+RouteToWeddingArch:OnRouteFailed', 'ScriptCore.ScriptCore.ScriptProxy:Simulate'];
+  const wed = (fr: string[]) => xe(`System.NullReferenceException: A null value was found\n${fr.map((f, i) => `#${i}: 0x00031 callvirt   in ${f} () ()`).join('\n')}`);
+  const kn = reloadErrors([wed(wedFrames)]), mod = reloadErrors([wed([...wedFrames.slice(0, 3), 'Ts3Fixes.Ts3Fixes.X:Y', wedFrames[3]])]);
+  assert.deepEqual(kn, { sigs: [], known: ['ea-wedding-cleanup-nre'] }); assert.equal(mod.known.length, 0); assert.equal(mod.sigs.length, 1);
+  const kc = compareReload({ ...side([book]), known: kn.known }, side([book]));
+  assert.equal(v(kc, 'new errors with fixes on'), 'pass'); assert.match(kc.find(x => x.name === 'known EA errors')!.why, /known EA error ea-wedding-cleanup-nre x1 \(ignored\): ON 1, OFF 0/);
+  assert.equal(v(compareReload({ ...side([book]), ...mod }, side([book])), 'new errors with fixes on'), 'fail');
   assert.ok(sameWorld('NewDowntownWorld', 'newdowntownworld')); assert.ok(!sameWorld('NewDowntownWorld', 'University'));
   assert.ok(!sameWorld(undefined, undefined)); assert.ok(!sameWorld('NewDowntownWorld', undefined));
   const ts = (o: object) => ({ loaded: true, inTravel: true, saving: false, world: 'NewDowntownWorld', household: 'H', ...o });
@@ -914,7 +929,7 @@ if (values['reload-check']) {
   checks.push({ name: `ScriptError files (${side.toUpperCase()})`, status: 'info', why: errs.length ? errs.join(', ') : `none since the save at ${new Date(p.t).toISOString().slice(11, 19)}` });
   await alive.check();
   checks.push({ name: 'game alive', status: (await ag('game_state')).ok ? 'pass' : 'fail', why: 'agent answers' });
-  p[side] = { save: target, households: now.households, files: errs, sigs: errs.map(f => errSig(readFileSync(join(USER_DIR, f), 'utf8'))) };
+  p[side] = { save: target, households: now.households, files: errs, ...reloadErrors(errs.map(f => readFileSync(join(USER_DIR, f), 'utf8'))) };
   writeFileSync(PENDING, JSON.stringify(p, null, 1));
   const done = !!p[other]?.sigs;
   if (done) checks.push(...compareReload(p.on, p.off));

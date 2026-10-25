@@ -367,10 +367,7 @@ export function dayFails(lines: any[], minDays = 2): string[] {
   const f: string[] = [];
   if (s.simDays < minDays) f.push(`only ${s.simDays} sim day(s) seen (${s.simHours} sim h); need ${minDays}`);
   if (s.deaths?.unscripted) f.push(`${s.deaths.unscripted} unscripted death(s): ${lines.filter(l => l.kind === 'death' && !l.scripted).map(l => `${l.sim} (${l.how})`).join(', ')}`);
-  // a household generated in this run moved in that day: no school or job assignment settled yet, so its first due day is
-  // a grace day (2026-10-24 mansion check: all four kids 'missed' the move-in day)
-  const fresh = lines.some(l => l.kind === 'household' && l.ok), first = Math.min(...Object.values<any>(s.attendance ?? {}).flatMap(a => a.due));
-  for (const [sim, a] of Object.entries<any>(s.attendance ?? {})) { const miss = a.due.filter((d: number) => !a.attended.includes(d) && !(fresh && d === first)); if (miss.length) f.push(`${sim} missed work/school on day ${miss.join(', ')}`); }
+  for (const [sim, a] of Object.entries<any>(s.attendance ?? {})) { const miss = a.due.filter((d: number) => !a.attended.includes(d)); if (miss.length) f.push(`${sim} missed work/school on day ${miss.join(', ')}`); }
   const w = perDay(s.byType, WORK_DAYS), fr = perDay(s.byType, FREE);
   if (!w.simDays || !fr.simDays) f.push(`pursuit comparison needs both: ${w.simDays} work/school Sim-days, ${fr.simDays} free Sim-days`);
   else if (!(fr.mean > w.mean)) f.push(`pursuits per Sim-day: free days ${fr.mean.toFixed(2)} not > work/school days ${w.mean.toFixed(2)}`);
@@ -534,8 +531,6 @@ async function selfCheck() {
   assert.match(dayFails([sum({ simDays: 1 })]).join(), /only 1 sim day/);
   assert.match(dayFails([{ kind: 'death', sim: 'Bob', scripted: false, how: 'dying' }, sum({ deaths: { scripted: 1, unscripted: 1 } })]).join(), /1 unscripted death\(s\): Bob \(dying\)/);
   assert.match(dayFails([sum({ attendance: { Ann: { due: [1, 2], attended: [1] } } })]).join(), /Ann missed work\/school on day 2/);
-  assert.deepEqual(dayFails([{ kind: 'household', ok: true }, sum({ attendance: { Ann: { due: [16, 18], attended: [18] }, Bo: { due: [16], attended: [] } } })]), []); // move-in day grace
-  assert.match(dayFails([{ kind: 'household', ok: true }, sum({ attendance: { Ann: { due: [16, 18], attended: [] } } })]).join(), /Ann missed work\/school on day 18$/);
   assert.match(dayFails([sum({ byType: { workday: { simDays: 2, done: 4 }, weekend: { simDays: 2, done: 4 } } })]).join(), /not > work/);
   assert.match(dayFails([sum({ byType: { workday: { simDays: 2, done: 1 } } })]).join(), /needs both/);
   assert.deepEqual(dayFails([]), ['no days summary (day planner did not run or the run stopped early)']);

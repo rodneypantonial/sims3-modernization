@@ -26,7 +26,6 @@ export function parseCsv(text: string): Record<string, number>[] {
 // self-check
 console.assert(median([3, 1, 2]) === 2 && median([1, 2, 3, 4]) === 2.5 && Number.isNaN(median([])), 'median');
 console.assert(parseCsv('a,b\r\n1,2\n3,4')[1].b === 4, 'parseCsv');
-if (args.includes('--self-check')) { console.log('addr-budget self-check ok'); process.exit(0); }
 
 const read = (p: string) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
 const MB = (b: number | undefined) => (b == null || b < 0 ? NaN : b / 1048576);

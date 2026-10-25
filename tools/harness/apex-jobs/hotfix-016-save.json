@@ -1,0 +1,26 @@
+{
+  "id": "hotfix-016-save",
+  "description": "v0.1.6 gate (docs/188 §6): Apex Radiance with its saved settings plus the hotfix pair (ts3native 0.36.37a, [Compat] ApexStandDown=1 as released) loads the Apex test town, lets lots load and Sims route, then save, save, reload, save. Pass: every save completes without Error 12, the reload reaches live mode, no crash; our ts3native.log copy (load-<n>-with-ts3native.log) has 3 'save: end #N result 0' lines (#1, #2 before the reload, #3 after it), no 'save: still running after' >= 120 s, no FAIL line and the 'ts3fixes: ts3fixes 0.1.6' line (the hotfix package is the installed one).",
+  "save": "ApexTest-Town",
+  "toml": {},
+  "variants": {
+    "saved": {}
+  },
+  "expect": [
+    "\\[Config\\] Settings loaded from ApexRadiance\\.toml",
+    "\\[Patches\\] \\d+ features:"
+  ],
+  "fail": [
+    "FAILED \\(Error 12\\)"
+  ],
+  "steps": [
+    { "do": "speed", "speed": "fast" },
+    { "do": "camera_pan", "lots": 6, "seconds": 30, "passes": 2 },
+    { "do": "wait", "minutes": 2 },
+    { "do": "save" },
+    { "do": "save" },
+    { "do": "reload", "save": "last" },
+    { "do": "wait", "minutes": 2 },
+    { "do": "save" }
+  ]
+}
