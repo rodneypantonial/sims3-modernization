@@ -71,6 +71,7 @@ namespace Ts3Fixes
             ApplySeasonMarkerCache();
             ApplyRouteSources();
             ApplyDisposeSpread();
+            ApplyMemAlive();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -128,12 +129,25 @@ namespace Ts3Fixes
         // [297-301] stuck-check outcomes (FewerPlans.cs StuckCheckRun, docs/163 §10, counted with any switch): [297] stuckcheckcap PROBE marks
         // ts3native accepted, then per check: [298] no plan (moved / early return), [299] a probe succeeded (not stuck), [300] every probe
         // failed before the last round (re-armed), [301] every probe failed in the last round (reset).
+        // [302] overwatchstuckslice: longest stretch seen at the IsSelectable hook (us) (OverwatchStuck.cs, docs/145 §12).
+        // [303-312] unseen-Sim fallback (UnseenFallback.cs, docs/202): stuck checks deferred / run (seen), plans marked / cut,
+        // teleports / refused, no-retry answers, plans seen, marks refused, longest marked plan (ms).
+        // [313-318] unseenfbpre (UnseenFallback.cs UfPre, docs/202 §3.5): teleports after a walk-time hold / eligible but no reachability
+        // proof (planned normally) / proven unreachable (failed at once) / holds given up (seen, moved, interrupted: planned normally) /
+        // holds started / longest hold (sim-minutes); [319-322] unseenfbarrive / unseenfbleave (§3.6): arrive hand-offs / arrive no hand-off
+        // or proof, leave teleports / leave no hand-off or proof; [323-325] other branches; [326-327] D paths skipped for a missing
+        // verdict (normal plan instead, no sim-thread check) / D cells filled from those normal plans (UfFillNote).
+        // [328-340] D / D-arrive / D-leave reject gates (UfPre / UfArrive / UfLeave, docs/202 §3.5.1, shared by the three switches,
+        // counted for unseen Sims (D, D-arrive) and seen-but-movable ones (D-leave)): no goal or not the Sim's own task / too short /
+        // Sim rules / not a standing unseen townie / car or boat / goal on the Sim's lot / goal lot refused / goal indoors or off the
+        // ground / caller not a follow helper (frames in AppDomain ts3fixes.unseenfb.callers) / no yielding context / colour gives no
+        // same-component proof / goal not routable or no route profile / D-leave goal in view.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[302]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[341]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -220,6 +234,13 @@ namespace Ts3Fixes
                 case "preplancb": return Instantiator.kPrePlanCallback;
                 case "stuckcheckcap": return Instantiator.kStuckCheckCap;
                 case "owprobeplans": return Instantiator.kOverwatchIgnoreStuckProbes;
+                case "unseenfbstuck": return Instantiator.kUnseenFallbackStuck;
+                case "unseenfbplan": return Instantiator.kUnseenFallbackPlan;
+                case "unseenfbteleport": return Instantiator.kUnseenFallbackTeleport;
+                case "unseenfbsites": return Instantiator.kUnseenFallbackSites;
+                case "unseenfbpre": return Instantiator.kUnseenFallbackPre;
+                case "unseenfbarrive": return Instantiator.kUnseenFallbackArrive;
+                case "unseenfbleave": return Instantiator.kUnseenFallbackLeave;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -421,6 +442,7 @@ namespace Ts3Fixes
             public Sims3.SimIFace.Vector3 LotPos;
             public readonly Dictionary<VerdictKey, bool> Cells = new Dictionary<VerdictKey, bool>(new VerdictKeyComparer());
             public readonly List<Sims3.SimIFace.Vector3> Good = new List<Sims3.SimIFace.Vector3>();
+            public readonly Dictionary<VerdictKey, bool> PlanOk = new Dictionary<VerdictKey, bool>(new VerdictKeyComparer()); // docs/202 D only: cells a normal plan proved (UfFillNote)
             public readonly Dictionary<VerdictKey, Sims3.SimIFace.Vector3> Fwds = new Dictionary<VerdictKey, Sims3.SimIFace.Vector3>(new VerdictKeyComparer()); // facing found with a verified spot (switch safespotreuse)
             public int Next;
         }

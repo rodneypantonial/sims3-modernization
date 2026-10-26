@@ -1,0 +1,68 @@
+{
+  "jobs": [
+    {
+      "id": "bp-memsus-catalogue",
+      "note": "docs/191 module 2 verify (correctness only, never timing: [MemDiag] SelfTest leaks 8 MB on purpose, mem_gc forces full collections). Repro leak-catalogue-loop: forced GC in live mode, Build mode, 5 rounds x 8 catalogues with a mark per round, forced GC, back to live mode, forced GC. Needs game-copy/ts3native.asi.memsus2 (0.36.76: wanted memsus samples queue up, file-mapping self-test fix of 0.36.75) and ts3fixes + ts3agent rebuilt (MemSuspects.cs; mem_gc, catalog_loop, buy_sell_loop). 2026-10-25 run (0.36.74) FAILed all 3: profile-world ignored the repro steps' until (async loops cut short, time sent into a loading game), the single wanted slot lost the load answer, the map self-test flaked (fixed in 0.36.75). Pass: native self-test PASS; ts3fixes suspect self-test PASS (cc, ppc, gsc, wq, ... each +1 and back) and ccIcon validated once the first catalogue wrapped an icon; a diag: memsus answer for the load, every mark and every gc pair; no '!' mark. Then: node tools/mem-report.ts report --log <job ts3native.log> (event deltas per cat-r round, forced-GC section with the gcN cross-check).",
+      "asi": "game-copy/ts3native.asi.memsus2",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1, "MemDiag.SelfTest": 1 },
+      "logRequire": {
+        "^diag: mem selftest PASS": 1,
+        "^diag: memsus #\\d+ load ": 1,
+        "^diag: memsus selftest cc \\d+ -> \\d+ -> \\d+ \\(want \\+1, back\\) ok": 1,
+        "^diag: memsus selftest ppc \\d+ -> \\d+ -> \\d+ \\(want \\+1, back\\) ok": 1,
+        "^diag: memsus selftest PASS": 1,
+        "^diag: memsus selftest ccIcon \\d+ -> \\d+ -> \\d+ \\(want \\+1, back\\) ok": 1,
+        "^diag: mem #\\d+ mark ev=gc-before ": 3,
+        "^diag: memsus #\\d+ mark ev=gc-before cc=\\d+": 3,
+        "^diag: mem #\\d+ mark ev=gc-after ": 3,
+        "^diag: memsus #\\d+ mark ev=gc-after cc=\\d+": 3,
+        "^diag: memsus #\\d+ mark ev=cat-r1 cc=\\d+": 1,
+        "^diag: memsus #\\d+ mark ev=cat-r5 cc=\\d+": 1,
+        "^diag: memsus #\\d+ mark ev=build-out ": 1
+      },
+      "logForbid": { "^FAIL\\b": 0, "^diag: mem selftest FAIL": 0, "^diag: memsus selftest FAIL": 0, "^diag: memsus selftest .* FAIL\b": 0, "^diag: mem(sus)? .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "leak-catalogue-loop" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-memsus-reload",
+      "note": "docs/191 module 2 / docs/192 #4 #5: the same save loaded 3 times in one session (repro leak-overwatch-errortrap-reload) with NRaas Overwatch + ErrorTrap installed. Pass: a diag: memsus answer at each of the 3 loads and marks load-1..load-3, etRef readable (ErrorTrap's ScriptCore found) and its self-test ok. Result to read (not a pass rule): etRef and ppc per load (1, 2, 3 above the EA base = leak real).",
+      "asi": "game-copy/ts3native.asi.memsus2",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1, "MemDiag.SelfTest": 1 },
+      "logRequire": {
+        "^diag: memsus #\\d+ load .* etRef=\\d+": 3,
+        "^diag: memsus selftest etRef \\d+ -> \\d+ -> \\d+ \\(want \\+1, back\\) ok": 1,
+        "^diag: memsus #\\d+ mark ev=load-1 ": 1,
+        "^diag: memsus #\\d+ mark ev=load-2 ": 1,
+        "^diag: memsus #\\d+ mark ev=load-3 ": 1
+      },
+      "logForbid": { "^FAIL\\b": 0, "^diag: memsus selftest FAIL": 0, "^diag: memsus selftest .* FAIL\b": 0, "^diag: mem(sus)? .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "leak-overwatch-errortrap-reload" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 35
+    },
+    {
+      "id": "bp-memsus-place",
+      "note": "docs/191 module 2 / docs/192 #2: 20 buy + sell rounds of a store object (repro leak-place-object-loop), marks every 5 rounds, forced GC before and after. Pass: the loop ran (marks place-r5..place-r20 with memsus answers), both gc pairs answered, wq self-test ok (wpl is tested once it has entries). Result to read: wpl / wq per mark (+1 per round = leak real).",
+      "asi": "game-copy/ts3native.asi.memsus2",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1, "MemDiag.SelfTest": 1 },
+      "logRequire": {
+        "^diag: memsus selftest wq \\d+ -> \\d+ -> \\d+ \\(want \\+1, back\\) ok": 1,
+        "^diag: memsus #\\d+ mark ev=place-r5 .* wpl=\\d+": 1,
+        "^diag: memsus #\\d+ mark ev=place-r20 .* wpl=\\d+": 1,
+        "^diag: memsus #\\d+ mark ev=gc-after ": 2
+      },
+      "logForbid": { "^FAIL\\b": 0, "^diag: memsus selftest FAIL": 0, "^diag: memsus selftest .* FAIL\b": 0, "^diag: mem(sus)? .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 10, "seed": 12345, "noSamplers": true, "repro": "leak-place-object-loop" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 25
+    }
+  ]
+}

@@ -73,17 +73,17 @@ import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, op
 import { join, resolve } from 'node:path';
 import { classify } from './shadow-compare-report.ts';
 import { parseArgs } from 'node:util';
-import { checkRequire, numericFields, parseRequire, stepTally } from './fixes-require.ts';
+import { checkRequire, nativeWindowStep, numericFields, parseRequire, stepTally } from './fixes-require.ts';
 import { checkHitchTasks, parseHitchTasks } from './hitch-tasks.ts';
 import { checkTag, parseRule } from './frame-lead.ts';
-import { isSetup, runLoop, runStep, stopLine, withRule } from './repro-loop.ts';
+import { isSetup, runLoop, runStep, stopLine, untilUnlocked, withRule } from './repro-loop.ts';
 import { loadStory } from './story-fuzzer.ts';
 import { counterSwitches, nativeNames, nativeValues } from './native-switches.ts';
 import { leadInCut, sliceFrames } from './session-reuse.ts';
 import { reproSave } from './repro-save.ts';
 import { focusGame, giveFocusBack } from './focus-game.ts';
 import { mayBeStuck } from './stuck-rule.ts';
-import { watchGame } from './game-alive.ts';
+import { clockStep, watchGame } from './game-alive.ts';
 import { startMachineLoad, summarize } from './machine-load.ts';
 
 const { values } = parseArgs({ options: { tag: { type: 'string' }, minutes: { type: 'string', default: '10' }, ab: { type: 'string' }, 'ab-on-first': { type: 'boolean' }, 'fixes-off': { type: 'string' }, 'fixes-on': { type: 'string' }, 'until-compares': { type: 'string' }, slice: { type: 'string', default: '2' }, taskstall: { type: 'string' }, seed: { type: 'string' }, repro: { type: 'string' }, mainstack: { type: 'string' }, inroom: { type: 'boolean' }, watchstalk: { type: 'boolean' }, 'watchstalk-worker': { type: 'boolean' }, livereads2: { type: 'boolean' }, f4b: { type: 'boolean' }, vres: { type: 'boolean' }, 'vres-dry': { type: 'string' }, 'no-samplers': { type: 'boolean' }, 'no-env': { type: 'boolean' }, 'no-env-guard': { type: 'boolean' }, 'no-prof': { type: 'boolean' }, 'no-frames': { type: 'boolean' }, 'camera-pan': { type: 'boolean' }, 'prof-opts': { type: 'string' }, travel: { type: 'string' }, 'fixes-require': { type: 'string' }, 'frame-lead': { type: 'string' }, 'hitch-tasks': { type: 'string' }, 'since-load': { type: 'string' }, 'frames-shared': { type: 'string' }, 'loop-rule': { type: 'string' }, story: { type: 'string' } } });
@@ -235,18 +235,21 @@ if (rng.seed !== null) {
 rng.simMinutes.start = (await ag('time')).result?.minutes_total ?? null;
 // fail fast (docs/TESTING.md): game time must move unless the game says it is paused; 2026-10-17 bp-p0-sync froze after its
 // save step twice and still "passed" with 39-47 stuck Sims. 2 checks 30 s apart without movement = FAIL.
+// Build/Buy/CAS/Edit Town pause the clock by design (game-alive.ts clockStep): there the agent answering is the progress check
+let pauseDeclared = false; // a repro step with "pausesClock": true|false sets it (reproStep)
 const clockGuard = (async () => {
-  let last = rng.simMinutes.start, misses = 0;
+  const st = { last: rng.simMinutes.start as number | null, misses: 0 } as Parameters<typeof clockStep>[0];
   for (const end = Date.now() + secs * 1000; !stopped && Date.now() < end;) {
     await sleep(30000);
     if (env && !values['no-env-guard']) {  // keep skew sources out during the run (idempotent; only acts on winter, extreme cold or a full moon)
       const g = (await ag('test_env', { min_days_to_full: 1 }).catch(() => null))?.result;
       if (g?.changed?.length) console.log(`${stamp()} test_env guard: ${g.changed.join(', ')} (season ${g.season}, moon ${g.moon_phase})`);
     }
-    const t = (await ag('time').catch(() => null))?.result;
-    if (!t || t.speed === 'Paused' || t.minutes_total !== last) { misses = 0; last = t?.minutes_total ?? last; continue; }
-    if (++misses < 2) continue;
-    console.log(`${stamp()} FAIL: sim clock stuck at day ${t.day_number} ${t.clock} for ~60 s (speed ${t.speed}; fail-fast guard)`);
+    const t = (await ag('time').catch(() => null))?.result ?? null;
+    const sub = t && (/^Pause/i.test(t.speed) || t.minutes_total === st.last) ?(await ag('game_state').catch(() => null))?.result?.sub_state : undefined;
+    const why = clockStep(st, t, { subState: sub, declared: pauseDeclared });
+    if (!why) continue;
+    console.log(`${stamp()} FAIL: ${why} (fail-fast guard)`);
     // pause bits, game dt, speed and window state at the trip (docs/85 §6: minimize pause = bit 2, device pause = bit 4)
     const cs = await ag('clock_state');
     console.log(`${stamp()} clock_state at the trip: ${JSON.stringify(cs.ok ? cs.result : cs.error)}`);
@@ -268,6 +271,17 @@ if (prof) {
   prof.stdout.on('data', (d: Buffer) => { if (String(d).includes('[ts3prof] stopped early')) profHalted(); });
 }
 const profDone = prof ? new Promise(r => prof.on('exit', r)) : Promise.resolve();
+// Frida 17's Interceptor patches a page as: VirtualProtect RWX, write, VirtualProtect back to RX (gum_memory_patch_code_pages_via_mprotect).
+// Two Frida sessions patching the same page at once race: one sets RX between the other's VirtualProtect and its write, and that write
+// faults (docs/67 §21, Crash R: the profiler's publish hook 0x593590 vs frame-times.js readpair 0x593440 / drain 0x5937B0, page
+// 0x593000). So the side sessions below start only once the profiler is done installing (or gave up, or 30 s passed).
+const profInstalled = prof ? new Promise<void>(r => {
+  let seen = '', done = false;
+  const end = () => { done = true; r(); };
+  const on = (d: Buffer) => { seen += d; if (/\[ts3prof\] hooks installed|NOT PROFILING/.test(seen)) end(); };
+  prof.stdout.on('data', on); prof.stderr.on('data', on); prof.on('exit', end);
+  setTimeout(() => { if (!done) { console.log(`${stamp()} stutter profiler: no install line in 30 s; starting the side sessions anyway`); end(); } }, 30000).unref();
+}) : Promise.resolve();
 // fail fast: the profiler stops itself after -t; one still running 90 s past that is hung, and the run would wait on it forever
 setTimeout(() => { if (prof && prof.exitCode === null && prof.signalCode === null) { console.log(`${stamp()} FAIL: stutter profiler still running 90 s past -t ${secs}; killed (fail-fast guard)`); prof.kill(); } }, (secs + 90) * 1000).unref();
 
@@ -297,6 +311,7 @@ const side = (on: boolean | undefined, file: string, name: string, extra = {}, k
   p.on('exit', r);
   setTimeout(() => { if (p.exitCode === null && p.signalCode === null) { console.log(`${stamp()} FAIL: ${file} still running 90 s past -t ${secs}; killed (fail-fast guard)`); p.kill(); } }, (secs + 90) * 1000).unref();
 }) : Promise.resolve();
+await profInstalled; // no two sessions patching code at once (above)
 const inroomDone = side(values.inroom, 'inroom-reads.js', 'inroom');
 const watchDone = side(values.watchstalk, 'watch-stalk.js', 'watchstalk', values['watchstalk-worker'] ? { worker: true } : {});
 const lr2Done = side(values.livereads2, 'live-reads2.js', 'livereads2');
@@ -386,7 +401,11 @@ async function nativeSet(args: Record<string, unknown>): Promise<{ ok: boolean; 
     const val = Number(v === true ? 1 : v === false ? 0 : v);
     if (!Number.isInteger(val)) return { ok: false, error: `native_set: ${n} value ${v} is not an integer` };
     if (nativeNames.includes(n)) await get(`native?${n}=${val}`);
-    else if (n in counterSwitches || n in nativeValues) await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n] ?? nativeValues[n]}&value=${val}`);
+    else if (n in counterSwitches || n in nativeValues) {
+      // read back: a probe that writes 0/1 only (before 2026-10-25) left HoldKeyed=2 / p6warm=2 unset without an error
+      const w = await get(`nativeexport?name=ts3native_counters&offset=${counterSwitches[n] ?? nativeValues[n]}&value=${val}`);
+      if (w?.value !== val) return { ok: false, error: `native_set: ${n}=${val} did not stick (reads ${w?.value})` };
+    }
     else return { ok: false, error: `native_set: unknown ts3native switch ${n}` };
     done[n] = val;
   }
@@ -418,26 +437,40 @@ const reproFail = async (why: string) => {
   process.exit(1);
 };
 // the note goes into the log line: worst-hitches.ts labels the step's window by its arm ("fire off #3" -> reflect_call off)
+const nativeMarks = new Map<string, any>(); // native_mark / native_check windows (fixes-require.ts nativeWindowStep)
 const reproStep = async (s: any) => {
-  const r = s.cmd === 'native_set' ? await nativeSet(s.args) : await ag(s.cmd, s.args, s.timeoutS ? s.timeoutS * 1000 : undefined);
+  const call = () => s.cmd === 'native_set' ? nativeSet(s.args)
+    : s.cmd === 'native_mark' || s.cmd === 'native_check' ? nativeWindowStep(s, () => get('native'), nativeMarks)
+    : ag(s.cmd, s.args, s.timeoutS ? s.timeoutS * 1000 : undefined);
+  if (s.pausesClock !== undefined) pauseDeclared = !!s.pausesClock; // the step pauses the clock on purpose until a later step says false
+  let r = await call();
+  if (s.cmd === 'set_speed') r = await untilUnlocked(call, r, { sleep, now: Date.now, log: l => console.log(`${stamp()} ${l}`),
+    dialog: async () => JSON.stringify((await ag('pending_dialogs').catch(() => null))?.result ?? null).slice(0, 300) });
   console.log(`${stamp()} repro ${values.repro} step ${s.cmd}${s.note ? ` [${s.note}]` : ''}${isSetup(s) ? ' (setup)' : ''}: ${JSON.stringify(r).slice(0, 200)}`);
   appendFileSync(`${pre}-repro.jsonl`, JSON.stringify({ t: stamp(), cmd: s.cmd, args: s.args, note: s.note, r }) + '\n'); // full result: the log line is cut
-  stepAnswers.push({ cmd: s.cmd, r });
+  stepAnswers.push({ cmd: s.tally ?? s.cmd, r }); // "tally": count this step under its own name in stepsRequire (per-arm visits)
   // fail fast, as repro.ts: a failed setup step means the rest of the run measures nothing (2026-10-19 bp-ab-wildflowertask
   // ended PASS after wildflower_drain failed); "optional": true steps may fail. The queue closes the game after the job.
   if (!r.ok && !s.optional) await reproFail(`repro step ${s.cmd} failed: ${String(r.error).split('\n')[0].slice(0, 300)}`);
   return r;
 };
 const reproRun = (async () => {
-  for (const s of reproSteps) await runStep(s, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) }); // fixed waitS or adaptive waitUntil (repro-loop.ts)
+  for (const s of reproSteps) await runStep(s, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) }) // fixed waitS or adaptive waitUntil, then until (repro-loop.ts)
+    .catch((e: Error) => reproFail(`repro ${e.message}`));
   if (story) await story.run({ ag, sleep, halted: () => stopped || Date.now() >= at(secs), pre }).catch(e => reproFail(e.message)); // household creation failed: stop the job
   if (!reproLoop) return;
   // firings inside the first minute are excluded by the hitch classifier (bp-overwatch-ab-loop2 2026-10-23: all 20 fell in it)
   // shortcut: 65 s even in a reused session (whose start edge is only 15 s), upgrade when reuse measurement matters
   if (Date.now() < at(65)) { console.log(`${stamp()} loop waits for the end of the excluded first minute`); await sleep(at(65) - Date.now()); }
   const capMs =Math.min(reproLoop.maxMinutes ?? mins, mins) * 60000 - (Date.now() - t0); // the loop cap counts from the window start
+  // in-load arms as --ab slices (docs/189 §16): slice 0 = the lead-in (warm-up, not counted), then one slice per firing with a
+  // ts3native snapshot at its start, so wait-ab.ts and hitch-ab.ts split the whole arm window per arm (<tag>-ab.json loop: true)
+  writeFileSync(`${pre}-ab-native.jsonl`, '');
+  const loopSnap = () => get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
+  await loopSnap(); slices.push({ from: (Date.now() - t0) / 1000, on: false, warmup: true } as typeof slices[number]);
+  const onArm = async (arm: string) => { await loopSnap(); slices.push({ from: (Date.now() - t0) / 1000, on: arm === 'on' }); };
   try {
-    const r = await runLoop(reproLoop, capMs, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs) });
+    const r = await runLoop(reproLoop, capMs, { ag, step: reproStep, sleep, now: Date.now, halted: () => stopped || Date.now() >= at(secs), onArm });
     if (r.why !== 'window') stopWindow(stopLine(r, reproLoop.until), { loop: r, until: reproLoop.until });
     else console.log(`${stamp()} ${stopLine(r, reproLoop.until)}`);
   } catch (e: any) { await reproFail(e.message); }
@@ -456,7 +489,7 @@ async function checkStuck() {
     const prev = simSeen.get(sim.id);
     const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     simSeen.set(sim.id, e);
-    if (!e.reported && mayBeStuck(sim.interaction, !!sim.routing) && e.checks >= (sim.routing ? 3 : 6)) {
+    if (!e.reported && mayBeStuck(sim.interaction, !!sim.routing, !!sim.in_transit) && e.checks >= (sim.routing ? 3 : 6)) {
       e.reported = true;
       stuck.push({ ...sim, checks: e.checks, shortcut: moved[sim.name] ?? false });
     }
@@ -563,6 +596,10 @@ if (hitchTasks.length) {
   if (fails.length) process.exitCode = 1;
 }
 if (abNames.length) { writeFileSync(`${pre}-ab.json`,JSON.stringify({ names: abNames, slices }, null, 1)); await ag('patches', Object.fromEntries(abNames.map(n => [n, true]))); }
+if (reproLoop && slices.length) { // the last firing's end snapshot, then the arm slices (loop: hitch-ab keeps every firing slice whole)
+  await get('native').then(c => appendFileSync(`${pre}-ab-native.jsonl`, JSON.stringify({ i: slices.length, s: (Date.now() - t0) / 1000, c }) + '\n')).catch(() => {});
+  writeFileSync(`${pre}-ab.json`, JSON.stringify({ names: [`loop:${values.repro}`], loop: true, slices }, null, 1));
+}
 writeFileSync(`${pre}-stuck.json`, JSON.stringify(stuck, null, 1));
 if (stuck.length) await reproSave(ag, values.tag!, stuck);
 console.log(`${stamp()} stuck Sims: ${stuck.length}${stuck.length ? ` (${stuck.map(x => `${x.name}${x.shortcut ? ` [teleported: ${x.shortcut}]` : ''} on ${x.interaction}`).join('; ')})` : ''}`);

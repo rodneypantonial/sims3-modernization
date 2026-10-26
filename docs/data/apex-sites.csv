@@ -245,11 +245,11 @@ address,apex_name,apex_source,class,verdict
 0x732E90,,features/memory_guard.cpp,,
 0x733D20,ResourceChangeMonitor,features/frame_profiler.cpp,,
 0x733D30,,features/frame_profiler.cpp,,
-0x733E70,ResShrinkBoth,features/memory_guard.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,,
+0x733E70,ResShrinkBoth,features/memory_guard.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,C2,ours [ResourceCache] TrimAfterCleanup experiment (off) calls it; Apex MemoryGuard (on) calls it too; ours stands down with Apex loaded + ApexStandDown=1 (docs/198)
 0x736660,ResKeyListDerived,features/frame_profiler.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,,
 0x736A70,ResRegisterDbDerived,framework/game_addresses.cpp+patches/performance_patches.cpp,,
 0x737560,ResUpdate,features/memory_guard.cpp+framework/game_addresses.cpp,,
-0x7377F0,ResourceSystem,features/frame_profiler.cpp,,
+0x7377F0,ResourceSystem,features/frame_profiler.cpp,C2,ours [ResourceCache] TrimAfterCleanup (off) swaps the service vtable slot that holds it (data 0xFFEB2C) and calls it; Apex Frame Profiler (developer only) hooks the entry bytes; Apex MemoryGuard patches the call 0x7377F7 inside it (docs/198)
 0x7377F7,ResUpdateCall,features/memory_guard.cpp+framework/game_addresses.cpp,,
 0x7A08C0,ShaderSystem,features/frame_profiler.cpp,,
 0x7D2DB0,ScriptMessageScopeCtor,framework/game_addresses.cpp,C2,ours [Verify] (off) vs LotObjectThrottle (off by default)
@@ -310,7 +310,7 @@ address,apex_name,apex_source,class,verdict
 0xC38530,WallUv,framework/game_addresses.cpp,,
 0xC387B5,WallUvCall0,framework/game_addresses.cpp,,
 0xC387CC,WallUvCall1,framework/game_addresses.cpp,,
-0xC5FA60,ObjectTreeSearch,framework/game_addresses.cpp,,
+0xC5FA60,ObjectTreeSearch,framework/game_addresses.cpp,C2,ours [CrashForensics] SceneTreeGuard check-only entry detour (off) vs Apex ObjectLookupIndex call/read (on): Apex calls run through our check
 0xC60D30,ObjectTreeWalk,framework/game_addresses.cpp,C2,ours [Verify] (off) vs Apex ObjectLookupIndex (on)
 0xC61DC0,,features/memory_guard.cpp,,
 0xC62860,,features/memory_guard.cpp,,
@@ -337,7 +337,7 @@ address,apex_name,apex_source,class,verdict
 0xC845C0,,features/frame_profiler.cpp,,
 0xC8504C,ChunkRenderCall,features/terrain_chunk_relight.cpp+framework/game_addresses.cpp+patches/night_terrain_relight_patch.cpp,,
 0xD819A0,,features/frame_profiler.cpp,,
-0xD819AA,,features/frame_profiler.cpp,,
+0xD819AA,,features/frame_profiler.cpp,C0,Apex profiler only (developer mode); ours [GC] SqrtHeapLimit call retarget for GC timing (off; docs/199)
 0xE4A050,,features/frame_profiler.cpp,C0,Apex profiler only (developer mode); ours MonoThread M5 detour (off)
 0xE54D1B,,patches/performance_patches.cpp,,
 0xE58304,,patches/performance_patches.cpp,,

@@ -1,0 +1,157 @@
+{
+  "note": "p6-slim-verify (docs/66 §7.1, 2026-10-25): correctness + memory check of the P5/P6 clone slimming switches on game-copy/ts3native.asi.slim (= native/ts3native/out-slim, ts3native 0.36.73, counters v133; release ini unchanged: both switches default off). A1 [RouteSnap] PoolChunkMB=16 (pool regions of 16 MB reserved as they fill, up to 96) + A3 EpochHeap=1 (one clone build per load: the cut waits from world event 9 / 0x0A to event 7; one heap per clone build, destroyed with its last block), P6 on (TakeKinds=9, P6EarlyCopy, TakeKindsAll), VerifyEvery=1 (every armed job runs the clone and then the game's plan, §13 compare), [MemDiag] + [UserDiag] for the memory lines, A4 readout [RouteSnap] LotUseReadout=1 (per clone lot: bytes by structure and route jobs / agents that read it; untouched share at each memory sample and at a clean exit). Read: node tools/harness/lot-use-report.ts --filter p6-slim (top 20 lots by bytes, untouched share, verdict simple variant vs full A4 per docs/66 §7.1). Correctness runs, not timing (VerifyEvery=1 doubles route cost). PASS per job = nativeRequire + logForbid + logRequire, plus by hand: one 'snap replay: clone built' line before the 'diag: memory at world load' line (asked by the event-7 site), and the memory gate from the 'diag: memory at world load' / 'at 10 min' lines against the docs/66 §7 routesnap medians (largest free at load BP 1,413 / IP 1,415 MB, after 10-16 min BP 1,097 / IP 1,333 MB): predicted gain >= +50 MB at load and >= +60 MB at 10 min [inferred, ledger §350: A1 ~48-64 MB of the 96 MB reserve, A3 ~20 MB of the double-build peak]; direct counters plSavedKB (pool reserve left free), rpGenRelKB (heap blocks handed back), rpLoadWaitCuts. Fail = any m2VerBad / p6BorrowVerBad, a crash, plFull > 0, a load-wait timeout, two clone builds at load, or the gain under the prediction (then read rpGenLive: heaps pinned by long-lived blocks).",
+  "jobs": [
+    {
+      "id": "bp-p6-slim-verify",
+      "note": "BP, P6 on, PoolChunkMB=16 + EpochHeap=1, VerifyEvery=1, repro route-queuefull-replan-loop (30+ own Go Here STARTs per firing; its arms flip fallbackasync, P6 stays on), 12 min so the 10-min memory line lands. Pass: P6 armed/taken/borrowed > 0, m2VerBad 0, p6BorrowVerBad 0, m2Off 0, m2Trips <= 2; plFull 0 (16 MB regions never refused), plSavedKB >= 48 MB, one clone build at load (rpLoadWaitTimeouts 0), rpGenLive <= 3, HeapDestroy max < 5 ms (rpGenDestroyMaxUs, inside the consumer hold); largest free at load >= 1,463 MB and at 10 min >= 1,157 MB.",
+      "asi": "game-copy/ts3native.asi.slim",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 133,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2,plFull<=0,plChunkMB>=16,plSavedKB>=49152,rpGenOn>=1,rpGenLive<=3,rpGenDestroyMaxUs<=5000,rpLoadWaitTimeouts<=0,rpCapOff<=0,luOn>=1,luWalks>=1,luRuns>=1",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0,
+        "SKIP private pools": 0,
+        "SKIP route snapshot replay": 0,
+        "retake watchdog escalation": 0
+      },
+      "logRequire": {
+        "^route snapshot slimming \\(docs/66 §7\\.1\\): PoolChunkMB=16, EpochHeap=1": 1,
+        "^snap replay: clone built ": 1,
+        "^diag: memory at world load ": 1,
+        "^diag: memory at 10 min": 1,
+        "^diag: mem #\\d+ load ": 1,
+        "^OK   route snapshot LotUseReadout=1": 1,
+        "lot use \\(sample #\\d+\\): \\d+ clone lots": 1,
+        "lot use: #1 ": 1
+      },
+      "ini": {
+        "RouteAsync.Kinds": 7,
+        "RouteAsync.KindsMode": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 15,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "RouteSnap.TakeKindsAll": 1,
+        "RouteSnap.ShadowWorld": "BP",
+        "RouteSnap.PoolChunkMB": 16,
+        "RouteSnap.EpochHeap": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "CrashForensics.Enabled": 1,
+        "UserDiag.Enabled": 1,
+        "MemDiag.Enabled": 1,
+        "RouteSnap.LotUseReadout": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 28
+    },
+    {
+      "id": "ip-p6-slim-verify",
+      "note": "IP, same settings as bp-p6-slim-verify (ShadowWorld IP). Pass: same counters; largest free at load >= 1,465 MB and at 10 min >= 1,393 MB.",
+      "asi": "game-copy/ts3native.asi.slim",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 133,
+      "nativeRequire": "p6Armed_0>=1,p6Taken_0>=1,p6Borrowed_0>=1,m2VerBad<=0,p6BorrowVerBad<=0,m2Off<=0,m2Trips<=2,plFull<=0,plChunkMB>=16,plSavedKB>=49152,rpGenOn>=1,rpGenLive<=3,rpGenDestroyMaxUs<=5000,rpLoadWaitTimeouts<=0,rpCapOff<=0,luOn>=1,luWalks>=1,luRuns>=1",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0,
+        "SKIP private pools": 0,
+        "SKIP route snapshot replay": 0,
+        "retake watchdog escalation": 0
+      },
+      "logRequire": {
+        "^route snapshot slimming \\(docs/66 §7\\.1\\): PoolChunkMB=16, EpochHeap=1": 1,
+        "^snap replay: clone built ": 1,
+        "^diag: memory at world load ": 1,
+        "^diag: memory at 10 min": 1,
+        "^diag: mem #\\d+ load ": 1,
+        "^OK   route snapshot LotUseReadout=1": 1,
+        "lot use \\(sample #\\d+\\): \\d+ clone lots": 1,
+        "lot use: #1 ": 1
+      },
+      "ini": {
+        "RouteAsync.Kinds": 7,
+        "RouteAsync.KindsMode": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 15,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyEvery": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "RouteSnap.TakeKindsAll": 1,
+        "RouteSnap.ShadowWorld": "IP",
+        "RouteSnap.PoolChunkMB": 16,
+        "RouteSnap.EpochHeap": 1,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "CrashForensics.Enabled": 1,
+        "UserDiag.Enabled": 1,
+        "MemDiag.Enabled": 1,
+        "RouteSnap.LotUseReadout": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 12,
+          "seed": 12345,
+          "repro": "route-queuefull-replan-loop"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 28
+    }
+  ]
+}

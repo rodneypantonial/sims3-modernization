@@ -17,7 +17,9 @@ namespace Ts3Fixes
         public void Exit(ulong sim, ulong task)
         {
             for (int i = mSim.Count - 1; i >= 0; i--)
-                if (mSim[i] == sim && mTask[i] == task) { mSim.RemoveAt(i); mTask.RemoveAt(i); return; }
+                // RemoveRange, not RemoveAt: List<ulong>.RemoveAt's `initobj !T` zeroes 12 bytes into an 8-byte local in EA's
+                // Mono (docs/67 §22.9), past the frame; at a chunk's end that wiped the arena descriptor (Crash S)
+                if (mSim[i] == sim && mTask[i] == task) { mSim.RemoveRange(i, 1); mTask.RemoveRange(i, 1); return; }
         }
 
         public bool Active(ulong sim, ulong task)

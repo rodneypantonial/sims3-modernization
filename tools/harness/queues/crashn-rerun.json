@@ -1,0 +1,92 @@
+{
+  "note": "crashn-rerun: one job, ip-p6int-p6-ab with the docs/67 §16 forensics build (asi game-copy/ts3native.asi.m068 = native/ts3native/out-m068, 0.36.68 master d21b3a06, counters v131: the p6int-p6 loop writes p6warm at +0x51BC, past the block below v131). Crash N = sim-thread DBPF index use after release (0x72DBDA) + audio-thread list node (0x8B315E) in nearby heap, FreeLock=1 RecsUnlocked=1. Fixed = 2 clean runs.",
+  "jobs": [
+    {
+      "id": "ip-p6int-p6-ab-crashn",
+      "note": "Rerun of p6-integration rung 1 (ip-p6int-p6-ab) after crash N (docs/67 §16, 2026-10-25 04:49:26 UTC, sim thread at 0x72DBDA in the DBPF database index Contains + audio list fault 0x8B315E): same settings on ts3native 0.36.68 (asi.m068 = master: 0.36.66 + [CrashForensics] DbIndexLog, default off, + [P6Waits] p6warm counters v131) with the docs/67 §16 logging round: [CrashForensics] Enabled/Guards/OurEvents/DbIndexLog (HeapCheck default 1: P5 heap ring + double-free check; P5c park / final release lines; DB index release ring with D-lock state + Contains check; registers + rings on a fault). Timing is not the goal of this run (forensics cost light, not measured): read crashes, not it/s. Fixed = 2 clean runs; a DB INDEX BAD line or a db index free with D lock NOT held names the releaser; a P5 heap ring hit on ecx/esi names our free. Original note: docs/189 integration (c) timing ladder rung 1/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-p6-loop (off = the rungs below on, on = + routesnapplan=1 routesnapearly=1). P6 take + P6EarlyCopy (docs/94 §24.14). VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung.",
+      "asi": "game-copy/ts3native.asi.m068",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 131,
+      "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0,
+        "FAIL hold keyed": 0,
+        "FAIL door memo x": 0,
+        "retake watchdog escalation": 0
+      },
+      "ini": {
+        "RouteAsync.Kinds": 7,
+        "RouteAsync.KindsMode": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.DoorMemo": 0,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 15,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "RouteSnap.TakeKindsAll": 1,
+        "RouteSnap.TakeForeign": 0,
+        "RouteSnap.AskLent": 0,
+        "RouteSnap.DoorMemoX": 0,
+        "RouteSnap.DoorMemoXMs": 250,
+        "RouteSnap.StaleLot": 0,
+        "RouteSnap.StaleLotFp": 0,
+        "RouteGate.HoldKeyed": 0,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "P6Waits.Enabled": 1,
+        "RouteSnap.ShadowWorld": "IP",
+        "RouteSnap.VerifyEvery": 0,
+        "MovedWaits.Enabled": 1,
+        "CrashForensics.Enabled": 1,
+        "CrashForensics.Guards": 1,
+        "CrashForensics.OurEvents": 1,
+        "CrashForensics.DbIndexLog": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 24,
+          "seed": 12345,
+          "repro": "route-queuefull-p6int-p6-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 16
+            },
+            "maxMinutes": 22
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 42,
+      "logRequire": {
+        "OK   p6 waits": 1,
+        "crash forensics db index release 0x72DB80": 1,
+        "crash forensics db index contains 0x72DBD0": 1
+      }
+    }
+  ]
+}

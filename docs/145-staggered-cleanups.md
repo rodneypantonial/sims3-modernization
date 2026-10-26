@@ -340,6 +340,13 @@ The v3 commits sleep between cleanups and after each Stuck Check route check (§
 
 Ledger docs/51 §315: I-145-14 .. I-145-16.
 
+### 12.6 Verdict 2026-10-27: 0 slices is the right answer, not a code fault [measured]
+
+- `untested-v020` rerun 2026-10-26 (build 0dc5fca8, SV, `sv-overwatchstuckslice-verify`, 8 forced firings ABBA, `probe-out/profile/untested-v020-2026-10-26-sv-overwatchstuckslice-verify-repro.jsonl`): `owstuck_runs` 1 -> 7, ~84 Sims per run, `overwatch_yields` ~66 per run (a route check, and so an overwatchstuck yield, for most Sims), `owstuck_max_stretch_us` 21,741-26,434, **`owstuck_max_select_us` 1,039**, `owstuck_slices` 0 on every arm.
+- [302] is the slice check's own view: the longest stretch at a Sim's start never got past ~1 ms, well under `kStuckSliceUs` 8,000. The 21-26 ms stretches in [257] all end in a route check (the plan itself), which the IsSelectable hook cannot split. So the switch never had a stretch to slice; the hook and its counters behave as designed.
+- With `overwatchstuck` on, the walk between two Sims is already short; the 100-336 ms SV soak runs of §12.3 were plan-to-plan runs from builds before the shipped chain (§12.2) [inferred]. `overwatchstuckslice` stays **off** and is not a v0.2.0 candidate; redesign only if a run shows `owstuck_max_select_us` >= 8,000.
+- Queue rules changed: `untested-v020` `sv-overwatchstuckslice-verify` and `owstuckslice-verify2` `sv-owstuckslice-soak-verify` now require `owstuck_runs>=1` only (`owstuck_slices>=1` dropped); read `owstuck_max_select_us`.
+
 ## 13. 2026-10-24: `overwatchstucknotice`, one summary instead of a notice per reset Sim (built, not run)
 
 Player report: Overwatch's Stuck Check V2 shows one notice per reset Sim ("StuckCheck:Unroutable"), too many. Rodney's decision: Overwatch's resets stay exactly as they are; only those per-Sim notices are held and replaced by one summary at most every 2 sim-hours.

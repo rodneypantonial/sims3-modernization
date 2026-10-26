@@ -157,3 +157,20 @@ Written 2026-10-25 09:45 PHT. No game run. Rodney's decision: call-site resoluti
 - **Frida guard (2026-10-25):** `queue.ts` never adds the key to a profile job that attaches a second Frida agent (stutter profiler unless `noProf`, or `inroom` / `watchstalk` / `livereads2` / `f4b`; `fridaAttach()`): those 39 correctness profile jobs run without coverage and the queue log says `ProbeSnap.CallSites off: <agent> attaches a Frida agent (docs/67 §7)`. `callSites: true` or an ini `ProbeSnap.CallSites` != 0 on such a job is a parse error. Coverage comes from soak, matrix, repro and `noProf` profile jobs. No native guard (detecting a Frida agent from the asi is not simple or safe).
 - **First collection run:** `tools/harness/queues/virtual-resolution-2.json` `bp-vres2-routing` now runs `game-copy/ts3native.asi.callsites` (0.36.64, normal build, builds.json) with `ProbeSnap.CallSites=1`, `noProf`, `minCounters` 130; pass = `OK   call sites` and >= 1 `callsites min` line, no faults; it reports the trap cost. The windowed `/DTS3N_VCSITES5` build `ts3native.asi.vres2` stays parked.
 - **Build:** image 863 KB (the vres2 probe build of 0.36.62: 831 KB; the second table adds ~25 KB), selftest at `/BASE:0x20000000` as before; `build.cmd` selftest ok.
+
+## 8. First collection run: `virtual-resolution-2` `bp-vres2-routing` (2026-10-25 11:42-12:16 PHT, PASS)
+
+Asi = `ts3native.asi.callsites` 0.36.64 (passive, self-disarming; every per-repro log starts `ts3native 0.36.64`), BP, six repros, 34.1 min, five game starts (11:42 vehicles + route bits, 11:54 door lock, 11:58 upstairs, 12:03 build/buy crowd, 12:09 stuck check 3 AM), faults 0 in every log, no crash. Timing invalid by design (correctness tool, noise medium).
+
+Report over the five per-run logs (`virtual-resolution-report.ts --log <each per-repro *-ts3native.log>`) [measured]:
+
+| group | armed | fired | % resolved static -> with live answers | some target known | I- verdict |
+|---|---|---|---|---|---|
+| glue (docs/131) | 541 | 185 (34.2%) | 36.8% -> 55.0% | 57.9% | I-131-12: 62 caller-typed armed, 10 fired, 0 live targets outside the static set -> **pass** |
+| routing (docs/102/106/107) | 1,721 | 948 (55.1%) | 17.6% -> 28.2% | 76.7% | I-107-12: 104 armed, 90 fired, 0 outside -> **pass** |
+
+- Never fired: glue 356, routing 773 armed sites (list: `--db` or `--sites-out`).
+- New pairs (target not in the static set): glue 98 on `[switch]` rows (jump-table case targets inside the same function: the static row names no case list, not a soundness gap) + 8 on receiver-typed rows with untyped caller sources; routing 47 on partly resolved rows, of them 39 on docs/106/107 live-list rows that say "not an exhaustive list" (expected) and 8 on `closure-built heuristic` rows (the heuristic missed a vtable built outside the closure: those 8 rows are wrong as static answers; the live target stands).
+- **DB gap:** `probe-out/callsites/db.json` holds 1 run (972 sites; the job's `nativeLog` = the last game start only). `queue.ts` merges only `row.nativeLog`, so a `profile.repros` job that restarts the game per repro loses the other starts. By hand: `node tools/callsite-db.ts merge <per-repro log> --job bp-vres2-routing` for the 11:42, 11:54, 11:58 and 12:03 logs; fix in `queue.ts`: merge every per-repro `*-ts3native.log` of the row.
+
+**Trap cost** [measured, `callsites min` lines]: ~5.3 us per trap (5,308 ns). First armed minute 185-289 ms of traps (31-38 k hits, 0.30-0.48% of the minute = ~3-5 ms/s); after that 0.3-11 ms per minute (<= 0.02%, < 0.2 ms/s) as ~750-900 sites disarm by minute 2-10; total 204-309 ms per game start. The late counter (minute >= 10) only reached in the vehicles run: 0.34 ms in minute 10. **Verdict: fits the light-tool budget (20-30 ms/s) by two orders of magnitude after the first minute; keep `CallSites=1` on every non-timing job.** The first-minute burst (~3-5 ms/s averaged) is the only part a timing run would see; not measured per frame, so timing jobs keep it off until a cost A/B sets `tool-costs.json`.

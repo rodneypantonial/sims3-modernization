@@ -1,5 +1,7 @@
 # 189. P6 and the sim's wait behind route jobs: the whole problem, why P6 measures ~0, and the plan that removes the wait
 
+**Parked 2026-10-25: P6 stopped, see docs/189 §17.** All P5/P6 switches ship off; P6 no longer gates v0.2.0.
+
 Written 2026-10-25. **Design and plan only:** no code change, no build, no game run. Inputs: PLAN.md "Resume here", docs/116, docs/94 §21-§24 (§24.11 lock-hold analysis, §24.13 G1 v2, §24.8 clone defect), docs/182, docs/178 §9, docs/159, docs/160, docs/161, docs/86-90, docs/137, docs/140, docs/174, docs/175, docs/81-83, docs/134, docs/152, docs/158, docs/183, docs/164; `native/ts3native/ts3native.cpp` (`ServeAsync`, `LockAcquireAsync`, `WaitAsyncDone`), `routegate.cpp`, `rtsites.cpp`, `p5.cpp`, `p5c.cpp`, `p4clone.cpp`, `snap.cpp`, `replay.cpp`, `hostcalls.cpp`; run data named per row. The two P6 fixes another agent builds in the `p6fix` worktree (`[RouteSnap] P6EarlyCopy`, counters v122; P6Rebase, per the registry reservation **not built** yet; docs/94 §24.14 when it lands) are treated as given inputs. Tags: **[verified source]** = read in our code or the disassembly-backed docs; **[measured]** = run counters or run files; **[inferred]** = derived, method named. Effort = wall clock for Claude with agents; game runs and clean nights listed apart.
 
 ## 0. Summary
@@ -463,3 +465,95 @@ Counter layout: v122 ends at +0x4BBC; v123 (176) -> v124 (48) -> v125 (48) -> v1
 ### 15.3 Queue `tools/harness/queues/p6-integration.json` (dry-run clean, not started)
 
 (a) `bp-p6int-verify`, `ip-p6int-verify`: everything on (HoldKeyed=2, StaleLot=2 shadow, StaleLotFp=1, AskLent=1, DoorMemoX=2 shadow, TakeKindsAll=1, TakeForeign=1, P6EarlyCopy=1), VerifyEvery=1, VerifyLend=1, 12 min on `route-queuefull-replan-loop`; pass = no crash, no P4 FAULT, no escalation, `m2VerBad` 0, `p6BorrowVerBad` 0, `stlVer_1` 0, `stlMat_3` / `stlMat_7` 0, `fplVer_1` 0, `dmxMismatch` 0, `hgTrip` 0, `hgLongHold` 0 (`nativeRequire` + `logForbid`). (b) G1 v2: `shadow-compare-report.ts <bp shadow.jsonl> --g1`, tier 3 = 0. (c) IP timing ladder, 7 loads, each an in-load ABBA (off, on, on, off, 16 firings per arm) on a generated repro `route-queuefull-p6int-<rung>-loop` whose arm step writes every P6 switch: off = the rungs below, on = + this rung: P6 -> HoldKeyed=1 -> HoldKeyed=2 (`"$on:2:1"`, repro-loop.ts) -> StaleLot acting (gated on (a)) -> StaleLotFp (gated) -> AskLent + DoorMemoX (DoorMemoX acting gated) -> TakeKindsAll + TakeForeign. VerifyEvery=0, `[MovedWaits]` + `[P6Waits]` + `[HitchAttr] Holders`; read `hitch-ab.ts` and `wait-ab.ts` per arm. ~3.8 h of game time. The harness loop knows two arms per load (`repro-loop.ts`), so the ladder is cumulative across loads; a one-load N-arm ladder needs loop + `hitch-ab` arm support (follow-up).
+
+## 16. Ladder measurement fix (2026-10-25, ts3native 0.36.67, counters v131, `asi.p6meas` = `native/ts3native/out-p6meas`, not run)
+
+The 2026-10-25 ladder run (`probe-out/queue/p6-integration-2026-10-25-*`) could not measure its own rungs. Fixes, measurement only (no P6 behaviour change):
+
+1. **[P6Waits] arm** was `routesnapplan` at the job's start; rungs 2-7 keep it 1 in both arms, so every wait logged as arm 1. New native value `p6warm` (`p6wArmSet` +0x51BC): 0 = as before, 1 = off, 2 = on. Every `route-queuefull-p6int-*-loop` arm step writes `"p6warm": "$on:2:1"`, so `p6 waits arm 0/1` lines split off/on on every rung (`P6wArmNow`, selftest (g)).
+2. **wait-ab.ts** needed `<tag>-ab.json` + `-ab-native.jsonl`, written only by `--ab`. profile-world.ts now writes both for in-load loops: slice 0 = lead-in (warm-up), one slice per firing with a ts3native snapshot at its start (`repro-loop.ts` `onArm`), `"loop": true`.
+3. **hitch-ab.ts** read every loop iteration as repro-triggered (0 iterations). With loop slices it splits the whole arm window per arm: every firing slice counts (no 15 s settle, short last one kept) and repro-triggered windows stay in the arm (probe calls, sampler, profiler edges, first minute still out); `--scenario` keeps its own per-step view (`loopCtx`).
+4. **RouteSnap.AuditEvery=0** in the 7 rung jobs (audits = heavy tool, timing invalid); `minCounters` 131, asi `game-copy/ts3native.asi.p6meas` (copy `native/ts3native/out-p6meas/ts3native.asi` there before the queue runs).
+5. **set_speed** while the speed is locked (stalelot rung abort): logs `pending_dialogs`, retries every 5 s, fails after 2 x 30 s checks with the dialog named (`untilUnlocked`).
+6. **[MovedWaits]** `none other 0`: by design. It records skips of the read-only switches (`MwSkip`: goalvalid, idlecheck, slot, avoid, gate0, routetoobj, placement, obstructed, steer); the P6 switches take or borrow a clone and never skip a wait, so there is nothing to attribute. P6 rungs read the per-arm `[P6Waits]` lines and `wait-ab.ts` keys instead; the `next takers` line still counts the ranked keys.
+
+Found on the way: the probe's `nativeexport` wrote only 0/1, so rung hold2's `holdkeyed` 2 (`"$on:2:1"`) was never written (stayed 1 in the on arm, 1 in the off arm: hold2 measured nothing). ts3probe.py now writes any non-negative integer, and `native_set` reads the value back and fails the step when it did not stick.
+
+## 17. Ladder rerun results and why the model missed (2026-10-25, existing run data, no build, no game run)
+
+**Inputs.** The IP ladder rerun of 2026-10-25 (10:20-12:58 UTC, in-load ABBA, 16 firings per arm, valid timing, per-arm `[P6Waits]` split working): `probe-out/queue/p6-integration-2026-10-25-ip-p6int-{p6,hold1,hold2,stalelot,stalelotfp,ask,kinds}-ab*` (rungs 1-5 on `asi.p6meas` 0.36.67, 6-7 on `asi.flight` 0.36.72) and `probe-out/queue/evening-1024b.out`. **Method:** per-slice counter deltas from `probe-out/profile/<tag>-ab-native.jsonl` split by the slices of `<tag>-ab.json` (warm-up and the open last slice dropped, ~600-650 s per arm), `p6w*` summed over both arm indices of a slice; `hitch-ab.ts <tag>` per arm; `p6 waits` log lines for hold2 (it crashed, no `-ab.json`). Code read: `p5.cpp` (`P5Plan`, `P5EarlyCopy`), `p5c.cpp` (`P5cStale*`), `stalelot.cpp`, `snap.cpp` (`SLW_*`), `ts3native.cpp:4025` (P6W class), `p6wait.cpp`. Tags as in the header.
+
+### 17.1 What the rungs measured [measured]
+
+On arm = the rungs below + this rung; off arm = the rungs below. Take / stale = `pkTaken_0` / `pkStale_0` over `pkArmed_0` (own Route.Plan). Wait = `p6w*` sim job wait, all outcomes; classes lock / gate / rtwait / result / host.
+
+| rung | job wait off -> on ms/s | on arm by class | take off -> on | stale off -> on | >= 300 ms per 10 min off -> on | p99 ms off -> on |
+|---|---|---|---|---|---|---|
+| 1 P6 + EarlyCopy | 149.0 -> 143.9 | 18.5 / 42.8 / 7.1 / 1.0 / 74.5 | - -> 21% | - -> 54% | 125 -> 102 | 203 -> 189 |
+| 2 HoldKeyed=1 | 148.2 -> 145.1 | 15.0 / 39.2 / 8.1 / 0.6 / 82.3 | 20% -> 21% | 59% -> 57% | 97 -> 85 | 177 -> 195 |
+| 3 HoldKeyed=2 | crashed (Crash O); on arm stale span 14.9 -> 22.1 ms, rtwait ~0.45 -> 2.4 s, result 9 -> 667 ms | | | | | |
+| 4 StaleLot acting | 152.0 -> 141.9 | 15.1 / 36.2 / 7.8 / 2.5 / 80.4 | 19% -> 20% | 60% -> 59% | 113 -> 112 | 210 -> 191 |
+| 5 StaleLotFp | 146.8 -> 156.6 | 19.9 / 39.3 / 8.2 / 3.7 / 85.5 | 19% -> 27% | 58% -> 45% | 107 -> 148 | 203 -> 211 |
+| 6 AskLent + DoorMemoX | 152.0 -> 151.2 | 17.8 / 51.3 / 6.3 / 4.2 / 71.5 | 30% -> 27% | 38% -> 41% | 112 -> 132 | 207 -> 212 |
+| 7 TakeKindsAll + TakeForeign | 143.3 -> 170.1 | 18.2 / 72.6 / 13.4 / 7.3 / 58.7 | 28% -> 24% | 41% -> 41% | 129 -> 132 | 209 -> 226 |
+
+Off arms span 143-152 ms/s: that spread is the noise floor of one rung. No rung is below it except by noise; rungs 5 and 7 are above it.
+
+**Per outcome (rung 1, the cleanest pair) [measured]:**
+
+| arm, outcome | jobs/s | span (A_RUNNING) ms | sim wait ms/s | sim wait per job ms |
+|---|---|---|---|---|
+| off, plain (every own job plans live) | 16.4 | 10.8 | 130.9 | 8.0 |
+| on, taken | 2.3 | 5.1 | 4.4 | 1.9 |
+| on, stale-refused | 6.6 | 15.5 | 66.4 | 10.0 |
+| on, other refusal (nr, cold, epoch, ...) | 3.2 | 6.9 | 10.0 | 3.1 |
+| on, not armed (kinds 1-2, ReplanFromPosition not armed) | 4.4 | 17.4 | 62.9 | 14.2 |
+
+Same shape on every rung: taken jobs 1.5-3.0 ms of sim wait each, stale-refused 10-12 ms (rung 7: 18.4), an unarmed live job ~8 ms.
+
+### 17.2 Q1: why StaleLot does not raise the take rate
+
+1. **Most refusals happen before the clone run, so the per-lot verdict never sees them [measured + verified source].** `stlNoRun` (armed plans with no clone run) is 4,231 of 6,213 armed jobs on rung 4's on arm (68%), 3,460 of 6,201 on rung 5 (56%), 3,365 / 5,969 on rung 6 (56%). In acting mode `StlActDefer` defers an early refusal only when every write since the cut is lot-keyed (`stalelot.cpp` `StlActDefer` -> `StlStaleOf` with an empty read set); one world-level write between START and the run refuses at `P5cStaleEarly` (`p5.cpp` `slDef` / `P5cStaleEarly`). The early refusals are not counted by kind (`stlWorld` is fed only from `StlJob`, after a run): **gap**; the kind mix below is from the jobs that did run.
+2. **The world-level writes are footprint churn, then lot-0 churn [measured].** After a run, per-lot-only windows (`stlMat_5`) are **0** on rung 4: every stale window had a world-level write, 425 of 474 the footprint-object kind (`stlWorld_7` = `SLW_FP`). StaleLotFp covers those (`fplCov`: W6 ~745/s, FPCORE ~200/s, grid no-op removes ~255/s on rung 5) and per-lot-only becomes 776 of 2,768 judged jobs (`stlActTaken` 577), but the next world-level kind is **lot 0** (`stlWorld_10` = `SLW_LOT0`: 401 of 443 on rung 5, 446 / 487 on rung 6, 624 / 698 on rung 7): footprint inserts / removes on open ground, where the loop's 30+ Sims stand and walk (crowd Go Here to an open-ground point). Uncovered world-level writes after StaleLotFp: ~200 per s [inferred: `stlWrites_1` minus the covered counts], i.e. ~3 per 15 ms window.
+3. **It is the window age, not a gate.** Cut age at the plan is 11-18 ms (`p6jCutAgeUs`: taken 11-15, refused 13-18): the cut is taken at START on the sim and the job runs after the sim's next animation / footprint pass, so a footprint write lands in nearly every window [measured ages; the pass timing inferred from docs/89]. No gate refuses before the lot check; the epoch / `nr` refusals ("other refusal") are a separate 18-30% and unchanged by StaleLot.
+4. **StaleLotFp made refusals dearer.** Deferring a lot-only early refusal to after the run means those jobs now copy + run the clone and are then refused anyway (`stlMat_6` 522 both stale after the run): stale-refused span 15.4 -> 19.4 ms, other refusals 8.5 -> 10.8 ms. The 581 extra takes (~1.5 ms wait each) do not pay for that: +9.8 ms/s, +41 >= 300 ms per 10 min.
+
+### 17.3 Q2: why AskLent and DoorMemoX do not cut the host wait
+
+1. **The "host" class is not host-call time [verified source].** `ts3native.cpp:4025-4026`: a `+0x918` pump wait (not a gate) is booked whole as `P6W_HOST` when the sim served at least one host call during it. The served calls themselves cost `p6wServeUs` = **2.5-2.9 ms/s** for ~150,000-170,000 calls per arm (~17 us each, docs/159's ~20 us) [measured]: 3-4% of the 71-86 ms/s booked as host. The class is "a wait for a job that asks doors", i.e. mostly the span of live game plans (stale-refused, refused, plain), which ask 13-21 doors each vs 5-8 for a taken job (`p6jDoorN`).
+2. **Asks still reach the sim, but fewer [measured].** Rung 6 on arm: `auAsks` 16,893 lent asks (only clone-run windows can lend; live plans keep the real hold), `dmxHit` 76,077 vs `dmxMiss` 87,310 (47% hit rate, `dmxMismatch` 0); served calls 155,642 -> 88,841 (-43%), service 2.6 -> 1.8 ms/s. The best case of removing every ask was ~2.6 ms/s.
+3. **Queue delay is a job-span cost, not a sim wait.** Worker door time per taken job is 1.3-2.2 ms for 5-8 asks (~0.25 ms per round trip vs ~17 us service): docs/159's queue delay is real but it lengthens the taken job, whose sim wait is already ~1.9 ms. Lending removes the retake, not the round trip; the sim is in the pump either way.
+
+### 17.4 Q3: why taking jobs does not cut the sim wait
+
+- **Taking works per job [measured]:** a taken job costs the sim ~1.9 ms against ~8 ms for a live one; its gate waits are 1-2.4 ms/s in total. So the §2 rank 1 cause (`A_RUNNING` waiters during taken jobs) is small: HoldKeyed can save at most those 1-2.4 ms/s, and rung 2 admitted only site 0 (`hgAdmit_0` 9,263; sites 3/4/6-9 never; 268 windows with an admission).
+- **Coverage is the problem:** 20-27% of armed jobs are taken; 41-60% are stale-refused at ~10 ms of sim wait each (more than the ~8 ms of the live plan they replace: the clone attempt + copy + replay wait are added, then the game plans). Break-even needs `t x (8 - 1.9) >= s x (10 - 8)`, t >= ~s/3; measured t 0.2-0.27, s 0.45-0.6 gives +2-5 ms/s of gain [inferred arithmetic], inside the 143-152 off-arm spread.
+- **What the sim waits on is not P6's [measured].** By class the bulk is host-tagged pumps (71-86 ms/s, job span) and gates (36-51; rung 7: 73). Gate site 12 (gate-12 writer families, kept on `A_RUNNING` by HoldKeyed) is 29-44 ms/s of it on every rung and 67 ms/s on rung 7; gate 10, which §1 M2 called the largest `A_RUNNING` waiter, is 0.1-3.4 ms/s, gate 0 5-9 ms/s (`p6wGateUs` per site).
+- **Admitting long holders makes spans longer (rung 3) [measured, log lines].** With HoldKeyed=2 an admitted gate-10 holder runs a sync plan under the real `+0x918` and the job's retake waits for it: stale-refused span 14.9 -> 22.1 ms, rtwait ~5x, result waits 9 -> 667 ms; then Crash O (not attributed to HoldKeyed=2, docs/67 §17).
+- **All kinds move the wait to gates (rung 7):** the newly armed foreign jobs (`p6fbArmed` 1,097, taken 178, game plan 377) and kinds 1-2 (taken 294 of 1,493) are mostly refused; a refused foreign job runs clone + game plan inside its deadline (§4.1 risk 2), stale span 27 ms, and gate 12 doubles (38 -> 67 ms/s).
+- **Selection bias [inferred].** A job is taken only when no routing write landed between START and the retake: a quiet sim. The writers that make answers stale (footprint updates, gate-12 families) are the same sim work that waits on a job. So "taken jobs cost 1.9 ms" partly measures quiet moments, and raising the take rate would not reach 1.9 ms per job. Rung 5 is the one test of this: its added takes cost ~1.5 ms each, but the refusals got dearer (§17.2 item 4).
+
+### 17.5 Q4: is the forced loop representative?
+
+No, it is a stress case [measured vs §1, §3.6]. Loop: 15-18 jobs/s, worker hold 205-264 ms/s, sim job wait 134-154 ms/s (pump) / 142-170 ms/s (`p6w`), queue time of refused jobs 23-40 ms, ~900-1,000 iterations >= 100 ms and ~100-150 >= 300 ms per 10 min. IP natural (v0.1.5 bundle): ~9.7 jobs/s, hold 154 ms/s, pump 74 ms/s, ~21 >= 300 ms per 10 min (docs/161), of which route-job waits lead ~9 of 32 freezes, mostly F-G placement (docs/174). Expected in natural play [inferred]: fewer Sims on open ground, so less lot-0 churn and a higher take rate than 20-27%, but a smaller ceiling: with 9.7 jobs/s, a 30-50% take rate and the measured 6 ms per-job saving the bound is ~17-29 ms/s of 74, less after the selection bias and the refusal overhead, and no change in >= 1 s freezes (M6). Nothing measures natural play with P6 on yet (§5 job 2 never ran).
+
+### 17.6 Model assumptions refuted, and the corrected model
+
+| docs/189 claim | verdict |
+|---|---|
+| §2 rank 1 / §3.1: `A_RUNNING` waiters during taken jobs are the main reason for ~0; `A_HOLD` gates (phase 1) unlock the gain | **refuted**: taken jobs carry 3-9 ms/s of 142-170; their gate share 1-2.4 ms/s; rung 2 flat, rung 3 longer spans |
+| §1 M2: gate 10 is the largest `A_RUNNING` waiter | **refuted**: gate 12 (site 12) 29-44 ms/s, gate 10 0.1-3.4 |
+| §3.3 / §11.4: per-lot staleness gives 10-20% stale | **refuted**: 55-68% of armed jobs refused before any run by a world-level write; after StaleLotFp lot-0 churn is the new floor (45% stale) |
+| §3.2 / docs/159 H2-H4: door asks are a large part of the job wait; memo / lending cut it | **refuted for the sim**: service 2.5 ms/s; host class = job span; -43% asks moved nothing |
+| §3.6: non-taken span ~16 ms, taken ~2.4 ms held; r = 0.48 natural / 0.84 loop | partly: per-job sim wait is 0.65-0.75 x span for live outcomes, ~0.4 x span for taken; refused jobs cost more than the live plan they replace (not "the same + 4 ms"); r in this loop ~0.66 (pump / hold) |
+| §3.6 expected 74 -> 15-25 ms/s | **refuted** as stated: needs t ~0.9 at 1.9 ms per job; measured t 0.2-0.27, and the 1.9 ms is selection-biased |
+
+**Corrected model [inferred from §17.1].** Sim job wait ~= jobs/s x sum over outcomes (share x per-job wait), with per-job waits ~8 ms (live), ~10-18 ms (stale-refused), ~3-8 ms (other refusal), ~1.5-3 ms (taken), loop numbers. P6's gain = t x (w_live - w_taken) - s x (w_stale - w_live); it is positive only when refusals are rare **and** cheap, and its upper bound in the loop is ~10-15 ms/s at t = 0.5 once selection bias halves the per-job saving. The rest of the wait (host-tagged pumps and gate 12 during live plans) follows live-plan span x job rate, which P6 does not shorten for the 73-80% of jobs it does not take.
+
+### 17.7 Recommendation: stop P6 gain work; three cheap next steps
+
+1. **Stop the P6 gain line (phases 1-4) [decision for Rodney].** Keep every P6 switch default off, ship nothing new from phases 1-4 in v0.2.0 (the §4 release note "no measured hitch gain" stands), drop the queued P6 timing rungs. Keep `[P6Waits]` (cheap, explains every future job-wait question). The open P6 risk is Crashes M/N/O under `FreeLock=1` + `RecsUnlocked=1`: validate-and-fix those first if P6 or FreeLock stays in any build.
+2. **One counter, no run of its own (~1 h, offline + selftest):** book `stlWorld` for early refusals too (kind of the first world-level write that made `P5cStaleEarly` / `StlActDefer` refuse) and split lot-0 writes into Sim-owned vs object footprints. It rides along in the next validation job (no A/B). Decides whether anything can still lift the take rate: only if most early refusals are lot-0 Sim footprints would a rebase at run start (P6Rebase, not built) or a lot-0-by-cell key be worth a design; expected size even then <= ~10-15 ms/s in the loop, less natural [inferred].
+3. **Spend the routing time on the live-plan waiters instead:** gate 12 is the largest named waiter on every rung (29-44 ms/s here, doubles when more jobs are armed) and F-G placement waits are the natural-play freeze cause (docs/174). `[PlacementRO]` (built, off, never run) is the newest design there: smoke + correctness on `ip-placement-crowd-loop` first, then read `[P6Waits]` site 12 and `next takers` in that same validation run; conservation (§1, four measurements) says expect the wait to move, so judge by the >= 300 ms freeze count on IP natural, not by ms/s. Early-out for failing plans (docs/142) is not the lever: its acting A/B measured 0 saved (PLAN.md 2026-10-24).
+
+Not done here: hold2's per-arm split (no `-ab.json`, log lines only); no ledger section reserved (refutations I-189-1/2 and the §3.6 figures should go into docs/51 when the next P6 decision is recorded).

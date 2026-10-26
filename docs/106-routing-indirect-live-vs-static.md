@@ -137,6 +137,8 @@ Armed but never hit, by what they need (all search group unless noted):
 | `Route_UnlinkPaths` `0x75732D`/`0x75733A`, `Route_PlanCommon 0x760F0A` (plan group) | 3 | path insertion and loop ICs | low: routing-path family | `IC_Route_InsertCustomPathAtIndex`-style script routes |
 | Lifetime sites (search, armed) | 268 | temporaries on rare branches | low (§6 found no writer) | — |
 
+**2026-10-25 passive call sites (docs/133 §8):** the 0.36.64 table (1,721 routing rows) fired 948 sites on BP routing repros (55.1% of armed; 773 never fired); static 17.6% resolved -> 28.2% with live answers, 76.7% some target known; I-107-12 pass (90 of 104 docs/107 rows fired, 0 targets outside). 8 `closure-built heuristic` rows got a target outside their list: treat those static answers as wrong.
+
 ## 8. Tool
 
 `tools/indirect-live-vs-static.ts` (node, no dependencies):

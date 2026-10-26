@@ -1,0 +1,125 @@
+{
+ "note": "Cost proof for [CrashForensics] Light=1 (docs/67 §18, Rodney 2026-10-25: light crash logging in every run, heavy guards opt-in). Build: ts3native 0.36.72 = game-copy/ts3native.asi.flight (out-flight). BP, seed 12345, lean profiler, no samplers; only Light differs. 4 jobs x ~12 min = ~50 min; clean machine (noise check on). PASS (docs/67 §18): on vs off it/s within the noise band (|diff| <= the pooled run-to-run spread of the two off runs, hitch-ab.ts), sim wait ms/s within the same band, and no increase in hitch counts >= 100 / 300 / 1000 ms per 10 min beyond the 95% CI; no crash. Then write msPerS = 1000 x (1 - on it/s / off it/s) (0 if within noise) into docs/data/tool-costs.json CrashForensics.Light and the docs/168 §9 table.",
+ "jobs": [
+  {
+   "id": "bp-cf-light-off-1",
+   "note": "[CrashForensics] Light=1 cost (docs/67 §18): off arm 1 of a two-load ABBA (off-1, on-1, on-2, off-2; Light is start-time only, no runtime switch). Release defaults (repo ini) otherwise; Light=0 set explicitly (queue.ts adds Light=1 to every job). Read: node tools/harness/hitch-ab.ts forensics-light-cost-<date>-bp-cf-light (pools off-1/off-2 vs on-1/on-2 as ABBA) and node tools/harness/wait-ab.ts on the same tags.",
+   "asi": "game-copy/ts3native.asi.flight",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 131,
+   "ini": {
+    "CrashForensics.Light": 0
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "noSamplers": true,
+     "profOpts": {
+      "stages": false
+     }
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": true,
+   "logForbid": {
+    "crash forensics: (light|on) ": 0,
+    "crash forensics: HEAP": 0
+   },
+   "timeoutMin": 22
+  },
+  {
+   "id": "bp-cf-light-on-1",
+   "note": "[CrashForensics] Light=1 cost (docs/67 §18): on arm 1 of a two-load ABBA (off-1, on-1, on-2, off-2; Light is start-time only, no runtime switch). Release defaults (repo ini) otherwise; Light=1 (the queue default, set here too). Read: node tools/harness/hitch-ab.ts forensics-light-cost-<date>-bp-cf-light (pools off-1/off-2 vs on-1/on-2 as ABBA) and node tools/harness/wait-ab.ts on the same tags.",
+   "asi": "game-copy/ts3native.asi.flight",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 131,
+   "ini": {
+    "CrashForensics.Light": 1
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "noSamplers": true,
+     "profOpts": {
+      "stages": false
+     }
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": true,
+   "logRequire": {
+    "crash forensics: light \\(docs/67": 1
+   },
+   "logForbid": {
+    "crash forensics: HEAP": 0
+   },
+   "timeoutMin": 22
+  },
+  {
+   "id": "bp-cf-light-on-2",
+   "note": "[CrashForensics] Light=1 cost (docs/67 §18): on arm 2 of a two-load ABBA (off-1, on-1, on-2, off-2; Light is start-time only, no runtime switch). Release defaults (repo ini) otherwise; Light=1 (the queue default, set here too). Read: node tools/harness/hitch-ab.ts forensics-light-cost-<date>-bp-cf-light (pools off-1/off-2 vs on-1/on-2 as ABBA) and node tools/harness/wait-ab.ts on the same tags.",
+   "asi": "game-copy/ts3native.asi.flight",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 131,
+   "ini": {
+    "CrashForensics.Light": 1
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "noSamplers": true,
+     "profOpts": {
+      "stages": false
+     }
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": true,
+   "logRequire": {
+    "crash forensics: light \\(docs/67": 1
+   },
+   "logForbid": {
+    "crash forensics: HEAP": 0
+   },
+   "timeoutMin": 22
+  },
+  {
+   "id": "bp-cf-light-off-2",
+   "note": "[CrashForensics] Light=1 cost (docs/67 §18): off arm 2 of a two-load ABBA (off-1, on-1, on-2, off-2; Light is start-time only, no runtime switch). Release defaults (repo ini) otherwise; Light=0 set explicitly (queue.ts adds Light=1 to every job). Read: node tools/harness/hitch-ab.ts forensics-light-cost-<date>-bp-cf-light (pools off-1/off-2 vs on-1/on-2 as ABBA) and node tools/harness/wait-ab.ts on the same tags.",
+   "asi": "game-copy/ts3native.asi.flight",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 131,
+   "ini": {
+    "CrashForensics.Light": 0
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "noSamplers": true,
+     "profOpts": {
+      "stages": false
+     }
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "noiseCheck": true,
+   "logForbid": {
+    "crash forensics: (light|on) ": 0,
+    "crash forensics: HEAP": 0
+   },
+   "timeoutMin": 22
+  }
+ ]
+}

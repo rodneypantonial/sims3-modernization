@@ -2,34 +2,65 @@
   {
     "id": "bp-unseen-play",
     "note": "docs/143 step 2: how much sim-thread locomotion work belongs to agents the player cannot see. Release ini defaults ([RouteAsync], [RouteGate] Sites+Enforce, [Discourage]) plus [UnseenProbe] Enabled=1 (counters v79, observe only, nothing skipped; [UnseenThrottle] stays off). Correctness/data job, daytime OK (timing read for shares, not absolute ms/s). Build: ts3native 0.36.13 (game-copy/ts3native.asi.0313, the 0.36.13 merge build; with [Discourage] DeferFootprint=1 the probe counts footprint bodies behind design U's stub). BP Spring, seeded, 10 min. After: node tools/harness/unseen-report.ts <native.json>. Pass: no crash, 0 watchdog lines, unReady 15 (agent site, footprint, plans, keyed lock), unseen-report ok (classified updates > 0, camera fails <= 10% of passes), log line 'OK   unseen probe'.",
-    "asi": "game-copy/ts3native.asi.0313",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
     "save": "Baseline-BP-Spring",
     "minCounters": 79,
-    "ini": { "UnseenProbe.Enabled": 1 },
-    "run": { "profile": { "minutes": 10, "seed": 12345 } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "ArenaGuard.TailPad": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   },
   {
     "id": "bp-unseen-big-crowd",
     "note": "docs/143: the same with the rare-big-crowd repro (many walking Sims at once, BP): the steering / avoidance share by class when crowds form. Pass as bp-unseen-play.",
-    "asi": "game-copy/ts3native.asi.0313",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
     "save": "Baseline-BP-Spring",
     "minCounters": 79,
-    "ini": { "UnseenProbe.Enabled": 1 },
-    "run": { "profile": { "minutes": 8, "seed": 12345, "repro": "rare-big-crowd" } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "ArenaGuard.TailPad": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 8,
+        "seed": 12345,
+        "repro": "rare-big-crowd"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 23
   },
   {
     "id": "ip-unseen-play",
     "note": "docs/143: the same on Isla Paradiso (boats, water, long walks), 10 min seeded. Pass as bp-unseen-play.",
-    "asi": "game-copy/ts3native.asi.0313",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
     "save": "Baseline-IP-Spring",
     "minCounters": 79,
-    "ini": { "UnseenProbe.Enabled": 1 },
-    "run": { "profile": { "minutes": 10, "seed": 12345 } },
-    "gameArgs": ["-disablestoryprogression"],
+    "ini": {
+      "UnseenProbe.Enabled": 1,
+      "ArenaGuard.TailPad": 1
+    },
+    "run": {
+      "profile": {
+        "minutes": 10,
+        "seed": 12345
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
     "timeoutMin": 30
   }
 ]

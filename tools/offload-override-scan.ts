@@ -8,10 +8,10 @@
 //        [--asm game-copy/assemblies] [--index game-copy/analysis/callgraph/index.json] [--csv out.csv] [--summary]
 //   node tools/offload-override-scan.ts --self-check [--asm ...]
 // Env TS3_GAME / TS3_USER override the default folders. Extracted assemblies go to a temp folder that is deleted at exit.
-import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { decryptS3SA, moduleName, peImage, readIndex, refpack } from './extract-assemblies.ts';
+import { moduleName, s3saImages, type Img } from './extract-assemblies.ts';
 import { TYPE_S3SA, fnv64, s3saEncode, writePackage } from './dbpf.ts';
 import { defRoots, typeModel, type Index, type Method, type TypeDef } from './managed-callgraph.ts';
 
@@ -49,24 +49,6 @@ const EFFECT = {
 type Kind = keyof typeof EFFECT;
 const AFFECTS: Kind[] = ['core', 'unchecked', 'vcall'];
 
-// ---------- packages (read-only, header + index + S3SA entries only: some install packages are GBs) ----------
-type Img = { pkg: string; inst: bigint; img: Buffer | null };
-export function s3saImages(file: string): Img[] {
-  const fd = openSync(file, 'r');
-  try {
-    const read = (pos: number, len: number) => { const b = Buffer.alloc(len); readSync(fd, b, 0, len, pos); return b; };
-    const head = read(0, 96);
-    if (head.toString('latin1', 0, 4) !== 'DBPF' || !head.readUInt32LE(36)) return [];
-    // readIndex wants the whole file; a header whose index position points right behind it is enough.
-    const syn = Buffer.concat([head, read(head.readUInt32LE(64), head.readUInt32LE(44))]);
-    syn.writeUInt32LE(96, 64);
-    return readIndex(syn).filter((e) => e.type === TYPE_S3SA).map((e) => {
-      let body = read(e.offset, e.fileSize);
-      if (e.compressed === 0xffff) body = refpack(body);
-      return { pkg: file, inst: e.inst, img: peImage(body) ?? peImage(decryptS3SA(body)) };
-    });
-  } finally { closeSync(fd); }
-}
 // MVID as the call-graph index stores it (16 GUID-heap bytes in hex).
 export function mvidOf(img: Buffer): string {
   const pe = img.readUInt32LE(0x3c), nSec = img.readUInt16LE(pe + 6), opt = pe + 24, secs = opt + img.readUInt16LE(pe + 20);

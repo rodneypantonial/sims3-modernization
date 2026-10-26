@@ -1,0 +1,59 @@
+{
+  "note": "docs/163 §10.2 rerun of stuckcheck-cap-verify2 after the queue.ts fixActivity fix (outcome counters 297-301 recorded from profile.fixesOn); reset parity off vs on (not an A/B for gain): ts3native 0.36.62 (out-sccap2 -> game-copy/ts3native.asi.sccap2, stuck-check round tag) + master build/ts3fixes.package (tagged PROBE mark on every stuck-check START). SV pair only. Pass per job: no crash, run not INVALID, machine load line ok. Read: round tags on long-job and sim-waited lines, ts3fixes activity counters stuckcheck_noplan / _notstuck / _rearmed / _reset per run (reset parity).",
+  "jobs": [
+    {
+      "id": "sv-sccap3-nat-off",
+      "note": "SV natural run, stuckcheckown ON, stuckcheckcap OFF (45 min seeded 12345 from Baseline-SV-Spring), as sv-sccap-nat-off on 0.36.62: own long-job and own-job wait lines carry the stuck-check round (or no stuck-check mark); the run row records stuckcheck_* outcome counters (297-301) before/after.",
+      "asi": "game-copy/ts3native.asi.sccap2",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckown",
+          "fixesRequire": "stuckcheckown_sent>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "sv-sccap3-nat-on",
+      "note": "Same as sv-sccap3-nat-off with stuckcheckcap ON. Expected: uncut waits >= 1 s behind own jobs only on round 4 (last) or no stuck-check mark lines; stuckcheck_reset rise equal to the off run within the run spread.",
+      "asi": "game-copy/ts3native.asi.sccap2",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 109,
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "stuckcheckown,stuckcheckcap",
+          "fixesRequire": "stuckcheckcap_marked>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}

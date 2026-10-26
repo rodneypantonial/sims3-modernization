@@ -190,14 +190,14 @@ export function build(o: { map: FeatureMap; repros: Repro[]; validate: Job[]; sh
   const touched = [...ship].filter(id => newShip.has(id) || changed.has(id));
   const jobs: (Job & { part: string; estMin: number; est: string })[] = [], derived: Repro[] = [], needs: string[] = [];
   const base = (id: string, save: string, run: any, timeoutMin: number, note: string, extra: Record<string, unknown> = {}) => ({ id, note, asi: o.asi, ...(o.fixesBuild && { fixesBuild: o.fixesBuild }), save, minCounters: o.minCounters,
-    ini: { ...MEASURE_INI, ...o.iniOverride }, run, gameArgs: ['-disablestoryprogression'], timeoutMin, ...extra });
+    ini: { ...MEASURE_INI, ...o.iniOverride }, run, gameArgs: ['-disablestoryprogression'], timeoutMin, releaseDefaults: true, ...extra });
   const profile = (p: Record<string, unknown>) => ({ profile: { seed: 12345, noSamplers: true, ...(o.fixesOn && { fixesOn: o.fixesOn }), ...p } });
   const old = (id: string) => validate.find(j => j.id === id);
   const oldJob = (id: string, part: string) => {
     const j = old(id)!;
     const est = times.byId.get(id), m = j.run.profile?.minutes;
     const run = j.run.profile && o.fixesOn ? { profile: { ...j.run.profile, fixesOn: o.fixesOn } } : j.run;
-    jobs.push({ ...j, asi: o.asi, ...(o.fixesBuild && { fixesBuild: o.fixesBuild }), minCounters: o.minCounters, ...(Object.keys(o.iniOverride).length && { ini: { ...o.iniOverride } }), run, part,
+    jobs.push({ ...j, asi: o.asi, releaseDefaults: true, ...(o.fixesBuild && { fixesBuild: o.fixesBuild }), minCounters: o.minCounters, ...(Object.keys(o.iniOverride).length && { ini: { ...o.iniOverride } }), run, part,
       estMin: est ?? (j.run.matrix ? matrixMin : (m ?? 5) + times.overhead), est: est ? 'measured (v0.1.4 release-validate)' : '[inferred]' });
   };
   const matrixMin = times.overhead + times.matrixCases + 2 * times.reload;

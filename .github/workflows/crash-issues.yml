@@ -29,3 +29,17 @@ jobs:
           [ -n "$dups" ] || exit 0
           refs=$(printf '#%s ' $dups)
           gh issue comment "$NUM" --body "Same crash signature \`$sig\` as $refs. New details are welcome there; a maintainer may close this one as a duplicate."
+
+  # Error 12 reports sent with `report-crash.ts --memory` through gh skip the form, so its labels: add them here
+  label-memory:
+    if: contains(github.event.issue.body, 'ts3native memory report')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label memory report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUM: ${{ github.event.issue.number }}
+        run: |
+          gh label create memory --color 5319E7 --description "ts3native Error 12 / memory report" 2>/dev/null || true
+          gh issue edit "$NUM" --add-label memory

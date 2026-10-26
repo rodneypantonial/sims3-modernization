@@ -37,7 +37,7 @@ export type Asm = {
 };
 export type TypeDef = { asm: Asm; row: number; ns: string; name: string; full: string; flags: number; extendsCi: number; methods: Method[]; fields: Field[]; enclosing?: TypeDef; ifaces: number[]; base?: TypeDef | null };
 export type Method = { gi: number; asm: Asm; row: number; type: TypeDef; name: string; flags: number; impl: number; rva: number; sigBlob: number; params: string; ret: string; arity: number; id: string };
-type Field = { asm: Asm; row: number; type: TypeDef; name: string; flags: number; sigBlob: number; id: string };
+export type Field = { asm: Asm; row: number; type: TypeDef; name: string; flags: number; sigBlob: number; id: string };
 
 // Column specs: number = fixed bytes; 's' string, 'g' guid, 'b' blob; 't<n>' simple index into table n; 'c<name>' coded index.
 const CODED: Record<string, number[]> = {
@@ -279,7 +279,7 @@ function findMethod(t: TypeDef | undefined, name: string, params: string, ret: s
 }
 const stubs = new Map<string, number>(); // unresolved external targets (array accessors, missing refs)
 type Target = { m?: Method; stub?: string };
-function resolveMethodToken(a: Asm, tok: number): Target {
+export function resolveMethodToken(a: Asm, tok: number): Target {
   const tt = tok >>> 24, ti = tok & 0xffffff;
   if (tt === 0x06) return { m: a.methods[ti - 1] };
   if (tt === 0x2b) { const [mt, mi] = decodeCi('MethodDefOrRef', tbl(a, 0x2b)[ti - 1][0]); return resolveMethodToken(a, ((mt === 6 ? 0x06 : 0x0a) << 24) | mi); }
@@ -295,7 +295,7 @@ function resolveMethodToken(a: Asm, tok: number): Target {
   const m = findMethod(t, name, sig.params, sig.ret, sig.arity);
   return m ? { m } : { stub: `${owner}::${name}${sig.arity ? '`' + sig.arity : ''}(${sig.params})` };
 }
-function resolveFieldToken(a: Asm, tok: number): { id: string; type: string } {
+export function resolveFieldToken(a: Asm, tok: number): { id: string; type: string } {
   const tt = tok >>> 24, ti = tok & 0xffffff;
   if (tt === 0x04) { const f = a.fields[ti - 1]; return { id: f.id, type: fieldSigType(a, f.sigBlob) }; }
   const r = tbl(a, 0x0a)[ti - 1];
@@ -368,7 +368,7 @@ function body(m: Method): Ins[] {
 // producer of the receiver slot (ldarg, ldloc, ldfld, ldsfld, call, castclass, isinst, unbox.any, newobj). Gives up (no
 // type) at a branch target in between (stack merge), on any other opcode, or on a generic parameter type.
 const STATIC_M = 0x10;
-type FullIns = { op: number; at: number; next: number; v: number; tok: number };
+export type FullIns = { op: number; at: number; next: number; v: number; tok: number };
 function decodeAll(b: Buffer, start: number, len: number): { ins: FullIns[]; targets: Set<number> } {
   const ins: FullIns[] = []; const targets = new Set<number>(); let p = start; const end = start + len;
   while (p < end) {
@@ -394,8 +394,23 @@ export function receiverTypes(caller: number): Map<number, Recv> {
   if (!asms.length) loadAll(ASM_DIR);
   let out = recvCache.get(caller); if (out) return out;
   out = new Map(); recvCache.set(caller, out);
+  for (const { target: tm, recv: res } of methodIl(caller)?.sites ?? []) {
+    // ifaceN edges point at the implementations, so key those too.
+    for (const g of [tm.gi, ...(isIface(tm.type) ? ifaceImpls(tm)?.map((x) => x.gi) ?? [] : [])]) {
+      const prev = out.get(g);
+      out.set(g, prev && (prev.type !== res.type || prev.isThis !== res.isThis || prev.via !== res.via) ? { isThis: false } : res); // sites disagree: unknown
+    }
+  }
+  return out;
+}
+// Per method: every IL instruction (at = offset in the body) and every instance call site (call/callvirt) with its
+// receiver: j = index of the call in ins, src = index of the instruction that pushed the receiver (-1 = unknown).
+// docs/192 (script-leak-scan.ts) matches collection mutators to the static or instance field they run on.
+export type CallSite = { j: number; target: Method; recv: Recv; src: number };
+export function methodIl(caller: number): { ins: FullIns[]; sites: CallSite[]; asm: Asm } | undefined {
+  if (!asms.length) loadAll(ASM_DIR);
   const m = methods[caller];
-  if (!m || !m.rva || m.impl & IC_FLAG || m.flags & (ABSTRACT | PINVOKE)) return out;
+  if (!m || !m.rva || m.impl & IC_FLAG || m.flags & (ABSTRACT | PINVOKE)) return undefined;
   const a = m.asm, b = a.buf, p0 = rva(a, m.rva);
   let start: number, len: number, locals: string[] = [];
   if ((b[p0] & 3) === 2) { start = p0 + 1; len = b[p0] >> 2; }
@@ -404,7 +419,7 @@ export function receiverTypes(caller: number): Map<number, Recv> {
     const lt = b.readUInt32LE(p0 + 8);
     if (lt) { const [lp] = blob(a, tbl(a, 0x11)[(lt & 0xffffff) - 1][0]); let q = lp + 1; const [n, k] = cuint(b, q); q += k; for (let i = 0; i < n; i++) { const [t, q2] = sigType(a, q); locals.push(t); q = q2; } }
   }
-  let dec: ReturnType<typeof decodeAll>; try { dec = decodeAll(b, start, len); } catch { return out; }
+  let dec: ReturnType<typeof decodeAll>; try { dec = decodeAll(b, start, len); } catch { return undefined; }
   const params = splitTop(m.params);
   const inst = !(m.flags & STATIC_M);
   const argType = (i: number): [string | undefined, boolean] => inst ? (i === 0 ? [m.type.full, true] : [params[i - 1], false]) : [params[i], false];
@@ -429,25 +444,22 @@ export function receiverTypes(caller: number): Map<number, Recv> {
     }
     return undefined;
   };
+  const sites: CallSite[] = [];
   for (let j = 0; j < dec.ins.length; j++) {
     const x = dec.ins[j]; if (x.op !== 0x6f && x.op !== 0x28) continue;
     const tm = resolveMethodToken(a, x.tok).m; if (!tm || tm.flags & STATIC_M) continue;
-    let res: Recv = { isThis: false };
+    let res: Recv = { isThis: false }, src = -1;
     let k = nParams(tm); // values above the receiver still to skip
     for (let i = j - 1; i >= 0; i--) {
       if (dec.targets.has(dec.ins[i + 1].at)) break; // something jumps into the sequence: stack merge
       const e = effect(dec.ins[i]); if (!e) break;
       const [po, pu, ty, isThis, via] = e;
-      if (k < pu) { if (pu === 1 && k === 0 && ty && !/^!|&$/.test(ty)) res = { type: ty.replace(/<.*$/s, ''), isThis, via }; break; }
+      if (k < pu) { if (pu === 1 && k === 0) { src = i; if (ty && !/^!|&$/.test(ty)) res = { type: ty.replace(/<.*$/s, ''), isThis, via }; } break; }
       k = k - pu + po;
     }
-    // ifaceN edges point at the implementations, so key those too.
-    for (const g of [tm.gi, ...(isIface(tm.type) ? ifaceImpls(tm)?.map((x) => x.gi) ?? [] : [])]) {
-      const prev = out.get(g);
-      out.set(g, prev && (prev.type !== res.type || prev.isThis !== res.isThis || prev.via !== res.via) ? { isThis: false } : res); // sites disagree: unknown
-    }
+    sites.push({ j, target: tm, recv: res, src });
   }
-  return out;
+  return { ins: dec.ins, sites, asm: a };
 }
 
 // ---------- build ----------
@@ -754,7 +766,7 @@ export function subtypes(type: string): { full: string; asm: string; abstract: b
 export function typeModel(dir: string, skipped: string[]) {
   if (!asms.length) loadAll(dir, skipped);
   if (!kids) hierarchy();
-  return { asms, typeByFull, baseOf, ifaceClosure, isIface, sigEq, VIRT, NEWSLOT };
+  return { asms, typeByFull, baseOf, ifaceClosure, isIface, sigEq, VIRT, NEWSLOT, fieldType: (f: Field) => fieldSigType(f.asm, f.sigBlob) };
 }
 
 // Root groups for the routing study. Specs: method id prefix; type:<T> (its methods); derived:<T> (T and subclasses);

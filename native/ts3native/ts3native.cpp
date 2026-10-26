@@ -12,14 +12,14 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.64"
+#define TS3NATIVE_VERSION "0.36.103"
 
 typedef unsigned char u8;
 
 static HANDLE g_log = INVALID_HANDLE_VALUE;
 
 static void Log(const char* fmt, ...) {
-    char buf[512];
+    char buf[1536];  // docs/67 §22.4: was 512, which cut the "mono fault:" script stack after 6 of 16 frames
     va_list ap;
     va_start(ap, fmt);
     int n = _vsnprintf_s(buf, sizeof(buf) - 2, _TRUNCATE, fmt, ap);
@@ -148,17 +148,50 @@ static void XcptRefs(const CONTEXT* c, char* refs, int cap, int max) {
         }
     }
 }
+// docs/67 §22 (Crash S): a fault inside the mint interpreter names nothing managed. Interpreter frame [verified, docs/130 §1]:
+// ebp = 0xE53EB0's frame (its helpers keep ebp), [ebp-0x10] = current RuntimeMethod (+8 MonoMethod). In the callvirt miss
+// helper 0xE51FC0-0xE520BF also the receiver [ebp-0x28] with its first two links (object -> vtable -> klass; a Boehm
+// free-list object shows heap -> heap there) and the callee MonoMethod (esi). Then the script stack. One line, reads guarded.
+static int FbName(char* d, int room, DWORD method);   // below (LogFallbackStack names)
+static int FbStackText(char* d, int room, int frames);
+static bool GrFaultText(const CONTEXT* c, char* d, int room);  // gcroots.cpp: the task line (docs/67 §22.4)
+static bool MonoFaultText(const CONTEXT* c, char* d, int room) {
+    if (c->Eip < 0x00E51000 || c->Eip >= 0x00E5A600) return false;
+    char caller[120] = "?", callee[120] = "-", st[1100] = "unreadable";
+    DWORD rm = 0, obj = 0, vt = 0, kl = 0;
+    const bool miss = c->Eip >= 0x00E51FC0 && c->Eip < 0x00E520C0;
+    __try {
+        rm = *(const DWORD*)(uintptr_t)(c->Ebp - 0x10);
+        if (rm) FbName(caller, sizeof(caller), *(const DWORD*)(uintptr_t)(rm + 8));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (miss) {
+        FbName(callee, sizeof(callee), c->Esi);
+        __try {
+            obj = *(const DWORD*)(uintptr_t)(c->Ebp - 0x28);
+            vt = obj ? *(const DWORD*)(uintptr_t)obj : 0;
+            kl = vt ? *(const DWORD*)(uintptr_t)vt : 0;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+    if (FbStackText(st, sizeof(st), 16) <= 0) strcpy_s(st, "unreadable");
+    sprintf_s(d, room, "mono fault: in %s (rm %08lX)%s%s, receiver %08lX vtable %08lX klass %08lX; script stack: %s", caller, rm,
+              miss ? ", callvirt of " : "", miss ? callee : "", obj, vt, kl, st);
+    return true;
+}
 static DWORD P5cRelMatch(const CONTEXT* c);  // p5c.cpp: registers in an object our graveyard flush released (crash I)
 static void CfOnFault(const EXCEPTION_POINTERS* x);  // crashfx.cpp: [CrashForensics] dump (off unless Enabled=1)
+static void P5cRelDump();  // p5c.cpp: the whole released ring (docs/67 §15), once
+static bool AtOwnsXcpt(const EXCEPTION_POINTERS* e);  // arenatail.cpp: [GcRootCheck] TailWatch arm requests and hits (docs/67 §22.7)
 static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const EXCEPTION_RECORD* r = e->ExceptionRecord;
     const DWORD code = r->ExceptionCode;
+    if (AtOwnsXcpt(e)) return EXCEPTION_CONTINUE_SEARCH;
     // 0xE0503401: P4's lazy stop (p4.cpp kP4LazyCode), caught by P4Guarded; not a crash (docs/94 §21.8.1)
     if (code == 0x406D1388 || code == 0x40010006 || code == 0x4001000A || code == DBG_CONTROL_C || code == 0xE0503401)
         return EXCEPTION_CONTINUE_SEARCH;
     if (code == 0xE06D7363 && InterlockedIncrement(&g_xcptCpp) > 2) return EXCEPTION_CONTINUE_SEARCH;
     // [CrashForensics] dump before the 16-line cap; not for our own probes' guarded reads (caught in ts3native)
-    if (code == EXCEPTION_ACCESS_VIOLATION && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
+    // docs/67 §17: an illegal instruction too (a wild call into the heap, Crash M / O)
+    if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) && !(e->ContextRecord->Eip >= g_selfLo && e->ContextRecord->Eip < g_selfHi)) CfOnFault(e);
     if (InterlockedIncrement(&g_xcptN) > 16) return EXCEPTION_CONTINUE_SEARCH;
     const CONTEXT* c = e->ContextRecord;
     char refs[128];
@@ -166,7 +199,18 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     Log("exception %08lX at 0x%08lX (info %08lX %08lX) thread %lu eip %08lX esp %08lX; stack code refs:%s", code,
         (DWORD)(uintptr_t)r->ExceptionAddress, r->NumberParameters > 0 ? (DWORD)r->ExceptionInformation[0] : 0,
         r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0, GetCurrentThreadId(), c->Eip, c->Esp, refs);
-    if (code == EXCEPTION_ACCESS_VIOLATION) P5cRelMatch(c);
+    // docs/67 §15: every register (the 2026-10-25 crash pair logged only eip / esp), for the crash's own exceptions too
+    Log("  registers eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX esp %08lX eip %08lX efl %08lX", c->Eax,
+        c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip, c->EFlags);
+    if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) P5cRelMatch(c);
+    char mono[1500];
+    if (code == EXCEPTION_ACCESS_VIOLATION && MonoFaultText(c, mono, sizeof(mono))) {
+        Log("  %s", mono);
+        if (GrFaultText(c, mono, sizeof(mono))) Log("  %s", mono);  // docs/67 §22.4: is the task rooted, is the frame scanned
+    }
+    // TS3W.exe code (not the start-up AVs in other modules): the released ring once; an illegal instruction counts (wild call)
+    if ((code == EXCEPTION_ACCESS_VIOLATION && c->Eip >= 0x00401000 && c->Eip < 0x00F95000) || code == EXCEPTION_ILLEGAL_INSTRUCTION)
+        P5cRelDump();
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -206,7 +250,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5215 int32 (v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5392 int32 (v139 [UnseenFallback] C1-C4 site fallbacks after v138, version field 139; v138 [UnseenFallback] after v137, version field 138; v137 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit after v136 [ResourceCache] trim, version field 137; v135 PlanDeadlineMs sync-path exemptions after v134, version field 135; v134 [RouteAsync] KindDeadlines after v133; v133 [RouteSnap] LotUseReadout after v132; v132 [RouteSnap] PoolChunkMB / EpochHeap after v131; v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -1808,7 +1852,7 @@ struct Ts3nCounters {
     LONG pfFullPass;                  // +0x4768, queue full with an Add queued: the call ran now, out of order (expect 0)
     LONG pfApplyInJob;                // +0x476C, tripwire: applied while a job ran (expect 0)
     // v114 (0.36.43, docs/157 §11.7): [CrashForensics] (crashfx.h / crashfx.cpp), default off
-    LONG cfReady;                     // +0x4770, bits: 1 ring, 2 audio erase guard 0x5EE1E0, 4 array clear guard 0x7B0A00, 8 heap check
+    LONG cfReady;                     // +0x4770, bits: 1 ring, 2 audio erase guard 0x5EE1E0, 4 array clear guard 0x7B0A00, 8 heap check, 16 Light=1 only (0.36.72)
     LONG cfRecs;                      // +0x4774, ring events recorded (P5 EA news / frees, g_rpUse holds)
     LONG cfCalls[2];                  // +0x4778, guarded site calls (approximate, plain increments): 0 audio erase, 1 array clear
     LONG cfBad[2];                    // +0x4780, bad pointer seen before the game used it: 0 node object vtable, 1 array unreadable
@@ -2030,8 +2074,129 @@ struct Ts3nCounters {
     LONG cpLateUs;                     // +0x51A0, trap us from minute CallSitesWarmMin on (the after-warm-up cost)
     LONG cpLateMin;                    // +0x51A4, minutes in cpLateUs (ms/s = cpLateUs / cpLateMin / 60000)
     LONG cpSpare[5];                   // +0x51A8, reserved with native-v130 (16 int32)
+    // v131 (0.36.67, docs/189 §16 ladder measurement, p6wait.cpp): [P6Waits] arm from the in-load loop, not the P6 switch
+    LONG p6wArmSet;                    // +0x51BC, switch p6warm (native_set): 0 = arm = routesnapplan (as before), 1 = off, 2 = on
+    LONG p6wArmSpare[3];               // +0x51C0, reserved with native-v131 (4 int32)
+    // v132 (0.36.73, docs/66 §7 clone slimming, pools.cpp + replay.cpp; all switches off by default)
+    LONG plChunkMB;                    // +0x51CC, [RouteSnap] PoolChunkMB (0 = one 96 MB pool region as before)
+    LONG plChunks;                     // +0x51D0, pool regions reserved
+    LONG plResKB;                      // +0x51D4, pool regions reserved in all (KB)
+    LONG plSavedKB;                    // +0x51D8, 96 MB minus plResKB: pool reserve left in the free address space
+    LONG rpGenOn;                      // +0x51DC, [RouteSnap] EpochHeap (one heap per clone build)
+    LONG rpGenLive;                    // +0x51E0, clone build heaps alive (1-2 expected; more = blocks pinning old heaps)
+    LONG rpGenFreed;                   // +0x51E4, clone build heaps destroyed
+    LONG rpGenRelKB;                   // +0x51E8, peak block KB of the destroyed heaps (lower bound of the reservation returned)
+    LONG rpGenDestroyMaxUs;            // +0x51EC, longest HeapDestroy (inside the consumer's +0x918 hold)
+    LONG rpLoadWaitCuts;               // +0x51F0, EpochHeap: cuts that built no clone between world event 9 / 0x0A and 7
+    LONG rpLoadWaitTimeouts;           // +0x51F4, load waits ended by the 60 s bound (event 7 not seen)
+    LONG rpSlimSpare;                  // +0x51F8, reserved with native-v132 (12 int32)
+    // v133 (0.36.73, docs/66 §7.1 A4 readout, lotuse.cpp; [RouteSnap] LotUseReadout, default off)
+    LONG luOn;                         // +0x51FC, 1 = LotUseReadout on
+    LONG luWalks;                      // +0x5200, clone walks (one per [UserDiag] memory sample)
+    LONG luRuns;                       // +0x5204, route jobs whose clone run's read set was noted
+    LONG luOver;                       // +0x5208, of those with more lots than the read set holds (kStlKeys)
+    LONG luLots;                       // +0x520C, clone lots at the last walk
+    LONG luTouched;                    // +0x5210, of those read by at least one noted job
+    LONG luUntouchedPermille;          // +0x5214, share of lot bytes on lots no job read (per mille)
+    LONG luUntouchedKB;                // +0x5218, those bytes (KB)
+    // v134 (0.36.77, docs/197, plandeadline.cpp): [RouteAsync] KindDeadlines, one deadline per route job kind (KD_*: 0 own Plan,
+    // 1 own Replan, 2 own PlanFromPoint, 3 own ReplanFromPosition, 4 A10 foreign, 5 foreign Plan, 6 stuck-check probe)
+    volatile LONG kdMode;              // +0x521C, switch (native_set kinddeadlines / --ab kinddeadlines): 1 = jobs get their kind's deadline
+    LONG kdReady;                      // +0x5220, 1 = the world A* cost stubs and the cell A* / water stubs are in
+    LONG kdUs[7];                      // +0x5224, deadline per kind in us (0 = that kind is never cut)
+    LONG kdJobs[7];                    // +0x5240, jobs that ran with their kind's deadline (doubled ones included)
+    LONG kdCut[7];                     // +0x525C, of those cut (a world A*, cell A* or water search took the no-path exit)
+    LONG kdLong[7];                    // +0x5278, jobs >= 300 ms while kdMode 1 (cut or not)
+    LONG kdLateMaxUs;                  // +0x5294, longest time a cut job ran past its deadline
+    LONG kdBackoff[2];                 // +0x5298, jobs of a follower cut within 10 s: [0] deadline doubled, [1] run uncut
+    LONG kdAfterOk;                    // +0x52A0, a cut follower's next job (within 10 s) succeeded
+    LONG kdAfterFail;                  // +0x52A4, ... failed
+    LONG kdUncutOk;                    // +0x52A8, of kdAfterOk: an uncut backoff job (a cut would have failed a plan that succeeds)
+    LONG kdAfterStuckCheck;            // +0x52AC, stuck-check marks on a follower cut within 30 s
+    LONG kdExemptSc;                   // +0x52B0, own jobs with a stuck-check tag but no probe mark (last round): never cut
+    LONG kdCutOk;                      // +0x52B4, cut jobs whose plan still succeeded (a later candidate)
+    LONG kdSpare[2];                   // +0x52B8, reserved with native-v134 (41 int32)
+    // v135 (0.36.78, docs/164 §7.8, plandeadline.cpp): sync-path exemptions of [RouteAsync] PlanDeadlineMs
+    LONG pdExemptSc;                   // +0x52C0, sync IC plans of a stuck-check round with a tag but no probe mark (last round): no deadline
+    LONG pdCutSc;                      // +0x52C4, tripwire: cut sessions (skip / capped > 0) holding such a plan (nested in an open session)
+    LONG pdSpare[2];                   // +0x52C8, reserved with native-v135 (4 int32)
+    // v136 (0.36.80, docs/198 §4, rctrim.cpp): [ResourceCache] TrimAfterCleanup experiment (off)
+    LONG rtOn;                         // +0x52D0, 1 = service slot hook installed
+    LONG rtTrims;                      // +0x52D4, shrink-both calls made
+    LONG rtFreedKB;                    // +0x52D8, idle cache KB dropped over all trims (both caches)
+    LONG rtLastFreedKB;                // +0x52DC, ... by the last trim
+    LONG rtMaxUs;                      // +0x52E0, longest shrink-both call
+    LONG rtStood;                      // +0x52E4, trims skipped: Apex Radiance loaded ([Compat] ApexStandDown=1)
+    LONG rtBad;                        // +0x52E8, trims skipped: manager or cache vtable not as expected
+    LONG rtSpare;                      // +0x52EC, reserved with native-v136 (8 int32)
+    // v137 (0.36.81, docs/199, memexp.cpp): [MemDiag] TypeGrowth + [GC] SqrtHeapLimit experiments (off)
+    volatile LONG tyMode;              // +0x52F0, switch (--ab typegrowth): 1 = class census + Cork rank + holders after each completed GC
+    volatile LONG sqMode;              // +0x52F4, switch (--ab sqrtheap): 1 = heap grows up to the square-root limit, 2 = observe (log only)
+    LONG mxReady;                      // +0x52F8, bit 0 notify hook, 1 census tables, 2 per-frame GC timing, 3 collect_or_expand detour
+    LONG tyPasses;                     // +0x52FC, census passes
+    LONG tyLastUs;                     // +0x5300, last pass (census + graph)
+    LONG tyMaxUs;                      // +0x5304, longest pass
+    LONG tyGraphLastUs;                // +0x5308, last points-from walk
+    LONG tyGraphMaxUs;                 // +0x530C, longest points-from walk
+    LONG tyObjs;                       // +0x5310, live managed objects at the last pass
+    LONG tyClasses;                    // +0x5314, classes seen so far
+    LONG tyRejects;                    // +0x5318, words at object +0 that were no vtable (last pass)
+    LONG tyFaults;                     // +0x531C, walks ended by an access fault (should stay 0)
+    LONG sqGcs;                        // +0x5320, completed collections seen
+    LONG sqLiveKB;                     // +0x5324, marked bytes at the last completed collection
+    LONG sqLimitKB;                    // +0x5328, square-root heap limit (0 = not computed yet)
+    LONG sqHeapKB;                     // +0x532C, GC_heapsize then
+    LONG sqAllocKBs;                   // +0x5330, smoothed allocation rate, KB/s
+    LONG sqSpeedMBs;                   // +0x5334, smoothed GC speed (live bytes per GC second), MB/s
+    LONG sqGcUsLast;                   // +0x5338, GC time of the last cycle (per-frame steps + forced, our walk excluded)
+    LONG sqWalkUsLast;                 // +0x533C, marked-bytes walk (when TypeGrowth did not run that pass)
+    LONG sqWalkUsMax;                  // +0x5340
+    LONG sqWouldFreeKB;                // +0x5344, heap above the limit (Boehm here never returns heap: log only)
+    LONG sqGrows;                      // +0x5348, collect_or_expand calls answered by growing under the limit
+    LONG sqGrowKB;                     // +0x534C, KB grown that way
+    LONG sqForced;                     // +0x5350, collect_or_expand calls passed to the game (forced collection or its own expand)
+    LONG mxSpare[3];                   // +0x5354, reserved with native-v137 (28 int32)
+    // v138 (0.36.89, docs/202, unseenfb.cpp): [UnseenFallback] deadline for the plans and route jobs of unseen Sims (off)
+    volatile LONG ufMode;              // +0x5360, switch (--ab unseenfb): 1 = MARKs accepted (needs ufReady bits 1-3)
+    volatile LONG ufUs;                // +0x5364, deadline of a marked plan or job (us), [UnseenFallback] DeadlineMs
+    LONG ufReady;                      // +0x5368, bit 0 world A* cost stubs, 1 cell A*, 2 water, 3 route IC sync path ([RouteAsync])
+    LONG ufMarks;                      // +0x536C, MARKs accepted
+    LONG ufMarkRefused;                // +0x5370, MARKs answered 0 (mode off or not ready)
+    LONG ufSync;                       // +0x5374, marked sync ICs run with the deadline
+    LONG ufSyncCut;                    // +0x5378, of those, past their deadline
+    LONG ufJobs;                       // +0x537C, marked route jobs
+    LONG ufJobCut;                     // +0x5380, of those, cut (capped)
+    LONG ufMaxUs;                      // +0x5384, longest marked sync plan or job
+    LONG ufLong;                       // +0x5388, marked plans or jobs >= 300 ms (the target is none)
+    LONG ufCutAsks;                    // +0x538C, CUT? answered 1
+    // v139 (0.36.90, docs/202 §3.4, unseenfbc.cpp): [UnseenFallback] Sites=1, C1-C4: an unseen Sim waiting at a +0x918 site
+    // takes the lock with a deadline (SiteWaitMs) and on timeout skips the whole locked block with the harmless answer.
+    // Per-site arrays: [0] C1 steering obstacle list 0x9573B7, [1] C2 avoidance RouteFollow_A 0x847697, [2] C3 route-to-object
+    // check 0x831568 (IsSlotUnobstructed / IsRouteToObjectUnobstructed), [3] C4 placement 0x635013 (FindGoodLocation of a Sim)
+    volatile LONG ufcMode;             // +0x5390, switch (--ab unseenfbc): 1 = the sites act (needs ufcReady and a fresh unseen list)
+    volatile LONG ufcWaitMs;           // +0x5394, [UnseenFallback] SiteWaitMs (0-150; 0 = try once), value unseenfbcms
+    LONG ufcReady;                     // +0x5398, bit 0 C1, 1 C2, 2 C3 (three call sites), 3 C4 site, 4 C3 / C4 owner = the running script task (MonoScriptHost +0xBD0), 5 agent update context
+    LONG ufcList;                      // +0x539C, Sim ids in the current unseen list (ts3fixes unseenfbsites push)
+    LONG ufcPushes;                    // +0x53A0, lists accepted
+    LONG ufcPushBad;                   // +0x53A4, pushes refused (bad order, count mismatch, more than 256 ids)
+    LONG ufcTry[4];                    // +0x53A8, timed acquires by an unseen owner while a route job was busy
+    LONG ufcGot[4];                    // +0x53B8, of those, the lock came within the deadline (the block ran as the game's, under that hold)
+    LONG ufcTimeout[4];                // +0x53C8, of those, the deadline passed (-2)
+    LONG ufcFake[4];                   // +0x53D8, harmless answers given (C1 no obstacles, C2 nothing to avoid, C3 obstructed, C4 no spot)
+    LONG ufcRecover[4];                // +0x53E8, of the fakes, try-only ones: this job already used one wait, or the same Sim's fake < 1.5 s ago
+    LONG ufcSeen[4];                   // +0x53F8, a busy job but the owner not unseen (not listed, native camera seen, posture): the game's path
+    LONG ufcWaitUs[4];                 // +0x5408, time spent in the timed acquires
+    LONG ufcMaxWaitUs;                 // +0x5418, longest timed acquire
+    LONG ufcNoRoute;                   // +0x541C, C3 timeouts with no route part (0x831530 ran its physics checks unlocked, as rtoNoRoute)
+    LONG ufcStale;                     // +0x5420, site asks with no fresh list (older than 1.5 s, or out of live mode: nothing acts)
+    // 0.36.94 (docs/202 §3.1.1, strict DeadlineMs), in the v139 reserve: [0] sync plans, [1] route jobs
+    LONG ufEffCutUs[2];                // +0x5424, effective cut point = setting - overrun budget (never below setting / 2)
+    LONG ufOverP99Us[2];               // +0x542C, overrun budget: largest per-exit p99 of deadline-to-return (floor 30 ms, 80 ms to start)
+    LONG ufLockWaits;                  // +0x5434, marked sync plans that took +0x918 with their deadline while a route job was busy
+    LONG ufLockFail;                   // +0x5438, of those, failed before the search (the deadline passed: "no route", then recovery)
+    LONG ufOverSamples;                // +0x543C, cut plans / jobs learned into the overrun budget
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {130,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {139,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -2117,6 +2282,12 @@ static void PrLog();  // planrepeat.cpp
 static void EoLogCounters();  // earlyout.cpp
 static void MwLogCounters();  // movedwait.cpp
 static void P6wLogCounters();  // p6wait.cpp
+static void KdLogCounters();   // plandeadline.cpp (docs/197)
+static void UfLogCounters();   // unseenfb.cpp (docs/202)
+static void AgLogCounters();   // monothread-m5.cpp: [ArenaGuard] (docs/67 §22.2)
+static void GrLogCounters();   // gcroots.cpp: [GcRootCheck] (docs/67 §22.4)
+static void AtLogCounters();   // arenatail.cpp: [ArenaGuard] TailPad, [GcRootCheck] TailWatch (docs/67 §22.7)
+static void UfcLogCounters();  // unseenfbc.cpp (docs/202 §3.4)
 
 static void MaybeLogCounters(ULONGLONG now) {
     LONG64 next = g_nextLog;
@@ -2165,6 +2336,12 @@ static void MaybeLogCounters(ULONGLONG now) {
             c.fbjdMode, c.fbjdReady, c.fbjdSkip[0], c.fbjdSkip[1], c.fbjdCapped[0], c.fbjdCapped[1], c.fbjdCapped[2],
             c.fbjdLateMaxUs / 1000, c.fbjdLong[0], c.fbjdLong[1], c.owWaits, c.owWaitUs / 1000, c.owWaitMaxUs / 1000, c.owWaitHist[0],
             c.owWaitHist[1], c.owWaitHist[2], c.owWaitHist[3], c.owWaitHist[4], c.owWaitHist[5]);
+    if (c.kdReady) KdLogCounters();  // docs/197
+    if (c.ufReady) UfLogCounters();  // docs/202
+    AgLogCounters();  // docs/67 §22.2 (logs only with [ArenaGuard] on)
+    GrLogCounters();  // docs/67 §22.4 (logs only with [GcRootCheck] on)
+    AtLogCounters();  // docs/67 §22.7 (logs only with TailPad or TailWatch on)
+    if (c.ufcReady) UfcLogCounters();  // docs/202 §3.4
     if (c.asyncReady)  // docs/183: n / ms / yieldable per site
         Log("route jobs sim waits: runplan %ld/%ld/%ld rtwait %ld/%ld/%ld disc %ld/%ld/%ld collect %ld/%ld/%ld drop %ld/%ld/%ld "
             "other %ld/%ld/%ld, max %ld ms; job yield mode %ld asks %ld busy %ld", c.swN[0], c.swUs[0] / 1000, c.swYieldable[0],
@@ -2364,6 +2541,34 @@ static u8 CallPlan(void* world, void* edx, int* outList, int* starts, int* goals
 static volatile LONG g_pdOn;
 // docs/178 T1: the worker's id while it runs a foreign job with a deadline (the cell / water entry stubs' second compare)
 static volatile DWORD g_pdWkTid;
+// docs/164 §7.8: t_pdNoCut = inside a sync IC exempt from the deadline (own task with PlanDeadlineOwnMs 0, or a stuck-check
+// last round): its nested Route_PlanLocked opens no session either; t_pdScH: IcCollect's Plan IC follows a refused START
+// whose stuck-check tag had no probe mark (t_pdScH = its route handle, read once by SyncIc)
+static __declspec(thread) bool t_pdNoCut;
+static __declspec(thread) DWORD t_pdScH;
+static DWORD g_scSyncH;  // route handle of the last own START with a stuck-check tag and no probe mark (sim thread only)
+// docs/202 (unseenfb.cpp): t_ufSess = this sync IC runs an UnseenFallback session (PdSkip cuts it with pdMode 0 too);
+// t_pdHitLast = the last closed session ran past its deadline (PdClose); t_ufJob = the worker runs a marked job
+struct AsyncJob;
+static DWORD g_ufH;     // docs/202: route handle of the last UnseenFallback MARK (sim thread only), taken by its next START or sync IC
+static DWORD g_ufCutH;  // docs/202: route handle whose marked plan or job was cut, read once by CUT?
+static __declspec(thread) bool t_ufSess, t_pdHitLast;
+static __declspec(thread) LONG t_ufJob;
+// docs/202 §3.1.1: the last closed session's time past its deadline (us) and the exits that cut it (bit 0 world A*, 1 cell,
+// 2 water), for the overrun budget; t_ufLockFail = this marked sync IC failed a plan at its pre-search +0x918 wait
+static __declspec(thread) LONG t_pdLastLateUs;
+static __declspec(thread) unsigned t_pdLastMask;
+static __declspec(thread) bool t_ufLockFail;
+static bool UfTake(DWORD handle);
+static LONG UfSyncUs(LONG pd);
+static LONG UfUs();
+static LONG UfEffUs(int ctx);
+static int UfLockGate(void* world);  // unseenfbc.cpp: RunPlan, 0 = not gated, 1 = held (release), -2 = fail the plan
+static void UfLockRelease(void* world);
+static void UfSyncEnd(DWORD handle, const u8* out, LONG us);
+static void UfJobEnd(AsyncJob* j, bool capped, LONG us, LONG lateUs, unsigned mask);
+static u8 UfMsg(DWORD handle, DWORD lo);
+static u8 UfCamMsg(DWORD lo, DWORD hi);
 static bool PdPlanBegin();
 static void PdPlanEnd(u8 r);
 static void PdCapped();
@@ -2461,6 +2666,9 @@ struct AsyncJob {
     LONG pend;        // docs/134 §2.6: READY ticks this J_PEND slot has waited
     LONG probe;       // docs/163 §10: 1 = a stuck-check probe (PROBE mark on this route right before its own START)
     LONG sc;          // docs/163 §10.1: stuck-check tag of an own START (ScTagText), 0 = no mark
+    u64 kdId;         // docs/197: the route's follower (route +0x40/+0x44) read at START with KindDeadlines on, 0 = unknown
+    LONG uf;          // docs/202: 1 = an unseen Sim's route (UnseenFallback MARK right before its START): ufUs deadline
+    LONG ufCut;       // docs/202: that job was cut (worker, before J_DONE); IcCollect hands it to the CUT? answer
 };
 // docs/134: 32 slots; with [RouteAsync] FallbackAsync off only the first kJobsBase are handed out (QueueFull as before)
 static const int kJobs = 32, kJobsBase = 8;
@@ -2515,6 +2723,11 @@ static void MwJobEnd(DWORD seq);
 enum { P6O_PLAIN, P6O_TAKEN, P6O_BORROWED, P6O_STALE, P6O_REFUSED, P6O_NONE, P6O_N };
 enum { P6W_LOCK, P6W_GATE, P6W_RTWAIT, P6W_RESULT, P6W_HOST, P6W_N };
 static __declspec(thread) int t_p6wOut, t_p6wArm;
+// the in-load loop's arm when it sets p6warm (ladder rungs keep the P6 switch on in both arms, docs/189 §16), else the P6 switch
+static int P6wArmNow() {
+    const Ts3nCounters& k = ts3native_counters;
+    return k.p6wArmSet ? k.p6wArmSet == 2 : k.p6Plan != 0;
+}
 static void P6wWait(DWORD tok, int cls, int site, LONG us);  // sim thread: tok = MwSeqNow() at the wait's start, site 1 + gate
 static void P6wJobEnd(DWORD seq, LONG spanUs);                // worker, at the job's +0x918 release
 static volatile DWORD g_asyncSeq;  // the running job's seq (worker, before A_RUNNING)
@@ -2824,6 +3037,7 @@ static void ScTagText(char* b, size_t n, LONG sc) {
     else if (!(sc & 0xFF)) _snprintf_s(b, n, _TRUNCATE, ", stuck-check round ?");
     else _snprintf_s(b, n, _TRUNCATE, ", stuck-check round %ld%s", sc & 0xFF, sc & 0x200 ? " (last)" : "");
 }
+static __declspec(thread) int t_kdKind;  // docs/197 (plandeadline.cpp): KD_* + 1 of the job this worker runs with KindDeadlines on, 0 = off
 static void JobLongNote(const AsyncJob* j, LONG us, bool capped, const JobSplit* s = NULL) {
     static DWORD minute, lines;
     InterlockedIncrement(j->fb ? &ts3native_counters.fbjcLong : &ts3native_counters.ownJobLong);
@@ -2834,11 +3048,11 @@ static void JobLongNote(const AsyncJob* j, LONG us, bool capped, const JobSplit*
         char sc[48] = "";
         if (!j->fb && !j->af) ScTagText(sc, sizeof(sc), j->sc);
         Log("route async: long job %ld ms, %s START, IC kind %d, route %08lX%s%s", us / 1000, j->fb ? "foreign" : j->af ? "A10 foreign" : "own", j->kind,
-            j->handle, !capped ? "" : j->probe ? ", capped (stuck-check probe, PlanDeadlineMs)" : ", capped (FbJobCapMs)", sc);
+            j->handle, !capped ? "" : j->uf ? ", capped (UnseenFallback)" : t_kdKind ? ", capped (KindDeadlines)" : j->probe ? ", capped (stuck-check probe, PlanDeadlineMs)" : ", capped (FbJobCapMs)", sc);
         return;
     }
     Log("route async: long job %ld ms, foreign START, IC kind %d, route %08lX%s, capAt %ld ms tail %ld ms, plan %ld ms host %ld ms "
-        "other %ld ms", us / 1000, j->kind, j->handle, capped ? ", capped (FbJobCapMs)" : "", s->capAtUs < 0 ? -1 : s->capAtUs / 1000,
+        "other %ld ms", us / 1000, j->kind, j->handle, !capped ? "" : j->uf ? ", capped (UnseenFallback)" : t_kdKind ? ", capped (KindDeadlines)" : ", capped (FbJobCapMs)", s->capAtUs < 0 ? -1 : s->capAtUs / 1000,
         s->tailUs < 0 ? -1 : s->tailUs / 1000, s->planUs / 1000, s->hostUs / 1000, (us - s->planUs - s->hostUs) / 1000);
 }
 
@@ -2883,6 +3097,11 @@ static void OwSimWait(LONG us, bool own, DWORD handle) {
     Log("route jobs: sim waited %ld ms behind an own job (route %08lX%s)", us / 1000, handle, sc);
 }
 static void FbjdJobEnd(LONG us, LONGLONG end, LONGLONG dl);  // plandeadline.cpp (docs/178 T1)
+static LONG KdJobBegin(const AsyncJob* j);                          // plandeadline.cpp (docs/197): -1 = KindDeadlines off
+static void KdJobEnd(const AsyncJob* j, bool capped, LONG us, LONGLONG end, LONGLONG dl);
+static u64 KdFollower(DWORD handle);  // sim thread, at START
+static void KdStuckMark(DWORD handle);
+static LONG ScProbeUs();              // the stuck-check probe's deadline: KindDeadlines' probe kind, else PlanDeadlineMs
 
 // Worker side: runs every queued job, oldest first. Each job: the whole original route IC of its kind (IC_Route_Plan, or
 // with A10 Replan / PlanFromPoint / ReplanFromPosition: start points, Route_PlanCommon, Route_PlanLocked, result mapping)
@@ -2963,22 +3182,30 @@ static void ServeAsync() {
         // foreign job gets a world A* cap like a sync plan's SyncCapMs (nested plans the job's managed calls send back too).
         // §11: the cap is a deadline from t0 (the job's start), not a clock from its first world A* node
         // docs/163 §10: a stuck-check probe job (own START, PROBE mark) gets PlanDeadlineMs from its start, as a foreign sync plan
-        t_scProbe = j->probe && !j->fb && k.pdUs > 0 ? 1 : 0;
-        t_fbCapUs = j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : t_scProbe ? k.pdUs : 0;
+        // docs/197 [RouteAsync] KindDeadlines (kdMode 1): the kind's deadline (with the follower's backoff) replaces both rules
+        const LONG kdUs = KdJobBegin(j);
+        t_scProbe = kdUs < 0 && j->probe && !j->fb && k.pdUs > 0 ? 1 : 0;
+        t_fbCapUs = kdUs >= 0 ? kdUs : j->fb && k.fbjcMode == 1 ? k.fbjcCapUs : t_scProbe ? k.pdUs : 0;
+        // docs/202 [UnseenFallback]: an unseen Sim's route (MARK before START) gets ufUs, or the smaller deadline it already had
+        t_ufJob = j->uf && k.ufMode == 1 ? 1 : 0;
+        if (t_ufJob) {
+            const LONG ufUs = UfEffUs(1);  // unseenfb.cpp: the setting minus the learned job overrun (docs/202 §3.1.1)
+            t_fbCapUs = t_fbCapUs && t_fbCapUs < ufUs ? t_fbCapUs : ufUs;
+        }
         t_fbDeadline = t_fbCapUs ? t0.QuadPart + (LONGLONG)t_fbCapUs * g_qpf.QuadPart / 1000000 : 0;
-        t_jobT0 = j->fb || t_scProbe ? t0.QuadPart : 0;
+        t_jobT0 = j->fb || t_scProbe || kdUs > 0 || t_ufJob ? t0.QuadPart : 0;
         t_jobCapAt = 0;
         t_jobPlanUs = t_jobHostUs = 0;
         t_fbCapHit = 0;
         t_fbjdCut[0] = t_fbjdCut[1] = t_fbjdCut[2] = 0;
         // docs/178 T1: the cell A* / water deadline exits (plandeadline.cpp) also answer this thread while the job has a
         // deadline; PdSkip reads fbjdMode per call (runtime switch)
-        if (t_fbDeadline && ((k.fbjdReady & 3) || (t_scProbe && (k.pdReady & 6))))
+        if (t_fbDeadline && ((k.fbjdReady & 3) || ((t_scProbe || kdUs > 0 || t_ufJob) && (k.pdReady & 6))))
             InterlockedExchange((volatile LONG*)&g_pdWkTid, (LONG)GetCurrentThreadId());
         RjpJobBegin(j->fb ? 2 : j->kind ? 1 : 0);  // [RouteJobPhases] (routephases.cpp): own START, own A10, foreign
         t_hcJob = ++g_hcJobSeq;                     // hostcalls.cpp: door keys and the memo are per job
         t_p6wOut = j->p4 >= 2 ? P6O_REFUSED : P6O_PLAIN;  // [P6Waits]: armed until P5Plan says taken / stale
-        t_p6wArm = k.p6Plan != 0;                          // [P6Waits]: the arm = the P6 switch at the job's start
+        t_p6wArm = P6wArmNow();                            // [P6Waits]: the arm at the job's start
         CallIc(j->kind, j->result, j->handle, j->pt);
         t_hcJob = 0;
         LendBackstop();  // CE-4 (docs/154): a lend window an unwind left open is closed before the release below
@@ -2993,6 +3220,7 @@ static void ServeAsync() {
         t_fbCapHit = 0;
         const LONG us = UsSince(t0);
         if (j->fb) FbjdJobEnd(us, t0.QuadPart + (LONGLONG)us * g_qpf.QuadPart / 1000000, dl);
+        KdJobEnd(j, capped, us, t0.QuadPart + (LONGLONG)us * g_qpf.QuadPart / 1000000, dl);  // docs/197
         RjpJobEnd(us);  // reads t_fbjdCut for the per-phase long-job line (docs/178 T1)
         JobSplit split = {-1, -1, t_jobPlanUs, t_jobHostUs};
         if (t_jobCapAt) {
@@ -3013,7 +3241,13 @@ static void ServeAsync() {
         TwArm(false);
         InterlockedExchangeAdd(&k.asyncUs, us);
         Max(&k.asyncMaxUs, us);
-        if (capped && !j->probe) InterlockedIncrement(&k.fbjcCapped);  // docs/163 §10: a cut probe shows in its long-job line
+        if (capped && !j->probe && !t_kdKind && !t_ufJob) InterlockedIncrement(&k.fbjcCapped);  // docs/163 §10 probe / docs/197 kd cuts: own lines and kdCut
+        if (t_ufJob) {  // docs/202: ufCut before J_DONE (set below), counters; §3.1.1 overrun = end - deadline, by exit
+            const LONGLONG lateQ = dl ? t0.QuadPart + (LONGLONG)us * g_qpf.QuadPart / 1000000 - dl : -1;
+            const unsigned mask = (t_fbjdCut[0] ? 1u : 0u) | (t_fbjdCut[1] ? 2u : 0u) | (t_fbjdCut[2] ? 4u : 0u);
+            UfJobEnd(j, capped, us, lateQ < 0 ? -1 : (LONG)(lateQ * 1000000 / g_qpf.QuadPart), mask);
+        }
+        t_ufJob = 0;
         Max(j->fb ? &k.fbjcMaxUs : &k.ownJobMaxUs, us);
         if (j->af) Max(&k.afJobMaxUs, us);
         if (j->fb) {  // docs/134 §11
@@ -3064,6 +3298,15 @@ static bool StartWorker() {
 
 static u8 RunPlan(void* world, void* edx, int* outList, int* starts, int* goals, DWORD agent, DWORD doPlan, u8* opts,
                   int* out1, int* out2, DWORD guidLo, DWORD guidHi) {
+    // docs/202 §3.1.1: a marked unseen sync plan takes +0x918 with its session's deadline before the wait below; past it the
+    // plan fails before the lock (docs/11 Q5: 0 = the pre-lock "Failed, no blocker" path, as the negative cache answers)
+    if (const int g = UfLockGate(world)) {
+        if (g < 0) return 0;
+        u8 r = 0;
+        __try { r = CallPlan(world, edx, outList, starts, goals, agent, doPlan, opts, out1, out2, guidLo, guidHi); }
+        __finally { UfLockRelease(world); }
+        return r;
+    }
     const DWORD me = GetCurrentThreadId();
     bool viaWorker = ts3native_counters.workerMode == 1;
     // An async job of this thread still runs (it holds the routing lock and may wait for a managed call only this thread can
@@ -3466,15 +3709,42 @@ static void RfbNote(int why, LONG ms, const char* entry, DWORD handle, const voi
 // the cap through the [RouteBudget] stubs (an ordinary no-path failure), whatever the reason it is not async
 static bool SypIcWants();  // syncphases.cpp (docs/164): [RouteJobPhases] SyncPlans session around the whole sync IC
 static u8* SypIcRun(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret);
-// docs/164 §7 (plandeadline.cpp): the deadline of this IC by reason (0 = none) and its session around the IC
-static LONG PdIcUs(int why);
+// docs/164 §7 (plandeadline.cpp): the deadline of this IC by reason (0 = none, < 0 = exempt incl. nested plans, §7.8) and its session
+static LONG PdIcUs(int why, bool scLast);
 static void PdIcBegin(LONG us, int kind, int why, const char* entry, DWORD handle);
 static void PdIcEnd(const u8* out);
+static u8* SyncIc0(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret, LONG dlUs);
 static u8* SyncIc(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret) {
     if (SypIcWants()) return SypIcRun(kind, out, handle, pt, why, entry, ret);
+    const bool scLast = !kind && handle && t_pdScH == handle;
+    t_pdScH = 0;
+    // docs/202: an unseen Sim's marked route (never a stuck-check last round) runs with ufUs, also where pd exempts it
+    const bool uf = !scLast && UfTake(handle);
+
+    const LONG pd = g_pdOn ? PdIcUs(why, scLast) : 0;
+    if (uf) {
+        const LONG ufDl = UfSyncUs(pd);
+        if (ufDl > 0) {
+            LARGE_INTEGER t0;
+            QueryPerformanceCounter(&t0);
+            const bool noCut0 = t_pdNoCut, sess0 = t_ufSess;
+            t_pdNoCut = false, t_ufSess = true, t_pdHitLast = t_ufLockFail = false;
+            u8* r = SyncIc0(kind, out, handle, pt, why, entry, ret, ufDl);
+            t_pdNoCut = noCut0, t_ufSess = sess0;
+            UfSyncEnd(handle, out, UsSince(t0));
+            return r;
+        }
+    }
+    if (pd >= 0) return SyncIc0(kind, out, handle, pt, why, entry, ret, pd);
+    const bool noCut0 = t_pdNoCut;  // exempt (< 0): no session here, none for its nested Route_PlanLocked (PdPlanBegin)
+    t_pdNoCut = true;
+    u8* r = SyncIc0(kind, out, handle, pt, why, entry, ret, 0);
+    t_pdNoCut = noCut0;
+    return r;
+}
+static u8* SyncIc0(int kind, u8* out, DWORD handle, const float* pt, int why, const char* entry, const void* ret, LONG dlUs) {
     Ts3nCounters& k = ts3native_counters;
     const LONG cap = k.asyncMode == 1 ? k.fbCapUs : 0;
-    const LONG dlUs = g_pdOn ? PdIcUs(why) : 0;
     if (!kind && !cap && !dlUs && !g_fmOn && (!k.rfbLogMs || k.asyncMode != 1)) return g_icPlanOrig(out, handle);
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
@@ -3522,6 +3792,10 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
     g_collect = 0;
     const int why = g_rfbHandle == handle ? g_rfbWhy : RFB_NOSTART;
     if (g_rfbHandle == handle) g_rfbHandle = 0;
+    if (!kind) {  // docs/164 §7.8: the mark is good for this Plan IC only (its SyncIc reads it)
+        t_pdScH = g_scSyncH == handle ? handle : 0;
+        g_scSyncH = 0;
+    }
     AsyncJob* j = GetCurrentThreadId() == g_async.owner ? JobFor(handle) : NULL;
     // no job for this route: plan as asked (its Route_PlanLocked waits for a running job first: Lock_Acquire pump)
     if (!j) {
@@ -3552,6 +3826,7 @@ static u8* IcCollect(int kind, u8* out, DWORD handle, const float* pt, const voi
     if (done && collect) {
         memcpy(out, j->result, sizeof(j->result));
         InterlockedIncrement(&k.asyncCollected);
+        if (j->uf && j->ufCut) g_ufCutH = handle;  // docs/202: the C# caller asks CUT? right after this IC returns
         if (kind) {
             InterlockedIncrement(&k.arCollected[kind - 1]);
             InterlockedExchangeAdd(&k.arJobUs[kind - 1], j->us);
@@ -3614,6 +3889,7 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool fo
     const LONG probe = handle && g_scProbeH == handle && !kind && !foreign ? 1 : 0;  // a mark is good for one START only
     const LONG sc = handle && g_scTagH == handle && !kind && !foreign ? g_scTag : 0;
     g_scProbeH = g_scTagH = 0;
+    g_scSyncH = sc && !probe ? handle : 0;  // docs/164 §7.8: a refused last round plans sync (IcCollect), never cut there
     g_rfbHandle = 0;
     Ts3nCounters& k = ts3native_counters;
     if (k.asyncMode != 1 || !k.asyncReady) return 0;  // asyncMode is writable at runtime
@@ -3659,6 +3935,9 @@ static u8 AsyncStart(DWORD handle, int kind = 0, const float* pt = NULL, bool fo
     if (!j) { InterlockedIncrement(&k.asyncQueueFull); return AsyncRefuse(handle, RFB_QFULL, kind); }
     j->probe = probe;  // before J_PEND / J_QUEUED: the worker reads it once it claims the slot
     j->sc = sc;
+    j->kdId = k.kdMode == 1 ? KdFollower(handle) : 0;  // docs/197: the backoff key, read here on the sim thread
+    j->uf = UfTake(handle) ? 1 : 0;  // docs/202: the MARK is used up by the job it marks (a refused START leaves it to the sync IC)
+    j->ufCut = 0;
     if (park) {  // the slot is this route's; READY (FbRetry) queues it once the pending updates are applied
         g_async.owner = GetCurrentThreadId();
         j->handle = handle;
@@ -3767,13 +4046,16 @@ static u8 ScProbeMark(DWORD handle, DWORD lo = 0) {
     g_scProbeH = 0;
     g_scTagH = handle;
     g_scTag = 0x10000 | (tagged ? (LONG)(lo & 0x2FF) : 0);
-    if (!handle || (tagged && !(lo & 0x100)) || !k.pdUs || !(k.pdReady & 7)) return 0;
+    KdStuckMark(handle);  // docs/197: a stuck check on a follower whose job was cut
+    if (!handle || (tagged && !(lo & 0x100)) || !ScProbeUs() || !(k.pdReady & 7)) return 0;
     g_scProbeH = handle;
     return 1;
 }
 static u8 UdTextMsg(DWORD lo, DWORD hi);   // userdiag.cpp: ts3fixes text channel (optHi top byte 0x87 = bits 63 + 58 + 57 + 56, docs/188)
 static u8 __cdecl GetOptionHook(DWORD handle, DWORD optLo, DWORD optHi, DWORD options2) {
     if ((u8)options2 && optHi == kJobBusyHi && !optLo) return JyBusy();  // docs/183
+    if ((u8)options2 && optHi == 0x83000000 && (optLo == 1 || optLo == 2)) return UfMsg(handle, optLo);  // docs/202
+    if ((u8)options2 && (optHi & 0xFF00FFFF) == 0x83000000 && (optHi >> 16 & 0xFF) >= 3) return UfCamMsg(optLo, optHi);  // docs/202 §2.1
     if ((u8)options2 && optHi == kProbeHi && (!optLo || optLo >> 16 == 1)) return ScProbeMark(handle, optLo);  // docs/163 §10
     if ((u8)options2 && (optHi & 0xFF000000) == 0x84000000) return SpDoorMsg(optLo, optHi);
     if ((u8)options2 && (optHi & 0xFF000000) == 0x82000000) return UtViewerMsg(optLo, optHi);
@@ -4102,6 +4384,7 @@ static void UdInfoDir(const unsigned char* info);  // the save folder from the s
 #include "footprint.cpp"
 #include "heightcache.cpp"
 #include "gcthreads.cpp"
+#include "memexp.cpp"  // docs/199: [MemDiag] TypeGrowth, [GC] SqrtHeapLimit (off)
 #include "threadstack.cpp"
 #include "iclock.cpp"
 #include "routegate.cpp"
@@ -4130,6 +4413,7 @@ static void UdInfoDir(const unsigned char* info);  // the save folder from the s
 #include "crashfx.h"  // docs/157 §11.7: [CrashForensics] ring core (CfRec / CfFree / CfUse, used by replay.cpp and p4clone.cpp)
 #include "routesnap.cpp"
 #include "autshadow.cpp"
+#include "gcroots.cpp"  // docs/67 §22.4: Crash S task-rooting line + [GcRootCheck] (after autshadow.cpp: autledger's g_lgCtx; memexp.cpp: g_mx)
 #include "snap.cpp"
 #include "pools.cpp"
 #include "replay.cpp"
@@ -4139,6 +4423,7 @@ static void UdInfoDir(const unsigned char* info);  // the save folder from the s
 #include "p5b.cpp"
 #include "p5c.cpp"
 #include "stalelot.cpp"  // docs/189 phase 2: [RouteSnap] StaleLot (after p5c.cpp: P5c, PcActiveLot, the snap.cpp ring)
+#include "lotuse.cpp"    // docs/66 §7.1: [RouteSnap] LotUseReadout (after stalelot.cpp: its LotTable_Find read set)
 #include "tailunlock.cpp"
 #include "rtoro.cpp"
 #include "fgro.cpp"  // docs/174: [PlacementRO] (after rtoro.cpp: S2's QL and SrQuery, AvMayRun, PatchCalls)
@@ -4155,15 +4440,29 @@ static void UdInfoDir(const unsigned char* info);  // the save folder from the s
 #include "worldimage.cpp"
 #include "crashreport.cpp"
 #include "watchpt.cpp"  // docs/157 §8: [Watchpoint] hardware data watchpoints (default off)
+#include "arenatail.cpp"  // docs/67 §22.7: Crash S fix [ArenaGuard] TailPad + writer watch [GcRootCheck] TailWatch (after crashreport.cpp: CrStack)
 #include "crashfx.cpp"  // docs/157 §11.7: [CrashForensics] guarded sites + crash dump (default off)
 #include "earlyout.cpp"
 #include "plandeadline.cpp"  // docs/164 §7: [RouteAsync] PlanDeadlineMs / FailMemo (routephases.cpp takes its trampolines)
+#include "unseenfb.cpp"      // docs/202: [UnseenFallback] (after plandeadline.cpp: PdSess, the exits)
+#include "unseenfbc.cpp"     // docs/202 §3.4: [UnseenFallback] Sites C1-C4 (after unseen.cpp, rtoro.cpp, fgro.cpp)
+
+// the world A* cost-function stubs: [RouteBudget] on, or a deadline feature with [RouteBudget] off (budgetMode then stays 0:
+// no global cap). docs/134 SyncCapMs / FbJobCapMs, docs/164 §7 PlanDeadlineMs, docs/197 KindDeadlines, docs/202 UnseenFallback
+// (0.36.91 left it out: world A* of marked plans and jobs was never cut, only cell A* / water)
+static bool CostStubsWanted(bool routeBudget, int asyncMode) {
+    const Ts3nCounters& k = ts3native_counters;
+    return routeBudget || (asyncMode >= 0 && (k.fbCapUs > 0 || k.fbjcCapUs > 0 || k.pdUs > 0 || k.pdOwnUs > 0 || g_kdIni || g_ufIni));
+}
 #include "routephases.cpp"
 #include "syncphases.cpp"  // docs/164: [RouteJobPhases] SyncPlans (needs routephases.cpp)
 #include "cellmemo.cpp"
 #include "hostcalls.cpp"
 #include "fgrender.cpp"  // docs/162 §7: [Harness] ForegroundRender (TEST ONLY)
 #include "userdiag.cpp"  // docs/188: [UserDiag] player-report lines (header, world load, save trail)
+#include "memdiag.cpp"   // docs/190 phase 1, docs/191: [MemDiag] "diag: mem" lines + self-test (needs userdiag.cpp)
+#include "rctrim.cpp"    // docs/198 §4: [ResourceCache] TrimAfterCleanup experiment (needs userdiag.cpp, memdiag.cpp, apex.cpp)
+#include "allocsites.cpp"  // docs/201: [MemDiag] AllocSites, TEST-RUN TOOL (needs memdiag.cpp, alloc.cpp, apex.cpp)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -4218,10 +4517,7 @@ static void Run(HMODULE self) {
         if (asyncMode >= 0 && !worker && !(worker = StartWorker())) Log("FAIL route async: worker thread start (err %lu)", GetLastError());
         const bool gate = ReadRouteGate(ini);  // checks every prologue first: nothing is hooked if one differs
         // [PlanRepeat] (planrepeat.cpp) counts inside this detour
-        // docs/134 SyncCapMs needs the cost-function stubs even with [RouteBudget] off (budgetMode then stays 0: no global cap)
-        // docs/164 §7: PlanDeadlineMs cuts world A* through the same stubs
-        const bool budget = ApplyRouteBudget(ini) || (asyncMode >= 0 && (ts3native_counters.fbCapUs > 0 || ts3native_counters.fbjcCapUs > 0 ||
-                                                                         ts3native_counters.pdUs > 0 || ts3native_counters.pdOwnUs > 0));
+        const bool budget = CostStubsWanted(ApplyRouteBudget(ini), asyncMode);
         const bool earlyOut = ReadEarlyOut(ini);  // docs/142: its request scope lives in this detour
         keepLog = InstallPlanDetour(cache, worker, budget, gate || earlyOut || GetPrivateProfileIntW(L"PlanRepeat", L"Enabled", 0, ini));
         if (earlyOut) InstallEarlyOut(keepLog);
@@ -4253,6 +4549,7 @@ static void Run(HMODULE self) {
         keepLog = ApplySaveWrite(ini) || keepLog;
         ApplySaveFlush(ini);
         keepLog = ApplyUserDiag(ini) || keepLog;  // docs/188: after [SaveWrite] (its save phase sites need the save hooks)
+        ApplyRcTrim(ini);  // docs/198 §4: EXPERIMENT, off ([ResourceCache] TrimAfterCleanup)
         // the NOYIELD query guards ts3fixes' other yields too, so it is answered with async off (START then says no)
         if (!g_getOptOrig)
             g_getOptOrig = (GetOptionFn)InstallDetour("Route_GetOption", ROUTE_GET_OPTION, kGetOptionPrologue, sizeof(kGetOptionPrologue), (void*)GetOptionHook);
@@ -4263,11 +4560,16 @@ static void Run(HMODULE self) {
         keepLog = ApplyFootprintIndex(ini) || keepLog;
         keepLog = ApplyHeightCache(ini) || keepLog;
         keepLog = ApplyGcThreadCheck(ini) || keepLog;
+        keepLog = ApplyMemExp(ini) || keepLog;  // docs/199 (default off)
+        keepLog = ApplyGcRootCheck(ini) || keepLog;  // docs/67 §22.4 (off): after ApplyMemExp, chains its GC_notify_event hook
         keepLog = ApplyThreadStack(ini) || keepLog;  // docs/66 §6: exe IAT CreateThread/_beginthreadex (default off)
         keepLog = ApplyWatchpoint(ini) || keepLog;  // docs/157 §8: vectored handler for WpArm (default off)
         keepLog = ApplyCrashForensics(ini) || keepLog;  // docs/157 §11.7: after [Alloc] (reads its Free detour for the heap check)
+        keepLog = ApplyAllocSites(ini) || keepLog;  // docs/201 (off): after [Alloc] (chains its jmps) and [CrashForensics] (its heap check reads the Free prologue)
         keepLog = ApplyIcLockCheck(ini) || keepLog;
         keepLog = ApplyMonoThread(ini) || keepLog;
+        keepLog = ApplyArenaGuard(ini) || keepLog;  // docs/67 §22.2: after [MonoThread] (skips when its P3 owns the arena sites)
+        keepLog = ApplyArenaTail(ini) || keepLog;  // docs/67 §22.7: TailPad (EA arena byte patches) + TailWatch (0xE563B2)
         keepLog = ApplyWorldImage(ini) || keepLog;  // after [MonoThread]: second callback on the Simulate loop-back hook
         keepLog = ApplyLotStream(ini) || keepLog;
         keepLog = ApplyJobQueue(ini) || keepLog;
@@ -4287,6 +4589,7 @@ static void Run(HMODULE self) {
         keepLog = ApplyOptsInit(ini) || keepLog;    // I-94-322: the planner options' hub references start at 0 (default off)
         keepLog = ApplyHitchAttr(ini) || keepLog;   // docs/96 §9: per-frame sim waits for the route job (observe only)
         keepLog = ApplyUnseenProbe(ini) || keepLog;  // docs/143: locomotion work split visible / unseen (observe only)
+        keepLog = ApplyUnseenFallbackSites(ini) || keepLog;  // docs/202 §3.4: after the probe / throttle (shares their agent site and slots)
         keepLog = ApplyRouteJobPhases(ini) || keepLog;  // docs/150 §7: after every owner of a phase site (observe only)
         keepLog = ApplyCellMemoProbe(ini) || keepLog;   // docs/150 §12: after [RouteJobPhases] (its job window and cell A* frame)
         keepLog = ApplyHostCalls(ini) || keepLog;       // docs/159: after [RouteJobPhases] (rjpReady) and P4 / [ProbeValues] (door chain)
@@ -4306,6 +4609,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         // Patch now: the ASI loader runs before the exe's entry point, so before GC_init (lazy, first GC use).
         Run(inst);
     } else if (reason == DLL_PROCESS_DETACH) {
+        LuExit();  // [RouteSnap] LotUseReadout: the exit summary (last walk's bytes, final job counts)
         UdExit();
         CrCleanExit();
         FgRevert();  // [Harness] ForegroundRender: original bytes back

@@ -28,6 +28,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { asiVersion, loadDb, type Build } from '../builds.ts';
+import { dumpHungGame } from './game-alive.ts';
 
 const HERE = resolve(import.meta.dirname, '..', '..');
 export const mainRoot = (r: string) => /^(.*?)[\\/]\.claude[\\/]worktrees[\\/][^\\/]+[\\/]?$/.exec(r)?.[1] ?? r;
@@ -111,7 +112,7 @@ const gameRunning = () => {
 function waitGameGone(log: (s: string) => void, maxMs = 180000) {
   const t0 = Date.now();
   while (gameRunning()) {
-    if (Date.now() - t0 > maxMs) { log('TS3W.exe still running after 3 min: killed'); try { execFileSync('taskkill', ['/F', '/T', '/IM', 'TS3W.exe'], { stdio: 'ignore', timeout: 15000 }); } catch { /* checked by the loop */ } sleep(3000); if (gameRunning()) return; }
+    if (Date.now() - t0 > maxMs) { log(`TS3W.exe still running after 3 min: killed; ${dumpHungGame('apex-run: still running after 3 min')}`); try { execFileSync('taskkill', ['/F', '/T', '/IM', 'TS3W.exe'], { stdio: 'ignore', timeout: 15000 }); } catch { /* checked by the loop */ } sleep(3000); if (gameRunning()) return; }
     sleep(5000);
   }
 }

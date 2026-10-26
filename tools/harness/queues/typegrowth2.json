@@ -1,0 +1,40 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/199 §7.1 follow-up: [MemDiag] TypeGrowth after the 0.36.83 fix (game-copy/ts3native.asi.typegrowth2 = master + region-wide readability cache, no 4 GB wrap in MxReadable, logged pass faults, holders graph every 10th pass). The 0.36.81 job (mem-exp bp-cc-typegrowth) logged 40 passes during load and none after: every later pass faulted in MxVt (runtime info 0xFFFFFFFF, MxReadable wrapped) and census cost 2-8 s per pass. One stress job, live-cc-cycle 15 min on cc-2k-v2. Pass: switch read back with 'graph every 10', >= 40 typegrowth passes (GC count went 45 -> 141 in the old run), >= 1 holders line, no 'typegrowth: pass fault', no pass with census >= 200 ms, 3 x live-empty / inv-empty marks. Read: census / graph ms per pass (target census <= ~50 ms; host bench 40-47 ms at 564k objects, graph ~250 ms on a dense fake heap), tyMaxUs, then classes whose KB grows full -> full and empty -> empty and their holders (node tools/memory-report.ts <job ts3native.log>). The old run's buy_object failure (inventory refused 4 of 25 CC pool products) was fixed in ea8cbfb8. ~15 min play + 1 load (~25 min); under 60 timing minutes, no derived smoke.",
+  "jobs": [
+    {
+      "id": "bp-cc-typegrowth2",
+      "note": "live-cc-cycle 15 min, shipped ini + [MemDiag] TypeGrowth=1 (every completed GC, top 8, graph every 10) + HitchAttr.",
+      "asi": "game-copy/ts3native.asi.typegrowth2",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "MemDiag.TypeGrowth": 1,
+        "MemDiag.TypeGrowthEvery": 1,
+        "MemDiag.TypeGrowthTopK": 8,
+        "MemDiag.TypeGrowthGraphEvery": 10,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "^ts3native 0\\.36\\.83": 1,
+        "^mem experiments: TypeGrowth=1 .*graph every 10": 1,
+        "^typegrowth: #\\d+ gc=": 40,
+        "^typegrowth: holders #\\d+ ": 1,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP mem experiments": 0,
+        "^SKIP type growth": 0,
+        "^typegrowth: pass fault": 0,
+        "^typegrowth: #\\d+ .* census=(\\d{4,}|[2-9]\\d\\d)\\.": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    }
+  ]
+}

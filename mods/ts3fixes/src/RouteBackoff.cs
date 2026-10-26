@@ -27,14 +27,14 @@ namespace Ts3Fixes
         // the same destination (1 m cell) fail at once for kBackoffMinutes, with no blocker, so callers take their normal
         // failure branch and DoRouteFailureBehavior skips its fail-path plans. Successes are never cached; a transient
         // failure (blocked by a Sim or vehicle) is not recorded. Counters: [24] plans seen, [25] failures recorded, [26] skipped.
-        public class RouteBackoffHook : ScriptCore.Route
+        public partial class RouteBackoffHook : ScriptCore.Route
         {
             public RoutePlanResult PlanHook()
             {
                 DoorMirror.SyncRoute(this, Vector3.Invalid); // doormirror: push the start/goal lots' doors to ts3native (DoorMirror.cs)
                 RouteSrcCall src = RouteSrcBegin(this, 0, Vector3.Invalid); // routesrc: source of this plan (RouteSources.cs, docs/151)
-                RoutePlanResult r = PlanBackoff();
-                NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded, this); // the stuck watchdog's route-fail count and success memo (RouteFixes.cs)
+                RoutePlanResult r = UfPlan(0, Vector3.Invalid); // docs/202 unseenfbplan wraps the whole plan (UnseenFallback.cs)
+                if (!UfTakeNotFail()) NotePlanResult(Follower, r.mType == RoutePlanResultType.Succeeded, this); // the stuck watchdog's route-fail count and success memo (RouteFixes.cs); docs/202: not for a cut plan
                 StuckCheckPlanned(r.mType == RoutePlanResultType.Succeeded); // docs/163 §10 stuck-check outcome counters (FewerPlans.cs)
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
@@ -283,7 +283,7 @@ namespace Ts3Fixes
             public RoutePlanResult ReplanHook()
             {
                 RouteSrcCall src = RouteSrcBegin(this, 1, Vector3.Invalid);
-                RoutePlanResult r = ReplanAsync();
+                RoutePlanResult r = UfPlan(1, Vector3.Invalid);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
             }
@@ -307,7 +307,7 @@ namespace Ts3Fixes
             public RoutePlanResult PlanFromPointHook(Vector3 startPosition)
             {
                 RouteSrcCall src = RouteSrcBegin(this, 2, startPosition);
-                RoutePlanResult r = PlanFromPointAsync(startPosition);
+                RoutePlanResult r = UfPlan(2, startPosition);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
             }
@@ -331,7 +331,7 @@ namespace Ts3Fixes
             public RoutePlanResult ReplanFromPointHook(Vector3 fromPt)
             {
                 RouteSrcCall src = RouteSrcBegin(this, 3, fromPt);
-                RoutePlanResult r = ReplanFromPointAsync(fromPt);
+                RoutePlanResult r = UfPlan(3, fromPt);
                 RouteSrcEnd(this, src, r.mType == RoutePlanResultType.Succeeded);
                 return r;
             }

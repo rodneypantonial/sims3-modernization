@@ -1,0 +1,76 @@
+{
+  "note": "RERUN NEEDED: 2026-10-26 01:02 UTC run of 0.36.82 failed all 3 jobs (hook frame scan faulted at image base - 5 in Frida's agent thread: attach timeout x2, game hang before the menu x1; fixed in 0.36.84, docs/201 §11). docs/201 [MemDiag] AllocSites (ts3native 0.36.85, game-copy/ts3native.asi.allocsites3; 0.36.85 = frames in our own hooks skipped, docs/201 §12.1 = master with memexp + rctrim, AllocSites off unless a job turns it on): which native call sites hold the address space that does not come back (Error 12 evidence: 45-min BP soak largest free 1533 -> 1211 MB; per live stress cycle largest free -16 MB, free -28..-39 MB, map 112 -> 134 MB; one travel round trip largest free -80 MB). TEST-RUN TOOL: correctness runs only (noiseCheck false), never a timing arm; cost per docs/201 §5 (host selftest: +2-3 ns per EA malloc+free pair at 1 in 64, +0.2-0.7 us per VirtualAlloc reserve+release). Stands down when Apex Radiance is loaded (SKIP line = forbidden here: the test Bin must not have Apex). Read every job with node tools/memory-report.ts <job ts3native.log> (section 'native call sites': cyc rows per repeated mark = growth from one cycle's <prefix>-empty to the next = survives removal; 'held through removal'; regions inside the previous largest free block; what bounds the 3 largest free blocks) and node tools/mem-report.ts report --log <job ts3native.log> (the diag: mem fields per mark). Order: bp-cc-allocsites (live-cc-cycle, the per-cycle -16 MB lead), bp-travel-allocsites (3 round trips, the -80 MB lead), bp-bb-allocsites (Buy/Build cycles, cheap). ~15 + ~40 + ~16 min of play + 3 loads (~85 min); correctness queue, no timing arms, so no derived measurement smoke (run with --no-smoke if queue.ts asks).",
+  "jobs": [
+    {
+      "id": "bp-cc-allocsites",
+      "note": "live-cc-cycle 15 min (docs/200: 3 cycles of 400 synthetic objects over the town + up to 150 Sims dressed, removed and undressed, then 100 inventory objects added and removed; mem_gc gc-before / gc-after at each live-full / live-empty / inv-full / inv-empty mark) with [MemDiag] AllocSites=1 (1 in 64 heap blocks < 64 KB, everything >= 64 KB, every reserve and view). Pass: the on line with EA heap hooks 4/4 and ntdll hooks >= 4, allocsites sum lines at 3 x live-empty and 3 x inv-empty, drops and busy 0 in the last sum line (read by hand), no crash. Read: cyc rows at live-empty #2 / #3 and inv-empty #2 / #3 (sites that grow cycle over cycle after removal and GC), the map-kind sites (map 112 -> 134 MB per cycle: whose views stay), the virtual sites inside the previous largest free block (inbig) and the free-block neighbours (who splits the big block).",
+      "asi": "game-copy/ts3native.asi.allocsites3",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 12
+      },
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^OK   alloc sites NtAllocateVirtualMemory detour": 1,
+        "^OK   alloc sites NtMapViewOfSection detour": 1,
+        "^allocsites: #\\d+ mark ev=live-empty sum heapMB=": 3,
+        "^allocsites: #\\d+ mark ev=inv-empty sum heapMB=": 3,
+        "^allocsites: #\\d+ mark ev=live-empty free r=1 base=": 3,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-travel-allocsites",
+      "note": "The bp-memtravel-x3 flow (save-matrix travel case, 3 trips Bridgeport -> France -> Bridgeport with --mem-marks: mark base + mem_gc, then per trip mark away, mark home, mem_gc gc-before / gc-after) with [MemDiag] AllocSites=1. Pass: the on line, allocsites sum lines at 3 x away and 3 x home, cyc rows possible from the 2nd home mark, no crash. Read: cyc rows at home #2 / #3 and gc-after #3 / #4 (per-trip growth that the trip home and a forced GC do not give back: the -80 MB largest free per trip lead), map / virtual sites inside the previous largest free block.",
+      "asi": "game-copy/ts3native.asi.allocsites3",
+      "save": "Baseline-BP",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1, "UserDiag.Enabled": 1, "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=away ": 3,
+        "^diag: mem #\\d+ mark ev=home ": 3,
+        "^allocsites: #\\d+ mark ev=away sum heapMB=": 3,
+        "^allocsites: #\\d+ mark ev=home sum heapMB=": 3,
+        "^allocsites: #\\d+ mark ev=gc-after sum heapMB=": 4
+      },
+      "logForbid": { "^FAIL\\b": 0, "^SKIP alloc sites": 0, "^diag: mem(sus)? .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "matrix": ["--travel", "--cases", "travel", "--to", "france", "--trips", "3", "--mem-marks"] },
+      "timeoutMin": 90
+    },
+    {
+      "id": "bp-bb-allocsites",
+      "note": "bb-cc-cycle 16 min (5 Buy mode cycles x 40 objects through the placement cursor and the sell tool, 3 Build mode cycles x 20 + floor repaint; marks bb-full / bb-empty, bbp-full / bbp-empty) with [MemDiag] AllocSites=1 on the cc-2k set (as bp-cc-buildbuy in cc-build-stress.json). Pass: the on line, allocsites sum lines at 5 x bb-empty, no crash. Read: cyc rows at bb-empty #2..#5 (Buy/Build mode thumbnails, catalogue cells, placement cursor objects that survive the sell), map sites.",
+      "asi": "game-copy/ts3native.asi.allocsites3",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=bb-empty ": 5,
+        "^allocsites: #\\d+ mark ev=bb-empty sum heapMB=": 5
+      },
+      "logForbid": { "^FAIL\\b": 0, "^SKIP alloc sites": 0, "^diag: mem(sus)? .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 16, "seed": 12345, "noSamplers": true, "repro": "bb-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 35
+    }
+  ]
+}

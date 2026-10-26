@@ -1,0 +1,193 @@
+{
+  "note": "docs/197 [RouteAsync] KindDeadlines (ts3native 0.36.77, counters v134 kd*; build native/ts3native/out-kinddl -> game-copy/ts3native.asi.kinddl; master ts3fixes / ts3agent). DRAFT, NOT RUN. Jobs 1-2 = correctness (day, noiseCheck false); jobs 3-4 = the IP natural pair (natural-ab-only-where-hitches: IP is the world that still hitches on route-job waits), 62 timing minutes, so queue.ts runs the queue-level 10 min IP smoke first. Stop rule: job 1 or 2 FAIL (crash, watchdog line, nativeRequire miss, a Sim left stuck at the end, stuck-check resets clearly above the reference) = stop, fix, do not run 3-4. Read every job: the 'route kind deadlines' minute line (jobs/cut/>=300 ms per kind, late max, backoff, after-cut ok/fail, uncut ok, stuck checks), 'long job ... capped (KindDeadlines)' lines, 'route jobs: sim waited N ms behind an own job' lines (T4).",
+  "smoke": {
+    "note": "Measurement smoke: IP 10 min on the kinddl asi with KindDeadlines=1 and the pair's light tools (checks the measurement path and that the switch installs: kdReady 1).",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
+    "releaseDefaults": true,
+    "save": "Baseline-IP-Spring",
+    "minCounters": 134,
+    "nativeRequire": "kdReady>=1,watchdogs<=0",
+    "ini": {
+      "RouteAsync.KindDeadlines": 1,
+      "RouteAsync.OwnJobWait": 1,
+      "HitchAttr.Enabled": 1,
+      "HitchAttr.Holders": 1,
+      "Harness.ForegroundRender": 1,
+      "RouteJobPhases.Enabled": 1,
+      "RouteJobPhases.SyncPlans": 1,
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16
+    },
+    "run": {
+      "profile": {
+        "seed": 12345,
+        "noSamplers": true,
+        "minutes": 10
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  "jobs": [
+    {
+      "id": "sv-kd-loop",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Correctness, forced ABBA on route-kinddeadline-loop (own-START no-path Go Here crowd on the SV home lot) until 50 plans per arm, cap 10 min; KindDeadlines=1 installs the stubs, the loop flips kdMode. Pass: no crash, 0 watchdog lines, kdCut_0 >= 1, no Sim stuck at the end (crowd_go home). Read: on arms the own long jobs end at ~250-350 ms 'capped (KindDeadlines)', off arms run seconds; 'sim waited ... behind an own job' >= 300 ms lines only in off arms (on: none above ~350 ms); kdBackoff_0/1, kdAfterOk/Fail, kdUncutOk (> 0 = a doubled-then-uncut plan succeeded: a cut would have failed a route the Sim could take).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "kdReady>=1,kdCut_0>=1,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 12,
+          "repro": "route-kinddeadline-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 50
+            },
+            "maxMinutes": 10
+          },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-kd-nat-verify",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Correctness, SV natural 30 min seeded 12345 from Baseline-SV-Spring with every job kind live: FallbackAsync + FbJobCapMs 300 + FbJobDeadline (foreign Plan), Kinds 7 (own Replan / PlanFromPoint / ReplanFromPosition), ForeignKinds 4 (A10 foreign RFP), stuckcheckown + stuckcheckcap with PlanDeadlineMs 300 (probe), KindDeadlines=1 for the whole run (no A/B: the off reference is stuckcheck-cap-verify3 sv-sccap3-nat-on, same save, seed and stuck-check switches, 45 min). Pass: no crash, 0 watchdog lines, kdCut_0 >= 1, for every kind with kdJobs_i > 0 a kdCut_i line read (not required: some kinds have no long jobs in 30 min), stuck_check_reset per hour not above sv-sccap3-nat-on's, no Sim stuck at the end. Read: kdAfterOk vs kdAfterFail (fail share high = cut plans the Sims needed), kdUncutOk, kdAfterStuckCheck, kdExemptSc (last-round checks seen), hitch-ab.ts --causes for >= 1 s route-job waits (expected 0).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "kdReady>=1,kdCut_0>=1,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.Kinds": 7,
+        "RouteAsync.KindsMode": 1,
+        "RouteAsync.ForeignKinds": 4,
+        "RouteAsync.ForeignKindsMode": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 30,
+          "seed": 12345,
+          "fixesOn": "stuckcheckown,stuckcheckcap",
+          "fixesRequire": "stuckcheckown_sent>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    },
+    {
+      "id": "ip-kd-nat-off",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "IP natural pair, off half: Isla Paradiso 31 min natural play (autopilot, camera untouched, no repro), kinddl asi with release defaults and KindDeadlines=0 (installs nothing: the shipped behaviour), light tools as natural-shipped (HitchAttr + Holders, RouteJobPhases SyncPlans, LogFallback 20 / stack 16, noSamplers) plus OwnJobWait (counters only). Pass: no crash, 0 watchdog lines. Read: TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes kind-deadlines-<date>-ip-kd-nat-off kind-deadlines-<date>-ip-kd-nat-on: >= 300 ms per 10 min led by route-job waits (docs/196 §2.1 IP 6.0), all >= 300 / >= 1000, p99 / p99.9 / max; ownJobLong and the T4 own-job waits >= 300 ms.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 134,
+      "ini": {
+        "RouteAsync.KindDeadlines": 0,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 31
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    },
+    {
+      "id": "ip-kd-nat-on",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "IP natural pair, on half: as ip-kd-nat-off with KindDeadlines=1 (release defaults: only own Route.Plan jobs exist, cut at 250 ms; stuck-check probe kind only if ts3fixes marks probes). Pass: no crash, 0 watchdog lines, kdReady 1, no Sim stuck at the end, ts3fixes stuck_check_reset not above the off half. Judge (hitch-ab.ts --causes, both tags): route-job-wait-led >= 300 ms per 10 min below the off half and none above ~350 ms; no new leader rising by the same amount (moved waits: sync ReplanFromPosition, locomotion); kdAfterFail / (kdAfterOk + kdAfterFail) and kdUncutOk for behaviour. Expected [inferred, docs/197 §5]: route-job-wait-led >= 300 ms IP 6.0 -> ~1-2 per 10 min; total ~17 -> ~13.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 134,
+      "nativeRequire": "kdReady>=1,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 31
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}

@@ -2,6 +2,9 @@
 // ts3native.cpp after watchpt.cpp (reads replay.cpp / p4.cpp state for the dump).
 // docs/186 §8 adds DrawGuards=1 (four draw-site checks, below CfOnFault) and OurEvents=1 (crashev.h ring, dumped by CeDump).
 // docs/186 §9 adds EffectLog=1 (Swarm render list ring), §10 ObjResLog=1 (SceneModel model handle ring); each only adds.
+// docs/67 §16 adds DbIndexLog=1 (DBPF database index release ring + Contains check, Crash N).
+// docs/67 §17 adds SceneTreeGuard=1 (scene node check at 0xC5FA60, Crash O) and dumps illegal instructions (wild calls) too.
+// docs/67 §18 adds Light=1 (0.36.72): ring, heap check, P5c lines, our-events ring and the dump without any guard detour (every run).
 //
 // Guarded sites (probe-only detours: they read, count and log, then run the game's code unchanged):
 //   0x5EE1E0 hash-map erase by iterator (thiscall, ret 0xC; [esp+8] = the node, its +0x10 object is released through vtable
@@ -33,6 +36,7 @@ static void FxExplain(DWORD entry, DWORD list);                     // docs/186 
 static void FxDump();                                               // docs/186 §9, below
 static void OrExplain(DWORD obj);                                   // docs/186 §10, below
 static void OrDump();                                               // docs/186 §10, below
+static void DiDump(const CONTEXT* c);                               // docs/67 §16, below
 static bool CfJmp(DWORD at, const u8* pro, size_t len, void* hook);  // below
 static bool CfVtOk(DWORD vt) { return vt >= g_cfVtLo && vt < g_cfVtHi && !(vt & 3); }
 
@@ -81,26 +85,122 @@ static void __fastcall CfClrHook(u8* self, void* edx) {
     g_cfClrOrig(self, edx);
 }
 
+// docs/67 §15: 0x958560 (transform world matrix, thiscall(this, out) ret 4; callers 0x958F10, 0x959749, 0x9599A9, 0x959C09)
+// reads the parent object [this+0x30], its transform and its slot component's +0x48 list. 2026-10-25 p6fix-verify crash: the
+// sim thread faulted at 0x958944 on a NULL vtable from that list, the parent being an object our P5c flush had freed 33 s
+// before. Check only, before the game reads: parent vtable not vt_Object (0x1042CA8) or the building base (0x107396C) or
+// unreadable = 0 freed / garbage, refcount < 1 = 1, destroyed bit (+0x28 & 0x400000) = 2 (a child still parented to a destroyed,
+// still allocated object: the zombie window of docs/67 §11.3 A). First 16 lines per kind, then counted; prologue 9 bytes.
+static const DWORD kXgAt = 0x00958560;
+static const u8 kXgPro[] = {0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF0, 0x0F, 0x57, 0xC0};  // push ebp; mov ebp,esp; and esp,-16; xorps xmm0,xmm0
+typedef void*(__fastcall* XgFn)(u8* self, void*, void* out);
+static XgFn g_xgOrig;
+static volatile LONG g_xgBad[3], g_xgLogs[3];
+static bool P5cRelFind(DWORD a, char* out, size_t cap);  // p5c.cpp
+static void XgBad(int kind, const u8* self, DWORD parent, const DWORD* w, bool readable, DWORD ret) {
+    InterlockedIncrement(&g_xgBad[kind]);
+    CeRec(CE_XFORM_BAD, parent, (DWORD)(uintptr_t)self, ret);
+    if (InterlockedIncrement(&g_xgLogs[kind]) > 16) return;
+    static const char* const why[3] = {"FREED / not an object", "refcount < 1", "destroyed (still allocated)"};
+    char d1[220], d2[220];
+    CeDescribe(parent, d1, sizeof(d1));
+    P5cRelFind(parent, d2, sizeof(d2));
+    DWORD key = 0;
+    __try { key = *(const DWORD*)(self + 4); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (readable)
+        Log("crash forensics: XFORM BAD %s at 0x958560: transform 0x%08lX key 0x%08lX parent 0x%08lX vt %08lX count %ld id %08lX%08lX "
+            "flags %08lX key %08lX, thread %lu, caller 0x%08lX; ours: %s; P5c: %s",
+            why[kind], (DWORD)(uintptr_t)self, key, parent, w[0], (LONG)w[1], w[3], w[2], w[10], w[6], GetCurrentThreadId(), ret, d1, d2);
+    else
+        Log("crash forensics: XFORM BAD %s at 0x958560: transform 0x%08lX key 0x%08lX parent 0x%08lX unreadable, thread %lu, caller "
+            "0x%08lX; ours: %s; P5c: %s", why[kind], (DWORD)(uintptr_t)self, key, parent, GetCurrentThreadId(), ret, d1, d2);
+}
+static void* __fastcall XgHook(u8* self, void* edx, void* out) {
+    DWORD parent = 0, w[11] = {};
+    int kind = -1;
+    bool readable = true;
+    __try {
+        parent = *(const DWORD*)(self + 0x30);
+        if (parent) {
+            memcpy(w, (const void*)(uintptr_t)parent, sizeof(w));
+            if (w[0] != 0x01042CA8 && w[0] != 0x0107396C) kind = 0;
+            else if ((LONG)w[1] < 1) kind = 1;
+            else if (w[10] & 0x400000) kind = 2;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { kind = 0, readable = false; }
+    if (kind >= 0) XgBad(kind, self, parent, w, readable, (DWORD)(uintptr_t)_ReturnAddress());
+    return g_xgOrig(self, edx, out);
+}
+
+// docs/67 §17 (Crash O): SceneNode_FindRecursive 0xC5FA60, cdecl(node, idLo, idHi, counter*) -> the node with that id or 0;
+// callers 0xC60D71 (WorldManager_FindLotById over WM+0x9C) and 0xC5FAC8 (itself, on a type-2 node's children) [verified E8 scan].
+// 2026-10-25 hold2 crash: the sim thread faulted at 0xC5FA93 on a child node whose vtable word was 0xB07B3B93 (design-U footprint
+// apply -> 0x82CBF0 -> 0x82C120 -> FindLotByIdTyped 0xC62D40). Check only, before the game reads: vtable outside TS3W.exe .rdata
+// or unreadable. The caller's esi is the parent node (recursive call) or the world manager (root call). 7-byte prologue, no
+// branch into it [verified E8/E9/Jcc scan]. Apex Radiance's ObjectLookupIndex reads this function: a patched prologue = SKIP.
+static const DWORD kStAt = 0x00C5FA60;
+static const u8 kStPro[] = {0x53, 0x55, 0x56, 0x8B, 0x74, 0x24, 0x10};  // push ebx; push ebp; push esi; mov esi,[esp+10h]
+static void* g_stOrig;
+static volatile LONG g_stBad, g_stLogs;
+// sp = the entry esp: [0] return, [1] node, [2] id low, [3] id high
+static void __stdcall StCheck(const DWORD* sp, DWORD parent) {
+    const DWORD node = sp[1];
+    if (!node) return;  // the game returns 0 for it
+    DWORD vt = 0;
+    bool readable = true;
+    __try { vt = *(const DWORD*)(uintptr_t)node; } __except (EXCEPTION_EXECUTE_HANDLER) { readable = false; }
+    if (readable && CfVtOk(vt)) return;
+    InterlockedIncrement(&g_stBad);
+    if (InterlockedIncrement(&g_stLogs) > 16) return;
+    DWORD pvt = 0;
+    __try { pvt = parent ? *(const DWORD*)(uintptr_t)parent : 0; } __except (EXCEPTION_EXECUTE_HANDLER) { pvt = 0xFFFFFFFF; }
+    char d1[200], d2[220], d3[220];
+    CfDescribe(node, d1, sizeof(d1));
+    CeDescribe(node, d2, sizeof(d2));
+    if (!P5cRelFind(node, d3, sizeof(d3))) strcpy_s(d3, "no");
+    Log("crash forensics: SCENE NODE BAD at 0xC5FA60: node 0x%08lX %s vt %08lX, parent 0x%08lX vt %08lX, id %08lX%08lX, thread %lu, "
+        "caller 0x%08lX; P5 heap ring: %s; ours: %s; P5c: %s", node, readable ? "" : "UNREADABLE", vt, parent, pvt, sp[3], sp[2],
+        GetCurrentThreadId(), sp[0], d1, d2, d3);
+}
+static __declspec(naked) void StThunk() {
+    __asm {
+        mov eax, esp  // eax / ecx / edx are free at this cdecl entry (the body reads only its stack arguments)
+        push esi
+        push eax
+        call StCheck
+        jmp dword ptr [g_stOrig]
+    }
+}
+
 // the dump: one line of P5 state, the fault and register addresses against the ring, then the ring tail
 static void CfOnFault(const EXCEPTION_POINTERS* x) {
-    // TS3W.exe .text only: every run has 3 handled first-chance AVs at start-up in other modules (queue logs 2026-10-24)
+    // TS3W.exe .text only: every run has 3 handled first-chance AVs at start-up in other modules (queue logs 2026-10-24);
+    // an illegal instruction anywhere = a wild call into data (Crash M / O: eip in the heap), dumped with the fault at eip
     const DWORD eip = x->ContextRecord->Eip;
-    if (!g_cfOn || eip < 0x00401000 || eip >= 0x00F95000 || InterlockedIncrement(&g_cfDumpN) > 4) return;
+    const bool wild = x->ExceptionRecord->ExceptionCode == EXCEPTION_ILLEGAL_INSTRUCTION;
+    if (!g_cfOn || (!wild && (eip < 0x00401000 || eip >= 0x00F95000)) || InterlockedIncrement(&g_cfDumpN) > 4) return;
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&k.cfDumps);
     const EXCEPTION_RECORD* r = x->ExceptionRecord;
     const CONTEXT* c = x->ContextRecord;
-    const DWORD at = r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0;
+    const DWORD at = wild ? eip : r->NumberParameters > 1 ? (DWORD)r->ExceptionInformation[1] : 0;
     char d[200];
     CfDescribe(at, d, sizeof(d));
-    Log("crash forensics: DUMP access violation (%s 0x%08lX) at eip 0x%08lX thread %lu; P5 state: route job %s, g_rpPhase 0x%lX, "
+    Log("crash forensics: DUMP %s (%s 0x%08lX) at eip 0x%08lX thread %lu; P5 state: route job %s, g_rpPhase 0x%lX, "
         "g_rpUse holder %lu, RecsUnlocked %ld, held lot %08lX%08lX, replay head %lu tail %lu, P4 job armed %ld kind %d mode %d; "
         "heap check %s, bad frees %ld, guard hits %ld/%ld",
-        r->NumberParameters > 0 && r->ExceptionInformation[0] ? "write" : "read", at, c->Eip, GetCurrentThreadId(),
+        wild ? "illegal instruction" : "access violation", wild ? "exec" : r->NumberParameters > 0 && r->ExceptionInformation[0] ? "write" : "read", at, c->Eip, GetCurrentThreadId(),
         g_async.state == A_RUNNING ? "running" : "idle", g_rpPhase, g_cfUseTid, g_rpRecsUnlocked, (DWORD)(g_rpHoldKey >> 32),
         (DWORD)g_rpHoldKey, g_rpHead, g_rpTail, g_p4Job.armed, g_p4Job.kind, g_p4Job.mode, g_cfHeap ? "on" : "off", k.cfHeapBad,
         k.cfBad[0], k.cfBad[1]);
     Log("crash forensics: fault address 0x%08lX: %s", at, d);
+    if (wild) {  // the call site and the object whose vtable slot led here (Crash O main thread: call [edx+10h] at 0x50ED8C)
+        DWORD ret = 0, vt = 0;
+        __try { ret = *(const DWORD*)(uintptr_t)c->Esp; } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        __try { vt = *(const DWORD*)(uintptr_t)c->Ecx; } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        CfDescribe(c->Ecx, d, sizeof(d));
+        Log("crash forensics: wild call: [esp] 0x%08lX, ecx 0x%08lX vt %08lX (%s): %s", ret, c->Ecx, vt, CfVtOk(vt) ? ".rdata" : "NOT .rdata", d);
+    }
     const struct { const char* n; DWORD v; } regs[] = {{"eax", c->Eax}, {"ebx", c->Ebx}, {"ecx", c->Ecx}, {"edx", c->Edx},
                                                        {"esi", c->Esi}, {"edi", c->Edi}, {"ebp", c->Ebp}};
     CfEnt e;
@@ -122,11 +222,14 @@ static void CfOnFault(const EXCEPTION_POINTERS* x) {
             g_cfQpf ? (double)(q.QuadPart - t.qpc) * 1000.0 / (double)g_cfQpf : -1.0);
     }
     // every draw guard site, whatever crashed (docs/186 §8: several races may be at work at once)
-    Log("crash forensics: draw guard hits model %ld resource %ld effect %ld binding %ld (installed bits 0x%lX)", k.cdBad[0], k.cdBad[1],
-        k.cdBad[2], k.cdBad[3], k.cdReady);
+    Log("crash forensics: draw guard hits model %ld resource %ld effect %ld binding %ld (installed bits 0x%lX); parent guard 0x958560 "
+        "freed %ld refcount %ld destroyed %ld (%s)", k.cdBad[0], k.cdBad[1], k.cdBad[2], k.cdBad[3], k.cdReady, g_xgBad[0], g_xgBad[1],
+        g_xgBad[2], g_xgOrig ? "on" : "off");
+    Log("crash forensics: scene node guard 0xC5FA60 bad %ld (%s)", g_stBad, g_stOrig ? "on" : "off");  // docs/67 §17
     CeDump(x);  // docs/186 §8: our-events ring (OurEvents=1)
     FxDump();   // docs/186 §9: Swarm render list ring (EffectLog=1)
     OrDump();   // docs/186 §10: model handle ring (ObjResLog=1)
+    DiDump(c);  // docs/67 §16: DBPF database index ring (DbIndexLog=1)
 }
 
 // ---- docs/186 §8: DrawGuards=1, the main-thread draw sites of the Apex pan crashes, and the OurEvents dump ----
@@ -799,6 +902,147 @@ static void OrInstall() {
         kOrRing, kOrUpd, k.mhReady);
 }
 
+// ---- docs/67 §16: DbIndexLog=1, the DBPF database index (Crash N, sim thread at 0x72DBDA) ----
+// DatabaseIndex (alloc name "ResourceSystem/DatabaseIndex", 0x24 bytes): +4 bucket array, +8 bucket count, +0xC elements, +0x20
+// refcount (AddRef 0x72D890, Release 0x72DB80 frees at 0). The DBPF database D (vtable 0xFFE078, outer object O = D - 8, vtable
+// 0xFFE0D0) holds one reference at D+0xB0. Contains 0x72DBD0 (only caller 0x7345FD, D slot 0x34) runs under D's lock D+0x40;
+// the releases at 0x734532 (D slot 8) and 0x734409 (O slot 0xC) take no lock [verified disassembly]. Record only: every release
+// (index, refcount before, database from the caller's esi, D lock held by this thread, thread, caller) into a ring, and a check
+// before Contains reads (bucket array 0 / count 0 / refcount < 1) that logs the index's ring history; then the game's code runs.
+static const DWORD kDiRelAt = 0x0072DB80, kDiHasAt = 0x0072DBD0;
+static const u8 kDiRelPro[] = {0x56, 0x8B, 0xF1, 0x57, 0x8D, 0x46, 0x20};              // push esi; mov esi,ecx; push edi; lea eax,[esi+20h]
+static const u8 kDiHasPro[] = {0x8B, 0x41, 0x08, 0x8B, 0x51, 0x04, 0x83, 0xEC, 0x08};  // mov eax,[ecx+8]; mov edx,[ecx+4]; sub esp,8
+struct DiEnt {
+    volatile LONG seq;
+    DWORD idx, db, ret, tid;
+    LONG count;  // refcount before the release (1 = this release frees the index)
+    LONG held;   // D lock owner is this thread: 1 yes, 0 no, -1 unknown (esi not a database or a mutex lock)
+    LONGLONG qpc;
+};
+static const DWORD kDiRing = 1024;  // power of two
+static DiEnt g_diRing[kDiRing];
+static volatile LONG g_diSeq, g_diFrees, g_diFreesUnlocked, g_diBad, g_diLogs;
+static void* g_diRelOrig;
+static void* g_diHasOrig;
+
+// the database behind the caller's esi (D or O) and whether this thread owns its lock D+0x40
+static DWORD DiDb(DWORD esi, LONG* held) {
+    *held = -1;
+    DWORD d = 0;
+    __try {
+        const DWORD vt = *(const DWORD*)(uintptr_t)esi;
+        d = vt == 0x00FFE078 ? esi : vt == 0x00FFE0D0 ? esi + 8 : 0;
+        if (d && *(const u8*)(uintptr_t)(d + 0x40 + 0x24))  // EA lock kind byte: nonzero = CRITICAL_SECTION at +0
+            *held = (DWORD)(uintptr_t)((const CRITICAL_SECTION*)(uintptr_t)(d + 0x40))->OwningThread == GetCurrentThreadId();
+    } __except (EXCEPTION_EXECUTE_HANDLER) { d = 0; }
+    return d;
+}
+static void __stdcall DiRelNote(DWORD idx, DWORD esi, DWORD ret) {
+    LONG count = 0, held;
+    __try { count = *(const LONG*)(uintptr_t)(idx + 0x20); } __except (EXCEPTION_EXECUTE_HANDLER) { count = -9999; }
+    const DWORD db = DiDb(esi, &held);
+    if (count == 1) {
+        InterlockedIncrement(&g_diFrees);
+        if (held != 1) InterlockedIncrement(&g_diFreesUnlocked);
+    }
+    const LONG s = InterlockedIncrement(&g_diSeq);
+    DiEnt& e = g_diRing[(DWORD)(s - 1) & (kDiRing - 1)];
+    e.seq = 0;
+    e.idx = idx, e.db = db ? db : esi, e.ret = ret, e.tid = GetCurrentThreadId(), e.count = count, e.held = db ? held : -1;
+    LARGE_INTEGER q;
+    QueryPerformanceCounter(&q);
+    e.qpc = q.QuadPart;
+    _WriteBarrier();
+    e.seq = s;
+}
+static void DiLine(const char* pre, const DiEnt& t, const LARGE_INTEGER& now) {
+    Log("%sindex 0x%08lX release (count before %ld%s) db 0x%08lX D lock %s, thread %lu, caller 0x%08lX, %.1f ms ago", pre, t.idx,
+        t.count, t.count == 1 ? " = FREED" : "", t.db, t.held == 1 ? "held" : t.held == 0 ? "NOT held" : "?", t.tid, t.ret,
+        g_cfQpf ? (double)(now.QuadPart - t.qpc) * 1000.0 / (double)g_cfQpf : -1.0);
+}
+// every ring event of this index (newest 8), and our P5 heap / P5c ring entries for its address
+static void DiExplain(const char* what, DWORD idx) {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    const LONG top = g_diSeq;
+    int n = 0;
+    for (LONG s = top; s > 0 && top - s < (LONG)kDiRing && n < 8; s--) {
+        const DiEnt& t = g_diRing[(DWORD)(s - 1) & (kDiRing - 1)];
+        if (t.seq == s && t.idx == idx) n++, DiLine("crash forensics:   db index log: ", t, now);
+    }
+    char d1[220], d2[220];
+    CfDescribe(idx, d1, sizeof(d1));
+    if (!P5cRelFind(idx, d2, sizeof(d2))) strcpy_s(d2, "no");
+    Log("crash forensics:   db index log: %s 0x%08lX: %d release events in the ring (%ld total); P5 heap ring: %s; P5c: %s", what, idx, n,
+        top, d1, d2);
+}
+static void __stdcall DiHasCheck(DWORD idx, DWORD esi, DWORD ret) {
+    DWORD w[10] = {};
+    bool readable = true;
+    __try { memcpy(w, (const void*)(uintptr_t)idx, sizeof(w)); } __except (EXCEPTION_EXECUTE_HANDLER) { readable = false; }
+    if (readable && w[1] && w[2] && (LONG)w[8] >= 1) return;
+    InterlockedIncrement(&g_diBad);
+    if (InterlockedIncrement(&g_diLogs) > 16) return;
+    LONG held;
+    const DWORD db = DiDb(esi, &held);
+    DWORD slot = 0;
+    __try { slot = db ? *(const DWORD*)(uintptr_t)(db + 0xB0) : 0; } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    Log("crash forensics: DB INDEX BAD at 0x72DBD0: index 0x%08lX %s buckets 0x%08lX count %lu elements %lu refcount %ld, db 0x%08lX "
+        "slot +0xB0 0x%08lX D lock %s, thread %lu, caller 0x%08lX", idx, readable ? "" : "UNREADABLE", w[1], w[2], w[3], (LONG)w[8],
+        db ? db : esi, slot, held == 1 ? "held" : held == 0 ? "NOT held" : "?", GetCurrentThreadId(), ret);
+    DiExplain("index", idx);
+}
+// thunks: the caller's esi (the database at the DBPF call sites) and return address, ecx (the index) kept for the game's code
+static __declspec(naked) void DiRelThunk() {
+    __asm {
+        push ecx
+        push dword ptr [esp + 4]
+        push esi
+        push ecx
+        call DiRelNote
+        pop ecx
+        jmp dword ptr [g_diRelOrig]
+    }
+}
+static __declspec(naked) void DiHasThunk() {
+    __asm {
+        push ecx
+        push dword ptr [esp + 4]
+        push esi
+        push ecx
+        call DiHasCheck
+        pop ecx
+        jmp dword ptr [g_diHasOrig]
+    }
+}
+// crash dump part: counts, the fault registers that are in the index ring, the newest 8 frees
+static void DiDump(const CONTEXT* c) {
+    if (!g_diRelOrig) return;
+    Log("crash forensics: db index log: %ld releases, %ld frees (%ld without the D lock), %ld bad Contains checks", g_diSeq, g_diFrees,
+        g_diFreesUnlocked, g_diBad);
+    const struct { const char* n; DWORD v; } regs[] = {{"eax", c->Eax}, {"ebx", c->Ebx}, {"ecx", c->Ecx}, {"edx", c->Edx},
+                                                       {"esi", c->Esi}, {"edi", c->Edi}, {"ebp", c->Ebp}};
+    const LONG top = g_diSeq;
+    for (const auto& g : regs) {
+        bool in = false;
+        for (LONG s = top; s > 0 && top - s < (LONG)kDiRing && !in; s--) in = g_diRing[(DWORD)(s - 1) & (kDiRing - 1)].idx == g.v;
+        if (in) DiExplain(g.n, g.v);
+    }
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    int n = 0;
+    for (LONG s = top; s > 0 && top - s < (LONG)kDiRing && n < 8; s--) {
+        const DiEnt& t = g_diRing[(DWORD)(s - 1) & (kDiRing - 1)];
+        if (t.seq == s && t.count == 1) n++, DiLine("crash forensics:   db index free: ", t, now);
+    }
+}
+static void DiInstall() {
+    g_diRelOrig = InstallDetour("crash forensics db index release 0x72DB80 (record only)", kDiRelAt, kDiRelPro, sizeof(kDiRelPro), (void*)DiRelThunk);
+    g_diHasOrig = InstallDetour("crash forensics db index contains 0x72DBD0 (check only)", kDiHasAt, kDiHasPro, sizeof(kDiHasPro), (void*)DiHasThunk);
+    Log("crash forensics: docs/67 §16: db index log release %s, contains check %s (ring %lu events)", g_diRelOrig ? "on" : "off",
+        g_diHasOrig ? "on" : "off", kDiRing);
+}
+
 // TS3W.exe .rdata bounds from the loaded image (the vtables of its classes)
 static void CfRdata() {
     const u8* base = (const u8*)GetModuleHandleW(NULL);
@@ -826,7 +1070,10 @@ static bool CfJmp(DWORD at, const u8* pro, size_t len, void* hook) {
 }
 
 static bool ApplyCrashForensics(const wchar_t* ini) {
-    if (!GetPrivateProfileIntW(L"CrashForensics", L"Enabled", 0, ini)) return false;
+    // docs/67 §18: Light=1 = only the parts with no detour on a game path (P5 heap ring, heap check at our frees, P5c park /
+    // release lines, our-events ring, fault dump incl. illegal instructions); Enabled=1 = all of that plus the guard switches
+    const bool full = GetPrivateProfileIntW(L"CrashForensics", L"Enabled", 0, ini) != 0;
+    if (!full && !GetPrivateProfileIntW(L"CrashForensics", L"Light", 0, ini)) return false;
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
@@ -837,6 +1084,12 @@ static bool ApplyCrashForensics(const wchar_t* ini) {
         g_cfHeap = Matches((const void*)(uintptr_t)EA_FREE, kEaLockedPrologue, sizeof(kEaLockedPrologue)) || g_eaFreeOrig != NULL;
     g_cfOn = 1;
     k.cfReady = 1 | (g_cfHeap ? 8 : 0);
+    if (!full) {
+        g_ceOn = 1, k.cfReady |= 16, k.cdReady |= 16;
+        Log("crash forensics: light (docs/67 §18): ring %lu P5 heap events + g_rpUse holds, heap check %s, our-events ring %lu events, "
+            "fault dump; no guards (Enabled=1 for those)", kCfRing, g_cfHeap ? "on" : "off (EA Free entry not the game's or ours)", kCeRing);
+        return true;
+    }
     if (GetPrivateProfileIntW(L"CrashForensics", L"Guards", 1, ini)) {
         g_cfEraseOrig = (CfEraseFn)InstallDetour("crash forensics map erase 0x5EE1E0 (check only)", kCfEraseAt, kCfErasePro, sizeof(kCfErasePro), (void*)CfEraseHook);
         if (g_cfEraseOrig) k.cfReady |= 2;
@@ -845,6 +1098,8 @@ static bool ApplyCrashForensics(const wchar_t* ini) {
             g_cfClrOrig = t;
             if (CfJmp(kCfClrAt, kCfClrPro, sizeof(kCfClrPro), (void*)CfClrHook)) k.cfReady |= 4, Log("OK   detour crash forensics array clear 0x7B0A00 (check only)");
         } else Log("SKIP crash forensics guard at 0x7B0A00: prologue differs");
+        // docs/67 §15: the parent check before the 0x958944 path
+        g_xgOrig = (XgFn)InstallDetour("crash forensics transform parent 0x958560 (check only)", kXgAt, kXgPro, sizeof(kXgPro), (void*)XgHook);
     }
     // docs/186 §8: our-events ring and the draw guards (both default off)
     if (GetPrivateProfileIntW(L"CrashForensics", L"OurEvents", 0, ini)) g_ceOn = 1, k.cdReady |= 16;
@@ -853,6 +1108,11 @@ static bool ApplyCrashForensics(const wchar_t* ini) {
     if (GetPrivateProfileIntW(L"CrashForensics", L"EffectLog", 0, ini)) FxInstall();
     // docs/186 §10: SceneModel model handle ring (default off); adds to everything above
     if (GetPrivateProfileIntW(L"CrashForensics", L"ObjResLog", 0, ini)) OrInstall();
+    // docs/67 §16: DBPF database index release ring + Contains check (default off); adds to everything above
+    if (GetPrivateProfileIntW(L"CrashForensics", L"DbIndexLog", 0, ini)) DiInstall();
+    // docs/67 §17: scene node check before SceneNode_FindRecursive reads (default off); adds to everything above
+    if (GetPrivateProfileIntW(L"CrashForensics", L"SceneTreeGuard", 0, ini))
+        g_stOrig = InstallDetour("crash forensics scene node search 0xC5FA60 (check only)", kStAt, kStPro, sizeof(kStPro), (void*)StThunk);
     Log("crash forensics: docs/186 §8: our-events ring %s (%lu events), draw guards model %s resource %s effect %s binding %s",
         g_ceOn ? "on" : "off", kCeRing, k.cdReady & 1 ? "on" : "off", k.cdReady & 2 ? "on" : "off", k.cdReady & 4 ? "on" : "off",
         k.cdReady & 8 ? "on" : "off");

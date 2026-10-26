@@ -1,0 +1,33 @@
+name: Error 12 report (ts3native memory)
+description: Memory lines from ts3native.log after an Error 12, usually opened for you by `node tools/report-crash.ts --memory`.
+title: "[memory] "
+labels: [memory, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sending this. It helps us see how the game's memory fills up before Error 12, and whether our mod plays a part. `report-crash.ts --memory` keeps only the memory lines of `Game\Bin\ts3native.log`, replaces user paths, your user name, your machine name and emails with placeholders, and replaces package file names with ids (unless you chose `--names`). Read it once before you press Submit. If the text below starts with "[cut: ...]", attach the file `ts3native-memory-report.txt` the tool wrote (drag it into the box). No saves, dumps or game files, please.
+  - type: input
+    id: version
+    attributes:
+      label: ts3native version
+      placeholder: 0.36.86
+  - type: textarea
+    id: what
+    attributes:
+      label: What were you doing? (optional)
+      description: World, how long you had played before Error 12, whether it happened on save, travel or while playing, and roughly how much CC you have.
+  - type: textarea
+    id: report
+    attributes:
+      label: Memory report
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I read the report above; it has no personal paths, names or emails.
+          required: true

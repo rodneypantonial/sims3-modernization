@@ -323,7 +323,8 @@ export function liveValidity(r: Rec): { ok: true | null; why: string } {
 }
 
 // replay-audit drift (ts3native log): every "snap replay audit MISMATCH lot X" must be repaired by the forced rebase. The log
-// has no per-lot "rebased" line, so repaired = a later MISMATCH line of X names a last equal ring after this one; recurred =
+// had no per-lot "rebased" line before 0.36.55, so repaired = a later MISMATCH line of X names a last equal ring after this one, or
+// (0.36.55, docs/94 §24.13.5) a later "snap replay audit: lot X equal again at ring R" line; recurred =
 // a later line of X names none or an older one; timeout = the AuditHoldRebase hold of X released by timeout; else unconfirmed.
 export type AuditEv = { lot: string; ring: number; fate: 'repaired' | 'recurred' | 'timeout' | 'unconfirmed' };
 export function auditDrift(log: string): AuditEv[] {
@@ -336,6 +337,8 @@ export function auditDrift(log: string): AuditEv[] {
       if (!evs.some(e => e.lot === m![1] && e.ring === ring)) evs.push({ lot: m[1], ring, lastEq, fate: 'unconfirmed' });  // Q line + hash line
       continue;
     }
+    m = /snap replay audit: lot (0x[0-9A-Fa-f]+) equal again at ring (\d+)/.exec(l);
+    if (m) { for (const e of evs) if (e.lot === m[1] && e.ring < +m[2] && e.fate === 'unconfirmed') e.fate = 'repaired'; continue; }
     m = /snap replay audit: lot (0x[0-9A-Fa-f]+) rebase hold released by timeout/.exec(l);
     if (m) for (const e of evs) if (e.lot === m[1] && e.fate === 'unconfirmed') e.fate = 'timeout';
   }
@@ -574,6 +577,10 @@ function selfCheck() {
     assert.deepEqual(ev.map(e => `${e.lot}@${e.ring}:${e.fate}`), ['0xA@100:repaired', '0xB@300:recurred', '0xA@200:unconfirmed', '0xB@400:unconfirmed', '0xC@500:timeout', '0xD@600:unconfirmed']);
     assert.match(g1('BP', many(5), idx, ev, 1).reasons[0], /not shown repaired: 5 of 6 on 4 lots \(recurred 1, timeout 1, unconfirmed 3\)/);
     assert.equal(g1('BP', many(5), idx, ev.slice(0, 1), 1).verdict, 'PASS');
+    // 0.36.55: the "equal again" line repairs the lot's earlier mismatches (not a later one)
+    const ev2 = auditDrift(log + '\nsnap replay audit: lot 0xD equal again at ring 700, cut 70 (first audit after its forced rebase), entries 5\n' +
+      'snap replay audit: lot 0xB equal again at ring 350, cut 35 (first audit after its forced rebase), entries 5');
+    assert.deepEqual(ev2.filter(e => e.lot === '0xD' || e.lot === '0xB').map(e => `${e.lot}@${e.ring}:${e.fate}`), ['0xB@300:recurred', '0xB@400:unconfirmed', '0xD@600:repaired']);
     assert.match(g1Report([...ins.slice(0, 2), ...many(3)], idx, [], 1).lines.join('\n'), /^G1 v2 BP: 5 compares; tier 1 1, tier 2 1, tier 3 0;[^\n]*\n  G1 FAIL: tier 2 = 1 > 1 per 10,000/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
   console.log('shadow-compare-report self-check ok');

@@ -21,6 +21,8 @@ Hotfix: `ts3native.log` now tells us what we need to help you. No gameplay chang
   - for every save, each step of the save as it happens, what it waits for, and a line every 5 seconds while a save is still running. A save that gets stuck now shows where.
 - **Privacy.** The log holds file names, never the folders they sit in, your Windows user name or your PC's name. Nothing is sent anywhere: you decide whether to send the file. Open it in Notepad to check before you send it.
 - **Logging only.** It writes a few lines at start, when a world loads and when you save; nothing per frame. To switch it off, set `Enabled=0` under `[UserDiag]` in `ts3native.ini`.
+- **Memory line (on).** Every 5 minutes of play the log gets one short line of memory numbers (`[MemDiag] Light=1`), so an Error 12 report already shows how the memory filled up. Logging only.
+- **Error 12 report (test feature, off).** If you get Error 12 often, set `AllocSites=1` under `[MemDiag]` in `ts3native.ini`, play until it happens, and send us the log with `node report-crash.ts --memory` (it removes paths, names and emails and replaces your package file names with ids unless you add `--names`, shows you everything and asks first). It shows what filled the memory and whether our mod had a part in it. Its cost is still being measured: switch it off again after you sent the report. Off by itself when Apex Radiance is installed. See "Error 12 report" in the player notes.
 
 ### Good to know
 

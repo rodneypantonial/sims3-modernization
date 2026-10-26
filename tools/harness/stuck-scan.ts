@@ -51,7 +51,7 @@ while (Date.now() - t0 < Number(values.minutes) * 60000) {
     const p = seen.get(s.id);
     const e = p && p.key === key ? { key, checks: p.checks + 1, reported: p.reported } : { key, checks: 1, reported: false };
     seen.set(s.id, e);
-    if (e.reported || !mayBeStuck(s.interaction, !!s.routing) || e.checks < (s.routing ? 3 : 6)) continue;
+    if (e.reported || !mayBeStuck(s.interaction, !!s.routing, !!s.in_transit) || e.checks < (s.routing ? 3 : 6)) continue;
     e.reported = true;
     console.log(`${stamp()} NEW STUCK ${s.name} on "${s.interaction}" at ${s.lot ?? 'street'} (${s.x}, ${s.z})${s.routing ? ' routing' : ''}${moved[s.name] ? ` [moved: ${moved[s.name]}]` : ''}`);
     const list = existsSync(CANDIDATES) ? JSON.parse(readFileSync(CANDIDATES, 'utf8')) : [];

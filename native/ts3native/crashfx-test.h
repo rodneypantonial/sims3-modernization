@@ -12,10 +12,10 @@ static void TestCrashForensics() {
                       offsetof(Ts3nCounters, cfDumps) == 0x4790,
                   "counters v114 layout after v113 (docs/registry.md)");
     static_assert(offsetof(Ts3nCounters, cdReady) == 0x4794 && offsetof(Ts3nCounters, cdBad) == 0x4798 &&
-                      offsetof(Ts3nCounters, ceRecs) == 0x47A8 && sizeof(Ts3nCounters) == 5231 * 4,
+                      offsetof(Ts3nCounters, ceRecs) == 0x47A8 && sizeof(Ts3nCounters) == 5392 * 4,
                   "counters v115 layout after v114 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 130);
+    assert(k.version == 139);
     // off: nothing recorded
     const LONG s0 = g_cfSeq;
     CfRec(CF_COPY_NEW, (void*)0x1000, 64);
@@ -131,6 +131,27 @@ static void TestCrashForensics() {
     cx.Eip = 0x5EE23C;
     CfOnFault(&xp);
     assert(k.cfDumps == dm0 + 1 && k.cfRingHit == rh1 + 2);  // ecx and the fault address
+    // docs/67 §17: a wild call (illegal instruction, eip in a freed block) dumps too, with eip as the fault address
+    DWORD stk[2] = {0x0050ED8E, 0};
+    r.ExceptionCode = EXCEPTION_ILLEGAL_INSTRUCTION, r.NumberParameters = 0;
+    cx.Eip = (DWORD)(uintptr_t)(obj + 1), cx.Esp = (DWORD)(uintptr_t)stk;
+    CfOnFault(&xp);
+    assert(k.cfDumps == dm0 + 2 && k.cfRingHit == rh1 + 4);
+
+    // docs/67 §17: scene node check (0xC5FA60) on dummies: .rdata vtable passes, garbage / unreadable counted, NULL skipped
+    static DWORD good[2];
+    good[0] = (DWORD)(uintptr_t)vtab;
+    DWORD sp[4] = {0x00C5FACD, (DWORD)(uintptr_t)good, 0x11, 0x22};
+    const LONG sb = g_stBad;
+    StCheck(sp, 0x1234);
+    assert(g_stBad == sb);
+    sp[1] = (DWORD)(uintptr_t)obj;  // obj[0] = 0x123: outside .rdata
+    StCheck(sp, (DWORD)(uintptr_t)good);
+    sp[1] = 0x1000;  // unreadable
+    StCheck(sp, 0x1000);
+    sp[1] = 0;
+    StCheck(sp, 0);
+    assert(g_stBad == sb + 2);
 
     VirtualFree(pg, 0, MEM_RELEASE);
     g_cfOn = 0, g_cfEraseOrig = NULL, g_cfClrOrig = NULL, g_cfVtLo = g_cfVtHi = 0, g_cfDumpN = 0, g_cfBadLogs[0] = g_cfBadLogs[1] = 0, g_cfHeapLogs = 0;
@@ -400,7 +421,7 @@ static __declspec(naked) void OrtCallRes() {  // as 0x6FA2DB: edi = the object, 
 
 static void TestCrashForensicsObjRes() {
     static_assert(offsetof(Ts3nCounters, mhReady) == 0x47C4 && offsetof(Ts3nCounters, mhFxQueued) == 0x47D8 &&
-                      sizeof(Ts3nCounters) == 5231 * 4, "counters v117 layout after v116 (docs/registry.md)");
+                      sizeof(Ts3nCounters) == 5392 * 4, "counters v117 layout after v116 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
     const DWORD savedMain = g_mainTid;
     g_mainTid = GetCurrentThreadId();

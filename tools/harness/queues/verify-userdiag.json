@@ -14,6 +14,7 @@
         "^ts3fixes: ts3fixes ": 1,
         "^ts3fixes: world: ": 1,
         "^diag: world load #1": 1,
+        "^diag: memory at world load #1: private ": 1,
         "^save: start #1": 1,
         "^save: at start route job ": 1,
         "^save: > info \\(save paths\\)": 1,
@@ -21,6 +22,8 @@
         "^save: > write: world save": 1,
         "^save: > copy \\(new save into place\\)": 1,
         "^save: end #1 result ": 1,
+        "^save: memory at start #1: ": 1,
+        "^save: memory at end #1: ": 1,
         "^save: folder now ": 1
       },
       "logForbid": { "^FAIL\\b": 0, "[\\\\/]Users[\\\\/][^<]": 0 },

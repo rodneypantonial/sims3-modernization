@@ -34,7 +34,8 @@ export function numericFields(answer: Record<string, unknown> | null | undefined
 
 // Repro step pass rules (repros.json entry stepsRequire, same rule syntax): "<cmd>.<field>" = how many of that command's steps
 // answered ok with result[field] === true, e.g. "sim_visit_lot.queued>=4" (bp-preplancb-order 2026-10-24 passed on counters
-// with all 6 visits queued:false). A field no ok answer carried stays missing, so its rule fails.
+// with all 6 visits queued:false). A step with "tally": "<name>" counts as <name> instead of its cmd (per-arm rules such as
+// "visit_c.queued>=1"). A field no ok answer carried stays missing, so its rule fails.
 export function stepTally(steps: { cmd: string; r: { ok?: boolean; result?: unknown } }[]): Record<string, number> {
   const t: Record<string, number> = {};
   for (const { cmd, r } of steps) {
@@ -43,6 +44,30 @@ export function stepTally(steps: { cmd: string; r: { ok?: boolean; result?: unkn
     t[cmd] = (t[cmd] ?? 0) + 1;
   }
   return t;
+}
+
+// nativeRequire: every numeric /native field's after - before (arrays as name.i), checked with the rules above;
+// `*Ready` fields are load-time install flags/masks, so they keep their after value (a delta is always 0: 3 FAILs 2026-10-23)
+export function flatDelta(a: any, b: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(b ?? {})) {
+    if (typeof v === 'number' && typeof a?.[k] === 'number') out[k] = /Ready$/.test(k) ? v : v - a[k];
+    else if (Array.isArray(v) && Array.isArray(a?.[k])) v.forEach((x, i) => { if (typeof x === 'number' && typeof a[k][i] === 'number') out[`${k}.${i}`] = x - a[k][i]; });
+  }
+  return out;
+}
+
+// Repro steps native_mark / native_check {name?, require} (docs/202 §6): the /native delta over a window inside one repro, e.g.
+// only while Build/Buy runs (whole-job nativeRequire also counts the live-mode minutes). A failed rule fails the step, so
+// profile-world.ts fails the job. Marks are per name ('' when none is given).
+export async function nativeWindowStep(s: { cmd: string; args?: any }, native: () => Promise<any>, marks: Map<string, any>):
+  Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  const name = String(s.args?.name ?? '');
+  if (s.cmd === 'native_mark') { marks.set(name, await native()); return { ok: true, result: { mark: name } }; }
+  if (!marks.has(name)) return { ok: false, error: `native_check: no native_mark "${name}" before it` };
+  const rule = String(s.args?.require ?? ''), d = flatDelta(marks.get(name), await native()), fails = checkRequire(rule, d);
+  if (fails.length) return { ok: false, error: `native_check ${name}: ${fails.join(', ')}` };
+  return { ok: true, result: Object.fromEntries(parseRequire(rule).map(r => [r.name, d[r.name] ?? d[r.name.replace(/\.(\d+)$/, '_$1')]])) };
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(/^\//, '')}`) {
@@ -58,5 +83,16 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.deepEqual(checkRequire('v.queued>=1', tally), []);
   assert.deepEqual(checkRequire('v.queued>=2,w.queued>=1', tally), ['v.queued=1 (want >=2)', 'w.queued missing']);
   assert.deepEqual(checkRequire('v.queued>=1', stepTally([{ cmd: 'v', r: { ok: true, result: { queued: false } } }])), ['v.queued=0 (want >=1)']);
+  assert.deepEqual(flatDelta({ a: 1, p: [1, 2], s: 'x', fgReady: 1 }, { a: 4, p: [1, 7], s: 'y', fgReady: 1 }), { a: 3, 'p.0': 0, 'p.1': 5, fgReady: 1 });
+  // native_mark / native_check: delta since the named mark only (the 2026-10-26 sv-ufc-buildbuy C4 tries were live mode)
+  const seq = [{ ufcTry_3: 5, w: 1 }, { ufcTry_3: 5, w: 3 }, { ufcTry_3: 6, w: 3 }];
+  let at = 0;
+  const nat = async () => seq[at++], marks = new Map<string, any>();
+  assert.equal((await nativeWindowStep({ cmd: 'native_check', args: { require: 'w<=0' } }, nat, marks)).ok, false); // no mark yet
+  at = 0;
+  assert.deepEqual(await nativeWindowStep({ cmd: 'native_mark', args: { name: 'bb' } }, nat, marks), { ok: true, result: { mark: 'bb' } });
+  assert.deepEqual(await nativeWindowStep({ cmd: 'native_check', args: { name: 'bb', require: 'ufcTry_3<=0' } }, nat, marks), { ok: true, result: { ufcTry_3: 0 } });
+  assert.deepEqual(await nativeWindowStep({ cmd: 'native_check', args: { name: 'bb', require: 'ufcTry_3<=0,w<=2' } }, nat, marks),
+    { ok: false, error: 'native_check bb: ufcTry_3=1 (want <=0)' });
   console.log('fixes-require selftest: PASS');
 }

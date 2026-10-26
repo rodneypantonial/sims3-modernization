@@ -140,6 +140,21 @@ The verify (PLAN.md, queue `stuckcheck-cap-verify`) left two gaps: the 2 uncut S
 - **Outcome counters at run end.** `queue.ts` ACTIVITY has record-only rows for `stuckcheckown` and `stuckcheckcap`: any profile or soak job with either switch on gets `stuckcheckcap_marked`, `stuckcheck_noplan`, `_notstuck`, `_rearmed`, `_reset` before/after in its row (`fixActivity.counters`) and its `ts3fixes activity:` verdict line; never a void or note.
 - Self-tests: `selftest.cpp` (tag without cut, tag with cut, old form, untagged START, `ScTagText`), `tools/selftest/nostart` (`StuckTag`), `queue.ts --self-check` (record rows). Build `native/ts3native/out-sccap2` -> `game-copy/ts3native.asi.sccap2`; queue `tools/harness/queues/stuckcheck-cap-verify2.json` (SV off/on pair, not run).
 
+### 10.2 Verify 2: `stuckcheck-cap-verify2` (2026-10-25 10:08-11:42 PHT, both PASS)
+
+Jobs `sv-sccap2-nat-off` / `sv-sccap2-nat-on` (Baseline-SV-Spring, 45 min, seed 12345, `stuckcheckown` on in both, `stuckcheckcap` off -> on; logs `probe-out/queue/stuckcheck-cap-verify2-2026-10-25-*`). Validity: fresh load, asi `ts3native.asi.sccap2` 0.36.62 (log ok), `fixes on: ... (verified)`, `stuckcheckown_sent>=1` / `stuckcheckcap_marked>=1` PASS; exit 0, no crash, `watchdogs 0` on every route-worker line in both runs. Timing invalid (noise medium, other apps 12.4 / 13.4% of game CPUs): this is a correctness verdict only.
+
+| run | own long jobs (>= 300 ms) | capped probe jobs | sim waits behind an own job (>= 300 ms lines) | of them >= 1 s | round tags of the waits | longest wait | `asyncMaxUs` |
+|---|---|---|---|---|---|---|---|
+| cap off | 27 | 0 | 14 | 6 (1,325-1,966 ms) | 10 x round 2, 4 x no mark | 1,966 ms | 1.97 s |
+| cap on | 42 | 25 (302-395 ms, rounds 2-3) | 27 | **0** | 20 x round 2, 4 x round 3, 3 x no mark | 410 ms | 0.41 s |
+
+[measured] Every >= 1 s wait in the off run is a round-2 probe (cut-eligible); the on run has none, and no wait in either run is a last round (round 4) or `round ?`. The 2 uncut waits of verify 1 are therefore not explained by this run (no last-round probe went long here). The on run has more >= 300 ms lines because a cut job ends at `PlanDeadlineMs` 300 + overrun, still above the 300 ms log floor: each cut probe is a ~300-400 ms wait instead of 1.3-2 s. Stuck Sims at end: off 1 (`Razta Dog on Beg`, logged only), on 0.
+
+**Outcome counters 297-301 were not recorded (harness bug)** [verified code read]: `profile-world.ts --fixes-on` restores the previous switches at run end (`restoreFixes`), and `queue.ts` reads `patches` for `fixActivity` before the profile run sets the switches and after it restores them; `fixActivity` keeps a row only when `p1[fix] === true`, so with both switches back to their tuning default (off) the record rows drop and `fixActivity.counters` is `{}` in both rows. Fix: gate the record rows on the job's `profile.fixesOn` as well (or have `profile-world.ts` print the outcome counters before `restoreFixes`).
+
+**Verdict: not yet ship-on.** The wait half passes (>= 1 s own-job waits 6 -> 0, all remaining waits ~300-410 ms, no last-round wait, 0 watchdogs, no crash). Reset parity (`stuckcheck_reset` / `_rearmed` / `_notstuck` / `_noplan` off vs on) is still unmeasured, and a cut can turn "not stuck" into one more round by design, so it must be shown before default-on. Next: fix the `queue.ts` gate, rerun the SV pair (2 jobs, ~95 min) and compare the counters.
+
 ## Reproduce
 
 ```
