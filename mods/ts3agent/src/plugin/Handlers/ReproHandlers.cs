@@ -171,10 +171,12 @@ namespace Ts3Agent
         // pet_guard {action: "start" | "state" | "cancel", target?}: docs/84 §7.2 fix D-X repro (repros.json pet-guard-cancel).
         // start: a pet of the active household guards an object on the home lot (PetGuardSitutation.GuardObject, the Guard
         // interaction); with no pet in the household a random adult dog is made, joins it next to the object and is tracked
-        // for remove_sims. target = an object id, else a random object on the home lot (no Sim, not carried). Once the pet
+        // for remove_sims. target = an object id, else a random floor object on the home lot (no Sim, not carried, not a door, window, wall,
+        // ceiling, vehicle or hidden object). Once the pet
         // arrives the guard adds a route discourage footprint on a hidden DynamicSlot (Route.AddDiscourageFootprint).
         // cancel: cancels the pet's interactions; the guard's Cleanup then removes the footprint and destroys the slot in the
-        // same script call (Remove, then Destroy: the case D dropped). state: guarding / area present, for an "until" step.
+        // same script call (Remove, then Destroy: the case D dropped). state: guarding / area present, for an "until" step;
+        // state with restart:true starts a new guard (new random target) when the pet has none queued.
         // ensure: base saves (spring-saves): with no pet in the household, a random adult dog joins it on the home lot and is
         // NOT tracked, so it stays in the save; returns pets (the household's pet count) for an "until" check.
         static object PetGuard(Args a)
@@ -205,13 +207,27 @@ namespace Ts3Agent
                 r["pet"] = pet.FullName;
                 return r;
             }
+            // state + restart: the guard is gone without its area (route close failed, lazy-pet nap, autonomy took over):
+            // start a new guard on a fresh random target, so an "until area" poll does not wait out a dead guard
+            bool restart = action == "state" && a.Bool("restart", false) && !(pet != null && pet.InteractionQueue.HasInteractionOfType(PetGuardSitutation.GuardObject.Singleton)); // queued counts: no restart loop while the old head exits
+            if (restart) action = "start";
             if (action == "start")
             {
+                r["restarted"] = restart;
                 GameObject target = a.Has("target") ? Util.FindObject(a, "target") : null;
                 if (target == null)
                 {
+                    // floor objects only: doors, windows, wall and ceiling objects, hidden helpers and objects without a catalog
+                    // product never let the guard route close (untriaged runs picked doors, area stayed false; GuardObject.Test
+                    // also refuses parked vehicles)
                     List<GameObject> cand = h.LotHome.GetObjects<GameObject>(delegate(GameObject o)
-                        { return !(o is Sim) && o.Parent == null && o.InWorld; });
+                    {
+                        return !(o is Sim) && o.Parent == null && o.InWorld && o.Product != null && !o.IsWallObject
+                            && !(o is CommonDoor) && !(o is Windows) && !(o is Sims3.Gameplay.Objects.Vehicles.Vehicle)
+                            && !(o is Sims3.Gameplay.Objects.Lighting.LightCeilingLamp) && !(o is Sims3.Gameplay.Objects.Electronics.GoboCeilingLight)
+                            && o.GetHiddenFlags() == HiddenFlags.Nothing;
+                    });
+                    r["candidates"] = cand.Count;
                     if (cand.Count == 0) throw new McpException("no object on the home lot to guard");
                     target = RandomUtil.GetRandomObjectFromList(cand);
                 }
@@ -238,6 +254,7 @@ namespace Ts3Agent
             else if (action == "cancel") pet.InteractionQueue.CancelAllInteractions();
             else if (action != "state") throw new McpException("action must be ensure, start, state or cancel");
             PetGuardSitutation.GuardObject g = pet.InteractionQueue.GetHeadInteraction() as PetGuardSitutation.GuardObject;
+            // the interaction's own field: set after RouteCloseToObject reaches the object, cleared in GuardObject.Cleanup (decompiled C#)
             FieldInfo area = typeof(PetGuardSitutation.GuardObject).GetField("mDiscourageArea", BindingFlags.NonPublic | BindingFlags.Instance);
             GameObject slot = g != null && area != null ? area.GetValue(g) as GameObject : null;
             r["pet"] = pet.FullName;
@@ -441,6 +458,20 @@ namespace Ts3Agent
                 Lot far = FarLot(Util.ActiveSim());
                 if (far == null) throw new McpException("no community lot in this world");
                 return far;
+            }
+            if (string.Equals(name, "far2", StringComparison.OrdinalIgnoreCase))  // docs/202 §3.5 D repros: the community lot farthest from both the active Sim and "far"
+            {
+                Sim me = Util.ActiveSim();
+                Lot far = FarLot(me), best = null;
+                float bestD = -1f;
+                foreach (Lot l in LotManager.AllLots)
+                {
+                    if (l == null || !l.IsCommunityLot || l.IsWorldLot || l == far || far == null) continue;
+                    float d = Math.Min((l.GetCenterPosition() - me.Position).LengthSqr(), (l.GetCenterPosition() - far.GetCenterPosition()).LengthSqr());
+                    if (d > bestD) { bestD = d; best = l; }
+                }
+                if (best == null) throw new McpException("no second community lot in this world");
+                return best;
             }
             if (string.Equals(name, "farhome", StringComparison.OrdinalIgnoreCase))  // farthest other household's home from the active Sim
             {

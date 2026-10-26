@@ -18,6 +18,7 @@ namespace Ts3Agent
         static void RegisterRare()
         {
             Dispatcher.Register("crowd_go", CrowdGo);
+            Dispatcher.Register("crowd_do", CrowdDo);
             Dispatcher.Register("kill_sim", KillSim);
             Dispatcher.Register("zombies", Zombies);
             Dispatcher.Register("spawn_traffic", SpawnTraffic);
@@ -27,6 +28,52 @@ namespace Ts3Agent
             Dispatcher.Register("unseen_water_watch", UnseenWaterWatch);
             Dispatcher.Register("unseen_water_cause", UnseenWaterCause);
             Dispatcher.Register("houseboat_move", HouseboatMove);
+            Dispatcher.Register("mem_mark", MemMark);
+            Dispatcher.Register("mem_gc", MemGc);                // MemHandlers.cs (docs/191 module 2)
+            Dispatcher.Register("catalog_loop", CatalogLoop);
+            Dispatcher.Register("buy_sell_loop", BuySellLoop);
+            Dispatcher.Register("bb_cc_cycle", BbCcCycle);       // MemStressHandlers.cs (docs/200)
+            Dispatcher.Register("et_lot_cycle", EtLotCycle);
+            Dispatcher.Register("build_cc_cycle", BuildCcCycle);  // BuildCcHandlers.cs (docs/200 §6)
+            Dispatcher.Register("build_cc_catalog", BuildCcCatalog);
+            Dispatcher.Register("inv_pool", InvPool);             // BuildCcHandlers.cs: buy_object pool (Sim-inventory CC)
+            Dispatcher.Register("scripted_cc_check", ScriptedCcCheck); // ScriptedCcHandlers.cs (docs/200 §8)
+            Dispatcher.Register("scripted_cc_cycle", ScriptedCcCycle);
+            Dispatcher.Register("preset_cc_check", PresetCcCheck);   // PresetCcHandlers.cs (docs/200 §9)
+            Dispatcher.Register("preset_cc_cycle", PresetCcCycle);
+        }
+
+        // mem_mark {tag}: docs/191 module 1 / docs/190 phase 1: asks ts3native [MemDiag] for one "diag: mem" sample tagged
+        // ev=<tag> ([A-Za-z0-9_-], 31 characters; others become '_'), so a repro brackets an action (Build mode, catalogue)
+        // with before / after samples. Sent as the text line "mem: <tag>" over ts3native's [UserDiag] text channel (top
+        // byte 0x87, as ts3fixes UserDiag.cs). accepted = false: no ts3native, [UserDiag] off, or an older build.
+        static readonly ScriptCore.Route sMemProbe = new ScriptCore.Route();
+        static bool MemSend(int op, uint v) { return sMemProbe.GetOption2((Route.RouteOption2)(0x8700000000000000UL | (ulong)(uint)op << 48 | v)); }
+
+        // Since ts3native 0.36.74 the mark is sampled inline (the line exists when this returns) and ts3fixes then answers its
+        // suspect counters for it (MemHandlers.cs SusPoll); suspects = false: no ts3fixes, an older one, or [MemDiag] off.
+        static object MemMark(Args a)
+        {
+            bool sus;
+            Dictionary<string, object> r = Util.Obj();
+            r["accepted"] = MemMarkTag(a.Str("tag"), out sus);
+            r["suspects"] = sus;
+            return r;
+        }
+
+        static bool MemMarkTag(string tag, out bool suspects)
+        {
+            string s = "mem: " + tag;
+            bool ok = MemSend(0, 0);
+            for (int i = 0; ok && i < s.Length; i += 4)
+            {
+                uint v = 0;
+                for (int k = 0; k < 4 && i + k < s.Length; k++) v |= (uint)(s[i + k] & 0xFF) << (8 * k);
+                ok = MemSend(1, v);
+            }
+            ok = ok && MemSend(2, 0);
+            suspects = ok && SusPoll();
+            return ok;
         }
 
         // unseen_water_watch {start: true} | {stop: true} | {result: true, min_engaged?: n, min_mounted?: n, require?: true}
@@ -571,7 +618,7 @@ namespace Ts3Agent
             return list;
         }
 
-        // crowd_go {target | to | x,z, max?: 50, household?: false}: every spawn_sims Sim (and the active household with
+        // crowd_go {target | to | x,z, max?: 50, household?: false, cancel?: false}: every spawn_sims Sim (and the active household with
         // household: true) walks to the same point at once (Go Here, user-directed), so the arrivals steer round each other.
         static object CrowdGo(Args a)
         {
@@ -587,7 +634,12 @@ namespace Ts3Agent
             foreach (Sim s in crowd)
             {
                 if (sent.Count >= max) break;
-                try { QueueGoHere(s, pos); sent.Add(s.FullName); }
+                try
+                {
+                    if (a.Bool("cancel", false)) s.InteractionQueue.CancelAllInteractions();  // docs/202 D repros: end the last loop's interaction first
+                    QueueGoHere(s, pos);
+                    sent.Add(s.FullName);
+                }
                 catch (Exception e) { sent.Add(s.FullName + ": " + e.Message); }
             }
             if (sent.Count == 0) throw new McpException("no crowd: spawn_sims first (or household: true)");
@@ -625,6 +677,95 @@ namespace Ts3Agent
         }
 
         // Destination of a walk for commands that take {target | to | x,z}; Vector3.Invalid when none is given.
+        // crowd_do {lot, object, interaction, max?: 50}: every spawn_sims Sim queues the pie-menu interaction matching `interaction`
+        // on the first object on `lot` (FindLotByName: "far", "far2", "home" or a name) whose catalog name contains `object`,
+        // user-directed, as do_interaction does for one Sim (docs/202 §3.5 D repros: a walk to an object or slot on another lot,
+        // planned by a RoutingComponent.RouteTo* helper in the Sim's own interaction). Sims whose menu lacks it are listed with why.
+        // `object` and `interaction` take '|' alternatives. The object is the first one (named objects first, outdoor before
+        // indoor: D needs an outdoor ground goal) whose menu for the first crowd Sim offers one of the interactions; when no named
+        // object does (far2 differs per run: a park, a graveyard), any object on the lot is tried, up to 300 menus.
+        // look: true also points the camera at the object, so its lot is in view (D-arrive repro: goal seen, starts unseen).
+        static object CrowdDo(Args a)
+        {
+            RequireLive();
+            Lot lot = FindLotByName(a.Str("lot"));
+            string objName = a.Str("object", "*");
+            string[] names = objName.Split('|'), labels = a.Str("interaction").Split('|');
+            List<Sim> crowd = SpawnedInWorld();
+            if (crowd.Count == 0) throw new McpException("no crowd: spawn_sims first");
+            List<GameObject> named = new List<GameObject>(), rest = new List<GameObject>();
+            foreach (GameObject o in lot.GetObjects<GameObject>())
+            {
+                if (o == null || o is Sim) continue;
+                string n = Util.ObjectName(o);
+                bool hit = false;
+                foreach (string w in names) if (w.Length > 0 && w != "*" && n.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) { hit = true; break; }
+                (hit ? named : rest).Add(o);
+            }
+            GameObject target = null;
+            string label = null;
+            int tried = 0;
+            foreach (List<GameObject> group in new List<GameObject>[] { OutdoorFirst(named), OutdoorFirst(rest) })
+            {
+                foreach (GameObject o in group)
+                {
+                    if (tried++ >= 300) break;
+                    label = CrowdOffer(crowd[0], o, labels, a);
+                    if (label != null) { target = o; break; }
+                }
+                if (target != null) break;
+            }
+            if (target == null)
+                throw new McpException("no object on " + lot.Name + " offers '" + a.Str("interaction") + "' to " + crowd[0].FullName + " (" + named.Count + " named like '" + objName + "', " + tried + " menus tried)");
+            if (a.Bool("look", false)) CameraController.SetPositionAndTarget(target.Position + new Vector3(0f, 25f, -25f), target.Position);
+            int max = (int)a.Long("max", 50);
+            List<object> sent = new List<object>();
+            foreach (Sim s in crowd)
+            {
+                if (sent.Count >= max) break;
+                try
+                {
+                    GameObjectHit hit = HitFor(target, a);
+                    MenuEntry e = MatchEntry(BuildMenu(s, target, hit), label);
+                    InteractionInstanceParameters p = new InteractionInstanceParameters(e.Iop, s, new InteractionPriority(InteractionPriorityLevel.UserDirected),
+                        Sims3.Gameplay.Autonomy.AutonomySearchType.None, InteractionFlags.UserDirected, hit, null, false);
+                    InteractionInstance inst = e.Iop.InteractionDefinition.CreateInstanceFromParameters(ref p);
+                    sent.Add(inst != null && s.InteractionQueue.Add(inst) ? s.FullName : s.FullName + ": refused");
+                }
+                catch (ResetException) { throw; }
+                catch (Exception ex) { sent.Add(s.FullName + ": " + ex.Message); }
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["sent"] = sent;
+            r["lot"] = lot.Name;
+            r["object"] = Util.ObjectName(target);
+            r["interaction"] = label;
+            r["outdoor"] = target.RoomId == 0;
+            return r;
+        }
+
+        static List<GameObject> OutdoorFirst(List<GameObject> objs)
+        {
+            List<GameObject> r = objs.FindAll(delegate(GameObject o) { return o.RoomId == 0; });
+            r.AddRange(objs.FindAll(delegate(GameObject o) { return o.RoomId != 0; }));
+            return r;
+        }
+
+        // the first of `labels` that the Sim's pie menu on o offers (enabled, one match), else null
+        static string CrowdOffer(Sim s, GameObject o, string[] labels, Args a)
+        {
+            List<MenuEntry> menu;
+            try { menu = BuildMenu(s, o, HitFor(o, a)); }
+            catch (ResetException) { throw; }
+            catch (Exception) { return null; }
+            foreach (string l in labels)
+            {
+                try { MatchEntry(menu, l); return l; }
+                catch (McpException) { }
+            }
+            return null;
+        }
+
         static Vector3 WalkGoal(Args a, Sim me)
         {
             if (a.Has("target"))

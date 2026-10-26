@@ -1,0 +1,47 @@
+{
+  "jobs": [
+    {
+      "id": "sv-ufb-farcrowd-loop-offctl",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Crash control (docs/67 §22.1): the sv-ufb-farcrowd-loop job with every arm off, same build (unseenfb-all2), seed 12345, save and ini. Crash near 6.2 min = EA bug (known, keep the switch); a clean 12 min = rerun with the guard on.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all2",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "GcThreadCheck.Enabled": 1,
+        "CrashForensics.Light": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 14,
+          "repro": "unseenfb-far-crowd-loop-offctl",
+          "loopRule": {
+            "until": {
+              "events": 1000
+            },
+            "maxMinutes": 12
+          },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    }
+  ]
+}

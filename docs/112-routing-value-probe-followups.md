@@ -130,6 +130,8 @@ Cell callers that pass no context: `0x663589`/`0x663596` push 0; the quadtree ca
 
 **Verdict:** neither the vanilla game nor our async path cancels a route through `Job_Cancel`; `0x59A603` stays silent for any route cancel, and that is expected. docs/109 §6 repro C (`pet-guard-cancel` for `0x59A603`) cannot fire it; take it off the pass-2 repro list and leave the site as "job manager, not routing" (docs/106 §7).
 
+**Rerun triage 2026-10-27 (`untested-v020` `bp-snap2-cancel`, 2026-10-26, build 0dc5fca8):** FAIL at the first cycle, `pet_guard until area=true not met in 120 s`; harness, not routing [measured: activity samples show Roxy Dog running `Guard Object` on the floor target "Festus 44", then `Dig Hole`; no crash, no ProbeSnap verdict reached]. The guard ended without its discourage area: `GuardObject.Run` returns at once when the radial-range route close to the target fails, and a lazy pet naps instead (route failure inferred: no route-fail line names the pet). The poll then waited out a dead guard. Fix: ts3agent `pet_guard {action: state, restart: true}` starts a new guard on a new random target when the pet has none queued (branch `bugfix/pet-guard-restart`); `pet-guard-cancel` polls with `restart: true`. Rerun the job after the merge.
+
 ## 5. Other BP readings
 
 ### 5.1 I-105-3: display level inside CanSee

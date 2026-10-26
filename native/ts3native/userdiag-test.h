@@ -83,7 +83,36 @@ static void TestUserDiag() {
     // the GetOption hook routes 0x87 to the channel
     assert(GetOptionHook(0, 0, kUdTextHi, 1) == 1);
 
-    // save trail: start, phases with their end lines, a long wait, a watchdog line, end
+    // address space: top-2 free blocks, per-type sums, limit text, low warning, mline format, walk cost
+    {
+        UdMemStat s = {};
+        MEMORY_BASIC_INFORMATION mb = {};
+        auto add = [&](DWORD state, DWORD type, SIZE_T mbytes) { mb.State = state, mb.Type = type, mb.RegionSize = mbytes << 20; UdMemAdd(s, mb); };
+        add(MEM_FREE, 0, 100), add(MEM_FREE, 0, 300), add(MEM_FREE, 0, 50), add(MEM_FREE, 0, 200);
+        add(MEM_COMMIT, MEM_IMAGE, 30), add(MEM_RESERVE, MEM_IMAGE, 2), add(MEM_COMMIT, MEM_MAPPED, 10), add(MEM_COMMIT, MEM_PRIVATE, 500), add(MEM_RESERVE, MEM_PRIVATE, 96);
+        assert(s.regions == 9 && s.freeB == 650ull << 20 && s.big1 == 300ull << 20 && s.big2 == 200ull << 20);
+        assert(s.image == 32ull << 20 && s.mapped == 10ull << 20 && s.priv == 596ull << 20 && s.commit == 540ull << 20);
+        assert(strstr(UdLimitText(0x100000000ull), "4 GB") && strstr(UdLimitText(0xC0000000ull), "3 GB") && strstr(UdLimitText(0x80000000ull), "NOT large"));
+        char mline[480];
+        assert(!UdMemLow(mline, sizeof(mline), 256) && UdMemLow(mline, sizeof(mline), 255));
+        assert(!strcmp(mline, "diag: low address space: largest free block 255 MB (under 256) - risk of Error 12 / crash on save"));
+        UdMemFormat(mline, sizeof(mline), "save: memory at start #3", s, 0x100000000ull, 1851ull << 20, 120, 410);
+        assert(!strcmp(mline, "save: memory at start #3: private 1851 MB, committed 540 MB; limit 4 GB (large address aware, 64-bit Windows), free 650 MB, "
+                             "largest free 300 MB (2nd 200), session low 120 MB; modules 32 MB, mapped files 10 MB, heaps and other private 596 MB; "
+                             "walk 410 us, 9 regions"));
+        // walk cost on a fragmented space: 4,000 extra regions (64 KB reserves, every other one committed)
+        static void* frag[4000];
+        for (int i = 0; i < 4000; i++) frag[i] = VirtualAlloc(NULL, 65536, MEM_RESERVE | (i & 1 ? MEM_COMMIT : 0), PAGE_READWRITE);
+        UdMemSample("diag: memory at test");
+        for (void* p : frag) if (p) VirtualFree(p, 0, MEM_RELEASE);
+        UdtLog(buf, sizeof(buf), h);
+        const char* w = strstr(buf, "diag: memory at test: private ");
+        assert(w && strstr(w, " regions\r\n"));
+        const char* wu = strstr(w, "walk ");
+        printf("user diag: address-space walk %ld us over %ld regions\n", strtol(wu + 5, NULL, 10), strtol(strstr(wu, " us, ") + 5, NULL, 10));
+    }
+
+    // save trail: start, phases with their end lines, a long wait, a watchdog mline, end
     g_udSaveTick = 0;
     g_udDogMs = 1000;
     UdPhase("not saving");  // no save on this thread: nothing
@@ -100,7 +129,7 @@ static void TestUserDiag() {
     WaitForSingleObject(g_udDog, 5000);
     UdtLog(buf, sizeof(buf), h);
     assert(!strstr(buf, "not saving"));
-    assert(strstr(buf, "save: start #") && strstr(buf, "save: at start route job none") && strstr(buf, "save: memory address space used"));
+    assert(strstr(buf, "save: start #") && strstr(buf, "save: at start route job none") && strstr(buf, "save: memory at start #") && strstr(buf, "save: memory at end #"));
     assert(strstr(buf, "save: > prepare (+") && strstr(buf, "save: < prepare ") && strstr(buf, "save: > info (save paths)"));
     assert(strstr(buf, "save: wait for the running route job took 15") && strstr(buf, "save: < write (package) "));
     assert(strstr(buf, "save: still running after ") && strstr(buf, ": phase write (package) for ") &&
@@ -141,14 +170,11 @@ static void TestUserDiag() {
     UdBinLines(tmp);  // read-only: nothing to list there is fine
     UdGpuLines();
     UdPacksLine();
-    char mem[256];
-    UdMem(mem, sizeof(mem));
     UdtLog(buf, sizeof(buf), h);
     assert(strstr(buf, "PackedFile:, Packages/*.package, Packages/*/*.package"));
     assert(strstr(buf, "diag: Mods\\Packages 2 .package files, 0 MB, 1 with scripts (S3SA), 1 other"));
     assert(strstr(buf, "diag: script mods (S3SA packages): NRaas_Test_V1.package\r\n") && strstr(buf, "cc.package"));
     assert(strstr(buf, "diag: saves 1 (+0 .backup), 1 files") && strstr(buf, "diag: Bin add-ons: none") && strstr(buf, "diag: registry packs:"));
-    assert(strstr(mem, "address space used ") && strstr(mem, "largest free block "));
     for (const wchar_t* f : {L"Mods\\Resource.cfg", L"Mods\\Packages\\NRaas\\NRaas_Test_V1.package", L"Mods\\Packages\\cc.package", L"Saves\\A.sims3\\x.nhd"}) {
         swprintf_s(p, L"%s\\%s", user, f);
         DeleteFileW(p);
@@ -162,5 +188,5 @@ static void TestUserDiag() {
     g_udDogMs = 5000;
     g_log = saved;
     CloseHandle(h);
-    printf("user diag: install class, DBPF S3SA count, line packing, Resource.cfg patterns, ts3fixes text channel, save trail + watchdog ok\n");
+    printf("user diag: install class, DBPF S3SA count, line packing, Resource.cfg patterns, ts3fixes text channel, save trail + watchdog, address space ok\n");
 }

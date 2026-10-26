@@ -10,7 +10,7 @@
    "noiseCheck": false,
    "timeoutMin": 25,
    "id": "bp-preplancb-order-verify",
-   "note": "preplancb (docs/185 §5, §6.1): AboutToPlanCallback before the async START, locked-door list kept. Arms: A routeasync 0 (vanilla order), B routeasync 1, C routeasync 1 + preplancb. Pass: no crash, all 6 visits queued (repro stepsRequire), preplancb_precalls >= 1; read each visitor at the locked door: A and C walk to the door and show the locked-door reaction, B may fail in place.",
+   "note": "preplancb (docs/185 §5, §6.1): AboutToPlanCallback before the async START, locked-door list kept. Arms: A routeasync 0 (vanilla order), B routeasync 1, C routeasync 1 + preplancb. Pass: no crash, every arm queued at least one of its 2 visits (repro stepsRequire visit_a/visit_b/visit_c.queued>=1; visitors sent home before the swap pass and arm C, both household adults liked, docs/185 §6.4), preplancb_precalls >= 1 and preplancb_doors_restored >= 1 (the order case ran: preplancb is on only in arm C); read each visitor at the locked door: A and C walk to the door and show the locked-door reaction, B may fail in place.",
    "save": "Baseline-BP-Spring",
    "ini": {
     "CrashForensics.Enabled": 1
@@ -20,7 +20,7 @@
      "seed": 12345,
      "minutes": 12,
      "repro": "route-aboutplan-order",
-     "fixesRequire": "preplancb_precalls>=1"
+     "fixesRequire": "preplancb_precalls>=1,preplancb_doors_restored>=1"
     }
    }
   }

@@ -1057,7 +1057,7 @@ rpc.exports = {
     return r;
   },
 
-  // One exported ts3native DWORD by name (e.g. ts3native_footprintMode); value 0|1 writes it first. Null when missing.
+  // One exported ts3native DWORD by name (e.g. ts3native_footprintMode); a value (non-negative integer) writes it first. Null when missing.
   nativeExport(name, value, offset) {
     const m = Process.findModuleByName('ts3native.asi');
     const e = m === null ? null : m.findExportByName(name);
@@ -1571,6 +1571,30 @@ rpc.exports = {
       // v130 (docs/133 §7, vcall.cpp): [ProbeSnap] CallSites coverage; trap cost cpTrapUs = vcHits x cpTrapNs + cpHandlerUs
       if (c.readS32() >= 130) f.push('cpOn', 'cpDone', 'cpPoly', 'cpTrapNs', 'cpTrapUs', 'cpHandlerUs', 'cpLastMinUs', 'cpMaxMinUs',
           'cpMinutes', 'cpLateUs', 'cpLateMin', ...n('cpSpare', 5));
+      // v131 (docs/189 §16): [P6Waits] arm from the in-load loop
+      if (c.readS32() >= 131) f.push('p6wArmSet', ...n('p6wArmSpare', 3));
+      // v132 (docs/66 §7.1 clone slimming): pool regions (A1), one build per load + heap per clone build (A3)
+      if (c.readS32() >= 132) f.push('plChunkMB', 'plChunks', 'plResKB', 'plSavedKB', 'rpGenOn', 'rpGenLive', 'rpGenFreed', 'rpGenRelKB',
+          'rpGenDestroyMaxUs', 'rpLoadWaitCuts', 'rpLoadWaitTimeouts', 'rpSlimSpare');
+      // v133 (docs/66 §7.1 A4 readout, lotuse.cpp): [RouteSnap] LotUseReadout
+      if (c.readS32() >= 133) f.push('luOn', 'luWalks', 'luRuns', 'luOver', 'luLots', 'luTouched', 'luUntouchedPermille', 'luUntouchedKB');
+      if (c.readS32() >= 134) f.push('kdMode', 'kdReady', ...n('kdUs', 7), ...n('kdJobs', 7), ...n('kdCut', 7), ...n('kdLong', 7), 'kdLateMaxUs',
+        ...n('kdBackoff', 2), 'kdAfterOk', 'kdAfterFail', 'kdUncutOk', 'kdAfterStuckCheck', 'kdExemptSc', 'kdCutOk', ...n('kdSpare', 2));
+      // v135 (docs/164 §7.8, plandeadline.cpp): PlanDeadlineMs sync-path exemptions (stuck-check last round, cut tripwire)
+      if (c.readS32() >= 135) f.push('pdExemptSc', 'pdCutSc', ...n('pdSpare', 2));
+      // v136 (docs/198 §4, rctrim.cpp): [ResourceCache] TrimAfterCleanup experiment
+      if (c.readS32() >= 136) f.push('rtOn', 'rtTrims', 'rtFreedKB', 'rtLastFreedKB', 'rtMaxUs', 'rtStood', 'rtBad', 'rtSpare');
+      // v137 (docs/199, memexp.cpp): [MemDiag] TypeGrowth + [GC] SqrtHeapLimit experiments
+      if (c.readS32() >= 137) f.push('tyMode', 'sqMode', 'mxReady', 'tyPasses', 'tyLastUs', 'tyMaxUs', 'tyGraphLastUs', 'tyGraphMaxUs', 'tyObjs',
+        'tyClasses', 'tyRejects', 'tyFaults', 'sqGcs', 'sqLiveKB', 'sqLimitKB', 'sqHeapKB', 'sqAllocKBs', 'sqSpeedMBs', 'sqGcUsLast', 'sqWalkUsLast',
+        'sqWalkUsMax', 'sqWouldFreeKB', 'sqGrows', 'sqGrowKB', 'sqForced', ...n('mxSpare', 3));
+      // v138 (docs/202 §3.1, unseenfb.cpp): [UnseenFallback] deadline for unseen Sims' plans and jobs
+      if (c.readS32() >= 138) f.push('ufMode', 'ufUs', 'ufReady', 'ufMarks', 'ufMarkRefused', 'ufSync', 'ufSyncCut', 'ufJobs', 'ufJobCut',
+        'ufMaxUs', 'ufLong', 'ufCutAsks');
+      // v139 (docs/202 §3.4, unseenfbc.cpp): [UnseenFallback] Sites C1-C4 (per-site arrays: C1 list, C2 avoidance, C3 route-to-object, C4 placement)
+      if (c.readS32() >= 139) f.push('ufcMode', 'ufcWaitMs', 'ufcReady', 'ufcList', 'ufcPushes', 'ufcPushBad', ...n('ufcTry', 4), ...n('ufcGot', 4),
+        ...n('ufcTimeout', 4), ...n('ufcFake', 4), ...n('ufcRecover', 4), ...n('ufcSeen', 4), ...n('ufcWaitUs', 4), 'ufcMaxWaitUs', 'ufcNoRoute',
+        'ufcStale', ...n('ufcSpare', 7));
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

@@ -1,0 +1,103 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/200 §9 makeup + object design preset CC stress. Sets (tools/cc-gen.ts, git-ignored, moved in before the load and back after; interrupted run: node tools/harness/queue.ts --restore-content): game-copy/cc-synth/cc-makeup-300 (--kind makeup --seed 1: 300 cloned base-game makeup CASPs, lipstick / eye shadow / eyeliner / blush / costume makeup, 115 MB) and game-copy/cc-synth/cc-presets-200x6 (--kind presets --presets 6 --seed 1: 200 cloned objects with 6-10 design presets, every preset its own texture copies, 666 MB). Asi game-copy/ts3native.asi.allocsites2 (0.36.84, docs/201, includes memlite/rctrim/memexp; [MemDiag] AllocSites=1 at 1 in 64 attributes native growth per call site, read with node tools/memory-report.ts <log> section native call sites; ResourceCache trim, SqrtHeapLimit and TypeGrowth off). STRESS + correctness (noiseCheck false). Order: bp-ccp-load (load smoke, presets set: preset_cc_check, the game lists >= 6 presets for >= 100 CC products), bp-ccm-cycle (repro makeup-cc-cycle, 3 cycles: up to 150 town Sims in CC makeup, mkp-full / -empty + GC), bp-ccp-cycle (repro preset-cc-cycle, 3 cycles x 180 objects = 30 products x 6 presets over the town, pcc-full / -empty + GC). Read: node tools/mem-report.ts report --log <job ts3native.log> (repeated marks), the repro-jsonl per_cycle counts. ~8 + ~12 + ~16 min with loads [estimated].",
+  "jobs": [
+    {
+      "id": "bp-ccp-load",
+      "note": "Load smoke (~8 min with the load). Pass: preset_cc_check ok (>= 100 placeable CCGen products with >= 6 presets), pcc-loaded mark, no crash. Read the step answer: products, with_min, presets_histogram (does the game list every OBJD material as a preset).",
+      "asi": "game-copy/ts3native.asi.allocsites2",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-presets-200x6",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=pcc-loaded ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "preset-cc-load"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ccm-cycle",
+      "note": "Makeup CC (repro makeup-cc-cycle). Pass: 3 x mkp-full and 3 x mkp-empty marks, every cycle's first wear_parts dressed > 0 (repro-jsonl). Read: mkp-full / mkp-empty against the previous cycle; the wear_parts answers (parts worn per Sim, skipped reasons). Window: lead-in ~1 min + 3 x ~2.5 min [estimated], run 10 min.",
+      "asi": "game-copy/ts3native.asi.allocsites2",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-makeup-300",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=mkp-full ": 3,
+        "^diag: mem #\\d+ mark ev=mkp-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "makeup-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ccp-cycle",
+      "note": "Object design presets (repro preset-cc-cycle, agent preset_cc_cycle). Pass: cycles_done 3, no error, applied > 0 every cycle (repro-jsonl per_cycle), 3 x pcc-full and pcc-empty marks. Read: pcc-full / pcc-empty against the previous cycle; apply_failed + errors and readback_equal say whether the presets went through the design swap. Window: lead-in ~1 min + until maxS 900 s (estimated), run 14 min.",
+      "asi": "game-copy/ts3native.asi.allocsites2",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-presets-200x6",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=pcc-full ": 3,
+        "^diag: mem #\\d+ mark ev=pcc-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 14,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "preset-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

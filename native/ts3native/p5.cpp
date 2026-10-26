@@ -35,6 +35,8 @@ static bool P5cRan();                           // p5c.cpp: this job's window op
 static int StlModeNow();
 static void StlRunBegin(int slm);
 static void StlRunEnd();
+static void LuNoteRun(DWORD agent);  // lotuse.cpp
+static void ApplyLu(const wchar_t* ini);
 static bool StlActDefer(int slm, LONG w0);
 static bool StlJob(int slm, LONG w0, bool* globOut, bool* fpOnly = NULL);
 static void StlVerify(int slm, LONG w0, int eq);
@@ -445,6 +447,7 @@ static u8 P5Plan(void* world, void* edx, int* outList, int* starts, int* goals, 
         if (dl) P6fbCloneBudgetEnd(outer);
     }
     StlRunEnd();
+    if (have) LuNoteRun(agent);  // [RouteSnap] LotUseReadout
     if (slm && !have) InterlockedIncrement(&k.stlNoRun);
     if (have || lent) P5cTake();  // also after a refused acquire in the window: +0x918 back before the game's plan
     if (have) {
@@ -662,4 +665,5 @@ static void ApplyP5(const wchar_t* ini) {
 #endif
     ApplyP5b(ini);
     ApplySl(ini);
+    ApplyLu(ini);
 }

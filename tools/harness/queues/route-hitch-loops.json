@@ -1,5 +1,5 @@
 {
-  "note": "Routing freeze loop A/Bs (clean night): the repro-check-route jobs at A/B length on asi.0332 (deadline + fail memo + stuck-check fixes per arm, ABBA in one load). Read per arm: hitch-ab --scenario; stranding: pdHitOk, stuck Sims per arm.",
+  "note": "Routing freeze loop A/Bs (clean night): the repro-check-route jobs at A/B length on asi.0332 (deadline + fail memo + stuck-check fixes per arm, ABBA in one load). Read per arm: hitch-ab --scenario; stranding: stuck Sims per arm (pdHitOk = past the deadline yet succeeded: info only, not a cut).",
   "jobs": [
     {
       "id": "bp-route-stuckcheck-reset-ab",

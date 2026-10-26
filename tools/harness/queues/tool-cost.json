@@ -1,5 +1,5 @@
 {
-  "note": "Measurement tool cost jobs (PLAN.md Measurement cost rule 2026-10-24, docs/168 §9): one cost job set per light tool without a measured cost, cheapest tool first so the queue can stop at any tool boundary (--from bp-tc-<tool>-off-1 or bp-tc-<tool>-ab resumes). Same save (Baseline-BP-Spring), seed 12345, release build asi.rel015 with the release ini; base = lean profiler (stages:false), no stack samplers; only the tool differs between the arms. Runtime-switchable tools (OwnJobWait = --ab ownjobwait, RouteEarlyOut observe = --ab earlyout): one in-load ABBA job each, 13.5 min, 1.5-min slices, 4 kept slices per arm (timing verdict valid alone). Start-time-only tools (HitchAttr, LogFallback, Holders, PlanRepeat, RouteJobPhases + SyncPlans, UnseenProbe, frames, mainstack, prof-tasks, prof-stages): one off/on two-load pair (off-1, on-1), each run valid-single, the pair a cross-run comparison (weaker evidence, labelled); a later opposite-order pair (on-2, off-2, same ids, asi and ini) pools to ABBA in hitch-ab.ts. Read per tool: node tools/harness/hitch-ab.ts tool-cost-<date>-bp-tc-<tool> (it/s per run or arm); cost ms/s = 1000 x (1 - on it/s / off it/s); write it into docs/data/tool-costs.json msPerS and the docs/168 §9 table. Timing: clean night only (noise check on). 22 jobs: 20 pair jobs ~12 min + 2 in-load jobs ~16 min = ~4.5 h.",
+  "note": "Measurement tool cost jobs (PLAN.md Measurement cost rule 2026-10-24, docs/168 §9): one cost job set per light tool without a measured cost, cheapest tool first so the queue can stop at any tool boundary (--from bp-tc-<tool>-off-1 or bp-tc-<tool>-ab resumes). Same save (Baseline-BP-Spring), seed 12345, release build asi.rel015 with the release ini; base = lean profiler (stages:false), no stack samplers; only the tool differs between the arms. Runtime-switchable tools (OwnJobWait = --ab ownjobwait, RouteEarlyOut observe = --ab earlyout): one in-load ABBA job each, 13.5 min, 1.5-min slices, 4 kept slices per arm (timing verdict valid alone). Start-time-only tools (HitchAttr, LogFallback, Holders, PlanRepeat, RouteJobPhases + SyncPlans, UnseenProbe, frames, mainstack, prof-tasks, prof-stages): one off/on two-load pair (off-1, on-1), each run valid-single, the pair a cross-run comparison (weaker evidence, labelled); a later opposite-order pair (on-2, off-2, same ids, asi and ini) pools to ABBA in hitch-ab.ts. Read per tool: node tools/harness/hitch-ab.ts tool-cost-<date>-bp-tc-<tool> (it/s per run or arm); cost ms/s = 1000 x (1 - on it/s / off it/s); write it into docs/data/tool-costs.json msPerS and the docs/168 §9 table. Timing: clean night only (noise check on). 22 jobs: 20 pair jobs ~12 min + 2 in-load jobs ~16 min = ~4.5 h. 2026-10-25: + bp-tc-cflight-off-1 / -on-1 ([CrashForensics] Light=1, asi.flight 0.36.72; docs/67 §18): 24 jobs, ~4.9 h.",
   "jobs": [
     {
       "id": "bp-tc-hitchattr-off-1",
@@ -525,6 +525,56 @@
           "noSamplers": true,
           "profOpts": {
             "tasks": false
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": true,
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-tc-cflight-off-1",
+      "note": "Tool cost (docs/168 §9, docs/67 §18): [CrashForensics] Light=1 (no game-path detour: P5 heap ring, heap check at our frees, P5c lines, our-events ring, fault dump); off arm of a two-load pair (start-time only). Needs ts3native 0.36.72: asi.flight, not asi.rel015 (rel015 ignores the key). Light=0 set explicitly (queue.ts adds Light=1 to every job). The full ABBA is tools/harness/queues/forensics-light-cost.json; running either is enough. Read: hitch-ab.ts tool-cost-<date>-bp-tc-cflight.",
+      "asi": "game-copy/ts3native.asi.flight",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 131,
+      "ini": {
+        "CrashForensics.Light": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "noSamplers": true,
+          "profOpts": {
+            "stages": false
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": true,
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-tc-cflight-on-1",
+      "note": "Tool cost (docs/168 §9, docs/67 §18): [CrashForensics] Light=1 (no game-path detour: P5 heap ring, heap check at our frees, P5c lines, our-events ring, fault dump); on arm of a two-load pair (start-time only). Needs ts3native 0.36.72: asi.flight, not asi.rel015 (rel015 ignores the key). Light=1 set explicitly (queue.ts adds Light=1 to every job). The full ABBA is tools/harness/queues/forensics-light-cost.json; running either is enough. Read: hitch-ab.ts tool-cost-<date>-bp-tc-cflight.",
+      "asi": "game-copy/ts3native.asi.flight",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 131,
+      "ini": {
+        "CrashForensics.Light": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "noSamplers": true,
+          "profOpts": {
+            "stages": false
           }
         }
       },

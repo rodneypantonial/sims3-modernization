@@ -1,0 +1,93 @@
+{
+  "note": "crasho-rerun: one job, ip-p6int-hold2-ab with the docs/67 §17 forensics build (asi game-copy/ts3native.asi.crasho = native/ts3native/out-crasho, 0.36.71, counters v131 unchanged). Crash O = main-thread wild call into the heap + sim-thread scene node with a garbage vtable under a design-U footprint apply, holdkeyed=2 arm, FreeLock=1 RecsUnlocked=1 (third crash of that family after M and N). Fixed = 2 clean runs.",
+  "jobs": [
+    {
+      "id": "ip-p6int-hold2-ab-crasho",
+      "note": "Rerun of p6-integration rung 3 (ip-p6int-hold2-ab) after crash O (docs/67 §17, 2026-10-25 11:15:06 UTC, arm on #7 = holdkeyed 2, 3 s after the crowd_go step: main thread wild call into the heap (C000001D at 0x9A6FA8F6, vtable slot call 0x50ED8C) + sim thread at 0xC5FA93 on a scene node with a garbage vtable, reached from a design-U footprint apply -> UpdateSimFootprint 0x833560 -> FindLotByIdTyped 0xC62D40). Same settings on ts3native 0.36.71 (asi.crasho) with the docs/67 §17 logging round: [CrashForensics] Enabled/Guards/OurEvents/DbIndexLog (§15/§16 rings, P5 heap ring + double-free check) + SceneTreeGuard (check before 0xC5FA60 reads a node) and the dump now also fires on illegal instructions (wild calls). Correctness run, not timing: read crashes, not it/s. Read: a SCENE NODE BAD line names the node and its parent before the fault; a P5 heap ring or P5c hit on the node / ecx / eip = ours; a crash with neither = widen (EA heap walk). Fixed = 2 clean runs.",
+      "asi": "game-copy/ts3native.asi.crasho",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 131,
+      "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
+      "logForbid": {
+        "P4 FAULT": 0,
+        "fault applying record": 0,
+        "FAIL hold keyed": 0,
+        "FAIL door memo x": 0,
+        "retake watchdog escalation": 0
+      },
+      "ini": {
+        "RouteAsync.Kinds": 7,
+        "RouteAsync.KindsMode": 1,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.M1Retry": 1,
+        "RouteAsync.SyncCapMs": 1000,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "RouteAsync.DoorMemo": 0,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Mode": 2,
+        "RouteSnap.Kinds": 15,
+        "RouteSnap.Lots": "replay",
+        "RouteSnap.Prebuild": 1,
+        "RouteSnap.LazyKeep": 1,
+        "RouteSnap.ReplaySigMs": 250,
+        "RouteSnap.LotsUnlocked": 1,
+        "RouteSnap.InsFreeInPlace": 1,
+        "RouteSnap.RecsUnlocked": 1,
+        "RouteSnap.ReleaseLock": 1,
+        "RouteSnap.ReleaseGates": 1,
+        "RouteSnap.FreeLock": 1,
+        "RouteSnap.TakeKinds": 9,
+        "RouteSnap.ShareCuts": 1,
+        "RouteSnap.VerifyLend": 1,
+        "RouteSnap.P6LogMs": 20,
+        "RouteSnap.P6EarlyCopy": 1,
+        "RouteSnap.TakeKindsAll": 1,
+        "RouteSnap.TakeForeign": 0,
+        "RouteSnap.AskLent": 0,
+        "RouteSnap.DoorMemoX": 0,
+        "RouteSnap.DoorMemoXMs": 250,
+        "RouteSnap.StaleLot": 0,
+        "RouteSnap.StaleLotFp": 0,
+        "RouteGate.HoldKeyed": 0,
+        "OptsInit.Enabled": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "P6Waits.Enabled": 1,
+        "RouteSnap.ShadowWorld": "IP",
+        "RouteSnap.VerifyEvery": 0,
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0,
+        "CrashForensics.Enabled": 1,
+        "CrashForensics.Guards": 1,
+        "CrashForensics.OurEvents": 1,
+        "CrashForensics.DbIndexLog": 1,
+        "CrashForensics.SceneTreeGuard": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 24,
+          "seed": 12345,
+          "repro": "route-queuefull-p6int-hold2-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 16
+            },
+            "maxMinutes": 22
+          }
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "noiseCheck": false,
+      "timeoutMin": 42,
+      "logRequire": {
+        "OK   p6 waits": 1,
+        "crash forensics scene node search 0xC5FA60": 1
+      }
+    }
+  ]
+}

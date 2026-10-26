@@ -24,7 +24,7 @@ namespace Ts3Fixes
     // Stuck Check as running and a yield is allowed. A Sim that left the world during the tick gets the answer that puts
     // it in Overwatch's not-in-world branch. The stretches are measured with the switch off too.
     // Counters: [255] ticks taken, [256] Sims walked, [257] longest stretch without a tick (us), [258] Stuck Check runs,
-    // [259] stretch time summed (ms).
+    // [259] stretch time summed (ms), [302] longest stretch seen at the IsSelectable hook (us; the slice check's own view).
     public static partial class Fixes
     {
         static bool sOverwatchDone, sOwNoYieldLogged;
@@ -88,7 +88,9 @@ namespace Ts3Fixes
                 {
                     int[] c = PatchCounters();
                     c[256]++;
-                    if (OverwatchSpreadCore.SliceDue(sOwStuckWatch.GetElapsedTime()) && ShortcutOn("overwatchstuckslice")
+                    long us = sOwStuckWatch.GetElapsedTime();
+                    if (us > c[302]) c[302] = (int)Math.Min(us, int.MaxValue); // [257] also counts stretches that end in a route check; this is what the slice check sees
+                    if (OverwatchSpreadCore.SliceDue(us) && ShortcutOn("overwatchstuckslice")
                         && OverwatchSpreadCore.OurStuckSlice(sOwUpstreamVersion) && MayYield())
                     {
                         OwStuckStretch();

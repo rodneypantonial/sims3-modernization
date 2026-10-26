@@ -42,8 +42,10 @@ export function split(r: Row, wall: number, steerShare: number) {
   const route = Math.max(0, n(r, 'route') - n(r, 'rtPlanWait'));
   const gc = n(r, 'gcMark') + n(r, 'fin');
   const animRaw = n(r, 'animSacs') + n(r, 'animPose') + n(r, 'locomotion') + n(r, 'publish');
-  const waitsLoco = Math.min(animRaw, (n(r, 'rtLock') + n(r, 'rtOtherLock')) * steerShare);
   const sched = n(r, 'script') + n(r, 'taskObjects') + n(r, 'oneShot') + n(r, 'threaded');
+  // waits the script stages cannot hold sat inside locomotion, whatever the run-wide key share says (else counted twice)
+  const keyed = (n(r, 'rtLock') + n(r, 'rtOtherLock')) * steerShare;
+  const waitsLoco = Math.min(animRaw, Math.max(keyed, waits - Math.max(0, sched - route - n(r, 'gcForcedMs'))));
   const script = Math.max(0, sched - route - (waits - waitsLoco) - n(r, 'gcForcedMs'));
   const anim = animRaw - waitsLoco;
   return { script, route, waits, gc, anim, other: Math.max(0, wall - script - route - waits - gc - anim) };
@@ -176,6 +178,8 @@ function selfCheck() {
   close(x.ms['anim + locomotion + publish'], 75, 'anim');
   close(x.ms['ICs (native under script)'], 564 / 2, 'IC = 2 of 4 non-plan samples (Route_GetOption is an IC)'); close(x.ms['Mono script'], 564 / 2, 'Mono');
   close(BUCKETS.reduce((s, b) => s + x.ms[b], 0), 1000, 'buckets sum to wall');
+  // waits larger than the script stages sit in locomotion: nothing counted twice, other = wall - timed
+  const w = split({ rtLock: 700, animSacs: 780, gcMark: 1 }, 1000, 0); close(w.waits + w.anim + w.gc + w.other, 1000, 'excess waits moved out of anim');
   assert.equal(x.hitches, 1); assert.equal(x.ledOf['route sync plans'], '100%');
   assert.match(x.contrib['+0x918 / job waits'], /steering avoidance A 30\.0; UpdateSimFootprint 30\.0/);
   assert.match(x.contrib['Mono script'], /autonomy search/); assert.match(x.contrib['route sync plans'], /Route_Plan <- Sims3\.Gameplay\.Actors\.SimRoutingComponent\.DoRoute/);

@@ -26,6 +26,12 @@ static int FgQueryGame(SrCtx* c, const u8* p, DWORD lo, DWORD hi, const SrPt& pt
     return SrQuery(c, p, lo, hi, pt, true, r, rec, true, rec ? 2 : 0);  // mode 1 = visitor 0x662DD0; rec+0x28 options apply
 }
 static FgQueryFn g_fgQuery = FgQueryGame;  // selftest hands in fake footprint lists
+// docs/202 §3.4 C4 (unseenfbc.cpp UfcPlace, set when [UnseenFallback] Sites C4 is installed): the game's 0x631F10 for a
+// FindGoodLocation of an unseen Sim, taken with a deadline; NULL = the game's call as is
+static FgFn g_ufcFg;
+static DWORD FgGame(u8* p, void* edx, const u8* ctx, const float* pt, float r, void* set, DWORD mode) {
+    return g_ufcFg ? g_ufcFg(p, edx, ctx, pt, r, set, mode) : g_fgOrig(p, edx, ctx, pt, r, set, mode);
+}
 
 enum { FG_FB_STATE, FG_FB_TRY, FG_FB_LOT, FG_FB_SHAPE, FG_FB_TRIP, FG_FB_JOBEND };
 static const int FG_WHY_JOBEND = 100;  // above the SR_* codes
@@ -100,16 +106,16 @@ static DWORD FgShadow(u8* p, void* edx, const u8* ctx, const float* pt, float r,
 static DWORD __fastcall FgStub(u8* p, void* edx, const u8* ctx, const float* pt, float r, void* set, DWORD mode) {
     Ts3nCounters& k = ts3native_counters;
     const DWORD tid = GetCurrentThreadId();
-    if ((!k.fgMode && !k.fgShadow) || tid != g_async.owner) return g_fgOrig(p, edx, ctx, pt, r, set, mode);
+    if ((!k.fgMode && !k.fgShadow) || tid != g_async.owner) return FgGame(p, edx, ctx, pt, r, set, mode);
     InterlockedIncrement(&k.fgCalls);
     if (g_async.state != A_RUNNING) {
-        if (!k.fgShadow) return g_fgOrig(p, edx, ctx, pt, r, set, mode);
+        if (!k.fgShadow) return FgGame(p, edx, ctx, pt, r, set, mode);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const DWORD a = g_async.state == A_RUNNING ? g_fgOrig(p, edx, ctx, pt, r, set, mode) : FgShadow(p, edx, ctx, pt, r, set, mode);
         InterlockedDecrement(&g_rgOffSimOpen);
         return a;
     }
-    if (!k.fgMode) return g_fgOrig(p, edx, ctx, pt, r, set, mode);
+    if (!k.fgMode) return FgGame(p, edx, ctx, pt, r, set, mode);
     int why = SR_FB_STATE;
     if (AvMayRun(tid)) {  // not the +0x918 owner (lent or recursive hold), no job callback, no gate frame open
         LARGE_INTEGER t0;
@@ -127,7 +133,7 @@ static DWORD __fastcall FgStub(u8* p, void* edx, const u8* ctx, const float* pt,
         }
     }
     FgFallback(why);
-    return g_fgOrig(p, edx, ctx, pt, r, set, mode);
+    return FgGame(p, edx, ctx, pt, r, set, mode);
 }
 
 static const CallSite kFgSite = {FG_SITE, FG_TARGET, (void*)FgStub};

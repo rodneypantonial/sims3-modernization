@@ -1,0 +1,93 @@
+{
+  "note": "docs/196 §4 step 1: engage check of the shipped v0.1.6 package in natural play, BP + IP, 31 min each (62 timing minutes > 60: queue.ts runs the queue-level 10 min BP smoke first, same files and fixesPackage install, no owchain requirement). 3 AM coverage: earlier natural runs on these saves passed ~270-380 sim min per real min (BP start 11:53, bp-g1-m2dump 5,442 sim min in 20 min; IP start 03:32, ~6,000-9,000 in 20-24 min), so the next 3 AM (BP ~15 h, IP ~23.5 h away) comes within ~3-5 real min of each 31 min job. Players' setup: asi game-copy/ts3native.asi.hotfix016 (ts3native 0.36.37a, sha256 e04063de..., = the v0.1.6 release zip's asi), ts3fixes game-copy/ts3fixes.package.rel016 (sha256 f8442a45..., the v0.1.6 release asset, installed over cycle.ts's build/ copy by fixesPackage), release ini = repo ini (every key of the v0.1.6 zip's ts3native.ini has the same value there; the extra master keys are unknown to 0.36.37a), releaseDefaults: true (no CrashForensics Light). Light tools only: [HitchAttr] + Holders, RouteJobPhases SyncPlans, LogFallbackMs 20 / stack 16, Harness.ForegroundRender, profile.noSamplers (as release-check rc-soak, so the causes compare with docs/196's table). Master's ts3agent drives the run (reads the counters). Timing jobs: clean machine, noise check on. Read per world: TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes natural-shipped-<date>-<id> (>= 300 and >= 1000 ms per 10 min, p99/p99.9/max) against docs/196 §2 (IP 17.4 >= 300 / 0.6 >= 1000 per 10 min, Overwatch 5.4; BP 3.9, Overwatch 3.6).",
+  "smoke": {
+    "note": "Measurement smoke: BP 10 min on the same shipped files and install path (fixesPackage), no owchain_alarms requirement (it checks the measurement path, not the feature; a 10 min run may miss 3 AM).",
+    "asi": "game-copy/ts3native.asi.hotfix016",
+    "fixesPackage": "game-copy/ts3fixes.package.rel016",
+    "releaseDefaults": true,
+    "save": "Baseline-BP-Spring",
+    "minCounters": 108,
+    "ini": {
+      "HitchAttr.Enabled": 1,
+      "HitchAttr.Holders": 1,
+      "Harness.ForegroundRender": 1,
+      "RouteJobPhases.Enabled": 1,
+      "RouteJobPhases.SyncPlans": 1,
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16
+    },
+    "run": {
+      "profile": {
+        "seed": 12345,
+        "noSamplers": true,
+        "minutes": 10
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  "jobs": [
+    {
+      "id": "bp-shipped-31",
+      "note": "Bridgeport, 31 min natural play (autopilot, camera untouched, no repro), shipped v0.1.6 asi + ts3fixes + release ini. Pass: no crash, 0 watchdog lines, ts3native.log first line ts3native 0.36.37a, fixesRequire owchain_alarms >= 1 (Overwatch chain engaged; the row's ts3fixes activity line records owchain_alarms, owspread_types_run, stuckcheckasync_*, etspread_passes before -> after), no Overwatch-led iteration >= 300 ms in hitch-ab.ts --causes (docs/196 §2.4: 13 in 35.8 min on the chain-off package). Read: hitch-ab.ts --causes <tag> vs docs/196 BP 3.9 >= 300 per 10 min.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 31,
+          "fixesRequire": "owchain_alarms>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    },
+    {
+      "id": "ip-shipped-31",
+      "note": "Isla Paradiso, 31 min natural play (autopilot, camera untouched, no repro), shipped v0.1.6 asi + ts3fixes + release ini. Pass: no crash, 0 watchdog lines, ts3native.log first line ts3native 0.36.37a, fixesRequire owchain_alarms >= 1, no Overwatch-led iteration >= 300 ms in hitch-ab.ts --causes (docs/196 §2.1: 19 in 35 min pooled on chain-off builds). Read: hitch-ab.ts --causes <tag> vs docs/196 IP 17.4 >= 300 per 10 min (expected ~12 with Overwatch gone); route-job waits, sync ReplanFromPosition and the Sim proxy stall stay (§3 #2, #4, #5).",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 108,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 31,
+          "fixesRequire": "owchain_alarms>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}

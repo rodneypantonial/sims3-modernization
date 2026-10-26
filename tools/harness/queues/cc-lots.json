@@ -1,0 +1,40 @@
+{
+  "note": "RUN 1 (2026-10-26 02:37 UTC) FAILED: not a crash, the sim thread blocked over 60 s in EA's synchronous import / place of CCLot 01 and the harness heartbeat killed the game (docs/67 §20). Rerun only after game-alive.ts excuses the heartbeat during the placement; et_lot_cycle now logs etcc-ph-* marks plus import_ms / place_ms. docs/200 §10 CC library lots by file rewrite: game-copy/cc-synth/lots-cc = 6 Library lots from tools/cc-lot-gen.ts --count 6 --top-up game-copy/cc-synth/cc-lots-topup (sources: the 2 installed lots Breezy Getaway / Luxurious European Mansion, read only; every product with a same-source cc-gen clone swapped: objects 209/222 and 159/171, patterns 18/22 and 17/18, all fences / stairs / railings; lots 'CCLot 01..06 <source name>'). ccSet loads the three clone sets they name (cc-2k-v2 + cc-build-200 + cc-lots-topup, moved under Mods/Packages/cc-synth/<set>/), ccLots copies the 6 ebf_*.package into Documents/Library and deletes them after (interrupted run: node tools/harness/queue.ts --restore-content). Asi game-copy/ts3native.asi.allocsites2 (0.36.84, docs/201, includes memlite/rctrim/memexp; [MemDiag] AllocSites=1 at 1 in 64 attributes native growth per call site, read with node tools/memory-report.ts <log> section native call sites; ResourceCache trim, SqrtHeapLimit and TypeGrowth off). STRESS + correctness (noiseCheck false). One job: repro et-cc-lot-cycle (Edit Town, each lot from the Library placed + bulldozed twice on an empty plot it fits, etcc-full / -empty + GC; load check after each lot: placed, >= 50 objects, >= 50 CCGen objects; no new script errors). Read: node tools/mem-report.ts report --log <job ts3native.log> (repeated marks), repro-jsonl per_cycle objects / cc_objects. ~45 min with the load (3.8 GB of CC to mount).",
+  "jobs": [
+    {
+      "id": "bp-cc-lots",
+      "note": "Pass: 6 lots x 2 cycles, every check step ok, 12 etcc-full + 12 etcc-empty marks, 0 new script errors, no crash. First failure to expect if it fails: 'no lot-only Library entry named like cclot 0n fits an empty plot' (the save lacks a free 25 x 30 / 40 x 30 residential plot: pick another save or pass lot) or a lot that is not listed at all (then the rewrite broke the Library entry: compare with the source lot's ebf, docs/200 §10 risks).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": ["game-copy/cc-synth/cc-2k-v2", "game-copy/cc-synth/cc-build-200", "game-copy/cc-synth/cc-lots-topup"],
+      "ccLots": "game-copy/cc-synth/lots-cc",
+      "scriptErrorsMax": 0,
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=etcc-full ": 12,
+        "^diag: mem #\\d+ mark ev=etcc-empty ": 12
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 32,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "et-cc-lot-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 70
+    }
+  ]
+}

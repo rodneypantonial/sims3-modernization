@@ -10,6 +10,7 @@
 // shortcut: waits still pending when the stats block prints are not in it yet (booked at the next wait); a job whose outcome
 // slot was reused (> 16 jobs later) counts in p6wLost. Upgrade if p6wLost is ever more than a few per mille of the waits.
 // Included by ts3native.cpp after movedwait.cpp.
+// Arm (v131, 0.36.67): the in-load loop's arm when it sets p6warm (P6wArmNow in ts3native.cpp), else the P6 switch.
 
 static struct { volatile LONG seq; volatile LONG out; } g_p6wDone[16];  // worker writes (out | arm << 4), sim reads
 static struct { DWORD seq; LONG us; u8 cls, site, used; } g_p6wPend[32];  // sim thread only

@@ -202,11 +202,20 @@ namespace Ts3Agent
                 bool routing = false;
                 try { routing = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting; } catch (Exception) { }
                 o["routing"] = routing;
+                o["in_transit"] = InTransit(s);  // docs/202 §3.7: ts3fixes unseenfbpre walk-time hold (stuck-rule.ts: never stuck)
                 o["active_household"] = s.Household != null && s.Household == Household.ActiveHousehold;
                 list.Add(o);
                 if (list.Count >= 400) break;
             }
             return list;
+        }
+
+        // ts3fixes' hold table (AppDomain ts3fixes.unseenfb.holding: Sim object id -> hold end in sim ticks), as UfPreCore.InTransit
+        static bool InTransit(Sim s)
+        {
+            Dictionary<ulong, long> d = AppDomain.CurrentDomain.GetData("ts3fixes.unseenfb.holding") as Dictionary<ulong, long>;
+            long until;
+            return d != null && d.TryGetValue(s.ObjectId.Value, out until) && Sims3.Gameplay.Utilities.SimClock.CurrentTicks <= until;
         }
 
         // Current in-world sub state (LiveMode, EditTown, BuildMode, CAS...), read from GameStates' private state machines.

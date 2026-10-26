@@ -16,6 +16,8 @@
 static bool g_udOn;
 static DWORD g_udT0;  // GetTickCount at start (uptime)
 static wchar_t g_udIni[MAX_PATH];
+static void MdSaveStart(bool travelSave);       // memdiag.cpp ([MemDiag], docs/190 phase 1)
+static void ApplyMemDiag(const wchar_t* ini);  // memdiag.cpp
 
 // ---------------------------------------------------------------------------------------------------------------------
 // pure helpers (selftest)
@@ -145,27 +147,140 @@ static bool UdFileHas(const wchar_t* path, const char* needle) {  // worker only
 static char g_udSum[200];  // one-line summary repeated at each world load (worker fills it)
 static volatile LONG g_udScanDone;
 
-// Address space, commit and memory: "used A MB of T, free F MB, largest free L MB, private P MB, peak working set W MB"
-static DWORD g_udPeakUsedMB;
-static void UdMem(char* out, size_t cap) {
+// Address space (docs/188 §6): one VirtualQuery walk, on the memory worker (UdMemMain) or at exit, never per frame.
+// "save: memory at start #3: private 1851 MB, committed 2167 MB; limit 4 GB (...), free 1646 MB, largest free 1525 MB
+// (2nd 80), session low 1301 MB; modules 310 MB, mapped files 120 MB, heaps and other private 2010 MB; walk 410 us, 9123 regions"
+struct UdMemStat {
+    DWORD regions;
+    u64 freeB, big1, big2, image, mapped, priv, commit;  // image/mapped/priv = reserved + committed by region type
+    // [MemDiag] (memdiag.cpp, docs/190 phase 1): MEM_PRIVATE committed, and private allocations grouped by AllocationBase:
+    // thread stacks (a PAGE_GUARD region in the allocation) and 64 / 128 MiB reserves (S3SS mimalloc arenas [inferred owner])
+    u64 privCommit, stkRes, stkCom, miRes, miCom;
+    const void* gBase;  // allocation being summed (regions of one allocation are contiguous in the walk)
+    u64 gRes, gCom;
+    bool gPriv, gGuard;
+    uintptr_t ownLo, ownLen;  // [MemDiag] self-test view: MEM_MAPPED regions starting in [ownLo, ownLo + ownLen) -> ownMapped
+    u64 ownMapped;
+};
+static bool AsIsDriverRegion(DWORD base);  // allocsites.cpp: reserved by a GPU driver (only with [MemDiag] AllocSites on)
+static void UdMemGroupEnd(UdMemStat& s) {  // classify the allocation summed so far
+    if (s.gPriv && s.gGuard) s.stkRes += s.gRes, s.stkCom += s.gCom;
+    else if (s.gPriv && (s.gRes == 64ull << 20 || s.gRes == 128ull << 20) && !AsIsDriverRegion((DWORD)(uintptr_t)s.gBase))
+        s.miRes += s.gRes, s.miCom += s.gCom;
+    s.gBase = NULL, s.gRes = s.gCom = 0, s.gPriv = s.gGuard = false;
+}
+static void UdMemAdd(UdMemStat& s, const MEMORY_BASIC_INFORMATION& m) {
+    s.regions++;
+    if (m.State == MEM_FREE || m.AllocationBase != s.gBase) UdMemGroupEnd(s);
+    if (m.State != MEM_FREE) {
+        s.gBase = m.AllocationBase;
+        s.gRes += m.RegionSize;
+        if (m.State == MEM_COMMIT) s.gCom += m.RegionSize;
+        if (m.State == MEM_COMMIT && m.Type == MEM_PRIVATE) s.privCommit += m.RegionSize;
+        s.gPriv = m.Type == MEM_PRIVATE;
+        s.gGuard = s.gGuard || (m.State == MEM_COMMIT && (m.Protect & PAGE_GUARD));
+    }
+    if (m.State == MEM_FREE) {
+        s.freeB += m.RegionSize;
+        if (m.RegionSize > s.big1) s.big2 = s.big1, s.big1 = m.RegionSize;
+        else if (m.RegionSize > s.big2) s.big2 = m.RegionSize;
+        return;
+    }
+    if (m.State == MEM_COMMIT) s.commit += m.RegionSize;
+    (m.Type == MEM_IMAGE ? s.image : m.Type == MEM_MAPPED ? s.mapped : s.priv) += m.RegionSize;
+    if (m.Type == MEM_MAPPED && (uintptr_t)m.BaseAddress - s.ownLo < s.ownLen) s.ownMapped += m.RegionSize;
+}
+static const DWORD kUdLowBigMB = 256;  // largest free block under this: Error 12 / crash-on-save territory (docs/66)
+static const char* UdLimitText(u64 top) {  // top = highest user address + 1
+    return top > (3ull << 30) ? "4 GB (large address aware, 64-bit Windows)" : top > (2ull << 30) ? "3 GB (large address aware, /3GB)"
+                                                                               : "2 GB (NOT large address aware)";
+}
+static void UdMemFormat(char* out, size_t cap, const char* what, const UdMemStat& s, u64 top, u64 privUsage, DWORD lowMB, LONG walkUs) {
+    sprintf_s(out, cap,
+              "%s: private %lu MB, committed %lu MB; limit %s, free %lu MB, largest free %lu MB (2nd %lu), session low %lu MB; modules %lu MB, "
+              "mapped files %lu MB, heaps and other private %lu MB; walk %ld us, %lu regions",
+              what, (DWORD)(privUsage >> 20), (DWORD)(s.commit >> 20), UdLimitText(top), (DWORD)(s.freeB >> 20), (DWORD)(s.big1 >> 20),
+              (DWORD)(s.big2 >> 20), lowMB, (DWORD)(s.image >> 20), (DWORD)(s.mapped >> 20), (DWORD)(s.priv >> 20), walkUs, s.regions);
+}
+static bool UdMemLow(char* out, size_t cap, DWORD bigMB) {  // the warning line, false = no warning
+    if (bigMB >= kUdLowBigMB) return false;
+    sprintf_s(out, cap, "diag: low address space: largest free block %lu MB (under %lu) - risk of Error 12 / crash on save", bigMB, kUdLowBigMB);
+    return true;
+}
+static volatile DWORD g_udLowBigMB = 0xFFFFFFFF;  // session low of the largest free block
+static LONG UdMemWalk(UdMemStat& s, u64* top, const void* ownLo = NULL, size_t ownLen = 0) {  // one VirtualQuery walk; returns its cost in us
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
     SYSTEM_INFO si;
     GetSystemInfo(&si);
-    u64 freeB = 0, big = 0;
+    s = {};
+    s.ownLo = (uintptr_t)ownLo, s.ownLen = ownLen;
     MEMORY_BASIC_INFORMATION m;
     for (uintptr_t a = (uintptr_t)si.lpMinimumApplicationAddress; a < (uintptr_t)si.lpMaximumApplicationAddress;) {
         if (!VirtualQuery((void*)a, &m, sizeof(m))) break;
-        if (m.State == MEM_FREE) { freeB += m.RegionSize; if (m.RegionSize > big) big = m.RegionSize; }
+        UdMemAdd(s, m);
         const uintptr_t next = (uintptr_t)m.BaseAddress + m.RegionSize;
         if (next <= a) break;
         a = next;
     }
-    const u64 total = (u64)(uintptr_t)si.lpMaximumApplicationAddress - (uintptr_t)si.lpMinimumApplicationAddress;
-    const DWORD used = (DWORD)((total - freeB) >> 20);
-    if (used > g_udPeakUsedMB) g_udPeakUsedMB = used;
+    UdMemGroupEnd(s);
+    if (top) *top = (u64)(uintptr_t)si.lpMaximumApplicationAddress + 1;
+    return UsSince(t0);
+}
+static u64 UdPrivateUsage() {
     PROCESS_MEMORY_COUNTERS_EX pc = {sizeof(pc)};
     K32GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pc, sizeof(pc));
-    sprintf_s(out, cap, "address space used %lu MB of %lu (peak seen %lu), largest free block %lu MB; private %lu MB, peak working set %lu MB",
-              used, (DWORD)(total >> 20), g_udPeakUsedMB, (DWORD)(big >> 20), (DWORD)(pc.PrivateUsage >> 20), (DWORD)(pc.PeakWorkingSetSize >> 20));
+    return pc.PrivateUsage;
+}
+static void MdAfterSample(const char* what, const char* ev, const UdMemStat& s, u64 privUsage);  // memdiag.cpp
+static void UdMemSample(const char* what, const char* ev = NULL) {
+    UdMemStat s;
+    u64 top;
+    const LONG us = UdMemWalk(s, &top);
+    const u64 privUsage = UdPrivateUsage();
+    const DWORD big = (DWORD)(s.big1 >> 20);
+    if (big < g_udLowBigMB) g_udLowBigMB = big;
+    char line[480];
+    UdMemFormat(line, sizeof(line), what, s, top, privUsage, g_udLowBigMB, us);
+    Log("%s", line);
+    if (UdMemLow(line, sizeof(line), big)) Log("%s", line);
+    LuAsk();  // [RouteSnap] LotUseReadout: the replay consumer walks the clone now
+    MdAfterSample(what, ev, s, privUsage);  // [MemDiag]: the "diag: mem" line right after (no-op when off)
+}
+
+// Memory worker: samples asked for by the sim thread (world load, save start / end) plus one every 10 min of play (5 min
+// with [MemDiag] on or Light, the release default since 0.36.79).
+static HANDLE g_udMemEv;
+static char g_udMemQ[8][48], g_udMemQEv[8][40];  // what, [MemDiag] event tag ("" = none)
+static volatile LONG g_udMemHead, g_udMemTail;  // single producer (sim thread), single consumer (worker)
+static DWORD g_udMemPeriodMs = 10 * 60 * 1000;
+static LONG g_udWorlds;
+static void UdMemAsk(const char* fmt, LONG n, const char* ev = NULL) {
+    char what[48];
+    sprintf_s(what, fmt, n);
+    if (!g_udMemEv) { UdMemSample(what, ev); return; }  // no worker (CreateThread failed, selftest): inline
+    if (g_udMemHead - g_udMemTail >= 8) return;  // shortcut: a full queue drops the sample; 8 asks within one walk do not happen
+    strcpy_s(g_udMemQ[g_udMemHead & 7], what);
+    strncpy_s(g_udMemQEv[g_udMemHead & 7], ev ? ev : "", _TRUNCATE);
+    InterlockedIncrement(&g_udMemHead);
+    SetEvent(g_udMemEv);
+}
+static DWORD MdWorkerPoll();  // memdiag.cpp: runs a pending [MemDiag] self-test; ms until it wants the worker again
+static DWORD WINAPI UdMemMain(LPVOID) {
+    DWORD last = GetTickCount();
+    for (;;) {
+        const DWORD since = GetTickCount() - last, md = MdWorkerPoll();
+        const DWORD wait = since >= g_udMemPeriodMs ? 0 : g_udMemPeriodMs - since;
+        WaitForSingleObject(g_udMemEv, wait < md ? wait : md);
+        for (; g_udMemTail != g_udMemHead; InterlockedIncrement(&g_udMemTail))
+            UdMemSample(g_udMemQ[g_udMemTail & 7], g_udMemQEv[g_udMemTail & 7][0] ? g_udMemQEv[g_udMemTail & 7] : NULL);
+        if (GetTickCount() - last >= g_udMemPeriodMs) {
+            last = GetTickCount();
+            char what[48];
+            sprintf_s(what, "diag: memory at %lu min", (last - g_udT0) / 60000);
+            if (g_udWorlds) UdMemSample(what);  // play only: nothing before the first world load
+        }
+    }
 }
 
 static void UdScrubbed(const wchar_t* w, char* out, size_t cap) {  // UTF-8, user folders replaced
@@ -511,13 +626,13 @@ static void UdModulesLines() {
     Log("diag: d3d9.dll from %s; %d modules outside Windows and Bin (overlays, injectors)", d9from, other);
 }
 
-static LONG g_udWorlds;
+static const char* MdWorldEvent(const char* worldLine);  // memdiag.cpp: "travel,world-switch" / "world-switch" / NULL
+static char g_udTxt[480];  // the ts3fixes text line being received (UdTextMsg below)
 static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
     const LONG n = InterlockedIncrement(&g_udWorlds);
-    char mem[256];
-    UdMem(mem, sizeof(mem));
-    Log("diag: world load #%ld, uptime %lu min, ts3native " TS3NATIVE_VERSION ", %s; %s", n, (GetTickCount() - g_udT0) / 60000,
-        g_udScanDone ? g_udSum : "mods scan still running", mem);
+    Log("diag: world load #%ld, uptime %lu min, ts3native " TS3NATIVE_VERSION ", %s", n, (GetTickCount() - g_udT0) / 60000,
+        g_udScanDone ? g_udSum : "mods scan still running");
+    UdMemAsk("diag: memory at world load #%ld", n, MdWorldEvent(g_udTxt));
     if (n == 1) UdModulesLines();
 }
 
@@ -525,12 +640,15 @@ static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
 // op 0 = begin a line, 1 = append (NUL pads), 2 = end: log it as "ts3fixes: <line>". Answer 1 = accepted; with [UserDiag]
 // off 0, so ts3fixes stops at the first message. Without ts3native the game answers false (no RouteOption2 name there).
 static const DWORD kUdTextHi = 0x87000000;  // 0x86000000 exact = the stuck-check PROBE mark (docs/163 §10)
-static char g_udTxt[480];
 static int g_udTxtN;
 static LONG g_udTxtLines;
+static void MdMark(const char* tag);  // memdiag.cpp
+static void MsLine(const char* line);  // memdiag.cpp: [MemDiag] suspect counters from ts3fixes
+static u8 MsOp(int op);                // memdiag.cpp: ops 3-5 (on / sample wanted / self-test wanted)
 static u8 UdTextMsg(DWORD lo, DWORD hi) {
     if (!g_udOn) return 0;
     switch ((hi >> 16) & 0xFF) {
+        case 3: case 4: case 5: return MsOp((hi >> 16) & 0xFF);
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {
@@ -541,8 +659,10 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
             return 1;
         case 2:
             g_udTxt[g_udTxtN] = 0;
+            if (!strncmp(g_udTxt, "memsus", 6)) { g_udTxtN = 0; MsLine(g_udTxt); return 1; }  // own lines and cap ([MemDiag] module 2)
             if (g_udTxtLines++ < 400) Log("ts3fixes: %s", g_udTxt);  // cap: a looping sender cannot fill the disk
             if (!strncmp(g_udTxt, "world:", 6)) UdWorldLoad();
+            else if (!strncmp(g_udTxt, "mem: ", 5)) MdMark(g_udTxt + 5);  // [MemDiag] event mark (ts3agent mem_mark)
             g_udTxtN = 0;
             return 1;
     }
@@ -632,16 +752,16 @@ static void UdSaveStart(int travelSave, int traveling) {
     g_udSaveTick = GetTickCount();
     g_udPhase = g_udWaitWhat = NULL;
     g_udSaveDir[0] = 0;
-    char rs[200], mem[256];
+    char rs[200];
     UdRouteState(rs, sizeof(rs));
-    UdMem(mem, sizeof(mem));
     const LONG n = ++g_udSaves;
     // trigger: the native save cannot tell a manual save from NRaas Saver; travel flags come from the call
     Log("save: start #%ld, %s, uptime %lu min, save mode %ld, flush mode %ld (previous flush %s)", n,
         travelSave & 0xFF ? "travel save" : traveling & 0xFF ? "traveling" : "normal save", (g_udSaveTick - g_udT0) / 60000,
         ts3native_counters.saveMode, ts3native_counters.flushMode, g_fj.thread ? "still running" : "done");
     Log("save: at start %s", rs);
-    Log("save: memory %s", mem);
+    UdMemAsk("save: memory at start #%ld", n, travelSave & 0xFF ? "travel-save" : traveling & 0xFF ? "traveling" : NULL);
+    MdSaveStart(travelSave & 0xFF);
     if (!g_udDogEv) g_udDogEv = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (g_udDogEv) {
         ResetEvent(g_udDogEv);
@@ -654,6 +774,7 @@ static void UdSaveEnd(DWORD r) {
     if (!UdOnSaveThread()) return;
     UdPhase(NULL);
     Log("save: end #%ld result %lu after %lu ms", g_udSaves, r, GetTickCount() - g_udSaveTick);
+    UdMemAsk("save: memory at end #%ld", g_udSaves);
     g_udSaveTick = 0;
     if (g_udDogEv) SetEvent(g_udDogEv);  // the watchdog then sizes the save folder and ends
 }
@@ -708,14 +829,18 @@ static bool ApplyUserDiag(const wchar_t* ini) {
     else Log("user diag: save phase lines need [SaveWrite] Enabled=1 (the save entry hooks); header and world lines still on");
     HANDLE t = CreateThread(NULL, 256 * 1024, UdHeaderMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (t) CloseHandle(t);
+    ApplyMemDiag(ini);  // its "diag: mem" lines ride on these samples; first: it sets the worker's period
+    g_udMemEv = CreateEventW(NULL, FALSE, FALSE, NULL);
+    t = g_udMemEv ? CreateThread(NULL, 64 * 1024, UdMemMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL) : NULL;
+    if (t) CloseHandle(t);
+    else if (g_udMemEv) CloseHandle(g_udMemEv), g_udMemEv = NULL;  // no worker: samples run inline
     return true;
 }
 
 static void UdExit() {  // DLL_PROCESS_DETACH (normal quit)
     if (!g_udOn) return;
-    char mem[256];
-    UdMem(mem, sizeof(mem));
-    Log("diag: exit after %lu min, %ld saves, %ld world loads; %s", (GetTickCount() - g_udT0) / 60000, g_udSaves, g_udWorlds, mem);
+    Log("diag: exit after %lu min, %ld saves, %ld world loads", (GetTickCount() - g_udT0) / 60000, g_udSaves, g_udWorlds);
+    UdMemSample("diag: memory at exit");  // inline: the worker is gone (ExitProcess ends other threads before DLL_PROCESS_DETACH)
 }
 
 static void UdInfoDir(const unsigned char* info) {  // SaveInfoHook: <Saves>\<name>.sims3 from info+0x430 (as SaveJobPaths)

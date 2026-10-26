@@ -1,0 +1,171 @@
+{
+  "note": "NOT RUN (built 2026-10-26, Rodney approved): docs/200 §12 address-space cost per installed CC at LOAD, split by owner. Runs after the AllocSites fixes merge: asi placeholder game-copy/ts3native.asi.allocsites6 (ts3native 0.36.88 being built: AllocSites with the stale-module and hang fixes); the dry run reports it missing until then. Four loads of Baseline-BP-Spring, same asi and ini ([MemDiag] Light=1 + AllocSites=1, sample 1 in 64, AllocSitesTop=32), same repro ccn-load-mark (45 s lead-in, mark ccn-loaded, ~3 min idle, forced GC with gc-before / gc-after marks), then quit; the arms differ only by the installed CC. TEST-RUN TOOL: correctness run (noiseCheck false), Apex must not be in the test Bin (SKIP line forbidden). Pass per job: allocsites on line (EA heap hooks 4/4, ntdll hooks 7), diag: mem load + ccn-loaded + gc-after lines, allocsites gc-after sum + usum lines, no crash. Read: node tools/cc-count-report.ts (per job free, largest free, priv, rcN, allocsites live MB by owner at gc-after; deltas per 1,000 CC items none -> 1k -> 2k and real CC per 1,000 resources). ~4 x 10 min with the loads.",
+  "jobs": [
+    {
+      "id": "bp-ccn-none",
+      "note": "No-CC reference: user CC and Store repacks stashed (content no-cc, as cc-script bp-ccs-nocc), no synthetic set.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": {
+        "MemDiag.Light": 1,
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 32
+      },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on (TEST-RUN TOOL, docs/201): EA heap hooks 4/4, ntdll hooks 7": 1,
+        "^diag: mem #d+ load ": 1,
+        "^diag: mem #d+ mark ev=ccn-loaded ": 1,
+        "^diag: mem #d+ mark ev=gc-after ": 1,
+        "^allocsites: #d+ mark ev=gc-after sum heapMB=": 1,
+        "^allocsites: #d+ mark ev=gc-after usum private=": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "ccn-load-mark"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ccn-1k",
+      "note": "cc-1k-v2 only (1,200 items: 1,000 CAS/object + 200 inv, 1.8 GB); user CC stashed (content no-cc).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": {
+        "MemDiag.Light": 1,
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 32
+      },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "ccSet": "game-copy/cc-synth/cc-1k-v2",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on (TEST-RUN TOOL, docs/201): EA heap hooks 4/4, ntdll hooks 7": 1,
+        "^diag: mem #d+ load ": 1,
+        "^diag: mem #d+ mark ev=ccn-loaded ": 1,
+        "^diag: mem #d+ mark ev=gc-after ": 1,
+        "^allocsites: #d+ mark ev=gc-after sum heapMB=": 1,
+        "^allocsites: #d+ mark ev=gc-after usum private=": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "ccn-load-mark"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ccn-2k",
+      "note": "cc-2k-v2 only (2,200 items, 92,452 keys, 3.4 GB); user CC stashed (content no-cc).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": {
+        "MemDiag.Light": 1,
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 32
+      },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on (TEST-RUN TOOL, docs/201): EA heap hooks 4/4, ntdll hooks 7": 1,
+        "^diag: mem #d+ load ": 1,
+        "^diag: mem #d+ mark ev=ccn-loaded ": 1,
+        "^diag: mem #d+ mark ev=gc-after ": 1,
+        "^allocsites: #d+ mark ev=gc-after sum heapMB=": 1,
+        "^allocsites: #d+ mark ev=gc-after usum private=": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "ccn-load-mark"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ccn-real",
+      "note": "Rodney real CC (docs/08 §1: 172 packages, 209,735 resources = install-fixes user-cc + store-repacks-test). content as-is keeps the live Mods folder, so both fixes must be INSTALLED at run time (install-fixes state.json; they were on 2026-10-26); no synthetic set. If either is missing: node tools/setup/install-fixes.ts install --only user-cc,store-repacks-test before the queue.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": {
+        "MemDiag.Light": 1,
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 32
+      },
+      "save": "Baseline-BP-Spring",
+      "content": "as-is",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on (TEST-RUN TOOL, docs/201): EA heap hooks 4/4, ntdll hooks 7": 1,
+        "^diag: mem #d+ load ": 1,
+        "^diag: mem #d+ mark ev=ccn-loaded ": 1,
+        "^diag: mem #d+ mark ev=gc-after ": 1,
+        "^allocsites: #d+ mark ev=gc-after sum heapMB=": 1,
+        "^allocsites: #d+ mark ev=gc-after usum private=": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "ccn-load-mark"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    }
+  ]
+}

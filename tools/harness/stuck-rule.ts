@@ -13,8 +13,10 @@ export const stillByDesign = (interaction: string, routing: boolean): boolean =>
     /^(Work Until End of Shift\b.*|Performance|Perform For Tips|Watch|Swing|Blues|Jam|Slow Dance|Dance\b.*|(Re)?[Rr]ead\b.*)$/.test(interaction));
 
 // The one rule every stuck check uses: an interaction that neither loops by design nor stands still by design.
-export const mayBeStuck = (interaction: string | null | undefined, routing: boolean): boolean =>
-  !!interaction && !endlessJob(interaction) && !stillByDesign(interaction, routing);
+// inTransit (sims_activity in_transit): a ts3fixes unseenfbpre walk-time hold (docs/202 §3.7), standing still on purpose
+// until its end (the agent drops it from the table after the end, so a hold that never ends is judged normally).
+export const mayBeStuck = (interaction: string | null | undefined, routing: boolean, inTransit = false): boolean =>
+  !inTransit && !!interaction && !endlessJob(interaction) && !stillByDesign(interaction, routing);
 
 // self-check: node tools/harness/stuck-rule.ts
 if (process.argv[1]?.endsWith('stuck-rule.ts')) {
@@ -22,7 +24,8 @@ if (process.argv[1]?.endsWith('stuck-rule.ts')) {
     mayBeStuck('Go Home', false) && !mayBeStuck(null, false) && !mayBeStuck('Sleep', false) &&
     !mayBeStuck('Work Until End of Shift (6:30 PM)', false) && !mayBeStuck('Dance Wildly Together', false) &&
     !mayBeStuck('Reread "I\'m Still Cool"', false) && !mayBeStuck('Read "Zombies? Zombies!"', false) &&
-    mayBeStuck('Work Until End of Shift (6:30 PM)', true) && mayBeStuck('Visit Banzai Lounge', true) && mayBeStuck('Ready', false);
+    mayBeStuck('Work Until End of Shift (6:30 PM)', true) && mayBeStuck('Visit Banzai Lounge', true) && mayBeStuck('Ready', false) &&
+    !mayBeStuck('Go Home', false, true) && mayBeStuck('Go Home', false, false);
   console.log(ok ? 'stuck-rule ok' : 'stuck-rule FAIL');
   if (!ok) process.exit(1);
 }

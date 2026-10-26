@@ -4671,3 +4671,306 @@ Same columns as §3. Sources: `snap.cpp` (`StlClassify`, `FplGridNoop`, `FplGrid
 | I-189-11 | 189 §9.1 | `0x670510` runs once per record a grid remove finds (so the tripwire sees a wrong no-op whenever records exist) | count `0x670510` inside `0x62D9F0` vs records found | - | equal | fewer | inferred (P1 rates: 9.8 / 14 per s vs 337 / 407 removes) |
 | I-189-12 | 189 §9.5 | ~96-98% of grid removes find no record; with covered entries 1,000-1,300 of 1,600-1,900 writer rows per s leave the world-level class | `fplGrid_0 / (fplGrid_0 + fplGrid_1)`, `fplCov`, `stlWrites` in the shadow run | same | >= 90% no-op | < 50% | inferred (P1 rates, docs/94 §11.1) |
 | I-189-13 | 189 §9.5 | After StaleLotFp the leading world kind is lot 0 (open-ground remove-alls / Q changes), not FP / W6 / grid | `stlWorld` with `fplMode` 1 | same | `stlWorld_10` leads | `stlWorld_4` or `_5` leads | inferred (open) |
+
+## 349. Additions 2026-10-25 (docs/94 §24.19, G1 dump round 3 run data)
+
+Same columns as §3. Sources: `night-1025-g1dump3-2026-10-25-bp-g1-m2dump3-0125-ts3native.log` and shadow jsonl, `shadow-compare-report.ts --g1`.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-94-547 | 94 §24.19 | The recurring same-deficit audit drift (lot `0x6C11003475C24E60` 603 entries twice, `0xF590003344965800` 243 twice, repaired in between) is one footprint's entries going missing again in the clone, not a build defect | `AuditHoldRebase=1` diff of the first 4 mismatches: only-live entries and owners | `bp-g1-m2dump4` (`night-1025-g1dump4.json`) | only-live entries of one or few footprint ids per lot, same ids at each recurrence | entries spread over many footprints = a Q-level or cell defect | inferred (counts measured; 2 clone builds, both before the first mismatch) |
+
+## 350. Additions 2026-10-25 (docs/66 §7.1, P5/P6 clone slimming: `[RouteSnap] PoolChunkMB`, `EpochHeap`; ts3native 0.36.73, counters v132; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/p6-slim-verify.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-66-7-1 | 66 §7.1 | The 96 MB pool reserve sits in (or splits) the largest free block at install; reserving 16 MB regions as the pools fill (peak `plKB` 22-31 MB, max 46) leaves ~48-64 MB more largest free block at load | `p6-slim-verify` jobs 1-2: `plSavedKB`, largest free at load vs the docs/66 §7 routesnap median (BP 1,413 / IP 1,415 MB) | `route-queuefull-replan-loop` | `plSavedKB` >= 48 MB, largest free at load >= median + 50 | gain < 30 MB with `plSavedKB` >= 48 MB = the reserve was not in the largest block | inferred (reserve size verified in code; placement not measured) |
+| I-66-7-2 | 66 §7.1 | The replay heap keeps the reservation of the load's double clone build (`rpKBMax` ~2.1x `rpKB`) and of later rebuild peaks; one build per load (cut waits from event 9 / 0x0A to 7) plus one heap per build, destroyed with its last block, saves ~20 MB at load and hands the rebuild peaks back in play | same jobs: one clone build at load, `rpLoadWaitTimeouts` 0, `rpGenRelKB`, `rpGenLive` <= 3, largest free at 10 min vs median (BP 1,097 / IP 1,333) | `route-queuefull-replan-loop` | `rpGenRelKB` >= 15 MB, gain at 10 min >= +60 MB with I-66-7-1 | `rpGenLive` growing = long-lived blocks pin build heaps (the gain then stays at A1 only) | inferred (NT heap keeps segments reserved after HeapFree; not measured per heap) |
+
+## 351. Additions 2026-10-25 (docs/191 module 2: forced-GC probe and suspect counters; ts3native 0.36.74; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/mem-suspects-verify.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-191-M2-1 | 191 module 2 | `System.GC.WaitForPendingFinalizers()` returns at once in TS3W.exe and runs no finalizer: icall table `0x10B5838` entry 126 = `0xE78F80`, stock Mono 1.2 body (pending check `0xE69810`, compare with `gc_thread [0x11F4310]`, `ResetEvent` / `SetEvent` on `[0x11F4308]` / `[0x11F430C]`, `WaitForSingleObjectEx([0x11F4308], INFINITE, TRUE)`); all three globals are .bss and only read (no code writes them), so the wait gets a NULL handle and fails at once; finalizers run only from `mono_gc_invoke_finalizers 0xE697F0` (docs/130) | static: done (byte scan for the three addresses, IAT names); live: time a `WaitForPendingFinalizers` call after `GC.Collect` with finalizers pending | `leak-catalogue-loop` (mem_gc) | the call returns in < 1 ms and the finalizer queue is drained only at the next Simulate | a hang, or finalizers run inside the call = a writer we missed (S3SS / another module) | verified static (no live call: `mem_gc` does not call it) |
+| I-191-M2-2 | 191 module 2 | `GC_gc_no [0x11F2F90]` (native `gcN`) is the counter managed `GC.CollectionCount(0)` returns (docs/119 §9 says `mono_gc_collection_count 0xE69660` reads it) | `mem-report.ts` forced-GC section: gcN delta = gcCnt delta over each gc pair | `leak-catalogue-loop` | `gcN vs managed GC.CollectionCount: ok` on all 3 pairs | mismatch = native read wrong or a collection between the two reads | inferred (docs/119 host run; not checked in the game) |
+| I-191-M2-3 | 191 module 2, docs/193 §3.1 | Build-mode catalogue populates add `CustomContentIcon` wrappers to `UIManager.mCustomControlInstanceDict` that no later step removes (L1) | `ccIcon` per `cat-r` mark and at gc-after / build-out | `leak-catalogue-loop` | `ccIcon` rises each round and does not drop after GC or leaving Build mode | flat `ccIcon` = the detach path disposes the icons (docs/193 open item 1) | inferred (managed source; counter self-test pending) |
+
+## 352. Additions 2026-10-25 (docs/195, gate-12 "F-F" key `0x62FB74`: idle check, absorber, `[IdleCheckRO]` site C design; static + existing runs)
+
+Same columns as §3. No build, no queue yet.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-195-1 | 195 §1 | On current builds (0.36.7x, P6 ladder and v0.1.5 bundle) most `0x62FB74` waits still have the second frame `0x7558DC` (`IsOkToIdleAtCurrentLocation`) | `[ProbeP1b] Enabled=1` in the site-C smoke job; `p1b-report.ts` | `ip-idlecheck-crowd-loop` | `0x7558DC` holds most of the key | another frame leading: cover that caller first | inferred (measured on 2026-10-18 builds only, I-178-8-1) |
+| I-195-2 | 195 §2 | `0x62FB74` is an absorber: the v0.1.5 bundle raises it from 3-4 to 21-22 ms/s on IP natural by removing earlier takers in the same tick | `wait-ab.ts` on the two `overnight-1023` `ip-v015bundle` tags | existing data | on arm >> off arm | - | measured (2 tags) |
+| I-195-3 | 195 §4 | The IC's obstacle query at `0x75598B` has the T6 call shape (mode 0, fresh empty vector, answer in `al`), so `GvRun` answers empty results exactly | site-C shadow compare (no job): `al` and footprint count | `ip-idlecheck-crowd-loop` | mismatch 0 over >= 20 compares; empty share reported | any mismatch: site C stays off | call shape verified (disassembly); empty share unknown |
+| I-195-4 | 195 §4 | With A+B+C on, the idle-check wait moves mostly to destroy `0x2000003` / gate 0 `0x62EF7A`, not away | `[MovedWaits]` moved key and net for `idlecheck` in the same smoke job | `ip-idlecheck-crowd-loop` | moved key = destroy or gate 0, net small | net clearly > 0: add to the next IP natural bundle smoke | inferred (docs/152 conservation) |
+
+## 353. Additions 2026-10-25 (docs/197, `[RouteAsync] KindDeadlines`: per-kind route job deadlines; ts3native 0.36.77, counters v134; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/kind-deadlines.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-197-1 | 197 §4 | A job cut by its kind deadline ends as an ordinary failed plan for every IC kind (Plan, Replan, PlanFromPoint, ReplanFromPosition): the IC runs the game's own failure path after the no-path exits and the collect hands the script a result type != 1 | `sv-kd-loop` + `sv-kd-nat-verify`: no crash, long-job lines `capped (KindDeadlines)` per kind, `kdCut_i` with the Sims routing on | `route-kinddeadline-loop` | crash-free; cut Sims show the route-fail reaction or re-plan | a crash or a Sim frozen mid-route after a cut of kinds 1-3: those kinds back to 0 ms | verified for foreign kind 0 (FbJobDeadline, docs/178 T1) and sync plans (bp-plandeadline-ab); inferred for own kinds 1-3 |
+| I-197-2 | 197 §4 | route `+0x40/+0x44` names the follower (the Sim) across that Sim's route objects, so the backoff row follows the Sim, not one route | `kdBackoff_0` / `kdBackoff_1` > 0 in `sv-kd-loop` (each Sim re-plans within 10 s) | `route-kinddeadline-loop` | backoff counters rise with the crowd's repeated plans | 0 while `kdCut_0` is high: the id changes per route (key on the handle instead) | inferred (ReplanDedupe's "same follower" key, docs/150 §13) |
+| I-197-3 | 197 §2, §5 | Own jobs that run past 250 ms mostly fail anyway (no path or a goal they never reach), so a cut rarely changes the outcome | `kdCutOk`, `kdUncutOk`, `kdAfterOk` vs `kdAfterFail` in `sv-kd-nat-verify` and `ip-kd-nat-on` | natural | `kdUncutOk` small next to `kdCut_0`; stuck-check resets not above the off half | `kdUncutOk` >= ~20% of own cuts: raise `KdOwnPlanMs` or keep own kinds at 0 | inferred (sync plans: largest successful 81 ms in bp-plandeadline-ab; not measured for own jobs) |
+| I-197-4 | 197 §3 | Work past a job's deadline (no-cut parts: portal A*, LotGraph_Build, goal step, script callbacks, the running cell A*) adds <= ~100 ms, so 250 ms own / 200 ms foreign / 180 ms probe keep the sim wait at or under ~300-350 ms | `kdLateMaxUs`; 'sim waited ... behind an own job' lines in the on halves | `route-kinddeadline-loop`, natural | late max <= ~100 ms; no own-job wait >= 400 ms on arms | late max > 150 ms: lower that kind's deadline or cut the long phase (route phases line) | measured for the probe (303-395 ms at 300, stuckcheck-cap-verify) and sync plans (late max 30 ms); inferred for own jobs |
+
+## 354. Additions 2026-10-26 (docs/191 "Player memory lines": destroyed-but-alive check; ts3native 0.36.79 + ts3fixes; selftest, no game run)
+
+Same columns as §3. Check: `bp-memlite-check` (declared measurement smoke of `tools/harness/queues/cc-soak.json`).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-191-1 | 191 "Player memory lines" | `ScriptObject.Destroy` is not yet compiled when ts3fixes applies its patches (Instantiator static ctor), so the swap succeeds | `memsus alive ... hook=1` | natural | `hook=1` | `hook=0`: hook another base or sample from object events | open |
+| I-191-2 | 191 "Player memory lines" | Most script destroys reach the base `ScriptObject.Destroy` (overrides call `base.Destroy()`), so `seen` follows the destroy rate (~1-20/s steady play, docs/76) | `seen` per minute in `bp-memlite-check` | natural | `seen` rises by ~60-1,200 per min | far below: overrides skip the base; add the main overrides | open |
+| I-191-3 | 191 "Player memory lines" | Destroyed objects are normally collected within 2 GCs: `alive` stays near 0 in a clean session and grows with a leak | `alive` over the check and the soak arms; a positive from a destroy-and-hold repro | natural | `alive` flat in natural play | `alive` large and flat from the start: conservative roots or the ScriptProxy hold them; require more GCs | open |
+| I-191-4 | 191 "Player memory lines" | 512 weak references cost nothing measurable (Mono GC handle table + Boehm disappearing links, docs/57) | `ms=` on the alive line; gcCnt rate vs bp-rc-soak | natural | alive `ms` < 1, GC rate unchanged | `ms` > 5 or GC time up: shrink the ring | open |
+
+## 355. Additions 2026-10-26 (docs/198: Boehm heap return static check; `[ResourceCache] TrimAfterCleanup` experiment, ts3native 0.36.80, counters v136; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/rctrim-exp.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-198-1 | 198 §3.1 | The Boehm build has no unmap code: no collector path calls `VirtualFree`; heap memory goes back only at exit (`0xE4EF50`) | static: `VirtualFree` callers [verified]; live: `diag: mem gcHeap` never drops in any soak | natural soak | gcHeap monotone | a drop = some path frees: find it | verified (static) |
+| I-198-2 | 198 §3.3 | Free hblk pages are never read or written by the collector outside `GC_get_first_part` / `GC_allochblk_nth` takers (marking skips free blocks via the header) | decommit probe build: decommit after a full GC, count faults with a vectored handler (no recommit detour) | natural + build/buy | 0 faults outside the two take sites | any other faulting site = add it to the recommit set or drop the design | open (inferred) |
+| I-198-3 | 198 §3.4 | `GetWriteWatch` over a heap section with decommitted pages succeeds and reports only committed pages | same probe build, `GC_read_dirty 0xE4EFB0` return value | natural | no failure | failure = decommit unsafe in incremental mode | open (inferred) |
+| I-198-4 | 198 §3.5 | Growth sections are almost never wholly free after a full GC (first-fit by size class, not address) | probe: after each full GC list sections whose bytes equal one free block | natural 45 min BP | 0 or rare | frequent = revisit release | open (inferred) |
+| I-198-5 | 198 §4.1 | `0x733E70` drops only idle (flush-list) entries of both caches; referenced ones stay | `rctrim:` lines: held unchanged within noise, idle -> ~0 | `bp-rctrim` | held before ~ held after, idle after ~0 | held drops a lot: re-read the trim | open (static verified) |
+| I-198-6 | 198 §4.2 | Calling shrink-both after the main-thread ResourceSystem update is as safe as the game's own per-frame trim (same thread, lock taken inside, release outside) | `bp-rctrim`, `bp-rctrim-travel`, `bp-rctrim-cc2k`: no crash, no hang | the queue | 3 clean jobs | crash = our bug (AGENTS.md crash rules) | open |
+| I-198-7 | 198 §4.4 | Dropped idle bytes do not come back to the OS as private bytes / largest free (EA dlmalloc keeps the cores) | `rctrim:` priv / big before -> after | the queue | priv and big move << freed | big up by most of freed = a real gain path (then the Apex question) | open |
+
+## 356. Additions 2026-10-26 (docs/199: `[MemDiag] TypeGrowth` + `[GC] SqrtHeapLimit` experiments, ts3native 0.36.81, counters v137; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/mem-exp.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-199-1 | 199 §2 | `GC_notify_event [0x1234360]` is called with 3 once per completed cycle at the top of `GC_finish_collection 0xE49A50`, mark bits complete; MonoScriptHost init stores the empty `ret` `0xC0FD60` at `0xD7E62A` | static [verified: xrefs, decompile, bytes]; live: `sqGcs` grows with `GC_gc_no` (gcsize `gc=`) | `bp-sqrtheap-observe` | sqGcs ~ delta gc_no over the run | fewer = a finish path without the event: find it | verified (static) |
+| I-199-2 | 199 §2 | Marked object = bit at its first word in header `+0x1C`; `+0x9C` = EA free bits; size in words at `+0`; large objects (> 0x200 words) one per block run, bit 0 | static [verified: `GC_mark_from 0xE4C3E0`, `0xE4C0F0`, `0xE50160`, `0xE4C1E0`]; live: `typegrowth: marked=` vs diag: mem `gcHeap - gcFree` after a sweep | `bp-typegrowth` | marked <= heap - free, same order | marked > heap = layout wrong | verified (static) |
+| I-199-3 | 199 §2 | A word at object `+0` is a vtable iff its klass `+0xB8` runtime info lists it; MonoClass name `+0x34` / namespace `+0x38` | selftest (fake); live: `typegrowth:` top names are real EA classes, `tyRejects` small vs `tyObjs` | `bp-typegrowth` | names like `Sims3.Gameplay...`, `System.String` | garbage names = offsets wrong | open (offsets verified elsewhere, I-123-28) |
+| I-199-4 | 199 §3 | A TypeGrowth pass costs tens to hundreds of ms on the sim thread (test runs only) | `tyLastUs` / `census=` / `graph=`, `--ab typegrowth` slices | `bp-typegrowth` | pass >> 10 ms | <= 2-3% sim share at a usable `TypeGrowthEvery` = player candidate | open (inferred) |
+| I-199-5 | 199 §4 | Growing the heap up to the square-root limit in `GC_collect_or_expand 0xE4A120` cuts forced full collections and their hitches | observe vs act pair | `bp-sqrtheap-observe`, `bp-sqrtheap-on` | `sqForced` and hitches >= 100 ms lower with mode 1, heap <= ceiling | no change = limit at the 352 MB floor (InitialHeapMB already covers it) or forced GCs come from elsewhere | open |
+| I-199-6 | 199 §4 | `([0x12225C0] + [0x12225C4]) * 4` is a monotone total of allocated bytes | `gcsize: alloc=` stays positive and plausible (MB/s) | the queue | no negative / absurd rates | jumps = `0x12225C0` reset somewhere | open (inferred) |
+
+## 357. Additions 2026-10-26 (docs/201: `[MemDiag] AllocSites`, native address space by call site; ts3native 0.36.82, no counters; selftest, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/alloc-sites.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-1 | 201 §2 | The four locked entries `0x4E69D0` / `0x4E6A20` / `0x4E6A70` / `0x4E5920` are every way into the EA heaps except the debug layer (core callers: realloc core + `0x4E7B9E`-`0x4E846A`) | static [verified: call scan]; live: `nofree` small against `sampled` | `bp-cc-allocsites` | `nofree` << sampled frees | large `nofree` = another entry (or the debug layer active) | open (static verified) |
+| I-201-2 | 201 §2 | The debug allocator (`0x4E44F0` id `0x8843221A`, paths `0x4E82E0` / `0x4E84A0`) is never active in retail | breakpoint-free check: `nofree` and heap sum vs `eaDir` / private growth | the queue | no blocks missing | heap sum far below the private growth with low `nofree` = look there | open (inferred) |
+| I-201-3 | 201 §2 | Every reserve and view of every module passes the WoW64 ntdll stubs `NtAllocateVirtualMemory` / `NtMapViewOfSection` (no Ex variants in use) | host selftest round trips [verified]; live: `virtMB + mapMB` vs `diag: mem` private reserved + `map` | the queue | sums within ~10 % (minus regions before load: `rgnMiss`, untracked neighbours) | big gap = an Ex path or kernel-made regions | open |
+| I-201-4 | 201 §4 | The first return address above a heap hook's arguments is the caller; the stack-scan `from` frame is a real caller most of the time | live: `from` addresses decode to call sites in the disassembly for the top rows | the queue | top rows' `from` are call instructions' next addresses in plausible callers | stale frames dominate = add a frame-pointer / unwind walk | open (inferred) |
+| I-201-5 | 201 §5 | The tool costs ~3 ns per unsampled EA heap pair and ~100 ns per sampled pair in the game too | sim-thread budget with and without the switch (not a timing arm: one smoke) | `bp-cc-allocsites` | no visible hitch change | heavy = sample 1 in 256 | open (host selftest measured) |
+
+## 358. Additions 2026-10-26 (docs/200 §10: CC library lots by file rewrite, `tools/cc-lot-gen.ts`; static, no game run)
+
+Same columns as §3. Queue `tools/harness/queues/cc-lots.json` (not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-200-10-1 | 200 §10 | The game lists a Library ebf whose own resources are renamed, some stored uncompressed, product keys swapped (no checksum over the lot data) | `bp-cc-lots`: every `cclot 0n` entry found by `et_lot_cycle library: true` | `et-cc-lot-cycle` | 6 of 6 listed and placed | an entry missing = the rewrite broke it | open |
+| I-200-10-2 | 200 §10 | Objects bind to their product through the lot record's TGI key table (MODL + OBJD), so a swapped OBJD key loads the clone | `cc_objects` per cycle (CatalogName `CCGen ...`) | `et-cc-lot-cycle` | cc_objects close to the source's object count (209 / 159 CC products) | cc_objects 0 = objects bind another way | open |
+| I-200-10-3 | 200 §10 | Build products (patterns, fences, stairs, railings) bind through the reference store `0x05ED1226` keys | screenshot / wall pattern query on a placed lot | `et-cc-lot-cycle` | CC patterns on the walls | EA patterns = another binding | open |
+| I-200-10-4 | 200 §10 | A same-source clone keeps the object's footprint and slots, so placement succeeds as for the EA lot | `placed` true and objects >= 50 per cycle | `et-cc-lot-cycle` | placed true each cycle | refused or objects dropped = mismatch | open |
+
+## 359. Additions 2026-10-26 (docs/201 §11: `[MemDiag] AllocSites` first run failed, hook frame scan faulted; fixed in 0.36.84)
+
+Same columns as §3. Queue `tools/harness/queues/alloc-sites.json` (0.36.82 run failed, 0.36.84 not run).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-11-1 | 201 §11 | The 0.36.82 reserve / view hooks raised first-chance AVs at `ts3native+0x117D5` (`AsCallBefore` reading `image base - 5`) when a stack word equalled an image base | the three job logs; host selftest "no first-chance AV" on the 0.36.82 code | - | 16 log slots with `info 00000000 <base - 5>`; selftest assert fails | - | **verified** (logs + disassembly + selftest repro) |
+| I-201-11-2 | 201 §11 | Those AVs, raised on Frida's injected thread while the agent loads, made Frida's attach time out (cc, bb) and hung the game before the menu (travel) | rerun `alloc-sites` on 0.36.84: attach, agent answering, no `0x117D5`-style AVs in the log | `bp-cc-allocsites` | all 3 jobs reach the repro steps | still failing = fallback `AllocSitesVirtual=0` and look again | inferred |
+| I-201-11-3 | 201 §11 | `0x68140000` in those runs is Frida's agent DLL | module list at attach (probe `/modules`) or a dump | any probe run with the same asi | a `frida-agent` image at that base | - | inferred |
+
+## 360. Additions 2026-10-26 (docs/201 §12: EA heap cores, direct blocks and Boehm sections in the allocsites2 Edit Town run; static)
+
+Same columns as §3. Data `probe-out/queue/cc-build-stress-2026-10-26-bp-cc-edittown-0143-ts3native.log`, asi 0.36.84 (`native/ts3native/out-allocsites2`).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-12-1 | 201 §12.1 | `from=ts3native.asi+0x13FCF` / `+0x14037` are the allocsites Malloc / Memalign detours, not the game's caller | disassembly of `out-allocsites2/ts3native.asi` at `0x10013FC0` / `0x10014020` | - | return addresses after the calls through `g_asMalloc` / `g_asMemalign` | skip own image in `AsAnyFrames` | **verified** (disassembly) |
+| I-201-12-2 | 201 §12.2 | EA new core `0x4E4E30` reserves max(request, `+0x4D8`) rounded to 64 KB with `MEM_RESERVE`, `PAGE_READWRITE`, address NULL; top-down only in the reserve-failure fallback when `+0x498` is set | disassembly `0x4E4E30`-`0x4E4EE3` | - | as stated | - | **verified** (disassembly) |
+| I-201-12-3 | 201 §12.2 | No code sets core size or top-down per heap: only 3 direct `SetOption` calls (options 3, 3, `0x3E8`) | call scan done; indirect calls through a vtable not scanned | - | no indirect `SetOption(4/5/11)` | - | inferred (direct calls verified) |
+| I-201-12-4 | 201 §12.2 | At least 6 cores in this run are 16 MB, so S3PP's 4 MB core size did not reach every heap (or those heaps asked for >= 16 MB) | probe read of `+0x4D8` on each GeneralAllocator heap with S3PP on | `bp-cc-edittown` | some heap at `0x1000000` | - | inferred |
+| I-201-12-5 | 201 §12.2 | EA cores are released only at heap shutdown (`0x4E4870` from `0x4E5DBF`); trim only decommits | callers of `0x4E4870` (one: `0x4E5DBF`) | - | as stated | - | **verified** (call scan + disassembly) |
+| I-201-12-6 | 201 §12.4 | Boehm sections use `0x203000` = `MEM_WRITE_WATCH` + `MEM_RESERVE` + `MEM_COMMIT`, not `MEM_TOP_DOWN` (corrects docs/08 row 4) | disassembly `0xD70906`-`0xD70910` | - | flags operand `0x203000` | - | **verified** (disassembly) |
+| I-201-12-7 | 201 §12.4 | No `GrowthStepMB` (32 MB) step ran in this job; the 85 Boehm reservations are the 352 MB initial block plus header chunks | allocsites with the attribution fix, or `[GC]` growth log lines | `bp-cc-edittown` | no 32 MB reservation from `0xD70916` | - | inferred |
+
+## 361. Additions 2026-10-26 (docs/201 §12.1: allocsites frames in our own hooks skipped, ts3native 0.36.85; selftest, no game run)
+
+Same columns as §3. Asi `game-copy/ts3native.asi.allocsites3`.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-12-8 | 201 §12.1 | With our image's return addresses skipped, `k=virtual` rows of EA cores (`at=0x004E4E87`) and direct blocks (`at=0x004E5130`) name the game caller of Malloc / Memalign in `from=`, never `ts3native.asi+...` | host selftest (dummy hook chain) passes; rerun `alloc-sites` / `bp-cc-edittown` on 0.36.85 and grep `from=ts3native` | `bp-cc-allocsites` | no `ts3native.asi+` in any `at=` / `from=`; core rows split by exe caller | rows still name ts3native = another path (e.g. our own allocations), look at that frame | inferred (selftest only) |
+
+## 362. Additions 2026-10-26 (docs/67 §20 crash Q: `bp-cc-lots` sim stall in Library lot placement; logs only)
+
+Same columns as §3. Asi `game-copy/ts3native.asi.allocsites2`.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-20-1 | 67 §20 | The `bp-cc-lots` FAIL was a sim-thread stall with the process alive, not a crash | memory.csv / frames.csv to the kill, no xcpt / WER / crash section | `et-cc-lot-cycle` | as stated | - | **verified** (logs) |
+| I-67-20-2 | 67 §20 | The stall is EA's synchronous Library lot import / place (`ImportLotContentsFromExportBin` or `ImportLotContents`) running over 60 s, still progressing | rerun with the `etcc-ph-*` marks and a heartbeat excuse; last mark + `import_ms` / `place_ms` | `et-cc-lot-cycle` | `-ph-place` (or `-ph-import`) followed by `-ph-placed` within minutes, `etcc-full` reached | - | inferred |
+| I-67-20-3 | 67 §20 | The rewritten lot data (lot record `0x34E5247C`, reference store `0x05ED1226`, manifest `0x73E93EEB`) is not the cause | same rerun; control: the unmodified Breezy Library entry with the same step | `et-cc-lot-cycle` | CCLot places, maybe slower than the source | - | inferred |
+
+## 363. Additions 2026-10-26 (docs/201 §13: `[MemDiag] AllocSites` results, queue `alloc-sites`, asi allocsites3)
+
+Same columns as §3. Verdicts for §357 from this queue: I-201-1 holds (`nofree=0`, 4/4 hooks); I-201-3 partly refuted (untracked private 306-435 MB, new untracked 16 MB blocks in Build mode and saves, one ~88 MB untracked view); I-201-4 holds for the top rows (EA tag strings in the calling functions).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-13-1 | 201 §13.2 | `0xD71510` is the core supplier of the EA sub-heap `Scripting/Simulator` (`[0x11EE51C]`), power-of-two blocks of at least 1 MB from the main heap `[0x11CB864]` | static [verified: `0xD7F306` / `0xD7F325`, tag string `0x108BF54`]; live: its direct blocks track the Mono sub-heap size | `bp-travel-allocsites` | `virtual at=0x004E5130 from=0x00D71558` sizes are powers of two >= 1 MB | - | verified (static) |
+| I-201-13-2 | 201 §13.2 | The 128 MB `nvoglv32.dll+0x8ACB7E` reserves are DXVK device memory chunks mapped by the NVIDIA driver | DXVK log / HUD memory stats with the same steps; a `dxvk.conf` chunk setting changes the size | `bp-cc-allocsites` | reserve size follows the DXVK setting | - | inferred |
+| I-201-13-3 | 201 §13.3 | `CAS/GeometryResource` (`0x5C7906`) grows ~5 MB per live cycle and does not settle | 6+ live cycles with the same objects (steady-state queue) | `live-cc-cycle` | growth per cycle stays > 0 after cycle 3 | settles = cache | inferred |
+| I-201-13-4 | 201 §13.3 | The untracked 16 MB private blocks in Build mode and saves come from a path that skips the 32-bit `NtAllocateVirtualMemory` stub | tool: VirtualQuery untracked regions + hook `NtAllocateVirtualMemoryEx` | `bb-cc-cycle` | the Ex hook or another module names them | - | inferred |
+
+## 364. Additions 2026-10-26 (docs/201 §14: `[MemDiag] AllocSites` v4, untracked allocations, Ex hooks, driver regions; ts3native 0.36.86, selftest, no game run)
+
+Same columns as §3. Asi `game-copy/ts3native.asi.allocsites4`, queue `alloc-sites4.json`.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-201-14-1 | 201 §14.1 | The game process's 32-bit ntdll has `B8` stubs for `NtAllocateVirtualMemoryEx` / `NtMapViewOfSectionEx`, so both are hooked | on line in any `alloc-sites4` job | `bp-cc-allocsites` | `ntdll hooks 7` and both `OK ... Ex detour` lines | `SKIP alloc sites Nt...Ex` = other stub bytes: read them, extend the check | inferred (host selftest: hooked on the same Windows 11) |
+| I-201-14-2 | 201 §14.1 | Some of the untracked 16-32 MB private blocks of §13 are `VirtualAlloc(NULL, n, MEM_COMMIT)` (implicit reserve) or Ex-entry allocations that the 0.36.85 hooks did not record | compare §13 untracked blocks (BB Build cycles, the save after travel) with v4: blocks that now have a site vs `untr` rows | `bp-bb-allocsites`, `bp-travel-allocsites` | the Build-cycle and save blocks show as `k=virtual` sites (`inbig` / `free` neighbours) | still `untr` = made outside the 32-bit stubs (kernel / WoW64 side): read `prot`, `comMB`, `first` | inferred |
+| I-201-14-3 | 201 §14.1 | `nvoglv32.dll` names itself `nvoglv32.dll` in its export directory, so its 128 MB reserves carry the driver flag and leave `miRes` | `diag: mem` `miRes` at the sample where the report shows the `nvoglv32` +128 row | `bp-cc-allocsites` | `miRes` does not step +128 there | `miRes` still jumps = export name differs: log it once, add it to the list | inferred |
+
+## 365. Additions 2026-10-26 (docs/67 §21 crash R: stutter-profiler Frida write fault, AllocSites stale module rows, steady-state load hang, edittown empty game bin)
+
+Same columns as §3. Fix branch `fix/allocsites-stale-module` (ts3native 0.36.87, asi `game-copy/ts3native.asi.allocsites5`).
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-21-1 | 67 §21.2 | The 0.36.85 start-up first-chance AVs at `ts3native+0x11855` come from module-cache rows kept after `FreeLibrary` | first-chance section of any allocsites5 job log | `bp-cc-steady-same` | no `C0000005` at the `AsCallBefore` offset | still there = another read path: map the offset again | inferred (host selftest on an unloaded DLL: 0 AVs with the fix) |
+| I-67-21-2 | 67 §21.1 | AllocSites hook AVs on the profiler's thread helped the stutter profiler's write fault at `0x593590` (not a pure Frida race) | `steady-state.json` x2 on allocsites5 | `bp-cc-steady-same` | no fault | a fault with 0 AllocSites AVs = Frida race: `--no-prof` for AllocSites jobs | inferred |
+| I-67-21-3 | 67 §21.3 | `bp-cc-steady-fresh` hung on a lock taken inside the AllocSites ntdll hooks, or on a first-chance AV under the loader lock | rerun with a hang capture | `bp-cc-steady-fresh` | stacks in `allocsites.cpp` or the loader | other stacks = not ours | inferred |
+| I-67-21-4 | 67 §21.5 | `Baseline-BP-Spring`'s town game bin holds no lot-only entry | `et_lot_cycle` result `entries` | `et-lot-cycle` | 0 entries | | verified (04:34 run + decompiled `BinCommon.GetGameBinInfoList`) |
+
+## 366. Additions 2026-10-26 (docs/202: live-mode fallback for unseen Sims, phases A/B built, C/D designed; ts3native 0.36.89, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-202-1 | 202 §1 | A wait behind a route job is caused by the job's follower, so one deadline on unseen followers' jobs caps every `+0x918` wait site behind them | `--ab unseenfb` with `OwnJobWait=1` | `route-ownjob-yield-loop` | on arms: no `sim waited >= 300 ms behind an own job` for an unseen follower | a long wait behind a cut job = overrun too large: lower `DeadlineMs` | inferred |
+| I-202-2 | 202 §2 | (dropped 2026-10-26) `LotManager.ActiveLot` as the camera's lot; replaced by the lot under the camera target (`LotManager.GetLotAtPoint(CameraController.GetTarget())`) plus the §2.1 frustum + reach query of each lot's bounding circle | `sv-ufb-seen-crowd`: pan the camera to a far lot, its Sims count as seen | `unseenfb-far-crowd-loop` | marks only for lots out of view | a mark on the camera's lot = query or lookup wrong | inferred |
+| I-202-12 | 202 §2.1 | `CameraController.GetTarget` (script) reads the same camera as `Camera_GetTarget 0x73D480` that ts3native's query uses | log both once per load in a probe build | any | equal positions | differs = read the target natively and send it to ts3fixes | inferred |
+| I-202-3 | 202 §3.2 | `Route_IsPointRoutable` answers false for a point inside an object footprint, so teleport never lands inside an object | teleport counters + stuck log | SV natural, `unseenfbteleport` | 0 stuck teleported Sims | a stuck Sim at an object position = add a footprint test | inferred |
+| I-202-4 | 202 §3.2 | `Route_Plan` starts from the follower's current position, so the re-plan after a teleport is short | `ufMaxUs` / counter 312 on teleport runs | SV natural | re-plans under 50 ms | long re-plans = start point cached in the route: skip the re-plan, fail instead | inferred |
+| I-202-5 | 202 §3.4 | `Lock_Acquire 0x4E16F0` takes an absolute GetTickCount deadline and returns -2 on timeout (timed acquire exists; call sites pass infinite) | - | - | - | - | verified (docs/18 §246 disassembly, `FbApplyPending` deadline 0) |
+| I-202-6 | 202 §3.5 | The game's flood colours ignore doors, portals and blocked bits, so same colour never proves a path | - | - | - | - | verified (docs/142 §3.2/§3.4, docs/99 §1.8) |
+| I-202-7 | 202 §3.5 | Door lock settings are per household / per Sim and not in the SafeSpot route profile key | decompile `Door` lock fields and `RouteProfile` | - | lock type field per door + no household in the key | key holds household = drop the locked-door refusal | inferred |
+| I-202-8 | 202 §3.5 | No caller of `SimRoutingComponent.DoRoute` reads the path after a successful return | decompile all callers (docs/141 list) | - | no `GetDistanceRemaining` / segment reads after `DoRoute` | a reader = exclude that helper from D | inferred |
+| I-202-9 | 202 §3.7 | Overwatch Stuck Check V2 counts every failed plan at an unchanged spot through `Route.PostPlanCallback`, so a cut plan would count without the owprobeplans hide | - | - | - | - | verified (NRaas source `OverwatchSpace/Alarms/StuckCheck.cs` `OnPostPlan`, cited) |
+| I-202-10 | 202 §3.7 | Hiding marked plans from Overwatch V2 (owprobeplans' (Sim, task) set) prevents its "Unroutable" resets for cut Sims | `sv-ufb-overwatch` | `unseenfb-overwatch-cuts` | `owstucknotice_held` unchanged, `owprobeplans_hidden` grows | a reset of a touched Sim = the hide missed a path (another task planned for the Sim): hide by Sim only | inferred |
+| I-202-11 | 202 §3.7 | A D hold capped at 2 sim-hours never spans two Overwatch V1 passes with the same position and interaction | D repro `unseenfb-hold-overwatch` (with D) | - | no "Stationary" / "Unroutable" reset of a held Sim | a reset = shorter cap or a hold set Overwatch reads | inferred |
+
+## 367. Additions 2026-10-26 (docs/202 §3.4.1: C1-C4 site fallbacks for unseen waiters built; ts3native 0.36.90, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-202-13 | 202 §3.4.1 | `IsRouteToObjectUnobstructed` carries no Sim: `0x831530`'s second argument is a stand-in built from the age/gender flags (`0x74E075`), and its NULL test is on the third (target) argument | - | - | - | - | verified (disassembly `0x74E000..0x74E0E2`, `0x831530..0x831568`; decompiled ScriptCore `RouteManager.IsRouteToObjectUnobstructed(scriptHandle, point, options, ignore, agsFlags)`) |
+| I-202-14 | 202 §3.4.1 | MonoScriptHost `+0xBD0` during a script IC call is the running task's id, and a Sim's own task id equals its ObjectId, so it names the Sim whose interaction asks (C3 / C4 owner) | log the task id against the ts3fixes "own task" test (`Simulator.CurrentTask == sim.ObjectId`) once per C3 / C4 ask in a probe build | `unseenfbc-far-walkers-loop` | `ufcTry_2` / `ufcTry_3` > 0 only for listed Sims; `ufcSeen` for alarms | task id of another kind = owner rule wrong, sites off | inferred (field: docs/119 §11.2, autledger.cpp; equality: ts3fixes RouteBackoff.cs) |
+| I-202-15 | 202 §3.4.1 | Holding `+0x918` over all of `0x85FFE0` (C1) and `RouteFollow_A` (C2) adds no wait on the route worker (no managed call, event or second lock inside beyond the recursive `+0x918`) | `sv-ufc-farwalkers-loop`: watchdog lines, `ufcGot` > 0 with no hang | `unseenfbc-far-walkers-loop` | no hang, no watchdog line | a hang inside a held block = drop the hold, take-and-release only | inferred (2-3 hops in docs/81 §3, docs/137 §2; vtable footprint tests not followed) |
+| I-202-16 | 202 §3.4.1 | With no sim ticks in Build/Buy the unseen list goes stale within 1.5 s, so no site acts out of live mode | `sv-ufc-buildbuy` | `bb-cc-cycle` | `ufcFake_*` 0, `ufcTry_3` 0 | a fake out of live mode = clear the list on the mode change (ts3fixes) | inferred |
+| I-202-17 | 202 §3.4.1 | The far crowd's own venue interactions reach `IsSlotUnobstructed` / `IsRouteToObjectUnobstructed` / FindGoodLocation from their own tasks while route jobs run | `sv-ufc-farwalkers-loop` counters | `unseenfbc-far-walkers-loop` | `ufcTry_2`, `ufcTry_3` > 0 | 0 = add an agent action for C3 / C4 | inferred |
+
+## 368. Additions 2026-10-26 (docs/67 §22 crash S: mint `callvirt` miss on a freed receiver in `sv-ufb-farcrowd-loop`; ts3native 0.36.92 `mono fault:` line, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-1 | 67 §22 | At `0xE5201F` the receiver of a `callvirt` cache miss is a freed Boehm object (word 0 = free-list link, its word 0 = next link, `+0xBC` cleared) | rerun `sv-ufb-farcrowd-loop` on 0.36.92; a repeat logs `mono fault:` with receiver, vtable and klass words | `unseenfb-far-crowd-loop` | vtable and klass both GC-heap addresses, not a `0x49xxxxxx` loader class | a real class at `klass` = not a free object: read the callee name instead | **verified** 2026-10-26 repeat (docs/67 §22.1): receiver `8542F488`, word 0 `8542F348`, its word 0 `8542F320`, all GC heap, 0x140/0x28 apart; callee `InsideLoopFunction.Invoke` |
+| I-67-22-2 | 67 §22 | None of the unseenfb code that ran (uncut deadline sessions, `0x83` queries, `UfWhy`) can free a referenced managed object | `mono fault:` script stack of a repeat; and a crash in an off window | `unseenfb-far-crowd-loop` | the stack has no `UfPlan`/`UfWhy`/`Ts3Fixes` frame, or the crash also comes in off windows | a ts3fixes frame or receiver type = ours, fix there | stack part **holds** (docs/67 §22.1: EA-only `DoLoop < InRabbitHole < RabbitHoleInteraction.Run`, receiver an EA delegate); off-window part open (both crashes in on #3, off #4 never reached) |
+| I-67-22-3 | 67 §22 | `[ebp-0x10]` and `[ebp-0x28]` are the current RuntimeMethod and the receiver at any fault in `0xE51FC0`-`0xE520BF` (the helper keeps the interpreter's ebp) | the `mono fault:` line of any interpreter fault names a method that can make that call | any | caller method plausible for the callee | an unrelated caller = the helper set up its own frame: read the frame chain instead | verified for `0xE51FC0` (no `push ebp`; docs/130 register model; the 2026-10-26 repeat names `DoLoop` calling its own delegate), inferred for other helpers in the range |
+| I-67-22-4 | 67 §22.1 | Crash S is driven by the repro's game time (career day shift under ultra speed with 30 extra Sims), not by the unseenfb arm | control `sv-ufb-farcrowd-loop-offctl` (all four arms off, same seed/asi, `GcThreadCheck` + `CrashForensics Light`) | `unseenfb-far-crowd-loop-offctl` (to add) | the same `mono fault:` in `DoLoop` near 6.2 min with every arm off | passes 12 min = back on our on arm; rerun with all arms on | **not supported** 2026-10-26 08:37-08:52 UTC: the control passed 14.5 min, past 6.2 min; confounded by `GcThreadCheck` + `CrashForensics.Light` + loop rule (docs/67 §22.2): narrowing job `sv-ufb-farcrowd-loop-ctl2` |
+| I-67-22-5 | 67 §22.1 | The faulting Sim is a non-crowd townie at work, so `crowd_go` did not cancel or push into it | minidump of the control: the `InteractionInstance` actor in the frame | `unseenfb-far-crowd-loop-offctl` | actor not in the `spawn_sims` list | a crowd Sim = check the Go Here push into a rabbit-hole Sim | inferred (activity samples: crowd Sims never at work) |
+
+## 369. Additions 2026-10-26 (docs/67 §22.2 crash S static check of the on arm; ts3native 0.36.95 `[ArenaGuard]`, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-6 | 67 §22.2 | Crash S is EA's frame-arena pool duplicate (docs/120 §9.1): a chunk pooled twice goes to a second state while `DoLoop`'s yielded frame still uses it | `sv-ufb-farcrowd-loop-guard` (`[ArenaGuard] Enabled=1`) | `unseenfb-far-crowd-loop` | no crash; minute line `pooled chunks in use dropped` >= 1, first-8 drop lines | dropped 0 with a pass = chance; dropped 0 with the crash = not the arena path (task-state rooting, docs/130 G-B8) | **refuted** for Crash S (guard 2026-10-26: crash at 6.1 min, non-empty chain 0, dropped 0; docs/67 §22.3) |
+| I-67-22-7 | 67 §22.2 | No on-arm path (ts3fixes `UfWhy`/`UfSend`/`UfCamAsk`, native `UfMsg`/`UfCamMsg`, deadline sessions) frees, hides or unroots a managed object | static: allocation, stored-reference, thread and stack-bound checks per path | - | no path found | a path found = ours, fix there | **holds** statically (docs/67 §22.2 table, 7 checks) |
+| I-67-22-8 | 67 §22.2 | The control passed because the arm was off, not because of `GcThreadCheck` / `CrashForensics.Light` / the loop rule | `sv-ufb-farcrowd-loop-ctl2` = the crashing ABBA with the control's tools | `unseenfb-far-crowd-loop` | crash near 6.2 min in on #3 | a pass = the control showed timing only | **holds** (ctl2 2026-10-26: crash at 6.2 min in on #3; docs/67 §22.3) |
+| I-67-22-9 | 67 §22.2 | `UfWhy` and the camera queries alone (no MARK, no deadline, no try/finally) are enough to reach Crash S | `sv-ufb-farcrowd-loop-planonly`, only after I-67-22-8 holds | `unseenfb-far-crowd-loop-planonly` | crash near 6.2 min | a pass = the mark / deadline / try path | open |
+
+## 370. Additions 2026-10-26 (docs/67 §22.3 crash S narrowing results; patch host and frame rooting static check; no build, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-10 | 67 §22.3 | The patch host's header swap (docs/04 F8) adds no unscanned place for arguments: `EnterOrig` runs the original IL with its own `RuntimeMethod`, arguments stay in the caller's arena frame | static: `SwapMethod` fields, non-virtual target, frame layout docs/130 §1 | - | no extra frame or copy | a copy outside arena/stack = ours | **holds** statically [verified source] |
+| I-67-22-11 | 67 §22.3 | A yielded task's frames are roots through: state pair `{0, state}` (`0xD747C0`) in the `host+0xB84` container (uncollectable nodes via `0xD72010` -> `0xD70CE0`), arena chunks marked by proc `0xE69520` over `[chunk+8, top)`, frame cells uncollectable | static bytes; live: at a `mono fault:` log container membership and the chunk chain/tops | `unseenfb-far-crowd-loop` | faulting state in the container with tops above the slot = interpreter/collector gap; not in it = host rooting gap | - | verified bytes (container node kind inferred from docs/57) |
+| I-67-22-12 | 67 §22.3 | Crash S frees the whole task's frame-only objects at one collection (delegate held in >= 2 frames of one task), not one overwritten slot | next native build's fault line (container membership, chain, tops) | `unseenfb-far-crowd-loop` | state missing from the container or a top below a live frame | - | refuted 2026-10-26 (docs/67 §22.5: faulting state in the container, all frames below top, 0 mismatches over 1,953 collections) |
+| I-67-22-13 | 67 §22.3 | Shipped releases (v0.1.5: rabbit-hole, go-home, lot-trip and route-backoff hooks on; unseenfb off) are not exposed beyond EA's own rate | crash shape in release soaks/natural runs | - | no `0xE5201F` free-list receiver crash outside unseenfb on arms | one in a release run = reopen | holds on present evidence (docs/67 grep) |
+
+## 371. Additions 2026-10-26 (docs/67 §22.5 crash S fourth repeat: task rooted, frames in range, receiver freed; ts3native 0.36.97 frame-word mark audit, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-14 | 67 §22.5 | No `GC_free` caller (16 direct, 3 via `0xD71810`) frees a managed object; Crash S's delegate is freed by a collection's sweep | `mono fault task:` receiver mark bit on 0.36.97 | `unseenfb-far-crowd-loop` | receiver `gc F` with mark bit 0 | mark bit 1 = an explicit free: refuted | inferred (static callers verified) |
+| I-67-22-15 | 67 §22.5 | At the collection that frees Crash S's delegate, a rooted frame word holds it and the completed mark leaves it unmarked | `[GcRootCheck]` frame audit (event 3) on 0.36.97 | `unseenfb-far-crowd-loop` | a `gc frame audit:` line before the fault naming a `DoLoop`/`InRabbitHole`/`ReadLoop`-family state | audit clean through the fault = refuted (reference re-entered from outside the roots) | inferred |
+| I-67-22-16 | 67 §22.5 | A frame write at a chunk's end overwrites the chunk's explicitly typed descriptor at `+0x7FC` (`0xE50DE0`, end = `chunk+0x7FC`), so the collector stops scanning that chunk's frames | same audit | `unseenfb-far-crowd-loop` | `chunk descriptor overwritten` line, `current chain descriptors` not `ok` at the fault | descriptors all `ok` and audit clean = refuted | inferred (layout verified) |
+| I-67-22-17 | 67 §22.5 | Native `[UnseenFallback]` mode 1 adds no Mono entry, GC allocation, free or managed reference beyond the existing `[RouteAsync]` pump; its link to Crash S is timing | static: `unseenfb.cpp`, `unseenfbc.cpp` (`UfLockGate`), `plandeadline.cpp`, `LockAcquireAsync`; `gc root check:` `task running 0` | - | - | a GC heap write or Mono call found on a mode-1-only path | verified (static + log) |
+
+## 372. Additions 2026-10-26 (docs/67 §22.6 crash S fifth repeat: faulting chunk descriptor 0; EA's deferred GC finish and block stamps; ts3native 0.36.98 descriptor watch and restore, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-18 | 67 §22.6 | EA's incremental GC defers the finish past the stopped mark (`0xE49DA0` bumps `GC_gc_no`, `0xE49F10` finishes on a later call) and keeps blocks allocated from in that window (stamp `+0x18 == GC_gc_no`, skipped by reclaim `0xE500B6`/`0xE50182`) | static (bytes read) | - | - | a reclaim path that ignores the stamp | verified (static) |
+| I-67-22-19 | 67 §22.6 | The 0.36.97 audit's `unmarked` frame words are objects allocated in that window, not misses | 0.36.98 audit split (`unmarked` vs `window`) | `unseenfb-far-crowd-loop` | `window` grows, `unmarked` (swept) stays 0 | `unmarked` > 0 = refuted for those words | inferred |
+| I-67-22-20 | 67 §22.6 | Crash S = a frame chunk whose last word lost EA's descriptor `[0x11F424C]` (0 at the 5th fault): the collector scans none of its frames and sweeps what only they hold | `gc desc watch` (ctl2) and `RestoreDesc=1` (ctl2-restore) on 0.36.98 | `unseenfb-far-crowd-loop` | a watch line before the fault; the restore run passes with `restored >= 1` | restore run crashes with `restored 0`, or a Crash S with no watch line before it = refuted | inferred (descriptor 0 at the fault verified) |
+| I-67-22-21 | 67 §22.6 | The 5th crash (`0xE56370`, callee `RuntimeMethod` `0x12`) is the same freed-delegate fault as the `0xE5201F` ones | read where `[ebp-0x58]` comes from on the delegate invoke path, or a minidump of the next one | same | callee taken from a delegate whose block is free-listed | callee from a live object = refuted | inferred |
+| I-67-22-22 | 67 §22.6 | No frame covers a chunk's last word (`0xD71900`, `0xE563B2` grant only within `end`; `[rm+0x38]` = sum of the frame areas, `0xE63D0E`), so writing the descriptor back is safe | static (bytes read) | - | - | a grant path that lets a frame reach `+0x7FC` | verified (static) |
+## 373. Additions 2026-10-26 (docs/67 §22.7 crash S sixth repeat: descriptor watch 2.5 min before the fault; ts3native 0.36.100 arena tail pad and debug-register writer watch, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-23 | 67 §22.7 | Crash S's descriptor loss is a write one or more words past the declared size (`[rm+0x38]`) of the frame that ends on a chunk's last word; in mid-chunk the same write is harmless (above top) | `[GcRootCheck] TailWatch=1` (DR write watch on `[c[1], c[1]+16)` of chunks whose new frame leaves < 16 bytes) | `unseenfb-far-crowd-loop` (`sv-ufb-farcrowd-loop-ctl2`, `-ctl2-restore` on all10) | `arena tail watch: hit` lines with one writer eip and the armed frame's method | descriptor still lost with hits 0 across both jobs = refuted (another writer) | inferred |
+| I-67-22-24 | 67 §22.7 | No signed address compare in the arena grant / pop / release paths or the mark loop: chunks above `0x80000000` are not the cause | static (bytes read: `0xE563BD`, `0xD7191B` on differences; `0xD71AB7`-`0xD71ACC`, `0xE54448`, `0xE5444F`, `0xE50908`, `0xE50912`, `0xE509E1`, `0xE50A10` unsigned) | - | - | a signed compare of two chunk addresses on these paths | verified (static) |
+| I-67-22-25 | 67 §22.7 | `[ArenaGuard] TailPad=1` (64 bytes between every chunk's frame area and its descriptor) removes Crash S without changing behaviour | ctl2 on all10 (TailPad + TailWatch), full ABBA | same | pass, `gc desc watch: bad descriptors 0`, `arena tail: pad on` | Crash S or `bad descriptors` > 0 with the pad on = refuted (write > 64 bytes or another writer) | inferred |
+| I-67-22-26 | 67 §22.7 | Debug registers set from a vectored handler's context on a `RaiseException` work for a 32-bit thread on WOW64 (the TailWatch arm) | selftest `TestArenaTail` (write at end+4 caught with its eip, below end not, disarm stops it) | - | - | no hit in the selftest | verified (selftest) |
+
+## 374. Additions 2026-10-26 (docs/67 §22.8 ctl2-restore on 0.36.100: watch hits were EA next-chunk header writes; frame size read; ts3native 0.36.101 filtered tail watch, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-27 | 67 §22.8 | The 16 `arena tail watch: hit` lines of the 0.36.100 ctl2-restore run are EA's legal writes to the adjacent chunk's header (`c[0]` top at `end+4`, `c[2]` link at `end+12`; trap eips one past `0xE563D1`, `0xE54451`, `0xD71A03`, `0xD71A12`, `0xD71A83`, `0xD71A85`), not frame overruns; I-67-22-23 is still untested | static (bytes read) + log (all lines in chunk `80019000`, the written words in `80019800`) | - | - | a hit line whose written word is not a next-chunk header word | verified (static + log) |
+| I-67-22-28 | 67 §22.8 | The interpreter frame size `[rm+0x38]` has no off-by-one: stack `(max_stack * 10 + 7) & ~7`, locals and args rounded to 8, vt = `max_vt_sp`, 16-bit sum, the grant takes exactly that | static (`0xE6494C`-`0xE6495E`, `0xE649AC`, `0xE64A6F`, `0xE63D0E`-`0xE63D2F`, `0xE563B2`-`0xE563D1`) | - | - | a size field written elsewhere, or a grant other than the sum | verified (static) |
+| I-67-22-29 | 67 §22.8 | The `ScriptErrorWindow` path in the hit stacks is NRaas ErrorTrap's load-time correction report (out-of-world vehicles), not a script exception from ts3fixes, the agent or the hitch guard | ScriptError xml files of the run window | - | - | an exception report in the 11:40-11:55 UTC window | verified (files) |
+| I-67-22-30 | 67 §22.8 | With the header writers filtered and DR0 on the descriptor, a descriptor loss on an armed sim-thread chunk is logged with its writer | ctl2-restore on all11 | `sv-ufb-farcrowd-loop-ctl2-restore` | `arena tail watch: hit` at `end + 0` | restored > 0 and no `end + 0` line = writer off the sim thread or on unarmed chunks | inferred |
+
+## 375. Additions 2026-10-26 (docs/67 §22.9 Crash S writer: MINT_INITOBJ sizes Int64/UInt64/Double as 12 bytes on 8-byte slots; ts3native 0.36.102 InitobjFix, selftest, no game run)
+
+Same columns as §3.
+
+| id | doc § | claim | how to test | repro | expected if true | rule | verdict |
+|---|---|---|---|---|---|---|---|
+| I-67-22-31 | 67 §22.9 | The `end + 0` writer `711D4A81` is MSVCR80 `memset` + 0x61 (after `rep stosd`), called by the `MINT_INITOBJ` handler `0xE589F7` (return `0xE58A09`) in ``List`1.RemoveAt`` | static (msvcr80 9680 exports, TS3W IAT, handler bytes) + log (native stack, script stack) | - | - | a module list placing another DLL at `0x711C0000` | verified (offset fit + caller bytes; base inferred) |
+| I-67-22-32 | 67 §22.9 | The transform sizes `initobj` as `instance_size - 4`, which is 12 for Int64/UInt64/Double (field aligned to 8) while their slots are 8 bytes | static (`0xE63427`, `0xE6F5BB`, `0xE9C473`) | `sv-ufb-farcrowd-loop-ctl2-restore` (InitobjFix=1) | `initobj size: N clamped` > 0, no `end + 0` hits, restored 0 | `end + 0` memset hits with InitobjFix on | inferred (layout rule not read in bytes) |
+| I-67-22-33 | 67 §22.9 | No GetOption2 channel writes caller memory: all pass a `ulong` by value and return `bool` | source (ts3fixes senders, `GetOptionHook`) | - | - | a channel with a ref/out argument | verified (source) |

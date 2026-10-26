@@ -347,7 +347,11 @@ static bool MtChunkFree(const DWORD* n) {
 static void __cdecl MtArenaHeal() {
     DWORD* s = *g_mtArenaPool;
     if (!s) return;
-    for (DWORD* n = (DWORD*)(uintptr_t)s[1]; n != s && !MtChunkFree(n); n = (DWORD*)(uintptr_t)s[1]) MtUnlinkNode(n);
+    for (DWORD* n = (DWORD*)(uintptr_t)s[1]; n != s && !MtChunkFree(n); n = (DWORD*)(uintptr_t)s[1]) {
+        if (ts3native_mtprobe.arenaDropped < 8)  // docs/67 §22.2: each one is a frame overwrite that did not happen
+            Log("arena guard: pooled chunk %08lX is in use (top %08lX), node dropped before a grow", n[2], *(const DWORD*)(uintptr_t)n[2]);
+        MtUnlinkNode(n);
+    }
 }
 static __declspec(naked) void MtArenaGrow() {
     __asm {
@@ -383,6 +387,31 @@ static void MtArenaDedupe() {
             if (b[2] == a[2]) MtUnlinkNode(b);
             b = next;
         }
+}
+
+// [ArenaGuard] (docs/67 §22.2, ts3native 0.36.95): the fix above on the single sim thread, without [MonoThread]. Crash S
+// (docs/67 §22-§22.1) read a freed delegate out of a yielded task's frame. A pool duplicate of a chunk that task still uses
+// gives the chunk to a second state, whose frames overwrite the task's locals; the GC then frees what only the overwritten
+// slot held [verified in monohost, docs/120 §9.1; that it happens in game is inferred]. Same wrappers, own 5-byte detours at
+// 0xD71900 / 0xD71B70 (installed at load, before the pool exists: no dedupe needed, the heal drops older duplicates).
+// Counters ts3native_mtprobe arenaRelNonEmpty / arenaDropped, minute line "arena guard:".
+static const u8 kAgGrow[5] = {0x8B, 0x44, 0x24, 0x04, 0x55}, kAgRelAll[5] = {0x8B, 0x44, 0x24, 0x04, 0x56};
+static int g_agReady;  // bit 0 grow heal, bit 1 release-all clear
+static bool ApplyArenaGuard(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"ArenaGuard", L"Enabled", 0, ini)) { Log("arena guard disabled (Enabled=0)"); return false; }
+    if (GetPrivateProfileIntW(L"MonoThread", L"Enabled", 0, ini) && GetPrivateProfileIntW(L"MonoThread", L"GcLock", 0, ini)) {
+        Log("arena guard: left to [MonoThread] ArenaFix (P3 owns 0xD71900 / 0xD71B70)");
+        return false;
+    }
+    if ((g_mtGrowOrig = InstallDetour("arena grow (arena guard)", 0x00D71900, kAgGrow, 5, (void*)MtArenaGrow)) != NULL) g_agReady |= 1;
+    if ((g_mtRelAllOrig = InstallDetour("arena release all (arena guard)", 0x00D71B70, kAgRelAll, 5, (void*)MtArenaReleaseAll)) != NULL) g_agReady |= 2;
+    Log("%s arena guard: ready 0x%X (bit 0 heal before grow, 1 clear after release-all)", g_agReady == 3 ? "OK  " : "PART", g_agReady);
+    return g_agReady != 0;
+}
+static void AgLogCounters() {
+    if (g_agReady)
+        Log("arena guard: release-all on a non-empty chain %ld, pooled chunks in use dropped %ld", ts3native_mtprobe.arenaRelNonEmpty,
+            ts3native_mtprobe.arenaDropped);
 }
 
 // P3 install: lock detours, finalizer replacement, 0xE4EC40 ret. addRoots=false leaves GC_add_roots out (S3PP's

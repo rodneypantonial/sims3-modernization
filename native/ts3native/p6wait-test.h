@@ -5,10 +5,11 @@ static void TestP6Waits() {
                       offsetof(Ts3nCounters, p6wUs) == 0x4CB0 && offsetof(Ts3nCounters, p6wJobN) == 0x4DA0 &&
                       offsetof(Ts3nCounters, p6wSpanUs) == 0x4DC8 && offsetof(Ts3nCounters, p6wGateUs) == 0x4DF0 &&
                       offsetof(Ts3nCounters, p6wLost) == 0x4E70 && offsetof(Ts3nCounters, p6wServeUs) == 0x4E78 &&
-                      sizeof(Ts3nCounters) == 5231 * 4,
+                      offsetof(Ts3nCounters, p6wArmSet) == 0x51BC &&
+                      sizeof(Ts3nCounters) == 5392 * 4,
                   "counters v123 layout after v122 (docs/registry.md)");
     static_assert(P6O_N * P6W_N == 30 && P6O_NONE == 5, "p6wN / p6wUs are [2 * 6 * 5], p6wJobN [2 * 5]");
-    assert(k.version == 130);
+    assert(k.version == 139);
     const size_t blk = offsetof(Ts3nCounters, p6wServeUs) + sizeof(k.p6wServeUs) - offsetof(Ts3nCounters, p6wReady);
     static u8 save[0x400];
     memcpy(save, &k.p6wReady, blk);
@@ -59,6 +60,13 @@ static void TestP6Waits() {
     WaitForSingleObject(th, INFINITE), CloseHandle(th);
     assert(k.p6wN[P6O_NONE * P6W_N + P6W_LOCK] == 1);  // (d)'s one, not the thread's
     P6wLogCounters();
+    // (g) arm at the job's start (v131): the loop's p6warm wins over the P6 switch; 0 = the switch (as before)
+    const LONG armSetSave = k.p6wArmSet;
+    k.p6wArmSet = 0, k.p6Plan = 1; assert(P6wArmNow() == 1);
+    k.p6Plan = 0; assert(P6wArmNow() == 0);
+    k.p6wArmSet = 1, k.p6Plan = 1; assert(P6wArmNow() == 0);  // ladder off arm: P6 on in both arms
+    k.p6wArmSet = 2, k.p6Plan = 0; assert(P6wArmNow() == 1);
+    k.p6wArmSet = armSetSave;
 
     memcpy(&k.p6wReady, save, blk);
     memset(g_p6wPend, 0, sizeof(g_p6wPend));
@@ -66,5 +74,5 @@ static void TestP6Waits() {
     g_async = as;
     t_p6wOut = outSave, t_p6wArm = armSave;
     k.p6Plan = planSave;
-    printf("P6Waits: arm x outcome x class split, pending ring, slot reuse, owner-only ok\n");
+    printf("P6Waits: arm x outcome x class split, pending ring, slot reuse, owner-only, loop arm ok\n");
 }

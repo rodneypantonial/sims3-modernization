@@ -907,16 +907,48 @@ namespace Ts3Agent
             return list;
         }
 
+        static readonly Dictionary<string, bool> sNotInventoriable = new Dictionary<string, bool>();  // product keys a Sim inventory refused (buy_object sim_inventory)
+
         static object BuyObject(Args a)
         {
             // Live or Buy mode: GateHandlers wraps it (kLiveOrBuy), so the story buy flow runs inside Buy mode (docs/171 §16)
-            string key = a.Str("product");
+            if (a.Bool("pool", false)) return BuyFromInvPool(a);  // inv_pool products, distinct (BuildCcHandlers.cs)
+            // product = key; or name = catalogue name part (e.g. "CCGen", docs/191 synthetic CC) + nth = which match (mod count)
             BuildBuyProduct prod = null;
+            string key = a.Has("name") ? null : a.Str("product");
+            List<BuildBuyProduct> hits = new List<BuildBuyProduct>();
             foreach (BuildBuyProduct p in Catalog())
-                if (KeyString(p.ProductResourceKey) == key.ToUpperInvariant()) { prod = p; break; }
-            if (prod == null) throw new McpException("unknown product '" + key + "' (use catalog_search)");
+                if (key != null ? KeyString(p.ProductResourceKey) == key.ToUpperInvariant() : (p.CatalogName ?? "").ToLowerInvariant().IndexOf(a.Str("name").ToLowerInvariant()) >= 0) hits.Add(p);
+            if (hits.Count > 0) prod = hits[(int)(a.Long("nth", 0) % hits.Count)];
+            if (prod == null) throw new McpException("unknown product '" + (key ?? a.Str("name")) + "' (use catalog_search)");
             Household hh = Household.ActiveHousehold;
             if (hh == null) throw new McpException("no active household");
+            // sim_inventory + n: labelled stress step (docs/191 cc-soak), free, straight into a Sim's inventory, not a player flow
+            if (a.Bool("sim_inventory", false))
+            {
+                Sim s = a.Has("sim") ? Util.FindSim(a, "sim") : Util.ActiveSim();
+                int n = (int)a.Long("n", 1), added = 0, skipped = 0, start = (int)(a.Long("nth", 0) % hits.Count);
+                // big objects (tables, beds) never fit an inventory: the game's own TryToAdd decides; on a refused first object
+                // move on to the next match (cyclic from nth), remembered per product so later steps skip it without creating one
+                for (int k = 0; k < hits.Count && added == 0; k++)
+                {
+                    prod = hits[(start + k) % hits.Count];
+                    string pk = KeyString(prod.ProductResourceKey);
+                    if (sNotInventoriable.ContainsKey(pk)) { skipped++; continue; }
+                    for (; added < n; added++)
+                    {
+                        GameObject g = GlobalFunctions.CreateObjectOutOfWorld(prod.ProductResourceKey) as GameObject;
+                        if (g == null) break;
+                        if (!s.Inventory.TryToAdd(g)) { g.Destroy(); break; }
+                        CreatedObjects().Add(g.ObjectId.Value);  // remove_objects takes them out again (docs/200 live cycle)
+                    }
+                    if (added == 0) { sNotInventoriable[pk] = true; skipped++; }
+                }
+                Dictionary<string, object> ri = Util.Obj();
+                ri["sim"] = s.FullName; ri["name"] = prod.CatalogName; ri["added"] = added; ri["matches"] = hits.Count; ri["skipped"] = skipped;
+                if (added == 0) throw new McpException(s.FullName + "'s inventory took no " + prod.CatalogName);
+                return ri;
+            }
             int price = (int)prod.Price;
             bool free = a.Bool("free", false);
             if (!free && hh.FamilyFunds < price) throw new McpException("not enough money: costs §" + price + ", have §" + hh.FamilyFunds);

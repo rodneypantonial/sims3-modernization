@@ -1,0 +1,278 @@
+{
+  "note": "Untested v0.2.0 candidates (Rodney 2026-10-26: 'Add the tests for those we made and didn't test'). Build game-copy/ts3native.asi.kinddl (ts3native 0.36.77, counters v134) unless a job names another; master ts3fixes / ts3agent. Jobs copied from their earlier definitions (night-1024-verify, nostart-fix-ab, snap-probe2, repro sv-private-fp-loop, night-1024-plandeadline, natural-shipped / kind-deadlines). Not here (queued elsewhere): kind-deadlines.json, mem-*. Order: jobs 1-5 correctness (noiseCheck false; stop rule: a crash, a watchdog line or a nativeRequire miss = stop, fix, rerun before the timing jobs); jobs 6-7 timing (76 timing minutes > 60, so queue.ts runs the declared IP smoke first). No-run reads written to PLAN.md with this queue: stuckcheckcap reset parity (verify3) and preplancb per-arm door outcome (verify-preplancb-order 2026-10-25 13:47 UTC).",
+  "smoke": {
+    "note": "Measurement smoke: IP 10 min on the kinddl asi with job 7's switch set and light tools (checks the per-arm-free natural measurement path, heavy tools off, kdReady 1 and the fb/pd installs).",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
+    "releaseDefaults": true,
+    "save": "Baseline-IP-Spring",
+    "minCounters": 134,
+    "nativeRequire": "kdReady>=1,watchdogs<=0",
+    "ini": {
+      "RouteAsync.KindDeadlines": 1,
+      "RouteAsync.PlanDeadlineMs": 300,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.FbJobCapMs": 300,
+      "RouteAsync.FbJobDeadline": 1,
+      "RouteAsync.OwnJobWait": 1,
+      "HitchAttr.Enabled": 1,
+      "HitchAttr.Holders": 1,
+      "Harness.ForegroundRender": 1,
+      "RouteJobPhases.Enabled": 1,
+      "RouteJobPhases.SyncPlans": 1,
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16
+    },
+    "run": {
+      "profile": {
+        "seed": 12345,
+        "noSamplers": true,
+        "minutes": 10
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  "jobs": [
+    {
+      "id": "bp-stuckchecknear-smoke",
+      "note": "Correctness smoke of ts3fixes stuckchecknear (docs/163 §3, counters 238-240, built 2026-10-22, never run), copied from nostart-fix-ab bp-nostart-verify-3am with failrepeat dropped (one switch under test) and the kinddl asi. stuck-check-3am jumps the clock across 3 AM so the venue cleanup arms one stuck check per actor 20-60 sim-minutes later. Pass: no crash, 0 watchdog lines, stuckchecknear_checks >= 1, stuckchecknear_plans <= 10 x checks, stuck Sims / resets not above bp-nostart-verify-3am's off reference (seed drift allowed). Read: stuckchecknear_allfailed (checks where every point failed = same verdict as the game), sync plan lines with a stuck-check stack.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "stuck-check-3am",
+          "fixesOn": "stuckchecknear",
+          "fixesRequire": "stuckchecknear_checks>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-overwatchstuckslice-verify",
+      "note": "Verify overwatchstuckslice (docs/145 §12) on SV: night-1024-verify bp-overwatchstuckslice-verify FAILed owstuck_slices 0 because no BP walk stretch reaches 8 ms (the 57-336 ms stretches were measured in SV). Same repro (bp-overwatch-stuckslice-loop, world-agnostic: patches + OverwatchSpreadNow), ABBA, 3 firings per arm, cap 12 min, release set held (overwatchchain on, overwatchspread off). Pass: no crash, 0 watchdog lines, no 'overwatchspread: ... failed' line, owstuck_runs rises (owstuck_slices dropped from the rule 2026-10-27, docs/145 §12.6: the 2026-10-26 run read owstuck_max_select_us 1039 < 8000, so no slice is due; 0 slices is correct). Read per arm: owstuck_max_select_us, owstuck_max_stretch_us (off = the walk's longest stretch), no OwChainTheirs task run >= 50 ms inside StuckCheck on arms, Stuck Check resets equal within noise.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "logForbid": {
+        "overwatchspread: .* failed": 0
+      },
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 14,
+          "repro": "bp-overwatch-stuckslice-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 3
+            },
+            "maxMinutes": 12
+          },
+          "fixesRequire": "owstuck_runs>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-drivertask-boat-verify",
+      "note": "Rerun of night-1024-verify ip-drivertask-boat-verify (drivertaskasync rider side, docs/163 §7) on the kinddl asi: the earlier run was voided only by the DeferFootprint idle check, which queue.ts now notes instead of voiding on forced repros. ip-boat-houseboat-return-loop on its own rule (ABBA, 2 per arm, cap 12 min). Pass: no crash, 0 watchdog lines, drivertask_rider_sent rises; both Sims end on the houseboat. drivertask_rider_sent 0 = the Sim.Parent == boat test is wrong (inferred): read a live stack, do not A/B. Read: no 'reason Foreign' sync plan lines with a RouteBoatNearHouseboat stack on on arms, ownertask_started.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-IP",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 13,
+          "repro": "ip-boat-houseboat-return-loop",
+          "fixesRequire": "drivertask_rider_sent>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-private-fp-loop",
+      "note": "First run of T7 [Discourage] DeferPrivateFp (docs/89 §14, counters v113 pf*, never run). Repro sv-private-fp-loop: 30 spawned Sims + household idle, then all to the far lot and back home; arms flip deferprivatefp only (ABBA x 4 firings per arm, fixed windows, cap 20 min). Ini both arms as the repro note: Discourage on, DeferFootprint=1, DeferFootprint2=2 (installed, order rule only), DeferPrivateFp=1, HitchAttr + Holders for the wait keys. Pass: no crash, 0 watchdog lines, tripwires 0 (pfApplyInJob, pfFullPass, usfApplyInJob, fp2ApplyInJob), pfDeferred >= 1. Read: pfDeferred ~ pfInJob, pfDeferred = pfApplied + pfSwept + pfDropped at the end, key 0x82A0F6 ~0 in on slices, where the wait moves (0x831BF4 via pfAddFlush, 0x833593, 0x85FE10, gate 0), stuck / teleported Sims per arm.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "pfDeferred>=1,pfApplyInJob<=0,pfFullPass<=0,usfApplyInJob<=0,fp2ApplyInJob<=0,watchdogs<=0",
+      "ini": {
+        "Discourage.Enabled": 1,
+        "Discourage.DeferFootprint": 1,
+        "Discourage.DeferFootprint2": 2,
+        "Discourage.DeferPrivateFp": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 24,
+          "repro": "sv-private-fp-loop",
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 45
+    },
+    {
+      "id": "bp-snap2-cancel",
+      "note": "Rerun of snap-probe2 bp-snap2-cancel (docs/109 §6 group C) on the fixed harness (repro step 'until' now honoured, so each pet_guard start waits for the guard area before the cancel), to firm up I-112-8 (docs/112 §4.2: no route path reaches the Job_Cancel callback 0x59A603). Needs its own build: game-copy/ts3native.asi.snapprobe2 ([ProbeSnap] site 0x59A603; kinddl has no ProbeSnap call sites). Repro pet-guard-cancel: 5 spawned Sims at ultra, 8 guard/cancel cycles under running route jobs. Pass: no crash, every pet_guard start reached area=true (step until met), cancels landed (pet_guard cancel ok). I-112-8 verdict: 0 ProbeSnap hits at 0x59A603 with async on = holds; a hit inside a route plan = a callee of RoutingJob_Execute sets +0x10 (refutes). The async-off half of I-112-8 stays static (a second load with RouteAsync.Enabled=0 only if this one hits).",
+      "asi": "game-copy/ts3native.asi.snapprobe2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 43,
+      "noiseCheck": false,
+      "ini": {
+        "RouteAsync.Enabled": 1,
+        "RouteGate.Enabled": 1,
+        "RouteGate.Sites": 1,
+        "RouteGate.Enforce": 1,
+        "RouteAsync.Mode": 1,
+        "Discourage.Enabled": 1,
+        "ProbeSnap.Enabled": 1,
+        "ProbeSnap.DelaySec": 60,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "repro": "pet-guard-cancel"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "sv-plandeadline-soak",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "all"
+      },
+      "note": "TIMING soak of [RouteAsync] PlanDeadlineMs=300 (docs/164 §7; bp-plandeadline-ab = ship-on, pdHit 32 / pdHitOk 0), first natural run: SV 45 min natural play (autopilot, camera untouched, no repro; SV has the multi-second failing NoStart/Foreign sync plans), pd2 asi (0.36.78: kinddl + docs/164 §7.8 sync-path exemptions) at release defaults plus PlanDeadlineMs only (FailMemo off: one switch under test), light tools as natural-shipped. Pass: no crash, 0 watchdog lines, pdCutSc 0 (tripwire: a cut session that held a stuck-check last round, docs/164 §7.8), no Sim stuck at the end. Read: pdHit / pdHitOk (info only: past the deadline yet succeeded = nothing cut, not a behaviour change) / pdHitUs / pdLateMaxUs / pdOwnExempt / pdExemptSc, route failures (route_replan rows, pdHit - pdHitOk), hitch-ab.ts --causes for sync-plan-led >= 300 / >= 1000 ms vs v0.1.4 SV (docs/161).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 135,
+      "nativeRequire": "pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.PlanDeadlineMs": 300,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 45
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    },
+    {
+      "id": "ip-v020-routing-31",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "TIMING, combined v0.2.0 routing set (full, as v020-natural ON arms), IP 31 min natural play (autopilot, camera untouched, no repro), all12 asi (0.36.102 + InitobjFix, docs/67 §22.9; earlier pd2/all10: kinddl + docs/164 §7.8 sync-path exemptions) at release defaults plus: KindDeadlines=1 (docs/197), PlanDeadlineMs=300 (docs/164 §7), FallbackAsync=1 with what docs/134 §10.5 / §11.3 require for it to ship (FbJobCapMs=300 + FbJobDeadline=1: a foreign job is cut at 300 ms incl. cell A* / water; KindDeadlines replaces both for jobs while on, sync plans keep PlanDeadlineMs), OwnJobWait counters; hitch guard [UnseenFallback] Enabled=1 DeadlineMs=300 Sites=1 SiteWaitMs=100 + ts3fixes unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave; spread fixes easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice; light tools as natural-shipped. Pass: no crash, 0 watchdog lines, kdReady 1, ufMarks > 0, unseenfb_refused 0 (unseenfb_seen = plans of seen Sims passed to the game unchanged: info, grows in natural play), pdCutSc 0 (docs/164 §7.8 tripwire; pdHitOk is info only), no Sim stuck at the end. Read: stuck Sims; failed plans (route_replan rows, kdAfterFail / (kdAfterOk + kdAfterFail), kdUncutOk, pdHit - pdHitOk, fbjcCapped); kd* per kind ('route kind deadlines' minute line, 'capped (KindDeadlines)' lines); TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes untested-v020-<date>-ip-v020-routing-31 vs natural-shipped ip-shipped-31 (10.5 >= 300 ms per 10 min): >= 300 / >= 1000 per 10 min, p99 / p99.9 / max, route-job-wait and sync-plan led counts.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "nativeRequire": "ufReady>=14,ufcReady>=63,ufMarks>=1,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 100
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 31,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfb_refused<1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}

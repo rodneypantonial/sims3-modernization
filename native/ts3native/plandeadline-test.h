@@ -92,10 +92,10 @@ static void TestPlanDeadline() {
     static_assert(offsetof(Ts3nCounters, pdMode) == 0x4244 && offsetof(Ts3nCounters, pdSessions) == 0x4254 &&
                       offsetof(Ts3nCounters, pdLines) == 0x427C && offsetof(Ts3nCounters, fmMode) == 0x4280 &&
                       offsetof(Ts3nCounters, fmInval) == 0x4298 && offsetof(Ts3nCounters, fmServedUs) == 0x42C4 &&
-                      sizeof(Ts3nCounters) == 5231 * 4,
+                      sizeof(Ts3nCounters) == 5392 * 4,
                   "counters v99 layout after v98 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 130);
+    assert(k.version == 139);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     memset(&k.pdMode, 0, sizeof(Ts3nCounters) - offsetof(Ts3nCounters, pdMode));
     u8* code = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -161,12 +161,14 @@ static void TestPlanDeadline() {
     assert(!PdPlanBegin());
     // 7. IC deadlines by reason: NoStart / Foreign = pdUs, own task = pdOwnUs (0 = exempt, counted)
     k.pdUs = 200000;
-    assert(PdIcUs(RFB_NOSTART) == 200000 && PdIcUs(RFB_FOREIGN) == 200000 && k.pdOwnExempt == 0);
-    assert(PdIcUs(RFB_QFULL) == 0 && PdIcUs(RFB_NOYIELD) == 0 && k.pdOwnExempt == 2);
+    assert(PdIcUs(RFB_NOSTART, false) == 200000 && PdIcUs(RFB_FOREIGN, false) == 200000 && k.pdOwnExempt == 0);
+    assert(PdIcUs(RFB_QFULL, false) == -1 && PdIcUs(RFB_NOYIELD, false) == -1 && k.pdOwnExempt == 2);
     k.pdOwnUs = 3000000;
-    assert(PdIcUs(RFB_QFULL) == 3000000 && k.pdOwnExempt == 2);
+    assert(PdIcUs(RFB_QFULL, false) == 3000000 && k.pdOwnExempt == 2);
+    assert(PdIcUs(RFB_QFULL, true) == -1 && k.pdExemptSc == 1);  // §7.8: a stuck-check last round beats pdOwnUs
+    k.pdExemptSc = 0;
     k.pdMode = 0;
-    assert(PdIcUs(RFB_NOSTART) == 0);
+    assert(PdIcUs(RFB_NOSTART, true) == 0 && k.pdExemptSc == 0);
     k.pdMode = 1, k.pdOwnUs = 0;
     // 8. D1 through CallPlanBudget: a sim-thread plan opens its session; its search sleeps past 2 ms, the next cost call
     //    with the clock read caps it (every edge a wall), the plan fails through its own exit; counted, deadline cleared
@@ -210,6 +212,37 @@ static void TestPlanDeadline() {
     assert(k.pdSessions[0] == 1 && k.pdHit == 3 && k.pdSkipCell == 2 && !t_pd.open && !g_pdTid && !t_fbDeadline);
     assert(SyncIc(0, out, 0x1234, NULL, RFB_QFULL, "nojob", NULL) == out && *(DWORD*)out == 1 && g_pdtRuns[0] == c0 + 1);
     assert(k.pdSessions[0] == 1 && k.pdOwnExempt == 3);
+    // 9b. docs/164 §7.8: an exempt IC's nested Route_PlanLocked opens no session (own task, pdOwnUs 0; before 0.36.78 it
+    //     opened a pdUs one through CallPlanBudget); a stuck-check last round (IcCollect's mark from a refused START) is
+    //     exempt even as NoStart, once; nested in an open session it cannot be: a cut there counts pdCutSc
+    {
+        static_assert(offsetof(Ts3nCounters, pdExemptSc) == 0x52C0 && offsetof(Ts3nCounters, pdCutSc) == 0x52C4 &&
+                          offsetof(Ts3nCounters, pdSpare) == 0x52C8 && sizeof(Ts3nCounters) == 5392 * 4,
+                      "counters v135 layout after v134 (docs/registry.md)");
+        g_icPlanOrig = [](u8* o, DWORD) -> u8* {
+            assert(t_pdNoCut && !PdPlanBegin() && !t_pd.open && !g_pdTid);
+            *(DWORD*)o = 1;
+            return o;
+        };
+        const LONG s0 = k.pdSessions[0] + k.pdSessions[1];
+        g_rfbHandle = 0, g_collect = 0;
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_QFULL, "nojob", NULL) == out && !t_pdNoCut && k.pdOwnExempt == 4);
+        t_pdScH = 0x1234;
+        assert(SyncIc(0, out, 0x1234, NULL, RFB_NOSTART, "nojob", NULL) == out && !t_pdNoCut && !t_pdScH && k.pdExemptSc == 1);
+        g_scSyncH = 0x1234;
+        assert(IcCollect(0, out, 0x1234, NULL, NULL) == out && !g_scSyncH && k.pdExemptSc == 2);
+        assert(k.pdSessions[0] + k.pdSessions[1] == s0);
+        g_scSyncH = 0x1235;  // another route's mark: not this IC's, and gone after it
+        g_icPlanOrig = PdtIc;
+        assert(IcCollect(0, out, 0x1234, NULL, NULL) == out && !g_scSyncH && k.pdExemptSc == 2 && k.pdSessions[0] + k.pdSessions[1] == s0 + 1);
+        assert(PdPlanBegin());  // nested: the open session keeps its deadline, the last round only marks it
+        assert(PdIcUs(RFB_NOSTART, true) == 0 && t_pd.scLast && k.pdExemptSc == 2);
+        t_pd.dl = 1;
+        assert(PdSkip(0) == 1);
+        PdPlanEnd(0);
+        assert(k.pdCutSc == 1 && !t_pd.open);
+        k.pdCutSc = 0, k.pdExemptSc = 0;
+    }
     // 10. FailMemo on the sync Plan IC (ReplanDedupe's fakes): observe, then serve a failed repeat; a worker-side CallIc (no
     //     t_fmSync) never goes through it
     u8* const* rmSlot = g_orRmSlot;
@@ -283,6 +316,71 @@ static void TestPlanDeadline() {
     OwSimWait(50000, true, 0x25000001), OwSimWait(400000, true, 0x25000001), OwSimWait(9000000, false, 0x25000002);
     assert(k.owWaits == 2 && k.owWaitUs == 450000 && k.owWaitMaxUs == 400000 && k.owWaitHist[0] == 1 && k.owWaitHist[2] == 1 &&
            k.owLines == 1);
+    // 13. docs/197 KindDeadlines: off = the old rules (-1); kind per job; the stuck-check last round exempt; the follower's
+    //     backoff (doubled, then uncut, a success resets); outcomes after a cut; the probe deadline; stuck-check marks
+    {
+        static_assert(offsetof(Ts3nCounters, kdMode) == 0x521C && offsetof(Ts3nCounters, kdUs) == 0x5224 &&
+                          offsetof(Ts3nCounters, kdCut) == 0x525C && offsetof(Ts3nCounters, kdLateMaxUs) == 0x5294 &&
+                          offsetof(Ts3nCounters, kdCutOk) == 0x52B4 && offsetof(Ts3nCounters, kdSpare) == 0x52B8,
+                      "counters v134 layout after v133 (docs/registry.md)");
+        memset(g_kdTab, 0, sizeof(g_kdTab));
+        for (int i = 0; i < KD_N; i++) k.kdUs[i] = kKdDefMs[i] * 1000;
+        AsyncJob j = {};
+        j.handle = 0x25000001;
+        k.kdMode = 1, k.kdReady = 0;
+        assert(KdJobBegin(&j) == -1 && !t_kdKind && ScProbeUs() == k.pdUs);  // not ready: off
+        k.kdReady = 1;
+        assert(ScProbeUs() == 180000);
+        *(DWORD*)(g_rdtRoute + 0x44) = 0;
+        j.kdId = KdFollower(0x25000001);
+        assert(j.kdId == 7 && KdFollower(0x25000002) == 0);
+        // kinds
+        AsyncJob f = {}, a = {}, p = {}, r = {};
+        f.fb = 1, a.af = 1, a.kind = 3, p.probe = 1, p.sc = 0x10101, r.kind = 1;
+        assert(KdJobBegin(&f) == 200000 && t_kdKind == KD_FGN + 1 && KdJobBegin(&a) == 200000 && t_kdKind == KD_A10F + 1);
+        assert(KdJobBegin(&p) == 180000 && t_kdKind == KD_PROBE + 1 && KdJobBegin(&r) == 250000 && t_kdKind == KD_REPLAN + 1);
+        AsyncJob last = {};
+        last.sc = 0x10302;  // tagged, no probe mark: the last round
+        assert(KdJobBegin(&last) == 0 && k.kdExemptSc == 1);
+        // backoff: cut -> doubled -> cut -> uncut; the uncut job succeeds: counted, level reset
+        *(DWORD*)j.result = 16;
+        assert(KdJobBegin(&j) == 250000);
+        KdJobEnd(&j, true, 260000, 0, 0);
+        assert(k.kdCut[KD_PLAN] == 1 && k.kdAfterOk + k.kdAfterFail == 0);
+        assert(KdJobBegin(&j) == 500000 && k.kdBackoff[0] == 1);
+        KdJobEnd(&j, true, 510000, 0, 0);
+        assert(k.kdCut[KD_PLAN] == 2 && k.kdAfterFail == 1 && k.kdLong[KD_PLAN] == 1);
+        assert(KdJobBegin(&j) == 0 && k.kdBackoff[1] == 1);
+        *(DWORD*)j.result = 1;
+        KdJobEnd(&j, false, 900000, 0, 0);
+        assert(k.kdAfterOk == 1 && k.kdUncutOk == 1 && k.kdLong[KD_PLAN] == 2);
+        assert(KdJobBegin(&j) == 250000);  // reset by the success
+        KdJobEnd(&j, false, 1000, 0, 0);
+        assert(k.kdAfterOk == 1);  // nothing pending
+        // a cut that still succeeded; late time past the deadline
+        KdJobBegin(&j);
+        KdJobEnd(&j, true, 300000, g_qpf.QuadPart * 3, g_qpf.QuadPart * 2);
+        assert(k.kdCutOk == 1 && k.kdLateMaxUs == 1000000);
+        // stuck-check mark on the cut follower; unknown handle ignored
+        KdStuckMark(0x25000001);
+        KdStuckMark(0x25000002);
+        assert(k.kdAfterStuckCheck == 1);
+        // a kind at 0 ms is never cut; the probe has no backoff row
+        k.kdUs[KD_REPLAN] = 0;
+        assert(KdJobBegin(&r) == 0);
+        p.kdId = 9;
+        KdJobBegin(&p);
+        KdJobEnd(&p, true, 200000, 0, 0);
+        assert(k.kdCut[KD_PROBE] == 1 && KdFind(9, false) == NULL);
+        // eviction: 64 rows, the oldest cut makes room
+        memset(g_kdTab, 0, sizeof(g_kdTab));
+        for (int i = 0; i < kKdRows; i++) KdFind(100 + i, true)->cutTick = 1000 + i;
+        assert(KdFind(200, true) == &g_kdTab[0] && KdFind(101, false) && !KdFind(100, false));
+        t_kdKind = 0, k.kdMode = 0, k.kdReady = 0;
+        memset(g_kdTab, 0, sizeof(g_kdTab));
+        printf("KindDeadlines (docs/197): counters v134; kinds, last-round exemption, follower backoff doubled / uncut / reset, "
+               "outcomes after a cut, cut ok, late time, stuck-check marks, probe without backoff, row eviction ok\n");
+    }
     // restore
     g_fmOn = 0;
     g_orRmSlot = rmSlot, g_orRoute = route0, g_rdFollowerPos = pos0;

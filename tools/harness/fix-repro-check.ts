@@ -23,6 +23,7 @@ const SHADOW = 'diagnostic: shadow mode of a read-only fix (runs both answers an
 const MONO ='Mono offload, parked: no Mono game runs allowed now (memory mono-parked, docs/118)';
 // Switches with no repro on purpose. Dead ends: "dead end: <evidence>"; diagnostics; parked work.
 export const EXEMPT: Record<string, string> = {
+  unseenfbteleport: 'trip-shortcut type: verified by verify-shortcut.ts --name unseenfbteleport and the unseen-fallback.json sv-ufb-teleport-verify job (fixesRequire), not by an A/B repro (shortcut-verification rule, docs/202 §6)',
   autshadowverify: DIAG, ownjobwait: DIAG, autshadow: MONO, autledger: MONO,
   steershadow: SHADOW, lotfdshadow: SHADOW, obstructedshadow: SHADOW, slotenabledshadow: SHADOW, avoidshadow: SHADOW,
   gate0shadow: SHADOW, routetoobjroshadow: SHADOW, placementroshadow: SHADOW, goalvalidroshadow: SHADOW, idlecheckroshadow: SHADOW,
@@ -36,6 +37,8 @@ export const EXEMPT: Record<string, string> = {
   routesnaprel: 'dead end for now: P5b lock lending, part of the P5 snapshot path dropped from v0.1.5 and parked (docs/136 §3.8, docs/94 §22.9)',
   routesnapfree: 'dead end for now: P5c, keyed waits +5.2 BP / +13.8 IP ms/s, "drop from v0.1.5; P5c stays parked" (docs/136 §3.8)',
   cachedreflection: 'dead end: never installs in game ("PersistedClass.Init: already compiled", save matrix 2026-10-20/22, PLAN.md v0.1.4 triage); off as shipped',
+  typegrowth: DIAG,
+  sqrtheap: 'experiment, not a fix yet: heap policy compared by separate loads (observe vs act, queues/mem-exp.json, docs/199); allocation in natural play drives it, a repro gets added if it becomes a fix',
   doormirror: 'dead end as built: never run; door answers went through the P5 host-call proxy instead (docs/94 §19.1, docs/116); only comes back with docs/159 H4',
 };
 

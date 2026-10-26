@@ -6,8 +6,11 @@
 //   node tools/harness/game-alive.ts --self-check
 // A hang (heartbeat frozen, or a stall guard's "nothing moved" with the game and probe up) is captured before the FAIL line,
 // so the game is still alive for it: captureHang below (docs/172 §6).
+// Long blocking steps (docs/67 crash Q): while the last ts3agent mem mark in ts3native.log is an open -ph-import/-ph-place/
+// -ph-bulldoze (no later mark), a frozen heartbeat is excused while the game progresses (ts3native.log size, probe /memory
+// commit MB, TS3W.exe working set); 2 GUARD_MS windows without progress, or PHASE_GRACE_MS in all, fail (graceStep).
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const LIMIT_MS = 60000;
@@ -31,8 +34,45 @@ function lastTriage(): string {
   } catch (e) { return `crash-ledger triage failed: ${String(e).split('\n')[0]}`; }
 }
 
+// the open long step: last mem mark tag in a ts3native.log tail when it is -ph-import/-ph-place/-ph-bulldoze, else null (pure)
+export function openPhase(logTail: string): string | null {
+  const last = [...logTail.matchAll(/ mark ev=([A-Za-z0-9_-]+)/g)].at(-1)?.[1];
+  return last && /-ph-(import|place|bulldoze)$/.test(last) ? last : null;
+}
+
+// heartbeat-freeze grace (pure, covered by --self-check), one call per watchGame check while the heartbeat is frozen.
+// excused: keep waiting; else why ('' = no open step, the plain heartbeat verdict stands). Progress = mark changed.
+export const PHASE_GRACE_MS = 10 * 60000;
+export type GraceState = { since: number | null; mark: string | null; movedAt: number };
+export function graceStep(st: GraceState, s: { now: number; phase: string | null; mark: string }): { excused: boolean; why: string } {
+  if (!s.phase) { st.since = null; return { excused: false, why: '' }; }
+  if (st.since === null || s.mark !== st.mark) { st.movedAt = s.now; st.since ??= s.now; }
+  st.mark = s.mark;
+  if (s.now - st.since > PHASE_GRACE_MS) return { excused: false, why: `long step ${s.phase} still open after ${PHASE_GRACE_MS / 60000} min of heartbeat grace` };
+  if (s.now - st.movedAt >= 2 * GUARD_MS) return { excused: false, why: `long step ${s.phase}: no progress (ts3native.log, commit MB, working set) for ${Math.round((s.now - st.movedAt) / 1000)} s` };
+  return { excused: true, why: '' };
+}
+
+function logTail(bytes = 1 << 20): string {
+  try {
+    const f = join(BIN, 'ts3native.log'), size = statSync(f).size, b = Buffer.alloc(Math.min(bytes, size)), fd = openSync(f, 'r');
+    try { readSync(fd, b, 0, b.length, size - b.length); } finally { closeSync(fd); }
+    return b.toString('latin1');
+  } catch { return ''; }
+}
+
+// progress mark while the heartbeat is frozen: ts3native.log size, probe /memory commit MB, TS3W.exe working set (tasklist)
+async function progressMark(): Promise<string> {
+  let log = 0, ws = '';
+  try { log = statSync(join(BIN, 'ts3native.log')).size; } catch { /* no plugin */ }
+  const m = await fetch('http://127.0.0.1:47891/memory', { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null);
+  try { ws = execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', 'IMAGENAME eq TS3W.exe']).toString().split('","').at(-1)?.replace(/\D/g, '') ?? ''; } catch { /* no verdict */ }
+  return [log, typeof m?.commitMB === 'number' ? Math.round(m.commitMB) : '', ws].join('|');
+}
+
 export function watchGame(onDeath?: () => void) {
-  let lastBeat: unknown, lastBeatAt = Date.now(), error = '', dying: Promise<void> | null = null;
+  let lastBeat: unknown, lastBeatAt = Date.now(), error = '', dying: Promise<void> | null = null, busy = false;
+  const grace: GraceState = { since: null, mark: null, movedAt: 0 };
   const check = async (): Promise<void> => {
     if (dying) return dying; // never resolves (exit at its end): a caller's PASS cannot print during the hang capture
     try {
@@ -40,14 +80,27 @@ export function watchGame(onDeath?: () => void) {
       if (hb?.heartbeat === undefined || hb.heartbeat !== lastBeat) { lastBeat = hb?.heartbeat; lastBeatAt = Date.now(); } // no heartbeat field: an answer counts
       error = '';
     } catch (e) { error = String((e as any)?.cause?.code ?? e); }
-    const now = Date.now(), running = gameRunning(), why = deadReason({ running, now, lastBeatAt, error });
-    if (!why) return;
-    console.log(`${stamp()} FAIL: game died at ${stamp(running ? lastBeatAt : now)} (${why})`);
+    const now = Date.now(), running = gameRunning();
+    let why = deadReason({ running, now, lastBeatAt, error });
+    if (!why) { grace.since = null; return; }
+    const hung = running && error !== 'ECONNREFUSED'; // process and probe up: a long step or a hang, not a crash
+    if (hung) { // docs/67 crash Q: EA's Library lot import/place blocks the sim thread for minutes while still progressing
+      const phase = openPhase(logTail()), first = grace.since === null, g = graceStep(grace, { now, phase, mark: await progressMark() });
+      if (g.excused) { if (first) console.log(`${stamp()} heartbeat frozen in long step ${phase}: waiting while the game progresses (cap ${PHASE_GRACE_MS / 60000} min)`); return; }
+      if (g.why) why = `${why}; ${g.why}`;
+    }
+    if (dying) return dying;
+    dying = new Promise<void>(() => {});
+    // capture before the kill, as the header promises (docs/172 §6)
+    const cap = hung ? `\n${await captureHang(hangDir()).catch(e => `hang capture failed: ${e}`)}` : '';
+    const dmp = running ? `\n${dumpHungGame(why)}` : ''; // probe gone (ECONNREFUSED) or hung: the game gets killed after this
+    console.log(`${stamp()} FAIL: game died at ${stamp(running ? lastBeatAt : now)} (${why})${cap}${dmp}`);
     console.log(`last crash report (crash-ledger triage):\n${lastTriage()}`);
     onDeath?.();
     process.exit(1);
   };
-  setInterval(check, 10000).unref();
+  // one check at a time: grace sampling and the hang capture outlast the 10 s tick
+  setInterval(() => { if (busy) return; busy = true; check().finally(() => { busy = false; }); }, 10000).unref();
   return { check };
 }
 
@@ -67,6 +120,27 @@ export function stallStep(st: { last: string | null; misses: number }, s: GameSa
   if (s.answering) st.last = s.mark;
   st.misses = why ? st.misses + 1 : 0;
   return st.misses >= 2 ? why : '';
+}
+
+// sim clock guard step (pure, covered by --self-check), one call per check (30 s apart): '' or why, once 2 checks in a row miss.
+// The clock must move. A pause counts as a miss too (a modal dialog holds the clock), except where the game pauses by design:
+// Build/Buy/CAS/Edit Town stop the clock (GateHandlers.cs; Edit Town may still report its old speed), or a repro step said "pausesClock": true. There the
+// agent answering `time` is the progress check, so an agent that stops answering while excused still fails.
+// The agent's enum name is "Pause" (GameSpeed.ToString); "Paused" was compared before 2026-10-26, so no pause was ever excused.
+export const PAUSE_BY_DESIGN = /Build|Buy|CAS|EditTown/i;
+export type ClockSample = { minutes_total: number; speed: string; day_number?: number; clock?: string } | null;
+export function clockStep(st: { last: number | null; misses: number; excused?: string }, t: ClockSample, o: { subState?: string; declared?: boolean } = {}): string {
+  if (!t) { // no reply: a busy frame or a save; the heartbeat guard (watchGame) judges a dead agent, except during an excused pause
+    st.misses = st.excused ? st.misses + 1 : 0;
+    return st.misses >= 2 ? `agent not answering while paused by design (${st.excused})` : '';
+  }
+  const paused = /^Pause/i.test(t.speed);
+  // Edit Town stops the clock but keeps the speed it had (bp-cc-edittown 2026-10-26: "speed Triple"): by-design states count at any speed
+  st.excused = PAUSE_BY_DESIGN.test(o.subState ?? '') ? o.subState : paused && o.declared ? 'repro step pausesClock' : undefined;
+  const moved = t.minutes_total !== st.last;
+  st.last = t.minutes_total;
+  st.misses = moved || st.excused ? 0 : st.misses + 1;
+  return st.misses < 2 ? '' : `sim clock stuck at day ${t.day_number ?? '?'} ${t.clock ?? t.minutes_total} for ~60 s (speed ${t.speed}${o.subState ? `, sub_state ${o.subState}` : paused ? ', sub_state ?' : ''})`;
 }
 
 export async function sampleGame(port = 47891, extra?: () => unknown): Promise<GameSample> {
@@ -93,6 +167,7 @@ export function stallGuard(what: string, o: { port?: number; extra?: () => unkno
     const r = stallStep(st, await sampleGame(o.port, o.extra), o.liveOnly);
     if (r) why = `${what}: ${r} for ${Math.round(2 * GUARD_MS / 1000)} s (fail-fast guard)`;
     if (r.startsWith('nothing moved')) why += `; ${await captureHang(hangDir(), { port: o.port }).catch(e => `hang capture failed: ${e}`)}`; // game and probe up: a hang
+    if (r && !r.startsWith('TS3W.exe process gone')) why += `; ${dumpHungGame(`${what}: ${r}`)}`; // hung or probe silent: the caller's failure kills the game
     return why;
   };
 }
@@ -190,6 +265,62 @@ export async function captureHang(dir: string, o: { port?: number; get?: HangGet
   return line;
 }
 
+// ---- Full-memory dump before a kill, no probe needed (docs/201 §15, docs/67 §21: a load deadlocked on a heap/PEB lock left
+// the probe silent and the hang without a stack). Every path that kills a still-running TS3W.exe for a stall, hang or timeout
+// calls dumpHungGame first. Tool: procdump -ma (TS3_PROCDUMP or on PATH), else 32-bit Windows PowerShell calling dbghelp
+// MiniDumpWriteDump (full memory + handles + threads; an x86 dump of the WOW64 game). Dumps go to TS3_DUMP_DIR (default
+// probe-out/dumps, git-ignored: dumps hold personal data, never under docs or committed). One dump per game PID (a second
+// caller for the same hang skips), none when the disk has < 10 GB free, TS3_KILL_DUMP=off turns it off. Synchronous on purpose:
+// callers kill right after it returns. Returns a one-line note for the log.
+export const DUMP_MIN_FREE = 10 * 2 ** 30;
+export const dumpDir = () => process.env.TS3_DUMP_DIR ?? join(import.meta.dirname, '..', '..', 'probe-out', 'dumps');
+const PS32 = 'C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+// what to do (pure, covered by --self-check)
+export function dumpPlan(o: { pid: number | null; freeBytes: number; existing: string[]; procdump: string | null; dir: string; off?: boolean; now?: Date }):
+  { skip: string } | { tool: 'procdump' | 'powershell'; file: string } {
+  if (o.off) return { skip: 'dump off (TS3_KILL_DUMP=off)' };
+  if (!o.pid) return { skip: 'no TS3W.exe running' };
+  if (o.existing.some(f => f.startsWith(`ts3w-${o.pid}-`) && f.endsWith('.dmp'))) return { skip: `already dumped (PID ${o.pid})` };
+  if (o.freeBytes < DUMP_MIN_FREE) return { skip: `disk free ${Math.round(o.freeBytes / 2 ** 30)} GB < 10 GB` };
+  const ts = (o.now ?? new Date()).toISOString().replace(/[-:]/g, '').slice(0, 15);
+  return { tool: o.procdump ? 'procdump' : 'powershell', file: join(o.dir, `ts3w-${o.pid}-${ts}.dmp`) };
+}
+
+const findProcdump = (): string | null => {
+  if (process.env.TS3_PROCDUMP) return existsSync(process.env.TS3_PROCDUMP) ? process.env.TS3_PROCDUMP : null;
+  try { return execFileSync('where', ['procdump'], { timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().split(/\r?\n/)[0].trim() || null; } catch { return null; }
+};
+const gamePid = (image: string): number | null => {
+  try { return Number(/^"[^"]+","(\d+)"/m.exec(execFileSync('tasklist', ['/NH', '/FO', 'CSV', '/FI', `IMAGENAME eq ${image}`], { timeout: 15000 }).toString())?.[1]) || null; } catch { return null; }
+};
+
+export function dumpHungGame(reason: string, o: { pid?: number; image?: string; dir?: string; timeoutMs?: number } = {}): string {
+  const dir = o.dir ?? dumpDir(), timeout = o.timeoutMs ?? 180000;
+  try { mkdirSync(dir, { recursive: true }); } catch { /* statfs below says why */ }
+  let freeBytes = 0, existing: string[] = [];
+  try { const s = statfsSync(dir); freeBytes = s.bavail * s.bsize; existing = readdirSync(dir); } catch { /* no dir: plan skips on 0 free */ }
+  const procdump = findProcdump();
+  const plan = dumpPlan({ pid: o.pid ?? gamePid(o.image ?? 'TS3W.exe'), freeBytes, existing, procdump, dir, off: process.env.TS3_KILL_DUMP === 'off' });
+  const tag = `${stamp()} kill dump (${reason})`;
+  if ('skip' in plan) { console.log(`${tag}: skipped, ${plan.skip}`); return `kill dump skipped: ${plan.skip}`; }
+  const pid = Number(/ts3w-(\d+)-/.exec(plan.file)![1]), t0 = Date.now();
+  let err = '';
+  try {
+    if (plan.tool === 'procdump') execFileSync(procdump!, ['-accepteula', '-ma', String(pid), plan.file], { timeout, stdio: 'ignore', windowsHide: true });
+    else execFileSync(PS32, ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference='Stop'
+Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;public static class Dh{[DllImport("dbghelp.dll",SetLastError=true)]public static extern bool MiniDumpWriteDump(IntPtr p,uint id,SafeFileHandle f,uint t,IntPtr e,IntPtr u,IntPtr c);}'
+$p=Get-Process -Id ${pid}; $f=[IO.File]::Create('${plan.file.replace(/'/g, "''")}')
+try { if(-not [Dh]::MiniDumpWriteDump($p.Handle,${pid},$f.SafeFileHandle,0x1826,[IntPtr]::Zero,[IntPtr]::Zero,[IntPtr]::Zero)){ throw "MiniDumpWriteDump error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" } } finally { $f.Close() }`],
+      { timeout, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }); // 0x1826 = FullMemory|HandleData|UnloadedModules|FullMemoryInfo|ThreadInfo
+  } catch (e: any) { err = e?.killed || e?.signal ? `timeout ${Math.round(timeout / 1000)} s` : String(e?.stderr || e?.message || e).trim().split(/\r?\n/)[0]; }
+  let size = 0; try { size = statSync(plan.file).size; } catch { /* none written */ }
+  const line = size && !err ? `kill dump ${plan.tool} ${Math.round(size / 2 ** 20)} MB in ${Math.round((Date.now() - t0) / 1000)} s: ${plan.file}`
+    : `kill dump failed (${plan.tool}: ${err || 'no file'})${size ? `, partial ${plan.file}` : ''}`;
+  console.log(`${tag}: ${line}`);
+  return line;
+}
+
 if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-check')) {
   const assert = (await import('node:assert')).strict;
   const st = { last: null as string | null, misses: 0 }, smp = (mark: string, running = true, answering = true) => ({ running, answering, mark });
@@ -202,10 +333,52 @@ if (process.argv[1]?.endsWith('game-alive.ts') && process.argv.includes('--self-
   const lo = { last: null as string | null, misses: 0 };
   assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); assert.equal(stallStep(lo, smp('a'), true), ''); // liveOnly ignores the mark
   assert.equal(stallStep(lo, smp('a', false), true), ''); assert.match(stallStep(lo, smp('a', false), true), /process gone/);
+  // sim clock guard: Build mode pause is fine while the agent answers (bp-memsus-catalogue 2026-10-26), live-mode pause is not
+  const ck = { last: null as number | null, misses: 0 } as Parameters<typeof clockStep>[0], tm = (m: number, speed = 'Normal') => ({ minutes_total: m, speed, day_number: 15, clock: '18:20' });
+  assert.equal(clockStep(ck, tm(100)), ''); assert.equal(clockStep(ck, tm(101)), ''); // moving
+  for (let i = 0; i < 5; i++) assert.equal(clockStep(ck, tm(101, 'Pause'), { subState: 'BuildModeState' }), '', 'build mode pause excused');
+  assert.equal(clockStep(ck, null), ''); assert.match(clockStep(ck, null), /agent not answering while paused by design \(BuildModeState\)/);
+  assert.equal(clockStep(ck, tm(101, 'Pause'), { subState: 'CASFullModeState' }), ''); assert.equal(ck.misses, 0);
+  for (let i = 0; i < 3; i++) assert.equal(clockStep(ck, tm(101, 'Triple'), { subState: 'EditTownState' }), '', 'edit town excused at speed Triple');
+  assert.equal(clockStep(ck, tm(101, 'Pause'), { subState: 'LiveModeState', declared: true }), '', 'declared by a repro step');
+  assert.equal(clockStep(ck, tm(101, 'Pause'), { subState: 'LiveModeState' }), '');
+  assert.match(clockStep(ck, tm(101, 'Pause'), { subState: 'LiveModeState' }), /stuck at day 15 18:20 .*speed Pause, sub_state LiveModeState/, 'live pause still fails');
+  const ck2 = { last: null as number | null, misses: 0 };
+  clockStep(ck2, tm(5)); assert.equal(clockStep(ck2, null), ''); assert.equal(clockStep(ck2, null), '', 'no reply outside a pause: heartbeat guard decides');
+  assert.equal(clockStep(ck2, tm(5)), ''); assert.match(clockStep(ck2, tm(5)), /speed Normal\)$/, 'real stall at speed');
+  // heartbeat grace during a long blocking step (docs/67 crash Q)
+  const tail = (...ev: string[]) => ev.map((e, i) => `diag: mem #${i} mark ev=${e} priv=1\ndiag: memsus #${i} mark ev=${e} cc=1\n`).join('');
+  assert.equal(openPhase(tail('etcc-full', 'etcc-ph-import')), 'etcc-ph-import');
+  assert.equal(openPhase(tail('etcc-ph-place')), 'etcc-ph-place');
+  assert.equal(openPhase(tail('etcc-ph-place', 'etcc-ph-placed')), null, 'placed closes the step');
+  assert.equal(openPhase(tail('etcc-ph-bulldoze', 'etcc-empty')), null, 'any later mark closes it');
+  assert.equal(openPhase(''), null);
+  const gs: GraceState = { since: null, mark: null, movedAt: 0 };
+  assert.deepEqual(graceStep(gs, { now: 0, phase: null, mark: 'a' }), { excused: false, why: '' }, 'no open step: heartbeat verdict stands');
+  assert.equal(graceStep(gs, { now: 60000, phase: 'etcc-ph-place', mark: 'a' }).excused, true);
+  assert.equal(graceStep(gs, { now: 90000, phase: 'etcc-ph-place', mark: 'a' }).excused, true, 'one window without progress');
+  assert.equal(graceStep(gs, { now: 110000, phase: 'etcc-ph-place', mark: 'b' }).excused, true, 'progress resets');
+  let t = 110000;
+  for (let m = 0; t + 10000 <= 60000 + PHASE_GRACE_MS; m++) { t += 10000; assert.equal(graceStep(gs, { now: t, phase: 'etcc-ph-place', mark: String(m) }).excused, true); }
+  assert.match(graceStep(gs, { now: t + 10000, phase: 'etcc-ph-place', mark: 'z' }).why, /still open after 10 min/, 'grace capped');
+  const gs2: GraceState = { since: null, mark: null, movedAt: 0 };
+  graceStep(gs2, { now: 0, phase: 'etcc-ph-import', mark: 'a' });
+  assert.equal(graceStep(gs2, { now: 50000, phase: 'etcc-ph-import', mark: 'a' }).excused, true);
+  assert.match(graceStep(gs2, { now: 60000, phase: 'etcc-ph-import', mark: 'a' }).why, /etcc-ph-import: no progress .* for 60 s/, 'two windows without progress fail');
   assert.equal(deadReason({ running: true, now: 70000, lastBeatAt: 20000 }), '');
   assert.equal(deadReason({ running: false, now: 1, lastBeatAt: 1 }), 'TS3W.exe process gone');
   assert.match(deadReason({ running: true, now: 90000, lastBeatAt: 20000 }), /not answering for 70 s \(heartbeat frozen\)/);
   assert.match(deadReason({ running: true, now: 90000, lastBeatAt: 0, error: 'ECONNREFUSED' }), /\(ECONNREFUSED\)/);
+  // kill dump plan: path, procdump vs PowerShell, one per PID, disk floor, off switch
+  const dp = { pid: 4242, freeBytes: 50 * 2 ** 30, existing: [] as string[], procdump: null as string | null, dir: join('probe-out', 'dumps'), now: new Date('2026-10-26T03:04:05Z') };
+  assert.deepEqual(dumpPlan(dp), { tool: 'powershell', file: join('probe-out', 'dumps', 'ts3w-4242-20261026T030405.dmp') });
+  assert.equal((dumpPlan({ ...dp, procdump: 'C:\\t\\procdump.exe' }) as any).tool, 'procdump');
+  assert.match((dumpPlan({ ...dp, existing: ['ts3w-4242-20261026T010000.dmp'] }) as any).skip, /already dumped \(PID 4242\)/);
+  assert.equal((dumpPlan({ ...dp, existing: ['ts3w-42420-20261026T010000.dmp'] }) as any).tool, 'powershell', 'other PID with the same prefix');
+  assert.match((dumpPlan({ ...dp, freeBytes: 9 * 2 ** 30 }) as any).skip, /disk free 9 GB < 10 GB/);
+  assert.match((dumpPlan({ ...dp, pid: null }) as any).skip, /no TS3W\.exe running/);
+  assert.match((dumpPlan({ ...dp, off: true }) as any).skip, /dump off/);
+  assert.match(dumpHungGame('self-check', { image: 'no-such-image-ts3.exe', dir: join((await import('node:os')).tmpdir(), 'ts3-killdump-check') }), /skipped: no TS3W\.exe running/);
   // hang capture against fake probes (fixtures): healthy, dead (refused), hung (never answers)
   const { mkdtempSync, readdirSync, rmSync } = await import('node:fs'), { tmpdir } = await import('node:os');
   const ring = Buffer.alloc(0x10 + 64 * 32);

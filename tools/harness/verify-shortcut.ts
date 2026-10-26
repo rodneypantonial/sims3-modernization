@@ -43,7 +43,7 @@ while (Date.now() - t0 < limit) {
     const prev = seen.get(s.id);
     const e = prev && prev.key === key ? { key, checks: prev.checks + 1, reported: prev.reported } : { key, checks: 1, reported: false };
     seen.set(s.id, e);
-    if (!e.reported && mayBeStuck(s.interaction, !!s.routing) && e.checks >= (s.routing ? 3 : 6)) {
+    if (!e.reported && mayBeStuck(s.interaction, !!s.routing, !!s.in_transit) && e.checks >= (s.routing ? 3 : 6)) {
       e.reported = true;
       const teleported = s.name in moved;
       stuck.push(`${s.name}${teleported ? ' [teleported]' : ''} on ${s.interaction}`);

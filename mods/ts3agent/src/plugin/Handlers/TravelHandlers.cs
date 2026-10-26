@@ -78,8 +78,13 @@ namespace Ts3Agent
                     if (!Household.RoommateManager.IsNPCRoommate(s.SimDescription.SimDescriptionId)) wanted.Add(s);
             }
             List<Sim> list = new List<Sim>();
+            // clear_recovery (STRESS shortcut, not a player flow): drop the WentToLocation buff that GameStates adds on the way
+            // home and CheckForReasonsToFailTravel reads as "still recovering from the previous vacation", so back-to-back trips
+            // can run (NRaas Traveler lets the player skip the same check: TravelUtilEx filter Type.Recovering)
+            bool clear = a.Bool("clear_recovery", false);
             foreach (Sim s in wanted)
             {
+                if (clear && s.BuffManager.HasElement(BuffNames.WentToLocation)) s.BuffManager.RemoveElement(BuffNames.WentToLocation);
                 string why = TravelFailReason(s.SimDescription, world);
                 if (!string.IsNullOrEmpty(why)) { skipped.Add(s.FullName + ": " + why); continue; }
                 if (s == active) list.Insert(0, s); else list.Add(s);
@@ -99,7 +104,7 @@ namespace Ts3Agent
             throw new McpException("world must be france, china or egypt");
         }
 
-        // travel_vacation {world: france|china|egypt, days? (2), sims?, cost? (0)}: SitInCarToTriggerTravel, the interaction
+        // travel_vacation {world: france|china|egypt, days? (2), sims?, cost? (0), clear_recovery? (false)}: SitInCarToTriggerTravel, the interaction
         // TravelUtil.TriggerTravelToVacationWorld queues after the trip planner. Targeting the world lot skips the walk to the
         // farthest lot, so the switch starts on the next tick (same FinalBoardingCall + GameStates.TravelToVacationWorld).
         // Skips the planner's visa/duration limits and the ITF "travel with" warning.

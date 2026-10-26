@@ -36,6 +36,10 @@
 //   between: "normal" | "fast": the step's wait (fixed or adaptive) runs at ultra, then this speed is set back; only for steps
 //   whose effect does not depend on wall time (setup between firings), never a firing.
 //   Log line per adaptive step: "firing #n done after X s (signal|cap) [note]" (no arm note: "step <cmd> done after ...").
+//   until: {cmd, args?, all: [{path, equals | atLeast | atMost}], everyS?: 5, maxS?: 300} (repro.ts semantics, also in
+//   profile-world since 2026-10-25): after the step's wait, poll cmd until every path of its result holds; not met in maxS =
+//   the step throws (fail fast). Before that fix profile-world ignored it: mem-suspects-verify's async loops (catalog_loop,
+//   buy_sell_loop) and load_save reloads ran on into the next step (bp-memsus-reload: 'time' sent into a loading game).
 //   runStep() is the step-level API: profile-world's plain steps can call it in place of `step(s); sleep(waitS)`.
 //   node tools/harness/repro-loop.ts     self-check (fixtures, fake agent and clock; no game; plus every waitUntil in repros.json)
 import assert from 'node:assert/strict';
@@ -46,9 +50,23 @@ export type WaitCond = { counter: string | string[]; rises?: number; of?: string
 type Conds = WaitCond | WaitCond[];
 export type WaitUntil = Conds | { on: Conds; off: Conds };
 export type LoopStep = {
-  cmd: string; args?: unknown; waitS?: number; note?: string; optional?: boolean; count?: { counter: string } | { result: string };
-  waitUntil?: WaitUntil; minS?: number; maxS?: number; between?: 'normal' | 'fast'; setup?: boolean;
+  cmd: string; args?: unknown; waitS?: number; note?: string; optional?: boolean; count?: { counter: string } | { result: string }; tally?: string;
+  waitUntil?: WaitUntil; minS?: number; maxS?: number; between?: 'normal' | 'fast'; setup?: boolean; until?: Until1;
 };
+export type Until1 = { cmd: string; args?: unknown; all: { path: string; equals?: unknown; atLeast?: number; atMost?: number }[]; everyS?: number; maxS?: number };
+// one `until` (see top): resolves with the last answer once met, null when the window ended first; throws when not met in maxS
+export async function untilMet(u: Until1, io: Pick<StepIO, 'ag' | 'sleep' | 'now' | 'halted'>): Promise<any> {
+  const t0 = io.now(), get = (o: any, path: string) => path.split('.').reduce((x, k) => x?.[k], o);
+  const ok = (res: any) => res?.ok && u.all.every(c => { const v = get(res.result, c.path);
+    return c.equals !== undefined ? v === c.equals : c.atLeast !== undefined ? v >= c.atLeast : c.atMost !== undefined ? v <= c.atMost : !!v; });
+  for (;;) {
+    const last = await io.ag(u.cmd, u.args ?? {}).catch((e: Error) => ({ ok: false, error: e.message }));
+    if (ok(last)) return last;
+    if (io.halted()) return null;
+    if (io.now() - t0 > (u.maxS ?? 300) * 1000) throw new Error(`${u.cmd} until ${JSON.stringify(u.all)} not met in ${u.maxS ?? 300} s: ${JSON.stringify(last?.result ?? last?.error).slice(0, 200)}`);
+    await io.sleep((u.everyS ?? 5) * 1000);
+  }
+}
 export const isSetup = (s: { cmd: string; note?: string; setup?: boolean }) =>
   s.setup ?? (/^(patches|native_set|strand_\w+|spawn_sims|set_speed)$/.test(s.cmd) && !/^fire\b/.test(s.note ?? ''));
 export type Loop = { steps: LoopStep[]; arms: Arm[]; until: Until; maxMinutes?: number };
@@ -142,6 +160,10 @@ export async function runStep(s: LoopStep, io: StepIO, read: string[] = []): Pro
       await io.sleep(quiet.length ? PING_GAP_MS : POLL_MS);
     }
   }
+  if (s.until && why !== 'window') {
+    const met = await untilMet(s.until, io).catch((e: Error) => { throw new Error(`step ${s.cmd}: ${e.message}`); });
+    if (met) (io.log ?? (l => console.log(`${new Date().toISOString().slice(11, 19)} ${l}`)))(`  until met after ${((io.now() - t0) / 1000).toFixed(0)} s: ${JSON.stringify(met.result).slice(0, 160)}`);
+  }
   if (s.between) await io.ag('set_speed', { speed: s.between });
   const after = names.length ? await patches() : {};
   const secs = (io.now() - t0) / 1000;
@@ -197,7 +219,31 @@ export const STOP_LINE = /((?:stopped at \d+ events|loop (?:cap|window end) reac
 
 // ag: agent call (patches reads, pings); step: profile-world's step runner (logs, fail-fast on a failed non-optional step);
 // halted: window over (cap, clock guard, another stop)
-export type LoopIO = StepIO;
+// set_speed while the game speed is locked (a dialog is open or the game is saving; ip-p6int-stalelot-ab 2026-10-25 failed on it):
+// log the open dialog, retry every 5 s; fail-fast rule: progress checked every 30 s (still locked = a miss), 2 misses = the step
+// fails with the dialog named. r0 = the first answer; any other answer goes back unchanged.
+const LOCKED = /game speed is locked/;
+export async function untilUnlocked(call: () => Promise<any>, r0: any,
+  io: { sleep: (ms: number) => Promise<unknown>; now: () => number; log: (l: string) => void; dialog: () => Promise<string> }) {
+  if (r0?.ok || !LOCKED.test(String(r0?.error))) return r0;
+  const t0 = io.now();
+  let r = r0, misses = 0, next = t0 + 30000;
+  io.log(`set_speed: game speed locked, open dialog ${await io.dialog()}; retrying every 5 s (fail after 2 x 30 s)`);
+  for (;;) {
+    await io.sleep(5000);
+    r = await call();
+    if (r?.ok || !LOCKED.test(String(r?.error))) { io.log(`set_speed: unlocked after ${((io.now() - t0) / 1000).toFixed(0)} s`); return r; }
+    if (io.now() < next) continue;
+    const d = await io.dialog();
+    if (++misses >= 2) return { ...r, error: `${r.error}; still locked after ${((io.now() - t0) / 1000).toFixed(0)} s (2 checks), open dialog ${d}` };
+    io.log(`set_speed: still locked after ${((io.now() - t0) / 1000).toFixed(0)} s (check ${misses} of 2), open dialog ${d}`);
+    next += 30000;
+  }
+}
+
+// onArm: called at each firing's start, before its first step (profile-world.ts: arm slice + ts3native snapshot for wait-ab.ts
+// and hitch-ab.ts, docs/189 §16)
+export type LoopIO = StepIO & { onArm?: (arm: Arm, firing: number) => Promise<void> };
 
 export async function runLoop(loop: Loop, capMs: number, io: LoopIO): Promise<LoopResult> {
   const t0 = io.now(), ev: Record<Arm, number> = { on: 0, off: 0 }, fired: Partial<Record<Arm, number>> = Object.fromEntries(loop.arms.map(a => [a, 0]));
@@ -208,6 +254,7 @@ export async function runLoop(loop: Loop, capMs: number, io: LoopIO): Promise<Lo
     for (const arm of loop.arms) {
       if (io.halted()) return done('window');
       firings++; fired[arm]!++;
+      await io.onArm?.(arm, firings);
       let n = 0;
       for (const s of loop.steps) {
         if (io.halted()) return done('window'); // a firing cut short still counts what it saw
@@ -246,6 +293,23 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   const steps = (count?: LoopStep['count']): LoopStep[] => [{ cmd: 'patches', args: { overwatchspread: '$on' }, waitS: 1, note: 'arm' }, { cmd: 'fire', args: ['all', 1], waitS: 45, note: 'fire', ...(count && { count }) }];
   const L = (until: Until, count?: LoopStep['count'], maxMinutes?: number) => checkLoop({ steps: steps(count), arms: ['off', 'on', 'on', 'off'], until, maxMinutes });
 
+  // untilUnlocked: unlocks on the 3rd retry (15 s); stays locked -> fails at the 2nd 30 s check with the dialog; other errors pass
+  { let t = 0, n = 0; const lines: string[] = [];
+    const lio = { sleep: async (ms: number) => { t += ms; }, now: () => t, log: (l: string) => lines.push(l), dialog: async () => '{"open":true,"dialog":"Save"}' };
+    const lockedR = { ok: false, error: 'game speed is locked (a dialog is open or the game is saving)' };
+    let r = await untilUnlocked(async () => ++n >= 3 ? { ok: true } : lockedR, lockedR, lio);
+    assert.deepEqual([r.ok, t, lines.length], [true, 15000, 2]);
+    t = 0; lines.length = 0;
+    r = await untilUnlocked(async () => lockedR, lockedR, lio);
+    assert.deepEqual([r.ok, t], [false, 60000]); assert.match(r.error, /still locked after 60 s \(2 checks\), open dialog \{"open":true,"dialog":"Save"\}/);
+    assert.equal(lines.length, 2); // first notice + check 1
+    const other = { ok: false, error: 'no such speed' };
+    assert.equal(await untilUnlocked(async () => ({ ok: true }), other, lio), other); }
+  // onArm: once per firing, before its steps, with the arm and firing number
+  { const s0 = sim(() => 1), seen: string[] = [];
+    await runLoop(L({ perArm: 2 }), 30 * 60000, { ...s0.io, onArm: async (a, n) => { seen.push(`${a}${n}:${s0.log.length}`); } });
+    assert.deepEqual(seen.map(x => x.split(':')[0]), ['off1', 'on2', 'on3', 'off4']);
+    assert.equal(seen[1].split(':')[1], String(s0.log.length / 4)); } // firing 2 starts after firing 1's steps
   // firings counted: perArm 6 -> 3 ABBA cycles (12 firings), the old 12-firing repro; notes and $on as written by hand there
   let s = sim(() => 1), r = await runLoop(L({ perArm: 6 }), 30 * 60000, s.io);
   assert.deepEqual([r.why, r.events, r.firings, r.cycles], ['rule', { on: 6, off: 6 }, 12, 3]);
@@ -367,6 +431,15 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/').replace(
   assert.ok(d.secs >= 1 && d.secs < 1.1 && !g.calls.includes('patches'));
   await assert.rejects(runStep({ cmd: 'x', note: 'fire', waitUntil: armed, maxS: 5 }, game({}).io), /needs an arm/);
   // between: the wait runs at ultra, then the given speed; fixed waits keep waitS
+  // until: polled after the fixed wait until the result path holds; not met in maxS = throw (fail fast)
+  {
+    let polls = 0, tu = 0;
+    const io: StepIO = { now: () => tu, sleep: async ms => { tu += ms; }, halted: () => false, log: () => {}, step: async () => ({ ok: true, result: { done: false } }),
+      ag: async cmd => cmd === 'loop' ? (++polls < 3 ? { ok: false, error: 'no reply' } : { ok: true, result: { done: polls >= 4 } }) : { ok: true, result: {} } };
+    await runStep({ cmd: 'loop', waitS: 5, until: { cmd: 'loop', all: [{ path: 'done', equals: true }], everyS: 3, maxS: 60 } }, io);
+    assert.deepEqual([polls, tu], [4, 5000 + 3 * 3000]);
+    await assert.rejects(runStep({ cmd: 'loop', until: { cmd: 'never', all: [{ path: 'done', equals: true }], everyS: 3, maxS: 9 } }, io), /step loop: never until .* not met in 9 s/);
+  }
   g = game({}); d = await runStep({ cmd: 'strand_many', waitS: 3, between: 'normal' }, g.io);
   assert.deepEqual([d.why, d.secs, g.calls], ['fixed', 3, ['set_speed ultra', 'set_speed normal']]);
   // taskDone: needs the profiler's records

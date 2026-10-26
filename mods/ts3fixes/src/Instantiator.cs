@@ -78,14 +78,21 @@ namespace Ts3Fixes
         [Tunable] public static bool kOverwatchIgnoreStuckProbes = true; // NRaas Overwatch's Stuck Check V2 does not count the game's own stuck-check probe plans as the Sim's route failures (no double resets; OverwatchProbe.cs, docs/163 §9)
         [Tunable] public static bool kSafeSpotYield = false;       // opt-in until measured: SafeSpot sleeps one tick after each FindGoodLocation in the Sim's own task (Fixes.cs SafeSpotYield, docs/74 §11 (b))
         [Tunable] public static bool kStuckCheckCap = false;      // opt-in until verified: with stuckcheckown, the stuck check's probe jobs of rounds 1-2 are cut at ts3native's PlanDeadlineMs like a foreign sync plan (FewerPlans.cs, RouteBackoff.cs OwnerTaskStart, docs/163 §10)
+        [Tunable] public static bool kUnseenFallbackStuck = false;    // opt-in until verified: the 3 AM stuck check plans nothing for a Sim the player cannot see (live mode) and re-arms itself (UnseenFallback.cs, docs/202 §3.3)
+        [Tunable] public static bool kUnseenFallbackPlan = false;     // opt-in until verified: route plans of unseen Sims are cut at ts3native's [UnseenFallback] DeadlineMs (docs/202 §3.1)
+        [Tunable] public static bool kUnseenFallbackSites = false;    // opt-in until verified: pushes the unseen Sims' ids to ts3native's [UnseenFallback] Sites=1 (C1-C4 short lock waits, docs/202 §3.4)
+        [Tunable] public static bool kUnseenFallbackTeleport = false; // opt-in until verified: a cut own plan of an unseen townie places it at its route goal (docs/202 §3.2)
+        [Tunable] public static bool kUnseenFallbackArrive = false;   // opt-in until verified: an unseen townie walking to a spot in view skips the hidden part of the walk (hold, placed at a hand-off point out of view; docs/202 §3.6)
+        [Tunable] public static bool kUnseenFallbackLeave = false;    // opt-in until verified: a townie leaving the view walks to a hand-off point out of view, then the rest is held and skipped (docs/202 §3.6)
+        [Tunable] public static bool kUnseenFallbackPre = false;      // opt-in until verified: an unseen townie's own walk to an unseen lot goal is held for the walk time, then placed at the goal (no search; docs/202 §3.5)
         [Tunable] public static bool kPrePlanCallback = false;     // opt-in until measured: Route.AboutToPlanCallback runs before an async START, the job's locked-door list survives the original plan's second callback (RouteBackoff.cs PreCb, docs/185 §5)
 
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartUfSitesPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } try { Fixes.MemSusWorldLoad(); } catch (Exception) { } };
         }
     }
 }

@@ -232,6 +232,7 @@ namespace Ts3Fixes
                 foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
                 {
                     if (s == null || s.SimDescription == null || !s.InWorld) continue;
+                    if (UfInTransit(s)) continue;  // docs/202 §3.7: a D walk-time hold (unseenfbpre) stands still by design
                     ulong id = s.ObjectId.Value;
                     RouteFails f;
                     if (sRouteFails.TryGetValue(id, out f) && f.Count >= kRouteFailPlans && now - f.First > failSpan && f.First <= now
@@ -324,7 +325,7 @@ namespace Ts3Fixes
                     bool home = cur is GoHome || cur is Sim.GoToVirtualHome || cur is Sim.GoToVirtualHome.GoToVirtualHomeInternal;
                     bool moving = s.SimRoutingComponent != null && s.SimRoutingComponent.IsRouting;
                     if (!home && !moving) continue;
-                    if (!TownieUnseen(s, null)) continue;
+                    if (!TownieUnseen(s, null) || UfInTransit(s)) continue;  // docs/202 §3.7: D holds are in transit
                     ulong id = s.ObjectId.Value;
                     Seen seen;
                     if (!mSeen.TryGetValue(id, out seen) || (s.Position - seen.Pos).Length() > 1f)

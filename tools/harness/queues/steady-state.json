@@ -1,0 +1,91 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/200 §11 steady-state leak test (Rodney 2026-10-26): add items, remove, add the same number again, 6 cycles; full and empty marks should repeat; growth from cycle 2 on = leak, shrinking steps = cache settling; largest free = fragmentation. Job 1 the identical item set every cycle (same object keys, CAS parts, inventory products and Sims: wear_parts remember), job 2 distinct items every cycle (skip / nth offsets): a leak per instantiation shows in both, a per-distinct-item cache only in fresh. ts3native allocsites6 (0.36.88: v4 + stale module rows dropped, docs/67 §21, + no TLS in the hooks: load deadlock fix, docs/201 §15) with [MemDiag] AllocSites=1 as alloc-sites.json (TEST-RUN TOOL, correctness only, no timing arms, no derived smoke: --no-smoke if asked). ccSet cc-2k-v2 (leftover stash: node tools/harness/queue.ts --restore-content first). Needs the ts3agent with wear_parts remember. ~2 x 24 min play + 2 loads (~60 min).",
+  "jobs": [
+    {
+      "id": "bp-cc-steady-same",
+      "note": "live-cc-steady-same ~24 min (docs/200 §11: 6 cycles, the identical item set every cycle; 150 objects + 25 remembered Sims dressed -> lss-full, removed -> lss-empty; 25 inventory objects -> lss-inv-full / lss-inv-empty; mem_gc after every mark) with [MemDiag] AllocSites=1 as alloc-sites.json. Pass: the alloc sites on line, 6 x each of the four marks in diag: mem lines and 6 x full / empty allocsites sum lines, no crash. Read: node tools/memory-report.ts <job ts3native.log> --steady lss and --steady lss-inv.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 12
+      },
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [457]": 1,
+        "^OK   alloc sites NtAllocateVirtualMemory detour": 1,
+        "^OK   alloc sites NtMapViewOfSection detour": 1,
+        "^diag: mem #\\d+ mark ev=lss-full ": 6,
+        "^diag: mem #\\d+ mark ev=lss-empty ": 6,
+        "^diag: mem #\\d+ mark ev=lss-inv-full ": 6,
+        "^diag: mem #\\d+ mark ev=lss-inv-empty ": 6,
+        "^allocsites: #\\d+ mark ev=lss-full sum heapMB=": 6,
+        "^allocsites: #\\d+ mark ev=lss-empty sum heapMB=": 6
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 24,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "live-cc-steady-same"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    },
+    {
+      "id": "bp-cc-steady-fresh",
+      "note": "live-cc-steady-fresh ~24 min (docs/200 §11: 6 cycles, distinct items every cycle; 150 objects + 25 remembered Sims dressed -> lsf-full, removed -> lsf-empty; 25 inventory objects -> lsf-inv-full / lsf-inv-empty; mem_gc after every mark) with [MemDiag] AllocSites=1 as alloc-sites.json. Pass: the alloc sites on line, 6 x each of the four marks in diag: mem lines and 6 x full / empty allocsites sum lines, no crash. Read: node tools/memory-report.ts <job ts3native.log> --steady lsf and --steady lsf-inv.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "MemDiag.AllocSites": 1,
+        "MemDiag.AllocSitesSample": 64,
+        "MemDiag.AllocSitesTop": 12
+      },
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [457]": 1,
+        "^OK   alloc sites NtAllocateVirtualMemory detour": 1,
+        "^OK   alloc sites NtMapViewOfSection detour": 1,
+        "^diag: mem #\\d+ mark ev=lsf-full ": 6,
+        "^diag: mem #\\d+ mark ev=lsf-empty ": 6,
+        "^diag: mem #\\d+ mark ev=lsf-inv-full ": 6,
+        "^diag: mem #\\d+ mark ev=lsf-inv-empty ": 6,
+        "^allocsites: #\\d+ mark ev=lsf-full sum heapMB=": 6,
+        "^allocsites: #\\d+ mark ev=lsf-empty sum heapMB=": 6
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 24,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "live-cc-steady-fresh"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}

@@ -447,6 +447,436 @@
       "what": "P6 footprint per-lot keys (StaleLot FpLots, docs/189 phase 2b)",
       "at": "2026-10-25T00:19:08.223Z",
       "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\p6fl"
+    },
+    {
+      "id": "native-v130",
+      "kind": "native",
+      "version": 130,
+      "from": 20860,
+      "to": 20923,
+      "by": "callsite-coverage",
+      "what": "passive self-disarming call-site coverage ([ProbeSnap] CallSites, docs/133 §7)",
+      "at": "2026-10-25T01:30:20.464Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\callsites"
+    },
+    {
+      "id": "ledger-349",
+      "kind": "ledger",
+      "from": 349,
+      "to": 349,
+      "by": "s3m-g1report",
+      "what": "G1 dump round 3 result",
+      "at": "2026-10-25T02:06:23.546Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-g1report"
+    },
+    {
+      "id": "native-v131",
+      "kind": "native",
+      "version": 131,
+      "from": 20924,
+      "to": 20939,
+      "by": "p6-measure",
+      "what": "[P6Waits] arm override from the in-load loop (p6wArmSet, switch p6warm), docs/189 ladder measurement",
+      "at": "2026-10-25T07:14:27.359Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a44030f46ccd6de4b"
+    },
+    {
+      "id": "native-v132",
+      "kind": "native",
+      "version": 132,
+      "from": 20940,
+      "to": 20987,
+      "by": "p6-slim",
+      "what": "P6 clone slimming: [RouteSnap] PoolChunkMB (pl*), EpochHeap (rpGen*), StandDownMB (rpSd*), docs/66 §7",
+      "at": "2026-10-25T10:05:36.596Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-accf6fb9f61f22f45"
+    },
+    {
+      "id": "ledger-350",
+      "kind": "ledger",
+      "from": 350,
+      "to": 350,
+      "by": "p6-slim",
+      "what": "docs/66 §7.1 P6 clone slimming (PoolChunkMB, EpochHeap, StandDownMB)",
+      "at": "2026-10-25T10:17:42.825Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-accf6fb9f61f22f45"
+    },
+    {
+      "id": "native-v133",
+      "kind": "native",
+      "version": 133,
+      "from": 20988,
+      "to": 21019,
+      "by": "p6-slim",
+      "what": "A4 per-lot readout: [RouteSnap] LotUseReadout (lu*), docs/66 §7.1",
+      "at": "2026-10-25T10:33:20.911Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-accf6fb9f61f22f45"
+    },
+    {
+      "id": "ledger-351",
+      "kind": "ledger",
+      "from": 351,
+      "to": 351,
+      "by": "memsus",
+      "what": "GC.WaitForPendingFinalizers no-op in TS3W (mem_gc, docs/191 module 2)",
+      "at": "2026-10-25T13:20:21.581Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-adb0b4f82889df110"
+    },
+    {
+      "id": "ledger-352",
+      "kind": "ledger",
+      "from": 352,
+      "to": 352,
+      "by": "agent-afe53269255183e0f",
+      "what": "docs/195 gate-12 F-F 0x62FB74: IsOkToIdle idle check, moved wait, IdleCheckRO + obstacle query site C",
+      "at": "2026-10-25T13:33:29.051Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-afe53269255183e0f"
+    },
+    {
+      "id": "native-v134",
+      "kind": "native",
+      "version": 134,
+      "from": 21020,
+      "to": 21183,
+      "by": "kinddl",
+      "what": "[RouteAsync] KindDeadlines: per-kind route job deadlines, cut + per-follower backoff, outcome counters (kd*), docs/197",
+      "at": "2026-10-25T15:30:15.956Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a3b5327f79ae2b6ed"
+    },
+    {
+      "id": "ledger-353",
+      "kind": "ledger",
+      "from": 353,
+      "to": 353,
+      "by": "kinddl",
+      "what": "docs/197 per-kind route job deadlines (KindDeadlines)",
+      "at": "2026-10-25T15:30:16.152Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a3b5327f79ae2b6ed"
+    },
+    {
+      "id": "native-v135",
+      "kind": "native",
+      "version": 135,
+      "from": 21184,
+      "to": 21199,
+      "by": "pd2",
+      "what": "[RouteAsync] PlanDeadlineMs sync-path stuck-check last-round exemption + own-IC nested plan exemption (pdExemptSc, pdCutSc), docs/164 §7",
+      "at": "2026-10-25T20:55:50.694Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "fixes-302",
+      "kind": "fixes",
+      "from": 302,
+      "to": 302,
+      "by": "owstuckslice-sel",
+      "what": "OverwatchStuck.cs overwatchstuckslice: longest stretch measured at the IsSelectable hook (us), docs/145 §12",
+      "at": "2026-10-25T20:56:38.446Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-354",
+      "kind": "ledger",
+      "from": 354,
+      "to": 354,
+      "by": "memlite",
+      "what": "player memory lines: destroyed-but-alive via ScriptObject.Destroy + weak refs (docs/191)",
+      "at": "2026-10-25T22:51:48.478Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v136",
+      "kind": "native",
+      "version": 136,
+      "from": 21200,
+      "to": 21231,
+      "by": "rctrim",
+      "what": "[ResourceCache] TrimAfterCleanup experiment (rctrim.cpp)",
+      "at": "2026-10-25T22:56:10.565Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-355",
+      "kind": "ledger",
+      "from": 355,
+      "to": 355,
+      "by": "rctrim",
+      "what": "rctrim + Boehm heap decommit/release static check",
+      "at": "2026-10-25T22:56:10.786Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "native-v137",
+      "kind": "native",
+      "version": 137,
+      "from": 21232,
+      "to": 21343,
+      "by": "memexp",
+      "what": "docs/199 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit (memexp.cpp)",
+      "at": "2026-10-25T23:14:07.655Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-356",
+      "kind": "ledger",
+      "from": 356,
+      "to": 356,
+      "by": "sims-3-modernization",
+      "what": "docs/199 TypeGrowth + SqrtHeapLimit addresses",
+      "at": "2026-10-25T23:14:07.877Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-357",
+      "kind": "ledger",
+      "from": 357,
+      "to": 357,
+      "by": "allocsites-agent",
+      "what": "docs/201 [MemDiag] AllocSites hook table and attribution",
+      "at": "2026-10-26T00:49:16.357Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-358",
+      "kind": "ledger",
+      "from": 358,
+      "to": 358,
+      "by": "sims-3-modernization",
+      "what": "docs/200 §10 CC library lots by file rewrite (cc-lot-gen)",
+      "at": "2026-10-26T01:01:03.438Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-359",
+      "kind": "ledger",
+      "from": 359,
+      "to": 359,
+      "by": "allocsites-fix",
+      "what": "docs/201 §11 alloc sites hook fault",
+      "at": "2026-10-26T01:41:12.195Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-360",
+      "kind": "ledger",
+      "from": 360,
+      "to": 360,
+      "by": "agent-allocsites-cores",
+      "what": "docs/201 §12 EA core and Boehm reservations, arena feasibility",
+      "at": "2026-10-26T02:39:49.449Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-361",
+      "kind": "ledger",
+      "from": 361,
+      "to": 361,
+      "by": "sims-3-modernization",
+      "what": "allocsites own-hook frames skipped (docs/201 §12.1, 0.36.85)",
+      "at": "2026-10-26T02:46:03.149Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-362",
+      "kind": "ledger",
+      "from": 362,
+      "to": 362,
+      "by": "sims-3-modernization",
+      "what": "docs/67 crash Q: bp-cc-lots sim stall in Library lot place",
+      "at": "2026-10-26T02:51:05.892Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-363",
+      "kind": "ledger",
+      "from": 363,
+      "to": 363,
+      "by": "sims-3-modernization",
+      "what": "docs/201 §13 allocsites3 results 2026-10-26",
+      "at": "2026-10-26T04:27:21.923Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-364",
+      "kind": "ledger",
+      "from": 364,
+      "to": 364,
+      "by": "allocsites4",
+      "what": "docs/201 §14 allocsites v4: untracked regions, Ex hooks (0.36.86)",
+      "at": "2026-10-26T04:40:18.569Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-365",
+      "kind": "ledger",
+      "from": 365,
+      "to": 365,
+      "by": "sims-3-modernization",
+      "what": "docs/67 §21: steady-state Frida crash, AllocSites stale module AVs, edittown game bin",
+      "at": "2026-10-26T04:57:47.267Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-366",
+      "kind": "ledger",
+      "from": 366,
+      "to": 366,
+      "by": "unseenfb",
+      "what": "unseen-sim fallback (docs/202)",
+      "at": "2026-10-26T05:25:05.550Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-aa4cfeee1f92bf047"
+    },
+    {
+      "id": "fixes-303",
+      "kind": "fixes",
+      "from": 303,
+      "to": 312,
+      "by": "unseenfb",
+      "what": "UnseenFallback.cs unseenfbstuck / unseenfbplan / unseenfbteleport (docs/202)",
+      "at": "2026-10-26T05:25:05.758Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-aa4cfeee1f92bf047"
+    },
+    {
+      "id": "native-v138",
+      "kind": "native",
+      "version": 138,
+      "from": 21344,
+      "to": 21391,
+      "by": "unseenfb",
+      "what": "docs/202 [UnseenFallback] plan deadline for unseen Sims (unseenfb.cpp)",
+      "at": "2026-10-26T05:25:05.975Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-aa4cfeee1f92bf047"
+    },
+    {
+      "id": "fixes-313",
+      "kind": "fixes",
+      "from": 313,
+      "to": 322,
+      "by": "unseenfb-d",
+      "what": "docs/202 §3.5-§3.6 D / D-arrive / D-leave (unseenfbpre, unseenfbarrive, unseenfbleave)",
+      "at": "2026-10-26T06:23:42.627Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\unseenfb-d"
+    },
+    {
+      "id": "fixes-323",
+      "kind": "fixes",
+      "from": 323,
+      "to": 325,
+      "by": "unseenfb-c",
+      "what": "docs/202 C1-C4 unseenfbsites push: lists pushed, ids pushed, pushes refused",
+      "at": "2026-10-26T06:28:04.461Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\unseenfb-c"
+    },
+    {
+      "id": "native-v139",
+      "kind": "native",
+      "version": 139,
+      "from": 21392,
+      "to": 21567,
+      "by": "unseenfb-c",
+      "what": "docs/202 C1-C4 [UnseenFallback] site fallbacks ufc*",
+      "at": "2026-10-26T06:28:10.311Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\unseenfb-c"
+    },
+    {
+      "id": "fixes-326",
+      "kind": "fixes",
+      "from": 326,
+      "to": 327,
+      "by": "unseenfb-d",
+      "what": "docs/202 §3.5 D: no-verdict skips, verdicts filled from normal plans",
+      "at": "2026-10-26T06:44:54.408Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\unseenfb-d"
+    },
+    {
+      "id": "ledger-367",
+      "kind": "ledger",
+      "from": 367,
+      "to": 367,
+      "by": "unseenfb-c",
+      "what": "docs/202 §3.4 C1-C4 site fallbacks (unseenfb-c)",
+      "at": "2026-10-26T06:57:25.829Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\unseenfb-c"
+    },
+    {
+      "id": "ledger-368",
+      "kind": "ledger",
+      "from": 368,
+      "to": 368,
+      "by": "ufb-crash-agent",
+      "what": "docs/67 §22 Crash S: mint callvirt-miss fault on a freed receiver in sv-ufb-farcrowd-loop",
+      "at": "2026-10-26T08:21:02.996Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-fix-ufb-crash"
+    },
+    {
+      "id": "ledger-369",
+      "kind": "ledger",
+      "from": 369,
+      "to": 369,
+      "by": "s3m-ufb-arena",
+      "what": "docs/67 §22.2 crash S static: ArenaGuard, narrowing jobs",
+      "at": "2026-10-26T09:05:42.814Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-arena"
+    },
+    {
+      "id": "ledger-370",
+      "kind": "ledger",
+      "from": 370,
+      "to": 370,
+      "by": "s3m-wt-ufbpatch",
+      "what": "Crash S patch host + frame rooting static check (docs/67 §22.3)",
+      "at": "2026-10-26T09:31:09.631Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-wt-ufbpatch"
+    },
+    {
+      "id": "ledger-371",
+      "kind": "ledger",
+      "from": 371,
+      "to": 371,
+      "by": "s3m-ufb-audit",
+      "what": "docs/67 §22.5 crash S frame-word mark audit (ts3native 0.36.97)",
+      "at": "2026-10-26T10:04:58.129Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-audit"
+    },
+    {
+      "id": "ledger-372",
+      "kind": "ledger",
+      "from": 372,
+      "to": 372,
+      "by": "s3m-ufb-desc-watch",
+      "what": "Crash S chunk descriptor watch and restore (docs/67 §22.6)",
+      "at": "2026-10-26T10:32:49.346Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-desc-watch"
+    },
+    {
+      "id": "ledger-373",
+      "kind": "ledger",
+      "from": 373,
+      "to": 373,
+      "by": "s3m-ufb-tailpad",
+      "what": "Crash S arena chunk tail pad + DR writer watch (docs/67 §22.7)",
+      "at": "2026-10-26T11:21:24.698Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-tailpad"
+    },
+    {
+      "id": "ledger-374",
+      "kind": "ledger",
+      "from": 374,
+      "to": 374,
+      "by": "s3m-ufb-tailwatch",
+      "what": "Crash S tail watch filter: DR hits were next-chunk header writes (docs/67 §22.8)",
+      "at": "2026-10-26T11:59:43.782Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-tailwatch"
+    },
+    {
+      "id": "ledger-375",
+      "kind": "ledger",
+      "from": 375,
+      "to": 375,
+      "by": "s3m-fix-initobj",
+      "what": "Crash S writer: MINT_INITOBJ 12-byte size on 8-byte slots (docs/67 §22.9)",
+      "at": "2026-10-26T13:02:20.599Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-fix-initobj"
     }
   ]
 }

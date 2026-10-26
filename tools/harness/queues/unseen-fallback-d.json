@@ -1,0 +1,245 @@
+{
+  "note": "docs/202 §3.5 D pre-emptive teleport (ts3fixes unseenfbpre, counters 313-318; ts3native colour codes 11-13 on the 0x83 channel, no new native counters). DRAFT, NOT RUN (dry-run only). Run after feature/unseenfb-d is merged (cycle.ts rebuilds ts3fixes and ts3agent from source: the agent's unseenfbpre names, crowd_do, far2, sims_activity in_transit). asi game-copy/ts3native.asi.unseenfb-d (built from the branch). Correctness first, day OK: smoke (switch read back, the one 'unseenfb colour: R ...' log line shows a sane R size and world origin: the origin offsets are inferred, docs/202 §3.5), then the D loop, the hold vs stuck-detector job, then the natural verify (verify-shortcut rule as fixesRequire). Stop rule: a crash, a watchdog line, a fixesRequire miss, a stuck teleported Sim, or any unseenfbpre counter moving out of live mode = stop, fix, rerun. Manual check: node tools/harness/verify-shortcut.ts --name unseenfbpre --tries 10 --minutes 15 (other world if it does not fire). D-arrive / D-leave (§3.6, unseenfbarrive / unseenfbleave, counters 319-322) have their own loops and a natural split verify. ts3native 0.36.90 / ts3fixes 0.1.1 (D verdicts never planned on the sim thread: counters 326-327).",
+  "smoke": {
+    "note": "Measurement smoke: SV 10 min, unseenfbpre on: the switch reads back (fixes on ... verified), the 'unseenfb colour:' line appears once with R about 64x64 and the world origin, no crash.",
+    "asi": "game-copy/ts3native.asi.unseenfb-all13",
+    "releaseDefaults": true,
+    "save": "Baseline-SV-Spring",
+    "minCounters": 138,
+    "nativeRequire": "watchdogs<=0",
+    "ini": {
+      "RouteAsync.LogFallbackMs": 20,
+      "HitchAttr.Enabled": 1
+    },
+    "run": {
+      "profile": {
+        "seed": 12345,
+        "noSamplers": true,
+        "minutes": 10,
+        "fixesOn": "unseenfbpre"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  "jobs": [
+    {
+      "id": "sv-ufbd-pre-loop",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "D correctness: forced ABBA on unseenfb-pre-far-object (30 Sims at the farthest community lot, each loop Sit on a bench of far2: own-task RouteToSlot plans with both ends unseen), 30 per arm, cap 14 min. Pass: no crash, 0 watchdog lines, unseenfbpre_shortcuts >= 10, no stuck teleported Sim, held Sims in_transit during holds. Read: unseenfbpre_no_spot / _failfast / _cancelled, route jobs per arm (D removes the plans).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 16,
+          "repro": "unseenfb-pre-far-object",
+          "loopRule": {
+            "until": {
+              "perArm": 30
+            },
+            "maxMinutes": 14
+          },
+          "noSamplers": true,
+          "fixesRequire": "unseenfbpre_shortcuts>=10"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "sv-ufbd-hold-overwatch",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Stuck-detector compatibility of D holds (docs/202 §3.7): repro unseenfb-hold-overwatch (20 far Sims held for the far -> far2 walk time, two Overwatch passes forced inside the holds, our watchdog's own checks). Pass: no crash, unseenfbpre_holds >= 10, owstucknotice_held unchanged (no Overwatch Unroutable / Stationary reset), watchdog resets and stuck_check_reset unchanged. Needs NRaas Overwatch in the test Mods (as the Overwatch jobs).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "unseenfb-hold-overwatch",
+          "noSamplers": true,
+          "fixesOn": "unseenfbpre,overwatchstucknotice",
+          "fixesRequire": "unseenfbpre_holds>=10"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "sv-ufbd-arrive-loop",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "D-arrive correctness (docs/202 §3.6): forced ABBA on unseenfb-arrive-home (30 Sims at the farthest community lot, each loop Sit (or View / Admire ...) on an outdoor object of far2 with the camera on it: start unseen, goal in view), 30 per arm. Pass: no crash, 0 watchdog lines, unseenfbarrive_shortcuts >= 10, no stuck teleported Sim, Sims appear out of view and walk in. Read: unseenfbarrive_no_spot, unseenfbpre_no_verdict / _filled, unseenfbpre_cancelled.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 16,
+          "repro": "unseenfb-arrive-home",
+          "loopRule": {
+            "until": {
+              "perArm": 30
+            },
+            "maxMinutes": 14
+          },
+          "noSamplers": true,
+          "fixesRequire": "unseenfbarrive_shortcuts>=10"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "sv-ufbd-leave-loop",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "D-leave correctness (docs/202 §3.6): forced ABBA on unseenfb-leave-far (30 Sims on the household lot, each loop Sit on a bench of far2: start in view, goal unseen), 30 per arm. Pass: no crash, 0 watchdog lines, unseenfbleave_shortcuts >= 10 (the first loops may only fill verdicts: unseenfbpre_filled > 0), no stuck teleported Sim, the visible leg walked normally.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 16,
+          "repro": "unseenfb-leave-far",
+          "loopRule": {
+            "until": {
+              "perArm": 30
+            },
+            "maxMinutes": 14
+          },
+          "noSamplers": true,
+          "fixesRequire": "unseenfbleave_shortcuts>=10"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "sv-ufbd-pre-verify",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Teleport verify (verify-shortcut rule, docs/202 §3.5 (7)): SV natural 30 min, seeded, unseenfbpre on for the whole run. Pass: no crash, unseenfbpre_shortcuts >= 5, 0 stuck Sims among the moved ones (sims_activity + moved list, in_transit excluded, as verify-shortcut.ts), 0 watchdog lines. If it does not fire: rerun on IP and BP (other worlds), no A/B.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 30,
+          "noSamplers": true,
+          "fixesOn": "unseenfbpre",
+          "fixesRequire": "unseenfbpre_shortcuts>=5"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    },
+    {
+      "id": "sv-ufbd-split-verify",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Split verify (verify-shortcut rule, docs/202 §3.6): SV natural 30 min, unseenfbpre + unseenfbarrive + unseenfbleave on. Pass: no crash, unseenfbarrive_shortcuts >= 5, 0 stuck Sims among the moved ones, 0 watchdog lines; read unseenfbleave_shortcuts (fewer natural cases). Other world if it does not fire. Manual: verify-shortcut.ts --name unseenfbarrive,unseenfbleave --tries 5 --minutes 20. Plus the camera-sweep check by hand: pan along the hand-off area during holds, unseenfbpre_cancelled must grow.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 138,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "ini": {
+        "RouteAsync.LogFallbackMs": 20,
+        "HitchAttr.Enabled": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 30,
+          "noSamplers": true,
+          "fixesOn": "unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfbarrive_shortcuts>=5"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}
