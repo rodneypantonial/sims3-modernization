@@ -1,6 +1,7 @@
 // Sim-thread waits on the async route job, split per A/B side, from the counter snapshots profile-world.ts --ab takes at
 // every switch (<tag>-ab-native.jsonl, probe P0 blockKey/blockN/blockUs + async totals). Answers "where did the saved
 // route time go" (PLAN item 6, ip-ar-ab 2026-10-18: plans moved off the sim thread, stutter unchanged).
+// In-load repro loops (profile-world.ts --repro with a loop) write the same files: one slice per firing, slice 0 = lead-in.
 //   node tools/harness/wait-ab.ts <tag> [...]      (tag as in probe-out/profile/<tag>-ab.json)
 //   node tools/harness/wait-ab.ts --self-check
 import assert from 'node:assert/strict';

@@ -1,0 +1,106 @@
+{
+  "note": "Rerun on cc-script-100b (2026-10-26): the 01:56 UTC run crashed both CC jobs at load on cc-script-100 (InitializeArray 0xE7A349 on a NULL field: clone refs to EA <PrivateImplementationDetails>{GUID}, which simler90 core mod's recompiled assemblies name differently; docs/200 §8.1, docs/67 §19); cc-script-100b copies those fields into each clone. docs/200 §8 scripted CC (one script assembly per item): game-copy/cc-synth/cc-script-100b (tools/cc-gen-script.ts --count 100 --seed 1 --ep-share 0.5: 100 IL clones of EA object classes, 50 base + 50 EP/SP, 2.4 MB of assemblies, 2,930 cloned clips, 233 MB; moved in before the load and back after; interrupted run: node tools/harness/queue.ts --restore-content). Asi game-copy/ts3native.asi.allocsites3 (0.36.85, docs/201, includes memlite/rctrim/memexp; [MemDiag] AllocSites=1 at 1 in 64 attributes native growth per call site, read with node tools/memory-report.ts <log> section native call sites; ResourceCache trim, SqrtHeapLimit and TypeGrowth off). The user CC stashed in every job (content no-cc), so the arms differ only by the set. STRESS + correctness (noiseCheck false). Order: bp-ccs-nocc (no-CC reference load, mark scc-loaded), bp-ccs-load (load smoke: scripted_cc_check, no new script error, mark scc-loaded), bp-ccs-cycle (repro scripted-cc-cycle). Key read: diag: mem scc-loaded of bp-ccs-load minus bp-ccs-nocc = address space and largest free per 100 loaded assemblies (per assembly = /assemblies of the check answer); per cycle: scc-full / scc-empty repeated marks (node tools/mem-report.ts report --log <job ts3native.log>). ~6 + ~8 + ~20 min with loads.",
+  "jobs": [
+    {
+      "id": "bp-ccs-nocc",
+      "note": "No-CC reference (~6 min with the load): same save, same stash, no set. Read the diag: mem scc-loaded line.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=scc-loaded ": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "scc-baseline-mark"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ccs-load",
+      "note": "Load smoke (~8 min with the load). Pass: scripted_cc_check step ok (>= 80 products typed as their cloned class with own interactions, >= 90 CCGenS* assemblies loaded), no new ScriptError, scc-loaded + scc-checked marks, no crash. Read the check answer (problems: first items whose type or interactions did not bind).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "ccSet": "game-copy/cc-synth/cc-script-100b",
+      "scriptErrorsMax": 0,
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=scc-loaded ": 1,
+        "^diag: mem #\\d+ mark ev=scc-checked ": 1
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "scripted-cc-load"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-ccs-cycle",
+      "note": "Scripted CC use cycles (repro scripted-cc-cycle, agent scripted_cc_cycle): 3 x 25 items placed, own interaction run by the active Sim, removed. Pass: cycles_done 3, no error, pushed > 0, 3 x scc-empty. Read: scc-full / scc-empty per cycle against the previous cycle; finished / timeouts / none_enabled; ScriptError files (not capped here: a clone that throws in its own interaction is a finding, listed in the row).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "content": "no-cc",
+      "ccSet": "game-copy/cc-synth/cc-script-100b",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=scc-full ": 3,
+        "^diag: mem #\\d+ mark ev=scc-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-d.]+! ": 0,
+        "[\\/]Users[\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 15,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "scripted-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    }
+  ]
+}

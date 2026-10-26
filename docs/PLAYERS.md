@@ -38,6 +38,8 @@ Less stutter, mostly by skipping work nobody can see:
 
 Everything else in `ts3native.ini` is **off**: experiments still being tested. Leave them off unless you want to help test, and keep backups.
 
+- **Test setting `[UnseenFallback] DeadlineMs` (only used with `Enabled=1`, off by default):** how long (in ms) the game may search for a route for a Sim you cannot see before it gives up. Lower means fewer and shorter freezes caused by off-screen Sims, but more of those Sims have their walk cancelled or are moved straight to where they were going; higher means more of their routes are planned for real. Default 300, allowed 175 to 300 (other values are set to the nearest limit, and `ts3native.log` says so).
+
 ## How to install
 
 You need two downloads from the release page: **`ts3fixes.package`** and **`ts3native-<version>.zip`**. You can install just one of them if you like; they work on their own.
@@ -80,6 +82,26 @@ This is **opt-in** and still being tested, so it is off in the release. Nothing 
 4. **Without the tool:** open a [crash report issue](https://github.com/rodneypantonial/sims3-modernization/issues/new?template=crash.yml), copy the `signature id:` line into the first box and paste the whole file into the report box.
 
 To switch it off again, set `Enabled=0`. The folder `ts3native-crashes` can be deleted at any time.
+
+### Error 12 report (test feature)
+
+Error 12 means the game ran out of room in its memory (the game is a 32-bit program, so it can use at most 4 GB, however much RAM your PC has). Heavy CC and many mods make it come sooner. If you get Error 12 often, this report shows us what filled the memory, and whether our mod had any part in it.
+
+This is a **test feature**: it is off in the release and still being tested. Nothing is ever sent without you saying yes.
+
+- **Always on, logging only:** every 5 minutes of play `ts3native.log` already gets one short line of memory numbers (`[MemDiag] Light=1`). That alone often helps, so send `ts3native.log` with any Error 12 report.
+- **The Error 12 report adds more detail:** which parts of the game and which other plugins hold the memory, and what grew before the error.
+
+1. **Switch it on:** in `Game\Bin\ts3native.ini`, under `[MemDiag]`, set `AllocSites=1`.
+2. **Play as usual until Error 12 happens.** Then close the game (end it in Task Manager if it hangs). Do not start the game again before step 3: every start rewrites `ts3native.log`.
+3. **Send it (optional):** with [Node.js](https://nodejs.org/) 22.18 or newer and [`tools/report-crash.ts`](https://github.com/rodneypantonial/sims3-modernization/blob/HEAD/tools/report-crash.ts), run `node report-crash.ts --memory --log "<your game folder>\Game\Bin\ts3native.log"`. It keeps only the memory lines and the last lines of the log, replaces folder paths with your user name, your user name, your PC's name and email addresses with placeholders such as `<user>`, and replaces your package file names with short ids (`pkg-1a2b3c4d`). It shows **exactly** what would be sent, saves the same text as `ts3native-memory-report.txt`, and asks first. Then, like the crash report, it opens a new issue with your logged-in [GitHub CLI](https://cli.github.com/) or a prefilled GitHub page you submit yourself. If you are fine with sharing your package file names (it helps us see which CC or mods take the memory), add `--names`.
+4. **Without the tool:** open an [Error 12 report issue](https://github.com/rodneypantonial/sims3-modernization/issues/new?template=memory.yml) and attach `ts3native.log`. Open it in Notepad first: it lists your package file names.
+
+**What it costs:** the extra bookkeeping takes some memory and time while you play; the exact cost is still being measured. Switch it off again (`AllocSites=0`) once you have sent the report.
+
+**With Apex Radiance:** memory is Apex Radiance's area, so the Error 12 report switches itself off when Apex Radiance is installed (`[Compat] ApexStandDown=1`). The short memory line (`Light`) still logs; send `ts3native.log` to both projects.
+
+**What we do with it:** we read the memory lines with our own tools to find what grows until Error 12. If it is our mod, we fix it. If it is the game, another mod or a CC item, we tell you, and with your permission the mod's author. The report lives in the GitHub issue you open, which anyone can read: that is why the tool removes personal details first.
 
 ### Other mods
 

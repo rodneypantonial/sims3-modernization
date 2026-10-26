@@ -34,6 +34,13 @@ namespace Ts3Fixes
         {
             public bool RoutableHook(Lot lot, Vector3 pos)
             {
+                bool was = sInRoutableCheck;  // docs/202: unseenfbplan never marks these plans (a cut "false" sends the game to its safe-location logic)
+                sInRoutableCheck = true;
+                try { return RoutableCheck(lot, pos); }
+                finally { sInRoutableCheck = was; }
+            }
+            bool RoutableCheck(Lot lot, Vector3 pos)
+            {
                 Sim sim = (Sim)(object)this;
                 if (sInOwnCheck || lot == null || lot.IsWorldLot || !ShortcutOn("routablecache")) return RoutableOrig(lot, pos);
                 RouteProfile p = ProfileOf(sim);
@@ -109,6 +116,7 @@ namespace Ts3Fixes
 
         static void StuckCheckRun(StuckCheckBusyHook helper, Sim sim)
         {
+            if (ShortcutOn("unseenfbstuck") && UfStuckDefer(helper, sim)) return; // docs/202 §3.3 (UnseenFallback.cs)
             ulong id, task;
             OwProbeEnter(sim, out id, out task);
             bool known = StuckNearReflect(helper.GetType());

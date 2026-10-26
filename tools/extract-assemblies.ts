@@ -1,9 +1,29 @@
 // Extracts .NET assemblies (S3SA resources, type 0x073FAA07) from Sims 3 DBPF .package files.
 // Usage: node tools/extract-assemblies.ts <outDir> <file.package>...
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
 const S3SA = 0x073faa07;
+
+// Every S3SA assembly of one package, read-only: header + index + S3SA entries only (some install packages are GBs).
+// Used by offload-override-scan.ts (docs/132) and script-leak-scan.ts (docs/192).
+export type Img = { pkg: string; inst: bigint; img: Buffer | null };
+export function s3saImages(file: string): Img[] {
+  const fd = openSync(file, 'r');
+  try {
+    const read = (pos: number, len: number) => { const b = Buffer.alloc(len); readSync(fd, b, 0, len, pos); return b; };
+    const head = read(0, 96);
+    if (head.toString('latin1', 0, 4) !== 'DBPF' || !head.readUInt32LE(36)) return [];
+    // readIndex wants the whole file; a header whose index position points right behind it is enough.
+    const syn = Buffer.concat([head, read(head.readUInt32LE(64), head.readUInt32LE(44))]);
+    syn.writeUInt32LE(96, 64);
+    return readIndex(syn).filter((e) => e.type === S3SA).map((e) => {
+      let body = read(e.offset, e.fileSize);
+      if (e.compressed === 0xffff) body = refpack(body);
+      return { pkg: file, inst: e.inst, img: peImage(body) ?? peImage(decryptS3SA(body)) };
+    });
+  } finally { closeSync(fd); }
+}
 
 // RefPack (EA QFS) decompression as used by DBPF 2.0 resources.
 export function refpack(src: Buffer): Buffer {

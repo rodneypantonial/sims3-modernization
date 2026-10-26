@@ -41,9 +41,11 @@ buy_open,CasHandlers,Live,Buy button,natural,active household has a home lot; cl
 buy_category,CasHandlers,Buy,clicking a Buy catalog tab,natural,in Buy mode,handler,none
 buy_close,CasHandlers,Buy,Live button,natural,in Buy mode,handler,none
 catalog_objects,ContentHandlers,Any,none (read),harness,,handler,none
-place_objects,ContentHandlers,Live,none: a player places objects one at a time in Buy mode with the clock stopped,stress,up to 100 free objects on the home lot while the sim runs,handler,live
+place_objects,ContentHandlers,Live,none: a player places objects one at a time in Buy mode with the clock stopped,stress,up to 100 free objects per call on the home lot or round-robin over town lots while the sim runs,handler,live
 remove_objects,ContentHandlers,Live,none: a player sells objects in Buy mode with the clock stopped,stress,removes place_objects objects,handler,live
 cas_parts,ContentHandlers,Any,none (read: the CAS part list),harness,,handler,none
+cas_pool,ContentHandlers,Any,none (harness: CAS part keys wear_parts filter pool may pick),harness,,handler,none
+inv_pool,BuildCcHandlers,Any,none (harness: object keys buy_object pool may pick),harness,,handler,none
 wear_parts,ContentHandlers,Live,none (outfit swap without CAS),stress,,handler,live
 restore_outfit,ContentHandlers,Live,none (undo wear_parts),harness,,handler,none
 spawn_sims,ContentHandlers,Live,none: debug `spawn` command; the game itself fills households via story progression,stress,new YA+ townies join random households,handler,live
@@ -77,6 +79,7 @@ put_on,DecorHandlers,Live;Buy,placing an object on a surface,natural,home lot,ha
 async_log,ControlHandlers,Any,none (read),harness,,handler,none
 tick_status,ControlHandlers,Any,none (read),harness,,handler,none
 fresh_world,FreshWorld,MainMenu;Live,New Game with a premade household,natural,not in a world,handler,none
+crowd_do,RareHandlers,Live,none: one pie-menu click per Sim; 30-50 Sims queue one interaction on one object in one tick,stress,spawn_sims Sims (and the household),handler + R-VOL-1,live
 crowd_go,RareHandlers,Live,none: one Go Here per click; 30-50 Sims to one point in one tick,stress,spawn_sims Sims (and the household),handler + R-VOL-1,live
 kill_sim,RareHandlers,Live,none (no vanilla kill command; MasterController-style),cheat,template death role (docs/171 §12),handler + R-LIFE-6,live
 zombies,RareHandlers,Live,none: full-moon zombies come from the game's 20% roll per night (Supernatural),stress,EP Supernatural,handler + R-EP-2,live
@@ -87,6 +90,18 @@ unseen_horse_ride,RareHandlers,Live,riding a horse off-screen,natural,EP Pets; h
 unseen_water_watch,RareHandlers,Live,none (probe),harness,,handler,live
 unseen_water_cause,RareHandlers,Live,none (probe),harness,,handler,live
 houseboat_move,WaterCauseHandlers,Live,Sail houseboat (helm) to a dock,natural,EP Island Paradise; household owns a houseboat,handler,live
+mem_mark,RareHandlers,Any,none (agent plumbing),harness,,handler,none
+mem_gc,MemHandlers,Any,none (forced managed GC.Collect rounds bracketed by mem_mark: a measurement probe),harness,,handler,none
+catalog_loop,MemHandlers,Build,opening and closing Build-mode catalogues with the puck buttons (5 rounds x 8: more clicks in a row than a player),stress,in Build mode,handler,none
+buy_sell_loop,MemHandlers,Live,buying and selling one object again and again (free = cheat; 20 rounds),stress,home lot of the active household; live mode,handler + R-MODE-3,none
+bb_cc_cycle,MemStressHandlers,Live,entering Buy (or Build) mode and placing catalogue objects with the cursor then selling them with the sell tool (free; N cycles x M objects: more than a player in a row),stress,home lot of the active household with free ground round its centre; live mode,handler,none
+et_lot_cycle,MemStressHandlers,Live,Edit Town: placing a library lot on an empty plot then bulldozing it (N cycles on one plot),stress,live mode or Edit Town; an empty unowned plot that fits a lot-only library entry of its type,handler,none
+build_cc_cycle,BuildCcHandlers,Live,Build mode: building a room then painting CC wallpaper / floor tiles and placing CC doors and windows with the build tools then selling them and repainting with EA patterns (N cycles: more than a player in a row),stress,home lot of the active household with free ground for the room (default 10 x 4 tiles round the lot centre); live mode,handler,none
+build_cc_catalog,BuildCcHandlers,Any,none (harness: counts CC items in the Build catalogue lists),harness,,handler,none
+scripted_cc_check,ScriptedCcHandlers,Live,none (harness: creates each scripted CC product out of world to read its type and interactions; destroyed again),harness,live mode,handler,live
+scripted_cc_cycle,ScriptedCcHandlers,Live,placing scripted CC objects on the home lot and having the active Sim use each one (N cycles x M objects: more than a player in a row),stress,home lot of the active household with free ground round its centre; live mode,handler,none
+preset_cc_check,PresetCcHandlers,Live,none (harness: counts the design presets the game lists for each named catalogue product),harness,live mode,handler,live
+preset_cc_cycle,PresetCcHandlers,Live,placing CC objects over the town and giving each copy one of its design presets (N cycles x M objects x K presets: more than a player in a row),stress,occupied residential or community lots with free ground round their centres; live mode,handler,none
 own_vehicle,RareVehicleHandlers,Live,buying a car / boat / bike in Buy mode,natural,home lot; funds,handler,live
 make_sim,RareVehicleHandlers,Live,Edit Town > Edit Household > Create a Sim (human Toddler+ / pet); a Baby only by birth or adoption,natural,household < 8 humans and < 6 pets (R-HH-1); not in Build/Buy/CAS (crash 0x575651); Baby = adoption-equivalent,handler + R-HH-1 + R-LIFE-3,live
 stroll,RareVehicleHandlers,Live,Go Here / walk the dog,natural,,handler,live

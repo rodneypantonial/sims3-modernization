@@ -167,7 +167,7 @@ if (w.kind === 'counter') {
       const p = seen.get(s.id);
       const e = p && p.key === key ? { key, checks: p.checks + 1 } : { key, checks: 1 };
       seen.set(s.id, e);
-      if (mayBeStuck(s.interaction, !!s.routing) && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
+      if (mayBeStuck(s.interaction, !!s.routing, !!s.in_transit) && e.checks >= (s.routing ? 3 : 6)) stuck.add(`${s.name} on ${s.interaction} at ${s.lot ?? 'street'}`);
     }
     console.log(`${stamp()} stuck: ${stuck.size ? [...stuck].join('; ') : 'none'}`);
   }

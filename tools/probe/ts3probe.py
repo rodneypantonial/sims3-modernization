@@ -275,9 +275,10 @@ class Probe:
         if path == 'native':  # ts3native.asi counters (route cache, worker, budget), null when the plugin is not loaded; routeworker=0|1 / routebudget=0|1 / routeasync=0|1 flip them at runtime
             sw = [q.get(k) for k in ('routeworker', 'routebudget', 'routeasync', 'alloc', 'waterjps', 'vfresetmax')]  # vfresetmax=1: zero the [Verify] maxima after this read
             return rpc.native_counters(*[int(v) if v in ('0', '1') else None for v in sw])
-        if path == 'nativeexport':  # one exported ts3native DWORD: name=ts3native_footprintMode [&value=0|1]
+        if path == 'nativeexport':  # one exported ts3native DWORD: name=ts3native_footprintMode [&value=N], N >= 0
+            # any non-negative integer (2026-10-25: 0|1 only dropped HoldKeyed=2 and p6warm=2 writes of native_set silently)
             v = q.get('value')
-            return rpc.native_export(q.get('name', ''), int(v) if v in ('0', '1') else None, int(q.get('offset', '0'), 0))
+            return rpc.native_export(q.get('name', ''), int(v) if v is not None and v.isdigit() else None, int(q.get('offset', '0'), 0))
         if path == 'routelock':  # routing-lock hold/wait and plan overlap (docs/18 step 1a); start=1 hooks once, stop=1 unhooks
             return rpc.route_lock(q.get('start') == '1', q.get('stop') == '1')
         if path == 'taskstall':  # scheduler-stage stalls >= ms with task + managed stack samples (docs/04 F17); start=1 hooks, stop=1 unhooks.

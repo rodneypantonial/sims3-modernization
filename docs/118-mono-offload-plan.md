@@ -146,6 +146,34 @@ Open claims are in docs/51 §142 (I-118-1 to I-118-8).
 
 **Next static step:** the widened native closure for the 36 PROXY ICs (docs/62 §8-9 scan, depth 4) to see which ones a snapshot can answer and which need a proxy; then docs/119 (M1) builds its host list on §4.3-4.4.
 
+## 8. Offload size estimate 2026-10-25
+
+Read-only, existing data, no game run. **The docs/160 sim-budget queue was never run** (dry run only), so there is no per-world Mono/IC split from it; the "~400 ms/s Mono" figure is not from a sim-budget run. Source here: every `probe-out/profile/*-bp-|-ip-|-sv-*-managed.jsonl` from 2026-10-20..25 (102,696 samples: BP 49,016, IP 31,412, SV 22,268; mixed fix states, A/B arms pooled, managed sampler 5 Hz in minutes 1-4). Share of samples = share of wall time, 1% ≈ 10 ms/s (docs/75 §2). "IC" = leaf frame `ScriptCore.*` except `ScriptProxy`.
+
+**8.1 Autonomy scoring on the sim thread** (stack has `Autonomy.CalculateScore`) [measured share, ms inferred]:
+
+| World | Script on stack | of which managed leaf ("Mono") | IC leaf | Scoring | scoring in `AutonomyManager` task | meta part | Scoring share of Mono (managed leaf) |
+|---|---|---|---|---|---|---|---|
+| BP | 700 | 327 | 373 | **~64-66** (IC 29) | ~53 | ~44 | 11% |
+| IP | 708 | 317 | 391 | **~54-56** (IC 10) | ~45 | ~35 | 14% |
+| SV | 626 | 377 | 249 | **~87-90** (IC 18) | ~82 | ~46 | 19% |
+
+Higher than docs/75's pooled 47 ms/s (older runs: BP 40, IP 48). Movable [inferred]: pilot (meta, docs/126 62% pooled; here ~0.95 x meta) BP ~42, IP ~34, SV ~44; tier 2 adds ~71-82% of the rest (docs/126 27-31 of 38%): BP +16-18, IP +14-16, SV +32-37. **Caveat:** docs/127's virtual closure drops tier-2 "ready" from 191 to 23 of 270 and blocks all v0 until H11, so tier 2 is an upper bound.
+
+**8.2 What stays on the sim thread** (docs/124 §8.3, docs/122 §2.3) [inferred]: re-score of top-N + bands 10-25% of moved, cut at `Sample=1` 3-9, request build 1-3, guards ≤1, `[MonoThread]` fixed cost 7-25 (shared once with the docs/129 loads). Net:
+
+| World | Autonomy pilot | + tier 2 | docs/129 five (net of ≤2 cut) | Fast paths (docs/139: sub-run fusion 2-8 + call/return 15-30, stay on sim thread) | **Total net** |
+|---|---|---|---|---|---|
+| BP | -6..+27 | +5..+43 | ~+25..+35 (37 movable) | +17..+38 | **~+47..+116** |
+| IP | -12..+20 | -2..+34 | ~+25..+35 | +17..+38 | **~+40..+107** |
+| SV | -5..+29 | +19..+62 | ~+25..+35 (not measured on SV) | +17..+38 | **~+61..+135** |
+
+Gross moved before sim-side costs: BP ~95, IP ~85, SV ~115 ms/s. The low ends need everything (M5, pilot, tier 2 with H11, the five candidates, the call/return path): ~80-130 h of agent work and many game jobs. The fast paths alone (no second thread) give +17..+38 at much lower risk.
+
+**8.3 Hitches** [measured counts, cause inferred]: `hitch-ab.ts --causes` on the v0.1.4/v0.1.5 release-validate and soak runs (70 real minutes, 7 runs): of 64 iterations >= 300 ms, 31 are script-led (ThreadedObjects 11 + TaskObjects 8 with no managed sample, Overwatch spread hook 6, `Sim` task 3, `WorldLot`, `OneShotFunction`, `Dispose` 1 each). **None is named as the `AutonomyManager` task**; the >= 1 s ones (7) are all sync `Route.Plan` fallbacks (Foreign 4, NoStart 3). docs/161 §3 (292 min): with a sample, `Sim.Simulate` 8, `FunctionTask` 7, `SimUpdate` 1, `Lot` 1. Local autonomy never yields (docs/04a §4), so a single search spike could hide in the unsampled 19 or in `Sim`-task iterations (side `FindBestAction*`), but the data does not show it. Autonomy offload is a steady ms/s offload (docs/23 #17), not a hitch fix.
+
+**8.4 Against routing:** P6's whole-problem model (docs/189) cuts IP sim wait behind jobs ~74 -> ~15-25 ms/s (~50-60 less) [inferred], about the size of the whole net Mono offload on IP's low end, and routing also owns every >= 1 s freeze. Order stays: routing (P6, fallbacks) first, then the fast paths (docs/139), then M5 + pilot when a second load shares the `[MonoThread]` fixed cost. Measure first: run `sim-budget.json` (docs/160) to replace 8.1's sample shares with timed buckets.
+
 ## Reproduce
 
 ```sh

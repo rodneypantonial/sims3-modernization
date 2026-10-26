@@ -18,9 +18,10 @@ Logging only: no game behaviour changes. `[UserDiag] Enabled=1` by default (cost
 | | `diag: Mods\Resource.cfg <bytes>, hash <8 hex>, PackedFile: <patterns>` or `... missing: the game loads no mods` | patterns are relative paths |
 | | `diag: Mods\Packages N .package files, M MB, S with scripts (S3SA), C other, ...; scan T ms`, `diag: script mods (S3SA packages): ...` (up to 100), `diag: packages (first 200 names): ...`, `diag: packages: K more names not listed` | DBPF 2 header + index per file (type `0x073FAA07`; index read capped at 2 MB), up to 5 folder levels |
 | | `diag: saves N (+B .backup), F files, M MB in Saves, biggest save M MB`, `diag: header done in T ms` | folder walk |
-| world load (from the ts3fixes line `world:`) | `diag: world load #N, uptime, ts3native, mods summary; address space used .. largest free block .. private .. peak working set` | `UdMem`: VirtualQuery walk + `K32GetProcessMemoryInfo` |
+| world load (from the ts3fixes line `world:`) | `diag: world load #N, uptime, ts3native, mods summary`, then `diag: memory at world load #N: ...` (§6) | memory worker |
 | first world load | `diag: loaded modules outside Windows (Bin = game folder): <name> v<ver> (outside Bin)`, `diag: d3d9.dll from Bin (wrapper, e.g. DXVK) / Windows (system d3d9); N modules outside Windows and Bin (overlays, injectors)` | `K32EnumProcessModules` |
-| exit (DLL_PROCESS_DETACH) | `diag: exit after N min, S saves, W world loads; <memory>` | |
+| every 10 min of play (after the first world load) | `diag: memory at <uptime> min: ...` (§6) | memory worker |
+| exit (DLL_PROCESS_DETACH) | `diag: exit after N min, S saves, W world loads`, `diag: memory at exit: ...` | walk inline (the worker is gone by then) |
 
 Not built: an ini diff against the release defaults (the log lists every key of every enabled section; compare with the release `ts3native.ini` by hand), the DXVK version number, NRaas module versions beyond their file names (`NRaas_X_V123.package`) and assembly MVIDs, CC split by kind (CAS / objects).
 
@@ -42,7 +43,7 @@ The old `save: result ...` summary is written only after the game's save returns
 |---|---|
 | `save: start #N, normal save / travel save / traveling, uptime, save mode, flush mode (previous flush still running / done)` | first thing in `SaveGameHook` (before `FlushWait`) |
 | `save: at start route job none / running (handle 0x..), queued Q, parked P, deferred footprints D, +0x918 free / tid T (sim / route worker), gates open G` | same; reads `g_async`, `g_jobs`, `g_discCount`, `rgOwnerTid`, `g_rgOffSimOpen` |
-| `save: memory address space used ...` | `UdMem` |
+| `save: memory at start #N: ...` / `save: memory at end #N: ...` (§6) | memory worker, asked at the start / end line |
 | `save: > <phase> (+ms since start)` / `save: < <phase> N ms` | phases in order: `prepare`, `info (save paths)` (`SaveInfoHook`), `write (package)`, `write: route gate (deferred footprints, running route job), header` (RT_SAVE entry, `SaveGateEnter`), `write: pre-save listeners`, `write: world save (lots, script state)`, `write: post-save listeners`, `write: package commit`, `backup (old save to .backup)`, `copy (new save into place)`, `final (marker file, folder flush)`, `after the game's save (our flush and log)` |
 | `save: wait for <what> took N ms` (waits >= 1 s) | `UdWait` around the unbounded waits: the running route job in `RtWaitJob` and in `DiscDrain`, `+0x918 (deferred footprints)` (DiscDrain's `LockAcquireHook`), the backup worker's copy (`SaveJobPromote`, `SaveJobDiscard`), the previous save's flush worker (`FlushWait`) |
 | `save: still running after N s: phase P for N s, waiting for W for N s; <route state>; backup worker copying, F files M MB` | watchdog thread per save, every 5 s until the save returns |
@@ -59,9 +60,43 @@ Paths: every log line carries file names only. `host` now logs `TS3W.exe` instea
 - DllMain: one ini read, the exe's version resource, CPUID / memory status: well under 1 ms [inferred, not timed].
 - Header worker: one thread, 15 s after start, `THREAD_MODE_BACKGROUND_BEGIN`; reads the exe (SHA-256, ~15 MB), Bin add-ons, and per package 96 bytes + its index; ~10-60 s for 10k packages on an HDD [inferred], never on the sim thread.
 - World load: ts3fixes ~100-400 GetOption2 calls (one per 4 characters) + one object count + one module list on the sim thread, once per load: ~1-5 ms [inferred].
-- Save: ~15 log lines, one watchdog thread, one VirtualQuery walk on the sim thread (~0.1-1 ms [inferred]); the folder walk runs on the watchdog thread after the save.
+- Save: ~17 log lines, one watchdog thread, two VirtualQuery walks on the memory worker (§6); the folder walk runs on the watchdog thread after the save.
 - No per-frame or per-tick work. Selftest: `TestUserDiag` (selftest.cpp, userdiag-test.h).
 
 ## 5. Verify
 
 `node tools/harness/queue.ts tools/harness/queues/verify-userdiag.json` (one Bridgeport load, one agent save to `UserDiag-Scratch`, ~10 min): `logRequire` over the header, world and save lines, `logForbid` on `FAIL` and on any `\Users\<name>` path. Needs `game-copy/ts3native.asi.userdiag` (0.36.53) and the main checkout's `build/ts3fixes.package` rebuilt from this commit.
+
+## 6. Address space (`memory at` lines, ts3native 0.36.66)
+
+For heavy-CC / mod reports (Error 12, crash on save; budget in docs/66). One line per sample (figures made up):
+
+`save: memory at start #3: private 1851 MB, committed 2167 MB; limit 4 GB (large address aware, 64-bit Windows), free 1646 MB, largest free 1525 MB (2nd 80), session low 1301 MB; modules 310 MB, mapped files 120 MB, heaps and other private 2010 MB; walk 6100 us, 9000 regions`
+
+| Field | Source |
+|---|---|
+| private | `K32GetProcessMemoryInfo` `PrivateUsage` (commit charge) |
+| committed | sum of `MEM_COMMIT` regions of every type (images and mapped files too) |
+| limit | highest user address + 1: 4 GB = LAA on 64-bit Windows, 3 GB = LAA with /3GB, 2 GB = no LAA |
+| free, largest free, 2nd | `MEM_FREE` regions: sum, biggest, second biggest |
+| session low | lowest largest free block of all samples this session |
+| modules / mapped files / heaps and other private | reserved + committed by region type `MEM_IMAGE` / `MEM_MAPPED` / `MEM_PRIVATE` (heaps, GC heap, stacks, D3D, our pools) |
+| walk, regions | cost of this sample |
+
+When: world load, save start and end, every 10 min of play (nothing before the first world load), exit. A largest free block under 256 MB adds `diag: low address space: largest free block N MB (under 256) - risk of Error 12 / crash on save` (at every sample under it). The walk runs on a small userdiag memory worker (64 KB stack reserve, woken by the sim thread through an 8-slot queue; a full queue drops the sample), not on the sim thread and not on the header worker (its package scan can take a minute); at exit it runs inline. Cost [measured, selftest]: 5.5 ms over 5,045 regions (~1.1 us per region) on the worker. The game's region count is not known yet (the `regions` field will show it), so ~5-20 ms of worker time per sample [inferred]. Selftest `TestUserDiag`: top-2 logic, per-type sums, limit text, threshold and the exact line format.
+
+Not built: an ini threshold (256 MB fixed), a per-heap split (heaps are one `MEM_PRIVATE` sum), the warning on the save watchdog lines.
+
+**For the next release notes ("The log now shows"):** the game's memory use when a world loads, when you save (start and end), every 10 minutes of play and when you quit: how much of the game's 4 GB is in use, the biggest free block left, the lowest it got this session, and a warning line when the biggest free block falls under 256 MB (the point where Error 12 and crashes on save get likely). CHANGELOG has no unreleased section yet (v0.1.6 is the latest): copy this bullet there when the next release section opens.
+
+## 7. Player memory lines (`[MemDiag] Light`, ts3native 0.36.79, default on)
+
+Numbers only; no paths, only class and script assembly names. With `[MemDiag] Light=1` (shipped on) the address-space sample runs every 5 min of play (not 10) and each `memory at` line is followed by:
+
+```
+diag: mem #7 periodic priv=1839 wPriv=1780 wCom=2357 free=1430 big=1275? img=463? map=118 stkRes=112 stkCom=11.0? miRes=192 miCom=106 eaDir=203? eaDirN=150? rp=0.0 pl=0.0? sp=0.0? gcHeap=360? gcFree=150? gcN=420? rc=364? rcCold=9.0? rcBudget=200? rcN=107000? anim=10.1? rest=1126? t=1534
+diag: memsus #7 periodic cc=104 ccIcon=0? ppc=6 etRef=1 gsc=5 mapv=40 wq=28 wpl=22 ogs=5 smh=0? gcCnt=420 rdMs=0.25 lag=180 t=1534
+diag: memsus alive: seen=4120 trk=96 freed=31 alive=9 hook=1 ms=0.40 top=Ingredient:4,NRaasOverwatch/Thing:3,Plate:2
+```
+
+and once per load `diag: memsus types: n=10837 kinds=310 ms=12.50 top=Sim:265,...`. Fields: docs/191 module 1 (`wCom` commit, `priv` private, `big` largest free, `rc` resource cache, `gcHeap` Mono heap), module 2 (static-event handler counts) and "Player memory lines" (destroyed-but-alive check). Players send `Game\Bin\ts3native.log` as before; `node tools/memory-report.ts <log>` reads it (per load, over time, leak? vs cache, alive by type, mod types tied to the listed script packages).

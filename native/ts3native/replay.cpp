@@ -90,13 +90,52 @@ static int g_rpNCls = kRpNClsGame;
 static HANDLE g_rpHeap;
 static volatile LONG g_rpBytes;
 static LONG g_rpCapBytes = 64 << 20;
+// [RouteSnap] EpochHeap (0.36.73, docs/66 §7 A3): the blocks of each clone build come from that build's own heap (on the
+// building thread only: t_rpGen); the heap is destroyed when its last block is freed (the grave's last slice, a failed
+// build at once), so a rebuild's 2x peak and its segments go back to the free address space. Every other block stays on
+// g_rpHeap. One reference per block plus the build's own until the build ends. Header: a[-1] raw, a[-2] size, a[-3] generation.
+struct RpGen { HANDLE h; volatile LONG refs, bytes; LONG peak; };
+static bool g_rpEpochHeap;
+static __declspec(thread) RpGen* t_rpGen;
+// EpochHeap also builds the clone once per load (docs/66 §7.1, docs/194 §9 S2): world events 9 / 0x0A (world file, save
+// loaded) start a wait in which the cut builds no clone; event 7 (after the load's G build, docs/94 §9.1) builds it and ends
+// the wait. Before, the cut built one between the two and event 7 a second (both alive: the 2x load peak). kRpLoadWaitMs
+// bounds the wait if event 7 never comes (then the cut builds as before).
+static ULONGLONG g_rpLoadWaitUntil;  // sim
+static const DWORD kRpLoadWaitMs = 60000;
+static void RpGenRel(RpGen* g) {
+    if (InterlockedDecrement(&g->refs)) return;
+    Ts3nCounters& k = ts3native_counters;
+    InterlockedExchangeAdd(&k.rpGenRelKB, g->peak >> 10);  // lower bound of the reservation handed back
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    HeapDestroy(g->h);  // usually in the consumer's grave slice (+0x918 held): its cost is that hold's
+    Max(&k.rpGenDestroyMaxUs, UsSince(t0));
+    HeapFree(GetProcessHeap(), 0, g);
+    InterlockedDecrement(&k.rpGenLive);
+    InterlockedIncrement(&k.rpGenFreed);
+}
+static RpGen* RpGenNew() {  // NULL: the build uses g_rpHeap as before
+    RpGen* g = (RpGen*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(RpGen));
+    if (g && !(g->h = HeapCreate(0, 0, 0))) HeapFree(GetProcessHeap(), 0, g), g = NULL;
+    if (!g) return NULL;
+    g->refs = 1;
+    InterlockedIncrement(&ts3native_counters.rpGenLive);
+    return g;
+}
 static void* RpAlloc(DWORD n) {
     if (!g_rpHeap) g_rpHeap = HeapCreate(0, 0, 0);
-    u8* raw = (u8*)HeapAlloc(g_rpHeap, HEAP_ZERO_MEMORY, n + 24);
+    RpGen* g = t_rpGen;
+    u8* raw = (u8*)HeapAlloc(g ? g->h : g_rpHeap, HEAP_ZERO_MEMORY, n + 28);
     if (!raw) return NULL;
-    u8* a = (u8*)(((uintptr_t)raw + 8 + 15) & ~(uintptr_t)15);
+    u8* a = (u8*)(((uintptr_t)raw + 12 + 15) & ~(uintptr_t)15);
     ((void**)a)[-1] = raw;
     ((DWORD*)a)[-2] = n;
+    ((RpGen**)a)[-3] = g;
+    if (g) {
+        InterlockedIncrement(&g->refs);
+        Max(&g->peak, InterlockedExchangeAdd(&g->bytes, (LONG)n) + (LONG)n);
+    }
     Ts3nCounters& k = ts3native_counters;
     k.rpKB = (InterlockedExchangeAdd(&g_rpBytes, (LONG)n) + (LONG)n) >> 10;
     Max(&k.rpKBMax, k.rpKB);
@@ -104,8 +143,11 @@ static void* RpAlloc(DWORD n) {
 }
 static void RpFree(void* a) {
     if (!a) return;
-    ts3native_counters.rpKB = (InterlockedExchangeAdd(&g_rpBytes, -(LONG)((DWORD*)a)[-2]) - (LONG)((DWORD*)a)[-2]) >> 10;
-    HeapFree(g_rpHeap, 0, ((void**)a)[-1]);
+    const LONG n = (LONG)((DWORD*)a)[-2];
+    ts3native_counters.rpKB = (InterlockedExchangeAdd(&g_rpBytes, -n) - n) >> 10;
+    RpGen* g = ((RpGen**)a)[-3];
+    HeapFree(g ? g->h : g_rpHeap, 0, ((void**)a)[-1]);
+    if (g) InterlockedExchangeAdd(&g->bytes, -n), RpGenRel(g);
 }
 static inline DWORD A16(DWORD n) { return (n + 15) & ~15u; }
 static inline DWORD RpD(const u8* p) { return *(volatile const DWORD*)p; }
@@ -1508,7 +1550,11 @@ static void RpEpochBody(const u8* world) {
     Ts3nCounters& k = ts3native_counters;
     LARGE_INTEGER t0;
     QueryPerformanceCounter(&t0);
+    RpGen* gen = g_rpEpochHeap ? RpGenNew() : NULL;  // EpochHeap: this build's blocks on their own heap
+    t_rpGen = gen;
     RpClone* c = RpBuild(world);
+    t_rpGen = NULL;
+    if (gen) RpGenRel(gen);  // seal: the heap goes when the clone's last block does (now, if the build failed)
     const LONG us = UsSince(t0);
     k.rpEpochUs += us;
     Max(&k.rpEpochMaxUs, us);
@@ -1937,6 +1983,8 @@ static void RpPreBody(int site, const DWORD* slot) {
     if (site == SN_WEV) {
         const DWORD id = slot[2];
         if (id == 5 || id == 9 || id == 0x0A) RP_NEED_EPOCH();
+        if ((id == 9 || id == 0x0A) && g_rpEpochHeap) g_rpLoadWaitUntil = GetTickCount64() + kRpLoadWaitMs;  // one build per load
+        if (id == 7) g_rpLoadWaitUntil = 0;
         if (id == 7 && RgIsSim(GetCurrentThreadId())) {  // the load's G build has run (docs/94 §9.1): build the clone now
             const u8* world = *g_spWorldSlot;
             static const DWORD kInf = 0xFFFFFFFF;
@@ -2136,6 +2184,11 @@ static void RpCutBody(const u8* world) {
     // a rebuild waits while the last EPOCH is not applied yet: each clone is ~40 MB on BP, and 0.32.4 had up to three
     // alive (126 MB of 128) when the consumer lagged behind rebuilds (0.32.8)
     if (g_rpNeedEpoch && g_rpHave && world == g_rpWorld && (LONG)(g_rpEpochAt - g_rpTail) > 0) goto publish;
+    if (g_rpLoadWaitUntil && (!g_rpHave || g_rpNeedEpoch || world != g_rpWorld)) {  // EpochHeap: the load's build waits for event 7
+        if (GetTickCount64() < g_rpLoadWaitUntil) { k.rpLoadWaitCuts++; goto publish; }
+        g_rpLoadWaitUntil = 0;
+        k.rpLoadWaitTimeouts++;
+    }
     if (!g_rpHave || g_rpNeedEpoch || world != g_rpWorld) {
         if (!g_rpNeedEpoch) g_rpEpochWhy = __LINE__;
         RcMark(RC_PRE);
@@ -3708,10 +3761,12 @@ static bool RpDrainBody(bool lock) {
     }
     return false;
 }
+static void LuPoll();  // lotuse.cpp: [RouteSnap] LotUseReadout walk, between rounds
 static DWORD WINAPI RpThread(void*) {
     g_rpTid = GetCurrentThreadId();
     while (!g_rpStop) {
         WaitForSingleObject(g_rpEvent, 1000);
+        LuPoll();
         RpDrain(true);
     }
     return 0;
@@ -3748,6 +3803,12 @@ static bool ApplyReplay(const wchar_t* ini) {
     }
     k.ulMode = g_rpRecsUnlocked;
     g_rpInsCheck = Clamp(GetPrivateProfileIntW(L"RouteSnap", L"InsCheck", 1, ini), 0, 2);
+    // docs/66 §7.1 slimming (0.36.73, both off by default): A1 pool regions grown on demand, A3 one build per load + one heap per build
+    const LONG chunk = GetPrivateProfileIntW(L"RouteSnap", L"PoolChunkMB", 0, ini);
+    g_plChunkMB = chunk ? (DWORD)Clamp(chunk, 16, 48) : 0;
+    g_rpEpochHeap = GetPrivateProfileIntW(L"RouteSnap", L"EpochHeap", 0, ini) != 0;
+    k.rpGenOn = g_rpEpochHeap;
+    if (g_plChunkMB || g_rpEpochHeap) Log("route snapshot slimming (docs/66 §7.1): PoolChunkMB=%lu, EpochHeap=%d", g_plChunkMB, g_rpEpochHeap ? 1 : 0);
     g_rpRing = (RpRec*)VirtualAlloc(NULL, kRpRing * sizeof(RpRec), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_rpEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (!g_rpRing || !g_rpEvent) { Log("SKIP route snapshot replay: no ring"); return false; }

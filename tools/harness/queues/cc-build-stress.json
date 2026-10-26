@@ -1,0 +1,137 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/200 CC saturation stress (memory work is stress testing only since 2026-10-26, Rodney: the long CC soaks are dropped). Synthetic CC set game-copy/cc-synth/cc-2k (tools/cc-gen.ts, moved in before the load and back after; interrupted run: node tools/harness/queue.ts --restore-content). Asi game-copy/ts3native.asi.rctrim (0.36.80 = master after 0.36.79 memlite, so [MemDiag] Light is in it; [ResourceCache] TrimAfterCleanup is off unless a job turns it on). Every job is STRESS + correctness (noiseCheck false), marks per cycle with the same tags every cycle (<prefix>-full / <prefix>-empty, each followed by a gc-before / gc-after pair): node tools/mem-report.ts report --log <job ts3native.log> lists each tag against its previous cycle (growth that survives removal), node tools/memory-report.ts <log> the player lines. Order: bp-cc-live-trimoff and bp-cc-live-trimon (the same live saturation cycles, repro live-cc-cycle: 400 objects over the town + up to 150 Sims dressed, then removed and undressed; 100 inventory objects added and removed; 3 cycles; compare commit / private / largest free per cycle mark between the two jobs: no agent trim-now action exists, so the on job trims every minute (TrimEveryMin=1) and the rctrim: lines give held/idle before -> after per trim), bp-cc-buildbuy (repro bb-cc-cycle: 5 Buy mode cycles x 40 objects through the placement cursor and the sell tool, 3 Build mode cycles x 20 + floor repaint), bp-cc-edittown (repro et-lot-cycle: 5 library lot place + bulldoze cycles on one plot). ~48 min of play + 4 loads.",
+  "jobs": [
+    {
+      "id": "bp-cc-live-trimoff",
+      "note": "Live saturation, TrimAfterCleanup off. Pass: no crash, repro steps ok (wear_parts sim 75-149 optional), 3 x live-full / live-empty / inv-full / inv-empty marks. Read: per-cycle live-empty and inv-empty deltas (growth that survives removal), forced-GC drops.",
+      "asi": "game-copy/ts3native.asi.rctrim",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "ResourceCache.TrimAfterCleanup": 0
+      },
+      "logRequire": {
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 15,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "live-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-cc-live-trimon",
+      "note": "bp-cc-live-trimoff with [ResourceCache] TrimAfterCleanup=1 TrimEveryMin=1 (docs/198 §4: the game's shrink-both after the ResourceSystem update, every minute; a trim right after each removal would need a native trim-now op on the 0x87 channel, not built). Pass as trimoff plus the on line and >= 10 periodic trims. Read: the same marks against trimoff, cycle by cycle (commit, private, largest free), and the rctrim: lines (freed MB, ms).",
+      "asi": "game-copy/ts3native.asi.rctrim",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "ResourceCache.TrimAfterCleanup": 1,
+        "ResourceCache.TrimEveryMin": 1
+      },
+      "logRequire": {
+        "^rctrim: on \\(EXPERIMENT": 1,
+        "^rctrim: #\\d+ periodic world=": 10,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^rctrim: skipped": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 15,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "live-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-cc-buildbuy",
+      "note": "Build/Buy CC cycles (repro bb-cc-cycle, agent bb_cc_cycle). Pass: both loops done, cycles_done 5 and 3, placed > 0 every cycle (repro-jsonl per_cycle), 5 x bb-empty and 3 x bbp-empty marks. Read: bb-full / bb-empty and bbp-* per cycle; click_misses and fallback_deletes say how much went through the real cursor.",
+      "asi": "game-copy/ts3native.asi.rctrim",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k",
+      "logRequire": {
+        "^diag: mem #\\d+ mark ev=bb-empty ": 5,
+        "^diag: mem #\\d+ mark ev=bbp-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 16,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "bb-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "bp-cc-edittown",
+      "note": "Edit Town lot cycles (repro et-lot-cycle, agent et_lot_cycle) with the CC set loaded. Pass: cycles_done 5, placed true each cycle, back in live mode, 5 x et-empty marks. Read: et-full / et-empty per cycle. Since 2026-10-26: asi game-copy/ts3native.asi.allocsites6 (0.36.88 = 0.36.86 v4 + docs/67 §21 stale module fix + docs/201 §15 load deadlock fix; before allocsites3 0.36.85; docs/201, includes memlite/rctrim/memexp; [MemDiag] AllocSites=1 at 1 in 64 attributes native growth per call site, read with node tools/memory-report.ts <log> section native call sites; ResourceCache trim, SqrtHeapLimit and TypeGrowth off).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [457]": 1,
+        "^diag: mem #\\d+ mark ev=et-empty ": 5
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "et-lot-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

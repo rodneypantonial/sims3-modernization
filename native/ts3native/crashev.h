@@ -10,7 +10,8 @@
 
 enum CeTag : u8 {
     CE_NONE, CE_DESTROY_IN, CE_DESTROY_RUN, CE_DESTROY_OUT, CE_RC_HOLD, CE_RC_REL, CE_FP_QUEUE, CE_FP_APPLY, CE_DISC_DESTROY,
-    CE_LOTRM_FLUSH, CE_DECOMP, CE_SAVE, CE_JOB_START, CE_JOB_END, CE_DRAW_BAD, CE_NTAGS
+    CE_LOTRM_FLUSH, CE_DECOMP, CE_SAVE, CE_JOB_START, CE_JOB_END, CE_DRAW_BAD, CE_P5C_PARK, CE_P5C_REL,
+    CE_XFORM_BAD, CE_NTAGS
 };
 // what a, x and y hold per tag (docs/186 §8.2)
 static const char* const kCeTag[CE_NTAGS] = {
@@ -29,6 +30,9 @@ static const char* const kCeTag[CE_NTAGS] = {
     "job-start",       // a route handle, x kind, y +0x918 lock: the worker holds +0x918 from here
     "job-end",         // a route handle, x job us, y +0x918 lock: released
     "draw-bad",        // a bad pointer, x site, y parent object: a draw guard saw it (crashfx.cpp)
+    "p5c-park",        // a object, x idLo, y idHi: P5cPark kept one reference of a destroyed object (docs/67 §15)
+    "p5c-rel",         // a object, x park age us, y count before: P5cFlush released it (count 1 = freed now)
+    "xform-bad",       // a parent object, x transform component, y caller: the 0x958560 guard saw a bad parent (crashfx.cpp)
 };
 
 struct CeEnt {
@@ -63,7 +67,8 @@ static void CeRec(u8 tag, DWORD a, DWORD x = 0, DWORD y = 0) {
 // sub-object pointers a draw reads at small offsets), anything else 16
 static DWORD CeSpan(const CeEnt& e) {
     if (e.tag == CE_DECOMP) return e.x > 16 ? e.x : 16;
-    if (e.tag == CE_DESTROY_IN || e.tag == CE_DESTROY_RUN || e.tag == CE_DESTROY_OUT || e.tag == CE_FP_QUEUE || e.tag == CE_FP_APPLY) return 0x400;
+    if (e.tag == CE_DESTROY_IN || e.tag == CE_DESTROY_RUN || e.tag == CE_DESTROY_OUT || e.tag == CE_FP_QUEUE || e.tag == CE_FP_APPLY ||
+        e.tag == CE_P5C_PARK || e.tag == CE_P5C_REL) return 0x400;
     return 16;
 }
 // newest entry whose span holds `a`; false = none in the ring
@@ -71,7 +76,7 @@ static bool CeFind(DWORD a, CeEnt* out) {
     const LONG top = g_ceSeq;
     for (LONG s = top; s > 0 && top - s < (LONG)kCeRing; s--) {
         const CeEnt& e = g_ceRing[(DWORD)(s - 1) & (kCeRing - 1)];
-        if (e.seq != s || !e.a || e.tag == CE_DRAW_BAD) continue;
+        if (e.seq != s || !e.a || e.tag == CE_DRAW_BAD || e.tag == CE_XFORM_BAD) continue;
         if (a - e.a < CeSpan(e)) { *out = e; return true; }
     }
     return false;

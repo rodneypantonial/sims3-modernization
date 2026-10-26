@@ -98,7 +98,13 @@ static const int RTO_WHY_TAIL = 100, RTO_WHY_OPT = 101, RTO_WHY_SH = 102;  // ab
 static __declspec(thread) bool t_rtoPin, t_rtoJobEnd;
 
 // --- R-acq / R-call / R-rel state per nesting level (0x831530 never nests in practice: deeper levels take the game path)
-enum { RTO_PLAIN, RTO_SKIP, RTO_LATE, RTO_SHADOW, RTO_ANSWERED };
+// RTO_HELD / RTO_UFC (docs/202 §3.4 C3, unseenfbc.cpp): R-acq took +0x918 itself with a deadline and got it (R-call plain,
+// R-rel releases) / the deadline passed (R-call answers "obstructed", R-rel releases nothing)
+enum { RTO_PLAIN, RTO_SKIP, RTO_LATE, RTO_SHADOW, RTO_ANSWERED, RTO_HELD, RTO_UFC };
+// docs/202 §3.4 C3 (unseenfbc.cpp UfcC3, set when [UnseenFallback] Sites C3 is installed): the take of +0x918 with a deadline
+// when the running script task is an unseen Sim's own; 0 = not for this call (take it as the game does), 1 = taken (held),
+// -2 = the deadline passed (nothing held)
+static int (*g_ufcC3)(void* lock);
 static __declspec(thread) u8 t_rtoSt[8];
 static __declspec(thread) bool t_rtoWait[8];  // R-acq saw another thread own +0x918 (the original would have waited)
 static __declspec(thread) int t_rtoN;
@@ -576,9 +582,14 @@ static int __cdecl RtoAcqDecide(void* lock) {
     } else if (t_rtoN >= 8) {
         InterlockedIncrement(&k.rtoNested);
     }
+    // docs/202 C3: a take the RO path leaves to the game (outermost level only)
+    if (st == RTO_PLAIN && g_ufcC3 && t_rtoN == 0) {
+        const int r = g_ufcC3(lock);
+        if (r) st = r > 0 ? RTO_HELD : RTO_UFC;
+    }
     if (t_rtoN < 8) t_rtoSt[t_rtoN] = (u8)st, t_rtoWait[t_rtoN] = wait;
     t_rtoN++;
-    return st == RTO_SKIP;
+    return st == RTO_SKIP || st == RTO_HELD || st == RTO_UFC;
 }
 static __declspec(naked) void RtoAcqStub() {  // thiscall(lock; arg), ret 4, as 0x4E16F0
     __asm {
@@ -600,6 +611,12 @@ static DWORD* __fastcall RtoCallStub(u8* world, void* edx, DWORD* out, u8* sim, 
     Ts3nCounters& k = ts3native_counters;
     const int lvl = t_rtoN - 1;
     const int st = lvl >= 0 && lvl < 8 ? t_rtoSt[lvl] : RTO_PLAIN;
+    if (st == RTO_UFC) {  // docs/202 C3: the deadline passed at R-acq: "obstructed" (code 4, id 0: the early code-4 answer)
+        out[0] = 4, out[2] = out[3] = 0;
+        t_rtoSt[lvl] = RTO_ANSWERED;
+        InterlockedIncrement(&k.ufcFake[2]);
+        return out;
+    }
     if (st != RTO_SKIP && st != RTO_SHADOW) return g_rtoRoute(world, edx, out, sim, target, point, opts, a6, a7, a8, a9, a10);
     static RtoIn in;  // owner thread only
     in.world = world, in.sim = sim, in.target = target, in.point = point, in.opts = opts;
@@ -654,8 +671,15 @@ static DWORD* __fastcall RtoCallStub(u8* world, void* edx, DWORD* out, u8* sim, 
     }
     RtoFallback(why);
     t_rtoKey = 0x0083156D;  // probe P0: the late take keyed as the original site
-    g_rtoAcq(world + 0x918, NULL, g_rtoDeadline);
+    const int uf = g_ufcC3 ? g_ufcC3(world + 0x918) : 0;  // docs/202 C3: an unseen Sim's late take with a deadline
+    if (!uf) g_rtoAcq(world + 0x918, NULL, g_rtoDeadline);
     t_rtoKey = 0;
+    if (uf < 0) {
+        out[0] = 4, out[2] = out[3] = 0;
+        t_rtoSt[lvl] = RTO_ANSWERED;
+        InterlockedIncrement(&k.ufcFake[2]);
+        return out;
+    }
     t_rtoSt[lvl] = RTO_LATE;
     return g_rtoRoute(world, edx, out, sim, target, point, opts, a6, a7, a8, a9, a10);
 }
@@ -666,6 +690,7 @@ static LONG __fastcall RtoRelStub(void* lock, void* edx) {
     if (lvl < 0) t_rtoN = 0;  // shortcut: an unbalanced release (never seen) is passed through; the state resets
     if (st == RTO_SKIP) { InterlockedIncrement(&ts3native_counters.rtoNoRoute); return 1; }
     if (st == RTO_ANSWERED) return 1;
+    if (st == RTO_UFC) { InterlockedIncrement(&ts3native_counters.ufcNoRoute); return 1; }  // docs/202 C3: nothing held
     const LONG r = g_rtoRel(lock, edx);
     if (st == RTO_SHADOW) InterlockedDecrement(&g_rgOffSimOpen);
     return r;
@@ -677,24 +702,35 @@ static const CallSite kRtoSites[3] = {{RTO_REL_SITE, RTO_LOCK_REL, (void*)RtoRel
 
 // [RouteToObjRO] Enabled=1: the three call sites (each an E8 to its expected callee, else nothing) in the order R-rel, R-call,
 // R-acq, so SKIP is never pushed before its partners exist; needs the S2 writer set (QL, W1-W6, tripwires)
+// each site an E8 to its expected callee (checked first, logged under `who`)
+static bool RtoSitesOk(const char* who) {
+    for (const CallSite& c : kRtoSites) {
+        const u8* p = (const u8*)(uintptr_t)c.site;
+        if (!Readable(p, 5) || p[0] != 0xE8 || (DWORD)(c.site + 5 + *(const LONG*)(p + 1)) != c.target) {
+            Log("SKIP %s: the call at 0x%08lX is not to 0x%08lX (another hook?)", who, c.site, c.target);
+            return false;
+        }
+    }
+    return true;
+}
+// R-rel, R-call, R-acq in that order (rtoReady bits 2, 1, 0); also [UnseenFallback] C3's way in when [RouteToObjRO] is off
+static bool RtoPatchSites() {
+    for (int i = 0; i < 3; i++) {
+        if (!PatchCalls(i == 0 ? "route-to-object RO R-rel" : i == 1 ? "route-to-object RO R-call" : "route-to-object RO R-acq",
+                        &kRtoSites[i], 1))
+            return false;
+        ts3native_counters.rtoReady |= 4 >> i;
+    }
+    return true;
+}
+
 static void InstallRouteToObjRO(const wchar_t* ini) {
     Ts3nCounters& k = ts3native_counters;
     if (!GetPrivateProfileIntW(L"RouteToObjRO", L"Enabled", 0, ini)) { Log("route-to-object RO off (Enabled=0)"); return; }
     if (!k.rgEnforce || !k.asyncReady) { Log("SKIP route-to-object RO: needs [RouteGate] Enforce=1 with the async path"); return; }
-    for (const CallSite& c : kRtoSites) {
-        const u8* p = (const u8*)(uintptr_t)c.site;
-        if (!Readable(p, 5) || p[0] != 0xE8 || (DWORD)(c.site + 5 + *(const LONG*)(p + 1)) != c.target) {
-            Log("SKIP route-to-object RO: the call at 0x%08lX is not to 0x%08lX (another hook?)", c.site, c.target);
-            return;
-        }
-    }
+    if (!RtoSitesOk("route-to-object RO")) return;
     if (!InstallSrWriters()) { Log("SKIP route-to-object RO: the S2 writer set (W1-W6, W4, tripwires) is not all in place"); return; }
-    for (int i = 0; i < 3; i++) {
-        if (!PatchCalls(i == 0 ? "route-to-object RO R-rel" : i == 1 ? "route-to-object RO R-call" : "route-to-object RO R-acq",
-                        &kRtoSites[i], 1))
-            return;
-        k.rtoReady |= 4 >> i;
-    }
+    if (!RtoPatchSites()) return;
     if (k.slReady) k.rtoReady |= 8;
     k.rtoMode = Clamp(GetPrivateProfileIntW(L"RouteToObjRO", L"Mode", 1, ini), 0, 1);
     k.rtoShadow = Clamp(GetPrivateProfileIntW(L"RouteToObjRO", L"Shadow", 0, ini), 0, 1);

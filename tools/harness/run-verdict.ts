@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { armStats, loadRun, repoIniAt, runIters, toolCosts, toolsOn, withBaseIni, type Arm, type ToolCosts } from './hitch-ab.ts';
+import { THRESH, armStats, loadRun, repoIniAt, runIters, toolCosts, toolsOn, withBaseIni, type Arm, type ToolCosts } from './hitch-ab.ts';
 
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
 export const QUEUE_DIR = join(ROOT, 'probe-out', 'queue');
@@ -90,7 +90,7 @@ export function rowTiming(row: any, iniText?: string | null, costs: ToolCosts = 
 // hitch numbers of a profile arm: per 10 min >= 300 / >= 1000, max, p99, it/s
 export function armNums(a: Arm) {
   const s = armStats(a);
-  return { per300: s.per10[1], per1000: s.per10[3], max: s.max, p99: s.p99.bounded ? null : s.p99.ms, its: s.mins ? s.iters / (s.mins * 60) : 0, n1000: s.counts[3], mins: s.mins };
+  return { per300: s.per10[THRESH.indexOf(300)], per1000: s.per10[THRESH.indexOf(1000)], max: s.max, p99: s.p99.bounded ? null : s.p99.ms, its: s.mins ? s.iters / (s.mins * 60) : 0, n1000: s.counts[THRESH.indexOf(1000)], mins: s.mins };
 }
 type Nums = ReturnType<typeof armNums>;
 export function runNums(tag: string): { nums: Record<string, Nums>; invalid: string | null } | null {

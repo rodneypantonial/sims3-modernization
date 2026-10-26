@@ -1,0 +1,74 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/200 §6 Build-mode CC stress: synthetic Build items game-copy/cc-synth/cc-build-200 (tools/cc-gen.ts --kind wall:5,floor:5,door:3,window:3,fence,terrain,railing,stairs --seed 1: 50 wall + 50 floor patterns (CWAL), 30 doors + 30 windows (OBJD), 10 each fences, terrain paints, railings, stairs; 121 MB; moved in before the load and back after; interrupted run: node tools/harness/queue.ts --restore-content). Asi game-copy/ts3native.asi.allocsites3 (0.36.85, docs/201, includes memlite/rctrim/memexp; [MemDiag] AllocSites=1 at 1 in 64 attributes native growth per call site, read with node tools/memory-report.ts <log> section native call sites; ResourceCache trim, SqrtHeapLimit and TypeGrowth off). STRESS + correctness (noiseCheck false). Order: bp-ccb-catalog (load smoke: build_cc_catalog fails when the catalogue lists fewer than 40 CC wall / 40 floor patterns / 40 doors+windows; it also reports fence / terrain / railing / stairs counts, not required), then bp-ccb-cycle (repro build-cc-cycle, 3 phases: 1 patterns = 5 Build mode cycles of 10 CC wallpapers + 24 CC floors + 3 CC doors / windows in a room the action builds round the home lot centre, sold / repainted with EA patterns, bcc-full / -empty; 2 walls = 2 cycles of a 3-level building with 4 x 4 rooms on the first free 16 x 12 .. 8 x 8 area, built and Ctrl-drag removed, bccw-full / -empty; 3 portals inside each building cycle = up to 72 CC + EA doors + 4 stairs placed and removed, bccp-full / -empty; every mark + forced GC, docs/200 §7). Read: node tools/mem-report.ts report --log <job ts3native.log> (repeated marks), the repro-jsonl per_cycle counts. ~8 + ~32 min with loads.",
+  "jobs": [
+    {
+      "id": "bp-ccb-catalog",
+      "note": "Load smoke (~8 min with the load). Pass: build_cc_catalog step ok (mins met), bcc-loaded mark, no crash. Read the step answer: wall / floor / wall_objects / fence / stairs / railing / terrain counts (which build kinds the game lists from a cloned package).",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-build-200",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=bcc-loaded ": 1
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 3,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "build-cc-catalog"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-ccb-cycle",
+      "note": "Build-mode CC, 3 phases (repro build-cc-cycle, agent build_cc_cycle; BuildCcBuildingHandlers.cs for 2-3). Pass: cycles_done 5, walls_phase and portals_phase cycles_done 2, no error, walls_painted > 0 and placed > 0, walls_phase per_cycle full walls > start and empty walls == start (left-overs = the Ctrl-drag delete missed), portals_phase full doors > start (repro-jsonl). Marks: 5 x bcc-, 2 x bccw-, 2 x bccp-full / -empty. Read: each tag against its previous cycle; wall_pick_misses, click_misses, pick_misses, aim_misses and fallback_deletes say how much went through the real cursor. Needs free ground for the 10 x 4 room round the home lot centre tile (else: no far wall) and an 8 x 8 or larger free area (else: no free footprint; pass building: [lx0, lz0, w, d]). Window: lead-in ~1 min + until maxS 1200 s (estimated) = 21 min, run 24 min.",
+      "asi": "game-copy/ts3native.asi.allocsites6",
+      "ini": { "MemDiag.AllocSites": 1, "MemDiag.AllocSitesSample": 64 },
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-build-200",
+      "logRequire": {
+        "^alloc sites on \\(TEST-RUN TOOL, docs/201\\): EA heap hooks 4/4, ntdll hooks [45]": 1,
+        "^diag: mem #\\d+ mark ev=bcc-full ": 5,
+        "^diag: mem #\\d+ mark ev=bcc-empty ": 5,
+        "^diag: mem #\\d+ mark ev=bccw-full ": 2,
+        "^diag: mem #\\d+ mark ev=bccw-empty ": 2,
+        "^diag: mem #\\d+ mark ev=bccp-full ": 2,
+        "^diag: mem #\\d+ mark ev=bccp-empty ": 2
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP alloc sites": 0,
+        "^diag: mem(sus)? .*=[-\\d.]+! ": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": {
+        "profile": {
+          "minutes": 24,
+          "seed": 12345,
+          "noSamplers": true,
+          "repro": "build-cc-cycle"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 50
+    }
+  ]
+}

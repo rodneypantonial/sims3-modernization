@@ -29,6 +29,7 @@ namespace Ts3Agent
             Dispatcher.Register("remove_objects", RemoveObjects);
             Dispatcher.Register("cas_parts", CasParts);
             Dispatcher.Register("wear_parts", WearParts);
+            Dispatcher.Register("cas_pool", CasPool);
             Dispatcher.Register("restore_outfit", RestoreOutfit);
             Dispatcher.Register("spawn_sims", SpawnSims);
             Dispatcher.Register("remove_sims", RemoveSims);
@@ -137,16 +138,17 @@ namespace Ts3Agent
                 | BuildBuyProduct.eBuySubCategory2.kBuySubCategory2UnderwaterObjects)) == 0;
         }
 
-        // place_objects {keys:[...] | filter, count?, lot?: "home"}: create objects free of charge at free spots on the active
-        // household's home lot (the game's FindGoodLocationNearby from the lot centre: never on top of, nor moving, existing
-        // objects); a spot off the lot or none at all -> the family inventory. Returns the ids for remove_objects.
+        // place_objects {keys:[...] | filter, name?, count?, skip?, lot?} (name: catalogue name substring, e.g. "CCGen"): create objects free of charge at free spots (the game's
+        // FindGoodLocationNearby from each lot's centre: never on top of, nor moving, existing objects). lot: "home" (default:
+        // the active household's lot; no spot -> the family inventory), "residential" (occupied residential lots), "community",
+        // "town" (both), or a lot name / id; objects go round-robin over the lots and a spot off its lot is refused. skip: start
+        // at the nth matching product, so calls in a row place distinct products. Returns the ids for remove_objects.
         static object PlaceObjects(Args a)
         {
             RequireLive();
-            if (a.Has("lot") && a.Str("lot") != "home") throw new McpException("only lot: \"home\" is supported");
             Household hh = Household.ActiveHousehold;
-            Lot lot = hh != null ? hh.LotHome : null;
-            if (lot == null) throw new McpException("the active household has no home lot");
+            List<Lot> lots = TargetLots(a.Str("lot", "home"), hh);
+            bool home = lots.Count == 1 && hh != null && lots[0] == hh.LotHome;
             List<ResourceKey> keys = new List<ResourceKey>();
             if (a.Has("keys"))
             {
@@ -157,21 +159,25 @@ namespace Ts3Agent
             }
             else
             {
-                string f = OriginFilter(a);
-                int n = (int)a.Long("count");
+                string f = OriginFilter(a), name = a.Str("name", null);
+                int n = (int)a.Long("count"), skip = (int)a.Long("skip", 0), seen = 0;
                 foreach (BuildBuyProduct p in SortedCatalog())
                 {
                     if (keys.Count >= n) break;
-                    if (Placeable(p) && (f == "all" || ContentOrigin(p.ProductResourceKey) == f)) keys.Add(p.ProductResourceKey);
+                    if (Placeable(p) && (f == "all" || ContentOrigin(p.ProductResourceKey) == f)
+                        && (name == null || (p.CatalogName ?? "").Contains(name)) && seen++ >= skip) keys.Add(p.ProductResourceKey);
                 }
-                if (keys.Count < n) throw new McpException("only " + keys.Count + " placeable '" + f + "' objects in the catalog");
+                if (keys.Count < n) throw new McpException("only " + keys.Count + " placeable '" + f + "' objects in the catalog after skip " + skip);
             }
             if (keys.Count > 100) throw new McpException("count is capped at 100");
             List<ulong> created = CreatedObjects();
             List<object> placed = new List<object>();
-            Vector3 centre = lot.GetCenterPosition();
-            foreach (ResourceKey k in keys)
+            Dictionary<string, object> perLot = Util.Obj();
+            int ok = 0;
+            for (int i = 0; i < keys.Count; i++)
             {
+                ResourceKey k = keys[i];
+                Lot lot = lots[i % lots.Count];
                 Dictionary<string, object> d = Util.Obj();
                 AddOrigin(d, k);
                 placed.Add(d);
@@ -180,33 +186,63 @@ namespace Ts3Agent
                 created.Add(go.ObjectId.Value);
                 d["id"] = Util.Id(go.ObjectId);
                 d["name"] = Util.ObjectName(go);
-                Vector3 pos = centre, fwd = Vector3.UnitZ;
+                Vector3 pos = lot.GetCenterPosition(), fwd = Vector3.UnitZ;
                 if (GlobalFunctions.FindGoodLocationNearby(go, ref pos, ref fwd) && LotManager.GetLotAtPoint(pos) == lot)
                 {
                     go.SetPosition(pos);
                     go.SetForward(fwd);
                     go.AddToWorld();
-                    d["where"] = "lot";
+                    d["where"] = home ? "lot" : lot.Name;
                     d["position"] = Pos(pos);
+                    perLot[lot.Name] = (perLot.ContainsKey(lot.Name) ? (int)perLot[lot.Name] : 0) + 1;
+                    ok++;
                 }
-                else if (hh.SharedFamilyInventory != null && hh.SharedFamilyInventory.Inventory.TryToAdd(go))
+                else if (home && hh.SharedFamilyInventory != null && hh.SharedFamilyInventory.Inventory.TryToAdd(go))
                     d["where"] = "family inventory";
                 else
                 {
                     go.Destroy();
                     created.Remove(go.ObjectId.Value);
                     d.Remove("id");
-                    d["error"] = "no free spot on the lot and the family inventory refused it";
+                    d["error"] = home ? "no free spot on the lot and the family inventory refused it" : "no free spot on " + lot.Name;
                 }
             }
             Dictionary<string, object> r = Util.Obj();
-            r["lot"] = lot.Name;
+            r["lot"] = home ? lots[0].Name : a.Str("lot");
+            r["lots"] = lots.Count;
+            r["placed"] = ok;
+            r["per_lot"] = perLot;
             r["objects"] = placed;
             r["tracked"] = created.Count;
             return r;
         }
 
-        // remove_objects {ids?:[...]}: destroy objects that place_objects created (all of them when ids is left out);
+        // place_objects lot targets: "home", "residential" (occupied, not the world lot), "community", "town", or a lot name / id
+        static List<Lot> TargetLots(string which, Household hh)
+        {
+            List<Lot> l = new List<Lot>();
+            if (which == "home")
+            {
+                if (hh == null || hh.LotHome == null) throw new McpException("the active household has no home lot");
+                l.Add(hh.LotHome);
+                return l;
+            }
+            bool res = which == "residential" || which == "town", com = which == "community" || which == "town";
+            foreach (Lot lot in LotManager.AllLots)
+            {
+                if (lot == null || lot.IsWorldLot) continue;
+                if (res || com)
+                {
+                    if ((res && lot.IsResidentialLot && lot.Household != null) || (com && lot.IsCommunityLot)) l.Add(lot);
+                }
+                else if (lot.Name == which || lot.LotId.ToString() == which) l.Add(lot);
+            }
+            if (l.Count == 0) throw new McpException("no lot matches '" + which + "'");
+            l.Sort(delegate(Lot x, Lot y) { return x.LotId.CompareTo(y.LotId); }); // stable spread across runs
+            return l;
+        }
+
+        // remove_objects {ids?:[...]}: destroy objects that place_objects created or buy_object sim_inventory added (all of them when ids is left out);
         // any other id is refused. An object a Sim is using is left alone and reported; retry it later.
         static object RemoveObjects(Args a)
         {
@@ -499,10 +535,117 @@ namespace Ts3Agent
         // wear_parts {sim?, keys:[...]}: current outfit + the parts (each replaces what the Sim wears on that body type;
         // full body and top/bottom replace each other; a later key of the same body type wins) as a new Special outfit,
         // switched to at once. Parts that do not fit the Sim are skipped and reported. restore_outfit undoes it.
+        // Without keys: filter (cc/store/ea/all, or pool = cas_pool's keys) + body_types [...] + nth pick, per body type, the nth fitting part of that
+        // origin (sorted by key). docs/191 cc-soak runs with content no-cc, so "cc" is then only the synthetic set [inferred:
+        // Mods packages report kLocalUserCreated, 2026-10-15 store-items-memory]. sim "household": every member in the world.
+        // sim "town": the active household, then other instantiated human Sims by id, Sims skip_sims .. skip_sims + max_sims
+        // (default 0, 20); Sim i picks nth + i, so Sims wear distinct parts while the lists last. remember: see below.
+        static readonly Dictionary<string, KeyValuePair<int, List<ulong>>> sSimSets = new Dictionary<string, KeyValuePair<int, List<ulong>>>();
         static object WearParts(Args a)
         {
             RequireLive();
-            Sim s = Util.FindSim(a, "sim");
+            string who = a.Has("sim") ? a.Str("sim") : null;
+            if (who != "household" && who != "town") return WearOn(Util.FindSim(a, "sim"), a, 0, null);
+            if (Household.ActiveHousehold == null) throw new McpException("no active household");
+            List<Sim> sims = new List<Sim>(Household.ActiveHousehold.Sims);
+            if (who == "town")
+            {
+                List<Sim> others = new List<Sim>();
+                foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+                    if (s != null && s.SimDescription != null && s.SimDescription.IsHuman && !sims.Contains(s)) others.Add(s);
+                others.Sort(delegate(Sim x, Sim y) { return x.SimDescription.SimDescriptionId.CompareTo(y.SimDescription.SimDescriptionId); });
+                sims.AddRange(others);
+            }
+            int skip = who == "town" ? (int)a.Long("skip_sims", 0) : 0, end = who == "town" ? Math.Min(sims.Count, skip + (int)a.Long("max_sims", 20)) : sims.Count;
+            // remember (sim "town"): name this pick; a later call with the same name dresses the same Sims at the same
+            // index (steady-state tests, docs/200 §11), so townies that came or went in between do not change the set
+            string mem = who == "town" ? a.Str("remember", null) : null;
+            KeyValuePair<int, List<ulong>> set;
+            if (mem != null && sSimSets.TryGetValue(mem, out set))
+            {
+                skip = set.Key;
+                end = skip + set.Value.Count;
+                sims = new List<Sim>(new Sim[skip]);
+                foreach (ulong id in set.Value) { SimDescription sd = SimDescription.Find(id); sims.Add(sd == null ? null : sd.CreatedSim); }
+            }
+            else if (mem != null)
+            {
+                List<ulong> ids = new List<ulong>();
+                for (int i = skip; i < end; i++) ids.Add(sims[i].SimDescription.SimDescriptionId);
+                sSimSets[mem] = new KeyValuePair<int, List<ulong>>(skip, ids);
+            }
+            Dictionary<CASAgeGenderFlags, Dictionary<BodyTypes, List<string>>> cache = new Dictionary<CASAgeGenderFlags, Dictionary<BodyTypes, List<string>>>();
+            List<object> each = new List<object>();
+            int dressed = 0, parts = 0;
+            List<string> errs = new List<string>();
+            for (int i = skip; i < end; i++)
+            {
+                Sim m = sims[i];
+                if (m == null) { Dictionary<string, object> d = Util.Obj(); d["sim"] = i; d["error"] = "remembered Sim no longer instantiated"; each.Add(d); errs.Add("Sim #" + i + ": not instantiated"); continue; }
+                try
+                {
+                    Dictionary<string, object> w = (Dictionary<string, object>)WearOn(m, a, who == "town" ? i : 0, cache);
+                    parts += ((List<object>)w["worn"]).Count;
+                    each.Add(w); dressed++;
+                }
+                catch (McpException e) { Dictionary<string, object> d = Util.Obj(); d["sim"] = m.FullName; d["error"] = e.Message; each.Add(d); errs.Add(m.FullName + ": " + e.Message); }
+            }
+            if (dressed == 0) throw new McpException("no household Sim could wear a part: " + string.Join("; ", errs.ToArray()));
+            Dictionary<string, object> r = Util.Obj();
+            r["dressed"] = dressed;
+            r["parts"] = parts;
+            r["sims"] = each;
+            return r;
+        }
+
+        // cache (per wear_parts call): the sorted fitting parts per age/gender/species, so a town of Sims scans the parts once each
+        static List<string> PickParts(Args a, CASAgeGenderFlags ags, int nthAdd, Dictionary<CASAgeGenderFlags, Dictionary<BodyTypes, List<string>>> cache)
+        {
+            int nth = (int)a.Long("nth", 0) + nthAdd;
+            Dictionary<BodyTypes, List<string>> hits;
+            if (cache == null || !cache.TryGetValue(ags, out hits)) { hits = FittingParts(a, ags); if (cache != null) cache[ags] = hits; }
+            List<string> keys = new List<string>();
+            foreach (List<string> l in hits.Values)
+                if (l.Count > 0) keys.Add(l[nth % l.Count]);
+            return keys;
+        }
+
+        // cas_pool {add?:[keys], clear?}: CAS part instances that wear_parts filter "pool" may pick (the cc-synth set's keys
+        // from its manifest.json, so the player's own CC is never picked); sent in chunks, kept until clear or a reload
+        static readonly Dictionary<ulong, bool> sCasPool = new Dictionary<ulong, bool>();
+        static object CasPool(Args a)
+        {
+            if (a.Bool("clear", false)) sCasPool.Clear();
+            if (a.Has("add")) foreach (object o in a.List("add")) sCasPool[ParseKey(Convert.ToString(o)).InstanceId] = true;
+            Dictionary<string, object> r = Util.Obj();
+            r["pool"] = sCasPool.Count;
+            return r;
+        }
+
+        static Dictionary<BodyTypes, List<string>> FittingParts(Args a, CASAgeGenderFlags ags)
+        {
+            bool pool = a.Str("filter", "all").Trim().ToLowerInvariant() == "pool";
+            if (pool && sCasPool.Count == 0) throw new McpException("filter pool: the pool is empty; cas_pool add first");
+            string f = pool ? "all" : OriginFilter(a);
+            Dictionary<BodyTypes, List<string>> hits = new Dictionary<BodyTypes, List<string>>();
+            foreach (object o in a.List("body_types"))
+            {
+                try { hits[(BodyTypes)Enum.Parse(typeof(BodyTypes), Convert.ToString(o), true)] = new List<string>(); }
+                catch (ArgumentException) { throw new McpException("unknown body_type '" + o + "'"); }
+            }
+            foreach (CASPart p in new PartSearch())
+            {
+                List<string> l;
+                if (!hits.TryGetValue(p.BodyType, out l) || !Fits(p, ags) || (f != "all" && ContentOrigin(p.Key) != f) || (pool && !sCasPool.ContainsKey(p.Key.InstanceId))) continue;
+                string k = KeyString(p.Key);
+                if (!l.Contains(k)) l.Add(k);
+            }
+            foreach (List<string> l in hits.Values) l.Sort(string.CompareOrdinal);
+            return hits;
+        }
+
+        static object WearOn(Sim s, Args a, int nthAdd, Dictionary<CASAgeGenderFlags, Dictionary<BodyTypes, List<string>>> cache)
+        {
             SimDescription sd = s.SimDescription;
             if (WornBefore().ContainsKey(sd.SimDescriptionId)) throw new McpException(sd.FullName + " already wears agent parts; restore_outfit first");
             if (sd.IsSupernaturalForm) throw new McpException(sd.FullName + " is in a supernatural form; its outfit cannot be swapped");
@@ -512,9 +655,11 @@ namespace Ts3Agent
             {
                 b.UseCompression = true;
                 OutfitUtils.SetOutfit(b, s.CurrentOutfit, sd, false);
-                foreach (object o in a.List("keys"))
+                List<string> keyList = new List<string>();
+                if (a.Has("keys")) foreach (object o in a.List("keys")) keyList.Add(Convert.ToString(o));
+                else keyList = PickParts(a, sd.AgeGenderSpecies, nthAdd, cache);
+                foreach (string ks in keyList)
                 {
-                    string ks = Convert.ToString(o);
                     CASPart p = new CASPart(ParseKey(ks));
                     if (p.Key == ResourceKey.kInvalidResourceKey || p.BodyType == BodyTypes.None) { skipped.Add(ks + ": no such CAS part"); continue; }
                     if (!Fits(p, sd.AgeGenderSpecies)) { skipped.Add(ks + ": " + p.AgeGenderSpecies + " does not fit " + sd.AgeGenderSpecies); continue; }

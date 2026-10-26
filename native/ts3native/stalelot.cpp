@@ -54,7 +54,8 @@ static int StlModeNow() {  // the arm for this plan: 0 off, 1 acting, 2 shadow (
     if (!(k.stlReady & 1) || (m != 1 && m != 2)) return 0;
     return m == 1 && k.stlActOff ? 2 : m;
 }
-static void StlRunBegin(int slm) { t_stlN = 0, t_stlOver = false, t_stlRun = slm != 0; }
+static bool g_luOn;  // lotuse.cpp [RouteSnap] LotUseReadout: the read set is recorded for it too
+static void StlRunBegin(int slm) { t_stlN = 0, t_stlOver = false, t_stlRun = slm != 0 || g_luOn; }
 static void StlRunEnd() { t_stlRun = false; }
 
 // the per-lot verdict of window (w0, now]: true = stale; why = slWhy index, wk = the world-level kind (why 1)

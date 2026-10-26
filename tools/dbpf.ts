@@ -29,7 +29,8 @@ export function s3saEncode(assembly: Buffer): Buffer {
   return Buffer.concat([head, body]);
 }
 
-export type Resource = { type: number; group: number; instance: bigint; data: Buffer };
+// memSize set: data is already RefPack-compressed (copied as is from a game package), memSize = its decompressed size
+export type Resource = { type: number; group: number; instance: bigint; data: Buffer; memSize?: number };
 
 export function writePackage(resources: Resource[]): Buffer {
   const HEADER = 96;
@@ -45,8 +46,8 @@ export function writePackage(resources: Resource[]): Buffer {
     index.writeUInt32LE(Number(r.instance & 0xffffffffn), o + 12);
     index.writeUInt32LE(offsets[i], o + 16);
     index.writeUInt32LE((r.data.length | 0x80000000) >>> 0, o + 20);
-    index.writeUInt32LE(r.data.length, o + 24);
-    index.writeUInt16LE(0, o + 28); // not compressed
+    index.writeUInt32LE(r.memSize ?? r.data.length, o + 24);
+    index.writeUInt16LE(r.memSize === undefined ? 0 : 0xffff, o + 28); // 0xffff = RefPack
     index.writeUInt16LE(1, o + 30); // committed
   });
   const header = Buffer.alloc(HEADER);

@@ -88,6 +88,13 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kOverwatchStuckNoticeSummary value="False" />
     <kPrePlanCallback value="False" />
     <kStuckCheckCap value="False" />
+    <kUnseenFallbackStuck value="False" />
+    <kUnseenFallbackPlan value="False" />
+    <kUnseenFallbackTeleport value="False" />
+    <kUnseenFallbackSites value="False" />
+    <kUnseenFallbackPre value="False" />
+    <kUnseenFallbackArrive value="False" />
+    <kUnseenFallbackLeave value="False" />
     <kOverwatchIgnoreStuckProbes value="True" />
   </Current_Tuning>
 </base>

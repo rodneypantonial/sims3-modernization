@@ -32,20 +32,21 @@ import { jsonlRows, rowTiming } from './run-verdict.ts'; // cycle with run-verdi
 const ROOT = process.env.TS3_REPO ?? join(import.meta.dirname, '..', '..');
 const PROFILE = join(ROOT, 'probe-out', 'profile'), QUEUE = join(ROOT, 'probe-out', 'queue');
 export const HITCH_MS = 50; // profile-world.ts starts stutter-profile.js with hitchMs 50: faster iterations are not in hitches.jsonl
-export const THRESH = [100, 300, 500, 1000, 2000];
+export const THRESH = [100, 200, 250, 300, 500, 1000, 2000]; // 200/250: noticeable-hitch targets (Rodney 2026-10-26)
 const SKIP_S = 60, SETTLE_S = 15;
 
 type H = Record<string, any> & { t: number; wallMs: number };
 type Row = Record<string, number>;
-type Slice = { from: number; on: boolean };
+type Slice = { from: number; on: boolean; loop?: boolean }; // loop: an in-load loop firing (profile-world.ts, <tag>-ab.json loop: true)
 export type Arm = { iters: number; secs: number; hitches: H[]; excl: Map<string, ExclRow>; freezes?: number[] }; // hitches, freezes = real ones only
 type Fz = { t0: number; t1: number; gapMs: number; iters: number };
 type Pct = { ms: number; bounded: boolean };
 
 // arm of each seconds row (row i ~ second i of the run); without slices every row is 'all' (the first minute goes out as an
 // excluded window in splitRun, so its hitches are listed)
-// which --ab slices count: slice 0 (warm-up) out, a last slice under half length out
+// which --ab slices count: slice 0 (warm-up) out, a last slice under half length out; loop firings: every one after slice 0
 const sliceKeep = (n: number, slices: Slice[]) => {
+  if (slices[1]?.loop) return slices.map((_, i) => i > 0);
   const len = slices.length > 1 ? slices[1].from - slices[0].from : Infinity;
   return slices.map((sl, i) => i > 0 && (i < slices.length - 1 || n - sl.from >= len / 2));
 };
@@ -66,7 +67,7 @@ export function rowArms(n: number, slices?: Slice[]): (string | null)[] {
   const keep = sliceKeep(n, slices);
   return Array.from({ length: n }, (_, i) => {
     let cur = -1; slices.forEach((sl, k) => { if (i >= sl.from) cur = k; });
-    return cur >= 0 && keep[cur] && i - slices[cur].from >= SETTLE_S ? (slices[cur].on ? 'on' : 'off') : null;
+    return cur >= 0 && keep[cur] && i - slices[cur].from >= (slices[cur].loop ? 0 : SETTLE_S) ? (slices[cur].on ? 'on' : 'off') : null;
   });
 }
 
@@ -118,12 +119,18 @@ export function loadRun(tag: string) {
     .sort((a, b) => statSync(join(PROFILE, b)).mtimeMs - statSync(join(PROFILE, a)).mtimeMs)[0];
   if (!hf) throw new Error(`no ${tag}-<secs>-hitches.jsonl in ${PROFILE}`);
   const rows = csvRows(readFileSync(join(PROFILE, hf.replace('-hitches.jsonl', '-seconds.csv')), 'utf8')), hitches: H[] = jsonl(join(PROFILE, hf));
-  const abf = join(PROFILE, `${tag}-ab.json`), slices = existsSync(abf) ? JSON.parse(readFileSync(abf, 'utf8')).slices as Slice[] : undefined;
+  const abf = join(PROFILE, `${tag}-ab.json`), ab = existsSync(abf) ? JSON.parse(readFileSync(abf, 'utf8')) : undefined;
+  const slices = ab ? (ab.slices as Slice[]).map(sl => ab.loop ? { ...sl, loop: true } : sl) : undefined;
   const secs = Number(/-(\d+)-hitches/.exec(hf)![1]), ctx = runContext(tag, rows, secs);
   const freezes: Fz[] = jsonl(join(PROFILE, hf.replace('-hitches.jsonl', '-freezes.jsonl'))); // none before docs/162: arms get no freezes
   // invalid: profiler cut short, noisy machine, crash (worst-hitches.ts runInvalid): shown, left out of pairs and pools
-  return { tag, secs, rows, hitches, freezes, slices, ctx, arms: splitRun(rows, hitches, slices, ctx, freezes), invalid: ctx.invalid };
+  return { tag, secs, rows, hitches, freezes, slices, ctx, arms: splitRun(rows, hitches, slices, loopCtx(ctx, slices), freezes), invalid: ctx.invalid };
 }
+
+// in-load loop arms (docs/189 §16): the whole firing window is the arm, so its repro-triggered windows stay in (they are what
+// the arm measures); probe calls, sampler, profiler edges and the first minute still go out. --scenario keeps its own view.
+export const loopCtx = <C extends Pick<RunCtx, 'wins'>>(ctx: C, slices?: Slice[]): C =>
+  slices?.[1]?.loop ? { ...ctx, wins: ctx.wins.filter(w => w.why !== 'repro-triggered') } : ctx;
 
 // tags given as full tags or prefixes of profile tags
 export function expandTags(args: string[]) {
@@ -241,8 +248,12 @@ export function toolsOn(row: { ini?: Record<string, unknown> | null; run?: { pro
   // the stack samplers run only in a plain window (profile-world.ts `window`)
   if (!p.noSamplers && !(p.ab || p.taskstall || p.repro || p.inroom || p.watchstalk || p.livereads2 || p.f4b || p.vres || p.vresDry || p.story)) out.push('samplers');
   for (const k of ['mainstack', 'taskstall', 'inroom', 'watchstalk', 'livereads2', 'f4b', 'vres', 'story']) if (p[k]) out.push(k);
-  for (const s of ['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'CrashForensics', 'MovedWaits'])
+  for (const s of ['HitchAttr', 'RouteJobPhases', 'UnseenProbe', 'PlanRepeat', 'CellMemoProbe', 'ProbeP1b', 'ProbeP10', 'GcThreadCheck', 'IcLockCheck', 'LoadProf', 'ProbeValues', 'ProbeSnap', 'Watchpoint', 'Verify', 'MovedWaits'])
     if (n(`${s}.Enabled`)) out.push(s);
+  // docs/67 §18: the light parts (Light=1, or under Enabled=1) vs the guard switches (Enabled=1 only; Guards defaults to 1)
+  if (n('CrashForensics.Enabled') || n('CrashForensics.Light')) out.push('CrashForensics.Light');
+  if (n('CrashForensics.Enabled')) for (const [k, d] of [['Guards', 1], ['DrawGuards', 0], ['EffectLog', 0], ['ObjResLog', 0], ['DbIndexLog', 0], ['SceneTreeGuard', 0]] as const)
+    if (Number(ini[`CrashForensics.${k}`] ?? d)) out.push(`CrashForensics.${k}`);
   if (n('ProbeSnap.CallSites') && !n('ProbeSnap.Enabled')) out.push('ProbeSnap.CallSites'); // docs/133 §7 coverage (Enabled wins)
   if (n('HitchAttr.Enabled') && n('HitchAttr.Holders')) out.push('HitchAttr.Holders');
   if (n('RouteJobPhases.Enabled')) for (const k of ['SyncPlans', 'HostSplit', 'GoalSplit', 'GoalStepSplit']) if (n(`RouteJobPhases.${k}`)) out.push(`RouteJobPhases.${k}`);
@@ -564,7 +575,7 @@ function selfCheck() {
   const s = armStats(a.all);
   // 6900 iterations: p99 rank from the top = 69 > 31 recorded -> bounded; p99.9 rank 6 -> 120 ms; max 1500
   assert.deepEqual(s.p99, { ms: HITCH_MS, bounded: true }); assert.deepEqual(s.p999, { ms: 120, bounded: false });
-  assert.equal(s.max, 1500); assert.deepEqual(s.counts, [31, 1, 1, 1, 0]); assert.equal(s.per10[0], 31 * 600 / 138);
+  assert.equal(s.max, 1500); assert.deepEqual(s.counts, [31, 1, 1, 1, 1, 1, 0]); assert.equal(s.per10[0], 31 * 600 / 138);
   // harness windows: a sampler window over 100-130 s drops 30 rows (QPC 101-130 s) and the hitches in it; a repro step hitch in
   // a kept row leaves the iteration count; a 0-step 1.2 s iteration is a save
   const w = splitRun(rows, [...hs, { t: 150_500, wallMs: 2500, steps: 3 }, { t: 160_500, wallMs: 1200, steps: 0 }], undefined,
@@ -577,6 +588,13 @@ function selfCheck() {
   // --ab: slices of 60 s from 0 (warm-up), on/off/on; 15 s settle; last slice 180-200 is under half length -> out
   const ab = splitRun(rows, hs, [{ from: 0, on: true }, { from: 60, on: false }, { from: 120, on: true }, { from: 180, on: false }]);
   assert.equal(ab.off.secs, 45); assert.equal(ab.on.secs, 45); assert.equal(ab.off.hitches.length, 15); assert.equal(ab.on.hitches.length, 8);
+  // in-load loop slices (docs/189 §16): lead-in 65-70 out, firings 70/100/130/160 whole (no settle, short last kept), and the
+  // repro-triggered window inside a firing stays in the arm
+  const lsl = [{ from: 65, on: false }, { from: 70, on: false }, { from: 100, on: true }, { from: 130, on: true }, { from: 160, on: false }].map(x => ({ ...x, loop: true }));
+  const lwins = { wins: [...baseWins(rows), { a: 149_000, b: 149_500, why: 'repro-triggered' as const, what: 'crowd_go' }], foreground: false };
+  const lpr = splitRun(rows, [...hs, { t: 149_400, wallMs: 900, steps: 3 }], lsl, loopCtx(lwins, lsl));
+  assert.equal(lpr.on.secs, 60); assert.equal(lpr.off.secs, 30 + 38); assert.equal(lpr.on.hitches.length, 21); assert.equal(lpr.on.excl.size, 0);
+  assert.equal(loopCtx(lwins, undefined), lwins); // --ab and plain runs keep every window
   // causes
   assert.equal(causeOf({ t: 0, wallMs: 900, route: 800, threaded: 850, byEntry: {} }, { ms: 790, ic: 'IC Plan', reason: 'NoStart' }), 'sync route plan: IC Plan NoStart');
   assert.equal(causeOf({ t: 0, wallMs: 400, threaded: 380, rtLock: 300, rtMaxKey: '0x00760bff' }, null), 'route job wait: gate 10 goal step (sync plan)');
@@ -682,6 +700,14 @@ function selfCheck() {
     .map(s => [`${s}.Enabled`, 1]).concat(['HitchAttr.Holders', 'RouteJobPhases.SyncPlans', 'RouteJobPhases.HostSplit', 'RouteJobPhases.GoalSplit', 'RouteJobPhases.GoalStepSplit', 'RouteAsync.OwnJobWait', 'RouteAsync.LogFallbackStack'].map(k => [k, 1]), [['RouteAsync.LogFallbackMs', 20]])),
   run: { profile: { mainstack: 'main', taskstall: 250, inroom: true, watchstalk: true, livereads2: true, f4b: true, vres: true, story: {} } } });
   assert.deepEqual(all.filter(t => !tc.tools[t]), [], 'every toolsOn name has a tool-costs.json row');
+  // docs/67 §18: Light alone is not heavy; Enabled=1 brings the guards (Guards defaults on) and each opt-in guard switch
+  const cf = (ini: Record<string, number>) => toolsOn({ ini, run: { profile: { noProf: true, noSamplers: true } } });
+  assert.deepEqual(cf({ 'CrashForensics.Light': 1 }), ['CrashForensics.Light']);
+  assert.match(toolCostLine(cf({ 'CrashForensics.Light': 1 }), tc), /^tools on: CrashForensics.Light; cost taken off: 0 ms\/s; not measured: CrashForensics.Light$/);
+  assert.deepEqual(cf({ 'CrashForensics.Enabled': 1, 'CrashForensics.Light': 1 }), ['CrashForensics.Light', 'CrashForensics.Guards']);
+  assert.deepEqual(cf({ 'CrashForensics.Enabled': 1, 'CrashForensics.Guards': 0, 'CrashForensics.SceneTreeGuard': 1, 'CrashForensics.DbIndexLog': 1 }), ['CrashForensics.Light', 'CrashForensics.DbIndexLog', 'CrashForensics.SceneTreeGuard']);
+  const cfAll = cf(Object.fromEntries(['Enabled', 'DrawGuards', 'EffectLog', 'ObjResLog', 'DbIndexLog', 'SceneTreeGuard'].map(k => [`CrashForensics.${k}`, 1])));
+  assert.deepEqual(cfAll.filter(t => tc.tools[t]?.class !== (t === 'CrashForensics.Light' ? 'light' : 'heavy')), [], 'guards heavy, Light light, all in tool-costs.json');
   const cs = toolsOn({ ini: { 'ProbeSnap.CallSites': 1 }, run: { profile: { noProf: true } } });
   assert.deepEqual(cs, ['samplers', 'ProbeSnap.CallSites']); assert.equal(tc.tools[cs[1]].timing, 'no');
   assert.ok(!toolsOn({ ini: { 'ProbeSnap.CallSites': 1, 'ProbeSnap.Enabled': 1 } }).includes('ProbeSnap.CallSites'));

@@ -1,5 +1,5 @@
 {
-  "note": "docs/189 integration (ts3native 0.36.63, counters v129, asi game-copy/ts3native.asi.p6int = native/ts3native/out-p6int on branch p6/integration): every docs/189 phase in one build, every switch default off and runtime-flippable. (a) correctness BP + IP with everything on (shadows where a shadow exists), VerifyEvery=1; (b) G1 v2 compare on the BP run's shadow records (shadow-compare-report.ts --g1); (c) IP timing ladder, one load per rung, in-load ABBA (off, on, on, off): off -> P6 -> +HoldKeyed=1 -> +HoldKeyed=2 -> +StaleLot acting (gated) -> +StaleLotFp acting (gated) -> +AskLent/DoorMemoX (DoorMemoX acting gated) -> +TakeKindsAll/TakeForeign. The harness loop knows two arms per load (repro-loop.ts), so the ladder is cumulative across loads, not inside one; a one-load N-arm ladder needs loop + hitch-ab arm support (follow-up). Not started here: a night chain runs; Rodney slots it. Duration: 2 x ~17 min correctness + 7 x ~28 min ladder = ~3.8 h of game time (+ ~3 min load each, included).",
+  "note": "2026-10-25 measurement fix (docs/189 §16): ladder rungs run ts3native 0.36.67 counters v131 (game-copy/ts3native.asi.p6meas = native/ts3native/out-p6meas), RouteSnap.AuditEvery=0 (timing), loops set p6warm per arm and write <tag>-ab.json loop slices. docs/189 integration (ts3native 0.36.63, counters v129, asi game-copy/ts3native.asi.p6int = native/ts3native/out-p6int on branch p6/integration): every docs/189 phase in one build, every switch default off and runtime-flippable. (a) correctness BP + IP with everything on (shadows where a shadow exists), VerifyEvery=1; (b) G1 v2 compare on the BP run's shadow records (shadow-compare-report.ts --g1); (c) IP timing ladder, one load per rung, in-load ABBA (off, on, on, off): off -> P6 -> +HoldKeyed=1 -> +HoldKeyed=2 -> +StaleLot acting (gated) -> +StaleLotFp acting (gated) -> +AskLent/DoorMemoX (DoorMemoX acting gated) -> +TakeKindsAll/TakeForeign. The harness loop knows two arms per load (repro-loop.ts), so the ladder is cumulative across loads, not inside one; a one-load N-arm ladder needs loop + hitch-ab arm support (follow-up). Not started here: a night chain runs; Rodney slots it. Duration: 2 x ~17 min correctness + 7 x ~28 min ladder = ~3.8 h of game time (+ ~3 min load each, included).",
   "jobs": [
     {
       "id": "bp-p6int-verify",
@@ -150,9 +150,9 @@
     {
       "id": "ip-p6int-p6-ab",
       "note": "docs/189 integration (c) timing ladder rung 1/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-p6-loop (off = the rungs below on, on = + routesnapplan=1 routesnapearly=1). P6 take + P6EarlyCopy (docs/94 §24.14). VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung.",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.p6meas",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -204,7 +204,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -231,9 +232,9 @@
     {
       "id": "ip-p6int-hold1-ab",
       "note": "docs/189 integration (c) timing ladder rung 2/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-hold1-loop (off = the rungs below on, on = + holdkeyed=1). [RouteGate] HoldKeyed=1: gate-0 misses, sites 3, 4, 6-9 keyed on the hold (docs/189 §9). VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung.",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.p6meas",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -285,7 +286,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -312,9 +314,9 @@
     {
       "id": "ip-p6int-hold2-ab",
       "note": "docs/189 integration (c) timing ladder rung 3/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-hold2-loop (off = the rungs below on, on = + holdkeyed=2). HoldKeyed=2: sites 1, 2, 10, 11, 15 too (docs/189 §10). VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung.",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.p6meas",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -366,7 +368,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -393,9 +396,9 @@
     {
       "id": "ip-p6int-stalelot-ab",
       "note": "docs/189 integration (c) timing ladder rung 4/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-stalelot-loop (off = the rungs below on, on = + routesnapstalelot=1). [RouteSnap] StaleLot acting (per-lot staleness, docs/189 §11); ini StaleLot=2 so the ring + detour are installed; ONLY after the correctness jobs show stlVer_1 0, stlMat_3 0, stlMat_7 0, stlFaults 0. VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung. GATED: run only if the correctness jobs passed their shadow rule for this rung (see the rung text); else skip (--from the next id).",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.p6meas",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -447,7 +450,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -474,9 +478,9 @@
     {
       "id": "ip-p6int-stalelotfp-ab",
       "note": "docs/189 integration (c) timing ladder rung 5/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-stalelotfp-loop (off = the rungs below on, on = + routesnapstalelotfp=1). [RouteSnap] StaleLotFp acting (footprint / W6 writers judged by their nested leaves, docs/189 §9 on p6/fplots); ini StaleLotFp=1; ONLY after fplVer_1 0 in the correctness jobs. VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung. GATED: run only if the correctness jobs passed their shadow rule for this rung (see the rung text); else skip (--from the next id).",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.p6meas",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -528,7 +532,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -555,9 +560,9 @@
     {
       "id": "ip-p6int-ask-ab",
       "note": "docs/189 integration (c) timing ladder rung 6/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-ask-loop (off = the rungs below on, on = + asklent=1 doormemox=1). [RouteSnap] AskLent + DoorMemoX acting (docs/189 §13); DoorMemoX=1 ONLY after dmxMismatch 0 in the correctness jobs (else run with doormemox 0 in both arms). VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung. GATED: run only if the correctness jobs passed their shadow rule for this rung (see the rung text); else skip (--from the next id).",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.flight",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -609,7 +614,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {
@@ -636,9 +642,9 @@
     {
       "id": "ip-p6int-kinds-ab",
       "note": "docs/189 integration (c) timing ladder rung 7/7, IP, one load: in-load ABBA on repro route-queuefull-p6int-kinds-loop (off = the rungs below on, on = + routesnapkinds=1 routesnapforeign=1). [RouteSnap] TakeKindsAll + TakeForeign (docs/189 §12, §4.1); ini TakeKindsAll=1 (install), FallbackAsync=1 + FbJobCapMs=300 so foreign STARTs exist. VerifyEvery=0, ShareCuts 1, DoorMemo 0, [MovedWaits] + [P6Waits] + [HitchAttr] Holders on, CrashForensics off (timing). 16 firings per arm (~10 min per arm). CLEAN MACHINE ONLY (machine-load line < 10% other CPU, no clock drop, Spotify closed; else rerun). Read: node tools/harness/hitch-ab.ts <tag> (p99 / p99.9 / max, counts >= 100/300/500/1000 ms per arm) and node tools/harness/wait-ab.ts <tag> (sim +0x918 wait by arm, gate 10 0x760BFF, gate 0 0x62EF7A, F-G 0x631F40, job / collect waits), p6 waits lines by arm, moved waits lines. Stop rule: keyed wait up or it/s down > 2% on the on arm = read [MovedWaits] before the next rung.",
-      "asi": "game-copy/ts3native.asi.p6int",
+      "asi": "game-copy/ts3native.asi.flight",
       "save": "Baseline-IP-Spring",
-      "minCounters": 129,
+      "minCounters": 131,
       "nativeRequire": "m2Off<=0,m2Trips<=2,hgTrip<=0,hgLongHold<=0,stlVer_1<=0,dmxMismatch<=0,p5bWdEscalate<=0",
       "logForbid": {
         "P4 FAULT": 0,
@@ -690,7 +696,8 @@
         "P6Waits.Enabled": 1,
         "RouteSnap.ShadowWorld": "IP",
         "RouteSnap.VerifyEvery": 0,
-        "MovedWaits.Enabled": 1
+        "MovedWaits.Enabled": 1,
+        "RouteSnap.AuditEvery": 0
       },
       "run": {
         "profile": {

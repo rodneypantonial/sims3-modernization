@@ -32,50 +32,93 @@ static bool g_plJobOwn;            // that run took g_plSet (job thread only)
 static __declspec(align(16)) u8 g_plPool[PL_N + 1][0x20];
 static volatile LONG g_plMade[PL_N + 1];
 static LONG g_plOn;                // tree sites patched and the region reserved (replay may run)
-static u8* g_plBase;               // region [base, top) handed out, [top, end) reserved
+static u8* g_plBase;               // region [base, top) handed out, [top, end) reserved (the first region)
 static u8* volatile g_plTop;
-static u8* g_plEnd;
-static u8* g_plCommit;
+static u8* g_plEnd;                // end of the region the bump pointer is in (the first or the newest chunk)
+static u8* g_plCommit;             // committed up to here in that region
 static volatile LONG g_plLock;
 static const DWORD kPlRegionMB = 96;
+// [RouteSnap] PoolChunkMB (0.36.73, docs/66 §7 A1): 0 = one kPlRegionMB reserve at install (as before); 16-48 = the first
+// region is that size and more regions of that size are reserved only when it fills, up to kPlRegionMB in all, so the
+// unused part of the 96 MB stays in the free address space. Regions after the first: [lo, hi) with lo set before g_plNReg
+// publishes it and hi only growing, so a push stub on any thread never sees a half-made range (the first region keeps
+// g_plBase / g_plTop: the stubs' fast check is unchanged).
+static DWORD g_plChunkMB;
+static const int kPlMaxReg = 12;
+static u8* g_plRegLo[kPlMaxReg];
+static u8* volatile g_plRegHi[kPlMaxReg];
+static volatile LONG g_plNReg;     // regions after the first
+static DWORD g_plResMB, g_plComBytes;
+
+static bool PlChunk(DWORD size) {  // g_plLock held: reserve the next region
+    Ts3nCounters& k = ts3native_counters;
+    const DWORD need = (size + (1u << 20) - 1) >> 20, mb = g_plChunkMB > need ? g_plChunkMB : need;
+    if (!g_plChunkMB || g_plNReg >= kPlMaxReg || g_plResMB + mb > kPlRegionMB) return false;
+    u8* b = (u8*)VirtualAlloc(NULL, mb << 20, MEM_RESERVE, PAGE_NOACCESS);
+    if (!b) return false;
+    g_plRegLo[g_plNReg] = g_plRegHi[g_plNReg] = b;
+    MemoryBarrier();
+    InterlockedIncrement(&g_plNReg);
+    g_plCommit = b, g_plEnd = b + (mb << 20);
+    g_plResMB += mb;
+    k.plChunks = g_plNReg + 1, k.plResKB = (LONG)(g_plResMB << 10), k.plSavedKB = (LONG)((kPlRegionMB - g_plResMB) << 10);
+    return true;
+}
 
 // block callback of the private pools (cdecl(size, ctx), as 0x624590): bump from the region; NULL when full (the game's
 // pop then returns 0: a fault in our clone work, caught there)
 static void* __cdecl PlBlockAlloc(DWORD size, DWORD) {
     Ts3nCounters& k = ts3native_counters;
     while (InterlockedExchange(&g_plLock, 1)) YieldProcessor();
-    u8* p = (u8*)(((uintptr_t)g_plTop + 15) & ~(uintptr_t)15);
-    u8* e = p + size;
-    if (!g_plBase || e > g_plEnd || e < p) { InterlockedExchange(&g_plLock, 0); InterlockedIncrement(&k.plFull); return NULL; }
-    if (e > g_plCommit) {
-        u8* c = (u8*)(((uintptr_t)e + 0xFFFF) & ~(uintptr_t)0xFFFF);
-        if (c > g_plEnd) c = g_plEnd;
-        if (!VirtualAlloc(g_plCommit, c - g_plCommit, MEM_COMMIT, PAGE_READWRITE)) {
+    for (;;) {
+        const LONG r = g_plNReg;
+        u8* p = (u8*)(((uintptr_t)(r ? g_plRegHi[r - 1] : g_plTop) + 15) & ~(uintptr_t)15);
+        u8* e = p + size;
+        if (!g_plBase || e > g_plEnd || e < p) {
+            if (g_plBase && PlChunk(size)) continue;
             InterlockedExchange(&g_plLock, 0);
             InterlockedIncrement(&k.plFull);
             return NULL;
         }
-        g_plCommit = c;
-        k.plKB = (LONG)((g_plCommit - g_plBase) >> 10);
+        if (e > g_plCommit) {
+            u8* c = (u8*)(((uintptr_t)e + 0xFFFF) & ~(uintptr_t)0xFFFF);
+            if (c > g_plEnd) c = g_plEnd;
+            if (!VirtualAlloc(g_plCommit, c - g_plCommit, MEM_COMMIT, PAGE_READWRITE)) {
+                InterlockedExchange(&g_plLock, 0);
+                InterlockedIncrement(&k.plFull);
+                return NULL;
+            }
+            g_plComBytes += (DWORD)(c - g_plCommit);
+            g_plCommit = c;
+            k.plKB = (LONG)(g_plComBytes >> 10);
+        }
+        if (r) g_plRegHi[r - 1] = e; else g_plTop = e;
+        InterlockedExchange(&g_plLock, 0);
+        return p;
     }
-    g_plTop = e;
-    InterlockedExchange(&g_plLock, 0);
-    return p;
 }
 static void __cdecl PlBlockFree(void*, DWORD) {}  // never called: nothing destroys our pool objects
 
 static bool PlRegion() {
     if (g_plBase) return true;
-    DWORD mb = kPlRegionMB;  // smaller when the address space has no such block (offline tests map the whole exe)
+    const DWORD want = g_plChunkMB ? g_plChunkMB : kPlRegionMB;
+    DWORD mb = want;  // smaller when the address space has no such block (offline tests map the whole exe)
     for (; mb >= 16 && !(g_plBase = (u8*)VirtualAlloc(NULL, mb << 20, MEM_RESERVE, PAGE_NOACCESS)); mb /= 2) {}
     if (!g_plBase) return false;
     g_plTop = g_plCommit = g_plBase;
     g_plEnd = g_plBase + (mb << 20);
-    ts3native_counters.plReady |= 4;
-    if (mb != kPlRegionMB) Log("private pools: region %lu MB (no %lu MB block free)", mb, kPlRegionMB);
+    g_plResMB = mb;
+    Ts3nCounters& k = ts3native_counters;
+    k.plChunkMB = (LONG)g_plChunkMB, k.plChunks = 1, k.plResKB = (LONG)(mb << 10), k.plSavedKB = (LONG)((kPlRegionMB - mb) << 10);
+    k.plReady |= 4;
+    if (mb != want) Log("private pools: region %lu MB (no %lu MB block free)", mb, want);
     return true;
 }
-static inline bool PlOwns(const void* p) { return (const u8*)p >= g_plBase && (const u8*)p < g_plTop; }
+static bool __cdecl PlOwnsChunk(const u8* q) {  // the regions after the first
+    for (LONG i = 0, n = g_plNReg; i < n; i++) if (q >= g_plRegLo[i] && q < g_plRegHi[i]) return true;
+    return false;
+}
+static inline bool PlOwns(const void* p) { return ((const u8*)p >= g_plBase && (const u8*)p < g_plTop) || (g_plNReg && PlOwnsChunk((const u8*)p)); }
 
 // the private pool i, made on first use from the live pool object's parameters; NULL when it cannot be made (counted)
 static u8* PlPrivate(int i, const u8* live) {
@@ -149,8 +192,11 @@ static void __cdecl PlSinkNote(int i, int foreign, void* node) {
 // (`fdest`: the tree pools keep pushing those to the private pool, the A* family leaks them to the sink); a game node pushed
 // by the P4 job thread always goes to the sink
 #define PL_PUSH(i, tree, nodereg, fdest) static __declspec(naked) void PlPush##i() { __asm { \
-    __asm mov eax, nodereg __asm cmp eax, g_plBase __asm jb live __asm cmp eax, g_plTop __asm jae live \
-    __asm mov eax, dword ptr fs:[24h] __asm cmp eax, g_plJobTid __asm je mine \
+    __asm mov eax, nodereg __asm cmp eax, g_plBase __asm jb chunk __asm cmp eax, g_plTop __asm jb own \
+    __asm chunk: __asm cmp g_plNReg, 0 __asm je live \
+    __asm push ecx __asm push edx __asm push nodereg __asm call PlOwnsChunk __asm add esp, 4 __asm pop edx __asm pop ecx \
+    __asm test al, al __asm je live \
+    __asm own: __asm mov eax, dword ptr fs:[24h] __asm cmp eax, g_plJobTid __asm je mine \
     __asm cmp eax, tree __asm jne foreign __asm cmp eax, g_rpOpTid __asm je mine \
     __asm foreign: __asm lock inc ts3native_counters.plForeign __asm jmp fdest \
     __asm mine: __asm lea eax, [g_plPool + i * 0x20] __asm ret \
@@ -275,9 +321,9 @@ static bool PlInstall() {
     }
     if (!(k.plReady & 2) && PlPatch(PL_ASTAR, PL_QCELL, "A*, goal, cell and quadtree cell pools")) k.plReady |= 2;
     if (k.plReady & 2) g_p4PoolsEnterJob = PoolsEnterJobHook, g_p4PoolsLeaveJob = PoolsLeaveJob;
-    Log("OK   private pools (docs/94 §16.7): tree sites 0x667920 0x668962 0x667990 0x6679D8%s, %lu MB region",
+    Log("OK   private pools (docs/94 §16.7): tree sites 0x667920 0x668962 0x667990 0x6679D8%s, %lu MB region%s",
         k.plReady & 2 ? ", A* family 0x61AC90 0x61AD13 0x61AE80 0x61B533 0x61EB90 0x61EBE5 0x66BB50 0x66BFAE" : " (A* family SKIP: P4 clone runs keep the game's A* pools)",
-        (DWORD)((g_plEnd - g_plBase) >> 20));
+        (DWORD)((g_plEnd - g_plBase) >> 20), g_plChunkMB ? " (PoolChunkMB: more regions of that size as it fills, up to 96 MB)" : "");
     return true;
 }
 

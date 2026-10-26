@@ -218,6 +218,9 @@ Every hop-6 EA hazard (`0xB469C0`, `0x7CE7A0`, `0xD74100`) is reached only from 
 | §4.4 managed callbacks | corrected (§9.2) |
 | IC pass-through | still forbidden: 36 % unresolved in a, writes on read in at least five tier-2 ICs (#2, #4, #18, #25 and the first fills) |
 
+
+**Live check 2026-10-25 (docs/133 §8, passive call sites, BP routing repros):** 185 of 541 armed glue sites fired; static 36.8% resolved -> 55.0% with live answers (57.9% some target known). I-131-12 pass (10 of 62 caller-typed sites fired, 0 targets outside the static set). New pairs only on `[switch]` rows (98, in-function case targets) and 8 receiver-typed rows with untyped caller sources. Ledger docs/51 §180 stays: verdict pass on this coverage.
+
 ## Ledger
 
 docs/51 §177: I-131-1 .. I-131-5; §180: I-131-6 .. I-131-12 (v2).

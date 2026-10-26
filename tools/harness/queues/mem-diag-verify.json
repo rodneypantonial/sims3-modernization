@@ -1,0 +1,52 @@
+{
+  "jobs": [
+    {
+      "id": "bp-memdiag-selftest-build-save",
+      "note": "docs/191 module 1 / docs/190 phase 1 [MemDiag] verify (correctness only, never timing: SelfTest leaks 8 MB on purpose). One Bridgeport load, the self-test 30 s after it (VirtualAlloc commit, 64 MiB arena-like reserve, thread stack, file mapping, routesnap heap, EA heap direct block, 8 x 1 MB synthetic leak, OS cross-check), Build mode in/out bracketed by mem_mark, one scratch save (repro memdiag-build-save). Needs game-copy/ts3native.asi.memdiag2 (0.36.75: the file-mapping step checks the walk's count of its own view, the map total only retries; the 2026-10-25 14:01 run failed map on streaming) and the main checkout's ts3agent rebuilt with mem_mark. Pass: self-test PASS with the EA step run, every checked field ok (no '!' mark), diag: mem lines at load, leak before/after, the three build marks, save start and end.",
+      "asi": "game-copy/ts3native.asi.memdiag2",
+      "save": "Baseline-BP-Spring",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1, "MemDiag.SelfTest": 1 },
+      "logRequire": {
+        "^mem diag on \\(docs/190 phase 1\\)": 1,
+        "^diag: mem fields \\(docs/190 phase 1;": 1,
+        "^diag: mem #\\d+ load ": 1,
+        "^diag: mem selftest commit 48 MB priv \\+": 1,
+        "^diag: mem selftest file mapping 32 MB map view \\+32\\.00, after 0\\.00 .* ok, try ": 1,
+        "^diag: mem selftest EA heap direct block 8 MB eaDir .* ok, try ": 1,
+        "^diag: mem #\\d+ selftest ev=selftest-leak-before ": 1,
+        "^diag: mem #\\d+ selftest ev=selftest-leak-after ": 1,
+        "^diag: mem selftest leak 8 x 1 MB eaDir .* ok": 1,
+        "^diag: mem selftest cross-check: .* ok": 1,
+        "^diag: mem selftest PASS": 1,
+        "^diag: mem fields \\(after the self-test; .*validated priv wPriv wCom free map stkRes miRes miCom eaDir eaDirN rp;": 1,
+        "^diag: mem #\\d+ mark ev=build-before ": 1,
+        "^diag: mem #\\d+ mark ev=build-in ": 1,
+        "^diag: mem #\\d+ mark ev=build-after ": 1,
+        "^diag: mem #\\d+ save-start ": 1,
+        "^diag: mem #\\d+ save-end ": 1
+      },
+      "logForbid": { "^FAIL\\b": 0, "^diag: mem selftest FAIL": 0, "^diag: mem selftest .* FAIL, try ": 0, "^diag: mem .*=[-\\d.]+! ": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "profile": { "minutes": 5, "seed": 12345, "noSamplers": true, "repro": "memdiag-build-save" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-memdiag-travel",
+      "note": "docs/191 module 1: travel round trip Bridgeport -> France -> Bridgeport (save-matrix travel case) with [MemDiag] on, no self-test. Pass: a save-start line tagged travel-save and two world loads tagged world-switch (out and back), lines at each save. Then: node tools/mem-report.ts merge <job ts3native.log copy> --job bp-memdiag-travel and node tools/mem-report.ts report --run <run> for the per-event deltas.",
+      "asi": "game-copy/ts3native.asi.memdiag",
+      "save": "Baseline-BP",
+      "noiseCheck": false,
+      "ini": { "MemDiag.Enabled": 1 },
+      "logRequire": {
+        "^diag: mem #\\d+ load ": 3,
+        "^diag: mem #\\d+ save-start ev=travel-save ": 1,
+        "^diag: mem #\\d+ load ev=(travel,)?world-switch ": 2,
+        "^diag: mem #\\d+ save-end ": 1
+      },
+      "logForbid": { "^FAIL\\b": 0, "[\\\\/]Users[\\\\/][^<]": 0 },
+      "run": { "matrix": ["--travel", "--cases", "travel", "--to", "france"] },
+      "timeoutMin": 45
+    }
+  ]
+}

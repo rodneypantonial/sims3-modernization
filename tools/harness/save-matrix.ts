@@ -3,6 +3,10 @@
 //   --direct: university / future skip the queued trip interaction (agent `direct: true`; future: out and back); default the real queued trip
 //   --stay: travel case only goes out and stays (no save away, no trip back) and leaves the save fixes as they are; for
 //     profile-world.ts --travel, which runs a repro in the destination world after this exits (docs/117 §2.11)
+//   --trips N: travel case repeats the round trip (out, save away, back, save home) N times (default 1)
+//   --mem-marks: travel case brackets the trips with [MemDiag] samples (agent mem_mark / mem_gc, docs/191; repro
+//     leak-travel-roundtrip-x3): base + mem_gc before trip 1, then per trip marks away / home and a mem_gc at home; same tags
+//     every trip, so node tools/mem-report.ts report shows per-trip deltas (gc-after = per trip after GC)
 //   node tools/harness/save-matrix.ts --list            cases and what each checks
 //   node tools/harness/save-matrix.ts --reload-check    second half of case `reload`, after loading its ON save (printed commands)
 //   node tools/harness/save-matrix.ts --reload-check --off   same for its OFF save in a second load; the later check compares both
@@ -32,10 +36,12 @@ import { matchKnown } from './known-script-errors.ts';
 const { values } = parseArgs({ options: {
   cases: { type: 'string' }, list: { type: 'boolean' }, 'self-check': { type: 'boolean' }, travel: { type: 'boolean' },
   to: { type: 'string', default: 'france' }, direct: { type: 'boolean' }, stay: { type: 'boolean' }, 'reload-check': { type: 'boolean' }, off: { type: 'boolean' }, 'case-timeout': { type: 'string', default: '900' },
-  port: { type: 'string', default: '47891' }, fixes: { type: 'string', default: 'all' },
+  trips: { type: 'string', default: '1' }, 'mem-marks': { type: 'boolean' }, port: { type: 'string', default: '47891' }, fixes: { type: 'string', default: 'all' },
 } });
 if (!['all', 'shipped'].includes(values.fixes!)) { console.error(`--fixes must be all or shipped, not ${values.fixes}`); process.exit(2); }
 const SHIPPED = values.fixes === 'shipped';
+const TRIPS = Number(values.trips);
+if (!(Number.isInteger(TRIPS) && TRIPS >= 1 && TRIPS <= 10) || (TRIPS > 1 && values.stay)) { console.error(`--trips must be 1..10 and not with --stay, not ${values.trips}`); process.exit(2); }
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const USER_DIR = process.env.TS3_USER ?? join(homedir(), 'Documents', 'Electronic Arts', 'The Sims 3');
 const SAVES = join(USER_DIR, 'Saves');
@@ -839,17 +845,41 @@ const CASES: Case[] = [
     checks.push({ name: 'trip route', status: 'info', why: `${trip[0]}: ${route}` });
     const saves = [s0];
     let leg = 'trip out';
+    // --mem-marks: a failed mark or GC fails the case (the samples are the point of the run)
+    const mark = async (tag: string) => { const r = await ag('mem_mark', { tag }); if (!r.ok || !r.result?.accepted) throw new Error(`mem_mark ${tag}: ${r.error ?? 'not accepted ([MemDiag] / [UserDiag] off?)'}`); };
+    // at normal speed: each GC round sleeps 2 sim ticks for the finalizer drain; save() leaves the game paused
+    const memGc = async () => {
+      await ag('set_speed', { speed: 'normal' });
+      const r = await ag('mem_gc', { rounds: 2 });
+      if (!r.ok) throw new Error(`mem_gc: ${r.error}`);
+      let g: any;
+      await until('mem_gc done', 60, async () => (g = await ag('mem_gc', { result: true })).result?.done === true, 3000);
+      await pause();
+      if (g.result.error) throw new Error(`mem_gc: ${g.result.error}`);
+    };
     try {
-      // autonomy off for the travellers only: University / future take the active Sim alone, a vacation the household
-      const out = await enterWorld(trip[0], trip[1], home, uni || fut ? 'active' : 'household');
-      checks.push(...travelSaveChecks('trip out', out.travelEvs));
-      if (values.stay) { checks.push({ name: 'stay', status: 'info', why: `staying in ${out.world} (--stay)` }); return { fixes, saves, checks }; }
-      const s1 = await save('travel-away'); saves.push(s1); checks.push(...saveChecks(s1));
-      leg = 'trip back';
-      // away, the household is the travellers; --direct future also returns without the portal interaction (agent direct: true)
-      const back = await enterWorld('travel_home', fut && direct ? { direct } : {}, out.world, 'household');
-      checks.push(...travelSaveChecks('trip back', back.travelEvs), { name: 'back home', status: sameWorld(back.world, home) ? 'pass' : 'fail', why: `${back.world} (home ${home})` });
-      const s2 = await save('travel-home'); saves.push(s2); checks.push(...saveChecks(s2));
+      if (values['mem-marks']) { leg = 'mem baseline'; await mark('base'); await memGc(); }
+      for (let t = 1; t <= TRIPS; t++) {
+        const nth = TRIPS > 1 ? ` ${t}` : '';
+        leg = `trip out${nth}`;
+        // autonomy off for the travellers only: University / future take the active Sim alone, a vacation the household
+        // trip 2+ to a vacation world: the game refuses Sims back from a vacation ("still recovering", WentToLocation buff);
+        // clear_recovery drops that buff (STRESS shortcut, not a player flow; alloc-sites 2026-10-26 trip 2 failed on it)
+        const again = t > 1 && trip[0] === 'travel_vacation';
+        if (again && t === 2) checks.push({ name: 'vacation cooldown', status: 'info', why: 'trips 2+ clear the WentToLocation buff (stress shortcut)' });
+        const out = await enterWorld(trip[0], again ? { ...trip[1], clear_recovery: true } : trip[1], home, uni || fut ? 'active' : 'household');
+        checks.push(...travelSaveChecks(leg, out.travelEvs));
+        if (values.stay) { checks.push({ name: 'stay', status: 'info', why: `staying in ${out.world} (--stay)` }); return { fixes, saves, checks }; }
+        if (values['mem-marks']) await mark('away');
+        const s1 = await save('travel-away'); saves.push(s1); checks.push(...saveChecks(s1));
+        leg = `trip back${nth}`;
+        // away, the household is the travellers; --direct future also returns without the portal interaction (agent direct: true)
+        const back = await enterWorld('travel_home', fut && direct ? { direct } : {}, out.world, 'household');
+        checks.push(...travelSaveChecks(leg, back.travelEvs), { name: `back home${nth}`, status: sameWorld(back.world, home) ? 'pass' : 'fail', why: `${back.world} (home ${home})` });
+        if (values['mem-marks']) await mark('home');
+        const s2 = await save('travel-home'); saves.push(s2); checks.push(...saveChecks(s2));
+        if (values['mem-marks']) { leg = `mem gc${nth}`; await memGc(); } // gc-before / gc-after marks (agent)
+      }
     } catch (e) {
       // keep the travel saves seen before the failure (they are the evidence; ts3native.log goes with the next game start)
       if (tripEvs.length) checks.push(...travelSaveChecks(`${leg} (before the failure)`, tripEvs));

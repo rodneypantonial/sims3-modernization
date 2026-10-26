@@ -4,6 +4,94 @@ PLAN lane H item H2, first step of [docs/23 #17](23-ideas-and-roadmap.md) (sim-t
 
 Tags: **[verified]** = read in a decompile, disassembly, decompiled C# or the exe's strings; **[measured]** = from sample or timing files named below; **[community-reported]** = from other projects; **[inferred]** = reasoning, still to confirm. "[to measure]" = no number exists yet.
 
+## 0. Refresh 2026-10-25 (existing data only, no game run)
+
+Sections 1-5 below are the 2026-10-15 snapshot; this section replaces their ranking. Effort = wall clock for Claude with agents (CLAUDE.md working style); game runs and clean nights listed apart.
+
+### 0.1 Sources
+
+- **Budget buckets** = docs/160 `split()` (`tools/harness/sim-budget-report.ts`, imported as is) over existing runs. The `sim-budget.json` queue itself was **never run**; the earlier "Mono ~400 / ICs ~200-235 / other ~205 / anim ~141 / route ~47" figures are its self-check on one run (`tailunlock-2026-10-22-bp-tailunlock-verify`).
+- **Natural set** (used for the table): every `*-(bp|ip|sv)-(rvb|soak)-*` profile from 2026-10-23..25 (release-validate and soak, seeded natural play). Our builds (v0.1.4, candidate, v0.1.5): BP 3,655 s, IP 2,115 s, SV 8,880 s; vanilla: one 10 min run per world. `[HitchAttr]` was off in all of them, so route-job waits are **not** a separate bucket here: they sit inside Mono/ICs (script waits), anim (steering waits) or other.
+- **Wide set** (95 runs, 2026-10-20..25, repros and A/B arms included) for the "other" method checks and the simstack counts.
+- Autonomy, Mono-leaf and hitch causes from docs/118 §8 and docs/161 §3; route-job waits from docs/189 §1 (M1-M3); unseen agents from docs/143; scripts from docs/144/129; Apex ownership from docs/187.
+
+### 0.2 Budget per world (natural set) [measured timers; Mono/IC split inferred from managed samples]
+
+| Bucket (ms/s) | BP ours | BP vanilla | IP ours | IP vanilla | SV ours | SV vanilla |
+|---|---|---|---|---|---|---|
+| Mono script (incl. waits taken from script) | 375 | 396 | 363 | 351 | 387 | 392 |
+| ICs (native under script) | 279 | 192 | 225 | 134 | 223 | 170 |
+| route sync plans on the sim thread | 41 | 105 | 79 | 269 | 19 | 83 |
+| GC + finalizers (timed) | 7 | 8 | 10 | 8 | 13 | 11 |
+| anim + locomotion + publish | 116 | 109 | 116 | 75 | 104 | 88 |
+| other (untimed) | 181 | 190 | 207 | 164 | 253 | 255 |
+
+Route plans left the sim thread (vanilla 105 / 269 / 83 -> 41 / 79 / 19), but part of that time came back as waits behind the job inside ICs and anim (ICs +87 / +91 / +53 vs vanilla). Single-run vanilla columns, so read the direction, not the digits.
+
+### 0.3 The "other" bucket (~181 / 207 / 253 ms/s)
+
+- **It is real time outside every timed stage, not tool cost** [measured]: wide set by profile window, BP 170 / 173 / 170 ms/s (managed sampler on / native sampler on / none), IP 173 / 182 / 179, SV 250 / 255 / 260. Vanilla has the same size (190 / 164 / 255), so it is EA's loop, not our hooks.
+- **It scales with iterations** [measured fit, natural set rows of ~1 s]: BP 102 + 1.78 x it/s, IP 82 + 2.00 x it/s, SV 103 + 1.71 x it/s. So ~80-105 ms/s per wall second plus ~1.7-2.0 ms per sim iteration; SV is largest because it runs ~89 it/s (BP 47, IP 62).
+- **What runs there** [verified call order, docs/36 §2 and docs/82 §"Sim iteration order"]: `ServiceList_SimUpdate 0x59ED70` (two to four calls per iteration: UTFWin `WindowManager_UpdateVisuals 0x50DE70`, audio service `0x869000`, camera, the other services; ~14 ms/s incl. in docs/36), the pre-locomotion step `0x7FD520`, `0x76C5E0`, `0x769420`, `0xD7FE80`, `RunCatchUpSteps`, the publish wrapper `0x76C8A0` (only the inner `0x593590` is timed), the `[host+0xB78]` callback, the remote-call pump at `0xD81FC3` (JobManager jobs, 0.29% incl. in docs/36 §7), and **pacing**: `IdleSimulationCycle 0x7694B0` plus the sleeps at `0xD81AF7`/`0xD81B16` (idle, not cost).
+- **The simstack sampler cannot split it** [measured, this refresh]: 73-83% of sim-thread samples hit the 24-frame cap, only 5.0-5.9% carry any timed-stage frame and 2-5% reach `Simulate` at all. sim-budget-report's "other" contributor list (leaf of samples with neither a timed nor a Mono-range frame) is therefore a sample of truncated deep stacks (allocator `0x4E5E40`, height ray `0x67E2B0`, quadtree `0x681CF0`, `Query_GetObjectsOnLot 0x7499B0`, object hash `0x939100`), mostly work from inside the script stages; do not read it as the remainder's content. The few untimed samples that do reach `Simulate` (20 / 29 / 43 in the rel015 runs) sit at `Simulate+0x40A` (the `0x7FD520` chain) and `+0x453` (services: UTFWin visuals, audio), then the per-frame GC chain `0xE49FB0 -> 0xE49F10 -> 0xE49DA0` (no `0xE4A050` frame ever appears: the Frida hook trampoline hides it, so whether GC time leaks into "other" is open [inferred]), publish and the pump.
+- Short-stack OS waits are 11-17% of untimed samples: part under the arena lock wrapper `0x4E69D0` (~2-4 ms/s) and `Semaphore_Wait 0x4E2760` (< 1 ms/s) [measured share, ms inferred]; the rest has no caller frame.
+- **Hitch relevance** [measured frames]: "other" leads 10 of 262 frames >= 300 ms in the natural set (4%). The 6 frames >= 1 s it leads are one SV soak episode (`overnight-1023-...-sv-soak-cand`, 1.2-2.3 s each, script stages <= 15 ms), which the night note attributes to own-START route jobs with the sim in `WaitAsyncDone`/`WaitJobDone` (`docs/data/results/2026-10-23-queue-overnight-1023.md`), i.e. route waits taken at an untimed point, not loop overhead.
+- **Verdict: LEAVE** as a target (EA loop overhead, pacing, UI services = Apex's UTFWin/publish area). To split it for real, add four `stutter-profile.js` timers (`0x59ED70`, `0x7FD520`, the pump call `0xD81FC3`, `0x7694B0`, ~1 h) next time that script is touched, and run `sim-budget.json` with `[HitchAttr]` so route waits get their own bucket.
+
+### 0.4 Who leads the hitches (natural set, 286 profiled minutes) [measured frames, cause split per docs/160]
+
+Frames >= 300 ms: 262 (BP 19, IP 142, SV 101). Route sync plans lead 118 (45%; IP 90 of 142), script 107 (41%), anim/locomotion 26 (10%; SV 19), other 10 (4%), GC 1. Frames >= 1 s: 17 (BP 0, IP 1, SV 16): route plans 8, route-job waits at untimed points 6 (above), script 3. This agrees with docs/161 §3 (sync plan fallbacks lead 12 of 15 >= 1 s) and docs/118 §8.3 (31 of 64 >= 300 ms script-led, 7 of 7 >= 1 s sync `Route.Plan` fallbacks). In the wide set, where `[HitchAttr]` was on in many runs, route-job waits lead 25% (IP) and 43% (SV) of frames >= 300 ms, so part of this table's "script" and "anim" share is waiting on a route job.
+
+### 0.5 Refreshed table
+
+Owner: **us** = routing, script, Mono; **Apex** = engine, visuals, render, lookups, allocator, memory (docs/187); **EA-only** = no realistic patch. ms/s are BP / IP / SV.
+
+| # | Subsystem | ms/s now | Leads >= 300 ms / >= 1 s | Status | Owner | Verdict |
+|---|---|---|---|---|---|---|
+| T1 | Route sync plans on the sim thread (fallbacks `NoStart`/`Foreign`/`Los`, own-task sync plans, docs/141 class-c callers) | 41 / 79 / 19 [measured] | 45% / 8 of 17 (+6 job-wait frames) | in progress: `[RouteAsync]` shipped; `FallbackAsync`, `PlanDeadlineMs`, `FbJobDeadline`, `JobYield`, `stuckcheckcap` built, partly run | us | **OFFLOAD** (finish: no multi-second plan on the sim) |
+| T2 | Sim waits behind route jobs (`+0x918`, `A_RUNNING` gates, drains, result waits) | keyed BP 68-92, IP 73-99; IP `asyncPumpUs` 74 [measured, docs/189 M1]; SV not split (steering ~48% of keyed) | wide set: IP 25%, SV 43% of >= 300 ms | in progress: P5/P5c, RO clones (S2, AvoidRO, Gate0RO, SlotEnabledRO, RouteToObjRO, PlacementRO), P6 phases 1 and 3 built, not run | us | **MAKE CHEAPER IN PLACE** (P6 `A_HOLD` + take rate; lock-taker bundle) |
+| T3 | Mono interpreter + runtime (all C#) | managed leaf 327 / 317 / 377 [measured share, docs/118 §8.1]; budget bucket 375 / 363 / 387 incl. waits | script 41% (with ICs) / 3 of 17 | must stay (M); fast paths designed, sub-run fusion built in monohost | us | **MAKE CHEAPER IN PLACE** (docs/139) |
+| T4 | Script one-tick batches (Overwatch nightly, ErrorTrap load scan, EA 3 AM / pet pool / decay, stuck checks, dispose) | small per second; 0.3-0.9 s per event [measured, docs/145-147] | most of the script-led >= 300 ms (ThreadedObjects / TaskObjects bursts) | built, off; disposespread verify PASS, the rest not run | us (+ NRaas upstream patches) | **MAKE CHEAPER IN PLACE** (spread) |
+| T5 | Locomotion (agent update, steering, avoidance, footprints) | locomotion stage 72-79 of the anim bucket [measured, rel015]; unseen Sims 94% of agent updates [measured, docs/143] | anim 10% (SV 19 of 101) / 0 | phase 1 + 2 throttles built, not run | us (routing) | **MAKE CHEAPER IN PLACE** (unseen throttle) |
+| T6 | Autonomy scoring | 65 / 55 / 88 [measured share, docs/118] | 0 named | candidate: `[AutShadow]` pilot designed, M5 open | us | **OFFLOAD** (steady ms/s, not a hitch fix) |
+| T7 | Unseen script work (broadcasters, environment score, motives) and the docs/129 five | broadcasters ~4-8 BP; docs/129 five ~37 total [inferred from samples] | 0 | docs/144 built, off, not run; docs/129 design | us | **MAKE CHEAPER IN PLACE** now (docs/144), **OFFLOAD** later (docs/129 with `[MonoThread]`) |
+| T8 | ICs (queries, SACS requests, slots, `FindGoodLocation`, non-plan route ICs) | 279 / 225 / 223 incl. waits inside ICs [measured remainder x sample share] | inside the script row | route ICs covered by RO clones; `kSpatialCache` | us (route ICs), Apex (generic lookups) | **MAKE CHEAPER IN PLACE** (route ICs via T2) / **APEX** (lookups) |
+| T9 | Animation (SACS pass, pose pass) | `animPose` 42-55, `animSacs` ~0.2 [measured] | inside anim row | must stay (synchronous clip events) | Apex / EA | **APEX** |
+| T10 | Untimed loop ("other": services incl. UTFWin visuals, pre-locomotion step, publish wrapper, pump, pacing) | 181 / 207 / 253 [measured remainder] | 4% / 0 (the 6 are route waits) | EA loop | EA + Apex (UI, publish) | **LEAVE** (add timers, §0.3) |
+| T11 | GC + finalizers | 7 / 10 / 13 timed [measured] | 1 / 0 | `[GC]` heap tuning in place | us (Mono runtime) | **LEAVE** |
+| T12 | EA arena allocator | 6.9% of samples (N6) | - | `[Alloc]` cache exists | Apex | **APEX** |
+| T13 | Lookups: object-id hash, lot/world queries, height ray, package probe (N9, N10, N20, N21) | ~2.4 + 1.9 + 0.7 + 4.0% of samples (2026-10-15) | - | designs H5, C2, C3, R1 | Apex | **APEX** |
+| T14 | Audio update | ~4 (N19) | - | mixing already off-thread | EA | **LEAVE** |
+| T15 | Saves (episodic) | 11-12 s per save | save stall | `[SaveWrite]`, `kFastRefTable`, `[FootprintIndex]` shipped | us | **LEAVE** (done) |
+| T16 | Lot streaming through the pump | [to measure] (N16) | - | §5.5 probe built, not run | Apex (scene) | **APEX** (measure first) |
+
+### 0.6 Top 10: estimated gain and effort
+
+| Rank | Item | Gain | Effort |
+|---|---|---|---|
+| 1 | T1 own stuck-check job cap + `PlanDeadlineMs` + `JobYield` ship-on decision | SV/BP freezes up to ~9 s from own probe jobs: 10 -> 2 waits >= 1 s in the sccap pair [measured, PLAN night-1024] | ~1-2 h + 1 night |
+| 2 | T1 fallback finish: `FallbackAsync`/`FbJobDeadline` defaults, `LogFallbackStack=16`, then docs/141 class-c callers | the rest of the >= 1 s freezes; IP route bucket 79 -> ~40-60 ms/s [inferred] | 2-4 h + 1 night; class-c fixes 4-8 h + 2 runs |
+| 3 | T2 lock-taker bundle A/B (SteerRO, AvoidRO, Gate0RO, DeferFootprint2, RouteToObjRO, PlacementRO, ForeignKinds; built 0.36.29) | IP/SV 300 ms-2 s waits; F-G placement ~110 ms each [measured, docs/174] | ~1 h + 1-2 nights |
+| 4 | T2 P6 phases 0-3 integration + IP ABBA | IP wait behind jobs ~74 -> ~15-25 ms/s, -6..-8 frames >= 300 ms per 10 min [inferred, docs/189 §3.6] | ~11-17 h + ~6 runs |
+| 5 | T4 script batch spreads (Overwatch, ErrorTrap, EA maintenance, `stuckchecknear`, `failrepeat`) | 0.3-0.9 s one-tick hitches per event -> spread [measured cost, gain inferred] | ~1-2 h + 1-2 nights |
+| 6 | T1 route early-out acting Mode 2 (docs/142) | failing multi-second plans -> ms (provable A* time counted by the probe) [inferred] | ~6-10 h + 2 runs |
+| 7 | T5 unseen agent throttle phase 1 + 2 | BP rate ~15-35, footprint ~4-12, cars ~3-10 ms/s, not additive [inferred, docs/143 §8.7] | ~1 h + 2 nights (19 jobs) |
+| 8 | T7 unseen script throttle (docs/144) | broadcasters ~4-8 ms/s BP + env score / motives on the unseen high-LOD share [inferred] | ~1 h + 1 night |
+| 9 | T3 Mono fast paths (sub-run fusion port + call/return) | +17..+38 ms/s steady, no hitch effect expected [inferred, docs/139] | ~11-20 h + 2 runs |
+| 10 | T6 + T7 autonomy pilot / tier 2 + docs/129 five on a second Mono thread | net +47..+135 ms/s steady [inferred, docs/118 §8.2] | ~80-130 h, many runs |
+
+### 0.7 Next after v0.2.0, ranked by player-visible hitch impact per hour
+
+1. Stuck-check cap / `PlanDeadlineMs` / `JobYield` ship-on (rank 1): built, biggest freezes, ~1-2 h.
+2. Lock-taker bundle A/B (rank 3): built, IP/SV 0.3-2 s waits, ~1 h + nights.
+3. Script batch spreads (rank 5): built, the script-led >= 300 ms, ~1-2 h + nights.
+4. Fallback finish + class-c callers (rank 2): the remaining >= 1 s plans, ~6-12 h.
+5. P6 phases 0-3 (rank 4): the most IP frames >= 300 ms, but ~11-17 h.
+6. Route early-out Mode 2 (rank 6): ~6-10 h.
+7. Unseen agent and script throttles (ranks 7-8): steady ms/s, few hitches, ~2 h + nights.
+8. Measurement, before picking beyond this: `sim-budget.json` with `[HitchAttr]` (1 night) + the four "other" timers (~1 h).
+9. Mono fast paths (rank 9), then the second-thread offloads (rank 10): steady throughput, no hitch effect in the data.
+
 ## Sources and units
 
 - **Native share:** docs/20 §2, 15 pooled `/simstack` profiles (9,890 samples, BP/SV/IP), nearest owner. Self time is reliable, inclusive time approximate (24-frame cap, stack scan) [measured].

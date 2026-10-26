@@ -1,0 +1,122 @@
+{
+  "note": "NOT RUN (2026-10-26). docs/199 memory EXPERIMENTS on the Boehm heap (ts3native 0.36.81, game-copy/ts3native.asi.memexp; both switches off by default) as STRESS cycles, not natural play (Rodney 2026-10-26: memory work uses stress cycles). Every job runs repro live-cc-cycle (docs/200: 3 cycles of 400 synthetic objects over the town + up to 150 Sims dressed, removed and undressed, then 100 inventory objects added and removed; mem_gc gc-before / gc-after pairs at each live-full / live-empty / inv-full / inv-empty mark) with ccSet game-copy/cc-synth/cc-2k (make it first with node tools/cc-gen.ts --count 2000 --kind both --seed 1 --out game-copy/cc-synth/cc-2k; leftover stash: node tools/harness/queue.ts --restore-content first). Job 1: [MemDiag] TypeGrowth on every completed GC, no in-load on/off slicing (2-min slices would leave some cycle marks without a pass): cost per pass from the typegrowth: census= / graph= ms fields and ts3native_counters tyLastUs / tyMaxUs. Jobs 2-3: [GC] SqrtHeapLimit observe (2) vs act (1), same save, seed and repro, separate loads because a grown heap never shrinks (docs/198). Compare hitch-ab.ts <observe tag> <act tag> (p99 / p99.9 / max, counts >= 100/300/500 ms), forced-GC count (sqForced, gcsize forced=), GC ms per cycle, heap MB and largest free per cycle mark. Read every job with node tools/memory-report.ts <job ts3native.log> and node tools/mem-report.ts report --log <job ts3native.log>. Job 4 bp-cc-smallheap (Error 12): InitialHeapMB=160 + SqrtHeapLimit=1 vs job 3 (352 start), largest free and address-space free per cycle mark. ~60 min play + 4 loads (~75 min); timing minutes 45 < 60, so no derived measurement smoke.",
+  "jobs": [
+    {
+      "id": "bp-cc-typegrowth",
+      "note": "live-cc-cycle 15 min, shipped ini + [MemDiag] TypeGrowth=1 (every completed GC, top 8) + HitchAttr. Pass: the switch read back in the 'mem experiments: TypeGrowth=1' line, >= 6 typegrowth passes (forced GC pairs at every mark), >= 1 holders line, 3 x live-empty / inv-empty marks, tyFaults 0, no crash. Read: census / graph ms per pass (the cost: pass ms x passes per minute vs the 2-3% player budget); classes whose KB grows full -> full and empty -> empty across cycles (survive removal) and their holders.",
+      "asi": "game-copy/ts3native.asi.memexp",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "noiseCheck": false,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "MemDiag.TypeGrowth": 1,
+        "MemDiag.TypeGrowthEvery": 1,
+        "MemDiag.TypeGrowthTopK": 8,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "^mem experiments: TypeGrowth=1": 1,
+        "^typegrowth: #\\d+ gc=": 6,
+        "^typegrowth: holders #\\d+ ": 1,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP mem experiments": 0,
+        "^SKIP type growth": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-cc-sqrtheap-observe",
+      "note": "Baseline arm: [GC] SqrtHeapLimit=2 (observe: hooks in, gcsize lines, heap policy unchanged), live-cc-cycle 15 min, same save, seed and repro as the act arm. Pass: switch read back (SqrtHeapLimit=2), >= 10 gcsize lines with a limit > 0, 3 x live-empty / inv-empty marks, no crash.",
+      "asi": "game-copy/ts3native.asi.memexp",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "GC.SqrtHeapLimit": 2,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "^mem experiments: .*SqrtHeapLimit=2": 1,
+        "^gcsize: gc=\\d+ mode=2 live=[\\d.]+ limit=[1-9]": 10,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP mem experiments": 0,
+        "^note: SqrtHeapLimit without": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-cc-sqrtheap-on",
+      "note": "Act arm: [GC] SqrtHeapLimit=1 (SqrtC 0.0005/MB, ceiling 1024 MB), otherwise bp-cc-sqrtheap-observe. Pass: switch read back (SqrtHeapLimit=1), gcsize lines, 3 x live-empty / inv-empty marks, no crash or Error 12. Read vs observe: hitch-ab.ts (GC pauses), forced collections, gcMs, heap MB and largest free per cycle mark (address-space cost of the bigger heap with 2,000 CC items); grewMB > 0 shows the rule acted. If the heap sits at the floor (352) the rule asks for less than InitialHeapMB: lower SqrtC or note that InitialHeapMB already covers it.",
+      "asi": "game-copy/ts3native.asi.memexp",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "GC.SqrtHeapLimit": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "^mem experiments: .*SqrtHeapLimit=1": 1,
+        "^gcsize: gc=\\d+ mode=1 live=[\\d.]+ limit=[1-9]": 10,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP mem experiments": 0,
+        "^note: SqrtHeapLimit without": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-cc-smallheap",
+      "note": "Error 12 arm: [GC] InitialHeapMB=160 + SqrtHeapLimit=1, otherwise bp-cc-sqrtheap-on. 160 = below the measured BP live heap (docs/66: 360 MB heap with 151 MB free at 6 min, so ~209 MB live) and well above the 40 MB clamp, so the heap starts small and every MB above it is grown by the rule (floor = InitialHeapMB, docs/199 §4). Primary read vs bp-cc-sqrtheap-on (352 start): largest free block and address-space free from the diag: mem lines at each cycle mark. Secondary: GC pause hitches (hitch-ab.ts), heap MB and grewMB, forced count. Pass: settings + floor read back as 160, the rule grew the heap (grewMB > 0), 3 x live-empty / inv-empty marks, no crash or Error 12, no failed expansion (no dedicated counter: a rule grow that fails falls through to the game as a forced collection, so forced > 0 while heap < limit in gcsize lines = suspect; a game-side failed expansion shows as a GC out-of-memory warning or crash).",
+      "asi": "game-copy/ts3native.asi.memexp",
+      "save": "Baseline-BP-Spring",
+      "releaseDefaults": true,
+      "ccSet": "game-copy/cc-synth/cc-2k-v2",
+      "ini": {
+        "GC.InitialHeapMB": 160,
+        "GC.SqrtHeapLimit": 1,
+        "HitchAttr.Enabled": 1
+      },
+      "logRequire": {
+        "^settings: InitialHeapMB=160 ": 1,
+        "^mem experiments: .*SqrtHeapLimit=1 .*floor 160 MB": 1,
+        "^gcsize: gc=\\d+ mode=1 live=[\\d.]+ limit=[1-9]": 10,
+        "^gcsize: gc=\\d+ mode=1 .* grewMB=[1-9]": 1,
+        "^diag: mem #\\d+ mark ev=live-empty ": 3,
+        "^diag: mem #\\d+ mark ev=inv-empty ": 3
+      },
+      "logForbid": {
+        "^FAIL\\b": 0,
+        "^SKIP mem experiments": 0,
+        "^note: SqrtHeapLimit without": 0,
+        "^clamped InitialHeapMB": 0,
+        "^note: GC_INITIAL_HEAP_SIZE": 0,
+        "[\\\\/]Users[\\\\/][^<]": 0
+      },
+      "run": { "profile": { "minutes": 15, "seed": 12345, "noSamplers": true, "repro": "live-cc-cycle" } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 40
+    }
+  ]
+}

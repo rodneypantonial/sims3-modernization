@@ -1,0 +1,34 @@
+{
+  "note": "Re-verify overwatchstuckslice (docs/145 §12) after untested-v020 sv-overwatchstuckslice-verify (switch on, 8 Stuck Check runs over 84 Sims, owstuck_slices 0, owstuck_max_stretch_us 17120): that job forced the Stuck Check on a fresh load with OverwatchSpreadNow, and [257] also counts stretches that end in a route check, where overwatchstuck already yields, while the slice check only runs at a Sim's start in the IsSelectable hook. This job lets the nightly 3 AM Overwatch alarm fire naturally on the SV soak setup (45 min seeded natural play from Baseline-SV-Spring, as sv-scown-nat / sv-soak-*), where the 100-336 ms walk stretches were measured, with the switch on for the whole run, and reads the new counter [302] owstuck_max_select_us (longest stretch seen at the IsSelectable hook, the slice check's own view). Master ts3fixes / ts3agent.",
+  "jobs": [
+    {
+      "id": "sv-owstuckslice-soak-verify",
+      "note": "SV soak, overwatchstuckslice ON all run, release set held (overwatchchain on, overwatchspread off, overwatchstuck on). Pass: no crash, 0 watchdog lines, no 'overwatchspread: ... failed' line, owstuck_runs >= 1 (owstuck_slices >= 1 dropped 2026-10-27, docs/145 §12.6: untested-v020 2026-10-26 rerun read owstuck_max_select_us 1039 with max_stretch 26434, so 0 slices is the expected answer, not a code fault). Read: owstuck_max_select_us vs owstuck_max_stretch_us (select < 8000 with slices 0 = the walk never reaches the 8 ms threshold between two Sims: the long stretches are inside one Sim's checks, slicing at IsSelectable cannot help, redesign or drop), Stuck Check resets vs sv-scown-nat-*-on, no OwChainTheirs task run >= 50 ms inside StuckCheck except single route checks.",
+      "asi": "game-copy/ts3native.asi.kinddl",
+      "save": "Baseline-SV-Spring",
+      "minCounters": 134,
+      "noiseCheck": false,
+      "nativeRequire": "watchdogs<=0",
+      "logForbid": {
+        "overwatchspread: .* failed": 0
+      },
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "RouteAsync.LogFallbackMs": 20
+      },
+      "run": {
+        "profile": {
+          "minutes": 45,
+          "seed": 12345,
+          "fixesOn": "overwatchstuckslice",
+          "fixesRequire": "owstuck_runs>=1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 65
+    }
+  ]
+}
