@@ -2,7 +2,7 @@
 
 This project makes The Sims 3 (Steam 1.67, 32-bit `TS3W.exe`) stutter less, crash less and load faster, through measured community fixes, reverse engineering, a C# player mod (`mods/ts3fixes`) and a native ASI plugin (`native/ts3native`). Most contributors work with an AI coding agent (Claude Code or similar) on a gaming laptop. This guide is written for both the human and the agent.
 
-Read first: `CLAUDE.md` (constraints and tooling), `PLAN.md` ("Resume here" and "Next, in order"), `docs/04-re-findings.md` (what is verified) and `docs/registry.md` (counter slots you must reserve). Before your first game run or crash investigation, read `docs/TESTING-AND-BUG-HUNTING.md` (harness overview and the bug-hunting method).
+Read first: `CLAUDE.md` (constraints and tooling), `PLAN.md` ("Resume here" and "Next, in order"), `docs/04-re-findings.md` (what is verified) and `docs/registry.md` (counter slots you must reserve). Before your first game run or crash investigation, read `docs/TESTING-AND-BUG-HUNTING.md` (harness overview and the bug-hunting method). Working on memory or Error 12? Start with `docs/MEMORY-RESEARCH.md`.
 
 ## What you need
 
