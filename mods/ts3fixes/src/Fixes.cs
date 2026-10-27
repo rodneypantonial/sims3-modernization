@@ -43,6 +43,7 @@ namespace Ts3Fixes
             Patch(typeof(VisitLot), "Run", typeof(VisitLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToLot), "Run", typeof(GoToLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToCommunityLot), "Run", typeof(GoToCommunityLotHook), "RunHook", "RunOrig");
+            ApplyTripSubclasses();
             if (Instantiator.kWalkStyleComparer)
                 Patch(typeof(Sims3.Gameplay.Actors.SimRoutingComponent).GetNestedType("WalkStyleComparer", BindingFlags.NonPublic), "Compare", typeof(WalkStyleCompareHook), "CompareHook", null);
             Patch(typeof(Sims3.Gameplay.Autonomy.ReactionBroadcaster), "PulseSims", typeof(BroadcasterPulseHook), "PulseHook", "PulseOrig");
@@ -72,6 +73,7 @@ namespace Ts3Fixes
             ApplyRouteSources();
             ApplyDisposeSpread();
             ApplyMemAlive();
+            ApplyUfFinish();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -142,12 +144,21 @@ namespace Ts3Fixes
         // Sim rules / not a standing unseen townie / car or boat / goal on the Sim's lot / goal lot refused / goal indoors or off the
         // ground / caller not a follow helper (frames in AppDomain ts3fixes.unseenfb.callers) / no yielding context / colour gives no
         // same-component proof / goal not routable or no route profile / D-leave goal in view.
+        // [341-347] lot trips with D's hold (docs/202 §3.6.4, unseenfbtrip / unseenfbtriphold): mod subclass trip runs / shortcuts /
+        // no safe spot (ShortcutToLot idx 341), trips placed after a walk-time hold (any kind) / holds given up or refused (seen at the
+        // start, Sim or spot seen, moved or interrupted: the game's trip runs) / refused: start and lot proven in different flood
+        // colours / refused: not the Sim's own task or no yielding context.
+        // [348-353] loop detector / breaker (UnseenFallbackLoop.cs, docs/202 §5.7); [354-362] other branches (registry).
+        // [363-370] unseenfbfinish (UnseenFallbackFinish.cs, docs/202 §3.4.2): holds claimed / walks finished at the route end /
+        // not placed at the end (seen or gone at placement: replanned from where it stood) / holds given up (seen, route changed or
+        // ended, not routable: the Sim walks on) / ids flagged finishable / not flagged: route end seen or a household Sim on its lot /
+        // not flagged: route shape (not one open walking subpath, slaves, follow-up actions, Sim rules) / longest hold (sim-minutes).
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[341]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[371]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -241,6 +252,11 @@ namespace Ts3Fixes
                 case "unseenfbpre": return Instantiator.kUnseenFallbackPre;
                 case "unseenfbarrive": return Instantiator.kUnseenFallbackArrive;
                 case "unseenfbleave": return Instantiator.kUnseenFallbackLeave;
+                case "unseenfbtrip": return Instantiator.kUnseenFallbackTrip;
+                case "unseenfbtriphold": return Instantiator.kUnseenFallbackTripHold;
+                case "unseenfbloopdet": return Instantiator.kUnseenFallbackLoopDetect;
+                case "unseenfbloopbreak": return Instantiator.kUnseenFallbackLoopBreak;
+                case "unseenfbfinish": return Instantiator.kUnseenFallbackFinish;
                 case "spotspread": return true;
                 default: return true;
             }
@@ -296,6 +312,8 @@ namespace Ts3Fixes
                     sCounters[2]++;
                     return RunOrig();
                 }
+                // docs/202 §3.6.4 unseenfbtriphold: D's walk-time hold first; given up = the game's own trip
+                if (UfPreCore.TripMode(false, false, ShortcutOn("unseenfbtriphold")) == 2 && !UfTripHold(Actor, Target, pos)) return RunOrig();
                 sLastShortcut[id] = now;
                 ShortcutLog(Actor.FullName + " -> " + Target.Name + " from " + (Actor.LotCurrent != null ? Actor.LotCurrent.Name : "street"));
                 // same lead-in as GoHome.Run
@@ -606,7 +624,8 @@ namespace Ts3Fixes
                         && !World.IsObjectOnScreen(proxy) && FarFromViewers(door))
                     {
                         Sims3.SimIFace.Vector3 pos, fwd;
-                        if (SafeSpot(a, lot, door, out pos, out fwd))
+                        if (SafeSpot(a, lot, door, out pos, out fwd)
+                            && (UfPreCore.TripMode(false, false, ShortcutOn("unseenfbtriphold")) != 2 || UfTripHold(a, lot, pos)))  // docs/202 §3.6.4
                         {
                             string from = a.LotCurrent != null ? a.LotCurrent.Name : "street";
                             PlaceSim(a, pos, fwd, "building " + proxy.CatalogName);
@@ -627,17 +646,22 @@ namespace Ts3Fixes
         // own arrival code (moving houseboats, apartment shells, resorts, diving lots, the active household's lot) are left alone,
         // and so are townies whose household has pets (the game may add a pet or horse as a follower after the move, which
         // would then start far away).
-        static bool ShortcutToLot(Sims3.Gameplay.Actors.Sim sim, Lot lot, string name, int idx)
+        // newKind (docs/202 §3.6.4): a trip kind the shortcuts above miss (a mod subclass overriding Run); with D's walk-time hold
+        // (UfTripHold, in transit) before the move, as covered kinds get with unseenfbtriphold.
+        static bool ShortcutToLot(Sims3.Gameplay.Actors.Sim sim, Lot lot, string name, int idx) { return ShortcutToLot(sim, lot, name, idx, false); }
+        static bool ShortcutToLot(Sims3.Gameplay.Actors.Sim sim, Lot lot, string name, int idx, bool newKind)
         {
             int[] c = PatchCounters();
             c[idx]++;
-            if (!ShortcutOn(name) || sim == null || lot == null || lot.IsWorldLot || sim.LotCurrent == lot) return false;
+            int mode = UfPreCore.TripMode(newKind, ShortcutOn("unseenfbtrip"), ShortcutOn("unseenfbtriphold"));
+            if (mode == 0 || !ShortcutOn(name) || sim == null || lot == null || lot.IsWorldLot || sim.LotCurrent == lot) return false;
             if (!HouseboatOk(lot) || lot.BuildableShells.Length > 0 || lot == Household.ActiveHouseholdLot) return false;
             if (lot.CommercialLotSubType == CommercialLotSubType.kEP10_Resort || lot.CommercialLotSubType == CommercialLotSubType.kEP10_Diving) return false;
             if (sim.Household != null && sim.Household.Pets.Count > 0) return false;
             if (!TownieUnseen(sim, null) || (sim.Position - lot.Position).Length() <= kShortcutMinDistance || !FarFromViewers(lot.Position)) return false;
             Sims3.SimIFace.Vector3 pos, fwd;
             if (!SafeSpot(sim, lot, lot.EntryPoint(), out pos, out fwd)) { c[idx + 2]++; return false; }
+            if (mode == 2 && !UfTripHold(sim, lot, pos)) return false;  // the game's own trip runs (the Sim lost only the hold)
             string from = sim.LotCurrent != null ? sim.LotCurrent.Name : "street";
             PlaceSim(sim, pos, fwd, name + " " + lot.Name);
             c[idx + 1]++;
@@ -753,6 +777,48 @@ namespace Ts3Fixes
                 return RunOrig();
             }
             public bool RunOrig() { return false; } // receives VisitCommunityLot.Run's original header
+        }
+
+        // docs/202 §3.6.4 (unseenfbtrip): a mod that installs its own VisitCommunityLot subclass as the game's visit singletons and
+        // overrides Run skips VisitCommunityLotHook (LynMods University More Shell Entries: VisitCommunityLotLabLecture runs every
+        // community visit in this install, SV ~2.2 / IP ~7.6 ms/s of sync plan samples). Its Run gets the same shortcut with D's
+        // walk-time hold, only for instances of the current visit singletons (the mod's follower interactions keep their walk).
+        // One stub per patched Run (the stub receives that Run's header); more overriding types than slots: logged, left alone.
+        public abstract class VclSubBase : VisitCommunityLot
+        {
+            protected void Shortcut()
+            {
+                object d = InteractionDefinition;
+                if (!ReferenceEquals(d, VisitCommunityLot.Singleton) && !ReferenceEquals(d, VisitCommunityLot.NoAdditionalActionsSingleton)) return;
+                if ((mFollowers == null || mFollowers.Count == 0) && ShortcutToLot(Actor, Target, "unseenfbtrip", 341, true))
+                    mFollowers = new List<Sims3.Gameplay.Actors.Sim>();
+            }
+        }
+        public class VclSubHook0 : VclSubBase { public bool RunHook() { Shortcut(); return RunOrig(); } public bool RunOrig() { return false; } }
+        public class VclSubHook1 : VclSubBase { public bool RunHook() { Shortcut(); return RunOrig(); } public bool RunOrig() { return false; } }
+        public class VclSubHook2 : VclSubBase { public bool RunHook() { Shortcut(); return RunOrig(); } public bool RunOrig() { return false; } }
+        static readonly Type[] kVclSubHooks = { typeof(VclSubHook0), typeof(VclSubHook1), typeof(VclSubHook2) };
+        static readonly List<Type> sVclSubPatched = new List<Type>();
+
+        // at tuning time and again at world load (script mods may load after us); Run must not be compiled yet (Patch checks)
+        internal static void ApplyTripSubclasses()
+        {
+            const BindingFlags inst = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            string ours = typeof(Fixes).Assembly.GetName().Name;
+            foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (!UfPreCore.TripScanAssembly(a.GetName().Name, ours)) continue;
+                Type[] ts;
+                try { ts = a.GetTypes(); } catch (Exception) { continue; }
+                foreach (Type t in ts)
+                {
+                    if (t.IsAbstract || !t.IsSubclassOf(typeof(VisitCommunityLot)) || sVclSubPatched.Contains(t) || t.GetMethod("Run", inst, null, Type.EmptyTypes, null) == null) continue;
+                    sVclSubPatched.Add(t);
+                    int slot = sVclSubPatched.Count - 1;
+                    if (slot >= kVclSubHooks.Length) { AppliedLog().Add(t.FullName + ".Run: no unseenfbtrip hook slot, left alone"); continue; }
+                    Patch(t, "Run", Type.EmptyTypes, kVclSubHooks[slot], "RunHook", "RunOrig");
+                }
+            }
         }
 
         static List<object> RecentLog()

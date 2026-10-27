@@ -1,5 +1,5 @@
 // [UnseenFallback] Sites=1 (docs/202 §3.4, phases C1-C4, counters v139 ufc*): an unseen Sim that would wait for the route
-// job's +0x918 at one of four sim-thread sites takes the lock with a short deadline (SiteWaitMs, default 100 ms) through the
+// job's +0x918 at one of four sim-thread sites takes the lock with a short deadline (SiteWaitMs, default 0 = one try) through the
 // game's own Lock_Acquire 0x4E16F0 (fastcall(lock; const DWORD* deadline), absolute GetTickCount deadline, -2 = timed out
 // [verified, docs/18 §246, selftest TestLockAcquire's finite-deadline case]). Taken: the whole locked block runs as the game's
 // under that hold (its own acquires inside are recursive) and the hold is released after it. Timed out: the whole block is
@@ -8,7 +8,8 @@
 //
 // Owner (who counts as unseen) = docs/202 §2, decided by ts3fixes (UnseenFallback.cs UfWhy, switch unseenfbsites): it pushes
 // the ids of the unseen Sims every few sim ticks over the 0x83 channel (codes 7 BEGIN, 8 id low, 9 id high = append, 10 END
-// with the count). Out of live mode it pushes an empty list; a list older than 1.5 s counts as none (nothing acts). Native
+// with the count, 14 C4 log query) about every 0.5 s. Out of live mode it pushes an empty list; a list older than 3 s counts
+// as none (nothing acts). Native
 // checks on top, at the moment of the wait: the game's frustum and the reach rule (unseen.cpp class 1) on the Sim itself,
 // plus, for C1 / C2, EA's on-screen byte agent+0xC8 off, a walking Sim (state 1), its own agent part, not a rider, no
 // group link (the [UnseenThrottle] holds).
@@ -34,6 +35,8 @@
 //   Sim parameter) [verified disassembly + decompiled ScriptCore]. Alarms, one-shot tasks and other objects' tasks are not on
 //   the list: they never act. Rule 6 keeps carrying Sims off the list, so a held object being put down is never answered
 //   "not free" by us (the game's own inventory / keep-in-hand branch runs only on its own failed search).
+// FinishWalk=1 (docs/202 §3.4.2, below): C1 / C2 hold flagged walkers for ts3fixes unseenfbfinish instead of faking, and give
+// every other unseen owner the game's own wait.
 // One wait per busy job: after a timeout every later site ask of an unseen owner during that job is a try (deadline 0), and a
 // C3 / C4 Sim that got a fake answer < 1.5 s ago gets a try too (ufcRecover), so the sim never waits SiteWaitMs per agent.
 
@@ -42,11 +45,12 @@ static const DWORD kUfcKey[4] = {0x0085FE10, 0x00846D21, 0x0083156D, 0x00631F40}
 
 // ---- the unseen-Sim list (sim thread only: GetOptionHook) ----
 enum { UFC_MAX = 256 };
-static const DWORD kUfcListAgeMs = 1500;
-struct UfcIds { DWORD lo[UFC_MAX], hi[UFC_MAX]; int n; DWORD at; };
+static const DWORD kUfcListAgeMs = 3000;  // docs/202 §5.6: ts3fixes pushes every ~0.5 s
+struct UfcIds { DWORD lo[UFC_MAX], hi[UFC_MAX]; u8 fin[UFC_MAX]; int n; DWORD at; };  // fin: FinishWalk flag (code 15)
 static UfcIds g_ufcList, g_ufcIn;
 static bool g_ufcInOpen;
 static DWORD g_ufcInLo;
+static void UfwSweep();
 
 static u8 UfcListMsg(int code, DWORD lo) {
     Ts3nCounters& k = ts3native_counters;
@@ -56,28 +60,36 @@ static u8 UfcListMsg(int code, DWORD lo) {
     if (code == 8) { g_ufcInLo = lo; return 1; }
     if (code == 9) {
         if (g_ufcIn.n == UFC_MAX) { g_ufcInOpen = false, k.ufcPushBad++; return 0; }
+        g_ufcIn.fin[g_ufcIn.n] = 0;
         g_ufcIn.lo[g_ufcIn.n] = g_ufcInLo, g_ufcIn.hi[g_ufcIn.n++] = lo;
         return 1;
     }
     g_ufcInOpen = false;  // 10 END
     if ((DWORD)g_ufcIn.n != lo) { k.ufcPushBad++; return 0; }
     memcpy(g_ufcList.lo, g_ufcIn.lo, g_ufcIn.n * 4), memcpy(g_ufcList.hi, g_ufcIn.hi, g_ufcIn.n * 4);
+    memcpy(g_ufcList.fin, g_ufcIn.fin, g_ufcIn.n);
     g_ufcList.n = g_ufcIn.n;
     const DWORD now = GetTickCount();
     g_ufcList.at = now ? now : 1;  // never ahead of GetTickCount (an `| 1` could be: the age test then wraps)
     k.ufcList = g_ufcList.n;
     k.ufcPushes++;
+    UfwSweep();  // holds of Sims no longer listed as finishable end now (they walk on)
     return 1;
 }
 
+static bool UfcFresh() { return g_ufcList.at && GetTickCount() - g_ufcList.at <= kUfcListAgeMs; }
+// index of the id in the current list, -1 = not listed
+static int UfcFind(DWORD lo, DWORD hi) {
+    for (int i = 0; i < g_ufcList.n; i++)
+        if (g_ufcList.lo[i] == lo && g_ufcList.hi[i] == hi) return i;
+    return -1;
+}
 static bool UfcListed(DWORD lo, DWORD hi) {
-    if (!g_ufcList.at || GetTickCount() - g_ufcList.at > kUfcListAgeMs) {
+    if (!UfcFresh()) {
         ts3native_counters.ufcStale++;
         return false;
     }
-    for (int i = 0; i < g_ufcList.n; i++)
-        if (g_ufcList.lo[i] == lo && g_ufcList.hi[i] == hi) return true;
-    return false;
+    return UfcFind(lo, hi) >= 0;
 }
 static bool UfcObjId(const u8* obj, DWORD* lo, DWORD* hi) {
     __try {
@@ -131,21 +143,50 @@ static bool UfcBusy(DWORD tid) {
 static LockAcquireFn g_ufcAcq = (LockAcquireFn)(uintptr_t)0x004E16F0;  // through the address: LockAcquireHook (pump, keys)
 static LockReleaseFn g_ufcRel = (LockReleaseFn)(uintptr_t)0x004E17B0;
 static DWORD g_ufcSpentH, g_ufcSpentAt;  // the busy job (route handle) that already cost one wait; sim thread only
-static struct { DWORD lo, hi, at; } g_ufcRecent[16];  // C3 / C4: Sims answered with a fake (recovery window)
+static struct { DWORD lo, hi, at, c4At; LONG c4n; } g_ufcRecent[16];  // C3 / C4: Sims answered with a fake (recovery window)
 static const DWORD kUfcRecentMs = 1500;
+// docs/202 §5.6 (3): v020-natural IP on-1 answered 19,660 C4 "not free" in ~2 min (19,657 recover = one Sim in a row). At most
+// kUfcC4Cap fakes per Sim per second; past it that Sim's C4 calls get the game's own answer (its wait) until the second ends.
+static const LONG kUfcC4Cap = 8;
+static const DWORD kUfcC4WindowMs = 1000;
+static DWORD g_ufcC4LogLo, g_ufcC4LogHi;  // last Sim C4 answered with a fake, for ts3fixes' log (code 14); 0 = none
+static bool g_ufcC4LogSet;
+static LONG g_ufcC4Capped;  // sim thread only
 
 static bool UfcRecent(DWORD lo, DWORD hi, DWORD now) {
     for (auto& e : g_ufcRecent)
         if (e.at && e.lo == lo && e.hi == hi && now - e.at < kUfcRecentMs) return true;
     return false;
 }
-static void UfcNoteRecent(DWORD lo, DWORD hi, DWORD now) {
+static int UfcSlot(DWORD lo, DWORD hi, DWORD now) {
     int pick = 0;
     for (int i = 0; i < 16; i++) {
-        if (g_ufcRecent[i].lo == lo && g_ufcRecent[i].hi == hi) { pick = i; break; }
+        if (g_ufcRecent[i].at && g_ufcRecent[i].lo == lo && g_ufcRecent[i].hi == hi) return i;
         if (g_ufcRecent[i].at - now < g_ufcRecent[pick].at - now) pick = i;  // oldest stamp (wrap-safe)
     }
-    g_ufcRecent[pick].lo = lo, g_ufcRecent[pick].hi = hi, g_ufcRecent[pick].at = now ? now : 1;
+    g_ufcRecent[pick].lo = lo, g_ufcRecent[pick].hi = hi, g_ufcRecent[pick].at = now ? now : 1, g_ufcRecent[pick].c4n = 0, g_ufcRecent[pick].c4At = 0;
+    return pick;
+}
+static void UfcNoteRecent(DWORD lo, DWORD hi, DWORD now) { g_ufcRecent[UfcSlot(lo, hi, now)].at = now ? now : 1; }
+// C4: true = this Sim already got kUfcC4Cap fakes in the current second (give it the game's answer)
+static bool UfcC4Capped(DWORD lo, DWORD hi, DWORD now) {
+    for (auto& e : g_ufcRecent)
+        if (e.at && e.lo == lo && e.hi == hi) return e.c4n >= kUfcC4Cap && now - e.c4At < kUfcC4WindowMs;
+    return false;
+}
+static void UfcC4Note(DWORD lo, DWORD hi, DWORD now) {
+    auto& e = g_ufcRecent[UfcSlot(lo, hi, now)];
+    if (!e.c4At || now - e.c4At >= kUfcC4WindowMs) e.c4At = now ? now : 1, e.c4n = 0;
+    e.c4n++;
+    g_ufcC4LogLo = lo, g_ufcC4LogHi = hi, g_ufcC4LogSet = true;
+}
+// code 14: lo 0-63 = bit lo of the logged Sim id, 64 = one pending, 65 = clear
+static u8 UfcC4LogMsg(DWORD lo) {
+    if (lo == 64) return g_ufcC4LogSet ? 1 : 0;
+    if (lo == 65) { g_ufcC4LogSet = false; return 1; }
+    if (lo >= 64) return 0;
+    const u64 id = (u64)g_ufcC4LogHi << 32 | g_ufcC4LogLo;
+    return (u8)(id >> lo & 1);
 }
 
 // 1 = held (release with g_ufcRel), -2 = not held (the deadline passed or a try failed)
@@ -205,6 +246,124 @@ static int UfLockGate(void* world) {
 }
 static void UfLockRelease(void* world) { g_ufcRel((u8*)world + 0x918, NULL); }
 
+// ---- docs/202 §3.4.2 [UnseenFallback] FinishWalk=1 (Rodney 2026-10-27): "finish the walk" instead of C1 / C2's fake answers ----
+// C1 / C2 faked "no obstacles" / "nothing to avoid" every tick the lock was busy; unseen Sims then walked into things and
+// replanned (200-300 ms hitches). With FinishWalk, a Sim ts3fixes flagged finishable in the pushed list (code 15: unseen, on
+// foot, a single open-ground subpath left, its end unseen and on no lot with a household Sim, ...) is HELD at the first busy
+// site: this tick the skipped block's answer (the empty list / 0, as one [UnseenThrottle] skipped tick), from the next pass on
+// its whole agent update is skipped (unseen.cpp g_unHoldSkip at 0x83CF52: no step, no route event, no +0x918 taker). ts3fixes
+// (unseenfbfinish) claims the hold (codes 16 + 17), waits the remaining walk time, then ends the route as the game's own arrival
+// does (FollowRouteAction.Kill(Success, kStop_Hard)), releases the hold (16 + 18) and places the Sim at its path end in the
+// Sim's own task before DoRoute resumes. Any Sim not flagged gets the game's own wait (no fake). A hold ends without ts3fixes
+// (the Sim walks on from where it stood, its path and route action untouched) when: the native class turns visible, the Sim
+// drops out of a pushed list or its flag, the list goes stale (3 s), unclaimed 3 s, held 10 min, or the mode is off.
+// Sim thread only (C1 / C2 run in Locomotion_UpdateAgent, the messages in GetOptionHook from script calls).
+enum { UFW_MAX = 32 };
+enum { UFW_R_FINISH, UFW_R_GIVEUP, UFW_R_SEEN, UFW_R_EXPIRED };
+static const DWORD kUfwClaimMs = 3000, kUfwMaxMs = 600000;
+struct UfwHold { u8* agent; DWORD lo, hi, at; bool claimed; };  // agent is only compared, never read after the hold starts
+static UfwHold g_ufw[UFW_MAX];
+static int g_ufwN;      // slots in use
+static bool g_ufwOn;    // installed
+static DWORD g_ufwQLo;  // id low staged by code 16
+
+static void UfwRelease(int i, int why) {
+    g_ufw[i].agent = NULL;
+    g_ufwN--;
+    InterlockedIncrement(&ts3native_counters.ufwRelease[why]);
+}
+static int UfwById(DWORD lo, DWORD hi) {
+    for (int i = 0; i < UFW_MAX; i++)
+        if (g_ufw[i].agent && g_ufw[i].lo == lo && g_ufw[i].hi == hi) return i;
+    return -1;
+}
+// -1 = keep, else the release reason (time and mode rules shared by the per-pass skip and the list sweep)
+static int UfwExpired(const UfwHold& h, DWORD now) {
+    if (ts3native_counters.ufwMode != 1 || ts3native_counters.ufcMode != 1 || !UfcFresh()) return UFW_R_EXPIRED;
+    if ((!h.claimed && now - h.at > kUfwClaimMs) || now - h.at > kUfwMaxMs) return UFW_R_EXPIRED;
+    return -1;
+}
+static void UfwSweep() {
+    if (!g_ufwN) return;
+    const DWORD now = GetTickCount();
+    for (int i = 0; i < UFW_MAX; i++) {
+        if (!g_ufw[i].agent) continue;
+        const int why = UfwExpired(g_ufw[i], now);
+        if (why >= 0) { UfwRelease(i, why); continue; }
+        const int x = UfcFind(g_ufw[i].lo, g_ufw[i].hi);
+        if (x < 0 || !g_ufcList.fin[x]) UfwRelease(i, UFW_R_SEEN);
+    }
+}
+// unseen.cpp's agent-update thunk: true = held, skip this update
+static bool UfwHoldSkip(u8* agent, int c) {
+    if (!g_ufwN) return false;
+    for (int i = 0; i < UFW_MAX; i++) {
+        if (g_ufw[i].agent != agent) continue;
+        const int why = c != 1 ? UFW_R_SEEN : UfwExpired(g_ufw[i], GetTickCount());
+        if (why >= 0) { UfwRelease(i, why); return false; }  // walks on this pass, from where it stood
+        InterlockedIncrement(&ts3native_counters.ufwHeldTicks);
+        return true;
+    }
+    return false;
+}
+// C1 / C2 found +0x918 busy for an unseen owner (lo, hi) of the updating agent: 1 = held (give the skipped block's answer),
+// 0 = the game's own wait, -1 = FinishWalk off (the C fake)
+static int UfwOnBusy(DWORD lo, DWORD hi) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!g_ufwOn || k.ufwMode != 1) return -1;
+    u8* const agent = t_unAgent;
+    const int x = UfcFresh() ? UfcFind(lo, hi) : -1;
+    if (agent && x >= 0 && g_ufcList.fin[x]) {
+        for (int i = 0; i < UFW_MAX; i++)
+            if (g_ufw[i].agent == agent) return 1;  // already held (the other site this pass)
+        for (int i = 0; i < UFW_MAX; i++) {
+            if (g_ufw[i].agent) continue;
+            const DWORD now = GetTickCount();
+            g_ufw[i].agent = agent, g_ufw[i].lo = lo, g_ufw[i].hi = hi, g_ufw[i].at = now ? now : 1, g_ufw[i].claimed = false;
+            g_ufwN++;
+            InterlockedIncrement(&k.ufwHolds);
+            Max(&k.ufwMaxHeld, (LONG)g_ufwN);
+            return 1;
+        }
+        InterlockedIncrement(&k.ufwFull);
+    }
+    InterlockedIncrement(&k.ufwPlainWait);
+    return 0;
+}
+// codes 15-20 on the 0x83 channel (ts3fixes UnseenFallbackFinish.cs). 0 = refused / no (FinishWalk not installed: ts3fixes
+// stops flagging for this load).
+//   15 flag the id just appended (code 9) finishable; 16 stage id low; 17 id high: held? (1 = yes, and the hold is claimed);
+//   18 id high: release as finished; 19 id high: release as given up; 20 any unclaimed hold (1 = yes)
+static u8 UfwMsg(int code, DWORD lo) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!g_ufwOn) return 0;
+    switch (code) {
+    case 15:
+        if (!g_ufcInOpen || !g_ufcIn.n) return 0;
+        g_ufcIn.fin[g_ufcIn.n - 1] = 1;
+        InterlockedIncrement(&k.ufwFlagged);
+        return 1;
+    case 16: g_ufwQLo = lo; return 1;
+    case 17: case 18: case 19: {
+        const int i = UfwById(g_ufwQLo, lo);
+        if (i < 0) return 0;
+        if (code == 17) {
+            if (!g_ufw[i].claimed) g_ufw[i].claimed = true, InterlockedIncrement(&k.ufwClaims);
+            return 1;
+        }
+        UfwRelease(i, code == 18 ? UFW_R_FINISH : UFW_R_GIVEUP);
+        const int x = UfcFind(g_ufwQLo, lo);
+        if (x >= 0) g_ufcList.fin[x] = 0;  // not held again before the next list (its stop pass may meet a busy lock)
+        return 1;
+    }
+    case 20:
+        for (int i = 0; i < UFW_MAX; i++)
+            if (g_ufw[i].agent && !g_ufw[i].claimed) return 1;
+        return 0;
+    }
+    return 0;
+}
+
 // ---- C1: steering obstacle list at 0x9573B7 ----
 static UtListFn g_ufcListNext = (UtListFn)(uintptr_t)UT_LIST;
 static void __cdecl UfcListHook(void* part, void* path, void* vec, DWORD a3, DWORD a4) {
@@ -217,7 +376,12 @@ static void __cdecl UfcListHook(void* part, void* path, void* vec, DWORD a3, DWO
         return;
     }
     void* const lock = g_async.lock;
-    if (UfcTake(UFC_C1, lock, lo, hi) < 0) { InterlockedIncrement(&k.ufcFake[UFC_C1]); return; }  // "no obstacles"
+    if (UfcTake(UFC_C1, lock, lo, hi) < 0) {
+        const int w = UfwOnBusy(lo, hi);
+        if (w == 0) { g_ufcListNext(part, path, vec, a3, a4); return; }  // FinishWalk, not flagged: the game's own wait
+        if (w < 0) InterlockedIncrement(&k.ufcFake[UFC_C1]);
+        return;  // "no obstacles" (the C fake, or this tick of a hold: the Sim stands from the next pass)
+    }
     __try { g_ufcListNext(part, path, vec, a3, a4); } __finally { g_ufcRel(lock, NULL); }
 }
 
@@ -237,7 +401,12 @@ static u64 __cdecl UfcAvHook(u8* path, u8* agent, const float* goal, const void*
         return g_ufcAvA(path, agent, goal, ign, n);
     }
     void* const lock = g_async.lock;
-    if (UfcTake(UFC_C2, lock, lo, hi) < 0) { InterlockedIncrement(&k.ufcFake[UFC_C2]); return 0; }  // nothing to avoid
+    if (UfcTake(UFC_C2, lock, lo, hi) < 0) {
+        const int w = UfwOnBusy(lo, hi);
+        if (w == 0) return g_ufcAvA(path, agent, goal, ign, n);  // FinishWalk, not flagged: the game's own wait
+        if (w < 0) InterlockedIncrement(&k.ufcFake[UFC_C2]);
+        return 0;  // nothing to avoid (the C fake, or this tick of a hold)
+    }
     return UfcAvHeld(path, agent, goal, ign, n, lock);
 }
 
@@ -260,7 +429,16 @@ static DWORD __fastcall UfcPlace(u8* p, void* edx, const u8* ctx, const float* p
         return g_fgOrig(p, edx, ctx, pt, r, set, mode);
     }
     void* const lock = g_async.lock;
-    if (UfcTake(UFC_C4, lock, lo, hi) < 0) { InterlockedIncrement(&k.ufcFake[UFC_C4]); return 1; }  // "footprints here": not free
+    const DWORD now = GetTickCount();
+    if (UfcC4Capped(lo, hi, now)) {  // the game's own answer: waits for the job as without the guard
+        g_ufcC4Capped++;  // log line only: no counter slot (v139 block is full)
+        return g_fgOrig(p, edx, ctx, pt, r, set, mode);
+    }
+    if (UfcTake(UFC_C4, lock, lo, hi) < 0) {  // "footprints here": not free
+        InterlockedIncrement(&k.ufcFake[UFC_C4]);
+        UfcC4Note(lo, hi, now);
+        return 1;
+    }
     __try { return g_fgOrig(p, edx, ctx, pt, r, set, mode); } __finally { g_ufcRel(lock, NULL); }
 }
 
@@ -268,14 +446,19 @@ static void UfcLogCounters() {
     const Ts3nCounters& c = ts3native_counters;
     Log("unseen fallback sites: mode %ld wait %ld ms list %ld (pushes %ld bad %ld stale %ld); try/got/timeout/fake/recover/seen "
         "C1 %ld/%ld/%ld/%ld/%ld/%ld C2 %ld/%ld/%ld/%ld/%ld/%ld C3 %ld/%ld/%ld/%ld/%ld/%ld (no route %ld) C4 %ld/%ld/%ld/%ld/%ld/%ld; "
-        "longest wait %ld ms",
+        "longest wait %ld ms; C4 capped %ld",
         c.ufcMode, c.ufcWaitMs, c.ufcList, c.ufcPushes, c.ufcPushBad, c.ufcStale, c.ufcTry[0], c.ufcGot[0], c.ufcTimeout[0],
         c.ufcFake[0], c.ufcRecover[0], c.ufcSeen[0], c.ufcTry[1], c.ufcGot[1], c.ufcTimeout[1], c.ufcFake[1], c.ufcRecover[1],
         c.ufcSeen[1], c.ufcTry[2], c.ufcGot[2], c.ufcTimeout[2], c.ufcFake[2], c.ufcRecover[2], c.ufcSeen[2], c.ufcNoRoute,
-        c.ufcTry[3], c.ufcGot[3], c.ufcTimeout[3], c.ufcFake[3], c.ufcRecover[3], c.ufcSeen[3], c.ufcMaxWaitUs / 1000);
+        c.ufcTry[3], c.ufcGot[3], c.ufcTimeout[3], c.ufcFake[3], c.ufcRecover[3], c.ufcSeen[3], c.ufcMaxWaitUs / 1000, g_ufcC4Capped);
+    if (c.ufwReady)
+        Log("unseen fallback finish walk: mode %ld flagged %ld holds %ld (held now %d, most %ld, full %ld) plain waits %ld held passes %ld "
+            "claims %ld; ended finished %ld given up %ld seen %ld expired %ld",
+            c.ufwMode, c.ufwFlagged, c.ufwHolds, g_ufwN, c.ufwMaxHeld, c.ufwFull, c.ufwPlainWait, c.ufwHeldTicks, c.ufwClaims,
+            c.ufwRelease[UFW_R_FINISH], c.ufwRelease[UFW_R_GIVEUP], c.ufwRelease[UFW_R_SEEN], c.ufwRelease[UFW_R_EXPIRED]);
 }
 
-// [UnseenFallback] Sites=1 with C1..C4 (each default 1 once Sites=1), SiteWaitMs (0-150, default 100). Needs [RouteAsync] (the
+// [UnseenFallback] Sites=1 with C1..C4 (each default 1 once Sites=1), SiteWaitMs (0-150, default 0 since 0.36.104). Needs [RouteAsync] (the
 // route jobs and their owner thread). ufcMode (+0x5390, --ab unseenfbc) starts at 1 when a site is installed.
 static bool ApplyUnseenFallbackSites(const wchar_t* ini) {
     if (!GetPrivateProfileIntW(L"UnseenFallback", L"Sites", 0, ini)) return false;
@@ -287,7 +470,7 @@ static bool ApplyUnseenFallbackSites(const wchar_t* ini) {
         return true;
     }
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
-    k.ufcWaitMs = Clamp(GetPrivateProfileIntW(L"UnseenFallback", L"SiteWaitMs", 100, ini), 0, 150);
+    k.ufcWaitMs = Clamp(GetPrivateProfileIntW(L"UnseenFallback", L"SiteWaitMs", 0, ini), 0, 150);
     const bool c1 = GetPrivateProfileIntW(L"UnseenFallback", L"C1", 1, ini) != 0, c2 = GetPrivateProfileIntW(L"UnseenFallback", L"C2", 1, ini) != 0;
     const bool c3 = GetPrivateProfileIntW(L"UnseenFallback", L"C3", 1, ini) != 0, c4 = GetPrivateProfileIntW(L"UnseenFallback", L"C4", 1, ini) != 0;
     // C1 / C2 need the agent update context (t_unAgent): the probe's / throttle's call site, else ours
@@ -323,5 +506,15 @@ static bool ApplyUnseenFallbackSites(const wchar_t* ini) {
     Log("%s unseen fallback sites: ready 0x%lX (bit 0 C1 obstacle list, 1 C2 avoidance, 2 C3 route-to-object check, 3 C4 placement, "
         "4 script task owner, 5 agent context), wait %ld ms, mode %ld; needs ts3fixes unseenfbsites (the unseen list)",
         (k.ufcReady & 31) == 31 ? "OK  " : k.ufcMode ? "PART" : "FAIL", k.ufcReady, k.ufcWaitMs, k.ufcMode);
+    // §3.4.2 FinishWalk: holds instead of the C1 / C2 fakes; the hold is the agent-update thunk's skip (needs bit 5)
+    if (GetPrivateProfileIntW(L"UnseenFallback", L"FinishWalk", 0, ini)) {
+        if ((k.ufcReady & 32) && (k.ufcReady & 3)) {
+            g_unHoldSkip = UfwHoldSkip, g_ufwOn = true, k.ufwReady = 1, k.ufwMode = 1;
+            Log("OK   unseen fallback finish walk: unseen flagged walkers are held and finished by ts3fixes unseenfbfinish; "
+                "unflagged ones get the game's own wait (no C1 / C2 fake)");
+        } else {
+            Log("SKIP unseen fallback finish walk: needs C1 or C2 and the agent update context (ready 0x%lX)", k.ufcReady);
+        }
+    }
     return true;
 }

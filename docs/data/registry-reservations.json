@@ -877,6 +877,26 @@
       "what": "Crash S writer: MINT_INITOBJ 12-byte size on 8-byte slots (docs/67 §22.9)",
       "at": "2026-10-26T13:02:20.599Z",
       "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-fix-initobj"
+    },
+    {
+      "id": "fixes-341",
+      "kind": "fixes",
+      "from": 341,
+      "to": 347,
+      "by": "ufbd-trip",
+      "what": "docs/202 §3.6.4 unseenfbtrip / unseenfbtriphold: mod lot-trip subclass runs/shortcuts/no spot, trip holds done/given up, colour refusals, no yield",
+      "at": "2026-10-26T21:54:25.172Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufbd-trip"
+    },
+    {
+      "id": "fixes-348",
+      "kind": "fixes",
+      "from": 348,
+      "to": 353,
+      "by": "bugfix/ufb-guard-cost",
+      "what": "docs/202 §5.7 E loop detector + loop breaker",
+      "at": "2026-10-26T22:22:48.444Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-guard-cost"
     }
   ]
 }

@@ -8,7 +8,7 @@
         "scope": "all"
       },
       "note": "TIMING soak, SV 30 min natural play (autopilot, camera untouched, no repro), pd2 asi at release defaults plus PlanDeadlineMs only (FailMemo off), light tools as sv-plandeadline-soak (untested-v020). Pass: no crash, 0 watchdog lines, pdCutSc 0, no Sim stuck at the end. Read: pdSessions[0] / [1] vs the kinddl soak (the [1] non-IC sessions should drop by the own-task nested plans, 911 pdOwnExempt there), pdHit / pdHitOk (info) / pdHitUs / pdLateMaxUs / pdOwnExempt / pdExemptSc, route failures (route_replan rows), hitch-ab.ts --causes for sync-plan-led >= 300 / >= 1000 ms vs v0.1.4 SV (docs/161).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 135,
@@ -44,7 +44,7 @@
         "scope": "unseen"
       },
       "note": "CORRECTNESS (noise OK). route-stuckcheck-own-loop (20 stranded Sims, the game's stuck check armed at attempt 3 = last round, stuckcheckasync on, stuckcheckown flipped ABBA) with [RouteAsync] Mode=0: every START is answered no, so the on arms' tagged last-round STARTs plan sync through IcCollect, the path §7.8 exempts. Off arms: no tag, the same plans run NoStart/Foreign sync and are cut at 300 ms (pdHit rises there). Watchdog lines allowed (uncut last rounds run their full 10 failing searches). Pass: no crash, pdExemptSc >= 1 (the exemption fired), pdCutSc 0, stuckcheckown_sent >= 1; stuck_check_reset rises in both arms. Read: pdExemptSc vs stuckcheckown_sent, 'route deadline: sync plan' lines only in off windows (none with a RunStuckCheckHelper stack inside on windows), pdOwnExempt.",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "save": "Baseline-BP-Spring",
       "minCounters": 135,
       "noiseCheck": false,

@@ -33790,7 +33790,7 @@
     "bug": "docs/196 §2.1 / docs/202 §3.5: every route plan of a townie the player cannot see still runs a world A* (and a route job that holds +0x918 for visible Sims too); cross-lot plans of unseen Sims cost 200 ms to seconds",
     "fix": "ts3fixes unseenfbpre (UnseenFallback.cs UfPre, docs/202 §3.5 D): an unseen townie's own walk to an unseen outdoor goal on another lot (RoutingComponent.RouteTo* helpers only) plans nothing: same flood colour (ts3native colour query) + cached SafeSpot verdicts, walk-time hold in its own task, placed at the goal, short plan from there",
     "save": "Baseline-SV-Spring",
-    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims walk to the farthest community lot (start seen: D refuses), then each loop they get Sit on a bench of far2 (the community lot farthest from both the household and far): own-task RouteToSlot plans of unseen Sims with both ends unseen. crowd_do takes the first object (named first, outdoor first) whose menu offers one of the interactions, else any object on the lot (2026-10-27: far2 differs per run, Recurve Strand had no Bench, Pleasant Rest Graveyard none either). Needs ts3native built from feature/unseenfb-d (colour codes 7-9; older builds answer unknown = D never acts).",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims walk to the farthest community lot (start seen: D refuses), then each loop they get Sit on a bench of far2 (the community lot farthest from both the household and far): own-task RouteToSlot plans of unseen Sims with both ends unseen. crowd_do takes the first object (named first, outdoor first) whose menu offers one of the interactions, else any object on the lot (2026-10-27: far2 differs per run, Recurve Strand had no Bench, Pleasant Rest Graveyard none either). Needs ts3native built from feature/unseenfb-d (colour codes 7-9; older builds answer unknown = D never acts). 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3).",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -33845,7 +33845,7 @@
           "cmd": "crowd_do",
           "setup": false,
           "args": {
-            "lot": "far2",
+            "lot": "farobj",
             "object": "Bench|Chair|Seat|Picnic|Swing|Sculpture|Painting",
             "interaction": "Sit|View|Admire|Swing|Read"
           },
@@ -33884,11 +33884,204 @@
     }
   },
   {
+    "id": "unseenfb-trip-far-visit",
+    "bug": "docs/202 §3.6.4: lot trips the trip shortcuts miss still plan the whole cross-town route for townies nobody can see; in this install every community visit runs LynMods VisitCommunityLotLabLecture.Run (overrides VisitCommunityLot.Run, replaces the visit singletons), which skips VisitCommunityLotHook (SV ~2.2, IP ~7.6, BP ~2.8 ms/s of sync plan samples)",
+    "fix": "ts3fixes unseenfbtrip (Fixes.cs VclSubHook0-2 + ShortcutToLot newKind, UnseenFallback.cs UfTripHold): mod subclasses of VisitCommunityLot that override Run get the visit shortcut for instances of the visit singletons, after the D walk-time hold (in transit, camera re-checked each sim-minute, colour refusal), placed at the SafeSpot spot; the mod Run finishes the arrival",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-27): never run. 30 spawned Sims at the farthest community lot (unseen), each loop all get the game community visit to far2 (crowd_visit_lot, player-directed: VisitCommunityLot.Singleton = the mod VisitCommunityLotLabLecture when LynMods University More Shell Entries is installed; the applied log must show VisitCommunityLotLabLecture.Run: ok). Without that mod nothing is patched: unseenfbtrip_runs stays 0 (then add unseenfbtriphold to the arm patches to test the hold through VisitCommunityLotHook). Needs ts3native 0.36.89+ (camera query).",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "away from the household and the camera"
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines; on arms: unseenfbtrip_runs and unseenfbtrip_held / unseenfbtrip_shortcuts grow (or unseenfbtrip_no_spot / _cancelled / _rj_* say why), unseenfbpre_holds grows with them, held Sims show in_transit during the hold and arrive at far2 without a walk, no stuck moved Sim; off arms: the mod Run plans and walks (unseenfbtrip_runs grows, shortcuts not); both: no Overwatch / watchdog reset",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "unseenfbtrip": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_visit_lot",
+          "setup": false,
+          "args": {
+            "lot": "far2"
+          },
+          "waitS": 30,
+          "note": "fire: unseen community visits far -> far2 through the mod subclass",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 30,
+          "count": {
+            "result": "queued"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "cancel": true
+          },
+          "waitS": 60,
+          "note": "back to far (ends the visit or the hold)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 30
+      },
+      "maxMinutes": 14
+    }
+  },
+  {
+    "id": "unseenfb-triphold-far-goto",
+    "bug": "docs/202 §3.6.4: the shipped trip shortcuts place an unseen townie on the destination lot at once (no travel time): arrivals come early, and the Sim is never in transit for our detectors",
+    "fix": "ts3fixes unseenfbtriphold (Fixes.cs ShortcutToLot / GoHomeHook / RabbitHoleHook + UnseenFallback.cs UfTripHold): the covered trip kinds hold for the walk time (D rules: own task, camera re-checked each sim-minute, colour refusal, in transit) before the move",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-27): never run. 30 spawned Sims at the farthest community lot, each loop GoToCommunityLot to far2 (crowd_visit_lot how goto: GoToCommunityLotHook, a covered kind). Off arms: the shortcut places them at once (gotocommunity shortcuts grow, unseenfbtrip_held not); on arms: held first (unseenfbtrip_held grows). Needs ts3native 0.36.89+ (camera query).",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "away from the household and the camera"
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines; on arms: unseenfbtrip_held grows (or unseenfbtrip_cancelled / _rj_* say why) and unseenfbpre_holds with it, held Sims in_transit; off arms: placed at once; both: no stuck moved Sim, no Overwatch / watchdog reset",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "unseenfbtriphold": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_visit_lot",
+          "setup": false,
+          "args": {
+            "lot": "far2",
+            "how": "goto"
+          },
+          "waitS": 30,
+          "note": "fire: unseen GoToCommunityLot far -> far2 (covered kind)",
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 30,
+          "count": {
+            "result": "queued"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "cancel": true
+          },
+          "waitS": 60,
+          "note": "back to far (ends the visit or the hold)"
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 30
+      },
+      "maxMinutes": 14
+    }
+  },
+  {
     "id": "unseenfb-hold-overwatch",
     "bug": "docs/202 §3.7: a D walk-time hold keeps an unseen Sim standing in the same interaction for up to 2 sim-hours; no stuck detector (NRaas Overwatch V1 Unroutable / Stationary, V2, ErrorTrap, EA stuck check, our watchdog / watchdogidle, harness stuck rule) may reset it or call it stuck for that",
     "fix": "ts3fixes unseenfbpre: holds run in the Sim's own interaction (no plan, no pushed interaction) and are listed in AppDomain ts3fixes.unseenfb.holding; watchdog / watchdogidle and the harness stuck rule (sims_activity in_transit) skip listed Sims; hold capped at 2 sim-hours (< Overwatch V1 pass spacing)",
     "save": "Baseline-SV-Spring",
-    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. Needs NRaas Overwatch installed (Stuck Check V1 + V2 on), ts3native built from feature/unseenfb-d. far -> far2 holds are long (distance x 1.3 / 2.5 m per sim-minute, cap 120 sim-minutes): two Overwatch passes are forced inside the holds (reflect_call NRaas.Overwatch.OnTimer); our watchdog's 10 sim-minute checks run on their own.",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. Needs NRaas Overwatch installed (Stuck Check V1 + V2 on), ts3native built from feature/unseenfb-d. far -> far2 holds are long (distance x 1.3 / 2.5 m per sim-minute, cap 120 sim-minutes): two Overwatch passes are forced inside the holds (reflect_call NRaas.Overwatch.OnTimer); our watchdog's 10 sim-minute checks run on their own. 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3).",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -33930,7 +34123,7 @@
       {
         "cmd": "crowd_do",
         "args": {
-          "lot": "far2",
+          "lot": "farobj",
           "object": "Bench|Chair|Seat|Picnic|Swing|Sculpture|Painting",
           "interaction": "Sit|View|Admire|Swing|Read"
         },
@@ -33973,7 +34166,7 @@
     "bug": "docs/202 §3.6: a townie walking from far away to a spot the player watches plans the whole cross-town route (world A*, a route job holding +0x918) although only the last part is visible",
     "fix": "ts3fixes unseenfbarrive (UnseenFallback.cs UfArrive, docs/202 §3.6): hold for the hidden leg, place at the first unseen street point H from the goal towards the Sim (same flood colour as start and goal), real plan H -> goal walked in view",
     "save": "Baseline-SV-Spring",
-    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims at the farthest community lot (unseen) each loop get Sit (or another slot / radial-range interaction) on an outdoor object of far2 with the camera pointed at it (crowd_do look: true; far2 = camera lot = goal in view). 2026-10-27: the household lot target failed in sv-ufbd-arrive-loop (ungreeted townies get no Sit on the household chair). Needs ts3native 0.36.90 (colour codes 7-9).",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims at the farthest community lot (unseen) each loop get Sit (or another slot / radial-range interaction) on an outdoor object of far2 with the camera pointed at it (crowd_do look: true; far2 = camera lot = goal in view). 2026-10-27: the household lot target failed in sv-ufbd-arrive-loop (ungreeted townies get no Sit on the household chair). Needs ts3native 0.36.90 (colour codes 7-9). 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3).",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -34028,7 +34221,7 @@
           "cmd": "crowd_do",
           "setup": false,
           "args": {
-            "lot": "far2",
+            "lot": "farobj",
             "object": "Bench|Chair|Seat|Picnic|Swing|Sculpture|Painting",
             "interaction": "Sit|View|Admire|Swing|Read",
             "look": true
@@ -34072,7 +34265,7 @@
     "bug": "docs/202 §3.6: a townie leaving the lot the player watches for a far spot plans and walks the whole cross-town route; only the first part is visible",
     "fix": "ts3fixes unseenfbleave (UnseenFallback.cs UfLeave, docs/202 §3.6): walk a normal short leg to the first unseen street point H towards the goal, then hold for the rest and place at the goal (D rules for the goal), real plan from there",
     "save": "Baseline-SV-Spring",
-    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims on the household lot (in view) each loop get Sit on a bench of far2 (goal unseen, D rules: community lot without locks, outdoor). crowd_do picks the first far2 object offering one of the interactions (outdoor first). A missing verdict skips the first tries (unseenfbpre_no_verdict) and fills D's list from their normal plans (unseenfbpre_filled), so later loops shortcut. Needs ts3native 0.36.90.",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims on the household lot (in view) each loop get Sit on a bench of far2 (goal unseen, D rules: community lot without locks, outdoor). crowd_do picks the first far2 object offering one of the interactions (outdoor first). A missing verdict skips the first tries (unseenfbpre_no_verdict) and fills D's list from their normal plans (unseenfbpre_filled), so later loops shortcut. Needs ts3native 0.36.90. 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3).",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -34127,7 +34320,7 @@
           "cmd": "crowd_do",
           "setup": false,
           "args": {
-            "lot": "far2",
+            "lot": "farobj",
             "object": "Bench|Chair|Seat|Picnic|Swing|Sculpture|Painting",
             "interaction": "Sit|View|Admire|Swing|Read"
           },
@@ -34391,6 +34584,442 @@
         "cmd": "native_set",
         "args": {
           "unseenfb": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "ufb-loop-break-loop",
+    "bug": "docs/202 §5.6/§5.7: a Sim that restarts the same action on the same target after failed routes (retry loop); suspected to rise with the hitch guard (fake C3/C4 answers, cuts, teleports)",
+    "fix": "ts3fixes unseenfbloopdet (loop detector, logging) and unseenfbloopbreak (motives/moodlets, unseen non-player lot tidy) (UnseenFallbackLoop.cs, docs/202 §5.7)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-27): never run. 30 spawned townies get the same unreachable Go Here (Terrain target, a new instance each time) 5 times per firing, camera parked on the far side of the world so they are unseen; every restart follows a failed plan, so the detector flags each Sim on the 4th restart. Detector on in both arms; breaker per arm.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "camera",
+        "args": {
+          "pos": {
+            "x": 1850,
+            "y": 140,
+            "z": 150
+          },
+          "target": {
+            "x": 1850,
+            "y": 0,
+            "z": 220
+          }
+        },
+        "waitS": 2,
+        "note": "far from Hogan diner (312, 1496): the crowd is unseen"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines; both arms: ufloop_flagged grows by >= 20 per firing and ufloop: lines name Terrain GoHere; on arms: ufloopbreak_sims grows, ufloopbreak_refused stays small (camera far), ufloopbreak: lines for Sims and for lot fixes only on lots not owned by the household; off arms: ufloopbreak_* unchanged",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "patches",
+          "setup": true,
+          "args": {
+            "unseenfbloopdet": true,
+            "unseenfbloopbreak": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": false
+          },
+          "waitS": 12,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 12,
+          "note": "fire: restart 1 (counted from the second)"
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": false
+          },
+          "waitS": 12,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 12
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": false
+          },
+          "waitS": 12,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 12
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": false
+          },
+          "waitS": 12,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 12
+        },
+        {
+          "cmd": "crowd_unreachable",
+          "setup": false,
+          "args": {
+            "x": 312.4,
+            "z": 1496.7,
+            "household": false
+          },
+          "waitS": 12,
+          "waitUntil": {
+            "quiet": 4000
+          },
+          "minS": 6,
+          "maxS": 12,
+          "count": {
+            "result": "sent"
+          }
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "target": "home",
+            "household": false
+          },
+          "waitS": 12
+        }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 150
+      },
+      "maxMinutes": 12
+    }
+  },
+  {
+    "id": "unseenfbfinish-far-walkers-loop",
+    "bug": "docs/202 §3.4.2: C1 / C2's fake answers (\"no obstacles\" / \"nothing to avoid\") for unseen walkers waiting on a busy +0x918 made them walk into things and replan (200-300 ms Route_Replan hitches)",
+    "fix": "ts3native [UnseenFallback] FinishWalk=1 (native switch unseenfbfinish) + ts3fixes unseenfbfinish: a flagged unseen walker is held (agent updates skipped), its remaining walk time passes, then the route ends as succeeded and the Sim is placed at its path end; unflagged unseen Sims get the game's own wait",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-27): never run. As unseenfbc-far-walkers-loop, but the crowd walks far -> far2 (the community lot farthest from the active Sim and far: an unseen end with no household Sim, so the crowd's last subpath is finishable) while the active Sim's Go Here to far holds the route job (a visible job). Arms: on = FinishWalk (unseenfbc 1, unseenfbfinish 1), off = C fake (unseenfbc 1, unseenfbfinish 0).",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenfbsites": true,
+          "unseenfbfinish": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "native_set",
+        "args": {
+          "unseenfbc": 1
+        },
+        "waitS": 1,
+        "note": "C sites on in both arms (the C-fake arm is unseenfbfinish 0)"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "away from the household and the camera"
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines, no stuck Sim at the end; on arms: ufwHolds and ufwClaims grow, unseenfbfinish_shortcuts >= 1, ufcFake_0 / ufcFake_1 unchanged (FinishWalk gives holds or the game's wait, never the fake), ufwRelease_2 / _3 (seen / expired) small next to ufwRelease_0; fewer Route_Replan sync plans and fewer >= 200 ms hitches led by them than the C-fake arm (hitch-ab.ts --causes); stuck_check_reset and Overwatch notices unchanged",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "unseenfbfinish": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "go_here",
+          "setup": false,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 2,
+          "note": "fire: the active Sim plans cross-town (a visible job)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far2"
+          },
+          "waitS": 40,
+          "note": "fire: the unseen crowd walks far -> far2 (an unseen end) while the visible job runs"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "household": false
+          },
+          "waitS": 60,
+          "note": "back to the far lot (fixed)"
+        },
+          {
+            "cmd": "go_here",
+            "setup": true,
+            "args": {
+              "target": "home"
+            },
+            "waitS": 2,
+            "note": "the active Sim heads home again, so it never reaches far (the crowd stays unseen)"
+          }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 4
+      },
+      "maxMinutes": 16
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "unseenfbfinish": 0,
+          "unseenfbc": 0
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenfbsites": false,
+          "unseenfbfinish": false
+        }
+      }
+    ]
+  },
+  {
+    "id": "unseenfbfinish-far-walkers-vs-off-loop",
+    "bug": "docs/202 §3.4.2: C1 / C2's fake answers (\"no obstacles\" / \"nothing to avoid\") for unseen walkers waiting on a busy +0x918 made them walk into things and replan (200-300 ms Route_Replan hitches)",
+    "fix": "ts3native [UnseenFallback] FinishWalk=1 (native switch unseenfbfinish) + ts3fixes unseenfbfinish: a flagged unseen walker is held (agent updates skipped), its remaining walk time passes, then the route ends as succeeded and the Sim is placed at its path end; unflagged unseen Sims get the game's own wait",
+    "save": "Baseline-SV-Spring",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-27): never run. As unseenfbc-far-walkers-loop, but the crowd walks far -> far2 (the community lot farthest from the active Sim and far: an unseen end with no household Sim, so the crowd's last subpath is finishable) while the active Sim's Go Here to far holds the route job (a visible job). Arms: on = FinishWalk (unseenfbc 1, unseenfbfinish 1), off = no site fallback at all (unseenfbc 0, unseenfbfinish 0).",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 15
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenfbsites": true,
+          "unseenfbfinish": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 90,
+        "note": "away from the household and the camera"
+      }
+    ],
+    "expect": "no crash, 0 watchdog lines, no stuck Sim at the end; on arms: ufwHolds and ufwClaims grow, unseenfbfinish_shortcuts >= 1, ufcFake_0 / ufcFake_1 unchanged (FinishWalk gives holds or the game's wait, never the fake), ufwRelease_2 / _3 (seen / expired) small next to ufwRelease_0; fewer Route_Replan sync plans and fewer >= 200 ms hitches led by them than the off arm (hitch-ab.ts --causes); stuck_check_reset and Overwatch notices unchanged",
+    "loop": {
+      "steps": [
+        {
+          "cmd": "native_set",
+          "setup": true,
+          "args": {
+            "unseenfbc": "$on",
+            "unseenfbfinish": "$on"
+          },
+          "waitS": 1,
+          "note": "arm"
+        },
+        {
+          "cmd": "go_here",
+          "setup": false,
+          "args": {
+            "to": "far"
+          },
+          "waitS": 2,
+          "note": "fire: the active Sim plans cross-town (a visible job)"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": false,
+          "args": {
+            "to": "far2"
+          },
+          "waitS": 40,
+          "note": "fire: the unseen crowd walks far -> far2 (an unseen end) while the visible job runs"
+        },
+        {
+          "cmd": "crowd_go",
+          "setup": true,
+          "args": {
+            "to": "far",
+            "household": false
+          },
+          "waitS": 60,
+          "note": "back to the far lot (fixed)"
+        },
+          {
+            "cmd": "go_here",
+            "setup": true,
+            "args": {
+              "target": "home"
+            },
+            "waitS": 2,
+            "note": "the active Sim heads home again, so it never reaches far (the crowd stays unseen)"
+          }
+      ],
+      "arms": [
+        "off",
+        "on",
+        "on",
+        "off"
+      ],
+      "until": {
+        "perArm": 4
+      },
+      "maxMinutes": 16
+    },
+    "cleanup": [
+      {
+        "cmd": "native_set",
+        "args": {
+          "unseenfbfinish": 0,
+          "unseenfbc": 0
+        }
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "unseenfbsites": false,
+          "unseenfbfinish": false
         }
       }
     ]

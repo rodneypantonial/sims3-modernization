@@ -7,32 +7,66 @@ namespace Ts3Fixes
 {
     // docs/202 §3.4 C1-C4 (switch unseenfbsites, off): the ids of the Sims that pass the unseen rule (UfWhy == 0: live mode,
     // not the household, not on a seen lot, off screen, far from the camera and the household, not riding / carried /
-    // carrying, not with a visible Sim) go to ts3native's [UnseenFallback] Sites=1 every few sim ticks. Its four sites then
-    // wait at most SiteWaitMs for a running route job's lock on behalf of a listed Sim and skip that step with a harmless
+    // carrying, not with a visible Sim) go to ts3native's [UnseenFallback] Sites=1 about every 0.5 s. Its four sites then
+    // try a running route job's lock once (SiteWaitMs, default 0) on behalf of a listed Sim and skip that step with a harmless
     // answer. Channel: GetOption2 with optHi top byte 0x83 and a code in bits 48-55 (no RouteOption2 name): 7 BEGIN, 8 id low,
-    // 9 id high (appends one id), 10 END with the count. Out of live mode the list is empty; ts3native treats a list older
-    // than 1.5 s as none, so nothing acts when this loop stops. BEGIN refused (no site installed, older ts3native, the game)
-    // ends the loop for this world load.
+    // 9 id high (appends one id), 10 END with the count, 14 C4 log query (§5.6). Out of live mode the list is empty;
+    // ts3native treats a list older than 3 s as none, so nothing acts when this loop stops. BEGIN refused (no site installed,
+    // older ts3native, the game) ends the loop for this world load.
+    // docs/202 §5.6 (cost): wall-clock cadence (Sleep sized from the tick rate, UnseenFallbackCore.SitesSleepTicks; a fixed
+    // Sleep(5) woke every iteration at speed 3), only Sims that are routing or running an interaction (C1 / C2 owners walk,
+    // C3 / C4 owners run their own interaction), and a per-Sim verdict cache (UfWhy again only after a 1 m move, a 1 m camera
+    // move or 2 s).
+    // docs/202 §3.4.2 (unseenfbfinish, UnseenFallbackFinish.cs): routing Sims that can have their walk finished are flagged after
+    // their id (code 15); after END the claimed holds are checked, finished or given up (codes 16-20).
     // Counters: [323] lists pushed, [324] ids pushed (sum), [325] pushes refused (BEGIN refused or a field refused).
     public static partial class Fixes
     {
-        const uint kUfSitesPushTicks = 5;  // as the viewer push; ts3native's list lives 1.5 s
         const int kUfSitesMax = 256;       // ts3native's list size
-        static int sUfSitesGen;
+        const int kUfC4LogMax = 20;        // C4 "not free" answers named in ts3native.log per session (§5.6)
+        static int sUfSitesGen, sUfC4Logged;
 
         internal static void StartUfSitesPush()
         {
             int gen = ++sUfSitesGen;  // a loop left from an earlier load ends at its next wake-up
+            sUfSiteCache.Clear();
+            UfFinishReset();  // docs/202 §3.4.2: holds of an earlier load are gone
             Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { UfSitesLoop(gen); }));
         }
 
         static void UfSitesLoop(int gen)
         {
+            int last = unchecked(System.Environment.TickCount - UnseenFallbackCore.kPushMs), wake = System.Environment.TickCount;
+            long ticks = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
             while (gen == sUfSitesGen)
             {
-                try { if (ShortcutOn("unseenfbsites") && !UfSitesPush()) return; } catch (Exception) { return; }
-                Simulator.Sleep(kUfSitesPushTicks);
+                int now = System.Environment.TickCount;
+                long t = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+                if (unchecked(now - last) >= UnseenFallbackCore.kPushMs)
+                {
+                    last = now;
+                    try { if (ShortcutOn("unseenfbsites") && !UfSitesPush(now)) return; } catch (Exception) { return; }
+                }
+                uint sleep = UnseenFallbackCore.SitesSleepTicks(t - ticks, unchecked(now - wake), unchecked(last + UnseenFallbackCore.kPushMs - now));
+                ticks = t;
+                wake = now;
+                Simulator.Sleep(sleep);
             }
+        }
+
+        sealed class UfSiteSeen { public Vector3 Pos; public int Why, At; }
+        static readonly System.Collections.Generic.Dictionary<ulong, UfSiteSeen> sUfSiteCache = new System.Collections.Generic.Dictionary<ulong, UfSiteSeen>();
+        static Vector3 sUfSiteCam = Vector3.Invalid;
+
+        static int UfSiteWhy(Sim s, ulong id, int now)
+        {
+            Vector3 p = s.Position;
+            UfSiteSeen e;
+            if (sUfSiteCache.TryGetValue(id, out e) && !UnseenFallbackCore.SitesRecheck((p - e.Pos).LengthSqr(), unchecked(now - e.At))) return e.Why;
+            if (e == null) sUfSiteCache[id] = e = new UfSiteSeen();
+            e.Pos = p;
+            e.At = now;
+            return e.Why = UfWhy(s);
         }
 
         static bool UfSitesSend(int code, uint value)
@@ -41,26 +75,66 @@ namespace Ts3Fixes
         }
 
         // false = BEGIN refused: no C site this load
-        static bool UfSitesPush()
+        static bool UfSitesPush(int now)
         {
             int[] c = PatchCounters();
             if (!UfSitesSend(7, 0)) { c[325]++; return false; }
             uint n = 0;
             bool live = GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown;
+            // docs/202 §3.4.2: flag walkers whose walk may be finished (UfFinishable), at most kUfFinishEvalMax per push
+            // (code 16 answers 1 only when ts3native has FinishWalk installed)
+            bool finishOn = live && ShortcutOn("unseenfbfinish") && UfSitesSend(16, 0);
+            int finishBudget = finishOn ? kUfFinishEvalMax : 0;
+            // a hold starts only for a Sim flagged in the last list, so last push's flagged Sims keep their place (else an unclaimed
+            // hold could lose its flag to the budget and end at END)
+            sUfFinishPrev.Clear();
+            foreach (Sim f in sUfFinishFlagged) sUfFinishPrev[f.ObjectId.Value] = true;
+            sUfFinishFlagged.Clear();
             if (live)
+            {
+                Vector3 cam = CameraController.GetPosition();
+                if (sUfSiteCam == Vector3.Invalid || (cam - sUfSiteCam).LengthSqr() >= 1f) { sUfSiteCam = cam; sUfSiteCache.Clear(); }
+                if (sUfSiteCache.Count > 4 * kUfSitesMax) sUfSiteCache.Clear();  // shortcut: Sims gone since are dropped wholesale
                 foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
                 {
                     if (n == kUfSitesMax) break;
-                    if (s == null || s.SimDescription == null || s.SimDescription.IsPet || UfWhy(s) != 0) continue;  // pets and horses: never (as the plan marks)
+                    // pets and horses: never (as the plan marks); idle Sims reach no site (no route, no own interaction)
+                    if (s == null || s.SimDescription == null || s.SimDescription.IsPet || (!s.IsRouting && s.CurrentInteraction == null)) continue;
                     ulong id = s.ObjectId.Value;
+                    if (UfSiteWhy(s, id, now) != 0) continue;
                     // a refused field: the old list stays and goes stale, so nothing acts
                     if (!UfSitesSend(8, (uint)id) || !UfSitesSend(9, (uint)(id >> 32))) { c[325]++; return true; }
                     n++;
+                    bool held = sUfFinish.ContainsKey(id) || sUfFinishPrev.ContainsKey(id);  // held or may be: re-checked every push
+                    if (s.IsRouting && finishOn && (held || finishBudget > 0))
+                    {
+                        if (!held) finishBudget--;
+                        if (UfFinishable(s) && UfSitesSend(15, 1)) { c[367]++; sUfFinishFlagged.Add(s); }
+                    }
                 }
+            }
+            else sUfSiteCache.Clear();
             if (!UfSitesSend(10, n)) { c[325]++; return true; }
             c[323]++;
             c[324] += (int)n;
+            if (ShortcutOn("unseenfbfinish") || sUfFinish.Count > 0) UfFinishStep();
+            if (sUfC4Logged < kUfC4LogMax && UfSitesSend(14, 64)) UfC4Log();
             return true;
+        }
+
+        // docs/202 §5.6 (3): ts3native holds the id of the last Sim its C4 site answered "not free"; code 14 b (0-63) reads bit b,
+        // 64 = any pending, 65 = clear. Names the Sim and its interaction in ts3native.log for the first kUfC4LogMax answers.
+        static void UfC4Log()
+        {
+            ulong id = 0;
+            for (int b = 0; b < 64; b++) if (UfSitesSend(14, (uint)b)) id |= 1UL << b;
+            UfSitesSend(14, 65);
+            sUfC4Logged++;
+            Sim s = Sims3.Gameplay.Abstracts.GameObject.GetObject<Sim>(new ObjectGuid(id));
+            Sims3.Gameplay.Interactions.InteractionInstance cur = s != null ? s.CurrentInteraction : null;
+            UfGuardNote(id, "C4 not free" + (cur != null ? " in " + cur.GetType().Name : ""));
+            DiagLine("ufc4: not free for " + (s != null ? s.FullName : "?") + " 0x" + id.ToString("X") + ", interaction "
+                + (cur != null ? cur.GetType().FullName : "none") + (cur != null && cur.Target != null ? " on " + cur.Target.GetType().Name : ""));
         }
     }
 }

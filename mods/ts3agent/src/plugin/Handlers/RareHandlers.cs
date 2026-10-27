@@ -19,6 +19,7 @@ namespace Ts3Agent
         {
             Dispatcher.Register("crowd_go", CrowdGo);
             Dispatcher.Register("crowd_do", CrowdDo);
+            Dispatcher.Register("crowd_visit_lot", CrowdVisitLot);
             Dispatcher.Register("kill_sim", KillSim);
             Dispatcher.Register("zombies", Zombies);
             Dispatcher.Register("spawn_traffic", SpawnTraffic);
@@ -505,7 +506,8 @@ namespace Ts3Agent
         }
 
         // Point for {to}: "pond" = representative point of the world pond nearest the Sim; "ocean" = 10 m into the sea
-        // found on rings of 10..400 m round the Sim; "far" = centre of the community lot farthest from the Sim.
+        // found on rings of 10..400 m round the Sim; "far" = centre of the community lot farthest from the Sim; "far2" = centre of
+        // the community lot farthest from both the Sim and "far" (FindLotByName).
         // Vector3.Invalid when the world has none.
         static Vector3 RarePoint(Sim s, string to)
         {
@@ -531,12 +533,13 @@ namespace Ts3Agent
                 Lot far = FarLot(s);
                 return far != null ? far.GetCenterPosition() : pos;
             }
+            if (to == "far2") return FindLotByName("far2").GetCenterPosition();  // docs/202 §3.4.2: a second unseen lot, never the household's
             if (to == "island")
             {
                 Lot isl = IslandLot(s);
                 return isl != null ? isl.GetCenterPosition() : pos;
             }
-            throw new McpException("to must be pond, ocean, far or island");
+            throw new McpException("to must be pond, ocean, far, far2 or island");
         }
 
         // "island": the community lot whose straight line from the Sim crosses the most sea (samples every 10 m, at least
@@ -649,6 +652,43 @@ namespace Ts3Agent
             return r;
         }
 
+        // crowd_visit_lot {lot, how?: "visit", autonomous?: false, cancel?: false, max?: 50} (docs/202 §3.6.4): every spawn_sims Sim
+        // queues the game's own lot trip to `lot` (FindLotByName: "far", "far2", "home" or a name), as sim_visit_lot does for one
+        // Sim: VisitCommunityLot.Singleton / VisitLot.Singleton, or with how "goto" GoToCommunityLot / GoToLot. With LynMods
+        // University More Shell Entries installed, VisitCommunityLot.Singleton is its VisitCommunityLotLabLecture (the trip kind the
+        // shortcuts miss, unseenfbtrip). autonomous false = player-directed (skips the autonomous-only visit gates).
+        static object CrowdVisitLot(Args a)
+        {
+            RequireLive();
+            Lot lot = FindLotByName(a.Str("lot"));
+            bool go = string.Equals(a.Str("how", "visit"), "goto", StringComparison.OrdinalIgnoreCase);
+            InteractionDefinition def = go ? (lot.IsCommunityLot ? GoToCommunityLot.Singleton : GoToLot.Singleton)
+                : lot.IsCommunityLot ? VisitCommunityLot.Singleton : VisitLot.Singleton;
+            bool auto = a.Bool("autonomous", false);
+            InteractionPriority pri = new InteractionPriority(auto ? InteractionPriorityLevel.Autonomous : InteractionPriorityLevel.UserDirected);
+            int max = (int)a.Long("max", 50), queued = 0;
+            List<object> sent = new List<object>();
+            foreach (Sim s in SpawnedInWorld())
+            {
+                if (sent.Count >= max) break;
+                try
+                {
+                    if (a.Bool("cancel", false)) s.InteractionQueue.CancelAllInteractions();
+                    bool q = s.InteractionQueue.Add(def.CreateInstance(lot, s, pri, auto, true));
+                    if (q) queued++;
+                    sent.Add(q ? s.FullName : s.FullName + ": not queued");
+                }
+                catch (Exception e) { sent.Add(s.FullName + ": " + e.Message); }
+            }
+            if (sent.Count == 0) throw new McpException("no crowd: spawn_sims first");
+            Dictionary<string, object> r = Util.Obj();
+            r["sent"] = sent;
+            r["queued"] = queued;
+            r["lot"] = lot.Name;
+            r["interaction"] = def.GetType().DeclaringType != null ? def.GetType().DeclaringType.FullName : def.GetType().FullName;
+            return r;
+        }
+
         // kill_sim {sim? | pick?: "routing" | "any", death?: "Electrocution"}: Sim.Kill (Urnstone.KillSim at MaxDeath
         // priority, which cancels the walk). Without sim it picks a spawn_sims Sim, one that is routing right now when
         // pick is "routing" (the default; falls back to any spawned Sim, reported in "routing"). Never the active Sim
@@ -685,38 +725,51 @@ namespace Ts3Agent
         // indoor: D needs an outdoor ground goal) whose menu for the first crowd Sim offers one of the interactions; when no named
         // object does (far2 differs per run: a park, a graveyard), any object on the lot is tried, up to 300 menus.
         // look: true also points the camera at the object, so its lot is in view (D-arrive repro: goal seen, starts unseen).
+        // lot "farobj" (docs/202 §3.6.3): community lots ranked as "far2" (farthest from both the active Sim and "far"), outdoor
+        // objects only; the first lot with one that offers an interaction wins (far2 alone may be a beach or graveyard without one).
         static object CrowdDo(Args a)
         {
             RequireLive();
-            Lot lot = FindLotByName(a.Str("lot"));
+            bool scan = string.Equals(a.Str("lot"), "farobj", StringComparison.OrdinalIgnoreCase);
+            List<Lot> lots = scan ? FarObjLots() : new List<Lot> { FindLotByName(a.Str("lot")) };
             string objName = a.Str("object", "*");
             string[] names = objName.Split('|'), labels = a.Str("interaction").Split('|');
             List<Sim> crowd = SpawnedInWorld();
             if (crowd.Count == 0) throw new McpException("no crowd: spawn_sims first");
-            List<GameObject> named = new List<GameObject>(), rest = new List<GameObject>();
-            foreach (GameObject o in lot.GetObjects<GameObject>())
-            {
-                if (o == null || o is Sim) continue;
-                string n = Util.ObjectName(o);
-                bool hit = false;
-                foreach (string w in names) if (w.Length > 0 && w != "*" && n.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) { hit = true; break; }
-                (hit ? named : rest).Add(o);
-            }
+            Lot lot = null;
             GameObject target = null;
             string label = null;
-            int tried = 0;
-            foreach (List<GameObject> group in new List<GameObject>[] { OutdoorFirst(named), OutdoorFirst(rest) })
+            int tried = 0, namedAll = 0;
+            List<string> lotsTried = new List<string>();
+            foreach (Lot l in lots)
             {
-                foreach (GameObject o in group)
+                if (tried >= 300) break;
+                lot = l;
+                lotsTried.Add(l.Name);
+                List<GameObject> named = new List<GameObject>(), rest = new List<GameObject>();
+                foreach (GameObject o in l.GetObjects<GameObject>())
                 {
-                    if (tried++ >= 300) break;
-                    label = CrowdOffer(crowd[0], o, labels, a);
-                    if (label != null) { target = o; break; }
+                    if (o == null || o is Sim || (scan && o.RoomId != 0)) continue;
+                    string n = Util.ObjectName(o);
+                    bool hit = false;
+                    foreach (string w in names) if (w.Length > 0 && w != "*" && n.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) { hit = true; break; }
+                    (hit ? named : rest).Add(o);
+                }
+                namedAll += named.Count;
+                foreach (List<GameObject> group in new List<GameObject>[] { OutdoorFirst(named), OutdoorFirst(rest) })
+                {
+                    foreach (GameObject o in group)
+                    {
+                        if (tried++ >= 300) break;
+                        label = CrowdOffer(crowd[0], o, labels, a);
+                        if (label != null) { target = o; break; }
+                    }
+                    if (target != null) break;
                 }
                 if (target != null) break;
             }
             if (target == null)
-                throw new McpException("no object on " + lot.Name + " offers '" + a.Str("interaction") + "' to " + crowd[0].FullName + " (" + named.Count + " named like '" + objName + "', " + tried + " menus tried)");
+                throw new McpException("no " + (scan ? "outdoor " : "") + "object on " + string.Join(", ", lotsTried.ToArray()) + " offers '" + a.Str("interaction") + "' to " + crowd[0].FullName + " (" + namedAll + " named like '" + objName + "', " + tried + " menus tried)");
             if (a.Bool("look", false)) CameraController.SetPositionAndTarget(target.Position + new Vector3(0f, 25f, -25f), target.Position);
             int max = (int)a.Long("max", 50);
             List<object> sent = new List<object>();
@@ -738,10 +791,30 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             r["sent"] = sent;
             r["lot"] = lot.Name;
+            r["lots_tried"] = lotsTried;
             r["object"] = Util.ObjectName(target);
             r["interaction"] = label;
             r["outdoor"] = target.RoomId == 0;
             return r;
+        }
+
+        // crowd_do lot "farobj": community lots except "far", farthest from both the active Sim and "far" first ("far2" = the first)
+        static List<Lot> FarObjLots()
+        {
+            Sim me = Util.ActiveSim();
+            Lot far = FarLot(me);
+            if (far == null) throw new McpException("no community lot in this world");
+            Vector3 f = far.GetCenterPosition();
+            List<KeyValuePair<float, Lot>> ranked = new List<KeyValuePair<float, Lot>>();
+            foreach (Lot l in LotManager.AllLots)
+            {
+                if (l == null || !l.IsCommunityLot || l.IsWorldLot || l == far) continue;
+                Vector3 c = l.GetCenterPosition();
+                ranked.Add(new KeyValuePair<float, Lot>(Math.Min((c - me.Position).LengthSqr(), (c - f).LengthSqr()), l));
+            }
+            if (ranked.Count == 0) throw new McpException("no second community lot in this world");
+            ranked.Sort(delegate(KeyValuePair<float, Lot> x, KeyValuePair<float, Lot> y) { return y.Key.CompareTo(x.Key); });
+            return ranked.ConvertAll(delegate(KeyValuePair<float, Lot> kv) { return kv.Value; });
         }
 
         static List<GameObject> OutdoorFirst(List<GameObject> objs)

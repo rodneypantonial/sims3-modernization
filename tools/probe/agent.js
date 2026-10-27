@@ -1595,6 +1595,9 @@ rpc.exports = {
       if (c.readS32() >= 139) f.push('ufcMode', 'ufcWaitMs', 'ufcReady', 'ufcList', 'ufcPushes', 'ufcPushBad', ...n('ufcTry', 4), ...n('ufcGot', 4),
         ...n('ufcTimeout', 4), ...n('ufcFake', 4), ...n('ufcRecover', 4), ...n('ufcSeen', 4), ...n('ufcWaitUs', 4), 'ufcMaxWaitUs', 'ufcNoRoute',
         'ufcStale', ...n('ufcSpare', 7));
+      // v140 (docs/202 §3.4.2, unseenfbc.cpp): [UnseenFallback] FinishWalk holds (release reasons: finished, given up, seen, expired)
+      if (c.readS32() >= 140) f.push('ufwMode', 'ufwReady', 'ufwFlagged', 'ufwHolds', 'ufwPlainWait', 'ufwHeldTicks', 'ufwClaims',
+        ...n('ufwRelease', 4), 'ufwMaxHeld', 'ufwFull', ...n('ufwSpare', 3));
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

@@ -2,7 +2,7 @@
   "note": "docs/202 live-mode fallback for unseen Sims (ts3native 0.36.89 [UnseenFallback], counters v138 uf*; ts3fixes unseenfbstuck / unseenfbplan / unseenfbteleport, counters 303-312). DRAFT, NOT RUN (dry-run only). Run after this branch is merged (cycle.ts rebuilds ts3fixes and ts3agent from source: the agent's patches names unseenfb*). asi game-copy/ts3native.asi.unseenfb (built from the branch, out-unseenfb). Correctness first, day OK: smoke, then 3 loop jobs (B, A positive, A negative on seen Sims), then the teleport verify (verify-shortcut rule as fixesRequire). Stop rule: a crash, a watchdog line, a nativeRequire / fixesRequire miss, or any unseenfb counter moving while the game is out of live mode = stop, fix, rerun. Natural IP + SV on/off pairs only after these pass (docs/202 §6, judged with hitch-ab.ts --causes). Manual teleport check: node tools/harness/verify-shortcut.ts --name unseenfbteleport --tries 10 --minutes 15.",
   "smoke": {
     "note": "Measurement smoke: SV 10 min with [UnseenFallback] Enabled=1 and unseenfbstuck + unseenfbplan on: the stubs install (ufReady 15), the switches read back (fixes on ... verified), the minute line 'unseen fallback:' appears.",
-    "asi": "game-copy/ts3native.asi.unseenfb-all13",
+    "asi": "game-copy/ts3native.asi.unseenfb-all14",
     "releaseDefaults": true,
     "save": "Baseline-SV-Spring",
     "minCounters": 138,
@@ -23,7 +23,8 @@
         "seed": 12345,
         "noSamplers": true,
         "minutes": 10,
-        "fixesOn": "unseenfbstuck,unseenfbplan"
+        "fixesOn": "unseenfbstuck,unseenfbplan",
+        "fixesReport": "unseenfb"
       }
     },
     "gameArgs": [
@@ -39,7 +40,7 @@
         "scope": "unseen"
       },
       "note": "Phase B correctness: forced ABBA on unseenfb-stuck-far (30 Sims stranded on the farthest lot, one round-1 stuck check each per loop), 60 per arm, cap 10 min. Pass: no crash, 0 watchdog lines, unseenfb_stuck_deferred >= 30, no RunStuckCheckHelper sync-plan line >= 300 ms in on windows, stuck_check_reset 0. Read: off-arm probe plans and their long-job lines (the cost B removes).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -64,7 +65,8 @@
             "maxMinutes": 10
           },
           "noSamplers": true,
-          "fixesRequire": "unseenfb_stuck_deferred>=30"
+          "fixesRequire": "unseenfb_stuck_deferred>=30",
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [
@@ -79,7 +81,7 @@
         "scope": "unseen"
       },
       "note": "Phase A correctness (positive): forced ABBA on unseenfb-far-crowd-loop (30 Sims sent home from the farthest community lot: own-START cross-town plans of unseen followers), 60 per arm, cap 12 min; the loop flips ufMode and unseenfbplan. Pass: no crash, 0 watchdog lines, ufMarks >= 30, ufJobCut + ufSyncCut >= 1, no 'sim waited >= 300 ms behind an own job' line in on windows for a capped (UnseenFallback) job, no Sim stuck at the end. Strict DeadlineMs (0.36.94, docs/202 §3.1.1): ufMaxUs must stay < 300 ms (the setting) and ufLong (marked >= the setting) 0: the cut point is the setting minus the learned overrun (minute line 'cut at <sync> / <job> ms', ufEffCutUs, ufOverP99Us), and a marked sync plan still waiting for +0x918 at its cut point fails before the search (ufLockFail). Read: the 'cut at' values, ufLockWaits / ufLockFail, unseenfb_noretry, unseenfb_refused (expect 0).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -107,7 +109,8 @@
             },
             "maxMinutes": 12
           },
-          "noSamplers": true
+          "noSamplers": true,
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [
@@ -122,7 +125,7 @@
         "scope": "unseen"
       },
       "note": "The same phase A loop with DeadlineMs=175 (the lowest player setting; every other job runs the release default 300). Pass as sv-ufb-farcrowd-loop; read (strict, 0.36.94): capped (UnseenFallback) lines and ufMaxUs < 175 ms, ufLong (>= the setting) 0, 'cut at' >= 87 ms (setting / 2 floor), more cuts than at 300 (cut share vs route-fail reactions = the trade-off the player picks).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -150,7 +153,8 @@
             },
             "maxMinutes": 12
           },
-          "noSamplers": true
+          "noSamplers": true,
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [
@@ -165,7 +169,7 @@
         "scope": "unseen"
       },
       "note": "Phase A negative (never acts on seen Sims): route-ownjob-yield-loop's crowd is on the household's lot (seen by rule) with unseenfbplan + [UnseenFallback] on for the whole run. Pass: no crash, unseenfb_seen >= 30, unseenfb_marked counts only townies away from the home lot (expect a few, not the crowd: ufMarks well below the crowd's plan count), unseenfbteleport_shortcuts 0.",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -192,7 +196,8 @@
           },
           "noSamplers": true,
           "fixesOn": "unseenfbplan",
-          "fixesRequire": "unseenfb_seen>=30,unseenfbteleport_shortcuts<1"
+          "fixesRequire": "unseenfb_seen>=30,unseenfbteleport_shortcuts<1",
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [
@@ -206,7 +211,7 @@
         "ms": 300,
         "scope": "unseen"
       },
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "note": "Stuck-detector compatibility (docs/202 §3.7): repro unseenfb-overwatch-cuts (20 far Sims, 12 rounds of cut plans home from one spot, Overwatch's nightly pass before and after). Pass: no crash, owprobeplans_hidden grows (fixesRequire); judged by hand from the repro's before / after patches steps (repro.jsonl): owstucknotice_held unchanged inside the repro window, watchdog resets unchanged. unseenfb_cut reported, not required (phase A cuts do not fire in repros; validated in natural runs, v020-natural.json). No end-value owstucknotice_held rule: fixesRequire reads the session value at the run end, which includes ~6 min of free play after the repro where Overwatch resets natural Sims (docs/202 §5.3). Needs NRaas Overwatch in the test Mods (as the Overwatch jobs).",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
@@ -227,7 +232,8 @@
           "repro": "unseenfb-overwatch-cuts",
           "noSamplers": true,
           "fixesOn": "unseenfbplan,overwatchstucknotice",
-          "fixesRequire": "owprobeplans_hidden>=20"
+          "fixesRequire": "owprobeplans_hidden>=20",
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [
@@ -242,7 +248,7 @@
         "scope": "unseen"
       },
       "note": "Teleport verify (verify-shortcut rule, docs/202 §3.2): SV natural 30 min, seeded, all three switches and [UnseenFallback] on for the whole run. Pass: no crash, unseenfbteleport_shortcuts >= 5, 0 stuck Sims among the moved ones (sims_activity + moved list, as verify-shortcut.ts), 0 watchdog lines. If it does not fire: rerun on IP (other world), no A/B.",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -263,7 +269,8 @@
           "minutes": 30,
           "noSamplers": true,
           "fixesOn": "unseenfbstuck,unseenfbplan,unseenfbteleport",
-          "fixesRequire": "unseenfbteleport_shortcuts>=5"
+          "fixesRequire": "unseenfbteleport_shortcuts>=5",
+          "fixesReport": "unseenfb"
         }
       },
       "gameArgs": [

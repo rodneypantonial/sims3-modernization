@@ -87,6 +87,19 @@ For timing, two kinds of evidence:
 
 `node tools/harness/profile-world.ts --tag <tag> [--minutes 10] [--ab <switch> --slice 2] [--repro <id>] [--seed N]` runs on a loaded world: autopilot, the native stutter profiler (every sim iteration, hitches >= 50 ms, route, GC), optional managed and native stack samplers, a clock guard, and a stuck-Sim count at the end. Performance A/B runs are 10 minutes; 5 minutes or less only for smoke, crash and "does the switch work" runs.
 
+### Synthetic custom content for stress tests
+
+Heavy-CC problems (memory growth, Error 12, slow loads) need lots of CC that behaves like downloaded CC. These tools generate it from your own game install; their output contains EA-derived bytes, so it is written only to the ignored `game-copy/cc-synth/` folder and never published. Only the tools are.
+
+| Tool | Makes | Use |
+|---|---|---|
+| `tools/cc-gen.ts` | New Buy/Build objects, CAS parts and Build-mode items (wall/floor patterns, doors, windows, fences, terrain paints, railings, stairs), each a clone of a base-game item with its own copy of every mesh, texture, footprint, slot, light and thumbnail; one `.package` per item plus `manifest.json`; also inventory, makeup and preset variants | CC sets of any size (e.g. 1k / 2k items) for the stress repros (place, wear, inventory, Build/Buy, Edit Town cycles) |
+| `tools/cc-gen-script.ts` | Scripted CC: every item runs its own script assembly (the original object's script classes cloned at IL level and renamed) plus its own copies of the animation data it names | Script-heavy CC, like real scripted objects |
+| `tools/cc-lot-gen.ts` | CC library lots: rewrites an installed lot so every object and Build product points at a clone from the sets above | Lots full of CC for Edit Town place/bulldoze cycles |
+| `tools/cc-count-report.ts` | Report, not a generator: address-space cost per installed CC item at load, by owner, from the `cc-count-load` queue | "How much does each 1,000 CC items cost" |
+
+A queue job installs a set with the `ccSet` field (moved into `Mods/Packages/cc-synth` for the job and back afterwards); `queue.ts --restore-content` puts things back after an interrupted run. Details: docs/200 (stress actions, sets, repros) and docs/191 (memory plan).
+
 ## 3. Reading results
 
 | Tool | What it answers |

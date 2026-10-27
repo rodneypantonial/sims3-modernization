@@ -29,18 +29,40 @@ namespace Ts3Fixes
         static bool sInRoutableCheck;  // inside Sim.IsPointInLotSafelyRoutable (RoutableCacheHook): never marked
         static bool sUfInLeg;          // D-leave walks its visible leg (UfLeave): plans inside are left to the game
 
+        // docs/202 §5.6 (5): plans of >= kUfSlowPlanMs (wall, the hook's whole call: sync search, or the task's sleep for an async
+        // job) are named in ts3native.log with the scope verdict, so long routing hitches can be split into seen Sims (accepted),
+        // marked-but-not-cut and never-asked (why -1: no Sim follower, stuck-check probe, own check, pet, D leg, switches off)
+        const int kUfSlowPlanMs = 150, kUfSlowPlanLogMax = 200;
+        static int sUfLastWhy, sUfSlowLogged;
+        static bool sUfLastMarked, sUfLastCut;
+        static Sim sUfLastSim;
+        static void UfSlowPlanLog(int kind, int ms)
+        {
+            if (ms < kUfSlowPlanMs || sUfSlowLogged >= kUfSlowPlanLogMax) return;
+            sUfSlowLogged++;
+            Sim s = sUfLastSim;
+            DiagLine("ufplan: kind " + kind + " " + ms + " ms why " + sUfLastWhy + (sUfLastMarked ? " marked" : "") + (sUfLastCut ? " cut" : "")
+                + (s != null ? " " + s.FullName + (Simulator.CurrentTask == s.ObjectId ? " own task" : " other task") : ""));
+            sUfLastSim = null;
+        }
+
         // docs/202 §2; 0 = unseen. GameStates.IsLiveState = in-world substate id 0 (LiveModeState): Build, Buy, CAS and Edit
         // Town are other substates [verified, decompiled].
+        // Same order and codes as UnseenFallbackCore.Why, but each test runs only when the ones before it passed: the camera
+        // query (4 GetOption2 ICs per position), the on-screen IC and the posture checks are skipped for Sims an earlier test
+        // already calls seen (docs/202 §5.4b).
         static int UfWhy(Sim s)
         {
-            bool live = GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown;
-            if (!live) return UnseenFallbackCore.kNotLive;
+            if (!GameStates.IsLiveState || GameStates.IsTravelling || GameStates.IsWorldShuttingDown) return UnseenFallbackCore.kNotLive;
             if (s == null || s.HasBeenDestroyed || s.SimDescription == null) return UnseenFallbackCore.kGone;
-            Lot lot = s.LotCurrent;
+            if (s.IsSelectable || s.Household == Household.ActiveHousehold) return UnseenFallbackCore.kHousehold;
+            if (UfLotSeen(s.LotCurrent)) return UnseenFallbackCore.kActiveLot;
+            if (World.IsObjectOnScreen(s)) return UnseenFallbackCore.kOnScreen;
+            if (!UfPosUnseen(s.Position, kUfSimRadiusM)) return UnseenFallbackCore.kNearViewers;
+            if (UfHeld(s)) return UnseenFallbackCore.kHeld;
             Sim t = s.CurrentInteraction != null ? s.CurrentInteraction.Target as Sim : null;
-            return UnseenFallbackCore.Why(true, true, s.IsSelectable || s.Household == Household.ActiveHousehold,
-                UfLotSeen(lot), World.IsObjectOnScreen(s), UfPosUnseen(s.Position, kUfSimRadiusM), UfHeld(s),
-                t != null && t != s && (t.IsSelectable || t.Household == Household.ActiveHousehold || World.IsObjectOnScreen(t) || !UfPosUnseen(t.Position, kUfSimRadiusM)));
+            return t != null && t != s && (t.IsSelectable || t.Household == Household.ActiveHousehold || World.IsObjectOnScreen(t) || !UfPosUnseen(t.Position, kUfSimRadiusM))
+                ? UnseenFallbackCore.kSocialSeen : UnseenFallbackCore.kSeen;
         }
 
         // docs/202 §2.1 camera checks. Seen unless ts3native's camera query (unseenfb.cpp UfCamMsg: the game's camera frustum
@@ -280,6 +302,23 @@ namespace Ts3Fixes
             finally { holds.Remove(id); }
         }
 
+        // docs/202 §3.6.4 lot trips (unseenfbtrip / unseenfbtriphold): D's rules on top of the trip shortcut's own (townie, lot rules,
+        // SafeSpot verdict for `spot`): the Sim's own task in a yielding context, Sim and spot unseen by the camera checks (§2), start
+        // and the destination lot not proven in different flood colours (unknown = allowed, as the shortcuts always were), then the
+        // walk-time hold (UfHold: in transit for our watchdogs and the harness, camera re-checked every sim-minute) and the same
+        // checks again right before the caller places the Sim. false = the caller runs the game's own trip from where the Sim stands.
+        static bool UfTripHold(Sim sim, Lot lot, Vector3 spot)
+        {
+            int[] c = PatchCounters();
+            if (Simulator.CurrentTask != sim.ObjectId || !MayYield()) { c[347]++; return false; }
+            if (UfWhy(sim) != 0 || !UfGoalUnseen(spot)) { c[345]++; return false; }
+            if (UfSameComponent(sim, sim.Position, spot, lot) < 0) { c[346]++; return false; }
+            if (!UfHold(sim, spot, UfPreCore.HoldMinutes((spot - sim.Position).Length())) || sim.HasBeenDestroyed || UfWhy(sim) != 0
+                || !TownieUnseen(sim, null) || !UfGoalUnseen(spot) || LotManager.GetLotAtPoint(spot) != lot) { c[345]++; return false; }
+            c[344]++;
+            return true;
+        }
+
         // phase B (StuckCheckRun): true = deferred (re-armed at the same round, nothing planned)
         static bool UfStuckDefer(object helper, Sim sim)
         {
@@ -316,7 +355,11 @@ namespace Ts3Fixes
             // kind 0 Plan, 1 Replan, 2 PlanFromPoint, 3 ReplanFromPoint (the A10 kinds)
             RoutePlanResult UfPlan(int kind, Vector3 p)
             {
+                int t0 = System.Environment.TickCount;
+                sUfLastWhy = -1; sUfLastMarked = sUfLastCut = false; sUfLastSim = null;
                 RoutePlanResult r = UfPlanBody(kind, p);
+                UfSlowPlanLog(kind, unchecked(System.Environment.TickCount - t0));
+                UfLoopNote(Follower, r);  // docs/202 §5.7 E (unseenfbloopdet)
                 if (sUfFill.Route != null && ReferenceEquals(sUfFill.Route, this))
                 {
                     if (r.mType == RoutePlanResultType.Succeeded) UfFillNote();
@@ -337,6 +380,7 @@ namespace Ts3Fixes
                     return UfInner(kind, p);
                 int[] c = PatchCounters();
                 int why = UfWhy(sim);
+                sUfLastWhy = why; sUfLastSim = sim;
                 if (why != 0)
                 {
                     RoutePlanResult lr;
@@ -362,6 +406,7 @@ namespace Ts3Fixes
                 if (!ShortcutOn("unseenfbplan")) return UfInner(kind, p);
                 if (!UfSend(1)) { c[311]++; return UfInner(kind, p); }
                 c[305]++;
+                sUfLastMarked = true;
                 bool cut = false;
                 RoutePlanResult r;
                 // docs/202 §3.7: Overwatch's Stuck Check V2 (OnPostPlan, inside the original plan) must not count a cut plan as the
@@ -374,6 +419,8 @@ namespace Ts3Fixes
                 if (ms > c[312]) c[312] = ms;
                 if (!cut || r.mType == RoutePlanResultType.Succeeded) return r;
                 c[306]++;
+                sUfLastCut = true;
+                UfGuardNote(id, "cut (kind " + kind + ")");
                 UfNotAFailure(id, dest);
                 if (kind != 0) sUfNotFail = false;  // only Route.Plan (PlanHook) reads it
                 RoutePlanResult tr;
@@ -586,6 +633,7 @@ namespace Ts3Fixes
                 bool marked = UfSend(1);
                 try { r = PlanBackoff(); }
                 finally { if (marked) UfSend(2); }
+                UfGuardNote(sim.ObjectId.Value, "teleport, next plan " + r.mType);  // §5.7: the post-teleport plan result
                 return true;
             }
         }

@@ -95,6 +95,11 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kUnseenFallbackPre value="False" />
     <kUnseenFallbackArrive value="False" />
     <kUnseenFallbackLeave value="False" />
+    <kUnseenFallbackTrip value="False" />
+    <kUnseenFallbackTripHold value="False" />
+    <kUnseenFallbackLoopDetect value="False" />
+    <kUnseenFallbackLoopBreak value="False" />
+    <kUnseenFallbackFinish value="False" />
     <kOverwatchIgnoreStuckProbes value="True" />
   </Current_Tuning>
 </base>
