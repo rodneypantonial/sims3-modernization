@@ -70,6 +70,8 @@
 // stop rule holds; row.stop and the verdict keep 'stopped at N events after M min (...)' (or 'loop cap reached: ..., rule not met').
 // profile.frameLead: {service, ms?, min, lotAdds?} -> profile-world.ts --frame-lead (frame-lead.ts pass rule: frames > ms led by that main-slot service, docs/169).
 // profile.fixesOff: "name,name" -> profile-world.ts --fixes-off (those switches off for the whole run).
+// profile.fixesReport: "prefix,prefix": every ts3fixes `patches` key starting with one (numbers before/after, lists as read at the
+// end, e.g. unseenfbpre_callers) goes into row.fixActivity and the `ts3fixes activity:` line; every fixesOn switch name is a prefix too.
 // profile.fixesRequire: "name>=1,name<5000" -> profile-world.ts --fixes-require (ts3fixes counter rules checked at the end; FAIL verdict when one fails).
 // profile.hitchTasks: ["<regex>[@ms]>=N" | "<regex>[@ms]<N"] -> profile-world.ts --hitch-tasks (hitch lines naming the expected script task, docs/169; FAIL verdict when one fails).
 // profile.fixesOn: "name,name" -> profile-world.ts --fixes-on (those switches on for the whole run; e.g. autshadow, whose tuning is off).
@@ -247,6 +249,7 @@ export function parseQueue(json: unknown): Job[] {
     if (j.run.profile?.seed !== undefined && !Number.isInteger(j.run.profile.seed)) throw new Error(`${at}: run.profile.seed must be an integer`);
     if (j.run.profile?.repro !== undefined && typeof j.run.profile.repro !== 'string') throw new Error(`${at}: run.profile.repro must be a repro id`);
     if (j.run.profile?.ab !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.ab))) throw new Error(`${at}: run.profile.ab must be comma-separated switch names`);
+    if (j.run.profile?.fixesReport !== undefined && !/^[a-z0-9_]+(,[a-z0-9_]+)*$/.test(String(j.run.profile.fixesReport))) throw new Error(`${at}: run.profile.fixesReport must be comma-separated counter name prefixes`);
     if (j.run.profile?.fixesOff !== undefined && !/^[a-z0-9]+(,[a-z0-9]+)*$/.test(String(j.run.profile.fixesOff))) throw new Error(`${at}: run.profile.fixesOff must be comma-separated switch names`);
     if (j.run.profile?.fixesRequire !== undefined) parseRequire(String(j.run.profile.fixesRequire));
     if (j.run.profile?.hitchTasks !== undefined) parseHitchTasks(j.run.profile.hitchTasks);
@@ -648,8 +651,15 @@ export function eventCovered(when: '3am' | 'load', t0: any, t1: any, margin = 10
 // on), so gating the record on it dropped owchain_alarms on every release-defaults job (docs/196 §4 step 1).
 // judged (fails, notes) only when on from the job's configuration (profile fixesOn/fixesOff), else the switch read after the run:
 // profile-world.ts restores the switches before p1 is read, so a --fixes-on switch reads off there (docs/163 §10.2)
-export function fixActivity(p0: any, p1: any, t0: any, t1: any, cfg: { fixesOn?: string; fixesOff?: string } = {}) {
-  const fails: string[] = [], notes: string[] = [], counters: Record<string, { before: number | null; after: number }> = {};
+// cfg.report: comma prefixes (profile.fixesReport + fixesOn names): matching `patches` keys are recorded too (counters: numbers,
+// lists: arrays as read at the end), so a job shows why a fix did not act (docs/202 §3.6.3: D reject counters, refused callers)
+export function fixActivity(p0: any, p1: any, t0: any, t1: any, cfg: { fixesOn?: string; fixesOff?: string; report?: string } = {}) {
+  const fails: string[] = [], notes: string[] = [], counters: Record<string, { before: number | null; after: number }> = {}, lists: Record<string, unknown[]> = {};
+  const pre = cfg.report?.split(',').filter(Boolean) ?? [];
+  for (const k of p1 && pre.length ? Object.keys(p1).filter(k => pre.some(x => k.startsWith(x))) : []) {
+    if (typeof p1[k] === 'number') counters[k] = { before: p0 && typeof p0[k] === 'number' ? p0[k] : null, after: p1[k] };
+    else if (Array.isArray(p1[k])) lists[k] = p1[k];
+  }
   const applied: string[] = Array.isArray(p1?.applied) ? p1.applied.map(String) : [];
   const on = new Set(cfg.fixesOn?.split(',') ?? []), off = new Set(cfg.fixesOff?.split(',') ?? []);
   for (const a of ACTIVITY.filter(x => x.fix && p1 && x.counters.every(k => k in p1))) {
@@ -663,11 +673,14 @@ export function fixActivity(p0: any, p1: any, t0: any, t1: any, cfg: { fixesOn?:
     if (eventCovered(a.when!, t0, t1)) fails.push(`self check: ${a.what} on but ${a.counters.join('+')} ${a.when === 'load' ? 'is' : 'rose'} ${d} although sim time ${t0?.clock}+${Math.round(Number(t1?.minutes_total) - Number(t0?.minutes_total))} min covered ${a.when === '3am' ? '03:00' : 'the after-load pass'}: fix idle, run void`);
     else notes.push(`${a.what}: not reached (sim ${t0?.clock ?? '?'} +${Math.round(Number(t1?.minutes_total) - Number(t0?.minutes_total)) || 0} min, no ${a.when === '3am' ? '03:00' : 'after-load pass'})`);
   }
-  return { fails, notes, counters };
+  return { fails, notes, counters, lists };
 }
-// fixActivity's cfg: the job profile's fixesOn plus every repro item's own fixesOn (on in some window), the job's fixesOff
-export const jobFixesCfg = (p: any) => ({
-  fixesOn: [p?.fixesOn, ...(p?.repros ?? []).map((r: any) => r?.fixesOn)].filter(Boolean).join(',') || undefined, fixesOff: p?.fixesOff });
+// fixActivity's cfg: the job profile's fixesOn plus every repro item's own fixesOn (on in some window), the job's fixesOff;
+// report = fixesReport + those fixesOn names
+export const jobFixesCfg = (p: any) => {
+  const fixesOn = [p?.fixesOn, ...(p?.repros ?? []).map((r: any) => r?.fixesOn)].filter(Boolean).join(',') || undefined;
+  return { fixesOn, fixesOff: p?.fixesOff, report: [p?.fixesReport, fixesOn].filter(Boolean).join(',') || undefined };
+};
 // ts3native.log copies to merge into the call-site DB: each repro slice (own game start after a reload) and the row's copy;
 // mergeLog is idempotent per run, so slices of one start add only their growth
 export const callsiteLogs = (row: any): string[] => [...new Set<string>([...(row.repros ?? []).map((r: any) => r.nativeLog), row.nativeLog].filter(Boolean))];
@@ -962,7 +975,12 @@ if (values['self-check']) {
   const scOff = { ...sc, stuckcheckown: false };
   assert.equal(Object.keys(fixActivity(scOff, { ...scOff, stuckcheck_reset: 2 }, night[0], night[1], { fixesOn: 'stuckcheckown,stuckcheckcap' }).counters).length, 5);
   assert.deepEqual(fixActivity(fx, fx, night[0], night[1], { fixesOff: 'overwatchchain,stuckcheckasync' }).fails, []); // off for the run: no idle void
-  assert.deepEqual(jobFixesCfg({ fixesOn: 'a', fixesOff: 'c', repros: [{ id: 'r1', fixesOn: 'b' }, 'r2'] }), { fixesOn: 'a,b', fixesOff: 'c' });
+  // fixesReport (docs/202 §3.6.3): prefix-matched numbers before/after, lists as read, switches and other keys skipped
+  const uf0 = { unseenfbpre: true, unseenfbpre_rj_samelot: 1 }, uf1 = { ...uf0, unseenfbpre_rj_samelot: 9, unseenfbleave_rj_goalseen: 2, unseenfbpre_callers: ['3 Foo.Run'], unseenenv_x: 1 };
+  const ufR = fixActivity(uf0, uf1, night[0], night[1], jobFixesCfg({ fixesOn: 'unseenfbpre', fixesReport: 'unseenfb' }));
+  assert.deepEqual([ufR.counters, ufR.lists, ufR.fails], [{ unseenfbpre_rj_samelot: { before: 1, after: 9 }, unseenfbleave_rj_goalseen: { before: null, after: 2 } }, { unseenfbpre_callers: ['3 Foo.Run'] }, []]);
+  assert.equal(jobFixesCfg({ repros: [{ fixesOn: 'unseenfbarrive' }] }).report, 'unseenfbarrive');
+  assert.deepEqual(jobFixesCfg({ fixesOn: 'a', fixesOff: 'c', repros: [{ id: 'r1', fixesOn: 'b' }, 'r2'] }), { fixesOn: 'a,b', fixesOff: 'c', report: 'a,b' });
   assert.deepEqual(callsiteLogs({ nativeLog: 'm', repros: [{ nativeLog: 'a' }, {}, { nativeLog: 'm' }] }), ['a', 'm']);
   assert.deepEqual(featureIdle(fIni.replace('DeferFootprint=1', 'DeferFootprint=0').replace('Mode=1', 'Mode=0'), {}, { rgEntries: 3, usfDeferred: 0, rcDeferred: 0, rcWould: 0 }), []);
   assert.deepEqual(featureIdle(fIni, null, null), []);
@@ -2035,9 +2053,11 @@ for (const [n, j] of jobs.entries()) {
     }
     if (fx0) {
       const fx1 = await fixRead(), fa = fixActivity(fx0.p, fx1.p, fx0.t, fx1.t, jobFixesCfg(j.run.profile));
-      row.fixActivity = { simStart: fx0.t?.clock, simMinutes: Number(fx1.t?.minutes_total) - Number(fx0.t?.minutes_total), counters: fa.counters, notes: fa.notes };
-      const cs = Object.entries(fa.counters).map(([k, v]) => `${k} ${v.before ?? '?'}->${v.after}`).join(', ');
-      if (cs || fa.notes.length) row.verdict.push(`ts3fixes activity: ${[cs, ...fa.notes].filter(Boolean).join('; ')}`);
+      row.fixActivity = { simStart: fx0.t?.clock, simMinutes: Number(fx1.t?.minutes_total) - Number(fx0.t?.minutes_total), counters: fa.counters, lists: fa.lists, notes: fa.notes };
+      // 0->0 counters stay in the row only (a fixesReport prefix can match ~30 gates)
+      const cs = Object.entries(fa.counters).filter(([, v]) => v.after || v.before).map(([k, v]) => `${k} ${v.before ?? '?'}->${v.after}`).join(', ');
+      const ls = Object.entries(fa.lists).map(([k, v]) => `${k} [${v.slice(0, 12).join(' | ')}${v.length > 12 ? ` | +${v.length - 12}` : ''}]`).join('; ');
+      if (cs || ls || fa.notes.length) row.verdict.push(`ts3fixes activity: ${[cs, ls, ...fa.notes].filter(Boolean).join('; ')}`);
       for (const f of fa.fails) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
     }
     if (j.minCounters !== undefined) { row.nativeDump = join(OUT, `${queueName}-${date}-${j.id}-native.json`); writeFileSync(row.nativeDump, JSON.stringify({ before: c0, after: c1, maxReset: resetMax && Number(c0?.vfMaxReset) > 0 }, null, 1)); }

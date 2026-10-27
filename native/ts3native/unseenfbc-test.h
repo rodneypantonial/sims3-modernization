@@ -22,9 +22,10 @@ static void TestUnseenFallbackSites() {
                       offsetof(Ts3nCounters, ufcTry) == 0x53A8 && offsetof(Ts3nCounters, ufcSeen) == 0x53F8 &&
                       offsetof(Ts3nCounters, ufcMaxWaitUs) == 0x5418 && offsetof(Ts3nCounters, ufcStale) == 0x5420 &&
                       offsetof(Ts3nCounters, ufEffCutUs) == 0x5424 && offsetof(Ts3nCounters, ufOverSamples) == 0x543C &&
-                      sizeof(Ts3nCounters) == 5392 * 4,
-                  "counters v139 layout after v138 (docs/registry.md)");
-    assert(k.version == 139);
+                      offsetof(Ts3nCounters, ufwMode) == 0x5440 && offsetof(Ts3nCounters, ufwRelease) == 0x545C &&
+                      offsetof(Ts3nCounters, ufwFull) == 0x5470 && sizeof(Ts3nCounters) == 5408 * 4,
+                  "counters v139 / v140 layout after v138 (docs/registry.md)");
+    assert(k.version == 140);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // save and fake
     const UnCompFn compSave = g_unComp;
@@ -73,7 +74,7 @@ static void TestUnseenFallbackSites() {
     for (int i = 0; i < UFC_MAX; i++) Send(8, i), Send(9, 0);
     assert(Send(9, 0) == 0 && k.ufcPushBad == bad0 + 2 && Send(10, UFC_MAX) == 0 && k.ufcPushBad == bad0 + 3);
     assert(Push(true) == 1);
-    g_ufcList.at = GetTickCount() - 2000;  // stale: nothing listed
+    g_ufcList.at = GetTickCount() - 4000;  // stale (3 s list life): nothing listed
     const LONG stale0 = k.ufcStale;
     assert(!UfcListed(farLo, farHi) && k.ufcStale == stale0 + 1);
     assert(Push(true) == 1);
@@ -132,6 +133,108 @@ static void TestUnseenFallbackSites() {
     assert(UfcAvHook(NULL, agentBuf + 8, NULL, NULL, 0) == 0 && g_ufcFkRel == 1 && g_ufcFkNext == 1 && k.ufcFake[1] == fake1 + 1);
     t_unAgent = NULL, t_unCls = 0;
     assert(UfcAvHook(NULL, agentBuf + 8, NULL, NULL, 0) == 0x77);  // outside an agent update: the game's call
+
+    // 3b. docs/202 §3.4.2 FinishWalk: a flagged Sim is held (no fake counted, its next updates skipped until released by
+    //     ts3fixes, the camera class, the pushed list, staleness or time); an unflagged one gets the game's own wait
+    {
+        const LONG fmSave = k.ufwMode;
+        g_ufwOn = true, k.ufwMode = 1;
+        memset(g_ufw, 0, sizeof(g_ufw)), g_ufwN = 0;
+        auto PushF = [&](bool flagFar) {
+            Send(7, 0);
+            Send(8, farLo), Send(9, farHi);
+            if (flagFar) assert(Send(15, 1) == 1);
+            Send(8, nearLo), Send(9, nearHi);
+            return Send(10, 2);
+        };
+        assert(PushF(false) == 1);
+        t_unAgent = agentBuf, t_unCls = 2;
+        g_ufcFkR = -2, g_ufcFkNext = 0;
+        g_async.handle = 0x25000010;
+        const LONG fakeA = k.ufcFake[0], plain0 = k.ufwPlainWait, holds0 = k.ufwHolds;
+        C1();  // listed, not flagged: the game's own call (its wait), no fake, no hold
+        assert(g_ufcFkNext == 1 && k.ufcFake[0] == fakeA && k.ufwPlainWait == plain0 + 1 && g_ufwN == 0);
+        assert(UfcAvHook(NULL, agentBuf + 8, NULL, NULL, 0) == 0x77 && g_ufcFkNext == 2 && k.ufwPlainWait == plain0 + 2);
+        assert(PushF(true) == 1 && g_ufcList.fin[0] == 1 && g_ufcList.fin[1] == 0);
+        C1();  // flagged: held, this tick the skipped answer, no fake counted
+        assert(g_ufcFkNext == 2 && k.ufcFake[0] == fakeA && k.ufwHolds == holds0 + 1 && g_ufwN == 1);
+        assert(UfcAvHook(NULL, agentBuf + 8, NULL, NULL, 0) == 0 && k.ufwHolds == holds0 + 1 && g_ufwN == 1);  // same agent: one hold
+        t_unAgent = NULL, t_unCls = 0;
+        // the agent-update thunk's skip: unseen = skipped; other agents untouched
+        const LONG held0 = k.ufwHeldTicks;
+        static u8 otherAgent[0x110];
+        assert(UfwHoldSkip(agentBuf, 1) && k.ufwHeldTicks == held0 + 1 && !UfwHoldSkip(otherAgent, 1));
+        // ts3fixes: any unclaimed, claim (held? by id), release as finished
+        assert(Send(20, 0) == 1 && Send(16, farLo) == 1 && Send(17, farHi) == 1 && k.ufwClaims >= 1 && Send(20, 0) == 0);
+        assert(Send(16, nearLo) == 1 && Send(17, nearHi) == 0);  // not held
+        const LONG fin0 = k.ufwRelease[UFW_R_FINISH], gu0 = k.ufwRelease[UFW_R_GIVEUP], seen0f = k.ufwRelease[UFW_R_SEEN],
+                   exp0 = k.ufwRelease[UFW_R_EXPIRED];
+        Send(16, farLo);
+        assert(Send(18, farHi) == 1 && g_ufwN == 0 && k.ufwRelease[UFW_R_FINISH] == fin0 + 1 && !UfwHoldSkip(agentBuf, 1));
+        assert(Send(17, farHi) == 0 && Send(19, farHi) == 0);  // gone
+        // released: its flag is cleared, so its stop pass meeting a busy lock gets the game's wait, not a new hold
+        t_unAgent = agentBuf, t_unCls = 2;
+        const LONG plain1 = k.ufwPlainWait;
+        C1();
+        assert(g_ufwN == 0 && k.ufwPlainWait == plain1 + 1);
+        t_unAgent = NULL, t_unCls = 0;
+        assert(PushF(true) == 1);
+        auto Hold = [&]() {
+            t_unAgent = agentBuf, t_unCls = 2;
+            C1();
+            t_unAgent = NULL, t_unCls = 0;
+            assert(g_ufwN == 1);
+        };
+        // given up by ts3fixes
+        Hold();
+        Send(16, farLo);
+        assert(Send(19, farHi) == 1 && g_ufwN == 0 && k.ufwRelease[UFW_R_GIVEUP] == gu0 + 1);
+        assert(g_ufcList.fin[0] == 0 && PushF(true) == 1);  // a release clears the flag until the next list
+        // the camera class turns visible: released, the update runs
+        Hold();
+        assert(!UfwHoldSkip(agentBuf, 0) && g_ufwN == 0 && k.ufwRelease[UFW_R_SEEN] == seen0f + 1);
+        // dropped from the flag in the next push: released at END
+        Hold();
+        assert(PushF(false) == 1 && g_ufwN == 0 && k.ufwRelease[UFW_R_SEEN] == seen0f + 2);
+        assert(PushF(true) == 1);
+        // unclaimed 3 s; claimed but held 10 min; stale list; mode off
+        Hold();
+        for (auto& h : g_ufw) if (h.agent) h.at -= kUfwClaimMs + 1;
+        assert(!UfwHoldSkip(agentBuf, 1) && g_ufwN == 0 && k.ufwRelease[UFW_R_EXPIRED] == exp0 + 1);
+        Hold();
+        Send(16, farLo), Send(17, farHi);
+        for (auto& h : g_ufw) if (h.agent) h.at -= kUfwClaimMs + 1;
+        assert(UfwHoldSkip(agentBuf, 1));  // claimed: kept past 3 s
+        for (auto& h : g_ufw) if (h.agent) h.at -= kUfwMaxMs;
+        assert(!UfwHoldSkip(agentBuf, 1) && k.ufwRelease[UFW_R_EXPIRED] == exp0 + 2);
+        Hold();
+        g_ufcList.at = GetTickCount() - 4000;
+        assert(!UfwHoldSkip(agentBuf, 1) && k.ufwRelease[UFW_R_EXPIRED] == exp0 + 3);
+        assert(PushF(true) == 1);
+        Hold();
+        k.ufwMode = 0;
+        assert(!UfwHoldSkip(agentBuf, 1) && k.ufwRelease[UFW_R_EXPIRED] == exp0 + 4);
+        // mode off: C1 / C2 fake as before
+        t_unAgent = agentBuf, t_unCls = 2, g_ufcFkNext = 0;
+        C1();
+        assert(g_ufcFkNext == 0 && k.ufcFake[0] == fakeA + 1 && g_ufwN == 0);
+        t_unAgent = NULL, t_unCls = 0;
+        // all slots in use: the game's own wait
+        k.ufwMode = 1;
+        for (auto& h : g_ufw) h.agent = otherAgent, h.lo = 1, h.hi = 2, h.at = GetTickCount(), h.claimed = true;
+        g_ufwN = UFW_MAX;
+        const LONG full0 = k.ufwFull;
+        t_unAgent = agentBuf, t_unCls = 2, g_ufcFkNext = 0;
+        C1();
+        assert(g_ufcFkNext == 1 && k.ufwFull == full0 + 1);
+        t_unAgent = NULL, t_unCls = 0;
+        memset(g_ufw, 0, sizeof(g_ufw)), g_ufwN = 0;
+        // FinishWalk not installed: codes refused
+        g_ufwOn = false;
+        assert(Send(16, farLo) == 0 && Send(20, 0) == 0);
+        k.ufwMode = fmSave;
+        assert(Push(true) == 1);
+    }
 
     // 4. C3 through rtoro.cpp's states, owner = the running script task (the host stand-in's +0xBD0): timed out = code 4,
     //    nothing released; taken = the game's route part, one release; a task Sim on screen, an unlisted task, no task = the
@@ -208,6 +311,21 @@ static void TestUnseenFallbackSites() {
     Task(farLo, farHi);
     assert(FgGame(NULL, NULL, NULL, NULL, 0, NULL, 1) == 0 && g_ufcFkNext == 3 && g_ufcFkRel == 1);  // no job: plain
     g_async.state = A_RUNNING;
+    // §5.6: at most kUfcC4Cap fakes per Sim per second, then the game's answer; the logged Sim id reads back bit by bit
+    memset(g_ufcRecent, 0, sizeof(g_ufcRecent));
+    g_ufcSpentH = 0, g_ufcFkR = -2, g_ufcFkNext = 0, g_ufcC4LogSet = false;
+    const LONG fake3b = k.ufcFake[3], cap0 = g_ufcC4Capped;
+    for (int i = 0; i < kUfcC4Cap; i++) assert(FgGame(NULL, NULL, NULL, NULL, 0, NULL, 1) == 1);
+    assert(k.ufcFake[3] == fake3b + kUfcC4Cap && g_ufcFkNext == 0 && g_ufcC4Capped == cap0);
+    assert(FgGame(NULL, NULL, NULL, NULL, 0, NULL, 1) == 0 && g_ufcFkNext == 1 && g_ufcC4Capped == cap0 + 1 && k.ufcFake[3] == fake3b + kUfcC4Cap);
+    {
+        u64 id = 0;
+        assert(UfcC4LogMsg(64) == 1);
+        for (DWORD b = 0; b < 64; b++) id |= (u64)UfcC4LogMsg(b) << b;
+        assert(id == ((u64)farHi << 32 | farLo) && UfcC4LogMsg(65) == 1 && UfcC4LogMsg(64) == 0);
+    }
+    for (auto& e : g_ufcRecent) e.c4At -= kUfcC4WindowMs;  // the second ended: fakes again
+    assert(FgGame(NULL, NULL, NULL, NULL, 0, NULL, 1) == 1 && k.ufcFake[3] == fake3b + kUfcC4Cap + 1);
     g_ufcFg = NULL, g_fgOrig = fgSave;
     FakeTask(0, 0);
     g_hostPtr = hostSave;
@@ -223,7 +341,9 @@ static void TestUnseenFallbackSites() {
         for (const wchar_t* c : {L"C1", L"C2", L"C3", L"C4"}) WritePrivateProfileStringW(L"UnseenFallback", c, L"0", ini);
         const LONG ready0 = k.asyncReady, wait0 = k.ufcWaitMs;
         k.asyncReady = 1, g_async.owner = 0, k.ufcReady = 0;
+        WritePrivateProfileStringW(L"UnseenFallback", L"FinishWalk", L"1", ini);
         assert(ApplyUnseenFallbackSites(ini) && k.ufcWaitMs == 37 && k.ufcReady == 0 && k.ufcMode == 0);
+        assert(k.ufwReady == 0 && !g_unHoldSkip && !g_ufwOn);  // FinishWalk needs C1 or C2 and the agent context: SKIP
         k.asyncReady = 0, k.ufcWaitMs = wait0;
         assert(ApplyUnseenFallbackSites(ini) && k.ufcWaitMs == wait0);  // no [RouteAsync]: SKIP before any read
         k.asyncReady = ready0;
@@ -242,7 +362,7 @@ static void TestUnseenFallbackSites() {
     g_ufcSpentH = 0;
     memset(g_ufcRecent, 0, sizeof(g_ufcRecent));
     printf("unseen fallback sites (docs/202 §3.4): list channel, C1/C2 agent rules, timed take held/skipped, one wait per job, C3 states and "
-           "C4 placement answer by the running task's Sim ok\n");
+           "C4 placement answer by the running task's Sim, FinishWalk holds (flag, claim, release, seen, list drop, expiry, plain wait) ok\n");
 }
 
 // TestUfStrict: docs/202 §3.1.1 strict DeadlineMs: overrun learning per path (p99, floor 30 ms, 80 ms until 20 samples, the

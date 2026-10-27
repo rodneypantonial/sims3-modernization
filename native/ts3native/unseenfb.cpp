@@ -210,7 +210,9 @@ static u8 UfSphereUnseen(const float* s) {
     }
     return 1;
 }
-static u8 UfcListMsg(int code, DWORD lo);  // unseenfbc.cpp: codes 7-10, the unseen-Sim list for the C1-C4 sites (docs/202 §3.4)
+static u8 UfcListMsg(int code, DWORD lo);
+static u8 UfcC4LogMsg(DWORD lo);
+static u8 UfwMsg(int code, DWORD lo);  // unseenfbc.cpp: codes 7-10, the unseen-Sim list for the C1-C4 sites (docs/202 §3.4)
 // docs/202 §3.5 (1): the game's flood colours of the world graph R near a point, for D's same-component test (ts3fixes UfPre).
 // R = world+0x54 (world = the RoutingWorld_Get slot 0x11D9128): w, h, chunk offsets +0x08, records +0x0C, size +0x10, colours
 // built +0x14, per-chunk first colour index +0x18/+0x1C, one signed colour byte per waypoint +0x28/+0x2C [verified, docs/99
@@ -283,6 +285,8 @@ static u8 UfColourMsg(int code) {
 static u8 UfCamMsg(DWORD lo, DWORD hi) {
     const int code = (int)(hi >> 16 & 0xFF);
     if (code >= 7 && code <= 10) return UfcListMsg(code, lo);
+    if (code == 14) return UfcC4LogMsg(lo);  // docs/202 §5.6: the last Sim C4 answered "not free"
+    if (code >= 15 && code <= 20) return UfwMsg(code, lo);  // docs/202 §3.4.2 FinishWalk (unseenfbc.cpp)
     float f;
     memcpy(&f, &lo, 4);
     if (code >= 3 && code <= 5) {

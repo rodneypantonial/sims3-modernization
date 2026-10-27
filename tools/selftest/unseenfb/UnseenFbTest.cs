@@ -55,6 +55,44 @@ static class UnseenFbTest
         for (ulong s = 0; s < (ulong)UfLimiter.kMaxSims + 10; s++) b.Cut(s, 0, 0, 0, 5, "x");
         Check(b.Count <= UfLimiter.kMaxSims, "table bound");
 
+        // §5.6 C-site push cadence and verdict cache
+        Check(UnseenFallbackCore.SitesSleepTicks(0, 20, 500) == UnseenFallbackCore.kSleepDefault, "no rate: default sleep");
+        Check(UnseenFallbackCore.SitesSleepTicks(8, 20, 500) == 200, "speed 3: 8 ticks / 20 ms -> 200 ticks per 500 ms");
+        Check(UnseenFallbackCore.SitesSleepTicks(1, 1000, 500) == 1, "slow clock floors at 1");
+        Check(UnseenFallbackCore.SitesSleepTicks(1000, 1, 500) == UnseenFallbackCore.kSleepMax, "cap");
+        Check(UnseenFallbackCore.SitesSleepTicks(8, 20, -5) == 1, "late push: shortest sleep");
+        Check(!UnseenFallbackCore.SitesRecheck(0.5f, 100) && UnseenFallbackCore.SitesRecheck(1f, 100) && UnseenFallbackCore.SitesRecheck(0f, UnseenFallbackCore.kRecheckMs) && UnseenFallbackCore.SitesRecheck(0f, -1), "recheck rule");
+
+        // §5.7 E: loop detector (restart after a failed plan, same key, inside the window; flags once)
+        UfLoopDetector ld = new UfLoopDetector(750);
+        object i0 = new object();
+        Check(!ld.Note(1, "Eat@5", i0, true, 0) && !ld.Note(1, "Eat@5", i0, false, 10), "first instance, replans: no restart");
+        bool flagged = false;
+        for (int i = 1; i <= UfLoopDetector.kLoopRestarts; i++) { bool f = ld.Note(1, "Eat@5", new object(), true, 10 + i); Check(f == (i == UfLoopDetector.kLoopRestarts), "flag on restart " + i); flagged |= f; }
+        Check(flagged && !ld.Note(1, "Eat@5", new object(), true, 30), "flags once per streak");
+        UfLoopDetector ld2 = new UfLoopDetector(750);
+        ld2.Note(2, "K", new object(), false, 0);
+        for (int i = 0; i < 10; i++) Check(!ld2.Note(2, "K", new object(), false, i + 1), "restarts after successes are not a loop");
+        UfLoopDetector ld3 = new UfLoopDetector(750);
+        ld3.Note(3, "K", new object(), true, 0);
+        for (int i = 0; i < 3; i++) ld3.Note(3, "K", new object(), true, 1 + i);
+        Check(!ld3.Note(3, "K", new object(), true, 800) && ld3.Restarts(3) == 0, "window end starts over");
+        ld3.Note(3, "K", new object(), true, 801);
+        Check(!ld3.Note(3, "Other", new object(), true, 802) && ld3.Restarts(3) == 0, "other key starts over");
+        // §5.7 E: breaker scope (Sim side: unseen only; lot side: Rodney's lot rules) and the per-tick budget
+        Check(UfLoopBreakCore.SimFix(true, UnseenFallbackCore.kSeen) && !UfLoopBreakCore.SimFix(false, UnseenFallbackCore.kSeen), "sim fix: live + unseen");
+        foreach (int wy in new int[] { UnseenFallbackCore.kHousehold, UnseenFallbackCore.kActiveLot, UnseenFallbackCore.kOnScreen, UnseenFallbackCore.kNearViewers, UnseenFallbackCore.kHeld, UnseenFallbackCore.kSocialSeen })
+            Check(!UfLoopBreakCore.SimFix(true, wy), "sim fix refused for why " + wy);
+        Check(UfLoopBreakCore.LotFix(true, false, true, false, false, false), "lot fix: unseen own/community lot");
+        Check(!UfLoopBreakCore.LotFix(true, false, true, false, true, false), "never a lot the active household owns");
+        Check(!UfLoopBreakCore.LotFix(true, false, true, false, false, true), "never with a household member there or heading there");
+        Check(!UfLoopBreakCore.LotFix(true, false, true, true, false, false), "never a lot in view");
+        Check(!UfLoopBreakCore.LotFix(true, true, true, false, false, false) && !UfLoopBreakCore.LotFix(true, false, false, false, false, false) && !UfLoopBreakCore.LotFix(false, false, true, false, false, false), "world lot, other lot, out of live");
+        UfTickBudget tb = new UfTickBudget(UfLoopBreakCore.kObjectsPerTick);
+        int used = 0;
+        for (int i = 0; i < 10; i++) if (tb.Try(100)) used++;
+        Check(used == UfLoopBreakCore.kObjectsPerTick && tb.Try(101), "per-tick budget, resets next tick");
+
         // D (unseenfbpre, docs/202 §3.5): hold time, deny list, follow-up callers, in-transit table
         Check(UfPreCore.HoldMinutes(0f) == UfPreCore.kMinHoldMin, "hold floor");
         Check(System.Math.Abs(UfPreCore.HoldMinutes(100f) - 100f * UfPreCore.kDetour / UfPreCore.kWalkMPerSimMin) < 0.001f, "hold = distance x detour / speed");
@@ -85,6 +123,36 @@ static class UnseenFbTest
         int n = UfPreCore.HandOffSteps(100f);
         Check(UfPreCore.HandOffAt(0) == UfPreCore.kHandOffGapM && UfPreCore.HandOffAt(n - 1) <= 100f - UfPreCore.kHandOffGapM
             && UfPreCore.HandOffAt(n) > 100f - UfPreCore.kHandOffGapM, "candidates stay kHandOffGapM from both ends");
+
+        // §3.6.4 lot trips: covered kinds unchanged unless unseenfbtriphold; mod subclasses only with unseenfbtrip, always held
+        Check(UfPreCore.TripMode(false, false, false) == 1 && UfPreCore.TripMode(false, true, false) == 1, "covered trip: placed at once as shipped");
+        Check(UfPreCore.TripMode(false, false, true) == 2 && UfPreCore.TripMode(false, true, true) == 2, "covered trip + unseenfbtriphold: held");
+        Check(UfPreCore.TripMode(true, false, false) == 0 && UfPreCore.TripMode(true, false, true) == 0, "mod subclass trip off without unseenfbtrip");
+        Check(UfPreCore.TripMode(true, true, false) == 2, "mod subclass trip with unseenfbtrip: held");
+        Check(UfPreCore.TripScanAssembly("StudentUnionLibrary", "ts3fixes") && !UfPreCore.TripScanAssembly("ts3fixes", "ts3fixes")
+            && !UfPreCore.TripScanAssembly("Sims3GameplaySystems", "ts3fixes") && !UfPreCore.TripScanAssembly("mscorlib", "ts3fixes")
+            && !UfPreCore.TripScanAssembly(null, "ts3fixes"), "scan mod assemblies only");
+
+        // docs/202 §3.4.2 finish the walk (UfFinishCore)
+        Check(UfFinishCore.HoldMinutes(0f) == 0f && UfFinishCore.HoldMinutes(-3f) == 0f && UfFinishCore.HoldMinutes(float.NaN) == 0f, "finish: no length = finish at once");
+        Check(System.Math.Abs(UfFinishCore.HoldMinutes(50f) - 50f / UfPreCore.kWalkMPerSimMin) < 0.001f, "finish: remaining length / speed, no detour");
+        Check(UfFinishCore.HoldMinutes(1e6f) == UfPreCore.kMaxHoldMin, "finish: capped at 2 sim-hours");
+        Check(UfFinishCore.RouteShape(true, false, 0, 1, UfFinishCore.kSimPath, false), "finish: last walking subpath");
+        Check(!UfFinishCore.RouteShape(false, false, 0, 1, UfFinishCore.kSimPath, false), "finish: vehicle / boat / UFO subclass");
+        Check(!UfFinishCore.RouteShape(true, true, 0, 1, UfFinishCore.kSimPath, false), "finish: already killed");
+        Check(!UfFinishCore.RouteShape(true, false, 1, 1, UfFinishCore.kSimPath, false), "finish: slaves");
+        Check(!UfFinishCore.RouteShape(true, false, 0, 2, UfFinishCore.kSimPath, false), "finish: a portal / door subpath left");
+        Check(!UfFinishCore.RouteShape(true, false, 0, 0, UfFinishCore.kSimPath, false), "finish: no path");
+        Check(!UfFinishCore.RouteShape(true, false, 0, 1, 1348865362u, false), "finish: portal path");
+        Check(!UfFinishCore.RouteShape(true, false, 0, 1, UfFinishCore.kSimPath, true), "finish: an action queued after");
+        Check(!UfFinishCore.Denied(UfFinishCore.kTerrainGoHere) && UfPreCore.Denied(UfFinishCore.kTerrainGoHere), "finish: a townie's Go Here allowed (D denies it)");
+        Check(UfFinishCore.Denied("Sims3.Gameplay.Core.Terrain+GoHereWith") && UfFinishCore.Denied("NRaas.GoHereSpace.Interactions.GoHereEx")
+            && UfFinishCore.Denied("Sims3.Gameplay.Actors.Sim+GoJogging") && !UfFinishCore.Denied("Sims3.Gameplay.Objects.Seating.Chair+Sit"), "finish: deny list otherwise D's");
+        Check(UfFinishCore.Step(true, true, true, 10, 20) == UfFinishCore.kKeep, "finish: hold until the walk time");
+        Check(UfFinishCore.Step(true, true, true, 20, 20) == UfFinishCore.kFinish, "finish: walk time over");
+        Check(UfFinishCore.Step(false, true, true, 30, 20) == UfFinishCore.kGiveUp, "finish: native released (seen, expired)");
+        Check(UfFinishCore.Step(true, false, true, 30, 20) == UfFinishCore.kGiveUp, "finish: route action changed");
+        Check(UfFinishCore.Step(true, true, false, 30, 20) == UfFinishCore.kGiveUp, "finish: seen at the finish check");
 
         if (fails > 0) { Console.WriteLine("unseenfb selftest FAILED: " + fails); Environment.Exit(1); }
         Console.WriteLine("unseenfb selftest ok");

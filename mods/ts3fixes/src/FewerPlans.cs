@@ -76,6 +76,9 @@ namespace Ts3Fixes
                     PatchCounters()[67]++;
                     return;
                 }
+                // docs/202 §5.6 (4): an unseen Sim's check only re-arms (phase B), so do it here, not through the async queue:
+                // queued + drained, every re-arm counted as a queued check (4,343 vs 769 in v020-natural IP) and cost a drain tick
+                if (ShortcutOn("unseenfbstuck") && UfStuckDefer(this, sim)) return;
                 if (sim != null && ShortcutOn("stuckcheckasync") && GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown)
                 {
                     StuckCheckDefer(this, sim);

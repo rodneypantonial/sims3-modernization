@@ -146,6 +146,9 @@ static bool UtWatched(const void* obj) {
 static float UtRateOwed(const u8* agent);
 static bool UtRateStep(u8* agent, int c, int kind, const float* pos, float dt, float* step, float* pre);
 static void UtFpFlush(bool pass);
+// docs/202 §3.4.2 [UnseenFallback] FinishWalk (unseenfbc.cpp UfwHoldSkip): true = this agent is held, skip its update this pass
+// (c = its class here: 0 visible, 1 unseen; a visible class ends the hold); NULL unless FinishWalk is installed
+static bool (*g_unHoldSkip)(u8* agent, int c);
 
 static void __fastcall UnAgentThunk(void* agent, void* edx, float dt) {
     Ts3nCounters& k = ts3native_counters;
@@ -185,7 +188,8 @@ static void __fastcall UnAgentThunk(void* agent, void* edx, float dt) {
     float pre = 0;  // owed time run first, as its own step, when dt + debt would pass behaviour B's 0.5 s clamp
     if (!rider && kind == 0) rider = UtHeldObj(*(void* const*)((const u8*)agent + 4));  // ridden / (dis)mounting horse or rider
     t_unKind = kind, t_unRider = rider;
-    if (g_utRateOn && !UtRateStep((u8*)agent, c, kind, pos, dt, &dt, &pre)) {
+    if (g_unHoldSkip && g_unHoldSkip((u8*)agent, c)) { t_unKind = 0, t_unRider = false; return; }  // held: no step, no event, no lock
+    if (g_utRateOn &&!UtRateStep((u8*)agent, c, kind, pos, dt, &dt, &pre)) {
         if (g_utWatch.flipped && g_utWatch.armed && UtWatched(*(void* const*)((const u8*)agent + 4))) UtWatchSkip(c == 0);
         return;
     }

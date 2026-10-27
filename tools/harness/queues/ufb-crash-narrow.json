@@ -7,7 +7,7 @@
         "scope": "unseen"
       },
       "note": "Crash S fix + writer (docs/67 §22.7, 0.36.100): [ArenaGuard] TailPad=1 keeps 64 bytes between every arena chunk's frames and its GC descriptor, [GcRootCheck] TailWatch=1 puts a sim-thread debug-register write watch past the end of any chunk whose new frame leaves < 16 bytes. Pass of the full ABBA with gc desc watch bad descriptors 0 = fixed; arena tail watch: hit lines name the overrunning writer (eip, frame method, area sizes, script stack); hits 0 and no crash = fixed, writer not seen in this run. Earlier: Crash S narrowing 1 (docs/67 §22.2): the crashing ABBA (off/on/on/off, both switches) with the control job ini (GcThreadCheck + CrashForensics Light; the control had them, the two crashes did not). Crash near 6.2 min in on #3 = arm implicated with the confound gone, and a minidump of the task frame; pass = the control pass may be timing, not the arm (stop the A/B reading there). 0.36.97 (docs/67 §22.5): GcRootCheck also runs the frame-word mark audit at each completed mark; on the next Crash S read the gc frame audit lines (unmarked frame word / chunk not marked / descriptor overwritten) before the fault and the mono fault task line (receiver mark bit, chain descriptors). 0.36.98 (docs/67 §22.6): GcRootCheck also checks every container, current and pooled chunk descriptor at each stopped mark (gc desc watch lines name the chunk, its state and the saved frame ending at the chunk end); the audit splits unmarked words into swept vs window (block stamped this cycle, EA keeps it).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -55,7 +55,7 @@
         "scope": "unseen"
       },
       "note": "0.36.102 (docs/67 §22.9): fix check with the pad OFF: [ArenaGuard] InitobjFix=1 (MINT_INITOBJ zeroed 12 bytes into 8-byte Int64/UInt64/Double slots; the 0.36.101 run caught it at end+0 from MSVCR80 memset called by 0xE589F7 in List<ulong>.RemoveAt). Pass = no hit with eip 711D4A81-like memset+0x61 at end+0, gc desc watch bad descriptors 0, restored 0, initobj size: clamped > 0; TailWatch + RestoreDesc stay on. 0.36.101 (docs/67 §22.8): the 0.36.100 run (PASS, 82 restored) logged only EA next-chunk header writes (trap eip = one past the write); the watch now arms DR0 = end (descriptor) + DR1 = end+4, filters EA header writers, logs 64 distinct (eip, method) with per-eip counts in the minute line: a hit at end+0 names the real writer. Writer at the real descriptor (docs/67 §22.7, 0.36.100): TailPad off (the 0.36.99 crash layout), TailWatch=1 (DR write watch on [end, end+16) = the descriptor word itself) + RestoreDesc=1. Hit lines name the writer; pass with restored >= 1 = descriptor loss mitigated by restore. Earlier: Crash S fix check (docs/67 §22.6, 0.36.98; 0.36.99 §22.6.1 watch inside the stop budget): ctl2 with [GcRootCheck] RestoreDesc=1 (a chunk whose last word lost EA descriptor 0x11F424C gets it back at each stopped mark, before the dirty-bit read). Pass of the full ABBA with restored >= 1 and no Crash S = descriptor loss confirmed as the cause and mitigated; crash with restored 0 = not the descriptor path.",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -103,7 +103,7 @@
         "scope": "unseen"
       },
       "note": "Crash S narrowing 2 / fix check (docs/67 §22.2): same ABBA with [ArenaGuard] (0.36.95). Read the minute line arena guard: release-all on a non-empty chain N, pooled chunks in use dropped M and the first-8 drop lines. Pass with M >= 1 = EA arena-pool duplicate confirmed and guarded (ship ArenaGuard on); M = 0 = not the arena path (the frame-rooting gap G-B8 stays).",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
@@ -149,7 +149,7 @@
         "scope": "unseen"
       },
       "note": "Crash S narrowing 3 (docs/67 §22.2): only ts3fixes unseenfbplan flips, native [UnseenFallback] mode 0 (marks refused). Run only if job 1 crashed: crash = UfWhy / camera queries suffice; pass = the mark, deadline session or try/finally path.",
-      "asi": "game-copy/ts3native.asi.unseenfb-all13",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
       "releaseDefaults": true,
       "save": "Baseline-SV-Spring",
       "minCounters": 138,
