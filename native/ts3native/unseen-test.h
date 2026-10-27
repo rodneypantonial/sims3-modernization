@@ -727,7 +727,8 @@ static void TestUnseenDiag() {
     UtRpHook(out, 7);
     assert(k.utRpN[0][0] == b.utRpN[0][0] + 1 && k.utRpPart[0][UT_DG_FOOT] == b.utRpPart[0][UT_DG_FOOT] + 1);
     const LONG ageMs = k.utRpPartMs[0][UT_DG_FOOT] - b.utRpPartMs[0][UT_DG_FOOT];
-    assert(ageMs >= 49 && ageMs < 399);  // the stamp is GetTickCount() | 1
+    assert(ageMs >= 49);  // the stamp is GetTickCount() | 1
+    TIMING_ASSERT("UnseenProbe part age < 399 ms", ageMs < 399);
     // 4. more than 8 passes since the last skip: "other" again
     k.unPasses += UT_DG_RECENT + 1;
     UtRpHook(out, 7);

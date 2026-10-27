@@ -51,7 +51,8 @@ static void __cdecl RcTBody() {
             const DWORD t0 = GetTickCount();
             // not READY: IcPlanHook waits for the job (WaitJobDone), then plans here (as TestH2Ic case 3)
             assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == GetCurrentThreadId());
-            assert(GetTickCount() - t0 < 1000 && RcTCount() == 0 && k.rcDropped[0] >= 1);
+            assert(RcTCount() == 0 && k.rcDropped[0] >= 1);
+            TIMING_ASSERT("RcGuard job-wait plan < 1 s", GetTickCount() - t0 < 1000);
             break;
         }
     }

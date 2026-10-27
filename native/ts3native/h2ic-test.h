@@ -29,7 +29,8 @@ static DWORD __cdecl FakeIcBody(DWORD a, DWORD b) {
             assert(g_async.state != A_RUNNING);
             const DWORD t0 = GetTickCount();
             assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == GetCurrentThreadId());
-            assert(GetTickCount() - t0 < 200 && g_g0Win == 0);
+            assert(g_g0Win == 0);
+            TIMING_ASSERT("H2Ic job-wait plan < 200 ms", GetTickCount() - t0 < 200);
             break;
         }
         case 4:

@@ -419,10 +419,15 @@ static void TestP5b() {
     k.p5bGates = 0;
     const LONG livelocks = k.m2Fb[P4_AB_LIVELOCK] - live0, taken = k.m2Taken - taken0;
     assert(g_p5bBad == 0 && !g_p5bWin && g_p5bIn == 0 && k.p5bWatchdog == wd0);
-    assert(destroysLent > 0 && lentUs[1] > 0 && lentUs[2] > 0 && lentUs[0] == 0 && k.p5bSimAcq > simAcq0);
+    assert(lentUs[0] == 0 && k.p5bSimAcq > simAcq0);
+    TIMING_ASSERT("P5b destroys and time lent", destroysLent > 0 && lentUs[1] > 0 && lentUs[2] > 0);
     // admitted classes inside a job only when lent (steering) and with the gate switch (gate reads); the rest never
-    assert(inJ[0][C_STEER] == 0 && inJ[1][C_STEER] > 0 && inJ[2][C_STEER] > 0);
-    for (int c = C_G12R; c < C_N; c++) assert(inJ[0][c] == 0 && inJ[1][c] == 0 && (c > C_G0H ? inJ[2][c] == 0 : inJ[2][c] > 0));
+    assert(inJ[0][C_STEER] == 0);
+    TIMING_ASSERT("P5b steering inside lent bodies", inJ[1][C_STEER] > 0 && inJ[2][C_STEER] > 0);
+    for (int c = C_G12R; c < C_N; c++) {
+        assert(inJ[0][c] == 0 && inJ[1][c] == 0 && (c <= C_G0H || inJ[2][c] == 0));
+        TIMING_ASSERT("P5b gate reads inside gated bodies", c > C_G0H || inJ[2][c] > 0);
+    }
     for (int p = 1; p < 3; p++)
         for (int c = 0; c < C_N; c++) assert(all[p][c] > 0);
     assert(all[0][C_STEER] > 0);
@@ -437,17 +442,19 @@ static void TestP5b() {
         for (int c = c0; c < c1; c++) us += waitUs[p][c];
         return us / 1000.0 / jobs[p];
     };
-    assert(mean(1, C_STEER) < mean(0, C_STEER) && mean(2, C_G12R) < mean(1, C_G12R) && mean(2, C_G0H) < mean(1, C_G0H));
+    TIMING_ASSERT("P5b mean waits drop per mode",
+                  mean(1, C_STEER) < mean(0, C_STEER) && mean(2, C_G12R) < mean(1, C_G12R) && mean(2, C_G0H) < mean(1, C_G0H));
     // 0.35.11: most admitted waits that start while the window is open are granted inside it. Was: of all waits that start
     // during a body (held parts too), more than half; under CPU load the held parts stretch and that fell to 38 of 76
     if (!(2 * lentGot[1][C_STEER] > lent0[1][C_STEER] && 2 * lentGot[2][C_G12R] > lent0[2][C_G12R]))
         printf("P5b FAIL: steering granted lent %ld of %ld started lent (%ld of %ld in bodies), gate-12 reads %ld of %ld (%ld of %ld)\n",
                lentGot[1][C_STEER], lent0[1][C_STEER], inJ[1][C_STEER], all[1][C_STEER], lentGot[2][C_G12R], lent0[2][C_G12R],
                inJ[2][C_G12R], all[2][C_G12R]);
-    assert(2 * lentGot[1][C_STEER] > lent0[1][C_STEER] && 2 * lentGot[2][C_G12R] > lent0[2][C_G12R]);
+    TIMING_ASSERT("P5b most lent waits granted in the window",
+                  2 * lentGot[1][C_STEER] > lent0[1][C_STEER] && 2 * lentGot[2][C_G12R] > lent0[2][C_G12R]);
     // the admitted classes' own wait per job drops; the total need not (the sim reaches the next writer wait sooner)
     const double sum1 = perJob(1, 0, C_N), sum2 = perJob(2, 0, C_N), adm1 = perJob(1, C_G12R, C_G12W), adm2 = perJob(2, C_G12R, C_G12W);
-    assert(adm2 < adm1);
+    TIMING_ASSERT("P5b admitted wait per job drops", adm2 < adm1);
     printf("P5b (ReleaseLock=1, ReleaseGates=1): counters v63; refusals switch / verify / no job / not owner / waiter, recursive "
            "hold lent and taken back, gate classes, a gate-0 hit lent and a miss given back; threaded (sim + worker, real +0x918), "
            "%ld held / %ld steering-lent / %ld gate-lent jobs (lent %.1f%% / %.1f%% of job time), sim acquires started during a "

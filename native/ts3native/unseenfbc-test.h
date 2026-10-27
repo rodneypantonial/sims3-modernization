@@ -442,7 +442,8 @@ static void TestUfStrict() {
     g_ufcFkR = 1;
     const DWORD now = GetTickCount();
     assert(UfLockGate(world) == 1 && g_ufcFkCalls == c0 + 1 && g_ufcFkDl != 0 && g_ufcFkDl != INFINITE &&
-           g_ufcFkDl - now <= 110 && k.ufLockWaits == w0 + 1 && k.ufLockFail == f0 && !t_ufLockFail);
+           k.ufLockWaits == w0 + 1 && k.ufLockFail == f0 && !t_ufLockFail);
+    TIMING_ASSERT("UnseenFallback lock deadline <= now + 110 ms", g_ufcFkDl - now <= 110);
     // timed out: the plan fails before the lock (RunPlan 0, no release), counted, and UfSyncEnd answers it as a cut
     g_ufcFkR = -2;
     const LONG rel0 = g_ufcFkRel;

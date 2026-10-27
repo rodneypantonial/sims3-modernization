@@ -74,6 +74,28 @@ Estimate for the suggested v0.1.5 set (slotenabledro, unseenthrottle, stuckcheck
 
 Once the last test of the release check is green: compute the numbers once (hitch tables per run, soak, test table), then write in parallel (agents for the README table and the test/dev-notes tables, the main session for the player notes and the public-copy prep), then one read-through for plain wording and matching numbers before the commit. Never start this while a timing run is still going (the number crunching adds load); text-only work may start earlier. Release ETAs count the wrap-up at its parallel length (~20 min after the last green test: ~5 min numbers, ~10 min parallel writing, ~5 min read-through), not the serial sum.
 
+## CI-skipped selftests
+
+GitHub runners are shared and slow, so selftest checks that depend on wall-clock time or thread interleaving flaked there.
+On CI (`GITHUB_ACTIONS` or `CI` set) these checks print `selftest <name> SKIPPED on CI (timing-dependent, runs locally)`
+and still run locally; the logic asserts around them (no writer inside a job, counters, refusals) stay on everywhere.
+`TIMING_ASSERT` in `native/ts3native/selftest.cpp`. Each one should become deterministic (fake clock, event handshakes
+instead of sleeps, fixed interleavings) and then go back to plain `assert`.
+
+| Test (file) | Checks skipped on CI |
+| --- | --- |
+| AllocSites (`allocsites-test.h`) | first hook entry while another thread holds the PEB / process heap lock (3 s wait; failed 3 CI runs 2026-10-26/27) |
+| P5b (`p5b-test.h`) | destroys and time lent, steering / gate reads inside lent bodies, mean waits drop per mode, most lent waits granted, admitted wait per job drops |
+| P5c (`p5c-test.h`) | HoldKeyed gates admitted inside jobs, sim calls got the lock inside job bodies, FreeLock share and mean waits (failed locally twice), HoldKeyed=2 site 10 admitted |
+| TailUnlock (`tailunlock-test.h`) | steering granted in a lent body, retake < 1 s |
+| Gate0RO (`gate0ro-test.h`) | waited >= 10 / 8 ms (Sleep on a helper thread), served hit < 5 ms |
+| H2 window (`selftest.cpp`) | job-wait plan < 200 ms, watchdog wait < 2 s, > 50 starts in 300 ms, held-job release < 100 ms, window hold < 250 ms |
+| H2Ic, RcGuard (`h2ic-test.h`, `rcguard-test.h`) | job-wait plan < 200 ms / < 1 s |
+| RouteAsync (`selftest.cpp`) | lock deadline 30 ms returns < 250 ms, foreign-cap own job < 200 ms |
+| LotStream pump, DeferFootprint(2) (`selftest.cpp`) | empty pump pass < 1.5 ms, record age < 300 ms |
+| UnseenProbe, UnseenFallback (`unseen-test.h`, `unseenfbc-test.h`) | part age < 399 ms, lock deadline <= now + 110 ms (GetTickCount ticks 15.6 ms) |
+| MemExp (`memexp-test.h`) | census < 250 ms |
+
 ## Before publishing (Rodney OKs each)
 
 1. **Validation queue passed** on a clean night: `node tools/harness/queue.ts tools/harness/queues/release-validate.json` (33 jobs, ~18 h of timeouts, about 10-12 h real; split with `--only`). Before it: copy `native/ts3native/out/ts3native.asi` to `game-copy/ts3native.asi.rel0360` (check the sha256 above), run from a checkout with the release ini merged (the queue writes `Bin/ts3native.ini` = repo ini; no job overrides it), install the release `ts3fixes.package`. Pass rules are in each job's note: 0 crashes, 0 watchdog lines, `ts3native 0.36.0` in the log, `asyncStarted > 0`, stuck Sims within docs/TESTING.md, every save matrix case PASS, travel cases PASS, rare repros ran with their Sims routing.

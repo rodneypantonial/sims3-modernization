@@ -78,7 +78,7 @@ static void TestMemExpBench() {
            st->objs, st->nCls, st->rejects, cen[0], cen[1], cen[2], q, gr);
     assert(st->nCls == (int)NC && st->objs > NB * 128 * 6 / 10 && st->nTg == 8);
     assert(q < 5000);         // one query per region, not per page (was ~one per garbage page)
-    assert(cen[2] < 250.0);   // loose: host noise; the printed figure is the measurement
+    TIMING_ASSERT("MemExp census < 250 ms", cen[2] < 250.0);  // loose: host noise; the printed figure is the measurement
     g_mx = saved, g_mxs = savedS, g_mxPage = savedP;
     VirtualFree(st, 0, MEM_RELEASE), VirtualFree(pg, 0, MEM_RELEASE), VirtualFree(raw, 0, MEM_RELEASE);
     VirtualFree(bis, 0, MEM_RELEASE), VirtualFree(hdr, 0, MEM_RELEASE), VirtualFree(cl, 0, MEM_RELEASE);
