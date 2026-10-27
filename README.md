@@ -166,6 +166,7 @@ Opt-in entries (`native-patches`, `overwatch-no-stuckcheck`, world fixes, ...) a
 - [docs/BUILD.md](docs/BUILD.md): build the mods and the native plugin, installer usage, `ts3native.ini` switches.
 - [docs/TESTING.md](docs/TESTING.md): how we measure, repro library, A/B runs, crash triage, how to report results.
 - [docs/TESTING-AND-BUG-HUNTING.md](docs/TESTING-AND-BUG-HUNTING.md): the test harness in one place and how we chase a crash or hitch down to its cause, with a worked example.
+- [docs/MEMORY-RESEARCH.md](docs/MEMORY-RESEARCH.md): start here for memory / Error 12 work: what we measured, the tools, how to run them, open tasks.
 - [AGENTS.md](AGENTS.md): rules for AI coding agents (and a good summary for humans).
 - `PLAN.md`: current state, open items and the next tasks in order. Pick from there or from the GitHub issues.
 

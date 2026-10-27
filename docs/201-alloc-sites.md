@@ -348,3 +348,4 @@ ABBA, both at 0 % CPU [inferred as the cause of the 04:24 hang: matches the symp
 ### 15.5 Unverified
 
 - That the 04:24 hang was this deadlock (no dump). The next steady-state run on `allocsites6` loading cleanly twice is the check; a further load hang with AllocSites on would need the minidump of §15.4.
+- CI flake 2026-10-26 (runs 40410736628, 40412681268): the §15.3 first-entry test timed out on the process heap lock even after the ready-event wait; the test is skipped on CI (`GITHUB_ACTIONS` / `CI` set), runs locally. Root-cause the first-entry heap-lock wait before AllocSites ships to players.
