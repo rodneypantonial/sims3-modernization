@@ -20,6 +20,7 @@ Rodney: test the current features and collect better metrics now; build the rema
 5. Footprint writes of unseen Sims: test `DeferFootprint2`.
 6. Find the owner of the extra `ObjectFootprintFromTool` (`0x8334CC`) waits (13 vs 2 per run with the guard on).
 7. Root-cause the AllocSites first-entry heap-lock wait before AllocSites ships to players (selftest skipped on CI since 2026-10-27, docs/201 §15).
+8. Make the CI-skipped timing selftests deterministic (docs/RELEASE.md "CI-skipped selftests": P5b, P5c, TailUnlock, Gate0RO, H2, RcGuard, RouteAsync deadlines, pump/footprint ages, unseen ages, MemExp census), then back to plain `assert`.
 Then quiet natural on/off pairs IP + SV, release check, publish Friday. Gain claims only from measured quiet pairs (current confidence: long tail cut ~70%, >= 300 ms -50% ~30-40%).
 
 ## Unseen-Sim fallback ("hitch guard", Rodney 2026-10-26): built, not run

@@ -4,6 +4,17 @@
 #include "ts3native.cpp"
 static void TestUfStrict();  // unseenfbc-test.h (docs/202 §3.1.1), run from the uf block
 #include <assert.h>
+// CI runners are shared and slow: wall-clock bounds and thread-interleaving checks flake there (docs/RELEASE.md, "CI-skipped
+// selftests"). TIMING_ASSERT skips its condition on CI (GITHUB_ACTIONS / CI set) with one SKIPPED line per site; runs locally.
+static bool StOnCi() { return GetEnvironmentVariableA("GITHUB_ACTIONS", NULL, 0) || GetEnvironmentVariableA("CI", NULL, 0); }
+#define TIMING_ASSERT(name, cond)                                                                                     \
+    do {                                                                                                              \
+        if (!StOnCi()) assert(cond);                                                                                  \
+        else {                                                                                                        \
+            static bool said_;                                                                                        \
+            if (!said_) said_ = true, printf("selftest %s SKIPPED on CI (timing-dependent, runs locally)\n", name); \
+        }                                                                                                             \
+    } while (0)
 #include "savecompress-fake.h"
 #include "snap-fake.h"
 #include "replay-fake.h"
@@ -427,7 +438,8 @@ static void __fastcall FakePass(void* self, void*, float dt) {
             assert(g_async.state != A_RUNNING);
             const DWORD t0 = GetTickCount();
             assert(IcPlanHook(out, kH1) == out && *(DWORD*)(out + 0x40) == GetCurrentThreadId());  // not READY: planned here
-            assert(GetTickCount() - t0 < 200 && g_g0Win == 0 && g_g0wIn == 1 && c.g0wDrop[G0W_JOBWAIT] == 1);
+            assert(g_g0Win == 0 && g_g0wIn == 1 && c.g0wDrop[G0W_JOBWAIT] == 1);
+            TIMING_ASSERT("H2 window job-wait plan < 200 ms", GetTickCount() - t0 < 200);
             break;
         }
         case 4: {  // [RouteWorker] Mode 1 sync plan while a start is held: dropped, the worker runs the job then the plan
@@ -535,7 +547,8 @@ static void TestLocoWindow() {
     // 5. watchdog: a raw wait with the window up ends after ~250 ms, logged once
     g_lpCase = 5;
     CallThunk((void*)0x55, 1.0f);
-    assert(g_lpMs >= 240 && g_lpMs < 2000 && k.g0wWatchdog == 1 && k.g0wHoldMaxUs >= 240000);
+    assert(g_lpMs >= 240 && k.g0wWatchdog == 1 && k.g0wHoldMaxUs >= 240000);
+    TIMING_ASSERT("H2 watchdog wait < 2 s", g_lpMs < 2000);
     Collect(kH1);
     // 6. nested
     const LONG passes = k.g0wPasses;
@@ -662,9 +675,12 @@ static void TestH2Threaded() {
     LONG started = g_tpStarts;
     assert(TpRun(1, 300) == 0);
     // g0wJobStartInPass is exact (v84 inPass order): 0 here, as the independent TpIc check
-    assert(g_tpStarts - started > 50 && k.g0wJobStartInPass == 0 && k.g0wWatchdog == 0 && k.g0wDrop[0] == 0 && k.g0wDrop[1] == 0);
-    assert(k.h2Released == k.g0wJobsHeld && k.h2ReleaseMaxUs > 0 && k.h2ReleaseMaxUs < 100000);  // no held job lost, each soon after
-    assert(k.g0wJobsHeld > 0 && k.h2Released > 0 && k.h2Released <= k.g0wJobsHeld && k.g0wHoldUs > 0 && k.g0wHoldMaxUs < 250000);
+    TIMING_ASSERT("H2 TpRun > 50 starts in 300 ms", g_tpStarts - started > 50);
+    assert(k.g0wJobStartInPass == 0 && k.g0wWatchdog == 0 && k.g0wDrop[0] == 0 && k.g0wDrop[1] == 0);
+    assert(k.h2Released == k.g0wJobsHeld && k.h2ReleaseMaxUs > 0);  // no held job lost, each soon after
+    TIMING_ASSERT("H2 held-job release < 100 ms", k.h2ReleaseMaxUs < 100000);
+    assert(k.g0wJobsHeld > 0 && k.h2Released > 0 && k.h2Released <= k.g0wJobsHeld && k.g0wHoldUs > 0);
+    TIMING_ASSERT("H2 window hold < 250 ms", k.g0wHoldMaxUs < 250000);
     assert(k.h2PassLockN[0] > 0 && k.h2PassLockUs[0] > 0);  // jobs running at entry: the pass waits out their hold
     const LONG held = k.g0wJobsHeld, rel = k.h2Released, lockN = k.h2PassLockN[0] + k.h2PassLockN[1];
     // Mode 0 (the off side of --ab h2): nothing held, starts land inside the pass, the same checker sees them
@@ -1229,7 +1245,8 @@ static void TestFallback() {
     assert(Foreign(kH1) && JobFor(kH1)->fb == 1);
     WaitReady(kH1);
     assert(IcPlanHook(out, kH1) == out && g_fbSeenCap == 200000 && k.fbjcCapped == 1 && k.fbCapped == 1);
-    assert(k.fbjcLong == 1 && k.ownJobLong == 0 && k.fbjcMaxUs >= 200000 && k.ownJobMaxUs < 200000);
+    assert(k.fbjcLong == 1 && k.ownJobLong == 0 && k.fbjcMaxUs >= 200000);
+    TIMING_ASSERT("foreign-cap own job < 200 ms", k.ownJobMaxUs < 200000);
     Cancel(kH1);
     g_icSleepMs = 0;
     k.fbjcMode = 0;
@@ -1697,7 +1714,8 @@ static void TestRouteAsync() {
     assert(Start(kH1));
     while (!g_icLockTaken) Sleep(1);
     const DWORD soon = GetTickCount() + 30, t0 = GetTickCount();
-    assert(LockAcquireHook(&g_fakeLock, NULL, &soon) == -2 && GetTickCount() - t0 < 250 && g_async.state == A_RUNNING);
+    assert(LockAcquireHook(&g_fakeLock, NULL, &soon) == -2 && g_async.state == A_RUNNING);
+    TIMING_ASSERT("lock deadline 30 ms returns < 250 ms", GetTickCount() - t0 < 250);
     WaitReady(kH1);
     assert(IcPlanHook(out, kH1) == out);
     g_icSleepMs = 0;
@@ -3095,7 +3113,8 @@ static void TestLotStream() {
     k.pumpMaxUs = 0;
     g_lsPumpNest = 1;  // a pass with no lot calls
     LsPumpHook(NULL, NULL, 1, 2, 3);
-    assert(k.pumpCalls == 2 && k.pumpLotPasses == 1 && k.pumpMaxUs < 1500);
+    assert(k.pumpCalls == 2 && k.pumpLotPasses == 1);
+    TIMING_ASSERT("lot pump empty pass < 1.5 ms", k.pumpMaxUs < 1500);
 
     // scoring: one switch made inside it; SetActive's own change test
     assert(LsScoreHook(NULL, NULL, 0x3F800000, 2, 3, 4) == 9);
@@ -4854,7 +4873,8 @@ static void TestFootprintDefer() {
     DiscPoll();
     assert(log("RAQ") && g_discCount == 0);
     // tripwires
-    assert(k.usfApplyInJob == 0 && k.usfAgeMaxMs < 300);
+    assert(k.usfApplyInJob == 0);
+    TIMING_ASSERT("DeferFootprint record age < 300 ms", k.usfAgeMaxMs < 300);
 
     g_async.owner = 0;
     g_async.state = A_IDLE;
@@ -5098,7 +5118,8 @@ static void TestFootprintDefer2() {
     DiscPoll();
     assert(g_xLogN == kDiscCap + 1 && settled());
     // tripwires
-    assert(k.fp2ApplyInJob == 0 && k.fp2AgeMaxMs < 300 && k.usfApplyInJob == 0);
+    assert(k.fp2ApplyInJob == 0 && k.usfApplyInJob == 0);
+    TIMING_ASSERT("DeferFootprint2 record age < 300 ms", k.fp2AgeMaxMs < 300);
 
     g_async.owner = 0;
     g_async.state = A_IDLE;

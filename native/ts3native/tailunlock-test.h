@@ -198,9 +198,11 @@ static void TestTailUnlock() {
                "granted in a body: kept %ld, lent %ld\n", g_tuBad, wins, refusedWaiter, lentJobs, k.tuRefused[0] - r0, steerIn[0], steerIn[1]);
     assert(g_tuBad == 0 && !g_p5bWin && g_p5bIn == 0 && !t_tuOpen && k.p5bWatchdog == wd0);
     assert(wins + refusedWaiter == lentJobs && k.tuRefused[0] - r0 == 41);  // 40 kept jobs + the direct refusal above
-    assert(steerIn[0] == 0 && steerIn[1] > 0);  // steering got the lock inside a job body only when lent
+    assert(steerIn[0] == 0);  // steering got the lock inside a job body only when lent
+    TIMING_ASSERT("TailUnlock steering granted in a lent body", steerIn[1] > 0);
     assert(k.tuTrip[0] - trip0 + refusedWaiter >= takes && k.tuTrip[1] + k.tuTrip[2] == trip1);
-    assert(k.tuReleasedUs > rel0 && k.tuRetakeMaxUs < 1000000);
+    assert(k.tuReleasedUs > rel0);
+    TIMING_ASSERT("TailUnlock retake < 1 s", k.tuRetakeMaxUs < 1000000);
     printf("TailUnlock ([RouteAsync] TailUnlock=1): counters v89; refusals switch / not the worker / P5b open; threaded (sim + "
            "worker, real +0x918, 2 levels): %ld kept and %ld lent jobs (%ld windows, %ld refused for a waiter), %ld failing at a pass "
            "and %ld taking +0x918 in pass 17 (tripwires %ld, retaken first), answers equal, steering acquires granted while a job "

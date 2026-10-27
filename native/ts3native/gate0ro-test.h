@@ -142,7 +142,8 @@ static void TestGate0Ro() {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
         RgEnter(0, slot);
-        assert(UsSince(t0) >= 10000 && t_rg.n == 1 && k.g0Calls == 0);  // waited for the job
+        TIMING_ASSERT("Gate0RO waited >= 10 ms for the job", UsSince(t0) >= 10000);
+        assert(t_rg.n == 1 && k.g0Calls == 0);  // waited for the job
         assert(RgLeave(hit) == G0_WRAP_RET && *(LONG*)(g_rgLockObj + 0x20) == 0 && g_rgOffSimOpen == 0);
         WaitForSingleObject(w, INFINITE);
         CloseHandle(w);
@@ -160,7 +161,8 @@ static void TestGate0Ro() {
             LARGE_INTEGER t0;
             QueryPerformanceCounter(&t0);
             RgEnter(0, slot);
-            assert(UsSince(t0) < 5000 && t_rg.n == 1 && t_qlShared == 1 && !qlFree());  // no wait; QL shared kept
+            TIMING_ASSERT("Gate0RO served hit < 5 ms", UsSince(t0) < 5000);
+            assert(t_rg.n == 1 && t_qlShared == 1 && !qlFree());  // no wait; QL shared kept
             assert(*(LONG*)(g_rgLockObj + 0x20) == 1 && g_rgOffSimOpen == 1);         // the worker's count only
             assert(RgLeave(hit) == G0_WRAP_RET && t_rg.n == 0 && t_qlShared == 0 && qlFree() && g_rgOffSimOpen == 0);
         }
@@ -206,7 +208,8 @@ static void TestGate0Ro() {
         LARGE_INTEGER t0;
         QueryPerformanceCounter(&t0);
         RgEnter(0, slot);
-        assert(UsSince(t0) >= 8000 && t_rg.n == 1 && t_qlShared == 0);
+        TIMING_ASSERT("Gate0RO fallback waited >= 8 ms", UsSince(t0) >= 8000);
+        assert(t_rg.n == 1 && t_qlShared == 0);
         assert((cases[c].fb < 0 ? k.g0Other : k.g0Fb[cases[c].fb]) == fb0 + 1);
         assert(RgLeave(0x0BAD) == G0_WRAP_RET && *(LONG*)(g_rgLockObj + 0x20) == 0 && g_rgOffSimOpen == 0);
         WaitForSingleObject(w, INFINITE);

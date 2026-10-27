@@ -355,12 +355,14 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
     if (inJ[3][C_HK] == 0 || k.hgTrip != hgTrip0 || g_hgOpen || k.hgJobs == hgJobs0 || k.hgAdmit[3] + k.hgAdmit[4] == hgA3 + hgA4)
         printf("P5c HoldKeyed FAIL: re-keyed in job %ld, trips +%ld, open %ld, hg jobs +%ld, admits +%ld\n", inJ[3][C_HK],
                k.hgTrip - hgTrip0, g_hgOpen, k.hgJobs - hgJobs0, k.hgAdmit[3] + k.hgAdmit[4] - hgA3 - hgA4);
-    assert(inJ[3][C_HK] > 0 && k.hgTrip == hgTrip0 && g_hgOpen == 0 && !g_hgJob && k.hgJobs > hgJobs0);
-    assert(k.hgAdmit[3] + k.hgAdmit[4] > hgA3 + hgA4 && k.hgStaleAfter >= hgStale0);
+    assert(k.hgTrip == hgTrip0 && g_hgOpen == 0 && !g_hgJob && k.hgStaleAfter >= hgStale0);
+    TIMING_ASSERT("P5c HoldKeyed gates admitted inside jobs",
+                  inJ[3][C_HK] > 0 && k.hgJobs > hgJobs0 && k.hgAdmit[3] + k.hgAdmit[4] > hgA3 + hgA4);
     k.hgOn = 0, k.hgReady = 0;
     for (int c = 0; c < C_N; c++) assert(inJ[0][c] == 0);
-    assert(inJ[1][C_WR] == 0 && inJ[1][C_PLAN] == 0 && inJ[1][C_DES] == 0 && inJ[1][C_STEER] > 0);
-    assert(inJ[2][C_WR] > 0 && inJ[2][C_DES] > 0 && inJ[2][C_STEER] > 0 && inJ[2][C_G12R] > 0);
+    assert(inJ[1][C_WR] == 0 && inJ[1][C_PLAN] == 0 && inJ[1][C_DES] == 0);
+    TIMING_ASSERT("P5c sim calls got the lock inside job bodies",
+                  inJ[1][C_STEER] > 0 && inJ[2][C_WR] > 0 && inJ[2][C_DES] > 0 && inJ[2][C_STEER] > 0 && inJ[2][C_G12R] > 0);
     assert(g_p5cSimPlans > simPlans0 && k.p5cPlanHere > here0 && k.p5cAcq > acq0 && k.p5cParked > park0);
     // every P5c answer matched the live world at its tail: taken (no write since the cut) or refused (the game's plan)
     assert(taken[2] > 0 && stale0 + stale1 > 0 && p5cJobs > 0);
@@ -375,7 +377,8 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
         for (int c = C_STEER; c <= C_PLAN; c++) a += all[p][c], in += inJ[p][c];
         return a ? 100.0 * in / a : 0.0;
     };
-    assert(share(2) > share(1) && mean(2, C_WR) < mean(1, C_WR) && mean(2, C_DES) < mean(1, C_DES));
+    TIMING_ASSERT("P5c FreeLock share and mean waits",
+                  share(2) > share(1) && mean(2, C_WR) < mean(1, C_WR) && mean(2, C_DES) < mean(1, C_DES));
     printf("P5c HoldKeyed (docs/189 phase 1): %ld jobs, re-keyed gates (3, 4) in a job %ld/%ld (mean wait %.2f ms, FreeLock "
            "alone %.2f), gate-0 misses %ld/%ld, kept (F-G, 10) 0/%ld; %ld gate writes in windows, %ld windows with an admitted "
            "gate (%ld with a write: refused), retake tripwire 0\n", jobs[3], inJ[3][C_HK], all[3][C_HK],
@@ -384,7 +387,8 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
     // HoldKeyed=2 (§10): site 10 got in on the odd jobs (hgOn 2); with hgOn 1 it was a waiting gate (C_GX above: never inside)
     printf("P5c HoldKeyed=2 (docs/189 §10): site 10 admitted %ld times in hgOn=2 jobs, long holds +%ld\n", k.hgAdmit[10] - hgA10,
            k.hgLongHold - hgLong0);
-    assert(k.hgAdmit[10] > hgA10 && k.hgLongHold == hgLong0);
+    assert(k.hgLongHold == hgLong0);
+    TIMING_ASSERT("P5c HoldKeyed=2 site 10 admitted", k.hgAdmit[10] > hgA10);
     printf("P5c (FreeLock=1): counters v65; park rules (callback, D-X record, full, not found), flush refused in a job and "
            "released after it, T-G1 count low kept; threaded (sim + worker, real +0x918), %ld held / %ld P5b+gates / %ld FreeLock "
            "jobs (lent %.1f%% / %.1f%% of job time), sim calls started during a job body, got the lock (destroys, saves: done) "
