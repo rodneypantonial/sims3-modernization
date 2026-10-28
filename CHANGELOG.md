@@ -2,6 +2,20 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.1 (2026-10-29)
+
+Hotfix for players with **simler90's Gameplay Systems Core Mod**.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native-v0.2.1.zip`: the same `ts3native.asi` and `ts3native.ini` as v0.2.0; you only need it if you don't have v0.2.0 yet.
+
+### Fixed
+
+- **simler90's nightly jobs run again.** simler90's core mod adds its own jobs to the game's 3 AM cleanup (aging up homeless pets and young townies, restoring missing household members, turning off noisy electronics, sending young Sims home). v0.2.0 split that cleanup into small steps but skipped simler90's jobs. v0.2.1 runs them again, inside the split-up cleanup. Tested with simler90 UPDATE242.
+- Nothing changes for players without simler90.
+
 ## v0.2.0 (2026-10-28)
 
 Routing release: fewer of the long "everyone stops" freezes when Sims plan their walks. Technical notes: [v0.2.0 developer notes](https://github.com/rodneypantonial/sims3-modernization/blob/v0.2.0/docs/release-notes/v0.2.0-dev.md).
