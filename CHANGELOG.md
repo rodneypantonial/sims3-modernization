@@ -2,6 +2,20 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.2 (2026-10-29)
+
+Hotfix: **families could not be loaded** with v0.2.0 / v0.2.1 on some setups (the Play arrow grays out and nothing happens).
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native-v0.2.2.zip`: the same `ts3native.asi` and `ts3native.ini` as v0.2.0; you only need it if you don't have v0.2.0 yet.
+
+### Fixed
+
+- **Loading a family works again.** Our off-screen hitch guard could keep a Sim waiting while the game was paused (for example in the family picker), and the game then waited for that Sim forever. The guard now notices right away when the game is paused or the family is being started.
+- Includes the v0.2.1 fix for simler90's nightly jobs.
+
 ## v0.2.1 (2026-10-29)
 
 Hotfix for players with **simler90's Gameplay Systems Core Mod**.

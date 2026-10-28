@@ -11,6 +11,7 @@ method_handle,HarnessHandlers,Any,none (our patches),harness,,handler,none
 patch_test_cold,HarnessHandlers,Any,none (our patches),harness,,handler,none
 patches,HarnessHandlers,Any,none (our runtime switches),harness,,handler,none
 play_household,HarnessHandlers,EditTown,Edit Town > Play household,natural,household with a home lot,handler + R-MODE-5,none
+play_existing,HarnessHandlers,EditTown,New game family picker > Play arrow on an existing family (PlayFlowModel.PlayExisting),natural,play flow up (load_world state PlayFlow) and a household with a home lot,handler + PlayFlowModel.PlayExisting,none
 quit_game,HarnessHandlers,Any,Options > Quit,natural,,handler,none
 auto_dialog,HarnessHandlers,Any,answering a popup (player clicks OK/Cancel),natural,,handler,none
 enter_live_mode,HarnessHandlers,Live;Build;Buy;EditTown;CAS,Live button / Play from Edit Town,natural,,handler + R-MODE-1,none

@@ -291,11 +291,17 @@ namespace Ts3Fixes
             if ((int)minutes > c[318]) c[318] = (int)minutes;
             try
             {
+                // a tick sleep never wakes while the clock is paused (family picker, Build/Buy), and the game then waits on this
+                // interaction forever ("Play" arrow stays gray, v0.2.0 reports): yield per frame, cheap exits every frame
+                long nextCheck = Sims3.Gameplay.Utilities.SimClock.CurrentTicks + step;
                 while (Sims3.Gameplay.Utilities.SimClock.CurrentTicks < until)
                 {
-                    Simulator.Sleep(step);
+                    Simulator.Sleep(0);
                     if (sim.HasBeenDestroyed || !sim.InWorld || sim.CurrentInteraction != cur || (cur != null && cur.Cancelled) || sim.HasExitReason()
-                        || (sim.Position - at).LengthSqr() > 0.01f || UfWhy(sim) != 0 || !TownieUnseen(sim, null) || !UfGoalUnseen(dest)) return false;
+                        || !GameStates.IsLiveState || sim.IsSelectable || sim.Household == Household.ActiveHousehold) return false;
+                    if (Sims3.Gameplay.Utilities.SimClock.CurrentTicks < nextCheck) continue;
+                    nextCheck = Sims3.Gameplay.Utilities.SimClock.CurrentTicks + step;
+                    if ((sim.Position - at).LengthSqr() > 0.01f || UfWhy(sim) != 0 || !TownieUnseen(sim, null) || !UfGoalUnseen(dest)) return false;
                 }
                 return true;
             }
