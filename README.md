@@ -14,6 +14,19 @@ Target: The Sims 3 **Steam** edition, patch 1.67, all expansion and stuff packs,
 
 Measured with the harness (`tools/harness/profile-world.ts`), 10 minutes of play at speed 3, on aged 14-day test saves. **Baseline** = the community fixes layer (DXVK, S3SS, NRaas, Smooth Patch, routing fixes, ...; see `tools/setup/fixes.json`) without our mods. The unmodified game cannot reliably load a save on this machine at all: it runs out of address space while loading (docs/05).
 
+**Release v0.2.x vs v0.1.5 vs no fixes of ours, freezes in normal play (2026-10-28):** a freeze is a sim step of 300 ms or longer. v0.2.0 is the mean of 3 seeded 15-minute loads per town on the exact release build; v0.1.5 and no-fixes are one 10-minute load each, so small differences are within noise. v0.2.1-v0.2.3 change only nightly simler90 jobs, a family-start hang and logging, not these paths.
+
+| | Bridgeport | Sunset Valley | Isla Paradiso |
+|---|---|---|---|
+| freezes of 300 ms or longer, per 10 minutes | 4.8 -> 5.0 -> **0.3** | 13.7 -> 4.3 -> **3.7** | 93.9 -> 20.0 -> **13.2** |
+| p99 sim step (99% of steps are shorter) | 79 -> 79 -> **91 ms** | 59 -> 67 -> **55 ms** | 168 -> 105 -> **107 ms** |
+
+**Long play (45 minutes, same save and seed):** Sunset Valley on v0.1.5 had 4 freezes of 1 s or longer, the worst 3.7 s; on v0.2.0 none, the worst 0.7 s. Isla Paradiso on v0.2.0: one freeze over 1 s (1.2 s) in 35 minutes, 8.3 freezes of 300 ms or longer per 10 minutes.
+
+**Under investigation:** Bridgeport ran at 44 sim steps per second on v0.2.0 against 57-59 before (Sunset Valley 86 and Isla Paradiso 69 are at or above their earlier values). We are checking it with an on/off pair; the numbers above are freezes, which went down in all three towns.
+
+**Release check for v0.2.0:** 46 tests: the save matrix and reload, travel (France, University), every new fix forced on, rare cases and three play soaks passed. One crash in a France trip was in the game's own Sim-outfit code (no code of ours on that path) and did not happen on the rerun; one test failed only because its setup could not create a stroller.
+
 **Release v0.1.5 vs v0.1.4 vs no fixes of ours, freezes in normal play:** a freeze here is a sim step of 300 ms (about a third of a second) or longer, the hitches you notice. Each cell is one 10-minute seeded run per town (one load each), so small differences are within noise. Cells: no fixes -> v0.1.4 -> **v0.1.5**.
 
 | | Bridgeport | Sunset Valley | Isla Paradiso |
