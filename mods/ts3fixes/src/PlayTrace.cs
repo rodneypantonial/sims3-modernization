@@ -26,6 +26,7 @@ namespace Ts3Fixes
             if (sPlayTraceListener != null) EventTracker.RemoveListener(sPlayTraceListener);
             sPlayTraceListener = EventTracker.AddListener(EventTypeId.kLotChosenForActiveHousehold, OnLotChosenForActive);
             sUfHoldLogged = 0;
+            ApplyPlayHooks();
             int gen = ++sActionGen;  // a watcher left from an earlier load ends at its next wake-up
             Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { ActionWatch(gen); }));
         }
@@ -34,26 +35,71 @@ namespace Ts3Fixes
         // Edit Town, ... and the active household. A per-frame compare of two values; a line only on a change (at most 200).
         static void ActionWatch(int gen)
         {
-            string mode = null, family = null;
-            int lines = 0, t0 = System.Environment.TickCount;
+            // compare values only, build strings on a change: Enum.ToString every frame churned the GC (gcN 32531 in a
+            // v0.2.3 report)
+            int mode = int.MinValue, lines = 0, t0 = System.Environment.TickCount;
+            Household family = null;
+            bool first = true;
+            string modeName = "start", familyName = "start";
             while (gen == sActionGen && lines < 200)
             {
-                string m, f;
+                int m;
+                Household f;
                 try
                 {
-                    m = GameStates.IsPlayFlowState ? "FamilyPicker" : GameStates.GetCurrentSubState().ToString();
-                    f = Household.ActiveHousehold != null ? Household.ActiveHousehold.Name : "none";
+                    m = GameStates.IsPlayFlowState ? -1 : (int)GameStates.GetCurrentSubState();
+                    f = Household.ActiveHousehold;
                 }
-                catch (Exception) { m = "?"; f = "?"; }
-                if (m != mode || f != family)
+                catch (Exception) { m = -2; f = null; }
+                if (first || m != mode || f != family)
                 {
-                    DiagLine("action: mode " + (mode ?? "start") + " -> " + m + ", family " + (family ?? "start") + " -> " + f + " at +" + (System.Environment.TickCount - t0) / 1000 + " s, holds " + UfHolds().Count);
+                    string mn = m == -1 ? "FamilyPicker" : m == -2 ? "?" : ((InWorldState.SubState)m).ToString(), fn = f != null ? f.Name : "none";
+                    DiagLine("action: mode " + modeName + " -> " + mn + ", family " + familyName + " -> " + fn + " at +" + (System.Environment.TickCount - t0) / 1000 + " s, holds " + UfHolds().Count);
                     mode = m;
                     family = f;
+                    modeName = mn;
+                    familyName = fn;
+                    first = false;
                     lines++;
                 }
                 Simulator.Sleep(0);
             }
+        }
+
+        // The Play path inside the game (PlayFlowModel): entry, result and exceptions of the family picker's Play
+        // (PlayExisting / PlayBinHousehold). Not ActivateSimScreenMaskedFunc: patching it hid it from reflection (test agent).
+        static bool sPlayHooksTried;
+        static void ApplyPlayHooks()
+        {
+            if (sPlayHooksTried) return;
+            sPlayHooksTried = true;
+            try { Patch(typeof(PlayFlowModel), "PlayExisting", new Type[] { typeof(ulong) }, typeof(PlayHooks), "PlayExistingHook", "PlayExistingOrig"); } catch (Exception) { }
+            try { Patch(typeof(PlayFlowModel), "PlayBinHousehold", new Type[] { typeof(Sims3.UI.GameEntry.IExportBinContents), typeof(ulong), typeof(bool) }, typeof(PlayHooks), "PlayBinHook", "PlayBinOrig"); } catch (Exception) { }
+        }
+
+        public class PlayHooks
+        {
+            public void PlayExistingHook(ulong lotId)
+            {
+                DiagLine("play: Play pressed (existing family), lot " + lotId + ", live " + GameStates.IsLiveState + ", holds " + UfHolds().Count);
+                try { PlayExistingOrig(lotId); DiagLine("play: PlayExisting returned"); }
+                catch (Exception e) { DiagLine("play: PlayExisting threw " + e.GetType().Name + ": " + e.Message); throw; }
+            }
+            public void PlayExistingOrig(ulong lotId) { }
+            public void PlayBinHook(Sims3.UI.GameEntry.IExportBinContents bin, ulong lotId, bool buyFurnished)
+            {
+                DiagLine("play: Play pressed (bin family), lot " + lotId + ", furnished " + buyFurnished);
+                try { PlayBinOrig(bin, lotId, buyFurnished); DiagLine("play: PlayBinHousehold returned"); }
+                catch (Exception e) { DiagLine("play: PlayBinHousehold threw " + e.GetType().Name + ": " + e.Message); throw; }
+            }
+            public void PlayBinOrig(Sims3.UI.GameEntry.IExportBinContents bin, ulong lotId, bool buyFurnished) { }
+            public bool MaskedHook(object param)
+            {
+                DiagLine("play: activating the family (screen masked)");
+                try { bool ok = MaskedOrig(param); DiagLine("play: activation returned " + ok); return ok; }
+                catch (Exception e) { DiagLine("play: activation threw " + e.GetType().Name + ": " + e.Message); throw; }
+            }
+            public bool MaskedOrig(object param) { return false; }
         }
 
         static ListenerAction OnLotChosenForActive(Event e)

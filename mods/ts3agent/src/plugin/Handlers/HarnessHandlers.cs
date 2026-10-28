@@ -510,6 +510,9 @@ namespace Ts3Agent
                 // throw at HidePlayFlowUI, so wait for it briefly, else run its MiniLoad with the model's own callbacks
                 for (int i = 0; i < 120 && Sims3.UI.GameEntry.PlayFlowController.Singleton == null; i++) Simulator.Sleep(0);
                 if (Sims3.UI.GameEntry.PlayFlowController.Singleton != null) { PlayFlowModel.Singleton.PlayExisting(lotId); return; }
+                // still call it once: hooks on PlayExisting (ts3fixes play trace) run and log; without the UI it throws at
+                // HidePlayFlowUI before MiniLoad, then the fallback below does that MiniLoad
+                try { PlayFlowModel.Singleton.PlayExisting(lotId); } catch (Exception) { }
                 const BindingFlags np = BindingFlags.NonPublic | BindingFlags.Instance;
                 PlayFlowModel m = PlayFlowModel.Singleton;
                 BoolFuncWithParam masked = (BoolFuncWithParam)Delegate.CreateDelegate(typeof(BoolFuncWithParam), m, typeof(PlayFlowModel).GetMethod("ActivateSimScreenMaskedFunc", np));
