@@ -19,6 +19,9 @@ namespace Ts3Fixes
     // move or 2 s).
     // docs/202 §3.4.2 (unseenfbfinish, UnseenFallbackFinish.cs): routing Sims that can have their walk finished are flagged after
     // their id (code 15); after END the claimed holds are checked, finished or given up (codes 16-20).
+    // docs/202 §5.8 (Rodney's per-Sim loop rule): the list is built over several ticks from one snapshot, at most
+    // UnseenFallbackCore.kSitesPerTick Sims per wake (round-robin cursor, UfSitesPass), cheap early-outs first, UfWhy again only
+    // for Sims that moved, started routing or changed interaction (or after 2 s); the list goes out when the pass ends.
     // Counters: [323] lists pushed, [324] ids pushed (sum), [325] pushes refused (BEGIN refused or a field refused).
     public static partial class Fixes
     {
@@ -38,34 +41,65 @@ namespace Ts3Fixes
         {
             int last = unchecked(System.Environment.TickCount - UnseenFallbackCore.kPushMs), wake = System.Environment.TickCount;
             long ticks = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+            Sim[] pass = null;
+            UfSitesPass cursor = new UfSitesPass();
+            System.Collections.Generic.List<Sim> sims = new System.Collections.Generic.List<Sim>();
             while (gen == sUfSitesGen)
             {
                 int now = System.Environment.TickCount;
                 long t = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
-                if (unchecked(now - last) >= UnseenFallbackCore.kPushMs)
+                try
                 {
-                    last = now;
-                    try { if (ShortcutOn("unseenfbsites") && !UfSitesPush(now)) return; } catch (Exception) { return; }
+                    if (pass == null && unchecked(now - last) >= UnseenFallbackCore.kPushMs)
+                    {
+                        last = now;
+                        if (ShortcutOn("unseenfbsites"))
+                        {
+                            pass = UfSitesBegin();
+                            sims.Clear();
+                            cursor.Begin(pass.Length);
+                        }
+                    }
+                    if (pass != null)
+                    {
+                        // docs/202 §5.8: at most kSitesPerTick Sims this wake; the list goes out once the pass is done
+                        int from, n = cursor.Slice(out from);
+                        for (int i = from; i < from + n; i++) UfSitesEval(pass[i], now, sims);
+                        if (cursor.Done)
+                        {
+                            pass = null;
+                            if (!UfSitesSendList(sims)) return;
+                        }
+                    }
                 }
-                uint sleep = UnseenFallbackCore.SitesSleepTicks(t - ticks, unchecked(now - wake), unchecked(last + UnseenFallbackCore.kPushMs - now));
+                catch (Exception) { return; }
+                // leaving live mode pauses the clock (LiveModeState.Shutdown), so a tick sleep would never wake and the last live
+                // list would stay fresh in Build/Buy for ts3native's 3 s age: yield per frame there so the empty list goes out
+                uint sleep = pass != null || !UfSitesLive() ? 0u : UnseenFallbackCore.SitesSleepTicks(t - ticks, unchecked(now - wake), unchecked(last + UnseenFallbackCore.kPushMs - now));
                 ticks = t;
                 wake = now;
-                Simulator.Sleep(sleep);
+                Simulator.Sleep(sleep);  // 0 = next tick while a pass runs
             }
         }
 
-        sealed class UfSiteSeen { public Vector3 Pos; public int Why, At; }
+        sealed class UfSiteSeen { public Vector3 Pos; public int Why, At; public object Inst; public bool Routing; }
         static readonly System.Collections.Generic.Dictionary<ulong, UfSiteSeen> sUfSiteCache = new System.Collections.Generic.Dictionary<ulong, UfSiteSeen>();
         static Vector3 sUfSiteCam = Vector3.Invalid;
 
         static int UfSiteWhy(Sim s, ulong id, int now)
         {
             Vector3 p = s.Position;
+            object inst = s.CurrentInteraction;
+            bool routing = s.IsRouting;
             UfSiteSeen e;
-            if (sUfSiteCache.TryGetValue(id, out e) && !UnseenFallbackCore.SitesRecheck((p - e.Pos).LengthSqr(), unchecked(now - e.At))) return e.Why;
+            if (sUfSiteCache.TryGetValue(id, out e)
+                && !UnseenFallbackCore.SitesRecheck((p - e.Pos).LengthSqr(), unchecked(now - e.At), !ReferenceEquals(inst, e.Inst) || (routing && !e.Routing)))
+                return e.Why;
             if (e == null) sUfSiteCache[id] = e = new UfSiteSeen();
             e.Pos = p;
             e.At = now;
+            e.Inst = inst;
+            e.Routing = routing;
             return e.Why = UfWhy(s);
         }
 
@@ -74,13 +108,35 @@ namespace Ts3Fixes
             return sYieldProbe.GetOption2((Sims3.SimIFace.Route.RouteOption2)(0x8300000000000000UL | (ulong)(uint)code << 48 | value));
         }
 
+        static bool UfSitesLive() { return GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown; }
+
+        // one snapshot per push; empty out of live mode (the list then goes out empty)
+        static Sim[] UfSitesBegin()
+        {
+            if (!UfSitesLive()) { sUfSiteCache.Clear(); return new Sim[0]; }
+            Vector3 cam = CameraController.GetPosition();
+            if (sUfSiteCam == Vector3.Invalid || (cam - sUfSiteCam).LengthSqr() >= 1f) { sUfSiteCam = cam; sUfSiteCache.Clear(); }
+            if (sUfSiteCache.Count > 4 * kUfSitesMax) sUfSiteCache.Clear();  // shortcut: Sims gone since are dropped wholesale
+            Sim[] all = Sims3.Gameplay.Queries.GetObjects<Sim>();
+            return all ?? new Sim[0];
+        }
+
+        static void UfSitesEval(Sim s, int now, System.Collections.Generic.List<Sim> sims)
+        {
+            if (sims.Count >= kUfSitesMax) return;
+            // cheap early-outs first: pets and horses never (as the plan marks); idle Sims reach no site (no route, no own interaction)
+            if (s == null || s.HasBeenDestroyed || s.SimDescription == null || s.SimDescription.IsPet || (!s.IsRouting && s.CurrentInteraction == null)) return;
+            ulong id = s.ObjectId.Value;
+            if (UfSiteWhy(s, id, now) == 0) sims.Add(s);
+        }
+
         // false = BEGIN refused: no C site this load
-        static bool UfSitesPush(int now)
+        static bool UfSitesSendList(System.Collections.Generic.List<Sim> sims)
         {
             int[] c = PatchCounters();
             if (!UfSitesSend(7, 0)) { c[325]++; return false; }
             uint n = 0;
-            bool live = GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown;
+            bool live = UfSitesLive();  // left live mode during the pass: send the empty list
             // docs/202 §3.4.2: flag walkers whose walk may be finished (UfFinishable), at most kUfFinishEvalMax per push
             // (code 16 answers 1 only when ts3native has FinishWalk installed)
             bool finishOn = live && ShortcutOn("unseenfbfinish") && UfSitesSend(16, 0);
@@ -91,17 +147,10 @@ namespace Ts3Fixes
             foreach (Sim f in sUfFinishFlagged) sUfFinishPrev[f.ObjectId.Value] = true;
             sUfFinishFlagged.Clear();
             if (live)
-            {
-                Vector3 cam = CameraController.GetPosition();
-                if (sUfSiteCam == Vector3.Invalid || (cam - sUfSiteCam).LengthSqr() >= 1f) { sUfSiteCam = cam; sUfSiteCache.Clear(); }
-                if (sUfSiteCache.Count > 4 * kUfSitesMax) sUfSiteCache.Clear();  // shortcut: Sims gone since are dropped wholesale
-                foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
+                foreach (Sim s in sims)
                 {
-                    if (n == kUfSitesMax) break;
-                    // pets and horses: never (as the plan marks); idle Sims reach no site (no route, no own interaction)
-                    if (s == null || s.SimDescription == null || s.SimDescription.IsPet || (!s.IsRouting && s.CurrentInteraction == null)) continue;
+                    if (s.HasBeenDestroyed) continue;  // the pass spans ticks
                     ulong id = s.ObjectId.Value;
-                    if (UfSiteWhy(s, id, now) != 0) continue;
                     // a refused field: the old list stays and goes stale, so nothing acts
                     if (!UfSitesSend(8, (uint)id) || !UfSitesSend(9, (uint)(id >> 32))) { c[325]++; return true; }
                     n++;
@@ -112,8 +161,6 @@ namespace Ts3Fixes
                         if (UfFinishable(s) && UfSitesSend(15, 1)) { c[367]++; sUfFinishFlagged.Add(s); }
                     }
                 }
-            }
-            else sUfSiteCache.Clear();
             if (!UfSitesSend(10, n)) { c[325]++; return true; }
             c[323]++;
             c[324] += (int)n;

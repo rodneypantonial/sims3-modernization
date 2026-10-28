@@ -40,7 +40,28 @@ namespace Ts3Fixes
         }
         // a cached verdict is reused unless the Sim moved >= 1 m, the camera moved >= 1 m (cache cleared), or it is kRecheckMs old;
         // ts3native re-tests frustum, reach and EA's on-screen byte at the wait itself, so a stale "unseen" never acts on a seen Sim
-        public static bool SitesRecheck(float movedSq, int ageMs) { return movedSq >= 1f || ageMs < 0 || ageMs >= kRecheckMs; }
+        // docs/202 §5.8: also when the Sim started routing or changed interaction since the cached verdict
+        public static bool SitesRecheck(float movedSq, int ageMs, bool changed) { return changed || movedSq >= 1f || ageMs < 0 || ageMs >= kRecheckMs; }
+
+        // docs/202 §5.8 (Rodney's per-Sim loop rule): a push's list is built over several ticks, at most kSitesPerTick Sims per wake
+        // from one snapshot (round-robin cursor), so no tick pays for every Sim in the world (the 0.36.104 push: 2.7-5 ms in one tick)
+        public const int kSitesPerTick = 8;
+    }
+
+    public sealed class UfSitesPass
+    {
+        int mNext, mCount = 0;
+        public void Begin(int count) { mCount = count < 0 ? 0 : count; mNext = 0; }
+        public bool Done { get { return mNext >= mCount; } }
+        // this wake's slice: [from, from + return value), never more than kSitesPerTick
+        public int Slice(out int from)
+        {
+            from = mNext;
+            int n = System.Math.Min(UnseenFallbackCore.kSitesPerTick, mCount - mNext);
+            if (n < 0) n = 0;
+            mNext += n;
+            return n;
+        }
     }
 
     // docs/202 §3.5 D (pre-emptive teleport): walk-time hold, interaction deny list, the "in transit" table.

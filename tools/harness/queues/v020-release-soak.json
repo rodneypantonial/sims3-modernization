@@ -1,0 +1,29 @@
+{
+  "note": "v0.2.0 SV 60 min soak vs v0.1.5 sv-soak-rel015 (2026-10-29 night)",
+  "jobs": [
+    {
+      "id": "sv-v020rel-soak60",
+      "note": "v0.2.0 release build, 60 min SV soak, light tools only; pairs with release-015-extra sv-soak-rel015 (same save, seed, length) for the long-freeze comparison",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 45
+        }
+      },
+      "timeoutMin": 80
+    }
+  ]
+}

@@ -4,8 +4,9 @@
     {
       "id": "sv-plandeadline-soak2",
       "routingFailFast": {
-        "ms": 300,
-        "scope": "all"
+        "ms": 400,
+        "scope": "all",
+        "note": "scope all + PlanDeadlineMs 300: cut at ~300 ms plus up to ~100 ms overrun is the cap working (docs/164 §7, 2026-10-27 sv-plandeadline-soak 308 ms plan / 340 ms hitch); fail above 400"
       },
       "note": "TIMING soak, SV 30 min natural play (autopilot, camera untouched, no repro), pd2 asi at release defaults plus PlanDeadlineMs only (FailMemo off), light tools as sv-plandeadline-soak (untested-v020). Pass: no crash, 0 watchdog lines, pdCutSc 0, no Sim stuck at the end. Read: pdSessions[0] / [1] vs the kinddl soak (the [1] non-IC sessions should drop by the own-task nested plans, 911 pdOwnExempt there), pdHit / pdHitOk (info) / pdHitUs / pdLateMaxUs / pdOwnExempt / pdExemptSc, route failures (route_replan rows), hitch-ab.ts --causes for sync-plan-led >= 300 / >= 1000 ms vs v0.1.4 SV (docs/161).",
       "asi": "game-copy/ts3native.asi.unseenfb-all14",

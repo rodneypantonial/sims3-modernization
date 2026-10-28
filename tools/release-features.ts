@@ -61,6 +61,18 @@ export const FEATURES: Record<string, Feature> = {
   unseenenv: { tuning: ['kUnseenEnvThrottle'], doc: 'docs/144' },
   unseenmotives: { tuning: ['kUnseenMotiveThrottle'], doc: 'docs/144' },
   unseenbroadcast: { tuning: ['kUnseenBroadcastThrottle'], doc: 'docs/144' },
+  // v0.2.0 routing set, as the v020-natural on arms ran it (2026-10-26/27/28)
+  arenaguard: { ini: { 'ArenaGuard.InitobjFix': ['1', '0'], 'ArenaGuard.TailPad': ['1', '0'] }, doc: 'docs/67 §22.9 (crash S)' },
+  plandeadline: { ini: { 'RouteAsync.PlanDeadlineMs': ['300', '0'] }, doc: 'docs/164 §7' },
+  fbjobdeadline: { ini: { 'RouteAsync.FbJobDeadline': ['1', '0'] }, needs: ['fallbackasync'], doc: 'docs/178 T1' },
+  kinddeadlines: { ini: { 'RouteAsync.KindDeadlines': ['1', '0'] }, doc: 'docs/197' },
+  overwatchstuckslice: { tuning: ['kOverwatchStuckSlice'], doc: 'docs/145 §12' },
+  unseenfallback: {
+    ini: { 'UnseenFallback.Enabled': ['1', '0'], 'UnseenFallback.DeadlineMs': ['300', '300'] },
+    tuning: ['kUnseenFallbackStuck', 'kUnseenFallbackPlan', 'kUnseenFallbackTeleport', 'kUnseenFallbackPre', 'kUnseenFallbackArrive', 'kUnseenFallbackLeave', 'kUnseenFallbackLoopDetect'],
+    doc: 'docs/202 A/B (hitch guard)',
+  },
+  unseenfbsites: { ini: { 'UnseenFallback.Sites': ['1', '0'], 'UnseenFallback.SiteWaitMs': ['0', '0'] }, tuning: ['kUnseenFallbackSites'], needs: ['unseenfallback'], doc: 'docs/202 §3.4 C1-C4' },
 };
 
 export function parseChosen(arg: string): Set<string> {
@@ -160,7 +172,7 @@ function ciAllowed(): string[] {
 
 function selfCheck(): void {
   const ok = (c: boolean, what: string) => { if (!c) { console.error(`self-check FAILED: ${what}`); process.exit(1); } };
-  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nKinds=0\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
+  const ini = '[RouteAsync]\n; FallbackAsync=9 comment\nEnabled=1\nKinds=0\nFallbackAsync=0\nM1Retry=0\nSyncCapMs=0\nFbJobCapMs=0\nRefcountGuard=0\nRefcountGuardMode=1\nPlanDeadlineMs=0\nFbJobDeadline=0\nKindDeadlines=0\n[ArenaGuard]\nTailPad=0\nInitobjFix=0\n[UnseenFallback]\nEnabled=0\nDeadlineMs=300\nSites=0\nSiteWaitMs=0\n[SlotEnabledRO]\nEnabled=0\nMode=1\nShadow=0\n' +
     '[Discourage]\nDeferFootprint=0\nDestroyPark=0\n[AvoidRO]\nEnabled=0\nMode=1\nShadow=0\n[UnseenThrottle]\nEnabled=0\n' +
     '[RouteSnap]\n' + Object.entries(iniValues(new Set())).filter(([k]) => k.startsWith('RouteSnap.')).map(([k, off]) => `${k.slice(10)}=${off}\n`).join('');
   const tun = Object.values(FEATURES).flatMap(f => f.tuning ?? []).map(t => `<${t} value="False" />`).join('\n') + '\n<kGoHomeShortcut value="True" />';
