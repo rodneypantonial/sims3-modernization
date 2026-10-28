@@ -6,7 +6,46 @@ Goal: The Sims 3 (Steam 1.67, all EPs/SPs) with **less in-game stutter** first (
 
 **Long-term goal: offload the sim thread (Rodney, 2026-10-14).** Move everything that can safely leave the game's single busy core (the sim thread) to other cores, so longer saves, more objects and more Sims scale instead of hitting that one core's limit. This needs a major architecture redesign and is a multi-step, long-term track (roadmap: docs/23 #17). Acceptance rule for offload changes: a change that moves measurable work off the sim thread is accepted even with no speed gain today, or a loss of up to ~2% in sim iterations/s, as long as it is stable (no crashes, no new stuck Sims, same results). Measure it as sim-thread ms/s moved off (route ms/s, stage ms/s), not only iterations/s. Losses over ~2% need a plan to win them back.
 
-## HANDOFF 2026-10-27 ~08:00 PHT: v0.2.0 release moved to FRIDAY 2026-10-30 (read first)
+## HANDOFF 2026-10-27 ~16:00 PHT: tonight's runs + where things stand (read first)
+
+**State:** hold ON (`probe-out/queue/hold`), Bin = test asi (`unseenfb-finish`, 0.36.105; install the release asi + ini before playing). Master has: hitch guard A/B/C + camera checks + strict-300, crash S fix (`[ArenaGuard] InitobjFix` + `TailPad`, EA Mono `initobj` clears 12 bytes for 8-byte values; docs/67 §22.9), guard-cost fixes, D for lot trips, finish-the-walk (off), CI-skipped timing selftests. Not merged: `bugfix/ufb-guard-cost-2` (UfSitesLoop per-tick spread), `feature/ufb-loop-break-ladder` (loop breaker steps 1-4, ships ON only after its repros pass).
+
+**Tonight (quiet machine, ~7.5 h), run from a terminal in the repo:**
+```
+node tools/harness/hold.ts off
+node tools/harness/queue.ts tools/harness/queues/kind-deadlines.json --from ip-kd-nat-on
+node tools/harness/queue.ts tools/harness/queues/plandeadline-verify2.json
+node tools/harness/queue.ts tools/harness/queues/ea-spread-ab.json --from bp-ab-easpread
+node tools/harness/queue.ts tools/harness/queues/untested-v020.json --only sv-plandeadline-soak,ip-v020-routing-31
+node tools/harness/queue.ts tools/harness/queues/kind-deadlines.json --only ip-kd-nat-off
+node tools/harness/queue.ts tools/harness/queues/v020-natural.json
+node tools/harness/hold.ts on "night 10-27 done"
+```
+(EA-spread repros lots/pets/decay all PASS 10-27 ~18:00 PHT, `chain-1027-easpread-repros.out`; lots longest tick 6.6 ms in one pass vs ~5 ms target, cap 64 units/tick too high, Thursday. The reruns: today's timing jobs ran while Rodney worked, likely noisy. `v020-natural` adds on/off pairs so the gain numbers firm up.)
+
+**Results so far (2026-10-26/27):** IP real play, guard on vs off (2 pairs): >= 300 ms -39%, >= 500 ms -83%, no >= 1 s routing freeze, worst -45%, 200-250 ms band flat, sim speed within noise; SV no change. Finish the walk: works (0 given up) but no gain (IP worse, SV flat) -> stays off. D (helper routes) never acts (rejects: short 10,224, vehicle 2,816); D for lot trips acts (505 per 30 min SV, LynMods visit); trip shortcuts: go-home 54% / rabbit hole 61% shortcut, rest refused. `sv-kd-nat-verify` FAILED on `kdCut_0=0` only (own Plan 9650/0/1: own jobs ran 309-324 ms uncut, overrun outside the A* deadline exits; chance check); rerun 10-27 ~18:50 PHT PASS (own Plan 15945/2/1, 2 cuts, after-cut ok 2 fail 0, 0 stuck, 0 watchdog firings), `chain-1027-kdverify.out`. Open gap: own jobs >= 300 ms that no deadline exit cuts (10-25 4 >= 300 / 3 cut, 10-27 1 / 0); probe with `[RouteJobPhases]` Thursday. `sv-plandeadline-soak` fail-fast was the 300 ms cap working (limit now 400). Logs: `probe-out/queue/chain-1027-ufw.out`, `chain-1027-resume.out`, the night's queue `*.jsonl` + `docs/data/results/`.
+
+**Night 10-27 read (10-28):** `v020-natural` 10-27 pairs undo the 10-26 gain: IP pooled >= 300 per 10 min off 10.9 / on 13.9 (+28%), >= 500 0 / 0.8, max 430 / 558; SV no change. All 4 IP pairs (10-26 + 10-27): >= 300 events off 64 / on 56 (-12%, no clear difference). The 10-27 off arms already sit at ~11 per 10 min (v0.1.4 baseline 21.7): the guard has little left to remove on these saves. SV PlanDeadline soaks stop on steering waits (`0x85FE10`, 503 of 526 ms), not plans.
+
+**ip-kd-nat pair (10-27, read 10-28):** KindDeadlines on vs off, one two-load pair: >= 300 per 10 min 15.3 -> 20.6 (ratio 1.35 [0.88, 2.09], no clear difference), max 1372 -> 1759; the on run's 3 freezes >= 1 s are sim-thread sync `Route_Plan` (no logged fallback), which KindDeadlines does not touch (it cuts async jobs only); route-job waits in on: steering 9, gate-12 F-G 4, gate 0 3. One pair, no gain shown: needs more pairs before KindDeadlines ships on.
+
+**bp-ab-easpread (10-27, read 10-28):** in-load A/B, ~2.5 min per arm after exclusions: >= 300 off 1 (490 ms, NRaas `ResetSimTask`, not an EA alarm) / on 0; spreading ran (lots 2 passes 930 ticks max 2.2 ms, decay 3 passes max 2.7 ms, pets 2228 ticks, 0 threw). No EA-alarm hitch in either arm on BP (the game's own pass stalls only on old/large saves, docs/147): safe, no measurable gain here; ships under the rare-case bundle rule if the bundle A/B stays in noise.
+
+**Decision 10-28 (Rodney):** easpreadlots/pets/decay ship ON in v0.2.0 (docs/RELEASE.md row). TODO after the `v020-natural-ip-more` queue ends (a ts3fixes rebuild mid-queue could change its arms): `Instantiator.cs` `kEaSpreadLots/Pets/Decay = true` + `mods/ts3fixes/README.md` rows **on** + include the three ids in the v0.2.0 `release-features.ts --write` list.
+
+**sv-ufbd-* read 10-28:** FAILs = (a) repro setup `crowd_do`: no bench/chair on Recurve Strand / Pleasant Rest Graveyard (harness lot pick, not the fix); (b) D pre/arrive shortcut counters 0 in natural play (D helper routes never act, as known). Trip variants PASS. Nothing to rerun; drop pre/arrive/leave/split jobs or fix the seat pick Thursday.
+
+**KindDeadlines (Rodney 10-28):** hitch fix, so judge it by repro, not long natural pairs. `sv-kd-loop` 10-27 PASS but the off arm never hitched (max 264 ms, 0 >= 300): repro does not reproduce the own-job wait; fix it (longer no-path jobs / more Sims, check `sim waited ... behind an own job` >= 300 ms off) before any more KindDeadlines runs. Extra IP natural pairs cancelled. Diagnosis 10-28: the 10-27 run had only 4 long jobs (238-255 ms, 3 capped = on arm) and 0 own-job waits: in the off arm the no-path Go Here jobs never ran long, so the repro no longer makes the seconds-long own jobs it was written for (check whether a later fix ends no-path plans early, or the plans went sync; then pick a target that floods a larger reachable area, e.g. IP, or more Sims).
+
+**IP bundle pairs pooled (10-28, 8 pairs = 10-26 + 10-27 + ip-more 3-6, ~100 min per arm):** >= 300 off 121 (12.1 per 10 min) / on 133 (13.2), ratio 1.09 = no clear difference; >= 500 12 / 8; >= 1000 1 / 2; max 1237 / 1285; it/s 70.9 / 73.5 (+3.7%). Not a clear regression (AGENTS.md rule): guard ships on; release notes claim no IP >= 300 ms change, only the repro-shown cuts.
+
+**uf reruns 10-28:** `sv-ufb-overwatch` PASS. `sv-ufc-buildbuy` FAIL again (real): in the Buy-mode window `ufcTry_0=9`, `ufcTry_1=1`, `ufcFake_0=5` (want 0): C sites act out of live mode on a stale list. Cause (static 10-28): `unseenfbc.cpp` `kUfcListAgeMs` 3000 keeps the last live-mode list valid 3 s; in Build/Buy scripts pause, so `UfSitesPush` (UnseenFallbackSites.cs:78, pushes n=0 when not live) cannot run. Shortening the age would disarm the guard during long live hitches. Fix: clear the list on leaving live mode (ts3fixes has no state hook yet; or native: a Build/Buy tool-active / sim-paused check at the C sites). **Thursday, release blocker:** that fix; rebuild; rerun `sv-ufc-buildbuy` + `sv-ufc-farwalkers-loop` (~25 min). If not fixed by the release check: ship `[UnseenFallback] Sites=0` (A/B stay on).
+
+**Apex freeze report (10-28): solved, cause was an incompatibility with S3PP (Rodney), not ts3native + Apex.** Our static pass (Apex ObjMapFind is thread-safe) and 2 x 15 min repro with Apex 2.17.1 (no freeze) fit that. Stash "apex: RouteAsync Mode=0 when Apex ObjectLookupIndex on" is not needed: drop it.
+
+**Thursday (token reset):** read tonight + today's FAIL rows (preliminary only so far), then the build list below; merge + run the loop-breaker repros; release check; publish Friday. Other: Bitdefender false positive (issue #67) report sent 10-27 via the business form; re-scan VirusTotal ~10-30 and post on #67 (Emsisoft form returns 403, skipped).
+
+## HANDOFF 2026-10-27 ~08:00 PHT: v0.2.0 release moved to FRIDAY 2026-10-30
 
 Rodney: test the current features and collect better metrics now; build the remaining gaps on **Thursday 2026-10-29 after the token reset** (he may not have tokens before). Memory and other side tracks stay parked.
 

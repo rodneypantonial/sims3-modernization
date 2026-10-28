@@ -1,0 +1,403 @@
+{
+  "note": "v0.2.0 real-play validation of the hitch guard (docs/202; Rodney 2026-10-26: no special repro for phase A cuts, long unseen plans are common in real play). Natural play, no repro, seed 12345, IP and SV, both-order pairs on/off/off/on as separate 15 min loads per world, timing (noiseCheck). Both arms: all12 asi (0.36.102, + ArenaGuard InitobjFix, docs/67 §22.9), release defaults, ArenaGuard TailPad, kind deadlines + PlanDeadlineMs 300 + FallbackAsync (FbJobCapMs 300, FbJobDeadline), spread fixes easpreadlots/pets/decay + overwatchstuckslice, light tools as natural-shipped. Arm = the hitch guard: [UnseenFallback] Enabled/DeadlineMs 300/Sites/SiteWaitMs 100 + ts3fixes unseenfbstuck/plan/teleport/sites/pre/arrive/leave; routingFailFast {300, unseen} on ON arms only. Verdict: hitch-ab.ts --causes off vs on per world, routing-led >= 200/250/300/1000 ms per 10 min against the docs/202 ~50% target. Smoke first (repo rule).",
+  "smoke": {
+    "note": "Measurement smoke: IP 10 min with the ON-arm config (all11 asi, full v0.2.0 routing set + hitch guard + spread fixes): every switch reads back (fixes on: ... verified), the stubs and C sites install (ufReady >= 14, ufcReady 63), kdReady 1, the per-minute 'unseen fallback:' / 'unseen fallback sites:' / 'route kind deadlines' lines appear, noise split works. No ufMarks requirement (checks the measurement path, not the feature).",
+    "asi": "game-copy/ts3native.asi.unseenfb-all14",
+    "releaseDefaults": true,
+    "save": "Baseline-IP-Spring",
+    "minCounters": 139,
+    "noiseCheck": true,
+    "nativeRequire": "ufReady>=14,ufcReady>=63,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+    "ini": {
+      "RouteAsync.KindDeadlines": 1,
+      "RouteAsync.PlanDeadlineMs": 300,
+      "RouteAsync.FallbackAsync": 1,
+      "RouteAsync.FbJobCapMs": 300,
+      "RouteAsync.FbJobDeadline": 1,
+      "RouteAsync.OwnJobWait": 1,
+      "HitchAttr.Enabled": 1,
+      "HitchAttr.Holders": 1,
+      "Harness.ForegroundRender": 1,
+      "RouteJobPhases.Enabled": 1,
+      "RouteJobPhases.SyncPlans": 1,
+      "RouteAsync.LogFallbackMs": 20,
+      "RouteAsync.LogFallbackStack": 16,
+      "ArenaGuard.InitobjFix": 1,
+      "ArenaGuard.TailPad": 1,
+      "UnseenFallback.Enabled": 1,
+      "UnseenFallback.DeadlineMs": 300,
+      "UnseenFallback.Sites": 1,
+      "UnseenFallback.SiteWaitMs": 0
+    },
+    "run": {
+      "profile": {
+        "seed": 12345,
+        "noSamplers": true,
+        "minutes": 10,
+        "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave"
+      }
+    },
+    "gameArgs": [
+      "-disablestoryprogression"
+    ],
+    "timeoutMin": 25
+  },
+  "jobs": [
+    {
+      "id": "ip-v020nat-on-3",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "ON half 1 (Isla Paradiso, ABBA on/off/off/on, separate loads): 15 min natural play (autopilot, camera untouched, no repro, seed 12345), all12 asi (0.36.102, + ArenaGuard InitobjFix, docs/67 §22.9) at release defaults + the full v0.2.0 routing set: kind deadlines + PlanDeadlineMs 300 + FallbackAsync/FbJobCapMs 300/FbJobDeadline (as untested-v020 ip-v020-routing-31), spread fixes (easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice), and the hitch guard: [UnseenFallback] Enabled=1 DeadlineMs=300 (strict) Sites=1 SiteWaitMs=100 + ts3fixes unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave (docs/202 phases A, B, C1-C4, D, D-arrive/leave). Pass: no crash, 0 watchdog lines, no Sim stuck at the end, ufMarks > 0 (the guard acts in real play), unseenfb_refused 0 (unseenfb_seen = plans of seen Sims passed to the game unchanged: info, grows in natural play), kdReady 1, pdCutSc 0. Report, not required > 0: ufSyncCut, ufJobCut, ufLong, ufcTry_0..3 / ufcFake_0..3, unseenfb_marked / _cut / _noretry, unseenfbteleport_shortcuts / _no_spot, unseenfbpre_*, unseenfbarrive_* / unseenfbleave_*, unseenfb_max_ms. Judge (docs/202 ~50% target): TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes v020-natural-<date>-ip-v020nat-off-1 v020-natural-<date>-ip-v020nat-off-2 vs ...-on-1 ...-on-2: routing-led (route-job wait, sync-plan, +0x918 site) >= 200 / 250 / 300 / 1000 ms per 10 min on vs off, plus all >= 300 / >= 1000, p99 / p99.9 / max; no new leader rising by the same amount (moved waits).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "ufReady>=14,ufcReady>=63,ufMarks>=1,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfb_refused<1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-off-3",
+      "note": "OFF half 1 (Isla Paradiso): as ip-v020nat-on-1 with the hitch guard off ([UnseenFallback] Enabled=0 Sites=0, unseenfb* switches at their off default); kind deadlines, PlanDeadlineMs, FallbackAsync and the spread fixes stay on, so the pair isolates the guard. No routingFailFast (off arms show the long unseen plans the guard cuts). Pass: no crash, 0 watchdog lines, kdReady 1, pdCutSc 0, no Sim stuck at the end. Read: hitch-ab.ts --causes baseline for the on halves.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 0,
+        "UnseenFallback.Sites": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-off-4",
+      "note": "OFF half 2 (Isla Paradiso): as ip-v020nat-on-2 with the hitch guard off ([UnseenFallback] Enabled=0 Sites=0, unseenfb* switches at their off default); kind deadlines, PlanDeadlineMs, FallbackAsync and the spread fixes stay on, so the pair isolates the guard. No routingFailFast (off arms show the long unseen plans the guard cuts). Pass: no crash, 0 watchdog lines, kdReady 1, pdCutSc 0, no Sim stuck at the end. Read: hitch-ab.ts --causes baseline for the on halves.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 0,
+        "UnseenFallback.Sites": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-on-4",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "ON half 2 (Isla Paradiso, ABBA on/off/off/on, separate loads): 15 min natural play (autopilot, camera untouched, no repro, seed 12345), all12 asi (0.36.102, + ArenaGuard InitobjFix, docs/67 §22.9) at release defaults + the full v0.2.0 routing set: kind deadlines + PlanDeadlineMs 300 + FallbackAsync/FbJobCapMs 300/FbJobDeadline (as untested-v020 ip-v020-routing-31), spread fixes (easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice), and the hitch guard: [UnseenFallback] Enabled=1 DeadlineMs=300 (strict) Sites=1 SiteWaitMs=100 + ts3fixes unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave (docs/202 phases A, B, C1-C4, D, D-arrive/leave). Pass: no crash, 0 watchdog lines, no Sim stuck at the end, ufMarks > 0 (the guard acts in real play), unseenfb_refused 0 (unseenfb_seen = plans of seen Sims passed to the game unchanged: info, grows in natural play), kdReady 1, pdCutSc 0. Report, not required > 0: ufSyncCut, ufJobCut, ufLong, ufcTry_0..3 / ufcFake_0..3, unseenfb_marked / _cut / _noretry, unseenfbteleport_shortcuts / _no_spot, unseenfbpre_*, unseenfbarrive_* / unseenfbleave_*, unseenfb_max_ms. Judge (docs/202 ~50% target): TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes v020-natural-<date>-ip-v020nat-off-1 v020-natural-<date>-ip-v020nat-off-2 vs ...-on-1 ...-on-2: routing-led (route-job wait, sync-plan, +0x918 site) >= 200 / 250 / 300 / 1000 ms per 10 min on vs off, plus all >= 300 / >= 1000, p99 / p99.9 / max; no new leader rising by the same amount (moved waits).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "ufReady>=14,ufcReady>=63,ufMarks>=1,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfb_refused<1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-on-5",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "ON half 1 (Isla Paradiso, ABBA on/off/off/on, separate loads): 15 min natural play (autopilot, camera untouched, no repro, seed 12345), all12 asi (0.36.102, + ArenaGuard InitobjFix, docs/67 §22.9) at release defaults + the full v0.2.0 routing set: kind deadlines + PlanDeadlineMs 300 + FallbackAsync/FbJobCapMs 300/FbJobDeadline (as untested-v020 ip-v020-routing-31), spread fixes (easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice), and the hitch guard: [UnseenFallback] Enabled=1 DeadlineMs=300 (strict) Sites=1 SiteWaitMs=100 + ts3fixes unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave (docs/202 phases A, B, C1-C4, D, D-arrive/leave). Pass: no crash, 0 watchdog lines, no Sim stuck at the end, ufMarks > 0 (the guard acts in real play), unseenfb_refused 0 (unseenfb_seen = plans of seen Sims passed to the game unchanged: info, grows in natural play), kdReady 1, pdCutSc 0. Report, not required > 0: ufSyncCut, ufJobCut, ufLong, ufcTry_0..3 / ufcFake_0..3, unseenfb_marked / _cut / _noretry, unseenfbteleport_shortcuts / _no_spot, unseenfbpre_*, unseenfbarrive_* / unseenfbleave_*, unseenfb_max_ms. Judge (docs/202 ~50% target): TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes v020-natural-<date>-ip-v020nat-off-1 v020-natural-<date>-ip-v020nat-off-2 vs ...-on-1 ...-on-2: routing-led (route-job wait, sync-plan, +0x918 site) >= 200 / 250 / 300 / 1000 ms per 10 min on vs off, plus all >= 300 / >= 1000, p99 / p99.9 / max; no new leader rising by the same amount (moved waits).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "ufReady>=14,ufcReady>=63,ufMarks>=1,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfb_refused<1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-off-5",
+      "note": "OFF half 1 (Isla Paradiso): as ip-v020nat-on-1 with the hitch guard off ([UnseenFallback] Enabled=0 Sites=0, unseenfb* switches at their off default); kind deadlines, PlanDeadlineMs, FallbackAsync and the spread fixes stay on, so the pair isolates the guard. No routingFailFast (off arms show the long unseen plans the guard cuts). Pass: no crash, 0 watchdog lines, kdReady 1, pdCutSc 0, no Sim stuck at the end. Read: hitch-ab.ts --causes baseline for the on halves.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 0,
+        "UnseenFallback.Sites": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-off-6",
+      "note": "OFF half 2 (Isla Paradiso): as ip-v020nat-on-2 with the hitch guard off ([UnseenFallback] Enabled=0 Sites=0, unseenfb* switches at their off default); kind deadlines, PlanDeadlineMs, FallbackAsync and the spread fixes stay on, so the pair isolates the guard. No routingFailFast (off arms show the long unseen plans the guard cuts). Pass: no crash, 0 watchdog lines, kdReady 1, pdCutSc 0, no Sim stuck at the end. Read: hitch-ab.ts --causes baseline for the on halves.",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 0,
+        "UnseenFallback.Sites": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020nat-on-6",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "ON half 2 (Isla Paradiso, ABBA on/off/off/on, separate loads): 15 min natural play (autopilot, camera untouched, no repro, seed 12345), all12 asi (0.36.102, + ArenaGuard InitobjFix, docs/67 §22.9) at release defaults + the full v0.2.0 routing set: kind deadlines + PlanDeadlineMs 300 + FallbackAsync/FbJobCapMs 300/FbJobDeadline (as untested-v020 ip-v020-routing-31), spread fixes (easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice), and the hitch guard: [UnseenFallback] Enabled=1 DeadlineMs=300 (strict) Sites=1 SiteWaitMs=100 + ts3fixes unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave (docs/202 phases A, B, C1-C4, D, D-arrive/leave). Pass: no crash, 0 watchdog lines, no Sim stuck at the end, ufMarks > 0 (the guard acts in real play), unseenfb_refused 0 (unseenfb_seen = plans of seen Sims passed to the game unchanged: info, grows in natural play), kdReady 1, pdCutSc 0. Report, not required > 0: ufSyncCut, ufJobCut, ufLong, ufcTry_0..3 / ufcFake_0..3, unseenfb_marked / _cut / _noretry, unseenfbteleport_shortcuts / _no_spot, unseenfbpre_*, unseenfbarrive_* / unseenfbleave_*, unseenfb_max_ms. Judge (docs/202 ~50% target): TS3_REPO=<main checkout> node tools/harness/hitch-ab.ts --causes v020-natural-<date>-ip-v020nat-off-1 v020-natural-<date>-ip-v020nat-off-2 vs ...-on-1 ...-on-2: routing-led (route-job wait, sync-plan, +0x918 site) >= 200 / 250 / 300 / 1000 ms per 10 min on vs off, plus all >= 300 / >= 1000, p99 / p99.9 / max; no new leader rising by the same amount (moved waits).",
+      "asi": "game-copy/ts3native.asi.unseenfb-all14",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 139,
+      "noiseCheck": true,
+      "nativeRequire": "ufReady>=14,ufcReady>=63,ufMarks>=1,kdReady>=1,pdCutSc<=0,watchdogs<=0",
+      "ini": {
+        "RouteAsync.KindDeadlines": 1,
+        "RouteAsync.PlanDeadlineMs": 300,
+        "RouteAsync.FallbackAsync": 1,
+        "RouteAsync.FbJobCapMs": 300,
+        "RouteAsync.FbJobDeadline": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteJobPhases.Enabled": 1,
+        "RouteJobPhases.SyncPlans": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1,
+        "UnseenFallback.Enabled": 1,
+        "UnseenFallback.DeadlineMs": 300,
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 0
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15,
+          "fixesOn": "easpreadlots,easpreadpets,easpreaddecay,overwatchstuckslice,unseenfbloopdet,unseenfbstuck,unseenfbplan,unseenfbteleport,unseenfbsites,unseenfbpre,unseenfbarrive,unseenfbleave",
+          "fixesRequire": "unseenfb_refused<1"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 32
+    }
+  ]
+}

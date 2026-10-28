@@ -61,7 +61,28 @@ static class UnseenFbTest
         Check(UnseenFallbackCore.SitesSleepTicks(1, 1000, 500) == 1, "slow clock floors at 1");
         Check(UnseenFallbackCore.SitesSleepTicks(1000, 1, 500) == UnseenFallbackCore.kSleepMax, "cap");
         Check(UnseenFallbackCore.SitesSleepTicks(8, 20, -5) == 1, "late push: shortest sleep");
-        Check(!UnseenFallbackCore.SitesRecheck(0.5f, 100) && UnseenFallbackCore.SitesRecheck(1f, 100) && UnseenFallbackCore.SitesRecheck(0f, UnseenFallbackCore.kRecheckMs) && UnseenFallbackCore.SitesRecheck(0f, -1), "recheck rule");
+        Check(!UnseenFallbackCore.SitesRecheck(0.5f, 100, false) && UnseenFallbackCore.SitesRecheck(1f, 100, false) && UnseenFallbackCore.SitesRecheck(0f, UnseenFallbackCore.kRecheckMs, false) && UnseenFallbackCore.SitesRecheck(0f, -1, false), "recheck rule");
+        Check(UnseenFallbackCore.SitesRecheck(0f, 100, true), "recheck on a new interaction or route");
+        // docs/202 §5.8: per-tick budget of the push's Sim pass, every Sim covered once
+        UfSitesPass sp = new UfSitesPass();
+        for (int total = 0; total <= 3 * UnseenFallbackCore.kSitesPerTick + 1; total += 5)
+        {
+            sp.Begin(total);
+            int covered = 0, wakes = 0, from;
+            bool over = false, gap = false;
+            while (!sp.Done)
+            {
+                int got = sp.Slice(out from);
+                if (got > UnseenFallbackCore.kSitesPerTick || got <= 0) over = true;
+                if (from != covered) gap = true;
+                covered += got;
+                if (++wakes > 100) break;
+            }
+            Check(!over && !gap && covered == total && wakes == (total + UnseenFallbackCore.kSitesPerTick - 1) / UnseenFallbackCore.kSitesPerTick, "sites pass: <= " + UnseenFallbackCore.kSitesPerTick + " Sims per wake, all " + total + " covered");
+        }
+        sp.Begin(0);
+        int f0;
+        Check(sp.Done && sp.Slice(out f0) == 0, "empty pass");
 
         // §5.7 E: loop detector (restart after a failed plan, same key, inside the window; flags once)
         UfLoopDetector ld = new UfLoopDetector(750);

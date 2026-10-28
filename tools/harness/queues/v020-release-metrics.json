@@ -1,0 +1,245 @@
+{
+  "note": "v0.2.0 release metrics: 3 x 15 min per town + one 45 min IP soak on the exact release build (2026-10-28 night)",
+  "jobs": [
+    {
+      "id": "bp-v020rel-1",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-BP",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020rel-1",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "sv-v020rel-1",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "bp-v020rel-2",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-BP",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020rel-2",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "sv-v020rel-2",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "bp-v020rel-3",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-BP",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020rel-3",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "sv-v020rel-3",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 15 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 15
+        }
+      },
+      "timeoutMin": 32
+    },
+    {
+      "id": "ip-v020rel-soak",
+      "note": "v0.2.0 release config (asi rel020, repo ini = release defaults, ts3fixes rel020 tunables) 45 min natural play, light tools only; release-notes numbers (docs/release-notes/v0.2.0-dev.md)",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "noiseCheck": true,
+      "ini": {
+        "RouteAsync.OwnJobWait": 1,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "noSamplers": true,
+          "minutes": 45
+        }
+      },
+      "timeoutMin": 62
+    }
+  ]
+}

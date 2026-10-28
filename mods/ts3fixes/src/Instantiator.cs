@@ -57,9 +57,9 @@ namespace Ts3Fixes
         [Tunable] public static bool kUnseenBroadcastThrottle = false; // opt-in until measured: unseen reaction broadcasters pulse one time in kUnseenBroadcastEvery each, instead of the shared 1 in 4 (docs/144)
         [Tunable] public static int kUnseenThrottleEvery = 4;      // N for the two Sim throttles above
         [Tunable] public static int kUnseenBroadcastEvery = 16;    // N for the broadcaster throttle (kBroadcasterThrottle is already 1 in 4)
-        [Tunable] public static bool kEaSpreadLots = false;        // opt-in until measured: EA's 3 AM venue cleanup does a few lots per sim tick in its own task, same steps (EaSpread.cs, docs/147)
-        [Tunable] public static bool kEaSpreadPets = false;        // opt-in until measured: the pet pool alarm builds its pet in a task, so EA's own sleeps between CAS steps take effect (docs/147)
-        [Tunable] public static bool kEaSpreadDecay = false;       // opt-in until measured: midnight relationship decay, a slice of Sims per sim tick, one step per pair per day (docs/147)
+        [Tunable] public static bool kEaSpreadLots = true;        // on since v0.2.0 (repro-verified, docs/RELEASE.md): EA's 3 AM venue cleanup does a few lots per sim tick in its own task, same steps (EaSpread.cs, docs/147)
+        [Tunable] public static bool kEaSpreadPets = true;        // on since v0.2.0 (repro-verified, docs/RELEASE.md): the pet pool alarm builds its pet in a task, so EA's own sleeps between CAS steps take effect (docs/147)
+        [Tunable] public static bool kEaSpreadDecay = true;       // on since v0.2.0 (repro-verified, docs/RELEASE.md): midnight relationship decay, a slice of Sims per sim tick, one step per pair per day (docs/147)
         [Tunable] public static bool kUnseenCarThrottle = false;   // opt-in until measured: an unseen traffic car (LiteDriver) bound for an unseen spot stays parked on kUnseenCarEvery-1 of kUnseenCarEvery rounds instead of planning a drive (UnseenThrottle.cs, docs/143 §8.3)
         [Tunable] public static int kUnseenCarEvery = 4;           // N for the traffic car rule
         [Tunable] public static bool kRouteSources = false;        // test only: route plans counted by source (docs/151 §2 buckets), repeats, leg-end and bouncer shares; no behaviour change (RouteSources.cs)

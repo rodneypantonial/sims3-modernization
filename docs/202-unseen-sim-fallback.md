@@ -597,3 +597,41 @@ To settle "seen vs not covered" per row in the next run, ts3fixes now logs every
 Unseen visitors on the player's lot can get step 1, never step 2 there. Selftest `tools/selftest/unseenfb` covers the detector (restart after a failure, replans of one instance, successes, window end, other key, flag once), both scopes (each why code, owned lot, household member there, lot in view, world lot, other lot, out of live) and the per-tick budget.
 
 **Risk:** behaviour change on unseen Sims (motives, moodlets) and unseen lots. A firefighter already called may arrive to a fire that is out [inferred]. Test order: v020 loop counts with the detector only, then a breaker arm.
+
+### 5.8 Fixed-build rerun (0.36.104 `unseenfb-all14`, `v020-natural` on-1 / off-1, 2026-10-26 22:46-23:20 UTC, existing data only)
+
+Inputs: `probe-out/profile/v020-natural-2026-10-26-ip-v020nat-{on,off}-1-900-*` (rewritten by this rerun), queue rows 5-6 of `probe-out/queue/v020-natural-2026-10-26.jsonl`, `-2246` / `-2303-ts3native.log`, `-machine.jsonl`. Old build: §5.5, plus `-on-2` (0.36.103, 22:06 UTC, files not overwritten) and the old `-2115` / `-2132` logs. `-off-2` on the new build was still running (624 s of seconds.csv read, no game-time row).
+
+**Headline:** it/s 59.4 on / 73.7 off (seconds.csv means). >= 200 ms per 10 min (first 60 s out) 87 / 68, >= 250 36 / 30, >= 300 10 / 11 [measured].
+
+**1. Machine noise explains most of the it/s gap [measured].** Other apps on the game CPUs: on-1 **21.6%** (claude agents), off-1 5.8%, off-2 7.9%; clock 4179 / 4212 MHz. By thirds of the run: on-1 others 25.7 / 31.1 / **9.2%**, it/s 53.9 / 51.0 / **73.2**; off-1 6.6 / 5.0 / 5.8%, it/s 68.2 / 75.2 / 77.7. In the quiet third the gap is -6% (73.2 vs 77.7), not -21%. Old on-2 was also noisy (22.9%, 41.5 it/s). The harness marks all of these "noise medium"; the on/off pair is not a valid timing pair.
+
+**2. Game time per second [measured, rng.json]:** 10,448 sim-minutes on vs 11,043 off in 900 s (11.6 vs 12.3 per s, -5.4%), with the noise above in two thirds of the on run. Old build: on-1 10,203 / on-2 9,109 vs off-1 10,707 / off-2 10,341 (mean -8.2%).
+
+**3. Split by owner (on-1 vs off-1, ms of sim thread per second):**
+
+| Owner | new on / off | old on (§5.5) | Verdict |
+|---|---|---|---|
+| taskObjects (script tasks) | 81.8 / 74.6 (new off-2 82.5) | 178.5 / 77.2 | **fixed**: within load-to-load spread |
+| `UfSitesLoop` push | 1,509 lists (1.7/s, was 42/s); named runs 2.7 ms mean, 5.0 max | ~120 | ~4-5 ms/s, one 2.7-5 ms bump per push (all Sims in one tick) [inferred from 89 named runs] |
+| C-site lock waits | 0 ms (SiteWaitMs 0) | ~8 | fixed. Side effect: try-only fakes C1 758 / C2 159 / C3 45 / C4 48 (old 30 / 6 / 0 / 19,660); C4 cap hit 6 times, `ufc4:` names 7 |
+| stuck checks | queued 514 / 740 (noplan 345 / 62, notstuck 3 / 316) | 4,343 / 769 | churn fixed; with the guard on a check now ends `noplan` for unseen Sims instead of `notstuck` (outcome change, not cost) |
+| per-plan guard (UfPlan, UfWhy, D `unseenfbpre` checks ~6,400 rejects, loop detector note) | not visible in task frames (inside Sim tasks) | same | ~1-3 ms/s [inferred, §5.4b per-plan estimate x ~15 plans/s + ~7 D checks/s]; loop detector is O(1) per plan, no scan; 0 `ufloop:` lines in either arm |
+| threaded (Sim scripts) | 574.8 / 560.8 | 526.6 / 566.3 | +14 ms/s, but noise-loaded; per sim-minute +8% |
+| route / locomotion / rtLock / gcMark | 84.7 / 93.6, 80.2 / 86.5, 75.4 / 81.2, 8.2 / 11.0 | | lower with the guard on (fewer iterations) |
+| fixesReport | read once at the end of the run | | not a cost |
+
+No camera-query, loop-detector or D-trip owner shows in the data: the script-side guard cost left is ~5-8 ms/s (~0.5-0.8% of the sim thread) [inferred], an order below the it/s gap.
+
+**4. The >= 200 ms excess is routing waits, and it survives the quiet third [measured].** >= 200 / >= 250 per 10 min by thirds: on 96/54, 108/44, **82/28**; off 84/30, 96/42, **36/24**. Causes (hitch-ab `causeOf`, per 10 min, on / off / old on-2):
+
+- sync `Route_ReplanFromPosition` 25.8 / 22.9 / 29.3, `Route_PlanFromPoint` 6.4 / 2.9 / 5.7
+- locomotion-led (steering `+0x918` wait `0x85FE10` inside the agent update) 10.7 / 5.7 / 7.2
+- **`ObjectFootprintFromTool` (`0x8334CC`) waits: 13 / 2 / 18 iterations** (>= 200 ms, whole run), from `GameObject.FadeOut` / `FadeIn`, `FollowRouteAction.PerformRoute` and `RouteBackoffHook.AsyncWait` in Sim tasks: on-arm-only in both builds. Owner not found: ts3fixes' guard teleports do not fade (`PlaceSim`) and were 20 cuts per run. Next: log the holder job's Sim and kind at `0x8334CC` waits >= 100 ms (`[HitchAttr] Holders` already names the holder for `rtMaxKey`; read it per row) before building anything.
+- gate 12 F-G placement (`0x631F40`) 11 / 7 iterations (seen owners: C4 acts only for unseen own-task placements).
+
+These are not guard code time: the guard changes which jobs run when (cuts 20, marks 7,359, C fakes), and the waits behind seen Sims' jobs stay (allowed by the §2 rule).
+
+**5. Fix (branch `bugfix/ufb-guard-cost-2`, ts3fixes only, not run): Rodney's per-Sim loop rule on the only all-Sims pass.** `UfSitesLoop` no longer evaluates every Sim in the push tick: at each 0.5 s push it takes one snapshot of the Sims, then a round-robin cursor (`UnseenFallbackCore.UfSitesPass`) evaluates at most `kSitesPerTick` = 8 Sims per wake (`Simulator.Sleep(0)` = next tick while a pass runs), cheap early-outs first (destroyed, pet, idle = not routing and no interaction), `UfWhy` only for Sims that moved >= 1 m, started routing, changed interaction (new), or after 2 s; the list goes to ts3native when the pass ends (live mode re-checked then: out of live = empty list). A 150-Sim world takes ~19 ticks (< 0.5 s at ~60 it/s); the native list life stays 3 s. Estimate [inferred]: before ~4-5 ms/s with a 2.7-5 ms single-tick bump twice a second; after ~2-4 ms/s (interaction-change rule rechecks a few more, the cache skips most), at most 8 x ~40-120 us = <= ~1 ms per tick. Other loops checked: loop detector (O(1) per plan, no scan), loop breaker (already one Sim per tick + `UfTickBudget`), stuck-check defer (per alarm, no scan): unchanged. Selftest `tools/selftest/unseenfb` checks the per-wake budget (never > 8, every Sim once, wakes = ceil(n/8), empty pass) and the new recheck rule; ts3fixes compiles against the game DLLs.
+
+**Not done:** the `0x8334CC` holder attribution, a quiet-machine on/off pair (needs no agents on the game CPUs: rerun when `og` < 10%), an arm with C1/C2 off (try-only raised C1 fakes 25x; steering skipped more often for unseen walkers).

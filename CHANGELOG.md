@@ -2,6 +2,40 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.0 (2026-10-28)
+
+Routing release: fewer of the long "everyone stops" freezes when Sims plan their walks. Technical notes: [v0.2.0 developer notes](https://github.com/rodneypantonial/sims3-modernization/blob/v0.2.0/docs/release-notes/v0.2.0-dev.md).
+
+### Download
+
+- `ts3native-v0.2.0.zip`: put `ts3native.asi` and `ts3native.ini` in `The Sims 3\Game\Bin\` and replace the old ones. You still need an ASI loader, as before (see "How to install" below).
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one. Both files must come from this release.
+
+### What's new
+
+- **Time limits on route planning.** A Sim looking for a path that does not exist no longer holds up the whole game for seconds: plans that run too long end early with the game's own "can't get there" answer.
+- **Hitch guard for Sims you can't see.** When an off-screen Sim's route goes wrong, the game no longer freezes waiting for it; the Sim gets a short cut or is moved along.
+- **Nightly chores in small steps.** The game's 3 AM venue cleanup, the pet adoption pool and midnight relationship decay now run over many frames instead of one frozen frame. NRaas Overwatch's nightly stuck-Sim check is split up too.
+- **Crash fix.** A rare crash where the game's script engine cleared more memory than it should.
+
+### Results (our test saves, autopilot play, 10-15 minute loads)
+
+Cells: no fixes -> v0.1.5 -> **v0.2.0**.
+
+| | Bridgeport | Sunset Valley | Isla Paradiso |
+|---|---|---|---|
+| freezes of 300 ms or longer, per 10 minutes | 4.8 -> 5.0 -> **0.0** | 13.7 -> 4.3 -> **5.8** | 93.9 -> 20.0 -> **13.1** |
+| sim iterations per second | 59.3 -> 56.9 -> n/a | 91.3 -> 73.2 -> **87.7** | 63.2 -> 65.8 -> **73.0** |
+| p99 sim step | 79 -> 79 -> **84 ms** | 59 -> 67 -> **57 ms** | 168 -> 105 -> **107 ms** |
+
+v0.2.0 numbers are the mean of several loads (Isla Paradiso 9, Sunset Valley 4, Bridgeport 1); v0.1.5 and no-fixes are one load each, so small differences are within noise. The Bridgeport v0.2.0 load ran with our profiler's samplers on, which slow the game, so its speed is left out.
+
+### Good to know
+
+- Your saves are not changed by installing or removing this release. As always, back up your saves first.
+- Upgrading: replace both files; use the new `ts3native.ini` (the new features are switched on there).
+- The guard's part for Build/Buy edge cases ships switched off and comes in v0.2.1.
+
 ## v0.1.6 (2026-10-25)
 
 Hotfix: `ts3native.log` now tells us what we need to help you. No gameplay changes: same fixes, same settings as v0.1.5.

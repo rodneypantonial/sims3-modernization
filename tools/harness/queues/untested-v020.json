@@ -194,8 +194,9 @@
     {
       "id": "sv-plandeadline-soak",
       "routingFailFast": {
-        "ms": 300,
-        "scope": "all"
+        "ms": 400,
+        "scope": "all",
+        "note": "scope all + PlanDeadlineMs 300: cut at ~300 ms plus up to ~100 ms overrun is the cap working (docs/164 §7, 2026-10-27 sv-plandeadline-soak 308 ms plan / 340 ms hitch); fail above 400"
       },
       "note": "TIMING soak of [RouteAsync] PlanDeadlineMs=300 (docs/164 §7; bp-plandeadline-ab = ship-on, pdHit 32 / pdHitOk 0), first natural run: SV 45 min natural play (autopilot, camera untouched, no repro; SV has the multi-second failing NoStart/Foreign sync plans), pd2 asi (0.36.78: kinddl + docs/164 §7.8 sync-path exemptions) at release defaults plus PlanDeadlineMs only (FailMemo off: one switch under test), light tools as natural-shipped. Pass: no crash, 0 watchdog lines, pdCutSc 0 (tripwire: a cut session that held a stuck-check last round, docs/164 §7.8), no Sim stuck at the end. Read: pdHit / pdHitOk (info only: past the deadline yet succeeded = nothing cut, not a behaviour change) / pdHitUs / pdLateMaxUs / pdOwnExempt / pdExemptSc, route failures (route_replan rows, pdHit - pdHitOk), hitch-ab.ts --causes for sync-plan-led >= 300 / >= 1000 ms vs v0.1.4 SV (docs/161).",
       "asi": "game-copy/ts3native.asi.unseenfb-all14",
