@@ -289,6 +289,9 @@ namespace Ts3Fixes
             holds[id] = until;
             c[317]++;
             if ((int)minutes > c[318]) c[318] = (int)minutes;
+            int t0 = System.Environment.TickCount;
+            string why = "time up";
+            UfHoldLog(sim, cur, "start, " + minutes.ToString("0") + " sim-min, live " + GameStates.IsLiveState, false);
             try
             {
                 // a tick sleep never wakes while the clock is paused (family picker, Build/Buy), and the game then waits on this
@@ -297,15 +300,22 @@ namespace Ts3Fixes
                 while (Sims3.Gameplay.Utilities.SimClock.CurrentTicks < until)
                 {
                     Simulator.Sleep(0);
-                    if (sim.HasBeenDestroyed || !sim.InWorld || sim.CurrentInteraction != cur || (cur != null && cur.Cancelled) || sim.HasExitReason()
-                        || !GameStates.IsLiveState || sim.IsSelectable || sim.Household == Household.ActiveHousehold) return false;
+                    why = sim.HasBeenDestroyed || !sim.InWorld ? "gone" : sim.CurrentInteraction != cur || (cur != null && cur.Cancelled) ? "interaction ended"
+                        : sim.HasExitReason() ? "exit reason" : !GameStates.IsLiveState ? "not live" : sim.IsSelectable || sim.Household == Household.ActiveHousehold ? "family started" : null;
+                    if (why != null) return false;
                     if (Sims3.Gameplay.Utilities.SimClock.CurrentTicks < nextCheck) continue;
                     nextCheck = Sims3.Gameplay.Utilities.SimClock.CurrentTicks + step;
-                    if ((sim.Position - at).LengthSqr() > 0.01f || UfWhy(sim) != 0 || !TownieUnseen(sim, null) || !UfGoalUnseen(dest)) return false;
+                    if ((sim.Position - at).LengthSqr() > 0.01f || UfWhy(sim) != 0 || !TownieUnseen(sim, null) || !UfGoalUnseen(dest)) { why = "seen or moved"; return false; }
                 }
+                why = "time up";
                 return true;
             }
-            finally { holds.Remove(id); }
+            finally
+            {
+                holds.Remove(id);
+                // pauses and family starts are what hung the Play step on v0.2.0/v0.2.1: always log them
+                UfHoldLog(sim, cur, "end: " + why + " after " + (System.Environment.TickCount - t0) + " ms", why == "not live" || why == "family started");
+            }
         }
 
         // docs/202 §3.6.4 lot trips (unseenfbtrip / unseenfbtriphold): D's rules on top of the trip shortcut's own (townie, lot rules,

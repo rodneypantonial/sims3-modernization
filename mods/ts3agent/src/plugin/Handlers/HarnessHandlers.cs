@@ -503,7 +503,20 @@ namespace Ts3Agent
             if (target == null) throw new McpException("no household on a lot named '" + name + "'");
             if (PlayFlowModel.Singleton == null) throw new McpException("the play flow is not up (load_world with state PlayFlow)");
             ulong lotId = target.LotHome.LotId;
-            RunAsync("play_existing " + name, delegate { PlayFlowModel.Singleton.PlayExisting(lotId); });
+            Household hh = target;
+            RunAsync("play_existing " + name, delegate
+            {
+                // a world loaded by load_world has no picker UI (PlayFlowController.Singleton null): ActivateExisting would
+                // throw at HidePlayFlowUI, so wait for it briefly, else run its MiniLoad with the model's own callbacks
+                for (int i = 0; i < 120 && Sims3.UI.GameEntry.PlayFlowController.Singleton == null; i++) Simulator.Sleep(0);
+                if (Sims3.UI.GameEntry.PlayFlowController.Singleton != null) { PlayFlowModel.Singleton.PlayExisting(lotId); return; }
+                const BindingFlags np = BindingFlags.NonPublic | BindingFlags.Instance;
+                PlayFlowModel m = PlayFlowModel.Singleton;
+                BoolFuncWithParam masked = (BoolFuncWithParam)Delegate.CreateDelegate(typeof(BoolFuncWithParam), m, typeof(PlayFlowModel).GetMethod("ActivateSimScreenMaskedFunc", np));
+                BoolFuncWithParam loaded = (BoolFuncWithParam)Delegate.CreateDelegate(typeof(BoolFuncWithParam), m, typeof(PlayFlowModel).GetMethod("LotsLoadedFunc", np));
+                BoolFuncWithParam unmasked = (BoolFuncWithParam)Delegate.CreateDelegate(typeof(BoolFuncWithParam), m, typeof(PlayFlowModel).GetMethod("ScreenUnmaskedFunc", np));
+                Sims3.UI.GameEntry.MiniLoad.Show(true, lotId, masked, loaded, unmasked, new Tuple(hh, hh.LotHome));
+            });
             Dictionary<string, object> r = Util.Obj();
             r["playing"] = target.Name;
             r["lot"] = lotId;

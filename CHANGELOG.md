@@ -2,6 +2,20 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.3 (2026-10-29)
+
+Diagnostics hotfix: better problem reports for starting a family. No gameplay changes from v0.2.2.
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native-v0.2.3.zip`: the same `ts3native.asi` and `ts3native.ini` as v0.2.0; you only need it if you don't have v0.2.x yet.
+
+### What's new
+
+- **`ts3native.log` now records what you do and when the family starts:** each switch between the family picker, live mode, Build, Buy, Create a Sim and Edit Town, the active family, and, when you press Play, whether the family started (checked every 5 seconds for a minute, naming any Sim that is still busy). If a family ever fails to load, send us that file and we can see exactly where it stopped.
+- Logging only: a few short lines per mode change, nothing per frame.
+
 ## v0.2.2 (2026-10-29)
 
 Hotfix: **families could not be loaded** with v0.2.0 / v0.2.1 on some setups (the Play arrow grays out and nothing happens).
