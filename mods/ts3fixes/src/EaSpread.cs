@@ -44,6 +44,10 @@ namespace Ts3Fixes
         static FieldInfo sPoolAlarm;                        // PetPoolManager.sPoolAlarm, the pool's one alarm handle
         static ObjectGuid sLotTask = ObjectGuid.InvalidObjectGuid, sPetTask = ObjectGuid.InvalidObjectGuid, sDecayTask = ObjectGuid.InvalidObjectGuid;
         static StopWatch sEaWatch;
+        // simler90's Gameplay Systems Core Mod adds four simler90Extras.WorldMaintenance calls to the 3 AM cleanup our patch
+        // replaces; we call them at its places (private static, by reflection). Its TuningExtras flags are read inside them.
+        static MethodInfo sSimElectronics, sSimYoungster, sSimAging, sSimMissing;
+        static bool sSimLooked, sSimFailLogged;
 
         static void ApplyEaSpread()
         {
@@ -161,9 +165,49 @@ namespace Ts3Fixes
             u.Add(delegate
             {
                 if (!Bartending.IsBarVenue(lot))
+                {
                     foreach (IVelvetRopes ropes in lot.GetObjects<IVelvetRopes>()) { ropes.NightlyCleanUp(); n[3]++; }
+                    SimlerCall(sSimElectronics, lot, n, 7);
+                }
             });
             return u;
+        }
+
+        // Looks up simler90Extras.WorldMaintenance once per session (loaded assemblies do not change in a session).
+        // Absent = all four stay null and the cleanup is EA's.
+        static void FindSimlerExtras()
+        {
+            if (sSimLooked) return;
+            sSimLooked = true;
+            try
+            {
+                Type t = null;
+                foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies()) { t = a.GetType("simler90Extras.WorldMaintenance", false); if (t != null) break; }
+                if (t == null) return;
+                const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+                sSimElectronics = t.GetMethod("TurnOffDisturbingElectronicsOnLot", st, null, new Type[] { typeof(Lot) }, null);
+                sSimYoungster = t.GetMethod("SendInactiveYoungsterHome", st, null, new Type[] { typeof(Sim) }, null);
+                sSimAging = t.GetMethod("AgingFixHomelessPetsAndYoungsters", st, null, Type.EmptyTypes, null);
+                sSimMissing = t.GetMethod("FixMissingSims", st, null, Type.EmptyTypes, null);
+                EaLog("venue cleanup: simler90 extras found: electronics " + (sSimElectronics != null) + ", youngsters home " + (sSimYoungster != null)
+                    + ", aging fix " + (sSimAging != null) + ", missing Sims " + (sSimMissing != null));
+            }
+            catch (Exception e) { EaLog("venue cleanup: simler90 extras lookup failed: " + e.GetType().Name); }
+        }
+
+        // One simler90 extra; n[slot] counts calls that returned. A throw is logged once and never stops our units.
+        static void SimlerCall(MethodInfo m, object arg, int[] n, int slot)
+        {
+            if (m == null) return;
+            try { m.Invoke(null, arg == null ? null : new object[] { arg }); n[slot]++; }
+            catch (Exception e)
+            {
+                n[6]++;
+                if (sSimFailLogged) return;
+                sSimFailLogged = true;
+                Exception inner = e.InnerException != null ? e.InnerException : e;
+                EaLog("venue cleanup: simler90 " + m.Name + " threw " + inner.GetType().Name + ": " + inner.Message);
+            }
         }
 
         // Lot.MagicallyCleanUp(repair) as units, the same steps in the same order: the objects to clean are found (one unit
@@ -277,6 +321,7 @@ namespace Ts3Fixes
                 {
                     actor.SeedNpcInventoryIfNeeded();
                     actor.GrantVampireFruitToNpcVampires();
+                    SimlerCall(sSimYoungster, actor, n, 8);
                     n[4]++;
                 }
                 sStuckInit.Invoke(null, new object[] { actor });
@@ -308,14 +353,16 @@ namespace Ts3Fixes
         static string LotCounts(int[] n)
         {
             return "cleaned " + n[0] + ", virtual-slot lots " + n[1] + ", season only " + n[2] + ", velvet ropes " + n[3]
-                + ", NPCs seeded " + n[4] + ", stuck checks armed " + n[5] + ", failed steps " + n[6];
+                + ", NPCs seeded " + n[4] + ", stuck checks armed " + n[5] + ", failed steps " + n[6]
+                + (n.Length > 7 && n[7] + n[8] + n[9] + n[10] > 0 ?", simler90 extras: electronics lots " + n[7] + ", youngster checks " + n[8] + ", aging fix " + n[9] + ", missing Sims " + n[10] : "");
         }
 
         static void LotCleanupTask(Sim active, int before)
         {
-            int[] c = PatchCounters(), n = new int[7];
+            int[] c = PatchCounters(), n = new int[11]; // [7..10] simler90 extras, logged only (no counter slots reserved)
             int ticks = 1;
             long maxUs = 0;
+            FindSimlerExtras();
             List<Lot> lotList = AllLots();
             int maxUnits = 0;
             bool whole = RunUnits(lotList, delegate(Lot lot) { return LotUnits(lot, active, n); }, EaSpreadCore.kMaxLotUnits, n, ref ticks, ref maxUs, ref maxUnits);
@@ -329,6 +376,28 @@ namespace Ts3Fixes
             {
                 SlicedPass<Sim> actors = new SlicedPass<Sim>(new List<Sim>(LotManager.Actors));
                 whole = RunSliced(actors, delegate(Sim s) { ActorStep(s, n); }, EaSpreadCore.kMaxActors, ref ticks, ref maxUs);
+            }
+            // simler90 runs these two after the Sim loop, before the hot-spot pick. shortcut: the aging fix runs whole in one
+            // tick (its per-townie body is inline, no method to call per item), spread it later if it shows as a hitch.
+            if (whole && sSimAging != null)
+            {
+                Simulator.Sleep(0);
+                ticks++;
+                whole = !WorldGone();
+                if (whole)
+                {
+                    StopWatch aw = EaWatch();
+                    aw.Restart();
+                    SimlerCall(sSimAging, null, n, 9);
+                    if (aw.GetElapsedTime() > maxUs) maxUs = aw.GetElapsedTime();
+                }
+            }
+            if (whole && sSimMissing != null)
+            {
+                Simulator.Sleep(0);
+                ticks++;
+                whole = !WorldGone();
+                if (whole) SimlerCall(sSimMissing, null, n, 10); // sleeps between households itself
             }
             if (whole)
             {
