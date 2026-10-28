@@ -42,6 +42,7 @@ namespace Ts3Agent
             Dispatcher.Register("patch_test_cold", PatchTestCold);
             Dispatcher.Register("patches", Patches);
             Dispatcher.Register("play_household", PlayHousehold);
+            Dispatcher.Register("play_existing", PlayExisting);
             Dispatcher.Register("quit_game", QuitGame);
             Dispatcher.Register("auto_dialog", AutoDialog);
             Dispatcher.Register("enter_live_mode", EnterLiveMode);
@@ -488,6 +489,24 @@ namespace Ts3Agent
             });
             Dictionary<string, object> r = Util.Obj();
             r["playing"] = target.Name;
+            return r;
+        }
+
+        // The family picker's Play arrow on an existing household: PlayFlowModel.PlayExisting(lot) -> MiniLoad with
+        // waitForSims, the path players take (play_household skips that wait). Needs the play flow (load_world state PlayFlow).
+        static object PlayExisting(Args a)
+        {
+            string name = a.Str("name");
+            Household target = null;
+            foreach (Household h in Household.sHouseholdList)
+                if (h != null && h.LotHome != null && string.Equals(h.Name, name, StringComparison.OrdinalIgnoreCase)) { target = h; break; }
+            if (target == null) throw new McpException("no household on a lot named '" + name + "'");
+            if (PlayFlowModel.Singleton == null) throw new McpException("the play flow is not up (load_world with state PlayFlow)");
+            ulong lotId = target.LotHome.LotId;
+            RunAsync("play_existing " + name, delegate { PlayFlowModel.Singleton.PlayExisting(lotId); });
+            Dictionary<string, object> r = Util.Obj();
+            r["playing"] = target.Name;
+            r["lot"] = lotId;
             return r;
         }
 
