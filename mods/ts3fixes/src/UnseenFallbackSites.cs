@@ -34,7 +34,7 @@ namespace Ts3Fixes
             int gen = ++sUfSitesGen;  // a loop left from an earlier load ends at its next wake-up
             sUfSiteCache.Clear();
             UfFinishReset();  // docs/202 §3.4.2: holds of an earlier load are gone
-            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { UfSitesLoop(gen); }));
+            Simulator.AddObject(new LoopTask(delegate { UfSitesLoop(gen); }));
         }
 
         static void UfSitesLoop(int gen)

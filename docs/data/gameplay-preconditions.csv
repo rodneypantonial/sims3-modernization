@@ -12,6 +12,8 @@ patch_test_cold,HarnessHandlers,Any,none (our patches),harness,,handler,none
 patches,HarnessHandlers,Any,none (our runtime switches),harness,,handler,none
 play_household,HarnessHandlers,EditTown,Edit Town > Play household,natural,household with a home lot,handler + R-MODE-5,none
 play_existing,HarnessHandlers,EditTown,New game family picker > Play arrow on an existing family (PlayFlowModel.PlayExisting),natural,play flow up (load_world state PlayFlow) and a household with a home lot,handler + PlayFlowModel.PlayExisting,none
+ui_single_task_probe,HarnessHandlers,EditTown,none (harness check: queues a UI single task like the Play arrow),harness,none,handler + Sims3.UI.OneShotFunctionTask singleTask,none
+ui_single_task_result,HarnessHandlers,Any,none (harness check: result of ui_single_task_probe),harness,none,handler,none
 quit_game,HarnessHandlers,Any,Options > Quit,natural,,handler,none
 auto_dialog,HarnessHandlers,Any,answering a popup (player clicks OK/Cancel),natural,,handler,none
 enter_live_mode,HarnessHandlers,Live;Build;Buy;EditTown;CAS,Live button / Play from Edit Town,natural,,handler + R-MODE-1,none

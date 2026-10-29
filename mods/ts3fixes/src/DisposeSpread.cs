@@ -68,7 +68,7 @@ namespace Ts3Fixes
             if (!TaskAlive(sDisposeTask))
             {
                 c[288] += sDisposeQueue.Clear(); // left over from a task the world unload killed
-                sDisposeTask = Simulator.AddObject(new OneShotFunctionTask(DisposeSpreadDrain));
+                sDisposeTask = Simulator.AddObject(new LoopTask(DisposeSpreadDrain));
             }
             if (sDisposeQueue.Count >= kDisposeSpreadMax) { c[287]++; return false; }
             sDisposeQueue.Add(o, Simulator.TicksElapsed());

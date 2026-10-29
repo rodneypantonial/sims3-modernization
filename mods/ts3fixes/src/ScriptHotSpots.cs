@@ -328,7 +328,7 @@ namespace Ts3Fixes
                         p.FglParams.PlacementCheckFunc = Wildflower.IsValidWildflowerLocation;
                         if (task && !(sWfTask.IsValid && Simulator.GetTask(sWfTask) != null))
                         {
-                            sWfTask = Simulator.AddObject(new OneShotFunctionTask(delegate
+                            sWfTask = Simulator.AddObject(new LoopTask(delegate
                             {
                                 try { WfPlaceSliced(flower, lot, p); }
                                 finally { sWfTask = ObjectGuid.InvalidObjectGuid; }

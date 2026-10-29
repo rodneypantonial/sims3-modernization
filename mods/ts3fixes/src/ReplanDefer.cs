@@ -82,7 +82,7 @@ namespace Ts3Fixes
             if (sSpreadReplaying || rc == null || !ShortcutOn("replanspread") || !GameStates.IsInWorld() || GameStates.IsWorldShuttingDown) return false;
             if (sSpread.Add(rc)) PatchCounters()[134]++;
             if (!(sSpreadTask.IsValid && Simulator.GetTask(sSpreadTask) != null))
-                sSpreadTask = Simulator.AddObject(new OneShotFunctionTask(SpreadReplay));
+                sSpreadTask = Simulator.AddObject(new LoopTask(SpreadReplay));
             return true;
         }
 
