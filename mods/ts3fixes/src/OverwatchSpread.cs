@@ -225,7 +225,7 @@ namespace Ts3Fixes
 
         static void OwStartTask(object option, bool ours)
         {
-            Simulator.AddObject(new OneShotFunctionTask(delegate { OwRunType(option, ours); }));
+            Simulator.AddObject(new LoopTask(delegate { OwRunType(option, ours); }));
         }
 
         // Our alarm: Overwatch's option list, one alarm per type, gapMinutes apart (the first one right away).
@@ -440,11 +440,11 @@ namespace Ts3Fixes
             {
                 if (mode == OverwatchSpreadCore.Mode.Ours)
                 {
-                    Simulator.AddObject(new OneShotFunctionTask(delegate { OwSpread(gapMinutes > 0 ? gapMinutes : OverwatchSpreadCore.kGapMinutes); }));
+                    Simulator.AddObject(new LoopTask(delegate { OwSpread(gapMinutes > 0 ? gapMinutes : OverwatchSpreadCore.kGapMinutes); }));
                     return "ours, " + gapMinutes + " sim-minutes apart";
                 }
                 // with a spreading Overwatch build nothing is patched: its own OnTimer is the alarm
-                Simulator.AddObject(new OneShotFunctionTask(delegate { if (sOwSpreadReady) OverwatchSpreadHook.TimerHook(); else sOwTimer.Invoke(null, null); }));
+                Simulator.AddObject(new LoopTask(delegate { if (sOwSpreadReady) OverwatchSpreadHook.TimerHook(); else sOwTimer.Invoke(null, null); }));
                 return mode.ToString();
             }
             if (sOwFind == null) return "option list not found";
@@ -465,7 +465,7 @@ namespace Ts3Fixes
                 }
                 else if (mode == OverwatchSpreadCore.Mode.Chain)
                 {
-                    Simulator.AddObject(new OneShotFunctionTask(OwChainTheirs)); // own task: a yieldable root, and its name marks the chain's hitch lines
+                    Simulator.AddObject(new LoopTask(OwChainTheirs)); // own task: a yieldable root, and its name marks the chain's hitch lines
                     return;
                 }
                 else if (mode == OverwatchSpreadCore.Mode.Upstream)

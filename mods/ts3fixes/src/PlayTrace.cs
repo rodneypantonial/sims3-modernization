@@ -21,6 +21,26 @@ namespace Ts3Fixes
 
         static int sActionGen;
 
+        // The task for all our script work. Sims3.Gameplay.OneShotFunctionTask counts itself in UIManager.TaskCount for its
+        // whole life, and the game's single tasks (family picker Play, Edit Town lot place) only run while that count is 1:
+        // three of our world-load loops kept it at 3 and Play grayed out for good (v0.2.0-v0.2.5, traced with TaskCountHook).
+        internal sealed class LoopTask : Task
+        {
+            readonly Sims3.Gameplay.Function mFunction;
+            public LoopTask(Sims3.Gameplay.Function f) { mFunction = f; }
+            public override void Simulate()
+            {
+                try { mFunction(); }
+                catch (Exception) { }
+                finally { Simulator.DestroyObject(ObjectId); }
+            }
+            // same text as OneShotFunctionTask: hitch lines name a task by it (OverwatchSpread's chain marks)
+            public override string ToString()
+            {
+                return mFunction == null ? "(OneShotFunctionTask) NULL function" : "(OneShotFunctionTask) Function method: " + mFunction.Method.ToString() + ", Declaring Type: " + mFunction.Method.DeclaringType.ToString();
+            }
+        }
+
         internal static void StartPlayTrace()
         {
             if (sPlayTraceListener != null) EventTracker.RemoveListener(sPlayTraceListener);
@@ -28,7 +48,7 @@ namespace Ts3Fixes
             sUfHoldLogged = 0;
             ApplyPlayHooks();
             int gen = ++sActionGen;  // a watcher left from an earlier load ends at its next wake-up
-            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { ActionWatch(gen); }));
+            Simulator.AddObject(new LoopTask(delegate { ActionWatch(gen); }));
         }
 
         // The player's actions as mode and family changes ("ts3fixes: action: ..."): family picker, live, Build, Buy, CAS,
@@ -54,7 +74,7 @@ namespace Ts3Fixes
                 if (first || m != mode || f != family)
                 {
                     string mn = m == -1 ? "FamilyPicker" : m == -2 ? "?" : ((InWorldState.SubState)m).ToString(), fn = f != null ? f.Name : "none";
-                    DiagLine("action: mode " + modeName + " -> " + mn + ", family " + familyName + " -> " + fn + " at +" + (System.Environment.TickCount - t0) / 1000 + " s, holds " + UfHolds().Count);
+                    DiagLine("action: mode " + modeName + " -> " + mn + ", family " + familyName + " -> " + fn + " at +" + (System.Environment.TickCount - t0) / 1000 + " s, holds " + UfHolds().Count + ", ui tasks " + Sims3.UI.UIManager.TaskCount + (first ? " (task count hook " + sTaskHookState + ")" : ""));
                     mode = m;
                     family = f;
                     modeName = mn;
@@ -62,6 +82,7 @@ namespace Ts3Fixes
                     first = false;
                     lines++;
                 }
+                try { PlayStuckCheck(); } catch (Exception) { }
                 Simulator.Sleep(0);
             }
         }
@@ -75,6 +96,132 @@ namespace Ts3Fixes
             sPlayHooksTried = true;
             try { Patch(typeof(PlayFlowModel), "PlayExisting", new Type[] { typeof(ulong) }, typeof(PlayHooks), "PlayExistingHook", "PlayExistingOrig"); } catch (Exception) { }
             try { Patch(typeof(PlayFlowModel), "PlayBinHousehold", new Type[] { typeof(Sims3.UI.GameEntry.IExportBinContents), typeof(ulong), typeof(bool) }, typeof(PlayHooks), "PlayBinHook", "PlayBinOrig"); } catch (Exception) { }
+            // the picker's Play arrow: EnableNavButtons(false), then a OneShotFunctionTask(PlayGame) that calls PlayExisting
+            try { Patch(typeof(Sims3.UI.GameEntry.PlayFlowInstructions), "EnableNavButtons", new Type[] { typeof(bool) }, typeof(PlayUiHooks), "EnableHook", "EnableOrig"); } catch (Exception) { }
+            try
+            {
+                Type flow = typeof(Sims3.UI.GameEntry.PlayFlowController).Assembly.GetType("Sims3.UI.GameEntry.PlayFlowInWorldFlow");
+                if (flow != null) Patch(flow, "PlayGame", Type.EmptyTypes, typeof(PlayUiHooks), "PlayGameHook", "PlayGameOrig");
+            }
+            catch (Exception) { }
+        }
+
+        // who moves UIManager.TaskCount: PlayGame is a single task that only runs once the count is 1. Patched at script load
+        // (Fixes.Apply), before the setter first runs; later the patch is refused (already compiled).
+        static string sTaskHookState = "not tried";
+        internal static void ApplyTaskCountHook()
+        {
+            try
+            {
+                sTaskHookState = Patch(typeof(Sims3.UI.UIManager), "set_TaskCount", new Type[] { typeof(uint) }, typeof(TaskCountHook), "SetHook", "SetOrig")
+                    ? "on" : "refused: " + AppliedLog()[AppliedLog().Count - 1];
+            }
+            catch (Exception e) { sTaskHookState = "failed: " + e.Message; }
+        }
+
+        static int sTaskLogLeft = 150;     // changes logged per session outside the Play window
+        static int sTaskLogPlayUntil;      // TickCount: log every change until then (10 s after Play)
+
+        static string Callers()
+        {
+            try
+            {
+                System.Diagnostics.StackTrace st = new System.Diagnostics.StackTrace(2, false);
+                StringBuilder b = new StringBuilder();
+                for (int i = 0; i < st.FrameCount && i < 5; i++)
+                {
+                    System.Reflection.MethodBase m = st.GetFrame(i).GetMethod();
+                    if (m == null) continue;
+                    if (b.Length > 0) b.Append(" < ");
+                    b.Append(m.DeclaringType != null ? m.DeclaringType.Name : "?").Append('.').Append(m.Name);
+                }
+                return b.ToString();
+            }
+            catch (Exception e) { return "stack unreadable: " + e.GetType().Name; }
+        }
+
+        public static class TaskCountHook
+        {
+            public static void SetHook(uint value)
+            {
+                uint old = 0;
+                try { old = Sims3.UI.UIManager.TaskCount; } catch (Exception) { }
+                SetOrig(value);
+                try
+                {
+                    bool inPlay = sTaskLogPlayUntil != 0 && unchecked(System.Environment.TickCount - sTaskLogPlayUntil) < 0;
+                    bool wrapped = value > 100000u;
+                    if (!wrapped && !inPlay && sTaskLogLeft <= 0) return;  // from script load: the tasks that hold Play start early
+                    if (!inPlay && !wrapped) sTaskLogLeft--;
+                    DiagLine("play: ui tasks " + old + " -> " + value + (wrapped ? " WRAPPED (a task ended that was counted before the reset)" : "") + " by " + Callers());
+                }
+                catch (Exception) { }
+            }
+            public static void SetOrig(uint value) { }
+        }
+
+        // the Play arrow grays the nav buttons and queues PlayGame; reports (v0.2.0-v0.2.4) show PlayExisting never called
+        static int sNavOffAt;          // TickCount when the picker's nav buttons went off, 0 = on
+        static bool sPlayGameRan;
+
+        static string ChosenLot(out ulong lotId)
+        {
+            lotId = ulong.MaxValue;
+            try
+            {
+                object flow = Sims3.UI.GameEntry.PlayFlowController.Singleton != null ? Sims3.UI.GameEntry.PlayFlowController.Singleton.InWorldFlow : null;
+                if (flow == null) return "no in-world flow";
+                System.Reflection.FieldInfo fi = flow.GetType().GetField("mChosenLotInfo", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Sims3.UI.GameEntry.UIBinInfo info = fi != null ? fi.GetValue(flow) as Sims3.UI.GameEntry.UIBinInfo : null;
+                if (info == null) return "no chosen lot";
+                lotId = info.LotId;
+                return "lot " + info.LotId + ", household " + info.HouseholdName + " (" + info.HouseholdId + ")";
+            }
+            catch (Exception e) { return "chosen lot unreadable: " + e.GetType().Name; }
+        }
+
+        // ActionWatch calls this every frame: Play pressed (buttons off) but PlayGame never ran for 10 s -> log, start the
+        // chosen family ourselves and turn the buttons back on
+        static void PlayStuckCheck()
+        {
+            if (sNavOffAt == 0 || sPlayGameRan || !GameStates.IsPlayFlowState || unchecked(System.Environment.TickCount - sNavOffAt) < 10000) return;
+            sNavOffAt = 0;
+            ulong lotId;
+            string chosen = ChosenLot(out lotId);
+            DiagLine("play: PlayGame never ran 10 s after the buttons went off (" + chosen + "); starting the family directly");
+            try { if (lotId != ulong.MaxValue && PlayFlowModel.Singleton != null) PlayFlowModel.Singleton.PlayExisting(lotId); }
+            catch (Exception e) { DiagLine("play: direct start threw " + e.GetType().Name + ": " + e.Message); }
+            try { if (Sims3.UI.GameEntry.PlayFlowInstructions.Singleton != null) Sims3.UI.GameEntry.PlayFlowInstructions.Singleton.EnableNavButtons(true); } catch (Exception) { }
+        }
+
+        public class PlayUiHooks
+        {
+            public void EnableHook(bool enable)
+            {
+                if (GameStates.IsPlayFlowState)
+                {
+                    uint tasks = 0;
+                    try { tasks = Sims3.UI.UIManager.TaskCount; } catch (Exception) { }
+                    DiagLine("play: picker buttons " + (enable ? "on" : "off") + ", ui tasks " + tasks + " (Play runs only at 1)");
+                    if (!enable)
+                    {
+                        sNavOffAt = System.Environment.TickCount; if (sNavOffAt == 0) sNavOffAt = 1; sPlayGameRan = false;
+                        sTaskLogPlayUntil = System.Environment.TickCount + 10000; if (sTaskLogPlayUntil == 0) sTaskLogPlayUntil = 1;
+                    }
+                    else sNavOffAt = 0;
+                }
+                EnableOrig(enable);
+            }
+            public void EnableOrig(bool enable) { }
+            public void PlayGameHook()
+            {
+                sPlayGameRan = true;
+                ulong lotId;
+                DiagLine("play: PlayGame task ran, picker state " + GameStates.IsPlayFlowState + ", " + ChosenLot(out lotId));
+                try { PlayGameOrig(); DiagLine("play: PlayGame returned"); }
+                catch (Exception e) { DiagLine("play: PlayGame threw " + e.GetType().Name + ": " + e.Message); throw; }
+            }
+            public void PlayGameOrig() { }
         }
 
         public class PlayHooks
@@ -110,7 +257,7 @@ namespace Ts3Fixes
                 Household hh = lot != null ? lot.Household : null;
                 DiagLine("play: lot chosen " + (lot != null ? lot.Name : "?") + ", household " + (hh != null ? hh.Name : "?") + ", live " + GameStates.IsLiveState
                     + ", holds " + UfHolds().Count);
-                Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { PlayWatch(hh); }));
+                Simulator.AddObject(new LoopTask(delegate { PlayWatch(hh); }));
             }
             catch (Exception) { }
             return ListenerAction.Keep;

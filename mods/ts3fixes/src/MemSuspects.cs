@@ -45,7 +45,7 @@ namespace Ts3Fixes
             sAliveOn = true;
             sTypesDue = true;
             int gen = ++sSusGen;
-            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate
+            Simulator.AddObject(new LoopTask(delegate
             {
                 while (gen == sSusGen)
                 {

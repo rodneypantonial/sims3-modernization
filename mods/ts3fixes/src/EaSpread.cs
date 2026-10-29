@@ -430,7 +430,7 @@ namespace Ts3Fixes
                 {
                     Sim active = Sim.ActiveActor; // EA reads it once, when the alarm fires
                     int before = verify ? LotsToClean() : -1;
-                    sLotTask = Simulator.AddObject(new OneShotFunctionTask(delegate { LotCleanupTask(active, before); }));
+                    sLotTask = Simulator.AddObject(new LoopTask(delegate { LotCleanupTask(active, before); }));
                     return;
                 }
                 if (!verify) { CleanOrig(); return; }
@@ -465,7 +465,7 @@ namespace Ts3Fixes
         {
             int[] c = PatchCounters();
             c[184]++;
-            sPetTask = Simulator.AddObject(new OneShotFunctionTask(delegate
+            sPetTask = Simulator.AddObject(new LoopTask(delegate
             {
                 int before = PetsInPools();
                 long t0 = Simulator.TicksElapsed();
@@ -725,7 +725,7 @@ namespace Ts3Fixes
                 sDecayBefore = verify ? Relationships() : -1;
                 sDecayDue = verify ? DropsDue(at) : -1;
                 c[190] += Relationship.sAllRelationships.Count;
-                if (!TaskAlive(sDecayTask)) sDecayTask = Simulator.AddObject(new OneShotFunctionTask(DecayTask));
+                if (!TaskAlive(sDecayTask)) sDecayTask = Simulator.AddObject(new LoopTask(DecayTask));
             }
             public static void RunOrig() { } // receives SocialComponent.RelationshipDecay's original header
         }

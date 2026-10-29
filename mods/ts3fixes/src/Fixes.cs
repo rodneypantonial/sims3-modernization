@@ -37,6 +37,7 @@ namespace Ts3Fixes
             if (AppDomain.CurrentDomain.GetData("ts3fixes.applied") != null) return;
             AppDomain.CurrentDomain.SetData("ts3fixes.applied", new List<object>());
             PatchCounters();
+            ApplyTaskCountHook();  // first: the setter must not have run yet
             Patch(typeof(GoHome), "Run", typeof(GoHomeHook), "RunHook", "RunOrig");
             Patch(typeof(RabbitHole), "RouteNearEntranceAndEnterRabbitHole", typeof(RabbitHoleHook), "EnterHook", "EnterOrig");
             Patch(typeof(VisitCommunityLot), "Run", typeof(VisitCommunityLotHook), "RunHook", "RunOrig");

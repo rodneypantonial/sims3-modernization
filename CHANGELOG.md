@@ -2,6 +2,21 @@
 
 Player-facing changes per release. Each `## vX.Y.Z` section becomes the GitHub release notes for that tag (`.github/workflows/build.yml`).
 
+## v0.2.4 (2026-10-29)
+
+Hotfix: **the Play arrow in the family picker grayed out and the family never loaded** (v0.2.0 to v0.2.3, for anyone who starts a family from the picker).
+
+### Download
+
+- `ts3fixes.package`: put it in `Documents\Electronic Arts\The Sims 3\Mods\Packages\` and replace the old one.
+- `ts3native-v0.2.4.zip`: the same `ts3native.asi` and `ts3native.ini` as v0.2.0; you only need it if you don't have v0.2.x yet.
+
+### Fixed
+
+- **Play loads your family again.** The game only runs Play when no other interface work is pending, and it counted our mod's background tasks as pending interface work, so Play waited forever. Our tasks no longer count. The same applies to Play after importing a family or returning from university, and to placing a moved lot in Edit Town.
+- If Play ever does nothing for 10 seconds, the mod starts the family itself and turns the buttons back on (safety net).
+- `ts3native.log` names what holds Play back, if anything ever does again (`play:` lines).
+
 ## v0.2.3 (2026-10-29)
 
 Diagnostics hotfix: better problem reports for starting a family. No gameplay changes from v0.2.2.

@@ -218,7 +218,7 @@ namespace Ts3Fixes
             if (!(sStuckTask.IsValid && Simulator.GetTask(sStuckTask) != null))
             {
                 c[129] += sStuckQueue.Clear(); // left over from a task the world unload killed
-                sStuckTask = Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(StuckCheckDrain));
+                sStuckTask = Simulator.AddObject(new LoopTask(StuckCheckDrain));
             }
             StuckCheck e = new StuckCheck();
             e.Helper = helper;

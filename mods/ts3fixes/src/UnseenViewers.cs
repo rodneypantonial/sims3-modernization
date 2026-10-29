@@ -22,7 +22,7 @@ namespace Ts3Fixes
         internal static void StartViewerPush()
         {
             int gen = ++sViewerGen;  // a loop left from an earlier load ends at its next wake-up
-            Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(delegate { ViewerPushLoop(gen); }));
+            Simulator.AddObject(new LoopTask(delegate { ViewerPushLoop(gen); }));
         }
 
         static void ViewerPushLoop(int gen)

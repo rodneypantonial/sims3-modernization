@@ -43,6 +43,8 @@ namespace Ts3Agent
             Dispatcher.Register("patches", Patches);
             Dispatcher.Register("play_household", PlayHousehold);
             Dispatcher.Register("play_existing", PlayExisting);
+            Dispatcher.Register("ui_single_task_probe", UiSingleTaskProbe);
+            Dispatcher.Register("ui_single_task_result", UiSingleTaskResult);
             Dispatcher.Register("quit_game", QuitGame);
             Dispatcher.Register("auto_dialog", AutoDialog);
             Dispatcher.Register("enter_live_mode", EnterLiveMode);
@@ -523,6 +525,30 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             r["playing"] = target.Name;
             r["lot"] = lotId;
+            return r;
+        }
+
+        // Queues a UI single task the way the family picker's Play arrow does (OneShotFunctionTask(f, singleTask: true): it only
+        // runs once UIManager.TaskCount is 1); ui_single_task_result says whether it ran. A counted endless script task of a mod
+        // keeps it from ever running (ts3fixes v0.2.0-v0.2.5: Play grayed out, the family never loaded).
+        static bool sSingleRan;
+        static object UiSingleTaskProbe(Args a)
+        {
+            sSingleRan = false;
+            long before = Sims3.UI.UIManager.TaskCount;
+            Simulator.AddObject(new Sims3.UI.OneShotFunctionTask(delegate { sSingleRan = true; }, true));
+            // no waiting task here: a Gameplay OneShotFunctionTask counts in TaskCount too and would hold the probe back itself
+            Dictionary<string, object> r = Util.Obj();
+            r["ui_tasks_before"] = before;
+            r["note"] = "read ui_single_task_result after ~5 s";
+            return r;
+        }
+
+        static object UiSingleTaskResult(Args a)
+        {
+            Dictionary<string, object> r = Util.Obj();
+            r["ran"] = sSingleRan;
+            r["ui_tasks"] = Sims3.UI.UIManager.TaskCount;
             return r;
         }
 

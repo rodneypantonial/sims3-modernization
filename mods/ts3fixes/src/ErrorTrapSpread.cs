@@ -221,7 +221,7 @@ namespace Ts3Fixes
             if (logM == null || dbgM == null) return "ErrorTrap log methods not found";
             Delegate log = Delegate.CreateDelegate(sEtLogger, logM), dbg = Delegate.CreateDelegate(sEtLogger, dbgM);
             OverwatchSpreadCore.Mode mode = path == "ours" ? OverwatchSpreadCore.Mode.Ours : path == "theirs" ? OverwatchSpreadCore.Mode.Theirs : EtMode();
-            Simulator.AddObject(new OneShotFunctionTask(delegate { EtRun(log, dbg, true, mode); }));
+            Simulator.AddObject(new LoopTask(delegate { EtRun(log, dbg, true, mode); }));
             return mode.ToString();
         }
 

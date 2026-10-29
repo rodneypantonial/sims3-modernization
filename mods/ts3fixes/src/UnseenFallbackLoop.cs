@@ -77,7 +77,7 @@ namespace Ts3Fixes
             b.Key = key;
             sUfBreaks.Enqueue(b);
             if (!(sUfBreakTask.IsValid && Simulator.GetTask(sUfBreakTask) != null))
-                sUfBreakTask = Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(UfBreakDrain));
+                sUfBreakTask = Simulator.AddObject(new LoopTask(UfBreakDrain));
         }
 
         static bool UfLive() { return GameStates.IsLiveState && !GameStates.IsTravelling && !GameStates.IsWorldShuttingDown; }

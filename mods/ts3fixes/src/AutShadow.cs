@@ -269,7 +269,7 @@ namespace Ts3Fixes
                 {
                     sLedger = AutShadowNative.Config(7) == 1 ? 1 : -1;
                     if (sLedger < 0) { AppliedLog().Add("AutLedger: ts3native Ledger=0 this load (off)"); return false; }
-                    Simulator.AddObject(new Sims3.Gameplay.OneShotFunctionTask(SleepProbe));
+                    Simulator.AddObject(new LoopTask(SleepProbe));
                 }
                 return AutShadowNative.Config(5) == 1;
             }
