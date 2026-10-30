@@ -294,9 +294,15 @@ static DWORD __fastcall GbGetBone(u8* geom, void*, DWORD i) {
     const DWORD* b = *(const DWORD* const*)(geom + 0x58);
     const DWORD n = (DWORD)(*(const DWORD* const*)(geom + 0x5C) - b);
     if (i < n) return b[i];
-    if (InterlockedIncrement(&g_gbBad) <= 8)
+    const LONG k = InterlockedIncrement(&g_gbBad);
+    if (k <= 8)
         Log("ea fix: GeomBoneIndex: GEOM %p asked for bone %lu of %lu (caller 0x%08X): answered 0, the rig's missing-bone path",
             geom, i, n, (DWORD)(uintptr_t)_ReturnAddress());
+    if (k == 1) {  // the resource base's fields (vtable 0xFB2C04, +8..+0x24): the key is expected among them [inferred], to name the mesh
+        const DWORD* f = (const DWORD*)(geom + 8);
+        Log("ea fix: GeomBoneIndex: GEOM %p base fields %08lX %08lX %08lX %08lX %08lX %08lX %08lX %08lX", geom, f[0], f[1], f[2], f[3],
+            f[4], f[5], f[6], f[7]);
+    }
     return 0;
 }
 

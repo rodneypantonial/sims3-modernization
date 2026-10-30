@@ -70,10 +70,10 @@ static __declspec(naked) void MdtBack() {  // eax = 1 the game's handler, 2 the 
         ret
     }
 }
-static __declspec(naked) void MdtGame() { __asm { mov eax, 1 }  __asm { jmp MdtBack } }
+static __declspec(naked) void MdtGame() { __asm { mov eax, 1 } __asm { jmp MdtBack } }
 static __declspec(naked) void MdtOvf() { __asm { mov eax, 2 } __asm { jmp MdtBack } }
 static __declspec(naked) void MdtNext() { __asm { mov eax, 3 } __asm { jmp MdtBack } }
-static __declspec(naked) void __cdecl MdtRun(const void* stub, DWORD* sp, DWORD ip) {
+static __declspec(naked) void __cdecl MdtRun(const void* /*stub*/, DWORD* /*esi*/, DWORD /*edi*/) {
     __asm {
         push ebx
         push esi
