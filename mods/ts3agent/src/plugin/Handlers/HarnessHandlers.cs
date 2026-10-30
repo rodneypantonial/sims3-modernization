@@ -233,7 +233,11 @@ namespace Ts3Agent
                 if (inWorld == null) return null;
                 object sm = inWorld.GetType().GetField("mStateMachine", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(inWorld);
                 object cur = sm.GetType().GetProperty("CurState").GetValue(sm, null);
-                return cur == null ? null : cur.GetType().Name;
+                if (cur == null) return null;
+                // mods replace game states with subclasses (NRaas Traveler: LiveModeStateEx): report the game's own state name
+                Type t = cur.GetType();
+                while (t.BaseType != null && t.Assembly != typeof(GameStates).Assembly) t = t.BaseType;
+                return t.Name;
             }
             catch (Exception e) { return "unknown: " + e.Message; }
         }
