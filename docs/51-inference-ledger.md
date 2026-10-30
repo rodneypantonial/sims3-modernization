@@ -5309,7 +5309,7 @@ mono-cost11 (BP run + rerun, IP run + rerun, all exact, `listMissed` 0): I-393-1
 | I-409-2 | 67 §28.1 | Crash X read index 109 of a vector with at most 64 entries | report registers: `eax` begin `0xA2F8FF00`, `ecx` `0x6D`, fault `0xA2F900B4` in `MEM_FREE` | - | - | - | **verified** (report) |
 | I-409-3 | 67 §28.1 | In `0x5D1010` a missing bone hash takes EA's own missing-bone path (the map size is stored as the bone slot, `0x5D165B`), and only `eax` is live after the call at `0x5D1631` | disassembly | - | - | - | **verified** (static) |
 | I-409-4 | 67 §28.2 | The bad index comes from a mesh (probably CC) whose blend indices exceed its bone list, not from a freed GEOM | `+0x58` load succeeded; byte index | a session with `GeomBoneIndex=1` | `ea fix: GeomBoneIndex` lines with `i >= n` on a readable GEOM, no crash X | crash X with the switch on, or lines with `n` = 0 on every ask (a dead object) | **verified** (one session, docs/67 §28.4: 8 lines, `i` 104-115 of `n` 5, caller `0x5D1633`, at world load) |
-| I-409-5 | 67 §28.3 | Answering 0 past the list never matches a rig bone, so the vertex takes the miss path | no rig bone with hash 0 is known | same | - | a Sim mesh visibly bound to a wrong bone with the switch on | **inferred** |
+| I-409-5 | 67 §28.3 | Answering 0 past the list never matches a rig bone, so the vertex takes the miss path | no rig bone with hash 0 is known | same | - | a Sim mesh visibly bound to a wrong bone with the switch on | **verified** for this install (docs/67 §28.4 scan: 251 CC GEOMs with indices past the list, every one in a weight-0 slot) |
 
 ## 410. [EaCrashFixes] MintDivGuard: mint div.i4 / rem.i4 INT_MIN by -1 (2026-10-30, docs/213 §8, issue #114, ts3native 0.36.143; static + selftest, no game run)
 
