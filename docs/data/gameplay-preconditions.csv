@@ -68,7 +68,7 @@ do_interaction,ControlHandlers,Live,clicking a pie menu entry,natural,actor is i
 cancel_interactions,ControlHandlers,Live,cancelling queue items,natural,active household Sim,handler,live
 go_here,ControlHandlers,Live,Go Here on terrain / lot,natural,active household Sim; one Sim per click (R-VOL-1),handler + R-HH-4,live
 cheat,ControlHandlers,Live,cheat console (Ctrl+Shift+C),cheat,,handler,none
-save_game,ControlHandlers,Live,Save / Save As,natural,not while traveling to or from another world,handler,none
+save_game,ControlHandlers,Live;Build;Buy,Save / Save As (Options menu; also open in Build / Buy),natural,not while traveling to or from another world,handler,none
 pending_dialogs,ControlHandlers,Any,none (read),harness,,handler,none
 respond_dialog,ControlHandlers,Any,clicking a dialog button,natural,,handler,none
 catalog_search,ControlHandlers,Any,none (read),harness,,handler,none

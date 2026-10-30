@@ -222,7 +222,7 @@ Rodney approved 2b on 2026-10-30. Code: `native/ts3native/satb.cpp` (included by
 | mint store opcodes (37) | stub: decode target and size (`SatbStoreRange`), log each word not yet logged, then the game's handler | scalar kinds emulated: a word the sim logged takes the worker's bytes in its log entry (the worker's view; the sim's memory keeps the sim's value), other words live, then a re-check (closes the race with a concurrent first write); vt/blk/ref kinds with a logged word: skipped, object aborted, job stopped |
 | mint load opcodes (41 + 0xED/0xEE + getchr/strlen) | thread test, then the game's handler (counted in `satbLoads`) | emulated: live bytes, compiler barrier, then each logged word's value; x87 `fld`/`fstp` for r4/r8 as the handlers do; `stackval_from_data` `0xE521A0` for typed cases; null / out-of-range / class-init / thread-static paths go to the game's handler |
 | load superinstructions (13) | game's handler | base sequence |
-| mono runtime icalls (static table `0x10B5838`, 45 entries, patched before Mono resolves them) | writers log the destination range (Array.Clear/FastCopy/SetValue, Buffer.BlockCopy/SetByte, String.InternalStrcpy x4/InternalCopyTo, Interlocked.*, InitializeArray, Marshal.Write*); unsized writers (MonoField.SetValue, Marshal.copy_from_unmanaged, PtrToStructure) stop the worker first | readers patched from the log after the copy (FastCopy, Clone, BlockCopy, GetGenericValue, InternalStrcpy, CopyTo); GetValue, MemberwiseClone, MonoField.GetValue: the object gives up on a logged word |
+| mono runtime icalls (static table `0x10B5838`, 45 entries, patched before Mono resolves them) | writers log the destination range (Array.Clear/FastCopy/SetValue, Buffer.BlockCopy/SetByte, String.InternalStrcpy x4/InternalCopyTo, Interlocked.*, InitializeArray, Marshal.Write*); unsized writers (MonoField.SetValue, Marshal.copy_from_unmanaged, PtrToStructure) stop the worker first (all three sized since: copy_from_unmanaged in 0.36.133 §9, the other two in 0.36.136 §10) | readers patched from the log after the copy (FastCopy, Clone, BlockCopy, GetGenericValue, InternalStrcpy, CopyTo); GetValue, MemberwiseClone, MonoField.GetValue: the object gives up on a logged word |
 | EA field store `0xE69820` (`*(arg2) = arg3`) | logs the word | a logged word goes into the entry |
 | EA ICs with byref/array parameters (180, `native/ts3native/satb-ics.h` from `tools/satb-ic-classes.ts`) | an argument dword pointing outside the sim's stack/arena = the body may write shared memory with an unknown size: stop the worker first | answered from snapshot rows as before (docs/122) |
 
@@ -281,3 +281,106 @@ Sim thread with a span on: 4.9-8.5 ns per store at ~18% first writes, ~5-18 ns p
 Corrections to docs/131 (from the CSV): the race set cannot see per-method state (the callvirt cache); four rows labelled P3 are not under the P3 lock (`[0x11F2F98]`, `GC_dont_gc` `[0x11F30A8]`, `0x1222470`, `0x1222408`; all benign today: only the sim writes them); `[0x11EE514]` is not reachable from the worker; I-131-4 (only Boehm calls `0xD70900`) verified (single caller `0xE4EEFB`).
 
 Before an act queue: S0 PASS, then Mode R with `Satb=2` (§7.6) and these counters read per run: `satbWGiveUp` with `satbWGiveUpOp` (0xC000+ = a cold path the warm-up missed; 0xD8A8E0 = F1 overflow), `satbWaitTimeouts` (a class-init lock between the threads), `satbStale`.
+
+## 9. S0 result and the IC argument fix (2026-10-30, ts3native 0.36.133, ledger §401, not run)
+
+### 9.1 What satb-s0 showed [measured, `node tools/harness/mono-cost-report.ts --tag satb-s0`]
+
+| Per job span | BP (3.2 ms, 796 spans) | IP (4.2 ms, 818 spans) |
+|---|---|---|
+| sim stores / first-written words / loads | 1,340 / 194 (max 10,557) / 10,119 | 2,900 / 308 (max 9,454) / 17,364 |
+| barrier without waits (stores x 4 + words x 6 + loads x 9 ns) | 97.6 us | 169.7 us |
+| unlogged events (IC shared pointer + runtime writer) | 5.0 | 6.5 |
+| model at go-live (8.9 / 10.2 jobs/s, a wait = half a job) | 72.9 ms/s: STOP | 142.3 ms/s: STOP |
+
+The log itself is cheap (~0.9 / ~1.7 ms/s); the waits are the whole verdict. Whole run: `satbIcShared` 102,962 of 102,962 byref/array IC calls (BP) and 53,815 of 53,815 (IP), runtime writers not logged 323 / 221 (`satbRtWaits`). So the events were the IC check, and it fired on every call of such an IC [verified, I-401-1]. Cause: 0.36.125 scanned every argument dword up to the last byref/array parameter (`dw` in `satb-ics.h`) and treated any value >= 0x10000 outside the sim's stack and arena as a shared pointer. An object id (ulong), a float or an enum before the byref parameter always qualified [verified, I-401-2]. The counters do not name the ICs; the managed samples of the two runs (time, not calls) show which byref/array ICs the sim spends time in: BP `World_FindPlaceOnRoad` / `World_FindPlaceOnRoadOffScreen` (11 samples each), `Simulator_CreateObjectImpl` 3, `RouteManager_AddPrivateFootprint` 2; IP `World_FindGoodLocation` 8, `RouteManager_IsOkToIdleAtCurrentLocation` 5 (all sized below) [measured samples; call counts inferred]. 0.36.133 adds per-IC log lines (below).
+
+Also from the run: the GC lock line (36 ms/s of uncontended entries) is `[MonoThread] LazyGate` off in `satb-s0.json`; the queues now set `LazyGate=1` (gate on only while a job runs, docs/30 §15).
+
+### 9.2 Fix: log each byref/array argument's range (0.36.133)
+
+`tools/satb-ic-classes.ts` now emits, per IC, the argument dword of each byref/array parameter, its kind and its size (`satb-ics.h`). None of the 180 ICs returns a struct, so no hidden result pointer shifts the arguments [verified, I-401-3]. On the sim, during a span, `SatbIcSim` reads only those dwords:
+
+| Kind | Count (180 ICs) | Logged before the body runs |
+|---|---|---|
+| byref `T&` | 184 | `sizeof(T)`: primitives, Vector3 12, Quaternion 16, ResourceKey 16, LotLocation 12, Matrix44 64, PathData 32, PondInfo 128, PackageId 16 (field lists; MSVC alignment of 64-bit fields [inferred]) |
+| array `T[]` | 98 | the elements: `max_length` (+8) x element size (table, else Mono's `0xE6B690`), data from +0x10 |
+| byref array `T[]&` | 41 | the slot (a new array may land there) and the held array's elements |
+| layout unknown | 0 | (a wait; the four ICs with an unsized by-value struct before the byref now have sizes: RouteAnimationSpec 16, CASPart 72, PackageId 16) |
+
+A null argument or one into the sim's own stack or arena is skipped. A range over `SATB_IC_MAXW` = 16,384 words or a full log still waits (counted in `satbIcShared`, act: `SatbSimWait`). Sizes are [inferred, I-401-4]: the native body writes at most its parameter type, arrays only inside their elements; Mode R with `Satb=2` (A1-A3) is the check.
+
+Runtime writers: `Marshal.copy_from_unmanaged` now logs dest's elements [inferred, I-401-5]. **Still waits** (unsized, counted per site): `MonoField.SetValueInternal` (reflection: the `MonoClassField` layout past +8 and the static-data path were not read, the size depends on the field type) in `satbRtFset`, and both `PtrToStructure` entries (which of `0xE99A50`/`0xE99B10` writes an existing object was not read) in `satbRtPtrStruct`. Both are rare in play [inferred: 323 / 221 runtime waits per whole run vs ~0.5 M runtime writer calls]. Both sized in 0.36.136 (§10).
+
+Per-site data: `ts3native.log` lines `autshadow satb ic logged: <IC> xN` and `autshadow satb ic wait: <IC> xN` at the 1st, 10th, 100th, ... call of each IC; counters (autshadow v16) `satbIcLogged`, `satbIcLogWords`, `satbJobIcLogged`, `satbRtFset`, `satbRtPtrStruct`. Selftest `TestSatbIcArgs` (in `TestSatbLog`): heap byrefs logged, private and null skipped, the ulong id before them never read, ulong[] / byref-array ranges, an oversized array waits, copy_from_unmanaged's destination logged.
+
+### 9.3 Modelled barrier after the fix [inferred]
+
+Left as waits per job span: oversized IC ranges (none seen: the job span's largest log was ~10.5k words) and the unsized runtime writers. Scaled by the job span's share of the whole-tick stores (BP 5.0%, IP 12.7%): ~0.02 (BP) and ~0.03 (IP) waits per job.
+
+| | BP | IP |
+|---|---|---|
+| barrier per job (S0 counts) + IC log words (5.0 / 6.5 arguments x ~5 words x 6 ns) | 97.6 + ~0.2 us | 169.7 + ~0.2 us |
+| waits per job x half a job | 0.02 x 1.6 ms = 0.03 ms | 0.03 x 2.1 ms = 0.07 ms |
+| x go-live jobs/s | 8.9 -> **~1.2 ms/s** | 10.2 -> **~2.5 ms/s** |
+
+Both under the 3 ms/s gate if the counts hold; IP is close to it and depends on the residual runtime waits. Queue `satb-s0b.json` measures it (asi `game-copy/ts3native.asi.satb2`, ts3fixes `mc14` for contract 9): `node tools/harness/queue.ts tools/harness/queues/satb-s0b.json`, then `node tools/harness/mono-cost-report.ts --tag satb-s0b`.
+
+## 10. The last two runtime writers sized (2026-10-30, ts3native 0.36.136, ledger §404, not run)
+
+§9.2 left two runtime icalls as waits because their write range was not read. Both are now read in the disassembly and logged like the other writers; nothing in the runtime icall table waits by design any more (only an unknown MonoType kind or a class whose layout is not set yet).
+
+| Icall | What it writes [verified, disassembly] | Logged before the call (0.36.136) |
+|---|---|---|
+| `MonoField.SetValueInternal` `0xE7B320` (this, obj, value) | `cf = this[+8]` (`MonoClassField`: `+0` MonoType, `+8` offset, `+0x14` parent class). Static (MonoType attrs `+4` & 0x10): `vtable = 0xEA2AD0(this->vtable->domain, cf->parent)` (finds or makes it; class init `0xEA3370` follows), destination `vtable[+0xC] + offset` (`0xEA12E0`). Instance: `obj + offset` (`0xEA1290`). `set_value 0xEA10A0` stores by MonoType: byref flag (`+4` & 0x40000000) = a pointer; kind byte `+6` through the table at `0xEA1274`; an enum uses its base type's kind (`class+0x14` & 0x10, base type `class+4`); a valuetype and a valuetype generic instance (container kind byte `+0xA6`) copy `mono_class_value_size` (`0xE6F5A0`: `class+0x54` instance size - 4, layout flag `class+0x14` & 4) | `[dest, dest + size)` from the same reads (`SatbFieldDest`, `SatbTypeSize`); the static path calls `0xEA2AD0` first, the same call the icall makes next (a vtable it creates waits through cold site 2 as before). Unknown kind or layout not set: wait (`satbRtWaits`). Null instance object: the icall throws, nothing logged |
+| `Marshal.PtrToStructure(IntPtr, object)` `0xE99A50` | refuses a value type (kind 0x11), then runs the class's ptr-to-struct wrapper (`0xE99770`) through `mono_runtime_invoke 0xEA1090` = `jmp [0x1195B60]`, the interpreter: the wrapper's own stores already pass the Satb store stubs | the object's fields `[obj + 4, obj + class+0x54)` (4-byte object header in this build, as `0xEA2710` clone copies) |
+| `Marshal.PtrToStructure(IntPtr, Type)` `0xE99B10` | `mono_object_new 0xEA36F0` (domain `0xE75260`, class `0xE70D50`), then the same wrapper on the new object | nothing: the object is newer than the cut, no worker can reach it (the wrapper's stores are logged by the stubs anyway) |
+
+Counters keep their slots (autshadow v16): `satbRtFset` now counts sized field sets, `satbRtPtrStruct` existing-object calls only; `satbRtWaits` holds what still waits. `mono-cost-report.ts` labels them by version.
+
+Tests: ts3native selftest `TestSatbRtWriters` (in `TestSatbLog`: int, double, 12-byte struct, enum of byte, byref, static long through the class vtable, valuetype generic instance, an unknown kind waits, a null object neither logs nor waits; PtrToStructure(object) logs exactly its fields, the Type entry nothing). Monohost `MONOHOST_SATB=1`: `SatbWorld.Mutate` now also sets fields by reflection (instance long and struct, static int, struct and byte enum) and runs `Marshal.PtrToStructure` into a shared `SPod` while the worker scores; `AS-satb-exact` must stay A0 for every object and the new `AS-satb-rtwriters` wants both counters > 0 and no runtime wait.
+
+Model after the fix [inferred]: the §9.3 residual waits were the unsized writers (~0.02 / ~0.03 a job); with them logged the barrier is the log alone: BP ~97.8 us x 8.9 jobs/s = **~0.9 ms/s**, IP ~169.9 us x 10.2 = **~1.8 ms/s** (was ~1.2 / ~2.5). satb-s0b's counts decide; then `tools/harness/queues/satb-act.json` (Satb=2 Mode R, BP + IP, two clean runs each, gated on satb-s0b passing).
+
+## 11. The sim's load test made cheap (2026-10-30, ts3native 0.36.136, not run)
+
+satb-s0b (0.36.133, LazyGate on) [measured, `node tools/harness/mono-cost-report.ts --tag satb-s0b`]: BP 2.7 ms/s (PASS), IP 3.0 (between gate and stop). Per job span BP 2,384 stores, 239 first-written words, **16,604 sim loads**, 0.1 unlogged events; IP 3,771 / 383 / **19,685** / 0.0. At the model's 9 ns a load the loads are 150 / 177 us of the 160 / 195 us barrier. These are the **sim's** loads in the span (the stub every heap load opcode runs while Satb's entries are in the jump table: a thread test, then the game's handler); the worker's own log lookup is a separate cost of the job (already one epoch-byte test per page before any hash probe, `SatbWRead`) and does not enter the sim's ms/s. The unlogged events were the runtime writers §10 sizes: BP 372 of 372 were `MonoField.SetValue`, IP 194 of 194 (plus 89 oversized IC ranges in the whole run).
+
+Why the sim path cost ~9 ns [inferred from the code]: `push eax` / `pop eax` around the `fs:[0x24]` read; a counter add into `ts3native_autshadow` on a cache line the worker writes during the job (its `satbW*` counters: the line moves between cores on every load); and a second indirect jump `jmp [g_satbOrig + edx*4]` shared by all 41 load opcodes, after the interpreter's own indirect dispatch, so it predicts poorly.
+
+0.36.136: **one thunk per wrapped load opcode** (`SatbMakeLoadThunk`, 31 bytes in one RWX page): `mov ecx, fs:[0x24]` (ecx is not live at handler entry [verified, §7.2]), `cmp ecx, [tid]`, `je` the shared worker path (unchanged), `add [count], 1`, `jmp rel32` straight to that opcode's handler. The worker id copy and the sim's load count each sit on their own 64-byte line (`g_satbWTidL`, `g_satbSimLoadsL`; `satbLoads` takes the count at span end and in the probe snapshot). Exactness is unchanged: the sim path still runs the game's handler, the worker path is the same code. Fallback: if the page is refused, the old shared stub (now with ecx, the isolated lines) is used; the log says which.
+
+Tests: ts3native selftest `TestSatbLoadThunk` (sim path reaches the handler with edx intact and counts, worker path reaches the worker code and does not count; times the thunk against 0.36.135's stub sequence: a microbenchmark with one target cannot show the shared jump's mispredicts, so the in-game number comes from the probe); monohost `AS-satb-exact` / `-rtwriters` run through the thunks, and its barrier bench prints ns per load.
+
+Measured (build 2026-10-30): selftest thunk 1.22 ns a call vs 1.53 for the old sequence (one target, no mispredicts: a floor, not the game's number); monohost Satb bench **3.30 ns a load** through the thunks including the scoring loop's own stores (was ~5-18 ns per load in §7.5), host 45 of 45 PASS. Model [inferred, report line "Satb barrier with 0.36.136 load thunks", 3.3 ns a load]: S0b counts give BP 1.6, IP 1.7 ms/s with S0b's waits; without the §10 runtime waits **BP ~0.7, IP ~1.0 ms/s**. satb-act's probe-free Mode R does not count loads; a satb-s0c (Satb=1 on 0.36.136) would measure it if the act queue's cost needs proof.
+
+## 12. satb-act run 1: every job stopped by a reflection read (2026-10-30, ts3native 0.36.139, not run)
+
+bp-satb-act-1 (0.36.136, asi.satb3) [measured, `node tools/harness/mono-cost-report.ts probe-out/queue/satb-act-2026-10-30.jsonl`]: 1,087 jobs, all 1,087 still running at the next Simulate entry (`satbConc`: the act path and the barrier worked; no sim wait, no window stop, no epoch drop, no overrun), but **all 1,087 stale**: 4,336 worker give-ups, last op `0xE7B150` = `MonoField.GetValueInternal`. A give-up stops the job, so 25,373 objects aborted `stop` (99.1%), 23 compared (A0 23), 42,301 fell back. The worker's reflection reads are ts3fixes' own hooks reached from the scoring (`FieldInfo.GetValue` on private game fields: posture lists, room callbacks, dating records, lots-known lists; `AutShadow.cs`), which §7.2 had left as "give up" because the icall's result was not patched.
+
+0.36.139 (`SatbRtFieldGet`) [verified, disassembly of `0xE7B150`]: after the call, the worker finds the field's range the way the setter does (§10); not logged (the common case: `satbWHits` was 0 of 1.96 M worker loads in that run) = the call's own result. Logged: a reference-kind field (string, class, array, object, szarray, reference generic instance: the icall returns the pointer as read, through `0xEA1350` / `0xEA2510`) is answered with the logged pointer (the log's roots keep that object alive); a value-kind field (primitives, native int, valuetype, enum: a fresh box with the bytes at +4) gets the cut bytes copied into the box. `Nullable<T>` (`0xE6AD10` / `0xEA3AC0`), other generic structs and pointer fields still give up when logged. Give-ups are now also logged per op at span end (`autshadow satb give-up: op 0x... xN`, 1, 10, 100, ...) so the next run names every op, not only the last.
+
+Tests: selftest `TestSatbRtWriters` (worker side: a logged reference field answered from the log, a logged double patched into its box, an unwritten field passed through, no give-up); monohost `SatbWorld.Score` now reads fields by reflection on the worker (instance long, struct and reference, static int and enum) while the main thread writes them, `AS-satb-rtwriters` wants 0 give-ups, and the new **`AS-satb-survive`**: every job runs through the next Simulate entry with 0 stale, A4 0, A5 0, A0 for every object (46/46 PASS). `mono-cost-report.ts` prints a "Satb act" line in act mode (concurrent, stale, give-ups, waits) instead of "no job spans timed".
+
+Queue: `satb-act.json` now uses asi `game-copy/ts3native.asi.satb4` + `game-copy/ts3fixes.package.satb4`.
+
+## 13. satb-act on satb4: the worker's frame-arena list overflowed (2026-10-30, ts3native 0.36.140, not run)
+
+bp-satb-act-1 on 0.36.139 (satb4) [measured, `node tools/harness/mono-cost-report.ts probe-out/queue/satb-act-2026-10-30.jsonl`]: no crash, 1,812 objects compared (was 23), A1-A3 0, still 1,121 of 1,121 jobs stale; 16,443 worker give-ups, by op (the §12 log lines): **`0xD71900` ~11,100**, cold site 0 (`0xE643B0` method transform) x5, cold site 1 (`0xE51400` native-call thunk) x2. Worker log hits 0 of 9.2 M loads, sim waits 0.
+
+`0xD71900` is not an icall: it is the give-up code of `SatbGrowWrap`, the wrapper on the interpreter's frame-arena grow (`0xD71900` takes the shared pool's head chunk onto the state's chain, docs/130 §1.3). §7.1: a chunk the worker takes during a job may hold log entries from the sim's earlier use of it, so the worker lists its chunks and keeps live values there. 0.36.125 added one entry per grow and gave up past 64. A deep call path grows, returns (the chunk goes back to the pool head), grows again: the same few chunks fill the 64 slots [inferred from ~10 give-ups a job on top of the 64]. Which managed calls: any scoring path deeper than one chunk, e.g. the meta-score drivers' nested `Test` / tuning calls; the grow site does not know the method.
+
+0.36.140 (`SatbWArenaAdd`): a chunk already listed is not added again (its widest end kept); up to 256 distinct chunks, past that it still gives up. Exactness unchanged: the list only says which words are the worker's own frames. Tests: selftest `TestSatbArenaChunks` (500 grows over 3 chunks = 3 entries, ranges, cap); monohost `SatbWorld.Score` now recurses 2 x 50 deep (the interpreter allows 63) with ~0.5 KB of locals a frame on the worker each object, `AS-satb-survive` prints the worker's grows and still wants 0 stale / 0 give-ups.
+
+Cold sites 0 and 1 (x7 in the run): first use of a method or a native-call thunk on the worker, which the cut's reference had not reached (the worker's own branches). The call runs once and the object gives up; afterwards the method is transformed and the site does not fire again for it [inferred: the detours sit on the transform and thunk-creation entries, which run only for a method or signature not yet done]. 7 of 1,121 jobs in 10 min: left as give-ups (answering them from the cut is not possible: the race is with the sim's own transform, docs/206 §8 X11).
+
+Queue: `satb-act.json` uses `game-copy/ts3native.asi.satb5` + `game-copy/ts3fixes.package.satb5` (ts3fixes unchanged from satb4).
+
+## 14. satb5 round 1: concurrent and exact; the worker's sim cost (2026-10-30, ts3native 0.36.141, not run)
+
+bp-satb-act-1 on 0.36.140 (satb5) [measured, `probe-out/queue/mono-loop-report.txt`]: **Satb=2 runs concurrently and exactly**: A0 31,038 of 31,038, A1-A3 0, no crash; 1,019 of 1,019 jobs still running at the next Simulate entry, 22 stale, 10 give-ups (cold sites 0 x5 and 1 x2 only), worker log hits 175 of 55.7 M loads (the sim's concurrent writes answered from the log), 19 sim waits (0 timeouts); go-live net after consume 14.0 ms/s. Blocker: the stop rule (worker adds 8.1 ms/s >= 5).
+
+What 0.36.141 changes:
+- **GC lock** (docs/30 §16): `[MonoThread] LazyEarly=1` ends the gate at the sim's first GC entry after the job instead of a tick later, mtprobe v6 counts the sim's own waits, and the report's stop rule counts only the sim's waits and entries.
+- **Cold sites** (the 7 give-ups): the worker records each method it transforms first (site 0's argument is the `RuntimeMethod`, `+8` the `MonoMethod` [verified, `0xE643B7`]); at span end the sim logs its name once (`autshadow satb cold transform on the worker: <method>`, via `0xE72010`). A warm-up list in ts3fixes can then call them in the reference run; until the names are in, they stay one-off give-ups (one per method per session).
+- **The cut 0.7 -> 0.9 ms** [code read, not measured]: the cut runs at the end of a frame whose job already finished, after `SatbEnd` (store and load stubs out, IC check off) and with the GC gate off (`MtLazyOff` at that tick's top), so neither Satb nor the GC lock is in the cut. The rise is in `refresh` (659 us): IC bodies on the sim. Candidates: the worker running on the sim core's hyperthread sibling during tick t+1 (it now runs ~5 ms concurrently instead of in a 10 us window) and the route worker's `Sleep(0)` spin; `satb-act.json` runs `bp-satb-act-ww` ([RouteAsync] WorkerWait=1) next to bp-satb-act-1 to separate the spin. Next if it stays: per-phase cut timers on both jobs, and worker affinity off the sim's sibling.

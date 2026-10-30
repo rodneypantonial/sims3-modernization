@@ -22,6 +22,267 @@ static DWORD WINAPI SatbTestReader(void*) {
     return 0;
 }
 
+// docs/206 §9: EA IC byref/array arguments into shared memory are logged per argument (only the parameter's own dword is
+// read: an object id or float next to it is never taken for a pointer); private locals, nulls skipped; too big = wait.
+// Marshal.copy_from_unmanaged logs its destination elements.
+static DWORD g_sbVec[3] = {11, 12, 13}, g_sbF = 14, g_sbVt[1], g_sbArr8[4 + 2 * 5], g_sbArr4[4 + 3], g_sbSlot, g_sbBigArr[4];
+static DWORD __cdecl SatbTestEs(const void*) { return 4; }
+static DWORD __cdecl SatbTestMcopy(DWORD, DWORD, DWORD, DWORD) { return 0; }
+static int SatbTestRow(const char* name) {
+    for (int j = 0; j < SATB_NICS; j++) if (!strcmp(kSatbIcs[j].name, name)) return j;
+    assert(!"satb-ics.h row missing");
+    return -1;
+}
+static void TestSatbIcArgs() {
+    Ts3nAutShadow& k = ts3native_autshadow;
+    const int mode0 = g_satbMode;
+    const DWORD wtid0 = g_satbWTid;
+    g_satbMode = SATB_PROBE, g_satbWTid = 0;  // probe: a wait only counts
+    static DWORD noState = 0;  // no interpreter state: only the stack is private
+    DWORD* const cur0 = g_curState;
+    g_curState = &noState;
+    const int IDX = 3;
+    const short row0 = g_satbIcRow[IDX];
+    SatbReset();
+    const LONG lg0 = k.satbIcLogged, sh0 = k.satbIcShared, w0 = k.satbIcLogWords;
+    DWORD v;
+    // byref Vector3 (heap) + byref Vector3 (the caller's stack: private) + byref float; the ulong route id before them looks
+    // like a pointer and must not be read (0.36.125 scanned it)
+    g_satbIcRow[IDX] = (short)(1 + SatbTestRow("ScriptCore.Route::Route_GetPointAtDistanceOnRoute"));
+    DWORD local[3] = {1, 2, 3};
+    const DWORD a1[5] = {0x00012345, 0x00ABCDEF, (DWORD)(uintptr_t)g_sbVec, (DWORD)(uintptr_t)local, (DWORD)(uintptr_t)&g_sbF};
+    SatbIcSim(IDX, a1);
+    assert(k.satbIcLogged == lg0 + 2 && k.satbIcShared == sh0 && k.satbIcLogWords == w0 + 4 && g_satbN == 4);
+    assert(SatbFind((DWORD)(uintptr_t)&g_sbVec[2], &v) && v == 13 && SatbFind((DWORD)(uintptr_t)&g_sbF, &v) && v == 14);
+    assert(!SatbFind((DWORD)(uintptr_t)local, &v) && !SatbFind(0x00012344, &v));
+    // ulong[] (element size from the table): 5 elements = 10 words; a null array is skipped
+    g_satbIcRow[IDX] = (short)(1 + SatbTestRow("ScriptCore.Route::Route_SetLockKeys"));
+    g_sbArr8[2] = 5;
+    const DWORD a2[2] = {0, (DWORD)(uintptr_t)g_sbArr8}, a2n[2] = {0, 0};
+    SatbIcSim(IDX, a2), SatbIcSim(IDX, a2n);
+    assert(k.satbIcLogged == lg0 + 3 && k.satbIcLogWords == w0 + 14 && SatbFind((DWORD)(uintptr_t)&g_sbArr8[4 + 9], &v) &&
+           !SatbFind((DWORD)(uintptr_t)&g_sbArr8[2], &v));
+    // byref array: the slot, then the elements of the array it holds (3 x 4 bytes)
+    g_satbIcRow[IDX] = (short)(1 + SatbTestRow("ScriptCore.Route::Route_InsertCustomPathAtIndex"));
+    g_sbArr4[2] = 3, g_sbSlot = (DWORD)(uintptr_t)g_sbArr4;
+    const DWORD a3[3] = {0x00F00000, 0x00F00001, (DWORD)(uintptr_t)&g_sbSlot};
+    SatbIcSim(IDX, a3);
+    assert(k.satbIcLogged == lg0 + 4 && k.satbIcLogWords == w0 + 18 && SatbFind((DWORD)(uintptr_t)&g_sbSlot, &v) &&
+           SatbFind((DWORD)(uintptr_t)&g_sbArr4[6], &v));
+    // an array over SATB_IC_MAXW words: not logged, a wait (counted in probe mode); the header is all that is read
+    g_satbIcRow[IDX] = (short)(1 + SatbTestRow("ScriptCore.Route::Route_SetLockKeys"));
+    g_sbBigArr[2] = SATB_IC_MAXW;  // x 8 bytes = 2 x SATB_IC_MAXW words
+    const DWORD a4[2] = {0, (DWORD)(uintptr_t)g_sbBigArr};
+    SatbIcSim(IDX, a4);
+    assert(k.satbIcShared == sh0 + 1 && k.satbIcLogged == lg0 + 4 && (g_satbStale & SATB_ST_IC));
+    // Marshal.copy_from_unmanaged(src, 2, dest, 3): dest elements 2..4 (element size from the class)
+    const SatbEsFn es0 = g_satbElemSize;
+    void* const mc0 = g_satbRt[SRT_MCOPY];
+    g_satbElemSize = SatbTestEs, g_satbRt[SRT_MCOPY] = (void*)SatbTestMcopy, g_satbOn = 1;
+    static DWORD dest[4 + 6];  // heap-like (static): a stack array would be the sim's private memory
+    dest[0] = (DWORD)(uintptr_t)g_sbVt, dest[2] = 6;
+    const LONG rt0 = k.satbRtWaits, n0 = g_satbN;
+    SatbRtMcopy(0x1000, 2, (DWORD)(uintptr_t)dest, 3);
+    assert(k.satbRtWaits == rt0 && g_satbN == n0 + 3 && SatbFind((DWORD)(uintptr_t)&dest[4 + 2], &v) && SatbFind((DWORD)(uintptr_t)&dest[4 + 4], &v) &&
+           !SatbFind((DWORD)(uintptr_t)&dest[4 + 5], &v));
+    g_satbOn = 0, g_satbElemSize = es0, g_satbRt[SRT_MCOPY] = mc0;
+    g_satbIcRow[IDX] = row0, g_satbMode = mode0, g_satbWTid = wtid0, g_curState = cur0;
+    SatbReset();
+    printf("satb IC arguments: byref/array/byref-array ranges logged (%ld words), private and null skipped, ids next to them never read, "
+           "oversized array waits, copy_from_unmanaged destination logged\n", k.satbIcLogWords - w0);
+}
+
+// docs/206 §10 (0.36.136): the two runtime writers that still waited are sized from Mono's own structures. MonoField
+// .SetValueInternal: the field's range by MonoType kind (instance at obj + offset, static in the class vtable's data),
+// enum = base kind, valuetype / valuetype generic instance = instance size - 4; unknown kind waits, a null object neither
+// logs nor waits. PtrToStructure(intptr, object): the object's fields; the (intptr, Type) entry makes a new object: nothing.
+static DWORD g_sfVtStatic[4], g_sfStatic[8], g_sfObj[16], g_sfPod[8], g_sfVtPod[1];
+static u8 g_sfVClass[0xA8], g_sfEClass[0xA8], g_sfGCont[0xA8], g_sfPodClass[0x58];
+static DWORD g_sfGenClass[2], g_sfGenType[2];
+static DWORD __cdecl SatbTestClassOfType(DWORD type) {
+    return type == (DWORD)(uintptr_t)g_sfGenType ? (DWORD)(uintptr_t)g_sfVClass : *(const DWORD*)(uintptr_t)type;
+}
+static DWORD __cdecl SatbTestVtable(DWORD, DWORD) { return (DWORD)(uintptr_t)g_sfVtStatic; }
+static DWORD __cdecl SatbTestRt3(DWORD, DWORD, DWORD) { return 0; }
+static DWORD __cdecl SatbTestRt2(DWORD, DWORD) { return 0; }
+static DWORD g_sfGetRet;
+static DWORD __cdecl SatbTestFget(DWORD, DWORD) { return g_sfGetRet; }
+static DWORD __cdecl SatbTestNotNullable(DWORD) { return 0; }
+static void TestSatbRtWriters() {
+    Ts3nAutShadow& k = ts3native_autshadow;
+    const int mode0 = g_satbMode;
+    const DWORD wtid0 = g_satbWTid;
+    DWORD* const cur0 = g_curState;
+    static DWORD noState = 0;
+    g_satbMode = SATB_PROBE, g_satbWTid = 0, g_curState = &noState;
+    const SatbPtrFn1 cot0 = g_satbClassOfType;
+    const SatbPtrFn2 vt0 = g_satbClassVtable;
+    void* const rt0[3] = {g_satbRt[SRT_FSET], g_satbRt[SRT_PTRTOSTRUCT], g_satbRt[SRT_PTRTOSTRUCT2]};
+    g_satbClassOfType = SatbTestClassOfType, g_satbClassVtable = SatbTestVtable;
+    g_satbRt[SRT_FSET] = (void*)SatbTestRt3, g_satbRt[SRT_PTRTOSTRUCT] = (void*)SatbTestRt2, g_satbRt[SRT_PTRTOSTRUCT2] = (void*)SatbTestRt2;
+    g_satbOn = 1;
+    g_sfVtStatic[3] = (DWORD)(uintptr_t)g_sfStatic;                      // vtable +0xC = static data
+    g_sfVClass[0x14] = 4, *(DWORD*)(g_sfVClass + 0x54) = 4 + 12;        // a 12-byte struct, layout set
+    static DWORD baseU1[2] = {0, 0x05u << 16};                           // u1 MonoType
+    g_sfEClass[0x14] = 4 | 0x10, *(DWORD*)(g_sfEClass + 4) = (DWORD)(uintptr_t)baseU1;  // enum : byte
+    g_sfGCont[0xA6] = 0x11, g_sfGenClass[1] = (DWORD)(uintptr_t)g_sfGCont;
+    g_sfGenType[0] = (DWORD)(uintptr_t)g_sfGenClass, g_sfGenType[1] = 0x15u << 16;
+    static DWORD vtRf[3] = {0, 0, 0x1234};                               // MonoReflectionField's vtable: +8 domain
+    struct Case { DWORD data, attrs, kind, off; int words; bool wait; };
+    const Case cs[] = {
+        {0, 0, 0x08, 4, 1, false},                                       // int at obj+4
+        {0, 0, 0x0D, 8, 2, false},                                       // double: 2 words
+        {(DWORD)(uintptr_t)g_sfVClass, 0, 0x11, 16, 3, false},           // 12-byte struct
+        {(DWORD)(uintptr_t)g_sfEClass, 0, 0x11, 30, 1, false},           // enum : byte at +30: 1 byte, 1 word
+        {0, 0x40000000, 0x0D, 40, 1, false},                             // byref (a pointer), whatever the kind
+        {0, 0x10, 0x0A, 4, 2, false},                                    // static long: the vtable's data
+        {0, 0, 0x13, 4, 0, true},                                        // VAR: the game's set_value refuses it: wait
+    };
+    for (int i = 0; i < (int)(sizeof(cs) / sizeof(cs[0])); i++) {
+        SatbReset();
+        static DWORD ty[2], cf[6], rf[3];
+        ty[0] = cs[i].data, ty[1] = cs[i].attrs | (cs[i].kind << 16);
+        cf[0] = (DWORD)(uintptr_t)ty, cf[2] = cs[i].off, cf[5] = 0x5000;
+        rf[0] = (DWORD)(uintptr_t)vtRf, rf[2] = (DWORD)(uintptr_t)cf;
+        const LONG f0 = k.satbRtFset, w0 = k.satbRtWaits;
+        SatbRtFieldSet((DWORD)(uintptr_t)rf, (DWORD)(uintptr_t)g_sfObj, 0);
+        const u8* base = (cs[i].attrs & 0x10) ? (const u8*)g_sfStatic : (const u8*)g_sfObj;
+        DWORD v;
+        assert(k.satbRtFset == f0 + 1 && (k.satbRtWaits - w0 == (cs[i].wait ? 1 : 0)) && g_satbN == (LONG)cs[i].words);
+        if (cs[i].words) assert(SatbFind((DWORD)(uintptr_t)(base + (cs[i].off & ~3u)), &v));
+    }
+    {   // valuetype generic instance: the value size of its class; null instance object: nothing, no wait
+        SatbReset();
+        static DWORD cf[6], rf[3];
+        cf[0] = (DWORD)(uintptr_t)g_sfGenType, cf[2] = 4;
+        rf[0] = (DWORD)(uintptr_t)vtRf, rf[2] = (DWORD)(uintptr_t)cf;
+        const LONG w0 = k.satbRtWaits;
+        SatbRtFieldSet((DWORD)(uintptr_t)rf, (DWORD)(uintptr_t)g_sfObj, 0);
+        assert(g_satbN == 3);
+        SatbReset();
+        SatbRtFieldSet((DWORD)(uintptr_t)rf, 0, 0);
+        assert(g_satbN == 0 && k.satbRtWaits == w0);
+    }
+    {   // PtrToStructure(ptr, existing object of a 4 + 20-byte class): 5 words from obj + 4; the Type entry: nothing
+        SatbReset();
+        *(DWORD*)(g_sfPodClass + 0x54) = 4 + 20;
+        g_sfVtPod[0] = (DWORD)(uintptr_t)g_sfPodClass, g_sfPod[0] = (DWORD)(uintptr_t)g_sfVtPod;
+        const LONG p0 = k.satbRtPtrStruct, w0 = k.satbRtWaits;
+        SatbRtPtrToStruct(0x1000, (DWORD)(uintptr_t)g_sfPod);
+        DWORD v;
+        assert(k.satbRtPtrStruct == p0 + 1 && k.satbRtWaits == w0 && g_satbN == 5 && SatbFind((DWORD)(uintptr_t)&g_sfPod[1], &v) &&
+               SatbFind((DWORD)(uintptr_t)&g_sfPod[5], &v) && !SatbFind((DWORD)(uintptr_t)&g_sfPod[0], &v) && !SatbFind((DWORD)(uintptr_t)&g_sfPod[6], &v));
+        SatbRtPtrToStruct2(0x1000, 0x2000);
+        assert(k.satbRtPtrStruct == p0 + 1 && g_satbN == 5 && k.satbRtWaits == w0);
+    }
+    {   // docs/206 §12: MonoField.GetValue on the worker (act) answers the cut: a reference field from the log, a value field's
+        // box patched from the log; a field not written since the cut is the call's own result, no give-up
+        void* const fget0 = g_satbRt[SRT_FGET];
+        const SatbPtrFn1 nul0 = g_satbIsNullable;
+        g_satbRt[SRT_FGET] = (void*)SatbTestFget, g_satbIsNullable = SatbTestNotNullable;
+        static DWORD ty[2], cf[6], rf[3], box[4];
+        rf[0] = (DWORD)(uintptr_t)vtRf, rf[2] = (DWORD)(uintptr_t)cf, cf[0] = (DWORD)(uintptr_t)ty;
+        g_satbMode = SATB_ACT, g_satbWTid = GetCurrentThreadId();
+        const LONG give0 = k.satbWGiveUp;
+        // reference (class) field at +8: the sim logged it, then wrote a new pointer
+        SatbReset();
+        ty[0] = 0, ty[1] = 0x12u << 16, cf[2] = 8;
+        g_sfObj[2] = 0x11110000;
+        assert(SatbLogWord((DWORD)(uintptr_t)&g_sfObj[2]));
+        g_sfObj[2] = 0x22220000, g_sfGetRet = 0x22220000;
+        assert(SatbRtFieldGet((DWORD)(uintptr_t)rf, (DWORD)(uintptr_t)g_sfObj) == 0x11110000);
+        // double field at +16: the box (header + 8 bytes) gets the cut bytes
+        ty[1] = 0x0Du << 16, cf[2] = 16;
+        g_sfObj[4] = 1, g_sfObj[5] = 2;
+        assert(SatbLogWord((DWORD)(uintptr_t)&g_sfObj[4]) && SatbLogWord((DWORD)(uintptr_t)&g_sfObj[5]));
+        g_sfObj[4] = 7, g_sfObj[5] = 8, box[1] = 7, box[2] = 8, g_sfGetRet = (DWORD)(uintptr_t)box;
+        assert(SatbRtFieldGet((DWORD)(uintptr_t)rf, (DWORD)(uintptr_t)g_sfObj) == (DWORD)(uintptr_t)box && box[1] == 1 && box[2] == 2);
+        // a field nobody wrote: the live answer as is
+        ty[1] = 0x08u << 16, cf[2] = 24, g_sfGetRet = 0x33330000;
+        assert(SatbRtFieldGet((DWORD)(uintptr_t)rf, (DWORD)(uintptr_t)g_sfObj) == 0x33330000 && k.satbWGiveUp == give0);
+        g_satbRt[SRT_FGET] = fget0, g_satbIsNullable = nul0;
+    }
+    g_satbOn = 0, g_satbClassOfType = cot0, g_satbClassVtable = vt0;
+    g_satbRt[SRT_FSET] = rt0[0], g_satbRt[SRT_PTRTOSTRUCT] = rt0[1], g_satbRt[SRT_PTRTOSTRUCT2] = rt0[2];
+    g_satbMode = mode0, g_satbWTid = wtid0, g_curState = cur0;
+    SatbReset();
+    printf("satb runtime writers: MonoField.SetValue sized by kind (int, double, struct, enum, byref, static, generic struct), "
+           "unknown kind waits, null object skipped; PtrToStructure(object) fields logged, new-object entry not\n");
+}
+
+// docs/206 §11: the per-opcode load thunk runs the handler on any thread but the worker's (counting it), the worker path on
+// the worker's; edx (the opcode) reaches both untouched. Timed against the shared stub's old sequence.
+static __declspec(naked) int SatbTestHandler() { __asm { lea eax, [edx + 1000] } __asm { ret } }
+static __declspec(naked) int SatbTestWorkerPath() { __asm { lea eax, [edx + 2000] } __asm { ret } }
+static SatbLine g_stTid, g_stCount;
+static volatile DWORD g_stOldTid, g_stOldCount;
+static void* g_stOldTarget = (void*)SatbTestHandler;
+static __declspec(naked) int SatbTestOldStub() {  // 0.36.135's sim path: push/fs/cmp/pop, counter, shared indirect jump
+    __asm {
+        push eax
+        mov eax, dword ptr fs:[0x24]
+        cmp eax, dword ptr [g_stOldTid]
+        pop eax
+        je w
+        add dword ptr [g_stOldCount], 1
+        jmp dword ptr [g_stOldTarget]
+    w:
+        jmp SatbTestWorkerPath
+    }
+}
+static void TestSatbLoadThunk() {
+    typedef int(__cdecl * Fn)();
+    const DWORD op = 0x41;
+    Fn f = (Fn)SatbMakeLoadThunk(op, (void*)SatbTestHandler, (void*)SatbTestWorkerPath, &g_stTid.v, &g_stCount.v);
+    assert(f);
+    int r = 0;
+    g_stTid.v = GetCurrentThreadId() + 1, g_stCount.v = 0;
+    __asm { mov edx, 7 }
+    __asm { call f }
+    __asm { mov r, eax }
+    assert(r == 1007 && g_stCount.v == 1);  // sim path: handler, counted
+    g_stTid.v = GetCurrentThreadId();
+    __asm { mov edx, 9 }
+    __asm { call f }
+    __asm { mov r, eax }
+    assert(r == 2009 && g_stCount.v == 1);  // worker path, not counted
+    // cost of the sim path, thunk vs the old shared stub (best of 20 x 1M calls); both include the call/ret of the test
+    g_stTid.v = g_stOldTid = GetCurrentThreadId() + 1;
+    Fn old = (Fn)SatbTestOldStub;
+    double best[2] = {1e30, 1e30};
+    LARGE_INTEGER fq, a, b;
+    QueryPerformanceFrequency(&fq);
+    for (int rep = 0; rep < 20; rep++)
+        for (int which = 0; which < 2; which++) {
+            Fn g = which ? old : f;
+            QueryPerformanceCounter(&a);
+            for (int i = 0; i < 1000000; i++) g();
+            QueryPerformanceCounter(&b);
+            const double ns = (double)(b.QuadPart - a.QuadPart) * 1e9 / (double)fq.QuadPart / 1e6;
+            if (ns < best[which]) best[which] = ns;
+        }
+    printf("satb load thunk: sim path -> handler (counted), worker path -> worker; %.2f ns a call (old shared stub %.2f ns, incl. call/ret)\n",
+           best[0], best[1]);
+}
+
+// docs/206 §13: the worker's arena chunk list counts distinct chunks: the same pool chunk taken again by a later grow
+// (deep call paths) is one entry, its widest end kept; a word in any listed chunk is the worker's own frame.
+static void TestSatbArenaChunks() {
+    const LONG n0 = g_satbWArenaN;
+    g_satbWArenaN = 0;
+    static DWORD c[4][64];
+    for (int round = 0; round < 500; round++) {
+        const int i = round % 3;
+        SatbWArenaAdd((DWORD)(uintptr_t)c[i], (DWORD)(uintptr_t)&c[i][round % 2 ? 64 : 32]);
+    }
+    assert(g_satbWArenaN == 3);  // 0.36.139 counted 500 entries and gave up past 64
+    assert(SatbWInArena((DWORD)(uintptr_t)&c[0][60]) && SatbWInArena((DWORD)(uintptr_t)&c[2][0]) && !SatbWInArena((DWORD)(uintptr_t)&c[3][0]));
+    for (int i = 0; i < 200; i++) SatbWArenaAdd(0x40000000u + (DWORD)i * 0x1000, 0x40000800u + (DWORD)i * 0x1000);
+    assert(g_satbWArenaN == 203 && SatbWInArena(0x400C7100) && !SatbWInArena(0x400C7900));
+    g_satbWArenaN = n0;
+    printf("satb arena chunks: 500 grows over 3 chunks = 3 entries, 200 more distinct = 203 (cap %ld), ranges kept\n", SATB_WARENA);
+}
+
 static void TestSatbLog() {
     assert(SatbAlloc());
     // single thread: the first write's value is kept, bytes of a partly covered word are merged
@@ -82,4 +343,8 @@ static void TestSatbLog() {
     printf("satb log: first values kept, partial words merged, overflow at %lu, epoch wraps clean; writer/reader %ld stores, %ld reads, %ld wrong\n",
            SATB_CAP, stores, g_sbReads, g_sbBad);
     assert(g_sbBad == 0 && g_sbReads > 1000);
+    TestSatbIcArgs();
+    TestSatbRtWriters();
+    TestSatbLoadThunk();
+    TestSatbArenaChunks();
 }

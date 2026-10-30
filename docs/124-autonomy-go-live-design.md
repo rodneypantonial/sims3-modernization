@@ -19,6 +19,8 @@ Tags: **[verified, docs/N]** = verified there, not re-read here; **[inferred]** 
 - **Worker window (2026-10-30, docs/206):** the §2.2 row "worker scores in the native tail of t" does not hold: the quiescent gap between Simulate iterations is ~10 us (docs/122 §14.20), the native span inside an iteration (BP ~3.3, IP ~2.2, SV ~1.4 ms) calls C# synchronously (route events 57/58, SACS event pushes), and a copied heap costs more than a job moves. **Chosen: copy on first write** (docs/206 §3.3): from the cut to the worker's end the sim logs the old value of every managed word it overwrites, the worker's loads check the log, so §3.4's in-place reads see the cut while the sim runs t+1 (window ~26-32 ms, overruns ~0, ~1-2.5 ms/s barrier [inferred]); S0 store-rate probe first, then ~15-24 h and 6-10 jobs before S2.
 - **Consume cost (2026-10-30, §15, offline from mono-cost11):** live C1 for the top 20 pairs costs ~9-20 ms/s on the sim, and IP overruns (17-44% of searches) cost another 8-16. Net after consume at `TopN` 20 is BP -4.9 to +1.3 and IP -3.6 to +8.2 ms/s; the range is the pass share, which nothing counts yet. Break-even N is BP 8-16 and IP 9-30. `TopN` 10 gives BP +1 to +5 and IP +2 to +16 [inferred]. Before S2: count the pass share, make 10 the default `TopN`, fix the IP overruns. **Decided 2026-10-30 (§16):** `TopN` 10 with an exact band rule, a per-ad rule for mixed meta objects, scores stay exact (no Test-only option). Net with band 1 only: BP +1.0 to +4.9, IP +2.3 to +15.7 ms/s [inferred].
 
+- **Built 2026-10-31 (§17, ts3native 0.36.142, not run):** `[AutShadow] Mode=3` + ts3fixes `autlive` (B13 wait, B14 consumer, §16.1 bands, `ObjStale`, `VerifyEvery`, `Dry=1` for G7), queues `golive-g7.json`, `golive-act.json`, `golive-ab.json`.
+
 ## 1. Starting point
 
 | Have (docs/122, built offline) | Missing for go-live |
@@ -576,3 +578,83 @@ Objects not in the request, a whole-object `AlwaysChooseBest` hit, and `late` ob
 | IP rerun | +2.3 / +2.4 / +3.7 / +4.4 | +2.3 / -0.9 / -4.2 / -7.4 | 8.7 / 12.8 / 15.1 / 16.6 |
 
 The result depends on how often bands fire. The exact rule (`Margin` 0, `drift`) should fire rarely if one-tick drift is small, but nothing measures that yet; Mode R's tie share and G7's `alBandWhy` measure it. IP's numbers also depend on the overrun fix (before consume: +23.4 at 17% overruns, +11.1 at 44%). The lazy GC lock (~0.2-1 ms/s) is still to subtract. BP stays below the ~10 ms/s goal at any pass share. IP reaches it only with a pass share >= ~0.5, few band fires and overruns near the first run's 17%.
+
+### 16.5 Note after mono-cost13 (2026-10-30)
+
+The first runs with the consume counters change three inputs of this section; docs/122 §14.23 has the numbers.
+- **Staleness is small, and the top-pick figure is an artifact** [verified in the code, derived from the counters]. After about one tick, 0.24% (BP) and 0.07% (IP) of the pairs both sides answered differ. The 20.9-27.5% top-1 and 82-98% top-10 "changes" come from `FreshCheck` ranking each side's own passing pairs: the worker's A4 objects are missing on its side, and the top-10 compare counts padding slots. Staleness can explain at most 7.7% (BP) and 3.3% (IP) of searches. With `drift` that small, band 2+ (§16.1) should rarely fire; G7's `alBandWhy` still confirms it.
+- **Pass share:** 11.9% BP and 5.6% IP of answered pairs. Worker aborts fall on objects with passing pairs more often than average.
+- **"Scoring moved" is an upper bound by 1.4-1.7x** [measured shares, inferred scale]. R includes the driver's per-object `HowMuchItWantsSimToCome` (~47% of R), which vanilla never runs (§13.2). Vanilla's whole meta B14, off-list ads included, is ~0.6-0.7 x R per search. Pair cost: `Test` ~60-70%, venue score ~25-34%; no route cost. With that, design A (this section) nets about -5 to +3 ms/s on BP and -1 to +9 on IP, not +4.6 / +16.1. The report formula also discounts aborts twice (small net effect).
+- **Before S2:**
+  1. Add the docs/122 §14.23 counters (answered-only top compare, reference-vs-fresh top, reference passes among A4 pairs, per-pair C2 timer by allow-list and pass/fail).
+  2. Build docs/97 AM-1/R3 (exact memos of the pure venue parts: cheaper vanilla and cheaper live C1).
+  3. Get the BP cut to <= ~0.4 ms.
+  4. Reconsider the input-checked score reuse (docs/122 §14.23 design C), which keeps scores exact and gains roughly what the dropped Test-only option would.
+  
+  BP above ~10 ms/s needs step 3 plus design C (or B).
+
+## 17. Go-live consume, built (2026-10-31, ts3native 0.36.142, ts3fixes contract 10, not run)
+
+Built offline from §2, §3, §16 and the docs/206 Satb act mode (`Satb=2`; satb6 BP: 33,506 of 34,329 compared pairs bit-equal across its runs, A1-A3 0, no crash; worker cost to the sim 3.7-3.8 ms/s; report "go-live after consume" ~15 ms/s net [measured satb6, inferred net]). Nothing here has run in the game. Ledger docs/51 §408 (I-408-1 to I-408-5; I-124-16 = I-408-3).
+
+### 17.1 Switches
+
+| Where | Key | Default | Meaning |
+|---|---|---|---|
+| ts3native `[AutShadow]` | `Mode=3` | 0 | go-live: the native flow of Mode R (cut, worker, finish), with the sim-thread reference only at every `VerifyEvery`-th cut |
+| | `TopN` | 10 | band 1 and each later band (1-64) |
+| | `Bands` | 3 | bands including band 1 before every remaining worker-passing pair goes through C1 (1-8) |
+| | `Margin` | 0 | per mille added to the factor of rule (b) (§16.1); 0 = the exact rule |
+| | `MaxWait` | 3 | ticks a search waits for its result before the game's B13 runs (1-16) |
+| | `VerifyEvery` | 50 | every Nth cut also runs the reference; an A2/A3 there turns go-live off for the session (0 = never) |
+| | `Dry` | 0 | 1 = G7: compute and compare, use nothing |
+| ts3fixes | switches `autshadow` + `autlive` | off | `autlive` off in Mode 3 = the game's search and no request (the off arm of `--ab autlive`) |
+| ts3fixes | tuning `kAutLive` | False | patches B14 at startup; only in test packages (`node tools/setup/build-fixes.ts --on kAutLive`): the pass-through costs one interpreter frame on every meta B14 (I-408-5) |
+
+### 17.2 Flow as built (`mods/ts3fixes/src/AutLive.cs`, `AutLiveCore.cs`; native `autshadow-run.cpp`, `autshadow.cpp`)
+
+1. **B13 hook** (`MetaHook` -> `LiveMeta`): eligible = manager search (`CurrentSearchType` Autonomy), not the inspection window, `Simulator.CheckYieldingContext(false)`, B14 hook in, consumer-path guard clean, go-live not switched off. `TryRequest(a, c, live: true)` builds the Mode R request (same object list and order, §13.7), takes a `LiveSearch` from a pool of 8, copies the request into it, stores the actor fields of §3.1 (age and species bits, `LotCurrent`, `LotHome`, `Household`, `IsSelectable`, `AssignedRole`, `Occupation` with `JobCount` and `CurrentJob`, `CareerLocation`, the chip trait) and watches every meta object (object id) and its lot (LotId) for `ObjStale`. Shared cuts (up to 4 requests) work as in Mode R.
+2. **Wait**: `Simulator.Sleep(0)` until `AutFinish` marked the search ready, at most `MaxWait` ticks. After every yield the two checks of the game's `YieldIfPossible` run with its returns (interrupted: clear the flag, `SearchInterrupted`; actor destroyed: `ActorDestroyed`). With Satb=2 the job runs during t+1 and the finish comes at the end of t+1, so the search resumes in t+2 (I-408-4): the view is ~1-1.5 ticks old, not 1 as §2.2 assumed. A task destroyed while parked leaves its slot; the pool reclaims it 64 frames after its finish (or 600 after its post), and a world load clears all.
+3. **Result checks** (§3.1, each a counted fallback to the game's B13): run status (stopped without a kept part, epoch inside the run, no worker or refused, exception), world epoch moved since the cut (`Config(20)` vs the cut's `Config(21)`), `GameStates.IsLiveState` and not shutting down, `LotCurrent`, a head interaction, the actor fields. Not built: the tuning generation (no Retuner-style hook; G7 sees its effect) and the LOD flag compare.
+4. **Selection**: an object is consumed only if its implementor is allow-listed, the worker neither aborted nor skipped any of its allow-listed pairs (KeepPartial `stop` included), none of its ads has `AlwaysChooseBest`, and `ObjStale` says neither it nor its lot had an event after the cut frame (§17.3). Candidates = worker-passing pairs of those objects, ordered by worker score, ties in request order; band 1 = the first `TopN`.
+5. **B14 hook** (`AutB14Hook` -> `LiveB14`) inside the game's B13: not in the request, a late call (the frame moved since the resume: B13 yielded at Y2) or an invalid object: the game's B14. Else the ads must be the request's (same references and count, else the game's B14), then per ad in `MetaAds` order the game's own commodity filter and: off-list ad (definition off the list, mod guard, scoring function): C1; worker-filtered but passing now: C1; band 1: C1; anything else waits for the bands. C1 = the game's public `CalculateScoreAndAddToCandidates` (check table, C2, `BestScores.Add`).
+6. **Bands** after B13 returns `Continue`, before D2: `AutLiveCore.Bands.Step` on the game's own `BestScores` (`Count`, `Element(i).InteractionScore`); drift from the live scores the C2 hook records for sent pairs; rule (a) count, (b) `w x (1 + drift + Margin) >= s10`; only pairs of objects the B14 hook consumed; a destroyed object's pair is skipped.
+7. **Dry (G7)**: steps 1-4 as live; the B14 hook marks consumed objects but runs the game's B14; the C2 hook records every C1 call of the search. After B13: replay the calls into a model of the game's queue from the queue before B13 (must equal the game's queue: `drySimMis`), and again with only what consume would send plus the bands with the game's own live scores; compare the top-10 set and the top 1 with the game's queue; misses by cause (worker failed `Test` = stale reject, ranked below the bands, other); `dry-diff` records in `autshadow.jsonl` (50 per load).
+8. **Verify** (`VerifyEvery`): the native cut runs the reference on that cut only; `AutFinish` runs Mode R's `CompareR` (A0-A5 counters as before) and compares the worker's and the reference's top 1 and top-10 set over pairs both answered; an A2/A3 turns go-live off for the session.
+9. **Consumer-path guard** (§13.5): L3 by exact signature over `ScoreInteractionsOnObjects`, B13, `YieldIfPossible`, B14, C1, C2, `AssignProbabilitiesAndChooseInteraction()`, `InteractionObjectPair.get_Tuning`, `BestScores.Add` / `AddInteractionOnlyIfBest` / `ChooseInteraction` / `ChooseInteractions`; our own swaps (B13, B14, C2) pass as own swaps. A hit = go-live off for the load. `BestScores..ctor` is not checked (the resolver takes methods only).
+
+Not built from the design: the tuning-generation and LOD rules (step 3), the pick histogram per definition (§7.2; G8 territory), the `aut-live-pet` / `-interrupt` / `-venue-hour` repros (§8.2; `interrupted` is counted in every run).
+
+### 17.3 Native (0.36.142)
+
+- `Mode=3` in `AsInstallRun` (keys above, clamped; one log line `autshadow go-live: Mode=3 ...`), the cut frame (`g_asCutFrame`), the reference every `VerifyEvery`-th Mode 3 cut (`alCuts`, `alVerify`).
+- `AutShadowNative` contract 10: `LiveStat(slot, add)` into `al[56]`, `LiveWatch(id, isLot)`, `ObjStale(id, isLot, cutFrame)`; `Config` 13-18 settings, 19 frames ended, 20 epoch now, 21 epoch at the cut, 22 cut frame, 23 the last cut ran the reference.
+- `ObjStale` watch map (`autshadow.cpp`, 8,192 slots, reset at 6,144: a query for a cut before the reset answers stale): each object event on a watched object id stamps it with the frame in progress; an add (4) or destroy (5/6) also stamps the lot its world component names (key LotId with bit 63). Unwatched = stale. Cost: one locked hash probe per object event while anything is watched.
+- Counters `ts3native_autshadow` v20 (+0xB8C): `alOn` (bit 0 Mode 3, bit 1 Dry), `alCuts`, `alVerify`, `alWatchN`, `alWatchResets`, `alStaleQ`, `alStaleHit`, `alStaleEv`, `al[56]` (+0xBAC; slots in §17.4). `tools/probe/agent.js` reads them; `mono-cost-report.ts` prints the "go-live", "go-live objects" and "G7 dry apply" lines.
+
+### 17.4 Counter slots (`al[]`, ts3fixes `AutLive.cs` kS*)
+
+0 eligible, 1 posted, 2 consumed, 3 dry compared, 4 not posted (sampling, busy, pool, guard), 5 not ready in `MaxWait`, 6 run stopped, 7 epoch in the run, 8 no worker or refused, 9 worker exception, 10 epoch since the cut, 11 lot, 12 actor fields, 13 game state, 14 interrupted after our yield, 15 destroyed after our yield, 16-22 B14 calls: not in request, invalid (abort, skip, off-list implementor), stale, ads changed, `AlwaysChooseBest`, late, consumed; 23 band-1 pairs through C1, 24 band 2+ pairs, 25 off-list ads, 26 band 2 fired, 27 band 3, 28 full, 29 rule (a), 30 rule (b), 31-35 drift per search (0, < 1 %, < 5 %, < 20 %, more), 36 dry top-10 equal, 37 dry top 1 equal, 38 dry replay mismatch, 39 consumer time (us), 40 wait ticks, 41 off by verify, 42 candidates, 43 head interaction, 44 dry miss (worker failed `Test`), 45 dry miss (below the bands), 46 off by guard (reserved), 47-49 verify runs / top 1 same / top-10 same, 50 worker-filtered ads through C1, 51 other, 52 dry off-list C1 calls, 53 dry miss other.
+
+### 17.5 Tests
+
+- `tools/selftest/autlive` (C#, `AutLiveCore`): queue semantics (positives only, strict replace), rules (a)/(b) with ties, drift and bins, order with ties, band steps and the full band, and 3,000 random searches: exact and one-factor live scores give the game's queue in every run (I-408-1); per-pair +-20 % noise differs in ~2.5 % (measured, not asserted).
+- ts3native selftest `TestAutShadowLive`: the reference on every 4th Mode 3 cut only, `Config` 13-23, `LiveStat` bounds, the watch map (stamp after the cut, lot stamp on add/destroy only, unwatched = stale, reset after 6,144 ids, Mode 3 only); T5 updated to contract 10 and 31 ICs.
+- monohost `AS-live-verify`: 8 Mode 3 requests through the real worker, 2 references (VerifyEvery 4), every result finished; `AS-install` wants 31 ICs and contract 10.
+- `node tools/harness/mono-cost-report.ts --self-check` (the go-live lines); `tools/selftest/autshadow` unchanged.
+
+### 17.6 Queues (not run; asi `game-copy/ts3native.asi.golive1`, package `game-copy/ts3fixes.package.golive1` = `build-fixes.ts --on kAutLive`)
+
+| Queue | Jobs | Gate |
+|---|---|---|
+| `golive-g7.json` | smoke 4 min; BP and IP 10 min with Satb=2 and with Satb off (`WindowWaitUs` 5000); BP crowd in view (`aut-live-crowd-view`, 15 min); second clean BP/IP Satb=2 runs | G7 (§8): top-10 >= 99 %, top 1 >= 99.5 % over >= 2,000 searches per world, `drySimMis` 0, every miss with a cause |
+| `golive-act.json` (after G7) | smoke; BP, IP 10 min; BP crowd 20 min; BP with two saves (`aut-live-save`); second clean runs | 0 crashes, no script error, consumed >= 80 % of posted, verify A1-A3 0, Sims keep acting |
+| `golive-ab.json` (after act) | measurement smoke (1-min slices); BP, IP 10 min `--ab autlive` 2-min slices both orders; BP crowd in view 25 min, 5-min slices, both orders | S4 (§14.4): sim ms/s off - on outside the pooled noise band, autonomy-search owner down, it/s not down > 2 % |
+
+### 17.7 Risks
+
+1. Staleness of ~1-1.5 ticks with Satb=2 (I-408-4): a pair the worker failed that now passes is missed for one search; G7's `dryMissStale` sizes it. `MaxWait` 3 and the epoch rule bound it.
+2. The extra interpreter frames (I-408-5) on deep `Test` chains: an F1 overflow or a stack overflow would show as a worker give-up 0xD8A8E0 or a script error in G7/act.
+3. `ObjStale` misses lot changes without add/destroy (I-408-3), and there is no tuning-generation rule: both only change which pairs are selected, never a pushed score (every pair in `BestScores` is scored live).
+4. A parked search holds its `LiveSearch` slot until its task resumes; 8 slots; reclaimed 64 frames after the finish.
+5. The net gain is still the §16.4 / docs/122 §14.23 estimate (BP -5 to +3, IP -1 to +9 ms/s with design A; satb6's report line ~15 ms/s): the A/B decides.

@@ -66,10 +66,13 @@ namespace Ts3Fixes
             ApplyUiCaches();
             ApplyNameCache();
             ApplyScriptHotSpots();
+            ApplyVenueMemo();
             ApplyDoorMirror();
             ApplyAutShadow();
+            ApplyAutOffload();
             ApplyReplanDefer();
             ApplyUnseenThrottle();
+            ApplyWakePark();
             ApplyEaSpread();
             ApplySeasonMarkerCache();
             ApplyRouteSources();
@@ -80,6 +83,8 @@ namespace Ts3Fixes
             ApplySeasonImposter();
             ApplyEaFixes();
             ApplyDeadRefs();
+            ApplyEaVacation();
+            ApplyCompaction();  // docs/204: hooks only with ts3native [Compaction] Enabled=1 or 2
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -175,12 +180,23 @@ namespace Ts3Fixes
         // longest slice us, total ms, refused or stopped, outside-household pictures, quiet friend pairs, history entries,
         // dead outfits, dead Sims disposed, cleanse skipped for Overwatch, dead passport lists seen. [423-426] played households
         // (PlayedHouseholds.cs, docs/14 §8.6): set size, ids added, lighter-tier pictures removed, aggressive actions skipped.
+        // [427-438] Compaction (Compaction.cs, docs/204): saves seen, compactions started, offers, accepted, declined, refused by state,
+        // skipped / failed, queue entries recorded, re-pushed, not pushed, not restorable, pushes that threw; [439] restores finished.
+        // [440-447] venue memo (VenueMemo.cs, docs/122 §14.24): GetTuning memo hits, misses, verify mismatches, clears; venue
+        // scores by the hook's steps, passed to the game's method, verify mismatches, verify checks.
+        // [466-480] free vacation (EaVacation.cs, issue #97, docs/210): vacexport adults exported / dream managers from the export,
+        // vacstoreguard slots re-added / stores that threw / bring-backs scheduled at load / dead-pickup trips ended at load,
+        // vacreturnskip adults skipped / returns ended, vacteendelete deletions deferred / teens rejoined / returns from the check,
+        // vacexitreturn adults brought back at exit, vaclistenernull null states skipped, vacimportfix ids refreshed / expiry skipped.
+        // [448-465] offload Mode R (AutOffload.cs, docs/208): env / bcast items, A0-A5, exceptions, dry checks. [481-490] offload
+        // apply (docs/208 §8): env ready / applied / no answer / stale / applied = live, bcast ready / applied / no answer / stale / same order.
+        // [491-533] unseen wake-ups (WakePark.cs, docs/211: wakeprobe / wakepark / wakepoll): see the header of WakePark.cs.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[427]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[534]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -223,6 +239,8 @@ namespace Ts3Fixes
                 case "namecache": return Instantiator.kSimNameCache;
                 case "detailprio": return Instantiator.kDetailPriorityCache;
                 case "hoursmemo": return Instantiator.kHoursMemo;
+                case "venuememo": return Instantiator.kVenueMemo;
+                case "venuememoverify": return false; // verify switch: test runs only
                 case "caneearly": return Instantiator.kCaneEarlyOut;
                 case "tooltipthrottle": return Instantiator.kTooltipThrottle;
                 case "detailprioverify": case "hoursmemoverify": return false; // verify switches: test runs only, no tuning
@@ -232,6 +250,10 @@ namespace Ts3Fixes
                 case "wildflowertask": return Instantiator.kWildflowerTask;
                 case "doormirror": return Instantiator.kDoorMirror;
                 case "autshadow": return Instantiator.kAutShadow;
+                case "autoffenv": case "autoffbcast": case "autoffdry": return false; // docs/208 offload Mode R (AutOffload.cs): test runs only
+                // docs/208 §8 apply switches: unset read true here (default branch) while the agent showed them off
+                case "autoffenvapply": case "autoffbcastapply": case "autoffnoref": return false;
+                case "autlive": return false; // docs/124 §17 go-live consume ([AutShadow] Mode=3): test runs only
                 case "replandefer": return Instantiator.kReplanDefer;
                 case "replanspread": return Instantiator.kReplanSpread;
                 case "autshadowverify": return false; // verify switch: test runs only
@@ -245,6 +267,9 @@ namespace Ts3Fixes
                 case "unseenmotives": return Instantiator.kUnseenMotiveThrottle;
                 case "unseenbroadcast": return Instantiator.kUnseenBroadcastThrottle;
                 case "unseenprobe": return false; // probe switch: test runs only
+                case "wakeprobe": return false; // probe switch: test runs only (WakePark.cs, docs/211)
+                case "wakepark": return Instantiator.kWakePark;
+                case "wakepoll": return Instantiator.kWakePoll;
                 case "easpreadlots": return Instantiator.kEaSpreadLots;
                 case "easpreadpets": return Instantiator.kEaSpreadPets;
                 case "easpreaddecay": return Instantiator.kEaSpreadDecay;
@@ -291,6 +316,14 @@ namespace Ts3Fixes
                 case "deadrefguards": return Instantiator.kDeadRefGuards;
                 case "deadrefsweep": return Instantiator.kDeadRefSweep;
                 case "savecleanupaggressive": return Instantiator.kSaveCleanupAggressive;
+                case "vacexport": return Instantiator.kVacExport;
+                case "vacstoreguard": return Instantiator.kVacStoreGuard;
+                case "vacreturnskip": return Instantiator.kVacReturnSkip;
+                case "vacteendelete": return Instantiator.kVacTeenDelete;
+                case "vacexitreturn": return Instantiator.kVacExitReturn;
+                case "vaclistenernull": return Instantiator.kVacListenerNull;
+                case "vacimportfix": return Instantiator.kVacImportFix;
+                case "compactionfail": return false;  // test only (Compaction.cs, docs/204 §6): the reload throws after the screen is up
                 case "spotspread": return true;
                 default: return true;
             }

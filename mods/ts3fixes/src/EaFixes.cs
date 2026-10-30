@@ -60,10 +60,6 @@ namespace Ts3Fixes
         static readonly FieldInfo sBribeTable = typeof(VelvetRopes).GetField("mBribeDictionary", kInstAll);
         static readonly FieldInfo sTestChair = typeof(FirePit).GetField("mTestChair", kInstAll);
         static List<IGameObject> sThrowMade;  // non-null while a throwables call runs
-        static readonly MethodInfo sSwInitAbuse = SwInit(typeof(SocialWorkerChildAbuseSituation.RouteToLot), typeof(SocialWorkerChildAbuseSituation));
-        static readonly MethodInfo sSwInitAdopt = SwInit(typeof(SocialWorkerAdoptionSituation.RouteToLot), typeof(SocialWorkerAdoptionSituation));
-        static readonly MethodInfo sSwInitPetAdopt = SwInit(typeof(SocialWorkerPetAdoptionSituation.RouteToLot), typeof(SocialWorkerPetAdoptionSituation));
-        static readonly MethodInfo sSwInitPutUp = SwInit(typeof(SocialWorkerPetPutUpSituation.RouteToLot), typeof(SocialWorkerPetPutUpSituation));
         static bool sSwRunning;               // our deferred RouteToLot.Init: the hook passes it to the game
         static readonly FieldInfo sSbtFailed = typeof(SimBuilderTask).GetField("Failed", kInstAll);
         static readonly FieldInfo sSbtFailure = typeof(SimBuilderTask).GetField("FailureException", kInstAll);
@@ -206,6 +202,12 @@ namespace Ts3Fixes
             return n;
         }
 
+        // Calls a swapped method from our checks. MethodInfo.Invoke fails on it ("Unable to invoke an invalid target": Mono's
+        // InternalInvoke checks the target against the swapped-in hook class, RefTable.cs); Delegate.CreateDelegate(Type,
+        // object, MethodInfo) has no target check in this mscorlib [verified IL] and the delegate call runs the swapped body
+        // with `this` = the game object, like the game's own callers [inferred, Mono 1.2 icall; non-virtual methods only].
+        delegate void PrefRemoveFn(SimDescription preferredSim);
+
         public class PreferredServiceHook
         {
             public void RemoveHook(SimDescription preferredSim)
@@ -241,8 +243,10 @@ namespace Ts3Fixes
 
         // ---- socialworkeronlot (#87) ----
 
-        // True when the on-lot RouteToLot.Init was moved to a yielding alarm; false = run it now.
-        static bool SwDefer(Situation child, Situation parent, Sim worker, MethodInfo init)
+        // True when the on-lot RouteToLot.Init was moved to a yielding alarm; false = run it now. init runs the hook's InitOrig:
+        // reflection cannot invoke the swapped Init (Mono's InternalInvoke checks the target against the hook class: "Unable
+        // to invoke an invalid target", RefTable.cs), so the hook hands over a compiled call.
+        static bool SwDefer(Situation child, Situation parent, Sim worker, AlarmTimerCallback init)
         {
             if (sSwRunning || worker == null || child.Lot == null || worker.LotCurrent != child.Lot || !ShortcutOn("socialworkeronlot")) return false;
             AlarmManager am = AlarmManager.Global;
@@ -250,7 +254,7 @@ namespace Ts3Fixes
             {
                 if (parent.SituationExited || child.SituationExited || parent.Child != child) { PatchCounters()[384]++; return; }
                 sSwRunning = true;
-                try { init.Invoke(child, new object[] { parent }); }
+                try { init(); }
                 finally { sSwRunning = false; }
             };
             AlarmHandle h = am.AddAlarm(1f, TimeUnit.Minutes, later, "Ts3Fixes socialworkeronlot", AlarmType.DeleteOnReset, worker);
@@ -259,26 +263,24 @@ namespace Ts3Fixes
             return true;
         }
 
-        static MethodInfo SwInit(Type routeToLot, Type situation) { return routeToLot.GetMethod("Init", new Type[] { situation }); }
-
         public class SwAbuseHook
         {
-            public void InitHook(SocialWorkerChildAbuseSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, sSwInitAbuse)) InitOrig(parent); }
+            public void InitHook(SocialWorkerChildAbuseSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, delegate { InitOrig(parent); })) InitOrig(parent); }
             public void InitOrig(SocialWorkerChildAbuseSituation parent) { } // receives RouteToLot.Init's original header
         }
         public class SwAdoptHook
         {
-            public void InitHook(SocialWorkerAdoptionSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, sSwInitAdopt)) InitOrig(parent); }
+            public void InitHook(SocialWorkerAdoptionSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, delegate { InitOrig(parent); })) InitOrig(parent); }
             public void InitOrig(SocialWorkerAdoptionSituation parent) { }
         }
         public class SwPetAdoptHook
         {
-            public void InitHook(SocialWorkerPetAdoptionSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, sSwInitPetAdopt)) InitOrig(parent); }
+            public void InitHook(SocialWorkerPetAdoptionSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, delegate { InitOrig(parent); })) InitOrig(parent); }
             public void InitOrig(SocialWorkerPetAdoptionSituation parent) { }
         }
         public class SwPutUpHook
         {
-            public void InitHook(SocialWorkerPetPutUpSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, sSwInitPutUp)) InitOrig(parent); }
+            public void InitHook(SocialWorkerPetPutUpSituation parent) { if (!SwDefer((object)this as Situation, parent, parent.Worker, delegate { InitOrig(parent); })) InitOrig(parent); }
             public void InitOrig(SocialWorkerPetPutUpSituation parent) { }
         }
 
@@ -466,7 +468,7 @@ namespace Ts3Fixes
                         int after = 0;
                         d[ulong.MaxValue - 1] = sim;
                         d[ulong.MaxValue - 2] = sim;
-                        try { remove.Invoke(s, new object[] { sim }); }
+                        try { ((PrefRemoveFn)Delegate.CreateDelegate(typeof(PrefRemoveFn), s, remove))(sim); } // swapped: see PrefRemoveFn
                         finally
                         {
                             foreach (SimDescription v in d.Values) if (v == sim) after++;

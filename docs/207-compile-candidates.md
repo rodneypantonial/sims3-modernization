@@ -214,3 +214,81 @@ Another lane builds docs/206 option 2b: while an [AutShadow] worker job runs, si
 - **Loads on the worker.** Simplest and safe: compiled code never runs on a worker thread. `JitEnter` already sees the thread (TLS or a per-thread flag); on a worker it dispatches the original opcode (the "interpreted" path of verify mode), so the worker runs EA's handlers, which the other lane swapped. A later step could emit worker-side load templates that check the log, but the worker gets the speed-up only then.
 - **Switch flips.** The barrier is compiled in unconditionally (the flag test), so turning [AutShadow] on or off needs no recompile. If the write-log handlers are installed by swapping table entries, compiled exits still jump to whatever handler the table had at compile time (P0 caches `g_opHandler`); a P1 must read the live table entry at exit (one extra load) or re-link exits when the other lane swaps.
 - **Effect on the offload's numbers.** Compiling the sim thread's never-yielding methods makes the sim's own scoring and lookups cheaper, so the share of sim time the worker moves off the thread shrinks by the same factor for compiled methods (the worker runs interpreted code). On the other side, the consume re-score at the cut (docs/124: top-N ads re-tested on the sim thread) gets cheaper too, and if the worker later runs compiled code, its jobs get shorter, which shortens the window in which the write log is active (fewer logged first writes). Net: the two add, but each one's measured gain is smaller with the other on; A/Bs must state which of the two was on.
+
+## 8. P0 again, on top of the call fast path (2026-10-30)
+
+Rodney asked for the P0 bench again once docs/139 §8 (call/return fast path) was proven, with two P0 features added first: (a) compiled-to-compiled direct calls and (b) inlining of tiny leaf methods, four arms on the same benches, 0 mismatches in each. Everything offline in monohost; code in `native/monohost/monohost-jit.cpp` (inliner, `MONOHOST_JITINLINE=1`), `native/ts3native/mintcall.cpp` (fast path, `MONOHOST_MINTCALL=fast|verify`), cases 21/22 (`JitInl`, a compiled loop calling three tiny instance methods, and its interpreted twin) in `HostTest.cs`.
+
+### 8.1 The two features as built
+
+- **(b) Inlining [built, verified].** At a compiled `call` or `callvirt` (non-virtual, reference type) site whose callee is a transformed instance method with no clauses and no EA native body and whose body is `stinarg*` plus at most 12 of `ldthis`, `ldarg` (32-bit), `ldfld` on `this` (32-bit), `ldc`, 32-bit ALU / `mul`, compares, `ceq0`, `inc`/`dec`/`neg`/`not`, narrow `conv`, `pop`, ending in one `ret` / `ret.void`, the body runs in registers on the caller's eval stack. `this == null`, a set remoting class or a callee frame that would not fit the current arena chunk take the normal call path from the same state (the fast path when installed; EA's handler throws as before). The caller's stack ends bit-equal to EA's call: the result slot gets EA's high dword (the callee's eval slot 0 in the arena, which EA's 8-byte return copy carries). Listed methods' callees are transformed before the caller compiles (EA would transform them at their first call), so their mint code can be read. Static methods are not inlined (a call could be the one that runs a class initializer).
+- **(a) Direct calls [not built as a separate path; reasoned].** With the fast path installed, a compiled call site already enters the fast handler directly (no EA handler on the way: P0's exits jump to the table entry read at install, which is ours). What a dedicated direct path could still remove is the dispatch head + `JitEnter` hash probe at the callee's first word and at the return word, ~10 instructions of ~190-200 per call + return (~5%). The rest is the frame itself: every record, `MonoInvocation` and arena word must exist for exceptions, stack traces, yields and the GC (docs/139 §8.2: the protocol is store-bound), so a "direct" call that keeps EA's frame cannot be much cheaper than the fast path. A real direct call needs lazily built frames (records and `MonoInvocation` written only when an exception, a yield or a native transition needs them): that is P1 design, not a P0 feature.
+
+### 8.2 Correctness [verified: host runs]
+
+| Arm | Verify run | Result |
+|---|---|---|
+| fast path only | `MINTCALL=verify`, every eligible call | 19.3 M calls compared, 0 mismatches, 39/39 |
+| fast path + compiler | `MINTCALL=fast JIT=verify` | 2,002,864 verified compiled calls (+6.76 M inside them), **0 mismatches**, 23 of 23 bench checksums and `MintBench` equal to the interpreter, 39/39 |
+| fast path + compiler + inlining | `MINTCALL=fast JIT=verify JITINLINE=1` | 2,012,497 verified (+6.84 M), **0 mismatches**, 23/23, 39/39; 3 call sites inlined, 235 refused |
+
+Why so few inlined sites: the BCL tiny methods on the compile list are struct methods (`Int32.Equals`, the `List` / `Dictionary` enumerators), virtual or interface calls (`EqualityComparer`), static (`ObjectGuid` operators, 8-byte arguments) or plain getters that **mint's own transform already inlines** (a `callvirt` to `return V;` costs ~1 ns in the host). The inliner reaches the next tier (getters with arithmetic, Equals-style compares); the game's `Sims3Gameplay` accessors could not run offline (§7.5), so their coverage is unknown.
+
+### 8.3 Speed, four arms [measured offline; best of 9 pinned, compiled and interpreted interleaved per process; one process per arm]
+
+Quiet machine (2026-10-30 07:08-07:13 UTC, game queue held), ns per iteration (loop overhead included, as §7.3), `MintBench(3000)` in ms. Process to process the same arm moves ~±5% (a second fast + compiler process gave 285.4 / 240.7 ms; the first one's compiled column had a slow outlier on two `List` cases, 267.5 ms). The first, noisy set (a game correctness job running) is kept below it.
+
+| Case (quiet) | stock | fast path | fast + compiler | fast + compiler + inline |
+|---|---|---|---|---|
+| `Dictionary<int,Shape>.TryGetValue` | 173.8 | 149.3 | 132.0 | 133.7 |
+| `Dictionary<ulong,int>.TryGetValue` (collisions) | 9,795 | 9,591 | 8,242 | 8,421 |
+| `Dictionary<ObjectGuid,int>.TryGetValue` | 260.0 | 236.6 | 235.9 | 239.4 |
+| `List` foreach | 54.1 | 50.8 | 39.0 (2nd process) | 37.7 |
+| `List` get_Item + Count | 40.1 | 38.2 | 37.0 (2nd process) | 35.9 |
+| `Array.IndexOf<int>` (64) | 1,663 | 1,626 | 1,437 | 1,466 |
+| `CASUtils` flags | 71.2 | 69.0 | 33.0 | 34.4 |
+| `ContainsKey` + `set_Item` | 376.4 | 337.4 | 307.0 | 305.7 |
+| `JitInl` 64 (three tiny instance calls per element) | 62.6 | 59.9 | 53.1 | **~0** (the calls are gone) |
+| **`MintBench(3000)`** | **286.1** | **272.4 / 285.4** | **240.7 (-15.9%)** | **234.6 (-18.0%)** |
+
+Stock + compiler (the §7 configuration) in the same window: 243.7 ms (-14.8%).
+
+Noisy set (first runs):
+
+| Case | stock | fast path | fast + compiler | fast + compiler + inline |
+|---|---|---|---|---|
+| `Dictionary<int,Shape>.TryGetValue` | 187.3 | 162.9 | 141.1 | 141.7 |
+| `Dictionary<ulong,int>.TryGetValue` (collisions) | 10,222 | 10,075 | 9,414 | 8,795 |
+| `Dictionary<ObjectGuid,int>.TryGetValue` | 283.2 | 251.8 | 252.9 | 261.9 |
+| `List` foreach | 56.9 | 56.8 | 39.9 | 40.9 |
+| `List` get_Item + Count | 41.7 | 41.4 | 38.4 | 38.7 |
+| `Array.IndexOf<int>` (64) | 1,753 | 1,762 | 1,544 | 1,534 |
+| `CASUtils` flags | 74.7 | 73.9 | 40.2 | 36.2 |
+| `ContainsKey` + `set_Item` | 395.7 | 364.0 | 305.4 | 320.6 |
+| boxed `Enum.Equals` / `GetType` / `ObjectGuid !=` | 340 / 164 / 51 | 340 / 167 / 52 | 344 / 166 / 57 | 349 / 167 / 56 |
+| `JitInl` 64 (three tiny instance calls per element) | 66.3 | 65.3 | 58.0 | **~0** (the calls are gone) |
+| **`MintBench(3000)`** | **310.3** | **297.8 (-4.0%)** | **245.9 (-20.8%)** | **242.2 (-21.9%)** |
+
+Noisy set: stock + compiler gave 267.5 ms (-13.8%). Read together: the fast path adds ~1-3 points to the compiler's cut (quiet: -14.8% -> -15.9%; noisy: -13.8% -> -20.8%), inlining ~2 more in the quiet set; inlining is decisive where it applies (`JitInl`: three calls, ~53-58 ns, removed) and otherwise reaches 3 sites offline.
+
+### 8.4 Projection to the game [inferred]
+
+| Scope | §7.5 (stock calls) | Now (fast path + compiler + inlining) |
+|---|---|---|
+| fast path alone (all interpreted calls, docs/139 §8.5) | - | ~5-10 ms/s |
+| compiler on never-yielding code: ratio of the quiet `MintBench` cuts, -18.0% (fast + compiler + inline) vs -14.8% (stock + compiler) = x1.2 on the §7.5 figures | low 11, realistic 20-27, optimistic 45 | low ~13, realistic ~24-33, optimistic ~55 (includes the fast path's and the inliner's share on that code) |
+| fast path on the yielding remainder (not in the line above) | - | ~+3-5 |
+| inlining beyond the bench (Sims3Gameplay accessors unknown offline) | - | ~0-5 |
+| **Total** | **low 11, realistic 20-27, optimistic 45** | **low ~16, realistic ~27-40, optimistic ~65 ms/s** |
+
+The realistic range straddles the ~30 ms/s rule. It rests on the same offline-to-game scaling as §7.5, which the in-game fast-path A/B (`mintcall-ab`) tests directly.
+
+### 8.5 Go / stop for the full compiler (P1-P3)
+
+**Conditional GO for P1**, gated in this order:
+
+1. Quiet-machine rerun of the four arms: **done** (§8.3): stock -> fast + compiler -15.9%, with inlining -18.0%: at the bar, not above it. The offline case alone does not carry P1.
+2. `mintcall-verify` passes (0 mismatches in game, BP / IP / SV), then `mintcall-ab` shows the fast path saving **at least ~5 ms/s** Mono time on BP and IP. **Under ~3 ms/s: STOP** the compiler too, since its projection uses the same scaling.
+3. P1 scope then: lazily built frames for compiled-to-compiled calls (records and `MonoInvocation` written only when an exception, a yield or a native transition needs them: the real "direct call"), Sims3Gameplay accessor coverage measured on a world image (docs/123 M3, so the game's accessors can run offline), inlining tier 2 (null-checked `ldfld` on any base with an exit before any write, value-type `this` through `call`). P2 / P3 (register allocation, wider templates) only after P1's in-game number.
+
+Commands (monohost, `native/monohost/out`): stock `MONOHOST_JIT=on`; fast path `MONOHOST_MINTCALL=fast MONOHOST_JIT=on`; inlining adds `MONOHOST_JITINLINE=1`; verify replaces `on` with `verify`; `MONOHOST_JITREPS=9`; each run: `monohost.exe <repo>\game-copy\monohost\TS3W.exe <repo>\game-copy\assemblies selftest <repo>\game-copy\monohost\hostdata.txt`.
