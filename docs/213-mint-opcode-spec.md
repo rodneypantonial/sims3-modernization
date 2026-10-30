@@ -1,4 +1,4 @@
-# 209. Mint opcode spec: every opcode of the embedded interpreter, with test cases
+# 213. Mint opcode spec: every opcode of the embedded interpreter, with test cases
 
 Written 2026-10-30 (UTC). Static reading plus emulation of the game's own handler code; no game run, no build, no queue. Question (Rodney, research task 2): what exactly does each of the 449 mint opcodes of the Steam 1.67 `TS3W.exe` do, including edge cases, so that a compiler (docs/207 §7), the worker-thread load/store emulation (docs/206 §7) and crash triage can rely on one reference? Data: `docs/data/mint-opcode-spec.csv`, one row per opcode, the same 449 rows as `docs/data/mint-opcodes.csv` (opcodes `0x000`-`0x1C0`; that file has 450 lines including its header).
 

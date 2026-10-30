@@ -1,4 +1,4 @@
-# 208. Native writers into managed memory that `[AutShadow] Satb` does not log
+# 212. Native writers into managed memory that `[AutShadow] Satb` does not log
 
 Written 2026-10-30. Static only: no game run, no queue, no build. Question (docs/206 §7.7 risk 1): which native functions write a managed object's fields, an array, a string or a StringBuilder buffer on the sim thread during live mode, outside what Satb logs today (37 mint store opcodes, 45 wrapped runtime icall entries, the EA store helper `0xE69820`, 180 EA ICs in `native/ts3native/satb-ics.h`)? Data: `docs/data/native-managed-writers.csv` (273 rows, one per writer or writer group).
 

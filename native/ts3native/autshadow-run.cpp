@@ -36,6 +36,10 @@ static bool g_asPumpCut;                // the post-pump hook fired: the loop-ba
 static LARGE_INTEGER g_asWin0, g_asJob0;
 static double g_asUsPerTick;
 static int g_asSatbTicks;  // Satb act: ends of frame the job has been in flight
+// Mode 3 go-live (docs/124 §17): ts3fixes reads these through Config 13-18; VerifyEvery runs the reference at every Nth cut
+static int g_asLiveTopN = 10, g_asLiveBands = 3, g_asLiveMarginPm, g_asLiveMaxWait = 3, g_asLiveVerify = 50, g_asLiveDry;
+static LONG g_asCutFrame;   // the frame count at the last cut (frames are counted at their end, AsSimLeave)
+static int g_asLiveRefRan;  // the last cut ran the reference (Mode 3: VerifyEvery)
 static HANDLE g_asJsonl = INVALID_HANDLE_VALUE;
 static wchar_t g_asJsonlPath[MAX_PATH];
 // game addresses; selftest and monohost point them at fakes or the host's copies
@@ -217,12 +221,40 @@ static void __cdecl AsIcFresh(int on) {
     }
 }
 // ts3fixes' Mode R consume-side stats (docs/124 §15): 0 pass, 1 classified, 2 fresh pairs, 3 differ, 4 top-1, 5 top-10,
-// 6 partial overrun runs kept
+// 6 partial overrun runs kept; contract 9 (docs/122 §14.23): 7 / 8 top-1 / top-10 over the pairs both sides answered,
+// 9 / 10 top-1 / top-10 of the cut-time reference vs fresh, 11 reference passes among worker-A4 pairs
 static void __cdecl AsIcStat(int which, int add) {
     if (AsIcIsWorker()) return;
     Ts3nAutShadow& k = ts3native_autshadow;
-    LONG* const f[] = {&k.passPairs, &k.classPairs, &k.freshPairs, &k.freshDiff, &k.freshTop1, &k.freshTop10, &k.partialKept};
-    if (which >= 0 && which < 7) *f[which] += add;
+    LONG* const f[] = {&k.passPairs, &k.classPairs, &k.freshPairs, &k.freshDiff, &k.freshTop1, &k.freshTop10, &k.partialKept,
+                       &k.freshTop1Ans, &k.freshTop10Ans, &k.refFreshTop1, &k.refFreshTop10, &k.refPassA4};
+    if (which >= 0 && which < (int)(sizeof(f) / sizeof(f[0]))) *f[which] += add;
+}
+// contract 9: the game's C2 time per pair (ts3fixes AutScoreHook, sampled searches). PairT0 = the low 32 bits of the
+// performance counter; PairT1(kind, t0) adds now - t0 to pairT[kind] in 100 ns units (0 allow-listed pass, 1 allow-listed
+// fail, 2 off-list pass, 3 off-list fail). Sim thread only (C2 runs there); nested calls are fine (t0 lives in the caller).
+static int __cdecl AsIcPairT0() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return (int)t.LowPart; }
+static void __cdecl AsIcPairT1(int kind, int t0) {
+    if (AsIcIsWorker() || kind < 0 || kind > 3) return;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    Ts3nAutShadow& k = ts3native_autshadow;
+    k.pairT[kind] += (LONG)((DWORD)(t.LowPart - (DWORD)t0) * g_asUsPerTick * 10.0), k.pairN[kind]++;
+}
+
+// contract 10 (docs/124 §17): go-live counters by slot (ts3fixes AutLive.cs kS*), sim thread only
+static void __cdecl AsIcLiveStat(int which, int add) {
+    if (AsIcIsWorker() || which < 0 || which >= (int)(sizeof(ts3native_autshadow.al) / sizeof(LONG))) return;
+    ts3native_autshadow.al[which] += add;
+}
+// watch a live request's meta object (isLot 0: object id) or a lot (isLot 1: LotId) for ObjStale (autshadow.cpp AsGwWatch)
+static void __cdecl AsIcLiveWatch(DWORD lo, DWORD hi, int isLot) {
+    if (AsIcIsWorker() || g_asMode != 3) return;
+    AsGwWatch((lo | (AsU64)hi << 32) ^ (isLot ? AS_GW_LOT : 0));
+}
+static int __cdecl AsIcObjStale(DWORD lo, DWORD hi, int isLot, int cutFrame) {
+    if (AsIcIsWorker()) return 1;
+    return AsGwStale((lo | (AsU64)hi << 32) ^ (isLot ? AS_GW_LOT : 0), cutFrame);
 }
 
 // FPU state (docs/122 §14.15): the worker scores with the sim thread's x87 control word and MXCSR, as route jobs do
@@ -267,6 +299,7 @@ static bool AsWorkerIdle() { return g_mtWorker && ts3native_mtprobe.workerState 
 static void __cdecl AsSimLeave() {
     Ts3nAutShadow& k = ts3native_autshadow;
     k.simTicks = ++g_asFrame;
+    g_asGwNow = g_asFrame;  // go-live watch stamps: events from here on belong to the next frame
     if (g_satbMode == SATB_PROBE && g_satbLive) SatbEnd();  // probe: the span was this tick (from the Simulate entry)
     if (g_asRun == AS_RUN_WAIT) {
         if (g_mtBusy) {  // the job (or a skip) has not left the worker yet
@@ -299,8 +332,15 @@ static void __cdecl AsSimLeave() {
     AsMax(k.batchMax, g_asBatchN);
     k.cutSite = g_asPumpCut ? 2 : 1;
     g_asRunEpoch = g_asEpoch;
+    g_asCutFrame = g_asFrame;
     if (g_asMode == 0 || !g_asMRef || !g_asMWork) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
-    AsReference();
+    if (g_asMode == 3) {  // go-live: the reference is a sampled check only (docs/124 §7.1 VerifyEvery)
+        k.alCuts++;
+        g_asLiveRefRan = g_asLiveVerify > 0 && k.alCuts % g_asLiveVerify == 0;
+        if (g_asLiveRefRan) k.alVerify++, AsReference();
+    } else {
+        AsReference();
+    }
     if (!AsWorkerIdle()) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
     g_asWorkerTid = g_mtWorkerTid;
     g_asSimCw = GetX87(), g_asSimCsr = _mm_getcsr();
@@ -376,7 +416,7 @@ static void __cdecl AsSimEnter() {
 
 // ---- AutShadowNative internal calls (ts3fixes, docs/122 §3.5; registered at the first Simulate tick) ----
 static int AsLgConfig(int key);
-static int __cdecl AsIcVersion() { return 8; }  // 3: RngUnit (docs/125); 4: RngPause, abort reasons rain/posture; 5: Redirect; 6: shared cut, ListType*, Note; 7: ObjClass*, ListTypeCount/At; 8: Fresh, Stat
+static int __cdecl AsIcVersion() { return 10; }  // 3: RngUnit (docs/125); 4: RngPause, abort reasons rain/posture; 5: Redirect; 6: shared cut, ListType*, Note; 7: ObjClass*, ListTypeCount/At; 8: Fresh; 9: Stat 7-11, PairT0/PairT1, Stat; 10: LiveStat, LiveWatch, ObjStale, Config 13-23 (go-live)
 static int __cdecl AsIcConfig(int key) {
     switch (key) {
         case 0: return g_asMode;
@@ -386,6 +426,18 @@ static int __cdecl AsIcConfig(int key) {
         case 4: return AsWorkerIdle() ? 1 : 0;
         case 11: return g_asFreshEvery;  // docs/122 §14.21: re-score 1 in N finishes fresh (0 = off)
         case 12: return g_asKeepPartial;  // docs/122 §14.21: an overrun run keeps the meta objects it finished before the stop
+        // docs/124 §17 go-live (Mode 3): settings, then the frame and epoch words the consumer's checks compare
+        case 13: return g_asLiveTopN;
+        case 14: return g_asLiveBands;
+        case 15: return g_asLiveMarginPm;
+        case 16: return g_asLiveMaxWait;
+        case 17: return g_asLiveVerify;
+        case 18: return g_asLiveDry;
+        case 19: return g_asFrame;     // frames ended so far
+        case 20: return g_asEpoch;     // world epoch now
+        case 21: return g_asRunEpoch;  // world epoch at the last cut
+        case 22: return g_asCutFrame;  // frame count at the last cut
+        case 23: return g_asLiveRefRan;
         default: return AsLgConfig(key);  // 5-10: ledger probe (autledger.cpp)
     }
 }
@@ -462,10 +514,14 @@ static int __cdecl AsIcObjClassTake(void* arr) {
     const LONG cap = *(const LONG*)((const u8*)arr + 8);
     AsU64* out = (AsU64*)((u8*)arr + 16);
     while (InterlockedExchange(&g_asDirtyLock, 1)) YieldProcessor();
-    const LONG n = min(cap, g_asClsQN);
-    for (LONG i = 0; i < n; i++) {
-        out[i] = g_asClsQ[--g_asClsQN];
-        if (AsOl* o = AsOlSlot(out[i], false)) o->clsQ = 0;
+    LONG n = 0;
+    while (n < cap && g_asClsQN) {
+        const AsU64 id = g_asClsQ[--g_asClsQN];
+        AsOl* o = AsOlSlot(id, false);
+        if (o) o->clsQ = 0;
+        // docs/122 §14.26: destroyed (transients, mostly) or classified by the host since it was queued: nothing to ask
+        if (o && (o->gone || o->clsN)) { ts3native_autshadow.clsGoneSkip++; continue; }
+        out[n++] = id;
     }
     InterlockedExchange(&g_asDirtyLock, 0);
     ts3native_autshadow.clsAsked += n;
@@ -584,6 +640,11 @@ static void AsRegisterIcs() {
         {"Ts3Fixes.AutShadowNative::ObjClassSet", (const void*)AsIcObjClassSet},
         {"Ts3Fixes.AutShadowNative::Fresh", (const void*)AsIcFresh},
         {"Ts3Fixes.AutShadowNative::Stat", (const void*)AsIcStat},
+        {"Ts3Fixes.AutShadowNative::PairT0", (const void*)AsIcPairT0},
+        {"Ts3Fixes.AutShadowNative::PairT1", (const void*)AsIcPairT1},
+        {"Ts3Fixes.AutShadowNative::LiveStat", (const void*)AsIcLiveStat},
+        {"Ts3Fixes.AutShadowNative::LiveWatch", (const void*)AsIcLiveWatch},
+        {"Ts3Fixes.AutShadowNative::ObjStale", (const void*)AsIcObjStale},
     };
     if (!g_asAddIc) return;
     for (const auto& ic : kIcs) g_asAddIc(ic.name, ic.fn);
@@ -627,6 +688,50 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     // the stop flag after each object; an object it was inside of is aborted `stop`), instead of dropping the whole search
     g_asKeepPartial = ini ? (GetPrivateProfileIntW(L"AutShadow", L"KeepPartial", 0, ini) ? 1 : 0) : 0;
     k.keepPartial = g_asKeepPartial;
+    // docs/122 §14.26 (mono-cost15): Transient=1 objects created and destroyed between two cuts mark nothing; HostCls=1 the
+    // host's own list filter classifies objects at their marks and at destroy; ListWalk=1 one lot walk per cut feeds every
+    // list row of the lot (ListWalkCheck=N: every Nth also against the body, 0 = never)
+    g_asTransient = ini ? (GetPrivateProfileIntW(L"AutShadow", L"Transient", 0, ini) ? 1 : 0) : 0;
+    g_asHostCls = ini ? (GetPrivateProfileIntW(L"AutShadow", L"HostCls", 0, ini) ? 1 : 0) : 0;
+    g_asListWalk = ini ? (GetPrivateProfileIntW(L"AutShadow", L"ListWalk", 0, ini) ? 1 : 0) : 0;
+    g_asListWalkCheck = ini ? GetPrivateProfileIntW(L"AutShadow", L"ListWalkCheck", 8, ini) : 8;
+    if (g_asListWalkCheck < 0 || g_asListWalkCheck > 100000) g_asListWalkCheck = 8;
+    k.transOn = g_asTransient, k.hcOn = g_asHostCls, k.lwOn = g_asListWalk;
+    if (ini) Log("autshadow cut: RunSkip=%d Transient=%d HostCls=%d ListWalk=%d ListWalkCheck=%d (docs/122 §14.21, §14.26)", g_asRunSkip,
+                 g_asTransient, g_asHostCls, g_asListWalk, g_asListWalkCheck);
+    // docs/122 §14.27 (mono-cost16): SimEvRows=1 a reachable Sim's rows of the SimEvIcs ICs refresh on its object events
+    // (SimEvCheck=N: every Nth kept row against the body); TierMoveLot=1 a Sim's move re-classifies it only across a lot or
+    // room; ListAuditEvery=N the audit at every Nth dirty cut; GoneDelta=1 a destroy is removed from the stored list answers
+    // (GoneDeltaCheck=N: every Nth delta row against the body)
+    g_asSimEv = ini ? (GetPrivateProfileIntW(L"AutShadow", L"SimEvRows", 0, ini) ? 1 : 0) : 0;
+    g_asSimEvCheck = ini ? GetPrivateProfileIntW(L"AutShadow", L"SimEvCheck", 8, ini) : 8;
+    if (g_asSimEvCheck < 0 || g_asSimEvCheck > 100000) g_asSimEvCheck = 8;
+    g_asSimEvIcs = ini ? (DWORD)GetPrivateProfileIntW(L"AutShadow", L"SimEvIcs", 0x27, ini) : 0x27;
+    g_asTierMoveLot = ini ? (GetPrivateProfileIntW(L"AutShadow", L"TierMoveLot", 0, ini) ? 1 : 0) : 0;
+    g_asListAuditEvery = ini ? GetPrivateProfileIntW(L"AutShadow", L"ListAuditEvery", 1, ini) : 1;
+    if (g_asListAuditEvery < 1 || g_asListAuditEvery > 64) g_asListAuditEvery = g_asListAuditEvery < 1 ? 1 : 64;
+    g_asGoneDelta = ini ? (GetPrivateProfileIntW(L"AutShadow", L"GoneDelta", 0, ini) ? 1 : 0) : 0;
+    g_asGoneDeltaCheck = ini ? GetPrivateProfileIntW(L"AutShadow", L"GoneDeltaCheck", 8, ini) : 8;
+    if (g_asGoneDeltaCheck < 0 || g_asGoneDeltaCheck > 100000) g_asGoneDeltaCheck = 8;
+    k.seOn = g_asSimEv, k.tmOn = g_asTierMoveLot, k.laEvery = g_asListAuditEvery, k.gdOn = g_asGoneDelta;
+    if (ini) Log("autshadow cut16: SimEvRows=%d SimEvIcs=0x%lX SimEvCheck=%d TierMoveLot=%d ListAuditEvery=%d GoneDelta=%d GoneDeltaCheck=%d (docs/122 §14.27)",
+                 g_asSimEv, g_asSimEvIcs, g_asSimEvCheck, g_asTierMoveLot, g_asListAuditEvery, g_asGoneDelta, g_asGoneDeltaCheck);
+    // docs/122 §14.28 (mono-cost17): IdsDelta=1 list rows answered from their stored answer when the walk ids are the same or
+    // the same plus this cut's new objects (IdsDeltaCheck=N: every Nth against the full host call); SimEvLearn=1 / SimEvSeated=1
+    // SimEvRows for promoted Sims / Sims on a non-Sim root parent (SimSeatIcs); TierClassMax=N classifications a cut;
+    // GoneLoose=1 a destroy record naming another lot or room still drops the element from array rows
+    g_asIdsDelta = ini ? (GetPrivateProfileIntW(L"AutShadow", L"IdsDelta", 0, ini) ? 1 : 0) : 0;
+    g_asIdsDeltaCheck = ini ? GetPrivateProfileIntW(L"AutShadow", L"IdsDeltaCheck", 8, ini) : 8;
+    if (g_asIdsDeltaCheck < 0 || g_asIdsDeltaCheck > 100000) g_asIdsDeltaCheck = 8;
+    g_asSimEvLearn = ini ? (GetPrivateProfileIntW(L"AutShadow", L"SimEvLearn", 0, ini) ? 1 : 0) : 0;
+    g_asSimEvSeated = ini ? (GetPrivateProfileIntW(L"AutShadow", L"SimEvSeated", 0, ini) ? 1 : 0) : 0;
+    g_asSimSeatIcs = ini ? (DWORD)GetPrivateProfileIntW(L"AutShadow", L"SimSeatIcs", 0x25, ini) : 0x25;
+    g_asTierClassMax = ini ? GetPrivateProfileIntW(L"AutShadow", L"TierClassMax", 0, ini) : 0;
+    if (g_asTierClassMax < 0 || g_asTierClassMax > 4096) g_asTierClassMax = 0;
+    g_asGoneLoose = ini ? (GetPrivateProfileIntW(L"AutShadow", L"GoneLoose", 0, ini) ? 1 : 0) : 0;
+    k.idOn = g_asIdsDelta, k.seLearnOn = g_asSimEvLearn, k.seSeatOn = g_asSimEvSeated, k.tcMax = g_asTierClassMax;
+    if (ini) Log("autshadow cut17: IdsDelta=%d IdsDeltaCheck=%d SimEvLearn=%d SimEvSeated=%d SimSeatIcs=0x%lX TierClassMax=%d GoneLoose=%d (docs/122 §14.28)",
+                 g_asIdsDelta, g_asIdsDeltaCheck, g_asSimEvLearn, g_asSimEvSeated, g_asSimSeatIcs, g_asTierClassMax, g_asGoneLoose);
     g_asPrintUsPerTick = g_asUsPerTick;
     if (g_asWaitUs < 0 || g_asWaitUs > 20000) g_asWaitUs = g_asWaitUs < 0 ? 0 : 20000;  // a test knob: never more than 20 ms per frame
     if (ini) {
@@ -635,15 +740,32 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
         if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - g_asJsonlPath), L"autshadow.jsonl");
         else g_asJsonlPath[0] = 0;
     }
-    g_asMode = slotStub ? (mode < 0 || mode > 2 ? 0 : mode) : -1;
+    g_asMode = slotStub ? (mode < 0 || mode > 3 ? 0 : mode) : -1;
     k.mode = g_asMode;
+    // docs/124 §17 go-live keys (Mode 3 only; clamped so a typo cannot turn the consumer into a full re-score)
+    if (ini && g_asMode == 3) {
+        g_asLiveTopN = GetPrivateProfileIntW(L"AutShadow", L"TopN", 10, ini);
+        g_asLiveBands = GetPrivateProfileIntW(L"AutShadow", L"Bands", 3, ini);
+        g_asLiveMarginPm = GetPrivateProfileIntW(L"AutShadow", L"Margin", 0, ini);
+        g_asLiveMaxWait = GetPrivateProfileIntW(L"AutShadow", L"MaxWait", 3, ini);
+        g_asLiveVerify = GetPrivateProfileIntW(L"AutShadow", L"VerifyEvery", 50, ini);
+        g_asLiveDry = GetPrivateProfileIntW(L"AutShadow", L"Dry", 0, ini) ? 1 : 0;
+        g_asLiveTopN = g_asLiveTopN < 1 ? 1 : g_asLiveTopN > 64 ? 64 : g_asLiveTopN;
+        g_asLiveBands = g_asLiveBands < 1 ? 1 : g_asLiveBands > 8 ? 8 : g_asLiveBands;
+        g_asLiveMarginPm = g_asLiveMarginPm < 0 ? 0 : g_asLiveMarginPm > 1000 ? 1000 : g_asLiveMarginPm;
+        g_asLiveMaxWait = g_asLiveMaxWait < 1 ? 1 : g_asLiveMaxWait > 16 ? 16 : g_asLiveMaxWait;
+        g_asLiveVerify = g_asLiveVerify < 0 ? 0 : g_asLiveVerify > 100000 ? 100000 : g_asLiveVerify;
+        Log("autshadow go-live: Mode=3 TopN=%d Bands=%d Margin=%d/1000 MaxWait=%d VerifyEvery=%d Dry=%d (docs/124 §17)", g_asLiveTopN,
+            g_asLiveBands, g_asLiveMarginPm, g_asLiveMaxWait, g_asLiveVerify, g_asLiveDry);
+    }
+    k.alOn = g_asMode == 3 ? 1 | g_asLiveDry << 1 : 0;
     // docs/206 §7: Satb=1 probe (S0 store counts in one job length of the next tick, no concurrency), 2 act (the worker runs
     // concurrently with the next tick and reads the cut through the log); needs Mode >= 1 and the worker (default 0)
     const int satb = ini ? GetPrivateProfileIntW(L"AutShadow", L"Satb", 0, ini) : 0;
     if (satb > 0 && slotStub && g_asMode >= 1) {
         g_satbRtSwapped = SatbInstallRt();
         const int m = SatbInstall(satb);
-        Log("%s autshadow satb: Satb=%d -> mode %d (%s), %d runtime icall entries wrapped, %d EA ICs with byref/array arguments checked, %d cold-path detours (act)",
+        Log("%s autshadow satb: Satb=%d -> mode %d (%s), %d runtime icall entries wrapped, %d EA ICs with byref/array arguments logged per argument, %d cold-path detours (act)",
             m > 0 && g_satbRtSwapped > 0 ? "OK  " : "FAIL", satb, m, m == SATB_ACT ? "act: concurrent worker, read redirect" :
             m == SATB_PROBE ? "probe: store counts, no concurrency" : "off", g_satbRtSwapped, g_satbIcMapped, g_satbColdN);
     }

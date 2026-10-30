@@ -539,8 +539,8 @@ namespace Ts3Fixes
 
             bool UfCarOrBoat()
             {
-                return GetOption(RouteOption.EnablePlanningAsCar) || GetOption(RouteOption.BeginAsCar) || GetOption2(RouteOption2.EnablePlanningAsBoat)
-                    || GetOption2(RouteOption2.BeginAsBoat);
+                return UfPreCore.VehicleRoute(GetOption(RouteOption.BeginAsCar), GetOption(RouteOption.DisablePlanningAsPedestrian),
+                    GetOption2(RouteOption2.EnablePlanningAsBoat), GetOption2(RouteOption2.BeginAsBoat));
             }
 
             // docs/202 §3.6 hand-off point H between `from` and `to` (dist apart): 10 m steps from `from`, the first point that is

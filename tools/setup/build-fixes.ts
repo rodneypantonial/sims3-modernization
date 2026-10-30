@@ -1,6 +1,6 @@
 // Compiles mods/ts3fixes (the player mod with the stutter fixes, docs/04 F8-F12) against the game's own DLLs and packs
 // it into build/ts3fixes.package. Windows-only by nature: it needs the .NET Framework C# compiler (csc.exe, C# 5).
-//   node tools/setup/build-fixes.ts
+//   node tools/setup/build-fixes.ts [--on kTuningA,kTuningB]   (--on: also a package with those tunings True)
 // Also builds the TEST-ONLY mod mods/portalplan-test (MonoPatcher [TypePatch] on Lot.OnPortalPathPlan, docs/94 §20 job 17)
 // into build/ts3-portalplan-test.package when MonoPatcher's package is in the installer cache; skipped otherwise.
 import { execFileSync } from 'node:child_process';
@@ -55,6 +55,8 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kSimNameCache value="True" />
     <kDetailPriorityCache value="False" />
     <kHoursMemo value="False" />
+    <kVenueMemo value="False" />
+    <kAutLive value="False" />
     <kSafeSpotReuse value="False" />
     <kWildflowerProbe value="False" />
     <kWildflowerTask value="False" />
@@ -70,6 +72,11 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kUnseenThrottleEvery value="4" />
     <kUnseenBroadcastEvery value="16" />
     <kUnseenCarThrottle value="False" />
+    <kWakeHooks value="False" />
+    <kWakePark value="False" />
+    <kWakePoll value="False" />
+    <kWakeParkTicks value="12" />
+    <kWakePollTicks value="30" />
     <kUnseenCarEvery value="4" />
     <kOverwatchSpread value="False" />
     <kOverwatchChain value="True" />
@@ -117,6 +124,13 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kAgeUpKeepOutfits value="False" />
     <kDeadRefGuards value="False" />
     <kDeadRefSweep value="False" />
+    <kVacExport value="False" />
+    <kVacStoreGuard value="False" />
+    <kVacReturnSkip value="False" />
+    <kVacTeenDelete value="False" />
+    <kVacExitReturn value="False" />
+    <kVacListenerNull value="False" />
+    <kVacImportFix value="False" />
   </Current_Tuning>
 </base>
 `;
@@ -142,6 +156,26 @@ const pkg = writePackage([
 const out = join(outDir, 'ts3fixes.package');
 writeFileSync(out, pkg);
 console.log(`built ${out} (${pkg.length} bytes)`);
+
+// --on kA,kB: also writes build/ts3fixes-on-kA-kB.package, the same DLL with those tunings True (test queues that need a
+// hook patched at startup, e.g. kVenueMemo, docs/122 §14.24.7, pick it with fixesPackage).
+const onArg = process.argv.indexOf('--on');
+if (onArg > 0) {
+  const names = (process.argv[onArg + 1] ?? '').split(',').filter(Boolean);
+  let xml = TUNING_XML;
+  for (const n of names) {
+    const off = `<${n} value="False" />`;
+    if (!xml.includes(off)) { console.error(`--on: ${n} is not a False tuning in TUNING_XML`); process.exit(1); }
+    xml = xml.replace(off, `<${n} value="True" />`);
+  }
+  const variant = writePackage([
+    { type: TYPE_S3SA, group: 0, instance: fnv64(ASSEMBLY), data: s3saEncode(readFileSync(dll)) },
+    { type: TYPE_XML, group: 0, instance: fnv64(`${ASSEMBLY}.Instantiator`), data: Buffer.from(xml, 'utf8') },
+  ]);
+  const vOut = join(outDir, `ts3fixes-on-${names.join('-')}.package`);
+  writeFileSync(vOut, variant);
+  console.log(`built ${vOut} (${variant.length} bytes, ${names.join(', ')} on)`);
+}
 
 // Test-only mod. MonoPatcher has no license, so its DLL never goes in the repo: take it from install-fixes.ts's unpacked download.
 const MP_PKG = join(process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'), 'ts3-fixes', 'unpacked', 'monopatcher', 'Packages', 'ld_MonoPatcher.package');

@@ -150,6 +150,15 @@ namespace Ts3Fixes
             return FollowsRoute(frame) || (frame == kViewObjects + "CreateRouteToObject" && above == kViewObjects + "RouteToObject");
         }
 
+        // §3.5 (5) vehicles, gate 332: refuse a route that starts in a car or boat, may plan as a boat, or may not walk.
+        // EnablePlanningAsCar alone is NOT a car route: SimRoutingComponent.SetRouteOptions sets it on every child-or-older
+        // Sim's route [verified, decompiled], so refusing it refused every D candidate (10-30 run: 2083 at 332, 0 acts). It
+        // only lets the planner pick a drive; the flood colours cover car and walk modes, so the proofs still hold.
+        public static bool VehicleRoute(bool beginAsCar, bool noPedestrian, bool planAsBoat, bool beginAsBoat)
+        {
+            return beginAsCar || noPedestrian || planAsBoat || beginAsBoat;
+        }
+
         // our own frames between the plan hook and D's caller read (UfFollows, UfCaller, UfPre's helpers in Fixes): never the caller.
         // Before 2026-10-30 UfCaller returned UfFollows itself, so gate 336 refused every plan (10-27 run: unseenfbpre_callers
         // = "6 Ts3Fixes.Fixes.UfFollows")
