@@ -11,7 +11,7 @@
 // declaration order; explicit layout uses the FieldLayout offsets. --layout decl|gc|gcsort picks a variant for the
 // docs/217 §2 check against the native stores (gcsort = gc-aware with the non-reference fields sorted by alignment).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { bindKeys, defRoots, typeModel, type Field, type TypeDef } from './managed-callgraph.ts';
+import { bindKeys, defRoots, methodIl, resolveFieldToken, resolveMethodToken, typeModel, type Field, type Method, type TypeDef } from './managed-callgraph.ts';
 
 const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
 const ASM = arg('--asm', 'game-copy/assemblies');
@@ -123,13 +123,43 @@ if (process.argv.includes('--self-check')) {
   if (layout('Sims3.SimIFace.Vector3').size !== 12) bad.push(['Vector3 size', '', 12]);
   if (bad.length) { console.log('self-check FAILED', JSON.stringify(bad.map(([t, f, o]) => [t, f, o, off(t, f)]))); process.exit(1); }
   console.log(`self-check ok: ${want.length} native store offsets match the ${LAYOUT} layout; Vector3 12 bytes`);
-  process.exit(0);
 }
 
 // ---------- facts ----------
-// --hashes: one registered hash per line (hex, first column); facts are keyed by the 8-digit lowercase hash
+// --hashes: one registered hash per line (hex, first column); facts are keyed by the 8-digit lowercase hash. Fifth column
+// (binder-bodies.py): the globals the body's init fills, `<global>:<kind>:<IL offset>` comma-separated.
 const hx = (h: string) => parseInt(h, 16).toString(16).padStart(8, '0');
-const hashes = new Set(readFileSync(arg('--hashes', ''), 'utf8').split(/\r?\n/).map((l) => l.trim().split(/\s+/)[0]).filter((h) => /^(0x)?[0-9a-f]+$/i.test(h ?? '')).map(hx));
+// init global -> the token at that IL offset of the bound method's own IL (the offset points just past the opcode).
+// ok = the opcode fits the init helper's kind (method/icall: call, callvirt, newobj, ldftn; field: ld/st[s]fld[a];
+// string: ldstr; class: any other token opcode).
+const OPK: Record<number, string> = { 0x28: 'method', 0x6f: 'method', 0x73: 'method', 0xfe06: 'method', 0xfe07: 'method', 0x7b: 'field',
+  0x7c: 'field', 0x7d: 'field', 0x7e: 'field', 0x7f: 'field', 0x80: 'field', 0x72: 'string' };
+const WANT: Record<string, string> = { method: 'method', icall: 'method', field: 'field', string: 'string', class: 'type' };
+function initRefs(m: Method, col: string) {
+  if (!col) return [];
+  const il = methodIl(m.gi);
+  return col.split(',').map((e) => {
+    const [g, kind, o] = e.split(':'); const off = parseInt(o, 16);
+    const x = il?.ins.find((i) => i.tok && i.next - 4 === off);
+    const opk = x ? OPK[x.op] ?? 'type' : 'none';
+    let target = '';
+    if (x && opk === 'method') { const r = resolveMethodToken(il!.asm, x.tok) as { m?: Method; stub?: string }; target = r.m ? r.m.id : r.stub ?? ''; }
+    else if (x && opk === 'field') target = resolveFieldToken(il!.asm, x.tok).id;
+    else if (x) target = `token 0x${x.tok.toString(16)}`;
+    return { g: parseInt(g, 16), kind, off, op: x ? x.op : -1, ok: kind === 'token' ? opk !== 'none' : opk === WANT[kind], target };
+  });
+}
+if (process.argv.includes('--self-check')) {
+  // Concat(string,string)'s init caches InternalAllocateStr's icall pointer from the call at IL 0x39 (binder-bodies.py pins the global)
+  const m = bindKeys().find((k) => k.m.id === 'System.String::Concat(string,string)')?.m;
+  const r = m && initRefs(m, '11EF494:icall:39')[0];
+  if (!r || !r.ok || r.target !== 'System.String::InternalAllocateStr(int)') { console.log('self-check FAILED: init ref', JSON.stringify(r)); process.exit(1); }
+  console.log('self-check ok: Concat init ref resolves to InternalAllocateStr');
+  process.exit(0);
+}
+const rows = readFileSync(arg('--hashes', ''), 'utf8').split(/\r?\n/).map((l) => l.trim().split(/\s+/)).filter((c) => /^(0x)?[0-9a-f]+$/i.test(c[0] ?? ''));
+const hashes = new Set(rows.map((c) => hx(c[0])));
+const initCol = new Map(rows.map((c) => [hx(c[0]), c[4] ?? '']));
 const keys = bindKeys().filter((k) => hashes.has(hx(k.hash)));
 const T = await import('./autonomy-tier2.ts');
 const ix = T.ix as unknown as { methods: { k: string; c: number[]; fw?: number[]; sw?: number[] }[]; fields: string[] };
@@ -166,7 +196,8 @@ for (const k of keys) {
   for (const p of [...params, ...(self ? [self] : [])]) want.add(p.t.replace(/&$/, '').replace(/\[,*\]$/, ''));
   methods[hx(k.hash)] = { id: m.id, key: k.key, static: !self, self, params, ret: { t: m.ret, kind: kindOf(m.ret) },
     il_fw: (rec?.fw ?? []).map((f) => ix.fields[f]), il_sw: (rec?.sw ?? []).map((f) => ix.fields[f]),
-    il_alloc_str: !!rec && rec.c.some((t, i) => i % 2 === 0 && ALLOC.test(ix.methods[t].k)), reach: reach.get(m.id) ?? 'no' };
+    il_alloc_str: !!rec && rec.c.some((t, i) => i % 2 === 0 && ALLOC.test(ix.methods[t].k)), reach: reach.get(m.id) ?? 'no',
+    init: initRefs(m, initCol.get(hx(k.hash)) ?? '') };
 }
 const types: Record<string, Lay> = {};
 let frontier = [...want];

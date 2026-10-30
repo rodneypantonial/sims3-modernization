@@ -33,6 +33,7 @@ import collections
 import csv
 import json
 import os
+import re
 import struct
 import sys
 import time
@@ -211,7 +212,18 @@ def addv(v, w, scale=1):
         return addv(w, v)
     if is_const(v):  # const table base + scaled index
         return cap(('GT', (), d) for _, _, d in v)
-    return addc(v, None)
+    if scale == 1 and v == w:  # x + x: a doubled count, not an address
+        return frozenset([('G', (), None)])
+    # either operand can be the pointer (add index, base); a scaled or integer operand is an index
+    if scale != 1 or is_int(w):
+        return addc(v, None)
+    if is_int(v):
+        return addc(w, None)
+    return cap(addc(v, None) | addc(w, None))
+
+
+def is_int(v):
+    return all(r == 'G' and not c for r, c, d in v)
 
 
 def load1(a, size, stack):
@@ -256,6 +268,15 @@ class St:
         return St(dict(self.r), dict(self.s))
 
 
+def widen_frame(s):
+    # a frame pointer that moves around a loop (a local vector used as a stack, 0xDC94B0) would walk onto its own header
+    # slots before cap() widens it: 3 offsets on one chain = somewhere in the frame (stores there are not counted)
+    n = collections.Counter(c for r, c, d in s if r == 'S' and d is not None)
+    if not any(k >= 3 for k in n.values()):
+        return s
+    return frozenset(('S', c, None) if r == 'S' and n[c] >= 3 else (r, c, d) for r, c, d in s)
+
+
 def merge(a, bst):
     ch = False
     for src, dst in ((bst.r, a.r), (bst.s, a.s)):
@@ -265,7 +286,7 @@ def merge(a, bst):
                 dst[k] = v
                 ch = True
             elif not v <= o:
-                n = cap(o | v)
+                n = cap(widen_frame(o | v))
                 if n != o:
                     dst[k] = n
                     ch = True
@@ -282,7 +303,7 @@ def esp_off(st):
 
 
 class Sum:
-    __slots__ = ('w', 'regs', 'pop', 'flags', 'steps', 'nat', 'ext', 'trunc', 'nargs', 'used', 'entry')
+    __slots__ = ('w', 'regs', 'pop', 'flags', 'steps', 'nat', 'ext', 'trunc', 'nargs', 'used', 'entry', 'fs')
 
     def __init__(self):
         self.w = {}  # (atom, size) -> [site, valueset]
@@ -296,15 +317,21 @@ class Sum:
         self.used = set()
         self.entry = None
         self.nat = {}  # native write targets: global address or root kind -> first site
+        self.fs = set()  # sites of stores with a fresh or native target (all sites, not only the first)
 
     def flag(self, k, site):
         self.flags.setdefault(k, site)
 
     def write(self, a, size, site, val):
+        if a[0] not in PARAMS and a[0] not in ('MV', 'U'):
+            self.fs.add(site)
         e = self.w.get((a, size))
         if e is None:
             self.w[(a, size)] = [site, val]
         else:
+            # the classifier judges a store by its site (runtime, allocator): keep the site that hides the least
+            if site_rank(site) < site_rank(e[0]):
+                e[0] = site
             e[1] = cap(e[1] | val)
 
 
@@ -413,6 +440,8 @@ def call(st, ins, tv, res):
             targets.append(d)
         elif r == 'I':
             targets.append(('imp', IMP[d]))
+        elif r == 'G' and len(c) == 1 and d == 0 and c[0] in ICALLS:
+            targets.append(('icall', ICALLS[c[0]]))  # icall pointer the body's init cached (init_refs)
         else:
             targets.append(('ind', (r, c, d)))
     newregs, pops = {}, set()
@@ -434,7 +463,12 @@ def call(st, ins, tv, res):
                 if x[0] in REGP.values() and not x[1]:
                     res.used.add(x[0])
         base = E - 4
+        res.fs |= s.fs
         for (a, size), (site, val) in s.w.items():
+            if isinstance(t, tuple) and t[0] in ('icall', 'imp'):  # one site per call instruction, so a site is one store
+                nm = 'icall ' + t[1] if t[0] == 'icall' else t[1].split('!')[1]
+                site = IMPSITE.setdefault('%s@%X' % (nm, ins.address), 0xFF000000 + len(IMPSITE))
+                IMPAT[site] = ins.address
             v2 = sub_val(val, env, st.s)
             for a2 in sub_atom(a, env, st.s):
                 if a2[0] == 'S':
@@ -534,9 +568,74 @@ IMPW = {'InterlockedIncrement': (0,), 'InterlockedDecrement': (0,), 'Interlocked
         'GetSystemTimeAsFileTime': (0,), 'GetLocalTime': (0,), 'GetSystemTime': (0,), 'FileTimeToSystemTime': (1,),
         'SystemTimeToFileTime': (1,), 'InitializeCriticalSection': (0,), 'EnterCriticalSection': (0,), 'LeaveCriticalSection': (0,),
         'TryEnterCriticalSection': (0,), 'DeleteCriticalSection': (0,)}
+CRT_DST = {'memcpy', 'memmove', 'memset', 'strcpy', 'wcscpy', 'strncpy', 'wcsncpy', 'strcat', 'wcscat'}
 CRT_W = {'memcpy', 'memmove', 'memset', 'strcpy', 'wcscpy', 'strncpy', 'wcsncpy', 'strcat', 'wcscat', 'sprintf', 'swprintf',
          '_snprintf', '_snwprintf', 'vsprintf', '_vsnprintf', 'wcsncat', 'memcpy_s', 'memmove_s', 'strcpy_s', 'wcscpy_s',
          'strncpy_s', 'wcsncpy_s', 'sprintf_s', 'swprintf_s', '_snprintf_s', '_vsnprintf_s', '_vswprintf_c_l', 'mbstowcs', 'wcstombs'}
+
+# Icalls the bodies call through their init globals (global -> managed method id, from binder-bodies.ts `init`; filled
+# before the analysis). Effects of the 92 that occur, from Mono 1.2.3 icall semantics and the EA ScriptCore signatures
+# [inferred, docs/217 §2]; argument indexes count `this` as A0. Icalls in none of the sets stay opaque handoffs.
+ICALLS = {}
+ICALL_CONST = {'System.Runtime.CompilerServices.RuntimeHelpers::get_OffsetToStringData()': 8}  # chars after vtable + length
+ICALL_FRESH = {  # return a new object or string, store nothing they are given
+    'System.String::InternalAllocateStr(int)', 'System.String::InternalJoin(string,string[],int,int)',
+    'System.String::InternalPad(int,char,bool)', 'System.String::InternalReplace(string,string,System.Globalization.CompareInfo)',
+    'System.String::InternalSplit(char[],int)', 'System.String::InternalTrim(char[],int)', 'System.Enum::get_value()',
+    'System.Enum::ToObject(System.Type,object)', 'System.MonoType::getFullName(bool,bool)', 'System.Array::GetValue(int[])',
+    'System.Array::GetValueImpl(int)', 'System.Activator::CreateInstanceInternal(System.Type)',
+    'ScriptCore.StreamHost::StreamHost_ToArray(uint)', 'System.Reflection.MonoMethodInfo::get_parameter_info(IntPtr)',
+    'System.MonoType::GetConstructors_internal(System.Reflection.BindingFlags,System.Type)',
+    'System.MonoType::GetEvents_internal(System.Reflection.BindingFlags,System.Type)',
+    'System.MonoType::GetFields_internal(System.Reflection.BindingFlags,System.Type)',
+    'System.MonoType::GetMethodsByName(string,System.Reflection.BindingFlags,bool,System.Type)',
+    'System.MonoType::GetPropertiesByName(string,System.Reflection.BindingFlags,bool,System.Type)'}
+ICALL_WRITE = {  # store through these arguments only
+    'System.String::InternalStrcpy(string,int,string)': (0,), 'System.String::InternalStrcpy(string,int,string,int,int)': (0,),
+    'System.String::InternalStrcpy(string,int,char[])': (0,), 'System.String::InternalStrcpy(string,int,char[],int,int)': (0,),
+    'System.String::InternalCopyTo(int,char[],int,int)': (2,), 'System.Array::ClearInternal(System.Array,int,int)': (0,),
+    'System.MonoEnumInfo::get_enum_info(System.Type,System.MonoEnumInfo&)': (1,),
+    'System.Reflection.MonoMethodInfo::get_method_info(IntPtr,System.Reflection.MonoMethodInfo&)': (1,),
+    'System.ValueType::InternalEquals(object,object,object[]&)': (2,), 'System.MonoType::type_from_obj(System.MonoType,object)': (0,),
+    'System.Reflection.MonoField::SetValueInternal(System.Reflection.FieldInfo,object,object)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadInt(uint,int,int&)': (2,), 'ScriptCore.StreamHost::StreamHost_ReadInt64(uint,long&)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadFloat(uint,float&)': (1,), 'ScriptCore.StreamHost::StreamHost_ReadDouble(uint,double&)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadDecimal(uint,System.Decimal&)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadCharUTF8(uint,char&)': (1,), 'ScriptCore.StreamHost::StreamHost_ReadStringUTF8(uint,string&)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadByteArray(uint,byte[],int,int)': (1,),
+    'ScriptCore.StreamHost::StreamHost_ReadCharArrayUTF8(uint,char[],int,int)': (1,),
+    'ScriptCore.PersistImports::Serializer_ReadFastFields(object,ScriptCore.PersistFastField[],uint)': (0,),
+    'ScriptCore.PersistImports::Serializer_ReadPrimitiveArray(System.Array,uint,byte)': (0,)}
+ICALL_MANAGED = {  # run managed code (attribute constructors, reflection invoke)
+    'System.Reflection.MonoMethod::InternalInvoke(object,object[])',
+    'System.MonoCustomAttrs::GetCustomAttributesInternal(System.Reflection.ICustomAttributeProvider,System.Type,bool)',
+    'System.MonoCustomAttrs::GetCustomAttributesDataInternal(System.Reflection.ICustomAttributeProvider)'}
+ICALL_READ = {  # store no managed memory (scalar or existing-object result; native stream state for StreamHost writes)
+    'System.Math::Floor(double)', 'System.Math::Log(double)', 'System.Math::Round(double)', 'System.Math::Round2(double,int)',
+    'System.Object::GetType()', 'System.Array::GetLength(int)', 'System.Array::GetLowerBound(int)',
+    'System.String::InternalLastIndexOfAny(char[],int,int)', 'System.String::InternalIsInterned(string)',
+    'System.String::InternalIntern(string)', 'System.Type::GetTypeCodeInternal(System.Type)', 'System.Type::IsArrayImpl(System.Type)',
+    'System.Type::internal_from_handle(IntPtr)', 'System.Type::type_is_subtype_of(System.Type,System.Type,bool)',
+    'System.MonoType::get_attributes(System.Type)', 'System.MonoType::InternalGetEvent(string,System.Reflection.BindingFlags)',
+    'System.MonoType::GetCorrespondingInflatedConstructor(System.Reflection.ConstructorInfo)',
+    'System.MonoType::GetCorrespondingInflatedMethod(System.Reflection.MethodInfo)',
+    'System.Reflection.MonoMethod::GetGenericMethodDefinition_impl()', 'System.Reflection.MonoMethod::MakeGenericMethod_impl(System.Type[])',
+    'System.Reflection.MonoMethod::get_base_definition(System.Reflection.MonoMethod)',
+    'System.Reflection.MethodBase::GetMethodBodyInternal(IntPtr)', 'System.Reflection.MethodBase::GetMethodFromHandleInternal(IntPtr)',
+    'System.MonoCustomAttrs::IsDefinedInternal(System.Reflection.ICustomAttributeProvider,System.Type)',
+    'ScriptCore.Reflection::Reflection_IsTypeAssignableFrom(System.Type,System.Type)',
+    'ScriptCore.Reflection::Reflection_GetTypeClassification(System.Type)',
+    'ScriptCore.StreamHost::StreamHost_Create()', 'ScriptCore.StreamHost::StreamHost_CreateFromBuffer(byte[])',
+    'ScriptCore.StreamHost::StreamHost_Close(uint)', 'ScriptCore.StreamHost::StreamHost_CopyStream(uint,uint)',
+    'ScriptCore.StreamHost::StreamHost_Flush(uint)', 'ScriptCore.StreamHost::StreamHost_GetPosition(uint)',
+    'ScriptCore.StreamHost::StreamHost_GetSize(uint)', 'ScriptCore.StreamHost::StreamHost_SetPosition(uint,int,int)',
+    'ScriptCore.StreamHost::StreamHost_WriteByteArray(uint,byte[],int,int)',
+    'ScriptCore.StreamHost::StreamHost_WriteCharArrayUTF8(uint,char[],int,int)', 'ScriptCore.StreamHost::StreamHost_WriteCharUTF8(uint,char)',
+    'ScriptCore.StreamHost::StreamHost_WriteDecimal(uint,System.Decimal)', 'ScriptCore.StreamHost::StreamHost_WriteDouble(uint,double)',
+    'ScriptCore.StreamHost::StreamHost_WriteFloat(uint,float)', 'ScriptCore.StreamHost::StreamHost_WriteInt(uint,int,int)',
+    'ScriptCore.StreamHost::StreamHost_WriteInt64(uint,long)', 'ScriptCore.StreamHost::StreamHost_WriteStringUTF8(uint,string)',
+    'ScriptCore.PersistImports::Serializer_WriteFastFields(object,ScriptCore.PersistFastField[],uint)',
+    'ScriptCore.PersistImports::Serializer_WritePrimitiveArray(System.Array,uint,byte)'}
 
 
 def external(t):
@@ -560,6 +659,8 @@ def external(t):
             s.pop = 0
             s.flag(('import-pop-unknown', t[1]), 0)
         isite = IMPSITE.setdefault(nm, 0xFF000000 + len(IMPSITE))  # site of a store an import makes: names the import
+        if nm in CRT_DST:
+            s.regs['eax'] = frozenset([('A0', (), 0)])  # C standard: these return their destination
         if nm in CRT_W:
             s.write(('A0', (), None), None, isite, UV)
         elif nm in IMPW:
@@ -571,6 +672,24 @@ def external(t):
         else:
             for i in range(STDCALL.get(nm, 4)):
                 s.ext[(t[1], ('A%d' % i, (), 0))] = 0
+    elif t[0] == 'icall':
+        nm = t[1]
+        s.regs = {'eax': UV, **KEEP}
+        s.pop = 0  # cdecl: the bodies pop the arguments after the call
+        isite = IMPSITE.setdefault('icall ' + nm, 0xFF000000 + len(IMPSITE))
+        if nm in ICALL_CONST:
+            s.regs['eax'] = frozenset([C(ICALL_CONST[nm])])
+        elif nm in ICALL_FRESH or nm.startswith('System.String::.ctor('):
+            s.regs['eax'] = frozenset([('N', (), 0)])
+        elif nm in ICALL_WRITE:
+            for i in ICALL_WRITE[nm]:
+                s.write(('A%d' % i, (), None), None, isite, UV)
+        elif nm in ICALL_MANAGED:
+            for i in range(6):
+                s.ext[('managed:icall ' + nm, ('A%d' % i, (), 0))] = 0
+        elif nm not in ICALL_READ:
+            for i in range(6):  # effects unknown: an opaque handoff, but named
+                s.ext[('icall:' + nm.split('(')[0], ('A%d' % i, (), 0))] = 0
     else:
         s.regs = {'eax': UV, **KEEP}
         s.flag('indirect', 0)
@@ -606,13 +725,16 @@ EXTCAP = 400
 
 
 IMPSITE = {}
+IMPAT = {}  # per-call pseudo-site -> the call instruction
 # EA runtime support inside the glue range: method binder 0xD9A7B0 (+ key builder 0xD9A530, registration 0xD9A860, record
 # lookup 0xD9A890), native service lookup 0xD89D40, interface-offset layout 0xD790A0 (docs/130 D6), frame arena and
-# context cells 0xD71900 / 0xD71A20 / 0xD71B70 / 0xD71800 (docs/118 D5)
-RUNTIME_EA = {0xD9A7B0, 0xD9A530, 0xD9A860, 0xD9A890, 0xD89D40, 0xD790A0, 0xD71900, 0xD71A20, 0xD71B70, 0xD71800}
+# context cells 0xD71900 / 0xD71A20 / 0xD71B70 / 0xD71800 (docs/118 D5), image loader ScriptHost_LoadImage 0xD78760 (the
+# host's image map at host+0xAD0, reached from Mono assembly loading through the image hook 0xD6FCB0, docs/119)
+RUNTIME_EA = {0xD9A7B0, 0xD9A530, 0xD9A860, 0xD9A890, 0xD89D40, 0xD790A0, 0xD71900, 0xD71A20, 0xD71B70, 0xD71800, 0xD78760}
 # their code ranges (entry to the int3 padding after it): 0xD9A530-0xD9A856 holds the key builder and the binder
 RUNTIME_EA_RANGES = [(0xD790A0, 0xD7972C), (0xD9A530, 0xD9A856), (0xD9A860, 0xD9A88A), (0xD9A890, 0xD9A965),
-                     (0xD71800, 0xD7180B), (0xD71900, 0xD71A17), (0xD71A20, 0xD71B66), (0xD71B70, 0xD71BD7), (0xD89D40, 0xD89D87)]
+                     (0xD71800, 0xD7180B), (0xD71900, 0xD71A17), (0xD71A20, 0xD71B66), (0xD71B70, 0xD71BD7), (0xD89D40, 0xD89D87),
+                     (0xD78760, 0xD78853)]
 
 
 def region(site):
@@ -625,6 +747,12 @@ def region(site):
     if GLUE[0] <= site < GLUE[1]:
         return 'glue'
     return 'runtime' if site >= 0xE40000 else 'engine'
+
+
+def site_rank(site):
+    # 0: glue or an import/icall call (an unknown store there stays unknown), 1: runtime or engine, 2: EA allocator (dropped)
+    rg = region(IMPAT.get(site, site))
+    return 0 if rg in ('glue', 'import') else 2 if rg == 'alloc' else 1
 
 
 def natadd(res, k, site):
@@ -703,9 +831,12 @@ def analyze(entry):
         ext = ext2
     res.ext = ext
     if len(res.w) > 60:
+        grp = collections.Counter((a[0], a[1][:2]) for a, _ in res.w)
+        crowded = sum(n for n in grp.values() if n > 4)
         w2 = {}
         for (a, size), e in res.w.items():
-            k = ((a[0], a[1][:2], None), None)
+            # coarsen the crowded groups only, so a lone exact store (the exception slot) keeps its offset
+            k = ((a[0], a[1][:2], None), None) if grp[(a[0], a[1][:2])] > 4 or len(res.w) - crowded > 60 else (a, size)
             if k in w2:
                 w2[k][1] = cap(w2[k][1] | e[1])
             else:
@@ -730,6 +861,27 @@ def setmark(st):
     st.r['_m'] = st.r['esp']
 
 
+SETJMP3 = 0xF7EE92  # thunk to msvcr80!_setjmp3: the binder bodies' icall wrappers set a jmp_buf before each icall
+
+
+def setjmp_arm(a):
+    """`je` at a is the `test eax, eax; je` right after a call to _setjmp3: its fall-through runs only after a longjmp.
+    All 238 such sites in the binder glue restore the frame's jmp_buf field (+0x10) on that arm and then return or go to
+    the exception-slot check, so the arm carries no store the zero arm lacks; following it only merges stale locals."""
+    for back in range(8, 24):
+        c = a - back
+        if read(c, 1)[0] == 0xE8 and (c + 5 + int.from_bytes(read(c + 1, 4), 'little', signed=True)) & 0xFFFFFFFF == SETJMP3:
+            x, prev = c + 5, None
+            while x < a:
+                i = dec(x)
+                if i is None:
+                    break
+                prev, x = i, x + i.size
+            if x == a and prev is not None and prev.mnemonic == 'test' and [o.reg for o in prev.operands] == [X.X86_REG_EAX] * 2:
+                return True
+    return False
+
+
 def step(ins, st, res, entry, rets):
     for reg in ins.rd:
         p = PARENT.get(reg)
@@ -748,6 +900,8 @@ def step(ins, st, res, entry, rets):
         val = UV
         if m == 'mov' and len(ops) == 2:
             val = opval(st, ops[1])
+        if m == 'add' and len(ops) == 2 and size == 4:  # pointer += offset in a local (string data = string + OffsetToStringData)
+            val = addv(opval(st, ops[0]), opval(st, ops[1]))
         if m == 'pop':
             E = esp_off(st)
             val = st.s.get(E, UV) if E is not None else UV
@@ -816,6 +970,19 @@ def step(ins, st, res, entry, rets):
         st.r['ebp'] = st.s.get(E, UV)
         st.r['esp'] = addc(st.r['esp'], 4)
         setmark(st)
+        return None
+    if m in ('imul', 'mul') or m in ('shl', 'sal', 'shr', 'sar') and ops[0].type == CS_OP_REG:
+        # a product or a shift is an integer (an index, a size, a hash), never a pointer: base + idx * elemsize stays on base
+        for r in ([ops[0].reg] if m in ('shl', 'sal', 'shr', 'sar') or len(ops) > 1 else [X.X86_REG_EAX, X.X86_REG_EDX]):
+            p = PARENT.get(r)
+            if not p or not p[1]:
+                setreg(st, r, UV)
+                continue
+            cur = st.r.get(p[0], UV)
+            if m in ('shl', 'sal') and len(ops) == 2 and ops[1].type == CS_OP_IMM and is_const(cur):
+                st.r[p[0]] = cap(C(d << (ops[1].imm & 31)) for _, _, d in cur)
+            else:
+                st.r[p[0]] = frozenset([('G', (), None)])
         return None
     if m in ('add', 'sub', 'inc', 'dec', 'and', 'xor', 'or') and ops[0].type == CS_OP_REG:
         p = PARENT.get(ops[0].reg)
@@ -909,6 +1076,8 @@ def step(ins, st, res, entry, rets):
         rets.append((dict(st.r), 0))
         return []
     if m in JCC:
+        if m == 'je' and ops and ops[0].type == CS_OP_IMM and setjmp_arm(a):
+            return [ops[0].imm]  # the non-zero arm is the longjmp return of a raised exception (docs/217 §2)
         return [ins.address + ins.size, ops[0].imm] if ops and ops[0].type == CS_OP_IMM else [ins.address + ins.size]
     if m in ('int3', 'hlt', 'ud2', 'int'):
         return []
@@ -941,6 +1110,11 @@ ALLOC = {0xE4BE30: 'GC_malloc', 0xE4BDC0: 'GC_malloc_atomic', 0xE4BF90: 'GC_mall
 for addr in ALLOC:
     SPECIAL[addr] = fixed(('N', (), 0))
 SPECIAL[0xEA2AD0] = fixed(('MV', (), 0))
+# mono_upgrade_remote_class (Mono 1.2.3 shape): rewrites a TransparentProxy's remote class and vtable when
+# mono_object_isinst / castclass meets a proxy. No script assembly uses RealProxy or a transparent proxy (docs/78 index)
+# [inferred], so it is modelled without stores; it was the source of "object at unknown offset" stores in 55 rows.
+SPECIAL[0xEA2D10] = fixed()
+SPECIAL[0xEA2D10].flag(('remoting', 'mono_upgrade_remote_class'), 0)
 MANAGED = {0xD8A8E0: 'ScriptHost_NativeToManaged', 0xE53EB0: 'ves_exec_method_with_context', 0xE59FD0: 'interp_mono_invoke_with_state',
            0xE5A600: 'interp_runtime_invoke', 0xEA1090: 'mono_runtime_invoke', 0xEA1400: 'mono_runtime_delegate_invoke',
            0xEA3370: 'mono_runtime_class_init'}  # class init runs the type's .cctor (managed code)
@@ -993,6 +1167,55 @@ def regs():
     return out
 
 
+# Init helpers (each reads the 4-byte token at an IL offset of the bound method's own IL through mono_method_get_header
+# 0xE85390 + 0xE9BC50, then resolves it): helper -> (kind, argument index of the IL offset). 0xD9A890 returns the callee's
+# RuntimeMethod* (bound by 0xD9A7B0 first); its +8 is the MonoMethod*, which 0xD89F00 turns into the icall pointer
+# (mono_lookup_internal_call 0xE82680, cached at +0x20). 0xD89D40(il_hash, method) unbinds the native body when the IL hash
+# differs, so the offsets always index the IL the body was built from.
+INIT_HELPERS = {0xD9A890: ('method', 1), 0xD89EB0: ('field', 2), 0xD89D90: ('string', 2), 0xD89DE0: ('class', 2),
+                0xD89E50: ('token', 2)}
+
+
+def init_refs(f3):
+    """globals an init function fills: [(global, kind, il_offset)]; kind icall = the icall pointer of a method record"""
+    out, pushes, reg = [], [], {}
+    if not f3 or sec_of(f3) is None:
+        return out
+    for ins in md.disasm(read(f3, 0x8000), f3):
+        m, ops = ins.mnemonic, ins.operands
+        if m == 'int3':
+            break
+        if m == 'push':
+            o = ops[0]
+            pushes.append(('imm', o.imm) if o.type == CS_OP_IMM else reg.get(PARENT.get(o.reg, ('',))[0]) if o.type == CS_OP_REG else None)
+        elif m == 'call':
+            t = ops[0].imm if ops[0].type == CS_OP_IMM else None
+            args = pushes[::-1]
+            val = None
+            if t in INIT_HELPERS and len(args) > INIT_HELPERS[t][1] and args[INIT_HELPERS[t][1]] and args[INIT_HELPERS[t][1]][0] == 'imm':
+                kind, ai = INIT_HELPERS[t]
+                val = ('rec' if t == 0xD9A890 else kind, args[ai][1])
+            elif t == 0xD89F00 and args and args[0] and args[0][0] == 'rec8':
+                val = ('icall', args[0][1])
+            reg = {'eax': val}
+            pushes = []
+        elif m == 'mov' and len(ops) == 2 and ops[0].type == CS_OP_MEM and not ops[0].mem.base and not ops[0].mem.index \
+                and ops[1].type == CS_OP_REG and reg.get(PARENT.get(ops[1].reg, ('',))[0]):
+            v = reg[PARENT[ops[1].reg][0]]
+            out.append((ops[0].mem.disp & 0xffffffff, 'method' if v[0] == 'rec' else v[0], v[1]))
+        elif m == 'mov' and len(ops) == 2 and ops[0].type == CS_OP_REG and ops[1].type == CS_OP_MEM and ops[1].mem.base \
+                and ops[1].mem.disp == 8 and not ops[1].mem.index and (reg.get(PARENT[ops[1].mem.base][0]) or ('',))[0] == 'rec':
+            reg[PARENT[ops[0].reg][0]] = ('rec8', reg[PARENT[ops[1].mem.base][0]][1])
+        elif m == 'add' and ops and ops[0].type == CS_OP_REG and ops[0].reg == X.X86_REG_ESP:
+            pass
+        else:
+            for r in ins.regs_access()[1]:
+                p = PARENT.get(r)
+                if p:
+                    reg.pop(p[0], None)
+    return out
+
+
 def top(f1):
     s = summary(f1)
     env = {'A0': frozenset([('F', (), 0)]), 'A1': frozenset([('X', (), 0)])}
@@ -1011,7 +1234,7 @@ def top(f1):
         for a2 in sub_atom(a, env, {}):
             if a2[0] in KEEPROOT:
                 ext.setdefault((lab, a2), site)
-    return w, dict(s.flags), s.nat, ext
+    return w, dict(s.flags), s.nat, ext, s.fs
 
 
 def store_path(fn, atom, depth=16):
@@ -1031,11 +1254,12 @@ def analyse(pick=None):
     out = []
     for i in (pick if pick is not None else range(len(R))):
         h, f1, f2, f3 = R[i]
-        w, fl, nat, ext = top(f1)
+        w, fl, nat, ext, fs = top(f1)
         s = summary(f1)
         out.append({'i': i, 'hash': '%08x' % h, 'adapter': f1, 'body': f2, 'init': f3, 'nat': nat,
                     'ext': [[lab, repr(a), site] for (lab, a), site in ext.items()],
                     'w': [[repr(a), size, site] for (a, size), site in w.items()],
+                    'fs': sorted(fs & set(w.values())),
                     'wchain': sorted({'%X' % x for (a, size) in s.w if a[0] == 'U' for x in store_path(f1, a)}),
                     'flags': [[repr(k), site] for k, site in fl.items()]})
     return {'bodies': out, 'imports': {'%d' % v: k for k, v in IMPSITE.items()}}
@@ -1083,6 +1307,8 @@ def obj(t, chain, add, size, via):
         nxt, rest = chain[0], chain[1:]
         if k in ('class', 'string', 'array', 'object', 'unknown') and nxt == 0:
             return 'meta', 'vtable of %s' % via  # a load at offset 0 of an object is its vtable: runtime metadata
+        if k == 'string':  # past the vtable a string holds its sync record, length and chars: no managed pointer
+            return 'unknown', '%s: load inside a string' % via if nxt is None else '%s: load at +%d of string' % (via, nxt)
         if nxt is None:
             return 'other', '%s: object reached through an unknown field' % via
         if k == 'array':
@@ -1180,10 +1406,19 @@ def target(a, size, m):
     return 'native', r
 
 
+def artifact(cat, det):
+    """a store address derived from an int (scalar field, scalar argument, string length): merged-path imprecision"""
+    return cat == 'unknown' and (det.endswith(('load of a scalar field', '(scalar) used as a pointer', 'load inside a string'))
+                                 or re.search(r'load at \+\d+ of string$', det) is not None)
+
+
 def hint(r, m, cls):
     """unknown rows: an unresolved store on the path of a body whose managed method builds a string it allocated [inferred]"""
     if cls != 'unknown':
         return ''
+    for a, size, site in r['w']:
+        if a.startswith("('U'") and site in USITE_HINT:
+            return USITE_HINT[site]
     if m.get('il_alloc_str'):
         return 'copy into the string this method allocates (IL: InternalAllocateStr) [inferred]'
     for x in r.get('wchain', ()):
@@ -1194,6 +1429,9 @@ def hint(r, m, cls):
 
 
 BODY, M = {}, {}
+# unresolved stores read by hand: the array comes back from a managed call the analysis does not follow
+USITE_HINT = {0xD9CCA4: 'element 0 of the array MonoCustomAttrs.GetCustomAttributes gets from Array.CreateInstance(Type, int) '
+                        '(NativeToManaged result, then castclass), a fresh array [inferred]'}
 
 
 def classify(J, F):
@@ -1209,12 +1447,22 @@ def classify(J, F):
         idx, h = r['i'], r['hash']
         m = M[h]
         cats = collections.defaultdict(set)
-        for a, size, site in r['w']:
-            a = ast.literal_eval(a)
-            cat, det = target(a, size, m)
-            if cat == 'unknown' and not (GLUE[0] <= site < GLUE[1]):
-                cat = 'runtime'  # unresolved store inside Mono / GC / EA heap code: bookkeeping on runtime-owned memory
-                det = 'unresolved store at 0x%X' % site
+        tw = [(target(ast.literal_eval(a), size, m), site) for a, size, site in r['w']]
+        real = {site for (cat, det), site in tw if not artifact(cat, det)} | set(r.get('fs', ()))
+        for (cat, det), site in tw:
+            if region(site) == 'alloc':
+                # the EA allocator only writes heap block headers and free lists: the block is native memory even when
+                # its address was loaded from a managed field (IntPtr), and GC-heap objects never reach it
+                cats['runtime'].add('heap')
+                continue
+            if artifact(cat, det) and site in real:
+                cats['dropped'].add(det)  # the same store has a type-possible target, which is the real one
+                continue
+            # 0xFF..: an import or icall store, judged by the instruction that called it
+            at = int(IMPS[site].rsplit('@', 1)[1], 16) if site >= 0xFF000000 and '@' in IMPS.get(site, '') else site
+            if cat == 'unknown' and region(at) not in ('glue', 'import'):
+                cat = 'runtime'  # unresolved store inside Mono / GC / EA runtime support: bookkeeping on runtime-owned memory
+                det = 'unresolved store at 0x%X' % at if at == site else 'unresolved store by %s called at 0x%X' % (IMPS[site].split('@')[0], at)
             cats[cat].add(det)
         for k, site in r['nat'].items():
             rg, key = k.split(':', 1)
@@ -1222,7 +1470,7 @@ def classify(J, F):
                 cats['runtime'].add('heap' if rg == 'alloc' else 'runtime')
                 continue
             if rg == 'import' and site in IMPS:
-                rg = IMPS[site]
+                rg = IMPS[site].split('@')[0]
             if key == 'N':
                 cats['fresh'].add('new native or managed block')
                 continue
@@ -1282,16 +1530,19 @@ def classify(J, F):
 def self_check(exe):
     # classifier on a fixture: one row per class, the field layout and the unknown-row hint
     F = {'types': {'T': {'kind': 'class', 'size': 24, 'align': 4,
-                         'fields': [{'name': 'm_x', 't': 'float', 'kind': 'scalar', 'off': 20, 'size': 4}]}},
+                         'fields': [{'name': 'm_x', 't': 'float', 'kind': 'scalar', 'off': 20, 'size': 4}]},
+                   'B': {'kind': 'class', 'size': 12, 'align': 4,
+                         'fields': [{'name': '_str', 't': 'string', 'kind': 'string', 'off': 8, 'size': 4}]}},
          'methods': {}}
 
     def meth(h, id, self=None, params=(), alloc=False):
         F['methods'][h] = {'id': id, 'self': self, 'params': list(params), 'reach': 'v0', 'il_fw': [], 'il_sw': [],
                            'il_alloc_str': alloc}
 
-    def body(h, i, w=(), nat=None, path=()):
+    def body(h, i, w=(), nat=None, path=(), fs=()):
         return {'i': i, 'hash': h, 'adapter': 0xE00000 + i, 'body': 0xE10000 + i, 'init': 0, 'nat': nat or {}, 'ext': [],
-                'w': [list(x) for x in w] + [["('F', (8,), 0)", 4, 0xE10000]], 'wchain': list(path), 'flags': []}
+                'w': [list(x) for x in w] + [["('F', (8,), 0)", 4, 0xE10000]], 'wchain': list(path), 'flags': [],
+                'fs': list(fs)}
 
     meth('00000001', 'T::Ref(float&)', params=[{'t': 'float&', 'kind': 'byref'}])
     meth('00000002', 'T::Fx(float)', self={'t': 'T', 'kind': 'class'}, params=[{'t': 'float', 'kind': 'scalar'}])
@@ -1299,24 +1550,43 @@ def self_check(exe):
     meth('00000004', 'T::Name()')
     meth('00000005', 'System.String::Concat(string,string)', alloc=True)
     meth('00000006', 'T::Tick()')
-    J = {'imports': {}, 'bodies': [
+    for h in ('00000007', '00000008', '00000009'):
+        meth(h, 'B::Grow()', self={'t': 'B', 'kind': 'class'})
+    # a string-copy icall store whose candidates are this._str's length (+4 of the string) and, on the real path, a fresh
+    # string: the scalar candidate is dropped (07); without the fresh target it stays unknown (08); an allocator store is heap (09)
+    cp = "('F', (12, 8, 4), None)"
+    J = {'imports': {'%d' % 0xFF000001: 'icall System.String::InternalStrcpy(string,int,string)@D90070'}, 'bodies': [
         body('00000001', 0, [["('F', (20, 0), 0)", 4, 0xE10010]]),
         body('00000002', 1, [["('F', (12,), 20)", 4, 0xE10020]]),
         body('00000003', 2),
         body('00000004', 3, [["('U', (), None)", None, 0xDC0316]], path=['E10004']),
         body('00000005', 4),
-        body('00000006', 5, nat={'glue:G1234567': 0xE10060, 'runtime:G4*': 0xE48552})]}
+        body('00000006', 5, nat={'glue:G1234567': 0xE10060, 'runtime:G4*': 0xE48552}),
+        body('00000007', 6, [[cp, None, 0xFF000001]], fs=[0xFF000001]),
+        body('00000008', 7, [[cp, None, 0xFF000001]]),
+        body('00000009', 8, [["('F', (12,), None)", None, 0x4E52E7]])]}
     got = {r['hash']: r for r in classify(J, F)}
     want = {'00000001': ('writes-args', 'arg0:4', ''), '00000002': ('writes-other', '', 'this.m_x'),
             '00000003': ('reader', '', ''), '00000004': ('unknown', '', ''), '00000005': ('reader', '', ''),
-            '00000006': ('native-only', '', '')}
+            '00000006': ('native-only', '', ''), '00000007': ('reader', '', ''), '00000008': ('unknown', '', ''),
+            '00000009': ('reader', '', '')}
     for h, (cls, wa, wo) in want.items():
         r = got[h]
         assert (r['class'], r['writes_args'], r['writes_other']) == (cls, wa, wo), (h, r)
     assert 'String::Concat' in got['00000004']['unknown_hint'], got['00000004']
     assert got['00000006']['writes_native'] == 'glue G1234567' and got['00000006']['runtime_writes'] == 'runtime', got['00000006']
     assert got['00000004']['confidence'] == 'low' and got['00000003']['confidence'] == 'high'
-    print('classifier fixture: 6 rows ok')
+    assert got['00000009']['runtime_writes'] == 'heap', got['00000009']
+    print('classifier fixture: 9 rows ok')
+    # one key, two sites: the glue site wins over a Mono or allocator site, so the classifier cannot hide it
+    s = Sum()
+    s.write(U, 4, 0xE6A6BA, UV)
+    s.write(U, 4, 0xDC999F, UV)
+    s.write(U, 4, 0x4E6354, UV)
+    assert s.w[(U, 4)][0] == 0xDC999F, s.w
+    # a frame pointer seen at 3 offsets is widened before it can walk onto other slots
+    assert widen_frame(frozenset([('S', (), -8), ('S', (), -12), ('S', (), -16)])) == frozenset([('S', (), None)])
+    assert widen_frame(frozenset([('S', (), -8), ('S', (), -12)])) == frozenset([('S', (), -8), ('S', (), -12)])
     if not os.path.exists(exe):
         print('exe not found (%s): analyzer checks skipped' % exe)
         return 0
@@ -1326,13 +1596,19 @@ def self_check(exe):
     R = regs()
     at = {'%08x' % r[0]: i for i, r in enumerate(R)}
     expect = {'8cc00867': "('F', (20, 0), 0)", 'aee09772': "('F', (12,), 20)", 'd576215f': "('F', (12,), 12)"}
+    expect["ce0c8b99"] = "('F', (20, 8), None)"  # String.CopyTo: InternalCopyTo writes its char[] argument (icall model)
+    ICALLS[0x11F0854] = 'System.String::InternalCopyTo(int,char[],int,int)'
     picks = list(expect) + ['5a1c8308']
     assert len(R) == 1085 and all(h in at for h in picks), len(R)
     out = {x['hash']: x for x in analyse([at[h] for h in picks])['bodies']}
     for h, atom in expect.items():
         assert any(w[0] == atom for w in out[h]['w']), (h, out[h]['w'])
     assert all(w[0].startswith("('F', ()") or w[0].startswith("('F', (8,)") for w in out['5a1c8308']['w']), out['5a1c8308']['w']
-    print('analyzer: 1085 registrations, 4 known bodies ok')
+    # init decoding: Concat(string,string) caches InternalAllocateStr's icall pointer from the call at IL 0x39
+    assert (0x11EF494, 'icall', 0x39) in init_refs(R[at['a1f221e8']][3]), init_refs(R[at['a1f221e8']][3])
+    # _setjmp3: the je after `test eax, eax` drops the longjmp arm; an ordinary je does not
+    assert setjmp_arm(0xDBB71D) and not setjmp_arm(0xDBB802)
+    print('analyzer: 1085 registrations, 5 known bodies, init refs and setjmp arms ok')
     return 0
 
 
@@ -1354,15 +1630,19 @@ def main():
         R = regs()
         with open(a.hashes, 'w', newline='\n') as f:
             for h, f1, f2, f3 in R:
-                f.write('%08x\t0x%X\t0x%X\t0x%X\n' % (h, f1, f2, f3))
+                refs = ','.join('%X:%s:%X' % r for r in init_refs(f3))  # binder-bodies.ts resolves the IL tokens
+                f.write('%08x\t0x%X\t0x%X\t0x%X\t%s\n' % (h, f1, f2, f3, refs))
         print('%d registrations -> %s' % (len(R), a.hashes), file=sys.stderr)
         return 0
+    facts = json.load(open(a.facts, encoding='utf-8'))
+    ICALLS.update({r['g']: r['target'] for m in facts['methods'].values() for r in m.get('init', ()) if r['kind'] == 'icall' and r['ok']})
     t0 = time.time()
     J = analyse()
-    print('%d bodies analysed in %.0f s (%d functions)' % (len(J['bodies']), time.time() - t0, STATS['fns']), file=sys.stderr)
+    print('%d bodies analysed in %.0f s (%d functions, %d icall globals)' % (len(J['bodies']), time.time() - t0, STATS['fns'], len(ICALLS)),
+          file=sys.stderr)
     if a.json:
         json.dump(J, open(a.json, 'w'), indent=0)
-    rows = classify(J, json.load(open(a.facts, encoding='utf-8')))
+    rows = classify(J, facts)
     with open(a.csv, 'w', newline='', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()), lineterminator='\n')
         w.writeheader()
