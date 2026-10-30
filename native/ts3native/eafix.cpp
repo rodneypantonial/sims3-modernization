@@ -298,22 +298,23 @@ static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x
 static const u8 kGbCount[10] = {0x8B, 0x41, 0x5C, 0x2B, 0x41, 0x58, 0xC1, 0xF8, 0x02, 0xC3};
 static volatile LONG g_gbBad;
 
-// The resource base's fields (vtable 0xFB2C04, +8..+0x24): the key is expected among them [inferred], to name the mesh.
-static void GeomLogFields(const char* fix, const u8* geom) {
+// The resource key in the resource base (vtable 0xFB2C04): instance (64-bit) at +8, type at +0x10, group at +0x14 [verified:
+// a logged key matched a GEOM in the player's packages, docs/67 §28.4]. Printed as type:group:instance, as package tools show it.
+static void GeomKey(char (&out)[40], const u8* geom) {
     const DWORD* f = (const DWORD*)(geom + 8);
-    Log("ea fix: %s: GEOM %p base fields %08lX %08lX %08lX %08lX %08lX %08lX %08lX %08lX", fix, geom, f[0], f[1], f[2], f[3], f[4],
-        f[5], f[6], f[7]);
+    sprintf_s(out, "%08lX:%08lX:%08lX%08lX", f[2], f[3], f[1], f[0]);
 }
 
 static DWORD __fastcall GbGetBone(u8* geom, void*, DWORD i) {
     const DWORD* b = *(const DWORD* const*)(geom + 0x58);
     const DWORD n = (DWORD)(*(const DWORD* const*)(geom + 0x5C) - b);
     if (i < n) return b[i];
-    const LONG k = InterlockedIncrement(&g_gbBad);
-    if (k <= 8)
-        Log("ea fix: GeomBoneIndex: GEOM %p asked for bone %lu of %lu (caller 0x%08X): answered 0, the rig's missing-bone path",
-            geom, i, n, (DWORD)(uintptr_t)_ReturnAddress());
-    if (k == 1) GeomLogFields("GeomBoneIndex", geom);
+    if (InterlockedIncrement(&g_gbBad) <= 8) {
+        char key[40];
+        GeomKey(key, geom);
+        Log("ea fix: GeomBoneIndex: GEOM %p (key %s) asked for bone %lu of %lu (caller 0x%08X): answered 0, the rig's missing-bone path",
+            geom, key, i, n, (DWORD)(uintptr_t)_ReturnAddress());
+    }
     return 0;
 }
 
@@ -346,11 +347,11 @@ static DWORD g_gnSkip = GN_SKIP, g_gnCont = GN_CONT, g_gnGet = GN_GET;  // stub 
 static volatile LONG g_gnBad;
 
 static void __stdcall GnHit(u8* geom, DWORD lod) {
-    const LONG k = InterlockedIncrement(&g_gnBad);
-    if (k <= 8)
-        Log("ea fix: GeomNoMaterial: GEOM %p (builder LOD %lu) has no embedded material: part skipped, EA's path for a part without a mesh",
-            geom, lod);
-    if (k == 1) GeomLogFields("GeomNoMaterial", geom);
+    if (InterlockedIncrement(&g_gnBad) > 8) return;
+    char key[40];
+    GeomKey(key, geom);
+    Log("ea fix: GeomNoMaterial: GEOM %p (key %s, builder LOD %lu) has no embedded material: part skipped, EA's path for a part "
+        "without a mesh", geom, key, lod);
 }
 
 // In place of the 10 bytes at 0x5DDB63: ebx = &part.mesh, esi = the builder (LOD at +0x1A0). eax/ecx/edx and the flags are

@@ -283,6 +283,11 @@ static void TestEaCrashFixes() {
     static DWORD bones[3] = {0x816E191A, 0x11111111, 0x22222222};
     alignas(4) static u8 geom[0x60];
     *(DWORD**)(geom + 0x58) = bones, *(DWORD**)(geom + 0x5C) = bones + 3;
+    // the logged key: type:group:instance from the resource base (instance at +8, type +0x10, group +0x14)
+    *(DWORD*)(geom + 8) = 0x8DAFEEA9, *(DWORD*)(geom + 0xC) = 0xC014AA21, *(DWORD*)(geom + 0x10) = 0x015A1849, *(DWORD*)(geom + 0x14) = 0x009B6C36;
+    char gkey[40];
+    GeomKey(gkey, geom);
+    assert(!strcmp(gkey, "015A1849:009B6C36:C014AA218DAFEEA9"));
     g_gbBad = 0;
     assert(GbGetBone(geom, NULL, 0) == 0x816E191A && GbGetBone(geom, NULL, 2) == 0x22222222 && g_gbBad == 0);
     assert(GbGetBone(geom, NULL, 3) == 0 && GbGetBone(geom, NULL, 0x6D) == 0 && g_gbBad == 2);  // 0x6D: crash X's index
@@ -386,7 +391,7 @@ static void TestEaCrashFixes() {
     k.mdDivOverflow = k.mdRemMinus1 = 0, g_mdLogged = 0;
     printf("EaCrashFixes: ConformActor live call unchanged, destroyed / null / freed / clobbered actors skipped, other types "
            "called, patched sequence run; ThumbPose reference kept across the evaluation and released by the stub; "
-           "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, vtable slot patched once; "
+           "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, key printed, vtable slot patched once; "
            "GeomNoMaterial meshes with a material unchanged, no material skipped, other types and null meshes unchanged, "
            "site patched once; "
            "MintDivGuard 18 normal div/rem cases on the game's path, INT_MIN / -1 to the overflow stub, INT_MIN %% -1 = 0, "

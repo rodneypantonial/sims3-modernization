@@ -927,15 +927,15 @@ A rig bone whose hash is exactly 0 would take that vertex weight instead of miss
 
 | | |
 |---|---|
-| Counters | none. The first 8 out-of-range asks are logged as `ea fix: GeomBoneIndex: GEOM <p> asked for bone <i> of <n> (caller <return address>)` |
+| Counters | none. The first 8 out-of-range asks are logged as `ea fix: GeomBoneIndex: GEOM <p> (key <type>:<group>:<instance>) asked for bone <i> of <n> (caller <return address>)` |
 | Tests (offline) | selftest `TestEaCrashFixes` covers four cases. (1) In-range bones are unchanged. (2) An index equal to the size, index `0x6D` and an empty list are all answered 0. (3) The game's two getter byte strings run on the fake GEOM, which checks the layout. (4) The patch on a stand-in slot: a foreign count getter means nothing is written, the slot is patched only once, and the patched slot answers like the hook |
 | Repro | none. A repro needs a mesh with a bad blend index. The log line names the GEOM pointer, not its resource key |
 | Conflicts | none with S3SS / S3PP / Apex at `0xFE3314` / `0x5C6E00` (docs/68) |
-| Open | Which mesh it was. Logging the resource key would need the GEOM's key field, which is not mapped |
+| Open | none left from crash X: the mesh is named in §28.4 |
 
 ### 28.4 Live check (2026-10-30, one session) [verified]
 
-One 35-minute session on a contributor's test save, with the 0.36.143 CI build and `GeomBoneIndex=1`. During world load (`ScriptProxy.PostLoad`) it logged 8 lines for one GEOM: `asked for bone 109 / 104 / 113 / 115 of 5 (caller 0x005D1633)`. 109 is crash X's index, and the mesh has 5 bones, so this save loads the bad mesh every time. The game ran on for the whole session. The lines confirm I-409-4: a readable GEOM with a real list (`n` = 5) whose blend indices are past it. Without the fix these reads land past the list; whether they crash depends on the heap layout (§28.2). The GEOM was freed after load, so it could not be named afterwards. From the next build, the first hit also logs the resource base's fields `+8..+0x24` (`GEOM <p> base fields ...`), where the key is expected [inferred].
+One 35-minute session on a contributor's test save, with the 0.36.143 CI build and `GeomBoneIndex=1`. During world load (`ScriptProxy.PostLoad`) it logged 8 lines for one GEOM: `asked for bone 109 / 104 / 113 / 115 of 5 (caller 0x005D1633)`. 109 is crash X's index, and the mesh has 5 bones, so this save loads the bad mesh every time. The game ran on for the whole session. The lines confirm I-409-4: a readable GEOM with a real list (`n` = 5) whose blend indices are past it. Without the fix these reads land past the list; whether they crash depends on the heap layout (§28.2). A second session (same save and switch, plus the other two guards) logged the same 8 asks. Its first line also printed the resource base's fields: instance `0xC014AA218DAFEEA9` at `+8`, type `0x015A1849` (GEOM) at `+0x10`, group `0x009B6C36` at `+0x14`. The CC scan below has exactly that GEOM (5 bones, 512 vertices, filler 115) [verified]. It is a LOD of the EA Store hair `amHairSTORE09FaLayeredSide` (adult male), which the contributor's CC manager had merged into one of its library packages. So store meshes from EA itself carry these filler indices. The log lines now print the key as `<type>:<group>:<instance>`.
 
 A scan of the same install's CC (every GEOM in `Mods\Packages`, read-only) found 251 of 9,856 GEOMs with a bone-assignment index past the mesh's own bone list: 27 with 5 bones, 61 with 1, others up to 58. Their out-of-range values are 115 or 255. **Every out-of-range index sits in a slot whose weight is 0** [verified: scan]: 0 vertices have a weighted index past the list. So these values are filler that the export tool wrote into unused slots, and the skin pass reads all four slots whatever their weight. The fix's answer of 0 changes no weighted bone for any of them (I-409-5). It also means the out-of-range read happens for every such mesh on every build, so crash X can come back on any install with this kind of CC whenever a bone list ends at a free region.
 
@@ -960,7 +960,7 @@ Because every path reads the material, the fix changes only parts that crash tod
 
 | | |
 |---|---|
-| Counters | none. The first 8 skips are logged as `ea fix: GeomNoMaterial: GEOM <p> (builder LOD <n>) has no embedded material`; the first also logs the GEOM's base fields |
+| Counters | none. The first 8 skips are logged as `ea fix: GeomNoMaterial: GEOM <p> (key <type>:<group>:<instance>, builder LOD <n>) has no embedded material` |
 | Tests (offline) | selftest `TestEaCrashFixes` runs the stub with landing pads in place of the two targets. Four cases: a GEOM with a material continues, a GEOM without one is skipped and counted, another type with the same field 0 continues, and a null mesh takes the game's skip without being counted. `ebx`, `esi`, `edi` and `ebp` are unchanged at both pads. The game's getter bytes run on the fake GEOM. The patch on a stand-in site: a foreign slot or foreign site bytes mean nothing is written, and the site is patched only once |
 | Repro | none in game: it needs the CC part, worn by a Sim the builder builds at LOD 2 or 3 |
 | Conflicts | none with S3SS / S3PP / Apex at `0x5DDB63` / `0xFE3318` / `0x580420` (docs/68). Apex's nearest site is `CasTriSort 0x5D1960` |
