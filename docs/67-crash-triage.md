@@ -899,3 +899,36 @@ Design: the release call at `0xD5B77A` is retargeted to `TpDefer` (same register
 | Tests (offline) | selftest `TestEaCrashFixes`: last reference kept across the evaluation and freed after it, another frame releases nothing, a shared owner is released without `tpLastRef`, an empty RefPtr keeps nothing, full slots release at once; the naked stub run on a real stack (frame match, release, `ecx` = the moved load, `eax`/`ebx`/`esi`/`edi` kept); patch on dummy bytes (foreign bytes: nothing written) |
 | Repro | `tools/harness/repros.json` `ea-thumb-pose-pack-loop`: household thumbnails while 8 spawned Sims are removed, three rounds (the contributor's cross-world thumbnail during pack-up has no agent action). `tpHeld > 0` shows branch (a) ran |
 | Conflicts | none with S3SS / S3PP / Apex at `0xD5B77A` / `0xD5B874` (docs/68) |
+
+## 28. Crash X (2026-10-30, a contributor's 35-minute test session on v0.2.4 release defaults with Apex Radiance): the Sim builder reads a CAS mesh's bone list past its end
+
+Static only (2026-10-30): the EA crash report and capstone on the Steam exe copy. There is no dump.
+
+### 28.1 Fault [verified: report + disassembly]
+
+| | |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0xA2F900B4` (`MEM_FREE`) at `0x5C6E07`. Main thread. EA's walk shows `0x5D3885`, `0x5DC19C`, `0x5F06C6` (`SimService_Process 0x5EBC50`) and `0x5F120C` (`SimService_Update 0x5F0E50`): the same service path as crash B (§1) |
+| Fault site | `0x5C6E00` (13 bytes, `ret 4`): `eax = [ecx+0x58]`, `ecx = [esp+4]`, `eax = [eax+ecx*4]`. It is slot `+0x54` of vtable `0xFE32C0`, which the `CAS/GeometryResource` name follows in `.rdata`. Slot `+0x50` = `0x5C6DF0` returns `([ecx+0x5C] - [ecx+0x58]) >> 2`. So `+0x58`/`+0x5C` are the begin and end of the mesh's bone-hash vector, and slot `+0x54` returns entry `i` with no bounds check. Only `0x5C6EBB` and `0x5C7045` store the vtable, and nothing calls either getter directly |
+| Registers | `eax` (vector begin) = `0xA2F8FF00`, `ecx` (index) = `0x6D` = 109. The read at `begin + 109 * 4` lands in a free region that starts `0x100` bytes after `begin`. The vector therefore has at most 64 entries, and the index is past its end. The `+0x58` load succeeded, so the GEOM object itself was readable |
+| Caller | `[esp]` = `0x5D1633`. The getter has no frame, so EA's walk skips this frame and shows `0x5D3885` instead (the return of `call 0x5D1010` at `0x5D3880`). `0x5D1010` is the skin pass. It reads each of a vertex's four blend indices as a byte (`0x5D1627`), calls slot `+0x54` at `0x5D1631`, then looks the returned hash up in an EASTL map at `[ebp+0x20]` (the rig's bones). On a miss, `edx` is the map's anchor and the code stores `[anchor+0x14]` (the map's size field) as the bone slot (`0x5D165B`-`0x5D1672`). This is EA's own path for a bone the rig lacks. `edx` is reloaded at `0x5D163B` and `ecx` at `0x5D1633`, so nothing but `eax` is live after the call |
+
+### 28.2 Cause [inferred]
+
+The most likely cause is a GEOM resource whose vertex blend indices name a bone past the mesh's own bone list, probably custom content: a mesh edited without its bone list being updated. The index is a byte, so the getter can read up to 255 entries. Most such reads land in other heap data and return a hash the rig lacks, which takes the miss path above without a crash. The read only crashes when the list sits near the end of a committed region, which is why this crash is rare. The report does not say which mesh it was.
+
+It is not a use-after-free, because the object's own fields were readable. No ts3native hook is on this path. The nearest Apex Radiance site is `CasTriSort 0x5D1960` (docs/data/apex-hooks.csv), and `node tools/hook-sites.ts --check` lists no shared address.
+
+### 28.3 Fix: `[EaCrashFixes] GeomBoneIndex` (0.36.143, eafix.cpp, off by default; ledger docs/51 §409)
+
+The fix points vtable slot `0xFE3314` at `GbGetBone`, which has the same contract: `ecx` = the GEOM, one stack argument, `ret 4`. For an index inside the vector it returns the game's entry. Past the end it returns 0, so the caller's map lookup misses and EA's missing-bone path runs.
+
+A rig bone whose hash is exactly 0 would take that vertex weight instead of missing [inferred: no such bone is known]. The install checks three things before it writes: the slot names `0x5C6E00`, the getter's 13 bytes match, and the count getter's 10 bytes match (they confirm the vector layout). If any check fails, it logs a SKIP and writes nothing. Every virtual caller of slot `+0x54` gets the game's answer for in-range indices.
+
+| | |
+|---|---|
+| Counters | none. The first 8 out-of-range asks are logged as `ea fix: GeomBoneIndex: GEOM <p> asked for bone <i> of <n> (caller <return address>)` |
+| Tests (offline) | selftest `TestEaCrashFixes` covers four cases. (1) In-range bones are unchanged. (2) An index equal to the size, index `0x6D` and an empty list are all answered 0. (3) The game's two getter byte strings run on the fake GEOM, which checks the layout. (4) The patch on a stand-in slot: a foreign count getter means nothing is written, the slot is patched only once, and the patched slot answers like the hook |
+| Repro | none. A repro needs a mesh with a bad blend index. The log line names the GEOM pointer, not its resource key |
+| Conflicts | none with S3SS / S3PP / Apex at `0xFE3314` / `0x5C6E00` (docs/68) |
+| Open | Which mesh it was. Logging the resource key would need the GEOM's key field, which is not mapped |

@@ -1,4 +1,5 @@
-// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose, eafix.cpp, docs/67 §26.4 / §27.5). Included by selftest.cpp.
+// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose + GeomBoneIndex, eafix.cpp, docs/67 §26.4 / §27.5 / §28).
+// Included by selftest.cpp.
 // Fake AnimationComponents, controllers and refcounted owners; the patched ask sequence and the after-evaluation stub run
 // for real on copies of the game's bytes.
 
@@ -191,6 +192,35 @@ static void TestEaCrashFixes() {
     assert(!TpPatch(defer, after));  // ours now
     g_tpRelease = rel0;
     k.tpHeld = k.tpLastRef = k.tpNoSlot = 0;
+
+    // ---- GeomBoneIndex ----
+    static DWORD bones[3] = {0x816E191A, 0x11111111, 0x22222222};
+    alignas(4) static u8 geom[0x60];
+    *(DWORD**)(geom + 0x58) = bones, *(DWORD**)(geom + 0x5C) = bones + 3;
+    g_gbBad = 0;
+    assert(GbGetBone(geom, NULL, 0) == 0x816E191A && GbGetBone(geom, NULL, 2) == 0x22222222 && g_gbBad == 0);
+    assert(GbGetBone(geom, NULL, 3) == 0 && GbGetBone(geom, NULL, 0x6D) == 0 && g_gbBad == 2);  // 0x6D: crash X's index
+    *(DWORD**)(geom + 0x5C) = bones;  // empty list
+    assert(GbGetBone(geom, NULL, 0) == 0 && g_gbBad == 3);
+    *(DWORD**)(geom + 0x5C) = bones + 3;
+    // the game's two getters, run on the fake, and the patch on a stand-in vtable slot
+    u8* gcode = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(gcode, kGbGet, sizeof(kGbGet)), memcpy(gcode + 16, kGbCount, sizeof(kGbCount));
+    typedef DWORD(__fastcall * GbGetFn)(u8* geom, void*, DWORD i);
+    typedef int(__fastcall * GbCountFn)(u8* geom);
+    assert(((GbGetFn)(void*)gcode)(geom, NULL, 1) == 0x11111111 && ((GbCountFn)(void*)(gcode + 16))(geom) == 3);
+    static DWORD gslot;
+    gslot = (DWORD)(uintptr_t)gcode;
+    gcode[16 + 2] = 0x60;  // a count getter of another layout: nothing written
+    assert(!GbPatch(&gslot, gcode + 16) && gslot == (DWORD)(uintptr_t)gcode);
+    gcode[16 + 2] = 0x5C;
+    assert(GbPatch(&gslot, gcode + 16) && gslot == (DWORD)(uintptr_t)&GbGetBone);
+    assert(!GbPatch(&gslot, gcode + 16));  // ours now
+    const GbGetFn patched = (GbGetFn)(uintptr_t)gslot;
+    assert(patched(geom, NULL, 1) == 0x11111111 && patched(geom, NULL, 4) == 0 && g_gbBad == 4);
+    VirtualFree(gcode, 0, MEM_RELEASE);
+    g_gbBad = 0;
     printf("EaCrashFixes: ConformActor live call unchanged, destroyed / null / freed / clobbered actors skipped, other types "
-           "called, patched sequence run; ThumbPose reference kept across the evaluation and released by the stub: ok\n");
+           "called, patched sequence run; ThumbPose reference kept across the evaluation and released by the stub; "
+           "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, vtable slot patched once: ok\n");
 }

@@ -25,6 +25,14 @@
 // retargeted to TpDefer (keeps the reference, keyed by the render's frame and thread) and the instruction after the
 // evaluation (0xD5B874 `mov ecx,[esp+0xAC]`) becomes a call to TpAfterStub, which releases it there (same thread, same
 // release function). Branches (b) and (c) hold no reference at all and stay as they are [verified disassembly].
+//
+// GeomBoneIndex (0.36.143, docs/67 §28, crash X). The GEOM resource (vtable 0xFE32C0, "CAS/GeometryResource") keeps its
+// bone hashes in a vector at +0x58/+0x5C; slot +0x54 (0x5C6E00) returns bones[i] with no bounds check, slot +0x50
+// (0x5C6DF0) the count. The Sim builder's skin pass 0x5D1010 asks slot +0x54 for each of a vertex's four blend indices
+// (0x5D1631) and looks the hash up in the rig's bone map; a miss takes EA's own path for a bone the rig lacks (0x5D165B).
+// A mesh whose blend index is past its own bone list reads past the vector and crashed at 0x5C6E07 [verified disassembly].
+// Fix: the vtable slot points to GbGetBone, which answers 0 for such an index, so the lookup misses the way an unknown
+// bone does. Indices inside the list get the game's answer.
 
 static const DWORD CA_ASK_SITES[3] = {0x0084EABD, 0x00849588, 0x00853521};
 // mov ecx,[eax+1Ch]; mov edx,[ecx]; push eax; mov eax,[edx+10h]; call eax   (eax = controller)
@@ -267,8 +275,47 @@ static bool ApplyThumbPose(const wchar_t* ini) {
     return false;
 }
 
+// ---- GeomBoneIndex ----
+static const DWORD GB_SLOT = 0x00FE3314, GB_GET = 0x005C6E00, GB_COUNT = 0x005C6DF0;  // vtable 0xFE32C0 +0x54, +0x50
+// mov eax,[ecx+58h]; mov ecx,[esp+4]; mov eax,[eax+ecx*4]; ret 4
+static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x04, 0x88, 0xC2, 0x04, 0x00};
+// mov eax,[ecx+5Ch]; sub eax,[ecx+58h]; sar eax,2; ret
+static const u8 kGbCount[10] = {0x8B, 0x41, 0x5C, 0x2B, 0x41, 0x58, 0xC1, 0xF8, 0x02, 0xC3};
+static volatile LONG g_gbBad;
+
+static DWORD __fastcall GbGetBone(u8* geom, void*, DWORD i) {
+    const DWORD* b = *(const DWORD* const*)(geom + 0x58);
+    const DWORD n = (DWORD)(*(const DWORD* const*)(geom + 0x5C) - b);
+    if (i < n) return b[i];
+    if (InterlockedIncrement(&g_gbBad) <= 8)
+        Log("ea fix: GeomBoneIndex: GEOM %p asked for bone %lu of %lu (caller 0x%08X): answered 0, the rig's missing-bone path",
+            geom, i, n, (DWORD)(uintptr_t)_ReturnAddress());
+    return 0;
+}
+
+// slot = the vtable entry; checks the getter it names and the count getter (the vector layout) first.
+static bool GbPatch(DWORD* slot, const u8* count) {
+    if (!Readable(slot, 4) || !Matches((const void*)(uintptr_t)*slot, kGbGet, sizeof(kGbGet)) ||
+        !Matches(count, kGbCount, sizeof(kGbCount)))
+        return false;
+    const DWORD hook = (DWORD)(uintptr_t)&GbGetBone;
+    return Write(slot, &hook, 4);
+}
+
+static bool ApplyGeomBoneIndex(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"EaCrashFixes", L"GeomBoneIndex", 0, ini)) return false;
+    DWORD* slot = (DWORD*)(uintptr_t)GB_SLOT;
+    if (!Readable(slot, 4) || *slot != GB_GET || !GbPatch(slot, (const u8*)(uintptr_t)GB_COUNT)) {
+        Log("SKIP ea fix: GeomBoneIndex: vtable slot 0x%08X or the getter bytes differ: not installed", GB_SLOT);
+        return false;
+    }
+    Log("OK   ea fix: GeomBoneIndex (docs/67 §28): GEOM bone-by-index getter answers 0 past the mesh's bone list");
+    return true;  // keep the log open for the skip lines
+}
+
 static bool ApplyEaCrashFixes(const wchar_t* ini) {
-    const bool keep = ApplyConformActor(ini);
+    bool keep = ApplyConformActor(ini);
     ApplyThumbPose(ini);
+    keep = ApplyGeomBoneIndex(ini) || keep;
     return keep;
 }
