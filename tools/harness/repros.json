@@ -2642,6 +2642,100 @@
     "expect": "switch on: hoursmemo_hits >> hoursmemo_misses (repeat questions in a tick); hoursmemo_mismatches 0 (a bachelor party started on a bar mid-tick is the only allowed cause; start one by hand on a bar lot to see it); venues open and close at the same hours as with the switch off; no script errors"
   },
   {
+    "id": "venue-memo",
+    "bug": "Meta venue score (Lot.HowMuchItWantsSimToCome per venue type, every passing meta pair) re-scans MetaAutonomyManager.GetTuning's world restriction lists and boxes every element of the rain/hail venue list on each call: ~18% of the venue score, which is 25% (BP) / 34% (IP) of vanilla meta pair time (docs/122 §14.23)",
+    "fix": "ts3fixes VenueMemo.cs (switch venuememo, tuning kVenueMemo, default off): GetTuning kept per venue type for one world pair (non-null answers only, cleared at world quit), venue score steps run with a typed scan of the same live rain/hail array; off the sim thread the game's methods run. venuememoverify checks 1 call in 8 against the game's method (docs/122 §14.24)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "venuememo": true,
+          "venuememoverify": true
+        },
+        "waitS": 1,
+        "note": "applied list: MetaAutonomyManager.GetTuning: ok, Lot.HowMuchItWantsSimToCome: ok"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 5,
+        "note": "townies with meta (community lot) autonomy: more venue scores"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 90,
+        "note": "meta searches: venuememo_scores and venuememo_tuning_hits rise"
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "venuememo": false,
+          "venuememoverify": false
+        },
+        "waitS": 30,
+        "note": "B half: game's methods; counters flat"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "venuememo_scores",
+      "min": 1,
+      "minutes": 2
+    },
+    "expect": "switch on: venuememo_tuning_hits >> venuememo_tuning_misses, venuememo_scores > 0, venuememo_score_checks > 0, venuememo_tuning_mismatches 0 and venuememo_score_mismatches 0 (any mismatch: stop and triage, the design claims exact), venuememo_passed 0; B half: counters flat; no script errors"
+  },
+  {
+    "id": "venue-memo-verify",
+    "bug": "venuememo (docs/122 §14.24) claims exact answers; a missed input would show as a different GetTuning reference or venue score",
+    "fix": "venuememo + venuememoverify on for the whole load (1 call in 8 also runs the game's method, the game's answer is returned, mismatches counted)",
+    "save": "Baseline-BP",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "venuememo": true,
+          "venuememoverify": true
+        },
+        "waitS": 1,
+        "note": "applied list: both venue memo patches ok"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 5
+        },
+        "waitS": 5,
+        "note": "more meta autonomy"
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "venuememo_score_checks",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "end of run: venuememo_tuning_mismatches 0, venuememo_score_mismatches 0, venuememo_score_checks > 50, venuememo_passed 0; no script errors"
+  },
+  {
     "id": "cane-early-out",
     "bug": "Cane.SimRequiresCaneWalk searches the Sim's inventory (Inventory.FindAll<Cane>) before testing the walk style, though only Run/FastWalk/FastJog/Jog/FastRun can answer true; asked per route sub-path and portal: 0.75% of managed samples (docs/74 §6.2)",
     "fix": "ts3fixes ScriptHotSpots.cs CaneEarlyOutHook (switch caneearly, tuning kCaneEarlyOut, default off): any other style answers false at once (identical answer), the five call the game's method",
@@ -7427,6 +7521,152 @@
       }
     ],
     "expect": "no crash; crowd_go sends 30+ Sims each wave; no Sim stuck at the end (profile stuck list)"
+  },
+  {
+    "id": "crowd-steady",
+    "bug": "none (A/B scenario): rare-big-crowd as a steady state for in-load --ab (the 2026-10-30 unseen-throttle-ab-v024 crowd pair was confounded: the first counted arm ran during the waves at ~30 it/s, the second after remove_sims at ~140 it/s)",
+    "fix": "measurement only: [UnseenThrottle] A/B (unseen-throttle-ab-v2.json)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-30, never run). World-neutral. 30 spawned Sims in the first ~62 s (inside a 5-min warm-up slice), then a fixed 300 s cycle (home 150 s, far lot 150 s) x 6 = 31 min, no remove_sims: every 5-min ABBA slice sees the same crowd and the same wave phase. Watch commitMB (docs/66). Steps past the window end are skipped (profile-world halts them); the game is closed at job end.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 1: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 2: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 3: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 4: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 5: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 6: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 7: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 8: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 9: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 10: everyone to one far lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 11: everyone onto the active home lot"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 12: everyone to one far lot"
+      }
+    ],
+    "expect": "no crash; crowd_go sends 30+ Sims each wave; it/s per counted slice within ~15% of each other (steady state); no Sim stuck at the end"
   },
   {
     "id": "rare-world-walk",
@@ -38406,7 +38646,7 @@
     "bug": "docs/196 §2.1 / docs/202 §3.5: every route plan of a townie the player cannot see still runs a world A* (and a route job that holds +0x918 for visible Sims too); cross-lot plans of unseen Sims cost 200 ms to seconds",
     "fix": "ts3fixes unseenfbpre (UnseenFallback.cs UfPre, docs/202 §3.5 D): an unseen townie's own walk to an unseen outdoor goal on another lot (RoutingComponent.RouteTo* helpers only) plans nothing: same flood colour (ts3native colour query) + cached SafeSpot verdicts, walk-time hold in its own task, placed at the goal, short plan from there",
     "save": "Baseline-SV-Spring",
-    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims walk to the farthest community lot (start seen: D refuses), then each loop they get Sit on a bench of far2 (the community lot farthest from both the household and far): own-task RouteToSlot plans of unseen Sims with both ends unseen. crowd_do takes the first object (named first, outdoor first) whose menu offers one of the interactions, else any object on the lot (2026-10-27: far2 differs per run, Recurve Strand had no Bench, Pleasant Rest Graveyard none either). Needs ts3native built from feature/unseenfb-d (colour codes 7-9; older builds answer unknown = D never acts). 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3). 2026-10-30 (docs/202 §3.6.5): target is a viewable object (View = ViewObjects.CreateRouteToObject + RouteToObject, the plan-then-DoRoute pair D now accepts); Sit on a bench plans in SimRoutingComponent.PlanToUnusedPart (not a D follower), so a run whose crowd_do answer says interaction Sit cannot fire D. Before 10-30 D refused every plan at gate 336 (caller read returned our own UfFollows frame).",
+    "note": "UNVERIFIED (static + selftest only, 2026-10-26): never run. 30 spawned Sims walk to the farthest community lot (start seen: D refuses), then each loop they get Sit on a bench of far2 (the community lot farthest from both the household and far): own-task RouteToSlot plans of unseen Sims with both ends unseen. crowd_do takes the first object (named first, outdoor first) whose menu offers one of the interactions, else any object on the lot (2026-10-27: far2 differs per run, Recurve Strand had no Bench, Pleasant Rest Graveyard none either). Needs ts3native built from feature/unseenfb-d (colour codes 7-9; older builds answer unknown = D never acts). 2026-10-27 D rerun: far2 (Recurve Strand) had 2 objects and neither offered these: crowd_do lot 'farobj' now takes the community lots ranked as far2 (far excluded), outdoor objects only, the first lot with one that offers an interaction (docs/202 §3.6.3). 2026-10-30 (docs/202 §3.6.5): target is a viewable object (View = ViewObjects.CreateRouteToObject + RouteToObject, the plan-then-DoRoute pair D now accepts); Sit on a bench plans in SimRoutingComponent.PlanToUnusedPart (not a D follower), so a run whose crowd_do answer says interaction Sit cannot fire D. Before 10-30 D refused every plan at gate 336 (caller read returned our own UfFollows frame). 10-30 run sv-ufbd2-pre-loop (docs/202 §3.6.6): 0 acts, every View plan refused at gate 332 (EnablePlanningAsCar is on for every child-or-older route; fixed), and count {result: sent} counted 0 (a list; fixed in repro-loop.ts). On lots without a statue crowd_do picks View on a tree (Plant.ViewPlant -> RouteToPointRadialRange, also a D follower).",
     "steps": [
       {
         "cmd": "spawn_sims",
@@ -38466,7 +38706,7 @@
             "interaction": "View|Sit|Admire|Swing|Read"
           },
           "waitS": 30,
-          "note": "fire: unseen own-task RouteToSlot plans far -> far2",
+          "note": "fire: unseen own-task View plans (ViewObjects / ViewPlant RouteToPointRadialRange) far -> far2",
           "waitUntil": {
             "quiet": 4000
           },
@@ -41125,8 +41365,23 @@
         "args": {
           "name": "DeadRefs-BP-2"
         },
-        "waitS": 5,
-        "note": "back-to-back: right after the previous save returns"
+        "waitS": 1,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            },
+            {
+              "path": "modal",
+              "equals": false
+            }
+          ],
+          "everyS": 1,
+          "maxS": 180
+        },
+        "note": "back-to-back: the next save goes in as soon as this one is written and its dialog closed (2026-10-30: a fixed 5 s wait met an open dialog the moment a 10.6 s save ended, most likely the save's own [inferred from timing])"
       },
       {
         "cmd": "save_game",
@@ -41234,7 +41489,7 @@
     "bug": "No multi-generation test save exists for the aggressive save cleanup (docs/14 §8): needs dead Sims in graves (some in the mausoleum), aged-up children, memories and a few sim days of story",
     "fix": "test save builder for ts3fixes savecleanupaggressive (SaveCleanupSpread.cs)",
     "save": "Baseline-BP",
-    "note": "UNVERIFIED (built 2026-10-30, never run). Builds the scratch save MultiGen-Test-BP from Baseline-BP (Baseline-BP itself is never overwritten). Elders are made friends of the active Sim before they die so EA keeps their graves (GrimReaperSituation: significant relationship -> AddGraveToRandomMausoleum, else the grave is destroyed). Steps marked optional may fail on some households (pregnancy needs a female YA/adult with a partner). Run the cleanup switches off.",
+    "note": "UNVERIFIED (built 2026-10-30, never run). Builds the scratch save MultiGen-Test-BP from Baseline-BP (Baseline-BP itself is never overwritten). Elders are made friends of the active Sim before they die so EA keeps their graves (GrimReaperSituation: significant relationship -> AddGraveToRandomMausoleum, else the grave is destroyed). Steps marked optional may fail on some households (pregnancy needs a female YA/adult with a partner). Run the cleanup switches off. Robust on Baseline-BP (2026-10-30): the young adult comes from a non-selectable teen (no Lifetime Wish dialog), two elders die (one friend keeps a grave, one acquaintance does not), autopilot answers popups between steps.",
     "steps": [
       {
         "cmd": "patches",
@@ -41262,6 +41517,15 @@
           "lifespan": "short"
         },
         "waitS": 2
+      },
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "none",
+          "dialogs": true
+        },
+        "note": "clears popups (newborn naming, notices) so the clock never sits behind a modal; speed left to the steps"
       },
       {
         "cmd": "make_sim",
@@ -41307,6 +41571,15 @@
         "optional": true
       },
       {
+        "cmd": "pick_sims",
+        "args": {
+          "age": "teen",
+          "count": 1
+        },
+        "waitS": 1,
+        "note": "a teen outside the active household: a selectable Sim's teen -> young adult opens the Lifetime Wish dialog, which pauses the game (2026-10-30 run: clock guard FAIL)"
+      },
+      {
         "cmd": "age_up",
         "args": {
           "sim": "picked:1"
@@ -41319,9 +41592,10 @@
         "cmd": "pick_sims",
         "args": {
           "age": "elder",
-          "count": 5
+          "count": 2
         },
-        "waitS": 1
+        "waitS": 1,
+        "note": "Baseline-BP has 2 instantiated townie elders (2026-10-30 run: count 5 found 2)"
       },
       {
         "cmd": "modify_relationship",
@@ -41338,16 +41612,6 @@
         "args": {
           "sim": "active",
           "other": "picked:2",
-          "state": "Friend",
-          "liking": 40
-        },
-        "optional": true
-      },
-      {
-        "cmd": "modify_relationship",
-        "args": {
-          "sim": "active",
-          "other": "picked:3",
           "state": "Acquaintance",
           "liking": 10
         },
@@ -41373,33 +41637,6 @@
         "optional": true
       },
       {
-        "cmd": "age_up",
-        "args": {
-          "sim": "picked:3",
-          "confirm_elder_death": true
-        },
-        "waitS": 90,
-        "optional": true
-      },
-      {
-        "cmd": "age_up",
-        "args": {
-          "sim": "picked:4",
-          "confirm_elder_death": true
-        },
-        "waitS": 90,
-        "optional": true
-      },
-      {
-        "cmd": "age_up",
-        "args": {
-          "sim": "picked:5",
-          "confirm_elder_death": true
-        },
-        "waitS": 90,
-        "optional": true
-      },
-      {
         "cmd": "pregnancy_advance",
         "args": {
           "sim": "active",
@@ -41416,6 +41653,13 @@
         },
         "waitS": 300,
         "note": "a few sim days of story progression, deaths finish, graves move"
+      },
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": false
+        },
+        "note": "off before the count and the save"
       },
       {
         "cmd": "reflect_call",
@@ -41830,5 +42074,2646 @@
       }
     ],
     "expect": "saves, unloads and loads back into live mode; diag: mem marks sr-pre, sr-save, sr-reload (sr-reload largest free vs sr-pre = what the in-process reload gives back)"
+  },
+  {
+    "id": "compaction-optin-bp",
+    "bug": "docs/204 Compaction, opt-in path on Bridgeport: a save under the threshold reloads the same save in-process behind the loading screen and restores speed, panel, selected Sim, camera and visible Sims' queues",
+    "fix": "ts3native 0.36.128 [Compaction] + ts3fixes Compaction.cs (opt-in, Enabled=1)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Saves Compaction-BP (new), the compaction reloads it (direct route), then 2 min of play and one more Save over Compaction-BP (not armed again: verdict no). Read: ts3native.log \"compaction:\" lines (verdict COMPACT, begin #1, done #1, +N min), \"ts3fixes: compaction: restored ...\" and the compaction_* counters (requeued vs requeue_skipped vs not_restorable).",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_restored",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "save + unload + load + restore done"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-BP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-offer-accept-bp",
+    "bug": "docs/204 Compaction, offered path on Bridgeport: the \"Compact now?\" dialog after a low save, answered Compact",
+    "fix": "ts3native 0.36.128 [Compaction] Enabled=2 + ts3fixes Compaction.cs",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=2, ThresholdMB=4000, MinMinutes=0. Autopilot keeps playing but leaves dialogs alone. Read: compaction_offered 1, compaction_accepted 1, compaction_restored 1; log verdict COMPACT, begin, done.",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "ultra",
+          "dialogs": false
+        },
+        "note": "our dialog is answered by the step below"
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": true
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "the offer is up"
+      },
+      {
+        "cmd": "respond_dialog",
+        "args": {
+          "button": "Compact"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_restored",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "reload + restore done"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-BP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-offer-decline-bp",
+    "bug": "docs/204 Compaction, offered path on Bridgeport answered Not now: the game plays on, no reload; the next low save does not ask again (the arm is used up)",
+    "fix": "ts3native 0.36.128 [Compaction] Enabled=2 + ts3fixes Compaction.cs",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=2, ThresholdMB=4000, MinMinutes=0. Read: compaction_declined 1, compaction_started 0, log \"the player chose Not now\" then \"verdict no ... not armed\" for the second save, no \"compaction: begin\".",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "ultra",
+          "dialogs": false
+        }
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": true
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        }
+      },
+      {
+        "cmd": "respond_dialog",
+        "args": {
+          "button": "Not now"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_declined",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 120
+        },
+        "note": "declined counted"
+      },
+      {
+        "cmd": "time",
+        "waitS": 60,
+        "note": "plays on in the same load"
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 10,
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 30
+        },
+        "note": "no second offer"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-refused-build-bp",
+    "bug": "docs/204 Compaction refused by state on Bridgeport: a save made in Build mode never compacts (EA refuses Quit to Main Menu there too)",
+    "fix": "ts3native 0.36.128 [Compaction] + ts3fixes Compaction.cs CpStateOk",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Read: compaction_refused_state >= 1, compaction_started 0, no \"compaction: verdict\" line for the build-mode save (the verdict is not asked, so the arm stays), game back in live mode.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_refused_state",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "the save task saw build mode"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-BP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-abort-bp",
+    "bug": "docs/204 §6 Compaction failure path on Bridgeport: the reload throws after the loading screen is up; the screen goes, play goes on in the same load, Compaction is off for the session",
+    "fix": "ts3fixes Compaction.cs (test switch compactionfail)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Read: compaction_failed 1, compaction_restored 0, log \"compaction: skipped or failed (reload threw): off for this session\", the second save's verdict \"off for the session\", the game in live mode and alive (2 min play), no \"compaction: done\".",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "compactionfail": true
+        }
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_failed",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "abort counted"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-BP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "compactionfail": false
+        }
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-optin-ip",
+    "bug": "docs/204 Compaction, opt-in path on Isla Paradiso: a save under the threshold reloads the same save in-process behind the loading screen and restores speed, panel, selected Sim, camera and visible Sims' queues",
+    "fix": "ts3native 0.36.128 [Compaction] + ts3fixes Compaction.cs (opt-in, Enabled=1)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Saves Compaction-IP (new), the compaction reloads it (direct route), then 2 min of play and one more Save over Compaction-IP (not armed again: verdict no). Read: ts3native.log \"compaction:\" lines (verdict COMPACT, begin #1, done #1, +N min), \"ts3fixes: compaction: restored ...\" and the compaction_* counters (requeued vs requeue_skipped vs not_restorable).",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-IP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_restored",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "save + unload + load + restore done"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-IP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-offer-accept-ip",
+    "bug": "docs/204 Compaction, offered path on Isla Paradiso: the \"Compact now?\" dialog after a low save, answered Compact",
+    "fix": "ts3native 0.36.128 [Compaction] Enabled=2 + ts3fixes Compaction.cs",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=2, ThresholdMB=4000, MinMinutes=0. Autopilot keeps playing but leaves dialogs alone. Read: compaction_offered 1, compaction_accepted 1, compaction_restored 1; log verdict COMPACT, begin, done.",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "ultra",
+          "dialogs": false
+        },
+        "note": "our dialog is answered by the step below"
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-IP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": true
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "the offer is up"
+      },
+      {
+        "cmd": "respond_dialog",
+        "args": {
+          "button": "Compact"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_restored",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "reload + restore done"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-IP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-offer-decline-ip",
+    "bug": "docs/204 Compaction, offered path on Isla Paradiso answered Not now: the game plays on, no reload; the next low save does not ask again (the arm is used up)",
+    "fix": "ts3native 0.36.128 [Compaction] Enabled=2 + ts3fixes Compaction.cs",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=2, ThresholdMB=4000, MinMinutes=0. Read: compaction_declined 1, compaction_started 0, log \"the player chose Not now\" then \"verdict no ... not armed\" for the second save, no \"compaction: begin\".",
+    "steps": [
+      {
+        "cmd": "autopilot",
+        "args": {
+          "enabled": true,
+          "speed": "ultra",
+          "dialogs": false
+        }
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-IP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": true
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        }
+      },
+      {
+        "cmd": "respond_dialog",
+        "args": {
+          "button": "Not now"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_declined",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 120
+        },
+        "note": "declined counted"
+      },
+      {
+        "cmd": "time",
+        "waitS": 60,
+        "note": "plays on in the same load"
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 10,
+        "until": {
+          "cmd": "pending_dialogs",
+          "all": [
+            {
+              "path": "open",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 30
+        },
+        "note": "no second offer"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-refused-build-ip",
+    "bug": "docs/204 Compaction refused by state on Isla Paradiso: a save made in Build mode never compacts (EA refuses Quit to Main Menu there too)",
+    "fix": "ts3native 0.36.128 [Compaction] + ts3fixes Compaction.cs CpStateOk",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Read: compaction_refused_state >= 1, compaction_started 0, no \"compaction: verdict\" line for the build-mode save (the verdict is not asked, so the arm stays), game back in live mode.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-IP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_refused_state",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "the save task saw build mode"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": false
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-IP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-abort-ip",
+    "bug": "docs/204 §6 Compaction failure path on Isla Paradiso: the reload throws after the loading screen is up; the screen goes, play goes on in the same load, Compaction is off for the session",
+    "fix": "ts3fixes Compaction.cs (test switch compactionfail)",
+    "save": "Baseline-IP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000 (always under: forces the verdict), MinMinutes=0. Read: compaction_failed 1, compaction_restored 0, log \"compaction: skipped or failed (reload threw): off for this session\", the second save's verdict \"off for the session\", the game in live mode and alive (2 min play), no \"compaction: done\".",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "compactionfail": true
+        }
+      },
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-IP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_failed",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 600
+        },
+        "note": "abort counted"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-IP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "compactionfail": false
+        }
+      },
+      {
+        "cmd": "save_game",
+        "waitS": 5,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            }
+          ],
+          "everyS": 3,
+          "maxS": 600
+        },
+        "note": "Save over the current file"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "compaction-menu-bp",
+    "bug": "docs/204 Compaction, main-menu route on Bridgeport: Quit to Main Menu + load of the just-saved file from the MainMenuState start (EA return-to-menu statics cleared)",
+    "fix": "ts3native 0.36.128 [Compaction] Route=1 + ts3fixes Compaction.cs (MainMenuState.Startup hook)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. job ini: [Compaction] Enabled=1, ThresholdMB=4000, MinMinutes=0, Route=1. Read: log \"begin #1 (main menu route)\", no \"MainMenuState hook is missing\" line, compaction_restored 1; note whether the main menu showed for a frame.",
+    "steps": [
+      {
+        "cmd": "time",
+        "waitS": 45,
+        "note": "[UserDiag] / [Compaction] up after the world load, autopilot fills queues"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Compaction-BP"
+        },
+        "waitS": 5,
+        "note": "Save As to a new scratch file (the Baseline is never written)"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "patches",
+          "all": [
+            {
+              "path": "compaction_restored",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "unload to the menu + load + restore"
+      },
+      {
+        "cmd": "time",
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            },
+            {
+              "path": "load_file",
+              "equals": "Compaction-BP.sims3"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "back in live mode on the compacted file"
+      },
+      {
+        "cmd": "time",
+        "waitS": 120,
+        "note": "2 min of autopilot play after the reload (restored queues run, game alive)"
+      },
+      {
+        "cmd": "patches",
+        "note": "compaction_* counters into the job log"
+      }
+    ]
+  },
+  {
+    "id": "bp-vacation-roundtrip",
+    "bug": "issue #97 rows 1, 2, 6, 7: the free vacation pickup destroys the adults without the travel export; they come back with fresh dreams, no opportunities, no travel moodlets (store NRE / RestoreState(null) / stale ids / tick-0 expiry on the import path)",
+    "save": "Baseline-BP",
+    "fix": "ts3fixes EaVacation.cs (all default off), docs/210",
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 3
+    },
+    "switches": [
+      "vacexport",
+      "vacstoreguard",
+      "vacreturnskip",
+      "vacteendelete",
+      "vacexitreturn",
+      "vaclistenernull",
+      "vacimportfix"
+    ],
+    "note": "UNVERIFIED (static only, 2026-10-30). Stress-labelled: the trip starts without its dialog (ParentsLeavingTownSituation.Create, as the dialog's yes does). Off arm then on arm in one load (neither loses Sims). Rows 6/7 only fire when an adult holds an opportunity at the pickup: read \"opportunities\" in the start line; with 0 the import path is not exercised (vaclistenernull_skipped / vacimportfix_* stay 0, not a fail).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": false,
+          "vacstoreguard": false,
+          "vacreturnskip": false,
+          "vacteendelete": false,
+          "vacexitreturn": false,
+          "vaclistenernull": false,
+          "vacimportfix": false
+        },
+        "waitS": 1,
+        "note": "applied log: FreeVacationPickupSituation.Dispose, Sim.SetupSelectableSimManagers, OpportunityHistory.StoreOpportunityForTravel, ParentsAreBack.BringAdultsBackToWorld, ParentsLeavingTownSituation.OnParticipantDeleted / CleanUp, 5x RestoreState, OpportunityManager.AddOpportunityFromTravel: ok"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "maketeen"
+          ]
+        },
+        "waitS": 45,
+        "note": "precondition: the active household needs a teen and an adult in the world; a child is aged up if there is no teen"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "household teens >= 1, adults >= 1, no trip"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "note": "off: before counts per adult (dreams, opportunities, buffs, inventory)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "compare"
+          ]
+        },
+        "note": "off (EA): dreams = a fresh set (count may differ), opportunities 0, inventory equal"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": true,
+          "vacstoreguard": true,
+          "vacreturnskip": true,
+          "vacteendelete": true,
+          "vacexitreturn": true,
+          "vaclistenernull": true,
+          "vacimportfix": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "note": "on: before counts"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "on: vacexport_exported = adults"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "compare"
+          ]
+        },
+        "note": "on: dreams equal before/now, opportunities equal (or minus ones really past their deadline), inventory equal; vacexport_dreams = adults; no ScriptError"
+      },
+      {
+        "cmd": "patches",
+        "args": {},
+        "note": "read vac* counters"
+      }
+    ],
+    "expect": "off arm loses dreams and opportunities; on arm keeps them; no ScriptError, trip ends (info: no trip) in both arms"
+  },
+  {
+    "id": "bp-vacation-exit",
+    "bug": "issue #97 row 5: an Exit of the trip while the parents are away (NRaas ResetSituations, AutonomyManager.Shutdown) clears the statics and nobody comes back",
+    "save": "Baseline-BP",
+    "fix": "ts3fixes EaVacation.cs (all default off), docs/210",
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 3
+    },
+    "switches": [
+      "vacexport",
+      "vacstoreguard",
+      "vacreturnskip",
+      "vacteendelete",
+      "vacexitreturn",
+      "vaclistenernull",
+      "vacimportfix"
+    ],
+    "note": "UNVERIFIED (static only, 2026-10-30). Stress-labelled: the trip starts without its dialog (ParentsLeavingTownSituation.Create, as the dialog's yes does). On arm first; the off arm loses the adults for the rest of the session (EA's bug), so it runs last.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": false,
+          "vacstoreguard": false,
+          "vacreturnskip": false,
+          "vacteendelete": false,
+          "vacexitreturn": true,
+          "vaclistenernull": false,
+          "vacimportfix": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "maketeen"
+          ]
+        },
+        "waitS": 45,
+        "note": "precondition: the active household needs a teen and an adult in the world; a child is aged up if there is no teen"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "household teens >= 1, adults >= 1, no trip"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "exit"
+          ]
+        },
+        "note": "on: stored null"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "waitS": 5,
+        "note": "on: no trip; household adults back in the world (vacexitreturn_back = adults)"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexitreturn": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "exit"
+          ]
+        },
+        "note": "off (EA): stored null"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "waitS": 5,
+        "note": "off: no trip and the adults have no Sim (lost until something instantiates them)"
+      }
+    ],
+    "expect": "on: every adult re-created on the home lot with its inventory; off: adults gone; no ScriptError"
+  },
+  {
+    "id": "bp-vacation-teendelete",
+    "bug": "issue #97 row 4: deleting a teen's Sim while the parents are away runs the whole return inside the teen's Dispose",
+    "save": "Baseline-BP",
+    "fix": "ts3fixes EaVacation.cs (all default off), docs/210",
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 3
+    },
+    "switches": [
+      "vacexport",
+      "vacstoreguard",
+      "vacreturnskip",
+      "vacteendelete",
+      "vacexitreturn",
+      "vaclistenernull",
+      "vacimportfix"
+    ],
+    "note": "UNVERIFIED (static only, 2026-10-30). Stress-labelled: the trip starts without its dialog (ParentsLeavingTownSituation.Create, as the dialog's yes does). \"teendelete\" destroys the trip teen's Sim and re-creates it at the same spot (what a reset mod does). On arm first.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": false,
+          "vacstoreguard": false,
+          "vacreturnskip": false,
+          "vacteendelete": true,
+          "vacexitreturn": false,
+          "vaclistenernull": false,
+          "vacimportfix": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "maketeen"
+          ]
+        },
+        "waitS": 45,
+        "note": "precondition: the active household needs a teen and an adult in the world; a child is aged up if there is no teen"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "household teens >= 1, adults >= 1, no trip"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "teendelete"
+          ]
+        },
+        "note": "on: trip still ParentsAreAway, vacteendelete_deferred 1"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 40,
+        "note": "10 sim-minutes"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "on: trip ParentsAreAway, teens >= 1 (vacteendelete_rejoined 1), adults still away"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "on: no trip, adults back"
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "vacteendelete": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "teendelete"
+          ]
+        },
+        "note": "off (EA): the return ran inside the Dispose: trip exited or ParentsAreBack; a ScriptError here is the reported defect"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "waitS": 30,
+        "note": "off: whether the adults came back"
+      }
+    ],
+    "expect": "on: the trip survives the delete and returns normally; off: EA returns (or loses the adults) from inside the Dispose"
+  },
+  {
+    "id": "bp-vacation-orphan",
+    "bug": "issue #97 row 3: the return re-creates a stored adult who died or left the household; a householdless one throws in Motives.CreateMotives and the trip sticks in ParentsAreBack",
+    "save": "Baseline-BP",
+    "fix": "ts3fixes EaVacation.cs (all default off), docs/210",
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 3
+    },
+    "switches": [
+      "vacexport",
+      "vacstoreguard",
+      "vacreturnskip",
+      "vacteendelete",
+      "vacexitreturn",
+      "vaclistenernull",
+      "vacimportfix"
+    ],
+    "note": "UNVERIFIED (static only, 2026-10-30). Stress-labelled: the trip starts without its dialog (ParentsLeavingTownSituation.Create, as the dialog's yes does). \"orphan\" takes a stored adult out of the household (the dead-elder state: no household). On arm first; the off arm expects one ScriptError (NullReferenceException from Sim.OnCreation) and a stuck trip.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": false,
+          "vacstoreguard": false,
+          "vacreturnskip": true,
+          "vacteendelete": false,
+          "vacexitreturn": false,
+          "vaclistenernull": false,
+          "vacimportfix": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "maketeen"
+          ]
+        },
+        "waitS": 45,
+        "note": "precondition: the active household needs a teen and an adult in the world; a child is aged up if there is no teen"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "household teens >= 1, adults >= 1, no trip"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "orphan"
+          ]
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "on: no trip; vacreturnskip_skipped 1; the other adults back; ts3native.log \"vacreturnskip: ... left the household\""
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "vacreturnskip": false
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "orphan"
+          ]
+        }
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "off (EA): ScriptError NullReferenceException in Motives.CreateMotives; trip stuck in ParentsAreBack, stored not null"
+      }
+    ],
+    "expect": "on: clean return without the orphan; off: NRE and a stuck trip"
+  },
+  {
+    "id": "bp-vacation-saves",
+    "bug": "issue #97 row 2 load repair + save matrix: trips stuck in a save (no alarm, no teen, dead pickup) get going again at load; vacexport writes EA travel fields that a save carries",
+    "save": "Baseline-BP",
+    "fix": "ts3fixes EaVacation.cs (all default off), docs/210",
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 3
+    },
+    "switches": [
+      "vacexport",
+      "vacstoreguard",
+      "vacreturnskip",
+      "vacteendelete",
+      "vacexitreturn",
+      "vaclistenernull",
+      "vacimportfix"
+    ],
+    "note": "UNVERIFIED (static only, 2026-10-30). Stress-labelled: the trip starts without its dialog (ParentsLeavingTownSituation.Create, as the dialog's yes does). Save matrix with every vac switch on: save while the taxi is on its way (the reporter's open case), new, overwrite x2, back-to-back, unpaused at ultra, reload of the pickup save + play, reload of the stalled save + repair + play, save after reload. The byte-identical case does not apply (a trip in progress changes save data by design; our own state is never saved).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "vacexport": true,
+          "vacstoreguard": true,
+          "vacreturnskip": true,
+          "vacteendelete": true,
+          "vacexitreturn": true,
+          "vaclistenernull": true,
+          "vacimportfix": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "maketeen"
+          ]
+        },
+        "waitS": 45,
+        "note": "precondition: the active household needs a teen and an adult in the world; a child is aged up if there is no teen"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "household teens >= 1, adults >= 1, no trip"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "start"
+          ]
+        },
+        "waitS": 10,
+        "note": "pickup starts"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-0"
+        },
+        "waitS": 30,
+        "note": "save while the taxi is on its way (adults still have Sims, pickup True)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the taxi drives up, the adults get in, the pickup Dispose destroys their Sims (kPickupMaxTime 60 sim-minutes caps it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "stall"
+          ]
+        },
+        "note": "trip alarms removed: it never returns on its own (stuck-trip state)"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-1"
+        },
+        "waitS": 30,
+        "note": "new save, parents away, trip stalled"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-1"
+        },
+        "waitS": 30,
+        "note": "overwrite 1"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-1"
+        },
+        "waitS": 30,
+        "note": "overwrite 2"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-2"
+        },
+        "waitS": 1,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            },
+            {
+              "path": "modal",
+              "equals": false
+            }
+          ],
+          "everyS": 1,
+          "maxS": 180
+        },
+        "note": "back-to-back"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-2"
+        },
+        "waitS": 30,
+        "note": "back-to-back 2"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 10
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-3"
+        },
+        "waitS": 30,
+        "note": "unpaused at ultra"
+      },
+      {
+        "cmd": "load_save",
+        "args": {
+          "file": "Vacation-BP-0.sims3",
+          "reload": true
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "in_world",
+              "equals": true
+            },
+            {
+              "path": "load_file",
+              "equals": "Vacation-BP-0.sims3"
+            },
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "reload the pickup save"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "pickup save: trip ParentsAreAway, pickup True or the taxi gone; vacstoreguard_load_* unchanged unless the pickup died"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 150,
+        "note": "the pickup finishes after the reload (or the repair ended / scheduled it)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "trip ParentsAreAway, pickup False, every stored adult \"no Sim\"; if an adult still has a Sim the pickup is not done: wait longer, not a fail of the switch"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "back"
+          ]
+        },
+        "note": "EA's debug bring-back path (ParentsNeedToReturn -> ParentsAreBack)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "GoHome of the re-created adults"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "pickup save: no trip, adults back"
+      },
+      {
+        "cmd": "load_save",
+        "args": {
+          "file": "Vacation-BP-1.sims3",
+          "reload": true
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "in_world",
+              "equals": true
+            },
+            {
+              "path": "load_file",
+              "equals": "Vacation-BP-1.sims3"
+            },
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "reload the stalled save"
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "stalled save: trip ParentsAreAway, adults no Sim; vacstoreguard_load_bringback 1, ts3native.log \"vacstoreguard: load: trip stuck\""
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 180,
+        "note": "60 sim-minutes for the repair alarm, then GoHome"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "reflect_call",
+        "args": {
+          "path": "Ts3Fixes.Fixes.VacationCheck",
+          "args": [
+            "info"
+          ]
+        },
+        "note": "stalled save: no trip; adults back with their dreams (DnPExportData was saved) and opportunities; moodlets are not saved (TravelBuffs is Persistable(false))"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "Vacation-BP-5"
+        },
+        "waitS": 30,
+        "note": "save after reload"
+      }
+    ],
+    "expect": "every save ok within 120 s; both reloads reach live mode; the stalled trip returns within ~60 sim-minutes of the load; no ScriptError, crash or hang"
+  },
+  {
+    "id": "wake-park-loop",
+    "bug": "EA's LOD limits what an unseen Sim computes, not how often its script tasks wake: low-LOD SimUpdate passes every tick, exit-reason polls every tick (docs/209 #94, docs/211)",
+    "fix": "ts3fixes WakePark.cs (docs/211; hooks only in the kWakeHooks test package, node tools/setup/build-fixes.ts --on kWakeHooks -> game-copy/ts3fixes.package.wakehooks): wakeprobe counts, wakepark parks unseen low-LOD SimUpdate passes kWakeParkTicks (12) ticks, wakepoll sleeps unseen exit-reason polls up to kWakePollTicks (30) capped at the deadline and woken by AddExitReason",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. Forces unseen low-LOD Sims (30 spawned walkers sent to the farthest lot while camera and household stay home), then the safety cases of docs/211 §3-§4: camera jumps (view-change wake-all), pause, save, back to play, switches off. Never the Baseline save: the save goes to a scratch name.",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "wakeprobe": true,
+          "wakepark": true,
+          "wakepoll": true
+        },
+        "waitS": 1,
+        "note": "applied list: InteractionQueue.UpdateTimer, Sim.get_IsActiveSim, Sim.DoInteraction, Sim.WaitForExitReason, Sim.AddExitReason, Autonomy.get_IsRunningHighLODSimulation, Lot.UpdateReactions: ok"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 30
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "to": "far"
+        },
+        "waitS": 20,
+        "note": "walkers leave the view: unseen low-LOD Sims"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 120,
+        "note": "wake_parks and wake_poll_long rise; wake_su_pass_unseen_lo falls toward 1 pass in 12 ticks per unseen low-LOD Sim"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "order": "far",
+          "lots": 6,
+          "dwellS": 8
+        },
+        "waitS": 60,
+        "note": "view changes: wake_wakeall rises; Sims at the jumped-to lots run every tick again (seen)"
+      },
+      {
+        "cmd": "camera_jumps",
+        "args": {
+          "stop": true
+        },
+        "optional": true
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "pause"
+        },
+        "waitS": 20,
+        "note": "paused: parked tasks stay asleep like the game's own sleeps; no hang, UI responsive"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "normal"
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "WakePark-Scratch"
+        },
+        "waitS": 90,
+        "note": "save with parked tasks and parked waits: must succeed (SimUpdate is Persistable(false); waits are interaction tasks the save never waits on)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "args": {
+          "wakepark": false,
+          "wakepoll": false
+        },
+        "waitS": 30,
+        "note": "off half: parks and long polls flat, every Sim back to the game's cadence within 30 ticks"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "remove_sims",
+        "args": {},
+        "waitS": 10
+      }
+    ],
+    "watch": {
+      "kind": "counter",
+      "counter": "wake_parks",
+      "min": 1,
+      "minutes": 3
+    },
+    "expect": "no crash or hang; save succeeds; on half: wake_parks > 0, wake_poll_long > 0, wake_poll_woken > 0, wake_poll_over <= 1, wake_wakeall > 0 after the jumps, wake_park_refused only around the save; no new script errors; stuck Sims logged only (no more walkers left standing than in the off half); off half: wake_parks / wake_poll_long flat",
+    "switches": [
+      "wakeprobe",
+      "wakepark",
+      "wakepoll"
+    ]
+  },
+  {
+    "id": "wake-park-travel",
+    "bug": "Parked SimUpdate tasks and parked exit-reason waits across a world switch (docs/211 §3: travel tears every task down; the tables are dropped at world quit and load)",
+    "fix": "ts3fixes WakePark.cs (docs/211; hooks only in the kWakeHooks test package, node tools/setup/build-fixes.ts --on kWakeHooks -> game-copy/ts3fixes.package.wakehooks): wakeprobe counts, wakepark parks unseen low-LOD SimUpdate passes kWakeParkTicks (12) ticks, wakepoll sleeps unseen exit-reason polls up to kWakePollTicks (30) capped at the deadline and woken by AddExitReason",
+    "save": "Baseline-BP",
+    "note": "UNVERIFIED (static only, 2026-10-30): never run. Vacation trip out and back with all three switches on; never writes a Baseline save (save-matrix copy as leak-travel-roundtrip-x3).",
+    "steps": [
+      {
+        "cmd": "patches",
+        "args": {
+          "wakeprobe": true,
+          "wakepark": true,
+          "wakepoll": true
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "parks running before the trip"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 2,
+        "note": "needs at max (a tired Sim drops the queued trip)"
+      },
+      {
+        "cmd": "travel_vacation",
+        "args": {
+          "world": "france",
+          "days": 2
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": true
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            },
+            {
+              "path": "household"
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        },
+        "note": "world switch with parked tasks"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60,
+        "note": "France: wake_parks rises again (new world, fresh tables)"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      },
+      {
+        "cmd": "travel_home",
+        "args": {},
+        "waitS": 5,
+        "until": {
+          "cmd": "travel_state",
+          "all": [
+            {
+              "path": "on_vacation",
+              "equals": false
+            },
+            {
+              "path": "in_travel",
+              "equals": false
+            }
+          ],
+          "everyS": 10,
+          "maxS": 900
+        }
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "watch": {
+      "kind": "stuck",
+      "sims": [],
+      "minutes": 1
+    },
+    "expect": "both world switches complete; no crash, hang or script error; wake_parks rises in every world; wake_poll_over <= 1",
+    "switches": [
+      "wakeprobe",
+      "wakepark",
+      "wakepoll"
+    ]
+  },
+  {
+    "id": "aut-live-crowd-view",
+    "bug": "none (offload scenario, memory offload-goal 2026-10-30): a crowd in view is where the sim thread carries the most work and where offload must pay; autonomy meta searches of 30+ idle Sims on the visible home lot",
+    "fix": "measurement and correctness: [AutShadow] Mode=3 go-live consume (docs/124 §17; ts3fixes switch autlive, --ab autlive) and its G7 dry compare",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run). World-neutral. 30 spawned Sims inside the first ~62 s (a 5-min warm-up slice holds them), household needs maxed (free time: meta searches), then the crowd is sent back onto the active home lot every 150 s: in between, every Sim stands idle in view and autonomy scores the meta objects (visit, go to lot, go home). The default camera after load looks at the active lot [inferred]. Fixed 150 s cycle so every ABBA slice sees the same phase. Watch commitMB (docs/66). Steps past the window end are skipped.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "household needs to max: their searches are free-time meta searches too"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 1: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 2: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 3: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 4: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 5: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 6: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 7: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 8: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 9: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 10: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 11: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "wave 12: the crowd back onto the active home lot (in view); between waves they idle and run autonomy"
+      }
+    ],
+    "expect": "no crash, no script error; crowd_go sends 30+ Sims each wave; go-live counters (mono-cost-report \"go-live\" lines) show eligible searches > 0 every slice; it/s per slice within ~15% (steady state); no Sim stuck at the end"
+  },
+  {
+    "id": "aut-live-save",
+    "bug": "none (go-live stability, docs/124 §9 \"Save, travel, build/buy during a search\"): a save while meta searches are parked waiting for the worker",
+    "fix": "[AutShadow] Mode=3 go-live: the game-state rule drops a parked search, the world load releases every parked search (AutShadowWorldLoad)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run). 20 spawned Sims idle on the home lot (meta searches in flight), then two saves 60 s apart under scratch names; the job ends in live mode. Correctness only.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "GoLive-Test-BP-1"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "GoLive-Test-BP-2"
+        },
+        "waitS": 60
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "expect": "both saves complete; no crash, hang or script error; go-live keeps consuming after each save (al consumed rises after the saves)",
+    "switches": [
+      "autlive"
+    ]
   }
 ]

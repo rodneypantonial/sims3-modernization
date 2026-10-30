@@ -63,6 +63,17 @@ namespace Ts3Fixes
         // saved and put back, per-unit streams with the cut's seed); Stat(which, add) adds to ts3native's consume-side counters
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Fresh(int on);
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Stat(int which, int add);
+        // version 9 (docs/122 §14.23): Stat 7-11 (answered-only top compare, reference vs fresh top, reference passes among
+        // worker-A4 pairs); PairT0() = a timestamp, PairT1(kind, t0) adds the time since t0 to the C2 per-pair timer of kind
+        // (0 allow-listed pass, 1 allow-listed fail, 2 off-list pass, 3 off-list fail)
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int PairT0();
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void PairT1(int kind, int t0);
+        // version 10 (docs/124 §17 go-live, Mode 3): LiveStat adds to a go-live counter slot (AutLive.cs kS*); LiveWatch
+        // watches a meta object (isLot 0, object id) or a lot (1, LotId) of a live request; ObjStale answers 1 when it had an
+        // event after the cut frame (or is not watched). Config 13-18 settings, 19 frame, 20 epoch, 21 cut epoch, 22 cut frame
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void LiveStat(int which, int add);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void LiveWatch(ulong id, int isLot);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int ObjStale(ulong id, int isLot, int cutFrame);
     }
 
     // [AutShadow] pilot part 2, managed half (docs/122 §1.2, §3.5, §4, §5, §12.5). Shadow only: the worker's scores are
@@ -106,6 +117,7 @@ namespace Ts3Fixes
             public readonly Dictionary<InteractionObjectPair, int> PairIndex = new Dictionary<InteractionObjectPair, int>();
             public readonly float[] GameScore = new float[kMaxPairs];
             public readonly bool[] GameHas = new bool[kMaxPairs];
+            public LiveSearch Live;  // Mode 3: the go-live search this request serves (AutLive.cs), else null
         }
 
         public sealed class Result
@@ -274,6 +286,11 @@ namespace Ts3Fixes
                 & Hook(failed, typeof(SimRoutingComponent), "CreateRoute", Type.EmptyTypes, typeof(AutRouteHook), "RouteHook", "RouteOrig")
                 & Hook(failed, typeof(SimRoutingComponent), "CreateRoute", new Type[] { typeof(Sims3.SimIFace.CAS.CASAgeGenderFlags) }, typeof(AutRouteHook), "AgsHook", "AgsOrig")
                 & Hook(failed, typeof(SimRoutingComponent), "CreateRouteAsAdult", null, typeof(AutRouteHook), "AdultHook", "AdultOrig");
+            // docs/124 §17: B14, the go-live consumer (passes through unless a Mode 3 search of that autonomy is in its game B13).
+            // Only in kAutLive packages: the pass-through costs one interpreter frame under every meta B14 (docs/130 §11 budget)
+            if (Instantiator.kAutLive)
+                sB14Ok = Hook(failed, typeof(AutonomyT), "ScoreInteractionsForMetaObject", new Type[] { typeof(IMetaObject), typeof(CommodityKind) },
+                    typeof(AutB14Hook), "B14Hook", "B14Orig");
             sCalcPatched = Hook(failed, typeof(AutonomyT), "CalculateScore", new Type[] { typeof(InteractionObjectPair) }, typeof(AutScoreHook), "ScoreHook", "ScoreOrig");
             sShimsOk = ok;
             sHooksOk = ok && sLocOk && sCalcPatched;
@@ -366,6 +383,8 @@ namespace Ts3Fixes
             sLedger = 0;
             sProbe = 0; sPosted = false; sInWork = false; sGameAut = null; sWarmIn = 0; sLogged = 0; sWorkReady = sGameDone = false; sReqN = 0;
             sSweptAtLoad = false;
+            sLiveCur = null;  // docs/124 §17: searches parked across the load never resume
+            foreach (LiveSearch L in sLive) if (L != null && L.InUse) LiveRelease(L);
             if (sSessionOff || !ShortcutOn("autshadow")) return;
             try { sSweptAtLoad = GuardSweep(); }
             catch (Exception e) { AutNote("load sweep: " + e.Message); }
@@ -381,7 +400,7 @@ namespace Ts3Fixes
             int v;
             try { v = AutShadowNative.Version(); }
             catch (Exception) { AppliedLog().Add("AutShadow: no ts3native internal calls this load (off)"); return false; }
-            if (v != 8) { AppliedLog().Add("AutShadow: ts3native contract version " + v + ", want 8 (off)"); return false; }
+            if (v != 10) { AppliedLog().Add("AutShadow: ts3native contract version " + v + ", want 10 (off)"); return false; }
             try
             {
                 if (!sSweptAtLoad && !GuardSweep()) return false;
@@ -401,6 +420,8 @@ namespace Ts3Fixes
             // (mono-cost3: the dating warm-up threw and no request was ever posted, docs/122 §14.12).
             sWarmOk = WarmShim("room", AutRoomHook.Warm) & WarmShim("dating", AutDatingHook.Warm) & WarmShim("route", AutRouteHook.Warm)
                 & WarmShim("rain", delegate { sRain.TargetIsSim(); AutShadowCore.RainShelter(false, sRain, 0, 0); if (Sims3.Gameplay.Seasons.SeasonsManager.Enabled) sRain.Weather(); });
+            try { LiveReady(); }
+            catch (Exception e) { AppliedLog().Add("AutShadow: go-live setup failed: " + e.Message); sLiveMode = false; }
             try { LocRedirect(); }
             catch (Exception e) { AppliedLog().Add("AutShadow: LocalizeString redirect failed: " + e.Message); }
             sProbe = 1;
@@ -446,13 +467,20 @@ namespace Ts3Fixes
         // names[i] with parameter types sigs[i], resolved exactly (docs/124 §13.5): another overload with the same name is
         // not covered, so our own hook on Autonomy.CalculateScore(InteractionObjectPair) never vouches for its sibling.
         // A signature t does not have counts as a guard hit (a wrong list must not pass silently).
+        // our own swap (Fixes.Patch recorded it in sPatched, and the method's class is still our hook type): not a foreign mod.
+        // AllL3Ok and ClosureSweep both accept it, so [AutShadow] keeps Lot meta objects with the venuememo hook installed.
+        static bool OwnSwap(MethodBase m)
+        {
+            Type hook;
+            return sPatched.TryGetValue(m, out hook) && KlassOf(m) == Marshal.ReadIntPtr(hook.TypeHandle.Value);
+        }
         static bool AllL3Ok(Type t, string[] names, Type[][] sigs)
         {
             for (int i = 0; i < names.Length; i++)
             {
                 MethodInfo m = AutShadowCore.FindExact(t, names[i], sigs[i]);
                 if (m == null) { AppliedLog().Add("AutShadow: mod guard: " + t.FullName + "." + names[i] + " signature not found"); return false; }
-                if (!L3Ok(m)) { AppliedLog().Add("AutShadow: mod guard: " + m.DeclaringType.FullName + "." + m.Name + " replaced"); return false; }
+                if (!L3Ok(m) && !OwnSwap(m)) { AppliedLog().Add("AutShadow: mod guard: " + m.DeclaringType.FullName + "." + m.Name + " replaced"); return false; }
             }
             return true;
         }
@@ -511,6 +539,7 @@ namespace Ts3Fixes
                 sDefGuardHit[k] = sSharedGuardHit || !AllL3Ok(t, kDefCallees, DefSigs(k));
             }
             if (!ClosureSweep()) for (int k = 0; k < sDefGuardHit.Length; k++) sDefGuardHit[k] = true;
+            sLiveGuardOk = LiveGuard();
             Census();
             sImplVerdict.Clear();
             return true;
@@ -532,8 +561,7 @@ namespace Ts3Fixes
             foreach (KeyValuePair<string, MethodBase> e in got)
             {
                 if (L3Ok(e.Value)) continue;
-                Type hook;
-                if (sPatched.TryGetValue(e.Value, out hook) && KlassOf(e.Value) == Marshal.ReadIntPtr(hook.TypeHandle.Value)) continue;
+                if (OwnSwap(e.Value)) continue;
                 if (foreign++ < 10) AppliedLog().Add("AutShadow: mod guard G-M4: " + e.Key + " swapped");
             }
             sw.Stop();
@@ -622,27 +650,33 @@ namespace Ts3Fixes
 
         // ---- request (sim thread, B13 prefix) ----
 
-        static void TryRequest(AutonomyT a, CommodityKind c)
+        // live (docs/124 §17, Mode 3): the request also gets a go-live search (AutLive.cs) and returns it in q.Live; null =
+        // nothing posted
+        static Request TryRequest(AutonomyT a, CommodityKind c, bool live)
         {
             if (sProbe > 0) AutShadowNative.Note();  // every B13 call: the go-live request rate (docs/122 §14.18)
             // a posted request's cut is shared by every later B13 before it (docs/122 §14.18); a new batch is sampled
             bool join = sPosted;
-            if (join ? sReqN >= kMaxReq || a == sGameAut : (++sCalls % sSample != 0 || sGameAut != null)) return;
-            if (!Ready()) return;
+            if (join ? sReqN >= kMaxReq || a == sGameAut : (++sCalls % sSample != 0 || sGameAut != null)) return null;
+            if (!Ready()) return null;
             int mode = AutShadowNative.Config(0);
-            if (mode < 0 || (mode > 0 && (!sHooksOk || !sWarmOk))) return;  // Modes 1/2 run managed code on the worker: every shim in and warm
+            if (mode < 0 || (mode > 0 && (!sHooksOk || !sWarmOk))) return null;  // Modes 1-3 run managed code on the worker: every shim in and warm
+            if (live != (mode == 3)) return null;  // Mode 3 posts only for a live search; shadow modes never do
             sSample = Math.Max(1, AutShadowNative.Config(1));
             // G-M4: again after a MonoPatcher ForceJIT byte change or a ts3agent patch_* swap (it sets the flag)
             bool resweep = AppDomain.CurrentDomain.GetData("ts3fixes.autshadow.resweep") != null;
             if (resweep) AppDomain.CurrentDomain.SetData("ts3fixes.autshadow.resweep", null);
-            if ((resweep || ForceJitBytes() != sForceJitBytes) && !GuardSweep()) return;
+            if ((resweep || ForceJitBytes() != sForceJitBytes) && !GuardSweep()) return null;
             Sim actor = a.Actor;
-            if (actor == null || !(bool)mCanAnyMeta.Invoke(a, null)) return;
+            if (actor == null || !(bool)mCanAnyMeta.Invoke(a, null)) return null;
             int[] cnt = PatchCounters();
-            if (!AutShadowNative.Begin()) { cnt[119]++; return; }
+            LiveSearch L = live ? LiveAcquire() : null;
+            if (live && L == null) return null;  // 8 searches in flight
+            if (!AutShadowNative.Begin()) { cnt[119]++; if (L != null) LiveRelease(L); return null; }
             if (!join) sReqN = 0;
             int at = sReqN;
             Request q = sReq = sReqs[at];
+            q.Live = L;
             q.Id = ++sNextId; q.Mode = mode; q.Actor = actor; q.Aut = a; q.C = c;
             q.SearchType = a.CurrentSearchType; q.Flags = a.GetInteractionFlagsForCurrentSearch(); q.Hours = SimClock.HoursPassedOfDay;
             q.Objs = q.Pairs = 0;
@@ -677,11 +711,14 @@ namespace Ts3Fixes
             ClassifyListTypes();
             ClassifyObjects();
             q.Start[q.Objs] = q.Pairs;
+            if (L != null) LiveFill(L, q);
             sPosted = true;
             sReqN = at + 1;
-            if (at == 0) { sGameAut = a; sGameDone = sWorkReady = false; }  // L report: the batch's first request only
+            if (at == 0 && !live) { sGameAut = a; sGameDone = sWorkReady = false; }  // L report: the batch's first request only
             cnt[118]++;
+            if (at == 0) OffRequest();  // docs/208: env / broadcaster items ride the batch's cut (AutOffload.cs)
             AutShadowNative.Post(q.Id);
+            return q;
         }
 
         // docs/122 §14.18 list kinds: each list query type ts3native has seen, once, sim thread. A Sim can be one when the type
@@ -814,9 +851,9 @@ namespace Ts3Fixes
             // read at the request (B13 prefix: no Sim gardening); by the cut at the end of the frame the reference read a count
             // > 0. Both now use the count at the cut, the instant the snapshot stands for (through the getter: a recount it
             // does happens here, and the reference's own calls find it fresh).
-            if (sReqs[0].Mode == 1) sGardening = Sim.NumSimsDoingGardening;
+            if (sReqs[0].Mode == 1 || sReqs[0].Mode == 3) sGardening = Sim.NumSimsDoingGardening;  // Mode 3: verify cuts only
             sInRef = true;
-            try { for (int i = 0; i < sReqN; i++) { sReq = sReqs[i]; sRef = sRefs[i]; ScoreMeta(sReq, sRef); } }
+            try { for (int i = 0; i < sReqN; i++) { sReq = sReqs[i]; sRef = sRefs[i]; ScoreMeta(sReq, sRef); } OffScore(false); }
             finally { sInRef = false; }
         }
 
@@ -835,6 +872,7 @@ namespace Ts3Fixes
                     sReq = sReqs[i]; sWork = sWorks[i];
                     ScoreMeta(sReq, sWork);
                 }
+                OffScore(true);  // docs/208 (AutOffload.cs)
             }
             finally { sInWork = false; }
         }
@@ -855,14 +893,19 @@ namespace Ts3Fixes
                 // KeepPartial (docs/122 §14.21): an overrun (LastRun 1) whose worker result says Done kept the objects it
                 // finished before the stop; those are compared, the rest are A4 `stop`. An epoch drop (2) stays dropped.
                 bool partial = lr == 1 && sKeepPartial && sWork.Done && sWork.Partial && sWork.Id == sReq.Id;
+                // docs/124 §17 go-live: the answers go to the waiting search (LiveFinish); valid = OK and done, or the kept part
+                if (sReq.Mode == 3) LiveFinish(sReq.Live, sReq, sWork, lr, partial || (lr == 0 && sWork.Done));
                 if (!partial && (lr == 1 || lr == 2 || (lr == 0 && !sWork.Done))) { c[111]++; continue; }
                 if ((lr != 0 && !partial) || sWork.Id != sReq.Id) continue;
                 if (partial) AutShadowNative.Stat(6, 1);
                 for (int i = 0; i < sReq.Pairs; i++)
                     if (sWork.Code[i] == AutShadowCore.kSkip) { c[116]++; if (sReq.Def[i] == -2 || sReq.ObjImpl[sReq.PairObj[i]] == -2) c[120]++; }
                 if (sReq.Mode == 1 && sRef.Id == sReq.Id && sRef.Done) { CompareR(c); FreshCheck(); }
-                if (k == 0) { sWorkReady = true; TryLReport(); }
+                // Mode 3 VerifyEvery: the reference ran at this cut (sRef holds this request's answers only then)
+                if (sReq.Mode == 3 && sRef.Id == sReq.Id && sRef.Done) { int a23 = c[108] + c[109]; CompareR(c); LiveVerify(a23); }
+                if (k == 0 && sReq.Mode != 3) { sWorkReady = true; TryLReport(); }
             }
+            OffFinish(lr);  // docs/208 (AutOffload.cs)
             sReq = sReqs[0]; sRef = sRefs[0]; sWork = sWorks[0];
         }
 
@@ -883,28 +926,52 @@ namespace Ts3Fixes
             finally { sInRef = false; AutShadowNative.Fresh(0); }
             if (!sFresh.Done) return;
             int both = 0, diff = 0;
+            bool[] ans = new bool[sReq.Pairs];
             for (int i = 0; i < sReq.Pairs; i++)
             {
                 if (sReq.Def[i] < 0 || sReq.ObjImpl[sReq.PairObj[i]] < 0) continue;
                 int a = sWork.Code[i], b = sFresh.Code[i];
                 if ((a != AutShadowCore.kPass && a != AutShadowCore.kTestFailed) || (b != AutShadowCore.kPass && b != AutShadowCore.kTestFailed)) continue;
                 both++;
+                ans[i] = true;
                 if (a != b || AutShadowCore.Bits(sWork.Score[i]) != AutShadowCore.Bits(sFresh.Score[i])) diff++;
             }
-            int[] tw = Top(sWork, 10), tf = Top(sFresh, 10);
+            int[] tw = Top(sWork, 10, null), tf = Top(sFresh, 10, null);
             bool top1 = tw[0] != tf[0], top10 = false;
             for (int j = 0; j < 10; j++) if (tw[j] != tf[j]) top10 = true;
             AutShadowNative.Stat(2, both); AutShadowNative.Stat(3, diff);
             AutShadowNative.Stat(4, top1 ? 1 : 0); AutShadowNative.Stat(5, top10 ? 1 : 0);
+            // docs/122 §14.23: (a) the same compare over the pairs both sides answered only (worker aborts drop out), the top-10
+            // as sets over the shorter list; (b) the cut-time reference against fresh over all pairs (both on the sim thread, no
+            // aborts: the one-tick staleness of the whole set go-live would see), top-10 as sets incl. padding
+            int[] twa = Top(sWork, 10, ans), tfa = Top(sFresh, 10, ans);
+            int k = Math.Min(Count(twa), Count(tfa));
+            AutShadowNative.Stat(7, k > 0 && twa[0] != tfa[0] ? 1 : 0);
+            AutShadowNative.Stat(8, SameSet(twa, tfa, k) ? 0 : 1);
+            if (sRef.Id == sReq.Id && sRef.Done)
+            {
+                int[] tr = Top(sRef, 10, null);
+                AutShadowNative.Stat(9, tr[0] != tf[0] ? 1 : 0);
+                AutShadowNative.Stat(10, SameSet(tr, tf, 10) ? 0 : 1);
+            }
         }
-        // indexes of the n best passing allow-listed pairs by score (ties: lower index), -1 padded
-        static int[] Top(Result r, int n)
+        static int Count(int[] t) { int n = 0; while (n < t.Length && t[n] >= 0) n++; return n; }
+        static bool SameSet(int[] a, int[] b, int k)
+        {
+            int[] x = new int[k], y = new int[k];
+            Array.Copy(a, x, k); Array.Copy(b, y, k);
+            Array.Sort(x); Array.Sort(y);
+            for (int j = 0; j < k; j++) if (x[j] != y[j]) return false;
+            return true;
+        }
+        // indexes of the n best passing allow-listed pairs by score (ties: lower index), -1 padded; only = pairs to consider (null: all)
+        static int[] Top(Result r, int n, bool[] only)
         {
             int[] t = new int[n];
             for (int j = 0; j < n; j++) t[j] = -1;
             for (int i = 0; i < sReq.Pairs; i++)
             {
-                if (sReq.Def[i] < 0 || sReq.ObjImpl[sReq.PairObj[i]] < 0 || r.Code[i] != AutShadowCore.kPass) continue;
+                if (sReq.Def[i] < 0 || sReq.ObjImpl[sReq.PairObj[i]] < 0 || r.Code[i] != AutShadowCore.kPass || (only != null && !only[i])) continue;
                 int at = n;
                 while (at > 0 && (t[at - 1] < 0 || r.Score[i] > r.Score[t[at - 1]])) at--;
                 if (at >= n) continue;
@@ -917,7 +984,7 @@ namespace Ts3Fixes
         static void CompareR(int[] c)
         {
             int[] n = new int[6];
-            int pass = 0, cls = 0;
+            int pass = 0, cls = 0, refPassA4 = 0;
             for (int i = 0; i < sReq.Pairs; i++)
             {
                 int o = sReq.PairObj[i];
@@ -931,12 +998,14 @@ namespace Ts3Fixes
                 if (sWork.Code[i] == AutShadowCore.kPass) pass++;
                 if (k == AutShadowCore.A4)
                 {
-                    int r = sWork.Code[i] == AutShadowCore.kAbort ? sWork.Reason[i] : sRef.Code[i] == AutShadowCore.kAbort ? sRef.Reason[i] : -1;
+                    if (sRef.Code[i] == AutShadowCore.kPass) refPassA4++;  // docs/122 §14.23: the true pass share and the abort bias
+                    int r =sWork.Code[i] == AutShadowCore.kAbort ? sWork.Reason[i] : sRef.Code[i] == AutShadowCore.kAbort ? sRef.Reason[i] : -1;
                     if (r >= 0 && r < sReasons.Length) sReasons[r]++;
                 }
                 else if (k != AutShadowCore.A0 && sLogged < kMaxLogPerLoad) { sLogged++; LogPair(i, k); }
             }
             AutShadowNative.Stat(0, pass); AutShadowNative.Stat(1, cls);  // docs/124 §15 pass share
+            AutShadowNative.Stat(11, refPassA4);
             if (ShortcutOn("autshadowverify"))
                 AutShadowNative.Log("{\"t\":\"req\",\"req\":" + sReq.Id + ",\"actor\":" + sReq.Actor.ObjectId.Value + ",\"objs\":" + sReq.Objs + ",\"pairs\":" + sReq.Pairs
                     + ",\"a\":[" + n[0] + "," + n[1] + "," + n[2] + "," + n[3] + "," + n[4] + "]}");
@@ -1094,7 +1163,14 @@ namespace Ts3Fixes
                 bool mine = false;
                 if (!sSessionOff && ShortcutOn("autshadow"))
                 {
-                    try { TryRequest(a, c); } catch (Exception) { PatchCounters()[121]++; }
+                    int live = LiveWanted();  // docs/124 §17: Mode 3 = go-live (autlive on) or the game's search (off), never a shadow request
+                    if (live != 0)
+                    {
+                        bool sc = LedgerOpen();
+                        try { return live > 0 ? LiveMeta(this, a, c) : MetaOrig(c); }
+                        finally { if (sc) LedgerClose(); }
+                    }
+                    try { TryRequest(a, c, false); } catch (Exception) { PatchCounters()[121]++; }
                     mine = sGameAut == a && sPosted;
                 }
                 bool scope = LedgerOpen();
@@ -1109,16 +1185,32 @@ namespace Ts3Fixes
             public int MetaOrig(CommodityKind c) { return 0; } // receives Autonomy.ScoreInteractionsForMetaAutonomy's original header
         }
 
-        // C2 entry used by C1: records what the game scored for the sampled search (same answer returned).
+        // C2 entry used by C1: records what the game scored for the sampled search (same answer returned), and times each
+        // pair (docs/122 §14.23): allow-listed (in the request with an allow-listed definition and implementor) or off-list,
+        // pass (score != 0) or fail (a failed Test scores 0 in C2) [inferred: a passing pair can also score 0 and counts as fail]
         public class AutScoreHook
         {
             public float ScoreHook(InteractionObjectPair iop)
             {
+                LiveSearch L = sLiveCur;  // docs/124 §17: a go-live search's live scores (drift, dry compare)
+                if (L != null && (object)this == (object)L.Aut)
+                {
+                    float ls = ScoreOrig(iop);
+                    LiveScored(L, iop, ls);
+                    return ls;
+                }
                 if (sGameAut == null || (object)this != sGameAut) return ScoreOrig(iop);
+                int t0 = AutShadowNative.PairT0();
                 float s = ScoreOrig(iop);
                 int i;
                 Request q = sReqs[0];  // the batch's first request (sGameAut's)
-                if (iop != null && q.PairIndex.TryGetValue(iop, out i)) { q.GameScore[i] = s; q.GameHas[i] = true; }
+                bool listed = false;
+                if (iop != null && q.PairIndex.TryGetValue(iop, out i))
+                {
+                    q.GameScore[i] = s; q.GameHas[i] = true;
+                    listed = q.Def[i] >= 0 && q.ObjImpl[q.PairObj[i]] >= 0;
+                }
+                AutShadowNative.PairT1((listed ? 0 : 2) + (s != 0f ? 0 : 1), t0);
                 return s;
             }
             public float ScoreOrig(InteractionObjectPair iop) { return 0f; } // receives Autonomy.CalculateScore(iop)'s original header

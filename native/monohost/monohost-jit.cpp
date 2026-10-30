@@ -15,6 +15,7 @@
 
 static const DWORD JIT_OP = 0x1A9, JIT_XFORM = 0xE643B0, OPLEN = 0x1195088, SUPERDESC = 0x108FCD8;
 static int g_jitMode;  // 0 off, 1 dump, 2 on, 3 verify
+static int g_jitInline;  // MONOHOST_JITINLINE=1: inline tiny leaf callees at compiled call sites (docs/207 §8)
 static const char* const kJitList[] = {
     // docs/207 §3 top never-yielding methods that run offline (BCL + SimIFace); Sims3Gameplay* accessors need world objects
     "Dictionary`2.GetPrev", "Dictionary`2.TryGetValue", "Dictionary`2.GetSlot", "Dictionary`2.ContainsKey", "Dictionary`2.set_Item",
@@ -24,7 +25,7 @@ static const char* const kJitList[] = {
     "IEquatableOfTEqualityComparer`1.Equals", "List`1.GetEnumerator", "List`1.Add", "List`1.get_Item", "List`1.GrowIfNeeded",
     "List`1.get_Count", "UInt64.GetHashCode", "UInt64.Equals", "Int32.GetHashCode", "Int32.Equals", "ObjectGuid.op_Inequality",
     "ObjectGuid.op_Equality", "CASUtils.CASAGSAvailabilityFlagsFromCASAgeGenderFlags", "Single.IsNaN", "Math.Max", "Math.Min",
-    "HostTest.JitId", "HostTest.JitOut", "HostTest.JitSum",
+    "HostTest.JitId", "HostTest.JitOut", "HostTest.JitSum", "HostTest.JitInl",
 };
 static char g_jitListBuf[4096];
 static const char* g_jitNames[128];
@@ -84,6 +85,7 @@ static void JitDumpMethod(const u8* rm, const char* name) {
 }
 
 static void JitCompiled(u8* rm);  // compiler (below)
+static void JitPreTransform(u8* rm, void* ctx);  // inliner (below)
 static u8* g_xformTramp;
 static void* __cdecl JitTransformHook(u8* rm, void* ctx) {
     void* exc = ((void*(__cdecl*)(u8*, void*))(void*)g_xformTramp)(rm, ctx);
@@ -93,6 +95,7 @@ static void* __cdecl JitTransformHook(u8* rm, void* ctx) {
     if (!JitListed(name)) return exc;
     EnterCriticalSection(&g_jitCs);
     JitDumpMethod(rm, name);
+    if (g_jitMode >= 2 && g_jitInline) JitPreTransform(rm, ctx);
     if (g_jitMode >= 2) JitCompiled(rm);
     LeaveCriticalSection(&g_jitCs);
     return exc;
@@ -243,6 +246,165 @@ static void EmitExit(Em& e, const unsigned short* ip, DWORD op, bool ret) {
     e.jmpTo(g_opHandler[op]);
 }
 
+// ---- inlining of tiny leaf instance methods at compiled call / callvirt sites (docs/207 §8, MONOHOST_JITINLINE=1) ----
+// Callee: transformed, instance, no EA native body, no clauses, body = stinarg* then at most 12 of ldthis / ldarg (32-bit) /
+// ldfld (32-bit, on this) / ldc / 32-bit ALU, compares, inc/dec/neg/not, narrow conv, pop, then one ret (value) or ret.void,
+// no branch, call, store, static or anything that can throw once this is known non-null (ldfld only on this). callvirt
+// only for a non-virtual declared method of a reference type. Inline code: this null -> the normal call path (EA throws);
+// the callee frame must fit in the current arena chunk (else EA's path takes another chunk, whose stale bytes the 8-byte
+// return copy would carry): the result slot gets the low dword computed here and the high dword EA's return copies from
+// the callee's eval slot 0 (top + eval offset + 4), so the caller's eval stack is bit-equal to EA's call.
+static volatile LONG g_jitInlined, g_jitInlineNo;
+static unsigned short JitOrigWord(const unsigned short* p) {
+    if (*p != JIT_OP) return *p;
+    const JitEnt* en = JitFind((DWORD)(uintptr_t)p);
+    return en ? (unsigned short)en->orig : 0xFFFF;
+}
+static const u8* JitInlineCallee(const unsigned short* ip, DWORD op, const u8* callerRm) {
+    const DWORD* items = *(const DWORD* const*)(callerRm + 0x14);
+    const u8* c = (const u8*)(uintptr_t)items[op == 0xEA ? ip[1] : ip[3]];
+    if (!c) return NULL;
+    const DWORD fl = *(const DWORD*)(c + 0x44);
+    const u8* mm = *(const u8* const*)(c + 8);
+    if (!(fl & 0x200) || !(fl & 0x100) || *(const DWORD*)(c + 0x24) || c[0x41] || !mm) return NULL;  // instance, transformed, no native body, no clauses
+    if (op == 0xEC && ((fl & 0x400) || (*(const unsigned short*)mm & 0x40))) return NULL;          // callvirt: non-virtual, reference type
+    return c;
+}
+static bool JitTryInline(Em& e, const unsigned short* ip, DWORD op, const u8* callerRm) {
+    const u8* c = JitInlineCallee(ip, op, callerRm);
+    if (!c) return false;
+    const unsigned short* code = *(const unsigned short* const*)c;
+    const int words = *(const unsigned short*)(c + 0x3A), n = c[0x40];
+    const DWORD* argOff = *(const DWORD* const*)(c + 0x1C);
+    const bool value = c[0x44] != 1;
+    // decode into base ops (superops expanded), original words where the callee is compiled
+    unsigned short ops[24];
+    const unsigned short* at[24];
+    int no = 0;
+    for (int i = 0; i < words;) {
+        unsigned short w = JitOrigWord(code + i);
+        if (w == 0xE8 || w > 0x1C0 || w == 0x1A9 || w == 0x1AA) return g_jitInlineNo++, false;
+        unsigned short tmp[2] = {w, 0};
+        int len = w <= 0x1A8 ? ((const u8*)(uintptr_t)OPLEN)[w] : JitLen(tmp);
+        if (len <= 0) return g_jitInlineNo++, false;
+        if (w >= 0x1AB) {
+            const u8* d = (const u8*)(uintptr_t)(SUPERDESC + 0x48 * (w - 0x1AA));
+            int m = *(const unsigned short*)(d + 4), p = i;
+            for (int k = 0; k < m && no < 24; k++) {
+                unsigned short b = ((const unsigned short*)(d + 6))[k];
+                ops[no] = b, at[no++] = code + p;
+                p += ((const u8*)(uintptr_t)OPLEN)[b];
+            }
+        } else if (no < 24)
+            ops[no] = w, at[no++] = code + i;
+        else
+            return g_jitInlineNo++, false;
+        i += len;
+    }
+    // emit into a scratch buffer first (no partial code on refusal)
+    static u8 buf[512];
+    Em b = {buf};
+    u8* slow[4];
+    int ns = 0;
+    const int thisOff = -(n + 1) * 8;  // receiver slot relative to esi
+    b.op(0x8B, EAX, ESI, thisOff);                                     // mov eax, this
+    b.rr(0x85, EAX, EAX); slow[ns++] = b.jcc(0x84);                   // null: EA's path throws
+    b.b(0x83); b.b(0x3D); b.d(0x01220EC0); b.b(0); slow[ns++] = b.jcc(0x85);  // remoting class set: EA's path
+    const unsigned short w38 = *(const unsigned short*)(c + 0x38), w3E = *(const unsigned short*)(c + 0x3E);
+    if (value) {  // high dword of EA's return copy: callee eval slot 0, only if the frame fits in this chunk
+        b.op(0x8B, ECX, EBP, 8); b.op(0x8B, ECX, ECX, 0x13C);          // ecx = state->chunk
+        b.rr(0x85, ECX, ECX); slow[ns++] = b.jcc(0x84);
+        b.op(0x8B, EDX, ECX, 0); b.b(0x81); b.b(0xC2); b.d(w38);         // edx = top + frame size
+        b.op(0x3B, EDX, ECX, 4); slow[ns++] = b.jcc(0x87);             // > end: another chunk
+        b.op(0x8B, EDX, ECX, 0); b.op(0x8B, EDX, EDX, w3E + 4);         // edx = [top + eval + 4]
+        b.op(0x89, EDX, ESI, thisOff + 4);
+    }
+    int sp = 0;              // compile-time stack depth; entries: ECX, EDX
+    bool isThis[3] = {};     // entry holds `this`
+    const int regs[2] = {ECX, EDX};
+    int k = 0, ret = -1;
+    for (; k < no && ops[k] >= 0 && g_opInfo[ops[k]].kind == K_STINARG; k++) {}
+    if (no - k > 12) return g_jitInlineNo++, false;
+    for (; k < no; k++) {
+        const JitOpInfo t = g_opInfo[ops[k]];
+        const int w = t.width, u16 = at[k][1];
+        int r = sp < 2 ? regs[sp] : -1, r0 = sp >= 2 ? regs[sp - 2] : -1, r1 = sp >= 1 ? regs[sp - 1] : -1;
+        switch (t.kind) {
+        case K_LDTHIS: if (r < 0) return g_jitInlineNo++, false; b.rr(0x8B, EAX, r); isThis[sp++] = true; break;  // mov r, eax
+        case K_LDARG: {
+            int idx = -1;
+            for (int a = 0; a < n; a++) if ((int)argOff[a] == u16) idx = a;
+            if (r < 0 || idx < 0 || w == 6) return g_jitInlineNo++, false;
+            b.load(w, r, ESI, -(n - idx) * 8); isThis[sp++] = false; break;
+        }
+        case K_LDFLD:
+            if (sp < 1 || !isThis[sp - 1] || w == 6) return g_jitInlineNo++, false;
+            b.load(w, r1, EAX, u16); isThis[sp - 1] = false; break;
+        case K_LDC: if (r < 0) return g_jitInlineNo++, false; b.movRI(r, (DWORD)t.x); isThis[sp++] = false; break;
+        case K_LDCS: if (r < 0) return g_jitInlineNo++, false; b.movRI(r, (DWORD)(int)(short)u16); isThis[sp++] = false; break;
+        case K_LDCI4: if (r < 0) return g_jitInlineNo++, false; b.movRI(r, *(const DWORD*)(at[k] + 1)); isThis[sp++] = false; break;
+        case K_BIN: if (sp < 2) return g_jitInlineNo++, false; b.rr(t.x, r0, r1); sp--; isThis[sp - 1] = false; break;
+        case K_MUL: if (sp < 2) return g_jitInlineNo++, false; b.b(0x0F); b.b(0xAF); b.b(0xC0 | (r0 << 3) | r1); sp--; isThis[sp - 1] = false; break;
+        case K_CMP:
+            if (sp < 2) return g_jitInlineNo++, false;
+            b.rr(0x39, r0, r1); b.b(0x0F); b.b(t.x); b.b(0xC0 | r0); b.b(0x0F); b.b(0xB6); b.b(0xC0 | (r0 << 3) | r0);
+            sp--; isThis[sp - 1] = false; break;
+        case K_CEQ0:
+            if (sp < 1) return g_jitInlineNo++, false;
+            b.rr(0x85, r1, r1); b.b(0x0F); b.b(0x94); b.b(0xC0 | r1); b.b(0x0F); b.b(0xB6); b.b(0xC0 | (r1 << 3) | r1);
+            isThis[sp - 1] = false; break;
+        case K_INC: case K_DEC: if (sp < 1) return g_jitInlineNo++, false; b.b(0x83); b.b((t.kind == K_INC ? 0xC0 : 0xE8) | r1); b.b(1); isThis[sp - 1] = false; break;
+        case K_UN: if (sp < 1) return g_jitInlineNo++, false; b.b(0xF7); b.b(0xC0 | (t.x << 3) | r1); isThis[sp - 1] = false; break;
+        case K_CONV:
+            if (sp < 1 || t.x == 1 || t.x == 2) return g_jitInlineNo++, false;
+            if (t.x >= 4) { static const u8 kx[4] = {0xBE, 0xB6, 0xBF, 0xB7}; b.b(0x0F); b.b(kx[t.x - 4]); b.b(0xC0 | (r1 << 3) | r1); }
+            isThis[sp - 1] = false; break;
+        case K_POP: if (sp < 1) return g_jitInlineNo++, false; sp--; break;
+        case K_RET: ret = k; break;
+        default: return g_jitInlineNo++, false;
+        }
+        if (ret >= 0) break;
+    }
+    const char* rn = ret >= 0 ? ((const char* const*)(uintptr_t)0x11949E0)[ops[ret]] : "";
+    if (ret != no - 1 || (value ? strcmp(rn, "ret") || sp != 1 : strcmp(rn, "ret.void") || sp != 0)) return g_jitInlineNo++, false;
+    if (value) b.op(0x89, regs[0], ESI, thisOff);                      // result low dword into the receiver slot
+    const int dsp = thisOff + (value ? 8 : 0);
+    if (dsp) { b.b(0x81); b.b(dsp > 0 ? 0xC6 : 0xEE); b.d((DWORD)(dsp > 0 ? dsp : -dsp)); }
+    // copy into the method's code: inline body, jmp over the out-of-line call (the normal call path from the same state)
+    const int len = (int)(b.p - buf);
+    u8* base = e.p;
+    memcpy(e.p, buf, len);  // no relative operand inside except the slow-path jccs, fixed below
+    e.p += len;
+    u8* skip = e.jmp();
+    for (int s = 0; s < ns; s++) Fix(slow[s] - buf + base, e.p);
+    EmitExit(e, ip, op, false);
+    Fix(skip, e.p);
+    g_jitInlined++;
+    return true;
+}
+// before a listed method is compiled: transform the instance callees of its call / callvirt sites that are not transformed
+// yet (EA would at their first call), so the inliner can read their mint code. Transform builds code only; a failure
+// returns its exception and is left for EA's own transform at the first call.
+static void* __cdecl JitTransformHook(u8* rm, void* ctx);
+static void JitPreTransform(u8* rm, void* ctx) {
+    const unsigned short* code = *(const unsigned short* const*)rm;
+    const int words = *(const unsigned short*)(rm + 0x3A);
+    const DWORD* items = *(const DWORD* const*)(rm + 0x14);
+    for (int i = 0; i < words;) {
+        const unsigned short w = code[i];
+        if (w == 0xE8) { i += JitSwitchLen(code + i); continue; }
+        int len = JitLen(code + i);
+        if (len <= 0) return;
+        if (w == 0xEA || w == 0xEC) {
+            u8* c = (u8*)(uintptr_t)items[w == 0xEA ? code[i + 1] : code[i + 3]];
+            const u8* mm = c ? *(const u8* const*)(c + 8) : NULL;
+            if (c && mm && !(*(const DWORD*)(c + 0x44) & 0x100) && (*(const DWORD*)(c + 0x44) & 0x200) && !(*(const unsigned short*)mm & 0x40))
+                JitTransformHook(c, ctx);
+        }
+        i += len;
+    }
+}
+
 // compile one method: returns false (and leaves the code alone) if anything does not fit
 static void JitCompiled(u8* rm) {
     if (!g_jitTab || g_jitMethN >= 4096) return;
@@ -387,6 +549,7 @@ static void JitCompiled(u8* rm) {
             else if (t.x >= 4) { e.load(t.x == 4 ? 1 : t.x == 5 ? 2 : t.x == 6 ? 3 : 4, EAX, ESI, -8); e.op(0x89, EAX, ESI, -8); }
             break;  // conv.i4.i8: the low word already is the result
         default:
+            if ((op == 0xEA || op == 0xEC) && g_jitInline && posReal[k] && JitTryInline(e, ip, op, rm)) { nat++; continue; }
             EmitExit(e, ip, op, t.kind == K_RET);
             ex++;
             continue;
@@ -817,14 +980,14 @@ static bool JitAtomic(bool on) {
     return on ? Jmp(0xE4BDC0, (const void*)(uintptr_t)0xE4BE30) : mt::Write((void*)(uintptr_t)0xE4BDC0, g_atomicOrig, 5);
 }
 
-static const int JIT_CASES = 21;
+static const int JIT_CASES = 23;
 static const char* const kJitCase[JIT_CASES] = {
     "Dictionary<int,Shape>.TryGetValue", "Dictionary<ulong,int>.TryGetValue", "Dictionary<ObjectGuid,int>.TryGetValue",
     "List foreach (per element)", "List get_Item + Count", "List.Add (+GrowIfNeeded)", "boxed Enum.Equals + GetHashCode",
     "GetType() == typeof", "Array.Resize<int>", "Array.IndexOf<int> (64)", "ObjectGuid !=", "CASUtils flags",
     "Dictionary foreach (per element)", "ContainsKey + set_Item", "JitId (compiled, trivial)", "JitPlain (interpreted twin)",
     "JitOut (compiled -> interpreted)", "JitOutPlain (interpreted twin)", "JitSum 64 (compiled loop, per 64)",
-    "JitSumPlain 64 (interpreted twin)", "empty loop"};
+    "JitSumPlain 64 (interpreted twin)", "empty loop", "JitInl 64 (compiled, tiny callees)", "JitInlPlain 64 (interpreted twin)"};
 static int JitCase(int c, int n) {
     void* a[2] = {&c, &n};
     return I32(T("JitBench", 2, a));
@@ -843,6 +1006,7 @@ static void JitStats() {
     Log("jit: %d methods compiled (%d instantiations incl. generics), %d native ops, %d exits, code %d bytes (%.1f KB, pool use %.1f KB), "
         "table %d entries (%u KB), shadow %d words\n", g_jitMethN, g_jitMethN, nat, ex, bytes, bytes / 1024.0, g_jitCodeUsed / 1024.0,
         g_jitEntN, (unsigned)(sizeof(JitEnt) * (JIT_TAB_N + 4096) / 1024), g_jitPosN);
+    if (g_jitInline) Log("jit: inlined call sites %ld, sites refused by the inliner %ld\n", g_jitInlined, g_jitInlineNo);
 }
 static void JitBenchRun() {
     if (g_jitMode < 2) {
@@ -912,8 +1076,8 @@ static void JitBenchRun() {
     }
     const double loop = (off[20] + on[20]) / 2;
     Log("jitbench (best of %d, n = 200000, pinned; ns per iteration, loop overhead %.1f ns subtracted):\n", reps, loop);
-    for (int c = 0; c < 20; c++)
-        Log("jitbench case %2d %-40s interp %7.1f ns  compiled %7.1f ns  speedup %.2fx  saved %6.1f ns\n", c, kJitCase[c], off[c] - loop,
+    for (int c = 0; c < JIT_CASES; c++)
+        if (c != 20) Log("jitbench case %2d %-40s interp %7.1f ns  compiled %7.1f ns  speedup %.2fx  saved %6.1f ns\n", c, kJitCase[c], off[c] - loop,
             on[c] - loop, (off[c] - loop) / (on[c] - loop), off[c] - on[c]);
     // whole MintBench (docs/139), JIT off vs on, interleaved
     int n = 3000, s0 = 0, s1 = 0;
@@ -957,6 +1121,7 @@ static bool InstallJit() {
         char x[8] = "";
         g_jitExitAll = GetEnvironmentVariableA("MONOHOST_JITEXITALL", x, sizeof(x)) && x[0] == '1';
         g_jitCountOn = GetEnvironmentVariableA("MONOHOST_JITCOUNT", x, sizeof(x)) && x[0] == '1';
+        g_jitInline = GetEnvironmentVariableA("MONOHOST_JITINLINE", x, sizeof(x)) && x[0] == '1';
         g_jitVerifyOn = g_jitMode == 3 ? 1 : g_jitCountOn ? 2 : 0;
         if (g_jitMode == 3 && GetEnvironmentVariableA("MONOHOST_JITVERIFY", x, sizeof(x)) && !strcmp(x, "bench")) g_jitVerifyOn = 0;
         g_jitMainTid = GetCurrentThreadId();

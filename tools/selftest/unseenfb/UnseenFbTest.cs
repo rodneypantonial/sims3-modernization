@@ -135,6 +135,10 @@ static class UnseenFbTest
         Check(UfPreCore.OwnFrame("Ts3Fixes.Fixes", "UfFollows") && UfPreCore.OwnFrame("Ts3Fixes.Fixes", "UfCaller")
             && !UfPreCore.OwnFrame("Ts3Fixes.Fixes", "RouteSrcNote") && !UfPreCore.OwnFrame("Sims3.Gameplay.Actors.Sim", "UfFollows")
             && !UfPreCore.OwnFrame(null, "UfFollows"), "own Uf* frames skipped by the caller read (10-27: callers = UfFollows)");
+        // the game's default Sim route (EnablePlanningAsCar on, the rest off) is not a vehicle route (10-30: 2083 refused at 332)
+        Check(!UfPreCore.VehicleRoute(false, false, false, false) && UfPreCore.VehicleRoute(true, false, false, false)
+            && UfPreCore.VehicleRoute(false, true, false, false) && UfPreCore.VehicleRoute(false, false, true, false)
+            && UfPreCore.VehicleRoute(false, false, false, true), "gate 332: drive-capable walks pass, car/boat/no-walk refused");
         Check(UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "PlanToLot") && UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "PlanToLotEx")
             && !UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "AddLotEntryPointDestinations") && !UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.LotManager", "PlanToLot")
             && !UfPreCore.PlanToLotFrame(null, "PlanToLot"), "RouteToLot: only Lot.PlanToLot(Ex) frames skipped");
