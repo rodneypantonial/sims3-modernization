@@ -1,0 +1,210 @@
+{
+  "note": "Mono cost 2 (2026-10-29): mono-cost.json jobs 2-7 re-pinned to asi mono-cost2 = ts3native 0.36.106 (docs/51 §377: [MonoThread] P4 left [0x11F4170] stale, so CanYield refused every [RouteAsync] START as NoYield in bp-mt-gates-off; 0.36.106 points the reader at the sim thread P4 slot). Job 1 (bp-mono-ledger) passed on rel020 and is not rerun. Otherwise as mono-cost.json: Mono goal 2026-10-29 (PLAN.md): what the Mono script engine costs on the sim thread, and the trial offload pieces on the current build. asi rel020 = ts3native 0.36.105 = master native source (no native change since 24c51af3; a fresh master build differs from rel020 only in 7 PE timestamp/checksum bytes, selftest ok 2026-10-29). Every job = repo ini (v0.2.x release defaults, every Mono switch off) + the job's Mono keys + [HitchAttr] (light, for the sim-budget waits bucket). Jobs re-pinned from mono-ledger-probe.json, mono-m5-probe.json, autshadow-first.json and mono-night.json (10-20/10-21 notes and pass rules kept). Order: ledger probe (0.36.7 loop-back fix, never rerun), [MonoThread] gates-off, idle worker, [AutShadow] count bp+ip, Mode R bp+ip. Stop the queue on any crash (crash-cause-before-fix: our Mono code until proven otherwise). Samplers are on in every job (the Mono bucket needs managed samples): ms/s are measurement numbers, not an A/B; compare with the release baseline of the same night (sim-budget-v024.json). Ledger and gates-off are correctness (noiseCheck false); the 5 cost jobs are 50 timing minutes (< SMOKE_OVER_MIN, no smoke). ~13-14 min per job, ~95 min. Report: node tools/harness/mono-cost-report.ts probe-out/queue/mono-cost-<date>.jsonl",
+  "jobs": [
+    {
+      "id": "bp-mt-gates-off",
+      "note": "2/7 [MonoThread] patches installed, gates off (docs/30 §14, docs/120 §9; passed 10-20 on 0.35.22 and 10-21 on 0.36.6): Enabled=1 GcLock=1 FrameTls=1 ArenaFix=1 N2mPrivate=1 Mode=0 (P3 19 sites + arena fix + F1 detour + P4 frame TLS, no worker, the lock gate stays 0). First run next to the release [ArenaGuard] InitobjFix/TailPad (docs/67 §22.9). Correctness + detour cost, 10 min. PASS = 0 crashes, 0 watchdog lines; ts3native.log 'OK   mono thread P3' and 'OK   mono thread P4' with both TLS indexes < 64 and no 'SKIP mono thread P4'; -native.json mtprobe version 4: p3Sites 19, p3Ready bits 0-2, 4, 5 set, p4Ready 15, locking 0, lockedCalls 0, lockOverflow 0, lockStale 0, workerState 0, n2mReady 1, n2mWorker 0, n2mOverflow 0; finRuns > 0; arenaDropped and arenaRelNonEmpty reported (I-120-22). STOP the queue on a crash, a P4 SKIP or p4Ready != 15 (every later job needs FrameTls).",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "noiseCheck": false,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "MonoThread.Enabled": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "MonoThread.Mode": 0
+      },
+      "logRequire": {
+        "OK   mono thread P3": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-mt-idle-worker",
+      "note": "3/7 Run only after bp-mt-gates-off passed. Idle worker (passed 10-20/10-21): same keys with Mode=1, one worker registered with GC_new_thread under the lock, gate on while it runs; no managed jobs ([AutShadow] off). Cost job, 10 min: the sim thread now takes the GC lock on every hooked GC/alloc call (mtprobe lockedCalls, lockWaits, lockWaitUs = the price of the gate alone). PASS = 0 crashes, no freeze, 0 watchdog lines; mtprobe v4: workerState 2 (idle) at the end, workerStarts 1, workerTid != 0, workerJobs 0, workerCtxSet 0, workerStopFails 0, locking 1, lockedCalls > 0, lockOverflow 0, finRuns > 0, lockStale 0, lockOomReleased 0 (non-zero = an OOM longjmp/unwind out of a locked hook: record in docs/51 I-120-27..31). STOP the queue on a crash or freeze (the lock is live from here on), or lockOverflow/workerCtxSet > 0.",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "MonoThread.Enabled": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "MonoThread.Mode": 1
+      },
+      "logRequire": {
+        "OK   mono thread P3": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-autshadow-count",
+      "note": "4/7 [AutShadow] gate G-A3 (docs/122 §14.7), Mode 0 = cut and count only, no worker; never run with cuts (10-20 got no data; cuts come from the 0.36.7 loop-back hook, so cutReq == req is testable for the first time). fixesOn autshadow switches the driver on for this job only. With simler90's core mod installed, G-M1 must accept it: ts3fixes.applied 'AutShadow: game assemblies = accepted set 1' and no 'AutShadow: off for the session ... MVIDs' line; also read 'G-M4 sweep: N of 688' and 'G-M5' (patches autshadow_gm4_*, autshadow_gm5_types). A fixesApplied 'AutShadow: not patched: ...' line names a refused overload (I-188-1) and still allows Mode 0 requests. Cost job, 10 min: cutUs / s = sim-thread cut + snapshot cost. PASS = 0 crashes, 0 watchdog lines; -native.json autshadow v5: mode 0, icRegistered 14, req > 0, cutReq == req, noWorker == cutReq, refRuns 0, auditMis[0] 0, cutMaxUs and cutUs/cutReq reported (target p95 0.3 ms), guardSim per s (<= 1 ms/s); patches autshadow_requests > 0, autshadow_guardskips 0, autshadow_exceptions 0; no 'autshadow abort' lines. STOP before Mode R on a crash or autshadow_requests == 0 (read 'AutShadow:' lines in ts3fixes.applied first: MVID, contract version, L3, warm-up).",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 0,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 0,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-count",
+      "note": "5/7 Same as bp-autshadow-count on Isla Paradiso (more lots and Sims: the largest snapshot). Same asi, switch, G-M1 log check ('accepted set 1') and pass rule. STOP before Mode R on a crash or requests == 0.",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 0,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 0,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-autshadow-r",
+      "note": "6/7 Run only after jobs 3, 4 and 5 passed. [AutShadow] Mode 1 = R, gate G-A4 (never run): the sim thread re-scores each sampled request at the cut (script RNG saved and restored), the M5 worker scores the same request from the snapshot, ts3fixes compares bit for bit; [MonoThread] Mode=1 GcLock=1 FrameTls=1 ArenaFix=1 N2mPrivate=1. Mode 1 refuses requests when any worker shim is missing (fixesApplied 'Modes 1/2 off'): then req 0 is expected, not a bug. Since 0.36.7 the cut runs after the sim pump when it fires (autshadow cutSite 2, docs/51 I-188-3): window = the frame limiter's sleep; overrun/overrunIdle counted. Cost job, 10 min: refUs (reference on the sim, a test cost the apply step would not pay), workUs (worker busy), mtprobe lockWaitUs (sim waits behind the worker). PASS = 0 crashes, no freeze; patches autshadow_a2 == 0 and autshadow_a3 == 0, autshadow_a1 0 or each record in autshadow.jsonl explained; autshadow_a4 < 20% of compared pairs (autshadow_reasons sized); a5, overrun, epochDrops counted, not failures; -native.json autshadow v5: workRuns > 0, workExc 0, refExc 0, finishExc 0, abort.rain and abort.posture reported (posture 0 expected, I-182-5), rngPauseDraws reported (I-182-4); mtprobe v4: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0, n2mWorker > 0, lockStale/lockOomReleased reported. Report the compared-search count (G-A4 needs >= 2,000 per world over R runs). Any crash: stop and triage against 0.36.105.",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-r",
+      "note": "7/7 Same as bp-autshadow-r on Isla Paradiso; run after bp-autshadow-r passed. Same asi, switch and pass rule.",
+      "asi": "game-copy/ts3native.asi.mono-cost2",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

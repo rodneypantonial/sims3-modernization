@@ -25,6 +25,7 @@ const MONO ='Mono offload, parked: no Mono game runs allowed now (memory mono-pa
 export const EXEMPT: Record<string, string> = {
   unseenfbteleport: 'trip-shortcut type: verified by verify-shortcut.ts --name unseenfbteleport and the unseen-fallback.json sv-ufb-teleport-verify job (fixesRequire), not by an A/B repro (shortcut-verification rule, docs/202 §6)',
   autshadowverify: DIAG, ownjobwait: DIAG, autshadow: MONO, autledger: MONO,
+  workerwait: 'worker CPU, not a hitch fix: no repro makes the job-start wait more likely than plain play; measured by the off/on plain-play pairs in route-worker-wait.json, correctness by the selftest TestRouteWorkerWait (docs/203 §6)',
   steershadow: SHADOW, lotfdshadow: SHADOW, obstructedshadow: SHADOW, slotenabledshadow: SHADOW, avoidshadow: SHADOW,
   gate0shadow: SHADOW, routetoobjroshadow: SHADOW, placementroshadow: SHADOW, goalvalidroshadow: SHADOW, idlecheckroshadow: SHADOW,
   routesnapgate: 'dead end for now: P5b ReleaseGates (lends +0x918 to gate reads), with routesnaprel in the P5 path dropped from v0.1.5 and parked (docs/136 §3.8, docs/94 §22.10)',

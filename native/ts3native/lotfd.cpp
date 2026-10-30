@@ -176,7 +176,7 @@ static u64 __fastcall FdHook(const u8* p, void* edx, DWORD lo, DWORD hi, DWORD t
         if (!k.ltShadow) return g_fdOrig(p, edx, lo, hi, type, out);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const u64 r = g_async.state == A_RUNNING ? g_fdOrig(p, edx, lo, hi, type, out) : LtShadow(p, edx, lo, hi, type, out);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return r;
     }
     if (!k.ltMode) return g_fdOrig(p, edx, lo, hi, type, out);

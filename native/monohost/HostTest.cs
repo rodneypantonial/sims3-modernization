@@ -68,6 +68,81 @@ namespace MonoHostTest
             return acc;
         }
 
+        // ---- docs/207 P0: per-method loops for the method compiler (MONOHOST_JIT). Each case calls one compile candidate
+        // (or a trivial twin pair for the switch cost) n times and returns a checksum that must not depend on the JIT.
+        // JitId/JitOut/JitSum are on the compile list; their *Plain twins (same bodies) never are.
+        public static int JitId(int x) { return x; }
+        public static int JitPlain(int x) { return x; }
+        public static int JitOut(int x) { return JitPlain(x) + 1; }
+        public static int JitOutPlain(int x) { return JitPlain(x) + 1; }
+        public static int JitSum(int[] a) { int s = 0; for (int i = 0; i < a.Length; i++) s += a[i] ^ i; return s; }
+        public static int JitSumPlain(int[] a) { int s = 0; for (int i = 0; i < a.Length; i++) s += a[i] ^ i; return s; }
+
+        static System.Collections.Generic.Dictionary<int, Shape> s_map;
+        static System.Collections.Generic.Dictionary<ulong, int> s_mapU;
+        static System.Collections.Generic.Dictionary<ObjectGuid, int> s_mapG;
+        static System.Collections.Generic.List<Shape> s_list;
+        static int[] s_arr;
+        static void JitSetup()
+        {
+            if (s_map != null) return;
+            s_map = new System.Collections.Generic.Dictionary<int, Shape>();
+            s_mapU = new System.Collections.Generic.Dictionary<ulong, int>();
+            s_mapG = new System.Collections.Generic.Dictionary<ObjectGuid, int>();
+            s_list = new System.Collections.Generic.List<Shape>();
+            s_arr = new int[64];
+            for (int i = 0; i < 256; i++)
+            {
+                Shape s;
+                if (i % 3 == 0) { Rect r = new Rect(); r.H = i + 1; s = r; } else s = new Sq();
+                s.W = i;
+                s_map[i * 7] = s;
+                s_mapU[(ulong)i * 0x100000001UL] = i;
+                s_mapG[new ObjectGuid((ulong)i * 977UL)] = i;
+                s_list.Add(s);
+                if (i < 64) s_arr[i] = i * 3;
+            }
+        }
+
+        public static int JitBench(int c, int n)
+        {
+            JitSetup();
+            int acc = 0;
+            Shape sh;
+            int v;
+            switch (c)
+            {
+                case 0: for (int r = 0; r < n; r++) if (s_map.TryGetValue((r & 255) * 7 + (r >> 8 & 1), out sh)) acc += sh.W; break;
+                case 1: for (int r = 0; r < n; r++) if (s_mapU.TryGetValue((ulong)(r & 511) * 0x100000001UL, out v)) acc += v; break;
+                case 2: for (int r = 0; r < n; r++) if (s_mapG.TryGetValue(new ObjectGuid((ulong)(r & 511) * 977UL), out v)) acc += v; break;
+                case 3: for (int r = 0; r < n; r += 256) foreach (Shape s in s_list) acc += s.W; break;
+                case 4: for (int r = 0; r < n; r++) acc += s_list[r & 255].W + s_list.Count; break;
+                case 5:
+                {
+                    System.Collections.Generic.List<int> l = new System.Collections.Generic.List<int>();
+                    for (int r = 0; r < n; r++) { if ((r & 127) == 0) l = new System.Collections.Generic.List<int>(); l.Add(r); acc += l.Count; }
+                    break;
+                }
+                case 6: for (int r = 0; r < n; r++) { object d = (DayOfWeek)(r % 7); if (d.Equals(DayOfWeek.Monday)) acc += 5; acc += d.GetHashCode(); } break;
+                case 7: for (int r = 0; r < n; r++) if (s_list[r & 255].GetType() == typeof(Rect)) acc += 3; break;
+                case 8: { int[] a = new int[1]; for (int r = 0; r < n; r++) { if ((r & 63) == 0) a = new int[1]; Array.Resize(ref a, (r & 63) + 1); acc += a.Length; } break; }
+                case 9: for (int r = 0; r < n; r++) acc += Array.IndexOf(s_arr, (r & 63) * 3); break;
+                case 10: { ObjectGuid g0 = new ObjectGuid(5UL); for (int r = 0; r < n; r++) if (new ObjectGuid((ulong)(r & 7)) != g0) acc++; break; }
+                case 11: for (int r = 0; r < n; r++) acc += (int)Sims3.SimIFace.CAS.CASUtils.CASAGSAvailabilityFlagsFromCASAgeGenderFlags((Sims3.SimIFace.CAS.CASAgeGenderFlags)(1 << (r & 15))); break;
+                case 12: for (int r = 0; r < n; r += 256) foreach (System.Collections.Generic.KeyValuePair<int, Shape> kv in s_map) acc += kv.Key; break;
+                case 13: for (int r = 0; r < n; r++) { int k = (r & 255) * 7; if (s_map.ContainsKey(k)) { s_map[k] = s_list[r & 255]; acc++; } } break;
+                case 14: for (int r = 0; r < n; r++) acc += JitId(r); break;
+                case 15: for (int r = 0; r < n; r++) acc += JitPlain(r); break;
+                case 16: for (int r = 0; r < n; r++) acc += JitOut(r); break;
+                case 17: for (int r = 0; r < n; r++) acc += JitOutPlain(r); break;
+                case 18: for (int r = 0; r < n; r += 64) acc += JitSum(s_arr); break;
+                case 19: for (int r = 0; r < n; r += 64) acc += JitSumPlain(s_arr); break;
+                case 20: for (int r = 0; r < n; r++) acc += r; break;  // loop alone (subtracted per call)
+                default: return -1;
+            }
+            return acc;
+        }
+
         // ---- M1.4: a graph kept alive only through a GC handle ----
         static Node Build(int n, int seed)
         {
@@ -313,6 +388,15 @@ namespace MonoHostTest
             return 1;
         }
 
+        // docs/206 §7 (Satb proof): Score folds SatbWorld.Score in; the main thread mutates SatbWorld while the worker runs
+        static bool sSatb;
+        public static int SatbSetup() { SatbWorld.Setup(); sSatb = true; SatbWorld.Score(1); SatbWorld.Mutate(1); SatbWorld.Score(2); return SatbWorld.N; }
+        public static int MainMutate(int seed) { SatbWorld.Mutate(seed); return SatbWorld.Mutations; }
+        public static int SatbScoreNow(int salt) { return SatbWorld.Score(salt); }
+        // more first-written words than the log holds (65,534): the sim must stop the worker and wait before going on
+        static int[] sBig;
+        public static int MainBig(int seed) { if (sBig == null) sBig = new int[70000]; for (int i = 0; i < sBig.Length; i++) sBig[i] = seed + i; return sBig.Length; }
+
         static bool sInRef;
         public static void Reference() { if (sReq == null) return; sInRef = true; try { Score(sReq, sRef, sRefCode); } finally { sInRef = false; } }
         public static void Work()
@@ -344,6 +428,7 @@ namespace MonoHostTest
                     string money = AsIc.EAText_GetMoneyString(i);
                     sc = p.x * 0.5f + p.z * 0.25f + AsIc.World_GetSunriseTime() + loc.mX + loc.mZ * 2 + loc.mRoom + (float)(lot & 0xFFFF)
                         + (a == null ? -1 : a.Length) + sum + (key == null ? -7 : key.Length * 3 + key[0]) + (money == null ? -3 : money.Length);
+                    if (sSatb) sc += (float)(SatbWorld.Score(i) & 0x7FFF);
                     Node garbage = new Node(); garbage.Kids = new Node[3]; garbage.Tag = "g" + i;  // allocation on both threads
                     // docs/125 addendum §4.1: a reference-only draw (a hooked call) in a bracket leaves the unit stream alone
                     if (sInRef && i % 7 == 0) { AutShadowNative.RngPause(1); AsIc.Random_NextDoubleImpl(); AutShadowNative.RngPause(0); }
@@ -392,6 +477,140 @@ namespace MonoHostTest
             MainBad += bad;
             return bad;
         }
+    }
+
+    // docs/206 §7 (Satb offline proof): a managed world the worker's score reads with every heap load kind, and a mutator
+    // the main ("sim") thread runs between the cut and the worker's end with every store kind and the runtime writers
+    // (Array.Copy through List<T>, Array.Clear, Buffer.BlockCopy, Dictionary). With Satb the worker must score the cut.
+    public struct SVec { public float x, y, z; public int tag; }
+    public class SObj
+    {
+        public sbyte I1; public byte U1; public short I2; public ushort U2; public int I4; public long I8; public float R4; public double R8;
+        public object O; public SVec V; public SObj Next; public string S; public bool B; public char C;
+    }
+    public class SRemote : MarshalByRefObject { public int X; public SVec V; }
+    public static class SatbWorld
+    {
+        public const int N = 64;
+        public static SObj[] sObjs;
+        public static int sI4; public static long sI8; public static double sR8; public static float sR4; public static object sObj;
+        public static SVec sVec; public static string sStr; public static short sI2; public static byte sU1;
+        public static int[] sInts; public static long[] sLongs; public static byte[] sBytes; public static short[] sShorts;
+        public static float[] sFloats; public static double[] sDoubles; public static object[] sRefs; public static SVec[] sVecs;
+        public static sbyte[] sSbytes; public static ushort[] sUshorts; public static char[] sChars;
+        public static System.Collections.Generic.List<SObj> sList;
+        public static System.Collections.Generic.Dictionary<int, int> sDict;
+        public static SRemote sRemote;
+        public static int Mutations;
+
+        public static void Setup()
+        {
+            sObjs = new SObj[N];
+            for (int i = 0; i < N; i++) { SObj o = new SObj(); Fill(o, i); sObjs[i] = o; }
+            for (int i = 0; i < N; i++) sObjs[i].Next = sObjs[(i + 1) % N];
+            sInts = new int[N]; sLongs = new long[N]; sBytes = new byte[N * 4]; sShorts = new short[N]; sFloats = new float[N];
+            sDoubles = new double[N]; sRefs = new object[N]; sVecs = new SVec[N]; sSbytes = new sbyte[N]; sUshorts = new ushort[N]; sChars = new char[N];
+            for (int i = 0; i < N; i++)
+            {
+                sInts[i] = i * 3; sLongs[i] = (long)i << 33; sShorts[i] = (short)(i - 30); sFloats[i] = i * 0.5f; sDoubles[i] = i * 0.25;
+                sRefs[i] = sObjs[i]; sVecs[i].x = i; sVecs[i].z = -i; sVecs[i].tag = i; sSbytes[i] = (sbyte)(-i); sUshorts[i] = (ushort)(i * 1000); sChars[i] = (char)('a' + i % 26);
+            }
+            for (int i = 0; i < sBytes.Length; i++) sBytes[i] = (byte)i;
+            sList = new System.Collections.Generic.List<SObj>();
+            for (int i = 0; i < 20; i++) sList.Add(sObjs[i]);
+            sDict = new System.Collections.Generic.Dictionary<int, int>();
+            for (int i = 0; i < 40; i++) sDict[i] = i * 7;
+            sRemote = new SRemote(); sRemote.X = 11; sRemote.V.y = 2.5f;
+            sI4 = 1; sI8 = 2; sR8 = 3.5; sR4 = 4.5f; sObj = sObjs[1]; sVec.y = 7; sStr = "abc"; sI2 = -5; sU1 = 200;
+        }
+        static void Fill(SObj o, int i)
+        {
+            o.I1 = (sbyte)(-i); o.U1 = (byte)(i + 100); o.I2 = (short)(-i * 100); o.U2 = (ushort)(i * 300); o.I4 = i * 11; o.I8 = (long)i * 0x100000001L;
+            o.R4 = i * 1.25f; o.R8 = i * 2.5; o.O = i % 3 == 0 ? (object)("s" + i) : null; o.V.x = i; o.V.y = i * 2; o.V.z = i * 3; o.V.tag = i; o.S = "t" + i;
+            o.B = (i & 1) != 0; o.C = (char)('A' + i % 26);
+        }
+
+        static int H(int h, int v) { return (h ^ v) * 16777619; }
+        static int H(int h, long v) { return H(H(h, (int)v), (int)(v >> 32)); }
+        static int H(int h, double v) { return H(h, BitConverter.DoubleToInt64Bits(v)); }
+        static int ReadRefI4(ref int x) { return x; }
+        static long ReadRefI8(ref long x) { return x; }
+        static double ReadRefR8(ref double x) { return x; }
+        static float ReadRefR4(ref float x) { return x; }
+        static short ReadRefI2(ref short x) { return x; }
+        static ushort ReadRefU2(ref ushort x) { return x; }
+        static sbyte ReadRefI1(ref sbyte x) { return x; }
+        static byte ReadRefU1(ref byte x) { return x; }
+        static object ReadRefO(ref object x) { return x; }
+        static SVec ReadRefV(ref SVec v) { SVec c = v; return c; }
+        static int VecH(int h, SVec v) { return H(H(H(H(h, (double)v.x), (double)v.y), (double)v.z), v.tag); }
+
+        // every heap load kind: ldfld.*, ldsfld*, ldelem.*, ldelem.any.vt, ldelema + ldind.*, ldobj, ldrmfld; collections
+        public static int Score(int salt)
+        {
+            int h = salt;
+            for (int k = 0; k < 8; k++)
+            {
+                SObj o = sObjs[(salt * 7 + k * 5) % N];
+                h = H(h, o.I1); h = H(h, o.U1); h = H(h, o.I2); h = H(h, o.U2); h = H(h, o.I4); h = H(h, o.I8); h = H(h, (double)o.R4); h = H(h, o.R8);
+                h = H(h, o.O == null ? 0 : o.O.GetHashCode()); h = VecH(h, o.V); h = H(h, o.V.tag); h = H(h, o.Next.I4); h = H(h, o.S == null ? 1 : o.S.Length);
+                h = H(h, o.B ? 3 : 4); h = H(h, o.C);
+                h = H(h, ReadRefI4(ref o.I4)); h = H(h, ReadRefI8(ref o.I8)); h = H(h, ReadRefR8(ref o.R8)); h = H(h, (double)ReadRefR4(ref o.R4));
+                h = H(h, ReadRefI2(ref o.I2)); h = H(h, ReadRefU2(ref o.U2)); h = H(h, ReadRefI1(ref o.I1)); h = H(h, ReadRefU1(ref o.U1));
+                h = H(h, ReadRefO(ref o.O) == null ? 5 : 6); h = VecH(h, ReadRefV(ref o.V));
+            }
+            int i = salt % N;
+            h = H(h, sI4); h = H(h, sI8); h = H(h, sR8); h = H(h, (double)sR4); h = H(h, sObj == null ? 0 : ((SObj)sObj).I4); h = VecH(h, sVec);
+            h = H(h, sStr.Length); h = H(h, sI2); h = H(h, sU1);
+            h = H(h, ReadRefI4(ref sI4)); h = VecH(h, ReadRefV(ref sVec));
+            h = H(h, sInts[i]); h = H(h, sLongs[i]); h = H(h, sBytes[i * 3]); h = H(h, sShorts[i]); h = H(h, (double)sFloats[i]); h = H(h, sDoubles[i]);
+            h = H(h, sRefs[i] == null ? 0 : ((SObj)sRefs[i]).I2); h = VecH(h, sVecs[i]); h = H(h, sSbytes[i]); h = H(h, sUshorts[i]); h = H(h, sChars[i]);
+            h = H(h, ReadRefI4(ref sInts[(i + 1) % N])); h = VecH(h, ReadRefV(ref sVecs[(i + 2) % N])); h = H(h, ReadRefI8(ref sLongs[(i + 3) % N]));
+            h = H(h, sList.Count);
+            for (int j = 0; j < sList.Count; j++) h = H(h, sList[j].I4);
+            int dv;
+            h = H(h, sDict.Count); if (sDict.TryGetValue(salt % 50, out dv)) h = H(h, dv);
+            h = H(h, sRemote.X); h = H(h, (double)sRemote.V.y);
+            // worker-side native copies of shared arrays (Array.Copy through List<T>(IEnumerable) / CopyTo, Clone, BlockCopy)
+            System.Collections.Generic.List<SObj> copy = new System.Collections.Generic.List<SObj>(sList);
+            h = H(h, copy.Count); if (copy.Count > 0) h = H(h, copy[salt % copy.Count].I2);
+            int[] ints = (int[])sInts.Clone(); h = H(h, ints[(salt + 5) % N]);
+            double[] dbl = new double[4]; Array.Copy(sDoubles, salt % (N - 4), dbl, 0, 4); h = H(h, dbl[1]);
+            byte[] bytes = new byte[16]; Buffer.BlockCopy(sLongs, 8 * (salt % (N - 2)), bytes, 0, 16); h = H(h, bytes[3] + bytes[11] * 256);
+            return h;
+        }
+
+        // every store kind on shared objects, statics and arrays, plus the runtime writers behind List/Dictionary/Array
+        public static void Mutate(int seed)
+        {
+            Mutations++;
+            int i = seed % N;
+            SObj o = sObjs[i];
+            o.I1 = (sbyte)seed; o.U1 = (byte)seed; o.I2 = (short)seed; o.U2 = (ushort)seed; o.I4 = seed; o.I8 = (long)seed << 20; o.R4 = seed; o.R8 = seed * 0.5;
+            o.O = (seed & 1) != 0 ? null : (object)o; o.V.x = seed; o.V = new SVec(); o.V.tag = seed; o.S = "m" + seed; o.B = !o.B; o.C = (char)seed;
+            SObj fresh = new SObj(); Fill(fresh, seed % 97); o.Next = fresh; fresh.Next = sObjs[(i + 1) % N];
+            WriteRefI4(ref sObjs[(i + 3) % N].I4, seed); WriteRefV(ref sObjs[(i + 4) % N].V, seed); WriteRefI8(ref sObjs[(i + 5) % N].I8, seed);
+            WriteRefR8(ref sObjs[(i + 6) % N].R8, seed); WriteRefI2(ref sObjs[(i + 7) % N].I2, seed); WriteRefU1(ref sObjs[(i + 8) % N].U1, seed);
+            sI4 = seed; sI8 = seed * 3L; sR8 = seed * 0.75; sR4 = seed; sObj = o; sVec.y = seed; sVec = new SVec(); sStr = "x" + seed; sI2 = (short)seed; sU1 = (byte)seed;
+            WriteRefI4(ref sI4, seed + 1); WriteRefV(ref sVec, seed);
+            sInts[i] = seed; sLongs[i] = seed; sBytes[(i * 3) % sBytes.Length] = (byte)seed; sShorts[i] = (short)seed; sFloats[i] = seed; sDoubles[i] = seed;
+            sRefs[i] = fresh; sVecs[i] = new SVec(); sVecs[(i + 1) % N].tag = seed; sSbytes[i] = (sbyte)seed; sUshorts[i] = (ushort)seed; sChars[i] = (char)seed;
+            WriteRefI4(ref sInts[(i + 1) % N], seed); WriteRefV(ref sVecs[(i + 2) % N], seed); WriteRefI8(ref sLongs[(i + 3) % N], seed);
+            if ((seed & 3) == 0 && sList.Count > 4) sList.RemoveAt(seed % sList.Count); else sList.Insert(seed % (sList.Count + 1), o);
+            if (sList.Count > 40) sList.RemoveRange(0, 10);
+            sDict[seed % 50] = seed; if ((seed & 7) == 0) sDict.Remove((seed / 8) % 50);
+            if ((seed & 15) == 0) Array.Clear(sInts, seed % (N - 8), 4);
+            if ((seed & 15) == 5) Buffer.BlockCopy(sLongs, 8, sBytes, 0, 16);
+            if ((seed & 15) == 9) Array.Copy(sDoubles, 1, sDoubles, 0, N - 1);
+            sRemote.X = seed; sRemote.V.y = seed;
+            o.I4 += sObjs[(i + 9) % N].I4;  // a read on the main thread after its own writes
+        }
+        static void WriteRefI4(ref int x, int v) { x = v; }
+        static void WriteRefI8(ref long x, int v) { x = v; }
+        static void WriteRefR8(ref double x, int v) { x = v; }
+        static void WriteRefI2(ref short x, int v) { x = (short)v; }
+        static void WriteRefU1(ref byte x, int v) { x = (byte)v; }
+        static void WriteRefV(ref SVec x, int v) { SVec n = new SVec(); n.x = v; n.tag = -v; x = n; }
     }
 
     public class CctorSleeper

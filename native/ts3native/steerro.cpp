@@ -813,7 +813,7 @@ static void __fastcall LocoHook(u8* agent, void* edx, u8* ids, const void* ign1,
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         if (g_async.state == A_RUNNING) g_locoOrig(agent, edx, ids, ign1, n1, ign2, n2);
         else SrShadow(agent, ids, ign1, n1, ign2, n2, &out, &ctx);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return;
     }
     // a job runs: read-only answer, unless this thread holds +0x918, serves the job's callback, has a gate frame open, or

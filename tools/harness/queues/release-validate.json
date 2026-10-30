@@ -1,5 +1,5 @@
 {
-  "note": "Release v0.2.0 standard validation (docs/RELEASE.md v0.2.0). Before running: (1) node tools/release-features.ts <chosen ids> --write (release ini + ts3fixes tuning), (2) build the release (native/ts3native/build.cmd, node tools/setup/build-fixes.ts) and install that ts3fixes.package, (3) copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.rel020 (check the sha256 in docs/RELEASE.md), (4) run from that checkout: the queue writes Bin/ts3native.ini = repo ini, no job overrides it. minCounters 79 = ts3native 0.36.14; raise it if the release asi has a newer counters version (unseen phase 2). Clean night. 46 jobs, ~8.1 h real (profile minutes + ~2 min each, save matrix ~40 min each [inferred: the v0.1.4 matrices failed early, no full-length timing yet], travel ~5 min). Groups for --only: *-rel-play + bp-rel-stuck-unseen, *-rel-matrix, bp-rel-travel-*, bp-rel-feat-* (feature repros: the pass rules for a feature apply when it is on in the release ini; off, the job is a regression run of the game's path), *-rel-rare-*. Split if needed: part A = play, stuck, matrix, travel, feature repros (25 jobs, ~5.1 h), part B = rare (21 jobs, ~3.0 h).",
+  "note": "Release v0.2.0 standard validation (docs/RELEASE.md v0.2.0). Before running: (1) node tools/release-features.ts <chosen ids> --write (release ini + ts3fixes tuning), (2) build the release (native/ts3native/build.cmd, node tools/setup/build-fixes.ts) and install that ts3fixes.package, (3) copy native/ts3native/out/ts3native.asi to game-copy/ts3native.asi.rel020 (check the sha256 in docs/RELEASE.md), (4) run from that checkout: the queue writes Bin/ts3native.ini = repo ini, no job overrides it. minCounters 79 = ts3native 0.36.14; raise it if the release asi has a newer counters version (unseen phase 2). Clean night. 46 jobs, ~8.1 h real (profile minutes + ~2 min each, save matrix ~40 min each [inferred: the v0.1.4 matrices failed early, no full-length timing yet], travel ~5 min). Groups for --only: *-rel-play + bp-rel-stuck-unseen, *-rel-matrix, bp-rel-travel-*, bp-rel-feat-* (feature repros: the pass rules for a feature apply when it is on in the release ini; off, the job is a regression run of the game's path), *-rel-rare-*. Split if needed: part A = play, stuck, matrix, travel, feature repros (25 jobs, ~5.1 h), part B = rare (21 jobs, ~3.0 h). Start-of-game paths (added 2026-10-29, group --only bp-rel-start-*): 7 correctness repros (family picker Play on an existing family, library household + lot, CAS new family + move in, new save from the main menu + reload, Edit Town move lot, switch family through the picker, University arrival), each with a -v016 control on the shipped v0.1.6 files (14 jobs, ~4 h worst case by timeoutMin, typically ~1.5 h).",
   "jobs": [
     {
       "id": "bp-rel-play",
@@ -857,6 +857,216 @@
         "-disablestoryprogression"
       ],
       "timeoutMin": 21
+    },
+    {
+      "id": "bp-rel-start-existing",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-picker-existing (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "menu",
+      "run": {
+        "repro": "start-picker-existing"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-rel-start-existing-v016",
+      "note": "Control for bp-rel-start-existing: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "menu",
+      "run": {
+        "repro": "start-picker-existing"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-rel-start-bin",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-picker-bin (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "menu",
+      "run": {
+        "repro": "start-picker-bin"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-rel-start-bin-v016",
+      "note": "Control for bp-rel-start-bin: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "menu",
+      "run": {
+        "repro": "start-picker-bin"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-rel-start-cas",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-cas-new-family (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "menu",
+      "run": {
+        "repro": "start-cas-new-family"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-rel-start-cas-v016",
+      "note": "Control for bp-rel-start-cas: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "menu",
+      "run": {
+        "repro": "start-cas-new-family"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "bp-rel-start-newsave",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-new-save-reload (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "menu",
+      "run": {
+        "repro": "start-new-save-reload"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-rel-start-newsave-v016",
+      "note": "Control for bp-rel-start-newsave: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "menu",
+      "run": {
+        "repro": "start-new-save-reload"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 40
+    },
+    {
+      "id": "bp-rel-start-edittown-move",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-edit-town-move-lot (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-edit-town-move-lot"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-start-edittown-move-v016",
+      "note": "Control for bp-rel-start-edittown-move: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-edit-town-move-lot"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-start-switch",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-switch-family (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-switch-family"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-start-switch-v016",
+      "note": "Control for bp-rel-start-switch: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-switch-family"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-rel-start-travel-uni",
+      "note": "Start-of-game path (PLAN.md \"Release-check gap found 10-29\"), correctness job on the release build: repro start-travel-university (tools/harness/repros.json: steps, until conditions and expect). Pass: repro.ts PASS (every step and until met: picker up, UI single task ran, live mode with the household active / lot placed / save reloaded), 0 crashes, 0 watchdog lines, no new ScriptError (scriptErrorsMax 0). A FAIL here with the -v016 control PASS = our build; both FAIL = harness or agent side.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-travel-university"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    },
+    {
+      "id": "bp-rel-start-travel-uni-v016",
+      "note": "Control for bp-rel-start-travel-uni: the same repro on the shipped v0.1.6 files (asi game-copy/ts3native.asi.hotfix016 = ts3native 0.36.37a, ts3fixes game-copy/ts3fixes.package.rel016 installed by fixesPackage, release defaults), which never had the v0.2.x single-task hang. Expected PASS; a FAIL here means the repro or the agent is wrong, not the release.",
+      "asi": "game-copy/ts3native.asi.hotfix016",
+      "fixesPackage": "game-copy/ts3fixes.package.rel016",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "run": {
+        "repro": "start-travel-university"
+      },
+      "scriptErrorsMax": 0,
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
     }
   ]
 }

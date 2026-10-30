@@ -1,0 +1,4 @@
+# Maintainer-only tools: never in the public repo (git archive in tools/publish-public.ts honours export-ignore)
+tools/mts-helper/** export-ignore
+docs/mts-site-map.md export-ignore
+tools/mts-helper export-ignore

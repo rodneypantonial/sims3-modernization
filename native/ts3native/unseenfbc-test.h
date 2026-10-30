@@ -23,9 +23,9 @@ static void TestUnseenFallbackSites() {
                       offsetof(Ts3nCounters, ufcMaxWaitUs) == 0x5418 && offsetof(Ts3nCounters, ufcStale) == 0x5420 &&
                       offsetof(Ts3nCounters, ufEffCutUs) == 0x5424 && offsetof(Ts3nCounters, ufOverSamples) == 0x543C &&
                       offsetof(Ts3nCounters, ufwMode) == 0x5440 && offsetof(Ts3nCounters, ufwRelease) == 0x545C &&
-                      offsetof(Ts3nCounters, ufwFull) == 0x5470 && sizeof(Ts3nCounters) == 5408 * 4,
+                      offsetof(Ts3nCounters, ufwFull) == 0x5470 && offsetof(Ts3nCounters, ufcBb) == 0x5474 && sizeof(Ts3nCounters) == 5432 * 4,
                   "counters v139 / v140 layout after v138 (docs/registry.md)");
-    assert(k.version == 140);
+    assert(k.version == 142);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
     // save and fake
     const UnCompFn compSave = g_unComp;
@@ -78,6 +78,41 @@ static void TestUnseenFallbackSites() {
     const LONG stale0 = k.ufcStale;
     assert(!UfcListed(farLo, farHi) && k.ufcStale == stale0 + 1);
     assert(Push(true) == 1);
+    // docs/202 §3.4.3: Build/Buy (world+0x97B set) drops a fresh list with no push; after the exit nothing is listed until
+    // the next push
+    const LONG bb0 = g_ufcBbDrops;
+    fakeWorld[0x97B] = 1;
+    assert(!UfcListed(farLo, farHi) && !UfcListed(nearLo, nearHi) && g_ufcList.n == 0 && k.ufcList == 0 && g_ufcBbDrops == bb0 + 1);
+    assert(!UfcListed(farLo, farHi) && g_ufcBbDrops == bb0 + 1);  // dropped once
+    fakeWorld[0x97B] = 0;
+    assert(!UfcListed(farLo, farHi));
+    assert(Push(true) == 1 && UfcListed(farLo, farHi) && UfcListed(nearLo, nearHi));
+    // §3.4.4: the poll watch. No site asks in Build/Buy (sim paused): the poll's entry still drops the pre-entry list at the
+    // first ask after the exit; spans / tries inside / tries in the 3 s tail are counted from the poll's view
+    {
+        const LONG span0 = k.ufcBb[0], in0 = k.ufcBb[1], tail0 = k.ufcBb[2], try0 = k.ufcTry[0], drop0 = g_ufcBbDrops;
+        memset(&g_ufcBbW, 0, sizeof(g_ufcBbW));
+        UfcBbPoll(1000);
+        k.ufcTry[0]++, UfcBbPoll(1010);                       // live: not counted
+        fakeWorld[0x97B] = 1, UfcBbPoll(1020);                // entry
+        assert(k.ufcBb[0] == span0 + 1 && g_ufcBbPend && k.ufcBb[1] == in0 && k.ufcBb[2] == tail0);
+        k.ufcTry[0]++, UfcBbPoll(1030);                       // a try while the byte stays set: counted
+        assert(k.ufcBb[1] == in0 + 1);
+        fakeWorld[0x97B] = 0;
+        k.ufcTry[0]++, UfcBbPoll(1040);                       // the exit interval goes to the tail
+        k.ufcTry[0]++, UfcBbPoll(3900);                       // still in the tail
+        k.ufcTry[0]++, UfcBbPoll(4100);                       // after it
+        assert(k.ufcBb[1] == in0 + 1 && k.ufcBb[2] == tail0 + 2 && k.ufcBb[0] == span0 + 1);
+        assert(!UfcListed(farLo, farHi) && !g_ufcBbPend && g_ufcBbDrops == drop0 + 1);  // dropped once after the exit
+        assert(Push(true) == 1 && UfcListed(farLo, farHi));
+        g_ufcBbPend = 1;
+        assert(Push(true) == 1 && !g_ufcBbPend && UfcListed(farLo, farHi));  // a live push after the exit keeps its list
+        fakeWorld[0x97B] = 1, g_ufcBbPend = 0;
+        assert(Push(true) == 1 && !UfcListed(farLo, farHi));  // a push while the byte is set is dropped by the ask
+        fakeWorld[0x97B] = 0;
+        assert(Push(true) == 1 && UfcListed(farLo, farHi));
+        k.ufcTry[0] = try0, k.ufcBb[0] = span0, k.ufcBb[1] = in0, k.ufcBb[2] = tail0;
+    }
 
     // 2. C1: the agent update context (unseen class, walking Sim, own part), its owner by id
     static u8 agentBuf[0x110];
@@ -122,6 +157,13 @@ static void TestUnseenFallbackSites() {
     t_unCls = 1, C1(), t_unCls = 2;
     *(DWORD*)(ownerBuf + 8) = 0x999, C1(), *(DWORD*)(ownerBuf + 8) = farLo;
     assert(g_ufcFkCalls == 0 && g_ufcFkNext == 10 && k.ufcSeen[0] == seen0 + 6);
+    // Build/Buy with a fresh list (sv-ufc-buildbuy): no take, no fake, the game's call
+    const LONG fakeBb = k.ufcFake[0];
+    fakeWorld[0x97B] = 1, g_ufcFkNext = 0;
+    C1();
+    assert(g_ufcFkCalls == 0 && g_ufcFkNext == 1 && k.ufcFake[0] == fakeBb && k.ufcSeen[0] == seen0 + 7);
+    fakeWorld[0x97B] = 0;
+    assert(Push(true) == 1);
 
     // 3. C2: RouteFollow_A's answer under the hold, or 0 on timeout
     g_ufcAvA = UfcFkAvA;

@@ -1,9 +1,12 @@
 // [UnseenProbe] / [UnseenThrottle] report (docs/143, counters v79, phase 2 v80; the probe was v78 on its first branch): sim-thread locomotion work per second, visible vs unseen agents.
 //   node tools/harness/unseen-report.ts probe-out/queue/<queue>-<date>-<job>-native.json [...] [--seconds 600]
+//   node tools/harness/unseen-report.ts <queue>-<date>[-<job>]   (tag: every probe-out/queue/<tag>*-native.json)
 //   node tools/harness/unseen-report.ts --self-check
-// Reads the queue's native counter dump ({before, after}) and uses after - before over --seconds (the profile length).
+// Reads the queue's native counter dump ({before, after}) and uses after - before over the profile length: --seconds, else the
+// job's run.profile.minutes from the queue's rows (<queue>-<date>.jsonl next to the dump), else 600.
 // Pass: probe installed (unReady bit 0), agent updates classified, camera read on most passes.
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 type Counters = Record<string, number>;
 const CLS = ['visible', 'unseen', 'outside'];
@@ -15,7 +18,7 @@ const UT_WHY2 = [...UT_WHY, 'not a Sim', 'timer', 'new path', 'step cap', 'slot'
 const UT_FP_WHY = ['off', 'pass', 'no class', 'visible', 'not a Sim', 'viewer', 'no viewers', 'parked', 'change', 'due', 'full', 'rider'];
 const ms = (us: number, s: number) => (us / 1000 / s).toFixed(2);
 
-export function report(b: Counters, a: Counters, seconds: number) {
+export function report(b: Counters, a: Counters, seconds: number, fixes?: Counters) {
   const d = (k: string) => (a[k] ?? 0) - (b[k] ?? 0);
   const lines: string[] = [];
   const ready = a.unReady ?? 0, passes = d('unPasses');
@@ -84,13 +87,38 @@ export function report(b: Counters, a: Counters, seconds: number) {
         `; last skip by: ` + PARTS.map((p, j) => { const n = d(`utRpPart_${i}_${j}`); return `${p} ${n}${n ? ` (mean ${(d(`utRpPartMs_${i}_${j}`) / n).toFixed(0)} ms before)` : ''}`; }).join(', '));
     }
   }
+  // summary (docs/143 §6.3: saved ~ W.u.(N-1)/N.m, N = 4, m = 0.25-1; docs/144 §2: script shares need ts3fixes `unseenprobe`)
+  const wu = (d('unWaitUs_1_0') + d('unWaitUs_1_1')) / 1000 / seconds, cpu = d('unAgentUs_1_0') / 1000 / seconds;
+  lines.push(`summary: unseen walking Sims ${passes ? (d('unAgents_1_0') / passes).toFixed(1) : 0} per pass ` +
+    `(${pct(d('unAgents_1_0'), d('unAgents_0_0') + d('unAgents_1_0'))}% of Sim updates), unseen Sim locomotion ${cpu.toFixed(1)} ms/s; ` +
+    `docs/143 list+avoidance throttle covers unseen keyed waits ${wu.toFixed(1)} ms/s -> saves ~${(wu * 0.75 * 0.25).toFixed(1)}-${(wu * 0.75).toFixed(1)} ms/s, ` +
+    `CPU ceiling ${(cpu * 0.75).toFixed(1)} ms/s (query share of an update not measured)`);
+  const sc = (p: string) => fixes?.[`unseen_${p}_calls`] ? `${p} ${pct(fixes[`unseen_${p}_unseen`] ?? 0, fixes[`unseen_${p}_calls`])}%` : '';
+  const shares = ['env', 'motive'].map(sc).filter(Boolean);
+  lines.push(`  docs/144 unseen script share: ${shares.length ? shares.join(', ') + ` (gain env 18 ms/s x s x 3/4, motives ~32 x s x 3/4)` :
+    'not measured (ts3fixes counters 146-155 absent: run with fix switch unseenprobe)'}`);
   return { ok, lines };
 }
+
+// Queue row for a native dump: <queue>-<date>.jsonl in the same folder whose nativeDump names this file.
+function findRow(file: string): any {
+  const dir = dirname(file), base = basename(file);
+  for (const j of readdirSync(dir).filter(f => f.endsWith('.jsonl') && base.startsWith(f.slice(0, -6) + '-'))) {
+    for (const l of readFileSync(join(dir, j), 'utf8').split('\n')) {
+      if (!l.includes(base)) continue;
+      try { const r = JSON.parse(l); if (basename(String(r.nativeDump ?? '').replace(/\\/g, '/')) === base) return r; } catch { /* partial line */ }
+    }
+  }
+  return undefined;
+}
+// Fix counters from the row (fixActivity.counters {k: {before, after}}) as deltas.
+const fixDeltas = (row: any): Counters | undefined => row?.fixActivity?.counters &&
+  Object.fromEntries(Object.entries(row.fixActivity.counters).map(([k, v]: [string, any]) => [k, (v.after ?? 0) - (v.before ?? 0)]));
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
   const args = process.argv.slice(2);
   const si = args.indexOf('--seconds');
-  const seconds = si >= 0 ? Number(args.splice(si, 2)[1]) : 600;
+  const fixedSeconds = si >= 0 ? Number(args.splice(si, 2)[1]) : 0;
   if (args[0] === '--self-check') {
     const b: Counters = { unPasses: 100 }, a: Counters = {
       unReady: 15, unPasses: 6100, unCamFail: 2, unAgents_0_0: 30000, unAgents_1_0: 90000, unAgents_1_1: 30000,
@@ -103,7 +131,7 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
       utDgReady: 3, utDefer_0: 40, utListNotices: 90, utRpN_0_0: 10, utRpUs_0_0: 1_200_000, utRpLong_0_0: 4, utRpN_0_1: 20,
       utRpPart_0_2: 6, utRpPartMs_0_2: 300,
     };
-    const r = report(b, a, 600).lines.join('\n');
+    const r = report(b, a, 600, { unseen_env_calls: 200, unseen_env_unseen: 30 }).lines.join('\n');
     const want = ['unseen share of agent updates: 80.0%', 'per pass: 5.0 visible, 20.0 unseen', 'Sim 90000 2.00 ms/s',
       'avoidance 10.0', 'avoidance 300 / 5.00', 'unseen 50 / 0.10', 'car-only (n / ms/s): visible 0 / 0.00, unseen 12 / 1.00',
       'byte 0 in 0% of visible, 50% of unseen', 'skipped 600 (60.0%), path tests 0.10 ms/s', 'ran because: visible 300, turn 100',
@@ -111,17 +139,25 @@ if (process.argv[1] && import.meta.filename === process.argv[1]) {
       'footprint: mode 1 (below design U), calls 100, held back 75 (75.0%), folded 40, flushed 30', 'ran because: due 25',
       'rate: mode 1, updates looked at 1000, skipped 700 (70.0%), catch-up runs 290, largest step 170 ms', 'turn 250, step cap 50', 'rate 12 / 125',
       'deferred notices (skips after a non-empty obstacle list): list 40', 'Replan (n / ms/s / >=100 ms): throttled<=8 passes 10 / 2.00 / 4, other 20',
-      'rate 6 (mean 50 ms before)'];
+      'rate 6 (mean 50 ms before)', 'summary: unseen walking Sims 15.0 per pass (75.0% of Sim updates), unseen Sim locomotion 2.0 ms/s',
+      'unseen keyed waits 5.0 ms/s -> saves ~0.9-3.8 ms/s, CPU ceiling 1.5', 'unseen script share: env 15.0%'];
     const miss = want.filter(w => !r.includes(w));
     if (miss.length || !report(b, a, 600).ok) throw new Error(`unseen-report self-check failed (${miss.join('; ')})\n${r}`);
     if (report(b, { ...a, unReady: 0 }, 600).ok) throw new Error('unseen-report self-check: probe off must fail');
+    if (!report(b, a, 600).lines.join('\n').includes('not measured')) throw new Error('unseen-report self-check: no fix counters must say not measured');
     console.log('unseen-report self-check ok');
   } else {
     let ok = true;
-    for (const f of args) {
+    // a queue tag (not a file) expands to its native dumps; before this a tag died with ENOENT and printed no report
+    const files = args.flatMap(f => existsSync(f) ? [f] : readdirSync('probe-out/queue')
+      .filter(n => n.startsWith(f) && n.endsWith('-native.json')).map(n => join('probe-out/queue', n)));
+    if (!files.length) { console.error(`no native dumps for ${args.join(' ') || '(no args)'}`); process.exitCode = 1; }
+    for (const f of files) {
       const j = JSON.parse(readFileSync(f, 'utf8'));
-      const r = report(j.before ?? {}, j.after ?? j, seconds);
-      console.log(`== ${f}\n${r.lines.join('\n')}`);
+      const row = findRow(f), minutes = Number(row?.run?.profile?.minutes) || 0;
+      const seconds = fixedSeconds || minutes * 60 || 600;
+      const r = report(j.before ?? {}, j.after ?? j, seconds, fixDeltas(row));
+      console.log(`== ${f} (${seconds} s${fixedSeconds ? '' : minutes ? ' from the queue row' : ', default'})\n${r.lines.join('\n')}`);
       ok &&= r.ok;
     }
     process.exitCode = ok ? 0 : 1;

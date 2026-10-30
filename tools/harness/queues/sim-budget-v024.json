@@ -1,0 +1,77 @@
+{
+  "note": "Sim-thread budget per world (docs/160) on the v0.2.4 release build (asi rel020 = 0.36.105, repo ini = release defaults, ts3fixes from master = v0.2.4 tunables) + [HitchAttr] Holders (observe only). Question (Rodney 2026-10-29): after the v0.2.0 routing work, how many ms/s does the sim still wait on +0x918 / route jobs, i.e. what off-thread routing saves net. Decides: RecsUnlocked A/B (docs/182) if waits >= ~30 ms/s, helper process (docs/194) only if they stay high. 10 min per world with the stutter profiler and both stack samplers (measurement run, not a speed run). Read: node tools/harness/sim-budget-report.ts. Clean night only.",
+  "jobs": [
+    {
+      "id": "bp-simbudget-v024",
+      "note": "Sim-thread budget, Bridgeport, v0.2.4 release config + HitchAttr Holders; pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, waits by key present.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "noiseCheck": true,
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10
+        }
+      },
+      "timeoutMin": 20,
+      "save": "Baseline-BP-Spring"
+    },
+    {
+      "id": "ip-simbudget-v024",
+      "note": "Sim-thread budget, Isla Paradiso, v0.2.4 release config + HitchAttr Holders; pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, waits by key present.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "noiseCheck": true,
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10
+        }
+      },
+      "timeoutMin": 20,
+      "save": "Baseline-IP-Spring"
+    },
+    {
+      "id": "sv-simbudget-v024",
+      "note": "Sim-thread budget, Sunset Valley, v0.2.4 release config + HitchAttr Holders; pass: no crash, 0 watchdog lines, report sum = 1000 ms/s, managed and simstack samples > 0, waits by key present.",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "releaseDefaults": true,
+      "noiseCheck": true,
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "Harness.ForegroundRender": 1,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10
+        }
+      },
+      "timeoutMin": 20,
+      "save": "Baseline-SV-Spring"
+    }
+  ]
+}

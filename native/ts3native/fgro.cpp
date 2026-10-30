@@ -112,7 +112,7 @@ static DWORD __fastcall FgStub(u8* p, void* edx, const u8* ctx, const float* pt,
         if (!k.fgShadow) return FgGame(p, edx, ctx, pt, r, set, mode);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const DWORD a = g_async.state == A_RUNNING ? g_fgOrig(p, edx, ctx, pt, r, set, mode) : FgShadow(p, edx, ctx, pt, r, set, mode);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return a;
     }
     if (!k.fgMode) return FgGame(p, edx, ctx, pt, r, set, mode);

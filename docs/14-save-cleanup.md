@@ -139,3 +139,101 @@ Risk: it removes player content (old memory pictures), so it is opt-in and shoul
 Repro, id `sv-snapshot-cap`, save a copy of `Baseline-SV` (29 snapshots). Set the cap to 10 through the agent switch, run the cap once, then run it again (about 0 the second time), and `save_game` to `Cap-Test-SV-after`. Pass: `snaps` <= 10 per Sim, `visible` unchanged; the scrapbook opens and shows stock images for the capped memories; no errors. Offline: `save-sources.ts` shows `dds g269d005` in `TravelDB.package` dropping from 29 to about 20 (2 Sims x 10) and the file shrinking by about 1 MB.
 
 Wiring for both (main session): the same pattern as §4. Add `RunLifeEventTrimOnce`, `LifeEventCounts` and `RunSnapshotCapOnce` to `SaveCleanup.cs`. Call the trim from the existing 2:00 alarm when `kSaveCleanup` is on. Add a separate tunable `kSnapshotCap` (default 0). Counters: `c[52]` (lists removed, built); the snapshot cap needs a new slot `c[53]` (46-51 went to the watchdog idle cases).
+
+## 8. Aggressive tier and the spread pass (opt-in, built 2026-10-30, not run)
+
+For long multi-generation saves. Switch `savecleanupaggressive`, tunable `kSaveCleanupAggressive` (default **off**, changes save data), on top of `kSaveCleanup`: when it is on, the `kSaveCleanup` parts run too. Two more tunables: `kAggressiveSnapshotKeep` (10 newest pictures per Sim outside the active household) and `kAggressiveQuietDays` (56 sim days, about two years of four 7-day seasons [inferred: the Seasons default length]). Code: `mods/ts3fixes/src/SaveCleanupSpread.cs`; rules without game types in `SaveCleanupCore.cs` (self-check `tools/selftest/savecleanup`).
+
+### 8.1 Spread pass (all parts, also the old ones)
+
+The 2:00 alarm no longer runs the cleanup in one tick. It starts one script task (`SaveCleanupSpreadRun`) that runs each part over its items in slices of about 2 ms (`EaSpreadCore.kSliceUs`, measured with a `StopWatch`, one slice per tick, `Simulator.Sleep(0)` between slices), the way `deadrefsweep` and `easpread*` do. Before each next slice it re-checks the world state: no world, travelling, vacation, saving, not live mode, no active household, or an active-household member with an invalid description stop the pass (counters [43] and [415]). Every item is re-tested at its own turn, and each step is wrapped so one bad item does not stop the pass. A part's item list is gathered in that part's first slice; a gather is a list copy of keys or descriptions.
+
+Parts in order, each only when its switch is on:
+1. Snapshot holders (`kSnapshotCap > 0` or aggressive): which picture keys more than one life event holds, built Sim by Sim (before: one walk over every life event in one tick).
+2. Active-household snapshot cap (`kSnapshotCap`, §7b).
+3. Aggressive: pictures of Sims outside the active household (§8.2.1).
+4. Relationship pairs per key Sim: rule §2a, plus §8.2.4 when aggressive.
+5. Other-world MiniSims (§2b): the keep set is built in the gather, each MiniSim tested at its turn.
+6. Empty life-event lists per Sim (§7a).
+7. Stale route callbacks per Sim (`PortalAdaptorLeak.cs`).
+8. Aggressive: per-Sim history (§8.2.2), dead outfits (§8.2.5), cleanse the dead (§8.2.3).
+
+The `Run*Once` methods stay as one-tick versions for the test agent. The #91 pre-save pass (`DeadRefSavePass`, docs/205) already does only a cheap final part at save; it is owned by `deadrefsweep` and not changed here.
+
+### 8.2 What the aggressive tier removes
+
+"Outside the active household" (`OutsideActive`): a valid description that is not in the active household and not a playable ghost, has no selectable or destroyed Sim object, is not travelling or at boarding school, and is either dead or in some household. "Buried" (`BuriedSim`): the description of a grave or urn that is dead, not a playable ghost, and has no Sim object and no household.
+
+#### 8.2.1 Memory pictures of Sims outside the active household (counter [416])
+
+Only selectable Sims get pictures (`AddLifeEvent`, §7b [verified]), so the Sims outside the active household that have any are former members: Sims who moved out, households the player stopped playing, and the recently dead. Each keeps its newest `kAggressiveSnapshotKeep` own pictures; older ones are cleared exactly as §7b does (`UpdateSnapshot(kInvalidResourceKey)`, then `World.DeleteTravelDBResource`). The memory itself stays; custom memories (id 0) and shared keys are never touched. The active household keeps all its pictures (its own cap stays `kSnapshotCap`).
+
+Dead Sims: EA's daily `LifeEventManager.PurgeLifeEvents` (`Sims3.Gameplay.ActorSystems/LifeEventManager.cs` line 2215) already walks every household Sim and every urnstone and purges all memories (`Forget` deletes the picture) 10 days after death; a playable ghost resets the death time (`PurgeIfNecessary`, line 2235) [verified]. So for the dead this part only acts within those 10 days.
+
+#### 8.2.2 Per-Sim history (counter [418], entries)
+
+For every Sim outside the active household (households and urnstones):
+- `ReadBookDataList` cleared. Readers use `ContainsKey`/`TryGetValue` or the count, and reading again adds the entry back (`Sims3.Gameplay.Objects/ReadBookData.cs` line 63) [verified]. Effect: an NPC counts as not having read a book; two readers use the count (`Sim.cs` line 18335 answer chance, `VaultOfAntiquity` line 426) [verified].
+- `OpportunityHistory`: the private completed and user-rejected dictionaries cleared (`Sims3.Gameplay.Opportunities/OpportunityHistory.cs` line 109). Current and last opportunities stay. Effect: a former member who rejoins the active household can get one-time opportunities again [inferred].
+- `SpoiledGiftHistory` set to null for the dead and for teens and older: what `AgingState` does at the teen age-up (`AgingState.cs` line 467); giving a gift creates it again (`Sim.cs` line 8764) [verified].
+- Dead only: `GameObjectRelationships` (minor pets: birds, terrarium animals) cleared; EA itself drops entries whose object is gone (`SimDescription.cs` line 3219) [verified].
+
+Never touched here: skills, traits, careers, genealogy, relationships (except §8.2.4), `mInventoryItemsWhileInPassport`.
+
+#### 8.2.3 Cleanse the dead (counters [420], [421])
+
+What EA does [verified]: when a Sim dies, `GrimReaperSituation` keeps the grave in a random mausoleum only when the Sim was protected for the player or had a significant relationship with the active household; otherwise it destroys the grave, which disposes the Sim (`Sims3.Gameplay.Services/GrimReaperSituation.cs` line 1325, `AddGraveToRandomMausoleum` line 2622). Story-progression deaths go to a mausoleum too (`Sims3.Gameplay.StoryProgression/KillSim.cs` line 209). `Urnstone.Dispose` disposes the dead description when it has no Sim object and the game is not in Edit Town (`Sims3.Gameplay.Objects/Urnstone.cs` line 2197). `GameObject.Destroy` takes an object out of its parent inventory first (`Sims3.Gameplay.Abstracts/GameObject.cs` line 4350). So mausoleum graves are the ones tied to the player when the Sim died; generations later nobody may be left.
+
+Rule: a buried Sim whose grave sits in a mausoleum inventory (`Inventory.ParentInventory(stone).Owner is IMausoleum`) is disposed with `stone.Destroy()`, the call EA's own story code uses, when all of these hold: no parent, child or sibling is alive (`Genealogy.IsAlive`, which also reads MiniSims) or a playable ghost; no spouse, parent, child or sibling link to an active-household member; neither is the other's partner; no relationship entry with an active-household member; not in Edit Town. Graves placed in the world or held in a Sim's or a household's inventory are never touched. Unknown genealogy counts as family.
+
+NRaas Overwatch has the same cleanup ("Cleanse The Dead", off by default, docs/09 §2.1). When the `NRaasOverwatch` assembly is loaded, this part stands down for the whole pass (counter [421]); we never change Overwatch's settings. Overwatch's source was read for reference only (`game-copy/nraas-src/NRaas/Helpers/CleanseTheDead.cs`); no code was taken.
+
+#### 8.2.4 Quiet friend-or-weaker NPC pairs (counter [417])
+
+On top of §2a: a pair of NPCs that both pass the §2a Sim checks (alive, in a household that is not the active one, not selectable, no Long Distance Friend trait, not at boarding school, not travelling) is removed with `Relationship.RemoveRelationship` when its state is Stranger, Acquaintance, Disliked, Distant Friend or Friend; it was never romantic; it has none of the §2a ties (same household, partner, spouse, blood, step or future family, in-law, working relation); and the two have not talked for `kAggressiveQuietDays` sim days (`WhenLastTalked`), or never talked and the state is that old (`WhenStateStarted`). Good Friend and up, Enemy, Old Enemies and every romance state stay. Effect: two townies who were friends long ago start again as strangers when they next talk (`Relationship.Get(..., createIfNone: true)`, §2a) [verified]. Counter [417] counts pairs only this rule removed; [40] counts all.
+
+#### 8.2.5 Outfits of the buried (counter [419]) and their inventory (counter [422])
+
+What a dead Sim shows [verified]: a wandering or summoned ghost is the description instantiated with its default outfit (`SimDescription.Instantiate(Vector3)` uses `mDefaultOutfitKey`, `Sims3.Gameplay.CAS/SimDescription.cs` line 4787; `Urnstone.cs` lines 655, 1113, 2352), switched from Naked to Everyday when needed (line 2389); the ghost look is a native shader state (`World.ObjectSetGhostState`), not an outfit. The grave's portrait uses Everyday index 0 (line 628). Resurrection (`GhostToSim`, line 2576) clears the ghost state and keeps the outfits. A Sim with no outfit in a category does not switch to it (`Sims3.Gameplay.Actors/Sim.cs` line 61843), and outerwear is made on demand (line 62516) [verified].
+
+Rule, buried humans only: every outfit of Formal, Sleepwear, Swimwear, Athletic, Singed, Martial Arts, Career, Aux Career, Makeover, Skinny-dipping Towel, Massage, Child Imagination and Outerwear (regular and maternity lists) is removed with the game's `RemoveOutfit(category, index, release: true, maternity)`, except the default outfit. Naked, Everyday (all of them), Special and Supernatural (occult forms) stay. `RemoveOutfitInternal` releases an outfit only when no other category still holds the same key (`Sims3.Gameplay.CAS/SimDescriptionCore.cs` line 1094) [verified]. Effect: a resurrected Sim wears Everyday until the player makes new outfits in CAS [inferred: no EA code was found that rebuilds missing categories on resurrection]. Expected gain: fewer outfits in the native CAS SimService cache (`0x342779A7`, §1) [inferred; measure with save-stats].
+
+Inventory [verified]: a Sim's inventory belongs to its Sim object, not to the description. When a Sim of the active household dies, `GrimReaperSituation.FinalizeDeath` moves its inventory to the oldest living (or playable ghost) household member (`Sim.MoveInventoryItemsToAFamilyMember`, `Sim.cs` line 60982; items marked `INotTransferableOnDeath` are destroyed by EA there); a playable ghost sent back to its grave does the same (`Urnstone.ReturnToGraveCleanup`, line 3650). A buried Sim has no Sim object, so it holds no inventory. The only inventory a description can still hold is `mInventoryItemsWhileInPassport` (items parked during a passport trip, `Sims3.Gameplay.Passport/Passport.cs` line 128). It is never deleted or moved: counter [422] counts buried Sims that still hold such a list, so we learn whether it happens at all.
+
+### 8.3 What it never touches
+
+Everything in §3 except what §8.2 lists, and always: living Sims of the active household and its playable ghosts; any selectable Sim; graves placed in the world or held in any inventory other than a mausoleum; dead Sims with a living or ghost parent, child or sibling, or any family, partner or relationship tie to the active household; Good Friend and stronger, enemies and every romance; Naked, Everyday, Special and Supernatural outfits and the default outfit; skills, traits, careers, genealogy; inventories. Nothing runs while travelling, on vacation, saving, outside live mode, or before the load fix-up.
+
+### 8.4 Counters and checks
+
+[411] passes finished, [412] slices, [413] longest slice us, [414] total ms, [415] passes refused or stopped (and items that threw), [416]-[422] as above (agent names `savecleanup_spread_*`, `savecleanupaggressive_*`). Agent check `Ts3Fixes.Fixes.SaveCleanupAggressiveCheck`: `count` (candidates per part, no change), `run` (start the pass now), `cleanse` (§8.2.3 alone in one tick, also with Overwatch loaded; scratch test saves only).
+
+### 8.5 Test plan
+
+No multi-generation save existed. Repro `bp-multigen-build` builds the scratch save `MultiGen-Test-BP` from `Baseline-BP` with the test agent: short lifespan, children aged up, elders made friends of the active Sim and aged to death (so EA keeps their graves in the mausoleum), a birth, 5 minutes at ultra. Repro `bp-multigen-aggr` saves the same state with the cleanup off (`MultiGen-BP-off`), runs the pass twice (the second should remove about 0), runs `cleanse`, then the save matrix (new, overwrite, unpaused, build mode, reload, play, save after reload). Queue:
+
+`node tools/harness/queue.ts tools/harness/queues/save-cleanup-aggressive.json`
+
+Save size: `node tools/harness/save-stats.ts MultiGen-BP-off MultiGen-BP-aggr`. Hitches: job `bp-multigen-ab` (in-load A/B, 2-minute slices), judged with `tools/harness/hitch-ab.ts`: no new frames >= 100 ms from the cleanup and `savecleanup_spread_max_slice_us` <= ~3000.
+
+Risks [inferred]: rotation players are covered by §8.6 (played households get the lighter tier), but only within `kPlayedGenerations` of a living member: older generations of a played family, and households the player never made active, get the full aggressive tier; §8.2.2 changes NPC behaviour slightly (book counts; one-time opportunities for returning members); §8.2.4 drops old friendships between townies; §8.2.5 resurrected Sims need new outfits; the cleanse removes family-tree entries of Sims nobody is linked to any more (the daily genealogy purge keeps only 1 link of the dead anyway, docs/09 §3).
+
+### 8.6 Played households and the lighter tier (rotation play)
+
+EA keeps no "was ever played" flag on `Household` or `SimDescription` (only `IsNeverSelectable`; no field named played, ever-active or was-active in `Household.cs` or `SimDescription.cs`) [verified]. So we keep our own set (`mods/ts3fixes/src/PlayedHouseholds.cs`).
+
+Store (rule: our data never goes into a save): a sidecar text file per save, kept by ts3native (`native/ts3native/played.cpp`), at `<Documents>\Electronic Arts\The Sims 3\ts3native\played\<key>.txt` (the same user folder as the saves, Mods and `ts3native-crashes`; `<Documents>` from the shell folder registry key, so OneDrive-moved folders work). One decimal household id per line; `#` lines are comments; a header names the save key, world and write time. Removing the mod, or deleting the file, leaves every save untouched; deleting the file only forgets which households were played. Script code cannot write files, so ts3fixes talks to the store over the `[UserDiag]` text channel (top byte `0x87`, docs/188): text lines `played: open <key> <world>`, `played: saveas <key> <world>`, `played: add <id>`, `played: ask <id>`, and op 6 for the answer (store ready after open/saveas; played or not after ask). Writes go to a temp file renamed over the old one. A missing file is an empty set, a corrupt line is skipped, a file over 256 KB or unreadable is an empty set; each case is logged (`played: <key>: ...` in `ts3native.log`), never a crash. Without the store (no ts3native, an older build, `[UserDiag] Enabled=0`) op 6 answers 0: ts3fixes keeps this session's households in memory only and the aggressive tier stands down for every pass (counter [415], one log line); the basic `kSaveCleanup` parts still run.
+
+Key: `SaveCleanupCore.PlayedKey` of the save's file name (`LoadSaveManager.GetCurrentSaveGameInfo().ID`, folders cut, characters outside `[A-Za-z0-9._-]` replaced by `_`, at most 100) [inferred: that the ID is the save's file name; the first run's log line shows it]. A game with no save yet uses `unsaved_<world>`, kept in memory only. After every save (the `OptionsModel.SaveGame` hook), at every add and at each pass start the key is read again; when it changed (Save As, the first save of a new game) the set is written under the new key (`played: saveas`), so the old save keeps its file and the new one gets a copy. A save renamed outside the game starts with an empty set. Other worlds and other saves never share a file.
+
+Recording: at every world load, and on `EventTypeId.kHouseholdSelected`, which `PlumbBob.CheckForChangeInActiveHousehold` sends whenever the active household changes (Edit Town household switch, selecting a Sim of another household, load, return from travel) (`Sims3.Gameplay.Core/PlumbBob.cs` line 430) [verified], the active household's id is added. Counters [423] set size, [424] ids added this session; each new id logs `savecleanup: played household added hh=<id>` in `ts3native.log`, and each load logs the set size. Recording runs even while every cleanup switch is off, so the set is complete when a player turns the cleanup on later.
+
+Generation depth: at the start of each pass, a breadth-first walk over genealogy parent and child links from every living member of every played household (the active one included) gives each Sim its number of steps to the nearest one, up to `kPlayedGenerations` (default 2: parents and grandparents, children and grandchildren; a sibling is 2 steps, via a parent). Every member of a played household counts as 0. Sims within that depth get the lighter tier; older generations (for example a great-grandparent's grave) get the normal aggressive tier.
+
+Lighter tier (played Sims within the depth, other than active-household members, who keep full protection):
+- the `kSaveCleanup` rules (§2a weak pairs, §2b, §7a) as before;
+- pictures capped at `kPlayedSnapshotKeep` (40) instead of `kAggressiveSnapshotKeep` (10) (counter [425]);
+- no history trim (§8.2.2), no quiet-friend rule (§8.2.4: a pair is kept when either Sim is played), no cleanse (§8.2.3) (counter [426] counts each skip);
+- dead outfits (§8.2.5) still apply, the same as for the active household's own dead (buried Sims have no household, so this rule never looked at households).
+
+Per-action log: every cleanup action on a Sim writes one `ts3native.log` line: `savecleanup: <part> tier=<basic|cap|light|aggr|dead> hh=<household id or 0> played=<0|1> gen=<steps or -1> near=<0|1> sim=<id>` (pairs log both Sims). MiniSim and route-callback removals are not per Sim of a household and are not logged per action. The queue fails any `tier=aggr` line with `near=1` (`logForbid` in every job of `save-cleanup-aggressive.json`). Repro `bp-multigen-rotation` switches to another household and back with the agent's `switch_household {household: "@other" | "@previous"}`, saves, reloads (the set must still hold both ids) and runs the pass.

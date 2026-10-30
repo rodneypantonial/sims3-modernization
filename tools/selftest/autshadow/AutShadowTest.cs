@@ -41,6 +41,11 @@ namespace Gm
     }
     public class ModFromGame : GameImpl { }  // the interface bodies are the game base's
     public class ModQuiet { public virtual void Plain() { } }
+    // docs/122 §14.13: definition-receiver slots (IDefLike / GameDef stand in for InteractionDefinition)
+    public interface IDefLike { bool Test(); }
+    public class GameDef : IDefLike { public virtual bool Test() { return true; } }
+    public class ModOwnDef : IDefLike { public bool Test() { return false; } }      // a mod's own, unrelated definition
+    public class ModSubDef : GameDef { public override bool Test() { return false; } }  // derives an allow-listed one
 }
 
 class Probe : AutShadowCore.IRainProbe
@@ -139,6 +144,23 @@ static class AutShadowTest
         Check(n == 1, "census: one mod type overrides closure slots, got " + n);
         Check(hit[0] && !hit[1] && hit[2] && hit[3] && !hit[4], "census: InUse override, explicit and implicit interface bodies; newslot and game-base bodies not counted");
         Check(log.Count == 3, "census log lines " + log.Count);
+        // receiver rule: the old census marks the definition slot for a mod's own definition (mono-cost4 bug); with the
+        // definition slots exempt only the object slot is marked, and the subclass skips its base by the derive rule
+        string[] ds = { "Gm.IDefLike::Test()", "Gm.GameDef::Test()", "Gm.Host::get_InUse()" };
+        Type[] mt = { typeof(Gm.ModOwnDef), typeof(Gm.ModSubDef), typeof(Gm.ModObj) };
+        Predicate<Type> modP = delegate(Type t) { return t != null && t.Name.StartsWith("Mod"); };
+        bool[] dh = new bool[ds.Length];
+        AutShadowCore.OverrideCensus(mt, modP, ds, dh, null);
+        Check(dh[0] && dh[1] && dh[2], "old census: own definition marks the interface slot");
+        dh = new bool[ds.Length];
+        int ex;
+        int ntypes = AutShadowCore.OverrideCensus(mt, modP, ds, dh, null, delegate(string sl) { return sl.StartsWith("Gm.IDefLike::") || sl.StartsWith("Gm.GameDef::"); }, out ex);
+        Check(!dh[0] && !dh[1] && dh[2] && ntypes == 1 && ex >= 2, "receiver rule: only the object slot marked, exempted " + ex + ", types " + ntypes);
+        bool[] oh = new bool[3];
+        System.Collections.Generic.List<string> dl = new System.Collections.Generic.List<string>();
+        int dn = AutShadowCore.DerivedOwners(mt, new Type[] { typeof(Gm.GameDef), null, typeof(Gm.IThing) }, oh, dl);
+        Check(dn == 1 && oh[0] && !oh[1] && !oh[2] && dl.Count == 1 && dl[0].Contains("Gm.ModSubDef"), "derive rule: the subclass skips its base only");
+        Check(AutShadowCore.OnScoredDefinition("Sims3.Gameplay.Interactions.InteractionDefinition::Test(x)") && !AutShadowCore.OnScoredDefinition("Sims3.Gameplay.Interfaces.IGameObject::get_InUse()"), "OnScoredDefinition");
 
         // H11 (docs/127 §4): conditions in the game's order, later probes not run once one fails
         Probe pr2 = new Probe();

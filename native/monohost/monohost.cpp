@@ -12,6 +12,7 @@
 // It also runs the M2 stubs (docs/119 §12; "m13 <hostdata> m2" for the sweep alone) and the M5 proof (docs/120 §8: the
 // unchanged ts3native [MonoThread] code with a worker; both threads interpreting at once, docs/120 §9).
 // docs/139 (env, selftest mode): MONOHOST_MINT=count|threaded|nocheck, MONOHOST_MINTFUSE=sub, MONOHOST_MINTBENCH=<n>.
+// docs/207 §7 (env, selftest mode): MONOHOST_JIT=off|dump|on|verify method compiler prototype (monohost-jit.cpp).
 // Never point it at the installed game: the exe is only mapped, but keep EA files out of git (copy under game-copy/).
 #include <windows.h>
 #include <stdio.h>
@@ -68,7 +69,7 @@ static int RunChild() {
     }
     ResumeThread(pi.hThread);
     DWORD rc = 2;
-    if (WaitForSingleObject(pi.hProcess, 120000) == WAIT_TIMEOUT) {  // fail fast: init takes seconds
+    if (WaitForSingleObject(pi.hProcess, GetEnvironmentVariableA("MONOHOST_JIT", NULL, 0) ? 900000 : 120000) == WAIT_TIMEOUT) {  // fail fast: init takes seconds
         printf("child timed out after 120 s\n");
         TerminateProcess(pi.hProcess, 4);
     }
@@ -987,6 +988,7 @@ namespace mt {
 static DWORD g_mainTid;
 struct Ts3nCounters { LONG mtMode, mtReady, mtSimTid, mtSimRegistered, mtThreads, mtPushCalls, mtCtxFails, mtStacksPushed; };
 static Ts3nCounters ts3native_counters;
+static DWORD* g_curState = (DWORD*)(uintptr_t)0x011F4170;  // ts3native's current-state pointer, repointed by MtInstallP4
 static void Log(const char* fmt, ...) {
     char buf[512];
     va_list a;
@@ -1009,6 +1011,7 @@ static bool Write(void* addr, const void* bytes, size_t n) {
     FlushInstructionCache(GetCurrentProcess(), addr, n);
     return true;
 }
+static void* InstallDetour(const char*, DWORD, const u8*, size_t, void*) { return NULL; }
 #include "../ts3native/simloop.cpp"  // the per-iteration hook ApplyMonoThread adds (the host never runs Simulate)
 #include "../ts3native/monothread.cpp"
 // [AutShadow] (docs/122 §13-§14) on top of M5: routesnap's pieces it touches, as no-ops (no routing in the host)
@@ -1017,9 +1020,12 @@ static SnObjRegFn g_snObjReg;
 static bool SnObjListed(DWORD, void*) { return true; }
 static const int SN_IC_N = 1, SN_WEV = 0;
 static void (*const kSnIcShims[SN_IC_N])() = {NULL};
+static void (*const kHxShims[7])() = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};  // locowin.cpp's H2Ic shims: none in the host
+static unsigned short GetX87() { unsigned short cw; __asm { fnstcw cw } return cw; }  // as ts3native.cpp
+static void SetX87(unsigned short cw) { __asm { fldcw cw } }
 static void* g_snJmp[1];
-static void* InstallDetour(const char*, DWORD, const u8*, size_t, void*) { return NULL; }
 #include "../ts3native/autshadow.cpp"
+static int AsTierOf(AsU64) { return 1; }  // unseen.cpp's tier rule (TierMs is 0 in the host: never asked)
 #pragma warning(pop)
 }  // namespace mt
 
@@ -1165,6 +1171,163 @@ static void* TA(const char* name, int n, void** args) {
 }
 static int AsGet(int what) { void* a[1] = {&what}; return I32(TA("Get", 1, a)); }
 
+// ---- docs/206 §7 Satb offline proof: the worker scores while this ("sim") thread runs the next tick's script, which mutates
+// the managed world the score reads (every store kind, List/Dictionary/Array.Copy/Clear/BlockCopy). Satb=2: A0 for every
+// object (bit-equal to the reference run at the cut); negative control (no barrier): the same flow must show A1-A3.
+static int AsSatbRounds(int rounds, int* seed, int* concRounds, int* mutations) {
+    int bad = 0;
+    *concRounds = 0, *mutations = 0;
+    for (int r = 0; r < rounds; r++) {
+        int id = 20000 + r;
+        void* a[1] = {&id};
+        if (I32(TA("Request", 1, a)) != 1) { Log("AS satb: request %d refused\n", id); return -1; }
+        mt::MtSimLeave();  // cut, reference, Satb on, submit
+        mt::MtTick();      // next Simulate entry: Satb act keeps the job running
+        int during = 0;
+        for (int s = 0; s < 200000 && mt::g_mtBusy; s++) {
+            void* m[1] = {seed};
+            TA("MainMutate", 1, m);
+            (*seed)++, during++;
+            if ((s & 7) == 7) MainChurnGc();  // collections while the job runs: the log's roots keep the cut objects alive
+        }
+        *mutations += during;
+        *concRounds += during > 0;
+        for (int s = 0; s < 1000 && mt::g_asRun != 0; s++) mt::MtSimLeave();  // finish (compare) once the job left
+        bad += mt::g_asRun != 0;
+    }
+    return bad;
+}
+static int AsSatb() {
+    mt::Ts3nAutShadow& k = mt::ts3native_autshadow;
+    const int n = I32(TA("SatbSetup", 0, NULL));
+    const int mode = mt::SatbInstall(2);
+    if (!Check("AS-satb-install", n == 64 && mode == 2 && mt::g_satbRtSwapped >= 0, "SatbWorld %d objects, Satb mode %d (act), IC rows %d", n, mode,
+               mt::g_satbIcMapped))
+        return 170;
+    // every opcode runs once on this thread first (transform, class init, vtables)
+    int seed = 7, conc = 0, muts = 0;
+    void* w[1] = {&seed};
+    TA("MainMutate", 1, w);
+    TA("SatbScoreNow", 1, w);
+    static int rounds = 120;
+    TA("ResetCounts", 0, NULL);
+    const LONG hits0 = k.satbWHits, loads0 = k.satbWLoads, words0 = k.satbWords, give0 = k.satbWGiveUp, conf0 = k.satbWConflict,
+               rt0 = k.satbRtCalls, fix0 = k.satbWRtFix, conc0 = k.satbConc, stale0 = k.satbStale, waits0 = k.satbWaits, ign0 = k.satbWArenaIgn,
+               st0 = k.satbStores;
+    const int stuck = AsSatbRounds(rounds, &seed, &conc, &muts);
+    const int a0 = AsGet(0), a1 = AsGet(1), a2 = AsGet(2), a3 = AsGet(3), a4 = AsGet(4), a5 = AsGet(5), runs = AsGet(6), rng = AsGet(8), other = AsGet(9),
+              abandoned = AsGet(12), errLen = AsGet(13);
+    void* es = TA("GetError", 0, NULL);
+    char err[200] = "";
+    if (es && es != (void*)1) Narrow(es, err, 200);
+    Log("AS satb (act): %d rounds, %d with the main thread mutating during the job (%d mutations); runs %d, A0 %d A1 %d A2 %d A3 %d A4 %d (rng %d, other %d) "
+        "A5 %d, abandoned %d; worker loads %ld, log hits %ld, arena ignores %ld, give-ups %ld (last op 0x%lX), conflicts %ld; sim stores %ld, words logged %ld, "
+        "runtime writers %ld, worker copy fixes %ld, waits %ld, stale %ld, concurrent jobs %ld; %s\n", rounds, conc, muts, runs, a0, a1, a2, a3, a4, rng,
+        other, a5, abandoned, k.satbWLoads - loads0, k.satbWHits - hits0, k.satbWArenaIgn - ign0, k.satbWGiveUp - give0, k.satbWGiveUpOp,
+        k.satbWConflict - conf0, k.satbStores - st0, k.satbWords - words0, k.satbRtCalls - rt0, k.satbWRtFix - fix0, k.satbWaits - waits0,
+        k.satbStale - stale0, k.satbConc - conc0, err);
+    if (mt::g_satbDbgObj) {
+        void* objClass = *(void**)(uintptr_t)(0x1220E40 + 4);
+        void* fullName = Meth(Cls(*(void**)(uintptr_t)0x1220E40, "System", "MonoType"), "get_FullName", 0);
+        char nm[128] = "";
+        Narrow(Inv0(fullName, Inv0(Meth(objClass, "GetType", 0), (void*)(uintptr_t)mt::g_satbDbgObj)), nm, 120);
+        Log("AS satb: last conflict at %08lX in a %s (object %08lX)\n", mt::g_satbDbgAddr, nm, mt::g_satbDbgObj);
+    }
+    const int perRun = 50;
+    const bool ok = stuck == 0 && conc >= rounds / 2 && a1 + a2 + a3 == 0 && other == 0 && errLen == 0 && k.workExc == 0 &&
+                    k.satbWHits - hits0 > 0 && runs >= rounds * 9 / 10 && a0 + a4 + abandoned == runs * perRun && a0 >= runs * perRun * 9 / 10;
+    Check("AS-satb-exact", ok, "worker scored the cut while this thread mutated the world in %d of %d jobs: A0 %d of %d, A1-A3 %d, "
+          "log hits %ld, give-ups %ld", conc, rounds, a0, runs * perRun, a1 + a2 + a3, k.satbWHits - hits0, k.satbWGiveUp - give0);
+
+    // barrier cost on this thread [measured]: the same mutation and score loops with a span on (no job) vs off; ns per
+    // store through the stub (first writes included) and per load through the thread test
+    {
+        LARGE_INTEGER f, t0, t1;
+        QueryPerformanceFrequency(&f);
+        static int bn = 100;  // ~45k first-written words: under the 65,534-entry log
+        double offM = 1e30, onM = 1e30, offS = 1e30, onS = 1e30;
+        LONG st = 0, wd = 0, ld = 0, stS = 0;
+        for (int rep = 0; rep < 20; rep++) {
+            for (int on = 0; on < 2; on++) {
+                const LONG st0b = k.satbStores, wd0b = k.satbWords, ld0b = k.satbLoads;
+                if (on) mt::SatbBegin(mt::g_mtWorkerTid, 0);
+                QueryPerformanceCounter(&t0);
+                for (int i = 0; i < bn; i++) { int sd = 5000 + i; void* m[1] = {&sd}; TA("MainMutate", 1, m); }
+                QueryPerformanceCounter(&t1);
+                const double msM = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+                const LONG stS0 = k.satbStores;
+                QueryPerformanceCounter(&t0);
+                for (int i = 0; i < bn; i++) { int sd = i; void* m[1] = {&sd}; TA("SatbScoreNow", 1, m); }
+                if (on) stS = k.satbStores - stS0;
+                QueryPerformanceCounter(&t1);
+                const double msS = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+                if (on) { mt::SatbEnd(); st = k.satbStores - st0b, wd = k.satbWords - wd0b, ld = k.satbLoads - ld0b; onM = min(onM, msM), onS = min(onS, msS); }
+                else offM = min(offM, msM), offS = min(offS, msS);
+            }
+        }
+        Log("AS satb cost: %d mutations %.2f ms off / %.2f ms on (%ld stores, %ld first-written words): %.1f ns per store; %d scores %.2f ms off / %.2f ms on "
+            "(%ld loads, %ld stores of its own): %.2f ns per load after its stores [measured, best of 20]\n", bn, offM, onM, st, wd,
+            st ? (onM - offM) * 1e6 / st : 0.0, bn, offS, onS, ld, stS, ld && st ? ((onS - offS) * 1e6 - stS * (onM - offM) * 1e6 / st) / ld : 0.0);
+    }
+
+    // negative control: the same concurrent flow with no barrier and no redirect must see the mutations
+    mt::g_satbTestNoBarrier = true;
+    TA("ResetCounts", 0, NULL);
+    int conc2 = 0, muts2 = 0;
+    const int stuck2 = AsSatbRounds(40, &seed, &conc2, &muts2);
+    mt::g_satbTestNoBarrier = false;
+    const int b1 = AsGet(1), b2 = AsGet(2), b3 = AsGet(3);
+    Log("AS satb negative control (no barrier): 40 rounds, %d concurrent, A0 %d A1 %d A2 %d A3 %d\n", conc2, AsGet(0), b1, b2, b3);
+    Check("AS-satb-negative", stuck2 == 0 && conc2 > 0 && b1 + b2 + b3 > 0,
+          "without the barrier the worker saw the main thread's writes: A1-A3 %d over %d concurrent jobs", b1 + b2 + b3, conc2);
+
+    // overflow: a mutation that writes more words than the log holds while the job runs -> the sim stops the worker and
+    // waits for it before the unlogged writes; the run is stopped (A5 here), never wrong
+    TA("ResetCounts", 0, NULL);
+    const LONG ov0 = k.satbOverflow, wt0 = k.satbWaits;
+    int big = 0;
+    {
+        int id = 30000;
+        void* a[1] = {&id};
+        void* bg[1] = {&seed};
+        TA("MainBig", 1, bg);  // allocate the array before the cut (warm), then once more inside the job
+        if (I32(TA("Request", 1, a)) == 1) {
+            mt::MtSimLeave();
+            mt::MtTick();
+            if (mt::g_mtBusy) { TA("MainBig", 1, bg); big = 1; }
+            for (int s = 0; s < 1000 && mt::g_asRun != 0; s++) mt::MtSimLeave();
+        }
+    }
+    Log("AS satb overflow: big write during the job %d, overflows %ld, waits %ld (timeouts %ld), A0 %d A1 %d A2 %d A3 %d A5 %d\n", big,
+        k.satbOverflow - ov0, k.satbWaits - wt0, k.satbWaitTimeouts, AsGet(0), AsGet(1), AsGet(2), AsGet(3), AsGet(5));
+    Check("AS-satb-overflow", !big || (k.satbOverflow > ov0 && k.satbWaits > wt0 && AsGet(1) + AsGet(2) + AsGet(3) == 0 && mt::g_asRun == 0),
+          "a 70,000-word write during a job: overflow %ld, the sim waited %ld times, A1-A3 %d (big write in the job: %d)", k.satbOverflow - ov0,
+          k.satbWaits - wt0, AsGet(1) + AsGet(2) + AsGet(3), big);
+
+    // probe (S0): the job runs in the window as before; one job length of the next tick's stores is counted, no redirect
+    mt::SatbInstall(1);
+    TA("ResetCounts", 0, NULL);
+    const LONG sp0 = k.satbJobSpans, js0 = k.satbJobStores, jw0 = k.satbJobWords, wl0 = k.satbWLoads;
+    for (int r = 0; r < 20; r++) {
+        int id = 40000 + r;
+        void* a[1] = {&id};
+        if (I32(TA("Request", 1, a)) != 1) break;
+        mt::MtSimLeave();
+        for (int s = 0; s < 60000 && mt::g_mtBusy; s++) Sleep(0);  // quiescent window: the job ends first
+        mt::MtTick();  // window close: the probe span starts
+        for (int m = 0; m < 3; m++) { void* mm[1] = {&seed}; TA("MainMutate", 1, mm); seed++; }
+        Sleep(10);  // past one job length: the timer thread snapshots
+        mt::MtSimLeave();  // span end, finish
+    }
+    Log("AS satb probe: spans timed %ld, per span %ld stores / %ld words; worker redirect loads %ld; A0 %d A1 %d A2 %d A3 %d\n", k.satbJobSpans - sp0,
+        k.satbJobSpans > sp0 ? (k.satbJobStores - js0) / (k.satbJobSpans - sp0) : 0, k.satbJobSpans > sp0 ? (k.satbJobWords - jw0) / (k.satbJobSpans - sp0) : 0,
+        k.satbWLoads - wl0, AsGet(0), AsGet(1), AsGet(2), AsGet(3));
+    Check("AS-satb-probe", k.satbJobSpans - sp0 >= 18 && k.satbJobStores > js0 && k.satbJobWords > jw0 && k.satbWLoads == wl0 && AsGet(1) + AsGet(2) + AsGet(3) == 0,
+          "probe spans %ld with stores counted, no worker redirect, A1-A3 %d", k.satbJobSpans - sp0, AsGet(1) + AsGet(2) + AsGet(3));
+    mt::SatbInstall(0);
+    return 0;
+}
+
 static int AsG2() {
     mt::Ts3nAutShadow& k = mt::ts3native_autshadow;
     mt::Ts3nMtProbe& p = mt::ts3native_mtprobe;
@@ -1191,7 +1354,7 @@ static int AsG2() {
     mt::g_asMode = 1;  // R: reference on this thread, then the worker
     mt::MtTick();      // first Simulate entry: the AutShadowNative ICs register
     const int ver = I32(TA("Setup", 0, NULL));
-    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 16 && ver == 4 && p.workerState == 2,
+    if (!Check("AS-install", guards && k.descIcs == nIc && k.icRegistered == 26 && ver == 8 && p.workerState == 2,
                "guards %d (%ld descriptor ICs), AutShadowNative ICs %ld, Setup -> Version %d, worker state %ld", guards, k.descIcs,
                k.icRegistered, ver, p.workerState))
         return 160;
@@ -1256,6 +1419,12 @@ static int AsG2() {
     const bool stopped = k.overrun > over0 ? AsGet(5) == a5b + 1 && AsGet(11) == 1 : AsGet(11) == 0;  // a fast worker may finish first
     Check("AS-overrun", posted && !mt::g_mtBusy && mt::g_asRun == 0 && stopped && AsGet(13) == 0,
           "request posted %d, overrun %ld, last status %d, worker idle %d", posted, k.overrun - over0, AsGet(11), !mt::g_mtBusy);
+    char sv[4] = "";
+    GetEnvironmentVariableA("MONOHOST_SATB", sv, sizeof(sv));
+    if (sv[0] == '1') {
+        const int rc = AsSatb();
+        if (rc) return rc;
+    }
     mt::g_mtOnEnter = NULL, mt::g_mtOnLeave = NULL, mt::g_mtJobHook = NULL, mt::g_asWorkerTid = 0;
     return 0;
 }
@@ -1624,16 +1793,21 @@ static void MintBench() {
     Log("mintbench mode %d n %d: best %.1f ms, checksum %d\n", g_mintMode, n, best, sum);
 }
 
+#include "monohost-jit.cpp"  // docs/207 P0 method compiler (MONOHOST_JIT)
+
 static int SelfTest(void* domain) {
     int rc = M13(domain);
     MintDump("m13");  // docs/139: the .cctor sweep = EA script code; the rest is HostTest code
     if (!rc) rc = M14();
     if (!rc) rc = M15();
+    JitAtomic(false);  // docs/207 verify: M5 installs P3 detours on the GC entry points
     if (!rc) rc = M5();
     if (!rc) rc = GuardSweepTest();  // after M5: M5-arena-dedupe expects M1.5's arena state
     MintDump("selftest-rest");
-    if (!rc) MintBench();
+    // docs/207: the JIT runs go on past an early stop (M5's [AutShadow] install check belongs to another lane)
+    if (!rc || g_jitMode) MintBench();
     MintDump("bench");
+    if (!rc || g_jitMode) JitBenchRun();
     Log("SELFTEST %s: %d passed, %d failed%s\n", g_fail || rc ? "FAILED" : "OK", g_pass, g_fail, rc ? " (stopped early)" : "");
     return rc ? rc : g_fail;
 }
@@ -1665,7 +1839,12 @@ static int Run(const wchar_t* exe) {
         if (!Jmp(p.at, p.to)) { Log("STEP 2 FAIL: patch 0x%08lX\n", p.at); return 20; }
     Log("STEP 2 OK: eglib g_malloc/g_malloc0/g_free/g_strdup/g_realloc and GeneralAllocator alloc/free/realloc -> host CRT\n");
     Log("STEP 3 OK: image loader 0xD6FCB0 and config path 0xD6FC40 detoured (assemblies from %s)\n", g_asmDir);
-    if (!InstallMint() || !InstallSubFuse()) { Log("STEP 3 FAIL: mint instrumentation (docs/139)\n"); return 30; }
+    if (!InstallMint() || !InstallSubFuse() || !InstallJit()) { Log("STEP 3 FAIL: mint instrumentation (docs/139)\n"); return 30; }
+    {  // docs/206 §7: MONOHOST_SATB=1 wraps mono's runtime icall table before any icall is resolved (as ts3native at DllMain)
+        char sv[4] = "";
+        GetEnvironmentVariableA("MONOHOST_SATB", sv, sizeof(sv));
+        if (sv[0] == '1') Log("satb: %d runtime icall table entries wrapped\n", mt::SatbInstallRt());
+    }
 
     void* domain = ((InterpInit)0xE5A680)("MonoEngine");
     void* corlib = *(void**)(uintptr_t)0x1220E40;          // mono_defaults.corlib

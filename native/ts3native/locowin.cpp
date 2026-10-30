@@ -29,6 +29,7 @@ static LONG g_g0wDropLogged[2];
 static void G0wDrop(int site, const void* ret) {
     if (!g_g0Win || GetCurrentThreadId() != g_g0wTid) return;
     InterlockedExchange(&g_g0Win, 0);  // for the rest of this pass; g_g0wIn stays (later starts count as in-pass)
+    RwWake();  // [RouteAsync] WorkerWait: a parked worker starts the job this wait needs now
     InterlockedIncrement(&ts3native_counters.g0wDrop[site]);
     if (!g_g0wDropLogged[site]++) Log("loco window: dropped before a sim wait (%s), caller %p", site ? "sync worker plan" : "WaitJobDone", ret);
 }
@@ -56,6 +57,7 @@ static void __fastcall LocoWinThunk(void* self, void* edx, float dt) {
         InterlockedExchange64(&g_h2PassEnd, end.QuadPart);
         InterlockedExchange(&g_g0wIn, 0);
         InterlockedExchange(&g_g0Win, 0);
+        RwWake();
         t_g0wDepth = 0;
         const LONG us = UsSince(t0);
         InterlockedIncrement(&k.g0wPasses);
@@ -110,7 +112,7 @@ static void __cdecl HxLeaveThunk();
 
 static void HxClose() {  // the outermost IC frame is gone: the window down (unless the pass owns it)
     InterlockedExchange(&g_hxOpen, 0);
-    if (!t_g0wDepth) InterlockedExchange(&g_g0Win, 0);
+    if (!t_g0wDepth) InterlockedExchange(&g_g0Win, 0), RwWake();
 }
 static void HxReset() {  // drops only frames below this stack pointer (dead for sure); a live IC frame always sits above it
     HxThread& t = t_hx;

@@ -112,13 +112,23 @@ namespace Ts3Fixes
             return !UfLotSeen(lot);
         }
 
-        // riding, ridden, in a vehicle, carried, or carrying a child, pet or object (their routes move another object too)
+        // riding, ridden, in a vehicle, carried, or carrying a child, pet or object (their routes move another object too).
+        // Issue #89: the posture chain is walked here, bounded, instead of through Posture.Satisfies, which recurses down
+        // PreviousPosture with no end check: EA's Sim.set_Posture can leave two postures pointing at each other on a pop
+        // (PosturePopHook below), and Satisfies then overflows the interpreter stack. Same answer as the four Satisfies calls
+        // (Satisfaction > 0 at any posture of the chain, Satisfies is not virtual) [verified, decompiled]; a chain that does not end
+        // within kPostureChainCap postures is a broken state: held, so nothing of ours moves or fakes this Sim. Counter [371].
         static bool UfHeld(Sim s)
         {
             if (s.IsInRidingPosture || s.IsInBeingRiddenPosture || s.Parent is Vehicle || s.Parent is Sim) return true;
-            var p = s.Posture;
-            return p != null && (p.Satisfies(CommodityKind.CarryingChild, null) || p.Satisfies(CommodityKind.CarryingPet, null)
-                || p.Satisfies(CommodityKind.CarryingObject, null) || p.Satisfies(CommodityKind.BeingRidden, null));
+            int n = 0;
+            for (Sims3.Gameplay.ActorSystems.Posture p = s.Posture; p != null; p = p.PreviousPosture)
+            {
+                if (!UnseenFallbackCore.ChainStepOk(++n)) { PatchCounters()[371]++; return true; }
+                if (p.Satisfaction(CommodityKind.CarryingChild, null) > 0f || p.Satisfaction(CommodityKind.CarryingPet, null) > 0f
+                    || p.Satisfaction(CommodityKind.CarryingObject, null) > 0f || p.Satisfaction(CommodityKind.BeingRidden, null) > 0f) return true;
+            }
+            return false;
         }
 
         // docs/202 §3.7: a cut plan (or a no-retry answer) is not a route failure of the Sim: our watchdog's route-fail count
@@ -181,14 +191,18 @@ namespace Ts3Fixes
 
         // first managed frame above the route funnels and our hooks ("FullType.Method"), as routesrc reads it; Lot.PlanToLot(Ex)
         // is skipped too, so RoutingComponent.RouteToLot (plans through Lot.PlanToLot) is seen as the caller
-        static string UfCaller()
+        static string UfCaller(out string above)
         {
+            above = null;
             for (int i = 1; i < 32; i++)
             {
                 System.Reflection.MethodBase m = new System.Diagnostics.StackFrame(i, false).GetMethod();
                 if (m == null) return null;
                 string ft = m.DeclaringType != null ? m.DeclaringType.FullName : null;
-                if (!RouteSrcCore.IsPassThrough(ft, m.Name) && !UfPreCore.PlanToLotFrame(ft, m.Name)) return ft + "." + m.Name;
+                if (RouteSrcCore.IsPassThrough(ft, m.Name) || UfPreCore.PlanToLotFrame(ft, m.Name) || UfPreCore.OwnFrame(ft, m.Name)) continue;
+                System.Reflection.MethodBase n = new System.Diagnostics.StackFrame(i + 1, false).GetMethod();
+                if (n != null) above = (n.DeclaringType != null ? n.DeclaringType.FullName : null) + "." + n.Name;
+                return ft + "." + m.Name;
             }
             return null;
         }
@@ -198,8 +212,8 @@ namespace Ts3Fixes
         // would reach
         static bool UfFollows()
         {
-            string f = UfCaller();
-            if (UfPreCore.FollowsRoute(f)) return true;
+            string above, f = UfCaller(out above);
+            if (UfPreCore.FollowsRoute(f, above)) return true;
             var d = AppDomain.CurrentDomain.GetData("ts3fixes.unseenfb.callers") as System.Collections.Generic.Dictionary<string, int>;
             if (d == null) { d = new System.Collections.Generic.Dictionary<string, int>(); AppDomain.CurrentDomain.SetData("ts3fixes.unseenfb.callers", d); }
             int n;
@@ -369,11 +383,22 @@ namespace Ts3Fixes
             }
 
             // kind 0 Plan, 1 Replan, 2 PlanFromPoint, 3 ReplanFromPoint (the A10 kinds)
+            // Issue #92 (docs/51 §386): every frame above the original plan counts against Mono's 63-frame limit for whatever the
+            // plan calls back into (AboutToPlan / PostPlan callbacks, door asks, mod handlers). UfPlanBody only decides and returns
+            // false when the plan is not ours, so the common plan runs from here: UfPlanBody and UfInner are off the stack then.
             RoutePlanResult UfPlan(int kind, Vector3 p)
             {
                 int t0 = System.Environment.TickCount;
                 sUfLastWhy = -1; sUfLastMarked = sUfLastCut = false; sUfLastSim = null;
-                RoutePlanResult r = UfPlanBody(kind, p);
+                RoutePlanResult r;
+                if (!UfPlanBody(kind, p, out r))
+                    switch (kind)  // UfInner, inlined
+                    {
+                        case 0: r = PlanBackoff(); break;
+                        case 1: r = ReplanAsync(); break;
+                        case 2: r = PlanFromPointAsync(p); break;
+                        default: r = ReplanFromPointAsync(p); break;
+                    }
                 UfSlowPlanLog(kind, unchecked(System.Environment.TickCount - t0));
                 UfLoopNote(Follower, r);  // docs/202 §5.7 E (unseenfbloopdet)
                 if (sUfFill.Route != null && ReferenceEquals(sUfFill.Route, this))
@@ -384,47 +409,46 @@ namespace Ts3Fixes
                 return r;
             }
 
-            RoutePlanResult UfPlanBody(int kind, Vector3 p)
+            // false = not ours: the caller (UfPlan) runs the plan; true = r is the plan's result
+            bool UfPlanBody(int kind, Vector3 p, out RoutePlanResult r)
             {
+                r = default(RoutePlanResult);
                 bool pre = kind == 0 && (ShortcutOn("unseenfbpre") || ShortcutOn("unseenfbarrive"));
                 bool leave = kind == 0 && ShortcutOn("unseenfbleave");
-                if (!pre && !leave && !ShortcutOn("unseenfbplan")) return UfInner(kind, p);
+                if (!pre && !leave && !ShortcutOn("unseenfbplan")) return false;
                 IScriptProxy proxy = Follower;
                 Sim sim = proxy != null ? proxy.Target as Sim : null;
                 // never: stuck-check probes (phase B), our own route checks, IsPointInLotSafelyRoutable, non-Sims, pets, D-leave's own leg
                 if (sim == null || sStuckIn || sInOwnCheck || sInRoutableCheck || sUfInLeg || sim.SimDescription == null || sim.SimDescription.IsPet)
-                    return UfInner(kind, p);
+                    return false;
                 int[] c = PatchCounters();
                 int why = UfWhy(sim);
                 sUfLastWhy = why; sUfLastSim = sim;
                 if (why != 0)
                 {
-                    RoutePlanResult lr;
-                    if (leave && UnseenFallbackCore.SeenButMovable(why) && UfLeave(sim, GetApproximateOriginalDestination(), out lr)) return lr;
+                    if (leave && UnseenFallbackCore.SeenButMovable(why) && UfLeave(sim, GetApproximateOriginalDestination(), out r)) return true;
                     c[310]++;
-                    return UfInner(kind, p);
+                    return false;
                 }
-                if (!pre && !ShortcutOn("unseenfbplan")) return UfInner(kind, p);
+                if (!pre && !ShortcutOn("unseenfbplan")) return false;
                 ulong id = sim.ObjectId.Value;
                 Vector3 dest = GetApproximateOriginalDestination();
                 int x = UnseenFallbackCore.Cell(dest.x), y = UnseenFallbackCore.Cell(dest.y), z = UnseenFallbackCore.Cell(dest.z);
                 int t0 = System.Environment.TickCount;
                 object prev;
-                if (sUf.NoRetry(id, x, y, z, t0, out prev)) { c[309]++; sUfNotFail = kind == 0; return FailFast((RoutePlanResult)prev); }
-                if (!sUf.MayMark(id, t0)) return UfInner(kind, p);
+                if (sUf.NoRetry(id, x, y, z, t0, out prev)) { c[309]++; sUfNotFail = kind == 0; r = FailFast((RoutePlanResult)prev); return true; }
+                if (!sUf.MayMark(id, t0)) return false;
                 if (pre)
                 {
-                    RoutePlanResult pr;
-                    int v = UfPre(sim, dest, out pr);
-                    if (v == 2) { sUf.Cut(id, x, y, z, System.Environment.TickCount, pr); return pr; }  // proven unreachable: no-retry window
-                    if (v == 1) return pr;
+                    int v = UfPre(sim, dest, out r);
+                    if (v == 2) { sUf.Cut(id, x, y, z, System.Environment.TickCount, r); return true; }  // proven unreachable: no-retry window
+                    if (v == 1) return true;
                 }
-                if (!ShortcutOn("unseenfbplan")) return UfInner(kind, p);
-                if (!UfSend(1)) { c[311]++; return UfInner(kind, p); }
+                if (!ShortcutOn("unseenfbplan")) return false;
+                if (!UfSend(1)) { c[311]++; return false; }
                 c[305]++;
                 sUfLastMarked = true;
                 bool cut = false;
-                RoutePlanResult r;
                 // docs/202 §3.7: Overwatch's Stuck Check V2 (OnPostPlan, inside the original plan) must not count a cut plan as the
                 // Sim's route failure: the same (Sim, task) hide owprobeplans uses for EA's stuck-check probes (OverwatchProbe.cs)
                 ulong task = Simulator.CurrentTask.Value;
@@ -433,16 +457,16 @@ namespace Ts3Fixes
                 finally { cut = UfSend(2); sOwProbe.Exit(id, task); }
                 int ms = unchecked(System.Environment.TickCount - t0);
                 if (ms > c[312]) c[312] = ms;
-                if (!cut || r.mType == RoutePlanResultType.Succeeded) return r;
+                if (!cut || r.mType == RoutePlanResultType.Succeeded) return true;
                 c[306]++;
                 sUfLastCut = true;
                 UfGuardNote(id, "cut (kind " + kind + ")");
                 UfNotAFailure(id, dest);
                 if (kind != 0) sUfNotFail = false;  // only Route.Plan (PlanHook) reads it
                 RoutePlanResult tr;
-                if (kind == 0 && ShortcutOn("unseenfbteleport") && Simulator.CurrentTask == sim.ObjectId && UfTeleport(sim, dest, out tr)) return tr;
+                if (kind == 0 && ShortcutOn("unseenfbteleport") && Simulator.CurrentTask == sim.ObjectId && UfTeleport(sim, dest, out tr)) { r = tr; return true; }
                 sUf.Cut(id, x, y, z, System.Environment.TickCount, r);
-                return r;
+                return true;
             }
 
             // docs/202 §3.5 D (switch unseenfbpre): an unseen townie's own Route.Plan, made by a RoutingComponent helper that follows

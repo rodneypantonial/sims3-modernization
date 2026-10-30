@@ -102,6 +102,14 @@ export function verifyPackage(pkg: Buffer, ini: string, tuning: string): string[
   return bad;
 }
 
+// the build.yml run of this tag push: same head SHA, created after the push (allowing 60 s clock skew), newest first. A
+// re-tag (failed run, tag moved) leaves the old run under the same tag name; picking `.[0]` of the list watched that one.
+export type TagRun = { databaseId: number; headSha: string; createdAt: string };
+export function pickTagRun(runs: TagRun[], sha: string, pushedAtMs: number): number | undefined {
+  return runs.filter(r => r.headSha === sha && Date.parse(r.createdAt) >= pushedAtMs - 60_000)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0]?.databaseId;
+}
+
 // --- runner ---
 
 type Opts = { yes: boolean; repo: string; remote: string; src: string; ref: string; branch: string; message: string;
@@ -212,12 +220,14 @@ export function publish(o: Opts): { clone: string; commit: string } {
   if (!o.tag) return { clone, commit };
 
   const tag = o.tag;
+  const pushedAt = Date.now();
   remote(`tag ${tag} on ${sha}`, () => run('gh', ['api', `repos/${o.repo}/git/refs`, '-f', `ref=refs/tags/${tag}`, '-f', `sha=${sha}`]), '');
-  remote(`watch the ${tag} build.yml run`, () => {
+  remote(`watch the ${tag} build.yml run for ${sha}`, () => {
     for (let i = 0; ; i++) {
-      const id = run('gh', ['run', 'list', ...R, '--workflow', 'build.yml', '--branch', tag, '--json', 'databaseId', '-q', '.[0].databaseId']);
-      if (id) { execFileSync('gh', ['run', 'watch', id, ...R, '--exit-status', '--interval', '30'], { stdio: 'inherit' }); return; }
-      if (i >= 18) throw new Error(`no build.yml run for ${tag} after 3 min`);
+      const runs = JSON.parse(run('gh', ['run', 'list', ...R, '--workflow', 'build.yml', '--branch', tag, '--json', 'databaseId,headSha,createdAt']) || '[]');
+      const id = pickTagRun(runs, sha, pushedAt);
+      if (id) { execFileSync('gh', ['run', 'watch', String(id), ...R, '--exit-status', '--interval', '30'], { stdio: 'inherit' }); return; }
+      if (i >= 18) throw new Error(`no build.yml run for ${tag} at ${sha} after 3 min (older runs of the tag name are skipped)`);
       sleep(10_000);
     }
   }, undefined);
@@ -247,6 +257,16 @@ function selfCheck(): void {
     assert.throws(() => waitUntil(() => { n++; throw new Error('gh: no checks reported'); }, 'checks on #1', 180_000, 10_000, tick, clock),
       /checks on #1: not after 180 s \(last error: gh: no checks reported\)/, 'timeout names the last error');
     assert.equal(n, 19, '19 polls in 3 min at 10 s');
+  }
+  { // re-tag: the failed run of the old tag commit is listed first; the new commit's run is picked, none before it exists
+    const push = Date.parse('2026-10-29T10:00:00Z');
+    const old = { databaseId: 1, headSha: 'aaa', createdAt: '2026-10-29T08:00:00Z' };
+    const rerunOld = { databaseId: 2, headSha: 'bbb', createdAt: '2026-10-29T09:00:00Z' };  // same SHA, before this push
+    const cur = { databaseId: 3, headSha: 'bbb', createdAt: '2026-10-29T10:00:20Z' };
+    assert.equal(pickTagRun([old], 'bbb', push), undefined, 'old tag run not picked');
+    assert.equal(pickTagRun([old, rerunOld], 'bbb', push), undefined, 'run of the same SHA before the push not picked');
+    assert.equal(pickTagRun([old, rerunOld, cur], 'bbb', push), 3, 'current run picked');
+    assert.equal(pickTagRun([cur, old], 'bbb', push + 30_000), 3, 'clock skew tolerated');
   }
   assert.equal(leftovers(`${pc}`).length, 1, 'leftover found');
   assert.ok(!isText(Buffer.from([65, 0, 66])) && isText(Buffer.from('abc')), 'binary detection');

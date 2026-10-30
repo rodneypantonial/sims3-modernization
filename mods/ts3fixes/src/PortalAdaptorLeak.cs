@@ -86,21 +86,26 @@ namespace Ts3Fixes
             if (unsafeWhy != null) { c[43]++; return "skipped: " + unsafeWhy; }
             string before = RouteAdaptorCounts();
             int removed = 0;
-            foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>())
-            {
-                Delegate d = ExitReasonsHandlers(s);
-                if (d == null) continue;
-                foreach (Delegate h in d.GetInvocationList())
-                {
-                    ScriptAdaptor a = h.Target as ScriptAdaptor;
-                    if (a != null && StaleAdaptor(s, a) && Unsubscribe(s, a)) removed++;
-                }
-            }
+            foreach (Sim s in Sims3.Gameplay.Queries.GetObjects<Sim>()) removed += RouteAdaptorCleanSim(s);
             c[55] += removed;
             string line = "route adaptor cleanup: -" + removed + " callbacks | before " + before + " | after " + RouteAdaptorCounts();
             ShortcutLog(line);
             AppDomain.CurrentDomain.SetData("ts3fixes.routeadaptorcleanup", line);
             return line;
+        }
+
+        // Stale route callbacks of one Sim removed; returns how many (also a step of the spread pass, SaveCleanupSpread.cs).
+        static int RouteAdaptorCleanSim(Sim s)
+        {
+            Delegate d = s == null || s.HasBeenDestroyed ? null : ExitReasonsHandlers(s);
+            if (d == null) return 0;
+            int removed = 0;
+            foreach (Delegate h in d.GetInvocationList())
+            {
+                ScriptAdaptor a = h.Target as ScriptAdaptor;
+                if (a != null && StaleAdaptor(s, a) && Unsubscribe(s, a)) removed++;
+            }
+            return removed;
         }
 
         // OnExitReasonsAdded callbacks over all Sims in the world: all handlers, ScriptAdaptor ones, stale ones, and the Sim

@@ -17,11 +17,16 @@
 
 enum { AS_RUN_IDLE, AS_RUN_WINDOW, AS_RUN_WAIT };
 enum { AS_LAST_OK, AS_LAST_STOPPED, AS_LAST_EPOCH, AS_LAST_NOWORKER, AS_LAST_REFUSED, AS_LAST_EXC };
-static int g_asMode = -1, g_asSample = 4, g_asWarmIn = 20, g_asDump;
+static int g_asMode = -1, g_asSample = 4, g_asWarmIn = 20, g_asDump, g_asWaitUs;  // g_asWaitUs: WindowWaitUs (0 = no wait)
 static void* g_asMFinish;  // MonoMethod* of AutShadow's finish / reference / work (SetMethods)
 static void* g_asMRef;
 static void* g_asMWork;
-static volatile LONG g_asReqId;         // posted request, 0 = none
+static volatile LONG g_asReqId;         // posted request (the batch's first), 0 = none
+// docs/122 §14.18 shared cut: every request posted before the cut joins it (one snapshot, one reference call and one worker
+// job for all of them; ts3fixes compares each request against its own rows). AS_BATCH_MAX = ts3fixes kMaxReq.
+static const int AS_BATCH_MAX = 4;
+static int g_asBatchN;                  // requests in the posted batch
+static LONG g_asFrame, g_asNoteFrame;   // ends of frame (AsSimLeave), and the frame of the last B13 note
 static volatile LONG g_asRun;           // AS_RUN_*
 static LONG g_asLast = AS_LAST_OK;      // what LastRun() tells finish
 static LONG g_asRunEpoch, g_asTrack0, g_asWaitTicks;
@@ -30,6 +35,7 @@ static volatile LONG g_asJobIn;         // the worker entered the current job (p
 static bool g_asPumpCut;                // the post-pump hook fired: the loop-back no longer cuts
 static LARGE_INTEGER g_asWin0, g_asJob0;
 static double g_asUsPerTick;
+static int g_asSatbTicks;  // Satb act: ends of frame the job has been in flight
 static HANDLE g_asJsonl = INVALID_HANDLE_VALUE;
 static wchar_t g_asJsonlPath[MAX_PATH];
 // game addresses; selftest and monohost point them at fakes or the host's copies
@@ -154,6 +160,7 @@ static void AsFinish(LONG status) {
     if (g_asMFinish && !AsInvoke(g_asMFinish, NULL)) k.finishExc++;
     InterlockedExchange(&g_asRun, AS_RUN_IDLE);
     InterlockedExchange(&g_asReqId, 0);
+    g_asBatchN = 0;
 }
 
 // the reference run on the sim thread: same driver, same cut, script RNG put back afterwards (docs/122 §3.4)
@@ -178,33 +185,105 @@ static void AsReference() {
     AsMax(k.refMaxUs, us);
 }
 
+// docs/122 §14.21 / docs/124 §15: a fresh re-score at the finish (sim thread, >= 1 tick after the cut), bracketed as the
+// reference is: the script RNG is saved and put back, RngUnit draws per-unit streams with the cut's seed, so only the world
+// change between the cut and now can make a score differ. on = 1 opens, 0 closes (time into freshUs).
+static int __cdecl AsIcIsWorker();
+static int g_asFreshEvery, g_asKeepPartial;
+static LARGE_INTEGER g_asFreshT0;
+static u8 g_asFreshRng[AS_RNG_LEN];
+static bool g_asFreshOpen;
+static void __cdecl AsIcFresh(int on) {
+    if (AsIcIsWorker() || !g_asFreshEvery) return;
+    Ts3nAutShadow& k = ts3native_autshadow;
+    u8* host = g_asHostPtr ? *g_asHostPtr : NULL;
+    u8* rng = host ? host + AS_RNG_OFF : NULL;
+    const int ri = g_asIcRng;
+    if (on && !g_asFreshOpen) {
+        g_asFreshOpen = true;
+        if (rng) memcpy(g_asFreshRng, rng, AS_RNG_LEN);
+        const DWORD seed = g_asPub >= 0 ? g_asRngSeedV[g_asPub] : 0;
+        if (rng && ri >= 0 && seed && !g_asInRef) {
+            g_asRngOrig = g_asOrig[ri], g_asRngSeedS = seed, g_asRngPendS = -1, g_asInRef = true;
+            g_asOrig[ri] = (void*)AsRngSimDraw;
+        }
+        QueryPerformanceCounter(&g_asFreshT0);
+    } else if (!on && g_asFreshOpen) {
+        g_asFreshOpen = false;
+        if (g_asInRef && ri >= 0) g_asOrig[ri] = g_asRngOrig, g_asInRef = false, g_asRngPendS = -1;
+        g_asRngPause = 0;
+        if (rng) memcpy(rng, g_asFreshRng, AS_RNG_LEN);
+        k.freshReqs++, k.freshUs += AsUs(g_asFreshT0);
+    }
+}
+// ts3fixes' Mode R consume-side stats (docs/124 §15): 0 pass, 1 classified, 2 fresh pairs, 3 differ, 4 top-1, 5 top-10,
+// 6 partial overrun runs kept
+static void __cdecl AsIcStat(int which, int add) {
+    if (AsIcIsWorker()) return;
+    Ts3nAutShadow& k = ts3native_autshadow;
+    LONG* const f[] = {&k.passPairs, &k.classPairs, &k.freshPairs, &k.freshDiff, &k.freshTop1, &k.freshTop10, &k.partialKept};
+    if (which >= 0 && which < 7) *f[which] += add;
+}
+
+// FPU state (docs/122 §14.15): the worker scores with the sim thread's x87 control word and MXCSR, as route jobs do
+// (ts3native.cpp ServePlan). mono-cost6: 44 A1/A2 pairs off by 1-200 ULP with bit-equal inputs [inferred: precision
+// control; simX87/workX87 show both words].
+static unsigned short g_asSimCw, g_asWorkCw;
+static volatile LONG g_asLastJobUs;  // the last job's run time (Satb probe span length)
+static unsigned int g_asSimCsr, g_asWorkCsr;
+static bool g_asFpuSet;  // worker: its own state is saved and the sim's applied (phase 0 seen with a captured state)
+
 // worker, around each M5 job (only ours count): hold the published version, time the run
 static void __cdecl AsJobHook(int phase, void* method) {
     if (method != g_asMWork) return;
     Ts3nAutShadow& k = ts3native_autshadow;
     if (phase == 0) {
+        g_asWorkCw = GetX87(), g_asWorkCsr = _mm_getcsr();
+        k.workX87 = g_asWorkCw, k.workCsr = (LONG)g_asWorkCsr;
+        g_asFpuSet = g_asSimCw != 0;  // 0 = no cut captured yet
+        if (g_asFpuSet) SetX87(g_asSimCw), _mm_setcsr(g_asSimCsr);
         InterlockedExchange(&g_asHeld, g_asPub);  // AsWorkerBegin without clearing stop: the sim may have set it already
-        if (g_asRunEpoch != g_asEpoch) InterlockedExchange(&g_asStop, 1);  // the world moved between cut and start
+        // the world moved between cut and start; with Satb act the worker reads the cut through the log, so a move is fine
+        if (g_asRunEpoch != g_asEpoch && !(g_satbMode == SATB_ACT && g_satbLive)) InterlockedExchange(&g_asStop, 1);
         g_asRngUnitW = -1, g_asRngLiveW = false;
         InterlockedExchange(&g_asJobIn, 1);
         QueryPerformanceCounter(&g_asJob0);
         return;
     }
+    if (g_asFpuSet) SetX87(g_asWorkCw), _mm_setcsr(g_asWorkCsr), g_asFpuSet = false;
     const LONG us = AsUs(g_asJob0);
     InterlockedExchangeAdd(&k.workUs, us);
     if (us > k.workMaxUs) InterlockedExchange(&k.workMaxUs, us);
     if (phase == 2) InterlockedIncrement(&k.workExc), InterlockedExchange(&g_asJobExc, 1);
+    g_asLastJobUs = us;
+    if (g_satbMode == SATB_ACT) SatbOff();  // the job left: the sim stops paying the barrier at once (the log stays until the next cut)
     AsWorkerEnd();
 }
 
+static bool __cdecl AsSatbBusy() { return g_mtBusy != 0; }
 static bool AsWorkerIdle() { return g_mtWorker && ts3native_mtprobe.workerState == 2 && !g_mtBusy; }
 
 // return of MonoScriptHost_Simulate (sim thread): finish a run whose job ended, else cut for a posted request
 static void __cdecl AsSimLeave() {
     Ts3nAutShadow& k = ts3native_autshadow;
+    k.simTicks = ++g_asFrame;
+    if (g_satbMode == SATB_PROBE && g_satbLive) SatbEnd();  // probe: the span was this tick (from the Simulate entry)
     if (g_asRun == AS_RUN_WAIT) {
-        if (g_mtBusy) { k.waitTicks++; return; }  // the job (or a skip) has not left the worker yet
+        if (g_mtBusy) {  // the job (or a skip) has not left the worker yet
+            k.waitTicks++;
+            if (g_satbLive && g_satbMode == SATB_ACT) {
+                k.satbConcTicks++;
+                if (++g_asSatbTicks >= 8 && !g_asStop) { InterlockedExchange(&g_asStop, 1); k.overrun++; if (g_asLast == AS_LAST_OK) g_asLast = AS_LAST_STOPPED; }
+            }
+            return;
+        }
         LONG st = g_asLast;
+        if (g_satbMode == SATB_ACT && g_satbLive) {
+            SatbEnd();  // worker idle: accounting, roots off
+            // an unlogged write (the sim stopped the worker first) or a worker give-up: the objects finished before the stop
+            // stay valid (ts3fixes checks the stop flag after each object, KeepPartial), as for an overrun
+            if (g_satbStale && st == AS_LAST_OK) st = AS_LAST_STOPPED;
+        }
         if (g_asJobExc) st = AS_LAST_EXC;
         else if (ts3native_mtprobe.workerTrackSkips != g_asTrack0) st = AS_LAST_REFUSED, k.workRefused++;
         AsFinish(st);
@@ -215,12 +294,17 @@ static void __cdecl AsSimLeave() {
     AsCut();
     g_asRngSeedV[g_asPub] = AsRngCutSeed();
     k.cutReq++;
+    k.batchReqs += g_asBatchN;
+    if (g_asBatchN > 1) k.batchCuts++;
+    AsMax(k.batchMax, g_asBatchN);
     k.cutSite = g_asPumpCut ? 2 : 1;
     g_asRunEpoch = g_asEpoch;
     if (g_asMode == 0 || !g_asMRef || !g_asMWork) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
     AsReference();
     if (!AsWorkerIdle()) { k.noWorker++; AsFinish(AS_LAST_NOWORKER); return; }
     g_asWorkerTid = g_mtWorkerTid;
+    g_asSimCw = GetX87(), g_asSimCsr = _mm_getcsr();
+    k.simX87 = g_asSimCw, k.simCsr = (LONG)g_asSimCsr;
     g_asLast = AS_LAST_OK;
     g_asJobExc = 0;
     g_asJobIn = 0;
@@ -228,7 +312,8 @@ static void __cdecl AsSimLeave() {
     InterlockedExchange(&g_asStop, 0);
     InterlockedExchange(&g_asRun, AS_RUN_WINDOW);
     QueryPerformanceCounter(&g_asWin0);
-    if (!MtSubmit(g_asMWork, NULL, NULL)) { k.workRefused++; AsFinish(AS_LAST_REFUSED); return; }
+    if (g_satbMode == SATB_ACT) SatbBegin(g_mtWorkerTid, 0), g_asSatbTicks = 0;  // barrier on before the worker can read
+    if (!MtSubmit(g_asMWork, NULL, NULL)) { SatbEnd(); k.workRefused++; AsFinish(AS_LAST_REFUSED); return; }
     k.workRuns++;
 }
 // loop-back end of frame (g_mtOnLeave): cuts only while the post-pump hook has not fired
@@ -248,7 +333,8 @@ static void __cdecl AsSimEnter() {
     Ts3nAutShadow& k = ts3native_autshadow;
     if (!k.icRegistered) AsRegisterIcs();
     AsLgTick();
-    if (g_asRun != AS_RUN_IDLE && g_asRunEpoch != g_asEpoch && g_asLast == AS_LAST_OK) {
+    const bool satbAct = g_satbMode == SATB_ACT && g_satbLive;  // the worker reads the cut through the log: no stop, no wait
+    if (g_asRun != AS_RUN_IDLE && g_asRunEpoch != g_asEpoch && g_asLast == AS_LAST_OK && !satbAct) {
         InterlockedExchange(&g_asStop, 1);
         k.epochDrops++;
         g_asLast = AS_LAST_EPOCH;
@@ -257,6 +343,22 @@ static void __cdecl AsSimEnter() {
         const LONG us = AsUs(g_asWin0);
         k.windowUs += us;
         AsMax(k.windowMaxUs, us);
+        // WindowWaitUs > 0 (shadow tests only): the sim waits here, before any script work of the frame, for the job to end.
+        // mono-cost4 IP: window 6.5 us average (no limiter sleep), the worker never entered a job (overrunIdle 953 of 953).
+        if (satbAct) {
+            if (g_mtBusy) k.satbConc++;  // the job runs on while this tick's script runs
+            InterlockedExchange(&g_asRun, AS_RUN_WAIT);
+            return;
+        }
+        if (g_mtBusy && g_asWaitUs > 0) {
+            LARGE_INTEGER w0;
+            QueryPerformanceCounter(&w0);
+            for (int spin = 0; g_mtBusy && AsUs(w0) < g_asWaitUs; spin++) {
+                if (spin < 64) YieldProcessor();
+                else SwitchToThread();
+            }
+            k.windowWaits++, k.windowWaitUs += AsUs(w0);
+        }
         if (g_mtBusy) {
             InterlockedExchange(&g_asStop, 1);
             k.overrun++;
@@ -264,12 +366,17 @@ static void __cdecl AsSimEnter() {
             if (g_asLast == AS_LAST_OK) g_asLast = AS_LAST_STOPPED;
         }
         InterlockedExchange(&g_asRun, AS_RUN_WAIT);
+        // probe (S0): the stores this tick's script makes in one job length from here are what a concurrent job would log
+        if (g_satbMode == SATB_PROBE) {
+            const LONG runs = k.workRuns, avg = runs ? k.workUs / runs : 0;
+            SatbBegin(g_mtWorkerTid, g_mtBusy ? avg : (g_asLastJobUs ? g_asLastJobUs : avg));
+        }
     }
 }
 
 // ---- AutShadowNative internal calls (ts3fixes, docs/122 §3.5; registered at the first Simulate tick) ----
 static int AsLgConfig(int key);
-static int __cdecl AsIcVersion() { return 4; }  // 3: RngUnit (docs/125); 4: RngPause, abort reasons rain/posture
+static int __cdecl AsIcVersion() { return 8; }  // 3: RngUnit (docs/125); 4: RngPause, abort reasons rain/posture; 5: Redirect; 6: shared cut, ListType*, Note; 7: ObjClass*, ListTypeCount/At; 8: Fresh, Stat
 static int __cdecl AsIcConfig(int key) {
     switch (key) {
         case 0: return g_asMode;
@@ -277,6 +384,8 @@ static int __cdecl AsIcConfig(int key) {
         case 2: return g_asWarmIn;
         case 3: return g_asDump;
         case 4: return AsWorkerIdle() ? 1 : 0;
+        case 11: return g_asFreshEvery;  // docs/122 §14.21: re-score 1 in N finishes fresh (0 = off)
+        case 12: return g_asKeepPartial;  // docs/122 §14.21: an overrun run keeps the meta objects it finished before the stop
         default: return AsLgConfig(key);  // 5-10: ledger probe (autledger.cpp)
     }
 }
@@ -288,17 +397,90 @@ static void __cdecl AsIcResetAbort() { if (AsIcIsWorker()) AsResetAbort(); }
 static int __cdecl AsIcStopped() { return AsIcIsWorker() && g_asStop != 0; }
 static int __cdecl AsIcBegin() {
     if (g_asMode < 0 || !g_as || !g_asMFinish || AsIcIsWorker()) return 0;
-    if (g_asRun != AS_RUN_IDLE || g_asReqId) { ts3native_autshadow.busy++; return 0; }
-    memset(&g_as->always, 0, sizeof(AsSet));  // reachable Sims are per request
+    if (g_asRun != AS_RUN_IDLE || (g_asReqId && g_asBatchN >= AS_BATCH_MAX)) { ts3native_autshadow.busy++; return 0; }
+    if (g_asReqId) { g_asNextActor = true; return 1; }  // joins the posted batch's cut (docs/122 §14.18)
+    AsSetClear(g_as->always);  // reachable Sims are per batch
+    g_asActor = 0, g_asActorN = 0, g_asNextActor = false;
     return 1;
 }
 static void __cdecl AsIcAddRow(DWORD lo, DWORD hi, int kind) {
     if (!AsIcIsWorker() && g_asRun == AS_RUN_IDLE) AsAddRowKind(lo | (AsU64)hi << 32, kind);
 }
+static void AsClsFlush();
 static void __cdecl AsIcPost(int id) {
     if (AsIcIsWorker() || g_asRun != AS_RUN_IDLE || g_asMode < 0) return;
-    InterlockedExchange(&g_asReqId, id ? id : 1);
+    AsClsFlush();  // the request's classification (docs/122 §14.20) ended before its Post
+    if (g_asReqId) g_asBatchN++;
+    else g_asBatchN = 1, InterlockedExchange(&g_asReqId, id ? id : 1);
+    g_asNextActor = false;
     ts3native_autshadow.req++;
+}
+// docs/122 §14.18: every game B13 call (sampled or not): the go-live request rate, and frames with at least one (the
+// go-live cut rate with shared cuts)
+static void __cdecl AsIcNote() {
+    if (AsIcIsWorker()) return;
+    Ts3nAutShadow& k = ts3native_autshadow;
+    k.metaCalls++;
+    if (g_asNoteFrame != g_asFrame + 1) g_asNoteFrame = g_asFrame + 1, k.metaTicks++;  // +1: frame 0 counts too
+}
+// list kinds (docs/122 §14.18): the next list type ts3fixes has not classified (its System.Type object), else null; then
+// ListTypeSet(type, 1 = some Sim is of this type, 0 = none). Sim thread only; each type is asked once.
+static void* __cdecl AsIcListTypeNext() {
+    if (AsIcIsWorker()) return NULL;
+    for (int i = 0; i < g_asLTypeN; i++) {
+        AsLType& t = g_asLTypes[i];
+        if (t.cls || t.asked) continue;
+        t.asked = 1;
+        if (t.type) return (void*)(uintptr_t)t.type;
+    }
+    return NULL;
+}
+static void __cdecl AsIcListTypeSet(void* type, int simCapable) {
+    if (AsIcIsWorker()) return;
+    AsLType* t = AsLTypeOf((DWORD)(uintptr_t)type, false);
+    if (!t || t->cls) return;
+    t->cls = simCapable ? 2 : 1;
+    ts3native_autshadow.listTypes++;
+    if (!simCapable) ts3native_autshadow.listTypesSimFree++;
+}
+// typed marks (docs/122 §14.20), sim thread: the list types in AsLTypeOf order (ts3fixes keeps them by index), the queued
+// object ids into a ulong[] (MonoArray: max_length +8, elements +16), and each object's class (bit i = of list type i,
+// n = types it was tested against; n 0 = no script object yet, it stays unknown)
+static int __cdecl AsIcListTypeCount() { return AsIcIsWorker() ? 0 : g_asLTypeN; }
+static void* __cdecl AsIcListTypeAt(int i) { return AsIcIsWorker() || i < 0 || i >= g_asLTypeN ? NULL : (void*)(uintptr_t)g_asLTypes[i].type; }
+// newest first (the ids a cut's marks queued come before older event-4 ones); ts3fixes takes one buffer (32) per request,
+// so the sim-thread cost per request is bounded; clsUs = Take to the last Set of that batch (the managed classification)
+static LARGE_INTEGER g_asClsT0, g_asClsT1;
+static void AsClsFlush() {
+    if (g_asClsT0.QuadPart && g_asClsT1.QuadPart > g_asClsT0.QuadPart)
+        ts3native_autshadow.clsUs += (LONG)((g_asClsT1.QuadPart - g_asClsT0.QuadPart) * g_asUsPerTick);
+    g_asClsT0.QuadPart = g_asClsT1.QuadPart = 0;
+}
+static int __cdecl AsIcObjClassTake(void* arr) {
+    if (AsIcIsWorker() || !arr || !g_as) return 0;
+    AsClsFlush();
+    const LONG cap = *(const LONG*)((const u8*)arr + 8);
+    AsU64* out = (AsU64*)((u8*)arr + 16);
+    while (InterlockedExchange(&g_asDirtyLock, 1)) YieldProcessor();
+    const LONG n = min(cap, g_asClsQN);
+    for (LONG i = 0; i < n; i++) {
+        out[i] = g_asClsQ[--g_asClsQN];
+        if (AsOl* o = AsOlSlot(out[i], false)) o->clsQ = 0;
+    }
+    InterlockedExchange(&g_asDirtyLock, 0);
+    ts3native_autshadow.clsAsked += n;
+    if (n) QueryPerformanceCounter(&g_asClsT0), g_asClsT1 = g_asClsT0;
+    return (int)n;
+}
+static void __cdecl AsIcObjClassSet(DWORD lo, DWORD hi, int mask, int n) {
+    if (AsIcIsWorker() || !g_as) return;
+    QueryPerformanceCounter(&g_asClsT1);
+    if (n <= 0) { ts3native_autshadow.clsNone++; return; }
+    while (InterlockedExchange(&g_asDirtyLock, 1)) YieldProcessor();
+    AsOl* o = AsOlSlot(lo | (AsU64)hi << 32, false);
+    if (o && !o->gone) o->cls = (DWORD)mask, o->clsN = (u8)min(n, 32);
+    InterlockedExchange(&g_asDirtyLock, 0);
+    ts3native_autshadow.clsSet++;
 }
 static int __cdecl AsIcLastRun() { return g_asLast; }
 // a new RNG unit (unit >= 0): on the worker its own stream, in the reference the host MT's; elsewhere nothing (the live
@@ -321,6 +503,29 @@ static void __cdecl AsIcRngPause(int on) {
         memcpy(host + AS_RNG_OFF, g_asRngPaused, AS_RNG_LEN);
     }
 }
+// Version 5 (docs/122 §15): a worker shim for a method mint transformed before ts3fixes could swap its MonoMethod header
+// (Localization.LocalizeString overloads, refused "already compiled"). Callers bind the callee's RuntimeMethod pointer when
+// they are transformed (docs/04 F8), so the redirect rotates the three 0x48-byte RuntimeMethod bodies in place: the stub's
+// gets the target's (original code), the target's gets the hook's (every bound caller now runs the hook). MonoMethod+0x14
+// = RuntimeMethod, RuntimeMethod +8 MonoMethod, +0x40 param count, +0x44 bit 0x100 = transformed (docs/133, I-186-2).
+// Only with Mode 1/2 (the shim matters only on the worker), sim thread, no run in flight. Returns 0 done, -1 mode/state,
+// -2 no RuntimeMethod, -3 one not transformed, -4 back pointer or param count differs.
+static int __cdecl AsIcRedirect(u8* target, u8* hook, u8* stub) {
+    if (g_asMode < 1 || AsIcIsWorker() || g_asRun != AS_RUN_IDLE || !target || !hook || !stub) return -1;
+    u8* const rm[3] = {*(u8**)(target + 0x14), *(u8**)(hook + 0x14), *(u8**)(stub + 0x14)};
+    const u8* const mm[3] = {target, hook, stub};
+    for (int i = 0; i < 3; i++) {
+        if (!rm[i]) return -2;
+        if (!(*(DWORD*)(rm[i] + 0x44) & 0x100)) return -3;
+        if (*(const u8**)(rm[i] + 8) != mm[i] || rm[i][0x40] != rm[0][0x40]) return -4;
+    }
+    u8 orig[0x48];
+    memcpy(orig, rm[0], sizeof(orig));
+    memcpy(rm[0], rm[1], sizeof(orig));
+    memcpy(rm[2], orig, sizeof(orig));
+    Log("autshadow: RuntimeMethod redirect 0x%p -> hook 0x%p (original body in stub 0x%p)", rm[0], rm[1], rm[2]);
+    return 0;
+}
 static void __cdecl AsIcSetMethods(void* finish, void* reference, void* work) {
     if (AsIcIsWorker() || g_asRun != AS_RUN_IDLE) return;
     g_asMFinish = finish, g_asMRef = reference, g_asMWork = work;
@@ -332,7 +537,7 @@ static void __cdecl AsIcSetRefs(void* empty, void* fmtExc) {
     if (empty) ts3native_autshadow.rooted |= 4;
     if (fmtExc) ts3native_autshadow.rooted |= 8;
 }
-// MonoString {vtable, sync, length, UTF-16} [inferred Mono 1.x layout, as AsStrKey]: one line to autshadow.jsonl
+// EA's MonoString {vtable, length, UTF-16 at +8} [verified, as AsStrKey]: one line to autshadow.jsonl
 static void __cdecl AsIcLog(const DWORD* s) {
     Ts3nAutShadow& k = ts3native_autshadow;
     if (!s || k.logLines >= 100000) return;
@@ -341,9 +546,9 @@ static void __cdecl AsIcLog(const DWORD* s) {
         g_asJsonl = CreateFileW(g_asJsonlPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
         if (g_asJsonl == INVALID_HANDLE_VALUE) { g_asJsonlPath[0] = 0; return; }
     }
-    const LONG len = (LONG)s[2];
+    const LONG len = (LONG)s[1];
     char buf[4096];
-    int n = len > 0 && len < 1300 ? WideCharToMultiByte(CP_UTF8, 0, (const wchar_t*)(s + 3), len, buf, sizeof(buf) - 2, NULL, NULL) : 0;
+    int n = len > 0 && len < 1300 ? WideCharToMultiByte(CP_UTF8, 0, (const wchar_t*)(s + 2), len, buf, sizeof(buf) - 2, NULL, NULL) : 0;
     if (n <= 0) return;
     buf[n++] = '\n';
     DWORD w;
@@ -369,6 +574,16 @@ static void AsRegisterIcs() {
         {"Ts3Fixes.AutShadowNative::Log", (const void*)AsIcLog},
         {"Ts3Fixes.AutShadowNative::RngUnit", (const void*)AsIcRngUnit},
         {"Ts3Fixes.AutShadowNative::RngPause", (const void*)AsIcRngPause},
+        {"Ts3Fixes.AutShadowNative::Redirect", (const void*)AsIcRedirect},
+        {"Ts3Fixes.AutShadowNative::Note", (const void*)AsIcNote},
+        {"Ts3Fixes.AutShadowNative::ListTypeNext", (const void*)AsIcListTypeNext},
+        {"Ts3Fixes.AutShadowNative::ListTypeSet", (const void*)AsIcListTypeSet},
+        {"Ts3Fixes.AutShadowNative::ListTypeCount", (const void*)AsIcListTypeCount},
+        {"Ts3Fixes.AutShadowNative::ListTypeAt", (const void*)AsIcListTypeAt},
+        {"Ts3Fixes.AutShadowNative::ObjClassTake", (const void*)AsIcObjClassTake},
+        {"Ts3Fixes.AutShadowNative::ObjClassSet", (const void*)AsIcObjClassSet},
+        {"Ts3Fixes.AutShadowNative::Fresh", (const void*)AsIcFresh},
+        {"Ts3Fixes.AutShadowNative::Stat", (const void*)AsIcStat},
     };
     if (!g_asAddIc) return;
     for (const auto& ic : kIcs) g_asAddIc(ic.name, ic.fn);
@@ -385,6 +600,35 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     g_asSample = ini ? GetPrivateProfileIntW(L"AutShadow", L"Sample", 4, ini) : 4;
     g_asWarmIn = ini ? GetPrivateProfileIntW(L"AutShadow", L"WarmIn", 20, ini) : 20;
     g_asDump = ini ? GetPrivateProfileIntW(L"AutShadow", L"DumpOnMismatch", 0, ini) : 0;
+    g_asWaitUs = ini ? GetPrivateProfileIntW(L"AutShadow", L"WindowWaitUs", 0, ini) : 0;
+    g_asColdIc = ini ? GetPrivateProfileIntW(L"AutShadow", L"ColdIc", 0, ini) : 0;
+    g_asLean = ini ? GetPrivateProfileIntW(L"AutShadow", L"CutLean", 0, ini) : 0;  // docs/122 §14.16
+    g_asTierMs = ini ? GetPrivateProfileIntW(L"AutShadow", L"TierMs", 0, ini) : 0;
+    if (g_asTierMs < 0 || g_asTierMs > 60000) g_asTierMs = g_asTierMs < 0 ? 0 : 60000;
+    k.tierMs = g_asTierMs;
+    // docs/122 §14.17: CutLean=2 dirty lots, ListAudit list rows per cut (0-64), TierClassMs tier cache (100-10,000)
+    g_asListAudit = ini ? GetPrivateProfileIntW(L"AutShadow", L"ListAudit", 1, ini) : 1;
+    if (g_asListAudit < 0 || g_asListAudit > 64) g_asListAudit = g_asListAudit < 0 ? 0 : 64;
+    g_asTierClassMs = ini ? GetPrivateProfileIntW(L"AutShadow", L"TierClassMs", 1000, ini) : 1000;
+    if (g_asTierClassMs < 100 || g_asTierClassMs > 10000) g_asTierClassMs = g_asTierClassMs < 100 ? 100 : 10000;
+    // docs/122 §14.19: RowHot=N (0 = off, else 16-100,000 cuts) object rows unread by the worker for N cuts wait cold
+    g_asRowHot = ini ? GetPrivateProfileIntW(L"AutShadow", L"RowHot", 0, ini) : 0;
+    if (g_asRowHot < 0 || g_asRowHot > 100000) g_asRowHot = 0;
+    else if (g_asRowHot && g_asRowHot < 16) g_asRowHot = 16;
+    k.rowHot = g_asRowHot;
+    // docs/122 §14.21: RunSkip=1 skips clean runs of object rows whole in the refresh loop and publishes only changed runs
+    g_asRunSkip = ini ? (GetPrivateProfileIntW(L"AutShadow", L"RunSkip", 0, ini) ? 1 : 0) : 0;
+    k.runSkip = g_asRunSkip;
+    // docs/122 §14.21: FreshEvery=N re-scores 1 in N Mode R finishes on the sim thread (stale-score check, test cost); 0 = off
+    g_asFreshEvery = ini ? GetPrivateProfileIntW(L"AutShadow", L"FreshEvery", 0, ini) : 0;
+    if (g_asFreshEvery < 0 || g_asFreshEvery > 1000) g_asFreshEvery = 0;
+    k.freshEvery = g_asFreshEvery;
+    // docs/122 §14.21: KeepPartial=1: an overrun keeps the meta objects the worker finished before the stop (ts3fixes checks
+    // the stop flag after each object; an object it was inside of is aborted `stop`), instead of dropping the whole search
+    g_asKeepPartial = ini ? (GetPrivateProfileIntW(L"AutShadow", L"KeepPartial", 0, ini) ? 1 : 0) : 0;
+    k.keepPartial = g_asKeepPartial;
+    g_asPrintUsPerTick = g_asUsPerTick;
+    if (g_asWaitUs < 0 || g_asWaitUs > 20000) g_asWaitUs = g_asWaitUs < 0 ? 0 : 20000;  // a test knob: never more than 20 ms per frame
     if (ini) {
         wcscpy_s(g_asJsonlPath, ini);
         wchar_t* slash = wcsrchr(g_asJsonlPath, L'\\');
@@ -393,6 +637,17 @@ static void AsInstallRun(const wchar_t* ini, bool slotStub) {
     }
     g_asMode = slotStub ? (mode < 0 || mode > 2 ? 0 : mode) : -1;
     k.mode = g_asMode;
+    // docs/206 §7: Satb=1 probe (S0 store counts in one job length of the next tick, no concurrency), 2 act (the worker runs
+    // concurrently with the next tick and reads the cut through the log); needs Mode >= 1 and the worker (default 0)
+    const int satb = ini ? GetPrivateProfileIntW(L"AutShadow", L"Satb", 0, ini) : 0;
+    if (satb > 0 && slotStub && g_asMode >= 1) {
+        g_satbRtSwapped = SatbInstallRt();
+        const int m = SatbInstall(satb);
+        Log("%s autshadow satb: Satb=%d -> mode %d (%s), %d runtime icall entries wrapped, %d EA ICs with byref/array arguments checked, %d cold-path detours (act)",
+            m > 0 && g_satbRtSwapped > 0 ? "OK  " : "FAIL", satb, m, m == SATB_ACT ? "act: concurrent worker, read redirect" :
+            m == SATB_PROBE ? "probe: store counts, no concurrency" : "off", g_satbRtSwapped, g_satbIcMapped, g_satbColdN);
+    }
+    g_satbWorkerBusy = AsSatbBusy;
     if (!slotStub) return;
     g_mtOnEnter = AsSimEnter;
     g_mtOnLeave = AsSimLeaveLoop;

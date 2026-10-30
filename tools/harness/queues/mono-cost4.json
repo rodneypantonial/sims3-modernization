@@ -1,0 +1,116 @@
+{
+ "note": "mono-cost4: the three [AutShadow] shadow jobs on ts3native 0.36.108 (asi.mono-cost4, docs/122 §14.12): dating warm-up fix (mono-cost3: warm-up threw, no request posted, cuts 0) and the LocalizeString RuntimeMethod redirect (Modes 1/2 only, contract Version 5). Correctness, ~36 min.",
+ "jobs": [
+  {
+   "id": "bp-autshadow-count",
+   "note": "1/3 mono-cost3 1/3 had cuts 0: 'AutShadow: warm-up failed: not of type: ...OnlineDatingRecord' kept Ready() off (docs/51 §379). Read fixesApplied first: no 'warm-up failed' / 'warm-up of' line; 'not patched: Localization.LocalizeString(...)' is still expected in Mode 0 (the redirect runs only in Modes 1/2). PASS needs req > 0 and cutReq == req (icRegistered 17). STOP the queue on FAIL. Earlier note: 1/3 Rerun of mono-cost2 4/7 on 0.36.107 (docs/67 §24): [AutShadow] Mode 0 count only, BP. 0.36.106 PASSED with cuts 0 entries 0 because ts3fixes turned AutShadow off for the session (L3 self-check, docs/51 §378); queue.ts now FAILs a shadow job with cuts 0, entries 0 or an 'AutShadow: off for the session' line. Read fixesApplied first: no 'not patched: Localization.LocalizeString' (shims now install first in Fixes.Apply) and no self-check line; G-M4 sweep counters > 0. STOP the queue on FAIL. 4/7 [AutShadow] gate G-A3 (docs/122 §14.7), Mode 0 = cut and count only, no worker; never run with cuts (10-20 got no data; cuts come from the 0.36.7 loop-back hook, so cutReq == req is testable for the first time). fixesOn autshadow switches the driver on for this job only. With simler90's core mod installed, G-M1 must accept it: ts3fixes.applied 'AutShadow: game assemblies = accepted set 1' and no 'AutShadow: off for the session ... MVIDs' line; also read 'G-M4 sweep: N of 688' and 'G-M5' (patches autshadow_gm4_*, autshadow_gm5_types). A fixesApplied 'AutShadow: not patched: ...' line names a refused overload (I-188-1) and still allows Mode 0 requests. Cost job, 10 min: cutUs / s = sim-thread cut + snapshot cost. PASS = 0 crashes, 0 watchdog lines; -native.json autshadow v5: mode 0, icRegistered 14, req > 0, cutReq == req, noWorker == cutReq, refRuns 0, auditMis[0] 0, cutMaxUs and cutUs/cutReq reported (target p95 0.3 ms), guardSim per s (<= 1 ms/s); patches autshadow_requests > 0, autshadow_guardskips 0, autshadow_exceptions 0; no 'autshadow abort' lines. STOP before Mode R on a crash or autshadow_requests == 0 (read 'AutShadow:' lines in ts3fixes.applied first: MVID, contract version, L3, warm-up).",
+   "asi": "game-copy/ts3native.asi.mono-cost4",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 90,
+   "ini": {
+    "HitchAttr.Enabled": 1,
+    "RouteSnap.Enabled": 1,
+    "RouteSnap.Count": 1,
+    "RouteSnap.AuditEvery": 0,
+    "MonoThread.Enabled": 1,
+    "MonoThread.Mode": 0,
+    "AutShadow.Enabled": 1,
+    "AutShadow.Mode": 0,
+    "AutShadow.Sample": 4,
+    "AutShadow.Audit": 50
+   },
+   "logRequire": {
+    "OK   sim loop: .* runs at the end of every Simulate iteration": 1
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "fixesOn": "autshadow"
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 30
+  },
+  {
+   "id": "bp-autshadow-r",
+   "note": "2/3 Run only after 1/3 passed. Mode R on 0.36.108: fixesApplied must show 'AutShadow: Localization.LocalizeString(String,Object[]) redirected (RuntimeMethod)' and the (Boolean,String,Object[]) one (ts3native.log 'autshadow: RuntimeMethod redirect' x2), no 'Modes 1/2 off' line after them, then req > 0. A 'redirect refused <code>' line = stop and triage (docs/122 §14.12 codes). Any crash in 0xE53EB0 with a LocalizeString frame = the redirect: stop. Earlier note: 2/3 Run only after 1/3 passed. Mode R on BP (mono-cost2 6/7), 0.36.107: the MonoString key fix (memo of DeviceConfig_GetOption hashed megabytes per call on 0.36.106). Needs req > 0 now that the LocalizeString shims install early. 6/7 Run only after jobs 3, 4 and 5 passed. [AutShadow] Mode 1 = R, gate G-A4 (never run): the sim thread re-scores each sampled request at the cut (script RNG saved and restored), the M5 worker scores the same request from the snapshot, ts3fixes compares bit for bit; [MonoThread] Mode=1 GcLock=1 FrameTls=1 ArenaFix=1 N2mPrivate=1. Mode 1 refuses requests when any worker shim is missing (fixesApplied 'Modes 1/2 off'): then req 0 is expected, not a bug. Since 0.36.7 the cut runs after the sim pump when it fires (autshadow cutSite 2, docs/51 I-188-3): window = the frame limiter's sleep; overrun/overrunIdle counted. Cost job, 10 min: refUs (reference on the sim, a test cost the apply step would not pay), workUs (worker busy), mtprobe lockWaitUs (sim waits behind the worker). PASS = 0 crashes, no freeze; patches autshadow_a2 == 0 and autshadow_a3 == 0, autshadow_a1 0 or each record in autshadow.jsonl explained; autshadow_a4 < 20% of compared pairs (autshadow_reasons sized); a5, overrun, epochDrops counted, not failures; -native.json autshadow v5: workRuns > 0, workExc 0, refExc 0, finishExc 0, abort.rain and abort.posture reported (posture 0 expected, I-182-5), rngPauseDraws reported (I-182-4); mtprobe v4: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0, n2mWorker > 0, lockStale/lockOomReleased reported. Report the compared-search count (G-A4 needs >= 2,000 per world over R runs). Any crash: stop and triage against 0.36.105.",
+   "asi": "game-copy/ts3native.asi.mono-cost4",
+   "save": "Baseline-BP-Spring",
+   "minCounters": 90,
+   "ini": {
+    "HitchAttr.Enabled": 1,
+    "RouteSnap.Enabled": 1,
+    "RouteSnap.Count": 1,
+    "RouteSnap.AuditEvery": 0,
+    "MonoThread.Enabled": 1,
+    "MonoThread.Mode": 1,
+    "MonoThread.GcLock": 1,
+    "MonoThread.FrameTls": 1,
+    "MonoThread.ArenaFix": 1,
+    "MonoThread.N2mPrivate": 1,
+    "AutShadow.Enabled": 1,
+    "AutShadow.Mode": 1,
+    "AutShadow.Sample": 4,
+    "AutShadow.Audit": 50,
+    "AutShadow.DumpOnMismatch": 1
+   },
+   "logRequire": {
+    "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+    "OK   mono thread P4": 1
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "fixesOn": "autshadow"
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 30
+  },
+  {
+   "id": "ip-autshadow-r",
+   "note": "3/3 Run only after 2/3 passed. Same as 2/3 on Isla Paradiso; also crash T second clean run (docs/67 §24). Earlier note: 3/3 Crash T rerun (docs/67 §24): mono-cost2 7/7 crashed at ts3native+0x14976 (AsStrKey read EA strings with the wrong layout). Run after 2/3 passed; with a second clean run it is fixed. Same pass rule plus no crash. 7/7 Same as bp-autshadow-r on Isla Paradiso; run after bp-autshadow-r passed. Same asi, switch and pass rule.",
+   "asi": "game-copy/ts3native.asi.mono-cost4",
+   "save": "Baseline-IP-Spring",
+   "minCounters": 90,
+   "ini": {
+    "HitchAttr.Enabled": 1,
+    "RouteSnap.Enabled": 1,
+    "RouteSnap.Count": 1,
+    "RouteSnap.AuditEvery": 0,
+    "MonoThread.Enabled": 1,
+    "MonoThread.Mode": 1,
+    "MonoThread.GcLock": 1,
+    "MonoThread.FrameTls": 1,
+    "MonoThread.ArenaFix": 1,
+    "MonoThread.N2mPrivate": 1,
+    "AutShadow.Enabled": 1,
+    "AutShadow.Mode": 1,
+    "AutShadow.Sample": 4,
+    "AutShadow.Audit": 50,
+    "AutShadow.DumpOnMismatch": 1
+   },
+   "logRequire": {
+    "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+    "OK   mono thread P4": 1
+   },
+   "run": {
+    "profile": {
+     "minutes": 10,
+     "seed": 12345,
+     "fixesOn": "autshadow"
+    }
+   },
+   "gameArgs": [
+    "-disablestoryprogression"
+   ],
+   "timeoutMin": 30
+  }
+ ]
+}

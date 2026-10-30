@@ -126,6 +126,15 @@ static class UnseenFbTest
         Check(!UfPreCore.FollowsRoute("Sims3.Gameplay.ObjectComponents.RoutingComponent.RouteToDynamicObjectRadiusWithCondition")
             && !UfPreCore.FollowsRoute("Sims3.Gameplay.Core.Lot.PlanToLotEx") && !UfPreCore.FollowsRoute("Sims3.Gameplay.Actors.Sim.IsPointInLotSafelyRoutable")
             && !UfPreCore.FollowsRoute(null), "plan-only and moving-target callers refused");
+        const string vo = "Sims3.Gameplay.InteractionsShared.ViewObjects.";
+        Check(UfPreCore.FollowsRoute(vo + "CreateRouteToObject", vo + "RouteToObject")
+            && UfPreCore.FollowsRoute("Sims3.Gameplay.ObjectComponents.RoutingComponent.RouteToSlot", null)
+            && !UfPreCore.FollowsRoute(vo + "CreateRouteToObject", "Sims3.Gameplay.Objects.HobbiesSkills.Trampoline+Jump.Run")
+            && !UfPreCore.FollowsRoute(vo + "CreateRouteToObject", null) && !UfPreCore.FollowsRoute(vo + "RouteToObject", vo + "Run"),
+            "ViewObjects: plan + DoRoute pair only");
+        Check(UfPreCore.OwnFrame("Ts3Fixes.Fixes", "UfFollows") && UfPreCore.OwnFrame("Ts3Fixes.Fixes", "UfCaller")
+            && !UfPreCore.OwnFrame("Ts3Fixes.Fixes", "RouteSrcNote") && !UfPreCore.OwnFrame("Sims3.Gameplay.Actors.Sim", "UfFollows")
+            && !UfPreCore.OwnFrame(null, "UfFollows"), "own Uf* frames skipped by the caller read (10-27: callers = UfFollows)");
         Check(UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "PlanToLot") && UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "PlanToLotEx")
             && !UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.Lot", "AddLotEntryPointDestinations") && !UfPreCore.PlanToLotFrame("Sims3.Gameplay.Core.LotManager", "PlanToLot")
             && !UfPreCore.PlanToLotFrame(null, "PlanToLot"), "RouteToLot: only Lot.PlanToLot(Ex) frames skipped");
@@ -175,7 +184,55 @@ static class UnseenFbTest
         Check(UfFinishCore.Step(true, false, true, 30, 20) == UfFinishCore.kGiveUp, "finish: route action changed");
         Check(UfFinishCore.Step(true, true, false, 30, 20) == UfFinishCore.kGiveUp, "finish: seen at the finish check");
 
+        PostureChecks();
+
         if (fails > 0) { Console.WriteLine("unseenfb selftest FAILED: " + fails); Environment.Exit(1); }
         Console.WriteLine("unseenfb selftest ok");
+    }
+
+    // Issue #89 model: a posture chain and the setter's two branches as the issue and the decompiled setter describe them
+    // (Compatible: link the new posture on top; else unwind down to it), with and without posturepopcycle's pop test.
+    class P { public P Prev; public bool Carry; public bool CompatOverCarry; public string Name; public P(string n) { Name = n; } }
+    static P sCur;
+    static int Walk(P top, out bool carry)  // UfHeld's bounded walk: postures seen, -1 = did not end within the cap
+    {
+        int n = 0;
+        carry = false;
+        for (P p = top; p != null; p = p.Prev)
+        {
+            if (!UnseenFallbackCore.ChainStepOk(++n)) return -1;
+            if (p.Carry) carry = true;
+        }
+        return n;
+    }
+    static void Set(P value, bool guard)
+    {
+        if (value == sCur) return;
+        bool carry;
+        bool compatible = value.CompatOverCarry && Walk(sCur, out carry) > 0 && carry;
+        if (!(guard && UnseenFallbackCore.IsPop(sCur, sCur != null ? sCur.Prev : null, value)) && compatible) value.Prev = sCur;
+        sCur = value;  // unwind: the target is below, already linked
+    }
+    static void PostureChecks()
+    {
+        for (int g = 0; g < 2; g++)
+        {
+            bool guard = g == 1, carry;
+            P stand = new P("stand"), carryChild = new P("carry"), carA = new P("carA"), carB = new P("carB");
+            carryChild.Carry = true; carA.CompatOverCarry = carB.CompatOverCarry = true;
+            sCur = stand;
+            carryChild.Prev = stand; sCur = carryChild;
+            Set(carA, guard); Set(carB, guard);
+            Check(sCur == carB && carB.Prev == carA && carA.Prev == carryChild, "posture: pushes link on top (guard " + guard + ")");
+            Check(Walk(sCur, out carry) == 4 && carry, "posture: carry seen through the chain");
+            Set(carB.Prev, guard);  // PopPosture: Posture = mPosture.PreviousPosture
+            int n = Walk(sCur, out carry);
+            if (guard) Check(sCur == carA && carA.Prev == carryChild && n == 3 && carry, "posture: guarded pop unwinds, chain intact");
+            else Check(carA.Prev == carB && carB.Prev == carA && n == -1, "posture: EA pop makes the loop, bounded walk stops (held)");
+        }
+        Check(!UnseenFallbackCore.IsPop(null, null, new object()) && !UnseenFallbackCore.IsPop(new object(), null, null), "posture: no pop without both");
+        object a = new object(), b = new object();
+        Check(UnseenFallbackCore.IsPop(a, b, b) && !UnseenFallbackCore.IsPop(a, b, a) && !UnseenFallbackCore.IsPop(a, null, b), "posture: pop = set to the current previous");
+        Check(UnseenFallbackCore.ChainStepOk(UnseenFallbackCore.kPostureChainCap) && !UnseenFallbackCore.ChainStepOk(UnseenFallbackCore.kPostureChainCap + 1), "posture: cap");
     }
 }

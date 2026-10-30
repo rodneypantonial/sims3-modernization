@@ -110,7 +110,7 @@ static u8* __fastcall IkGipStub(u8* p, void* edx, DWORD lo, DWORD hi) {
                     Log("idle check RO: shadow mismatch for lot %08lX:%08lX: game %p, clone %p", hi, lo, a, e);
             }
         }
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return a;
     }
     if (!k.ikMode) return g_ikGip(p, edx, lo, hi);

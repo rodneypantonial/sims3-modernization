@@ -897,6 +897,206 @@
       "what": "docs/202 §5.7 E loop detector + loop breaker",
       "at": "2026-10-26T22:22:48.444Z",
       "worktree": "C:\\Users\\<user>\\IdeaProjects\\s3m-ufb-guard-cost"
+    },
+    {
+      "id": "ledger-377",
+      "kind": "ledger",
+      "from": 377,
+      "to": 377,
+      "by": "sims-3-modernization",
+      "what": "MonoThread P4 stale frame global breaks RouteAsync CanYield",
+      "at": "2026-10-29T04:38:49.699Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-378",
+      "kind": "ledger",
+      "from": 378,
+      "to": 378,
+      "by": "sims-3-modernization",
+      "what": "AutShadow L3 self-check and EA MonoString layout (mono-cost2 crash)",
+      "at": "2026-10-29T06:26:17.531Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-379",
+      "kind": "ledger",
+      "from": 379,
+      "to": 379,
+      "by": "sims-3-modernization",
+      "what": "AutShadow warm-up dating dictionary + LocalizeString RuntimeMethod redirect (0.36.108)",
+      "at": "2026-10-29T07:15:41.697Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-380",
+      "kind": "ledger",
+      "from": 380,
+      "to": 380,
+      "by": "sims-3-modernization",
+      "what": "mono-cost4 void Mode R: G-M5 interface over-match, window overrun, GC lock entry cost, lazy gate",
+      "at": "2026-10-29T08:28:32.200Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-381",
+      "kind": "ledger",
+      "from": 381,
+      "to": 381,
+      "by": "agent-a33ad31ce562ef5f0",
+      "what": "UnseenFallback Sites build/buy byte world+0x97B",
+      "at": "2026-10-29T09:47:01.430Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a33ad31ce562ef5f0"
+    },
+    {
+      "id": "ledger-382",
+      "kind": "ledger",
+      "from": 382,
+      "to": 382,
+      "by": "agent-mono-cost6",
+      "what": "AutShadow answer table full: memo rows fill 1024 at load, resize + LRU (docs/122 §14.14)",
+      "at": "2026-10-29T09:56:47.985Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-383",
+      "kind": "ledger",
+      "from": 383,
+      "to": 383,
+      "by": "sims-3-modernization",
+      "what": "AutShadow mono-cost6 mismatch causes, A4 split, cut cost (docs/122 §14.15)",
+      "at": "2026-10-29T10:41:57.570Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-384",
+      "kind": "ledger",
+      "from": 384,
+      "to": 384,
+      "by": "agent-crash-1029",
+      "what": "docs/67 §25 bp-simbudget-v024 sim stall (not a crash)",
+      "at": "2026-10-29T12:11:15.470Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-385",
+      "kind": "ledger",
+      "from": 385,
+      "to": 385,
+      "by": "agent-golive-1029",
+      "what": "docs/124 go-live plan update after Mode R 10-29",
+      "at": "2026-10-29T12:11:15.704Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "fixes-371",
+      "kind": "fixes",
+      "from": 371,
+      "to": 372,
+      "by": "agent bugfix/uf-posture-cycle-hook-frames",
+      "what": "issue #89: UfHeld posture chain loop/runaway cut; posturepopcycle pops taken through the unwind",
+      "at": "2026-10-29T12:25:48.694Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a19aa78cecc86cd1e"
+    },
+    {
+      "id": "ledger-386",
+      "kind": "ledger",
+      "from": 386,
+      "to": 386,
+      "by": "agent bugfix/uf-posture-cycle-hook-frames",
+      "what": "issue #92: interpreter frames added by ts3fixes hooks",
+      "at": "2026-10-29T12:25:48.926Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a19aa78cecc86cd1e"
+    },
+    {
+      "id": "ledger-387",
+      "kind": "ledger",
+      "from": 387,
+      "to": 387,
+      "by": "agent-monocost8",
+      "what": "AutShadow change-only list refresh and Sim tiers (0.36.114)",
+      "at": "2026-10-29T13:24:50.133Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-388",
+      "kind": "ledger",
+      "from": 388,
+      "to": 388,
+      "by": "agent-affinity-1029",
+      "what": "docs/203 thread affinity and spin loops (Mjolnir_IV check)",
+      "at": "2026-10-29T13:44:11.005Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "fixes-373",
+      "kind": "fixes",
+      "from": 373,
+      "to": 379,
+      "by": "agent feature/seasons-spread-ea-fixes",
+      "what": "issue #82 seasonimposter: lots queued, warm rebuilds in play, cold rebuilds in play, rebuilt at save/travel flush, dropped, longest rebuild ms, most waiting",
+      "at": "2026-10-29T13:55:44.399Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a4f6bed55ef40a97a"
+    },
+    {
+      "id": "fixes-380",
+      "kind": "fixes",
+      "from": 380,
+      "to": 390,
+      "by": "agent feature/seasons-spread-ea-fixes",
+      "what": "issues #86-#90 EA fixes: preferredservice x3, socialworkeronlot x2, eanullguards x4, showstagethrowables, firepitchair",
+      "at": "2026-10-29T13:55:44.641Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization\\.claude\\worktrees\\agent-a4f6bed55ef40a97a"
+    },
+    {
+      "id": "ledger-389",
+      "kind": "ledger",
+      "from": 389,
+      "to": 389,
+      "by": "sims-3-modernization",
+      "what": "AutShadow dirty lots, tier cache, list tiers (docs/122 §14.17)",
+      "at": "2026-10-29T14:32:27.394Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-390",
+      "kind": "ledger",
+      "from": 390,
+      "to": 390,
+      "by": "sims-3-modernization",
+      "what": "UnseenFallback Sites Build/Buy window: poll watch of world+0x97B (0.36.117)",
+      "at": "2026-10-29T15:37:05.978Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-391",
+      "kind": "ledger",
+      "from": 391,
+      "to": 391,
+      "by": "sims-3-modernization",
+      "what": "AutShadow list kinds, lot-vector prints, tier triggers, shared cut, gardening A2 (0.36.116)",
+      "at": "2026-10-29T15:40:02.293Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-392",
+      "kind": "ledger",
+      "from": 392,
+      "to": 392,
+      "by": "agent-issue98-99",
+      "what": "docs/67 §26-27: issues #98/#99 contributor crashes (ConformToRouteController actor, thumbnail pose buffer)",
+      "at": "2026-10-29T23:49:50.752Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
+    },
+    {
+      "id": "ledger-393",
+      "kind": "ledger",
+      "from": 393,
+      "to": 393,
+      "by": "sims-3-modernization",
+      "what": "docs/122 §14.19 mono-cost11 BP cut round: seeding, causes, pointer prints, RowHot",
+      "at": "2026-10-29T23:58:03.500Z",
+      "worktree": "C:\\Users\\<user>\\IdeaProjects\\sims-3-modernization"
     }
   ]
 }

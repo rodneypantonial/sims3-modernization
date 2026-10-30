@@ -33,6 +33,11 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kRouteFailureBackoff value="True" />
     <kSaveCleanup value="False" />
     <kSnapshotCap value="0" />
+    <kSaveCleanupAggressive value="False" />
+    <kAggressiveSnapshotKeep value="10" />
+    <kAggressiveQuietDays value="56" />
+    <kPlayedGenerations value="2" />
+    <kPlayedSnapshotKeep value="40" />
     <kNoStationDetourOffscreen value="True" />
     <kPortalAdaptorLeak value="True" />
     <kCasGrid value="False" />
@@ -100,7 +105,18 @@ const TUNING_XML = `<?xml version="1.0" encoding="utf-8"?>
     <kUnseenFallbackLoopDetect value="True" />
     <kUnseenFallbackLoopBreak value="False" />
     <kUnseenFallbackFinish value="False" />
+    <kPosturePopCycle value="False" />
     <kOverwatchIgnoreStuckProbes value="True" />
+    <kSeasonImposter value="False" />
+    <kSeasonImposterCold value="False" />
+    <kPreferredService value="False" />
+    <kSocialWorkerOnLot value="False" />
+    <kEaNullGuards value="False" />
+    <kShowStageThrowables value="False" />
+    <kFirePitChair value="False" />
+    <kAgeUpKeepOutfits value="False" />
+    <kDeadRefGuards value="False" />
+    <kDeadRefSweep value="False" />
   </Current_Tuning>
 </base>
 `;

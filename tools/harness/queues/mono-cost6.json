@@ -1,0 +1,85 @@
+{
+  "note": "mono-cost6: ts3native 0.36.110 (asi.mono-cost6, docs/122 §14.14): [AutShadow] Mode R with the resized answer table (8,192 rows, memo quota, LRU eviction, autshadow v7) on BP and IP, WindowWaitUs=5000. Correctness + sizing, 2 x 10 min, ~30 min. Read with node tools/harness/mono-cost-report.ts --tag mono-cost6.",
+  "jobs": [
+    {
+      "id": "bp-autshadow-r",
+      "note": "1/2 Mode R on 0.36.110 (docs/122 §14.14): answer table 8,192 rows, memo rows capped at 2,048, LRU eviction, learn ring 1,024 (256 new keys per cut). mono-cost5 had 0 compared pairs: 1,024 memo rows filled the table at load, every learned key refused (BP aborts 98.8% row, IP 79.5% row + 19.7% other = world constants not listed). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a2 == 0 and autshadow_a3 == 0 (A1 each explained in autshadow.jsonl), a4 < 20% of compared pairs; -native.json autshadow v7: learned > 0, full ~0, evicted and entriesMax / learnWantMax / refreshMax reported (sizing data), cut avg < 300 us; workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read with mono-cost-report.ts --tag mono-cost6 (abort reasons + answer table lines). Any crash: stop and triage against 0.36.109.",
+      "asi": "game-copy/ts3native.asi.mono-cost6",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-r",
+      "note": "2/2 Mode R on 0.36.110 (docs/122 §14.14): answer table 8,192 rows, memo rows capped at 2,048, LRU eviction, learn ring 1,024 (256 new keys per cut). mono-cost5 had 0 compared pairs: 1,024 memo rows filled the table at load, every learned key refused (BP aborts 98.8% row, IP 79.5% row + 19.7% other = world constants not listed). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a2 == 0 and autshadow_a3 == 0 (A1 each explained in autshadow.jsonl), a4 < 20% of compared pairs; -native.json autshadow v7: learned > 0, full ~0, evicted and entriesMax / learnWantMax / refreshMax reported (sizing data), cut avg < 300 us; workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read with mono-cost-report.ts --tag mono-cost6 (abort reasons + answer table lines). Any crash: stop and triage against 0.36.109. Run after 1/2 passed.",
+      "asi": "game-copy/ts3native.asi.mono-cost6",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

@@ -23,6 +23,7 @@ namespace Ts3Agent
             Dispatcher.Register("sim_go_home", SimGoHome);
             Dispatcher.Register("sim_strand", SimStrand);
             Dispatcher.Register("strand_many", StrandMany); // HitchReproHandlers.cs
+            Dispatcher.Register("posture_chain_check", PostureChainCheck); // HitchReproHandlers.cs, issue #89
             Dispatcher.Register("sim_visit_lot", SimVisitLot);
             Dispatcher.Register("sim_route_to", SimRouteTo);
             Dispatcher.Register("route_replan", RouteReplan);

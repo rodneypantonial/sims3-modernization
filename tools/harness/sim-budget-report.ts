@@ -153,6 +153,9 @@ const csvOf = (tag: string) => readdirSync(PROFILE).find(f => f.startsWith(`${ta
 export function load(tag: string): Run {
   const csv = csvOf(tag);
   if (!csv) throw new Error(`no ${tag}-<secs>-seconds.csv in ${PROFILE}`);
+  // ts3prof refused the run (e.g. a prologue it does not know): one row, no stages; say why instead of reporting 0 s
+  const plog = join(PROFILE, csv.replace(/-seconds\.csv$/, '.log')), why = existsSync(plog) ? /NOT PROFILING: [^\r\n]*/.exec(readFileSync(plog, 'utf8'))?.[0] : undefined;
+  if (why) throw new Error(`${tag}: ${why}`);
   const native = existsSync(join(QUEUE, `${tag}-native.json`)) ? JSON.parse(readFileSync(join(QUEUE, `${tag}-native.json`), 'utf8')) : undefined;
   return { tag, rows: csvRows(join(PROFILE, csv)), hitches: jsonl(join(PROFILE, csv.replace(/-seconds\.csv$/, '-hitches.jsonl'))),
     managed: jsonl(join(PROFILE, `${tag}-managed.jsonl`)), simstack: jsonl(join(PROFILE, `${tag}-simstack.jsonl`)).map((s: any) => s.stack ?? []),
@@ -186,10 +189,15 @@ function selfCheck() {
   assert.match(x.contrib['other (untimed, sync, idle)'], /^ntdll\.dll/); // Mono and locomotion samples are not "other"
   assert.match(report(x), /\| \*\*sum\*\* \| 1000\.0 \|/);
   console.log('fixture ok');
-  // real data: the newest run with managed samples and stage columns (any queue); every bucket >= 0, sum = wall
+  // real data: the newest finished, profiled run with managed samples and stage columns (any queue); every bucket >= 0, sum =
+  // wall. 2026-10-29: the newest such run was a [MonoThread] GcLock=1 job ts3prof had refused (1-row CSV) or one still running
+  // (< 30 s kept): both are skipped, not failed (>= 61 s load + 30 s kept + header = 92 lines)
   if (!existsSync(PROFILE)) { console.log(`no ${PROFILE}: real-data check skipped (set TS3_REPO from a worktree)`); return console.log('self-check ok'); }
-  const real = tagsBy(/(^|-)(bp|ip|sv)-/).find(({ tag }) => existsSync(join(PROFILE, `${tag}-managed.jsonl`)) && statSync(join(PROFILE, `${tag}-managed.jsonl`)).size > 0
-    && readFileSync(join(PROFILE, csvOf(tag)!), 'utf8').split(/\r?\n/, 1)[0].includes('locomotion'));
+  const real = tagsBy(/(^|-)(bp|ip|sv)-/).find(({ tag }) => {
+    if (!existsSync(join(PROFILE, `${tag}-managed.jsonl`)) || statSync(join(PROFILE, `${tag}-managed.jsonl`)).size === 0) return false;
+    const lines = readFileSync(join(PROFILE, csvOf(tag)!), 'utf8').split(/\r?\n/);
+    return lines[0].includes('locomotion') && lines.length >= 92 && !/NOT PROFILING/.test((() => { try { return readFileSync(join(PROFILE, csvOf(tag)!.replace(/-seconds\.csv$/, '.log')), 'utf8'); } catch { return ''; } })());
+  });
   if (!real) { console.log('no real run with managed samples and stage columns: real-data check skipped'); return console.log('self-check ok'); }
   const y = analyze(load(real.tag));
   assert.ok(y.secs > 30, `${real.tag}: ${y.secs} s kept`);

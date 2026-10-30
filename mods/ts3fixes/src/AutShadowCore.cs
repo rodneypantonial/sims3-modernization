@@ -156,6 +156,24 @@ namespace Ts3Fixes
         // counted (more skips, never fewer).
         public static int OverrideCensus(Type[] modTypes, Predicate<Type> isMod, string[] slots, bool[] hit, System.Collections.Generic.List<string> log)
         {
+            int exempt;
+            return OverrideCensus(modTypes, isMod, slots, hit, log, null, out exempt);
+        }
+
+        // docs/122 §14.13: slots dispatched on the scored definition itself (docs/127 §2 receiver table). The worker scores a
+        // pair only when the definition's exact runtime type is allow-listed, so a mod override of these runs there only as
+        // a subclass of an allow-listed definition: DerivedOwners covers that, the census does not mark the slot.
+        public static readonly string[] kDefReceiverTypes = {
+            "Sims3.Gameplay.Interactions.InteractionDefinition", "Sims3.Gameplay.Interactions.IMetaInteractionDefinition",
+            "Sims3.Gameplay.Interactions.IOverridesCalculateScore", "Sims3.Gameplay.Interactions.IOverridesAgeTests" };
+        public static bool OnScoredDefinition(string slot) { return Array.IndexOf(kDefReceiverTypes, slot.Substring(0, slot.IndexOf("::"))) >= 0; }
+
+        // exemptSlot (may be null): matches on those slots are not marked, only counted in exempted (logged once).
+        public static int OverrideCensus(Type[] modTypes, Predicate<Type> isMod, string[] slots, bool[] hit, System.Collections.Generic.List<string> log,
+            Predicate<string> exemptSlot, out int exempted)
+        {
+            int ex = 0;
+            Predicate<int> take = delegate(int i) { if (exemptSlot != null && exemptSlot(slots[i])) { ex++; return false; } return true; };
             const BindingFlags decl = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
             System.Collections.Generic.Dictionary<string, int> idx = new System.Collections.Generic.Dictionary<string, int>();
             System.Collections.Generic.Dictionary<string, bool> names = new System.Collections.Generic.Dictionary<string, bool>();
@@ -173,7 +191,7 @@ namespace Ts3Fixes
                     {
                         if (isMod(b)) continue;
                         int i;
-                        if (idx.TryGetValue(TypeKey(b) + tail, out i)) { hit[i] = any = true; if (log != null) log.Add(t.FullName + " overrides " + slots[i]); }
+                        if (idx.TryGetValue(TypeKey(b) + tail, out i) && take(i)) { hit[i] = any = true; if (log != null) log.Add(t.FullName + " overrides " + slots[i]); }
                     }
                 }
                 foreach (Type itf in t.GetInterfaces())
@@ -187,20 +205,42 @@ namespace Ts3Fixes
                     try { map = t.GetInterfaceMap(itf); }
                     catch (Exception)
                     {   // no map: every listed method of the interface counts (more skips, never fewer)
-                        for (int i = 0; i < slots.Length; i++) if (slots[i].StartsWith(ik)) { hit[i] = any = true; if (log != null) log.Add(t.FullName + " implements " + slots[i] + " (no map)"); }
+                        for (int i = 0; i < slots.Length; i++) if (slots[i].StartsWith(ik) && take(i)) { hit[i] = any = true; if (log != null) log.Add(t.FullName + " implements " + slots[i] + " (no map)"); }
                         continue;
                     }
                     for (int j = 0; j < map.InterfaceMethods.Length; j++)
                     {
                         int i;
-                        if (map.TargetMethods[j] == null || !isMod(map.TargetMethods[j].DeclaringType) || !idx.TryGetValue(SigKey(map.InterfaceMethods[j]), out i)) continue;
+                        if (map.TargetMethods[j] == null || !isMod(map.TargetMethods[j].DeclaringType) || !idx.TryGetValue(SigKey(map.InterfaceMethods[j]), out i) || !take(i)) continue;
                         hit[i] = any = true;
                         if (log != null) log.Add(t.FullName + " implements " + slots[i]);
                     }
                 }
                 if (any) types++;
             }
+            exempted = ex;
             return types;
+        }
+
+        // G-M5 derive rule (docs/122 §14.13): ownerHit[o] = true when a type of modTypes derives from owners[o] (a mod
+        // subclass replacing the definition's singleton, e.g. NRaas GoHere's VisitLotEx.Definition : VisitLot.Definition).
+        // Logs the first such type per owner; returns the number of owners newly hit. Null owners are skipped.
+        public static int DerivedOwners(Type[] modTypes, Type[] owners, bool[] ownerHit, System.Collections.Generic.List<string> log)
+        {
+            int n = 0;
+            for (int o = 0; o < owners.Length; o++)
+            {
+                if (owners[o] == null) continue;
+                foreach (Type t in modTypes)
+                {
+                    if (t == null || !t.IsSubclassOf(owners[o])) continue;
+                    if (!ownerHit[o]) n++;
+                    ownerHit[o] = true;
+                    if (log != null) log.Add(owners[o].FullName + " (derived: " + t.FullName + ")");
+                    break;
+                }
+            }
+            return n;
         }
 
         // Class of one pair: reference (sim thread) vs worker, both from the same driver on the same request. kNoClass when

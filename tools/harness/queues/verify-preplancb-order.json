@@ -1,5 +1,5 @@
 {
- "note": "Correctness only, no timing (docs/185 §6.1): rerun of night-1024-new bp-preplancb-order, which passed on counters but was invalid (all 6 VisitLot visits queued:false, the door-order case never ran). Visits now player-directed (sim_visit_lot autonomous: false); the repro's stepsRequire sim_visit_lot.queued>=6 fails the job unless every visit queues, and a refused visit logs test + why. asi.p6f = ts3native 0.36.43 as in night-1024-new; ts3fixes and ts3agent = master build.",
+ "note": "Correctness only, no timing (docs/185 §6.1): rerun of night-1024-new bp-preplancb-order, which passed on counters but was invalid (all 6 VisitLot visits queued:false, the door-order case never ran). Visits now player-directed (sim_visit_lot autonomous: false); the repro's stepsRequire sim_visit_lot.queued>=6 fails the job unless every visit queues, and a refused visit logs test + why. asi.p6f = ts3native 0.36.43 as in night-1024-new; ts3fixes and ts3agent = master build. 2026-10-30 (docs/185 §6.5): the 10-25 13:47 PASS left arm C unread; the repro now records every visit outcome (sim_details tallied detail_a/b/c) and stepsRequire needs detail_c.in_world>=2. Rerun this job; read the detail_c rows (lot, queue) against detail_a / detail_b.",
  "jobs": [
   {
    "asi": "game-copy/ts3native.asi.p6f",

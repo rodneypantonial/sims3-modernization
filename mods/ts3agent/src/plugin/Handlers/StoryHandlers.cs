@@ -47,7 +47,9 @@ namespace Ts3Agent
             Dispatcher.Register("switch_household", SwitchHousehold);
         }
 
-        // switch_household {household}: Edit Town's "Change Active Household" (EditTownPuck -> PlayFlow), its household step
+        static Household sPreviousHousehold;
+
+        // switch_household {household: name | id | "@other" | "@previous"}: Edit Town's "Change Active Household" (EditTownPuck -> PlayFlow), its household step
         // PlayFlowModel.ActivateSimScreenMaskedFuncFromHousehold: LotManager.LockActiveLot(home), the household's internal
         // PrepareToBecomeActiveHousehold (reflection), BinCommon.ActivateSim(household, home), camera on the home lot.
         // Refused where the player's button is: vacation, University, future world (GameUtils), and where Edit Town is
@@ -65,8 +67,15 @@ namespace Ts3Agent
                 throw new McpException("not available: Edit Town refused (" + (why ?? "busy") + ")");
             string want = a.Str("household");
             Household h = null;
-            foreach (Household x in Household.sHouseholdList)
-                if (x != null && (Util.Id(x.HouseholdId) == want || x.Name == want)) { h = x; break; }
+            if (want == "@previous") h = sPreviousHousehold; // the one active before the last switch_household (rotation repros)
+            else if (want == "@other") // the playable household with the most humans other than the active one (rotation repros)
+            {
+                foreach (Household x in Household.sHouseholdList)
+                    if (x != null && x != cur && x.LotHome != null && !x.IsSpecialHousehold && !x.IsPreviousTravelerHousehold && x.NumMembers > 0 && (h == null || x.NumMembers > h.NumMembers)) h = x;
+            }
+            else
+                foreach (Household x in Household.sHouseholdList)
+                    if (x != null && (Util.Id(x.HouseholdId) == want || x.Name == want)) { h = x; break; }
             if (h == null) throw new McpException("no household '" + want + "'");
             if (h == cur) throw new McpException("'" + h.Name + "' is already the active household");
             if (h.LotHome == null || h.IsSpecialHousehold) throw new McpException("not available: '" + h.Name + "' has no home lot or is a service household");
@@ -80,6 +89,7 @@ namespace Ts3Agent
             Sim s = activate.Invoke(null, new object[] { h, h.LotHome }) as Sim;
             if (s == null) throw new McpException("BinCommon.ActivateSim gave no Sim for '" + h.Name + "'");
             try { Camera.FocusOnLot(h.LotHome.LotId, 0f); } catch (Exception) { }
+            sPreviousHousehold = cur;
             Dictionary<string, object> r = Util.Obj();
             r["from"] = cur != null ? cur.Name : null;
             r["household"] = h.Name; r["id"] = Util.Id(h.HouseholdId); r["active_sim"] = s.FullName;

@@ -119,7 +119,7 @@ static DWORD __fastcall GvStub(u8* world, void* edx, const float* pt, float r, D
         if (!k.gvShadow) return g_gvOrig(world, edx, pt, r, vec, mode, opt);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const DWORD a = g_async.state == A_RUNNING ? g_gvOrig(world, edx, pt, r, vec, mode, opt) : GvShadow(world, edx, pt, r, vec, mode, opt);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return a;
     }
     if (!k.gvMode) return g_gvOrig(world, edx, pt, r, vec, mode, opt);

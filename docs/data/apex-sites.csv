@@ -314,7 +314,7 @@ address,apex_name,apex_source,class,verdict
 0xC60D30,ObjectTreeWalk,framework/game_addresses.cpp,C2,ours [Verify] (off) vs Apex ObjectLookupIndex (on)
 0xC61DC0,,features/memory_guard.cpp,,
 0xC62860,,features/memory_guard.cpp,,
-0xC62D40,ObjectById,features/frame_profiler.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,,
+0xC62D40,ObjectById,features/frame_profiler.cpp+framework/game_addresses.cpp+patches/performance_patches.cpp,C0,ours [AutShadow] CutLean only calls it (lot print at the cut on the sim thread as the list ICs do); Apex hooks the entry: our call goes through it like the game's; no write overlap
 0xC63015,LotVisibilityCameraBiasJZ,framework/game_addresses.cpp,,
 0xC6BA15,,patches/performance_patches.cpp,,
 0xC6BCC0,,features/memory_guard.cpp,,

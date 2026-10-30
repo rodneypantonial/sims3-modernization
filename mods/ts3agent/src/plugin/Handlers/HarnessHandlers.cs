@@ -37,6 +37,7 @@ namespace Ts3Agent
             RegisterRouteFreeze();
             RegisterStory();
             RegisterHouseholds();
+            RegisterStartPaths();
             Dispatcher.Register("patch_test", PatchTest);
             Dispatcher.Register("method_handle", MethodHandle);
             Dispatcher.Register("patch_test_cold", PatchTestCold);
@@ -46,6 +47,7 @@ namespace Ts3Agent
             Dispatcher.Register("ui_single_task_probe", UiSingleTaskProbe);
             Dispatcher.Register("ui_single_task_result", UiSingleTaskResult);
             Dispatcher.Register("quit_game", QuitGame);
+            Dispatcher.Register("main_menu", GoMainMenu);
             Dispatcher.Register("auto_dialog", AutoDialog);
             Dispatcher.Register("enter_live_mode", EnterLiveMode);
             Dispatcher.Register("reflect_call_async", ReflectCallAsync);
@@ -317,6 +319,8 @@ namespace Ts3Agent
             Dictionary<string, object> r = Util.Obj();
             if (modal == null) { r["open"] = false; return r; }
             r["open"] = true;
+            // a start-path step answers this dialog itself (StartPathHandlers: purchase confirm, Edit Town place dialog)
+            if (HarnessOwnsDialog()) { r["title"] = null; r["clicked"] = "(left to a harness step)"; return r; }
             List<string> texts = new List<string>();
             CollectTexts(modal, texts, 0);
             r["title"] = texts.Count > 0 ? texts[0] : null;
@@ -557,6 +561,22 @@ namespace Ts3Agent
             RunAsync("quit_game", delegate { GameStates.TransitionToGameStateQuitNoCheck(); });
             Dictionary<string, object> r = Util.Obj();
             r["quitting"] = true;
+            return r;
+        }
+
+        // main_menu: Options > Quit to Main Menu > Quit without Saving (save first with save_game), the call EA's own
+        // InWorldState.ExitToMainMenuNoCheck makes: GameStates.TransitionToLeaveInWorld (world unload -> MainMenu state).
+        // Refused where EA's menu entry is blocked (CAS, Build/Buy, a sub-state switch running) or a save is running.
+        // docs/204 measurement (save-reload.ts): unload + in-process load_save of the same save.
+        static object GoMainMenu(Args a)
+        {
+            if (!GameStates.IsInWorld()) throw new McpException("not in a world");
+            if (GameStates.IsCasState || GameStates.IsBuildBuyLikeState) throw new McpException("leave CAS / Build / Buy first (state " + SubState() + ")");
+            if (Sims3.Gameplay.UI.Responder.Instance.OptionsModel.SaveGameInProgress) throw new McpException("a save is in progress");
+            if (UIManager.GetModalWindow() != null) throw new McpException("close the open dialog first");
+            RunAsync("main_menu", delegate { GameStates.TransitionToLeaveInWorld(); });
+            Dictionary<string, object> r = Util.Obj();
+            r["leaving"] = SubState();
             return r;
         }
 

@@ -130,7 +130,7 @@ static DWORD __cdecl SlHook(float* point, const u8* obj, DWORD ags, DWORD a4) {
         if (!k.slShadow) return g_slOrig(point, obj, ags, a4);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const DWORD r = g_async.state == A_RUNNING ? g_slOrig(point, obj, ags, a4) : SlShadow(point, obj, ags, a4);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return r;
     }
     if (!k.slMode) return g_slOrig(point, obj, ags, a4);

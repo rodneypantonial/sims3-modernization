@@ -91,26 +91,59 @@ namespace Ts3Fixes
                 return r;
             }
 
+            // The plan itself (PlanAsync below) is inlined here, its only caller: one interpreter frame less above the original
+            // Plan (issue #92, docs/51 §386).
             RoutePlanResult PlanBackoffBody(Sims3.Gameplay.Actors.Sim sim)
             {
                 int[] c = PatchCounters();
                 IScriptProxy proxy = Follower;
-                if (!ShortcutOn("backoff")) return PlanAsync(sim);
-                Vector3 dest = GetApproximateOriginalDestination();
-                // non-Sim routers, no destination yet, or a short hop (turn in place, fail-path near the Sim): untouched
-                if (sim == null || dest == Vector3.Origin || dest == Vector3.Invalid || (sim.Position - dest).Length() < kBackoffMinDistance)
-                    return PlanAsync(sim);
-                BackoffKey key = new BackoffKey(proxy.ObjectId.Value, dest);
-                long now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
-                BackoffEntry e;
-                // From <= now guards against a clock that went back (another save loaded)
-                if (sBackoff.TryGetValue(key, out e) && e.From <= now && now < e.Until && BackoffEligible(sim))
+                BackoffKey key = default(BackoffKey);
+                BackoffEntry e = default(BackoffEntry);
+                long now = 0;
+                bool record = false;
+                if (ShortcutOn("backoff"))
                 {
-                    c[26]++;
-                    return FailFast(e.Type);
+                    Vector3 dest = GetApproximateOriginalDestination();
+                    // non-Sim routers, no destination yet, or a short hop (turn in place, fail-path near the Sim): untouched
+                    if (sim != null && dest != Vector3.Origin && dest != Vector3.Invalid && (sim.Position - dest).Length() >= kBackoffMinDistance)
+                    {
+                        key = new BackoffKey(proxy.ObjectId.Value, dest);
+                        now = Sims3.Gameplay.Utilities.SimClock.CurrentTicks;
+                        // From <= now guards against a clock that went back (another save loaded)
+                        if (sBackoff.TryGetValue(key, out e) && e.From <= now && now < e.Until && BackoffEligible(sim))
+                        {
+                            c[26]++;
+                            return FailFast(e.Type);
+                        }
+                        record = true;
+                    }
                 }
-                RoutePlanResult r = PlanAsync(sim);
-                if ((r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination) // not plain Failed: ts3native's route cache returns that on a hit (docs/15)
+                // PlanAsync (docs/18, see below), inlined
+                RoutePlanResult r;
+                bool pre = false;
+                bool started = AsyncEligible(sim, "asyncroute") ? PreCb(0, ref pre) && GetOption(kAsyncStart)
+                    : OwnerTaskStart(ref pre) ? true
+                    : ForeignEligible() && PreCb(0, ref pre) && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
+                if (!started)
+                {
+                    StepAside();
+                    r = PlanOrig();
+                }
+                else
+                {
+                    try
+                    {
+                        AsyncWait();
+                        List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
+                        r = PlanOrig();
+                        RestoreDoors(doors);
+                    }
+                    finally
+                    {
+                        GetOption2(kAsyncCancel); // disarm, also when the Sim is reset while sleeping
+                    }
+                }
+                if (record && (r.mType == RoutePlanResultType.FailedBecauseNoPathToDestination) // not plain Failed: ts3native's route cache returns that on a hit (docs/15)
                     && r.mBlockerType != RouteBlockerType.Sim && r.mBlockerType != RouteBlockerType.Vehicle && BackoffEligible(sim))
                 {
                     if (sBackoff.Count >= kMaxBackoffEntries) PruneBackoff(now);
@@ -137,30 +170,7 @@ namespace Ts3Fixes
             // route, a vehicle or other non-Sim follower, a situation or one-shot task) sends the foreign START instead
             // (GetOption2 bits 58 + 59, kind 0). ts3native 0.36.7+ starts it only with [RouteAsync] FallbackAsync=1 and refuses
             // it as "Foreign" otherwise; older ts3native and the game answer false, so the plan stays synchronous as before.
-            RoutePlanResult PlanAsync(Sims3.Gameplay.Actors.Sim sim)
-            {
-                bool pre = false;
-                bool started = AsyncEligible(sim, "asyncroute") ? PreCb(0, ref pre) && GetOption(kAsyncStart)
-                    : OwnerTaskStart(ref pre) ? true
-                    : ForeignEligible() && PreCb(0, ref pre) && GetOption2((Sims3.SimIFace.Route.RouteOption2)kArStart);
-                if (!started)
-                {
-                    StepAside();
-                    return PlanOrig();
-                }
-                try
-                {
-                    AsyncWait();
-                    List<Door> doors = pre ? PrePlanCbCore.Snapshot(LockedDoors()) : null;
-                    RoutePlanResult r = PlanOrig();
-                    RestoreDoors(doors);
-                    return r;
-                }
-                finally
-                {
-                    GetOption2(kAsyncCancel); // disarm, also when the Sim is reset while sleeping
-                }
-            }
+            // (The code is inlined in PlanBackoffBody above, issue #92.)
 
             bool AsyncEligible(Sims3.Gameplay.Actors.Sim sim, string shortcut)
             {

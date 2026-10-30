@@ -24,6 +24,19 @@ namespace Ts3Fixes
         // near a viewer) may start a split route; the household, held Sims, Sims with a seen social partner and out-of-live never
         public static bool SeenButMovable(int why) { return why == kActiveLot || why == kOnScreen || why == kNearViewers; }
 
+        // Issue #89: a Sim's posture chain (PreviousPosture) is a few postures deep; one that does not end within kPostureChainCap
+        // steps is a loop (EA's set_Posture on a pop) or otherwise broken. ChainStepOk(n) for the n-th posture walked (1-based).
+        public const int kPostureChainCap = 16;
+        public static bool ChainStepOk(int n) { return n <= kPostureChainCap; }
+
+        // Issue #89: EA's Sim.set_Posture asks the new posture's Compatible(current) first and, when true, links the new one on
+        // top (new.PreviousPosture = current). For a pop the new posture already is current.PreviousPosture, so the two then
+        // point at each other [verified, decompiled]. True = this set is such a pop (posturepopcycle sends it down the unwind).
+        public static bool IsPop(object current, object currentPrevious, object next)
+        {
+            return current != null && next != null && !ReferenceEquals(current, next) && ReferenceEquals(currentPrevious, next);
+        }
+
         // 1 m destination cell, as RouteBackoff's BackoffKey
         public static int Cell(float f) { return (int)System.Math.Floor(f); }
 
@@ -127,6 +140,22 @@ namespace Ts3Fixes
             string m = frame.Substring(kRoutingComponent.Length);
             foreach (string f in kFollowers) if (m == f) return true;
             return false;
+        }
+        // the same with the frame above it: ViewObjects.CreateRouteToObject plans (a second plan only for a pool goal) and returns the
+        // route; only ViewObjects.RouteToObject then calls DoRoute on it at once [verified, decompiled]. Its other callers
+        // (Trampoline compares two routes, InteriorDesigner, Aromainator) stay refused.
+        const string kViewObjects = "Sims3.Gameplay.InteractionsShared.ViewObjects.";
+        public static bool FollowsRoute(string frame, string above)
+        {
+            return FollowsRoute(frame) || (frame == kViewObjects + "CreateRouteToObject" && above == kViewObjects + "RouteToObject");
+        }
+
+        // our own frames between the plan hook and D's caller read (UfFollows, UfCaller, UfPre's helpers in Fixes): never the caller.
+        // Before 2026-10-30 UfCaller returned UfFollows itself, so gate 336 refused every plan (10-27 run: unseenfbpre_callers
+        // = "6 Ts3Fixes.Fixes.UfFollows")
+        public static bool OwnFrame(string fullType, string method)
+        {
+            return fullType == "Ts3Fixes.Fixes" && method != null && method.StartsWith("Uf");
         }
 
         // RoutingComponent.RouteToLot plans through Lot.PlanToLot (static) -> Lot.PlanToLot / PlanToLotEx [verified, decompiled]:

@@ -55,5 +55,31 @@ namespace Ts3Agent
             r["sims"] = placed;
             return r;
         }
+
+        // posture_chain_check: issue #89, read-only. Sims whose posture chain (PreviousPosture) does not end within 16 postures
+        // (the two-posture loop EA's Sim.set_Posture makes on a pop whose target is Compatible); "looped" stays empty with
+        // posturepopcycle on. Walks the chain itself (bounded), never Posture.Satisfies.
+        static object PostureChainCheck(Args a)
+        {
+            List<object> looped = new List<object>();
+            int sims = 0, deepest = 0;
+            foreach (Sim s in new List<Sim>(LotManager.Actors))
+            {
+                if (s == null || s.HasBeenDestroyed) continue;
+                sims++;
+                int n = 0;
+                for (Sims3.Gameplay.ActorSystems.Posture p = s.Posture; p != null && n <= 16; p = p.PreviousPosture) n++;
+                if (n <= 16) { if (n > deepest) deepest = n; continue; }
+                Dictionary<string, object> e = Util.Obj();
+                e["sim"] = s.FullName;
+                e["posture"] = s.Posture.GetType().FullName;
+                looped.Add(e);
+            }
+            Dictionary<string, object> r = Util.Obj();
+            r["sims"] = sims;
+            r["deepest"] = deepest;
+            r["looped"] = looped;
+            return r;
+        }
     }
 }

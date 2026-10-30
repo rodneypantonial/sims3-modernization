@@ -1,0 +1,85 @@
+{
+  "note": "Sites Build/Buy verify (docs/202 §3.4.3 + §3.4.4, ts3native 0.36.117 = asi.ufc2): sv-ufc-buildbuy (bb-cc-short native_check per window: ufcBb_0 >= spans, ufcBb_1 = 0 tries while world+0x97B stays set) + sv-ufc-farwalkers-loop (live behaviour unchanged). 2026-10-29 run on asi.merge113 (0.36.113) failed the Build window on live-mode tries (ufcTry_0=15, lists dropped 0, §3.4.4); re-pinned to asi.ufc2.",
+  "jobs": [
+    {
+      "id": "sv-ufc-farwalkers-loop",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "C1-C4 correctness (positive): forced ABBA on unseenfbc-far-walkers-loop (30 Sims at the farthest community lot, unseen; each loop the active Sim plans cross-town (a visible job) while the crowd walks), 4 loops per arm, cap 16 min; the loop flips ufcMode. Pass: no crash, 0 watchdog lines, ufcTry_0 + ufcTry_1 >= 1 and ufcFake_0 + ufcFake_1 >= 1 (on arms; the off arms add none), ufcMaxWaitUs <= ~120 ms, no hitch >= 300 ms led by 0x85FE10 / 0x846D21 / 0x83156D / 0x631F40 for an unseen waiter in on windows (hitch-ab.ts --causes), no Sim stuck at the end, stuck_check_reset unchanged. Read: ufcTry_2 / ufcTry_3 (C3 / C4 from the crowd's own interactions at the venue: may stay 0 [inferred]), ufcRecover (one wait per job working), ufcStale (list gaps), unseenfbsites_ids per list.",
+      "asi": "game-copy/ts3native.asi.ufc2",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "minCounters": 139,
+      "noiseCheck": false,
+      "nativeRequire": "ufcReady>=63,ufcTry_0>=1,ufcFake_0>=1,watchdogs<=0",
+      "ini": {
+        "UnseenFallback.Sites": 1,
+        "UnseenFallback.SiteWaitMs": 0,
+        "RouteAsync.OwnJobWait": 1,
+        "RouteAsync.LogFallbackMs": 20,
+        "RouteAsync.LogFallbackStack": 16,
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 18,
+          "repro": "unseenfbc-far-walkers-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 4
+            },
+            "maxMinutes": 16
+          },
+          "noSamplers": true,
+          "fixesOn": "unseenfbsites",
+          "fixesRequire": "unseenfbsites_lists>=20",
+          "fixesReport": "unseenfb"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 36
+    },
+    {
+      "id": "sv-ufc-buildbuy",
+      "routingFailFast": {
+        "ms": 300,
+        "scope": "unseen"
+      },
+      "note": "Not outside live mode (docs/202 §6): bb-cc-short (Build/Buy placement cycles on the home lot, short form of bb-cc-cycle) with Sites=1 and unseenfbsites on: out of live mode the list is empty (UfWhy kNotLive) or stale, so no site acts. Pass (0.36.117, docs/202 §3.4.4): no crash, and the repro's native_check steps: ufcBb_0 >= 2 (Buy) / >= 1 (Build) and ufcBb_1 = 0 in each window; ufcTry/ufcFake/ufcBb_2 are read only (live ticks before the entry and after the exit). Before 0.36.117 the repro's native_check steps: ufcTry_0..3 and ufcFake_0..3 all 0 inside each Build/Buy window (native_mark before the cycle, native_check after it). The whole-job ufcTry_3<=0 rule of the 2026-10-26 runs counted the ~8.5 live-mode minutes after the cycles (C4 28 tries spread over the whole run, all got the lock, 0 fakes; docs/202 §6). ccSet cc-2k: bb_cc_cycle places only cc-gen products named CCGen (first run 2026-10-26 failed 'no placeable catalogue product named like ccgen' without it, docs/202 §6).",
+      "asi": "game-copy/ts3native.asi.ufc2",
+      "releaseDefaults": true,
+      "save": "Baseline-SV-Spring",
+      "ccSet": "game-copy/cc-synth/cc-2k",
+      "minCounters": 139,
+      "noiseCheck": false,
+      "nativeRequire": "ufcReady>=63,watchdogs<=0",
+      "ini": {
+        "UnseenFallback.Sites": 1,
+        "ArenaGuard.InitobjFix": 1,
+        "ArenaGuard.TailPad": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 10,
+          "repro": "bb-cc-short",
+          "noSamplers": true,
+          "fixesOn": "unseenfbsites",
+          "fixesReport": "unseenfb"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 35
+    }
+  ]
+}

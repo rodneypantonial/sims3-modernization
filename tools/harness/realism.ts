@@ -60,16 +60,22 @@ export const worst = (ls: Label[]): Label => LABELS[Math.max(0, ...ls.map(l => L
 const NEXT: Record<string, (a: any) => string> = {
   build_mode: a => a?.on === false ? 'Live' : 'Build', buy_open: () => 'Buy', buy_close: () => 'Live', cas_open: () => 'CAS',
   cas_close: () => 'Live', enter_live_mode: () => 'Live', travel_vacation: () => 'Travel', travel_university: () => 'Travel',
-  travel_future: () => 'Travel', travel_home: () => 'Live', fresh_world: () => 'Live', load_save: () => 'Live',
+  travel_future: () => 'Travel', travel_home: () => 'Live', fresh_world: () => 'Live', load_save: () => 'Live', main_menu: () => 'MainMenu',
+  // start-of-game paths (StartPathHandlers.cs): the family picker is the map view
+  load_world: a => (a?.state === 'PlayFlow' ? 'Map' : a?.state === 'EditTown' ? 'EditTown' : 'Live'), enter_play_flow: () => 'Map',
+  picker_play: () => 'Live', picker_nav: a => ((a?.nav ?? 'Play') === 'Play' ? 'Live' : 'Map'), picker_cas: () => 'CAS',
+  et_move_lot: () => 'EditTown',
 };
 export function modeViolations(steps: { cmd: string; args?: any }[], t = table(), start = 'Live'): string[] {
   const out: string[] = [];
-  let mode = start;
+  let mode = start, casBack = 'Live'; // CAS Done returns to where CAS was opened from (the picker's CAS flow = Map)
   for (const [i, s] of steps.entries()) {
     const r = t.get(s.cmd);
     const ok = !r || r.states.includes('Any') || r.states.includes(mode) || (mode === 'Travel' && r.states.includes('Live'));
     if (!ok) out.push(`step ${i} ${s.cmd} in ${mode} (valid: ${r!.states.join('/')})`);
-    if (NEXT[s.cmd]) mode = NEXT[s.cmd](s.args);
+    if (s.cmd === 'picker_cas' || s.cmd === 'cas_open') casBack = s.cmd === 'picker_cas' ? 'Map' : 'Live';
+    if (s.cmd === 'cas_close') mode = casBack;
+    else if (NEXT[s.cmd]) mode = NEXT[s.cmd](s.args);
   }
   return out;
 }
@@ -84,7 +90,8 @@ export function labelRepro(r: any, t = table()): { label: Label; why: string[]; 
   const all = reproSteps(r).flat().filter((s: any) => s?.cmd);
   const label = worst(all.map(s => stepLabel(s, t)));
   const why = [...new Set(all.filter(s => stepLabel(s, t) === label && label !== 'natural').map(s => s.cmd))];
-  return { label, why, modes: reproSteps(r).flatMap(s => modeViolations(s.filter((x: any) => x?.cmd), t)) };
+  const start = r.save === 'menu' ? 'MainMenu' : 'Live'; // a "menu" repro starts at the main menu (queue save "menu")
+  return { label, why, modes: reproSteps(r).flatMap(s => modeViolations(s.filter((x: any) => x?.cmd), t, start)) };
 }
 
 function registered(): Set<string> {
@@ -125,6 +132,12 @@ function selfCheck() {
   assert.equal(stepLabel({ cmd: 'make_household', args: { funds: 30000 } }), 'cheat');
   assert.equal(stepLabel({ cmd: 'make_household', args: {} }), 'natural');
   assert.equal(labelRepro({ steps: [{ cmd: 'spawn_sims', args: { count: 30 } }, { cmd: 'crowd_go' }] }).label, 'stress');
+  // start-of-game paths: menu -> picker -> CAS -> back to the picker -> lot -> Play -> live; a picker step in live mode is not
+  const cas = [{ cmd: 'load_world', args: { state: 'PlayFlow' } }, { cmd: 'picker_cas' }, { cmd: 'cas_close' }, { cmd: 'picker_lot' }, { cmd: 'picker_nav' }, { cmd: 'save_game' }];
+  assert.deepEqual(modeViolations(cas, t, 'MainMenu'), []);
+  assert.deepEqual(labelRepro({ save: 'menu', steps: cas }).modes, []);
+  assert.deepEqual(modeViolations([{ cmd: 'picker_play' }]), ['step 0 picker_play in Live (valid: Map)']);
+  assert.deepEqual(modeViolations([{ cmd: 'et_move_lot', args: { action: 'enter' } }, { cmd: 'et_move_lot' }, { cmd: 'enter_live_mode' }, { cmd: 'go_here' }]), []);
   const repros = JSON.parse(readFileSync(join(import.meta.dirname, 'repros.json'), 'utf8'));
   const bad = repros.flatMap((r: any) => labelRepro(r, t).modes.map(m => `${r.id}: ${m}`));
   assert.deepEqual(bad, [], 'repros.json: no step in a game mode a player could not send it in');

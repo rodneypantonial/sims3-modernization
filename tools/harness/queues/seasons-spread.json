@@ -1,0 +1,68 @@
+{
+  "note": "Issue #82 seasonimposter + issues #86-#90 EA fixes (ts3fixes SeasonImposter.cs / EaFixes.cs, all default off). Built 2026-10-29, never run. Order: 1 and 3 are correctness (day, stop on any FAIL or ScriptError from our hooks), 2 is the hitch A/B (off arm must show >= 300 ms; if it does not, fix the repro first: more lots per firing). Read 2 with hitch-ab.ts --scenario <tag> --causes and worst-hitches.ts --min 300 per arm.",
+  "jobs": [
+    {
+      "id": "bp-seasonimposter-season",
+      "note": "Correctness (8 min): repro bp-seasonimposter-season under /taskstall 250. Pass: 'season: N lots' with N >= 1 (0 = no marked community lot on this save: switch the save, not the fix); game's half: one stall per lot under Lot.ChangeSeason with World.RegenImposter; our half: seasonimposter_queued >= 1 and no stall there; cold on: seasonimposter_cold >= 1; save: seasonimposter_flushed >= 1, seasonimposter_dropped 0; no ScriptError",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 8,
+          "seed": 12345,
+          "taskstall": 250,
+          "repro": "bp-seasonimposter-season"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 20
+    },
+    {
+      "id": "bp-seasonimposter-ab",
+      "note": "Hitch A/B (12 min, in one load): repro bp-seasonimposter-loop, ABBA until 4 firings per arm. Pass: off arms >= 300 ms on most firings (4 RegenImposter waits in one tick); on arms no >= 300 ms iteration from a firing, seasonimposter_queued rising, seasonimposter_max_depth 4; cleanup flush seasonimposter_flushed 4. Clear-regression rules of AGENTS.md apply",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP",
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "HitchAttr.Holders": 1
+      },
+      "run": {
+        "profile": {
+          "seed": 12345,
+          "minutes": 12,
+          "repro": "bp-seasonimposter-loop",
+          "loopRule": {
+            "until": {
+              "perArm": 4
+            },
+            "maxMinutes": 10
+          },
+          "noSamplers": true
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 25
+    },
+    {
+      "id": "bp-eafixes-check",
+      "note": "Correctness (5 min): repro bp-eafixes-check. Pass: off lines show EA's errors (topic threw 4, carry threw 1, prefdup after 2, throwdb +30), on lines none (threw 0, prefdup after 0, throwdb +0), counters eanullguards_topic 4 / _carry 1, preferredservice_extra >= 2, showstagethrowables_destroyed 30; applied log has every EaFixes patch 'ok'; no crash",
+      "asi": "game-copy/ts3native.asi.rel020",
+      "save": "Baseline-BP",
+      "run": {
+        "profile": {
+          "minutes": 5,
+          "seed": 12345,
+          "repro": "bp-eafixes-check"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 15
+    }
+  ]
+}

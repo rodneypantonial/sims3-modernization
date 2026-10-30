@@ -376,7 +376,7 @@ static u64 __cdecl AvAHook(u8* path, u8* agent, const float* goal, const void* i
         if (!k.avShadow) return g_avAOrig(path, agent, goal, ign, n);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const u64 r = g_async.state == A_RUNNING ? g_avAOrig(path, agent, goal, ign, n) : AvShadowA(path, agent, goal, ign, n);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return r;
     }
     if (!k.avMode) return g_avAOrig(path, agent, goal, ign, n);
@@ -412,7 +412,7 @@ static u8 __cdecl AvBHook(u8* wm, u8* world, u8* pB, const float* raw, DWORD opt
         if (!k.avShadow) return g_avBOrig(wm, world, pB, raw, opt);
         InterlockedIncrement(&g_rgOffSimOpen);
         const u8 r = g_async.state == A_RUNNING ? g_avBOrig(wm, world, pB, raw, opt) : AvShadowB(wm, world, pB, raw, opt);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return r;
     }
     if (!k.avMode) return g_avBOrig(wm, world, pB, raw, opt);

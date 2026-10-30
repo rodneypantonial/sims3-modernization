@@ -55,8 +55,12 @@ struct Ts3nMtProbe {
     LONG lockStale;          // +0x84, locked hook frames left without their exit (longjmp/unwind), dropped and their lock entry released
     // v4: GC_oom_fn wrapper (docs/120 §10.5)
     LONG lockOomReleased;    // +0x88, shadow entries (and lock recursions) the OOM thread released before calling 0xE78610
+    // v5: lazy gate (LazyGate=1, docs/30 §15): the gate is on only from a job's dispatch until the sim sees it finished
+    LONG lazyGate;           // +0x8C, 1 = LazyGate=1 in effect
+    LONG lazyOn;             // +0x90, gate switched on by MtSubmit (sim thread, tick boundary)
+    LONG lazyOff;            // +0x94, gate switched off at a tick boundary with the worker idle
 };
-extern "C" __declspec(dllexport) Ts3nMtProbe ts3native_mtprobe = {4};
+extern "C" __declspec(dllexport) Ts3nMtProbe ts3native_mtprobe = {5};
 
 static const DWORD MT_COLLECT_A = 0x00E4A050, MT_COLLECT_B = 0x00E4A0B0;
 
@@ -511,6 +515,9 @@ static void* __cdecl MtFrameAt(DWORD depth, DWORD* outMethod, LONG* outPos) {
     return NULL;
 }
 
+// This thread's P4 frame slot as memory (TEB TlsSlots +0xE10, index < 64): what fs:[0xE10 + 4*slot] in the stubs names.
+static DWORD* MtFrameSlot() { return (DWORD*)(uintptr_t)(__readfsdword(0x18) + 0xE10 + 4 * g_mtSlotF); }
+
 // Allocates the slot pair (indexes < 64: the value then sits at fs:[0xE10 + 4*index]) and builds the stubs into `stubs`.
 // sites[i] is where block i lives (the game addresses, or test copies). The calling thread's slots get the globals' values.
 static bool MtBuildP4(u8* stubs, const DWORD* sites, const DWORD* globals) {
@@ -552,6 +559,9 @@ static void MtInstallP4() {
     for (int i = 0; i < 3; i++)
         if (MtJmpTo(kMtBlocks[i].addr, stubs + i * 64, kMtBlocks[i].len)) m.p4Ready |= 1 << i;
     if (MtJmpTo(MT_FRAME_AT, (const void*)MtFrameAt, 5)) m.p4Ready |= 8;
+    // docs/51 §377: the global stays stale once the entry block writes the slot; our readers of the current state
+    // (CanYield for [RouteAsync] START/JobYield, gcroots.cpp) follow the sim thread's slot (P4 installs on the sim thread)
+    if (m.p4Ready & 1) g_curState = MtFrameSlot();
     Log("OK   mono thread P4: frame globals -> TLS %lu/%lu (fs:0x%X/0x%X), blocks 0x%lX of 0xF", g_mtSlotF, g_mtSlotA,
         0xE10 + 4 * g_mtSlotF, 0xE10 + 4 * g_mtSlotA, (DWORD)m.p4Ready);
 }
@@ -569,6 +579,7 @@ struct MtJob { void* method; void* obj; void** params; };
 static MtJob g_mtJob;
 static HANDLE g_mtWorker, g_mtJobEv;
 static volatile LONG g_mtStopReq, g_mtBusy;
+static bool g_mtLazyGate;  // [MonoThread] LazyGate=1 (default off: the gate stays on while a worker exists)
 static void* g_mtDomain;
 // worker, around each job: phase 0 before the invoke, 1 after, 2 after with a managed exception ([AutShadow] part 2)
 static void(__cdecl* g_mtJobHook)(int phase, void* method);
@@ -641,6 +652,7 @@ static bool MtStartWorker() {
 static bool MtStopWorker(DWORD waitMs) {
     Ts3nMtProbe& m = ts3native_mtprobe;
     if (!g_mtWorker) return true;
+    if (g_mtLazyGate) InterlockedExchange(&m.locking, 1);  // the worker unregisters under the lock, as it registered
     g_mtStopReq = 1;
     SetEvent(g_mtJobEv);
     if (WaitForSingleObject(g_mtWorker, waitMs) != WAIT_OBJECT_0) { m.workerStopFails++; return false; }
@@ -652,11 +664,27 @@ static bool MtStopWorker(DWORD waitMs) {
 
 // Sim thread: hand one job to the idle worker. The arguments must stay alive and rooted until seq moves (a managed
 // static or a GC_malloc_uncollectable cell; docs/120 §1.2). Methods must have run once on the sim thread (docs/30 §5 step 6).
+// LazyGate=1: the gate goes on here, before the worker can see the job (SetEvent is a full barrier), so every GC/alloc
+// entry the worker makes in the job takes the lock. Only from the sim thread outside every GC and interpreter function
+// (its callers: [AutShadow]'s post-pump / loop-back dispatch, monohost's driver): no unlocked GC frame of the sim is open
+// when the hooks start locking. MtLazyOff turns it off again.
 bool MtSubmit(void* method, void* obj, void** params) {  // external: no game caller until the MtProbe step
     if (!g_mtWorker || ts3native_mtprobe.workerState != 2 || InterlockedCompareExchange(&g_mtBusy, 1, 0) != 0) return false;
+    if (g_mtLazyGate && !ts3native_mtprobe.locking) InterlockedExchange(&ts3native_mtprobe.locking, 1), ts3native_mtprobe.lazyOn++;
     g_mtJob.method = method, g_mtJob.obj = obj, g_mtJob.params = params;
     SetEvent(g_mtJobEv);
     return true;
+}
+
+// LazyGate=1, sim thread at a tick boundary (outside every GC and interpreter function): gate off once the worker is idle.
+// g_mtBusy goes 0 only after the invoke returned, i.e. after every locked hook frame of the job left through its thunk and
+// released the lock; the worker then only waits on g_mtJobEv (no GC entry) until the next MtSubmit turns the gate on again.
+// A GC on the sim with the gate off still stops and scans the idle worker (P2): its stack holds no live job references.
+static void MtLazyOff() {
+    Ts3nMtProbe& m = ts3native_mtprobe;
+    if (!g_mtLazyGate || !g_mtWorker || m.workerState != 2 || g_mtBusy || !m.locking) return;
+    InterlockedExchange(&m.locking, 0);
+    m.lazyOff++;
 }
 
 // --- F1: ScriptHost_NativeToManaged 0xD8A8E0 on the worker (docs/122 §12.5, docs/120 §8 F1, §9.4) ---
@@ -679,14 +707,26 @@ static LONG g_mtN2mDepth;   // the worker's nesting (only the worker uses these)
 static bool g_mtN2mPrivate = true;
 
 // returns false when the private stack is full or a record cannot be made (the caller then takes the game's path)
+// [AutShadow] Satb act (docs/206 §8, docs/data/satb-races.csv X03): the sim interprets while the worker runs, so the game's
+// shared call-record chain [0x11EE5A4] is the sim's; a worker overflow must not fall back to it. satb.cpp sets the flag for
+// a span and the hook (the object gives up, the job stops); the call returns with the preallocated exception instead.
+static volatile LONG g_mtNoSharedFallback;
+static void* g_mtFallbackExc;
+static void(__cdecl* g_mtNoFallbackHook)();
+static bool MtN2mRefuse(void** exc) {
+    if (!g_mtNoSharedFallback) return false;
+    if (exc) *exc = g_mtFallbackExc;
+    if (g_mtNoFallbackHook) g_mtNoFallbackHook();
+    return true;
+}
 static bool __cdecl MtN2mWorker(void* rm, void* self, void* args, void* ret, void** exc, u8* ctx) {
     Ts3nMtProbe& m = ts3native_mtprobe;
     const LONG d = g_mtN2mDepth;
-    if (d >= 32) { m.n2mOverflow++; return false; }
+    if (d >= 32) { m.n2mOverflow++; return MtN2mRefuse(exc); }
     if (!g_mtN2mRec[d]) {
         u8* r = (u8*)g_mtUncoll(0x150);
         u8* b = (u8*)g_mtUncoll(0x28);
-        if (!r || !b) { m.n2mOverflow++; return false; }
+        if (!r || !b) { m.n2mOverflow++; return MtN2mRefuse(exc); }
         *(void**)(r + 0x30) = b;
         g_mtN2mRec[d] = r;
     }
@@ -762,4 +802,5 @@ static void MtM5Tick() {
         MtStopWorker(1000);
     }
     if (g_mtWorker && m.workerState == -1) MtStopWorker(1000);  // registration failed: thread already gone
+    MtLazyOff();
 }

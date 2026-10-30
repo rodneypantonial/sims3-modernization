@@ -326,7 +326,7 @@ static DWORD g_utInHave;
 static float g_utInCur[3];
 static u8 UtViewerMsg(DWORD lo, DWORD hi) {
     Ts3nCounters& k = ts3native_counters;
-    if (!g_utOn) return 0;
+    if (!g_utOn && !(g_asTierMs > 0 && ((hi >> 16) & 0xFF) <= 5)) return 0;  // the viewer table also feeds [AutShadow] TierMs
     const DWORD code = (hi >> 16) & 0xFF;
     if (code == 1) { g_utInOpen = true, g_utIn.n = 0, g_utInHave = 0; return 1; }
     // snap-back watch (unseen_snapback): 6 arm with the object id's low half (record cleared), 7 its high half (armed);
@@ -391,6 +391,42 @@ static int UtViewerWhy(const float* p) {
         if (d2 < UT_VIEWER_M * UT_VIEWER_M) return UTW_VIEWER;
     }
     return -1;
+}
+
+// [AutShadow] TierMs (autshadow.cpp, docs/122 §14.16): 1 = tier 2 (a far unseen Sim: off screen, beyond the camera reach, no
+// active-household viewer within 80 m in a fresh table), 0 = tier 1 (also when anything is unknown). id 0: start of a cut.
+// id 0 returns 1 when the camera moved more than 8 m (position or target) or its reach changed since the last 1: the
+// cached tiers are classified again (TierClassMs cache, docs/122 §14.17)
+static int AsTierOf(AsU64 id) {
+    if (!id) {
+        static float s_last[7];
+        static bool s_have;
+        UnRefreshCamera();
+        if (!g_unCam.ok) return 0;
+        float d2p = 0, d2t = 0;
+        for (int i = 0; i < 3; i++) {
+            d2p += (g_unCam.pos[i] - s_last[i]) * (g_unCam.pos[i] - s_last[i]);
+            d2t += (g_unCam.tgt[i] - s_last[3 + i]) * (g_unCam.tgt[i] - s_last[3 + i]);
+        }
+        const float dr = g_unCam.reach - s_last[6];
+        if (s_have && d2p < 64.0f && d2t < 64.0f && dr < 8.0f && dr > -8.0f) return 0;
+        memcpy(s_last, g_unCam.pos, 12), memcpy(s_last + 3, g_unCam.tgt, 12), s_last[6] = g_unCam.reach, s_have = true;
+        return 1;
+    }
+    if (!g_unCam.ok) return 0;
+    float p[3];
+    void* obj = NULL;
+    __try {
+        void* mgr = *g_unObjMgr;
+        obj = mgr ? g_unFind(mgr, NULL, (DWORD)id, (DWORD)(id >> 32)) : NULL;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    AsObjSeen(obj);  // CutLean=2: the Sim's lot is placed at the next cut (tier-1 lots)
+    if (!obj || UnObjClass(obj, NULL, p) != 1) return 0;
+    const bool need = g_utNeedViewers;
+    g_utNeedViewers = true;  // no fresh viewer table: tier 1 (never far by error)
+    const int why = UtViewerWhy(p);
+    g_utNeedViewers = need;
+    return why < 0 ? 1 : 0;
 }
 
 // Snap-backs to full rate caused by becoming visible (v80 utSnap / utSnapMaxMs, parts 0 list, 1 avoidance, 2 footprint,

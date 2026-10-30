@@ -1,0 +1,131 @@
+opcode,name,handler,kind,inputs,address,size,result,ip_adv_bytes,sp_delta_bytes,checks,notes
+0x059;0x05A,stfld.i1;stfld.u1,0xE56B06,store,obj=S2.lo; val=S1 low byte; w1=u16 at ip+2 (field offset incl. 4-byte header),obj+w1,1,-,4,-16,obj==0 -> NRE 0xE5947E (frame+0x1C=ip; ctor 0xE770E0),[ebp-4]=new ip
+0x05B;0x05C,stfld.i2;stfld.u2,0xE56B29,store,obj=S2.lo; val=S1 low word; w1,obj+w1,2,-,4,-16,NRE as above,
+0x05D,stfld.i4,0xE56B4E,store,obj=S2.lo; val=S1.lo; w1,obj+w1,4,-,4,-16,NRE,
+0x05E,stfld.i8,0xE56B71,store,obj=S2.lo; val=S1 both dwords; w1,obj+w1,8,-,4,-16,NRE,two dword stores: low (0xE56B86) then high (0xE56B8F)
+0x05F,stfld.r4,0xE56B9B,store,obj=S2.lo; val=S1 as double; w1,obj+w1,4,-,4,-16,NRE,double rounded to float through scratch [ebp-0x1C]
+0x060,stfld.r8,0xE56BC4,store,obj=S2.lo; val=S1 double; w1,obj+w1,8,-,4,-16,NRE,single fstp qword
+0x061;0x062,stfld.o;stfld.p,0xE56BE7,store,obj=S2.lo; val=S1.lo; w1,obj+w1,4,-,4,-16,NRE,reference store with no barrier
+0x063,stfld.vt,0xE56C0A,store,obj=S2.lo; src=S1.lo (vt stack); w1; d1=u32 at ip+4 (size),obj+w1,d1,-,8,-16,NRE,memcpy 0xF7E8A6; then vtsp [ebp-0xC] -= (d1+7)&~7
+0x064,strmfld,0xE56C43,store,obj=S2.lo; val=S1; field=items[w1] (items=[[ebp-0x10]+0x14]; MonoClassField +0 type +8 offset +0x14 parent),obj+field[+8],by field->type (stackval_to_data 0xE52350 table): bool/i1/u1 1; char/i2/u2 2; i4/u4/i/u/r4/string/ptr/class/object/szarray/array 4; i8/u8/r8 8; valuetype=value size; enum -> base type; generic inst: VT size or 4,-,4,-16,NRE; klass [[obj]]==[0x1220EC0] (transparent proxy) -> remote store 0xEA47D0(obj; [[obj+8]+8]; field; &S1),bool stores (S1.lo!=0); r4 = double->float; unknown type -> g_warning + assert path (no store)
+0x065,strmfld.vt,0xE56CA9,store,obj=S2.lo; src=S1.lo; field=items[w1]; d1 size,obj+field[+8],d1,-,8,-16,NRE; proxy -> 0xEA47D0,memcpy; vtsp -= align8(d1)
+0x06A,stsfld,0xE56F52,store,val=S1; field=items[w1],vt=0xEA2AD0(domain=[[ebp+0xC]]; field[+0x14]); addr=vt[+0xC]+field[+8]; if domain[+0x88]!=0 and g_hash_table_lookup 0xE45F00(domain[+0x88]; field) hits -> addr=0xEBAB30(hit) (thread/context static),by field->type (stackval_to_data 0xE52350),-,4,-8,vt[+0x18]&2 clear -> frame+0x1C=ip; mono_runtime_class_init 0xEA3370(vt) may run the cctor before the store,static block: GC_malloc when class has reference statics (klass[+0x17]&1) else domain mempool; vtable lookup can create the vtable on a miss
+0x06B,stsfld.vt,0xE56FEC,store,src=S1.lo; field=items[w1]; d1=u32 at ip+4,same as stsfld,mono_class_value_size of the field class (to_data VT branch); d1 only adjusts vtsp,-,8,-8,same as stsfld (frame+0x1C=ip+4),vtsp -= align8(d1)
+0x093;0x098,stind.i4;stind.ref,0xE559A7,store,addr=S2.lo; val=S1.lo,S2.lo,4,-,2,-16,none (no null check),target may be heap field/element/static/frame arena local/vt stack/native
+0x091,stind.i1,0xE559BD,store,addr=S2.lo; val=S1 byte,S2.lo,1,-,2,-16,none,
+0x092,stind.i2,0xE559D3,store,addr=S2.lo; val=S1 word,S2.lo,2,-,2,-16,none,
+0x095,stind.i,0xE559EB,store,addr=S2.lo; val=S1.lo,S2.lo,4,-,2,-16,none,
+0x094,stind.i8,0xE55A01,store,addr=S2.lo; val=S1 both dwords,S2.lo,8,-,2,-16,none,low dword then high
+0x096,stind.r4,0xE55A1D,store,addr=S2.lo; val=S1 double,S2.lo,4,-,2,-16,none,double->float via [ebp-0x1C]
+0x097,stind.r8,0xE55A39,store,addr=S2.lo; val=S1 double,S2.lo,8,-,2,-16,none,
+0x0F5,initobj,0xE589F7,store,addr=S1.lo; size=u32 at ip+2,S1.lo,u32 at ip+2,-,6,-8,none (no null check),memset 0xF7E8B8(addr; 0; size)
+0x0FF,stobj,0xE570C8,store,dest=S2.lo; val=S1; klass=items[w1],S2.lo,by klass+0xA0 (byval MonoType) through stackval_to_data 0xE52350,-,4,-16,none,VT class would memcpy from S1.lo without popping vtsp (transform uses stobj.vt for VT)
+0x100,stobj.vt,0xE57089,store,dest=S2.lo; src=S1.lo; klass=items[w1],S2.lo,mono_class_value_size 0xE6F5A0 = klass[+0x54]-4,-,4,-16,none; value_size runs 0xE6EE20 (layout init) when klass[+0x14]&4 clear,vtsp -= align8(size)
+0x101,cpblk,0xE58A17,store,dest=S3.lo; src=S2.lo; n=S1.lo,S3.lo (and READ of S2.lo..+n),S1.lo,-,2,-24,dest==0 or src==0 -> 0xE5947B (records ip-2; esi already lowered),memcpy 0xF7E8A6; also a heap load of the source range
+0x102,initblk,0xE58A49,store,dest=S3.lo; val=S2 low byte; n=S1.lo,S3.lo,S1.lo,-,2,-24,dest==0 -> 0xE5947B (records ip-2),memset 0xF7E8B8
+0x112,stelem.any.vt,0xE575CF,store,arr=S3.lo; idx=S2.lo; src=S1.lo; d1=u32 at ip+4 (element size); w1 unused here,arr+0x10+idx*d1,d1,-,8,-24,arr==0 -> NRE; idx>=arr[+8] unsigned -> IndexOutOfRange 0xE5949D (ctor 0xE772A0),vtsp -= align8(d1) before the memcpy
+0x113,stelem.i,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1.lo; opcode in EDX from head,arr+0x10+idx*4,4,-,2,-24,NRE; idx>=arr[+8] unsigned -> 0xE5949D; op-0x113>7 -> 0xE5951A,second-level table 0xE59FB0[op-0x113] -> 0xE5750D; [ebp-0x1C]=idx scratch
+0x114,stelem.i1,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1 byte,arr+0x10+idx,1,-,2,-24,as 0x113,case 0xE5751F
+0x115,stelem.i2,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1 word,arr+0x10+idx*2,2,-,2,-24,as 0x113,case 0xE57531
+0x116,stelem.i4,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1.lo,arr+0x10+idx*4,4,-,2,-24,as 0x113,case 0xE57545
+0x117,stelem.i8,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1 both dwords,arr+0x10+idx*8,8,-,2,-24,as 0x113,case 0xE57557; low then high dword
+0x118,stelem.r4,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1 double,arr+0x10+idx*4,4,-,2,-24,as 0x113,case 0xE57570; float via [ebp-0x1C] (overwrites idx scratch)
+0x119,stelem.r8,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1 double,arr+0x10+idx*8,8,-,2,-24,as 0x113,case 0xE57588
+0x11A,stelem.ref,0xE574DA,store,arr=S3.lo; idx=S2.lo; val=S1.lo,arr+0x10+idx*4,4,-,2,-24,as 0x113; val!=0 and mono_object_isinst 0xEA3820(val; element class [[[arr]]+8])==0 -> 0xE594FE (frame+0x1C=ip; ctor 0xE77300),case 0xE5759A; store happens only after the type check
+0x03E,ldfld.i1,0xE566A8,load,obj=S1.lo; w1,obj+w1,1,movsx -> S1.lo (S1.hi untouched),4,0,obj==0 -> NRE 0xE5947E,
+0x03F,ldfld.u1,0xE566C9,load,obj=S1.lo; w1,obj+w1,1,movzx -> S1.lo,4,0,NRE,
+0x040,ldfld.i2,0xE566EA,load,obj=S1.lo; w1,obj+w1,2,movsx -> S1.lo,4,0,NRE,
+0x041,ldfld.u2,0xE5670B,load,obj=S1.lo; w1,obj+w1,2,movzx -> S1.lo,4,0,NRE,
+0x042;0x046;0x047,ldfld.i4;ldfld.o;ldfld.p,0xE5672C,load,obj=S1.lo; w1,obj+w1,4,-> S1.lo,4,0,NRE,
+0x043,ldfld.i8,0xE5674C,load,obj=S1.lo; w1,obj+w1,8,-> S1 both dwords (low read+written first),4,0,NRE,two separate dword loads (not atomic)
+0x044,ldfld.r4,0xE56773,load,obj=S1.lo; w1,obj+w1,4,fld dword -> fstp qword S1 (double),4,0,NRE,
+0x045,ldfld.r8,0xE56793,load,obj=S1.lo; w1,obj+w1,8,-> S1 qword (x87 copy),4,0,NRE,
+0x048,ldfld.vt,0xE567B3,load,obj=S1.lo; w1; d1=u32 at ip+4,obj+w1,d1,S1.lo=vtsp; memcpy(vtsp; obj+w1; d1),8,0,NRE,shared tail 0xE545DB: vtsp += align8(d1)
+0x049,ldrmfld,0xE567DA,load,obj=S1.lo; field=items[w1],obj+field[+8] (proxy: address returned by 0xEA45A0(obj; [[obj+8]+8]; field; 0)),by field->type,stackval_from_data 0xE521A0: i1/u1/bool/i2/u2/char extend to S1.lo; 4-byte types S1.lo only; i8/u8 both; r4 -> double; r8 qword; VT memcpy to S1.lo pointer,4,0,NRE,
+0x04A,ldrmfld.vt,0xE56835,load,obj=S1.lo; field=items[w1]; d1=u32 at ip+4,obj+field[+8] (or proxy 0xEA45A0),d1,S1.lo=vtsp; memcpy(vtsp; addr; d1),8,0,NRE,EA/upstream bug: first memcpy(vtsp; obj + u16 at newip+2; d1) reads the NEXT instruction's word 1 as offset; overwritten by the real copy; vtsp += align8(d1)
+0x066,ldsfld,0xE56DA1,load,field=items[w1]; vt=items[w2] (u16 at ip+4; pre-resolved MonoVTable),vt[+0xC]+field[+8]; special-static hash hit -> 0xEBAB30,by field->type via 0xE521A0,new slot [esi] (from_data; 4-byte types write only the low dword),6,+8,vt[+0x18]&2 clear -> frame+0x1C=ip; 0xEA3370(vt) (cctor may run),side-effect-free address once initialised: (vt[+0x18]&2)!=0 and miss in domain[+0x88]
+0x067,ldsfld.i4,0xE56E1E,load,field=items[w1]; vt=items[w2],vt[+0xC]+field[+8],4,[esi] low dword only,6,+8,init test as ldsfld; no special-static lookup,
+0x068,ldsfld.o,0xE56E66,load,field=items[w1]; vt=items[w2],vt[+0xC]+field[+8],4,[esi] low dword only,6,+8,init test as ldsfld; no special-static lookup,
+0x069,ldsfld.vt,0xE56EAE,load,field=items[w1]; d1=u32 at ip+4,vt=0xEA2AD0(domain; field[+0x14]); vt[+0xC]+field[+8] or special static,value size of the field class (from_data VT branch),[esi]=vtsp; vtsp+=align8(d1); data copied there,8,+8,init test (frame+0x1C=ip+4); vtable lookup may create the vtable on a miss,
+0x086,ldind.i1,0xE558DF,load,addr=S1.lo,S1.lo,1,movsx -> S1.lo,2,0,none (no null check),source may be heap/static/arena/vt stack/native
+0x087,ldind.u1,0xE558F3,load,addr=S1.lo,S1.lo,1,movzx -> S1.lo,2,0,none,
+0x088,ldind.i2,0xE55907,load,addr=S1.lo,S1.lo,2,movsx -> S1.lo,2,0,none,
+0x089,ldind.u2,0xE5591B,load,addr=S1.lo,S1.lo,2,movzx -> S1.lo,2,0,none,
+0x08A;0x08B,ldind.i4;ldind.u4,0xE5592F,load,addr=S1.lo,S1.lo,4,-> S1.lo,2,0,none,
+0x08C,ldind.i8,0xE55942,load,addr=S1.lo,S1.lo,8,-> S1 both dwords,2,0,none,low then high
+0x08D,ldind.i,0xE5595B,load,addr=S1.lo,S1.lo,4,-> S1.lo,2,0,none,
+0x08E,ldind.r4,0xE5596E,load,addr=S1.lo,S1.lo,4,-> S1 double,2,0,none,
+0x08F,ldind.r8,0xE55981,load,addr=S1.lo,S1.lo,8,-> S1 qword,2,0,none,
+0x090,ldind.ref,0xE55994,load,addr=S1.lo,S1.lo,4,-> S1.lo,2,0,none,
+0x0FE,ldobj,0xE560CD,load,addr=S1.lo; klass=items[w1],S1.lo,VT (0xE52160: klass[+0xA6]==0x11 and not enum; or 0x15 generic inst of a VT): value_size; else by klass+0xA0 type,VT: S1.lo=vtsp; memcpy; vtsp+=align8(size); else from_data into S1,4,0,none (no null check),
+0x105,ldelem.i,0xE573D7,load,arr=S2.lo; idx=S1.lo; opcode in EDX from head,arr+0x10+idx*4,4,new top = old S2 slot low dword,2,-8,arr==0 -> NRE; idx>=arr[+8] unsigned -> 0xE5949D; op-0x105>10 -> 0xE594B9,table 0xE59F84[op-0x105] -> 0xE5745B
+0x106,ldelem.i1,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx,1,movsx -> old S2.lo,2,-8,as 0x105,case 0xE57407
+0x107,ldelem.u1,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx,1,movzx -> old S2.lo,2,-8,as 0x105,case 0xE5741C
+0x108,ldelem.i2,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*2,2,movsx,2,-8,as 0x105,case 0xE57431
+0x109,ldelem.u2,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*2,2,movzx,2,-8,as 0x105,case 0xE57446
+0x10A,ldelem.i4,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*4,4,low dword,2,-8,as 0x105,case 0xE5746F
+0x10B;0x10F,ldelem.u4;ldelem.ref,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*4,4,low dword,2,-8,as 0x105,shared case 0xE574C6
+0x10C,ldelem.i8,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*8,8,both dwords,2,-8,as 0x105,case 0xE57483
+0x10D,ldelem.r4,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*4,4,double,2,-8,as 0x105,case 0xE5749E
+0x10E,ldelem.r8,0xE573D7,load,arr=S2.lo; idx=S1.lo,arr+0x10+idx*8,8,qword,2,-8,as 0x105,case 0xE574B2
+0x111,ldelem.any.vt,0xE57382,load,arr=S2.lo; idx=S1.lo; d1=u32 at ip+4,arr+0x10+idx*d1,d1,old S2.lo=vtsp; vtsp+=align8(d1); memcpy,8,-8,NRE; IndexOutOfRange 0xE5949D,[ebp-0x1C]=arr scratch
+0x1AB,superop ldthis+ldfld.o,0xE58A73,super,base first opcode 0x024 (ldthis),this+w of ldfld,4,ref,6,+8,NRE at ldfld (stub sets base ip),loads only; descriptor 0x108FCD8 entry 1
+0x1AD,superop ldthis+ldfld.i4,0xE58AC2,super,base 0x024,this+off,4,i4,6,+8,NRE at ldfld,
+0x1AF,superop ldfld.o+ldfld.o,0xE58B18,super,base 0x046,obj+off1 then +off2,4+4,ref,8,0,NRE at either ldfld,
+0x1B0,superop brfalse.i4.s+ldloc.o+ldfld.o,0xE58B71,super,base 0x0A6,local+off,4,ref,12,varies,NRE at ldfld,
+0x1B3,superop ldthis+ldfld.o+ldfld.o,0xE58BD6,super,base 0x024,2 field loads,4+4,ref,10,+8,NRE at either ldfld,
+0x1B4,superop ldloc.o+ldthis+ldfld.o,0xE58C0A,super,base 0x075,this+off,4,ref,10,+16,NRE at ldfld,
+0x1B6,superop ldthis+ldfld.o+brtrue.i4.s+ldnull,0xE58C72,super,base 0x024,this+off,4,ref,10,varies,NRE at ldfld,
+0x1B7,superop stloc.np.o+brfalse.i4.s+ldloc.o+ldfld.o,0xE58C8F,super,base 0x084,local+off,4,ref,16,varies,NRE at ldfld,stloc writes [ebp-0x14] locals only
+0x1BB,superop ldloc.o+ldarg.o+ldarg.o+ldloc.i4+ldelem.ref,0xE58E37,super,base 0x075,arr+0x10+idx*4,4,ref,18,+24,NRE / index at ldelem,
+0x1BC,superop ldloc.o+ldfld.o+stloc.o+ldloc.i4+add1.i4+stloc.i4,0xE58E98,super,base 0x075,obj+off,4,ref,22,0,NRE at ldfld,stores to locals only
+0x1BE,superop (10 ops incl. 4 ldfld + ldlen),0xE58F55,super,base 0x024,field loads + arr[+8],4 each,-,32,varies,NRE at ldfld / ldlen,
+0x1BF,superop (13 ops incl. ldfld.o + ldelem.ref),0xE58FC8,super,base 0x015 (ldc.i4),this+off; arr+0x10+idx*4,4 each,-,44,varies,div0 0xE593F8; NRE; index 0xE596A3,stores to locals only ([ebp-0x14])
+0x1C0,superop (15 ops incl. 5 ldfld.o + isinst),0xE5904D,super,base 0x039 (stinarg.o),field loads on this and a local,4 each,-,54,varies,NRE at ldfld,stinarg writes frame args only
+0x1AC;0x1AE;0x1B1;0x1B2;0x1B5;0x1B8;0x1B9;0x1BA;0x1BD,superops without heap field/element loads,see mint-opcodes.csv,super,bases 0x0A9;0x0A6;0x03C;0x071;0x075;0x071;0x024;0x039;0x039,-,-,-,6;8;8;10;10;14;18;18;24,varies,0x1B9 isinst reads vtable/class only,no heap stores in any of the 22 (all non-stack writes go through [ebp-0x14] locals or frame arg areas)
+0x0ED,con.callvirt,0xE549EB,other,this slot holds an ADDRESS; constrained klass=items[...]; opcode in EAX from head,[slot] address,4 (ref class) or value_size (VT),ref class: stackval_from_data(klass+0xA0; slot; address) replaces the slot; VT: slot=vtsp; memcpy(vtsp; address; size); vtsp+=align8,-,-,-,HIDDEN HEAP LOAD through an address (ldflda/ldelema/ldsflda)
+0x0EE,con.boxcallvirt,0xE549EB,other,this slot holds an ADDRESS; klass=items[...],[slot],value size,mono_value_box 0xEA3140(domain; klass; address) -> slot,-,-,-,HIDDEN HEAP LOAD (box copies from the address)
+0x0EC;0x0ED;0x0EE,callvirt family,0xE549EB,other,opcode read from AX (movzx ecx; ax),items[cache] / items[cache+1],8,-,-,-,-,inline cache WRITE into RuntimeMethod data items: class at 0xE54B1D then target at 0xE54B22 (two plain stores: a second thread can see new class + old target)
+0x196,getchr,0xE572CE,other,str=S2.lo; idx=S1.lo,str+8+2*idx,2,movzx -> old S2.lo,2,-8,NRE; idx<0 or idx>=str[+4] -> 0xE5949D,string chars (mutable in place via stind.i2 / InternalStrcpy)
+0x197,strlen,0xE57303,other,str=S1.lo,str+4,4,-> S1.lo,2,0,str==0 -> 0xE5947B (ip already advanced),
+0x11B,ldlen,0xE572B2,other,arr=S1.lo,arr+8,4,-> S1.lo,2,0,NRE,immutable after allocation
+0x198,array_rank,0xE5731F,other,arr=S1.lo,[[arr]]+0x10 (class rank byte),1,-> S1.lo,2,0,NRE,class data
+0x0FA,unbox,0xE5661B,other,obj=S1.lo; klass=items[w1],vtable/class only,-,S1.lo=obj+4,4,0,NRE; type mismatch -> 0xE56478,object header is 4 bytes (vtable only)
+0x110,ldelema,0xE57340,other,arr=S2.lo; idx=S1.lo,address arr+0x10+idx*elemsize (0xE6B690),-,address in old S2,4,-8,NRE; index -> 0xE5949A (ip-4 restore),no access; writes arrive later via stind/stobj/cpblk/initobj
+0x058;0x06C,ldflda;ldsflda,0xE56674;0xE56D20,other,-,address only,-,-,-,-,ldsflda can run the cctor,
+0x04B-0x057,vtldfld.*;vtldrmfld*,0xE568BB-0xE56AD4,other,src pointer S1.lo is the vt stack,vt stack (not heap),-,-,8,0,NRE on the pointer,pops vtsp by align8(u32 at ip+4) before reading
+0x0F9;0x0F4;0x0F8;0x1A3,box;newobj;newarr;mono_newobj,0xE57200;0xE56152;0xE57284;0xE57FC5,other,-,fresh object only,-,-,-,-,-,writes only into newly allocated objects
+0x199-0x1A1,mono_icall_*,0xE57F6F,other,func=items[w1]; opcode in EDX from head (pushed to 0xE52E70),native helper,-,eval stack result,4,varies,frame+0x20 pending exception -> 0xE540AB,marshal wrappers only; cdecl args = eval slots low dwords; see icall rows for helpers
+0x1A4,mono_retobj,0xE59294,other,src=S1.lo pointer,S1.lo,by return type,from_data into frame retval,-,-8,-,reads a native struct pointer (marshal wrappers)
+0x0F2,callint,0xE591AF,other,frame=[ebp-8]; method=frame.rtm[+8],-,-,-,-,-,pending exception -> 0xE540AB,0xD70AC0 -> jmp 0xE52630 ves_pinvoke_method(frame; sig=method[+0xC]; addr=method[+0x20]; string_ctor=(method[+0x1C]>>7)&1; ctx); thunk rtm[+0x10](addr; &frame.retval (+8); frame.obj (+0xC); frame.stack_args (+0x14))
+-,System.Array::ClearInternal,0xE7A040,icall,(arr; idx; len),arr+0x10+idx*es (es=0xE6B690(arr class)),len*es,-,-,-,none,memset 0
+-,System.Array::FastCopy,0xE7A070,icall,(src; srcIdx; dst; dstIdx; len),dst+0x10+dstIdx*es (READ src range),len*es,bool,-,-,rank equal; no bounds arrays (arr[+4]==0); idx+len<=max_length else false; ref element class mismatch -> per-element isinst,store + load
+-,System.Array::SetValueImpl,0xE793D0,icall,(this arr; value; pos),arr+0x10+pos*es,es,-,-,-,null value -> memset element,store (ref or unboxed VT copy)
+-,System.Array::GetValueImpl,0xE79210,icall,(this arr; pos),arr+0x10+pos*es,es,ref or boxed copy (0xEA3140),-,-,-,load
+-,System.Array::GetGenericValueImpl,0xE7A300,icall,(this arr; pos; out ptr),arr+0x10+pos*es -> *ptr,es,-,-,-,none,load (+ store to ptr; usually a local)
+-,System.Array::SetGenericValueImpl,-,icall,-,-,-,-,-,-,-,not in this build's table
+-,System.Array::Clone,0xEA3800,icall,(this arr),whole array,max_length*es,new array (0xEA3710),-,-,-,load
+-,System.Buffer::BlockCopyInternal,0xE81280,icall,(src; srcOff; dst; dstOff; count),dst+0x10+dstOff (READ src+0x10+srcOff),count bytes,bool,-,-,byte lengths via 0xE811B0; out of range -> false,store + load (memcpy; memmove when src==dst)
+-,System.Buffer::SetByteInternal,0xE81260,icall,(arr; idx; byte),arr+0x10+idx,1,-,-,-,none,store
+-,System.Buffer::GetByteInternal,0xE81250,icall,(arr; idx),arr+0x10+idx,1,al,-,-,none,load
+-,System.String::InternalStrcpy(string;int;string),0xEB92F0,icall,(dest; destPos; src),dest+8+2*destPos (READ src+8),2*src[+4],-,-,-,none,memmove import 0xF95684
+-,System.String::InternalStrcpy(string;int;string;int;int),0xEB9320,icall,(dest; destPos; src; sPos; count),dest+8+2*destPos (READ src+8+2*sPos),2*count,-,-,-,none,
+-,System.String::InternalStrcpy(string;int;char[]),0xEB9350,icall,(dest; destPos; chars),dest+8+2*destPos (READ chars+0x10),2*chars[+8],-,-,-,none,
+-,System.String::InternalStrcpy(string;int;char[];int;int),0xEB9380,icall,(dest; destPos; chars; sPos; count),dest+8+2*destPos (READ chars+0x10+2*sPos),2*count,-,-,-,none,
+-,System.String::InternalCopyTo,0xEB9040,icall,(this str; sIndex; char[] dest; destIndex; count),dest+0x10+2*destIndex (READ str+8+2*sIndex),2*count,-,-,-,none,memcpy 0xF7E8A6
+-,System.String::InternalSetChar;InternalSetLength,-,icall,-,-,-,-,-,-,-,not in this build's table
+-,System.Threading.Interlocked::Increment(int&);Decrement(int&),0xE66E10;0xF4F560,icall,(loc),loc,4,new value,-,-,-,KERNEL32 InterlockedIncrement / InterlockedDecrement (atomic)
+-,System.Threading.Interlocked::Exchange(int&|intptr&|object&|T&);Exchange(single&),0xEBA1F0;0xEBA210,icall,(loc; value),loc,4,old value,-,-,-,InterlockedExchange (atomic)
+-,System.Threading.Interlocked::CompareExchange(int&|intptr&|object&|T&);CompareExchange(single&),0xEBA2B0;0xEBA2D0,icall,(loc; value; comparand),loc,4,old value,-,-,-,InterlockedCompareExchange(loc; value; comparand) (atomic)
+-,System.Threading.Interlocked::Add(int&);Add(long&);Increment(long&);Decrement(long&);Exchange(long&);Exchange(double&);CompareExchange(long&);CompareExchange(double&);Read(long&),0xEBA390;0xEBA3C0;0xEBA190;0xEBA1C0;0xEBA240;0xEBA280;0xEBA340;0xEBA300;0xEBA400,icall,(loc; ...),loc,4 or 8,-,-,-,-,plain read-modify-write under critical section 0x11F476C (not lock-prefixed: not atomic against the 32-bit Interlocked* calls on the same field)
+-,System.Reflection.MonoField::SetValueInternal,0xE7B320,icall,(this MonoField; obj; value),obj+field[+8] or static data; field=this[+8],by field type (switch 0xE7B470/0xE7B480),-,-,-,throws via 0xEA18F0 on a domain flag,store (reflection)
+-,System.Reflection.MonoField::GetValueInternal,0xE7B150,icall,(this MonoField; obj),field of obj or static,by type,object,-,-,-,load; runs class init 0xE6EE20
+-,System.Runtime.InteropServices.Marshal::copy_from_unmanaged,0xE8DB40,icall,(src; startIndex; dest array; length),dest array elements,length*es,-,-,-,src==0 / dest==0 -> ArgumentNull; rank must be 1,store (copy body not read)
+-,System.Runtime.InteropServices.Marshal::copy_to_unmanaged,0xE8DA50,icall,(array; startIndex; dest; length),READ array,-,-,-,-,-,load (args by upstream order; body not read)
+-,System.Runtime.InteropServices.Marshal::WriteByte;WriteInt16;WriteInt32|WriteIntPtr;WriteInt64,0xE8DC70;0xE8DC90;0xE8DC80;0xE8DCB0,icall,(ptr; ofs; val),ptr+ofs,1;2;4;8,-,-,-,none,store to any address (managed if the pointer came from a pinned object)
+-,System.Runtime.InteropServices.Marshal::StructureToPtr;PtrToStructure,0xE928F0;0xE99A50|0xE99B10,icall,-,-,-,-,-,-,-,PtrToStructure(intptr;object) writes an existing object (not read)
+-,System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray,0xE7A330,icall,(arr; field handle),arr+0x10 (READ handle[+0x10] data),arr[+8]*es,-,-,-,none,store
+-,System.ValueType::InternalEquals,0xE7A590,icall,(this; that; out object[] fields),READ both objects' fields; WRITE *fields,-,bool,-,-,that==0 -> ArgumentNull,load + store to the out slot
+-,System.ValueType::InternalGetHashCode,0xE7A410,icall,(this),READ fields,-,int,-,-,-,load
+-,System.Object::MemberwiseClone,0xE7A400,icall,(this),READ whole object,instance size,new object,-,-,-,jmp 0xEA2710 (object clone)
+-,jit icalls used by mono_icall_* (marshal wrappers),0xE82C70 registrations at 0xE99Dxx,icall,-,-,-,-,-,-,-,existing-object writers by name [inferred: bodies not read]: mono_byvalarray_to_array 0xE886E0; mono_string_utf8_to_builder 0xE88880; mono_string_utf16_to_builder 0xE88970; mono_marshal_free_asany 0xE99BC0; mono_delegate_to_ftnptr 0xE8E6E0; mono_remoting_wrapper 0xE8ABB0; mono_delegate_end_invoke 0xE8A640
