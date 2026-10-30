@@ -394,7 +394,9 @@ export function receiverTypes(caller: number): Map<number, Recv> {
   if (!asms.length) loadAll(ASM_DIR);
   let out = recvCache.get(caller); if (out) return out;
   out = new Map(); recvCache.set(caller, out);
-  for (const { target: tm, recv: res } of methodIl(caller)?.sites ?? []) {
+  for (const { target: tm, recv: r0 } of methodIl(caller)?.sites ?? []) {
+    const exact = r0.via && !r0.via.includes('(') ? exactStaticFieldType(r0.via) : undefined;
+    const res = exact ? { ...r0, type: exact } : r0;
     // ifaceN edges point at the implementations, so key those too.
     for (const g of [tm.gi, ...(isIface(tm.type) ? ifaceImpls(tm)?.map((x) => x.gi) ?? [] : [])]) {
       const prev = out.get(g);
@@ -403,11 +405,31 @@ export function receiverTypes(caller: number): Map<number, Recv> {
   }
   return out;
 }
+// Static fields whose every store is `newobj T; stsfld` (EA's `Singleton = new Definition()`) and whose address is never
+// taken (no ldsflda) hold an exact T or null, so a receiver loaded from one has type T, not the field's declared type
+// (docs/data/tier2-blockers.csv: `Terrain+PlayOnCarpetInternal::Singleton` is declared InteractionDefinition).
+let sfldExact: Map<string, string | null> | undefined;
+export function exactStaticFieldType(id: string): string | undefined {
+  if (!sfldExact) {
+    sfldExact = new Map();
+    for (let i = 0; i < methods.length; i++) {
+      const il = methodIl(i); if (!il) continue;
+      il.ins.forEach((x, j) => {
+        if (x.op !== 0x80 && x.op !== 0x7f) return;
+        const f = resolveFieldToken(il.asm, x.tok).id, p = il.ins[j - 1];
+        const t = x.op === 0x80 && p?.op === 0x73 && !il.targets.has(x.at) ? resolveMethodToken(il.asm, p.tok).m?.type.full : undefined;
+        const prev = sfldExact!.get(f);
+        sfldExact!.set(f, t && (prev === undefined || prev === t) ? t : null);
+      });
+    }
+  }
+  return sfldExact.get(id) ?? undefined;
+}
 // Per method: every IL instruction (at = offset in the body) and every instance call site (call/callvirt) with its
 // receiver: j = index of the call in ins, src = index of the instruction that pushed the receiver (-1 = unknown).
 // docs/192 (script-leak-scan.ts) matches collection mutators to the static or instance field they run on.
 export type CallSite = { j: number; target: Method; recv: Recv; src: number };
-export function methodIl(caller: number): { ins: FullIns[]; sites: CallSite[]; asm: Asm } | undefined {
+export function methodIl(caller: number): { ins: FullIns[]; sites: CallSite[]; asm: Asm; targets: Set<number> } | undefined {
   if (!asms.length) loadAll(ASM_DIR);
   const m = methods[caller];
   if (!m || !m.rva || m.impl & IC_FLAG || m.flags & (ABSTRACT | PINVOKE)) return undefined;
@@ -459,7 +481,7 @@ export function methodIl(caller: number): { ins: FullIns[]; sites: CallSite[]; a
     }
     sites.push({ j, target: tm, recv: res, src });
   }
-  return { ins: dec.ins, sites, asm: a };
+  return { ins: dec.ins, sites, asm: a, targets: dec.targets };
 }
 
 // ---------- build ----------
@@ -1001,6 +1023,10 @@ function selfCheck(): void {
   const csfo = lookup(ix, 'Sims3.Gameplay.Autonomy.Autonomy::CalculateScoreForObjectInteraction'); const igm = lookup(ix, 'Sims3.Gameplay.Interfaces.IGameObject::GetInUseAutonomyMultiplier');
   const r2 = csfo.length && igm.length ? csfo.map((c) => receiverTypes(c).get(igm[0])).find(Boolean) : undefined;
   if (r2?.type !== 'Sims3.Gameplay.Interfaces.IGameObject' || r2.isThis) fail(`receiver of GetInUseAutonomyMultiplier: ${JSON.stringify(r2)}`);
+  // A receiver loaded from a singleton field takes the type of the only object stored there (exactStaticFieldType).
+  const rug = lookup(ix, 'Sims3.Gameplay.Objects.Decorations.PlayOnRug+Definition::Test(Sims3.Gameplay.Interactions.InteractionInstanceParameters&,Sims3.SimIFace.GreyedOutTooltipCallback&)'), idt = lookup(ix, 'Sims3.Gameplay.Interactions.InteractionDefinition::Test(Sims3.Gameplay.Interactions.InteractionInstanceParameters&,Sims3.SimIFace.GreyedOutTooltipCallback&)');
+  const r3 = rug.length && idt.length ? receiverTypes(rug[0]).get(idt[0]) : undefined;
+  if (r3?.type !== 'Sims3.Gameplay.Core.Terrain+PlayOnCarpetInternal+Definition') fail(`receiver of the PlayOnCarpetInternal.Singleton Test call: ${JSON.stringify(r3)}`);
   const lotOv = familyTargets(inUse[0], 'Sims3.Gameplay.Core.Lot') ?? [];
   if (lotOv.length >= virtualTargets(inUse[0]).ea.length) fail('Lot family not narrower than all get_InUse overrides');
   console.log(`  docs/127: Sim.OnPortalPathPlan + overrides reaches Turnstile.IsAllowedThrough; BCL targets not expanded; this rule: generic Test -> ${self.length} VisitLot+Definition family Tests (of ${virtualTargets(gt[0]).ea.length}); receiver types: this.InUse, IGameObject local`);
