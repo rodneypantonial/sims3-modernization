@@ -34,6 +34,14 @@
 // Fix: the vtable slot points to GbGetBone, which answers 0 for such an index, so the lookup misses the way an unknown
 // bone does. Indices inside the list get the game's answer.
 //
+// GeomNoMaterial (0.36.143, issue #80, docs/67 §29). The Sim builder's per-part step 0x5DDB30 asks the part's GEOM for its
+// embedded material (vtable slot +0x58 = 0x580420, `mov eax,[ecx+28h]`) and reads the shader hash at [material+4] on every
+// path (0x5DDC5A when the part joins an existing group, 0x5DDFBD when it starts one) with no null check. A CAS VPXY LOD
+// entry that names a GEOM without one (custom content: a morph mesh with shader 0) crashed there [verified: two dumps +
+// disassembly]. The step already skips a part whose mesh pointer is null or tagged (0x5DDB5D / 0x5DDB67 -> 0x5DE0E2,
+// returns 1, the caller 0x5DE4CA ignores it). Fix: that check (0x5DDB63) becomes a jump to GnStub, which also takes the
+// skip for a GEOM whose slot +0x58 is the game's getter and whose material is null; every other part continues at 0x5DDB6D.
+//
 // MintDivGuard (0.36.143, issue #114, docs/213 §4 / §8, counters v144 md*). The mint handlers of div.i4 (opcode 0x127,
 // 0xE55B4C) and rem.i4 (0x143, 0xE55C0F) check the divisor for 0 only, then `cdq; idiv`: INT_MIN / -1 and INT_MIN % -1
 // raise the CPU's divide error, which nothing in the interpreter catches (the sim thread froze in TS3W's own filter in a
@@ -290,6 +298,13 @@ static const u8 kGbGet[13] = {0x8B, 0x41, 0x58, 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x
 static const u8 kGbCount[10] = {0x8B, 0x41, 0x5C, 0x2B, 0x41, 0x58, 0xC1, 0xF8, 0x02, 0xC3};
 static volatile LONG g_gbBad;
 
+// The resource base's fields (vtable 0xFB2C04, +8..+0x24): the key is expected among them [inferred], to name the mesh.
+static void GeomLogFields(const char* fix, const u8* geom) {
+    const DWORD* f = (const DWORD*)(geom + 8);
+    Log("ea fix: %s: GEOM %p base fields %08lX %08lX %08lX %08lX %08lX %08lX %08lX %08lX", fix, geom, f[0], f[1], f[2], f[3], f[4],
+        f[5], f[6], f[7]);
+}
+
 static DWORD __fastcall GbGetBone(u8* geom, void*, DWORD i) {
     const DWORD* b = *(const DWORD* const*)(geom + 0x58);
     const DWORD n = (DWORD)(*(const DWORD* const*)(geom + 0x5C) - b);
@@ -298,11 +313,7 @@ static DWORD __fastcall GbGetBone(u8* geom, void*, DWORD i) {
     if (k <= 8)
         Log("ea fix: GeomBoneIndex: GEOM %p asked for bone %lu of %lu (caller 0x%08X): answered 0, the rig's missing-bone path",
             geom, i, n, (DWORD)(uintptr_t)_ReturnAddress());
-    if (k == 1) {  // the resource base's fields (vtable 0xFB2C04, +8..+0x24): the key is expected among them [inferred], to name the mesh
-        const DWORD* f = (const DWORD*)(geom + 8);
-        Log("ea fix: GeomBoneIndex: GEOM %p base fields %08lX %08lX %08lX %08lX %08lX %08lX %08lX %08lX", geom, f[0], f[1], f[2], f[3],
-            f[4], f[5], f[6], f[7]);
-    }
+    if (k == 1) GeomLogFields("GeomBoneIndex", geom);
     return 0;
 }
 
@@ -324,6 +335,67 @@ static bool ApplyGeomBoneIndex(const wchar_t* ini) {
     }
     Log("OK   ea fix: GeomBoneIndex (docs/67 §28): GEOM bone-by-index getter answers 0 past the mesh's bone list");
     return true;  // keep the log open for the skip lines
+}
+
+// ---- GeomNoMaterial ----
+static const DWORD GN_SITE = 0x005DDB63, GN_SLOT = 0x00FE3318;                          // check in 0x5DDB30; GEOM vtable +0x58
+static const DWORD GN_SKIP = 0x005DE0E2, GN_CONT = 0x005DDB6D, GN_GET = 0x00580420;     // skip tail, next instruction, getter
+static const u8 kGnSite[10] = {0x8B, 0x03, 0x85, 0xC0, 0x0F, 0x84, 0x75, 0x05, 0x00, 0x00};  // mov eax,[ebx]; test eax,eax; je 0x5DE0E2
+static const u8 kGnGet[4] = {0x8B, 0x41, 0x28, 0xC3};                                     // mov eax,[ecx+28h]; ret
+static DWORD g_gnSkip = GN_SKIP, g_gnCont = GN_CONT, g_gnGet = GN_GET;  // stub targets and the getter (selftest swaps them)
+static volatile LONG g_gnBad;
+
+static void __stdcall GnHit(u8* geom, DWORD lod) {
+    const LONG k = InterlockedIncrement(&g_gnBad);
+    if (k <= 8)
+        Log("ea fix: GeomNoMaterial: GEOM %p (builder LOD %lu) has no embedded material: part skipped, EA's path for a part without a mesh",
+            geom, lod);
+    if (k == 1) GeomLogFields("GeomNoMaterial", geom);
+}
+
+// In place of the 10 bytes at 0x5DDB63: ebx = &part.mesh, esi = the builder (LOD at +0x1A0). eax/ecx/edx and the flags are
+// dead at both targets (0x5DDB6D reloads all three; the skip tail pops and sets al).
+static __declspec(naked) void GnStub() {
+    __asm {
+        mov eax, [ebx]
+        test eax, eax
+        je skip                       // the game's own null check
+        mov ecx, [eax]
+        mov edx, g_gnGet
+        cmp [ecx + 0x58], edx
+        jne cont                      // another type, or the slot is someone else's: the game's path
+        cmp dword ptr [eax + 0x28], 0
+        jne cont
+        pushad
+        push dword ptr [esi + 0x1A0]
+        push eax
+        call GnHit
+        popad
+    skip:
+        jmp dword ptr [g_gnSkip]
+    cont:
+        jmp dword ptr [g_gnCont]
+    }
+}
+
+// site = the 10 bytes at 0x5DDB63, slot = GEOM vtable +0x58: both must be EA's, and the slot must name EA's getter.
+static bool GnPatch(u8* site, const DWORD* slot) {
+    if (!Matches(site, kGnSite, sizeof(kGnSite)) || !Readable(slot, 4) || *slot != g_gnGet ||
+        !Matches((const void*)(uintptr_t)g_gnGet, kGnGet, sizeof(kGnGet)))
+        return false;
+    u8 b[10] = {0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90, 0x90, 0x90};
+    *(LONG*)(b + 1) = (LONG)((uintptr_t)&GnStub - ((uintptr_t)site + 5));
+    return Write(site, b, sizeof(b));  // DllMain: no Sim is built yet
+}
+
+static bool ApplyGeomNoMaterial(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"EaCrashFixes", L"GeomNoMaterial", 0, ini)) return false;
+    if (!GnPatch((u8*)(uintptr_t)GN_SITE, (const DWORD*)(uintptr_t)GN_SLOT)) {
+        Log("SKIP ea fix: GeomNoMaterial: bytes at 0x%08X, vtable slot 0x%08X or the getter differ: not installed", GN_SITE, GN_SLOT);
+        return false;
+    }
+    Log("OK   ea fix: GeomNoMaterial (issue #80, docs/67 §29): a CAS mesh without an embedded material is skipped, not read");
+    return true;  // keep the log open for the hit lines
 }
 
 // ---- MintDivGuard ----
@@ -407,6 +479,7 @@ static bool ApplyEaCrashFixes(const wchar_t* ini) {
     bool keep = ApplyConformActor(ini);
     ApplyThumbPose(ini);
     keep = ApplyGeomBoneIndex(ini) || keep;
+    keep = ApplyGeomNoMaterial(ini) || keep;
     keep = ApplyMintDivGuard(ini) || keep;
     return keep;
 }

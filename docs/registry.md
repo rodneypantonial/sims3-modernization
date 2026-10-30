@@ -298,7 +298,7 @@ Integration 2026-10-30 (int129): **0.36.129** is the combined source (counters v
 
 0.36.142 (2026-10-31, docs/124 §17): `[AutShadow] Mode=3` go-live consume (TopN, Bands, Margin, MaxWait, VerifyEvery, Dry; off by default), ObjStale watch map; autshadow v20, ts3fixes contract 10 (`LiveStat`, `LiveWatch`, `ObjStale`; counters in native `al[]`, no ts3fixes counter slots), no main counter version.
 
-0.36.143 (2026-10-30, docs/67 §28, docs/213 §8): `[EaCrashFixes] GeomBoneIndex` (the GEOM bone-by-index getter checked against the bone list; log lines only) and `[EaCrashFixes] MintDivGuard` (issue #114: mint div.i4 / rem.i4 INT_MIN by -1; counters v144), both off by default.
+0.36.143 (2026-10-30, docs/67 §28, docs/213 §8): `[EaCrashFixes] GeomBoneIndex` (the GEOM bone-by-index getter checked against the bone list; log lines only), `[EaCrashFixes] GeomNoMaterial` (issue #80, docs/67 §29: the Sim builder skips a part whose GEOM has no embedded material; log lines only) and `[EaCrashFixes] MintDivGuard` (issue #114: mint div.i4 / rem.i4 INT_MIN by -1; counters v144), all off by default.
 
 Adding a version: append fields at the end of `Ts3nCounters` under a `// vN: ...` comment, set the first initializer value to N, update the "read N int32 (vN)" comment above the struct, bump `TS3NATIVE_VERSION`, add the `if (c.readS32() >= N) f.push(...)` line in `tools/probe/agent.js`, and add the row here. Runtime switches are `volatile LONG` and written by the probe (`/native?...`).
 

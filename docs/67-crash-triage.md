@@ -932,3 +932,35 @@ A rig bone whose hash is exactly 0 would take that vertex weight instead of miss
 | Repro | none. A repro needs a mesh with a bad blend index. The log line names the GEOM pointer, not its resource key |
 | Conflicts | none with S3SS / S3PP / Apex at `0xFE3314` / `0x5C6E00` (docs/68) |
 | Open | Which mesh it was. Logging the resource key would need the GEOM's key field, which is not mapped |
+
+### 28.4 Live check (2026-10-30, one session) [verified]
+
+One 35-minute session on a contributor's test save, with the 0.36.143 CI build and `GeomBoneIndex=1`. During world load (`ScriptProxy.PostLoad`) it logged 8 lines for one GEOM: `asked for bone 109 / 104 / 113 / 115 of 5 (caller 0x005D1633)`. 109 is crash X's index, and the mesh has 5 bones, so this save loads the bad mesh every time. The game ran on for the whole session. The lines confirm I-409-4: a readable GEOM with a real list (`n` = 5) whose blend indices are past it. Without the fix these reads land past the list; whether they crash depends on the heap layout (§28.2). The GEOM was freed after load, so it could not be named afterwards. From the next build, the first hit also logs the resource base's fields `+8..+0x24` (`GEOM <p> base fields ...`), where the key is expected [inferred].
+
+## 29. Issue #80 (2026-10-18 to 10-28, four crashes in about 60 sessions on 0.36.37a, heavy CC): the Sim builder reads a CAS mesh's material through a null pointer
+
+Static, plus the contributor's two full dumps (described in the issue; none is committed).
+
+### 29.1 Fault [verified: dumps + disassembly]
+
+| | |
+|---|---|
+| Report | ACCESS_VIOLATION reading `0x00000004` at `0x5DDFBD`, main thread, `eax` = 0. Signature `crashsig-95ce882e`. The nearest symbol names it `ModelBuilder_Dtor+0x1B6D`, but it is a separate function: the Sim builder's per-part step `0x5DDB30`, called once per part from the loop at `0x5DE4CA` |
+| Site | `0x5DDFA9`-`0x5DDFB0` calls the part's GEOM slot `+0x58`. For the GEOM vtable `0xFE32C0` that slot is `0x580420` (`mov eax,[ecx+0x28]; ret`): the embedded material. `0x5DDFBD` then reads the shader hash at `[eax+4]` with no null check. `0x5DE009`-`0x5DE01C` calls the slot again and copies 16 bytes from it |
+| Every path | The step reads the material on every path. When the part joins an existing group it reads it at `0x5DDC45`-`0x5DDC5A`. When it starts a new group it reads it at `0x5DDFB0`-`0x5DDFBD`. No branch between the start check and those reads leaves the function |
+| Cause | A CAS VPXY LOD 1-3 entry names a GEOM with shader 0 and vertices: a custom-content morph mesh used as a LOD. Such a GEOM has no embedded material (MTNF). In both dumps it was the same CC hair. EA's own CAS parts have no such entry (the contributor's scan of the install) |
+
+### 29.2 Fix: `[EaCrashFixes] GeomNoMaterial` (0.36.143, eafix.cpp, off by default; ledger docs/51 §411)
+
+The step already skips a part whose mesh pointer is null or tagged. That check is at `0x5DDB5D` / `0x5DDB67`, which go to the tail `0x5DE0E2`; the tail returns 1, and the caller ignores the result. The fix replaces the 10 bytes at `0x5DDB63` (`mov eax,[ebx]; test eax,eax; je 0x5DE0E2`) with a jump to `GnStub`. The stub keeps the null check. It also takes the same skip when the GEOM's slot `+0x58` is the game's getter `0x580420` and `[GEOM+0x28]` is 0. Every other part continues at `0x5DDB6D`, which reloads `eax`, `ecx` and `edx`.
+
+Because every path reads the material, the fix changes only parts that crash today [verified static]. The skipped part is not built for that LOD, so a CC hair goes missing at that distance instead of crashing the game. The install checks three things first: the 10 site bytes, the slot `0xFE3318` naming `0x580420`, and the getter's 4 bytes. If any check fails, it logs a SKIP and writes nothing. No instruction branches into `0x5DDB64`-`0x5DDB6C` (scan of `.text`).
+
+| | |
+|---|---|
+| Counters | none. The first 8 skips are logged as `ea fix: GeomNoMaterial: GEOM <p> (builder LOD <n>) has no embedded material`; the first also logs the GEOM's base fields |
+| Tests (offline) | selftest `TestEaCrashFixes` runs the stub with landing pads in place of the two targets. Four cases: a GEOM with a material continues, a GEOM without one is skipped and counted, another type with the same field 0 continues, and a null mesh takes the game's skip without being counted. `ebx`, `esi`, `edi` and `ebp` are unchanged at both pads. The game's getter bytes run on the fake GEOM. The patch on a stand-in site: a foreign slot or foreign site bytes mean nothing is written, and the site is patched only once |
+| Repro | none in game: it needs the CC part, worn by a Sim the builder builds at LOD 2 or 3 |
+| Conflicts | none with S3SS / S3PP / Apex at `0x5DDB63` / `0xFE3318` / `0x580420` (docs/68). Apex's nearest site is `CasTriSort 0x5D1960` |
+| Open | Whether a Sim with the part skipped at one LOD shows anything wrong besides the missing part at that distance [inferred: the same as a part whose mesh failed to load] |
+

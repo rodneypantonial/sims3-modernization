@@ -96,6 +96,48 @@ static int MdtCase(const void* stub, DWORD a, DWORD b) {
     return (int)g_mdtKind;
 }
 
+// GeomNoMaterial: GnStub runs with ebx = &part.mesh and esi = a fake builder; the two targets are landing pads
+static DWORD g_gntSp, g_gntKind, g_gntEbx, g_gntEsi, g_gntEdi, g_gntEbp;
+static __declspec(naked) void GntBack() {  // eax = 1 the skip tail, 2 the next instruction
+    __asm {
+        mov g_gntKind, eax
+        mov g_gntEbx, ebx
+        mov g_gntEsi, esi
+        mov g_gntEdi, edi
+        mov g_gntEbp, ebp
+        mov esp, g_gntSp
+        pop ebp
+        pop edi
+        pop esi
+        pop ebx
+        ret
+    }
+}
+static __declspec(naked) void GntSkip() { __asm { mov eax, 1 } __asm { jmp GntBack } }
+static __declspec(naked) void GntCont() { __asm { mov eax, 2 } __asm { jmp GntBack } }
+static __declspec(naked) void __cdecl GntRun(const void* /*stub*/, void* /*ebx*/, void* /*esi*/) {
+    __asm {
+        push ebx
+        push esi
+        push edi
+        push ebp
+        mov g_gntSp, esp
+        mov eax, [esp + 20]
+        mov ebx, [esp + 24]
+        mov esi, [esp + 28]
+        mov edi, 0x5A5A5A5A
+        mov ebp, 0x6B6B6B6B
+        jmp eax
+    }
+}
+static int GntCase(void* slot, void* builder) {
+    g_gntKind = 0;
+    GntRun((const void*)&GnStub, slot, builder);
+    assert(g_gntEbx == (DWORD)(uintptr_t)slot && g_gntEsi == (DWORD)(uintptr_t)builder && g_gntEdi == 0x5A5A5A5A &&
+           g_gntEbp == 0x6B6B6B6B);
+    return (int)g_gntKind;
+}
+
 static void TestEaCrashFixes() {
     static_assert(offsetof(Ts3nCounters, caOn) == 0x5480 && offsetof(Ts3nCounters, caSkip) == 0x5484 &&
                       offsetof(Ts3nCounters, caOther) == 0x5490 && offsetof(Ts3nCounters, caOverflow) == 0x549C &&
@@ -265,6 +307,43 @@ static void TestEaCrashFixes() {
     VirtualFree(gcode, 0, MEM_RELEASE);
     g_gbBad = 0;
 
+    // ---- GeomNoMaterial ----
+    const DWORD gn0[3] = {g_gnSkip, g_gnCont, g_gnGet};
+    u8* ncode = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(ncode, kGnGet, sizeof(kGnGet));  // the game's getter, at a stand-in address
+    g_gnGet = (DWORD)(uintptr_t)ncode;
+    typedef void*(__fastcall * GnGetFn)(u8* geom);
+    static DWORD gnVt[0x20], otherVt[0x20];  // a GEOM vtable (slot +0x58 = the getter) and another type's
+    gnVt[0x58 / 4] = g_gnGet, otherVt[0x58 / 4] = 0x12345678;
+    alignas(4) static u8 gmesh[0x60], builder[0x1A4];
+    static DWORD mat[4] = {0, 0x2B, 0, 0};
+    *(DWORD*)(builder + 0x1A0) = 2;
+    *(DWORD**)gmesh = gnVt;
+    *(DWORD**)(gmesh + 0x28) = mat;
+    assert(((GnGetFn)(void*)ncode)(gmesh) == mat);  // the game's getter on the fake: the material
+    void* part = gmesh;
+    g_gnSkip = (DWORD)(uintptr_t)&GntSkip, g_gnCont = (DWORD)(uintptr_t)&GntCont, g_gnBad = 0;
+    assert(GntCase(&part, builder) == 2 && g_gnBad == 0);  // a GEOM with its material: the game's path
+    *(DWORD**)(gmesh + 0x28) = NULL;
+    assert(GntCase(&part, builder) == 1 && g_gnBad == 1);  // no material: skipped (issue #80)
+    *(DWORD**)gmesh = otherVt;
+    assert(GntCase(&part, builder) == 2 && g_gnBad == 1);  // another type with the same field 0: the game's path
+    part = NULL;
+    assert(GntCase(&part, builder) == 1 && g_gnBad == 1);  // no mesh: the game's own skip, not counted
+    // patch on a stand-in site; foreign bytes or a foreign slot write nothing
+    u8* site = ncode + 64;
+    memcpy(site, kGnSite, sizeof(kGnSite));
+    static DWORD nslot;
+    nslot = g_gnGet + 1;
+    assert(!GnPatch(site, &nslot) && !memcmp(site, kGnSite, sizeof(kGnSite)));
+    nslot = g_gnGet, site[7] = 0x06;
+    assert(!GnPatch(site, &nslot) && site[0] == 0x8B);
+    site[7] = 0x05;
+    assert(GnPatch(site, &nslot) && site[0] == 0xE9 && (uintptr_t)site + 5 + *(LONG*)(site + 1) == (uintptr_t)&GnStub && site[9] == 0x90);
+    assert(!GnPatch(site, &nslot));  // ours now
+    VirtualFree(ncode, 0, MEM_RELEASE);
+    g_gnSkip = gn0[0], g_gnCont = gn0[1], g_gnGet = gn0[2], g_gnBad = 0;
+
     // ---- MintDivGuard ----
     static_assert(offsetof(Ts3nCounters, mdOn) == 0x5520 && offsetof(Ts3nCounters, mdDivOverflow) == 0x5524 &&
                       offsetof(Ts3nCounters, mdRemMinus1) == 0x5528 && offsetof(Ts3nCounters, mdSpare) == 0x552C,
@@ -308,6 +387,8 @@ static void TestEaCrashFixes() {
     printf("EaCrashFixes: ConformActor live call unchanged, destroyed / null / freed / clobbered actors skipped, other types "
            "called, patched sequence run; ThumbPose reference kept across the evaluation and released by the stub; "
            "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, vtable slot patched once; "
+           "GeomNoMaterial meshes with a material unchanged, no material skipped, other types and null meshes unchanged, "
+           "site patched once; "
            "MintDivGuard 18 normal div/rem cases on the game's path, INT_MIN / -1 to the overflow stub, INT_MIN %% -1 = 0, "
            "table patched once: ok\n");
 }
