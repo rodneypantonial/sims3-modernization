@@ -1,5 +1,5 @@
-// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose + GeomBoneIndex, eafix.cpp, docs/67 §26.4 / §27.5 / §28).
-// Included by selftest.cpp.
+// TestEaCrashFixes ([EaCrashFixes] ConformActor + ThumbPose + GeomBoneIndex + MintDivGuard, eafix.cpp, docs/67 §26.4 / §27.5 /
+// §28, docs/213 §8). Included by selftest.cpp.
 // Fake AnimationComponents, controllers and refcounted owners; the patched ask sequence and the after-evaluation stub run
 // for real on copies of the game's bytes.
 
@@ -52,14 +52,58 @@ static void EaRunTpStub() {
     }
 }
 
+// MintDivGuard: a stub runs on a fake eval stack; the game's targets are landing pads that record where it went
+static DWORD g_mdtSp, g_mdtKind, g_mdtEsi, g_mdtEdi, g_mdtSlot;
+static DWORD g_mdtFrame[4];  // ebp = &g_mdtFrame[2], so [ebp-4] = g_mdtFrame[1] (the frame's saved ip)
+static __declspec(naked) void MdtBack() {  // eax = 1 the game's handler, 2 the OverflowException stub, 3 the dispatch head
+    __asm {
+        mov g_mdtKind, eax
+        mov g_mdtEsi, esi
+        mov g_mdtEdi, edi
+        mov eax, [ebp - 4]
+        mov g_mdtSlot, eax
+        mov esp, g_mdtSp
+        pop ebp
+        pop edi
+        pop esi
+        pop ebx
+        ret
+    }
+}
+static __declspec(naked) void MdtGame() { __asm { mov eax, 1 }  __asm { jmp MdtBack } }
+static __declspec(naked) void MdtOvf() { __asm { mov eax, 2 } __asm { jmp MdtBack } }
+static __declspec(naked) void MdtNext() { __asm { mov eax, 3 } __asm { jmp MdtBack } }
+static __declspec(naked) void __cdecl MdtRun(const void* stub, DWORD* sp, DWORD ip) {
+    __asm {
+        push ebx
+        push esi
+        push edi
+        push ebp
+        mov g_mdtSp, esp
+        mov eax, [esp + 20]
+        mov esi, [esp + 24]
+        mov edi, [esp + 28]
+        lea ebp, [g_mdtFrame + 8]
+        jmp eax
+    }
+}
+// dividend a, divisor b in 8-byte slots ev[0..1] / ev[2..3]; esi = &ev[4] (the handler's top of stack)
+static DWORD g_mdtEv[6];
+static int MdtCase(const void* stub, DWORD a, DWORD b) {
+    memset(g_mdtEv, 0xCC, sizeof(g_mdtEv)), memset(g_mdtFrame, 0, sizeof(g_mdtFrame));
+    g_mdtEv[0] = a, g_mdtEv[2] = b, g_mdtKind = 0;
+    MdtRun(stub, g_mdtEv + 4, 0x1000);
+    return (int)g_mdtKind;
+}
+
 static void TestEaCrashFixes() {
     static_assert(offsetof(Ts3nCounters, caOn) == 0x5480 && offsetof(Ts3nCounters, caSkip) == 0x5484 &&
                       offsetof(Ts3nCounters, caOther) == 0x5490 && offsetof(Ts3nCounters, caOverflow) == 0x549C &&
                       offsetof(Ts3nCounters, tpOn) == 0x54A0 && offsetof(Ts3nCounters, tpNoSlot) == 0x54AC &&
-                      sizeof(Ts3nCounters) == 5448 * 4,
+                      sizeof(Ts3nCounters) == 5452 * 4,
                   "counters v141 layout after v140 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 143);
+    assert(k.version == 144);
 
     // ---- ConformActor ----
     const DWORD rd0 = g_ecaRdLo, rd1 = g_ecaRdHi, tx0 = g_ecaTxLo, tx1 = g_ecaTxHi;
@@ -220,7 +264,50 @@ static void TestEaCrashFixes() {
     assert(patched(geom, NULL, 1) == 0x11111111 && patched(geom, NULL, 4) == 0 && g_gbBad == 4);
     VirtualFree(gcode, 0, MEM_RELEASE);
     g_gbBad = 0;
+
+    // ---- MintDivGuard ----
+    static_assert(offsetof(Ts3nCounters, mdOn) == 0x5520 && offsetof(Ts3nCounters, mdDivOverflow) == 0x5524 &&
+                      offsetof(Ts3nCounters, mdRemMinus1) == 0x5528 && offsetof(Ts3nCounters, mdSpare) == 0x552C,
+                  "counters v144 layout after v143 (docs/registry.md)");
+    const DWORD md0[4] = {g_mdDiv, g_mdRem, g_mdOvf, g_mdNext};
+    // patch on a stand-in table whose two handlers start with EA's bytes; foreign bytes write nothing
+    u8* hcode = (u8*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(hcode, kMdHead, sizeof(kMdHead)), memcpy(hcode + 16, kMdHead, sizeof(kMdHead));
+    static DWORD tbl[0x1C1];
+    g_mdDiv = (DWORD)(uintptr_t)hcode, g_mdRem = (DWORD)(uintptr_t)(hcode + 16);
+    tbl[0x127] = g_mdDiv, tbl[0x143] = g_mdRem;
+    hcode[16 + 3] = 1;  // rem handler of another build
+    assert(!MdPatch(tbl) && tbl[0x127] == g_mdDiv && tbl[0x143] == g_mdRem);
+    hcode[16 + 3] = 0;
+    assert(MdPatch(tbl) && tbl[0x127] == (DWORD)(uintptr_t)&MdDivStub && tbl[0x143] == (DWORD)(uintptr_t)&MdRemStub);
+    assert(!MdPatch(tbl));  // ours now
+    VirtualFree(hcode, 0, MEM_RELEASE);
+    // the stubs, run: every case but INT_MIN by -1 lands on the game's handler with the registers as they came
+    g_mdDiv = g_mdRem = (DWORD)(uintptr_t)&MdtGame, g_mdOvf = (DWORD)(uintptr_t)&MdtOvf, g_mdNext = (DWORD)(uintptr_t)&MdtNext;
+    k.mdDivOverflow = k.mdRemMinus1 = 0, g_mdLogged = 0;
+    const DWORD kMin = 0x80000000, kM1 = 0xFFFFFFFF;
+    const DWORD normal[][2] = {{7, 2}, {(DWORD)-7, 2}, {kMin, 1}, {5, kM1}, {5, 0}, {kMin, 2}, {0x7FFFFFFF, kM1}, {kMin, 0}, {0, kM1}};
+    for (const auto& c : normal) {
+        for (int rem = 0; rem < 2; rem++) {
+            assert(MdtCase(rem ? (void*)&MdRemStub : (void*)&MdDivStub, c[0], c[1]) == 1);
+            assert(g_mdtEsi == (DWORD)(uintptr_t)(g_mdtEv + 4) && g_mdtEdi == 0x1000 && g_mdtSlot == 0);
+            assert(g_mdtEv[0] == c[0] && g_mdtEv[2] == c[1]);
+        }
+    }
+    assert(k.mdDivOverflow == 0 && k.mdRemMinus1 == 0);
+    // div INT_MIN / -1: the OverflowException stub, nothing popped, ip still this instruction
+    assert(MdtCase((void*)&MdDivStub, kMin, kM1) == 2);
+    assert(g_mdtEsi == (DWORD)(uintptr_t)(g_mdtEv + 4) && g_mdtEdi == 0x1000 && g_mdtSlot == 0 && g_mdtEv[0] == kMin);
+    assert(k.mdDivOverflow == 1 && k.mdRemMinus1 == 0);
+    // rem INT_MIN % -1: 0 over the dividend, divisor popped, next instruction saved and dispatched (as the game's handler)
+    assert(MdtCase((void*)&MdRemStub, kMin, kM1) == 3);
+    assert(g_mdtEsi == (DWORD)(uintptr_t)(g_mdtEv + 2) && g_mdtEdi == 0x1002 && g_mdtSlot == 0x1002 && g_mdtEv[0] == 0);
+    assert(k.mdDivOverflow == 1 && k.mdRemMinus1 == 1 && g_mdLogged == 2);
+    g_mdDiv = md0[0], g_mdRem = md0[1], g_mdOvf = md0[2], g_mdNext = md0[3];
+    k.mdDivOverflow = k.mdRemMinus1 = 0, g_mdLogged = 0;
     printf("EaCrashFixes: ConformActor live call unchanged, destroyed / null / freed / clobbered actors skipped, other types "
            "called, patched sequence run; ThumbPose reference kept across the evaluation and released by the stub; "
-           "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, vtable slot patched once: ok\n");
+           "GeomBoneIndex in-range bones unchanged, past-the-list indices answered 0, vtable slot patched once; "
+           "MintDivGuard 18 normal div/rem cases on the game's path, INT_MIN / -1 to the overflow stub, INT_MIN %% -1 = 0, "
+           "table patched once: ok\n");
 }

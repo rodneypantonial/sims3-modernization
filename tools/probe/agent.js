@@ -1607,6 +1607,8 @@ rpc.exports = {
       // v143 [MonoFast] CallPath (docs/139 §8, mintcall.cpp)
       if (c.readS32() >= 143) f.push('mcSwitch', 'mcReady', 'mcCall', 'mcCallvirt',
         'mcRet', 'mcBailCall', 'mcBailCallvirt', 'mcBailRet', 'mcVerified', 'mcMismatch', 'mcVSkipped', 'mcVerifyEvery', 'mcFirstBad', ...n('mcSpare', 3));
+      // v144 [EaCrashFixes] MintDivGuard (issue #114, docs/213 §8, eafix.cpp)
+      if (c.readS32() >= 144) f.push('mdOn', 'mdDivOverflow', 'mdRemMinus1', 'mdSpare');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key

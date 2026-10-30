@@ -33,6 +33,13 @@
 // A mesh whose blend index is past its own bone list reads past the vector and crashed at 0x5C6E07 [verified disassembly].
 // Fix: the vtable slot points to GbGetBone, which answers 0 for such an index, so the lookup misses the way an unknown
 // bone does. Indices inside the list get the game's answer.
+//
+// MintDivGuard (0.36.143, issue #114, docs/213 §4 / §8, counters v144 md*). The mint handlers of div.i4 (opcode 0x127,
+// 0xE55B4C) and rem.i4 (0x143, 0xE55C0F) check the divisor for 0 only, then `cdq; idiv`: INT_MIN / -1 and INT_MIN % -1
+// raise the CPU's divide error, which nothing in the interpreter catches (the sim thread froze in TS3W's own filter in a
+// live repro) [verified disassembly + emulation + one game session]. Fix: both jump-table entries point to stubs that
+// pass every other case to the game's handler. INT_MIN / -1 goes to the game's OverflowException stub 0xE57AA5 (the one the
+// *.ovf opcodes use; it records this instruction as the frame ip), as .NET throws. INT_MIN % -1 gives 0, the exact result.
 
 static const DWORD CA_ASK_SITES[3] = {0x0084EABD, 0x00849588, 0x00853521};
 // mov ecx,[eax+1Ch]; mov edx,[ecx]; push eax; mov eax,[edx+10h]; call eax   (eax = controller)
@@ -313,9 +320,87 @@ static bool ApplyGeomBoneIndex(const wchar_t* ini) {
     return true;  // keep the log open for the skip lines
 }
 
+// ---- MintDivGuard ----
+static const DWORD MD_TABLE = 0x00E59880;                    // mint jump table (opcode * 4), in .text
+static const DWORD MD_DIV = 0x00E55B4C, MD_REM = 0x00E55C0F;  // entries 0x127 / 0x143
+static const DWORD MD_OVF = 0x00E57AA5, MD_NEXT = 0x00E544D5;  // OverflowException stub, dispatch head
+static const u8 kMdHead[6] = {0x83, 0x7E, 0xF8, 0x00, 0x0F, 0x84};  // cmp dword [esi-8],0; je <DivideByZero stub>
+static DWORD g_mdDiv = MD_DIV, g_mdRem = MD_REM, g_mdOvf = MD_OVF, g_mdNext = MD_NEXT;  // stub jump targets (selftest swaps them)
+static volatile LONG g_mdLogged;
+
+static void __stdcall MdHit(int rem) {
+    InterlockedIncrement(rem ? &ts3native_counters.mdRemMinus1 : &ts3native_counters.mdDivOverflow);
+    if (InterlockedIncrement(&g_mdLogged) > 8) return;
+    char st[440];
+    if (FbStackText(st, sizeof(st), 8) <= 0) strcpy_s(st, "unreadable");
+    Log("ea fix: MintDivGuard: %s: %s; script stack: %s", rem ? "rem.i4 INT_MIN % -1" : "div.i4 INT_MIN / -1",
+        rem ? "result 0" : "OverflowException", st);
+}
+
+// The handler convention: esi = eval stack top (divisor [esi-8], dividend [esi-0x10], 8-byte slots), edi = this
+// instruction, [ebp-4] = the frame's saved ip. Only the INT_MIN / -1 pair leaves the game's path; flags are dead here.
+static __declspec(naked) void MdDivStub() {
+    __asm {
+        cmp dword ptr [esi - 8], -1
+        jne game
+        cmp dword ptr [esi - 0x10], 0x80000000
+        jne game
+        pushad
+        push 0
+        call MdHit
+        popad
+        jmp dword ptr [g_mdOvf]
+    game:
+        jmp dword ptr [g_mdDiv]
+    }
+}
+
+static __declspec(naked) void MdRemStub() {
+    __asm {
+        cmp dword ptr [esi - 8], -1
+        jne game
+        cmp dword ptr [esi - 0x10], 0x80000000
+        jne game
+        pushad
+        push 1
+        call MdHit
+        popad
+        add esi, -8                   // as the game's handler: pop the divisor, result over the dividend, next instruction
+        mov dword ptr [esi - 8], 0
+        add edi, 2
+        mov dword ptr [ebp - 4], edi
+        jmp dword ptr [g_mdNext]
+    game:
+        jmp dword ptr [g_mdRem]
+    }
+}
+
+// table = the jump table; both entries must still name the game's handlers, and both handlers start as EA's.
+static bool MdPatch(DWORD* table) {
+    DWORD* d = table + 0x127;
+    DWORD* r = table + 0x143;
+    if (!Readable(d, 4) || !Readable(r, 4) || *d != g_mdDiv || *r != g_mdRem ||
+        !Matches((const void*)(uintptr_t)g_mdDiv, kMdHead, sizeof(kMdHead)) || !Matches((const void*)(uintptr_t)g_mdRem, kMdHead, sizeof(kMdHead)))
+        return false;
+    const DWORD dv = (DWORD)(uintptr_t)&MdDivStub, rv = (DWORD)(uintptr_t)&MdRemStub;
+    return Write(d, &dv, 4) && Write(r, &rv, 4);  // aligned 4-byte stores; no script runs yet (DllMain)
+}
+
+static bool ApplyMintDivGuard(const wchar_t* ini) {
+    if (!GetPrivateProfileIntW(L"EaCrashFixes", L"MintDivGuard", 0, ini)) return false;
+    if (!MdPatch((DWORD*)(uintptr_t)MD_TABLE)) {
+        Log("SKIP ea fix: MintDivGuard: jump-table entries 0x127 / 0x143 or the handler bytes differ: not installed");
+        return false;
+    }
+    ts3native_counters.mdOn = 1;
+    Log("OK   ea fix: MintDivGuard (issue #114, docs/213 §8): div.i4 / rem.i4 INT_MIN by -1 no longer fault");
+    return true;  // keep the log open for the hit lines
+}
+
 static bool ApplyEaCrashFixes(const wchar_t* ini) {
     bool keep = ApplyConformActor(ini);
     ApplyThumbPose(ini);
     keep = ApplyGeomBoneIndex(ini) || keep;
+    keep = ApplyMintDivGuard(ini) || keep;
     return keep;
 }
