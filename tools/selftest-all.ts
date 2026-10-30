@@ -66,6 +66,9 @@ const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
   'tools/selftest/routesrc/run.ts': CSC,
   'tools/selftest/savercount/run.ts': CSC,
   'tools/selftest/screenfit/run.ts': CSC,
+  'tools/selftest/seasonimposter/run.ts': CSC,
+  'tools/selftest/deadrefs/run.ts': CSC,
+  'tools/selftest/savecleanup/run.ts': CSC,
   'tools/selftest/slicequeue/run.ts': CSC,
   'tools/selftest/typecache/run.ts': CSC,
   'tools/selftest/unseen/run.ts': CSC,
@@ -76,6 +79,9 @@ const LOCAL_ONLY: Record<string, { why: string; needs?: string }> = {
 const LIVE = 'drives the live game through the probe; nothing to check offline';
 const ONE_OFF = 'one-off generator of a docs/data table from local game files (game-copy)';
 const FRIDA = 'Frida script inside the live game';
+const MTS_EXT = 'Chrome extension script (chrome.* APIs); its parsers run in tools/mts-helper/cli/mts.ts --self-check, its rules in tools/mts-helper/build.ts --self-check';
+// Paths kept out of the public repo by .gitattributes export-ignore (maintainer-only tools).
+const INTERNAL = ['tools/mts-helper/'];
 const NO_SELF_CHECK: Record<string, string> = {
   'tools/ai-usage.ts': 'appends the local Claude usage file to docs/ai-usage.md; no logic to test',
   'tools/autonomy-tier2.ts': ONE_OFF,
@@ -115,6 +121,12 @@ const NO_SELF_CHECK: Record<string, string> = {
   'tools/ic-safety-classify.ts': ONE_OFF,
   'tools/internal-calls-map.ts': 'needs TS3W.exe; asserts the Route_Plan address on every run',
   'tools/mono-host-ics.ts': ONE_OFF,
+  'tools/mts-helper/ext/src/bg.ts': MTS_EXT,
+  'tools/mts-helper/ext/src/job.ts': MTS_EXT,
+  'tools/mts-helper/ext/src/options.ts': MTS_EXT,
+  'tools/mts-helper/ext/src/poll.ts': MTS_EXT,
+  'tools/mts-helper/ext/src/sel.ts': MTS_EXT,
+  'tools/mts-helper/ext/src/wizard-main.ts': MTS_EXT,
   'tools/probe/agent.js': `${FRIDA}; its g11 and vcache blocks run in tools/probe/g11-check.mjs and vcache-check.mjs`,
   'tools/probe/gc-read.mjs': LIVE,
   'tools/probe/managed-sample.mjs': LIVE,
@@ -208,7 +220,8 @@ function selfCheck() {
   threw = false; try { strip('enum E { A }'); } catch { threw = true; }
   ok(threw, 'strip rejects enum');
   const all = [...Object.keys(ARGS), ...Object.keys(LOCAL_ONLY), ...Object.keys(NO_SELF_CHECK), ...Object.keys(TIMEOUT_S)];
-  for (const k of all) ok(existsSync(join(ROOT, k)), `listed file exists: ${k}`);
+  // internal tools stay out of the public repo (.gitattributes export-ignore), so their entries may be missing there
+  for (const k of all) ok(existsSync(join(ROOT, k)) || INTERNAL.some(p => k.startsWith(p)), `listed file exists: ${k}`);
   for (const k of Object.keys(ARGS)) ok(!NO_SELF_CHECK[k], `in ARGS and NO_SELF_CHECK: ${k}`);
   console.log('selftest-all self-check ok');
 }

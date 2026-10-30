@@ -459,6 +459,24 @@ Result: the §1.9 table under "Live-chain shares". Calibration: the filter gives
 
 The interpreter body `0xE53EB0`-`0xE5987E` has exactly three table jumps: the dispatch `0xE544E7` (`0xE59880`) and the two element switches `0xE57400` (`0xE59F84`) and `0xE57506` (`0xE59FB0`) already closed as G-I8 (§9.4) [verified]. No other second-level table exists in the interpreter.
 
+## 11. Frame budget of ts3fixes hooks (issue #92, ledger docs/51 §386)
+
+Real play reaches the 63-frame limit of §1 (issue #92: three incidents, stacks 62-64 frames deep from `ScriptProxy.Simulate`, ErrorTrap's handler needing ~11 more). Each interpreted call is one frame record (§1; mint 1.2.3 has no call inlining [inferred, docs/29]), so every ts3fixes hook adds frames on every path through it. A ts3fixes hook copies its own method header over the target (`Fixes.SwapMethod`) and reaches the original through a stub that received the original's header, so a hook costs at least one frame: the hook body (shown under the target's name) plus the stub (the original body). Counts below are frames held **while the original body runs** (what deeper callbacks see), minus the one frame the original costs without us; static count from the source (2026-10-29) [verified: source].
+
+| Target (hook) | On which reported path | Added before | Added now | How |
+|---|---|---|---|---|
+| `ScriptCore.Route.Plan` (`PlanHook`) | every Sim route plan (#89 path 2 family) | +7 (+8 with `failrepeat`) | +4 (+5) | `UfPlanBody` returns "not ours" and `UfPlan` runs the plan itself (`UfPlanBody` and `UfInner` off the stack); `PlanAsync` inlined into its only caller `PlanBackoffBody` |
+| same, plan marked by `unseenfbplan` (unseen Sim) | | +7 (+8) | +6 (+7) | `PlanAsync` inlined; the mark's try/finally keeps `UfPlanBody` + `UfInner` |
+| `Route.Replan` / `PlanFromPoint` / `ReplanFromPoint` (`*Hook`) | #89 path 2 (`DoRoute` -> `ReplanFromPoint`) | +5 | +3 (marked: +5) | as `Plan` |
+| `GoHome.Run` (`GoHomeHook`) | #89 path 2 | +1 | +1 | floor (stub) |
+| `RabbitHole.RouteNearEntranceAndEnterRabbitHole` (`RabbitHoleHook`) | #92 incident 1 | +1 | +1 | floor |
+| `Sim.IsAllowedInRoom(ulong, int)` (`AutRoomHook`) | #92 incident 2 | +1 | +1 | floor; installed whenever `ApplyAutShadow` finds its members, also with `autshadow` off (open: install only when on at load, costs the runtime `--ab` flip) |
+| `FollowSubPathRouteAction.PerformAction` (`unseenfbfinish` hook) | any route follow (#92 incident 1 if the spin ran inside it [inferred]) | +1 | +1 | floor |
+| `Sim.set_Posture` (`PosturePopHook`, new, issue #89) | every posture change | - | +1 | floor; the hook calls nothing but the stub on the common path |
+| `UfHeld` (inside `UfWhy`, transient) | #89 path 2 | +1 + chain depth (`Posture.Satisfies` recursion; unbounded on a posture loop = the overflow) | +2, bounded at 16 postures | walks `PreviousPosture` itself with `Satisfaction` (same answer, `Satisfies` is not virtual) |
+
+Helpers a hook calls **before or after** the original (`SafeSpot`, `RouteSrcBegin`, `DoorMirror.SyncRoute`, `UfWhy`) return before it runs and add nothing to the depth the original's callbacks see; they only need their own depth at the call. Saved on the reported stacks: 2 frames on #89 path 2 (`ReplanFromPoint`), 3 on any plan from `Route.Plan`; incidents 1 and 2 of #92 had only floor-cost hooks of ours. Not ours to cut: EA's forwarding overloads (`SwitchToOutfitWithSpin` 6 frames, `RouteToSlot` 5; the reporter IL-patches those) and the error handler margin (ErrorTrap ~11 frames). Raising the limit itself is native work (`state+0x140` check at `0xE59414` against the 63-record array on the C stack, §1): not studied.
+
 ## Reproduce
 
 - PE reader plus capstone 5 (`pip install capstone`), Ghidra bounds from `game-copy/analysis/functions.csv`. Jump table: 449 dwords at `0xE59880`; names: `char*` at `0x11949E0 + 4*op`; superop entry `k`: 72 bytes at `0x108FCD8 + 72*k` (`u32` hash, `u16` count, `u16[count]` opcodes), opcode `0x1AA + k`.

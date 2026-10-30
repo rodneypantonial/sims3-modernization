@@ -45,6 +45,24 @@ namespace Ts3Fixes
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void RngUnit(int unit);
         // version 4 (docs/125 addendum §4.1): 1 opens, 0 closes a bracket in which the reference draws from a scratch stream
         [MethodImpl(MethodImplOptions.InternalCall)] public static extern void RngPause(int on);
+        // version 5 (docs/122 §14.12): RuntimeMethod rotation for a worker shim whose target was transformed before ts3fixes
+        // loaded; Mode 1/2 only. 0 done, -1 mode or state, -2 no RuntimeMethod, -3 not transformed, -4 layout mismatch
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int Redirect(IntPtr target, IntPtr hook, IntPtr stub);
+        // version 6 (docs/122 §14.18): Begin joins a posted request's cut (shared cut, up to kMaxReq); Note counts every game
+        // B13 call (the go-live rates); ListTypeNext/ListTypeSet classify each list query type once (can a Sim be one?)
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Note();
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern object ListTypeNext();
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void ListTypeSet(object type, int simCapable);
+        // version 7 (docs/122 §14.20): typed marks. The list types by native index, the object ids waiting for a class, and
+        // each object's class (bit i = it is of list type i, n = types tested; n 0 = no script object yet)
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int ListTypeCount();
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern object ListTypeAt(int i);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern int ObjClassTake(ulong[] ids);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void ObjClassSet(ulong id, int mask, int n);
+        // version 8 (docs/122 §14.21, docs/124 §15): Fresh(1/0) brackets a fresh sim-thread re-score at the finish (script RNG
+        // saved and put back, per-unit streams with the cut's seed); Stat(which, add) adds to ts3native's consume-side counters
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Fresh(int on);
+        [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Stat(int which, int add);
     }
 
     // [AutShadow] pilot part 2, managed half (docs/122 §1.2, §3.5, §4, §5, §12.5). Shadow only: the worker's scores are
@@ -81,26 +99,35 @@ namespace Ts3Fixes
             public readonly int[] PairObj = new int[kMaxPairs];
             public readonly int[] Def = new int[kMaxPairs];         // definition index; -1 not allow-listed, -2 mod guard, -3 sf
             public readonly bool[] Acb = new bool[kMaxPairs];       // the pair's tuning has AlwaysChooseBest (docs/124 rule 3 side list)
+            // per request (docs/122 §14.18: a shared cut holds several): scored lots and bake sales (Reachable, worker hooks),
+            // the pair index and the game's own scores (L report, first request of a batch only)
+            public readonly Dictionary<ulong, bool> Lots = new Dictionary<ulong, bool>();
+            public readonly List<Vector3> BakeSales = new List<Vector3>();
+            public readonly Dictionary<InteractionObjectPair, int> PairIndex = new Dictionary<InteractionObjectPair, int>();
+            public readonly float[] GameScore = new float[kMaxPairs];
+            public readonly bool[] GameHas = new bool[kMaxPairs];
         }
 
         public sealed class Result
         {
             public int Id = -1, Exceptions;
-            public bool Done;
+            public bool Done, Partial;  // Partial: stopped at a window close; Done then means "the finished objects are valid" (KeepPartial)
             public readonly float[] Score = new float[kMaxPairs];
             public readonly int[] Code = new int[kMaxPairs];
             public readonly int[] Reason = new int[kMaxPairs];
             public readonly float[] Meta = new float[kMaxObjs];
         }
 
-        // Rooted request and results (docs/122 §4.2), allocated at startup on the sim thread and reused.
-        static readonly Request sReq = new Request();
-        static readonly Result sRef = new Result(), sWork = new Result();
-        static readonly float[] sGameScore = new float[kMaxPairs];
-        static readonly bool[] sGameHas = new bool[kMaxPairs];
-        static readonly Dictionary<InteractionObjectPair, int> sPairIndex = new Dictionary<InteractionObjectPair, int>();
-        static readonly Dictionary<ulong, bool> sReqLots = new Dictionary<ulong, bool>();
-        static readonly List<Vector3> sBakeSales = new List<Vector3>();
+        // Rooted requests and results (docs/122 §4.2), allocated at startup on the sim thread and reused. A shared cut (docs/122
+        // §14.18, kMaxReq = ts3native AS_BATCH_MAX) serves sReqN requests; sReq/sRef/sWork point at the one being built,
+        // scored or compared (the worker hooks read sReq).
+        const int kMaxReq = 4;
+        static readonly Request[] sReqs = { new Request(), new Request(), new Request(), new Request() };
+        static readonly Result[] sRefs = { new Result(), new Result(), new Result(), new Result() };
+        static readonly Result[] sWorks = { new Result(), new Result(), new Result(), new Result() };
+        static Request sReq = sReqs[0];
+        static Result sRef = sRefs[0], sWork = sWorks[0];
+        static int sReqN;
         static readonly string sEmpty = "";
         static readonly Exception sFmtException = new FormatException("autshadow");
         static readonly int[] sReasons = new int[23];
@@ -110,7 +137,8 @@ namespace Ts3Fixes
         static bool sPosted, sInWork, sInRef, sSessionOff, sHooksOk, sCalcPatched, sWorkReady, sGameDone;
         static AutonomyT sGameAut;           // the autonomy whose B13 is being recorded (sim thread)
         static int sProbe;                   // per load: 0 not probed, 1 on, -1 off
-        static int sNextId, sCalls, sSample = 4, sWarmIn, sWarmInMax = 20, sLogged, sGardening;
+        static int sNextId, sCalls, sSample = 4, sWarmIn, sWarmInMax = 20, sLogged, sGardening, sFreshEvery;
+        static bool sKeepPartial;
         static int sForceJitBytes = -1;
 
         // Allow-list (docs/data/autonomy-allow.csv 'in' rows; assembly 0 = Sims3GameplaySystems, 1 = Sims3GameplayObjects).
@@ -162,9 +190,56 @@ namespace Ts3Fixes
         static bool sSharedGuardHit;
 
         // Private game members, read on the sim thread (request) and, for reference fields only, by the worker shims.
-        static FieldInfo fLotsKnown, fGardening, fAllowedRooms, fRoomCallbacks, fDatingRecords, fAcceptedDates, fPostureList;
+        static FieldInfo fLotsKnown, fAllowedRooms, fRoomCallbacks, fDatingRecords, fAcceptedDates, fPostureList;
         static List<InteractionObjectPair> sNoPostureList;  // the worker's answer when it aborts on an unfilled posture list
         static MethodInfo mCanAnyMeta, mCanFullMeta;
+
+        // Localization.LocalizeString shims, installed first in Fixes.Apply (after the TaskCount hook): anything that localizes
+        // a string before ApplyAutShadow compiles them, and Patch refuses a compiled method (0.36.106: the (String,Object[])
+        // and (Boolean,String,Object[]) overloads were refused in every job, so Modes 1/2 stayed off). Inert until the
+        // switch is on: the hooks call the original unless on the worker or inside a reference run.
+        static readonly List<string> sLocFailed = new List<string>();
+        static bool sLocOk, sShimsOk, sWarmOk;
+        static readonly Type[][] kLocSigs = { new Type[] { typeof(ulong) }, new Type[] { typeof(string), typeof(object[]) },
+            new Type[] { typeof(bool), typeof(string), typeof(object[]) }, new Type[] { typeof(bool[]), typeof(string), typeof(object[]) } };
+        static readonly string[] kLocHooks = { "KeyHook", "StrHook", "FemHook", "FemsHook" }, kLocStubs = { "KeyOrig", "StrOrig", "FemOrig", "FemsOrig" };
+        static readonly bool[] sLocPatched = new bool[4];
+        internal static void ApplyAutShadowLocHooks()
+        {
+            sLocOk = true;
+            for (int i = 0; i < 4; i++)
+                sLocOk &= sLocPatched[i] = Hook(sLocFailed, typeof(Localization), "LocalizeString", kLocSigs[i], typeof(AutLocHook), kLocHooks[i], kLocStubs[i]);
+            if (!sLocOk) AppliedLog().Add("AutShadow: LocalizeString compiled before ts3fixes loaded (another mod or the game localized first)");
+        }
+
+        // docs/122 §14.12: an overload mint transformed before ts3fixes loaded cannot take the header swap (its callers are
+        // bound to its RuntimeMethod). With Mode 1/2 only, ts3native rotates the RuntimeMethod bodies (target -> stub,
+        // hook -> target) once per session. Hook and stub are transformed first by one call (off the worker the hook calls the
+        // stub, whose own body returns null); a target not transformed yet (-3) is called once with an empty key.
+        static void LocRedirect()
+        {
+            if (sLocOk || AutShadowNative.Config(0) < 1) return;
+            const BindingFlags all = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            object[] none = new object[0];
+            object[][] args = { new object[] { 0UL }, new object[] { "", none }, new object[] { false, "", none }, new object[] { new bool[1], "", none } };
+            bool ok = true;
+            for (int i = 0; i < 4; i++)
+            {
+                if (sLocPatched[i]) continue;
+                MethodInfo t = typeof(Localization).GetMethod("LocalizeString", all, null, kLocSigs[i], null);
+                MethodInfo h = typeof(AutLocHook).GetMethod(kLocHooks[i], all), st = typeof(AutLocHook).GetMethod(kLocStubs[i], all);
+                h.Invoke(null, args[i]);
+                int r = AutShadowNative.Redirect(t.MethodHandle.Value, h.MethodHandle.Value, st.MethodHandle.Value);
+                if (r == -3) { t.Invoke(null, args[i]); r = AutShadowNative.Redirect(t.MethodHandle.Value, h.MethodHandle.Value, st.MethodHandle.Value); }
+                sLocPatched[i] = r == 0;
+                ok &= r == 0;
+                string sig = "";
+                foreach (Type a in kLocSigs[i]) sig += (sig.Length > 0 ? "," : "") + a.Name;
+                AppliedLog().Add("AutShadow: Localization.LocalizeString(" + sig + ") " + (r == 0 ? "redirected (RuntimeMethod)" : "redirect refused " + r));
+            }
+            sLocOk = ok;
+            sHooksOk = sShimsOk && sLocOk && sCalcPatched;
+        }
 
         static void ApplyAutShadow()
         {
@@ -172,7 +247,6 @@ namespace Ts3Fixes
             try
             {
                 fLotsKnown = typeof(AutonomyT).GetField("mLotsKnownAbout", all);
-                fGardening = typeof(Sim).GetField("sNumSimsDoingGardening", all);
                 fAllowedRooms = typeof(Sim).GetField("mAllowedRooms", all);
                 fRoomCallbacks = typeof(Lot).GetField("mRoomRestrictionCheckCallbacks", all);
                 fDatingRecords = typeof(OnlineDatingManager).GetField("mActiveRecords", all);
@@ -182,7 +256,7 @@ namespace Ts3Fixes
                 mCanFullMeta = typeof(AutonomyT).GetMethod("CanRunFullMetaAutonomy", all);
                 fPostureList = typeof(Sims3.Gameplay.ActorSystems.Posture).GetField("mInteractions", all);
                 sNoPostureList = new List<InteractionObjectPair>();
-                if (fLotsKnown == null || fGardening == null || fAllowedRooms == null || fRoomCallbacks == null || fDatingRecords == null
+                if (fLotsKnown == null || fAllowedRooms == null || fRoomCallbacks == null || fDatingRecords == null
                     || fAcceptedDates == null || mCanAnyMeta == null || mCanFullMeta == null || fPostureList == null)
                     throw new MissingMemberException("private member not found");
             }
@@ -190,13 +264,9 @@ namespace Ts3Fixes
             // Worker shims: Modes 1/2 need every one (TryRequest refuses them otherwise); Mode 0 (count only) runs no managed
             // code off the sim thread and needs none. docs/51 §188: one failed shim used to keep MetaHook out as well, which
             // silenced the requests and the ledger scope with no line saying which patch failed.
-            List<string> failed = new List<string>();
+            List<string> failed = new List<string>(sLocFailed);
             bool ok = Hook(failed, typeof(Sim), "IsAllowedInRoom", new Type[] { typeof(ulong), typeof(int) }, typeof(AutRoomHook), "AllowedHook", "AllowedOrig")
                 & Hook(failed, typeof(Sim), "get_NumSimsDoingGardening", null, typeof(AutGardenHook), "GardenHook", "GardenOrig")
-                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(ulong) }, typeof(AutLocHook), "KeyHook", "KeyOrig")
-                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(string), typeof(object[]) }, typeof(AutLocHook), "StrHook", "StrOrig")
-                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(bool), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemHook", "FemOrig")
-                & Hook(failed, typeof(Localization), "LocalizeString", new Type[] { typeof(bool[]), typeof(string), typeof(object[]) }, typeof(AutLocHook), "FemsHook", "FemsOrig")
                 & Hook(failed, typeof(OnlineDatingManager), "DidSimsMeetOnline", new Type[] { typeof(ulong), typeof(ulong) }, typeof(AutDatingHook), "MetHook", "MetOrig")
                 & Hook(failed, typeof(MetaAutonomyTuning), "GetSimCountForVenueWithCustomDesireFunction", null, typeof(AutDesireHook), "DesireHook", "DesireOrig")
                 & Hook(failed, typeof(Punishment), "GetPunishmentManagerFromSim", new Type[] { typeof(Sim) }, typeof(AutPunishHook), "PunishHook", "PunishOrig")
@@ -205,7 +275,8 @@ namespace Ts3Fixes
                 & Hook(failed, typeof(SimRoutingComponent), "CreateRoute", new Type[] { typeof(Sims3.SimIFace.CAS.CASAgeGenderFlags) }, typeof(AutRouteHook), "AgsHook", "AgsOrig")
                 & Hook(failed, typeof(SimRoutingComponent), "CreateRouteAsAdult", null, typeof(AutRouteHook), "AdultHook", "AdultOrig");
             sCalcPatched = Hook(failed, typeof(AutonomyT), "CalculateScore", new Type[] { typeof(InteractionObjectPair) }, typeof(AutScoreHook), "ScoreHook", "ScoreOrig");
-            sHooksOk = ok && sCalcPatched;
+            sShimsOk = ok;
+            sHooksOk = ok && sLocOk && sCalcPatched;
             // B13: requests (any mode) and the ledger scope (autledger) both enter here; it passes through while both are off
             if (!Hook(failed, typeof(AutonomyT), "ScoreInteractionsForMetaAutonomy", null, typeof(AutMetaHook), "MetaHook", "MetaOrig"))
                 AppliedLog().Add("AutShadow: B13 hook (Autonomy.ScoreInteractionsForMetaAutonomy) not patched: no requests, no ledger scopes");
@@ -293,7 +364,7 @@ namespace Ts3Fixes
         internal static void AutShadowWorldLoad()
         {
             sLedger = 0;
-            sProbe = 0; sPosted = false; sInWork = false; sGameAut = null; sWarmIn = 0; sLogged = 0; sWorkReady = sGameDone = false;
+            sProbe = 0; sPosted = false; sInWork = false; sGameAut = null; sWarmIn = 0; sLogged = 0; sWorkReady = sGameDone = false; sReqN = 0;
             sSweptAtLoad = false;
             if (sSessionOff || !ShortcutOn("autshadow")) return;
             try { sSweptAtLoad = GuardSweep(); }
@@ -310,15 +381,15 @@ namespace Ts3Fixes
             int v;
             try { v = AutShadowNative.Version(); }
             catch (Exception) { AppliedLog().Add("AutShadow: no ts3native internal calls this load (off)"); return false; }
-            if (v != 4) { AppliedLog().Add("AutShadow: ts3native contract version " + v + ", want 4 (off)"); return false; }
+            if (v != 8) { AppliedLog().Add("AutShadow: ts3native contract version " + v + ", want 8 (off)"); return false; }
             try
             {
                 if (!sSweptAtLoad && !GuardSweep()) return false;
                 // Warm-up: nothing is pending, so each returns at once; it transforms them on the sim thread first.
                 AutFinish(); AutReference(); AutWork();
-                AutRoomHook.Warm(); AutDatingHook.Warm(); AutRouteHook.Warm();
-                sRain.TargetIsSim(); AutShadowCore.RainShelter(false, sRain, 0, 0); if (Sims3.Gameplay.Seasons.SeasonsManager.Enabled) sRain.Weather();
                 sSample = Math.Max(1, AutShadowNative.Config(1));
+                sFreshEvery = AutShadowNative.Config(11);
+                sKeepPartial = AutShadowNative.Config(12) != 0;
                 sWarmInMax = AutShadowNative.Config(2);
                 AutShadowNative.SetRefs(sEmpty, sFmtException);
                 const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic;
@@ -326,19 +397,49 @@ namespace Ts3Fixes
                     typeof(Fixes).GetMethod("AutReference", st).MethodHandle.Value, typeof(Fixes).GetMethod("AutWork", st).MethodHandle.Value);
             }
             catch (Exception e) { AppliedLog().Add("AutShadow: warm-up failed: " + e.Message); return false; }
+            // Worker shims (Modes 1/2 only): a failed warm-up keeps those modes off for the load, Mode 0 still counts
+            // (mono-cost3: the dating warm-up threw and no request was ever posted, docs/122 §14.12).
+            sWarmOk = WarmShim("room", AutRoomHook.Warm) & WarmShim("dating", AutDatingHook.Warm) & WarmShim("route", AutRouteHook.Warm)
+                & WarmShim("rain", delegate { sRain.TargetIsSim(); AutShadowCore.RainShelter(false, sRain, 0, 0); if (Sims3.Gameplay.Seasons.SeasonsManager.Enabled) sRain.Weather(); });
+            try { LocRedirect(); }
+            catch (Exception e) { AppliedLog().Add("AutShadow: LocalizeString redirect failed: " + e.Message); }
             sProbe = 1;
             return true;
+        }
+        delegate void WarmFn();
+        static bool WarmShim(string name, WarmFn f)
+        {
+            try { f(); return true; }
+            catch (Exception e) { AppliedLog().Add("AutShadow: warm-up of " + name + " failed: " + e.Message + "; Modes 1/2 off, Mode 0 (count only) still runs"); return false; }
         }
 
         // docs/104 L3: MonoMethod+0x08 (klass) equals the declaring class, read as MonoType.data.klass from TypeHandle.Value
         // [inferred layout; checked below against our own method and our own patch before any verdict is trusted].
+        // MethodInfo.DeclaringType comes from MonoMethod.klass itself (IL: MonoMethod.get_DeclaringType calls the
+        // MonoMethodInfo.get_method_info internal call [verified]; it fills the parent from method->klass [inferred, Mono
+        // 1.2 source]), so after a header swap DeclaringType names the swapped-in class and the klass compare alone always
+        // passed: the self-check's patched CalculateScore looked unswapped (0.36.106, every shadow job off, docs/67). A
+        // method is also required to be one of its declaring class's own MonoMethods: a swapped header points klass at a
+        // class whose method table does not hold this MonoMethod.
         // shortcut: methods of generic classes pass unchecked (an inflated method's klass is the inflated class); add an
         // inflated-class compare if a generic base's Test ever matters.
         static bool L3Ok(MethodBase m)
         {
             Type d = m.DeclaringType;
             if (d == null || d.IsGenericType) return true;
-            return KlassOf(m) == Marshal.ReadIntPtr(d.TypeHandle.Value);
+            return KlassOf(m) == Marshal.ReadIntPtr(d.TypeHandle.Value) && OwnHandles(d).ContainsKey(m.MethodHandle.Value);
+        }
+        static readonly Dictionary<Type, Dictionary<IntPtr, bool>> sOwnHandles = new Dictionary<Type, Dictionary<IntPtr, bool>>();
+        static Dictionary<IntPtr, bool> OwnHandles(Type d)
+        {
+            Dictionary<IntPtr, bool> h;
+            if (sOwnHandles.TryGetValue(d, out h)) return h;
+            const BindingFlags own = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            h = new Dictionary<IntPtr, bool>();
+            foreach (MethodInfo x in d.GetMethods(own)) h[x.MethodHandle.Value] = true;
+            foreach (ConstructorInfo x in d.GetConstructors(own)) h[x.MethodHandle.Value] = true;
+            sOwnHandles[d] = h;
+            return h;
         }
         static IntPtr KlassOf(MethodBase m) { return Marshal.ReadIntPtr(new IntPtr(m.MethodHandle.Value.ToInt32() + 8)); }
 
@@ -382,9 +483,12 @@ namespace Ts3Fixes
         static bool GuardSweep()
         {
             const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic;
-            if (!L3Ok(typeof(Fixes).GetMethod("AutFinish", st)) || (sCalcPatched && L3Ok(typeof(AutonomyT).GetMethod("CalculateScore", new Type[] { typeof(InteractionObjectPair) }))))
+            bool ownOk = L3Ok(typeof(Fixes).GetMethod("AutFinish", st));
+            bool calcSeen = !sCalcPatched || !L3Ok(typeof(AutonomyT).GetMethod("CalculateScore", new Type[] { typeof(InteractionObjectPair) }));
+            if (!ownOk || !calcSeen)
             {
-                AppliedLog().Add("AutShadow: off for the session: L3 klass self-check failed");
+                AppliedLog().Add("AutShadow: off for the session: L3 klass self-check failed (" + (ownOk ? "" : "own method AutFinish reads as swapped; ")
+                    + (calcSeen ? "" : "our patched Autonomy.CalculateScore reads as unswapped") + ")");
                 sSessionOff = true;
                 return false;
             }
@@ -458,21 +562,40 @@ namespace Ts3Fixes
             }
             bool[] hit = new bool[AutShadowLists.Slots.Length];
             List<string> log = new List<string>();
-            PatchCounters()[126] = AutShadowCore.OverrideCensus(mod.ToArray(), delegate(Type t) { return t != null && isMod.ContainsKey(t.Assembly); },
-                AutShadowLists.Slots, hit, log);
+            int exempt;
+            Type[] modTypes = mod.ToArray();
+            // docs/122 §14.13: definition-receiver slots are covered by the exact-type check (mono-cost4: NRaas' own
+            // BaseDefinition implementing InteractionDefinition.Test skipped all 12 v0 definitions); subclasses skip instead
+            PatchCounters()[126] = AutShadowCore.OverrideCensus(modTypes, delegate(Type t) { return t != null && isMod.ContainsKey(t.Assembly); },
+                AutShadowLists.Slots, hit, log, AutShadowCore.OnScoredDefinition, out exempt);
             for (int i = 0; i < log.Count && i < 10; i++) AppliedLog().Add("AutShadow: mod guard G-M5: " + log[i]);
+            if (exempt > 0) AppliedLog().Add("AutShadow: G-M5: " + exempt + " mod overrides of definition slots covered by the exact-type check (not skipped)");
+            Type[] owners = new Type[AutShadowLists.Owners.Length];
+            foreach (KeyValuePair<Type, int> e in sDefIndex)
+            {
+                int o = Array.IndexOf(AutShadowLists.Owners, kDefNames[e.Value]);
+                if (o >= 0) owners[o] = e.Key;
+            }
+            bool[] derived = new bool[owners.Length];
+            List<string> dlog = new List<string>();
+            AutShadowCore.DerivedOwners(modTypes, owners, derived, dlog);
             Array.Clear(sImplGuardHit, 0, sImplGuardHit.Length);
             for (int o = 0; o < AutShadowLists.Owners.Length; o++)
             {
                 bool any = false;
                 foreach (string s in AutShadowLists.OwnerSlots[o].Split(','))
                     if (s.Length > 0 && hit[int.Parse(s)]) any = true;
+                if (derived[o])
+                {
+                    foreach (string l in dlog) if (l.StartsWith(AutShadowLists.Owners[o] + " ")) AppliedLog().Add("AutShadow: G-M5 skips " + l);
+                    any = true;
+                }
+                else if (any) AppliedLog().Add("AutShadow: G-M5 skips " + AutShadowLists.Owners[o] + " (overridden closure slot)");
                 if (!any) continue;
                 int k = Array.IndexOf(kDefNames, AutShadowLists.Owners[o]), m = -1;
                 for (int i = 0; i < kImpl.Length; i++) if (kImpl[i].FullName == AutShadowLists.Owners[o]) m = i;
                 if (k >= 0) sDefGuardHit[k] = true;
                 if (m >= 0) sImplGuardHit[m] = true;
-                AppliedLog().Add("AutShadow: G-M5 skips " + AutShadowLists.Owners[o]);
             }
         }
 
@@ -501,9 +624,13 @@ namespace Ts3Fixes
 
         static void TryRequest(AutonomyT a, CommodityKind c)
         {
-            if (++sCalls % sSample != 0 || sPosted || sGameAut != null || !Ready()) return;
+            if (sProbe > 0) AutShadowNative.Note();  // every B13 call: the go-live request rate (docs/122 §14.18)
+            // a posted request's cut is shared by every later B13 before it (docs/122 §14.18); a new batch is sampled
+            bool join = sPosted;
+            if (join ? sReqN >= kMaxReq || a == sGameAut : (++sCalls % sSample != 0 || sGameAut != null)) return;
+            if (!Ready()) return;
             int mode = AutShadowNative.Config(0);
-            if (mode < 0 || (mode > 0 && !sHooksOk)) return;  // Modes 1/2 run managed code on the worker: every shim must be in
+            if (mode < 0 || (mode > 0 && (!sHooksOk || !sWarmOk))) return;  // Modes 1/2 run managed code on the worker: every shim in and warm
             sSample = Math.Max(1, AutShadowNative.Config(1));
             // G-M4: again after a MonoPatcher ForceJIT byte change or a ts3agent patch_* swap (it sets the flag)
             bool resweep = AppDomain.CurrentDomain.GetData("ts3fixes.autshadow.resweep") != null;
@@ -513,16 +640,22 @@ namespace Ts3Fixes
             if (actor == null || !(bool)mCanAnyMeta.Invoke(a, null)) return;
             int[] cnt = PatchCounters();
             if (!AutShadowNative.Begin()) { cnt[119]++; return; }
-            Request q = sReq;
+            if (!join) sReqN = 0;
+            int at = sReqN;
+            Request q = sReq = sReqs[at];
             q.Id = ++sNextId; q.Mode = mode; q.Actor = actor; q.Aut = a; q.C = c;
             q.SearchType = a.CurrentSearchType; q.Flags = a.GetInteractionFlagsForCurrentSearch(); q.Hours = SimClock.HoursPassedOfDay;
             q.Objs = q.Pairs = 0;
-            sRef.Id = sWork.Id = -1;
-            sPairIndex.Clear(); sReqLots.Clear(); sBakeSales.Clear();
-            Array.Clear(sGameHas, 0, sGameHas.Length);
+            sRefs[at].Id = sWorks[at].Id = -1;
+            q.PairIndex.Clear(); q.Lots.Clear(); q.BakeSales.Clear();
+            Array.Clear(q.GameHas, 0, q.GameHas.Length);
             try
             {
-                sGardening = (int)fGardening.GetValue(null);
+                // through the getter (the game's own, our hook passes through off the worker): it recounts when the count is
+                // older than kMinutesbetweenNumGardeningsimsUpdates. The raw field read here (0.36.110) gave the worker the
+                // old count while the game's B13 or the reference recounted (mono-cost6: GoToGarden meta 300 vs 259, docs/122 §14.15).
+                // Mode R reads it again at the cut (AutReference, docs/122 §14.18); this read serves Mode W.
+                sGardening = Sim.NumSimsDoingGardening;
                 AutShadowNative.AddRow(actor.ObjectId.Value, 1);
                 if ((bool)mCanFullMeta.Invoke(a, null))
                 {
@@ -541,11 +674,61 @@ namespace Ts3Fixes
             }
             catch (Exception e) { cnt[121]++; AutNote("request: " + e.Message); }
             PreWarm(actor);
+            ClassifyListTypes();
+            ClassifyObjects();
             q.Start[q.Objs] = q.Pairs;
             sPosted = true;
-            sGameAut = a; sGameDone = sWorkReady = false;
+            sReqN = at + 1;
+            if (at == 0) { sGameAut = a; sGameDone = sWorkReady = false; }  // L report: the batch's first request only
             cnt[118]++;
             AutShadowNative.Post(q.Id);
+        }
+
+        // docs/122 §14.18 list kinds: each list query type ts3native has seen, once, sim thread. A Sim can be one when the type
+        // is Sim or a base or interface of it, or derives from it (a mod subclass); then Sim moves refresh its lists.
+        static void ClassifyListTypes()
+        {
+            try
+            {
+                for (int n = 0; n < 64; n++)
+                {
+                    object o = AutShadowNative.ListTypeNext();
+                    if (o == null) return;
+                    Type t = o as Type;
+                    AutShadowNative.ListTypeSet(o, t == null || t.IsAssignableFrom(typeof(Sim)) || typeof(Sim).IsAssignableFrom(t) ? 1 : 0);
+                }
+            }
+            catch (Exception e) { PatchCounters()[121]++; AutNote("list types: " + e.Message); }
+        }
+
+        // docs/122 §14.20 typed marks: objects ts3native queued (new ones, and those whose move marked every list type) are
+        // tested once against each list type, as the list ICs filter: the object's script target by IsInstanceOfType
+        // [inferred, I-396-1]. Sim thread, before the cut; an object with no target yet stays unknown (every type).
+        static readonly List<Type> sListTypes = new List<Type>();
+        // one batch of 32 per request (newest first: ids a cut's marks queued): the sim-thread cost per request stays bounded
+        static readonly ulong[] sClsIds = new ulong[32];
+        static void ClassifyObjects()
+        {
+            try
+            {
+                int nt = Math.Min(AutShadowNative.ListTypeCount(), 32);
+                while (sListTypes.Count < nt) sListTypes.Add(AutShadowNative.ListTypeAt(sListTypes.Count) as Type);
+                int n = AutShadowNative.ObjClassTake(sClsIds);
+                for (int j = 0; j < n; j++)
+                {
+                    IScriptProxy p = Simulator.GetProxy(new ObjectGuid(sClsIds[j]));
+                    object o = p != null ? p.Target : null;
+                    if (o == null) { AutShadowNative.ObjClassSet(sClsIds[j], 0, 0); continue; }
+                    int mask = 0;
+                    for (int i = 0; i < nt; i++)
+                    {
+                        Type t = sListTypes[i];
+                        if (t == null || t.IsInstanceOfType(o)) mask |= 1 << i;
+                    }
+                    AutShadowNative.ObjClassSet(sClsIds[j], mask, nt);
+                }
+            }
+            catch (Exception e) { PatchCounters()[121]++; AutNote("object classes: " + e.Message); }
         }
 
         static void AddObj(Request q, IMetaObject m)
@@ -557,8 +740,8 @@ namespace Ts3Fixes
             q.ObjImpl[o] = ImplVerdict(m.GetType());
             AutShadowNative.AddRow(m.ObjectId.Value, 0);
             Lot lot = m as Lot ?? m.LotCurrent;
-            if (lot != null) { sReqLots[lot.LotId] = true; if (lot != m) AutShadowNative.AddRow(lot.ObjectId.Value, 0); }
-            if (m is BakeSaleTable) sBakeSales.Add(m.Position);
+            if (lot != null) { q.Lots[lot.LotId] = true; if (lot != m) AutShadowNative.AddRow(lot.ObjectId.Value, 0); }
+            if (m is BakeSaleTable) q.BakeSales.Add(m.Position);
             ArrayList ads = m.MetaAds;
             if (ads == null) return;
             for (int i = 0; i < ads.Count && q.Pairs < kMaxPairs; i++)
@@ -573,7 +756,7 @@ namespace Ts3Fixes
                 InteractionTuning tun = iop.Tuning;
                 q.Acb[p] = tun != null && tun.AlwaysChooseBest;
                 if (q.Def[p] >= 0 && tun != null && tun.ScoringFunction != null && !SfAllowed(tun.ScoringFunction)) { q.Def[p] = -3; PatchCounters()[122]++; }
-                sPairIndex[iop] = p;
+                q.PairIndex[iop] = p;
             }
         }
 
@@ -596,7 +779,7 @@ namespace Ts3Fixes
             try
             {
                 if (actor.LotCurrent != null) actor.IsAllowedInRoom(actor.LotCurrent.LotId, 0);
-                foreach (ulong lot in sReqLots.Keys) actor.IsAllowedInRoom(lot, 0);
+                foreach (ulong lot in sReq.Lots.Keys) actor.IsAllowedInRoom(lot, 0);
                 int n = 0;
                 for (Sims3.Gameplay.ActorSystems.Posture p = actor.Posture; p != null && n++ < 8; p = p.PreviousPosture)
                     if (p.Interactions == null) break;
@@ -608,11 +791,11 @@ namespace Ts3Fixes
         static bool Reachable(Sim s)
         {
             Lot l = s.LotCurrent;
-            if (l != null && sReqLots.ContainsKey(l.LotId)) return true;
-            if (sBakeSales.Count == 0) return false;
+            if (l != null && sReq.Lots.ContainsKey(l.LotId)) return true;
+            if (sReq.BakeSales.Count == 0) return false;
             Vector3 p = s.Position;
             float r2 = BakeSaleTable.kMetaAutonomyDesiredRadius * BakeSaleTable.kMetaAutonomyDesiredRadius;
-            foreach (Vector3 b in sBakeSales) if ((p - b).LengthSqr() <= r2) return true;
+            foreach (Vector3 b in sReq.BakeSales) if ((p - b).LengthSqr() <= r2) return true;
             return false;
         }
 
@@ -621,23 +804,38 @@ namespace Ts3Fixes
         static void AutReference()
         {
             if (!sPosted) return;
-            if (sReq.Mode == 2)
+            if (sReqs[0].Mode == 2)
             {
                 if (sWarmIn >= sWarmInMax) return;
                 sWarmIn++;
                 PatchCounters()[117]++;
             }
+            // mono-cost9 BP A2 (docs/122 §14.18): GoToGarden meta 300 (worker) vs 250.2 (reference). The worker used the count
+            // read at the request (B13 prefix: no Sim gardening); by the cut at the end of the frame the reference read a count
+            // > 0. Both now use the count at the cut, the instant the snapshot stands for (through the getter: a recount it
+            // does happens here, and the reference's own calls find it fresh).
+            if (sReqs[0].Mode == 1) sGardening = Sim.NumSimsDoingGardening;
             sInRef = true;
-            try { ScoreMeta(sReq, sRef); }
+            try { for (int i = 0; i < sReqN; i++) { sReq = sReqs[i]; sRef = sRefs[i]; ScoreMeta(sReq, sRef); } }
             finally { sInRef = false; }
         }
 
-        // Worker thread: no counters, no logs, no Simulator calls; everything it learns goes into sWork.
+        // Worker thread: no counters, no logs, no Simulator calls; everything it learns goes into sWorks. A stop leaves the
+        // rest of the batch unscored (Done stays false: no compare).
         static void AutWork()
         {
             if (!sPosted) return;
             sInWork = true;
-            try { ScoreMeta(sReq, sWork); }
+            try
+            {
+                for (int i = 0; i < sReqN; i++)
+                {
+                    sWorks[i].Id = -1; sWorks[i].Done = false;
+                    if (i > 0 && AutShadowNative.Stopped()) continue;
+                    sReq = sReqs[i]; sWork = sWorks[i];
+                    ScoreMeta(sReq, sWork);
+                }
+            }
             finally { sInWork = false; }
         }
 
@@ -646,27 +844,91 @@ namespace Ts3Fixes
             if (!sPosted) return;
             sPosted = false;
             sInWork = false;
-            int lr = AutShadowNative.LastRun();
+            int lr = AutShadowNative.LastRun(), n = sReqN;
+            sReqN = 0;
             int[] c = PatchCounters();
-            c[121] += (sRef.Id == sReq.Id ? sRef.Exceptions : 0) + (sWork.Id == sReq.Id ? sWork.Exceptions : 0) + (lr == 5 ? 1 : 0);
-            if (lr == 1 || lr == 2 || (lr == 0 && !sWork.Done)) { c[111]++; return; }
-            if (lr != 0 || sWork.Id != sReq.Id) return;
+            if (lr == 5) c[121]++;
+            for (int k = 0; k < n; k++)  // each request against its own rows and its own reference (docs/122 §14.18)
+            {
+                sReq = sReqs[k]; sRef = sRefs[k]; sWork = sWorks[k];
+                c[121] += (sRef.Id == sReq.Id ? sRef.Exceptions : 0) + (sWork.Id == sReq.Id ? sWork.Exceptions : 0);
+                // KeepPartial (docs/122 §14.21): an overrun (LastRun 1) whose worker result says Done kept the objects it
+                // finished before the stop; those are compared, the rest are A4 `stop`. An epoch drop (2) stays dropped.
+                bool partial = lr == 1 && sKeepPartial && sWork.Done && sWork.Partial && sWork.Id == sReq.Id;
+                if (!partial && (lr == 1 || lr == 2 || (lr == 0 && !sWork.Done))) { c[111]++; continue; }
+                if ((lr != 0 && !partial) || sWork.Id != sReq.Id) continue;
+                if (partial) AutShadowNative.Stat(6, 1);
+                for (int i = 0; i < sReq.Pairs; i++)
+                    if (sWork.Code[i] == AutShadowCore.kSkip) { c[116]++; if (sReq.Def[i] == -2 || sReq.ObjImpl[sReq.PairObj[i]] == -2) c[120]++; }
+                if (sReq.Mode == 1 && sRef.Id == sReq.Id && sRef.Done) { CompareR(c); FreshCheck(); }
+                if (k == 0) { sWorkReady = true; TryLReport(); }
+            }
+            sReq = sReqs[0]; sRef = sRefs[0]; sWork = sWorks[0];
+        }
+
+        // docs/124 §15 stale-score check (Mode R, FreshEvery = 1 in N finishes): the same request scored again now, on the sim
+        // thread at the finish (>= 1 tick after the cut; go-live's consume point is inside the next tick), against the
+        // worker's cut-time result: pairs both answered, pairs whose code or score differ, searches whose top passing pair or
+        // top-10 passing pairs (identity and order) differ. Counts only; the bit-exact A0-A3 compare is untouched.
+        static readonly Result sFresh = new Result();
+        static int sFreshN;
+        static void FreshCheck()
+        {
+            int every = sFreshEvery;
+            if (every <= 0 || ++sFreshN % every != 0) return;
+            AutShadowNative.Fresh(1);
+            sInRef = true;
+            try { sGardening = Sim.NumSimsDoingGardening; ScoreMeta(sReq, sFresh); }
+            catch (Exception) { sFresh.Done = false; }
+            finally { sInRef = false; AutShadowNative.Fresh(0); }
+            if (!sFresh.Done) return;
+            int both = 0, diff = 0;
             for (int i = 0; i < sReq.Pairs; i++)
-                if (sWork.Code[i] == AutShadowCore.kSkip) { c[116]++; if (sReq.Def[i] == -2 || sReq.ObjImpl[sReq.PairObj[i]] == -2) c[120]++; }
-            if (sReq.Mode == 1 && sRef.Id == sReq.Id && sRef.Done) CompareR(c);
-            sWorkReady = true;
-            TryLReport();
+            {
+                if (sReq.Def[i] < 0 || sReq.ObjImpl[sReq.PairObj[i]] < 0) continue;
+                int a = sWork.Code[i], b = sFresh.Code[i];
+                if ((a != AutShadowCore.kPass && a != AutShadowCore.kTestFailed) || (b != AutShadowCore.kPass && b != AutShadowCore.kTestFailed)) continue;
+                both++;
+                if (a != b || AutShadowCore.Bits(sWork.Score[i]) != AutShadowCore.Bits(sFresh.Score[i])) diff++;
+            }
+            int[] tw = Top(sWork, 10), tf = Top(sFresh, 10);
+            bool top1 = tw[0] != tf[0], top10 = false;
+            for (int j = 0; j < 10; j++) if (tw[j] != tf[j]) top10 = true;
+            AutShadowNative.Stat(2, both); AutShadowNative.Stat(3, diff);
+            AutShadowNative.Stat(4, top1 ? 1 : 0); AutShadowNative.Stat(5, top10 ? 1 : 0);
+        }
+        // indexes of the n best passing allow-listed pairs by score (ties: lower index), -1 padded
+        static int[] Top(Result r, int n)
+        {
+            int[] t = new int[n];
+            for (int j = 0; j < n; j++) t[j] = -1;
+            for (int i = 0; i < sReq.Pairs; i++)
+            {
+                if (sReq.Def[i] < 0 || sReq.ObjImpl[sReq.PairObj[i]] < 0 || r.Code[i] != AutShadowCore.kPass) continue;
+                int at = n;
+                while (at > 0 && (t[at - 1] < 0 || r.Score[i] > r.Score[t[at - 1]])) at--;
+                if (at >= n) continue;
+                for (int j = n - 1; j > at; j--) t[j] = t[j - 1];
+                t[at] = i;
+            }
+            return t;
         }
 
         static void CompareR(int[] c)
         {
             int[] n = new int[6];
+            int pass = 0, cls = 0;
             for (int i = 0; i < sReq.Pairs; i++)
             {
                 int o = sReq.PairObj[i];
+                // docs/122 §5.1: A0-A5 are over allow-listed pairs; a pair off the allow-list (definition or implementor -1)
+                // is skipped on both sides by design and counted only in [116] (0.36.110 counted it as A4: 24,355 of 30,395 BP)
+                if (sReq.Def[i] == -1 || sReq.ObjImpl[o] == -1) continue;
                 int k = AutShadowCore.Classify(sRef.Code[i], sRef.Score[i], sRef.Meta[o], sWork.Code[i], sWork.Score[i], sWork.Meta[o]);
                 if (k < 0) continue;
                 c[106 + k]++; n[k]++;
+                cls++;
+                if (sWork.Code[i] == AutShadowCore.kPass) pass++;
                 if (k == AutShadowCore.A4)
                 {
                     int r = sWork.Code[i] == AutShadowCore.kAbort ? sWork.Reason[i] : sRef.Code[i] == AutShadowCore.kAbort ? sRef.Reason[i] : -1;
@@ -674,6 +936,7 @@ namespace Ts3Fixes
                 }
                 else if (k != AutShadowCore.A0 && sLogged < kMaxLogPerLoad) { sLogged++; LogPair(i, k); }
             }
+            AutShadowNative.Stat(0, pass); AutShadowNative.Stat(1, cls);  // docs/124 §15 pass share
             if (ShortcutOn("autshadowverify"))
                 AutShadowNative.Log("{\"t\":\"req\",\"req\":" + sReq.Id + ",\"actor\":" + sReq.Actor.ObjectId.Value + ",\"objs\":" + sReq.Objs + ",\"pairs\":" + sReq.Pairs
                     + ",\"a\":[" + n[0] + "," + n[1] + "," + n[2] + "," + n[3] + "," + n[4] + "]}");
@@ -709,7 +972,7 @@ namespace Ts3Fixes
         {
             if (!sWorkReady || !sGameDone) return;
             sWorkReady = sGameDone = false;
-            AutShadowCore.LReport r = AutShadowCore.Report(sGameScore, sGameHas, sWork.Score, sWork.Code, sReq.Pairs);
+            AutShadowCore.LReport r = AutShadowCore.Report(sReqs[0].GameScore, sReqs[0].GameHas, sWorks[0].Score, sWorks[0].Code, sReqs[0].Pairs);
             int[] c = PatchCounters();
             c[112] += r.Pairs; c[113] += r.Equal; c[114] += r.TestAgree;
             if (r.Top1Agree) c[115]++;
@@ -728,7 +991,7 @@ namespace Ts3Fixes
         // no events. Abort reasons are read after each meta object; a stop from the sim abandons the rest (A5).
         public static void ScoreMeta(Request q, Result r)
         {
-            r.Id = q.Id; r.Exceptions = 0; r.Done = false;
+            r.Id = q.Id; r.Exceptions = 0; r.Done = false; r.Partial = false;
             for (int o = 0; o < q.Objs; o++)
             {
                 int s = q.Start[o], e = q.Start[o + 1];
@@ -736,6 +999,7 @@ namespace Ts3Fixes
                 if (AutShadowNative.Stopped())
                 {
                     for (int i = s; i < q.Pairs; i++) { r.Code[i] = AutShadowCore.kAbort; r.Reason[i] = kReasonStop; r.Score[i] = 0f; }
+                    r.Partial = true; r.Done = sKeepPartial;
                     return;
                 }
                 for (int i = s; i < e; i++) { r.Score[i] = 0f; r.Code[i] = AutShadowCore.kSkip; r.Reason[i] = -1; }
@@ -757,6 +1021,16 @@ namespace Ts3Fixes
                 {
                     for (int i = s; i < e; i++) if (q.Def[i] >= 0) { r.Code[i] = AutShadowCore.kAbort; r.Reason[i] = ab; }
                     AutShadowNative.ResetAbort();
+                }
+                // docs/122 §14.21 KeepPartial: an object is valid only if the stop was still clear after its last read (x86:
+                // loads stay in order, the sim sets stop before it writes anything), so the stop test comes after the object;
+                // the object it was inside of is aborted `stop` with the rest. Off the worker Stopped() is always false.
+                if (sKeepPartial && AutShadowNative.Stopped())
+                {
+                    for (int i = s; i < q.Pairs; i++) { r.Code[i] = AutShadowCore.kAbort; r.Reason[i] = kReasonStop; r.Score[i] = 0f; }
+                    r.Meta[o] = 0f;
+                    r.Partial = true; r.Done = true;
+                    return;
                 }
             }
             r.Done = true;
@@ -843,7 +1117,8 @@ namespace Ts3Fixes
                 if (sGameAut == null || (object)this != sGameAut) return ScoreOrig(iop);
                 float s = ScoreOrig(iop);
                 int i;
-                if (iop != null && sPairIndex.TryGetValue(iop, out i)) { sGameScore[i] = s; sGameHas[i] = true; }
+                Request q = sReqs[0];  // the batch's first request (sGameAut's)
+                if (iop != null && q.PairIndex.TryGetValue(iop, out i)) { q.GameScore[i] = s; q.GameHas[i] = true; }
                 return s;
             }
             public float ScoreOrig(InteractionObjectPair iop) { return 0f; } // receives Autonomy.CalculateScore(iop)'s original header
@@ -921,12 +1196,16 @@ namespace Ts3Fixes
             public static bool MetOrig(ulong a, ulong b) { return false; } // receives OnlineDatingManager.DidSimsMeetOnline's original header
 
             // I-122-37: the game never calls IDictionary.Contains/indexer on this dictionary type; run them once on the sim thread.
+            // Dictionary<ulong, OnlineDatingRecord>'s IDictionary.Add refuses a null value ("not of type", mono-cost3) and its
+            // indexer throws on a missing key, so the warm-up holds one real record (private parameterless constructor).
             internal static void Warm()
             {
                 IDictionary d = Activator.CreateInstance(fDatingRecords.FieldType) as IDictionary;
                 if (d == null) return;
-                d.Add(1UL, null);
+                d.Add(1UL, Activator.CreateInstance(fAcceptedDates.DeclaringType, true));
                 Accepted(d, 1UL, 2UL);
+                Accepted(d, 2UL, 1UL);
+                new List<ulong>(1).Contains(2UL);
             }
 
             static bool Accepted(IDictionary recs, ulong owner, ulong other)

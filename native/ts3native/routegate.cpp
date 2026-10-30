@@ -106,7 +106,7 @@ static void RgUndo(const RgFrame& f) {
     if (f.rel & RG_REL_LOCK) LockReleaseHook(f.lock, NULL);
     if (f.rel & RG_REL_QT) LeaveCriticalSection(&g_qtCs);
     if (f.rel & RG_REL_BUSY) InterlockedDecrement(&ts3native_counters.rtBusy);
-    if (f.rel & RG_REL_OFFSIM) InterlockedDecrement(&g_rgOffSimOpen);
+    if (f.rel & RG_REL_OFFSIM) RgOffSimDrop();
     if (f.rel & RG_REL_CE) CeRec(CE_DESTROY_OUT, (DWORD)(uintptr_t)f.lock);  // DestroyById returned
     if (f.rel & RG_REL_STEER) t_steerRet = (DWORD)(uintptr_t)f.lock;
 }
@@ -321,7 +321,7 @@ static void __cdecl RgEnter(int site, DWORD* slot) {
             // without +0x918; anything else drops the hold (QL released) and goes on below as today
             if (t_slHold == 1 && SlGate(site, slot)) {
                 InterlockedIncrement(&g_rgOffSimOpen);
-                if (!RgPush(t, slot, 0, RG_REL_OFFSIM)) InterlockedDecrement(&g_rgOffSimOpen);
+                if (!RgPush(t, slot, 0, RG_REL_OFFSIM)) RgOffSimDrop();
                 return;
             }
             // every non-worker frame is published before the job state is read; the worker sets RUNNING before it reads

@@ -208,7 +208,7 @@ static void P5cFlush() {
     Ts3nCounters& k = ts3native_counters;
     InterlockedIncrement(&g_rgOffSimOpen);
     if (g_async.state == A_RUNNING) {
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         InterlockedIncrement(&k.p5cFlushRefused);
         return;
     }
@@ -240,7 +240,7 @@ static void P5cFlush() {
         g_objRelease(&obj, NULL);
     }
     InterlockedExchangeAdd(&k.p5cFlushed, n);
-    InterlockedDecrement(&g_rgOffSimOpen);
+    RgOffSimDrop();
 }
 
 // --- no wait for the job while holding its lent lock ---

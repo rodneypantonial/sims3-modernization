@@ -25,6 +25,23 @@ export function s3saImages(file: string): Img[] {
   } finally { closeSync(fd); }
 }
 
+// MVID as the call-graph index stores it (used by offload-override-scan.ts and compat-scan.ts) (16 GUID-heap bytes in hex).
+export function mvidOf(img: Buffer): string {
+  const pe = img.readUInt32LE(0x3c), nSec = img.readUInt16LE(pe + 6), opt = pe + 24, secs = opt + img.readUInt16LE(pe + 20);
+  const off = (rva: number) => { for (let i = 0; i < nSec; i++) { const s = secs + i * 40, va = img.readUInt32LE(s + 12); if (rva >= va && rva < va + Math.max(img.readUInt32LE(s + 8), img.readUInt32LE(s + 16))) return rva - va + img.readUInt32LE(s + 20); } throw new Error('rva'); };
+  const md = off(img.readUInt32LE(off(img.readUInt32LE(opt + 96 + 14 * 8)) + 8));
+  let p = md + 16 + img.readUInt32LE(md + 12) + 2; const n = img.readUInt16LE(p); p += 2;
+  let tables = 0, guid = 0;
+  for (let i = 0; i < n; i++) {
+    const o = img.readUInt32LE(p), e = img.indexOf(0, p + 8), name = img.toString('latin1', p + 8, e);
+    if (name === '#~') tables = md + o; if (name === '#GUID') guid = md + o;
+    p = p + 8 + ((e - (p + 8) + 4) & ~3);
+  }
+  const heap = img[tables + 6], valid = img.readBigUInt64LE(tables + 8);
+  const rows = tables + 24 + 4 * [...valid.toString(2)].filter((b) => b === '1').length; // Module row 0
+  const sIdx = heap & 1 ? 4 : 2, gi = heap & 2 ? img.readUInt32LE(rows + 2 + sIdx) : img.readUInt16LE(rows + 2 + sIdx);
+  return img.subarray(guid + (gi - 1) * 16, guid + gi * 16).toString('hex');
+}
 // RefPack (EA QFS) decompression as used by DBPF 2.0 resources.
 export function refpack(src: Buffer): Buffer {
   let p = 0;

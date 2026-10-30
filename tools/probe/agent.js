@@ -1595,9 +1595,15 @@ rpc.exports = {
       if (c.readS32() >= 139) f.push('ufcMode', 'ufcWaitMs', 'ufcReady', 'ufcList', 'ufcPushes', 'ufcPushBad', ...n('ufcTry', 4), ...n('ufcGot', 4),
         ...n('ufcTimeout', 4), ...n('ufcFake', 4), ...n('ufcRecover', 4), ...n('ufcSeen', 4), ...n('ufcWaitUs', 4), 'ufcMaxWaitUs', 'ufcNoRoute',
         'ufcStale', ...n('ufcSpare', 7));
-      // v140 (docs/202 §3.4.2, unseenfbc.cpp): [UnseenFallback] FinishWalk holds (release reasons: finished, given up, seen, expired)
+      // v140 (docs/202 §3.4.2, unseenfbc.cpp): [UnseenFallback] FinishWalk holds (release reasons: finished, given up, seen, expired);
+      // ufcBb_<i> (0.36.117, docs/202 §3.4.4, were ufwSpare): 0 Build/Buy spans, 1 C tries while world+0x97B set, 2 tries in the 3 s tail
       if (c.readS32() >= 140) f.push('ufwMode', 'ufwReady', 'ufwFlagged', 'ufwHolds', 'ufwPlainWait', 'ufwHeldTicks', 'ufwClaims',
-        ...n('ufwRelease', 4), 'ufwMaxHeld', 'ufwFull', ...n('ufwSpare', 3));
+        ...n('ufwRelease', 4), 'ufwMaxHeld', 'ufwFull', ...n('ufcBb', 3));
+      // v141 (docs/67 §26.4 / §27.5, eafix.cpp): [EaCrashFixes] ConformActor (caSkip_<i>: 0 null actor, 1 destroyed, 2 bad vtable) + ThumbPose
+      if (c.readS32() >= 141) f.push('caOn', ...n('caSkip', 3), 'caOther', 'caLive', 'caMaxLive', 'caOverflow', 'tpOn', 'tpHeld', 'tpLastRef', 'tpNoSlot');
+      // v142 (docs/203 §6, ts3native.cpp RwStartWait): [RouteAsync] WorkerWait, the route worker's job-start wait
+      if (c.readS32() >= 142) f.push('rwMode', 'rwBlocked', 'rwBlockUs', 'rwSleep0', 'rwSpinExits', 'rwWaits', 'rwWakes', 'rwTimeouts',
+        'rwSignals', 'rwMaxBlockUs', 'rwWorkerCpuMs', 'rwSpare');
     }
     const r = Object.fromEntries(f.map((n, i) => [n, c.add(i * 4).readS32()]));
     if (r.version >= 21) r.vfCostFrameDbConsumed = r.vfCost693780Calls; // the consume count under the I-41-4 key
@@ -1647,6 +1653,7 @@ rpc.exports = {
       if (mp.readS32() >= 2) mf.push('arenaRelNonEmpty', 'arenaDropped', 'n2mReady', 'n2mWorker', 'n2mMaxDepth', 'n2mOverflow'); // v2: +0x6C..+0x80 (docs/120 §9)
       if (mp.readS32() >= 3) mf.push('lockStale'); // v3: +0x84 (docs/120 §10, I-120-8)
       if (mp.readS32() >= 4) mf.push('lockOomReleased'); // v4: +0x88 (docs/120 §10.5, GC_oom_fn wrapper)
+      if (mp.readS32() >= 5) mf.push('lazyGate', 'lazyOn', 'lazyOff'); // v5: +0x8C..+0x94 (LazyGate=1, docs/30 §15)
       r.mtprobe = Object.fromEntries(mf.map((n, i) => [n, mp.add(i * 4).readS32()]));
     }
     // autonomy shadow pilot (docs/122 §13-§14): export ts3native_autshadow (docs/registry.md), null when the asi has none
@@ -1690,6 +1697,55 @@ rpc.exports = {
       if (v >= 5) { // v5: +0x770 abortRoute (reason 22, H12), +0x774 cutSite (1 loop-back, 2 after the sim pump), +0x778 overrunIdle
         a.abort.route = rd(476);
         Object.assign(a, { cutSite: rd(477), overrunIdle: rd(478) });
+      }
+      if (v >= 6) Object.assign(a, { windowWaits: rd(479), windowWaitUs: rd(480) }); // v6: +0x77C, +0x780 (WindowWaitUs, docs/122 §14.13)
+      if (v >= 7) { // v7: +0x784..+0x7A4 table sizing and LRU eviction (docs/122 §14.14)
+        ['evicted', 'evictedMemo', 'ringDropped', 'memoAged', 'entriesMax', 'learnWantMax', 'memoRows', 'refreshMax', 'learnBacklog']
+          .forEach((n, i) => { a[n] = rd(481 + i); });
+      }
+      if (v >= 8) { // v8: +0x7A8..+0x7F8 cut phases, body calls by cause, cold ICs, FPU state (docs/122 §14.15)
+        ['cutLearnUs', 'cutPrepUs', 'cutRefreshUs', 'cutAgeUs', 'cutAuditUs', 'cutPublishUs', 'bodyNew', 'bodyObj', 'bodyList', 'bodyCut',
+          'bodyNewUs', 'bodyObjUs', 'bodyListUs', 'bodyCutUs', 'coldSkips', 'coldReads', 'coldIcs', 'simX87', 'workX87', 'simCsr', 'workCsr', 'parentRows']
+          .forEach((n, i) => { a[n] = rd(490 + i); });
+      }
+      if (v >= 9) { // v9: +0x800..+0x834 change-only lists (CutLean) and Sim tiers (TierMs) (docs/122 §14.16)
+        ['listPrintSkips', 'listPrintUs', 'listLots', 'listSame', 'tierMs', 'tier1Sims', 'tier2Sims', 'tier2Stale', 'tier1Body', 'tier2Body',
+          'tier1BodyUs', 'tier2BodyUs', 'tierClassUs', 'ageRuns']
+          .forEach((n, i) => { a[n] = rd(512 + i); });
+      }
+      if (v >= 10) { // v10: +0x838..+0x874 dirty lots (CutLean=2), ListAudit, tier cache, list tiers (docs/122 §14.17)
+        ['dirtyLots', 'dirtyRows', 'dirtyKept', 'objResolved', 'objResolveUs', 'dirtyUnknown', 'listAuditN', 'listAuditUs', 'listMissed',
+          'dirtyTripped', 'tierClassN', 'tierCamInval', 'tierHold', 'listT2Wait', 'listT2Ref', 't1Lots']
+          .forEach((n, i) => { a[n] = rd(526 + i); });
+      }
+      if (v >= 11) { // v11: +0x878..+0x8C0 list kinds, lot-vector prints, tier triggers, shared cuts, go-live rates (docs/122 §14.18)
+        ['simMarks', 'simFreeKept', 'listTypes', 'listTypesSimFree', 'unplaced', 'liteLots', 'liteUs', 'liteMarks', 'resyncTouch',
+          'resyncMap', 'olCompact', 'olRows', 'tierKept', 'batchCuts', 'batchReqs', 'batchMax', 'metaCalls', 'metaTicks', 'simTicks']
+          .forEach((n, i) => { a[n] = rd(542 + i); });
+      }
+      if (v >= 12) { // v12: +0x8C4..+0x944 dirtying causes, seeded map, pointer lot-vector prints, RowHot (docs/122 §14.19)
+        const mc = ['First', 'New', 'Lot', 'Room', 'Gone', 'Lost', 'Lite', 'Kid'], ev = ['4', '5', '6', '0B', '0C', '0E', '12', '18', '21'];
+        mc.forEach((n, i) => { a['mark' + n] = rd(561 + i); a['row' + n] = rd(578 + i); });
+        ev.forEach((n, i) => { a['markEv' + n] = rd(569 + i); });
+        ['seedLots', 'seedObjs', 'seedUs', 'seedFull', 'liteSuspect', 'rowHot', 'rowColdSkips', 'rowColdReads']
+          .forEach((n, i) => { a[n] = rd(586 + i); });
+      }
+      if (v >= 13) { // v13: +0x948..+0x96C typed marks (docs/122 §14.20)
+        ['clsAsked', 'clsSet', 'clsNone', 'typedMarks', 'typedKept', 'typedAuditN', 'typedAuditMis', 'liteTyped', 'liteTypedNone', 'clsUs']
+          .forEach((n, i) => { a[n] = rd(594 + i); });
+      }
+      if (v >= 14) { // v14: +0x970..+0x9BC RunSkip, delta publish, pass share, fresh re-score, KeepPartial (docs/122 §14.21)
+        ['runSkip', 'runN', 'runSkips', 'rowSkips', 'runBuilds', 'icStampMoves', 'pubDelta', 'pubRows', 'runCheckMis',
+          'passPairs', 'classPairs', 'freshReqs', 'freshPairs', 'freshDiff', 'freshTop1', 'freshTop10', 'freshUs', 'freshEvery', 'partialKept', 'keepPartial']
+          .forEach((n, i) => { a[n] = rd(604 + i); });
+      }
+      if (v >= 15) { // v15: +0x9C0..+0xA4C Satb, copy on first write (docs/206 §7)
+        ['satbMode', 'satbSpans', 'satbStores', 'satbWords', 'satbPages', 'satbMaxWords', 'satbMaxPages', 'satbLoads', 'satbSpanUs',
+          'satbIcCalls', 'satbIcShared', 'satbRtCalls', 'satbRtWaits', 'satbBig', 'satbOverflow', 'satbWaits', 'satbWaitUs',
+          'satbWaitTimeouts', 'satbWLoads', 'satbWHits', 'satbWStores', 'satbWConflict', 'satbWRtFix', 'satbConc', 'satbConcTicks',
+          'satbStale', 'satbSwapUs', 'satbJobSpans', 'satbJobStores', 'satbJobWords', 'satbJobPages', 'satbJobLoads', 'satbJobIc',
+          'satbJobMaxWords', 'satbJobUs', 'satbIcCallsAll', 'satbSimArena', 'satbWArenaIgn', 'satbWGiveUp', 'satbWGiveUpOp']
+          .forEach((n, i) => { a[n] = rd(624 + i); });
       }
       r.autshadow = a;
     }

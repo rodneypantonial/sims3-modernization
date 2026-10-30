@@ -217,7 +217,7 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
             CeRec(CE_DESTROY_IN, ceObj, slot[1], slot[2]);
             if (enforce && !worker) {  // published first (no job starts during the destroy), then wait for a running one
                 InterlockedIncrement(&g_rgOffSimOpen);
-                if (!RgPush(t, slot, 1, RG_REL_OFFSIM | (g_ceOn ? RG_REL_CE : 0), (void*)(uintptr_t)ceObj)) InterlockedDecrement(&g_rgOffSimOpen);
+                if (!RgPush(t, slot, 1, RG_REL_OFFSIM | (g_ceOn ? RG_REL_CE : 0), (void*)(uintptr_t)ceObj)) RgOffSimDrop();
                 const LONG w0 = k.vfRtDestroyWaitUs;
                 const bool waited = parked || RtWaitJob(&k.vfRtDestroyWaitUs, 0x02000000 | RT_DESTROY);
                 CeRec(CE_DESTROY_RUN, ceObj, slot[1], (DWORD)(k.vfRtDestroyWaitUs - w0));
@@ -276,7 +276,7 @@ static int __cdecl RtEnter(int i, DWORD* slot) {
         if (s.kind == RT_SAVE) DiscDrain(true);  // the save must see every deferred discourage footprint
         InterlockedIncrement(&k.rtBusy);
         InterlockedIncrement(&g_rgOffSimOpen);
-        if (!RgPush(t, slot, 1, RG_REL_BUSY | RG_REL_OFFSIM)) { InterlockedDecrement(&k.rtBusy); InterlockedDecrement(&g_rgOffSimOpen); }
+        if (!RgPush(t, slot, 1, RG_REL_BUSY | RG_REL_OFFSIM)) { InterlockedDecrement(&k.rtBusy); RgOffSimDrop(); }
         RtWaitJob(&k.vfRtDrainWaitUs, 0x02000000 | s.kind);
     }
     // P5c: parked references go at these entries when no job runs (a save, travel / quit, world init / teardown). A destroy

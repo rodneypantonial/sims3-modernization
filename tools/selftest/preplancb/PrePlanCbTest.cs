@@ -1,6 +1,6 @@
 // Offline self-check of preplancb (mods/ts3fixes/src/PrePlanCbCore.cs, docs/185 §5). FakeRoute.Orig has the order of EA's
 // ScriptCore.Route.Plan (dest check, AboutToPlanCallback, search, PostPlanCallback); FakeRoute.Hook has the order of
-// RouteBackoff.cs PlanAsync / AsyncKindStart with PreCb (pre-call, START, wait, snapshot, original, restore).
+// RouteBackoff.cs PlanBackoffBody (PlanAsync, inlined) / AsyncKindStart with PreCb (pre-call, START, wait, snapshot, original, restore).
 using System;
 using System.Collections.Generic;
 using Ts3Fixes;

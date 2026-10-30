@@ -1,0 +1,97 @@
+{
+  "note": "mono-cost11: ts3native 0.36.119 (asi.mono-cost11, docs/122 §14.19, ledger §393): [AutShadow] Mode R on BP and IP with the mono-cost10 keys + RowHot=200. New in the build: lot dirtying cause counters (markBy/markEv/rowWhy, autshadow mark log lines with vtables), the object-lot map seeded per list lot (unmoved objects no longer mark at first sight; a first move marks the old lot too), pointer-only lot-vector prints with suspect pointers, parent array from the refresh loop, owner-run lookups, RowHot (object rows unread 200 cuts wait cold; actors and parent rows exempt), autshadow v12. mono-cost10: BP cut 1.57 ms (45% of scoring moved, FAIL), IP 0.71 ms (18%, PASS), A1-A3 0, A4 19.6% / 18.2%. Goal: BP cut <= 25% of the scoring moved (~0.8 ms), A1-A3 0, A4 ~20%. Correctness + cut cost, 2 x 10 min, ~30 min. Read with node tools/harness/mono-cost-report.ts --tag mono-cost11.",
+  "jobs": [
+    {
+      "id": "bp-autshadow-r",
+      "note": "1/2 Mode R on 0.36.119 (docs/122 §14.19). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v12: learned > 0, auditMis 0, listMissed 0 (> 0 = a seeding, lot-vector or event gap: read the list audit miss log lines), dirtyTripped 0, seedFull 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read: the dirtying line (which cause leads rowWhy; first sights ~0 expected), the autshadow mark log lines, seedLots/seedObjs, liteSuspect, rowColdSkips/rowColdReads and A4 vs mono-cost10, cut per cut (BP ~0.8-1.0 ms, IP ~0.5-0.65 expected), the go-live estimate line (cut share <= 25%). Any crash: stop and triage against 0.36.118.",
+      "asi": "game-copy/ts3native.asi.mono-cost11",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000,
+        "AutShadow.RowHot": 200
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-r",
+      "note": "2/2 Mode R on 0.36.119 (docs/122 §14.19). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v12: learned > 0, auditMis 0, listMissed 0 (> 0 = a seeding, lot-vector or event gap: read the list audit miss log lines), dirtyTripped 0, seedFull 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read: the dirtying line (which cause leads rowWhy; first sights ~0 expected), the autshadow mark log lines, seedLots/seedObjs, liteSuspect, rowColdSkips/rowColdReads and A4 vs mono-cost10, cut per cut (BP ~0.8-1.0 ms, IP ~0.5-0.65 expected), the go-live estimate line (cut share <= 25%). Any crash: stop and triage against 0.36.118. Run after 1/2 passed.",
+      "asi": "game-copy/ts3native.asi.mono-cost11",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000,
+        "AutShadow.RowHot": 200
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

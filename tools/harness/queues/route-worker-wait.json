@@ -1,0 +1,70 @@
+{
+  "note": "docs/203 §6 [RouteAsync] WorkerWait (ts3native 0.36.124 = asi.rwait1, counters v142 rw*), NOT RUN. Smoke first (5 min BP, switch on: read-back rwMode = 1, the job-start wait is reached, no timeouts storm, no watchdog), then off/on pairs per world in plain play with release defaults, 10 min each, order BP off/on, IP on/off. A pair rather than --ab: the machine-load sampler (ts3w %, og, per-core busy) runs per job, not per arm. Read per pair: worker CPU rwWorkerCpuMs / run s vs rwBlockUs / run s (off arm = the Sleep(0) loop cost, docs/203 S5 ~74/81 ms/s), ts3w CPU % from the machine line, job start latency rwMaxBlockUs + asyncPumpUs / asyncPumpWaits, sim job waits sw* ('route jobs sim waits' line), it/s and hitches (node tools/harness/hitch-ab.ts). Pass: no crash, 0 watchdog lines, on arm rwTimeouts <= rwWaits / 10 (most parks end by a signal), sim waits and hitches within noise of the off arm. Timing: machine quiet (noisy-machine rule), no build agents meanwhile.",
+  "jobs": [
+    {
+      "id": "bp-rwait-smoke",
+      "note": "Smoke, 5 min BP, WorkerWait=1 for the whole run. Pass: no crash, rwMode = 1 (switch read back), rwBlocked >= 1 (the wait is reached), rwWaits >= 1, 0 watchdog lines.",
+      "asi": "game-copy/ts3native.asi.rwait1",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "minCounters": 142,
+      "nativeRequire": "rwMode>=1,rwBlocked>=1,rwWaits>=1,watchdogs<=0",
+      "ini": { "RouteAsync.WorkerWait": 1, "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 5, "noSamplers": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 15
+    },
+    {
+      "id": "bp-rwait-off",
+      "note": "BP plain play, WorkerWait=0 (the Sleep(0) loop, counted by rwBlocked / rwBlockUs / rwSleep0 / rwWorkerCpuMs).",
+      "asi": "game-copy/ts3native.asi.rwait1",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "minCounters": 142,
+      "nativeRequire": "rwMode<=0,rwBlocked>=1,watchdogs<=0",
+      "ini": { "RouteAsync.WorkerWait": 0, "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 10, "noSamplers": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 22
+    },
+    {
+      "id": "bp-rwait-on",
+      "note": "BP plain play, WorkerWait=1.",
+      "asi": "game-copy/ts3native.asi.rwait1",
+      "releaseDefaults": true,
+      "save": "Baseline-BP-Spring",
+      "minCounters": 142,
+      "nativeRequire": "rwMode>=1,rwBlocked>=1,rwWaits>=1,watchdogs<=0",
+      "ini": { "RouteAsync.WorkerWait": 1, "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 10, "noSamplers": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rwait-on",
+      "note": "IP plain play, WorkerWait=1.",
+      "asi": "game-copy/ts3native.asi.rwait1",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 142,
+      "nativeRequire": "rwMode>=1,rwBlocked>=1,rwWaits>=1,watchdogs<=0",
+      "ini": { "RouteAsync.WorkerWait": 1, "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 10, "noSamplers": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 22
+    },
+    {
+      "id": "ip-rwait-off",
+      "note": "IP plain play, WorkerWait=0.",
+      "asi": "game-copy/ts3native.asi.rwait1",
+      "releaseDefaults": true,
+      "save": "Baseline-IP-Spring",
+      "minCounters": 142,
+      "nativeRequire": "rwMode<=0,rwBlocked>=1,watchdogs<=0",
+      "ini": { "RouteAsync.WorkerWait": 0, "HitchAttr.Enabled": 1 },
+      "run": { "profile": { "seed": 12345, "minutes": 10, "noSamplers": true } },
+      "gameArgs": ["-disablestoryprogression"],
+      "timeoutMin": 22
+    }
+  ]
+}

@@ -576,7 +576,7 @@ static int __cdecl RtoAcqDecide(void* lock) {
             }
         } else if (k.rtoShadow) {
             InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
-            if (g_async.state == A_RUNNING) InterlockedDecrement(&g_rgOffSimOpen);
+            if (g_async.state == A_RUNNING) RgOffSimDrop();
             else st = RTO_SHADOW;
         }
     } else if (t_rtoN >= 8) {
@@ -692,7 +692,7 @@ static LONG __fastcall RtoRelStub(void* lock, void* edx) {
     if (st == RTO_ANSWERED) return 1;
     if (st == RTO_UFC) { InterlockedIncrement(&ts3native_counters.ufcNoRoute); return 1; }  // docs/202 C3: nothing held
     const LONG r = g_rtoRel(lock, edx);
-    if (st == RTO_SHADOW) InterlockedDecrement(&g_rgOffSimOpen);
+    if (st == RTO_SHADOW) RgOffSimDrop();
     return r;
 }
 

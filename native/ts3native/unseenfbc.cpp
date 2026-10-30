@@ -9,7 +9,7 @@
 // Owner (who counts as unseen) = docs/202 §2, decided by ts3fixes (UnseenFallback.cs UfWhy, switch unseenfbsites): it pushes
 // the ids of the unseen Sims every few sim ticks over the 0x83 channel (codes 7 BEGIN, 8 id low, 9 id high = append, 10 END
 // with the count, 14 C4 log query) about every 0.5 s. Out of live mode it pushes an empty list; a list older than 3 s counts
-// as none (nothing acts). Native
+// as none (nothing acts); in Build/Buy (scripts paused, no push) the routing world's build/buy byte drops the list (UfcFresh). Native
 // checks on top, at the moment of the wait: the game's frustum and the reach rule (unseen.cpp class 1) on the Sim itself,
 // plus, for C1 / C2, EA's on-screen byte agent+0xC8 off, a walking Sim (state 1), its own agent part, not a rider, no
 // group link (the [UnseenThrottle] holds).
@@ -51,6 +51,8 @@ static UfcIds g_ufcList, g_ufcIn;
 static bool g_ufcInOpen;
 static DWORD g_ufcInLo;
 static void UfwSweep();
+static bool UfcBuildBuy();
+static volatile LONG g_ufcBbPend;  // §3.4.4: poll thread sets, sim thread clears (drop) or a push after the exit clears
 
 static u8 UfcListMsg(int code, DWORD lo) {
     Ts3nCounters& k = ts3native_counters;
@@ -73,11 +75,61 @@ static u8 UfcListMsg(int code, DWORD lo) {
     g_ufcList.at = now ? now : 1;  // never ahead of GetTickCount (an `| 1` could be: the age test then wraps)
     k.ufcList = g_ufcList.n;
     k.ufcPushes++;
+    if (!UfcBuildBuy()) g_ufcBbPend = 0;  // a live-mode list after the exit: nothing left to drop (§3.4.4)
     UfwSweep();  // holds of Sims no longer listed as finishable end now (they walk on)
     return 1;
 }
 
-static bool UfcFresh() { return g_ufcList.at && GetTickCount() - g_ufcList.at <= kUfcListAgeMs; }
+// docs/202 §3.4.3 (0.36.111): Build/Buy needs no script. In Build/Buy scripts pause, so ts3fixes cannot push the empty
+// out-of-live list and the last live list would act for up to kUfcListAgeMs (sv-ufc-buildbuy 10-28: C sites tried and faked
+// in Buy mode). The routing world's own build/buy byte world+0x97B (RoutingWorld_OnMessage 0x835300: set at 0x835818 on
+// message 0x4E11976, cleared at 0x8357FB on 0x4E119BB; RoutingSystem_OnExitBuildBuy 0x835240 tests it first) [verified raw
+// bytes, docs/100 §65] is read through the job's lock (world+0x918, g_rgLock). Seen set = the list is dropped, so after the
+// exit nothing acts until ts3fixes pushes a fresh live-mode list. Live mode: the byte is 0, behaviour unchanged.
+static LONG g_ufcBbDrops;  // log line only (v139 block is full); sim thread only
+static bool UfcBuildBuy() {
+    const u8* lock = (const u8*)g_async.lock;
+    if (!lock) return false;
+    __try { return lock[0x97B - 0x918] != 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+// docs/202 §3.4.4 (0.36.117): the byte read above only runs when a C site asks, and Build/Buy pauses the sim, so no site asks
+// there (sv-ufc-buildbuy 10-29: lists dropped 0). A poll thread (UfcBbThread) watches the byte every 10 ms: an entry sets
+// g_ufcBbPend so the pre-entry list is dropped at the first ask after the exit too, and ufcBb[3] (v140 spare slots) count
+// spans, tries while the byte stayed set (must stay 0), and tries in the 3 s after an exit (live mode: the window tails).
+static bool UfcFresh() {
+    if (UfcBuildBuy() || (g_ufcBbPend && InterlockedExchange(&g_ufcBbPend, 0))) {
+        if (g_ufcList.at) g_ufcList.n = 0, g_ufcList.at = 0, ts3native_counters.ufcList = 0, g_ufcBbDrops++;
+        return false;
+    }
+    return g_ufcList.at && GetTickCount() - g_ufcList.at <= kUfcListAgeMs;
+}
+// The Build/Buy span watch (§3.4.4), poll thread only (the selftest calls UfcBbPoll with its own clock)
+static const DWORD kUfcBbTailMs = 3000;
+static struct { bool in; LONG last; DWORD exitAt; DWORD enterAt; LONG triesAt; int lines; } g_ufcBbW;
+static void UfcBbPoll(DWORD now) {
+    Ts3nCounters& k = ts3native_counters;
+    const bool b = UfcBuildBuy(), wasIn = g_ufcBbW.in;
+    const LONG t = k.ufcTry[0] + k.ufcTry[1] + k.ufcTry[2] + k.ufcTry[3], d = t - g_ufcBbW.last;
+    g_ufcBbW.last = t;
+    if (b != wasIn) {
+        g_ufcBbW.in = b;
+        const bool log = g_ufcBbW.lines < 64;
+        if (log) g_ufcBbW.lines++;
+        if (b) {
+            k.ufcBb[0]++, g_ufcBbPend = 1, g_ufcBbW.enterAt = now, g_ufcBbW.triesAt = t;
+            if (log) Log("unseen fallback sites: build/buy entered (span %ld), list dropped at the next ask", k.ufcBb[0]);
+        } else {
+            g_ufcBbW.exitAt = now ? now : 1;
+            if (log) Log("unseen fallback sites: build/buy left after %lu ms, C-site tries meanwhile %ld (the gate allows none)",
+                         now - g_ufcBbW.enterAt, t - g_ufcBbW.triesAt);
+        }
+    }
+    if (b && wasIn) k.ufcBb[1] += d;  // both polls saw the byte set (edge intervals are ambiguous: not counted here)
+    else if (!b && g_ufcBbW.exitAt && now - g_ufcBbW.exitAt < kUfcBbTailMs) k.ufcBb[2] += d;
+}
+static DWORD WINAPI UfcBbThread(void*) {
+    for (;;) UfcBbPoll(GetTickCount()), Sleep(10);
+}
 // index of the id in the current list, -1 = not listed
 static int UfcFind(DWORD lo, DWORD hi) {
     for (int i = 0; i < g_ufcList.n; i++)
@@ -446,11 +498,13 @@ static void UfcLogCounters() {
     const Ts3nCounters& c = ts3native_counters;
     Log("unseen fallback sites: mode %ld wait %ld ms list %ld (pushes %ld bad %ld stale %ld); try/got/timeout/fake/recover/seen "
         "C1 %ld/%ld/%ld/%ld/%ld/%ld C2 %ld/%ld/%ld/%ld/%ld/%ld C3 %ld/%ld/%ld/%ld/%ld/%ld (no route %ld) C4 %ld/%ld/%ld/%ld/%ld/%ld; "
-        "longest wait %ld ms; C4 capped %ld",
+        "longest wait %ld ms; C4 capped %ld; lists dropped in build/buy %ld; build/buy spans %ld, tries inside %ld, "
+        "tries in the 3 s after an exit %ld",
         c.ufcMode, c.ufcWaitMs, c.ufcList, c.ufcPushes, c.ufcPushBad, c.ufcStale, c.ufcTry[0], c.ufcGot[0], c.ufcTimeout[0],
         c.ufcFake[0], c.ufcRecover[0], c.ufcSeen[0], c.ufcTry[1], c.ufcGot[1], c.ufcTimeout[1], c.ufcFake[1], c.ufcRecover[1],
         c.ufcSeen[1], c.ufcTry[2], c.ufcGot[2], c.ufcTimeout[2], c.ufcFake[2], c.ufcRecover[2], c.ufcSeen[2], c.ufcNoRoute,
-        c.ufcTry[3], c.ufcGot[3], c.ufcTimeout[3], c.ufcFake[3], c.ufcRecover[3], c.ufcSeen[3], c.ufcMaxWaitUs / 1000, g_ufcC4Capped);
+        c.ufcTry[3], c.ufcGot[3], c.ufcTimeout[3], c.ufcFake[3], c.ufcRecover[3], c.ufcSeen[3], c.ufcMaxWaitUs / 1000, g_ufcC4Capped, g_ufcBbDrops,
+        c.ufcBb[0], c.ufcBb[1], c.ufcBb[2]);
     if (c.ufwReady)
         Log("unseen fallback finish walk: mode %ld flagged %ld holds %ld (held now %d, most %ld, full %ld) plain waits %ld held passes %ld "
             "claims %ld; ended finished %ld given up %ld seen %ld expired %ld",
@@ -506,6 +560,10 @@ static bool ApplyUnseenFallbackSites(const wchar_t* ini) {
     Log("%s unseen fallback sites: ready 0x%lX (bit 0 C1 obstacle list, 1 C2 avoidance, 2 C3 route-to-object check, 3 C4 placement, "
         "4 script task owner, 5 agent context), wait %ld ms, mode %ld; needs ts3fixes unseenfbsites (the unseen list)",
         (k.ufcReady & 31) == 31 ? "OK  " : k.ufcMode ? "PART" : "FAIL", k.ufcReady, k.ufcWaitMs, k.ufcMode);
+    if (k.ufcMode) {  // §3.4.4 Build/Buy span watch
+        if (HANDLE t = CreateThread(NULL, 64 * 1024, UfcBbThread, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL)) CloseHandle(t);
+        else Log("SKIP unseen fallback sites build/buy watch: CreateThread failed (%lu)", GetLastError());
+    }
     // §3.4.2 FinishWalk: holds instead of the C1 / C2 fakes; the hold is the agent-update thunk's skip (needs bit 5)
     if (GetPrivateProfileIntW(L"UnseenFallback", L"FinishWalk", 0, ini)) {
         if ((k.ufcReady & 32) && (k.ufcReady & 3)) {

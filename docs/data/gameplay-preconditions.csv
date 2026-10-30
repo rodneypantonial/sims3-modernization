@@ -11,10 +11,11 @@ method_handle,HarnessHandlers,Any,none (our patches),harness,,handler,none
 patch_test_cold,HarnessHandlers,Any,none (our patches),harness,,handler,none
 patches,HarnessHandlers,Any,none (our runtime switches),harness,,handler,none
 play_household,HarnessHandlers,EditTown,Edit Town > Play household,natural,household with a home lot,handler + R-MODE-5,none
-play_existing,HarnessHandlers,EditTown,New game family picker > Play arrow on an existing family (PlayFlowModel.PlayExisting),natural,play flow up (load_world state PlayFlow) and a household with a home lot,handler + PlayFlowModel.PlayExisting,none
-ui_single_task_probe,HarnessHandlers,EditTown,none (harness check: queues a UI single task like the Play arrow),harness,none,handler + Sims3.UI.OneShotFunctionTask singleTask,none
+play_existing,HarnessHandlers,EditTown;Map,New game family picker > Play arrow on an existing family (PlayFlowModel.PlayExisting),natural,play flow up (load_world state PlayFlow) and a household with a home lot,handler + PlayFlowModel.PlayExisting,none
+ui_single_task_probe,HarnessHandlers,Any,none (harness check: queues a UI single task like the Play arrow),harness,none,handler + Sims3.UI.OneShotFunctionTask singleTask,none
 ui_single_task_result,HarnessHandlers,Any,none (harness check: result of ui_single_task_probe),harness,none,handler,none
 quit_game,HarnessHandlers,Any,Options > Quit,natural,,handler,none
+main_menu,HarnessHandlers,Live,Options > Quit to Main Menu > Quit without Saving (save_game first),natural,in a world; not in CAS / Build / Buy; no save running,handler,none
 auto_dialog,HarnessHandlers,Any,answering a popup (player clicks OK/Cancel),natural,,handler,none
 enter_live_mode,HarnessHandlers,Live;Build;Buy;EditTown;CAS,Live button / Play from Edit Town,natural,,handler + R-MODE-1,none
 reflect_call_async,HarnessHandlers,Any,none (raw script call),cheat,a raw call can do anything: label the repro by what the path does,handler,none
@@ -175,3 +176,13 @@ uni_move_in,TravelHandlers,Travel,moving into the dorm on arrival,natural,Univer
 saver_like_save,SaverHandlers,Live,a mod autosave (NRaas Saver style: script task while unpaused) - Save / Save As,natural,not while traveling to or from another world; refuses Baseline-/Story-/ApexTest names,none,none
 save_watch,SaverHandlers,Live,none (observes the game save-in-progress flag),natural,-,handler,none
 pick_sims,SimHandlers,Any,none (read: picks Sims by age for later steps),harness,,handler,none
+picker_state,StartPathHandlers,Any,none (read: family picker flow and state),harness,,handler,none
+enter_play_flow,StartPathHandlers,Live,Edit Town / Options > Change Active Household (the family picker from live mode),natural,live mode,handler + GameStates.TransitionToPlayFlow,live
+picker_play,StartPathHandlers,Map,family picker: pick a family in town > approve > Play arrow,natural,family picker up; a household with a home lot,handler + PlayFlowInWorldFlow,none
+picker_bin,StartPathHandlers,Map,family picker: library household (no lot) > approve,natural,family picker up; a household-only bin entry with an affordable lot,handler + PlayFlowImportFlow,none
+picker_cas,StartPathHandlers,Map,family picker: Create a new household (CAS),natural,family picker up,handler + PlayFlowModel.GotoCAS,none
+picker_lot,StartPathHandlers,Map,family picker: click an empty lot on the map (purchase dialog),natural,library or CAS flow with a chosen household,handler + PlayFlowImportFlow / PlayFlowCASFlow MaptagSelected,none
+picker_confirm,StartPathHandlers,Map,purchase dialog: furnish choice + Purchase,natural,purchase dialog open,handler + PlayFlowConfirmPurchaseLot,none
+picker_nav,StartPathHandlers,Map,family picker: Play arrow (or Cancel),natural,family picker up,handler + PlayFlowController.IFlow.OnNavigation,none
+et_move_lot,StartPathHandlers,Live;EditTown,Edit Town: Move lot tool > pick a lot > pick an empty plot > Accept,natural,Edit Town (action enter from live mode); a built residential lot without household and a free plot it fits,handler + EditTownMoveRotateTool,none
+posture_chain_check,HitchReproHandlers,Any,none (read: Sims whose posture chain loops; issue #89),harness,,handler,none

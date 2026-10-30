@@ -1,0 +1,99 @@
+{
+  "note": "mono-cost12: ts3native 0.36.122 (asi.mono-cost12, docs/122 §14.20, ledger §396): [AutShadow] Mode R on BP and IP with the mono-cost11 keys; IP WindowWaitUs 5000 -> 10000 (mono-cost11 IP: all 117 overruns were jobs past the 5 ms test wait, workMaxUs 5144, overrunIdle 0). New in the build: typed marks (ts3fixes classifies queued objects against the list types at each request, contract Version 7; a classified object's new/gone/lot/room/lost mark dirties only the rows of its types; lot-vector print changes take the classes of the cut's unplaceable objects), typed ListAudit (every other cut with a typed-kept row audits one), autshadow v13. mono-cost11: BP cut 1.19 ms (36% of scoring moved, FAIL; list bodies 0.425 ms, 6.9 a cut, all same: gone 4.0, lite 2.8, new 2.9 rows), IP 0.69 ms (15%, PASS), A1-A3 0. Goal: BP cut <= ~0.75 ms (<= 25%), A1-A3 0, listMissed 0, typedAuditMis 0. Correctness + cut cost, 2 x 10 min, ~30 min. Read with node tools/harness/mono-cost-report.ts --tag mono-cost12.",
+  "jobs": [
+    {
+      "id": "bp-autshadow-r",
+      "note": "1/2 Mode R on 0.36.122 (docs/122 §14.20). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v13: learned > 0, auditMis 0, listMissed 0, typedAuditMis 0 (> 0 = an object's class or the no-reorder rule I-396-1 is wrong: read the 'list audit miss (typed)' log lines), dirtyTripped 0, seedFull 0, clsSet > 0, typedAuditN > 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0; ts3fixes log: no 'AutShadow: ts3native contract version' line (wants 7), no 'object classes:' exception note. Read: the typed marks line (typedKept, liteTyped), the dirtying line (rowWhy gone/new/lite ~0 expected), list bodies per cut (BP 6.9 -> ~1-2 expected), cut per cut (BP ~0.7-0.85 ms, IP ~0.5-0.6), the go-live estimate line (cut share <= 25%), A5 overruns (IP ~0 with WindowWaitUs 10000). Any crash: stop and triage against 0.36.119.",
+      "asi": "game-copy/ts3native.asi.mc12",
+      "fixesPackage": "game-copy/ts3fixes.package.mc12",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000,
+        "AutShadow.RowHot": 200
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-r",
+      "note": "2/2 Mode R on 0.36.122 (docs/122 §14.20). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v13: learned > 0, auditMis 0, listMissed 0, typedAuditMis 0 (> 0 = an object's class or the no-reorder rule I-396-1 is wrong: read the 'list audit miss (typed)' log lines), dirtyTripped 0, seedFull 0, clsSet > 0, typedAuditN > 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0; ts3fixes log: no 'AutShadow: ts3native contract version' line (wants 7), no 'object classes:' exception note. Read: the typed marks line (typedKept, liteTyped), the dirtying line (rowWhy gone/new/lite ~0 expected), list bodies per cut (BP 6.9 -> ~1-2 expected), cut per cut (BP ~0.7-0.85 ms, IP ~0.5-0.6), the go-live estimate line (cut share <= 25%), A5 overruns (IP ~0 with WindowWaitUs 10000). Any crash: stop and triage against 0.36.119. Run after 1/2 passed.",
+      "asi": "game-copy/ts3native.asi.mc12",
+      "fixesPackage": "game-copy/ts3fixes.package.mc12",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 10000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000,
+        "AutShadow.RowHot": 200
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

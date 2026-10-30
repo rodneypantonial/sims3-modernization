@@ -9,13 +9,15 @@ Tags: **[verified, docs/N]** = verified there, not re-read here; **[inferred]** 
 ## Summary
 
 - **Hand-off point [design]:** the meta phase of a manager search. At entry of `Autonomy.ScoreInteractionsForMetaAutonomy` (docs/59 B13), the existing ts3fixes B13 hook (docs/122 §14.5) posts the request and yields once (`Sleep(0)`, the same kind of yield B13 already makes at its Y2 sites). The cut runs at the return of `MonoScriptHost_Simulate` `0xD81840` of that tick [verified, docs/122 §14.1], the worker scores in the native tail, and the result is marked ready at the top of the next Simulate. When the manager task resumes in tick t+1, the hook runs the **game's own B13** (`Orig`). A new hook on **B14 `ScoreInteractionsForMetaObject`** consumes the result per meta object: for an object with a valid worker result it sends only the selected ads through the game's own C1 `CalculateScoreAndAddToCandidates`, so they are tested and scored **live** and enter `BestScores` exactly as in vanilla. Every other object runs the game's B14 unchanged.
-- **Selected ads = the worker's top N (default 20) passing pairs** across the whole meta list (none of the 12 definitions has `AlwaysChooseBest` in the shipped tuning, §13.3; a pair whose runtime tuning has it sends its object to the game's B14), plus a margin check that pulls in the next band when the live scores come out lower than the worker predicted. `BestScores` keeps the top 10 (docs/59 D1), so every candidate D2 draws from has been tested and scored on live state. Staleness can only drop a pair the worker rejected or ranked low on a one-tick-old view; the next search sees it again.
+- **Selected ads = the worker's top N (default 10 since 2026-10-30, §16.1; was 20) passing pairs** across the whole meta list (none of the 12 definitions has `AlwaysChooseBest` in the shipped tuning, §13.3; a pair whose runtime tuning has it sends its object to the game's B14), plus a margin check that pulls in the next band when the live scores come out lower than the worker predicted. `BestScores` keeps the top 10 (docs/59 D1), so every candidate D2 draws from has been tested and scored on live state. Staleness can only drop a pair the worker rejected or ranked low on a one-tick-old view; the next search sees it again.
 - **Staleness:** result level (age > 1 tick, checked again at every B14 call because B13 can yield between objects, §13.1; world epoch, actor destroyed, lot or LOD change, head interaction, interrupted search, an actor field compare instead of an event listener, §13.4; tuning generation, save/travel/build) means the whole result is dropped and the game's B13 runs as today. Object level (object events `6`, `0x0B`/`0x0C`, `0x18`, `0x21`, `0x12` for the object; per-lot generation from object events `4`/`6` and world event `0x11`; lot events `0x0D`-`0x10`, `0x46`) means that object runs the game's B14. Pair level is covered by the live re-test of every selected pair.
 - **RNG:** the decision draws (D2 choice, D4 interrupt chance) stay on the sim thread. Pet actors abort on the worker (`rng`) and score live, in B13 order. What changes are the tooltip draws in `Localization.FillInTokens` for pairs whose `Test` failed on the worker: vanilla makes them and throws the text away, go-live skips them. Picks stay **equal in distribution**, not path-equal; seeded runs (docs/27 `seed_rng`) repeat only within one go-live setting.
 - **Mods:** everything docs/122 §4.1 and §14.5 guard (assembly MVIDs, per-method L3 integrity, exact runtime types) plus the consumer path itself: 18 methods, 13 of them new (§13.5); a hit there turns go-live off for the load. Side searches from mods (NRaas StoryProgression and others) never reach the hand-off and invalidate an in-flight result, as vanilla aborts a parked search.
 - **Gates:** G7 dry apply (predicted top 10 vs the game's own search on the same tick), G8 behaviour in distribution (seeded on/off), G9 cost and stability (clean-night ABBA plus two clean runs per world).
-- **Effort:** ~10-18 h on top of the pilot, **9-11 game jobs and 1-2 clean nights** (§10). Net sim-thread effect -18 to +10 ms/s [inferred, §8.3]: an offload step under the 2% rule, not a speed win, as docs/59 §3.3 and docs/97 §1 already said.
-- **Top risks:** net cost (M5 fixed cost plus the per-search cut at `Sample=1`), staleness bias in which pairs reach the top 10, and M5 in game (the worker has not interpreted in the game yet; the P4 TLS fix landed in 2f4c595) (§11).
+- **Effort:** ~10-18 h on top of the pilot, **9-11 game jobs and 1-2 clean nights** (§10). Net sim-thread effect -18 to +10 ms/s [inferred, §8.3]: an offload step under the 2% rule, not a speed win, as docs/59 §3.3 and docs/97 §1 already said. **Superseded 2026-10-29 by §14** (Mode R measured in game): the M5 GC lock cost goes away with `LazyGate=1`, the per-search cut is now the deciding cost; plan S1-S6 ~12-23 h, ~18-20 game jobs, 1-2 clean nights; net +4 to +18 ms/s if the cut reaches <= 0.5 ms per search, -11 to +10 ms/s at today's cut [inferred]. **Gate G-C changed 2026-10-29 (§14.3a):** cut cost <= ~25% of the scoring it moves, both per second at the go-live rate, instead of a fixed <= 0.5 ms per search.
+- **Top risks:** net cost (M5 fixed cost plus the per-search cut at `Sample=1`), staleness bias in which pairs reach the top 10, and M5 in game (the worker has not interpreted in the game yet; the P4 TLS fix landed in 2f4c595) (§11). Update 2026-10-29: the worker has interpreted in game (mono-cost6: 1,691 jobs, 0 exceptions, 0 crashes); the cut is now risk 1 (§14.3).
+- **Worker window (2026-10-30, docs/206):** the §2.2 row "worker scores in the native tail of t" does not hold: the quiescent gap between Simulate iterations is ~10 us (docs/122 §14.20), the native span inside an iteration (BP ~3.3, IP ~2.2, SV ~1.4 ms) calls C# synchronously (route events 57/58, SACS event pushes), and a copied heap costs more than a job moves. **Chosen: copy on first write** (docs/206 §3.3): from the cut to the worker's end the sim logs the old value of every managed word it overwrites, the worker's loads check the log, so §3.4's in-place reads see the cut while the sim runs t+1 (window ~26-32 ms, overruns ~0, ~1-2.5 ms/s barrier [inferred]); S0 store-rate probe first, then ~15-24 h and 6-10 jobs before S2.
+- **Consume cost (2026-10-30, §15, offline from mono-cost11):** live C1 for the top 20 pairs costs ~9-20 ms/s on the sim, and IP overruns (17-44% of searches) cost another 8-16. Net after consume at `TopN` 20 is BP -4.9 to +1.3 and IP -3.6 to +8.2 ms/s; the range is the pass share, which nothing counts yet. Break-even N is BP 8-16 and IP 9-30. `TopN` 10 gives BP +1 to +5 and IP +2 to +16 [inferred]. Before S2: count the pass share, make 10 the default `TopN`, fix the IP overruns. **Decided 2026-10-30 (§16):** `TopN` 10 with an exact band rule, a per-ad rule for mixed meta objects, scores stay exact (no Test-only option). Net with band 1 only: BP +1.0 to +4.9, IP +2.3 to +15.7 ms/s [inferred].
 
 ## 1. Starting point
 
@@ -71,15 +73,15 @@ Why the consumer is B14 and not a new B13 [design]: the game's B13 keeps every r
 | Object not in the request (list changed) | game's B14 |
 | Object invalidated since the cut (§3.2) | game's B14 |
 | Object `skip` or aborted on the worker (A4 reason: `rng`, `row`, `pos`, `memo`, `query`, `sf`, `privacy`, `roomcache`, `simstale`, `exc` ...) | game's B14 |
-| Object has an ad of a non-allow-listed definition or a mod type | game's B14 (re-scores the allow-listed ads too; small) |
-| Valid, all ads allow-listed | for each **selected** ad of this object, in `MetaAds` order: identity check (same ad reference, same `MetaAds` count as at the cut, else game's B14 for the object), then the game's C1 with the same pair object B14 would pass. Unselected ads: nothing |
+| Object has an ad of a non-allow-listed definition or a mod type | ~~game's B14 (re-scores the allow-listed ads too; small)~~ Changed 2026-10-30 (§16.2): no full-object fallback; the per-ad rule of §16.2 sends the non-allow-listed ads through C1 and takes the allow-listed ones from the worker |
+| Valid | for each **selected** ad of this object, in `MetaAds` order: identity check (same ad reference, same `MetaAds` count as at the cut, else game's B14 for the object), then the game's C1 with the same pair object B14 would pass. Unselected ads: nothing |
 
 C1 does the check-table dedupe (C1a), C2 (live `Test` + score) and `BestScores.Add` [verified, docs/59 C1]. So `BestScores` and `InteractionCheckTable` are filled by the game's code with live values; the hook only chooses which pairs reach C1. The worker already applied B14's commodity filter (`Tradeoff.SatisfiesCommodity` / `MetaAdSatisfiesCommodity`) to the same commodity kind [verified as built, docs/122 §14.5], so every selected ad passed it.
 
 ### 2.5 Selection (computed once, at resume, before the game's B13)
 
 1. Collect worker pairs with code 0 (pass) from valid objects, sort by worker score.
-2. Select the top `TopN` (default 20, twice the `BestScores` capacity of 10 [verified, docs/59 D1]).
+2. Select the top `TopN` (default 20, twice the `BestScores` capacity of 10 [verified, docs/59 D1]). **Changed 2026-10-30:** default 10, and the band rule of step 4 is replaced by §16.1.
 3. ~~For each allow-listed definition whose tuning has `AlwaysChooseBest`: also select its best pair.~~ Dropped after S4 [verified, §13.3]: none of the 12 has it in the shipped tuning, so the per-definition best-pair rule is replaced by the guard row of §2.4 (an object with such an ad runs the game's B14, which keeps `BestScores`' remembered-best handling exactly as vanilla).
 4. **Margin check** (after the game's B13 returns, still in the hook): let `s10` = the 10th live score in `BestScores` (or the lowest if fewer than 10) and `w` = the best worker score among unselected pairs. If `w × (1 + Margin) ≥ s10` (default `Margin` = 0.05 [design; G7 sets it]), send the next `TopN` band through C1 (same identity checks), up to `Bands` (default 3); after that, the game's B14 for every remaining valid object. Counted (`alBand2`, `alBand3`, `alBandFull`).
 
@@ -163,7 +165,7 @@ The fallback is always the game's own code on the sim thread: the game's B13 (re
 
 ### 7.1 Switches
 
-- Ini `[AutShadow]`: `Mode=3` (live; 0/1/2 as docs/122 §4.3). New keys, all ignored unless `Mode=3`: `TopN=20`, `Margin=0.05`, `Bands=3`, `MaxAge=1`, `VerifyEvery=50` (every 50th live search also runs the Mode R reference at the cut with the MT saved and restored; an A2/A3 there turns live off for the session), `Dry=0` (G7: compute and compare, do not use; §8.1). `Sample` is honoured (1 = every eligible search; larger = staged roll-out).
+- Ini `[AutShadow]`: `Mode=3` (live; 0/1/2 as docs/122 §4.3). New keys, all ignored unless `Mode=3`: `TopN=10`, `Margin=0` (both changed 2026-10-30, §16.1; were 20 and 0.05), `Bands=3`, `MaxAge=1`, `VerifyEvery=50` (every 50th live search also runs the Mode R reference at the cut with the MT saved and restored; an A2/A3 there turns live off for the session), `Dry=0` (G7: compute and compare, do not use; §8.1). `Sample` is honoured (1 = every eligible search; larger = staged roll-out).
 - ts3fixes switch `autlive` (on/off for `--ab`), off by default; tuning `kAutLive` false. AGENTS.md rule: every new switch defaults off; nothing here changes save data.
 
 ### 7.2 Counters (reserve in `docs/registry.md` at build time, not here)
@@ -349,3 +351,228 @@ So the only same-identity change of actor state that moves a `Test` verdict in t
 The docs/122 request already lists them: `AutShadow.TryRequest` (ts3fixes) adds, after the public meta objects and `mLotsKnownAbout` (only when `CanRunFullMetaAutonomy`), the actor's `LotCurrent`, `LotHome` when it differs from `LotCurrent`, and `CareerLocation`, all only when `CanRunLocalAutonomy`: the same 4 sites and order as B13 (§13.1). `AddObj` also rows each object's lot. No change to the object list. Two small differences, both safe: `AddObj` skips destroyed objects on every site (B13 checks only in the public loop) and stops at `kMaxObjs`; such an object is "not in the request" and runs the game's B14.
 
 The go-live change to the request is the §3.1 compare, not objects: `Request` gains the age and species bits, `LotCurrent` (already read for the list; stored for the §3.1 lot rule), `LotHome`, `Household`, `IsSelectable`, `AssignedRole`, `Occupation`, `JobCount`, `CurrentJob`, `CareerLocation` and the chip flag, filled in `TryRequest` before `Post`.
+
+## 14. Go-live plan after the first in-game Mode R (2026-10-29)
+
+Static update from measured runs; no build or game run for this section. Ledger: docs/51 §385. Sources: docs/122 §14.12-§14.15 (Mode R rounds mono-cost3 to mono-cost6), docs/30 §15 (GC lock entry cost, lazy gate), docs/51 §376-§383, PLAN.md "Mono goal 2026-10-29", reports `probe-out/queue/monocost5-1029-report.txt` and `monocost6-1029-report.txt` (`tools/harness/mono-cost-report.ts`), and the v0.2.4 release sim budget `probe-out/queue/simbudget-v024-report.txt` (docs/160). mono-cost7 (0.36.112: x87/MXCSR fix, `ColdIc=1`, cut phase counters) is running in tonight's chain; its numbers are not in this section.
+
+### 14.1 What Mode R proved [measured unless marked]
+
+All from mono-cost6 (`[AutShadow] Mode=1 Sample=4 WindowWaitUs=5000`, `[MonoThread]` P3+P4, LazyGate off), BP rerun and IP, 10 min each, 0 crashes, 0 worker exceptions.
+
+| Fact | BP | IP | Note |
+|---|---|---|---|
+| Worker jobs (requests) | 835 | 856 | ~1.6 per s at `Sample=4`; 0 `Begin busy`, 0 `noWorker` |
+| Compared pairs, bit-equal (A0 of compared) | 25,071 of 25,112 = **99.84%** | 36,775 of 36,793 = **99.95%** | A3 0 on both worlds |
+| A1 / A2 | 8 / 33 | 6 / 12 | all in two groups: G1 x87/MXCSR rounding (1-~200 ULP, cause inferred, fixed in 0.36.112) and G2 gardening count read (verified, fixed); docs/122 §14.15 |
+| Hit rate = compared share of allow-listed pairs | 78.7% (A4 21.3%) | 84.2% (A4 15.5%) | off-allow-list skips (BP 26,813, IP 39,033) are out of A0-A5 since 0.36.112; G-A4 limit is A4 < 20% |
+| A4 by reason (pairs) | row 4,784, desirefn 1,423, rain 308, simstale 142, list 111 | row 4,504, desirefn 1,344, rain 712, simstale 27, list 66 | `row` = first reads of objects with no rows (0.36.112 adds object and Sim-parent rows); `desirefn` = H5, `rain` = H11 by design |
+| Overruns (worker not done at window close) | 12 (1.4%) | 104 (12%) | with the 5 ms window wait (Mode R only); go-live consumes one tick later (§2) |
+| Answer table | max 6,817 rows, evicted 0, refused 0 | max 5,011 rows, evicted 0, refused 0 | 8,192-row table is large enough on both worlds |
+| Lazy GC lock, idle worker (`bp-mt-idle-worker-lazy`, mono-cost5) | **0 locked entries** in 529 s (vs 290.6 M = 484k/s with the gate always on, `bp-mt-idle-worker-rerun`) | - | lazy gate with jobs has not run yet: mono-cost6/7 run LazyGate off |
+
+What it does not prove yet: the x87 fix (A1 = A2 = 0) and the cut split (mono-cost7, running); the lazy gate under jobs; anything about the apply step (G7-G9).
+
+### 14.2 Measured costs on the sim thread
+
+Per request = per sampled meta search at `Sample=4`. "At Sample=1" multiplies by 4 [inferred: sampling is 1 in 4 of eligible searches, so cost and moved work scale together].
+
+| Cost | BP | IP | Kind | Paid by go-live? |
+|---|---|---|---|---|
+| Cut + snapshot | 4.3 ms/s, avg **3.07 ms** per cut (max 16.5 ms) | 2.3 ms/s, avg **1.63 ms** (max 5.5 ms) | measured | **yes**, once per search: 17.2 / 9.2 ms/s at Sample=1 [inferred] |
+| Guard thunks (all EA ICs) | 104.2k calls/s x 17 ns = 1.8 ms/s | 93.6k calls/s x 17 ns = 1.6 ms/s | calls measured, ns from selftest = inferred | yes, fixed (independent of Sample) |
+| GC lock, gate always on | 555k entries/s x 68 ns = 37.8 ms/s | 536k/s = 36.4 ms/s | entries measured, ns selftest (docs/30 §15) = inferred | no: go-live requires `LazyGate=1` |
+| GC lock, lazy gate | idle: 0 entries [measured]; with jobs: locked only while the worker runs, ~2% of the second at Sample=1, so ~11k entries/s, ~0.8 ms/s [inferred] | same | contended waits measured at Sample=4: 21 waits, ~0 ms | yes, small |
+| Reference re-score | 5.6 ms/s (~3.5 ms per request) | 7.1 ms/s (~4.4 ms) | measured | **no**: Mode R test cost only (it is the work go-live moves) |
+| Window wait (`WindowWaitUs` 5000) | 4.6 ms/s | 6.2 ms/s | measured | **no**: Mode R test cost only; go-live does not wait |
+| Worker scoring (on the worker thread) | 4.5 ms/s (~2.9 ms per job) | 6.1 ms/s (~3.7 ms) | measured | not a sim cost |
+
+The mono-cost report's stop-rule line ("worker adds 40-44 ms/s, STOP") is the gate-always-on configuration; it is not the go-live configuration. With the lazy gate the fixed cost falls to guard + lock ~2.4-2.6 ms/s [inferred], and the cut becomes the cost that decides.
+
+### 14.3 Expected gain [inferred]
+
+Work moved off the sim thread = the eligible meta scoring the reference measures (5.6-7.1 ms/s at Sample=4, so **22-28 ms/s at Sample=1**, matching §8.3's ~23 and ~50-60% of the 44-51 ms/s autonomy-search owner in the v0.2.4 sim budget) times the hit rate (79-84%): **~18-24 ms/s**. Costs at Sample=1: cut (above), guard 1.6-1.8, lazy lock ~0.2-1, live re-score of the selected bands at apply 2-6 (§8.3, pairs per search still unmeasured), request build 1-3.
+
+| Cut per search | Cut ms/s at Sample=1 | Net on the sim thread |
+|---|---|---|
+| today (1.6-3.1 ms) | 9-17 | **-11 to +10** |
+| ColdIc estimate (~1.0-1.3 ms BP, docs/122 §14.15) | 4-8 | **-2 to +15** |
+| target <= 0.5 ms | <= 3.3 | **+4 to +18** |
+
+All three rows are [inferred]; the cut row is the only one with a measured input that mono-cost7 replaces. PLAN.md's goal (>= ~10 ms/s net) needs the target row.
+
+### 14.3a Gate G-C as a share: cut <= ~25% of the scoring it moves (2026-10-29)
+
+The 0.5 ms per search target assumed one cut per search and a fixed ~5 ms of scoring per search. Neither holds any more: docs/122 §14.18 shares one cut among every request posted before it (cut cost per second scales with frames that have a B13 call, not with searches), and the scoring per search differs by world (mono-cost9 reference ~4.4 ms per request on IP, ~3.4 on BP [measured: refUs / requests]). What decides the plan is the net per second: moved - cut - fixed costs. So G-C is now **cut ms/s <= ~25% of scoring moved ms/s**, both at the go-live rate [inferred, `mono-cost-report.ts` "go-live estimate" line: moved = reference us per request x every B13 call per second x the answered share (1 - A4); cut = cut ms x frames with a B13 call per second]. Why 25%: the fixed costs (guard 1.6-1.8, lazy lock ~0.2-1, apply re-score 2-6, request build 1-3 ms/s, §14.3) take another ~5-12 ms/s, so at the 22-28 ms/s this plan moves, a cut at 25% (5.5-7 ms/s) still leaves net ~+3 to +17 ms/s, the same band as the old target row; a cut at 50% leaves at most ~+9 and often <= 0 (the old "today" row). Stop rule: cut > 50% of moved after two cut rounds stops the go-live (as the old "> 1 ms per search" rule did).
+
+### 14.4 Build plan, gates and stop rules
+
+| Step | Work | Gate (pass) | Stop rule | Agent hours | Game jobs |
+|---|---|---|---|---|---|
+| S0 (running) | mono-cost7 Mode R: x87 fix, ColdIc, cut phases | G-A4: A2 = A3 = 0, A1 = 0 or explained, A4 < 20% of allow-listed pairs on BP and IP; 0 crashes; second clean run per world (crash rule) | an A2/A3 record that the snapshot cannot explain: fix before S1 | - | 2 (+2 reruns) |
+| S1 cut to budget | from mono-cost7's split: per-lot list generation if `bodyListUs` leads, cold rows, row churn; then one Mode R round with `[MonoThread] LazyGate=1` (first lazy run with jobs) | **G-C** (§14.3a): cut ms/s <= ~25% of the scoring moved ms/s at the go-live rate on BP and IP (`mono-cost-report.ts` go-live estimate line; was: cut avg <= 0.5 ms per search); lazy `lockedCalls` only inside job windows (<= ~20k/s), `lazyOn` = `lazyOff` +-1, 0 GC crashes, Mode R still G-A4 | **cut > 50% of the scoring moved on BP after 2 cut rounds: stop go-live** (was: > 1 ms per search; net cannot clear noise at Sample=1); keep `[AutShadow]` as a correctness tool and move to docs/139 fast paths | 2-4 | 2-4 |
+| S2 build Mode=3 | §10 rows: native ready-at-window-close, `ObjStale` IC, `VerifyEvery`, `Dry`; ts3fixes B13 yield + resume checks, bands, B14 consumer, actor field compare, tuning generation; offline selftests | selftests + `tools/selftest-all.ts` green | - | 6-10 | 0 |
+| S3 G7 dry apply | `Mode=3 Dry=1` BP, IP, SV + `bp-autlive-edit` | G7 (§8): top 10 equal >= 99%, top 1 >= 99.5%, every diff has a cause; 0 crashes in 2 clean runs | top-10 match < 99% after widening `TopN`/`Margin` once: stop (one-tick view too stale) | 1-3 | 4-6 |
+| S4 G9a cost first | clean-night ABBA `--ab autlive`, Sample=1, BP + IP, sim-budget report per arm (docs/160) | net sim-thread ms/s gain (off - on, sim busy ms/s; autonomy-search owner down) outside the noise band of the pooled ABBA pairs, it/s not down > 2% | **PLAN.md rule: no net gain outside the noise band in 2 build rounds = ship off** | 1-3 (fix round) | 2 per round |
+| S5 G8 behaviour | seeded on/off, BP + IP, 2 x 30 min each | G8 (§8) | a biased definition: exclude it, rerun once | 1-2 | 4 |
+| S6 G9b stability | 2 clean runs per world (BP, IP, SV) with one save + reload during a meta burst | 0 crashes in 6 runs, `asUnguarded` 0, `asWorkerClassInit` 0 | any crash: crash rule, then rerun | 1-2 | 6 |
+| **Total** | | | | **~12-23 h** | **~18-20 jobs**, 1-2 clean nights (S4) |
+
+Order change against §8: the cost check (S4) runs before the behaviour gate (S5), because cost, not correctness, is what can kill go-live (Mode R already shows bit-equal scores). Noise band: single 10-min runs are not enough to judge 10 ms/s. The BP Mono bucket ranged 325-378 ms/s across three mono-cost5 arms with the same features off [measured], so S4 judges by pooled ABBA pair differences (both orders), like `hitch-ab.ts` does for hitches.
+
+### 14.5 Next offload candidates, ranked by the v0.2.4 owner split
+
+The Mono script owners on the v0.2.4 release build (sim-budget, BP / IP / SV ms/s, measured) are Sim interaction step 79 / 52 / 71, SimUpdate (motives, buffs) 57 / 61 / 63, Lot.Simulate / reactions 51 / 67 / 50, autonomy search 44 / 51 / 50 and native event callbacks 31 / 24 / 28. docs/129's candidates map onto them. Their movable ms/s and hours are from the 10-17/18 runs, not re-measured on v0.2.4 [inferred].
+
+| Rank | Candidate | Owner today (ms/s) | Movable ms/s | Hours | Note |
+|---|---|---|---|---|---|
+| 1 | Autonomy meta scoring (this plan) | autonomy search 44-51 | ~18-24 | 12-23 | pays the cut, guard and lock that later candidates share |
+| 2 | Sim environment score (docs/129 §2.1) | SimUpdate 57-63 | ~14 | 8-12 | read-only precompute; adds rows to the cut, so it needs S1's cut budget |
+| 3 | Reaction broadcaster candidate set | Lot.Simulate / reactions 50-67 | ~10 | 7-10 | read-only precompute with a radius margin |
+| 4 | Motive decay | SimUpdate 57-63 | ~7 | 6-9 | shadow-then-apply |
+| 5 | Zombies on lot / closest visible lot | Lot.Simulate (IP ~6) / camera | ~3.5 / ~2.7 | 4-6 / 3-5 | small |
+| 1b | Autonomy local phase (docs/126 tier 2) | autonomy search | +27-31% of scoring on top of rank 1 | 14-22 | after rank 1 is live |
+
+Not movable with this machinery: Sim interaction step (writes) and native event callbacks (order-dependent), together ~75-110 ms/s of the Mono bucket (docs/129 §1). If S1 or S4 stops the plan, the interpreter fast paths (docs/139: sub-run fusion ~2-8 ms/s, call/return ~15-30 ms/s [inferred]) are the next Mono source of sim-thread time, with no worker, cut or staleness risk.
+
+## 15. Offline consume cost check (2026-10-30)
+
+Question: does the go-live net gain that Mode R predicts (report line "go-live estimate": BP ~+14, IP ~+27-31 ms/s = scoring moved - cut - guard) survive the work go-live keeps on the sim thread, mainly the game's C1 (live `Test` + score into `BestScores`) for the worker's selected pairs (§2.4-§2.5)? Offline only: no build, no game run. Inputs are the four mono-cost11 Mode R runs (0.36.119, `bp-autshadow-r`, `ip-autshadow-r` and their reruns, 10 min each, A1-A3 0). Report: `node tools/harness/mono-cost-report.ts probe-out/queue/mono-cost11-2026-10-30.jsonl`, new line "go-live after consume".
+
+Why no monohost measurement: monohost (docs/119) loads the script assemblies without a world. C1 needs a live actor, lots and meta objects, and the docs/123 world image that would provide them is not built. So the per-pair cost comes from Mode R's sim-thread reference (`refUs`), which runs the same `Test` and score bodies on the real heap, and everything below that depends on it is **[inferred]**.
+
+### 15.1 Sim-thread steps go-live adds or keeps
+
+| Step (§) | When | Covered by | Cost used here |
+|---|---|---|---|
+| B13 prefix: eligibility, request build (`AddRow` per meta object), `Post` (§2.2-2.3) | per eligible search | not timed apart (Mode R pays it inside the manager task today) | in the fixed 0.15 ms per search [inferred] |
+| `Simulator.Sleep(0)`, resume, B17-equivalent checks, actor field compare (~10 reads) (§2.2, §3.1) | per search | no counter | in the fixed 0.15 ms |
+| Selection sort, `ObjStale` per meta object, identity check per selected ad (§2.4-2.5, §3.2) | per search | no counter (`alApplyUs` planned, §7.2) | in the fixed 0.15 ms |
+| Cut at the `0xD81840` return | per frame with a B13 call | `cutUs`/`cuts` x `metaTicks` [measured] | BP 1.19-1.30 ms per cut, 8.7-9.4 ms/s; IP 0.69-0.73 ms, 5.1-6.0 ms/s |
+| Guard thunks | every EA IC call | `guardSim` [measured] x 17 ns [inferred] | 1.3-1.6 ms/s |
+| Lazy GC lock | worker windows | mono-cost11 ran `LazyGate` off | not in the numbers (~0.2-1 ms/s, §14.2) |
+| **Live C1 for the selected pairs** (§2.4) | per selected pair | no counter (`alPairsC1` planned, §7.2) | §15.3 |
+| Margin bands 2-3 (§2.5) | when the live 10th score is close | `alBand2`/`alBand3` planned | not in the numbers (each band = up to another `TopN` pairs) |
+| Game's B13 after a dropped result (§3.1, §4) | per dropped search | overruns: `overrun`/`req` [measured]; other drop reasons have no counter yet | overrun searches move nothing and still pay the cut |
+| Game's B14 per object (abort, skip, stale; §2.4) | per object | A4 share [measured], already out of "scoring moved" | - |
+| Game's B14 for an object with an off-allow-list ad (§2.4 "mixed") | per object | not counted: Mode R skips off-list pairs per pair (29-43 skipped pairs per search next to 32-48 classified) | not in the numbers: lowers the moved share by an unmeasured amount |
+
+### 15.2 Inputs per run [measured]
+
+| Run | Scoring per search R | Allow-listed pairs per search P | Per pair | Answered | B13 calls/s | Overrun searches |
+|---|---|---|---|---|---|---|
+| BP | 4.20 ms | 38.8 | 108 us | 79.0% | 7.4 | 0.7% |
+| BP rerun | 4.31 ms | 38.4 | 112 us | 80.2% | 7.3 | 1.3% |
+| IP | 5.19 ms | 48.0 | 108 us | 86.1% | 8.7 | 17.3% |
+| IP rerun | 5.55 ms | 32.3 | 172 us | 85.9% | 7.0 | 44.2% |
+
+P counts the classified pairs (pass, `Test` failed, aborted) that passed the commodity filter; overrun searches classify none, which is why the IP rerun shows fewer pairs per search and a higher per-pair cost.
+
+### 15.3 Model [inferred]
+
+- A selected pair costs R/P x (τ + (1 - τ)/p): its own `Test`, plus the score share, which only passing pairs carry. τ = 0.7 = the `Test` side of meta pair scoring in the docs/75 manager samples. Of 670 meta samples, about 460 are in `CheckAvailability`, `CommonTests`, the `VisitCommunityLot`/`VisitLot`/garden `Test` frames and other base checks, and 156 are in the venue score override, which calls `HowMuchItWantsSimToCome` only for passing pairs (§13.2). The sample counts are measured; splitting them into Test and score is inferred. Moving τ to 0.6 or 0.8 changes the nets below by about 2 ms/s.
+- The pass share p (worker code 0 among classified pairs) has **no counter**: Mode R logs per-pair codes only for A1-A3 records. So every result spans p = 0.25 / 0.5 / 0.75 / 1.
+- Selected pairs per search = min(`TopN`, p x P x answered). The C1 check-table and `BestScores.Add` overhead is paid by selected pairs as in vanilla. Unselected pairs skip it, a saving left out here, so the estimate is conservative on that side.
+- Net = (1 - overrun) x moved - cut - guard - 0.15 ms x searches/s - searches/s x (1 - overrun) x selected x pair cost.
+- Upper-bound caveats: R includes one `HowMuchItWantsSimToCome` per meta object that the worker driver makes and vanilla does not (vanilla only calls it inside passing pairs, §13.2), so R and "moved" are upper bounds. The Mode R overrun rate comes from a run that executes the reference on the sim before submit and waits up to 5 ms at window close. Go-live does neither, so its overrun rate may differ.
+
+### 15.4 Results [inferred]
+
+| Run | Before consume (report line) | Before consume, with overruns | Consume at `TopN` 20, p = 0.25/0.5/0.75/1 | **Net at `TopN` 20** | Break-even N | Net at `TopN` 10 |
+|---|---|---|---|---|---|---|
+| BP | +14.1 | +12.8 | 11.5 / 15.7 / 17.4 / 15.8 | **+1.3 / -3.0 / -4.6 / -3.0** | 8.5 / 12.5 / 14.7 / 16.2 | +1.3 / +2.5 / +4.1 / +4.9 |
+| BP rerun | +14.3 | +12.8 | 11.8 / 16.1 / 17.7 / 16.1 | **+1.0 / -3.3 / -4.9 / -3.3** | 8.4 / 12.3 / 14.5 / 15.9 | +1.0 / +2.4 / +4.0 / +4.8 |
+| IP | +31.4 | +23.4 | 15.2 / 20.2 / 17.1 / 15.5 | **+8.2 / +3.3 / +6.4 / +7.9** | 15.9 / 23.2 / 27.4 / 30.2 | +8.7 / +13.3 / +14.9 / +15.7 |
+| IP rerun | +26.8 | +11.1 | 8.8 / 12.0 / 14.7 / 13.3 | **+2.3 / -0.9 / -3.6 / -2.3** | 8.7 / 12.8 / 15.1 / 16.6 | +2.3 / +2.4 / +3.7 / +4.4 |
+
+All values in ms/s. Break-even N = the number of live C1 pairs per search at which net reaches 0. When fewer pairs pass than N, nothing more is selected, so a low p can stay positive even above its break-even N.
+
+### 15.5 What it means
+
+- **Overruns:** on BP they are small (0.7-1.3% of searches, about -1 ms/s). On IP (17-44%) they cost 8-16 ms/s, more than the cut. An overrun search pays the cut and then the game's whole B13. IP's worker `stop` aborts (11-22% of aborts) belong to the same window problem.
+- **Consume at the designed `TopN` = 20 takes 9-20 ms/s:** that wipes out the BP gain (net -4.9 to +1.3) and leaves IP at -3.6 to +8.2. Neither world reaches the PLAN.md goal (>= ~10 ms/s), and the S4 cost gate (§14.4) would most likely fail on BP. The cause: a search has about 8-40 passing pairs, and `TopN` 20 (twice the `BestScores` capacity of 10) re-runs most of them live, score phase included. What is left as saving is the failing pairs' `Test` and the passing pairs below the band.
+- **Break-even N:** BP 8-16, IP 9-30 (lower when overruns are high). `TopN` 20 is above the BP break-even for every pass share except the lowest.
+- **Before S2 (build Mode=3), in order:**
+  1. Count the pass share: add one Mode R counter (worker pairs with code pass per request) in the next ts3fixes build round. That turns the p range into one number per world.
+  2. Make `TopN` 10 (the `BestScores` capacity) the default and keep the margin bands as the safety net: BP +1 to +5, IP +2 to +16 ms/s. G7 then shows how often band 2 fires; each band adds up to another 10 live pairs.
+  3. Bring the IP overrun rate down (worker window length and `stop` causes) before any go-live run. It is worth more than any consume lever.
+  4. Mixed objects: the B14 consumer should send off-list ads through C1 itself (vanilla behaviour, same commodity filter) instead of handing the whole object to the game's B14. Otherwise the moved share shrinks by an amount Mode R does not measure.
+- **Option for Rodney, not designed:** re-run only `Test` live and keep the worker's score for selected pairs that still pass (BP about +2 to +9, IP +2 to +18 ms/s at `TopN` 10-20). It drops the vanilla-exact score: the scores come from the one-tick-old view (bit-equal in Mode R on the same view, §14.1). G7's "live scores of the shared pairs bit-equal" check would then measure staleness instead.
+- With the lazy GC lock (~0.2-1 ms/s) and the unmeasured band and mixed-object costs still to subtract, the honest band is: BP about -6 to +5 and IP about -4 to +16 ms/s after consume at `TopN` 10-20 [inferred]. Go-live is a viable offload step under the 2% rule only with `TopN` 10 and IP overruns fixed.
+
+## 16. Consume design after the consume check (2026-10-30)
+
+Rodney's decision on §15.5: `TopN` 10 with margin bands as the safety net, mixed meta objects handled per ad, a pass-share counter in Mode R (another agent is adding it), and the IP overruns fixed by the cut work. Scores stay exact: every pair that can reach `BestScores` is tested and scored live by the game's C1. The Test-only option is dropped. This section replaces §2.5 steps 2 and 4 and the mixed-object row of §2.4. Static design, no build.
+
+### 16.1 Band 1 and the band rule [design]
+
+**Band 1.** At resume, before the game's B13 runs (§2.5 step 1), the hook sorts the worker's passing pairs (code 0) from valid objects by worker score, highest first. Ties keep request order, which is B13's object order and then `MetaAds` order. Band 1 is the first `TopN` = 10 of that list. 10 is the `BestScores` capacity [verified, docs/59 D1], so band 1 is exactly the set the worker says belongs in the top 10 if nothing changed since the cut. Band 1 pairs reach C1 inside the game's B13, through the B14 consumer, in `MetaAds` order per object (§16.2).
+
+**Which live scores the band rule reads.** While band 1 runs, the hook records the live score of each selected pair. It uses the C2 wrapper that Mode W already installs (`AutScoreHook.ScoreHook` on `Autonomy.CalculateScore`, docs/122 §14.5), which writes the game's own result for a pair that is in the request [verified as built: `ts3fixes/src/AutShadow.cs`]. A pair whose live `Test` fails scores 0 there, as in vanilla [verified, AutShadowCore L report comment].
+
+**The band rule.** It runs after the game's B13 returns, in the hook's postfix, still in the manager task and before D2 picks. Let:
+- `s10` = the lowest score in `BestScores`. It holds local and meta pairs, and the go-home and B16 pairs B13 adds itself.
+- `cnt` = the number of entries in `BestScores`.
+- `w` = the worker score of the best pair not yet sent to C1.
+- `drift` = the largest relative drop from worker score to live score over the pairs sent so far, max(0, (worker - live) / worker). A pair that failed live counts as drift 1.
+
+Band k+1 (the next 10 in the sorted list) goes through C1 when either of these holds:
+- (a) `cnt` < 10 and unsent passing pairs remain. In vanilla every remaining passing pair would enter `BestScores`, so one could be picked.
+- (b) `w` x (1 + `drift` + `Margin`) >= `s10`. An unsent pair might beat the 10th live score, either because live scores moved down since the cut (that is what `drift` measures) or because of a tie: vanilla's heap keeps either of two equal scores depending on add order, so `>=` sends ties.
+
+`Margin` defaults to 0 [design]. With `drift` 0 (band 1 scored live exactly as on the worker, the Mode R result on the same view, §14.1), the rule fires only when the 11th worker score ties or beats the 10th live one. That is the exact condition: with a fixed state, an unsent pair cannot enter the top 10. G7 may raise `Margin` if it finds top-10 misses that `drift` does not explain, meaning a pair the worker ranked low whose live score rose (the §3.3 case).
+
+After each band the hook re-evaluates `s10`, `cnt`, `w` and `drift`. After `Bands` = 3 bands, every remaining worker-passing pair goes through C1 (`alBandFull`). Worker-failed and worker-filtered pairs never go through C1. Their live verdict is the only thing go-live does not compute, as before (§2.5, §5).
+
+**How bands 2-3 reach C1.** They do not go through B14, because the game's B13 has already returned. The hook calls C1 `CalculateScoreAndAddToCandidates` itself with the pair objects saved in the request, each after the same checks the B14 consumer makes: object not stale (`ObjStale`), same ad reference, same `MetaAds` count. C1's check table (C1a) drops a pair that already reached C1 in this search, for example through a lot B13 visits twice (§13.1) [verified, docs/59 C1a]. Band order differs from vanilla's add order only for these late pairs. `BestScores` keeps the top 10 by score whatever the add order, apart from exact ties, which rule (b) already sends. So the set D2 draws from matches vanilla [inferred, G7 checks it].
+
+**After a B13 yield** (the `late` case, §13.1): objects after the yield run the game's B14 (unchanged). Band pairs from objects before the yield still go through C1 in the postfix. Their scores are live, only their selection is older, and `drift` covers that.
+
+**Counters** (added to §7.2): `alBand2`, `alBand3`, `alBandFull` as before; new `alBandWhy[2]` (count rule a, margin rule b), `alDriftMax` (histogram of `drift` per search), and `alPairsC1` split by band.
+
+### 16.2 Mixed meta objects: per-ad rule at B14 [design]
+
+A mixed meta object has ads of allow-listed definitions and ads that are not allow-listed: definitions off the allow-list, or exact runtime types that the mod guard rejects (§6). Mode R already scores such objects per pair. Off-list pairs are skipped (`kSkip`) and the allow-listed pairs of the same object are scored and compared [verified: `ScoreMeta` skips only pairs with no allow-listed definition, and the whole object only when its implementor is off the list (`ObjImpl` < 0)]. The 29-43 skipped pairs per search in mono-cost11 are those off-list pairs. The old §2.4 row sent the whole object back to the game's B14 and lost the allow-listed half; that is gone.
+
+**Code points.**
+- **B14 hook** (`Autonomy.ScoreInteractionsForMetaObject`, one caller, B13 [verified, §13.1]). The consumer replaces the body for objects in the request with a valid result. It walks the object's `MetaAds` in order and first applies B14's own commodity filter (`Tradeoff.SatisfiesCommodity`, else `MetaAdSatisfiesCommodity` for meta definitions), the same filter the worker driver copies [verified as built, `ScorePair`]. Then for each ad:
+
+| Ad | Action |
+|---|---|
+| filtered out by the commodity check | nothing (as vanilla) |
+| not allow-listed (definition off the list, or a guarded mod type) | **C1** with the same pair object vanilla's B14 would pass |
+| allow-listed, the object's worker result valid, pair selected (band 1) | identity check, then **C1** |
+| allow-listed, valid, not selected (worker failed, or ranked below band 1) | nothing now; it may come back in a later band (§16.1) |
+| allow-listed, but the object aborted or skipped on the worker, or stale | **C1** (live, as vanilla) for every allow-listed ad of this object |
+
+- **C1 per-ad entry.** The hook calls `CalculateScoreAndAddToCandidates` (C1) once per ad that the table sends there. That runs C1a, C2 and `BestScores.Add`, exactly the per-ad call vanilla's B14 makes [verified, docs/59 B14/C1]. No other entry is used, so the check table, `BestScores` and the remembered-best handling stay the game's.
+
+Objects not in the request, a whole-object `AlwaysChooseBest` hit, and `late` objects still run the game's own B14 unchanged (§2.4). Everything an off-list ad does runs on the sim thread live, as in vanilla. No off-list code reaches the worker, so the mod guard (§6) needs no new row; the 18-method L3 list of §13.5 gains nothing, because the consumer calls C1, which is already on it.
+
+**Cost.** Off-list ads go through C1 in go-live and in vanilla alike, so they are cost-neutral. The moved estimate (allow-listed answered scoring, §15) needs no mixed-object correction under this rule. Under the old rule it would have shrunk by an unmeasured amount.
+
+### 16.3 What Mode R and G7 must check
+
+- **Mode R** (before S2, with the pass counter round):
+  - The pass share per request: worker code 0 among classified pairs (the other agent's counter; `mono-cost-report.ts` reads it when present).
+  - Mixed objects split out: the number of objects with both kinds of ad, and A0-A5 over the allow-listed pairs of those objects. They must stay A1-A3 = 0 like the rest; an allow-listed pair's score may not depend on its off-list neighbours.
+  - Over each request, the share of searches where the worker's 11th passing score ties or is within 1% of its 10th. That is the band rule's fire rate with `drift` 0 and an early read of band cost.
+- **G7 dry apply** (`Dry=1`, §8.1):
+  - (1) Top-10 equality as §8 says. The predicted set is built from band 1 (+ bands the rule fires) scored with C2 under MT save/restore, plus the game's own scores for the off-list ads of mixed objects, taken from the Mode W C1 record hook.
+  - (2) Off-list completeness: every off-list ad that vanilla's B14 sent to C1 in that search is in the consumer's C1 set exactly once (`alOffListC1` = the game's off-list C1 count per search; any difference is a G7 failure record with the pair).
+  - (3) Bands: `alBandWhy` counts and the `drift` histogram. Every top-10 miss must have a cause: `drift` under-estimated, a §3.3 rise, or a stale object.
+  - (4) Cost: band 2+ fire rate per search. Per §16.4 a rate near every search wipes out the gain, which stops go-live by the S4 rule.
+- **G9 / S4** as §14.4, judged with the report line below.
+
+### 16.4 Net after consume with `TopN` 10 [inferred]
+
+`mono-cost-report.ts` "go-live after consume" now uses `TopN` 10 and prints two bounds: band 1 only, and every band firing (all passing answered pairs re-scored live). It takes the pass share from the Mode R pass counter when the native JSON or ts3fixes counters have it; otherwise it prints the 0.25-1 range. mono-cost11, ms/s, pass share 0.25 / 0.5 / 0.75 / 1:
+
+| Run | Band 1 only | Every band | Break-even N |
+|---|---|---|---|
+| BP | +1.3 / +2.5 / +4.1 / +4.9 | +1.3 / -3.0 / -7.2 / -11.4 | 8.5 / 12.5 / 14.7 / 16.2 |
+| BP rerun | +1.0 / +2.4 / +4.0 / +4.8 | +1.0 / -3.3 / -7.6 / -12.0 | 8.4 / 12.3 / 14.5 / 15.9 |
+| IP | +8.7 / +13.3 / +14.9 / +15.7 | +8.2 / +2.6 / -3.0 / -8.7 | 15.9 / 23.2 / 27.4 / 30.2 |
+| IP rerun | +2.3 / +2.4 / +3.7 / +4.4 | +2.3 / -0.9 / -4.2 / -7.4 | 8.7 / 12.8 / 15.1 / 16.6 |
+
+The result depends on how often bands fire. The exact rule (`Margin` 0, `drift`) should fire rarely if one-tick drift is small, but nothing measures that yet; Mode R's tie share and G7's `alBandWhy` measure it. IP's numbers also depend on the overrun fix (before consume: +23.4 at 17% overruns, +11.1 at 44%). The lazy GC lock (~0.2-1 ms/s) is still to subtract. BP stays below the ~10 ms/s goal at any pass share. IP reaches it only with a pass share >= ~0.5, few band fires and overruns near the first run's 17%.

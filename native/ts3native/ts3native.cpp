@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.105"
+#define TS3NATIVE_VERSION "0.36.126"
 
 typedef unsigned char u8;
 
@@ -250,7 +250,7 @@ static void ApplyGc(const wchar_t* ini) {
 }
 
 // --- Phase 2: negative cache for failed route plans (docs/11 Q5, docs/15 phase 2) ---
-// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5408 int32 (v140 [UnseenFallback] FinishWalk holds after v139, version field 140; v139 [UnseenFallback] C1-C4 site fallbacks after v138, version field 139; v138 [UnseenFallback] after v137, version field 138; v137 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit after v136 [ResourceCache] trim, version field 137; v135 PlanDeadlineMs sync-path exemptions after v134, version field 135; v134 [RouteAsync] KindDeadlines after v133; v133 [RouteSnap] LotUseReadout after v132; v132 [RouteSnap] PoolChunkMB / EpochHeap after v131; v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
+// Counters for test tools: Frida `Module.findExportByName('ts3native.asi', 'ts3native_counters')`, read 5432 int32 (v142 [RouteAsync] WorkerWait after v141, version field 142; v141 [EaCrashFixes] after v140, version field 141; v140 [UnseenFallback] FinishWalk holds after v139, version field 140; v139 [UnseenFallback] C1-C4 site fallbacks after v138, version field 139; v138 [UnseenFallback] after v137, version field 138; v137 [MemDiag] TypeGrowth + [GC] SqrtHeapLimit after v136 [ResourceCache] trim, version field 137; v135 PlanDeadlineMs sync-path exemptions after v134, version field 135; v134 [RouteAsync] KindDeadlines after v133; v133 [RouteSnap] LotUseReadout after v132; v132 [RouteSnap] PoolChunkMB / EpochHeap after v131; v129 [RouteSnap] StaleLotFp after reserved v126-v128, version field 129; v125 [RouteSnap] StaleLot after reserved v123 / v124, version field 125; v119 [IdleCheckRO] after v118, version field 119; v118 [GoalValidRO] slots kept, other branch; v117 CrashForensics ObjResLog after v116, version field 117; v116 CrashForensics EffectLog after v115, version field 116; v115 CrashForensics DrawGuards / OurEvents after v114, version field 115; v114 CrashForensics after v113, version field 114; v113 DeferPrivateFp after v112, version field 113; v112 P6 take kinds + Mode=2 cut sharing + per-job phase split after v111, version field 112; v111 watchpoint constructor-pair count + follow + replay audit rebase hold after v110, version field 111; v110 [Watchpoint] lot arm + child z / parent +0x30 writer probes after v109, version field 110; v109 job yield + sim job waits by site after v108, version field 109; v108 gate site 16 after v107; v107 PlanDrain after v106; v106 P5 steps 2-4 after v105 (layout of merge eaef8a1b; zeros without it); v105 RecsUnlocked after v104, version field 105; v104 refcount guard after v103; v103 job deadline + own waits + goal-step split after v102; v102 goal split + GoalGen D1 + H2 IC window after v101, version field 102; v101 foreign kinds after v100; v100 placement RO after v99; v99 plan deadline + fail memo after v98; v98 lock holders after v97; v97 sync plan phases after v96; v96 host-call split + DoorMemo after v93; v93 route-to-object RO appended after v95 at the 2026-10-22 0325 merge, version field stays 95; v95 F-G held-out count after v94, v94 design U phase 2 after v92, v92 route allocator sites after v91, v91 [Gate0RO] after v90, v90 replan dedupe after v88, all at the 2026-10-22 integration merge; version field 95; v88 cell memo probe appended after v89; v89 tail unlock; v87 route job phases; v86; v77 AvoidRO before v78, v79 unseen probe + throttle after v78, v80 unseen throttle phase 2, v81 foreign job cap, v83 unseen diagnostics, v84 foreign job split, v85 H2 counters, v86 acting early-out, no v52, v58 or v82 fields in this build).
 struct Ts3nCounters {
     LONG version;      // layout version, 4
     LONG enabled;      // 1 when the Route_PlanLocked detour is installed
@@ -2210,9 +2210,35 @@ struct Ts3nCounters {
                                        //          (unclaimed 3 s, held 10 min, no fresh list, mode off)
     LONG ufwMaxHeld;                   // +0x546C, most holds at once
     LONG ufwFull;                      // +0x5470, holds refused: all 32 slots in use (the game's own wait)
-    LONG ufwSpare[3];                  // +0x5474
+    LONG ufcBb[3];                     // +0x5474, 0.36.117 (docs/202 §3.4.4, was spare): [0] Build/Buy spans seen (world+0x97B,
+                                       // 10 ms poll), [1] C-site tries while it stayed set (must stay 0), [2] tries in the 3 s after an exit
+    // v141 (0.36.121, docs/67 §26.4 / §27.5, eafix.cpp): [EaCrashFixes] guards for EA lifetime bugs (issues #98, #99), off
+    LONG caOn;                         // +0x5480, ConformActor: controller ask sites guarded (3 = all; 0 = off or not installed)
+    LONG caSkip[3];                    // +0x5484, controllers answered "done" instead of calling the actor: [0] null actor,
+                                       //          [1] destroyed AnimationComponent (vtable 0x10433EC, not live), [2] vtable unreadable / outside the exe
+    LONG caOther;                      // +0x5490, asks to an actor that is not an AnimationComponent (the game's own call)
+    LONG caLive;                       // +0x5494, live AnimationComponents tracked
+    LONG caMaxLive;                    // +0x5498, ... most at once
+    LONG caOverflow;                   // +0x549C, 1 = live set full (> 65536): tracking stopped, unknown actors get the game's call
+    LONG tpOn;                         // +0x54A0, ThumbPose installed
+    LONG tpHeld;                       // +0x54A4, thumbnail branch (a) renders whose reference was kept across the pose evaluation
+    LONG tpLastRef;                    // +0x54A8, of those, ours was the last reference at release (the game would have read a freed pose)
+    LONG tpNoSlot;                     // +0x54AC, deferral slots full: released at once (the game's order)
+    // v142 (0.36.124, docs/203 §6, ts3native.cpp ServeAsync): [RouteAsync] WorkerWait, the worker's job-start wait (S5)
+    LONG rwMode;                       // +0x54B0, switch `workerwait` (0 = Sleep(0) loop, 1 = bounded spin then event wait)
+    LONG rwBlocked;                    // +0x54B4, job starts that found a start blocker (g_rgOffSimOpen or the H2 window), both modes
+    LONG rwBlockUs;                    // +0x54B8, worker time in that wait (us), both modes
+    LONG rwSleep0;                     // +0x54BC, Sleep(0) calls in it (mode 0: every iteration; mode 1: the spin phase)
+    LONG rwSpinExits;                  // +0x54C0, mode 1: blockers gone within the spin (no event wait)
+    LONG rwWaits;                      // +0x54C4, mode 1: event waits
+    LONG rwWakes;                      // +0x54C8, ... ended by a signal (RwWake: blocker dropped to 0)
+    LONG rwTimeouts;                   // +0x54CC, ... ended by the 1 ms safety timeout
+    LONG rwSignals;                    // +0x54D0, SetEvent calls by the droppers (a worker was parked)
+    LONG rwMaxBlockUs;                 // +0x54D4, longest single job-start wait (us)
+    LONG rwWorkerCpuMs;                // +0x54D8, route worker thread CPU (user + kernel, ms), refreshed after each blocked start
+    LONG rwSpare;                      // +0x54DC
 };
-extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {140,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+extern "C" __declspec(dllexport) Ts3nCounters ts3native_counters = {142,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -2702,6 +2728,18 @@ static volatile LONG g_rgOffSimOpen;
 // Written by the sim thread only; every sim wait that needs a not yet started job clears g_g0Win first (G0wDrop).
 static volatile LONG g_g0wIn, g_g0Win;
 static volatile LONG g_hxOpen;  // locowin.cpp (docs/177 §4): 1 while a script IC holds g_g0Win (H2 IC window), for hxHeld
+// [RouteAsync] WorkerWait (docs/203 §6, v142): the worker parks on g_rwWakeEv instead of a Sleep(0) loop while a start blocker
+// (g_rgOffSimOpen > 0 or the H2 window g_g0Win) is set. No lost wake-up: the worker publishes g_rwParked (interlocked), then
+// reads the blockers again before it waits; a dropper clears its blocker (interlocked), then reads g_rwParked. Both sides
+// are full barriers, so at least one of them sees the other (Dekker). Auto-reset event: a stale signal costs one extra loop.
+static HANDLE g_rwWakeEv;
+static volatile LONG g_rwParked;
+static void RwWake() {
+    if (g_rwParked && g_rwWakeEv) InterlockedIncrement(&ts3native_counters.rwSignals), SetEvent(g_rwWakeEv);
+}
+static void RgOffSimDrop() {
+    if (InterlockedDecrement(&g_rgOffSimOpen) == 0) RwWake();
+}
 enum { G0W_JOBWAIT, G0W_SYNCPLAN };
 static void G0wDrop(int site, const void* ret);  // locowin.cpp
 static void RcDrop();  // rcguard.cpp: kept +0x918 levels released before a sim wait for the worker
@@ -3020,6 +3058,45 @@ static bool G0wHolds(G0wHold& h) {
         Log("loco window: a job start was held %ld ms, started anyway (watchdog; a sim wait without G0wDrop?)", kG0wMaxHoldUs / 1000);
     return false;
 }
+// The job-start wait (docs/203 S5): until no guarded routing call is open elsewhere and the H2 window lets go. Mode 0 = the
+// old Sleep(0) loop (a syscall busy loop on its own core while the sim pumps: ~74-81 ms/s BP/IP); [RouteAsync] WorkerWait=1 =
+// Sleep(0) for kRwSpinUs (short blockers: gate leaves, RO answers), then parks on g_rwWakeEv (RgOffSimDrop / the g_g0Win
+// clears set it) with a 1 ms timeout as a safety net (H2 watchdog expiry, a dropper that missed RwWake).
+static const LONG kRwSpinUs = 50;
+static DWORD g_rwTimeoutMs = 1;  // the selftest raises it: a lost wake-up then shows as a timeout
+static void RwStartWait(G0wHold& h) {
+    Ts3nCounters& k = ts3native_counters;
+    if (!g_rgOffSimOpen && !G0wHolds(h)) return;
+    InterlockedIncrement(&k.rwBlocked);
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    LONG sleeps = 0;
+    bool waited = false;
+    for (;;) {
+        if (k.rwMode != 1 || !g_rwWakeEv || UsSince(t0) < kRwSpinUs) {
+            Sleep(0), sleeps++;
+        } else {
+            InterlockedExchange(&g_rwParked, 1);  // publish, then read the blockers again (Dekker with RgOffSimDrop / RwWake)
+            if (g_rgOffSimOpen || G0wHolds(h)) {
+                waited = true;
+                InterlockedIncrement(&k.rwWaits);
+                if (WaitForSingleObject(g_rwWakeEv, g_rwTimeoutMs) == WAIT_OBJECT_0) InterlockedIncrement(&k.rwWakes);
+                else InterlockedIncrement(&k.rwTimeouts);
+            }
+            InterlockedExchange(&g_rwParked, 0);
+        }
+        if (!g_rgOffSimOpen && !G0wHolds(h)) break;
+    }
+    if (k.rwMode == 1 && !waited) InterlockedIncrement(&k.rwSpinExits);
+    const LONG us = UsSince(t0);
+    InterlockedExchangeAdd(&k.rwSleep0, sleeps);
+    InterlockedExchangeAdd(&k.rwBlockUs, us);
+    Max(&k.rwMaxBlockUs, us);
+    FILETIME c, e, kt, ut;
+    if (GetThreadTimes(GetCurrentThread(), &c, &e, &kt, &ut))
+        k.rwWorkerCpuMs = (LONG)(((ULONGLONG)kt.dwHighDateTime << 32 | kt.dwLowDateTime) / 10000 +
+                                 ((ULONGLONG)ut.dwHighDateTime << 32 | ut.dwLowDateTime) / 10000);
+}
 // Worker: the job starts now (A_RUNNING published, no back-off)
 // inPass = g_g0wIn read just before the start's last window check (v85, docs/149): the thunk raises g_g0Win before g_g0wIn
 // and drops g_g0wIn first, so inPass with no hold means a start inside the pass (Mode 0, after a drop, or the watchdog), never
@@ -3155,7 +3232,7 @@ static void ServeAsync() {
         G0wHold h = {};  // H2: the sim's locomotion window holds the start too (locowin.cpp)
         bool inPass = false, late = false;
         for (;;) {
-            while (g_rgOffSimOpen || G0wHolds(h)) Sleep(0);
+            RwStartWait(h);  // docs/203 S5: Sleep(0) loop, or [RouteAsync] WorkerWait=1 spin + event
             LockAcquireHook(j->lock, NULL, &kInfinite);
             g_async.handle = j->handle;
             g_async.lock = j->lock;
@@ -3303,6 +3380,7 @@ static bool StartWorker() {
     g_invDone = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_asyncReady = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_asyncDone = CreateEventW(NULL, FALSE, FALSE, NULL);
+    g_rwWakeEv = CreateEventW(NULL, FALSE, FALSE, NULL);  // [RouteAsync] WorkerWait (docs/203 §6); NULL = the Sleep(0) loop
     // 1 MB reserve like a default thread; it starts running only after DllMain returns (loader lock) and then just waits
     HANDLE t = g_jobReady && g_jobDone && g_invReady && g_invDone && g_asyncReady && g_asyncDone
                    ? CreateThread(NULL, 1 << 20, WorkerMain, NULL, STACK_SIZE_PARAM_IS_A_RESERVATION, &g_workerTid)
@@ -4277,7 +4355,7 @@ static LONG LockAcquireAsync(void* lock, void* edx, const DWORD* deadline, DWORD
                 g_workerTid, g_rpTid, ts3native_counters.rgOwnerTid, g_async.state, g_p4Phase, g_rpPhase);
         }
     }
-    if (hold) InterlockedDecrement(&g_rgOffSimOpen);
+    if (hold) RgOffSimDrop();
     const LONG waited = UsSince(t0);
     InterlockedExchangeAdd(&ts3native_counters.asyncPumpUs, waited);
     WaitNote(key, waited, mwTok);
@@ -4475,10 +4553,12 @@ static bool CostStubsWanted(bool routeBudget, int asyncMode) {
 #include "cellmemo.cpp"
 #include "hostcalls.cpp"
 #include "fgrender.cpp"  // docs/162 §7: [Harness] ForegroundRender (TEST ONLY)
+#include "played.cpp"    // docs/14 section 8.6: played-household sidecar store for ts3fixes (op 6 + "played:" lines on the 0x87 channel)
 #include "userdiag.cpp"  // docs/188: [UserDiag] player-report lines (header, world load, save trail)
 #include "memdiag.cpp"   // docs/190 phase 1, docs/191: [MemDiag] "diag: mem" lines + self-test (needs userdiag.cpp)
 #include "rctrim.cpp"    // docs/198 §4: [ResourceCache] TrimAfterCleanup experiment (needs userdiag.cpp, memdiag.cpp, apex.cpp)
 #include "allocsites.cpp"  // docs/201: [MemDiag] AllocSites, TEST-RUN TOOL (needs memdiag.cpp, alloc.cpp, apex.cpp)
+#include "eafix.cpp"       // docs/67 §26.4 / §27.5: [EaCrashFixes] ConformActor, ThumbPose (needs footprint.cpp's FpCallOk / FpRedirect)
 
 // [D3DMultithreaded] (PLAN #4, docs/37 C5, docs/43 §1): Device_Create 0x611080 passes `esi` as the CreateDevice behaviour
 // flags: 0x40 (software VP) at 0x6112A4, replaced by 0x20 (hardware VP) at 0x6112B9 when the caps allow [verified]. Adding
@@ -4593,6 +4673,7 @@ static void Run(HMODULE self) {
         ApplyForegroundRender(ini);  // TEST ONLY (docs/162 §7): unfocused harness runs pace like focused ones
         keepLog = ApplyLotSinCos(ini) || keepLog;
         keepLog = ApplyIdCache(ini) || keepLog;
+        keepLog = ApplyEaCrashFixes(ini) || keepLog;  // docs/67 §26.4 / §27.5: off by default; before any game object exists
         keepLog = ApplyProbeValues(ini) || keepLog;  // after every behaviour section: it counts inside their stubs or skips
         keepLog = ApplyRouteSnap(ini) || keepLog;  // after [ProbeValues]: counts inside its, [SteerRO]'s and [RouteGate]'s stubs
         InstallLotRemoveGuard(ini);                 // after [RouteSnap]: its stub at 0x635700 runs the same guard

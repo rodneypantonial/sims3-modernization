@@ -110,6 +110,8 @@ All behind `[AutShadow] Enabled=0` and the ts3fixes switch `autshadow` (off by d
 
 Limits: the census matches by name and parameter keys, not vtable slots (a newslot further down still counts: more skips, never fewer); G-M4 cannot see `ReplaceIL` (L2 stays log-only); tier-2 closures are not in the lists yet (rerun the generator when tier-2 definitions join the allow-list).
 
+**G-M5 receiver rule (2026-10-29, docs/122 §14.13, ledger §380).** The census as built matched by declared slot, so NRaas' own definition bases (they implement `InteractionDefinition.Test`) skipped all 12 v0 definitions in game (mono-cost4). Slots dispatched on the scored definition (`InteractionDefinition.Test`/`CreateInstance`, `IMetaInteractionDefinition.MetaAdScore`, `IOverridesCalculateScore.CalculateScore`, `IOverridesAgeTests.GetSpecialCaseAgeTests`) no longer mark anything: the worker scores only exact allow-listed types, so a mod override of them can run there only as a subclass, and a mod subclass of an allow-listed definition now skips that definition (`AutShadowCore.DerivedOwners`; NRaas GoHere's `VisitLotEx`/`VisitCommunityLotEx` definitions skip `VisitLot+Definition`, `VisitCommunityLot+Definition` and `+DateDefinition`). Object, Sim, lot, posture, occupation and service slots keep the declared-slot rule (the 13 tier-2 `InteractionInstance` reaches above are unchanged).
+
 ## 6. Verdict per mod
 
 | Mod | Verdict | Why |

@@ -267,7 +267,7 @@ static void DiscDrain(bool force) {
         }
     }
     if (lock) LockReleaseHook(lock, NULL);
-    InterlockedDecrement(&g_rgOffSimOpen);
+    RgOffSimDrop();
     g_discDraining = false;
 }
 

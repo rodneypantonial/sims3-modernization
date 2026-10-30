@@ -4,7 +4,7 @@
 //   node tools/harness/queue.ts --restore-content     put CC/Store packages back from the stash manifest of an unfinished run
 // Queue file: a JSON list of jobs (or { "jobs": [...] }):
 //   { id, note?, asi: "tested" | "<path from repo root>", ini?: { "Section.Key": value }, fixes?: { install?: [ids], uninstall?: [ids] },
-//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store", run: {repro: id} | {matrix: [args]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
+//     save?: "<name>[.sims3]" | "menu", content?: "as-is" | "no-cc" | "no-store", run: {repro: id} | {matrix: [args]} | {saveReload: [save-reload.ts args]} | {soak: {minutes, speed?}} | {menuMemory: {waitS?, draws?}}
 //     | {profile: {minutes, seed?, repro?, mainstack?}} | {routelock: {minutes, speed?}} | {age: {days, checkpoint, keepAlive?, save?}}, gameArgs?: ["-disablestoryprogression"], defaultIni?: { "Config.SimulatorRandomSeed": n },
 //     s3ppIni?: { "Patches.MonoTypeEHashProbe": 0 }, s3ssToml?: { "patches.LotStreamingOptimizations.enabled": false }, minCounters?: 20, timeoutMin?,
 //     pin?: false | { cpus?: "4-15", priority?: "High", others?: boolean | [names] } }   (also queue-level beside "jobs"; pin.ts)
@@ -194,7 +194,7 @@ const log = (m: string) => console.log(`${stamp()} queue: ${m}`);
 
 // ---------------------------------------------------------------- pure parts (covered by --self-check)
 type Job = { id: string; note?: string; asi: string; ini?: Record<string, string | number | boolean>; fixes?: { install?: string[]; uninstall?: string[] };
-  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
+  save?: string; content?: string; ccSet?: string | string[]; ccLots?: string; run: { repro?: string; saveReload?: string[]; matrix?: string[]; soak?: { minutes: number; speed?: string }; menuMemory?: { waitS?: number; draws?: number };
     profile?: { minutes: number; seed?: number; repro?: string; mainstack?: string; ab?: string; abOnFirst?: boolean; slice?: number; taskstall?: number; inroom?: boolean; watchstalk?: boolean | 'worker'; livereads2?: boolean; f4b?: boolean; vres?: boolean; noEnv?: boolean; envGuard?: boolean; travel?: string }; routelock?: { minutes: number; speed?: string }; worldimage?: { captures: number; settleS?: number; gapS?: number; speed?: string }; age?: { days: number; checkpoint: number; keepAlive?: number | 'off'; save?: string } }; gameArgs?: string[]; defaultIni?: Record<string, string | number | boolean>; s3ppIni?: Record<string, string | number | boolean>; s3ssToml?: Record<string, string | number | boolean>; dxvkConf?: Record<string, string | number | boolean>; minCounters?: number; noiseCheck?: boolean; callSites?: boolean; releaseDefaults?: boolean; nativeRequire?: string; logRequire?: Record<string, number>; logForbid?: Record<string, number>; routingFailFast?: FailFast; scriptErrorsMax?: number; timeoutMin?: number; pin?: false | PinOpts;
   saveMatrix?: { fixes?: 'all' | 'shipped' }; fixesBuild?: string; fixesPackage?: string; rerunOf?: string };
 
@@ -217,8 +217,9 @@ export function parseQueue(json: unknown): Job[] {
     for (const k of Object.keys(j.dxvkConf ?? {})) if (!/^\w+\.\w+$/.test(k)) throw new Error(`${at}: dxvkConf key "${k}" must be component.option (e.g. d3d9.textureMemory)`);
     if (j.gameArgs && !(Array.isArray(j.gameArgs) && j.gameArgs.every((x: unknown) => typeof x === 'string' && x.startsWith('-')))) throw new Error(`${at}: gameArgs must be a list of -switches`);
     for (const k of ['install', 'uninstall']) if (j.fixes?.[k] && !Array.isArray(j.fixes[k])) throw new Error(`${at}: fixes.${k} must be a list of ids`);
-    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age'].includes(k));
-    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age`);
+    const kinds = Object.keys(j.run ?? {}).filter(k => ['repro', 'matrix', 'soak', 'menuMemory', 'profile', 'routelock', 'worldimage', 'age', 'saveReload'].includes(k));
+    if (kinds.length !== 1 || Object.keys(j.run).length !== 1) throw new Error(`${at}: run needs exactly one of repro, matrix, soak, menuMemory, profile, routelock, worldimage, age, saveReload`);
+    if (j.run.saveReload !== undefined && !(Array.isArray(j.run.saveReload) && j.run.saveReload.every((x: unknown) => typeof x === 'string'))) throw new Error(`${at}: run.saveReload must be a list of save-reload.ts args`);
     if (j.run.worldimage) {
       const w = j.run.worldimage;
       if (!(Number.isInteger(w.captures) && w.captures > 0)) throw new Error(`${at}: run.worldimage.captures must be a positive integer`);
@@ -280,9 +281,9 @@ export function parseQueue(json: unknown): Job[] {
     if (j.noiseCheck !== undefined && typeof j.noiseCheck !== 'boolean') throw new Error(`${at}: noiseCheck must be true or false`);
     if (j.callSites !== undefined && typeof j.callSites !== 'boolean') throw new Error(`${at}: callSites must be true or false`);
     if (j.releaseDefaults !== undefined && typeof j.releaseDefaults !== 'boolean') throw new Error(`${at}: releaseDefaults must be true or false`);
-    // fixesPackage: a shipped ts3fixes.package (path from the repo root) installed over cycle.ts's build/ copy before each start
-    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak)))
-      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak jobs, not with fixesBuild`);
+    // fixesPackage: a shipped ts3fixes.package (path from the repo root) installed over cycle.ts's build/ copy before each start (repro jobs: the start-path controls, release-validate *-v016)
+    if (j.fixesPackage !== undefined && (typeof j.fixesPackage !== 'string' || !j.fixesPackage || j.fixesBuild !== undefined || !(j.run?.profile || j.run?.soak || j.run?.repro)))
+      throw new Error(`${at}: fixesPackage must be a path, only on profile/soak/repro jobs, not with fixesBuild`);
     if (fridaAttach(j) && (j.callSites || Number(j.ini?.['ProbeSnap.CallSites']))) throw new Error(`${at}: ProbeSnap.CallSites with a second Frida agent (${fridaAttach(j)}): int3 traps + agent attach crashed the game (docs/67 §7); set run.profile.noProf (and drop the side probe) or callSites false`);
     if (j.timeoutMin !== undefined && !(j.timeoutMin > 0)) throw new Error(`${at}: timeoutMin must be > 0`);
     if (j.minCounters !== undefined && !(Number.isInteger(j.minCounters) && j.minCounters > 0)) throw new Error(`${at}: minCounters must be a positive integer (a counters version)`);
@@ -316,6 +317,37 @@ export function parseQueue(json: unknown): Job[] {
 // (docs/51 §188: a refused hook used to leave no trace in the row)
 export const fixesApplied = (applied: unknown): string[] => (Array.isArray(applied) ? applied.map(String) : [])
   .filter(l => /^Aut(Shadow|Ledger)\b/.test(l) || (/^[\w.+]+\.\w+: /.test(l) && !/: ok$/.test(l))).slice(0, 40);
+
+// shadow jobs ([AutShadow] Enabled=1 and the autshadow switch on): a job without cuts or snapshot entries, or with ts3fixes
+// "off for the session", measured nothing (mono-cost2 2026-10-29: four shadow jobs PASSED with cuts 0 entries 0, docs/67)
+// Mode R (AutShadow.Mode 1, docs/122 §14.13): also FAIL when ts3fixes compared 0 pairs (autshadow_a0..a3 deltas from the
+// row's fixActivity counters; none present = 0) or the worker spent implausibly little per run (< max(50 us, 2% of the
+// reference per run) with reference runs): mono-cost4 ip-autshadow-r "passed" with a5 953, worker 14 us per run
+export function shadowFails(ini: Record<string, unknown>, fixesOn: string | undefined, c0: any, c1: any, applied: string[],
+  fix?: Record<string, { before?: number; after?: number }>): string[] {
+  if (!Number(ini['AutShadow.Enabled']) || !/\bautshadow\b/.test(fixesOn ?? '')) return [];
+  const out: string[] = [], a = c1?.autshadow ?? {};
+  const cuts = Number(a.cuts ?? 0) - Number(c0?.autshadow?.cuts ?? 0), entries = Number(a.entries ?? 0);
+  if (!(cuts > 0) || !(entries > 0)) out.push(`[AutShadow] no data: cuts ${cuts}, entries ${entries}`);
+  const off = applied.find(l => /^AutShadow: off for the session/.test(l));
+  if (off) out.push(off);
+  if (Number(ini['AutShadow.Mode']) === 1) {
+    const dv = (k: string) => Number(fix?.[k]?.after ?? 0) - Number(fix?.[k]?.before ?? 0);
+    const cls = Object.keys(fix ?? {}).filter(k => /^autshadow_a[0-3]$/.test(k));
+    const cmp = cls.reduce((sum, k) => sum + dv(k), 0);
+    if (!(cmp > 0)) out.push(`[AutShadow] Mode R void: ${cmp} compared pairs (${cls.length ? cls.join('+') : 'no autshadow_a0..a3 counters'}; a4 ${dv('autshadow_a4')}, a5 ${dv('autshadow_a5')})`);
+    // since mono-cost7 (A1-A3 0 on BP and IP, docs/122 §14.16) any worker answer that differs from the reference is a regression
+    const mis = ['autshadow_a1', 'autshadow_a2', 'autshadow_a3'].filter(k => dv(k) > 0);
+    if (mis.length) out.push(`[AutShadow] Mode R mismatch: ${mis.map(k => `${k.slice(10).toUpperCase()} ${dv(k)}`).join(', ')} (must be 0)`);
+    const n = (k: string) => Number(a[k] ?? 0) - Number(c0?.autshadow?.[k] ?? 0);
+    const refRuns = n('refRuns'), workRuns = n('workRuns');
+    if (refRuns > 0) {
+      const refPer = n('refUs') / refRuns, workPer = workRuns > 0 ? n('workUs') / workRuns : 0, floor = Math.max(50, 0.02 * refPer);
+      if (workPer < floor) out.push(`[AutShadow] Mode R void: worker ${workPer.toFixed(1)} us per run (${workRuns} runs) < ${floor.toFixed(0)} us (reference ${refPer.toFixed(0)} us per run; overrun ${n('overrun')}, overrunIdle ${n('overrunIdle')})`);
+    }
+  }
+  return out;
+}
 
 // ---- worldimage (docs/123 §8.6): capture job pieces
 const GAME_COPY = join(ROOT, 'game-copy');
@@ -1084,6 +1116,26 @@ if (values['self-check']) {
     'AutLedger: ts3native Ledger=0 this load (off)', 'TooltipManager.Simulate at patch time: not started', 'Autonomy.CalculateScore: ok']),
     ['Localization.LocalizeString: already compiled', 'AutShadow: game assemblies = accepted set 1', 'AutLedger: ts3native Ledger=0 this load (off)']);
   assert.deepEqual(fixesApplied(null), []);
+  {  // shadowFails: only shadow jobs, zero cuts/entries and session-off lines fail
+    const on = { 'AutShadow.Enabled': 1 }, good = { autshadow: { cuts: 40, entries: 900 } };
+    assert.deepEqual(shadowFails(on, 'autshadow', { autshadow: { cuts: 0 } }, good, ['AutShadow: game assemblies = accepted set 1']), []);
+    assert.deepEqual(shadowFails({}, 'autshadow', {}, {}, []), []);
+    assert.deepEqual(shadowFails(on, 'autledger', {}, {}, []), []);
+    assert.deepEqual(shadowFails(on, 'x,autshadow', { autshadow: { cuts: 0 } }, { autshadow: { cuts: 0, entries: 0 } }, ['AutShadow: off for the session: L3 klass self-check failed']),
+      ['[AutShadow] no data: cuts 0, entries 0', 'AutShadow: off for the session: L3 klass self-check failed']);
+    assert.deepEqual(shadowFails(on, 'autshadow', { autshadow: { cuts: 5 } }, { autshadow: { cuts: 5, entries: 10 } }, []), ['[AutShadow] no data: cuts 0, entries 10']);
+    // Mode R: mono-cost4 ip-autshadow-r (a5 953, worker 13485 us over 953 runs, reference 2208084 us) fails twice
+    const r1 = { ...on, 'AutShadow.Mode': 1 }, z = { before: 0, after: 0 };
+    const ip4 = { autshadow: { cuts: 953, entries: 1024, refRuns: 953, refUs: 2_208_084, workRuns: 953, workUs: 13_485, overrun: 953, overrunIdle: 953 } };
+    const f4 = shadowFails(r1, 'autshadow', {}, ip4, [], { autshadow_a0: z, autshadow_a1: z, autshadow_a2: z, autshadow_a3: z, autshadow_a5: { before: 0, after: 953 } });
+    assert.equal(f4.length, 2); assert.match(f4[0], /Mode R void: 0 compared pairs .*a5 953/); assert.match(f4[1], /worker 14\.2 us per run \(953 runs\) < 50 us/);
+    assert.match(shadowFails(r1, 'autshadow', {}, ip4, [])[0], /no autshadow_a0\.\.a3 counters/);
+    const okR = { autshadow: { ...ip4.autshadow, workUs: 953 * 2000, overrun: 3 } };
+    assert.deepEqual(shadowFails(r1, 'autshadow', {}, okR, [], { autshadow_a0: { before: 0, after: 4000 }, autshadow_a3: z }), []);
+    assert.deepEqual(shadowFails(on, 'autshadow', {}, ip4, []), []);  // Mode 0: no compare rule
+    assert.deepEqual(shadowFails(r1, 'autshadow', {}, okR, [], { autshadow_a0: { before: 0, after: 4000 }, autshadow_a1: { before: 2, after: 5 }, autshadow_a3: { before: 0, after: 1 } }),
+      ['[AutShadow] Mode R mismatch: A1 3, A3 1 (must be 0)']);
+  }
   assert.equal(g11Gate('Baseline-IP', 31.2), 'G11 go (IP needs >= 30 ms/s)');
   assert.equal(g11Gate('Baseline-IP.sims3', 29), 'G11 stop (IP needs >= 30 ms/s)');
   assert.equal(g11Gate('Baseline-BP', 15), 'G11 go (BP needs >= 15 ms/s)');
@@ -1167,6 +1219,7 @@ if (values['self-check']) {
   assert.equal(parseQueue([{ id: 'f4', asi: 'x', save: 'S', fixesPackage: 'game-copy/p', run: { profile: { minutes: 1 } } }])[0].fixesPackage, 'game-copy/p');
   assert.throws(() => parseQueue([{ id: 'f5', asi: 'x', save: 'S', fixesPackage: 'p', fixesBuild: 'b', run: { soak: { minutes: 1 } } }]), /fixesPackage/);
   assert.throws(() => parseQueue([{ id: 'f6', asi: 'x', save: 'S', fixesPackage: 'p', run: { matrix: [] } }]), /fixesPackage/);
+  assert.equal(parseQueue([{ id: 'f7', asi: 'x', save: 'menu', fixesPackage: 'game-copy/p', run: { repro: 'r' } }])[0].fixesPackage, 'game-copy/p'); // start-path controls
   const bdb = loadDb();
   assert.ok(bdb.some(b => b.name === 'ts3fixes.v0.1.5' && b.kind === 'ts3fixes'), 'build DB has the v0.1.5 release package');
   assert.ok(bdb.some(b => b.name === 'ts3native.asi.rel015' && b.kind === 'asi' && b.version === '0.36.37'), 'build DB has asi.rel015 = 0.36.37');
@@ -1311,7 +1364,7 @@ const profileArgs = (j: Job, p: any = j.run.profile!, tag = profileTag(j), extra
       ...(p.ab ? ['--ab', p.ab, '--slice', String(p.slice ?? 2), ...(p.abOnFirst ? ['--ab-on-first'] : [])] : []), ...(p.untilCompares ? ['--until-compares', String(p.untilCompares)] : []), ...(p.fixesOff ? ['--fixes-off', p.fixesOff] : []), ...(p.fixesOn ? ['--fixes-on', p.fixesOn] : []), ...(p.taskstall ? ['--taskstall', String(p.taskstall)] : []),
       ...(p.inroom ? ['--inroom'] : []), ...(p.watchstalk ? ['--watchstalk'] : []), ...(p.watchstalk === 'worker' ? ['--watchstalk-worker'] : []), ...(p.livereads2 ? ['--livereads2'] : []), ...(p.f4b ? ['--f4b'] : []), ...(p.vres ? ['--vres'] : []), ...(p.vresDry ? ['--vres-dry', String(p.vresDry)] : []), ...(p.noSamplers ? ['--no-samplers'] : []), ...(p.noFrames ? ['--no-frames'] : []), ...(p.cameraPan ? ['--camera-pan'] : []), ...(p.profOpts ? ['--prof-opts', JSON.stringify(p.profOpts)] : []), ...(p.noEnv ? ['--no-env'] : []), ...(p.envGuard === false ? ['--no-env-guard'] : []), ...(p.story ? ['--story', JSON.stringify(p.story)] : []), ...(Number(j.ini?.['ProbeSnap.Enabled']) || p.noProf ? ['--no-prof'] : []), ...(p.travel ? ['--travel', p.travel] : []), ...(p.fixesRequire ? ['--fixes-require', p.fixesRequire] : []), ...(p.frameLead ? ['--frame-lead', JSON.stringify(p.frameLead)] : []), ...(p.hitchTasks ? ['--hitch-tasks', JSON.stringify(p.hitchTasks)] : []), ...extra];
 const runArgs = (j: Job): string[] | null =>
-  j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
+  j.run.repro ? [H('repro.ts'), 'run', j.run.repro, '--no-load'] : j.run.saveReload ? [H('save-reload.ts'), ...j.run.saveReload, '--port', values.port!] : j.run.matrix ? [H('save-matrix.ts'), ...j.run.matrix, ...(j.saveMatrix?.fixes ? ['--fixes', j.saveMatrix.fixes] : [])]
     : j.run.profile ? profileArgs(j)
     : j.run.age ? [H('age-save.ts'), '--days', String(j.run.age.days), '--checkpoint', String(j.run.age.checkpoint), '--save', ageName(j), '--port', values.port!,
       '--keep-alive', String(j.run.age.keepAlive ?? -50)] : null;
@@ -2070,6 +2123,7 @@ for (const [n, j] of jobs.entries()) {
     if (c1?.autshadow || /\baut/.test(j.run.profile?.fixesOn ?? '')) {
       row.fixesApplied = fixesApplied((await agent('patches'))?.result?.applied);
       log(`${j.id}: ts3fixes.applied: ${row.fixesApplied.join(' | ') || '(no AutShadow/AutLedger or refused-patch lines)'}`);
+      for (const f of shadowFails(rowIni(j), j.run.profile?.fixesOn, c0, c1, row.fixesApplied, row.fixActivity?.counters)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
     }
     row.counters ={ before: pickCounters(c0, sections), after: pickCounters(c1, sections) };
     row.counters.delta = delta(row.counters.before, row.counters.after);

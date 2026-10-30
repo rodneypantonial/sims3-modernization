@@ -639,6 +639,7 @@ static void UdWorldLoad() {  // sim thread, from the ts3fixes "world:" line
 // ts3fixes text channel (UserDiag.cs): Route.GetOption2 with optHi = 0x87000000 | op << 16, 4 ASCII bytes in optLo.
 // op 0 = begin a line, 1 = append (NUL pads), 2 = end: log it as "ts3fixes: <line>". Answer 1 = accepted; with [UserDiag]
 // off 0, so ts3fixes stops at the first message. Without ts3native the game answers false (no RouteOption2 name there).
+// Ops 3-5 memdiag.cpp; op 6 and "played: " lines played.cpp (docs/14 section 8.6).
 static const DWORD kUdTextHi = 0x87000000;  // 0x86000000 exact = the stuck-check PROBE mark (docs/163 §10)
 static int g_udTxtN;
 static LONG g_udTxtLines;
@@ -649,6 +650,7 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
     if (!g_udOn) return 0;
     switch ((hi >> 16) & 0xFF) {
         case 3: case 4: case 5: return MsOp((hi >> 16) & 0xFF);
+        case 6: return PlAnswer();  // played.cpp: store ready / household played (docs/14 section 8.6)
         case 0: g_udTxtN = 0; return 1;
         case 1:
             for (int i = 0; i < 4; i++) {
@@ -660,6 +662,13 @@ static u8 UdTextMsg(DWORD lo, DWORD hi) {
         case 2:
             g_udTxt[g_udTxtN] = 0;
             if (!strncmp(g_udTxt, "memsus", 6)) { g_udTxtN = 0; MsLine(g_udTxt); return 1; }  // own lines and cap ([MemDiag] module 2)
+            if (!strncmp(g_udTxt, "played: ", 8)) { g_udTxtN = 0; PlLine(g_udTxt + 8); return 1; }  // played.cpp logs what it does
+            if (!strncmp(g_udTxt, "savecleanup: ", 13)) {  // per-action save cleanup lines (docs/14 section 8.6): own, larger cap
+                static LONG s_scLines;
+                if (s_scLines++ < 50000) Log("ts3fixes: %s", g_udTxt);
+                g_udTxtN = 0;
+                return 1;
+            }
             if (g_udTxtLines++ < 400) Log("ts3fixes: %s", g_udTxt);  // cap: a looping sender cannot fill the disk
             if (!strncmp(g_udTxt, "world:", 6)) UdWorldLoad();
             else if (!strncmp(g_udTxt, "mem: ", 5)) MdMark(g_udTxt + 5);  // [MemDiag] event mark (ts3agent mem_mark)

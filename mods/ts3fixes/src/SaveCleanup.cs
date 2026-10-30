@@ -14,7 +14,8 @@ namespace Ts3Fixes
 {
     // Opt-in save cleanup (docs/14, ranks 1 and 2 of docs/09 4b), once per sim day at 2:00 (after the game's relationship
     // decay at 0:00 and its daily genealogy purge; before Overwatch's nightly run), never while saving, travelling or on
-    // vacation. Off unless Instantiator.kSaveCleanup or the "savecleanup" test switch is on.
+    // vacation. Off unless Instantiator.kSaveCleanup or the "savecleanup" test switch is on. The alarm starts the spread
+    // pass in SaveCleanupSpread.cs (~2 ms slices); the Run*Once methods below are the one-tick versions for the test agent.
     //   (a) Weak NPC-NPC relationships: what the game's own decay (Relationship.DecayAll / CanRelationshipDecayAway) would
     //       drop if NPC decay were not 0.001x, removed with Relationship.RemoveRelationship (both directions).
     //   (b) MiniSimDescriptions of Sims from other worlds with no family links and no tie to the active household,
@@ -43,18 +44,17 @@ namespace Ts3Fixes
         // Called on every world load (Instantiator). The alarm is NeverPersisted, so it is not written into the save.
         public static void StartSaveCleanup()
         {
+            try { PlayedWorldLoad(); } catch (Exception) { } // played households are recorded even while every cleanup is off
             if (AlarmManager.Global == null) return;
             if (sCleanupAlarm != AlarmHandle.kInvalidHandle) AlarmManager.Global.RemoveAlarm(sCleanupAlarm);
+            sCleanupTask = ObjectGuid.InvalidObjectGuid;
             sCleanupAlarm = AlarmManager.Global.AddAlarmDay(kCleanupHour, DaysOfTheWeek.All, DailySaveCleanup, "Ts3Fixes.SaveCleanup", AlarmType.NeverPersisted, null);
         }
 
+        // The 2:00 alarm starts the spread pass (SaveCleanupSpread.cs): every part runs in ~2 ms slices, one per tick.
         static void DailySaveCleanup()
         {
-            if (Instantiator.kSnapshotCap > 0) { try { RunSnapshotCapOnce(Instantiator.kSnapshotCap); } catch (Exception) { PatchCounters()[43]++; } }
-            if (!SaveCleanupOn()) return;
-            try { RunSaveCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; }
-            try { RunLifeEventTrimOnce(); } catch (Exception) { PatchCounters()[43]++; }
-            try { RunRouteAdaptorCleanupOnce(); } catch (Exception) { PatchCounters()[43]++; } // (d), PortalAdaptorLeak.cs
+            SaveCleanupSpreadStart();
         }
 
         // (c) On demand for the test agent too. Only empty lists go: every reader uses TryGetValue and creates a missing
@@ -66,16 +66,18 @@ namespace Ts3Fixes
             if (unsafeWhy != null) { c[43]++; return "skipped: " + unsafeWhy; }
             string before = LifeEventCounts();
             int lists = 0;
-            foreach (SimDescription d in Household.EverySimDescription())
-            {
-                if (d == null || d.LifeEventManager == null) continue;
-                lists += RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mLifeEvents")) + RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mActiveNodes"));
-            }
+            foreach (SimDescription d in Household.EverySimDescription()) lists += TrimLifeEventLists(d);
             c[52] += lists;
             string line = "life-event trim: -" + lists + " lists | before " + before + " | after " + LifeEventCounts();
             ShortcutLog(line);
             AppDomain.CurrentDomain.SetData("ts3fixes.lifeeventtrim", line);
             return line;
+        }
+
+        static int TrimLifeEventLists(SimDescription d)
+        {
+            if (d == null || d.LifeEventManager == null) return 0;
+            return RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mLifeEvents")) + RemoveEmptyLists(LifeEventDict(d.LifeEventManager, "mActiveNodes"));
         }
 
         // (d) On demand for the test agent too (reflect_call with args [cap]). Per active-household Sim, keeps the newest
@@ -93,23 +95,9 @@ namespace Ts3Fixes
             int removed = 0, kept = 0;
             foreach (SimDescription d in Household.ActiveHousehold.AllSimDescriptions)
             {
-                if (d == null || d.LifeEventManager == null) continue;
-                List<Sims3.UI.Hud.ILifeEvent> snaps = new List<Sims3.UI.Hud.ILifeEvent>();
-                foreach (Sims3.UI.Hud.ILifeEvent e in d.LifeEventManager.GetVisibleLifeEvents())
-                    if (e.HasSnapshot && e.Id != 0) snaps.Add(e);
-                snaps.Sort(); // LifeEvent.CompareTo orders by mTimestamp, oldest first
-                for (int i = 0; i < snaps.Count - cap; i++)
-                {
-                    Sims3.UI.Hud.ILifeEvent e = snaps[i];
-                    ResourceKey key = e.Snapshot;
-                    bool isShared;
-                    if (shared.TryGetValue(key, out isShared) && isShared) { kept++; continue; }
-                    MethodInfo update = e.GetType().GetMethod("UpdateSnapshot"); // LifeEvent is a private nested class
-                    if (update == null) return "failed: no LifeEvent.UpdateSnapshot";
-                    update.Invoke(e, new object[] { ResourceKey.kInvalidResourceKey });
-                    World.DeleteTravelDBResource(key);
-                    removed++;
-                }
+                int r = CapSnapshotsFor(d, cap, shared, ref kept);
+                if (r < 0) return "failed: no LifeEvent.UpdateSnapshot";
+                removed += r;
             }
             c[53] += removed;
             string line = "snapshot cap " + cap + ": -" + removed + " pictures, " + kept + " shared kept | before " + before + " | after " + LifeEventCounts();
@@ -118,33 +106,64 @@ namespace Ts3Fixes
             return line;
         }
 
+        // Keeps the newest `cap` own pictures of one Sim and clears older ones; returns how many, -1 when LifeEvent changed.
+        static int CapSnapshotsFor(SimDescription d, int cap, Dictionary<ResourceKey, bool> shared, ref int kept)
+        {
+            if (d == null || d.LifeEventManager == null) return 0;
+            List<Sims3.UI.Hud.ILifeEvent> snaps = new List<Sims3.UI.Hud.ILifeEvent>();
+            foreach (Sims3.UI.Hud.ILifeEvent e in d.LifeEventManager.GetVisibleLifeEvents())
+                if (e.HasSnapshot && e.Id != 0) snaps.Add(e);
+            snaps.Sort(); // LifeEvent.CompareTo orders by mTimestamp, oldest first
+            int removed = 0;
+            for (int i = 0; i < snaps.Count - cap; i++)
+            {
+                Sims3.UI.Hud.ILifeEvent e = snaps[i];
+                ResourceKey key = e.Snapshot;
+                bool isShared;
+                if (shared.TryGetValue(key, out isShared) && isShared) { kept++; continue; }
+                MethodInfo update = e.GetType().GetMethod("UpdateSnapshot"); // LifeEvent is a private nested class
+                if (update == null) return -1;
+                update.Invoke(e, new object[] { ResourceKey.kInvalidResourceKey });
+                World.DeleteTravelDBResource(key);
+                removed++;
+            }
+            return removed;
+        }
+
         // Every snapshot key held by a LifeEvent (visible or not) of any Sim in any household or urnstone: true when more
         // than one LifeEvent holds it (EventWithScreenshot can hand one picture to several Sims; no script code builds one).
         static Dictionary<ResourceKey, bool> SnapshotHolders()
         {
+            Dictionary<ResourceKey, object> owner = new Dictionary<ResourceKey, object>();
+            Dictionary<ResourceKey, bool> shared = new Dictionary<ResourceKey, bool>();
+            foreach (SimDescription d in SnapshotHolderSims()) AddSnapshotHolders(d, owner, shared);
+            return shared;
+        }
+
+        static List<SimDescription> SnapshotHolderSims()
+        {
             List<SimDescription> all = new List<SimDescription>();
             foreach (Household h in Household.sHouseholdList) all.AddRange(h.AllSimDescriptions); // incl. previous travellers
             all.AddRange(SimDescription.GetHomelessSimDescriptionsFromUrnstones());
-            Dictionary<ResourceKey, object> owner = new Dictionary<ResourceKey, object>();
-            Dictionary<ResourceKey, bool> shared = new Dictionary<ResourceKey, bool>();
-            foreach (SimDescription d in all)
+            return all;
+        }
+
+        static void AddSnapshotHolders(SimDescription d, Dictionary<ResourceKey, object> owner, Dictionary<ResourceKey, bool> shared)
+        {
+            if (d == null || d.LifeEventManager == null) return;
+            System.Collections.IDictionary dict = LifeEventDict(d.LifeEventManager, "mLifeEvents");
+            if (dict == null) return;
+            foreach (System.Collections.IEnumerable list in dict.Values)
             {
-                if (d == null || d.LifeEventManager == null) continue;
-                System.Collections.IDictionary dict = LifeEventDict(d.LifeEventManager, "mLifeEvents");
-                if (dict == null) continue;
-                foreach (System.Collections.IEnumerable list in dict.Values)
+                if (list == null) continue;
+                foreach (Sims3.UI.Hud.ILifeEvent e in list)
                 {
-                    if (list == null) continue;
-                    foreach (Sims3.UI.Hud.ILifeEvent e in list)
-                    {
-                        if (e == null || !e.HasSnapshot) continue;
-                        object first;
-                        if (!owner.TryGetValue(e.Snapshot, out first)) { owner[e.Snapshot] = e; shared[e.Snapshot] = false; }
-                        else if (!ReferenceEquals(first, e)) shared[e.Snapshot] = true; // the same Sim listed twice is not sharing
-                    }
+                    if (e == null || !e.HasSnapshot) continue;
+                    object first;
+                    if (!owner.TryGetValue(e.Snapshot, out first)) { owner[e.Snapshot] = e; shared[e.Snapshot] = false; }
+                    else if (!ReferenceEquals(first, e)) shared[e.Snapshot] = true; // the same Sim listed twice is not sharing
                 }
             }
-            return shared;
         }
 
         // lists/empty over both dictionaries of every Sim; events = LifeEvent objects; visible/snaps for the active household.
@@ -255,17 +274,28 @@ namespace Ts3Fixes
         // boarding school).
         static int PruneWeakRelationships()
         {
+            int n = 0;
+            foreach (SimDescription a in new List<SimDescription>(Relationship.sAllRelationships.Keys)) n += PruneWeakFor(a, false);
+            return n;
+        }
+
+        // The pairs of one key Sim (each pair once, from its lower id) that rule (a) drops; with `aggressive` also the
+        // quiet friend-or-weaker rule (SaveCleanupSpread.cs). Collected first, then removed with the game's RemoveRelationship.
+        static int PruneWeakFor(SimDescription a, bool aggressive)
+        {
             Household active = Household.ActiveHousehold;
+            Dictionary<SimDescription, Relationship> mine;
+            if (!NpcForCleanup(a, active) || !Relationship.sAllRelationships.TryGetValue(a, out mine) || mine == null) return 0;
             List<Relationship> drop = new List<Relationship>();
-            foreach (KeyValuePair<SimDescription, Dictionary<SimDescription, Relationship>> kv in Relationship.sAllRelationships)
+            foreach (KeyValuePair<SimDescription, Relationship> inner in mine)
             {
-                SimDescription a = kv.Key;
-                if (!NpcForCleanup(a, active)) continue;
-                foreach (KeyValuePair<SimDescription, Relationship> inner in kv.Value)
+                SimDescription b = inner.Key;
+                if (b == null || a.SimDescriptionId >= b.SimDescriptionId || !NpcForCleanup(b, active)) continue; // each pair once
+                if (WeakPair(inner.Value, a, b)) drop.Add(inner.Value);
+                else if (aggressive && QuietFriendPair(inner.Value, a, b))
                 {
-                    SimDescription b = inner.Key;
-                    if (a.SimDescriptionId >= b.SimDescriptionId) continue; // each pair once
-                    if (NpcForCleanup(b, active) && WeakPair(inner.Value, a, b)) drop.Add(inner.Value);
+                    if (PlayedGen(a) >= 0 || PlayedGen(b) >= 0) PatchCounters()[426]++; // played households get the lighter tier
+                    else drop.Add(inner.Value);
                 }
             }
             int n = 0;
@@ -274,8 +304,12 @@ namespace Ts3Fixes
                 Dictionary<SimDescription, Relationship> da, db;
                 if (!Relationship.sAllRelationships.TryGetValue(r.SimDescriptionA, out da) || !da.ContainsKey(r.SimDescriptionB)) continue;
                 if (!Relationship.sAllRelationships.TryGetValue(r.SimDescriptionB, out db) || !db.ContainsKey(r.SimDescriptionA)) continue;
+                bool weak = WeakPair(r, r.SimDescriptionA, r.SimDescriptionB);
+                SimDescription sa = r.SimDescriptionA, sb = r.SimDescriptionB;
                 Relationship.RemoveRelationship(r);
                 n++;
+                if (!weak) PatchCounters()[417]++; // removed by the aggressive rule only
+                CleanupAct("pair", weak ? "basic" : "aggr", sa, sb);
             }
             return n;
         }
@@ -295,14 +329,21 @@ namespace Ts3Fixes
             LongTermRelationshipTypes ltr = r.LTR.CurrentLTR;
             if (ltr != LongTermRelationshipTypes.Stranger && ltr != LongTermRelationshipTypes.Acquaintance) return false;
             if (Math.Abs(r.LTR.Liking) > kWeakLikingBand) return false;
+            if (!NoTiesPair(r, a, b)) return false;
+            if (SimClock.ElapsedTime(TimeUnit.Hours, r.LTR.WhenStateStarted) < SocialComponent.MinHoursToHoldRelationshipState) return false;
+            if (r.WhenLastTalked.Ticks != 0 && SimClock.ElapsedTime(TimeUnit.Days, r.WhenLastTalked) < kQuietDays) return false;
+            return true;
+        }
+
+        // Guards every relationship rule shares: never romantic, no household, partner, family, in-law or working tie.
+        static bool NoTiesPair(Relationship r, SimDescription a, SimDescription b)
+        {
             if (r.AreRomantic() || r.WasRomantic()) return false; // any romance visibility state, now or before
             if (a.Household == b.Household || a.Partner == b || b.Partner == a) return false;
             Genealogy ga = a.Genealogy, gb = b.Genealogy;
             if (ga.Spouse == gb || ga.IsSufficientlyRelatedToRuleOutRomance(gb) || gb.IsSufficientlyRelatedToRuleOutRomance(ga)) return false;
             if (Genealogy.IsParentInLaw(ga, gb) || Genealogy.IsParentInLaw(gb, ga) || Genealogy.IsSiblingInLaw(ga, gb)) return false;
             if (Occupation.HaveWorkingRelation(a, b)) return false;
-            if (SimClock.ElapsedTime(TimeUnit.Hours, r.LTR.WhenStateStarted) < SocialComponent.MinHoursToHoldRelationshipState) return false;
-            if (r.WhenLastTalked.Ticks != 0 && SimClock.ElapsedTime(TimeUnit.Days, r.WhenLastTalked) < kQuietDays) return false;
             return true;
         }
 
@@ -311,9 +352,18 @@ namespace Ts3Fixes
         // from the active household, and every mini relationship it has is a plain Stranger/Acquaintance one.
         static int PruneMiniSims()
         {
+            Dictionary<ulong, bool> keep = MiniSimKeep();
+            if (keep == null) return 0;
+            int n = 0;
+            foreach (ulong id in new List<ulong>(MiniSims().Keys)) if (PruneMiniSim(id, keep)) n++;
+            return n;
+        }
+
+        // Ids no MiniSim cleanup may remove or leave a tie to; null when sMiniSims is not readable.
+        static Dictionary<ulong, bool> MiniSimKeep()
+        {
             Dictionary<ulong, MiniSimDescription> minis = MiniSims();
-            if (minis == null) return 0;
-            WorldName here = GameUtils.GetCurrentWorld();
+            if (minis == null) return null;
             Dictionary<ulong, bool> keep = new Dictionary<ulong, bool>();
             foreach (SimDescription d in SimDescription.GetSimDescriptionsInWorld()) keep[d.SimDescriptionId] = true;
             if (GameStates.TravelerIds != null) foreach (ulong id in GameStates.TravelerIds) keep[id] = true;
@@ -324,17 +374,20 @@ namespace Ts3Fixes
                 if (minis.TryGetValue(d.SimDescriptionId, out own) && own != null)
                     foreach (MiniRelationship mr in own.MiniRelationships) keep[mr.SimDescriptionId] = true;
             }
-            List<ulong> drop = new List<ulong>();
-            foreach (KeyValuePair<ulong, MiniSimDescription> kv in minis)
-            {
-                MiniSimDescription m = kv.Value;
-                if (m == null || keep.ContainsKey(kv.Key) || m.HomeWorld == here || m.Instantiated) continue;
-                if (m.ProtectionFlags != MiniSimDescription.ProtectionFlag.None || m.PartnerId != 0 || m.IsPlayableGhost) continue;
-                if (HasFamilyLinks(m.Genealogy) || TiedToKept(m, keep)) continue;
-                drop.Add(kv.Key);
-            }
-            foreach (ulong id in drop) MiniSimDescription.RemoveMSD(id);
-            return drop.Count;
+            return keep;
+        }
+
+        // One MiniSim, tested at its turn; true when removed.
+        static bool PruneMiniSim(ulong id, Dictionary<ulong, bool> keep)
+        {
+            Dictionary<ulong, MiniSimDescription> minis = MiniSims();
+            MiniSimDescription m;
+            if (minis == null || !minis.TryGetValue(id, out m) || m == null) return false;
+            if (keep.ContainsKey(id) || m.HomeWorld == GameUtils.GetCurrentWorld() || m.Instantiated) return false;
+            if (m.ProtectionFlags != MiniSimDescription.ProtectionFlag.None || m.PartnerId != 0 || m.IsPlayableGhost) return false;
+            if (HasFamilyLinks(m.Genealogy) || TiedToKept(m, keep)) return false;
+            MiniSimDescription.RemoveMSD(id);
+            return true;
         }
 
         static bool HasFamilyLinks(Genealogy g)

@@ -21,6 +21,11 @@ namespace Ts3Fixes
         [Tunable] public static bool kStuckWatchdogIdle = true;    // ... also idle Sims on unroutable spots or in hidden rooms, a day in one spot, failing route plans (needs kStuckWatchdog)
         [Tunable] public static bool kSaveCleanup = false;       // opt-in: once a sim day drop weak NPC-NPC relationships, unlinked other-world MiniSims and empty life-event lists (docs/14)
         [Tunable] public static int kSnapshotCap = 0;            // opt-in: keep only the newest N memory pictures per active-household Sim, 0 = off (docs/14 7b)
+        [Tunable] public static bool kSaveCleanupAggressive = false; // opt-in, changes save data: long multi-generation saves, on top of kSaveCleanup (spread pass, docs/14 §8)
+        [Tunable] public static int kAggressiveSnapshotKeep = 10;  // ... newest memory pictures kept per Sim outside the active household
+        [Tunable] public static float kAggressiveQuietDays = 56f;  // ... friend-or-weaker NPC pairs not talked for this many sim days are dropped (2 years of 4 default 7-day seasons)
+        [Tunable] public static int kPlayedGenerations = 2;        // ... Sims within this many parent/child steps of a living member of a played household get the lighter tier
+        [Tunable] public static int kPlayedSnapshotKeep = 40;      // ... newest memory pictures kept per Sim under the lighter tier
         [Tunable] public static bool kRouteFailureBackoff = true;  // unseen townies do not re-plan a route that just failed (30 sim-minutes)
         [Tunable] public static bool kNoStationDetourOffscreen = true; // unseen townies keep their route instead of a subway/hover train detour
         [Tunable] public static bool kPortalAdaptorLeak = true;    // ocean/houseboat portals no longer leave a dead route callback on the Sim
@@ -89,15 +94,26 @@ namespace Ts3Fixes
         [Tunable] public static bool kUnseenFallbackLoopDetect = false;  // opt-in, logging only: names Sims that restart the same interaction on the same target after failed plans (docs/202 §5.7)
         [Tunable] public static bool kUnseenFallbackLoopBreak = false;   // opt-in until verified: an unseen looping Sim gets motives/moodlets reset and, on an unseen lot the player does not own, the lot tidied over several ticks (docs/202 §5.7)
         [Tunable] public static bool kUnseenFallbackFinish = false;   // opt-in until verified: an unseen walker that would wait for a busy route lock is held for its remaining walk time, then placed at its route end and the route ends as succeeded (needs ts3native [UnseenFallback] FinishWalk=1 and unseenfbsites; docs/202 §3.4.2)
+        [Tunable] public static bool kPosturePopCycle = false;   // opt-in until verified: a posture pop that EA would turn into a two-posture loop (Compatible branch) runs the setter's unwind instead (issue #89, PosturePop.cs)
         [Tunable] public static bool kUnseenFallbackPre = false;      // opt-in until verified: an unseen townie's own walk to an unseen lot goal is held for the walk time, then placed at the goal (no search; docs/202 §3.5)
         [Tunable] public static bool kPrePlanCallback = false;     // opt-in until measured: Route.AboutToPlanCallback runs before an async START, the job's locked-door list survives the original plan's second callback (RouteBackoff.cs PreCb, docs/185 §5)
+        [Tunable] public static bool kSeasonImposter = false;      // opt-in until measured: lot imposter rebuilds after a season change queued, one per 2 s for lots near the player, the rest at the next save (SeasonImposter.cs, issue #82)
+        [Tunable] public static bool kSeasonImposterCold = false;  // with kSeasonImposter: lots away from the player rebuilt in play too, one per 2 s, nearest first (else at the next save)
+        [Tunable] public static bool kPreferredService = false;    // opt-in, changes save data: service 'regular Sim' entries whose Sim left the pool dropped and re-picked (EaFixes.cs, issue #86)
+        [Tunable] public static bool kSocialWorkerOnLot = false;   // opt-in until verified: a social worker already on the lot starts the visit 1 sim-minute later from a yielding alarm, not inside a constructor (EaFixes.cs, issue #87)
+        [Tunable] public static bool kEaNullGuards = false;        // opt-in until verified: four EA null guards (bribe table, AddToSim(null), householdless pet motives, EnterWhileHolding(null)) (EaFixes.cs, issue #88)
+        [Tunable] public static bool kShowStageThrowables = false; // opt-in, changes save data: show stage throwable items made only to read a cost are destroyed (EaFixes.cs, issue #90)
+        [Tunable] public static bool kFirePitChair = false;        // opt-in, changes save data: fire pit test chairs destroyed before a save (EaFixes.cs, issue #90)
+        [Tunable] public static bool kAgeUpKeepOutfits = false;    // opt-in until verified: a failed or cancelled age-up builder keeps the Sim's outfits instead of wiping them (EaFixes.cs, issue #100)
+        [Tunable] public static bool kDeadRefGuards = false;       // opt-in until verified: Relationship.Get makes no entry for a disposed description, dead aging states skipped (DeadRefs.cs, issue #91)
+        [Tunable] public static bool kDeadRefSweep = false;        // opt-in, changes save data: EA holders of disposed descriptions / destroyed Sims cleaned, spread hourly + cheap pre-save pass (DeadRefs.cs, issue #91)
 
         public const string Version = "0.1.1";
 
         static Instantiator()
         {
             try { Fixes.Apply(); } catch (Exception) { } // never take the game down at startup
-            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartPlayTrace(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartUfSitesPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyTripSubclasses(); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } try { Fixes.MemSusWorldLoad(); } catch (Exception) { } };
+            World.OnWorldLoadFinishedEventHandler += delegate { try { Fixes.StartWatchdog(); } catch (Exception) { } try { Fixes.StartPlayTrace(); } catch (Exception) { } try { Fixes.StartViewerPush(); } catch (Exception) { } try { Fixes.StartUfSitesPush(); } catch (Exception) { } try { Fixes.StartSaveCleanup(); } catch (Exception) { } try { Fixes.StartDeadRefSweep(); } catch (Exception) { }try { Fixes.ApplyOverwatchStuck(true); } catch (Exception) { } try { Fixes.ApplyTripSubclasses(); } catch (Exception) { } try { Fixes.ApplyOverwatchSpread(true); Fixes.OverwatchSpreadWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchNotice(true); Fixes.OverwatchNoticeWorldLoad(); } catch (Exception) { } try { Fixes.ApplyOverwatchProbe(true); } catch (Exception) { } try { Fixes.ApplyErrorTrapSpread(true); Fixes.ErrorTrapSpreadWorldLoad(); } catch (Exception) { } Fixes.ClearNameCache(); Fixes.AutShadowWorldLoad(); Fixes.SeasonMarkerWorldLoad(); try { Fixes.DiagWorldLoad(); } catch (Exception) { } try { Fixes.MemSusWorldLoad(); } catch (Exception) { } };
         }
     }
 }

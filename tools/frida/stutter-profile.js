@@ -491,6 +491,11 @@ function addr(name) {
     // ts3native's route detour, or S3PP's SimulatorStageProfiler (needed by its MonoTypeEHashProbe, so it stays on): both wrap
     // the original with the same arguments and result, so timing the wrapper times the stage
     if (['ts3native.asi', 'Sims3Performance.asi'].includes(Process.findModuleByAddress(target)?.name)) return target;
+    // ts3native [MonoThread] P3 (docs/30 §14, GcLock=1): the stub lives in its own VirtualAlloc page and starts with
+    // `cmp dword [gate], 0` (83 3D <gate>), the gate inside ts3native.asi; it runs the original with the same arguments
+    // and result (locked or not), so timing the stub times the call. Before this, every GcLock=1 run was NOT PROFILING.
+    if (target.readU8() === 0x83 && target.add(1).readU8() === 0x3d &&
+        Process.findModuleByAddress(target.add(2).readPointer())?.name === 'ts3native.asi') return target;
   }
   if (got !== expect) throw new Error(`${name} @ ${p}: bytes ${got}, expected ${expect}. ` +
     (got.startsWith('e9') ? 'Detoured by another plugin (S3PP SimulatorStageProfiler? turn it off).' : 'Different TS3W.exe build?'));

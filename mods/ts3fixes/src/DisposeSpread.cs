@@ -163,7 +163,13 @@ namespace Ts3Fixes
             public bool SaveHook(bool synchronous, bool forceUseSaveName, bool forceSaveAs)
             {
                 try { PatchCounters(); DisposeSpreadFlush(); } catch (Exception) { } // never block a save
-                return SaveOrig(synchronous, forceUseSaveName, forceSaveAs);
+                try { SeasonImposterFlush(); } catch (Exception) { } // seasonimposter: the save holds fresh imposters (SeasonImposter.cs)
+                try { PreferredServiceSweep(); } catch (Exception) { } // preferredservice (EaFixes.cs)
+                try { FirePitChairSweep(); } catch (Exception) { } // firepitchair (EaFixes.cs)
+                try { DeadRefSavePass(); } catch (Exception) { } // deadrefsweep: cheap final pass, the rest is spread hourly (DeadRefs.cs)
+                bool saved = SaveOrig(synchronous, forceUseSaveName, forceSaveAs);
+                try { PlayedSyncKey(); } catch (Exception) { } // Save As: the played-household sidecar follows the new name (PlayedHouseholds.cs)
+                return saved;
             }
             public bool SaveOrig(bool synchronous, bool forceUseSaveName, bool forceSaveAs) { return false; } // OptionsModel.SaveGame(bool, bool, bool)
         }

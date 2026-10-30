@@ -218,9 +218,9 @@ static void TestMonoThreadM5() {
     Ts3nMtProbe& m = ts3native_mtprobe;
     static_assert(offsetof(Ts3nMtProbe, locking) == 0x0C && offsetof(Ts3nMtProbe, p4Ready) == 0x30 &&
                   offsetof(Ts3nMtProbe, seq) == 0x64 && offsetof(Ts3nMtProbe, arenaRelNonEmpty) == 0x6C && offsetof(Ts3nMtProbe, lockStale) == 0x84 &&
-                  offsetof(Ts3nMtProbe, lockOomReleased) == 0x88 && sizeof(Ts3nMtProbe) == 0x8C,
-                  "ts3native_mtprobe v4 layout (docs/registry.md)");
-    assert(m.version == 4 && m.locking == 0);
+                  offsetof(Ts3nMtProbe, lockOomReleased) == 0x88 && offsetof(Ts3nMtProbe, lazyOff) == 0x94 && sizeof(Ts3nMtProbe) == 0x98,
+                  "ts3native_mtprobe v5 layout (docs/registry.md)");
+    assert(m.version == 5 && m.locking == 0);
     MtLockInit();
     const DWORD me = GetCurrentThreadId();
 
@@ -274,6 +274,30 @@ static void TestMonoThreadM5() {
     printf("mono thread M5: control without the lock: %ld nodes handed out twice, %ld empty pops, list %d of 64\n", g_mtDup, g_mtNull, MtListLen());
     MtResetList();
     m.locking = 1;
+    // uncontended GC lock entry cost (docs/30 §15): one thread, alloc + free pairs through the stubs, gate on vs off; a
+    // worker id is set so MtLockEnter reads the thread id as in game (best of 3: the machine may be busy)
+    {
+        const int N = 2000000;
+        LARGE_INTEGER f, t0, t1;
+        QueryPerformanceFrequency(&f);
+        double best[2] = {1e30, 1e30};
+        const DWORD wt = g_mtWorkerTid;
+        g_mtWorkerTid = 1;
+        for (int rep = 0; rep < 3; rep++)
+            for (int on = 0; on < 2; on++) {
+                m.locking = on;
+                QueryPerformanceCounter(&t0);
+                for (int i = 0; i < N; i++) g_mtHFree((MtNode*)g_mtHAlloc(8));
+                QueryPerformanceCounter(&t1);
+                const double ns = (double)(t1.QuadPart - t0.QuadPart) * 1e9 / (double)f.QuadPart / (2.0 * N);
+                if (ns < best[on]) best[on] = ns;
+            }
+        g_mtWorkerTid = wt;
+        m.locking = 1;
+        assert(MtListLen() == 64 && g_mtDepth == 0 && g_mtLock.RecursionCount == 0);
+        printf("mono thread M5: GC lock uncontended: %.1f ns per hooked call with the gate on, %.1f ns off, +%.1f ns per locked entry (best of 3 x %d pairs)\n",
+               best[1], best[0], best[1] - best[0], N);
+    }
 
     // --- 0xE4B3F0 replacement on a fake queue: per-call limit, order, bytes freed meanwhile, ECX kept ---
     DWORD fin[3][4];
@@ -352,6 +376,7 @@ static void TestMonoThreadM5() {
     const DWORD globals[2] = {0x1111, 0x2222};
     assert(MtBuildP4(stubs, at, globals) && g_mtSlotF < 64 && g_mtSlotA < 64);
     assert(TlsGetValue(g_mtSlotF) == (void*)0x1111 && TlsGetValue(g_mtSlotA) == (void*)0x2222);
+    assert(*MtFrameSlot() == 0x1111);  // MtInstallP4 points g_curState here (CanYield after P4)
     for (int i = 0; i < 3; i++) assert(MtJmpTo(at[i], stubs + i * 64, kMtBlocks[i].len));
     // entry: saves the old pair (frame to [ebp-0x60], array in ECX), sets frame = [ebp+8], array = ebp-0x4C74
     static DWORD frameBuf[64];
@@ -435,6 +460,35 @@ static void TestMonoThreadM5() {
     MtM5Tick();  // restart on the switch
     MtWaitFor(&m.workerState, 2);
     assert(m.workerStarts == 2 && m.locking == 1);
+    // v5 LazyGate (docs/30 §15): gate off while the worker is idle, on from the dispatch until a tick sees the job finished
+    g_mtLazyGate = true;
+    MtM5Tick();  // worker idle: gate off
+    assert(m.locking == 0 && m.lazyOff == 1);
+    {
+        const LONG lc0 = m.lockedCalls;
+        g_mtHFree((MtNode*)g_mtHAlloc(8));
+        assert(m.lockedCalls == lc0);  // idle worker: the sim's GC entries run unlocked
+        const LONG lw = m.lockedWorker, sq = m.seq;
+        g_mtDup = g_mtNull = 0;
+        assert(MtSubmit((void*)0x40, NULL, params));
+        assert(m.locking == 1 && m.lazyOn == 1);
+        MtHammer(20000);  // the sim allocates while the job runs: both sides lock
+        MtWaitFor(&m.seq, sq + 1);
+        MtWaitFor(&g_mtBusy, 0);
+        assert(m.locking == 1 && g_mtDup == 0 && g_mtNull == 0 && MtListLen() == 64 && m.lockedWorker >= lw + 40000 && g_mtDepth == 0);
+        MtM5Tick();  // tick boundary, job finished: off again
+        assert(m.locking == 0 && m.lazyOff == 2);
+        MtM5Tick();  // nothing to do
+        assert(m.lazyOff == 2);
+    }
+    k.mtMode = 0;
+    MtM5Tick();  // stop with the lazy gate: the worker unregisters under the lock, then the gate goes off
+    assert(!g_mtWorker && m.locking == 0 && m.workerState == 4 && g_mtFakeTab[5] == 0 && g_mtFakeTab[8] == 0);
+    g_mtLazyGate = false;
+    k.mtMode = 1;
+    MtM5Tick();
+    MtWaitFor(&m.workerState, 2);
+    assert(m.workerStarts == 3 && m.locking == 1);
     k.mtMode = 0;
     MtM5Tick();
     assert(!g_mtWorker && m.locking == 0 && m.workerStopFails == 0);

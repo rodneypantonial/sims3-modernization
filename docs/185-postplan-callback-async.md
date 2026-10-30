@@ -125,6 +125,10 @@ Fix (pass rule, not the game): liking re-set before arm C; `stepsRequire` `sim_v
 
 Fix (repro, no game or mod change): `sim_go_home` for both visitors (30 s) before the swap pass and before arm C, so no visitor is on the lot when its next visit is tested; liking 50 with Lala as well as Tiara at both setup points; `stepsRequire` per arm via a new step field `tally` (`profile-world.ts` counts the step under that name): `visit_a.queued>=1,visit_b.queued>=1,visit_c.queued>=1`, so every arm planned at least one visit into the locked home (arm C's is the one `preplancb` acts on); `preplancb_precalls>=1` and `preplancb_doors_restored>=1` stay. Not run. Gap: on a refusal the agent should list the household adults (at home, liking); not added while a queue runs (`mods/` is rebuilt at job start).
 
+### 6.5 Fifth run: PASS, arm C outcome not recorded (2026-10-25 13:47 UTC); check fixed 2026-10-30
+
+`verify-preplancb-order` passed (`visit_a/b/c.queued>=1`, `preplancb_precalls` 0 -> 2,154, `preplancb_doors_restored` 0 -> 93, PLAN.md). Arm A walked to the door (Wogan on the home lot 30 s later). Arm B failed in place (Johnny still at Bridgeport Sports Zone with an empty queue). The repro had `sim_details` only after the first A and B visits, so neither arm C outcome nor the swap outcomes were read. Fix (repro only): every `sim_visit_lot` now has a `sim_details` step for the same Sim right after it, tallied `detail_a` / `detail_b` / `detail_c`, and `stepsRequire` adds `detail_c.in_world>=2`, so the job fails unless both arm C outcomes are recorded. The verdict stays a read of the result rows (`lot`, `queue`): for arm C, expect the arm A outcome (on the home lot or at the door, locked-door reaction queued), not the arm B outcome (off the lot, empty queue). Not run.
+
 ## 7. Corrections
 
 - docs/11 §"C# alternatives": EA sets both delegates (`SimRoutingComponent`, `CarRoutingComponent`, `TombRoomManager`, `BunkBedContainer`, docs/93); mods such as GoHere and Overwatch add to them. Fixed in place.

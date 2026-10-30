@@ -186,7 +186,7 @@ static u64 __cdecl OrHook(DWORD handle, OrV3 p) {
         if (!k.orShadow) return g_orOrig(handle, p);
         InterlockedIncrement(&g_rgOffSimOpen);  // no job starts while the two answers are compared (worker Dekker order)
         const u64 r = g_async.state == A_RUNNING ? g_orOrig(handle, p) : OrShadow(handle, p);
-        InterlockedDecrement(&g_rgOffSimOpen);
+        RgOffSimDrop();
         return r;
     }
     if (!k.orMode) return g_orOrig(handle, p);

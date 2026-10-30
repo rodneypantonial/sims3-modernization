@@ -91,7 +91,7 @@ export function unzip(z: Buffer): Map<string, Buffer> {
     const crc = z.readUInt32LE(p + 16), csize = z.readUInt32LE(p + 20), nlen = z.readUInt16LE(p + 28), xlen = z.readUInt16LE(p + 30), clen = z.readUInt16LE(p + 32);
     const name = z.toString('utf8', p + 46, p + 46 + nlen), lo = z.readUInt32LE(p + 42);
     const ldata = lo + 30 + z.readUInt16LE(lo + 26) + z.readUInt16LE(lo + 28);
-    const data = inflateRawSync(z.subarray(ldata, ldata + csize));
+    const raw = z.subarray(ldata, ldata + csize), data = z.readUInt16LE(p + 10) === 0 ? Buffer.from(raw) : inflateRawSync(raw); // 0 = stored
     if (crc32(data) !== crc) throw new Error(`unzip: CRC mismatch in ${name}`);
     out.set(name, data);
     p += 46 + nlen + xlen + clen;

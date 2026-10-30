@@ -38,6 +38,7 @@ namespace Ts3Fixes
             AppDomain.CurrentDomain.SetData("ts3fixes.applied", new List<object>());
             PatchCounters();
             ApplyTaskCountHook();  // first: the setter must not have run yet
+            ApplyAutShadowLocHooks();  // next: any localized string before ApplyAutShadow compiles them (inert while autshadow is off)
             Patch(typeof(GoHome), "Run", typeof(GoHomeHook), "RunHook", "RunOrig");
             Patch(typeof(RabbitHole), "RouteNearEntranceAndEnterRabbitHole", typeof(RabbitHoleHook), "EnterHook", "EnterOrig");
             Patch(typeof(VisitCommunityLot), "Run", typeof(VisitCommunityLotHook), "RunHook", "RunOrig");
@@ -75,6 +76,10 @@ namespace Ts3Fixes
             ApplyDisposeSpread();
             ApplyMemAlive();
             ApplyUfFinish();
+            ApplyPosturePop();
+            ApplySeasonImposter();
+            ApplyEaFixes();
+            ApplyDeadRefs();
         }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
@@ -154,12 +159,28 @@ namespace Ts3Fixes
         // not placed at the end (seen or gone at placement: replanned from where it stood) / holds given up (seen, route changed or
         // ended, not routable: the Sim walks on) / ids flagged finishable / not flagged: route end seen or a household Sim on its lot /
         // not flagged: route shape (not one open walking subpath, slaves, follow-up actions, Sim rules) / longest hold (sim-minutes).
+        // [371] UfHeld posture chains that did not end within 16 postures (a loop: held, issue #89, UnseenFallback.cs), [372] posturepopcycle:
+        // pops sent down the setter's unwind instead of Compatible (PosturePop.cs, issue #89).
+        // [373-379] seasonimposter (SeasonImposter.cs, issue #82): lots queued / warm rebuilds in play / cold rebuilds in play
+        // (seasonimpostercold) / rebuilt at a save or travel flush / dropped (lot gone, world unload, threw) / longest rebuild ms /
+        // most waiting. [380-390] EA fixes (EaFixes.cs, issues #86-#90): preferredservice extra entries removed / stale entries
+        // re-picked / swept at save, socialworkeronlot visits deferred / dropped, eanullguards bribe / topic / motives / carry,
+        // showstagethrowables items destroyed, firepitchair chairs destroyed. [391-392] ageupkeepoutfits (EaFixes.cs, issue #100):
+        // outfit swaps skipped after a failed build / descriptions with no Naked and no Everyday outfit at the last count.
+        // [393-410] dead references (DeadRefs.cs, issue #91): deadrefguards Get refusals / aging states refused; deadrefsweep
+        // relationship keys / relationship entries / aging states / alarm owners / react times / coworker-boss-chess / topics /
+        // fishers / Sim fields / passenger-horseshoe entries removed, passes finished, slices, longest slice us, total ms,
+        // longest save pass us, refused or stopped.
+        // [411-422] save cleanup spread pass + savecleanupaggressive (SaveCleanupSpread.cs, docs/14 §8): passes finished, slices,
+        // longest slice us, total ms, refused or stopped, outside-household pictures, quiet friend pairs, history entries,
+        // dead outfits, dead Sims disposed, cleanse skipped for Overwatch, dead passport lists seen. [423-426] played households
+        // (PlayedHouseholds.cs, docs/14 §8.6): set size, ids added, lighter-tier pictures removed, aggressive actions skipped.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[371]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[427]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -258,6 +279,18 @@ namespace Ts3Fixes
                 case "unseenfbloopdet": return Instantiator.kUnseenFallbackLoopDetect;
                 case "unseenfbloopbreak": return Instantiator.kUnseenFallbackLoopBreak;
                 case "unseenfbfinish": return Instantiator.kUnseenFallbackFinish;
+                case "posturepopcycle": return Instantiator.kPosturePopCycle;
+                case "seasonimposter": return Instantiator.kSeasonImposter;
+                case "seasonimpostercold": return Instantiator.kSeasonImposterCold;
+                case "preferredservice": return Instantiator.kPreferredService;
+                case "socialworkeronlot": return Instantiator.kSocialWorkerOnLot;
+                case "eanullguards": return Instantiator.kEaNullGuards;
+                case "showstagethrowables": return Instantiator.kShowStageThrowables;
+                case "firepitchair": return Instantiator.kFirePitChair;
+                case "ageupkeepoutfits": return Instantiator.kAgeUpKeepOutfits;
+                case "deadrefguards": return Instantiator.kDeadRefGuards;
+                case "deadrefsweep": return Instantiator.kDeadRefSweep;
+                case "savecleanupaggressive": return Instantiator.kSaveCleanupAggressive;
                 case "spotspread": return true;
                 default: return true;
             }

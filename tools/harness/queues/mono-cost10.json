@@ -1,0 +1,95 @@
+{
+  "note": "mono-cost10: ts3native 0.36.118 (asi.mono-cost10, docs/122 §14.18, ledger §391): [AutShadow] Mode R on BP and IP with the mono-cost9 keys. New in the build (no new ini keys): list kinds (Sim moves refresh only list rows whose type can hold a Sim; ts3fixes classifies each list type once), lot-vector prints for touches that cannot be placed (no resync cut), tier triggers (camera, move, 4 x TierClassMs), shared cut (every request posted before a cut joins it, contract Version 6), the gardening count read at the cut (mono-cost9 BP A2), autshadow v11. Goal: A1-A3 0 and docs/124 G-C (cut <= ~25% of the scoring moved, go-live estimate line). Correctness + cut cost, 2 x 10 min, ~30 min. Read with node tools/harness/mono-cost-report.ts --tag mono-cost10.",
+  "jobs": [
+    {
+      "id": "bp-autshadow-r",
+      "note": "1/2 Mode R on 0.36.118 (docs/122 §14.18). mono-cost9 (0.36.115): BP A0 26,606, A2 1 (GoToGarden gardening count), A4 18.9%, cut 1.59 ms (resync cuts 295 of 842); IP A0 33,971, A1-A3 0, A4 15.4%, cut 1.05 ms (resync 461 of 784). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v11: learned > 0, auditMis 0, listMissed 0 (> 0 = a list-kind or lot-vector gap: read the list audit miss log lines), dirtyTripped 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read: cut per cut (BP ~0.7-0.95 ms, IP ~0.45-0.65 expected), resync cuts (resyncTouch/resyncMap only, ~0), unplaced and lite prints, simFreeKept > 0 with listTypesSimFree > 0, tierClassN per cut, batchReqs per cut and batchCuts, the go-live estimate line (net, cut share <= 25%). Any crash: stop and triage against 0.36.115.",
+      "asi": "game-copy/ts3native.asi.mono-cost10",
+      "save": "Baseline-BP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    },
+    {
+      "id": "ip-autshadow-r",
+      "note": "2/2 Mode R on 0.36.118 (docs/122 §14.18). mono-cost9 (0.36.115): BP A0 26,606, A2 1 (GoToGarden gardening count), A4 18.9%, cut 1.59 ms (resync cuts 295 of 842); IP A0 33,971, A1-A3 0, A4 15.4%, cut 1.05 ms (resync 461 of 784). PASS = 0 crashes, no freeze; compared pairs > 0, autshadow_a1 == 0, autshadow_a2 == 0 and autshadow_a3 == 0 (any A1-A3 FAILs: queue.ts shadowFails), a4 < 22% of compared pairs; -native.json autshadow v11: learned > 0, auditMis 0, listMissed 0 (> 0 = a list-kind or lot-vector gap: read the list audit miss log lines), dirtyTripped 0, workExc 0, refExc 0, finishExc 0; mtprobe: workerExceptions 0, n2mOverflow 0, lockOverflow 0, workerCtxSet 0. Read: cut per cut (BP ~0.7-0.95 ms, IP ~0.45-0.65 expected), resync cuts (resyncTouch/resyncMap only, ~0), unplaced and lite prints, simFreeKept > 0 with listTypesSimFree > 0, tierClassN per cut, batchReqs per cut and batchCuts, the go-live estimate line (net, cut share <= 25%). Any crash: stop and triage against 0.36.115. Run after 1/2 passed.",
+      "asi": "game-copy/ts3native.asi.mono-cost10",
+      "save": "Baseline-IP-Spring",
+      "minCounters": 90,
+      "ini": {
+        "HitchAttr.Enabled": 1,
+        "RouteSnap.Enabled": 1,
+        "RouteSnap.Count": 1,
+        "RouteSnap.AuditEvery": 0,
+        "MonoThread.Enabled": 1,
+        "MonoThread.Mode": 1,
+        "MonoThread.GcLock": 1,
+        "MonoThread.FrameTls": 1,
+        "MonoThread.ArenaFix": 1,
+        "MonoThread.N2mPrivate": 1,
+        "AutShadow.Enabled": 1,
+        "AutShadow.Mode": 1,
+        "AutShadow.Sample": 4,
+        "AutShadow.Audit": 50,
+        "AutShadow.DumpOnMismatch": 1,
+        "AutShadow.WindowWaitUs": 5000,
+        "AutShadow.ColdIc": 1,
+        "AutShadow.CutLean": 2,
+        "AutShadow.TierMs": 1500,
+        "AutShadow.ListAudit": 1,
+        "AutShadow.TierClassMs": 1000
+      },
+      "logRequire": {
+        "OK   sim loop: .* runs at the end of every Simulate iteration": 1,
+        "OK   mono thread P4": 1
+      },
+      "run": {
+        "profile": {
+          "minutes": 10,
+          "seed": 12345,
+          "fixesOn": "autshadow"
+        }
+      },
+      "gameArgs": [
+        "-disablestoryprogression"
+      ],
+      "timeoutMin": 30
+    }
+  ]
+}

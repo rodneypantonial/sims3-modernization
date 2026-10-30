@@ -79,7 +79,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                   offsetof(Ts3nCounters, p5cAcq) == 0x3084 && offsetof(Ts3nCounters, p5cStale) == 0x3088 &&
                   offsetof(Ts3nCounters, p5cParked) == 0x3090 && offsetof(Ts3nCounters, p5cKeptWait) == 0x3094 &&
                   offsetof(Ts3nCounters, p5cFlushed) == 0x30A4 && offsetof(Ts3nCounters, p5cCountLow) == 0x30B4 &&
-                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 5408 * 4,
+                  offsetof(Ts3nCounters, p5cOff) == 0x30C0 && sizeof(Ts3nCounters) == 5432 * 4,
                   "counters v65 layout (docs/registry.md)");
     const DWORD me = GetCurrentThreadId();
     g_p5cSimTid = me;
@@ -229,7 +229,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                 destroyed = true;
                 got = g_p5bBody != 0;  // finished inside the job
                 P5cFlush();            // RtEnter's end: refused while the job runs
-                InterlockedDecrement(&g_rgOffSimOpen);
+                RgOffSimDrop();
             } else if (act == 30) {    // a save: D2, then the job wait (closure #6)
                 c = C_SAVE;
                 P5cNrEnter();
@@ -240,7 +240,7 @@ static void TestP5cIn(void* lock, const DWORD* hitKey, const DWORD* missKey, int
                 got = g_p5bBody != 0;
                 if (got) P5cBadAt(7);
                 P5cFlush();
-                InterlockedDecrement(&g_rgOffSimOpen);
+                RgOffSimDrop();
             } else {
                 LONG r;
                 if (act < 10) {
