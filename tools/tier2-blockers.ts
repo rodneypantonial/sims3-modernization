@@ -1,8 +1,8 @@
-// docs/216: what still blocks each tier-2 autonomy definition (docs/126 candidates) that is not ready after the built worker
+// docs/219: what still blocks each tier-2 autonomy definition (docs/126 candidates) that is not ready after the built worker
 // hooks (H7-H12) and the Query_GetGlobalObjects row (docs/127 §7): the exact missing piece (snapshot rows with the key their
 // answer depends on; the managed write or sim-thread IC that blocks, with its path), an effort class and the scoring share
 // the definition would move (docs/75 samples). Input: the --full JSON of tools/autonomy-virtual-closure.ts, run with those
-// hooks as what-if cuts (command in docs/216 Reproduce). Also classifies every game override of GameObject.get_InUse with
+// hooks as what-if cuts (command in docs/219 Reproduce). Also classifies every game override of GameObject.get_InUse with
 // the same rules: a base path scores any target, so all of them sit in its closure.
 // Usage: node tools/tier2-blockers.ts --asm <repo>/game-copy/assemblies --index <...>/index.json --full <json>
 //        [--csv docs/data/tier2-blockers.csv] [--what-if <the same cuts as the --full run>]   (summary to stderr). Static only.
@@ -36,10 +36,10 @@ const KEY: Record<string, string> = {
   Slots_IsSlotEnabledImpl: 'new: bit per (object, slot name); the body takes +0x918 (docs/90), so fill at the cut like a-cut rows',
   Slots_GetRoutingSlotNamesImpl: 'new: slot-name array per object model (fixed per model), memo',
 };
-// The four rows a base-path override puts in most local closures (docs/216 §2).
+// The four rows a base-path override puts in most local closures (docs/219 §2).
 const SHARED = ['World_IsOnRoofImpl', 'Objects_GetHeightAboveFloor', 'World_GetPoolObjectIdForPoolBelowPositionImpl', 'Objects_GetForward'];
 
-// Blocked definitions, read from their blocker paths (docs/216 §3). [kind, missing piece and fix, effort, notes]
+// Blocked definitions, read from their blocker paths (docs/219 §3). [kind, missing piece and fix, effort, notes]
 const INUSE = 'GameObject.get_InUse overrides (no target type here): 10 of 48 block (§3.1: 6 destroy an orphaned prop, 2 reach a fire placement check, 2 build the LiveDragHelperModel singleton); fix = worker hook on the 8 (abort `inuse`) + pre-warm LiveDragHelperModel.Singleton';
 const HAND: [RegExp, string, string, 'small' | 'medium' | 'hard', string][] = [
   [/^base path: Autonomy\.CalculateScoreForObjectInteraction$/, 'managed-write', INUSE, 'small', 'every blocker path enters a get_InUse override through GetInUseAutonomyMultiplier'],
@@ -54,7 +54,7 @@ const HAND: [RegExp, string, string, 'small' | 'medium' | 'hard', string][] = [
   [/Socializing\.SocialInteractionA\+Definition$/, 'static-coll', 'Relationship.GetMiniRelationships adds to Relationship.sAllRelationships; CauseEffectService persistable data lazy fill', 'medium', 'the OWN_FIELD_WRITE hits are the .ctor of a new Definition in GetYouShouldTargets (a fresh object, not the shared one) [inferred: rule false positive]; pre-warm CauseEffectService'],
   [/Sim_ReadToSleep_Autonomous\+Definition$/, 'static-coll', 'Relationship.GetMiniRelationships adds to Relationship.sAllRelationships; CauseEffectService persistable data lazy fill', 'medium', 'pre-warm CauseEffectService; abort when the Sim has no relationship entry yet'],
   [/Door\+ChangeDoorbellSound\+Definition$/, 'writing-ic', 'Lot.GetFrontDoor lazy lookup: SetFrontDoor (World_SetLotFrontDoorImpl), UpdateStreetParking (World_FindPlacesOnRoad)', 'medium', 'pre-warm the front door per lot (load and lot change)'],
-  [/(ViewObjects|WalkerClassic\+HoldChild)\+Definition$/, 'static-write', 'LiveDragHelperModel.get_Singleton lazy singleton', 'small', 'pre-warm once per load; then new rows only (docs/216 §3.2 what-if)'],
+  [/(ViewObjects|WalkerClassic\+HoldChild)\+Definition$/, 'static-write', 'LiveDragHelperModel.get_Singleton lazy singleton', 'small', 'pre-warm once per load; then new rows only (docs/219 §3.2 what-if)'],
   [/(Phone\+CallIntelligenceAgency|GoToOccupationJobLocation)\+Definition$/, 'sim-thread-ic', 'Lot.IsFireOnLot -> FireManager.HasOnlyLeafPileFires -> Fire.GetObjectsOnFloor -> CheckObjectPlacement', 'small', 'abort `fire` while the lot has a fire (FireManager.NoFire false); same guard covers the IceCreamMaker / DeepFryerVegas get_InUse'],
   [/InteriorDesigner\+TakeMeasurements\+Definition$/, 'static-write', 'Cabinetry.get_BuyModeSuite lazy BuyModeSuite: DesignModeSwap.DesignModeSwapComplete event add', 'medium', 'pre-warm per cabinetry object, or abort while the suite is null'],
   [/Terrain\+SplashInPuddle\+Definition$/, 'unclear-ic', 'World_GetObjectsImpl (class d, as Query_GetObjects I-121-7) and a CheckObjectPlacement', 'hard', 'two pieces; the placement check keeps it on the sim thread'],

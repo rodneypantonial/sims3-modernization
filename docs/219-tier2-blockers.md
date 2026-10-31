@@ -1,4 +1,4 @@
-# 216. Tier-2 autonomy definitions: what still blocks them
+# 219. Tier-2 autonomy definitions: what still blocks them
 
 2026-10-30. Static only: call-graph index and assemblies of the Steam 1.67 install, `tools/autonomy-virtual-closure.ts` what-if runs, no game run, no build. Per-definition table: `docs/data/tier2-blockers.csv`; generator `tools/tier2-blockers.ts`.
 
