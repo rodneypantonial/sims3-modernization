@@ -13,6 +13,20 @@ Shared numbers that two PRs must never both take. Test tools, logs and results f
 3. Two PRs that reserved the same number: the first merged keeps it, the other rebases onto the next free one.
 4. Gaps stay gaps (slots 19-20): old logs and results already read them as zero.
 
+## Checking a branch before the PR
+
+`node tools/pr-preflight.ts` (or `--pr <n>` for an open PR; `--base` defaults to `origin/main`) compares the branch with the base from their merge-base and lists only the problems:
+
+- **doc numbers:** a new `docs/NNN-*.md` whose number the base already has, or that the branch uses twice, with the next free number (past the base's highest, skipping numbers other open PRs add; `gh` needed for those, `--no-prs` skips them). An open PR that adds the same new number is listed too: whichever merges second renumbers.
+- **index lines:** lines the branch adds to `CLAUDE.md`, `PLAN.md` or `docs/index.md` that name a clashing doc number, with the number to use.
+- **docs/51 ledger:** a new `## N.` section whose number the base gave another title or reserved in `docs/data/registry-reservations.json`, with the next free §.
+- **counters:** ts3fixes slot rows and ts3native counters versions the branch adds that the base already uses (rows or reservations); reserve again with `tools/registry.ts`.
+- **ts3native version:** a `TS3NATIVE_VERSION` bump the base already passed (with the next version), and version strings in added lines that the base has used since the branch started.
+- **files:** files that would not merge (`git merge-tree`, git 2.38+); `--all` also lists files both sides changed that merge cleanly.
+- **checks:** `tools/check-docs-code.ts` and the self-checks of the scripts the branch changed (`selftest-all.ts --only`); with `--pr` they run in a temporary worktree of the PR head. `--no-checks` skips them.
+
+Read-only: it never commits, and uncommitted changes are not part of the check. `--all` prints what is fine as well, `--json` everything; the last line is `needs review: ...`, and the exit code is 1 when there is a problem.
+
 ## ts3fixes counters (`AppDomain` data `ts3fixes.counters`, `int[295]`; `int[293]` before owprobeplans, `int[290]` before overwatchstucknotice, `int[255]` before disposespread (280-289; 255-279 reserved by other branches), `int[251]` before the docs/163 §7 owner-task STARTs, `int[248]` before the docs/183 job yield, `int[246]` before the docs/176 foreign replan slots, `int[244]` before the Overwatch chain, `int[238]` before the docs/163 sync-plan caller fixes, `int[228]` before the docs/151 route sources, `int[213]` before the Overwatch type timing and unseen catch-up counters, `int[211]` before the ErrorTrap item counters, `int[210]` before the Overwatch items counter, `int[209]` before the venue-cleanup units counter, `int[208]` before the decay pairs-per-tick counter, `int[207]` before the pet pool chain guard, `int[177]` before the EA maintenance spreading, `int[167]` before the ErrorTrap load-up spreading, `int[156]` before the Overwatch cleanup spreading, `int[146]` before the docs/144 unseen throttle, `int[137]` before the candidate-loop caps, `int[132]` before the replan defer, `int[127]` before stuckcheckasync, `int[122]` before the [AutShadow] mod guards, `int[106]` before [AutShadow], `int[99]` before the door mirror, `int[80]` before the docs/74 hot-spot fixes)
 
 Source of truth: the comment block above `PatchCounters()` in `mods/ts3fixes/src/Fixes.cs` (an older note in PLAN.md "Resume here" puts the async route counters at 52-54; they are 56-58). The test agent reads them in `mods/ts3agent/src/plugin/Handlers/PatchHandlers.cs` (`patches` command).
