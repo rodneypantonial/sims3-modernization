@@ -62,6 +62,7 @@ The waterjps self-test copies game code at test time from the user's own `TS3W.e
 ## Sharing findings
 
 - **New topic:** `docs/NN-topic.md`, NN = the next free number (`ls docs`; 23 is taken by the roadmap, so the next is 24). Claim the number in your issue so two PRs do not collide. Start with a short answer, then sections; label claims as above; list sources.
+- **Finding a doc:** `node tools/docs-find.ts <words>` (top 5 by title, file name, index line and headings), `--addr 0x82EDB0`, `--switch "[RouteAsync] JobYield"`. After adding or renaming a doc, run `node tools/docs-find.ts --write-index` so `docs/index.md` lists it (`--write-index --check` says whether it is current).
 - **More on an existing topic:** append a dated subsection to the relevant doc (for example `### 7c. ... (2026-10-20)` in `docs/14-save-cleanup.md`) instead of a new file. Correct earlier claims in place with a note, do not leave contradictions.
 - Findings that change priorities also go in `PLAN.md`.
 
