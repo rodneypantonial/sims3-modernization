@@ -196,6 +196,7 @@ static DWORD P5cRelMatch(const CONTEXT* c);  // p5c.cpp: registers in an object 
 static void CfOnFault(const EXCEPTION_POINTERS* x);  // crashfx.cpp: [CrashForensics] dump (off unless Enabled=1)
 static void P5cRelDump();  // p5c.cpp: the whole released ring (docs/67 §15), once
 static bool AtOwnsXcpt(const EXCEPTION_POINTERS* e);  // arenatail.cpp: [GcRootCheck] TailWatch arm requests and hits (docs/67 §22.7)
+static bool XcptOnSim();  // routegate.cpp: this is the sim thread
 static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const EXCEPTION_RECORD* r = e->ExceptionRecord;
     const DWORD code = r->ExceptionCode;
@@ -225,6 +226,10 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     // docs/67 §15: every register (the 2026-10-25 crash pair logged only eip / esp), for the crash's own exceptions too
     Log("  registers eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX esp %08lX eip %08lX efl %08lX", c->Eax,
         c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip, c->EFlags);
+    if (in[0] && XcptOnSim()) {  // docs/172 §7: what the sim thread ran into another module (once per address)
+        char st[1100];
+        if (FbStackText(st, sizeof(st), 16) > 0) Log("  script stack (sim thread): %s", st);
+    }
     if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) P5cRelMatch(c);
     char mono[1500];
     if (code == EXCEPTION_ACCESS_VIOLATION && MonoFaultText(c, mono, sizeof(mono))) {

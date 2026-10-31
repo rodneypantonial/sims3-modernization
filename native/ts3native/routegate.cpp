@@ -120,6 +120,7 @@ static inline volatile LONG* RgJob(int s) {
 }
 static inline bool RgJobLive() { return g_callerTid || g_async.state == A_RUNNING; }
 static inline bool RgIsSim(DWORD tid) { return *g_rtSimTidSlot && tid == *g_rtSimTidSlot; }
+static bool XcptOnSim() { return RgIsSim(GetCurrentThreadId()); }  // XcptLog (docs/172 §7)
 static inline bool RgIsWorker(DWORD tid) { return g_workerTid && tid == g_workerTid; }
 
 // frames left without returning (see the file comment)

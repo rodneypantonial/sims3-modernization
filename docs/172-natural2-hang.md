@@ -148,6 +148,7 @@ The cost: the slots are gone before the world loads, so a later TS3W fault gets 
 **Change (`[Crash] Log`, on by default, no switch of its own).**
 - An access violation whose `eip` is in a loaded image other than TS3W.exe and ts3native is logged with `(name+0xoffset)` after the address, for example `exception C0000005 at 0x678F0280 (ApexRadiance.asi+0xE0280) ...`. The name comes from `VirtualQuery` and `K32GetMappedFileNameW`, with no loader lock.
 - Up to 8 such addresses are remembered. A repeat at a remembered address takes no slot and is only counted. The minute counters line prints the total and the count per address when the total has moved, for example `crash log: 100294 more AVs at logged addresses in other modules (not logged): 678F02E4 x… 678F0280 x…`.
+- On the sim thread, that first line is followed by the script stack (`  script stack (sim thread): ...`, as in `mono fault:` lines), so a mod hook that faults inside a game call names the script that made the call.
 - TS3W faults, faults with `eip` outside any image (a wild call into the heap) and every other code are logged as before, up to the same 16.
 
 Selftest: `TestCrashReport` checks the name for a kernel32 address, that a heap address is not named, that the second AV at an address takes no slot and is counted, and that a new address gets its line.
