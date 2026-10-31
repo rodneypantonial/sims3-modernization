@@ -16,21 +16,21 @@ type Kind = 'fixes' | 'native' | 'ledger';
 interface Res { id: string; kind: Kind; from: number; to: number; version?: number; by: string; what: string; at: string; worktree: string }
 interface Used { fixesMax: number; nativeVer: number; nativeEnd: number }
 
-const FIX_HEAD = '## ts3fixes counters';
-const NAT_HEAD = '## ts3native counters (';
+export const FIX_HEAD = '## ts3fixes counters';
+export const NAT_HEAD = '## ts3native counters (';
 const LEDGER = join('docs', '51-inference-ledger.md');
 export const ledgerMax = (text: string) => Math.max(0, ...[...text.matchAll(/^## (\d+)\./gm)].map(m => +m[1]));
 const hex = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
 
 // Lines of a `## ` section that starts with head: [start, end) indices.
-function section(L: string[], head: string): [number, number] {
+export function section(L: string[], head: string): [number, number] {
   const s = L.findIndex(l => l.startsWith(head));
   if (s < 0) return [-1, -1];
   let e = L.findIndex((l, i) => i > s && l.startsWith('## '));
   return [s, e < 0 ? L.length : e];
 }
-const fixRow = (l: string) => { const m = l.match(/^\| (\d+)(?:-(\d+))? \|/); return m ? [+m[1], +(m[2] ?? m[1])] : null; };
-const natRow = (l: string) => {
+export const fixRow = (l: string) => { const m = l.match(/^\| (\d+)(?:-(\d+))? \|/); return m ? [+m[1], +(m[2] ?? m[1])] : null; };
+export const natRow = (l: string) => {
   const m = l.match(/^\| v(\d+) \|[^|]*\|([^|]*)\|/);
   if (!m) return null;
   const o = m[2].match(/0x([0-9A-Fa-f]+)-0x([0-9A-Fa-f]+)/);
@@ -218,7 +218,7 @@ async function selfCheck() {
 }
 
 const args = process.argv.slice(2);
-try {
+if (process.argv[1]?.endsWith('registry.ts')) try {  // importable (tools/pr-preflight.ts)
   if (args[0] === '--self-check') await selfCheck();
   else if (args[0] === 'reserve') reserve(args);
   else if (args[0] === 'release') release(args);
