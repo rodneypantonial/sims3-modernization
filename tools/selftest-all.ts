@@ -147,6 +147,7 @@ const NO_SELF_CHECK: Record<string, string> = {
   'tools/setup/build-overwatch-tuning.ts': 'builder of one tuning package; no logic to test',
   'tools/setup/check-conflicts.ts': 'reads the installed Mods folder; DBPF index covered by the tools/dbpf.ts self-test',
   'tools/setup/install-fixes.ts': 'installer: downloads into the game folder; its content health part is content-health.ts --self-test',
+  'tools/tier2-blockers.ts': ONE_OFF,
 };
 
 const TIMEOUT_S: Record<string, number> = {};
