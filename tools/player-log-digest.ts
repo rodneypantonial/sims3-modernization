@@ -14,7 +14,7 @@ import { unzip, zip } from './mts-zip.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const STEAM_SHA = '10b2423e2368';                // Steam 1.67 TS3W.exe (docs/15), first 12 hex as the log prints it
-const TS3W = [0x400000, 0x1a00000];              // TS3W.exe image (no ASLR)
+const TS3W = [0x400000, 0x125a000];              // TS3W.exe image (no ASLR; SizeOfImage 0xE5A000 of the 1.67 exe)
 const LOW_FREE_MB = 300;                         // largest free block below this: Error 12 / crash on save territory (docs/66)
 // Bin add-ons with a known overlap: why it matters and where it is written up.
 const BIN_NOTES: [RegExp, string][] = [
