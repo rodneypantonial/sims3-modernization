@@ -28,7 +28,7 @@ static void TestHostCalls() {
                   offsetof(Ts3nCounters, dmMismatch) == 0x411C && sizeof(Ts3nCounters) == 5456 * 4,
                   "counters v96 layout after v93 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 143);
+    assert(k.version == 145);
     const size_t v96 = offsetof(Ts3nCounters, hcReady);
     memset((u8*)&k + v96, 0, sizeof(Ts3nCounters) - v96);
     if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);

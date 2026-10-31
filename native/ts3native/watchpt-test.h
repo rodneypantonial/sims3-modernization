@@ -37,7 +37,7 @@ static void TestWatchpointLot() {
                       sizeof(Ts3nCounters) == 5456 * 4,
                   "counters v111 layout after v110 (docs/registry.md)");
     Ts3nCounters& k = ts3native_counters;
-    assert(k.version == 143);
+    assert(k.version == 145);
     const DWORD wt0 = g_workerTid, ct0 = g_callerTid;
     WpInstall();
     DWORD child[16] = {kWpChildVt}, child2[16] = {kWpChildVt}, parent[16] = {0xFEBA98}, other[16] = {kWpChildVt};
