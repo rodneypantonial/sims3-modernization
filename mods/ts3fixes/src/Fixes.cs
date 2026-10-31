@@ -46,8 +46,10 @@ namespace Ts3Fixes
             Patch(typeof(GoToLot), "Run", typeof(GoToLotHook), "RunHook", "RunOrig");
             Patch(typeof(GoToCommunityLot), "Run", typeof(GoToCommunityLotHook), "RunHook", "RunOrig");
             ApplyTripSubclasses();
-            if (Instantiator.kWalkStyleComparer)
-                Patch(typeof(Sims3.Gameplay.Actors.SimRoutingComponent).GetNestedType("WalkStyleComparer", BindingFlags.NonPublic), "Compare", typeof(WalkStyleCompareHook), "CompareHook", null);
+            // No tuning gate here: Apply runs in Instantiator's static constructor, before the tuning loader sets the [Tunable]
+            // fields, so every tuning reads its C# default (docs/124 §17.8). Hooks read their tuning per call; patches that must
+            // stay out unless a tuning is on go in ApplyTuned.
+            Patch(typeof(Sims3.Gameplay.Actors.SimRoutingComponent).GetNestedType("WalkStyleComparer", BindingFlags.NonPublic), "Compare", typeof(WalkStyleCompareHook), "CompareHook", "CompareOrig");
             Patch(typeof(Sims3.Gameplay.Autonomy.ReactionBroadcaster), "PulseSims", typeof(BroadcasterPulseHook), "PulseHook", "PulseOrig");
             ApplyRouteFixes();
             ApplyRouteBackoff();
@@ -72,7 +74,6 @@ namespace Ts3Fixes
             ApplyAutOffload();
             ApplyReplanDefer();
             ApplyUnseenThrottle();
-            ApplyWakePark();
             ApplyEaSpread();
             ApplySeasonMarkerCache();
             ApplyRouteSources();
@@ -86,6 +87,36 @@ namespace Ts3Fixes
             ApplyEaVacation();
             ApplyCompaction();  // docs/204: hooks only with ts3native [Compaction] Enabled=1 or 2
         }
+
+        // Patches that go in only when a tuning is on (docs/124 §17.8): Apply cannot read tunings (C# defaults there), so these
+        // run once the tuning is set: at app startup when the tuning was already parsed (kInstantiator True: every
+        // ts3fixes tuning sets it), else at the first world load. Each logs "tuned: <tuning> on: <what> patched|MISSING";
+        // queue.ts fails a job on a MISSING line. A target the interpreter already compiled is refused (Patch), never swapped.
+        static bool sTunedDone;
+        internal static void ApplyTuned(string when)
+        {
+            if (sTunedDone) return;
+            sTunedDone = true;
+            AppliedLog().Add("tuned: tuning-gated patches at " + when + (Instantiator.TuningSet ? "" : " (tuning not set: kInstantiator False)"));
+            ApplyVenueScore();
+            ApplyWakePark();
+            ApplyAutLiveB14();
+        }
+
+        static void TunedLog(string tuning, bool ok, string what)
+        {
+            AppliedLog().Add("tuned: " + tuning + " on: " + what + (ok ? " patched" : " MISSING"));
+        }
+
+        // Null when target.method exists and is not compiled yet (a Patch would go in), else "Type.method".
+        static string NotPatchable(Type target, string method, Type[] args)
+        {
+            const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            MethodInfo t = target.GetMethod(method, all, null, args, null);
+            return t != null && !Compiled(t) ? null : target.Name + "." + method;
+        }
+
+        static bool Compiled(MethodInfo t) { return Marshal.ReadInt32(new IntPtr(t.MethodHandle.Value.ToInt32() + 0x14)) != 0; }
 
         static List<object> AppliedLog() { return (List<object>)AppDomain.CurrentDomain.GetData("ts3fixes.applied"); }
 
@@ -190,13 +221,23 @@ namespace Ts3Fixes
         // vacexitreturn adults brought back at exit, vaclistenernull null states skipped, vacimportfix ids refreshed / expiry skipped.
         // [448-465] offload Mode R (AutOffload.cs, docs/208): env / bcast items, A0-A5, exceptions, dry checks. [481-490] offload
         // apply (docs/208 §8): env ready / applied / no answer / stale / applied = live, bcast ready / applied / no answer / stale / same order.
+        // [534-537] autofftick (AutOffload.cs, docs/206 §15): items, A0, A2, unfinished.
+        // [538-541] go-live cost guard (AutLive.cs, docs/124 §17.10): windows closed, skip windows, searches skipped, last ratio
+        // (cost per mille of the scoring saved; -1 = no reference yet).
+        // [550-565] autlivelate (AutLive.cs, docs/217 L1): later slices checked, refused by age/epoch/state/lot/head/actor/other,
+        // late objects consumed / stale, consumed by age 1/2/3+ ticks, B14 us consumed / game late / game invalid.
+        // [566-574] G8 (AutLive.cs AutPushHook, docs/124 §8): pushes, no-pick searches, MakeSimGoHome fallbacks, Sim-hours x100,
+        // request-to-push latency 0/1/2/3/4+ ticks (Mode 3 searches).
+        // [575-601] go-live per-search feature mask (AutLive.cs, AutLiveCore.Feat bits late, prelearn, tierreqlots, rain,
+        // desirefn, satb, guard, cold, partial): 575-583 searches per bit, 584-592 mismatches (dry unequal or replay mismatch),
+        // 593-601 give-ups (live-drop fallbacks, dry-nocmp).
         // [491-533] unseen wake-ups (WakePark.cs, docs/211: wakeprobe / wakepark / wakepoll): see the header of WakePark.cs.
         static int[] sCountersCache;
         static int[] PatchCounters()
         {
             if (sCountersCache != null) return sCountersCache; // hooks call this hundreds of times a second
             int[] c = AppDomain.CurrentDomain.GetData("ts3fixes.counters") as int[];
-            if (c == null) { c = new int[534]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
+            if (c == null) { c = new int[602]; AppDomain.CurrentDomain.SetData("ts3fixes.counters", c); }
             return sCountersCache = c;
         }
 
@@ -253,7 +294,10 @@ namespace Ts3Fixes
                 case "autoffenv": case "autoffbcast": case "autoffdry": return false; // docs/208 offload Mode R (AutOffload.cs): test runs only
                 // docs/208 §8 apply switches: unset read true here (default branch) while the agent showed them off
                 case "autoffenvapply": case "autoffbcastapply": case "autoffnoref": return false;
+                case "autofftick": return false; // docs/206 §15 Mode R tick item: test runs only
                 case "autlive": return false; // docs/124 §17 go-live consume ([AutShadow] Mode=3): test runs only
+                case "autlivelate": return Instantiator.kAutLiveLate; // docs/217 L1 late consume (only acts with autlive)
+                case "autliveguard": return Instantiator.kAutLiveGuard; // docs/124 §17.10 go-live cost guard (only acts with autlive)
                 case "replandefer": return Instantiator.kReplanDefer;
                 case "replanspread": return Instantiator.kReplanSpread;
                 case "autshadowverify": return false; // verify switch: test runs only
@@ -341,11 +385,10 @@ namespace Ts3Fixes
             try
             {
                 MethodInfo t = args == null ? target.GetMethod(method, all) : target.GetMethod(method, all, null, args, null), r = hook.GetMethod(replacement, all);
-                if (Marshal.ReadInt32(new IntPtr(t.MethodHandle.Value.ToInt32() + 0x14)) != 0)
-                    throw new InvalidOperationException("already compiled");
+                if (Compiled(t)) throw new InvalidOperationException("already compiled");
                 if (stub != null) SwapMethod(hook.GetMethod(stub, all), t);
                 SwapMethod(t, r);
-                sPatched[t] = hook;  // docs/128 G-M4: our own swap, accepted by the closure sweep
+                sPatched[t.MethodHandle.Value] = hook;  // docs/128 G-M4: our own swap, accepted by the closure sweep (by MonoMethod: GetMethods hands out other MethodInfo objects)
                 AppliedLog().Add(target.Name + "." + method + ": ok");
                 return true;
             }
@@ -740,16 +783,20 @@ namespace Ts3Fixes
         // in a Dictionary<WalkStyle, int>, and with the default enum comparer each lookup boxes and calls Enum.Equals and
         // GetHashCode: 5% of script time as Enum.Equals alone in Bridgeport (docs/04 F7). The enum is sequential from 0, so
         // an array indexed by value gives the same priorities; a style missing from the table still throws, as before.
+        // Always patched (routing may compile Compare before the first world load); the tuning kWalkStyleComparer is read per
+        // call, because Apply runs before the tuning loader sets it (docs/124 §17.8): a player's False now runs the game's code.
         public class WalkStyleCompareHook
         {
             static int[] sPrio;
             public int CompareHook(Sims3.Gameplay.Actors.Sim.WalkStyle x, Sims3.Gameplay.Actors.Sim.WalkStyle y)
             {
+                if (!Instantiator.kWalkStyleComparer) return CompareOrig(x, y);
                 if (sPrio == null) sPrio = WalkStylePriorities();
                 int px = (int)x < sPrio.Length ? sPrio[(int)x] : -1, py = (int)y < sPrio.Length ? sPrio[(int)y] : -1;
                 if (px < 0 || py < 0) throw new KeyNotFoundException();
                 return py - px;
             }
+            public int CompareOrig(Sims3.Gameplay.Actors.Sim.WalkStyle x, Sims3.Gameplay.Actors.Sim.WalkStyle y) { return 0; } // receives Compare's original header
 
             static int[] WalkStylePriorities()
             {

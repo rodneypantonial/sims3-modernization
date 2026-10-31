@@ -12,7 +12,7 @@
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
 
-#define TS3NATIVE_VERSION "0.36.142"
+#define TS3NATIVE_VERSION "0.36.148"
 
 typedef unsigned char u8;
 
@@ -181,6 +181,7 @@ static DWORD P5cRelMatch(const CONTEXT* c);  // p5c.cpp: registers in an object 
 static void CfOnFault(const EXCEPTION_POINTERS* x);  // crashfx.cpp: [CrashForensics] dump (off unless Enabled=1)
 static void P5cRelDump();  // p5c.cpp: the whole released ring (docs/67 §15), once
 static bool AtOwnsXcpt(const EXCEPTION_POINTERS* e);  // arenatail.cpp: [GcRootCheck] TailWatch arm requests and hits (docs/67 §22.7)
+static void AsCrashLine();  // autshadow-run.cpp: the last [AutShadow] search and its feature mask
 static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     const EXCEPTION_RECORD* r = e->ExceptionRecord;
     const DWORD code = r->ExceptionCode;
@@ -203,6 +204,7 @@ static LONG CALLBACK XcptLog(EXCEPTION_POINTERS* e) {
     Log("  registers eax %08lX ebx %08lX ecx %08lX edx %08lX esi %08lX edi %08lX ebp %08lX esp %08lX eip %08lX efl %08lX", c->Eax,
         c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp, c->Eip, c->EFlags);
     if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) P5cRelMatch(c);
+    if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) AsCrashLine();
     char mono[1500];
     if (code == EXCEPTION_ACCESS_VIOLATION && MonoFaultText(c, mono, sizeof(mono))) {
         Log("  %s", mono);

@@ -24,6 +24,31 @@ static class AutLiveTest
         h.Add(8, 4f);
         Check("equal to the minimum: ignored (strict)", !h.Has(8));
         Check("top", h.TopId() == 1);
+        // heap order and ties as the game's PriorityQueue
+        h = new AutLiveCore.Heap(3);
+        h.Add(1, 2f); h.Add(2, 2f);
+        Check("sift up: an equal child stays below", h.Id[0] == 1 && h.Id[1] == 2);
+        h.Add(3, 1f);
+        Check("sift up: strictly smaller rises to the root", h.Id[0] == 3 && h.Id[2] == 1);
+        h = new AutLiveCore.Heap(3);
+        h.Add(1, 1f); h.Add(2, 2f); h.Add(3, 2f);
+        h.Add(4, 3f);  // root replaced; children tie at 2: the right one (3) moves up
+        Check("sift down: equal children take the right", h.Id[0] == 3 && h.Id[1] == 2 && h.Id[2] == 4);
+        h.Add(5, 4f);  // min tie 2/2: the root (3) goes, not the first 2 in insertion order
+        Check("min tie: the root minimum is evicted", h.Has(2) && !h.Has(3) && h.Has(4) && h.Has(5));
+        h = new AutLiveCore.Heap(3);
+        h.Add(1, 1f); h.Add(2, 3f); h.Add(3, 3f);
+        h.Add(4, 3f);  // root 1 replaced by 3: children equal to it, no swap
+        Check("sift down: no swap with an equal child", h.Id[0] == 4);
+        Check("top ties", h.TopScore() == 3f && h.CountAt(3f) == 3 && h.TopId() == 4);
+        AutLiveCore.Heap h2 = new AutLiveCore.Heap(3);
+        h2.Add(2, 3f); h2.Add(3, 3f); h2.Add(4, 3f);
+        Check("same top up to ties", h2.SameTop(h) && h.SameTop(h2) && h2.TopId() != h.TopId());
+        h2 = new AutLiveCore.Heap(3); h2.Add(9, 3f);
+        Check("top id must be among the other's top entries", !h2.SameTop(h) && !h.SameTop(h2));
+        AutLiveCore.Heap h3 = new AutLiveCore.Heap(3);
+        for (int i = 0; i < h.N; i++) h3.Add(h.Id[i], h.S[i]);
+        Check("copy in slot order keeps the slot order", h3.Id[0] == h.Id[0] && h3.Id[1] == h.Id[1] && h3.Id[2] == h.Id[2]);
         // rule
         Check("count rule", AutLiveCore.Fires(9, 10, 1f, 0f, 0f, 100f) == 1);
         Check("tie fires", AutLiveCore.Fires(10, 10, 2f, 0f, 0f, 2f) == 2);
@@ -114,7 +139,110 @@ static class AutLiveTest
         Check("one scale factor: consume queue = game queue in every run", scaledMiss == 0);
         Console.WriteLine("autlive: " + exactRuns + " exact runs (misses " + exactMiss + "), scaled misses " + scaledMiss + ", noisy +-20%: "
             + noisyMiss + " of " + noisyRuns + " differ (not asserted), bands fired " + fired);
+        GuardTests();
+        LateTests();
+        // per-search feature mask: native bits mapped, managed bits, names, JSON, per-bit counts
+        {
+            int m = AutLiveCore.Feat.Build(1 | 4 | 8, 2, true, false, true);
+            Check("feat build", m == ((1 << AutLiveCore.Feat.PreLearn) | (1 << AutLiveCore.Feat.Satb) | (1 << AutLiveCore.Feat.Cold)
+                | (1 << AutLiveCore.Feat.Rain) | (1 << AutLiveCore.Feat.DesireSkip) | (1 << AutLiveCore.Feat.Partial)));
+            Check("feat build empty", AutLiveCore.Feat.Build(0, 0, false, false, false) == 0);
+            Check("feat tierreqlots + guard", AutLiveCore.Feat.Build(2, 0, false, true, false) == ((1 << AutLiveCore.Feat.TierReqLots) | (1 << AutLiveCore.Feat.Guard)));
+            Check("feat text", AutLiveCore.Feat.Text(0x109) == "late|rain|partial" && AutLiveCore.Feat.Text(0) == "");
+            Check("feat json", AutLiveCore.Feat.Json(0x109) == ",\"feat\":\"0x109\",\"feats\":\"late|rain|partial\"");
+            Check("feat names = N", AutLiveCore.Feat.Names.Length == AutLiveCore.Feat.N);
+            int[] c = new int[20];
+            AutLiveCore.Feat.Count(c, 5, 0x109);
+            AutLiveCore.Feat.Count(c, 15, 0x1FF);  // past the end: no throw, cut at the array
+            Check("feat count", c[5] == 1 && c[8] == 1 && c[13] == 1 && c[6] == 0 && c[15] == 1 && c[19] == 1);
+        }
         Console.WriteLine(sFail == 0 ? "autlive selftest: PASS" : "autlive selftest: " + sFail + " FAIL");
         return sFail == 0 ? 0 : 1;
+    }
+
+    // docs/124 §17.10 cost guard. One eligible search every 10 frames; the native cumulative words grow by the search's cut us
+    // (wait and entries fixed per search). Returns searches skipped; sets sFrame.
+    static int sFrame, sCut, sSkips2;
+    static int Run(AutLiveCore.CostGuard g, int searches, int cutUs, double consumerUs, double share, double refUs, bool act)
+    {
+        int skipped = 0;
+        for (int i = 0; i < searches; i++, sFrame += 10)
+        {
+            if (!g.Allow(sFrame, act)) { skipped++; continue; }
+            int r = g.Tick(sFrame, sCut, 0, 0, refUs, act);
+            if (r == 2) { sSkips2++; skipped++; continue; }
+            sCut = unchecked(sCut + cutUs);
+            g.Add(consumerUs, share);
+        }
+        return skipped;
+    }
+
+    // docs/217 L1: the late-slice rule
+    static void LateTests()
+    {
+        Check("late: next slice within LateTicks consumes", AutLiveCore.LateSlice(false, 101, 100, 3, 0) == AutLiveCore.kLateOk);
+        Check("late: slice at exactly LateTicks consumes", AutLiveCore.LateSlice(false, 103, 100, 3, 0) == AutLiveCore.kLateOk);
+        Check("late: slice past LateTicks falls back (age)", AutLiveCore.LateSlice(false, 104, 100, 3, 0) == AutLiveCore.kLateAge);
+        Check("late: LateTicks 0 never consumes a later slice", AutLiveCore.LateSlice(false, 101, 100, 0, 0) == AutLiveCore.kLateAge);
+        Check("late: frame before the resume (wrap or reuse) falls back", AutLiveCore.LateSlice(false, 99, 100, 3, 0) == AutLiveCore.kLateAge);
+        Check("late: failed resume check falls back (check)", AutLiveCore.LateSlice(false, 101, 100, 3, 10) == AutLiveCore.kLateCheck);
+        Check("late: a given-up search stays given up", AutLiveCore.LateSlice(true, 101, 100, 3, 0) == AutLiveCore.kLateSticky);
+    }
+
+    static void GuardTests()
+    {
+        // window: 40 searches and 300 frames (one search every 10 frames: 40 searches = 400 frames)
+        AutLiveCore.CostGuard g = new AutLiveCore.CostGuard();
+        sFrame = 1000; sCut = 0;
+        Run(g, 39, 2000, 0, 1, 1000, true);
+        Check("guard: no decision before MinSearches", g.Windows == 0);
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Run(g, 400, 2000, 0, 0, 0, true);
+        Check("guard: no reference = no decision, ratio -1", g.Windows > 0 && g.Skips == 0 && g.LastPm == -1);
+        // cheap: 500 us cost per search vs 1000 us saved -> 500 pm, stays on
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Check("guard: cheap stays on", Run(g, 400, 400, 100, 1, 1000, true) == 0 && g.Skips == 0 && g.LastPm == 500);
+        // the BP crowd G7 numbers per search [docs/124 §17.10]: cost ~2.66 ms (36.5 ms/s at 13.7/s) vs saved ~2.98 ms -> ~894 pm, on
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Check("guard: crowd G7 (~894 pm) stays on at OffPm 1000", Run(g, 400, 2660, 0, 1, 2980, true) == 0 && g.LastPm >= 890 && g.LastPm <= 895);
+        // expensive: 1500 pm -> skip for Hold frames (600 = 60 searches), then probation
+        g = new AutLiveCore.CostGuard(); sFrame = 1000; sSkips2 = 0;
+        int sk = Run(g, 40, 1500, 0, 1, 1000, true);
+        Check("guard: expensive skips at the window end", g.Skips == 1 && g.Skipping && g.LastPm == 1500 && sk == 1 && g.Until == sFrame - 10 + 600);
+        sk = Run(g, 59, 1500, 0, 1, 1000, true);
+        Check("guard: skips through the hold", sk == 59 && g.Skipping);
+        // probation at 900 pm (between OnPm 800 and OffPm 1000): skips again with the hold doubled
+
+        Run(g, 1, 900, 0, 1, 1000, true);
+        Check("guard: probation after the hold", !g.Skipping && g.Probation);
+        Run(g, 39, 900, 0, 1, 1000, true);
+        Check("guard: hysteresis: 900 pm after a skip skips again, hold doubled", g.Skips == 2 && g.Skipping && g.Until - (sFrame - 10) == 1200);
+        Run(g, 120, 700, 0, 1, 1000, true);
+        Run(g, 41, 700, 0, 1, 1000, true);
+        Check("guard: 700 pm in probation: back on, hold reset", !g.Skipping && !g.Probation && g.Shift == 0 && g.LastPm == 700);
+        // a skip window in the on state needs > OffPm: 900 pm stays on
+        Run(g, 41, 900, 0, 1, 1000, true);
+        Check("guard: 900 pm in the on state stays on", !g.Skipping && g.Skips == 2);
+        // hold doubles up to 16 x
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        for (int i = 0; i < 7; i++) { Run(g, 41, 3000, 0, 1, 1000, true); while (g.Skipping) Run(g, 1, 3000, 0, 1, 1000, true); }
+        Check("guard: hold capped at 16 x", g.Shift == AutLiveCore.CostGuard.kMaxShift && g.Skips >= 5);
+        // nothing consumed (every search dropped) with a reference: cost with no saving -> skip
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Run(g, 41, 500, 0, 0, 1000, true);
+        Check("guard: nothing saved = skip", g.Skipping && g.LastPm == 1000000);
+        // switch off (A/B arm): measured, never skips; turning it off mid-skip ends the skip
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Check("guard: act off never skips", Run(g, 400, 3000, 0, 1, 1000, false) == 0 && g.Skips == 0 && g.LastPm == 3000);
+        g = new AutLiveCore.CostGuard(); sFrame = 1000;
+        Run(g, 41, 3000, 0, 1, 1000, true);
+        Check("guard: off mid-skip posts again", g.Skipping && g.Allow(sFrame, false) && !g.Skipping);
+        // consumer time and wrapping native words count; MinFrames holds a window open
+        g = new AutLiveCore.CostGuard(); sFrame = 1000; sCut = int.MaxValue - 10000;
+        Run(g, 41, 400, 600, 1, 1000, true);
+        Check("guard: wrapped cut counter + consumer time = 1000 pm", g.LastPm == 1000 && !g.Skipping);
+        g = new AutLiveCore.CostGuard(); g.MinFrames = 100000; sFrame = 1000;
+        Run(g, 400, 3000, 0, 1, 1000, true);
+        Check("guard: MinFrames keeps the window open", g.Windows == 0);
     }
 }

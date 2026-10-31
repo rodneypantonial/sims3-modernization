@@ -222,6 +222,18 @@ static DWORD WINAPI AfWorker(void*) {
     assert(((DWORD(__cdecl*)(DWORD, DWORD, DWORD, DWORD))AfSlot(AF_COUNT))(3, 2, 0, 1) == 0);
     assert(AsAborted() == AS_AB_ROW);  // first reason wins
     AsResetAbort();
+    {  // docs/216 §5 per-IC record: stop not counted, row counted twice; counters restored for the checks below
+        const Ts3nAutShadow k0 = k;
+        const int n0 = g_asIcN;
+        if (g_asIcN < 3) g_asIcN = 3;
+        const LONG a0 = g_asAbortIc[2], r0 = g_asAbortIcRow[2];
+        AsAbort(AS_AB_ROW, 2), AsAbort(AS_AB_STOP, 2), AsAbort(AS_AB_MEMO, 2), AsAbort(AS_AB_ROW, (DWORD)-1);
+        assert(g_asAbortIc[2] == a0 + 2 && g_asAbortIcRow[2] == r0 + 1);
+        AsAbortIcLog();
+        g_asAbortIc[2] = a0, g_asAbortIcRow[2] = r0, g_asIcN = n0;
+        k = k0;
+        AsResetAbort();
+    }
     float c[3] = {1, 1, 1};
     assert(((float*(__cdecl*)(float*))AfSlot(AF_CAMPOS))(c) == c && c[0] == 1);  // unlisted 's'
     assert(((DWORD(__cdecl*)(DWORD))AfSlot(AF_UNLISTED))(5) == 0 && AsAborted() == AS_AB_IC);
@@ -389,7 +401,9 @@ static void TestAutShadowRun() {
     assert(g_mtOnEnter == AsSimEnter && g_mtOnLeave == AsSimLeaveLoop && g_mtJobHook == AsJobHook && g_asMode == 0 && g_sppN == 0);
     // ICs register at the first Simulate entry; Begin refuses until the methods are set
     AsSimEnter();
-    assert(g_t5Ics == 31 && k.icRegistered == 31 && AsIcVersion() == 10 && AsIcConfig(1) == 4 && AsIcConfig(2) == 20);
+    assert(g_t5Ics == 33 && k.icRegistered == 33 && AsIcVersion() == 10 && AsIcConfig(1) == 4 && AsIcConfig(2) == 20);
+    // docs/124 §17.10 cost-guard keys: marker, then the counters as they stand
+    assert(AsIcConfig(24) == 1 && AsIcConfig(25) == k.cutUs && AsIcConfig(26) == k.cuts && AsIcConfig(29) == k.refUs && AsIcConfig(30) == k.refRuns);
     assert(!AsIcBegin());
     AsIcSetMethods((void*)1, (void*)2, (void*)3);
     const DWORD emptyStr[4] = {0x51, 0, 0, 0};
@@ -401,7 +415,7 @@ static void TestAutShadowRun() {
     g_mtInvoke = AfT5Invoke;
     AfT5Request(40);
     AsSimLeave();
-    assert(g_t5Ics == 31 && g_t5Roots == 4 && (k.rooted & 3) == 3 && g_asRefsRooted);
+    assert(g_t5Ics == 33 && g_t5Roots == 4 && (k.rooted & 3) == 3 && g_asRefsRooted);
     assert(k.cutReq == 1 && k.refRuns == 0 && k.noWorker == 1 && g_t5Finish == 1 && g_t5Last == AS_LAST_NOWORKER && g_asRun == AS_RUN_IDLE);
     assert(k.batchReqs == 1 && k.batchCuts == 0 && k.simTicks == 1);
     {  // shared cut (docs/122 §14.18): requests posted before the cut join it, one cut and one finish; a full batch is busy
@@ -616,7 +630,7 @@ static void TestAutLedger() {
     Ts3nAutShadow& k = ts3native_autshadow;
     assert(offsetof(Ts3nAutShadow, lgOn) == 0x13C && offsetof(Ts3nAutShadow, lgIn) == 0x158 && offsetof(Ts3nAutShadow, lgSleep) == 0x17C &&
            offsetof(Ts3nAutShadow, lgCls) == 0x1A0 && offsetof(Ts3nAutShadow, lgCall) == 0x260 && offsetof(Ts3nAutShadow, abort2) == 0x760 && offsetof(Ts3nAutShadow, rngPauseDraws) == 0x76C && offsetof(Ts3nAutShadow, abortRoute) == 0x770 &&
-           offsetof(Ts3nAutShadow, overrunIdle) == 0x778 && offsetof(Ts3nAutShadow, windowWaitUs) == 0x780 && k.version == 20 && offsetof(Ts3nAutShadow, satbMode) == 0x9C0 && offsetof(Ts3nAutShadow, satbWGiveUpOp) == 0xA5C &&
+           offsetof(Ts3nAutShadow, overrunIdle) == 0x778 && offsetof(Ts3nAutShadow, windowWaitUs) == 0x780 && k.version == 21 && offsetof(Ts3nAutShadow, satbMode) == 0x9C0 && offsetof(Ts3nAutShadow, satbWGiveUpOp) == 0xA5C &&
            offsetof(Ts3nAutShadow, satbIcLogged) == 0xA60 && offsetof(Ts3nAutShadow, refPassA4) == 0xA84 && offsetof(Ts3nAutShadow, pairT) == 0xA88 && offsetof(Ts3nAutShadow, pairN) == 0xA98 &&
            offsetof(Ts3nAutShadow, transOn) == 0xAA8 && offsetof(Ts3nAutShadow, runNo) == 0xAE4 && offsetof(Ts3nAutShadow, clsGoneSkip) == 0xAF8 &&
            offsetof(Ts3nAutShadow, seOn) == 0xAFC && offsetof(Ts3nAutShadow, tmOn) == 0xB10 && offsetof(Ts3nAutShadow, gdOn) == 0xB20 && offsetof(Ts3nAutShadow, gdOver) == 0xB40 &&
@@ -714,7 +728,7 @@ static void TestAutShadowFull() {
     Ts3nAutShadow& k = ts3native_autshadow;
     assert(offsetof(Ts3nAutShadow, evicted) == 0x784 && offsetof(Ts3nAutShadow, learnBacklog) == 0x7A4 && offsetof(Ts3nAutShadow, cutLearnUs) == 0x7A8 &&
            offsetof(Ts3nAutShadow, bodyN) == 0x7C0 && offsetof(Ts3nAutShadow, coldSkips) == 0x7E0 && offsetof(Ts3nAutShadow, workCsr) == 0x7F8 &&
-           sizeof(Ts3nAutShadow) == 0xC8C && offsetof(Ts3nAutShadow, alOn) == 0xB8C && k.version == 20);
+           sizeof(Ts3nAutShadow) == 0xC98 && offsetof(Ts3nAutShadow, alOn) == 0xB8C && k.version == 21);
     const LONG full0 = k.full, ev0 = k.evicted;
     const int audit0 = g_asAudit;
     g_asAudit = 0;  // the timed cut below is the production cut (Audit=50 adds a bounded 1,024-row slice every 50th)
@@ -2284,6 +2298,40 @@ static void TestAutShadowCost16() {
     g_afNow += 4000;
     AsCut();
     assert(k.tierClassN == cls0 + 2);  // the 4 x TierClassMs timer
+    {  // 0.36.147 TierReqLots: a tier-2 Sim on a scored lot (AddRow kind 3) refreshes; off again = published stale
+        const bool far0 = g_afFar[3];
+        g_afFar[3] = true;
+        g_afNow += 5000;
+        AsCut();  // classified tier 2, refreshed (TierMs passed)
+        const AsOl* ol = AsOlSlot(AfId(3), false);
+        assert(ol && ol->seen && ol->lot);
+        const AsU64 lot3 = ol->lot;
+        g_asTierReqLots = 1;
+        AsAddRowKind(lot3, 3);
+        assert(AsSetHas(g_as->reqLots, lot3) && !AsSetHas(g_as->simIds, lot3) && !AsSetHas(g_as->always, lot3));
+        const LONG r0 = g_asReqLotT1, st0 = k.tier2Stale;
+        g_afNow += 100;
+        AsCut();
+        assert(g_asReqLotT1 == r0 + 1 && k.tier2Stale == st0);
+        g_asTierReqLots = 0;
+        g_afNow += 100;
+        AsCut();
+        assert(k.tier2Stale == st0 + 1);
+        AsSetClear(g_as->reqLots);
+        g_afFar[3] = far0;
+    }
+    {  // 0.36.147 PreLearn: learned parent + GetTask rows once per object
+        const LONG r0 = g_asPreLearnRows, o0 = g_asPreLearnObjs;
+        AsPreLearnObject(AfId(61));
+        const LONG got = g_asPreLearnRows - r0;
+        printf("autshadow prelearn: %ld rows for a new object (parent ic %d, task ic %d), table %d rows\n", got, g_asIcParent, g_asIcTask, g_as->m.n);
+        assert(got <= (g_asIcParent >= 0) + (g_asIcTask >= 0 ? 2 : 0) && g_asPreLearnObjs == o0 + (got > 0));
+        const DWORD kp[2] = {(DWORD)AfId(61), (DWORD)(AfId(61) >> 32)};
+        const int pf = g_asIcParent >= 0 ? AsFind(g_as->m, g_asIcParent, kp, 2) : -1;
+        assert(g_asIcParent < 0 || pf < 0 || (g_as->m.e[pf].flags & AE_LEARNED) || got < 3);  // a new parent row is a learned row
+        AsPreLearnObject(AfId(61));
+        assert(g_asPreLearnRows == r0 + got && g_asPreLearnObjs == o0 + (got > 0));
+    }
     AfCheckAnswerable();
     g_asTierMs = 0, g_asTierFn = AsTierOf, g_asNowMs = GetTickCount, g_asTierMoveLot = 0;
     g_asActor = 0, g_asActorN = 0;

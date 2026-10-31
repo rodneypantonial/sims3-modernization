@@ -352,9 +352,14 @@ struct Ts3nAutShadow {
     LONG alStaleHit;      // +0xBA4, of those, answered stale (an event on the object or its lot since the cut, or not watched)
     LONG alStaleEv;       // +0xBA8, watch stamps set by object events
     LONG al[56];          // +0xBAC, ts3fixes go-live counters by slot (AutLive.cs kS*, docs/124 §17.3)
+    // v21: docs/127 H11 shelter answer (satb.cpp SatbRainSkip, ts3fixes AutShelterHook)
+    LONG rainArm;         // +0xC8C, rain/hail outdoor pairs the worker armed (RainArm with a definition)
+    LONG rainSkip;        // +0xC90, of those, CreateInstance calls not made (null result)
+    LONG rainMiss;        // +0xC94, armed but the call never came (disarmed with no skip: ts3fixes aborts the pair `rain`)
 };
-extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {20};
+extern "C" __declspec(dllexport) Ts3nAutShadow ts3native_autshadow = {21};
 static_assert(offsetof(Ts3nAutShadow, alOn) == 0xB8C && offsetof(Ts3nAutShadow, al) == 0xBAC, "autshadow v20 layout");
+static_assert(offsetof(Ts3nAutShadow, rainArm) == 0xC8C && sizeof(Ts3nAutShadow) == 0xC98, "autshadow v21 layout");
 
 enum { AO_OBJ, AO_LIST, AO_CUT, AO_WORLD, AO_MEMO, AO_STUB, AO_ABORT, AO_RNG };  // AO_RNG: per-unit MT streams (docs/125 §2)
 enum { AK_INT, AK_FP, AK_STRUCT, AK_REF, AK_ARRAY };
@@ -467,9 +472,53 @@ static int AsKindOfName(const char* name) {
     return 0;
 }
 
+// docs/216 §3 rows 1 and 5 (0.36.147, both off by default; counts in the "autshadow r7" line next to abortic):
+// PreLearn=1: an object placed by this cut's touches (new or moved) on a lot with list rows or a scored lot of the request
+// gets learned Slots_GetParentIdImpl + Simulator_GetTaskImpl rows before the refresh, so the worker's first read of it is
+// answered (golive-dfn crowd: GetParentId 2,892 + GetTask 690 `row` aborts). TierReqLots=1: a tier-2 Sim on a scored lot of
+// the request (ts3fixes AddRow kind 3 = LotId) refreshes at this cut instead of being published stale (`simstale`). Exact by
+// construction: a learned row is filled by the game's body at the cut like any learned key; a tier only gates refreshes.
+static int g_asPreLearn, g_asTierReqLots;
+static LONG g_asPreLearnRows, g_asPreLearnObjs, g_asReqLotT1;
+// docs/216 §5: aborts per IC (stop excluded) and of those `row`; top 24 in an "autshadow abortic" line every 256 cuts
+static LONG g_asAbortIc[AS_MAXIC], g_asAbortIcRow[AS_MAXIC];
+static void AsAbortIcLog() {
+    if (g_asPreLearn || g_asTierReqLots)
+        Log("autshadow r7 @%ld cuts: PreLearn rows %ld (objects %ld), TierReqLots Sims kept tier 1 %ld (docs/216 row, simstale)", ts3native_autshadow.cutReq,
+            g_asPreLearnRows, g_asPreLearnObjs, g_asReqLotT1);
+    int top[24], n = 0;
+    for (int i = 0; i < g_asIcN; i++) {
+        const LONG v = g_asAbortIc[i];
+        if (!v) continue;
+        int j = n;
+        if (n < 24) n++;
+        else if (g_asAbortIc[top[23]] >= v) continue;
+        else j = 23;
+        for (; j > 0 && g_asAbortIc[top[j - 1]] < v; j--) top[j] = top[j - 1];
+        top[j] = i;
+    }
+    if (!n) return;
+    char buf[1100];
+    int len = 0;
+    for (int t = 0; t < n; t++) {
+        const char* nm = g_asName[top[t]] ? g_asName[top[t]] : "-";
+        const char* c = strstr(nm, "::");
+        if (c) nm = c + 2;
+        const int w = (int)strcspn(nm, "(");
+        const int m = _snprintf_s(buf + len, sizeof(buf) - len, _TRUNCATE, "%s%.*s=%ld/%ld", t ? " " : "", w, nm, g_asAbortIc[top[t]], g_asAbortIcRow[top[t]]);
+        if (m < 0) break;  // full: the rest are smaller
+        len += m;
+    }
+    Log("autshadow abortic @%ld cuts (ic=aborts/row): %s", ts3native_autshadow.cutReq, buf);
+}
+
 static void AsAbort(int reason, DWORD idx) {
     Ts3nAutShadow& k = ts3native_autshadow;
     InterlockedIncrement(&k.abortTotal);
+    if (idx < (DWORD)g_asIcN && reason != AS_AB_STOP) {
+        InterlockedIncrement(&g_asAbortIc[idx]);
+        if (reason == AS_AB_ROW) InterlockedIncrement(&g_asAbortIcRow[idx]);
+    }
     InterlockedIncrement(reason < 20 ? &k.abort[reason] : reason < AS_AB_ROUTE ? &k.abort2[reason - 20] : &k.abortRoute);
     InterlockedCompareExchange(&g_asAbortReason, reason, -1);
     if (InterlockedIncrement(&g_asLogged) <= 64)
@@ -570,6 +619,7 @@ struct AsMem {
     // docs/122 §14.28: objects new at this cut (IdsDelta); ids an object event reached through our parent rows (SimEvSeated);
     // Sims on a root non-Sim parent with no event on either; objects whose parent answer is a refreshed 0
     AsSet newIds, simSeat, par0;
+    AsSet reqLots;  // 0.36.147 TierReqLots/PreLearn: the batch's scored lots (LotId, AddRow kind 3), cleared at each new batch
     AsOl ol[AS_OL];
     LONG olN, touchN;        // map rows used; touched rows since the last cut (under g_asDirtyLock)
     int touch[AS_TOUCH];
@@ -1399,12 +1449,31 @@ static void AsLearnObject(AsU64 id) {
     }
 }
 
+// PreLearn=1 (0.36.147, docs/216 row): the learned parent and GetTask rows of an object a cut placed on a lot the worker
+// lists or scores, before its first worker read; the other (ulong) ICs stay learn-on-miss (AsLearnObject)
+static int g_asIcTask = -2;  // guard index of Simulator_GetTaskImpl (kAsDesc[7]); -2 = not looked up yet
+static void AsPreLearnObject(AsU64 id) {
+    if (g_asIcTask == -2) {
+        g_asIcTask = -1;
+        for (int i = 0; i < g_asIcN; i++) if (g_asDescOf[i] == &kAsDesc[7]) { g_asIcTask = i; break; }
+    }
+    const DWORD k3[3] = {(DWORD)id, (DWORD)(id >> 32), 0};
+    bool any = false;
+    if (g_asIcParent >= 0 && AsFind(g_as->m, g_asIcParent, k3, 2) < 0 && AsInsert(g_asIcParent, k3, 2, AE_LEARNED) >= 0) any = true, g_asPreLearnRows++;
+    for (DWORD b = 0; g_asIcTask >= 0 && b < 2; b++) {
+        const DWORD kb[3] = {k3[0], k3[1], b};
+        if (AsFind(g_as->m, g_asIcTask, kb, 3) < 0 && AsInsert(g_asIcTask, kb, 3, AE_LEARNED) >= 0) any = true, g_asPreLearnRows++;
+    }
+    g_asPreLearnObjs += any;
+}
+
 // The request's rows (actor, Sims, meta objects, doors). kind 0 = object (refreshed when dirty), 1 = Sim the request can
 // reach (refreshed at every cut), 2 = other Sim: listed, refreshed only when dirty, else published stale (simstale).
 void AsAddRowKind(AsU64 id, int kind);
 void AsAddRow(AsU64 id, bool sim) { AsAddRowKind(id, sim ? 1 : 0); }
 void AsAddRowKind(AsU64 id, int kind) {
     if (!g_as) return;
+    if (kind == 3) { AsSetAdd(g_as->reqLots, id); return; }  // a scored lot's LotId (TierReqLots, PreLearn): no rows of its own
     const bool sim = kind == 1;
     if (kind == 2) AsSetAdd(g_as->sims, id);
     const DWORD key[3] = {(DWORD)id, (DWORD)(id >> 32), 0};
@@ -2184,6 +2253,7 @@ static void AsOlResolve(bool clear) {
     InterlockedExchange(&g_asDirtyLock, 0);
     // shortcut: map rows are written here and by destroy notes without the lock (both on the sim thread, docs/76 §3.3);
     // a destroy note racing this pass from another thread could lose its lot mark (the ListAudit net catches it)
+    int preN = 0;
     for (int i = 0; i < n; i++) {
         AsOl& o = g_as->ol[s_t[i].slot];
         if (o.gone) {
@@ -2194,6 +2264,9 @@ static void AsOlResolve(bool clear) {
             continue;
         }
         AsOlPlace(o, s_t[i].obj, true);
+        // PreLearn: a placed non-Sim object on a lot the worker lists or scores, at most 256 a cut
+        if (g_asPreLearn && o.seen && preN < 256 && (AsSetHas(g_as->listLots, o.lot) || AsSetHas(g_as->reqLots, o.lot)) && !AsSetHas(g_as->simIds, o.id))
+            AsPreLearnObject(o.id), preN++;
     }
     k.objResolved += n;
     // docs/122 §14.19: objects of lots that got list rows (or all, after an epoch) into the map, before the rows refresh
@@ -2304,6 +2377,7 @@ static void AsTierSet(const AsSet& s, DWORD now, bool camMoved, bool workOnly) {
             t->tier = (u8)(g_asTierFn(id) == 1), t->clsMs = now ? now : 1, t->clsCut = g_asCut, k.tierClassN++, t->pend = 0, g_asTierClassCut++;
             t->clsLot = o && o->seen ? o->lot : 0, t->clsRoom = o && o->seen ? o->room : 0xFFFFFFFFu;
         } else k.tierKept++;
+        if (t->tier && g_asTierReqLots && o && o->seen && AsSetHas(g_as->reqLots, o->lot)) { g_asReqLotT1++; t->refMs = now; k.tier1Sims++; AsT1Lot(id); continue; }
         if (!t->tier || t->holdCut >= g_asCut) { k.tier1Sims++; t->refMs = now; AsT1Lot(id); continue; }
         k.tier2Sims++;
         if (!t->refMs || now - t->refMs >= (DWORD)g_asTierMs) { t->refMs = now ? now : 1; AsSetAdd(g_as->t2ref, id); }

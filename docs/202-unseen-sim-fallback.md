@@ -407,6 +407,99 @@ Rule (Rodney): a Sim our fallback touches (cut, no-retry answer, deferred stuck 
 
 **Checks (§6):** zero NRaas / EA / ts3fixes stuck resets or unroutable marks on Sims our fallback touched, per detector: Overwatch notices "StuckCheck:Unroutable" / "Stationary" (held and named by `overwatchstucknotice`, counters 290-292, log), `stuck_check_reset` (301), `watchdog_*` resets (31, 46-51), ErrorTrap reset lines, our `MovedSims` list joined to the stuck-Sim log. Repro `unseenfb-overwatch-cuts` (built): the far crowd's plans cut repeatedly (> 10 per Sim at the same spot) while Overwatch's nightly check runs twice (`reflect_call NRaas.Overwatch.OnTimer`); the D-hold variant `unseenfb-hold-overwatch` is built with D (Sims held for the far -> far2 walk time across two forced Overwatch passes; queue `unseen-fallback-d.json` job `sv-ufbd-hold-overwatch`).
 
+### 3.8 D-ghost: walk unseen Sims as ghosts instead of standing holds and teleports (Rodney 2026-10-31; design only, not built)
+
+**Idea.** For a Sim the player cannot see, whose route would be long or blocked, skip the real search: the Sim "walks" a simplified path with no collision and no steering, the player never sees a teleport, and only the last short leg is a real route that puts it at the real slot with the real facing. Agreed constraints (Rodney): one floor level (or a teleport at a stair / elevator), routable land only (no deep water, inside the world), end at the real target slot with the right facing (real router for the last short leg only), never end in an enclosed room, snap to a routable point or finish with a short real route when the camera turns to the Sim, report route success with plausible timing (distance / walk speed); cars and boats separate.
+
+#### 3.8.1 Gate: unseen share of routing hitches, from existing data only (2026-10-31)
+
+**Data.** No hitch record carries the Sim's class (§5.1 still holds). The only per-plan class is ts3fixes' `ufplan:` line (`UnseenFallback.cs` `UfSlowPlanLog`, since 0.36.104): every plan through the four `RouteBackoffHook` hooks whose wall time from hook entry to return is >= 150 ms, with the §2 verdict (`why 0` = unseen, 3-8 = seen by rule 2-7, `-1` = never asked: no Sim follower (cars, boats), pet, stuck-check probe, own check, routable check, D leg, or `unseenfbplan` / `unseenfbpre` / `unseenfbleave` all off), `marked` / `cut`, the Sim's name. Limits [verified, source]: at most 200 lines per session; the wall time includes `AsyncWait` (the Sim's task sleeps while its route job runs, §3.6.6), so for an async plan it is the job's latency, **not** a sim-thread hitch; `ts3native.log` has no time stamps and `profile-world.ts` stamps only `route async: sync plan|script stack` lines (`*-nativelog.jsonl`), so `ufplan:` lines cannot be joined to hitch records by time.
+
+**Method.** Script over `probe-out/queue/*-ts3native.log` of 2026-10-25..31 (472 logs, 286 with `ufplan:` lines, 37,743 lines; world from the job name), natural release-default jobs only (`release-validate`, `v020-natural*`, `v020-release-*`, `sim-budget-v024`, `unseen-split`, `unseen-throttle-ab-v024`) and only logs where the rule ran (>= 1 line with `why` != -1): BP 61, IP 19, SV 17 logs (+6 unnamed world). (a) **Sync join [measured]:** a `ufplan:` line whose nearest earlier `route async: sync plan N ms` line (no other `ufplan:` between) has N within 60 ms of it is that plan's own sync search = a sim-thread hitch of the follower. (b) **Job follower proxy [measured for plans, inferred for hitches]:** all lines >= 300 ms; a sim-thread wait behind a route job is caused by the job's follower (§1 key point), so the follower class of long plans is the class of the job-led waits.
+
+| Natural, rule on | BP | IP | SV |
+|---|---|---|---|
+| routing-led hitches (route search + route waits >= 50% of the iteration), `worst-hitches.ts --min 100 --since 2026-10-25`, >= 300 ms: n (wait-led) [measured] | 3 (0) | 260 (176) | 58 (54) |
+| same, >= 100 ms | 679 | 12,765 | 1,301 |
+| (a) sync plans joined, >= 150 ms: unseen / seen / not asked | 1 / 0 / 0 | 4 / 1 / 3 | 1 / 0 / 0 |
+| (b) plans >= 300 ms: unseen / seen / not asked, n | 685 / 52 / 343 | 488 / 207 / 47 | 53 / 2 / 118 |
+| (b) same, ms | 400,946 / 61,967 / 231,701 | 266,751 / 123,235 / 17,719 | 24,614 / 686 / 47,190 |
+| **unseen share of class-known (unseen + seen), n / ms** | **92.9% / 86.6%** | **70.2% / 68.4%** | **96.4% / 97.3%** |
+| unseen share counting not asked as seen (floor), n / ms | 63.4% / 57.7% | 65.8% / 65.4% | 30.6% / 34.0% |
+| (b) plans >= 150 ms, class-known, n / ms | 91.2% / 89.4% | 74.1% / 72.2% | 86.1% / 87.7% |
+
+Seen reasons of the >= 300 ms seen plans: on a seen lot (rule 3) 240, household 24, near viewers 18, held 13 (IP's household lot is busy: the camera lot rule takes most). Of 1,300 unseen >= 300 ms plans 1,300 were marked and 23 cut: their wall time is queue + job + pickup latency, which phase A's job deadline does not cap [measured]. SV's not-asked plans are mostly stuck-check probes (sync joins: SV not-asked sync plans 62 of 69 >= 150 ms over all runs) [inferred from the never-asked list; phase B covers those].
+
+**Confidence.** The sync join (a) is exact but tiny (10 plans; the 200-line cap is spent on async lines early in a session). (b) is the class of the plans that hold route jobs, not of the hitches; it agrees with §5.1's sim-ms shares (88-99% of locomotion ms, 91-100% of `Route.Plan` ms unseen, upper bound) [inferred join]. **Gate verdict: above ~30% in every view** (class-known 68-97% by ms; floor 34-65%), so the design step goes ahead [inferred, not counted per hitch].
+
+**Logging that would make it [measured] (not built; ~30 min + one 30 min queue):** (1) `profile-world.ts` NLOG filter also keeps `^ts3fixes: ufplan:` (one regex), so `freeze-report.ts` / `hitch-ab.ts --causes` join them by epoch like sync-plan lines; (2) the 200 per session cap becomes 30 per sim-minute; (3) the line gains the route handle (`route 25D00352`, as ts3native's lines), and `why` is computed after the plan for plans >= 150 ms even with every switch off (log only), so off arms are classed; (4) jobs with `[OwnJobWait] Enabled=1` (I-202-1: `sim waited N ms behind an own job` names the route handle = the follower). Queue proposal `ghost-gate.json`: BP play, IP play, SV natural, 10 min each, release defaults + `LogFallbackStack=16`, report = routing-led hitches >= 300 ms by follower class.
+
+#### 3.8.2 What ghost changes against D, trip hold and FinishWalk
+
+D (§3.5), the trip hold (§3.6.4) and FinishWalk (§3.4.2) already skip the search or the walk of an unseen Sim; all three **stand** the Sim still for the walk time and then **place** it at the end. Ghost replaces that stand-and-place with a moving virtual position, so (1) a camera turn mid-way finds the Sim on its line, not at the start, and finishes with a short real route from there (no jump the player can see), and (2) the goal no longer has to be unseen (D-arrive's split falls out of it: the real last leg starts outside the view). It does **not** widen who can be ghosted: the entry rules are what limit D in natural play (§3.6.3: follow helpers are 0.5-1.1% of plan samples; lot trips 22-28% go to the trip shortcuts). So ghost is a realism upgrade of the existing shortcuts plus a goal-rule relaxation, not a new hitch lever on its own (§3.8.7).
+
+#### 3.8.3 Where it hooks
+
+| Entry | Site | Ghost does | Status of the site |
+|---|---|---|---|
+| G1 plan entry | `UfPlan` kind 0, D's slot (`UfPre`, before phase A's mark), same caller rule (`UfPreCore.FollowsRoute`: the route is planned once and `DoRoute`d by the same helper) | ghost to the hand-off point H, then the real plan from H; the caller follows that short route | built for D [verified, §3.5.1] |
+| G2 trip hold | `UfTripHold` (`unseenfbtriphold`: `ShortcutToLot`, `GoHomeHook`, `RabbitHoleHook`, mod visit subclasses) | ghost instead of the standing hold; the shortcut's own placement at the lot spot stays the end | built for the hold [verified, §3.6.4] |
+| G3 cut recovery | §3.2 after a CUT? answer 1, own-task kind 0, follow-helper caller | ghost to H instead of `unseenfbteleport`'s place-at-goal, then the real plan from H | built for teleport [verified, §3.2] |
+| G4 FinishWalk | `UfFinishStep` hold (§3.4.2) | virtual progress along the route's **own** path points; physical steps as below; end = the game's kill + place as built | built for the hold [verified, §3.4.2] |
+
+Not the deadline MARK path itself: the mark acts inside ts3native on a running search and must stay an ordinary failed plan (§3.1); ghost acts only in script, before a plan (G1, G2) or after its cut answer (G3). Never `Route.Plan` calls of other callers (tests, picks, `IsPointInLotSafelyRoutable`, stuck probes, our own checks): nobody follows those routes, so moving the Sim for them would be wrong (§3.5.1).
+
+#### 3.8.4 The fake route and how it is "followed"
+
+No route object is faked and no engine path is written: EA's `OffScreenSimBrain` + `SimpleBody` (docs/143 §2 [verified selection]) never see a ghost, because the Sim has no route action while ghosting (G1-G3: its task sleeps inside our `Route.Plan` hook, as D's hold [verified, §3.5.1]; G4: native already skips the held agent's update [verified, §3.4.2]). Script readers of the route object (`GetDistanceRemaining`, `PlanResult`, path end) only ever see the real short route from H [inferred, as D: the caller gets the real plan's result].
+
+1. **Polyline (ts3fixes, once per ghost).** Start S (the Sim's position), H (below), points every 2.5 m on the straight line S-H. If more than 1 in 4 points fail the checks of §3.8.5 (2), use S -> start lot `EntryPoint` -> goal lot `EntryPoint` -> H instead (sidewalk points the game itself routes through [inferred]); still failing = no ghost (plan normally, counter 546).
+2. **Hand-off point H.** For an outdoor ground goal within 15 m of the polyline end: the polyline point 8-15 m before the goal. For an indoor, raised or other-level goal: the goal lot's `EntryPoint` (outdoors, ground level). H must pass `IsPointRoutable` and be out of view with `UfPosUnseen` unless the goal itself is seen (then H must be outside reach, D-arrive's rule). None: counter 545, plan normally.
+3. **Virtual progress.** Sim id -> (polyline, start sim-minute, speed) in the AppDomain table `ts3fixes.unseenfb.holding` (the in-transit table, §3.7) [shortcut: walk speed is D's 2.5 m per sim-minute (inferred); upgrade to the route's walk style speed if arrivals look early or late]. Hold = `UfHold`'s loop (own task, `Simulator.Sleep` one sim-minute at a time, cap 120 sim-minutes).
+4. **Physical steps.** Every 5 sim-minutes (~12 m) the Sim is placed on the polyline point its virtual progress reached (`PlaceSim`, dynamic footprint off, facing the line), counter 548. Why: `LotCurrent`, other Sims' distance tests and Overwatch V1 read the real position; a coarse step keeps them close without a per-tick write. Each `SetPosition` fires the object position event (re-insert of the routing footprint, `UpdateSimFootprint`, a `+0x918` taker, docs/89 §2 [verified there]); with the dynamic footprint off that re-insert should find no active footprint [inferred, docs/89 sibling `0x9470B0` tests `C+0x40` bit 0 for event `0x0E`; to verify for `0x21`]. Budget: <= 1 step per Sim per 5 sim-minutes, <= 16 steps per push across all ghosts (spread rule).
+5. **End.** At the end of the walk time: the Sim is placed at H (checks again), then the real plan from H runs (marked by phase A as any unseen plan; short) and its result goes to the caller, which follows it: slot, facing and `mDestSlotNameHash` come from the game [verified for D's place-then-plan, §3.5.1]. The caller sees `Succeeded` from a real plan, after a hold of distance / speed: plausible timing.
+
+#### 3.8.5 The six constraints as checks
+
+| # | Constraint | Check (cheapest first) | Fails -> |
+|---|---|---|---|
+| 1 | one floor level | S and H outdoors (`World.GetRoomId` 0) and within 0.5 m of the terrain (D's gate 335 test); the goal may be on another level or inside: the real last leg from H takes the stairs / elevator / door portals | S indoors or raised: no ghost (phase 2: a real first leg out to the start lot's `EntryPoint`, D-leave style) |
+| 2 | routable land, no deep water, inside the world | per polyline point `route.IsPointRoutable(p)` (the game's point test for the route's own profile; in-footprint, water without swim permission and off-world points answer false [inferred]) + D's flood colour query (`UfColourAt`, codes 11-13): S and H in one colour (different = no path, exact one-sided [verified, docs/142 §3.2]) | different colour: `FailFast` no path as D (counter 315); too many bad points: sidewalk polyline, then no ghost |
+| 3 | real slot and facing | the end is a real plan from H that the caller `DoRoute`s | last leg fails: an ordinary route failure from H (outdoors, routable), the interaction's own failure branch; counter 547 |
+| 4 | never end in an enclosed room | H outdoors and routable (constraint 1-2); a physical step is only placed on a point that passed (2); the Sim never ends a ghost anywhere but H, a snap point (below) or its start | - |
+| 5 | camera turns to the Sim | every push (~0.5 s, `UfSitesPush` cadence with `UnseenViewers` positions) and every sim-minute wake-up: `UfWhy` of the Sim at its virtual point, `UfPosUnseen(virtual point, 3 m)`. Not unseen any more -> **snap**: `PlaceSim` at the virtual point (or the last point that passed (2)), then the real plan from there to the goal. The place moves the Sim by at most the distance since its last physical step (<= ~12 m); a camera that walks up flips rule 5 at 80 m (not visible), a frustum turn onto a far Sim flips rule 4 and the jump is seen small at > 80 m [inferred]; shortcut: steps every 1 sim-minute (2.5 m) while the Sim is within 150 m of camera or target, upgrade if the camera-sweep repro shows visible jumps | counter 544; the real plan is a visible Sim's, allowed by the rule |
+| 6 | success with plausible timing | hold = polyline length / 2.5 m per sim-minute (cap 120); the result is the real last leg's | - |
+
+Cars, boats, horses, strollers, carried / carrying: never (rule 6, `UfPreCore.VehicleRoute` as fixed in §3.6.6, pets); cars and boats keep `routablecache`, the trip shortcuts and docs/143's car paths.
+
+#### 3.8.6 Interaction with the rest
+
+- **A (§3.1):** ghost runs before the mark; the last leg is marked like any unseen plan. A cut last leg = G3 again would loop: G3 never ghosts a plan that is already a ghost's last leg (flag in the hold table).
+- **B (§3.3):** unchanged; a ghosting Sim plans nothing, EA's 3 AM check of it is deferred while unseen.
+- **C1-C4 / FinishWalk (§3.4):** a ghosting Sim has no route action, so no steering / avoidance / slot taker; G4 replaces FinishWalk's standing hold behind its own switch.
+- **D / D-arrive / D-leave / trip hold:** one switch `unseenfbghost` (off) turns their hold into a ghost and drops D's "goal unseen" requirement in favour of constraint 5 at H; their gates, counters and reject reasons stay (328-340), so their natural reach is unchanged.
+- **Stuck detectors (§3.7):** as D: no plans during the ghost (Overwatch V2, EA stuck probes, `backoff`, `failrepeat` see nothing), in-transit table for `watchdog` / `watchdogidle` / harness, 2 sim-hour cap under Overwatch V1's pass spacing; physical steps change the position, so V1's "same position" is false anyway.
+- **NRaas GoHere:** its `SimRoutingComponentEx` frames are not on D's caller list, so G1 stands down for GoHere follows [inferred, as D §3.5 (4)]; a GoHere post-plan reroute of a failed last leg is marked and capped by A (§3.7 table).
+- **Save / load mid-ghost (no mod data in saves):** nothing is written to the save; the virtual progress lives only in the AppDomain table. The save holds the Sim at its last physical step (on the polyline, outdoors, routable) inside its interaction like any standing Sim; after load the table is empty and the interaction runs as the game restores it [inferred: as D's hold]. A ghost is never started while a save runs (the sim does not tick).
+- **Out of live mode / travel / world end:** `UfWhy` kNotLive at a wake-up ends the ghost: the Sim stays at its last physical step and the real plan runs from there when live mode resumes.
+
+#### 3.8.7 Expected hitch removal [inferred]
+
+Ghost replaces D's / the trip hold's / FinishWalk's stand-and-place; their entry rules decide which plans disappear. From §3.8.1 the long unseen plans are 68-97% of class-known long-plan ms, but §3.6.3 puts follow-helper plans at 0.5-1.1% of plan samples in SV / IP natural play and lot trips at 22-28% (mostly already shortcut). So G1 + G2 remove about what D + the trip hold already would (SV / IP: ~0-1 ms/s of helper plans, plus refused lot trips that ghost's relaxed goal rule admits); G3 removes the retry plans after cuts (A already caps the hitch); G4 removes nothing new (same skip as FinishWalk). Realistic: **< ~5-10% of routing hitch ms on SV / IP from ghost alone** [inferred]. The lever for the remaining 60-90% unseen share is entry reach: 2,295 of 2,453 named unseen kind-0 plans >= 300 ms in all logs say "other task" (the plan does not run in a task whose id is the Sim's), and their callers are unknown (no stacks). **Before building ghost, run the §3.8.1 logging queue with `LogFallbackStack=16` and name those callers;** if they are follow-style callers, G1's caller list grows and ghost's gain grows with it.
+
+#### 3.8.8 Counters, switch, tests (proposal)
+
+- ts3fixes switch `unseenfbghost` (`kUnseenFallbackGhost`, off; needs one of `unseenfbpre`, `unseenfbtriphold`, `unseenfbteleport`, `unseenfbfinish` for an entry). Counters 542-549 (reservation `fixes-542`): 542 ghosts started (`unseenfbghost_holds`), 543 finished at H (`_shortcuts`), 544 snapped by the camera (`_snapped`), 545 no hand-off point (`_no_spot`), 546 route shape refused (polyline) (`_rj_shape`), 547 last leg failed (`_lastfail`), 548 physical steps (`_steps`), 549 longest ghost in sim-minutes. `verify-shortcut.ts --name unseenfbghost` reads `_shortcuts` / `_no_spot` unchanged. No native counters (colour and camera queries exist).
+- Selftest `tools/selftest/unseenfb`: polyline sampling and the sidewalk fallback, H choice (outdoor goal / indoor goal / seen goal), virtual progress per sim-minute, step spacing, snap decision, G3 no-loop flag.
+- Repros (reuse the D loops with the switch): `unseenfb-pre-far-object` + `unseenfbghost` (ABBA, ghost vs D), `unseenfb-ghost-camera-sweep` (new: 30 ghosting Sims, camera pans across their line every 30 s; pass = `_snapped` >= 5, `MovedSims` jump at snap <= one step, no stuck Sim), `unseenfb-hold-overwatch` with ghost (detectors).
+- Queue proposal `unseen-fallback-ghost.json` (not written, not run): smoke 5 min SV; `sv-ghost-pre-loop` (~40 min); `sv-ghost-camera-sweep` (~20 min); `sv-ghost-hold-overwatch` (~20 min); verify-shortcut BP / IP / SV (3 x 15 min, other world if it does not fire); natural IP + SV pair with `hitch-ab.ts --causes` only if §3.8.1's caller queue shows a reach worth it.
+
+#### 3.8.9 Effort and risks
+
+Effort (wall-clock, Claude with agents): logging + caller queue first (~30 min build, 1 x 30 min queue, ~30 min triage); ghost on D's code: ~3-5 h build + selftests (polyline, H, virtual progress, steps, snap, G3 flag), ~1-2 h triage; game: ~2.5 h of loop / verify jobs, natural pair 4 x 15 min later; no clean night needed until the natural pair.
+
+Risks: (1) the footprint re-insert on each physical step may still take `+0x918` (inferred no with the dynamic footprint off): the first loop job's `+0x918` wait keys show it; fall back to steps only at snap / H. (2) A straight or sidewalk line crosses gardens, fences and lots the real path would avoid: harmless while unseen, but a snap can place a Sim in a back yard (a routable point, then a real plan out). (3) The constant walk speed (D's). (4) Walk-by encounters lost (accepted for unseen pairs, §3.5 (5)). (5) Other-task plans (the big unseen share) stay out of reach until their callers are named. (6) The `own task` / `other task` test (`Simulator.CurrentTask == ObjectId`) is itself unverified as "the Sim's interaction task" [inferred]; the caller queue settles it.
+
 ## 4. Built (phase B + A)
 
 | Part | Where | Default | Counters |
@@ -498,6 +591,7 @@ The only class-tagged length is the longest agent update: every locomotion updat
 | Item | Effort | Game runs |
 |---|---|---|
 | Run `unseen-split.json` (measurement gate) | done 2026-10-26 (§5.1); per-hitch class and I-202-1 still open (`OwnJobWait=1`) | - |
+| D-ghost (§3.8, design): `ufplan:` logging + caller queue `ghost-gate.json` first, then ghost on D's code if the callers are reachable | ~30 min + ~3-5 h build, ~2 h triage | 1 x 30 min, then ~2.5 h loops / verify |
 | Run `unseen-fallback.json` (smoke + 4 correctness jobs) + triage | ~1 h | ~1.5 h |
 | Natural IP + SV on/off pair, `hitch-ab.ts` verdict | ~30 min | 2 x 2 x 12-30 min |
 | C1-C4 (built 2026-10-26, §3.4.1): run `unseen-fallback-c.json` + triage | ~1 h | ~1.5 h (5 jobs) |

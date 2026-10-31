@@ -139,7 +139,8 @@
 // After each job: `ai-usage.ts G <job id>`; at >= 80% in either window the queue pauses and prints the --from line to resume.
 // Output: probe-out/queue/<queue>-<date>.jsonl (one row per job, times UTC), docs/data/results/<date>-queue-<queue>.md (table, UTC + PHT).
 // After each job the game's Bin/ts3native.log is copied to probe-out/queue/<queue>-<date>-<job>-<HHMM>-ts3native.log (row.nativeLog),
-// and Bin/ts3native-shadow.jsonl (P4 shadow records) to ...-<HHMM>-shadow.jsonl (row.shadowLog) when the job wrote one.
+// and Bin/ts3native-shadow.jsonl (P4 shadow records) to ...-<HHMM>-shadow.jsonl (row.shadowLog) when the job wrote one;
+// Bin/autshadow.jsonl ([AutShadow] records; emptied at job start) to ...-<HHMM>-autshadow.jsonl (row.autshadowLog) when not empty.
 // At the end the Bin ts3native.asi and ts3native.ini found at the start are put back as a pair (copies in probe-out/queue/bin-before/;
 // until 2026-10-24 the asi came from native/ts3native/out/, which left an old build next to a job ini in Bin). The restored asi is
 // named from docs/data/builds.json; a WARN line says when it is not a release build. Windows-only by nature (TS3W.exe, taskkill).
@@ -316,7 +317,12 @@ export function parseQueue(json: unknown): Job[] {
 // ts3fixes.applied (agent `patches` .applied): the AutShadow / AutLedger lines and every refused patch, for the job row
 // (docs/51 §188: a refused hook used to leave no trace in the row)
 export const fixesApplied = (applied: unknown): string[] => (Array.isArray(applied) ? applied.map(String) : [])
-  .filter(l => /^Aut(Shadow|Ledger)\b/.test(l) || (/^[\w.+]+\.\w+: /.test(l) && !/: ok$/.test(l))).slice(0, 40);
+  .filter(l => /^(Aut(Shadow|Ledger)\b|tuned: )/.test(l) || (/^[\w.+]+\.\w+: /.test(l) && !/: ok$/.test(l))).slice(0, 40);
+
+// tuning-gated patches (ts3fixes Fixes.ApplyTuned, docs/124 §17.8): a tuning is on but its patch did not go in, so the switch
+// reads on while the code path is absent (golive-g7 round 1). Every profile/soak job with ts3fixes fails on such a line.
+export const tunedFails = (applied: unknown): string[] => (Array.isArray(applied) ? applied.map(String) : [])
+  .filter(l => /^tuned: .* MISSING$/.test(l)).map(l => `ts3fixes tuning-gated patch missing: ${l.slice(7)} (docs/124 §17.8)`);
 
 // shadow jobs ([AutShadow] Enabled=1 and the autshadow switch on): a job without cuts or snapshot entries, or with ts3fixes
 // "off for the session", measured nothing (mono-cost2 2026-10-29: four shadow jobs PASSED with cuts 0 entries 0, docs/67)
@@ -1116,6 +1122,11 @@ if (values['self-check']) {
     'AutLedger: ts3native Ledger=0 this load (off)', 'TooltipManager.Simulate at patch time: not started', 'Autonomy.CalculateScore: ok']),
     ['Localization.LocalizeString: already compiled', 'AutShadow: game assemblies = accepted set 1', 'AutLedger: ts3native Ledger=0 this load (off)']);
   assert.deepEqual(fixesApplied(null), []);
+  assert.deepEqual(fixesApplied(['tuned: tuning-gated patches at app startup', 'tuned: kVenueMemo on: venue score hook patched']),
+    ['tuned: tuning-gated patches at app startup', 'tuned: kVenueMemo on: venue score hook patched']);
+  assert.deepEqual(tunedFails(['tuned: kVenueMemo on: venue score hook patched', 'tuned: kAutLive on: go-live B14 hook MISSING', 'GoHome.Run: ok']),
+    ['ts3fixes tuning-gated patch missing: kAutLive on: go-live B14 hook MISSING (docs/124 §17.8)']);
+  assert.deepEqual(tunedFails(undefined), []);
   {  // shadowFails: only shadow jobs, zero cuts/entries and session-off lines fail
     const on = { 'AutShadow.Enabled': 1 }, good = { autshadow: { cuts: 40, entries: 900 } };
     assert.deepEqual(shadowFails(on, 'autshadow', { autshadow: { cuts: 0 } }, good, ['AutShadow: game assemblies = accepted set 1']), []);
@@ -1880,6 +1891,8 @@ for (const [n, j] of jobs.entries()) {
     installFixesPackage(j);
     copyFileSync(asiPath(j), join(BIN, 'ts3native.asi'));
     writeFileSync(join(BIN, 'ts3native.ini'), mergeIni(repoIni, jobIni(j)));
+    // ts3native appends Bin/autshadow.jsonl across loads ([AutShadow] live-drop, dry-diff, dry-sim-mis): fresh per job
+    try { writeFileSync(join(BIN, 'autshadow.jsonl'), ''); } catch (e) { log(`${j.id}: truncate autshadow.jsonl: ${e}`); }
     if (callSitesOffNote(j)) log(`${j.id}: ${callSitesOffNote(j)}`);
     if (j.defaultIni) { defaultIniOrig = readFileSync(DEFAULT_INI, 'utf8'); writeFileSync(DEFAULT_INI, mergeIni(defaultIniOrig, j.defaultIni)); }
     if (j.s3ppIni) {
@@ -2112,6 +2125,7 @@ for (const [n, j] of jobs.entries()) {
       const ls = Object.entries(fa.lists).map(([k, v]) => `${k} [${v.slice(0, 12).join(' | ')}${v.length > 12 ? ` | +${v.length - 12}` : ''}]`).join('; ');
       if (cs || ls || fa.notes.length) row.verdict.push(`ts3fixes activity: ${[cs, ls, ...fa.notes].filter(Boolean).join('; ')}`);
       for (const f of fa.fails) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
+      for (const f of tunedFails(fx1.p?.applied)) { row.verdict.push(`FAIL: ${f}`); row.selfCheckFail ||= f; }
     }
     if (j.minCounters !== undefined) { row.nativeDump = join(OUT, `${queueName}-${date}-${j.id}-native.json`); writeFileSync(row.nativeDump, JSON.stringify({ before: c0, after: c1, maxReset: resetMax && Number(c0?.vfMaxReset) > 0 }, null, 1)); }
     if (c1?.autshadow?.ledger?.on & 1) {  // [AutShadow] Ledger=1: one line per docs/51 item (block is always exported; on bit 0 = probe ran)
@@ -2179,6 +2193,9 @@ for (const [n, j] of jobs.entries()) {
   // P4 shadow records (RouteSnap Mode=1, docs/94 §13): rewritten at every start too (row.shadowLog; shadow-compare-report.ts)
   const SHADOW = join(BIN, 'ts3native-shadow.jsonl');
   if (launched && existsSync(SHADOW)) try { copyFileSync(SHADOW, row.shadowLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-shadow.jsonl`)); } catch (e) { log(`${j.id}: copy ts3native-shadow.jsonl: ${e}`); } // shortcut: whole load's records in a shared load; slice like the log when a P4 job uses reuse
+  // [AutShadow] records (go-live dry-diff / dry-sim-mis, docs/124 §17), truncated at job start (row.autshadowLog)
+  const AUTSHADOW = join(BIN, 'autshadow.jsonl');
+  if (launched && existsSync(AUTSHADOW) && statSync(AUTSHADOW).size > 0) try { copyFileSync(AUTSHADOW, row.autshadowLog = join(OUT, `${queueName}-${date}-${j.id}-${t0.slice(11, 16).replace(':', '')}-autshadow.jsonl`)); } catch (e) { log(`${j.id}: copy autshadow.jsonl: ${e}`); }
   let keep = mayKeep && row.pass;
   if (keep) {
     const c = await carryCheck(reuseOf(next)!, { windows: sess!.windows, stuck: row.repros?.at(-1)?.stuck ?? row.stuck ?? 0, cleanupFailed: !!(row.repros?.at(-1)?.cleanupFailed ?? row.cleanupFailed) });

@@ -5,7 +5,8 @@
 //   node tools/harness/track.ts status                       hold, job, game, chains, queues, main.lock, watchers; flags stale
 //   node tools/harness/track.ts stop [--after-job]           stop chains + queue.ts (+ job tree + TS3W.exe unless --after-job), clean
 //   node tools/harness/track.ts switch <script.sh> [--after-job]   stop, then start the script detached (out: probe-out/queue/<name>.out)
-//   node tools/harness/track.ts build-window <reason>        hold "build-window: <reason>", wait for the running job, "ok to build"
+//   node tools/harness/track.ts wait-chain <script.sh>         block until that chain, every queue.ts and the job are gone (use in the next chain)
+//   node tools/harness/track.ts build-window <reason>       hold "build-window: <reason>", wait for the running job, "ok to build"
 //   node tools/harness/track.ts build-done                   release the hold if it is a build-window hold
 //   node tools/harness/track.ts --self-check                 temp dir, fake process list
 import { execFileSync, spawn } from 'node:child_process';
@@ -87,6 +88,18 @@ async function waitJobEnd(e: Env) {
     if (!j || j.id !== first.id) return `${first.id} ended`;
     if (!j.alive) { rmSync(join(e.dir, 'job-running'), { force: true }); return `${first.id}: pid ${j.pid} dead, stale marker removed`; }
     if (t % 60 === 0) e.log(`still running: ${first.id} (${t * e.sleepMs / 60000} min)`);
+    await sleep(e.sleepMs);
+  }
+}
+
+// next chain waits for the previous chain's PROCESS, not its last echo line: chain-sat8 (10-31 02:55 PHT) exited after
+// its report without printing "CHAIN SAT8 DONE" and the grep-waiting chain sat idle 3 h
+export async function waitChain(e: Env, script: string) {
+  const name = basename(script);
+  for (let t = 1; ; t++) {
+    const c = classify(e.procs()), j = jobState(e, c.alive);
+    if (!c.chains.some(p => p.script === name) && !c.queues.length && !j?.alive) return `${name} gone, no queue or job running`;
+    if (t % 60 === 0) e.log(`waiting for ${name} (${t * e.sleepMs / 60000} min)`);
     await sleep(e.sleepMs);
   }
 }
@@ -180,6 +193,11 @@ if (import.meta.main) {
       const out = await stop(e, false);
       assert.ok([10, 12, 15].every(pid => killed.includes(pid)) && !killed.includes(16), 'unrelated bash untouched');
       assert.ok(!existsSync(holdFile(e)) && out.some(l => /released hold/.test(l)) && !existsSync(join(d, 'job-running')));
+      // wait-chain: returns once the chain and its queue are gone, not before
+      ps = [{ pid: 20, ppid: 1, name: 'bash.exe', cmd: 'bash probe-out/queue/chain-a.sh' }, { pid: 21, ppid: 20, name: 'node.exe', cmd: 'node tools/harness/queue.ts x.json' }];
+      let ticks = 0; const e2: Env = { ...e, procs: () => ps, sleepMs: 0 };
+      const w = waitChain({ ...e2, procs: () => { if (++ticks === 3) ps = [ps[1]]; if (ticks === 5) ps = []; return ps; } }, 'probe-out/queue/chain-a.sh');
+      assert.match(await w, /chain-a\.sh gone/); assert.equal(ticks, 5, 'waits for the orphaned queue too');
     } finally { rmSync(d, { recursive: true, force: true }); }
     console.log('self-check ok');
   } else if (cmd === 'status') {
@@ -196,6 +214,8 @@ if (import.meta.main) {
       ch.unref();
       console.log(`started ${basename(script)} pid ${ch.pid}, out ${outF}`);
     }
+  } else if (cmd === 'wait-chain' && rest[0]) {
+    const e = env(); console.log(`${new Date().toISOString().slice(11, 19)} track: ${await waitChain(e, rest[0])}`);
   } else if (cmd === 'build-window' && rest.length) {
     const e = env();
     setHold(e, `build-window: ${rest.join(' ')}`);
@@ -204,5 +224,5 @@ if (import.meta.main) {
     const e = env(), h = read(holdFile(e));
     if (h?.startsWith('build-window')) { rmSync(holdFile(e), { force: true }); console.log(`released: ${h}`); }
     else console.log(`WARN: ${h ? `hold is not a build-window hold (${h}), left in place` : 'no hold set'}`);
-  } else { console.error('usage: node tools/harness/track.ts status | stop [--after-job] | switch <script.sh> [--after-job] | build-window <reason> | build-done | --self-check'); process.exit(2); }
+  } else { console.error('usage: node tools/harness/track.ts status | stop [--after-job] | switch <script.sh> [--after-job] | wait-chain <script.sh> | build-window <reason> | build-done | --self-check'); process.exit(2); }
 }

@@ -44715,5 +44715,633 @@
     "switches": [
       "autlive"
     ]
+  },
+  {
+    "id": "bp-autlive-edit",
+    "bug": "none (go-live G7, docs/124 §8 G7 row): Buy mode, Build mode and Edit Town entered and left while meta searches are parked waiting for the worker; the world changes under a cut",
+    "fix": "[AutShadow] Mode=3 go-live: world epoch rule (Config 20 vs 21) and ObjStale drop or re-test what changed; Dry=1 compares the result with the game's own search",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run). STRESS (labelled): 20 spawned Sims make the meta burst (spawn_sims, crowd_go); the mode switches themselves are player flows (Buy / Build buttons, Edit Town). Timed for a 12 min profile window: burst, Buy mode with one free object placed (cheat: free), Build mode, Edit Town, each followed by a live burst. Steps past the window end are skipped.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "household needs to max: free-time meta searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 60,
+        "note": "meta burst: the crowd idles on the active home lot and runs autonomy"
+      },
+      {
+        "cmd": "buy_open",
+        "waitS": 10,
+        "note": "Buy mode during the burst (enter pauses the sim)"
+      },
+      {
+        "cmd": "buy_object",
+        "args": {
+          "name": "chair",
+          "free": true
+        },
+        "waitS": 10,
+        "optional": true,
+        "note": "one object added to the home lot: an object add event under the parked searches"
+      },
+      {
+        "cmd": "buy_close",
+        "waitS": 5
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 60,
+        "note": "burst after Buy mode"
+      },
+      {
+        "cmd": "build_mode",
+        "args": {
+          "on": true
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 5,
+        "note": "build exit (TransitionToLiveMode)"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 60,
+        "note": "burst after Build mode"
+      },
+      {
+        "cmd": "reflect_call_async",
+        "args": {
+          "path": "Sims3.Gameplay.GameStates.TransitionToEditTown"
+        },
+        "waitS": 30,
+        "note": "enter Edit Town as its button does (game task)"
+      },
+      {
+        "cmd": "enter_live_mode",
+        "waitS": 15,
+        "note": "the Edit Town Play button"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2,
+        "note": "Edit Town pauses the clock"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90,
+        "note": "burst after Edit Town"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "ts3fixes counters (go-live al slots via -native.json)"
+      }
+    ],
+    "expect": "every step ok; no crash, hang or script error; al slot 10 (epoch since the cut) rises after each mode exit; Dry: every dry-diff record around a switch has a cause (stale reject or below band), drySimMis 0; acting: Sims keep acting after each exit",
+    "switches": [
+      "autlive"
+    ]
+  },
+  {
+    "id": "aut-live-pet",
+    "bug": "none (go-live, docs/124 §8.2): pets' meta searches through go-live; pet pairs reach the worker's RNG units and abort paths (docs/125)",
+    "fix": "[AutShadow] Mode=3 go-live: an object with an aborted or skipped pair runs the game's B14 (al slot 17), never a worker score",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run). Natural + cheat: pets made in live mode join the active household (make_sim = Edit Household > Create a Sim; household caps 6 pets apply: a full household refuses, those steps are optional), needs maxed (cheat: motive drag) so pets and Sims run free-time meta searches; ultra speed. No spawned crowd. Timed for a 10 min profile window.",
+    "steps": [
+      {
+        "cmd": "make_sim",
+        "args": {
+          "species": "Dog",
+          "age": "Adult"
+        },
+        "waitS": 5
+      },
+      {
+        "cmd": "make_sim",
+        "args": {
+          "species": "Cat",
+          "age": "Adult",
+          "gender": "Male"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "make_sim",
+        "args": {
+          "species": "Dog",
+          "age": "Elder",
+          "gender": "Male"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "make_sim",
+        "args": {
+          "species": "Cat",
+          "age": "Child"
+        },
+        "waitS": 5,
+        "optional": true
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "pets and Sims maxed: free-time meta searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 240
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 240
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "expect": "no crash or script error; al eligible rises with the pets in the household; pairs the worker aborted (rng, ic) show as B14 invalid (al slot 17) and run the game's B14; verify cuts A1-A3 0; the made pets keep acting (sims_activity)",
+    "switches": [
+      "autlive"
+    ]
+  },
+  {
+    "id": "aut-live-interrupt",
+    "bug": "none (go-live, docs/124 §3.1 / §8.2): a commodity search started for a Sim whose manager search is parked waiting for the worker sets mAutonomySearchWasInterrupted; the parked search must return SearchInterrupted and push nothing, as vanilla",
+    "fix": "[AutShadow] Mode=3 go-live wait: after every yield the two checks of the game's YieldIfPossible (interrupted, destroyed) with its returns (al slot 14 / 15)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run; aut_interrupt is a new agent command, not yet built). STRESS (labelled): 20 spawned Sims make the meta burst; aut_interrupt is FORCED: every poll runs one Generic FindBestActionForCommodity (Fun, answer dropped) for each Sim whose manager search is parked at that moment, as trait reactions and story-progression mods do from their own tasks; a player cannot aim at the one-tick wait. Polled every second until 20 searches hit parked Sims (fail-fast after 300 s). Timed for a 10 min profile window.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "household needs to max: free-time meta searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 30,
+        "note": "meta burst: the crowd idles on the active home lot and runs autonomy"
+      },
+      {
+        "cmd": "aut_interrupt",
+        "args": {
+          "reset": true
+        },
+        "waitS": 1,
+        "until": {
+          "cmd": "aut_interrupt",
+          "all": [
+            {
+              "path": "total_searched",
+              "atLeast": 20
+            }
+          ],
+          "everyS": 1,
+          "maxS": 300
+        },
+        "note": "each poll searches for every Sim parked at that moment"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90,
+        "note": "burst after the interrupts: searches go on normally"
+      },
+      {
+        "cmd": "aut_interrupt",
+        "waitS": 1,
+        "note": "final totals (total_errors must be 0)"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "expect": "aut_interrupt total_searched >= 20, total_errors 0; al slot 14 (interrupted after our yield) > 0 in go-live loads; no push from an interrupted search, no script error, no crash; Sims keep acting",
+    "switches": [
+      "autlive"
+    ]
+  },
+  {
+    "id": "aut-live-venue-hour",
+    "bug": "none (go-live, docs/124 §8.2): a venue opens or closes between the cut and the apply, so a store-hours Test flips for pairs the worker scored on the cut",
+    "fix": "[AutShadow] Mode=3 go-live: worker-failed pairs that pass now go through the game's C1 (al slot 50); Dry counts them as dryMissStale",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run; venue_hours is a new read-only agent command, not yet built). STRESS (labelled): 20 spawned Sims make the meta burst; then ultra speed until the clock crosses an opening or closing hour of a community lot with hours (venue_hours, read-only: Lot.GetHoursOfOperation) with the crowd re-sent onto the home lot so meta searches run at the boundary. Fails fast if the world has no venue with hours or no boundary is crossed in 480 s. Timed for a 12 min profile window.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "household needs to max: free-time meta searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 20,
+        "note": "meta burst: the crowd idles on the active home lot and runs autonomy"
+      },
+      {
+        "cmd": "venue_hours",
+        "args": {
+          "reset": true
+        },
+        "waitS": 1,
+        "until": {
+          "cmd": "venue_hours",
+          "all": [
+            {
+              "path": "lots_with_hours",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 1,
+          "maxS": 5
+        },
+        "note": "boundaries of this world and the next one from now"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 5,
+        "until": {
+          "cmd": "venue_hours",
+          "all": [
+            {
+              "path": "crossed",
+              "atLeast": 1
+            }
+          ],
+          "everyS": 5,
+          "maxS": 480
+        },
+        "note": "ultra until a venue hour passes, the crowd idling in view"
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 90,
+        "note": "burst right after the boundary"
+      },
+      {
+        "cmd": "venue_hours",
+        "waitS": 1
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1
+      }
+    ],
+    "expect": "venue_hours crossed >= 1; Dry: misses near the boundary are dryMissStale or dryMissBand, never other; acting: al slot 50 (worker-filtered ads through C1) > 0, no closed venue chosen after it closed (sims_activity); no crash or script error",
+    "switches": [
+      "autlive"
+    ]
+  },
+  {
+    "id": "aut-live-save-reload",
+    "bug": "none (go-live G9b, docs/124 §8 G9): a save and a reload of that save while meta searches are parked waiting for the worker",
+    "fix": "[AutShadow] Mode=3 go-live: the game-state rule drops a parked search at the save; the world load releases every parked search and resets the pool (AutShadowWorldLoad)",
+    "save": "Baseline-BP-Spring",
+    "note": "UNVERIFIED (2026-10-31, never run). World-neutral (G9b runs it on SV, BP and IP). STRESS (labelled): 20 spawned Sims make the meta burst; the save (Save As, scratch name, never a Baseline-* save) and the reload (Load Game of that save) are player flows, taken unpaused at ultra mid-burst. After the reload 10 more Sims are spawned and sent home (spawned ids from before the reload are gone). Timed for a 14 min profile window.",
+    "steps": [
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1,
+        "note": "household needs to max: free-time meta searches"
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 60,
+        "note": "meta burst: the crowd idles on the active home lot and runs autonomy"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "before the save"
+      },
+      {
+        "cmd": "save_game",
+        "args": {
+          "name": "GoLive-Reload-Scratch"
+        },
+        "waitS": 1,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "save_in_progress",
+              "equals": false
+            },
+            {
+              "path": "modal",
+              "equals": false
+            }
+          ],
+          "everyS": 1,
+          "maxS": 180
+        },
+        "note": "save during the burst: parked searches drop (game state)"
+      },
+      {
+        "cmd": "load_save",
+        "args": {
+          "file": "GoLive-Reload-Scratch.sims3",
+          "reload": true
+        },
+        "waitS": 10,
+        "until": {
+          "cmd": "game_state",
+          "all": [
+            {
+              "path": "in_world",
+              "equals": true
+            },
+            {
+              "path": "load_file",
+              "equals": "GoLive-Reload-Scratch.sims3"
+            },
+            {
+              "path": "sub_state",
+              "equals": "LiveModeState"
+            }
+          ],
+          "everyS": 5,
+          "maxS": 300
+        },
+        "note": "reload the save in the same session"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "right after the reload: go-live back on (no \"go-live off\")"
+      },
+      {
+        "cmd": "spawn_sims",
+        "args": {
+          "count": 10
+        },
+        "waitS": 20
+      },
+      {
+        "cmd": "set_motive",
+        "args": {
+          "sim": "household"
+        },
+        "waitS": 1
+      },
+      {
+        "cmd": "set_speed",
+        "args": {
+          "speed": "ultra"
+        },
+        "waitS": 2
+      },
+      {
+        "cmd": "crowd_go",
+        "args": {
+          "target": "home",
+          "household": true
+        },
+        "waitS": 150,
+        "note": "burst after the reload"
+      },
+      {
+        "cmd": "patches",
+        "waitS": 1,
+        "note": "after: al consumed rose again"
+      }
+    ],
+    "expect": "save and reload steps ok; no crash, hang or script error; asUnguarded 0 and asWorkerClassInit 0 in -native.json; al consumed rises after the reload",
+    "switches": [
+      "autlive"
+    ]
+  },
+  {
+    "id": "aut-rain-bp",
+    "bug": "[AutShadow] worker aborts reason rain (docs/216 #3: BP 0.05-0.08, IP 0.09-0.23, crowd 0.85-1.75 ms/s): with Seasons on and rain or hail, Autonomy.CalculateScoreForObjectInteraction creates a throwaway InteractionInstance for an outdoor target (InteractionInstance.sNextId++, docs/127 H11), so the worker aborted every rainy outdoor pair",
+    "fix": "docs/127 §4.1 H11 shelter answer: shelter bit per meta object at the cut, the CreateInstance callvirt not made on the worker (ts3native 0.36.148 SatbRainSkip, Satb=2 only), ts3fixes AutShelterHook answers IsShelteredFromPrecipitation from the bit",
+    "save": "Baseline-BP-Spring",
+    "note": "STRESS (forced weather): the agent forces Moderate rain for 48 sim-hours (test_env fixed, the game's own ForceRequestRainWithIntensity), again after 5 min; needs profile.noEnv (no test_env guard). Natural play otherwise: Sims run autonomy on Bridgeport's meta objects (lots, rabbit holes: outdoor targets). Seasons (EP8) is installed in the test setup (test_env reports seasons). UNVERIFIED (2026-10-31, never run).",
+    "steps": [
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "weather": "rain",
+          "intensity": "Moderate",
+          "weather_hours": 48,
+          "moon_phase": 4
+        },
+        "waitS": 5,
+        "note": "rain, 48 sim-hours"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1,
+        "note": "log: weather must read Rain"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "fixed",
+          "season": "spring",
+          "weather": "rain",
+          "intensity": "Moderate",
+          "weather_hours": 48,
+          "moon_phase": 4
+        },
+        "waitS": 300,
+        "note": "again after 5 min: a weather change in between is overridden"
+      },
+      {
+        "cmd": "test_env",
+        "args": {
+          "mode": "read"
+        },
+        "waitS": 1
+      }
+    ],
+    "expect": "weather reads Rain at both reads; -native.json autshadow rainArm > 0 and rainSkip ~= rainArm, rainMiss ~0, abort2[0] (rain) ~0; Mode R A1-A3 0",
+    "switches": [
+      "autshadow"
+    ]
   }
 ]

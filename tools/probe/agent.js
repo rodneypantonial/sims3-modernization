@@ -1779,6 +1779,9 @@ rpc.exports = {
           .forEach((n, i) => { a[n] = rd(739 + i); });
         a.al = Array.from({ length: 56 }, (_, i) => rd(747 + i));
       }
+      if (v >= 21) { // v21: +0xC8C..+0xC94 docs/127 H11 shelter answer (rain pairs armed, CreateInstance skipped, armed with no call)
+        ['rainArm', 'rainSkip', 'rainMiss'].forEach((n, i) => { a[n] = rd(803 + i); });
+      }
       r.autshadow = a;
     }
     return r;

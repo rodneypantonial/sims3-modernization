@@ -55,7 +55,20 @@ namespace Ts3Fixes
         const float kBcObjMoveMax = 0.5f;
         const long kDryTicks = 240;      // a worker answer older than this (Simulator ticks since the request) is not dry-checked or applied
         const long kBcApplyTicks = 15;   // bcast apply: kBcMargin covers about this many ticks of walking [inferred, I-404-4]
-        const int cEnv = 448, cBc = 457, cEnvAp = 481, cBcAp = 486;
+        const int cEnv = 448, cBc = 457, cEnvAp = 481, cBcAp = 486, cTick = 534;
+
+        // docs/206 §15 (autofftick): one Mode R item that reads the sim clock (SimClock.CurrentTicks = Simulator / SimClock
+        // sSimTickCnt + start + advanced, Hours24, the day) at the cut. With [AutShadow] Satb=2 the worker runs while the sim
+        // stores tick t+1 natively (0xD81D39 / 0xD81D49); A0 needs 0.36.143's cut log of those statics. Counters 534-537.
+        sealed class TickRes { public bool Done; public long Ticks; public float Hours; public int Day; }
+        static readonly TickRes sTickRef = new TickRes(), sTickWork = new TickRes();
+        static bool sTickPosted;
+        static void TickScore(TickRes r)
+        {
+            r.Done = false;
+            r.Ticks = SimClock.CurrentTicks; r.Hours = SimClock.Hours24; r.Day = (int)SimClock.CurrentDayOfWeek;
+            r.Done = true;
+        }
 
         sealed class EnvRes
         {
@@ -136,6 +149,8 @@ namespace Ts3Fixes
         static void OffRequest()
         {
             sOffPosted = false; sOffRefRan = false; sEnvN = sBcN = 0;
+            sTickPosted = ShortcutOn("autofftick");
+            if (sTickPosted) { PatchCounters()[cTick]++; sOffPosted = true; sOffTick = Simulator.TicksElapsed(); }
             if (!sOffHooksOk) return;
             bool env = ShortcutOn("autoffenv"), bc = ShortcutOn("autoffbcast");
             if (!env && !bc) return;
@@ -161,7 +176,7 @@ namespace Ts3Fixes
             }
             catch (Exception e) { c[cEnv + 5]++; AutNote("offload request: " + e.Message); }
             c[cEnv] += sEnvN; c[cBc] += sBcN;
-            sOffPosted = sEnvN + sBcN > 0;
+            sOffPosted = sEnvN + sBcN > 0 || sTickPosted;
             sOffTick = Simulator.TicksElapsed();
         }
 
@@ -227,6 +242,12 @@ namespace Ts3Fixes
                 if (ShortcutOn("autoffnoref")) return;  // timing runs: no sim-side copy of the work at the cut
                 sOffRefRan = true;
             }
+            if (sTickPosted)
+            {
+                TickRes t = worker ? sTickWork : sTickRef;
+                try { TickScore(t); } catch (Exception) { t.Done = false; }
+                if (worker && AutShadowNative.Stopped()) t.Done = false;
+            }
             EnvRes[] er = worker ? sEnvWork : sEnvRef;
             BcRes[] br = worker ? sBcWork : sBcRef;
             int i = 0;
@@ -267,6 +288,13 @@ namespace Ts3Fixes
             int[] c = PatchCounters();
             bool ok = lr == 0 || (lr == 1 && sKeepPartial);
             bool cmp = sOffRefRan && ok, noref = !sOffRefRan && ok;  // noref: autoffnoref, the worker's answers kept unchecked
+            if (sTickPosted)
+            {
+                if (!cmp || !sTickWork.Done || !sTickRef.Done) c[cTick + 3]++;
+                else if (sTickWork.Ticks == sTickRef.Ticks && AutShadowCore.Bits(sTickWork.Hours) == AutShadowCore.Bits(sTickRef.Hours) && sTickWork.Day == sTickRef.Day) c[cTick + 1]++;
+                else { c[cTick + 2]++; OffLog("tick", null, (float)(sTickWork.Ticks - sTickRef.Ticks), 0f, sTickWork.Hours, sTickRef.Hours, sTickWork.Day, sTickRef.Day); }
+                sTickPosted = false;
+            }
             for (int i = 0; i < sEnvN; i++)
             {
                 EnvRes w = sEnvWork[i], r = sEnvRef[i];

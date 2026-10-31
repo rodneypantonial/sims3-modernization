@@ -3,8 +3,8 @@
   "smoke": {
     "id": "bp-golive-ab-smoke",
     "note": "Measurement smoke (4 min BP, --ab autlive, 1-min slices): PASS = 0 crashes; job log shows both arms with the switch read back (autlive true / false); al consumed rises only in on slices (per-slice native counters); heavy tools off (noSamplers); alOn 1. A FAIL stops the queue.",
-    "asi": "game-copy/ts3native.asi.golive1",
-    "fixesPackage": "game-copy/ts3fixes.package.golive1",
+    "asi": "game-copy/ts3native.asi.satb8",
+    "fixesPackage": "game-copy/ts3fixes.package.golive5",
     "save": "Baseline-BP-Spring",
     "minCounters": 90,
     "ini": {
@@ -67,8 +67,8 @@
     {
       "id": "bp-golive-ab",
       "note": "BP natural, --ab autlive 2-min slices, off first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-BP-Spring",
       "minCounters": 90,
       "ini": {
@@ -130,8 +130,8 @@
     {
       "id": "bp-golive-ab-onfirst",
       "note": "BP natural, on first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-BP-Spring",
       "minCounters": 90,
       "ini": {
@@ -194,8 +194,8 @@
     {
       "id": "ip-golive-ab",
       "note": "IP natural, off first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-IP-Spring",
       "minCounters": 90,
       "ini": {
@@ -257,8 +257,8 @@
     {
       "id": "ip-golive-ab-onfirst",
       "note": "IP natural, on first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-IP-Spring",
       "minCounters": 90,
       "ini": {
@@ -321,8 +321,8 @@
     {
       "id": "bp-golive-ab-crowd",
       "note": "BP crowd in view (repro aut-live-crowd-view: 30 Sims spawned in the warm-up slice, waves every 150 s), --ab autlive 5-min slices over 25 min (warm-up, then off,on,on,off), off first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-BP-Spring",
       "minCounters": 90,
       "ini": {
@@ -385,8 +385,8 @@
     {
       "id": "bp-golive-ab-crowd-onfirst",
       "note": "BP crowd in view, on first. Judge (docs/124 §14.4 S4, offload rule): sim busy ms/s off - on and the autonomy-search owner (node tools/harness/sim-budget-report.ts per arm), pooled over both orders; hitches with node tools/harness/hitch-ab.ts golive-ab (p99, p99.9, max, counts >= 300 / 1000 ms); it/s not down > 2% in the pooled pair mean. Clean machine (load line), no other build or agent during the job. No net gain outside the noise band in 2 build rounds = ship off (PLAN rule).",
-      "asi": "game-copy/ts3native.asi.golive1",
-      "fixesPackage": "game-copy/ts3fixes.package.golive1",
+      "asi": "game-copy/ts3native.asi.satb8",
+      "fixesPackage": "game-copy/ts3fixes.package.golive5",
       "save": "Baseline-BP-Spring",
       "minCounters": 90,
       "ini": {
