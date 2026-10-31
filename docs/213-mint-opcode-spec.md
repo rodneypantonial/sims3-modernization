@@ -88,7 +88,7 @@ Everything else matched the 1.2.3 case for the same opcode, including the bugs i
 - The harness is not in the repo. Porting it to `tools/emu/` as a frame-aware spec (it maps the contributor's own exe copy at run time, like docs/63) would let the 746 cases run as a regression check.
 - Not checked: the x87 precision the sim thread really runs at in game (docs/37 open item); the CRT SSE2 flag value in game (expected set).
 
-## 8. Fix built: `[EaCrashFixes] MintDivGuard` (0.36.149, issue #114, eafix.cpp, counters v144, off by default; ledger docs/51 §413)
+## 8. Fix built: `[EaCrashFixes] MintDivGuard` (0.36.149, issue #114, eafix.cpp, counters v144, off by default; ledger docs/51 §412)
 
 This builds the design in issue #114, with one change: the rem stub also checks for `INT_MIN`. So `x % -1` for every other `x` still runs the game's `idiv`, which gives 0, and the counter counts only the cases that used to fault.
 

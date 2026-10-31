@@ -919,7 +919,7 @@ The most likely cause is a GEOM resource whose vertex blend indices name a bone 
 
 It is not a use-after-free, because the object's own fields were readable. No ts3native hook is on this path. The nearest Apex Radiance site is `CasTriSort 0x5D1960` (docs/data/apex-hooks.csv), and `node tools/hook-sites.ts --check` lists no shared address.
 
-### 28.3 Fix: `[EaCrashFixes] GeomBoneIndex` (0.36.149, eafix.cpp, off by default; ledger docs/51 §412)
+### 28.3 Fix: `[EaCrashFixes] GeomBoneIndex` (0.36.149, eafix.cpp, off by default; ledger docs/51 §411)
 
 The fix points vtable slot `0xFE3314` at `GbGetBone`, which has the same contract: `ecx` = the GEOM, one stack argument, `ret 4`. For an index inside the vector it returns the game's entry. Past the end it returns 0, so the caller's map lookup misses and EA's missing-bone path runs.
 
@@ -952,7 +952,7 @@ Static, plus the contributor's two full dumps (described in the issue; none is c
 | Every path | The step reads the material on every path. When the part joins an existing group it reads it at `0x5DDC45`-`0x5DDC5A`. When it starts a new group it reads it at `0x5DDFB0`-`0x5DDFBD`. No branch between the start check and those reads leaves the function |
 | Cause | A CAS VPXY LOD 1-3 entry names a GEOM with shader 0 and vertices: a custom-content morph mesh used as a LOD. Such a GEOM has no embedded material (MTNF). In both dumps it was the same CC hair. EA's own CAS parts have no such entry (the contributor's scan of the install). The VPXY must be the part's mesh VPXY: morph VPXYs (fat, fit, thin, special) name only shader-0 meshes with position, normal and vertex-id data, by design, and are not built through this step [verified: VPXY LOD lists of an EA Store library package] |
 
-### 29.2 Fix: `[EaCrashFixes] GeomNoMaterial` (0.36.149, eafix.cpp, off by default; ledger docs/51 §414)
+### 29.2 Fix: `[EaCrashFixes] GeomNoMaterial` (0.36.149, eafix.cpp, off by default; ledger docs/51 §413)
 
 The step already skips a part whose mesh pointer is null or tagged. That check is at `0x5DDB5D` / `0x5DDB67`, which go to the tail `0x5DE0E2`; the tail returns 1, and the caller ignores the result. The fix replaces the 10 bytes at `0x5DDB63` (`mov eax,[ebx]; test eax,eax; je 0x5DE0E2`) with a jump to `GnStub`. The stub keeps the null check. It also takes the same skip when the GEOM's slot `+0x58` is the game's getter `0x580420` and `[GEOM+0x28]` is 0. Every other part continues at `0x5DDB6D`, which reloads `eax`, `ecx` and `edx`.
 
