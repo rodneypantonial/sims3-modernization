@@ -11,6 +11,7 @@
 #include <xmmintrin.h>
 #include <emmintrin.h>
 #include <intrin.h>  // _ReturnAddress (vfG11CloseBy)
+#include <psapi.h>  // K32GetMappedFileNameW (XcptOtherModule)
 
 #define TS3NATIVE_VERSION "0.36.142"
 
@@ -2440,8 +2441,9 @@ static void MaybeLogCounters(ULONGLONG now) {
     if (c.workerReady || c.asyncReady)
         Log("route plans: off %ld (fails %ld) on %ld (fails %ld) hostCalls %ld", c.planOffCalls, c.planOffFails, c.planOnCalls, c.planOnFails, c.hostCalls);
     static LONG xcptSkipLogged;  // docs/172 §7: only when the count moved
-    if (const LONG skip = g_xcptOtherSkip; skip != xcptSkipLogged)
-        Log("crash log: %ld more AVs at %ld logged addresses in other modules (not logged)", xcptSkipLogged = skip, g_xcptOtherN < 8 ? g_xcptOtherN : 8);
+    const LONG xcptSkip = g_xcptOtherSkip;
+    if (xcptSkip != xcptSkipLogged)
+        Log("crash log: %ld more AVs at %ld logged addresses in other modules (not logged)", xcptSkipLogged = xcptSkip, g_xcptOtherN < 8 ? g_xcptOtherN : 8);
 }
 
 static LARGE_INTEGER g_qpf;
